@@ -1,0 +1,132 @@
+# GraphQL
+
+GraphQL is served at `{PUBLIC_URL}{BASE_PATH}/api/graphql` (POST, or GET for queries). Its schema is generated
+from your models, in memory: add a field in the admin and the next query can ask for it, with no restart. It
+uses the same permissions, filters, page sizes and services as the [REST delivery API](delivery-api.md), so a
+query returns exactly what the equivalent REST request returns.
+
+## Authentication
+
+The same credentials as REST, in the `Authorization: Bearer` header: a delivery token, an admin API token, or
+an app user's access token. Without one the request is anonymous and gets what the public app role grants.
+Requests made with the admin's session cookie must also send the `X-CSRF-Token` header.
+
+## Schema shape
+
+For a collection `article` (plural API ID `articles`) Shapio generates:
+
+| Name                                                                                           | What                                                |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `article(id: ID!, locale, fallback, snapshot, publicationState)`                               | one entry, or null                                  |
+| `articles(filter, sort, search, page, pageSize, locale, fallback, snapshot, publicationState)` | `{ nodes, totalCount, pageInfo, locale, snapshot }` |
+| `Article`, `ArticleFilter`, `ArticleSort`, `ArticleInput`, `ArticleConnection`                 | the types behind them                               |
+| `createArticle`, `updateArticle`, `deleteArticle`, `publishArticle`, `unpublishArticle`        | mutations, for principals allowed to write          |
+
+The list query takes the collection's plural API ID; everything else is named after the singular API ID
+([Modelling](modelling.md#kinds-of-definitions)).
+
+A single type `home` is `home(locale, …)`. Field types: rich text is `RichText { json html }`, media is
+`Media { id url width height alt variants { name width url } … }`, a relation is the target type (or a list of
+it), a component is its own type, and a dynamic zone is a list of a union of its components (ask for
+`__typename`). Every entry also has `localizations` (its versions in the other locales).
+
+`publicationState: DRAFT` reads drafts; only admin users and admin API tokens may ask for it.
+
+## Example
+
+```graphql
+query Articles($locale: String) {
+  articles(
+    locale: $locale
+    filter: { publishedOn: { gte: "2026-09-01" } }
+    sort: [{ publishedOn: DESC }]
+    pageSize: 10
+  ) {
+    totalCount
+    snapshot
+    nodes {
+      id
+      title
+      slug
+      body {
+        html
+      }
+      cover {
+        url
+        alt
+        width
+        height
+      }
+      author {
+        name
+      }
+    }
+  }
+}
+```
+
+```sh
+curl "$SHAPIO_URL/api/graphql" \
+  -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"query":"query($locale: String) { articles(locale: $locale, sort: [{ publishedOn: DESC }]) { totalCount nodes { title author { name } } } }","variables":{"locale":"fr"}}'
+```
+
+Filters mirror REST's operators without the `$`: `{ publishedOn: { gte: "2026-09-01" } }`,
+`{ slug: { containsi: "snapshot" } }` (text matching and ranges need a filterable field, as in REST),
+`{ or: [{ slug: { eq: "a" } }, { slug: { eq: "b" } }] }`. Pin a build to one moment with `snapshot`, exactly as
+with REST.
+
+## Snapshots
+
+Two root queries mirror REST's `/api/snapshots` endpoints, for incremental builds:
+
+| Query                                    | What                                                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `_snapshot`                              | `{ snapshot schemaVersion publishedAt }`: the current snapshot, to pin the build to                                 |
+| `_changes(from: Int!, to, after, first)` | `{ from to fromSchemaVersion toSchemaVersion nextCursor nodes { id modelKey routeKey locales { locale change } } }` |
+
+```graphql
+query Since($from: Int!) {
+  _snapshot {
+    snapshot
+  }
+  _changes(from: $from, first: 100) {
+    toSchemaVersion
+    fromSchemaVersion
+    nextCursor
+    nodes {
+      modelKey
+      id
+      locales {
+        locale
+        change
+      }
+    }
+  }
+}
+```
+
+`change` is `PUBLISHED`, `UPDATED` or `UNPUBLISHED`; only models the caller may read are reported. When the two
+schema versions differ, rebuild the affected models. See [Snapshots and the changes API](snapshots.md).
+
+These names are reserved: `_changes`, `_snapshot` and `_schemaVersion` as query names, and `SnapshotChange`,
+`SnapshotChangeKind`, `SnapshotChangeLocale`, `SnapshotChangePage` and `SnapshotInfo` as type names. A model
+whose generated names would collide with them is refused when you save it.
+
+## Limits
+
+- Query depth: `GRAPHQL_MAX_DEPTH` (10).
+- Estimated cost: `GRAPHQL_MAX_COMPLEXITY` (20 000). Each field costs 1, multiplied by the page sizes and lists
+  around it; a collection query also costs its page size (the rows it reads) and `totalCount` costs 10 (a
+  count query). Ask for smaller pages or fewer nested lists if you hit it (`QUERY_TOO_COMPLEX`).
+- At most 30 aliased fields in one selection (`QUERY_TOO_MANY_ALIASES`), so one request cannot repeat an
+  expensive field thousands of times.
+- `pageSize` is at most 100, like REST.
+- Introspection is open to admins and API tokens. Anonymous callers and app users get it only with
+  `GRAPHQL_PUBLIC_INTROSPECTION=true`.
+- `GRAPHQL_ENABLED=false` turns GraphQL off.
+
+## Playground
+
+Admins open GraphiQL at `/api/graphql/playground` (signed in to the admin). Its files are served by Shapio
+itself, no CDN. Turn it off with `GRAPHQL_PLAYGROUND_ENABLED=false`.

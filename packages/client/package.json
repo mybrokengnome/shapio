@@ -1,0 +1,44 @@
+{
+  "name": "@shapio/client",
+  "version": "0.1.0",
+  "description": "Typed HTTP client for Shapio APIs.",
+  "license": "Apache-2.0",
+  "homepage": "https://shapio.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mybrokengnome/shapio.git",
+    "directory": "packages/client"
+  },
+  "bugs": {
+    "url": "https://github.com/mybrokengnome/shapio/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@shapio/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shapio/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

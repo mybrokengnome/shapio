@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "typeRoots": ["../../apps/api/node_modules/@types"],
+    // Inside the Shapio repository only: type against the server's source. In your own project `shapio` is
+    // installed, this mapping finds nothing and TypeScript resolves `shapio/config` from node_modules.
+    "paths": { "shapio/config": ["../../apps/api/src/extensions/public.ts"] }
+  },
+  "include": ["shapio.config.ts", "extensions"]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "shapio-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter shapio --filter @shapio/admin dev",
+    "build": "pnpm -r --filter \"!example-site\" build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run --project unit --project admin",
+    "test:integration": "vitest run --project integration",
+    "smoke:npm": "node scripts/smokeNpmPackage.mjs",
+    "db:migrate": "pnpm --filter shapio db:migrate",
+    "db:rollback": "pnpm --filter shapio db:rollback",
+    "db:codegen": "pnpm --filter shapio db:codegen",
+    "db:reset": "pnpm --filter shapio db:reset",
+    "docs:reference": "pnpm --filter shapio docs:reference"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "eslint-config-prettier": "catalog:",
+    "eslint-plugin-import-x": "catalog:",
+    "eslint-plugin-react-hooks": "catalog:",
+    "eslint-plugin-react-refresh": "catalog:",
+    "globals": "catalog:",
+    "prettier": "catalog:",
+    "prettier-plugin-tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

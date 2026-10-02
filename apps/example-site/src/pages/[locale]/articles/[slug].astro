@@ -1,0 +1,25 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { renderArticle } from '../../../lib/render.js';
+import { listArticles } from '../../../lib/shapio.js';
+import { articlePath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
+import type { Article } from '../../../lib/types.js';
+
+export const getStaticPaths = async () => {
+  const paths = [];
+  for (const locale of LOCALES) {
+    for (const article of await listArticles(locale)) {
+      paths.push({ params: { locale, slug: article.slug }, props: { locale, article } });
+    }
+  }
+  return paths;
+};
+
+type Props = { locale: Locale; article: Article };
+const { locale, article } = Astro.props;
+const context = { locale, strings: stringsFor(locale) };
+---
+
+<Base title={article.title} description={article.excerpt} locale={locale} alternatePath={articlePath(otherLocale(locale), article.slug)}>
+  <Fragment set:html={renderArticle(article, context)} />
+</Base>

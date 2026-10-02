@@ -1,0 +1,14 @@
+{
+  "dialect": "postgres",
+  "outFile": "./src/db/types.ts",
+  "excludePattern": "kysely_migration*",
+  "customImports": {
+    "ContentData": "./contentData.js"
+  },
+  "overrides": {
+    "columns": {
+      "entry_heads.data": "ContentData",
+      "content_revisions.data": "ContentData"
+    }
+  }
+}

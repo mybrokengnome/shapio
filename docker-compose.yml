@@ -1,0 +1,50 @@
+# Shapio + PostgreSQL + a media volume.
+#   docker compose up -d
+#   docker compose logs shapio   # then open http://localhost:4300/admin/ to create the owner account
+# Set POSTGRES_PASSWORD in a .env file next to this one before exposing anything beyond localhost.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: shapio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shapio}
+      POSTGRES_DB: shapio
+    volumes:
+      # postgres:18 keeps data under /var/lib/postgresql/<major>/docker; mount the parent.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shapio -d shapio']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  shapio:
+    build: .
+    image: ghcr.io/mybrokengnome/shapio:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://shapio:${POSTGRES_PASSWORD:-shapio}@postgres:5432/shapio
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4300}
+      HOST: 0.0.0.0
+      WORKER_MODE: inline
+      # Serving HTTPS directly (no reverse proxy): set PUBLIC_URL=https://cms.example.com, mount the
+      # directory holding your certificate and key (e.g. `- /etc/shapio/tls:/certs:ro` under `volumes`), then
+      #   TLS_CERT_FILE: /certs/fullchain.pem
+      #   TLS_KEY_FILE: /certs/privkey.pem
+      #   PORT: '8443'
+      #   HTTP_PORT: '8080'
+      # and replace `ports` with '443:8443' and '80:8080' (the container runs as a non-root user, so it
+      # listens on high ports and Docker maps the privileged ones). Renewed files are picked up without a
+      # restart. The key file must be readable by the container's user (uid 1000).
+    ports:
+      - '127.0.0.1:${SHAPIO_PORT:-4300}:4300'
+    volumes:
+      - media:/data/media
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  media:

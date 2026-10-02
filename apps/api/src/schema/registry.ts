@@ -1,0 +1,87 @@
+import type { FastifyBaseLogger } from 'fastify';
+import type { Database } from '../db/index.js';
+import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
+import { loadSnapshot } from './loadSnapshot.js';
+import type { SchemaSnapshot } from './snapshot.js';
+
+export type SchemaChangeListener = (snapshot: SchemaSnapshot) => void;
+
+export type SchemaRegistry = {
+  /**
+   * The snapshot for the current global schema version. Costs one primary-key read of
+   * `system_versions` when the cache is current; reloads (single-flight) when it is not. This durable
+   * check is what keeps every instance correct; notifications only make reloads happen sooner.
+   */
+  getSnapshot: () => Promise<SchemaSnapshot>;
+  /** The cached snapshot without any check (may be stale or absent). */
+  peek: () => SchemaSnapshot | undefined;
+  /** A hint that the version moved (NOTIFY). Reloads in the background; never throws. */
+  hint: (version?: number) => void;
+  /** Called with each newer snapshot once loaded (GraphQL/OpenAPI regeneration, admin live refresh). */
+  onChange: (listener: SchemaChangeListener) => () => void;
+};
+
+type RegistryOptions = { db: Database; log: FastifyBaseLogger };
+
+export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegistry => {
+  let cached: SchemaSnapshot | undefined;
+  let loading: Promise<SchemaSnapshot> | undefined;
+  const listeners = new Set<SchemaChangeListener>();
+
+  const publish = (snapshot: SchemaSnapshot) => {
+    if (cached && cached.version >= snapshot.version) {
+      return cached;
+    }
+    cached = snapshot;
+    for (const collision of snapshot.routeKeyCollisions) {
+      log.error(
+        { ...collision, schemaVersion: snapshot.version },
+        'two models share a delivery route key; set a plural API ID on the hidden one',
+      );
+    }
+    for (const listener of listeners) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        log.error({ err: error, schemaVersion: snapshot.version }, 'schema change listener failed');
+      }
+    }
+    return snapshot;
+  };
+
+  /** Single-flight: concurrent callers share one load; a load that turns out too old is repeated. */
+  const loadAtLeast = async (version: number): Promise<SchemaSnapshot> => {
+    for (;;) {
+      loading ??= loadSnapshot(db).finally(() => {
+        loading = undefined;
+      });
+      const snapshot = publish(await loading);
+      if (snapshot.version >= version) {
+        return snapshot;
+      }
+    }
+  };
+
+  return {
+    getSnapshot: async () => {
+      const version = await schemaVersionsRepository.getSchemaVersion(db);
+      if (cached && cached.version >= version) {
+        return cached;
+      }
+      return loadAtLeast(version);
+    },
+    peek: () => cached,
+    hint: (version) => {
+      if (version !== undefined && cached && cached.version >= version) {
+        return;
+      }
+      loadAtLeast(version ?? 0).catch((error: unknown) => {
+        log.warn({ err: error }, 'schema snapshot refresh failed; the next request will retry');
+      });
+    },
+    onChange: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+};

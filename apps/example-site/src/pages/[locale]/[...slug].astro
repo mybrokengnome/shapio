@@ -1,0 +1,28 @@
+---
+import Base from '../../layouts/Base.astro';
+import { renderPage } from '../../lib/render.js';
+import { listPages } from '../../lib/shapio.js';
+import { HOME_SLUG, LOCALES, otherLocale, pagePath, type Locale } from '../../lib/site.js';
+import type { Page } from '../../lib/types.js';
+
+/** Every published page in every locale; `home` is the locale's front page (`/en/`, `/fr/`). */
+export const getStaticPaths = async () => {
+  const paths = [];
+  for (const locale of LOCALES) {
+    for (const page of await listPages(locale)) {
+      paths.push({
+        params: { locale, slug: page.slug === HOME_SLUG ? undefined : page.slug },
+        props: { page, locale },
+      });
+    }
+  }
+  return paths;
+};
+
+type Props = { page: Page; locale: Locale };
+const { page, locale } = Astro.props;
+---
+
+<Base title={page.title} description={page.description} locale={locale} alternatePath={pagePath(otherLocale(locale), page.slug)}>
+  <div lang={page.locale} set:html={renderPage(page)} />
+</Base>

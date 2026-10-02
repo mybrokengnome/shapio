@@ -1,0 +1,51 @@
+{
+  "apiKey": "featureGrid",
+  "category": "Sections",
+  "display": {},
+  "fields": [
+    {
+      "apiKey": "heading",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "9936c9f6-f438-4de7-accc-14e37f0ce82d",
+      "label": "Heading",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "features",
+      "deprecated": false,
+      "editor": {
+        "id": "componentEditor",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "ecef464c-e05f-4f7c-80ce-f5ede8117af9",
+      "label": "Features",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "component": "66138d48-8c29-499e-ba51-86e5fb1b372b",
+        "max": 12,
+        "min": 1,
+        "repeatable": true
+      },
+      "sortable": false,
+      "type": "component",
+      "unique": false
+    }
+  ],
+  "id": "c292bae8-15f5-45e1-808c-d67cea02c993",
+  "kind": "component",
+  "label": "Feature grid"
+}

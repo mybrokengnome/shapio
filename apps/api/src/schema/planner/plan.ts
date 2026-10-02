@@ -1,0 +1,237 @@
+import {
+  classifyChanges,
+  diffDefinitions,
+  findDependentModels,
+  findReferencingDefinitions,
+  summarizeChanges,
+  validateSchema,
+  type ChangeSummary,
+  type ClassifiedChange,
+  type FieldDefinition,
+  type JsonValue,
+  type SchemaDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
+import { fieldIndexName } from '../../content/compiler/expressions.js';
+import {
+  findValueLocations,
+  stepKey,
+  type ContentStep,
+  type FollowUpStep,
+  type IndexStep,
+  type PrerequisiteStep,
+} from './steps.js';
+
+/**
+ * The change planner (brief §5 steps 3–5): diff, classify, validate against the whole proposed schema and
+ * derive the prerequisite and follow-up work. Pure: impact (which needs content) is added by impact.ts.
+ */
+export type ChangePlan = {
+  definitionId: string;
+  kind: SchemaDefinition['kind'];
+  apiKey: string;
+  operation: 'create' | 'update' | 'delete';
+  /** The active per-model version the plan was made against; null when the definition is new. */
+  fromVersion: number | null;
+  changes: ClassifiedChange[];
+  summary: ChangeSummary;
+  /** Models whose entries are affected: the model itself, or every model embedding a component. */
+  affectedModelIds: string[];
+  prerequisites: PrerequisiteStep[];
+  followUps: FollowUpStep[];
+  /** Problems that make the change impossible; a plan with issues is never applied. */
+  issues: ValidationIssue[];
+};
+
+export type PlanInput = {
+  /** Current definition (active, or the last revision of a deleted one being restored); null if new. */
+  before: SchemaDefinition | null;
+  /** Proposed definition; null to delete. */
+  after: SchemaDefinition | null;
+  fromVersion: number | null;
+  /** Every active definition right now. */
+  active: readonly SchemaDefinition[];
+  /** True when content may exist for this definition (an existing or restored model). */
+  hasContent: boolean;
+};
+
+const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
+  definition && definition.kind !== 'component'
+    ? definition.fields
+        .filter((field: FieldDefinition) => (field.filterable || field.sortable) && !field.deprecated)
+        .map((field) => {
+          // Toggling `localized` changes the layout, hence the name: the old index is dropped, a new one built.
+          const spec = {
+            modelId: definition.id,
+            fieldId: field.id,
+            type: field.type,
+            localized: definition.localized,
+          };
+          return {
+            kind: 'buildIndex',
+            modelId: definition.id,
+            fieldId: field.id,
+            fieldType: field.type,
+            localized: definition.localized,
+            indexName: fieldIndexName(spec),
+          };
+        })
+    : [];
+
+const field = (definition: SchemaDefinition | null, fieldId: string | undefined) =>
+  definition?.fields.find((candidate) => candidate.id === fieldId);
+
+const contentStepsFor = (
+  change: ClassifiedChange,
+  after: SchemaDefinition,
+  proposed: readonly SchemaDefinition[],
+): ContentStep[] => {
+  const ownerId = after.id;
+  const locations = () => findValueLocations(proposed, ownerId);
+  const target = field(after, change.fieldId);
+  return change.prerequisites.flatMap((kind): ContentStep[] => {
+    switch (kind) {
+      case 'validateRequired':
+        return target ? [{ kind, ownerId, fieldId: target.id, locations: locations() }] : [];
+      case 'backfill':
+        return target
+          ? [
+              {
+                kind,
+                ownerId,
+                fieldId: target.id,
+                value: target.defaultValue as JsonValue,
+                locations: locations(),
+              },
+            ]
+          : [];
+      case 'validateValues':
+        return [{ kind, ownerId, ...(target ? { fieldId: target.id } : {}), locations: locations() }];
+      case 'checkUnique':
+        return target && after.kind !== 'component' ? [{ kind, modelId: after.id, fieldId: target.id }] : [];
+      case 'convert':
+        return [{ kind, ownerId, change, locations: locations() }];
+      default:
+        // buildIndex is derived from the index layout below, not per change.
+        return [];
+    }
+  });
+};
+
+/**
+ * The order of content steps, whatever order the changes were listed in: conversions and backfills first,
+ * then checks of single fields, and whole-entry validation last. The dry run applies the conversions and
+ * backfills in this order in memory, so every check sees the values the activated schema will see (a
+ * conversion's validation must include another change's backfill); a failure is reported under the first
+ * failing step in this order.
+ */
+const CONTENT_STEP_PHASE: Record<ContentStep['kind'], number> = {
+  convert: 0,
+  backfill: 1,
+  validateRequired: 2,
+  checkUnique: 3,
+  validateValues: 4,
+};
+
+const byPhase = (steps: readonly ContentStep[]): ContentStep[] =>
+  steps
+    .map((step, index) => ({ step, index }))
+    .sort((a, b) => CONTENT_STEP_PHASE[a.step.kind] - CONTENT_STEP_PHASE[b.step.kind] || a.index - b.index)
+    .map(({ step }) => step);
+
+/** A uniqueness check on a field that is already unique stages its claims apart (see ContentStep). */
+const markRebuild = (step: ContentStep, before: SchemaDefinition | null): ContentStep =>
+  step.kind === 'checkUnique' && before?.fields.some((field) => field.id === step.fieldId && field.unique)
+    ? { ...step, rebuild: true }
+    : step;
+
+const dedupe = <T extends PrerequisiteStep | FollowUpStep>(steps: readonly T[]): T[] => {
+  const seen = new Set<string>();
+  return steps.filter((step) => {
+    const key = stepKey(step);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const proposedSchema = (
+  active: readonly SchemaDefinition[],
+  definitionId: string,
+  after: SchemaDefinition | null,
+) => [...active.filter((definition) => definition.id !== definitionId), ...(after ? [after] : [])];
+
+const affectedModelsOf = (definition: SchemaDefinition, schema: readonly SchemaDefinition[]): string[] =>
+  definition.kind === 'component'
+    ? findDependentModels(schema, definition.id).map((model) => model.id)
+    : [definition.id];
+
+const deletionIssues = (
+  definition: SchemaDefinition,
+  active: readonly SchemaDefinition[],
+): ValidationIssue[] =>
+  findReferencingDefinitions(active, definition.id).map((referrer) => ({
+    path: '',
+    code: 'REFERENCED_DEFINITION',
+    message: `"${referrer.apiKey}" still references "${definition.apiKey}"; remove the reference first`,
+    definitionId: referrer.id,
+  }));
+
+export const buildChangePlan = ({
+  before,
+  after,
+  fromVersion,
+  active,
+  hasContent,
+}: PlanInput): ChangePlan => {
+  const subject = (after ?? before) as SchemaDefinition;
+  const proposed = proposedSchema(active, subject.id, after);
+  const changes = classifyChanges(diffDefinitions(before, after), { before, after });
+  const issues = after ? validateSchema(proposed) : deletionIssues(subject, active);
+  const affectedModelIds = [
+    ...new Set([...affectedModelsOf(subject, active), ...affectedModelsOf(subject, proposed)]),
+  ];
+
+  const beforeIndexes = indexStepsOf(before);
+  const afterIndexes = indexStepsOf(after);
+  const newIndexes = afterIndexes.filter(
+    (step) => !beforeIndexes.some((old) => old.indexName === step.indexName),
+  );
+  const droppedIndexes: FollowUpStep[] = beforeIndexes
+    .filter((step) => !afterIndexes.some((kept) => kept.indexName === step.indexName))
+    .map((step) => ({ kind: 'dropIndex', indexName: step.indexName }));
+  const releasedUnique: FollowUpStep[] = changes
+    .filter((change) => change.cleanup.includes('releaseUnique') && change.fieldId)
+    .map((change) => ({ kind: 'releaseUnique', fieldId: change.fieldId as string }));
+
+  // With no content (a brand-new definition), nothing can fail a check: indexes are built right after
+  // activation instead of gating it.
+  const contentSteps =
+    after && hasContent
+      ? byPhase(changes.flatMap((change) => contentStepsFor(change, after, proposed))).map((step) =>
+          markRebuild(step, before),
+        )
+      : [];
+  const prerequisites = dedupe<PrerequisiteStep>([...contentSteps, ...(hasContent ? newIndexes : [])]);
+  const followUps = dedupe<FollowUpStep>([
+    ...(hasContent ? [] : newIndexes),
+    ...droppedIndexes,
+    ...releasedUnique,
+  ]);
+
+  return {
+    definitionId: subject.id,
+    kind: subject.kind,
+    apiKey: subject.apiKey,
+    operation: !after ? 'delete' : fromVersion === null ? 'create' : 'update',
+    fromVersion,
+    changes,
+    summary: summarizeChanges(changes),
+    affectedModelIds,
+    prerequisites,
+    followUps,
+    issues,
+  };
+};

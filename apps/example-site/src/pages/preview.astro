@@ -1,0 +1,21 @@
+---
+import '../styles/site.css';
+import { publicShapioUrl } from '../lib/config.js';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Preview</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body data-shapio-url={publicShapioUrl()}>
+    <div class="preview-banner" id="preview-banner" role="status">Preview</div>
+    <main id="content" aria-live="polite"></main>
+    <script src="../scripts/preview.ts"></script>
+  </body>
+</html>

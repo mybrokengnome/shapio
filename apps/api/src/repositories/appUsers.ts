@@ -1,0 +1,205 @@
+import {
+  sql,
+  type Insertable,
+  type Kysely,
+  type Selectable,
+  type Transaction,
+  type Updateable,
+} from 'kysely';
+import { db } from '../db/index.js';
+import type { AppUsers, DB } from '../db/types.js';
+
+type Executor = Kysely<DB> | Transaction<DB>;
+
+export type AppUserRow = Selectable<AppUsers>;
+export type NewAppUser = Insertable<AppUsers>;
+
+/** Public columns: everything except the password hash. */
+const USER_COLUMNS = [
+  'app_users.id',
+  'app_users.email',
+  'app_users.name',
+  'app_users.confirmed_at',
+  'app_users.blocked_at',
+  'app_users.last_login_at',
+  'app_users.created_at',
+  'app_users.updated_at',
+] as const;
+
+export type AppUserSummary = Pick<
+  AppUserRow,
+  'id' | 'email' | 'name' | 'confirmed_at' | 'blocked_at' | 'last_login_at' | 'created_at' | 'updated_at'
+> & { role_ids: string[]; has_password: boolean; providers: string[] };
+
+const summaries = (trx: Executor) =>
+  trx
+    .selectFrom('app_users')
+    .select(USER_COLUMNS)
+    .select((eb) => [
+      eb.fn
+        .coalesce(
+          eb
+            .selectFrom('app_user_roles')
+            .select(sql<string[]>`array_agg(role_id order by role_id)`.as('ids'))
+            .whereRef('app_user_roles.app_user_id', '=', 'app_users.id'),
+          sql<string[]>`'{}'::uuid[]`,
+        )
+        .as('role_ids'),
+      eb.fn
+        .coalesce(
+          eb
+            .selectFrom('app_oauth_accounts')
+            .select(sql<string[]>`array_agg(distinct provider order by provider)`.as('providers'))
+            .whereRef('app_oauth_accounts.app_user_id', '=', 'app_users.id'),
+          sql<string[]>`'{}'::text[]`,
+        )
+        .as('providers'),
+      sql<boolean>`app_users.password_hash is not null`.as('has_password'),
+    ])
+    .where('app_users.deleted_at', 'is', null);
+
+/**
+ * Keyset cursor: the (created_at, id) of the last row of the previous page; `createdAt` is ISO-8601 with
+ * microseconds so rows created within one millisecond are neither skipped nor repeated.
+ */
+export type AppUserCursor = { createdAt: string; id: string };
+
+const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
+
+/** Newest first, optionally matching `search` in the email or name (case-insensitive substring). */
+export const listPage = (
+  { search, cursor, limit }: { search: string | undefined; cursor: AppUserCursor | undefined; limit: number },
+  trx: Executor = db,
+) =>
+  summaries(trx)
+    .select(
+      sql<string>`to_char(app_users.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+        'cursor_at',
+      ),
+    )
+    .$if(search !== undefined, (qb) => {
+      const pattern = `%${escapeLike(search ?? '')}%`;
+      return qb.where((eb) =>
+        eb.or([eb('app_users.email', 'ilike', pattern), eb('app_users.name', 'ilike', pattern)]),
+      );
+    })
+    .$if(cursor !== undefined, (qb) => {
+      const at = sql<Date>`cast(${cursor?.createdAt ?? null} as timestamptz)`;
+      return qb.where((eb) =>
+        eb.or([
+          eb('app_users.created_at', '<', at),
+          eb.and([eb('app_users.created_at', '=', at), eb('app_users.id', '<', cursor?.id ?? '')]),
+        ]),
+      );
+    })
+    .orderBy('app_users.created_at', 'desc')
+    .orderBy('app_users.id', 'desc')
+    .limit(limit)
+    .execute();
+
+export const findSummaryById = (id: string, trx: Executor = db): Promise<AppUserSummary | undefined> =>
+  summaries(trx).where('app_users.id', '=', id).executeTakeFirst();
+
+/** Includes the password hash: for credential checks only. Live (not deleted) accounts only. */
+export const findByEmailWithHash = (email: string, trx: Executor = db) =>
+  trx
+    .selectFrom('app_users')
+    .selectAll()
+    .where(sql`lower(email)`, '=', email.toLowerCase())
+    .where('deleted_at', 'is', null)
+    .executeTakeFirst();
+
+/** Includes the password hash: for credential checks only. Live (not deleted) accounts only. */
+export const findByIdWithHash = (id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('app_users')
+    .selectAll()
+    .where('id', '=', id)
+    .where('deleted_at', 'is', null)
+    .executeTakeFirst();
+
+/** Locks the live account row (status changes, deletion and credential changes serialise on it). */
+export const lockById = (id: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('app_users')
+    .selectAll()
+    .where('id', '=', id)
+    .where('deleted_at', 'is', null)
+    .forUpdate()
+    .executeTakeFirst();
+
+/**
+ * Share-locks the live account while tokens are issued for it: a concurrent block or deletion (which takes
+ * the row lock and bumps the permissions version) then commits after the token's version is read, so the
+ * new token is re-validated on its first request instead of being trusted.
+ */
+export const lockForShare = (id: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('app_users')
+    .selectAll()
+    .where('id', '=', id)
+    .where('deleted_at', 'is', null)
+    .forShare()
+    .executeTakeFirst();
+
+/**
+ * Everything an access-token check needs in one round trip: the permissions version and the account's token
+ * version (null when the account is gone or deleted).
+ */
+export const findTokenState = async (
+  appUserId: string,
+  trx: Executor = db,
+): Promise<{ permissionsVersion: number; tokenVersion: number | null }> => {
+  const row = await trx
+    .selectFrom('system_versions')
+    .select('permissions_version')
+    .select((eb) =>
+      eb
+        .selectFrom('app_users')
+        .select('token_version')
+        .where('id', '=', appUserId)
+        .where('deleted_at', 'is', null)
+        .as('token_version'),
+    )
+    .executeTakeFirstOrThrow();
+  return { permissionsVersion: row.permissions_version, tokenVersion: row.token_version };
+};
+
+/** Moves the account's token version: every access token issued before it is rejected from now on. */
+export const bumpTokenVersion = (id: string, trx: Executor = db) =>
+  trx
+    .updateTable('app_users')
+    .set({ token_version: sql<number>`token_version + 1` })
+    .where('id', '=', id)
+    .execute();
+
+export const insert = (user: NewAppUser, trx: Executor = db) =>
+  trx.insertInto('app_users').values(user).returningAll().executeTakeFirstOrThrow();
+
+export const update = (id: string, changes: Updateable<AppUsers>, trx: Executor = db) =>
+  trx
+    .updateTable('app_users')
+    .set({ ...changes, updated_at: new Date() })
+    .where('id', '=', id)
+    .executeTakeFirst();
+
+/** Custom role IDs of an account (the built-in `authenticated` role is implicit and never stored). */
+export const findRoleIds = async (appUserId: string, trx: Executor = db): Promise<string[]> =>
+  (
+    await trx
+      .selectFrom('app_user_roles')
+      .select('role_id')
+      .where('app_user_id', '=', appUserId)
+      .orderBy('role_id')
+      .execute()
+  ).map((row) => row.role_id);
+
+export const replaceRoles = async (appUserId: string, roleIds: readonly string[], trx: Executor = db) => {
+  await trx.deleteFrom('app_user_roles').where('app_user_id', '=', appUserId).execute();
+  if (roleIds.length > 0) {
+    await trx
+      .insertInto('app_user_roles')
+      .values(roleIds.map((roleId) => ({ app_user_id: appUserId, role_id: roleId })))
+      .execute();
+  }
+};

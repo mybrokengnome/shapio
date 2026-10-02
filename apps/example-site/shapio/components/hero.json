@@ -1,0 +1,108 @@
+{
+  "apiKey": "hero",
+  "category": "Sections",
+  "display": {},
+  "fields": [
+    {
+      "apiKey": "heading",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "ee5d24bc-62aa-4f43-9382-11fdb2cab2c5",
+      "label": "Heading",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "subheading",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "b6d8e920-2292-4ef5-9563-27918825f6c9",
+      "label": "Subheading",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "image",
+      "deprecated": false,
+      "editor": {
+        "id": "mediaPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "add9554e-3e48-49f6-a352-2847b10e41dd",
+      "label": "Image",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "allowedKinds": [
+          "image"
+        ],
+        "multiple": false
+      },
+      "sortable": false,
+      "type": "media",
+      "unique": false
+    },
+    {
+      "apiKey": "ctaLabel",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "04f43999-b796-4ac2-a40e-33819acaaa2d",
+      "label": "Button label",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "ctaUrl",
+      "deprecated": false,
+      "description": "A full URL, a mailto: or tel: link, or a path on this site such as /en/articles/",
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "3bd06878-6873-4595-9608-0505e8821111",
+      "label": "Button link",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "pattern": "^(https?://|mailto:|tel:|/)"
+      },
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    }
+  ],
+  "id": "1ce854fc-b87d-4e38-aec6-e3c76938dd87",
+  "kind": "component",
+  "label": "Hero"
+}

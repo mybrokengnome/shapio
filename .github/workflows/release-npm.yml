@@ -1,0 +1,29 @@
+name: Release npm packages
+
+# Publishes shapio, create-shapio, @shapio/schema, @shapio/client and @shapio/editor-sdk.
+# @shapio/cli and @shapio/admin are private (bundled into shapio). Versions are bumped before tagging.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Publish (prepack copies the admin bundle into shapio)
+        run: pnpm -r publish --access public --no-git-checks --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,132 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Versions verified against the npm registry on 2026-10-01. Exact pins; the lockfile pins transitives.
+# Notes:
+# - typescript stays on 6.0.x: typescript-eslint 8.x peers on typescript <6.1.0 (7.x is the native port).
+# - graphql stays on 16.x: mercurius 16 peers on graphql ^16.
+catalog:
+  # Backend
+  fastify: 5.12.5
+  fastify-plugin: 6.0.0
+  '@fastify/static': 10.1.5
+  '@fastify/cors': 11.3.0
+  '@fastify/helmet': 13.1.1
+  '@fastify/rate-limit': 11.2.0
+  '@fastify/sensible': 6.0.6
+  '@fastify/type-provider-typebox': 6.1.0
+  typebox: 1.3.34
+  # Project config loader (package K): shapio.config.{js,mjs,ts,mts}
+  jiti: 2.7.0
+  env-schema: 8.0.0
+  close-with-grace: 2.5.0
+  kysely: 0.29.6
+  kysely-ctl: 0.21.0
+  kysely-codegen: 0.20.0
+  pg: 8.23.1
+  '@types/pg': 8.23.1
+  pino: 10.3.1
+  pino-pretty: 13.1.3
+  '@node-rs/argon2': 2.2.1
+  '@fastify/cookie': 11.1.2
+  '@fastify/csrf-protection': 8.0.1
+  nodemailer: 10.0.13
+  # GraphQL (package J): graphql stays on 16.x (mercurius 16 peers on graphql ^16)
+  graphql: 16.14.2
+  mercurius: 16.10.1
+  dataloader: 2.2.3
+  '@types/nodemailer': 8.0.2
+  # Media (package G)
+  '@aws-sdk/client-s3': 3.1143.0
+  '@aws-sdk/s3-request-presigner': 3.1143.0
+  '@aws-sdk/s3-presigned-post': 3.1143.0
+  '@fastify/multipart': 10.1.2
+  file-type: 22.1.1
+  sharp: 0.35.5
+  # Admin
+  react: 19.3.0
+  react-dom: 19.3.0
+  '@types/react': 19.3.0
+  '@types/react-dom': 19.3.0
+  vite: 8.3.2
+  '@vitejs/plugin-react': 6.1.1
+  tailwindcss: 4.3.3
+  '@tailwindcss/vite': 4.3.3
+  tw-animate-css: 1.4.0
+  radix-ui: 1.6.7
+  class-variance-authority: 0.7.1
+  clsx: 2.1.1
+  tailwind-merge: 3.7.0
+  lucide-react: 1.49.0
+  sonner: 2.0.8
+  '@tanstack/react-query': 5.104.0
+  '@tanstack/react-router': 1.170.41
+  zustand: 5.0.15
+  i18next: 26.4.2
+  react-i18next: 17.0.15
+  react-hook-form: 7.89.0
+  '@hookform/resolvers': 5.9.1
+  zod: 4.6.5
+  '@playwright/test': 1.63.0
+  '@axe-core/playwright': 4.13.0
+  # Admin component tests (DOM): jsdom + Testing Library, dev only
+  jsdom: 30.1.1
+  '@testing-library/dom': 10.4.2
+  '@testing-library/react': 16.3.3
+  '@testing-library/user-event': 14.6.7
+  axe-core: 4.13.0
+  # Schema as code editor (D3): CodeMirror 6, lazy-loaded in the /schema route chunk only
+  '@codemirror/state': 6.7.6
+  '@codemirror/view': 6.43.13
+  '@codemirror/language': 6.12.4
+  '@codemirror/commands': 6.11.1
+  '@codemirror/lang-json': 6.0.2
+  '@codemirror/lint': 6.9.7
+  '@codemirror/autocomplete': 6.20.3
+  '@lezer/common': 1.5.3
+  '@lezer/highlight': 1.2.5
+  # Rich text (package F): Tiptap open-source core only (ADR 0003)
+  '@tiptap/core': 3.31.4
+  '@tiptap/pm': 3.31.4
+  '@tiptap/react': 3.31.4
+  '@tiptap/starter-kit': 3.31.4
+  '@tiptap/extension-link': 3.31.4
+  '@tiptap/extension-table': 3.31.4
+  '@tiptap/extensions': 3.31.4
+  # Entry document canvas (E1): bubble toolbar, file drop/paste, `/` and `+` block menus
+  '@tiptap/extension-bubble-menu': 3.31.4
+  '@tiptap/extension-file-handler': 3.31.4
+  '@tiptap/suggestion': 3.31.4
+  # Example site (package L): static site generator, MIT. Telemetry is turned off in its scripts.
+  astro: 7.3.5
+  # Build and tooling
+  typescript: 6.0.3
+  '@types/node': 24.19.1
+  tsdown: 0.23.0
+  tsx: 4.23.15
+  vitest: 5.0.3
+  fast-check: 4.10.2
+  eslint: 10.11.0
+  '@eslint/js': 10.0.1
+  typescript-eslint: 8.71.0
+  eslint-plugin-import-x: 4.17.1
+  eslint-plugin-react-hooks: 7.1.1
+  eslint-plugin-react-refresh: 0.5.7
+  eslint-config-prettier: 10.1.8
+  globals: 17.13.0
+  prettier: 3.9.9
+  prettier-plugin-tailwindcss: 0.8.1
+
+# pnpm >=11 replaced onlyBuiltDependencies with allowBuilds; strictDepBuilds defaults to true,
+# so an unreviewed install script fails the install. Native deps added later (sharp, @node-rs/argon2)
+# must be reviewed and listed here.
+allowBuilds:
+  esbuild: true
+  # Ships prebuilt napi binaries; its postinstall is only a download fallback.
+  unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - '@types/node@24.19.1'
+  - globals@17.13.0
+  - vite@8.3.2

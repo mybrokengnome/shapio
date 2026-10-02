@@ -1,0 +1,85 @@
+{
+  "apiKey": "callToAction",
+  "category": "Sections",
+  "display": {},
+  "fields": [
+    {
+      "apiKey": "heading",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "f4022efd-611f-46da-96da-1f0a550fcd98",
+      "label": "Heading",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "text",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "9a5169a7-3116-496f-8073-806e80d02053",
+      "label": "Text",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "buttonLabel",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "377c9217-615d-4928-b2a3-621e6ea51aa5",
+      "label": "Button label",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "buttonUrl",
+      "deprecated": false,
+      "description": "A full URL, a mailto: or tel: link, or a path on this site such as /en/articles/",
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "fb10a97c-2199-4d5f-99e0-8ea83313a4f6",
+      "label": "Button link",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {
+        "pattern": "^(https?://|mailto:|tel:|/)"
+      },
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    }
+  ],
+  "id": "be8255cc-2588-4204-950e-ad3d84db4f2e",
+  "kind": "component",
+  "label": "Call to action"
+}

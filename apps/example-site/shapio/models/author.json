@@ -1,0 +1,73 @@
+{
+  "apiKey": "author",
+  "display": {
+    "titleFieldId": "aaff4c95-891a-4cb7-9668-4602ed5649de"
+  },
+  "draftAndPublish": true,
+  "fields": [
+    {
+      "apiKey": "name",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "aaff4c95-891a-4cb7-9668-4602ed5649de",
+      "label": "Name",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "bio",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "932fa059-07d4-4ff1-b241-4b5edb3cd23b",
+      "label": "Bio",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "avatar",
+      "deprecated": false,
+      "editor": {
+        "id": "mediaPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "75f2dc14-15a0-412b-adea-8a60ed54a419",
+      "label": "Avatar",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "allowedKinds": [
+          "image"
+        ],
+        "multiple": false
+      },
+      "sortable": false,
+      "type": "media",
+      "unique": false
+    }
+  ],
+  "id": "d47e030e-1eef-4441-9b3d-44f53f7ab1f5",
+  "kind": "collection",
+  "label": "Author",
+  "localized": false,
+  "pluralApiKey": "authors"
+}

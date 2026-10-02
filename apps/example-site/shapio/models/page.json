@@ -1,0 +1,93 @@
+{
+  "apiKey": "page",
+  "display": {
+    "titleFieldId": "9b7d0249-e547-4b23-b7d0-c3b2e95fa4e9"
+  },
+  "draftAndPublish": true,
+  "fields": [
+    {
+      "apiKey": "title",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "9b7d0249-e547-4b23-b7d0-c3b2e95fa4e9",
+      "label": "Title",
+      "localized": true,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "slug",
+      "deprecated": false,
+      "editor": {
+        "id": "slugInput",
+        "options": {}
+      },
+      "filterable": true,
+      "id": "41cb0daf-fed5-42e2-8ba8-f14831b025c4",
+      "label": "Slug",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "slug",
+      "unique": true
+    },
+    {
+      "apiKey": "description",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "504a303c-5e53-4716-a378-acbe9f20f7f5",
+      "label": "Description",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "sections",
+      "deprecated": false,
+      "editor": {
+        "id": "dynamicZoneEditor",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "113108bb-0666-4722-b2a5-a96a4be263a0",
+      "label": "Sections",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {
+        "components": [
+          "1ce854fc-b87d-4e38-aec6-e3c76938dd87",
+          "c292bae8-15f5-45e1-808c-d67cea02c993",
+          "b8da2c63-3d0a-41a3-b2b2-d40d08cacddc",
+          "be8255cc-2588-4204-950e-ad3d84db4f2e"
+        ]
+      },
+      "sortable": false,
+      "type": "dynamiczone",
+      "unique": false
+    }
+  ],
+  "id": "4c09af05-f302-4d8f-ba03-bb838d3afbd2",
+  "kind": "collection",
+  "label": "Page",
+  "localized": true,
+  "pluralApiKey": "pages"
+}

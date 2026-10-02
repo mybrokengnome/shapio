@@ -1,0 +1,15 @@
+{
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 110,
+  "plugins": ["prettier-plugin-tailwindcss"],
+  "overrides": [
+    {
+      "files": "apps/admin/**",
+      "options": {
+        "tailwindStylesheet": "./apps/admin/src/styles/index.css",
+        "tailwindFunctions": ["cn", "cva"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,266 @@
+/*
+ * Tailwind entry: fonts, design tokens, base layer. The only global CSS in the admin (DESIGN.md).
+ * Brand colours are defined once here; components use semantic tokens (bg-background, text-primary...)
+ * which carry a light and a dark value, or the brand tokens (bg-cobalt, text-ink) for deliberate accents.
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Manrope (SIL OFL 1.1, see public/fonts/OFL.txt), self-hosted: no third-party font request at runtime. */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/fonts/manrope-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/fonts/manrope-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Source Serif 4 (SIL OFL 1.1, see public/fonts/OFL-SourceSerif4.txt), self-hosted: the reading face for the
+ * document canvas (`font-serif`). Variable wght axis only (no opsz), roman and italic, latin + latin-ext.
+ */
+@font-face {
+  font-family: 'Source Serif 4';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('/fonts/source-serif-4-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Source Serif 4';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('/fonts/source-serif-4-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Source Serif 4';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('/fonts/source-serif-4-latin-ext-wght-italic.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Source Serif 4';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('/fonts/source-serif-4-latin-wght-italic.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@theme {
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  /* Reading face for the document canvas only (DESIGN.md "Document"); the UI stays Manrope. */
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+
+  /* Brand palette */
+  --color-cobalt: #2563eb;
+  --color-periwinkle: #a5b4fc;
+  --color-ink: #0f172a;
+  --color-ivory: #faf9f6;
+
+  /* Type scale additions (DESIGN.md): document title, page title, meta/hint text, tiny chips. Registered in
+     helpers/cn.ts. */
+  --text-display: 2.75rem;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 700;
+  /* Rich-text body in the document canvas, with font-serif (19px / 1.65). */
+  --text-canvas: 1.1875rem;
+  --text-canvas--line-height: 1.65;
+  --text-title: 1.75rem;
+  --text-title--line-height: 2.25rem;
+  --text-title--letter-spacing: -0.025em;
+  --text-title--font-weight: 700;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.125rem;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+:root {
+  --radius: 0.5rem;
+  /* Height of the Shell's status bar (md and up); sticky footers and toasts sit above it. */
+  --statusbar-h: 2rem;
+
+  --background: #faf9f6;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --primary-hover: #1d4ed8;
+  --secondary: #f1efea;
+  --secondary-foreground: #0f172a;
+  /* Warm neutrals (red >= green >= blue), as in dark: cobalt marks actions, links, focus and the active
+     nav bar only, never a surface. #f5f3ee (a touch lighter than the sidebar) keeps status text at 4.5:1. */
+  --muted: #f5f3ee;
+  --muted-foreground: #475569;
+  /* Selection and hover only (selected rows and tiles, current sub-nav item, menu focus). */
+  --accent: #eceae4;
+  --accent-foreground: #0f172a;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-muted: #fee2e2;
+  --success: #15803d;
+  --success-muted: #dcfce7;
+  --warning: #b45309;
+  --warning-muted: #fef3c7;
+  --info: #1d4ed8;
+  /* The info status chip only (status tones are semantic): no other light surface is blue. */
+  --info-muted: #e0e7ff;
+  --border: #e2dfd8;
+  /* Form-control borders and unchecked switches: 3:1 on every surface (WCAG 1.4.11; test/contrast.test.ts). */
+  --input: #808898;
+  --ring: #2563eb;
+  --link: #2563eb;
+  /* Sheet and dialog backdrops (used at /40). */
+  --overlay: #0f172a;
+
+  --sidebar: #f3f1ec;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e6e2da;
+  --sidebar-ring: #2563eb;
+}
+
+.dark {
+  /* Warm-neutral near-black (red >= green >= blue): no blue in the surfaces. Cobalt is the one colour,
+     periwinkle marks selection, focus and links. Every pair is checked by test/contrast.test.ts. */
+  --background: #0f0f0e;
+  --foreground: #f2f1ee;
+  --card: #161615;
+  --card-foreground: #f2f1ee;
+  --popover: #1c1c1a;
+  --popover-foreground: #f2f1ee;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --primary-hover: #1d4ed8;
+  --secondary: #232321;
+  --secondary-foreground: #f2f1ee;
+  --muted: #1f1f1d;
+  --muted-foreground: #a9a7a1;
+  /* Selection only (selected rows and tiles, current sub-nav item). */
+  --accent: #262a3a;
+  --accent-foreground: #c7d0fd;
+  --destructive: #ef5350;
+  --destructive-foreground: #0f0f0e;
+  --destructive-muted: #3b1519;
+  --success: #4ade80;
+  --success-muted: #12301f;
+  --warning: #fbbf24;
+  --warning-muted: #36270a;
+  --info: #a5b4fc;
+  --info-muted: #1e2a4a;
+  --border: #2c2c29;
+  --input: #76756f;
+  --ring: #a5b4fc;
+  --link: #a5b4fc;
+  --overlay: #000000;
+
+  --sidebar: #0b0b0a;
+  --sidebar-foreground: #e4e2dd;
+  --sidebar-primary: #a5b4fc;
+  --sidebar-primary-foreground: #0f0f0e;
+  --sidebar-accent: #1e1e1c;
+  --sidebar-accent-foreground: #a5b4fc;
+  --sidebar-border: #232321;
+  --sidebar-ring: #a5b4fc;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-info: var(--info);
+  --color-info-muted: var(--info-muted);
+  --color-overlay: var(--overlay);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+}

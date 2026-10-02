@@ -1,0 +1,108 @@
+import js from '@eslint/js';
+import prettier from 'eslint-config-prettier';
+import { importX } from 'eslint-plugin-import-x';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+// Config files whose tools require a default export.
+const DEFAULT_EXPORT_ALLOWED = ['**/*.config.{js,ts,mjs,cjs}', '**/tsdown.config.ts', '**/kysely.config.ts'];
+
+export default tseslint.config(
+  {
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      'apps/api/src/db/types.ts',
+      // Third-party browser builds served by the GraphQL playground (scripts/vendorGraphiql.mjs).
+      'apps/api/vendor/**',
+      // A standalone project with its own dependencies and build, like a user's editor package.
+      'examples/custom-editor/**',
+      // Per-run Playwright output (scaffolded projects, server logs, screenshots).
+      'apps/admin/e2e/.artifacts/**',
+      // Astro's generated type declarations (example site).
+      '**/.astro/**',
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+      globals: { ...globals.node },
+    },
+    plugins: { 'import-x': importX },
+    rules: {
+      'no-console': 'error',
+      'import-x/no-default-export': 'error',
+      'import-x/no-duplicates': 'error',
+      'import-x/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          'newlines-between': 'never',
+          alphabetize: { order: 'asc', caseInsensitive: true },
+        },
+      ],
+      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/only-throw-error': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { arguments: false } }],
+    },
+  },
+  {
+    files: ['apps/admin/**/*.{ts,tsx}', 'packages/editor-sdk/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser } },
+    // The admin's `@/` alias (apps/admin/src) is first-party code: sorted after packages, before relatives.
+    settings: { 'import-x/internal-regex': '^@/' },
+    plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      // TanStack Router redirects are thrown by design (`throw redirect(...)`) and are not Error objects.
+      '@typescript-eslint/only-throw-error': [
+        'error',
+        { allow: [{ from: 'package', package: '@tanstack/router-core', name: 'Redirect' }] },
+      ],
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+    },
+  },
+  {
+    // PUBLIC_URL + BASE_PATH are the single source of absolute URLs (build plan §3.7).
+    files: ['apps/api/src/**/*.ts'],
+    ignores: ['apps/api/src/helpers/publicUrl.ts', 'apps/api/src/config/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TemplateElement[value.raw=/:\\/\\//]',
+          message: 'Build absolute URLs with app.urls / helpers/publicUrl.ts (PUBLIC_URL + BASE_PATH).',
+        },
+        {
+          selector: "BinaryExpression[operator='+'] > Literal[value=/^https?:\\/\\//]",
+          message: 'Build absolute URLs with app.urls / helpers/publicUrl.ts (PUBLIC_URL + BASE_PATH).',
+        },
+        {
+          selector: "NewExpression[callee.name='URL'][arguments.length=2]",
+          message: 'Build absolute URLs with app.urls / helpers/publicUrl.ts (PUBLIC_URL + BASE_PATH).',
+        },
+      ],
+    },
+  },
+  {
+    files: DEFAULT_EXPORT_ALLOWED,
+    rules: { 'import-x/no-default-export': 'off' },
+  },
+  {
+    files: ['**/*.{js,mjs,cjs}'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } },
+  },
+  prettier,
+);

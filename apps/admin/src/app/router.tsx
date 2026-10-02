@@ -1,0 +1,394 @@
+import type { QueryClient } from '@tanstack/react-query';
+import { createRootRouteWithContext, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import { meQueryOptions } from '@/api/auth';
+import { AcceptInvitation } from '@/features/AcceptInvitation';
+import { apiExplorerSearchSchema } from '@/features/Develop/ApiExplorer/searchSchema';
+import { changeSetSearchSchema } from '@/features/Develop/ChangeSet/searchSchema';
+import { schemaSearchSchema } from '@/features/Develop/Schema/searchSchema';
+import { snapshotSearchSchema, snapshotsSearchSchema } from '@/features/Develop/Snapshots/searchSchema';
+import { ForgotPassword } from '@/features/ForgotPassword';
+import { Login } from '@/features/Login';
+import { NotFound } from '@/features/NotFound';
+import { firstPermittedSection } from '@/features/Publishing/sections';
+import { ResetPassword } from '@/features/ResetPassword';
+import { RouteError } from '@/features/RouteError';
+import { Setup } from '@/features/Setup';
+import { Shell } from '@/features/Shell';
+import { Users } from '@/features/Users';
+import { AppUsers } from '@/features/Users/AppUsers';
+import { safeRedirectPath } from '@/helpers/safeRedirect';
+import { routerBasePath } from './basePath';
+import {
+  redirectComponentBuilder,
+  redirectModelBuilder,
+  redirectModelsIndex,
+  redirectNewModel,
+} from './modelRedirects';
+import { RootLayout } from './RootLayout';
+import {
+  redirectIfSignedIn,
+  redirectToSetupIfPending,
+  requireSession,
+  requireSetupPending,
+} from './routeGuards';
+import {
+  appUsersSearchSchema,
+  auditSearchSchema,
+  contentListSearchSchema,
+  cursorSearchSchema,
+  entrySearchSchema,
+  loginSearchSchema,
+  mediaSearchSchema,
+  modelsSearchSchema,
+  newModelSearchSchema,
+  schedulesSearchSchema,
+} from './searchSchemas';
+
+export type RouterContext = { queryClient: QueryClient };
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
+  component: RootLayout,
+  notFoundComponent: NotFound,
+});
+
+// Signed-out screens
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'setup',
+  beforeLoad: ({ context }) => requireSetupPending(context.queryClient),
+  component: Setup,
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'login',
+  validateSearch: loginSearchSchema,
+  beforeLoad: async ({ context, search }) => {
+    await redirectToSetupIfPending(context.queryClient);
+    await redirectIfSignedIn(context.queryClient, safeRedirectPath(search.redirect));
+  },
+  component: Login,
+});
+
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'forgot-password',
+  component: ForgotPassword,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'reset-password',
+  component: ResetPassword,
+});
+
+const acceptInvitationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'accept-invitation',
+  component: AcceptInvitation,
+});
+
+// Signed-in screens, inside the shell
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'app',
+  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  component: Shell,
+});
+
+/** The Inbox is home for everyone (plan editor-experience §9). */
+const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/' }).lazy(() =>
+  import('./lazyRoutes/inbox').then((module) => module.inboxLazyRoute),
+);
+
+const usersRoute = createRoute({ getParentRoute: () => appRoute, path: 'users', component: Users });
+
+const appUsersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'users/app',
+  validateSearch: appUsersSearchSchema,
+  component: AppUsers,
+});
+
+// `/models/*` only redirects now: builders are the Structure tab of a place, components live under Develop.
+const modelsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'models',
+  validateSearch: modelsSearchSchema,
+  beforeLoad: ({ search }) => redirectModelsIndex(search.tab),
+});
+
+const newModelRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'models/new',
+  validateSearch: newModelSearchSchema,
+  beforeLoad: ({ search }) => redirectNewModel(search.kind),
+});
+
+const modelBuilderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'models/$modelId',
+  beforeLoad: ({ context, params }) => redirectModelBuilder(context.queryClient, params.modelId),
+});
+
+const componentBuilderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'models/components/$componentId',
+  beforeLoad: ({ params }) => redirectComponentBuilder(params.componentId),
+});
+
+// New content types and components, and Develop → Components.
+const contentTypesLazy = () =>
+  import('./lazyRoutes/contentTypes').then((module) => module.contentTypesLazyRoutes);
+
+const newContentTypeRoute = createRoute({ getParentRoute: () => appRoute, path: 'content/new' }).lazy(() =>
+  contentTypesLazy().then((routes) => routes.newContentType),
+);
+
+const componentsRoute = createRoute({ getParentRoute: () => appRoute, path: 'develop/components' }).lazy(() =>
+  contentTypesLazy().then((routes) => routes.components),
+);
+
+const newComponentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'develop/components/new',
+}).lazy(() => contentTypesLazy().then((routes) => routes.newComponent));
+
+const componentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'develop/components/$componentId',
+}).lazy(() => contentTypesLazy().then((routes) => routes.component));
+
+const mediaRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'media',
+  validateSearch: mediaSearchSchema,
+}).lazy(() => import('./lazyRoutes/media').then((module) => module.mediaLazyRoute));
+
+// Content (package F): entry lists and forms. Models are data, so routes carry the model's API key.
+const contentLazy = () => import('./lazyRoutes/content').then((module) => module.contentLazyRoutes);
+
+const contentRoute = createRoute({ getParentRoute: () => appRoute, path: 'content' }).lazy(() =>
+  contentLazy().then((routes) => routes.home),
+);
+
+const modelContentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'content/$modelKey',
+  validateSearch: contentListSearchSchema,
+}).lazy(() => contentLazy().then((routes) => routes.model));
+
+const newEntryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'content/$modelKey/new',
+  validateSearch: entrySearchSchema,
+}).lazy(() => contentLazy().then((routes) => routes.newEntry));
+
+const entryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'content/$modelKey/$entryId',
+  validateSearch: entrySearchSchema,
+}).lazy(() => contentLazy().then((routes) => routes.entry));
+
+// Route-level code splitting: these screens (and @shapio/schema with Models and Locales) load on first visit.
+const settingsLazy = () => import('./lazyRoutes/settings').then((module) => module.settingsLazyRoutes);
+
+const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: 'settings' }).lazy(() =>
+  settingsLazy().then((routes) => routes.settings),
+);
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/profile', replace: true });
+  },
+});
+
+type SettingsLazyKey = keyof Awaited<ReturnType<typeof settingsLazy>>;
+
+const settingsChild = <TPath extends string>(path: TPath, key: SettingsLazyKey) =>
+  createRoute({ getParentRoute: () => settingsRoute, path }).lazy(() =>
+    settingsLazy().then((routes) => routes[key]),
+  );
+
+const profileRoute = settingsChild('profile', 'profile');
+const sessionsRoute = settingsChild('sessions', 'sessions');
+const appearanceRoute = settingsChild('theme', 'theme');
+const localesRoute = settingsChild('locales', 'locales');
+const rolesRoute = settingsChild('roles', 'roles');
+const appRolesRoute = settingsChild('roles/app', 'appRoles');
+const appRoleRoute = settingsChild('roles/app/$roleId', 'appRole');
+const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
+
+const auditLogRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'audit-log',
+  validateSearch: auditSearchSchema,
+}).lazy(() => settingsLazy().then((routes) => routes.auditLog));
+
+// Publishing (package H): scheduled publications, deployments and webhooks.
+const publishingLazy = () => import('./lazyRoutes/publishing').then((module) => module.publishingLazyRoutes);
+
+type PublishingLazyKey = keyof Awaited<ReturnType<typeof publishingLazy>>;
+
+const publishingRoute = createRoute({ getParentRoute: () => appRoute, path: 'publishing' }).lazy(() =>
+  publishingLazy().then((routes) => routes.publishing),
+);
+
+/** `/publishing` opens the first section the admin may use. */
+const publishingIndexRoute = createRoute({
+  getParentRoute: () => publishingRoute,
+  path: '/',
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions);
+    throw redirect({ to: firstPermittedSection(me?.globalPermissions ?? []), replace: true });
+  },
+});
+
+const publishingChild = <TPath extends string>(path: TPath, key: PublishingLazyKey) =>
+  createRoute({ getParentRoute: () => publishingRoute, path }).lazy(() =>
+    publishingLazy().then((routes) => routes[key]),
+  );
+
+const scheduledRoute = createRoute({
+  getParentRoute: () => publishingRoute,
+  path: 'scheduled',
+  validateSearch: schedulesSearchSchema,
+}).lazy(() => publishingLazy().then((routes) => routes.scheduled));
+
+const deploymentsRoute = createRoute({
+  getParentRoute: () => publishingRoute,
+  path: 'deployments',
+  validateSearch: cursorSearchSchema,
+}).lazy(() => publishingLazy().then((routes) => routes.deployments));
+
+const connectionRoute = createRoute({
+  getParentRoute: () => publishingRoute,
+  path: 'deployments/$connectionId',
+  validateSearch: cursorSearchSchema,
+}).lazy(() => publishingLazy().then((routes) => routes.connection));
+
+const runRoute = publishingChild('deployments/runs/$runId', 'run');
+const webhooksRoute = publishingChild('webhooks', 'webhooks');
+
+const webhookRoute = createRoute({
+  getParentRoute: () => publishingRoute,
+  path: 'webhooks/$webhookId',
+  validateSearch: cursorSearchSchema,
+}).lazy(() => publishingLazy().then((routes) => routes.webhook));
+
+// Develop (plan developer-face): change sets, snapshots, live usage, schema as code, API explorer.
+const developLazy = () => import('./lazyRoutes/develop').then((module) => module.developLazyRoutes);
+
+type DevelopLazyKey = keyof Awaited<ReturnType<typeof developLazy>>;
+
+const developRoute = <TPath extends string>(path: TPath, key: DevelopLazyKey) =>
+  createRoute({ getParentRoute: () => appRoute, path }).lazy(() =>
+    developLazy().then((routes) => routes[key]),
+  );
+
+const changesRoute = developRoute('changes', 'changes');
+
+const changeSetRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'changes/$changeSetId',
+  validateSearch: changeSetSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.changeSet));
+
+const snapshotsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'snapshots',
+  validateSearch: snapshotsSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.snapshots));
+
+const snapshotRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'snapshots/$seq',
+  validateSearch: snapshotSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.snapshot));
+
+const liveRoute = developRoute('live', 'live');
+const schemaRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'schema',
+  validateSearch: schemaSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.schema));
+
+const apiExplorerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'api-explorer',
+  validateSearch: apiExplorerSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.apiExplorer));
+
+const routeTree = rootRoute.addChildren([
+  setupRoute,
+  loginRoute,
+  forgotPasswordRoute,
+  resetPasswordRoute,
+  acceptInvitationRoute,
+  appRoute.addChildren([
+    homeRoute,
+    usersRoute,
+    appUsersRoute,
+    modelsRoute,
+    newModelRoute,
+    modelBuilderRoute,
+    componentBuilderRoute,
+    newContentTypeRoute,
+    componentsRoute,
+    newComponentRoute,
+    componentRoute,
+    mediaRoute,
+    contentRoute,
+    modelContentRoute,
+    newEntryRoute,
+    entryRoute,
+    changesRoute,
+    changeSetRoute,
+    snapshotsRoute,
+    snapshotRoute,
+    liveRoute,
+    schemaRoute,
+    apiExplorerRoute,
+    publishingRoute.addChildren([
+      publishingIndexRoute,
+      scheduledRoute,
+      deploymentsRoute,
+      connectionRoute,
+      runRoute,
+      webhooksRoute,
+      webhookRoute,
+    ]),
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      profileRoute,
+      sessionsRoute,
+      appearanceRoute,
+      localesRoute,
+      rolesRoute,
+      appRolesRoute,
+      appRoleRoute,
+      apiTokensRoute,
+      auditLogRoute,
+    ]),
+  ]),
+]);
+
+export const createAppRouter = (queryClient: QueryClient) =>
+  createRouter({
+    routeTree,
+    basepath: routerBasePath(),
+    context: { queryClient },
+    defaultPreload: 'intent',
+    defaultErrorComponent: RouteError,
+    // Route data comes from TanStack Query; the router shouldn't cache it a second time.
+    defaultPreloadStaleTime: 0,
+    scrollRestoration: true,
+  });
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}

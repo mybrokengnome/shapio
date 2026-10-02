@@ -1,0 +1,95 @@
+{
+  "name": "shapio",
+  "version": "0.1.0",
+  "description": "Self-hosted headless CMS: model content live, deliver it over REST and GraphQL.",
+  "license": "Apache-2.0",
+  "homepage": "https://shapio.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mybrokengnome/shapio.git",
+    "directory": "apps/api"
+  },
+  "bugs": {
+    "url": "https://github.com/mybrokengnome/shapio/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "shapio": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "@shapio/source": "./src/extensions/public.ts",
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "vendor"
+  ],
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --watch --conditions=@shapio/source --import tsx src/main.ts",
+    "build": "tsdown",
+    "prepack": "pnpm --dir ../.. --filter \"shapio...\" --filter @shapio/admin build && node scripts/copyAdmin.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p ../../examples/extension/tsconfig.json",
+    "db:migrate": "kysely migrate:latest --no-outdated-check",
+    "db:rollback": "kysely migrate:rollback --all --no-outdated-check",
+    "db:reset": "kysely migrate:rollback --all --no-outdated-check && kysely migrate:latest --no-outdated-check",
+    "db:codegen": "node --env-file-if-exists=../../.env node_modules/kysely-codegen/dist/cli/bin.js",
+    "docs:reference": "node --conditions=@shapio/source --import tsx scripts/writeReference.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "catalog:",
+    "@aws-sdk/s3-presigned-post": "catalog:",
+    "@aws-sdk/s3-request-presigner": "catalog:",
+    "@fastify/cookie": "catalog:",
+    "@fastify/cors": "catalog:",
+    "@fastify/csrf-protection": "catalog:",
+    "@fastify/helmet": "catalog:",
+    "@fastify/multipart": "catalog:",
+    "@fastify/rate-limit": "catalog:",
+    "@fastify/sensible": "catalog:",
+    "@fastify/static": "catalog:",
+    "@fastify/type-provider-typebox": "catalog:",
+    "@node-rs/argon2": "catalog:",
+    "close-with-grace": "catalog:",
+    "dataloader": "catalog:",
+    "env-schema": "catalog:",
+    "fastify": "catalog:",
+    "fastify-plugin": "catalog:",
+    "file-type": "catalog:",
+    "graphql": "catalog:",
+    "jiti": "catalog:",
+    "kysely": "catalog:",
+    "mercurius": "catalog:",
+    "nodemailer": "catalog:",
+    "pg": "catalog:",
+    "pino": "catalog:",
+    "sharp": "catalog:",
+    "typebox": "catalog:"
+  },
+  "devDependencies": {
+    "@shapio/cli": "workspace:*",
+    "@shapio/client": "workspace:*",
+    "@shapio/schema": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/nodemailer": "catalog:",
+    "@types/pg": "catalog:",
+    "fast-check": "catalog:",
+    "kysely-codegen": "catalog:",
+    "kysely-ctl": "catalog:",
+    "pino-pretty": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

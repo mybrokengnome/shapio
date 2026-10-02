@@ -1,0 +1,150 @@
+{
+  "apiKey": "article",
+  "display": {
+    "titleFieldId": "d3e07d0a-c417-460c-8508-44146a81b096"
+  },
+  "draftAndPublish": true,
+  "fields": [
+    {
+      "apiKey": "title",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "d3e07d0a-c417-460c-8508-44146a81b096",
+      "label": "Title",
+      "localized": true,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "slug",
+      "deprecated": false,
+      "editor": {
+        "id": "slugInput",
+        "options": {}
+      },
+      "filterable": true,
+      "id": "ee6ff3b9-628d-4ed0-8efa-ad78f4792e7a",
+      "label": "Slug",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "slug",
+      "unique": true
+    },
+    {
+      "apiKey": "excerpt",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "2dbdad0c-d445-4813-872b-48905f1135bd",
+      "label": "Excerpt",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "body",
+      "deprecated": false,
+      "editor": {
+        "id": "richText",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "f373cea2-0a43-4035-a832-ace63ebfaa7b",
+      "label": "Body",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {
+        "formatVersion": 1
+      },
+      "sortable": false,
+      "type": "richtext",
+      "unique": false
+    },
+    {
+      "apiKey": "cover",
+      "deprecated": false,
+      "editor": {
+        "id": "mediaPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "c1c98382-15bd-4ee9-bc1c-0a624be6a648",
+      "label": "Cover",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "allowedKinds": [
+          "image"
+        ],
+        "multiple": false
+      },
+      "sortable": false,
+      "type": "media",
+      "unique": false
+    },
+    {
+      "apiKey": "author",
+      "deprecated": false,
+      "editor": {
+        "id": "relationPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "b6f91e18-bc41-44a5-a172-afe6cd978dbf",
+      "label": "Author",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "cardinality": "one",
+        "target": "d47e030e-1eef-4441-9b3d-44f53f7ab1f5"
+      },
+      "sortable": false,
+      "type": "relation",
+      "unique": false
+    },
+    {
+      "apiKey": "publishedOn",
+      "deprecated": false,
+      "editor": {
+        "id": "datePicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "1bc4a6d7-51ca-47f9-a019-ba57e9d6a8ee",
+      "label": "Published on",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": true,
+      "type": "date",
+      "unique": false
+    }
+  ],
+  "id": "1679d89c-747f-4dfc-955f-7d47bd5e4f6b",
+  "kind": "collection",
+  "label": "Article",
+  "localized": true,
+  "pluralApiKey": "articles"
+}

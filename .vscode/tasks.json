@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "pnpm build",
+      "problemMatcher": ["$tsc"],
+      "group": "build"
+    },
+    { "label": "lint", "type": "shell", "command": "pnpm lint", "problemMatcher": ["$eslint-stylish"] },
+    { "label": "typecheck", "type": "shell", "command": "pnpm typecheck", "problemMatcher": ["$tsc"] },
+    { "label": "test", "type": "shell", "command": "pnpm test", "problemMatcher": [], "group": "test" },
+    {
+      "label": "test:integration",
+      "type": "shell",
+      "command": "pnpm test:integration",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    { "label": "db:migrate", "type": "shell", "command": "pnpm db:migrate", "problemMatcher": [] },
+    { "label": "db:codegen", "type": "shell", "command": "pnpm db:codegen", "problemMatcher": [] },
+    {
+      "label": "docker compose up",
+      "type": "shell",
+      "command": "docker compose up -d --build",
+      "problemMatcher": []
+    },
+    {
+      "label": "docker compose down",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": []
+    }
+  ]
+}

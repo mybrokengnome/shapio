@@ -1,0 +1,227 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, format, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Build all packages (including the admin bundle)
+        run: pnpm build
+
+  integration:
+    name: Integration (Node ${{ matrix.node }}, PostgreSQL ${{ matrix.postgres }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
+        postgres: [16, 18]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/shapio_ci
+      # Media on S3 suite (apps/api/test/mediaS3.int.test.ts) runs against versitygw; fail rather than skip.
+      S3_TEST_ENDPOINT: http://127.0.0.1:7070
+      S3_TEST_ACCESS_KEY: shapio-test
+      S3_TEST_SECRET_KEY: shapio-test-secret
+      S3_TEST_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start versitygw (S3-compatible gateway, Apache-2.0)
+        run: |
+          mkdir -p /tmp/s3
+          docker run -d --name s3 -p 127.0.0.1:7070:7070 -v /tmp/s3:/data \
+            -e ROOT_ACCESS_KEY="$S3_TEST_ACCESS_KEY" -e ROOT_SECRET_KEY="$S3_TEST_SECRET_KEY" \
+            versity/versitygw:v1.8.0@sha256:30292fc2eeacc67a36993b01f7a7a5e3361a19cced0e80c1d71cfa2a4b0a2499 \
+            --port :7070 --quiet posix /data
+          for i in $(seq 1 30); do
+            # Any HTTP status means it is up (anonymous requests get 403).
+            [ "$(curl -s -o /dev/null -w '%{http_code}' "$S3_TEST_ENDPOINT")" != 000 ] && exit 0
+            sleep 1
+          done
+          docker logs s3
+          exit 1
+      - run: pnpm test:integration
+      - if: failure()
+        run: docker logs s3 || true
+      - name: Generated database types match the migrations
+        run: |
+          psql "$TEST_DATABASE_URL" -c 'create database shapio_ci'
+          pnpm db:migrate
+          pnpm db:codegen
+          git diff --exit-code -- apps/api/src/db/types.ts
+      - name: Every migration rolls back
+        run: |
+          pnpm db:rollback
+          pnpm db:migrate
+
+  npm-package:
+    name: npm package smoke test (npx shapio start, create-shapio)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the workspace packages (a fresh clone has no dist/)
+        run: pnpm build
+      - run: pnpm smoke:npm
+
+  example-site:
+    name: Example site (seed a local Shapio, build, smoke)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/shapio_example
+      PUBLIC_URL: http://localhost:4300
+      MEDIA_PATH: /tmp/shapio-media
+      LOG_LEVEL: warn
+      SHAPIO_URL: http://localhost:4300
+      SHAPIO_ADMIN_EMAIL: ci@example.com
+      SHAPIO_ADMIN_PASSWORD: example-site-ci-password
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start Shapio from source
+        working-directory: apps/api
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/postgres -c 'create database shapio_example'
+          node --conditions=@shapio/source --import tsx src/cli.ts migrate
+          node --conditions=@shapio/source --import tsx src/cli.ts admin create --email "$SHAPIO_ADMIN_EMAIL"
+          nohup node --conditions=@shapio/source --import tsx src/main.ts > /tmp/shapio.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://localhost:4300/api/ready && exit 0; sleep 1; done
+          cat /tmp/shapio.log
+          exit 1
+      - run: pnpm --filter example-site seed
+      - run: pnpm --filter example-site build
+      - run: pnpm --filter example-site smoke
+      - if: failure()
+        run: cat /tmp/shapio.log
+
+  admin-e2e:
+    name: Admin end to end (Playwright; axe and keyboard checks in light and dark)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the workspace packages and the admin
+        run: pnpm build
+      - name: Install Chromium for Playwright
+        working-directory: apps/admin
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run the admin e2e suite
+        working-directory: apps/admin
+        run: pnpm e2e
+
+  docker:
+    name: Docker image and compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ghcr.io/mybrokengnome/shapio:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: docker compose up passes /api/ready
+        run: |
+          docker compose up -d --no-build
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4300/api/ready; then echo; exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Container reports healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q shapio)")
+            [ "$status" = healthy ] && exit 0
+            sleep 2
+          done
+          docker compose logs shapio
+          exit 1
+      - if: always()
+        run: docker compose down -v

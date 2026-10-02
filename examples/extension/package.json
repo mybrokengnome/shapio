@@ -1,0 +1,15 @@
+{
+  "name": "shapio-example-extension",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example Shapio project extension: a lifecycle hook, a custom route, a service and a job, wired through shapio.config.ts.",
+  "type": "module",
+  "scripts": {
+    "check": "shapio extensions check",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "shapio": "^0.0.0",
+    "typescript": "^6.0.0"
+  }
+}

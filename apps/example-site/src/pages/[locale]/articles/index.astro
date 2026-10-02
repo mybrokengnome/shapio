@@ -1,0 +1,22 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { renderArticleCard } from '../../../lib/render.js';
+import { listArticles } from '../../../lib/shapio.js';
+import { articlesPath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
+import type { Article } from '../../../lib/types.js';
+
+export const getStaticPaths = async () =>
+  Promise.all(
+    LOCALES.map(async (locale) => ({ params: { locale }, props: { locale, articles: await listArticles(locale) } })),
+  );
+
+type Props = { locale: Locale; articles: Article[] };
+const { locale, articles } = Astro.props;
+const strings = stringsFor(locale);
+const context = { locale, strings };
+---
+
+<Base title={strings.articles} locale={locale} alternatePath={articlesPath(otherLocale(locale))}>
+  <h1 class="page-title">{strings.articles}</h1>
+  <ul class="cards" set:html={articles.map((article) => renderArticleCard(article, context)).join('')} />
+</Base>

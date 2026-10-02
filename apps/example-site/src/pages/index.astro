@@ -1,0 +1,18 @@
+---
+import { DEFAULT_LOCALE, HOME_SLUG, pagePath } from '../lib/site.js';
+
+const target = pagePath(DEFAULT_LOCALE, HOME_SLUG);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+  </head>
+  <body>
+    <a href={target}>Continue to the site</a>
+  </body>
+</html>

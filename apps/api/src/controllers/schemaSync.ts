@@ -1,0 +1,61 @@
+import type { LockFile } from '@shapio/schema';
+import type { FastifyRequest } from 'fastify';
+import * as schemaDefinitionsService from '../services/schemaDefinitions.js';
+import * as schemaSettingsService from '../services/schemaSettings.js';
+import * as schemaSyncService from '../services/schemaSync.js';
+import { schemaContextFor, toChangeJobResponse } from './schemaContext.js';
+
+type ApplyRequest = FastifyRequest<{
+  Body: {
+    definitions: unknown[];
+    base: LockFile;
+    prune?: boolean;
+    dryRun?: boolean;
+    acknowledgeBreaking?: boolean;
+    acknowledgeDestructive?: boolean;
+  };
+}>;
+type ChangeRequest = FastifyRequest<{ Params: { changeId: string } }>;
+type SettingsRequest = FastifyRequest<{ Body: { readOnly: boolean; readOnlyReason?: string | null } }>;
+
+export const getSchemaSummary = async (request: FastifyRequest) => {
+  const context = await schemaContextFor(request);
+  const { schemaVersion, definitions } = await schemaSyncService.exportSchema(context);
+  return {
+    schemaVersion,
+    defaultLocale: context.snapshot.defaultLocale,
+    definitions: definitions.map(({ definition, version, hash }) => ({
+      id: definition.id,
+      kind: definition.kind,
+      apiKey: definition.apiKey,
+      label: definition.label,
+      version,
+      hash,
+    })),
+  };
+};
+
+export const exportSchema = async (request: FastifyRequest) =>
+  schemaSyncService.exportSchema(await schemaContextFor(request));
+
+export const applySchema = async (request: ApplyRequest) => {
+  const { definitions, base, prune = false, dryRun = false, ...ack } = request.body;
+  return schemaSyncService.applySchema(await schemaContextFor(request), {
+    definitions,
+    base,
+    prune,
+    dryRun,
+    ...ack,
+  });
+};
+
+export const getChange = async (request: ChangeRequest) =>
+  toChangeJobResponse(
+    await schemaDefinitionsService.getChange(await schemaContextFor(request), request.params.changeId),
+  );
+
+export const getSettings = async (request: FastifyRequest) =>
+  schemaSettingsService.getSchemaSettings(await schemaContextFor(request));
+
+export const updateSettings = async (request: SettingsRequest) =>
+  schemaSettingsService.updateSchemaSettings(await schemaContextFor(request), request.body);

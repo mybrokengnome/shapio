@@ -1,0 +1,49 @@
+{
+  "name": "@shapio/editor-sdk",
+  "version": "0.1.0",
+  "description": "Contract and helpers for custom Shapio field editors loaded at runtime.",
+  "license": "Apache-2.0",
+  "homepage": "https://shapio.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mybrokengnome/shapio.git",
+    "directory": "packages/editor-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/mybrokengnome/shapio/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@shapio/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shapio/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

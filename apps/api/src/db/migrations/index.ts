@@ -1,0 +1,41 @@
+import type { Migration, MigrationProvider } from 'kysely/migration';
+import * as createPlatformTables from './20261001120000_create_platform_tables.js';
+import * as createAdminIdentity from './20261001130000_create_admin_identity.js';
+import * as createSystemSettings from './20261001130500_create_system_settings.js';
+import * as createSchemaTables from './20261001140000_create_schema_tables.js';
+import * as createContentTables from './20261001150000_create_content_tables.js';
+import * as createMediaTables from './20261001160000_create_media_tables.js';
+import * as createPublishingTables from './20261001170000_create_publishing_tables.js';
+import * as createAppUsers from './20261001180000_create_app_users.js';
+import * as createExtensionHookRuns from './20261002120000_create_extension_hook_runs.js';
+import * as appAuthTokenVersionAndLoginCodePkce from './20261002130000_app_auth_token_version_and_login_code_pkce.js';
+import * as addPublicationLogDiffIndexes from './20261002180000_add_publication_log_diff_indexes.js';
+import * as createUsageTables from './20261002180100_create_usage_tables.js';
+import * as createChangeSets from './20261002180200_create_change_sets.js';
+import * as createEditorPresenceAndContentHealth from './20261002190000_create_editor_presence_and_content_health.js';
+
+/**
+ * Every migration, listed explicitly. A static list works when the server is bundled for npm, where
+ * directory scanning would not. Names must keep the `YYYYMMDDHHMMSS_description` order; the migrator
+ * rejects out-of-order additions. Timestamps are assigned when a migration merges.
+ */
+export const MIGRATIONS: Readonly<Record<string, Migration>> = {
+  '20261001120000_create_platform_tables': createPlatformTables,
+  '20261001130000_create_admin_identity': createAdminIdentity,
+  '20261001130500_create_system_settings': createSystemSettings,
+  '20261001140000_create_schema_tables': createSchemaTables,
+  '20261001150000_create_content_tables': createContentTables,
+  '20261001160000_create_media_tables': createMediaTables,
+  '20261001170000_create_publishing_tables': createPublishingTables,
+  '20261001180000_create_app_users': createAppUsers,
+  '20261002120000_create_extension_hook_runs': createExtensionHookRuns,
+  '20261002130000_app_auth_token_version_and_login_code_pkce': appAuthTokenVersionAndLoginCodePkce,
+  '20261002180000_add_publication_log_diff_indexes': addPublicationLogDiffIndexes,
+  '20261002180100_create_usage_tables': createUsageTables,
+  '20261002180200_create_change_sets': createChangeSets,
+  '20261002190000_create_editor_presence_and_content_health': createEditorPresenceAndContentHealth,
+};
+
+export const staticMigrationProvider: MigrationProvider = {
+  getMigrations: () => Promise.resolve({ ...MIGRATIONS }),
+};

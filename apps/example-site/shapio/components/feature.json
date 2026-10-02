@@ -1,0 +1,46 @@
+{
+  "apiKey": "feature",
+  "category": "Marketing",
+  "display": {},
+  "fields": [
+    {
+      "apiKey": "title",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "11cba9b7-59b3-4f79-b6c0-4e6b1e1e732e",
+      "label": "Title",
+      "localized": false,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "description",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "c14bbc67-0f0f-4455-8e4c-443d4e3ed4b2",
+      "label": "Description",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    }
+  ],
+  "id": "66138d48-8c29-499e-ba51-86e5fb1b372b",
+  "kind": "component",
+  "label": "Feature"
+}

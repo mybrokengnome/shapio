@@ -1,0 +1,52 @@
+{
+  "apiKey": "gallery",
+  "category": "Sections",
+  "display": {},
+  "fields": [
+    {
+      "apiKey": "heading",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "9cf1f232-3b25-44e9-9fe1-f599a71ac712",
+      "label": "Heading",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "images",
+      "deprecated": false,
+      "editor": {
+        "id": "mediaPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "87b1288e-d883-4ca5-8ab7-80fedb2b2fa0",
+      "label": "Images",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "allowedKinds": [
+          "image"
+        ],
+        "min": 1,
+        "multiple": true
+      },
+      "sortable": false,
+      "type": "media",
+      "unique": false
+    }
+  ],
+  "id": "b8da2c63-3d0a-41a3-b2b2-d40d08cacddc",
+  "kind": "component",
+  "label": "Gallery"
+}

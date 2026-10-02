@@ -1,0 +1,29 @@
+{
+  "name": "@shapio/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shapio remote command library (schema sync, export/import, types). Bundled into the shapio bin.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@shapio/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shapio/client": "workspace:*",
+    "@shapio/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

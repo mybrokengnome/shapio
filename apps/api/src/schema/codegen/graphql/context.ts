@@ -1,0 +1,36 @@
+import type { FastifyRequest } from 'fastify';
+import type { MercuriusContext } from 'mercurius';
+import type { PermissionEvaluator } from '../../../permissions/types.js';
+import type { ContentServiceContext } from '../../../services/contentAccess.js';
+import type { BatchReadOptions, DeliveryEntry } from '../../../services/contentBatchReads.js';
+import type { SchemaSnapshot } from '../../snapshot.js';
+import type { GraphqlLoaders } from './loaders.js';
+
+/**
+ * How the entries of one result were read; relation targets and `localizations` are read the same way
+ * (same locale, fallback, state and snapshot), so a response is one consistent view.
+ */
+export type ReadScope = BatchReadOptions;
+
+/** The source object of every entry and component type: the delivery projection plus its read scope. */
+export type ValueNode = { data: Record<string, unknown>; scope: ReadScope };
+
+/** Per-request state, built by plugins/graphql.ts. */
+export type GraphqlRequestContext = {
+  request: FastifyRequest;
+  /** The request's evaluator, memoized per (model, action): one evaluation per request (ADR 0005). */
+  permissions: PermissionEvaluator;
+  /** Admin users and admin-scope API tokens: may read drafts (`publicationState: DRAFT`). */
+  isAdmin: boolean;
+  loaders: GraphqlLoaders;
+  /** The content service context of this request, built on first use. */
+  content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>;
+};
+
+export type GraphqlContext = MercuriusContext & GraphqlRequestContext;
+
+/** An entry as a GraphQL source object. Drafts carry no publication time. */
+export const entryNode = (entry: DeliveryEntry, scope: ReadScope): ValueNode => ({
+  data: scope.drafts ? { ...entry, publishedAt: null } : entry,
+  scope,
+});

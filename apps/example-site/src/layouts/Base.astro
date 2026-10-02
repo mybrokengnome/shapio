@@ -1,0 +1,46 @@
+---
+import '../styles/site.css';
+import { articlesPath, HOME_SLUG, otherLocale, pagePath, stringsFor, type Locale } from '../lib/site.js';
+
+type Props = {
+  title: string;
+  description?: string | null;
+  locale: Locale;
+  /** This page in the other locale. */
+  alternatePath?: string;
+  noindex?: boolean;
+};
+
+const { title, description, locale, alternatePath, noindex = false } = Astro.props;
+const strings = stringsFor(locale);
+const other = otherLocale(locale);
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · {strings.siteName}</title>
+    {description ? <meta name="description" content={description} /> : null}
+    {noindex ? <meta name="robots" content="noindex" /> : null}
+    {alternatePath ? <link rel="alternate" hreflang={other} href={alternatePath} /> : null}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#content">{strings.skipToContent}</a>
+    <header class="site-header">
+      <a class="brand" href={pagePath(locale, HOME_SLUG)}>{strings.siteName}</a>
+      <nav aria-label="Main">
+        <a href={articlesPath(locale)}>{strings.articles}</a>
+        <a href={alternatePath ?? pagePath(other, HOME_SLUG)} hreflang={other} lang={other}>{strings.switchTo}</a>
+      </nav>
+    </header>
+    <main id="content">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <p>{strings.siteName} · Built with Shapio and Astro</p>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "create-shapio",
+  "version": "0.1.0",
+  "description": "Scaffold a new Shapio project: npx create-shapio my-cms",
+  "license": "Apache-2.0",
+  "homepage": "https://shapio.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mybrokengnome/shapio.git",
+    "directory": "packages/create-shapio"
+  },
+  "bugs": {
+    "url": "https://github.com/mybrokengnome/shapio/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "create-shapio": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "tsdown",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
