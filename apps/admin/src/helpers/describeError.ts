@@ -6,6 +6,10 @@ type KnownErrorCode = keyof typeof en.errors.codes;
 
 const isKnownErrorCode = (code: string): code is KnownErrorCode => Object.hasOwn(en.errors.codes, code);
 
+/** The translated sentence for a server error code, or undefined when the code has none. */
+export const knownErrorMessage = (code: string): string | undefined =>
+  isKnownErrorCode(code) ? i18next.t(`errors.codes.${code}`) : undefined;
+
 /**
  * A human-readable, translated message for a failed request. Known server error codes have their own
  * translation (`errors.codes.<CODE>`); otherwise the server's message is shown, which is more useful than a

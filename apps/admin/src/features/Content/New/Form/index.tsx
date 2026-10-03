@@ -1,5 +1,6 @@
 import type { DefinitionKind } from '@shapio/schema';
 import { Link, type LinkOptions } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { FormError } from '@/components/FormError';
@@ -27,13 +28,15 @@ type FormProps = {
   /** Where Cancel and the breadcrumb go. */
   back: LinkOptions;
   backLabel: string;
+  /** Shown above the form (content types: "Describe it", when assist is on). */
+  intro?: ReactNode;
 };
 
 /**
  * Creates a content type (collection or single type) or a component, live, then opens it for editing.
  * Shared by `/content/new` and `/develop/components/new`.
  */
-export const Form = ({ title, kinds, back, backLabel }: FormProps) => {
+export const Form = ({ title, kinds, back, backLabel, intro }: FormProps) => {
   const { t } = useTranslation();
   const { locked, reason } = useSchemaLock();
   const { form, onSubmit, pending, error } = useCreateDefinitionForm(kinds[0]);
@@ -47,6 +50,7 @@ export const Form = ({ title, kinds, back, backLabel }: FormProps) => {
       <UnsavedChangesGuard when={form.formState.isDirty} />
       <PageHeader breadcrumb={[{ label: backLabel, link: back }]} title={title} />
       {locked ? <LockNotice reason={reason} /> : null}
+      {intro}
       <Panel>
         <form noValidate onSubmit={(event) => void onSubmit(event)}>
           <FieldGroup className="gap-5">

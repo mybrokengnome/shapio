@@ -22,6 +22,8 @@ export {
   PUBLICATION_ACTIONS,
   SCHEDULE_STATUSES,
   SNAPSHOT_SOURCES,
+  ASSIST_PATHS,
+  CONTENT_OPS_RULES,
   type AdminApi,
 } from './admin/index.js';
 export type * from './admin/types.js';
@@ -35,6 +37,7 @@ export type * from './admin/appUsersTypes.js';
 export type * from './admin/changeSetTypes.js';
 export type * from './admin/usageTypes.js';
 export type * from './admin/sitesTypes.js';
+export type * from './admin/assistTypes.js';
 export type * from './snapshotTypes.js';
 export { DELIVERY_PATH, type DeliveryApi } from './delivery.js';
 export { SITE_QUERY_PARAMETER } from './site.js';

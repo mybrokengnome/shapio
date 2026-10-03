@@ -8,6 +8,7 @@ import type {
   UpdateChangeSetInput,
 } from '@shapio/client';
 import { ShapioApiError } from '@shapio/client';
+import type { SchemaDefinition } from '@shapio/schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PUBLISHING_POLL_INTERVAL_MS } from '@/constants/publishing';
 import { logError } from '@/helpers/reportError';
@@ -121,6 +122,13 @@ export const useScheduleChangeSet = () =>
 export const useUnscheduleChangeSet = () =>
   useChangeSetWrite('unschedule', (id: string) => changeSetsApi.unschedule(id));
 
+/** The newest open change set (with its items), or a new one named `title` when none is open. */
+const openOrCreateChangeSet = async (title: string) => {
+  const open = await changeSetsApi.list({ status: 'open', limit: 1 });
+  const target = open.items[0] ?? (await changeSetsApi.create({ title, source: 'builder' }));
+  return changeSetsApi.get(target.id);
+};
+
 /**
  * The builder's "Review in a change set": saves the schema draft into the newest open set (or a new one
  * named `newSetTitle`), replacing that set's earlier draft of the same definition, and resolves with the
@@ -141,10 +149,7 @@ export const useSaveDraftToChangeSet = () => {
       newSetTitle: string;
     }) =>
       withCsrf(async () => {
-        const open = await changeSetsApi.list({ status: 'open', limit: 1 });
-        const target =
-          open.items[0] ?? (await changeSetsApi.create({ title: newSetTitle, source: 'builder' }));
-        const set = await changeSetsApi.get(target.id);
+        const set = await openOrCreateChangeSet(newSetTitle);
         const existing = set.items.find(
           (item) => item.kind === 'schema' && item.definitionId === definitionId,
         );
@@ -152,6 +157,38 @@ export const useSaveDraftToChangeSet = () => {
           ...input,
           ...(existing?.kind === 'schema' ? { expectedDraftVersion: existing.draftVersion } : {}),
         });
+        return set.id;
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all }),
+  });
+};
+
+/**
+ * New definitions proposed together ("Describe it"): each saved as a schema draft into the newest open set
+ * (or a new one named `newSetTitle`), in the order given (references first). Resolves with the set's ID.
+ */
+export const useSaveNewDefinitionsToChangeSet = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['changeSets', 'saveNewDefinitions'],
+    meta: silent,
+    mutationFn: ({
+      definitions,
+      newSetTitle,
+    }: {
+      definitions: readonly SchemaDefinition[];
+      newSetTitle: string;
+    }) =>
+      withCsrf(async () => {
+        const set = await openOrCreateChangeSet(newSetTitle);
+        for (const definition of definitions) {
+          // One at a time: a later definition may reference an earlier one.
+          await changeSetsApi.putSchemaDraft(set.id, definition.id, {
+            category: definition.kind === 'component' ? 'component' : 'model',
+            definition,
+            baseVersion: null,
+          });
+        }
         return set.id;
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all }),

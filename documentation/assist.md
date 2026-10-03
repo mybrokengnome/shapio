@@ -110,6 +110,45 @@ event (`assist.alt_text`, `assist.summarize`, `assist.translate`, `assist.rewrit
 `assist_runs` rows are deleted after `USAGE_RETENTION_DAYS`. The proposals of a content-ops run are kept as
 the result of its job until finished jobs are pruned (`RETENTION_DAYS`).
 
+## In the admin
+
+The admin reads `GET /status` once and keeps the answer for five minutes; assist only changes with a
+restart anyway. While assist is off, every assist control is hidden. Settings → Assist is the exception: it
+always exists and says assist is off, with a link to this page.
+
+Every result is something you review first. It fills a field, replaces a selection when you say so, or lands
+as a draft. Nothing is published.
+
+- **Rewrite** (the floating toolbar over selected rich text, "Rewrite…"): type an instruction, or use
+  Shorten or Expand. The proposal opens in an editable box; **Replace selection** puts it in place. If the
+  selected text changed while the model was working, Replace refuses and asks you to select it again. The
+  proposal is plain text: bold, italic, links and code in the selection are not kept.
+- **Suggest alt text**: beside the alt text of an image in rich text, a media field, the cover (Settings
+  drawer → Cover) and a file's details in the media library. Images only. It fills the alt text input, and
+  you save as usual.
+- **Summarize from body**: in a property's popover under the title, for string and text properties (not the
+  title) of a content type with a rich-text body. It fills the property, and you review it before saving.
+- **Translate {locale} from {source}**: in the Settings drawer's locale list, beside each locale the entry
+  doesn't have yet, and in the notice shown when you open a locale that isn't started. It saves the
+  translation as that locale's first draft and opens it with a "Proposed by {model}" banner. The banner lists
+  any translation issues by field (for example a value over its limit), and you can dismiss it.
+- **Describe it** (New content type): describe what editors will write, then **Propose content types**. You
+  see the proposed types and their fields. **Add to change set** saves them as schema drafts into the newest
+  open change set, or a new one titled "Content types proposed by {model}", and opens its review. Nothing goes
+  live until someone ships that change set.
+- **Propose fixes** (Inbox, on the "Images without alt text" and missing-locale groups): starts a
+  content-ops run and follows it.
+  - Alt text proposals open in a review list: edit each one, then Accept (saved to the file in the library)
+    or Reject.
+  - Missing locales link to the change set that holds the new drafts, and say how many entries were left
+    alone.
+- **Settings → Assist**: whether assist is on, the provider and model, this month's usage (with
+  `changes.manage`), and a **Try it** box that runs a rewrite without saving anything.
+
+**Unsaved changes.** Summarize and translate read the entry as it is saved. If the document has unsaved
+changes, the admin saves them as a draft first. In a content type without drafts, saving would publish, so
+the admin asks you to save yourself instead.
+
 ## Actions
 
 All endpoints are under `/api/admin/assist` and are site routes (send `Shapio-Site` or `?site=` on a

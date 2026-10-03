@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/helpers/formatDate';
 import { EntryStatusChip } from '../../EntryStatusChip';
 import { DrawerSection } from '../DrawerSection';
+import { useAssistTarget } from '../hooks/useAssistTarget';
 import { LocaleStatusList } from '../LocaleStatusList';
+import { TranslateLocale } from '../TranslateLocale';
 
 type StatusSectionProps = {
   model: ModelDefinition;
@@ -46,6 +48,7 @@ export const StatusSection = ({
   confirmCopy,
 }: StatusSectionProps) => {
   const { t } = useTranslation();
+  const assistTarget = useAssistTarget();
   const notStarted = entry
     ? locales.filter((item) => !entry.locales.some((state) => state.locale === item.code))
     : [];
@@ -92,6 +95,17 @@ export const StatusSection = ({
               {t('entry.settings.startLocale', { locale: item.label })}
             </Button>
           ))}
+          {assistTarget ? (
+            <TranslateLocale
+              model={model}
+              entryId={assistTarget.entryId}
+              from={locale}
+              fromLabel={labelOf(locale)}
+              targets={notStarted}
+              prepare={assistTarget.saveIfDirty}
+              onOpen={onLocaleChange}
+            />
+          ) : null}
         </div>
       ) : null}
       {onCopyFromDefault && defaultLocale ? (

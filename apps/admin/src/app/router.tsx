@@ -225,6 +225,7 @@ const profileRoute = settingsChild('profile', 'profile');
 const sessionsRoute = settingsChild('sessions', 'sessions');
 const appearanceRoute = settingsChild('theme', 'theme');
 const localesRoute = settingsChild('locales', 'locales');
+const assistRoute = settingsChild('assist', 'assist');
 const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
 
 // Roles and the audit log moved to the network view (sites plan §H); old links keep working.
@@ -437,6 +438,7 @@ const routeTree = rootRoute.addChildren([
       sessionsRoute,
       appearanceRoute,
       localesRoute,
+      assistRoute,
       rolesRedirectRoute,
       appRolesRedirectRoute,
       appRoleRedirectRoute,

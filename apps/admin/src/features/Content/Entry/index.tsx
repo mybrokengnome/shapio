@@ -20,6 +20,7 @@ import { Cover } from './Cover';
 import { CoverSettings } from './CoverSettings';
 import { DangerZone } from './DangerZone';
 import { HistorySheet } from './HistorySheet';
+import { AssistDocumentContext, useAssistDocument } from './hooks/useAssistTarget';
 import { useDocumentPaletteActions } from './hooks/useDocumentPaletteActions';
 import { useDocumentShortcuts } from './hooks/useDocumentShortcuts';
 import { useEntryDocument } from './hooks/useEntryDocument';
@@ -41,6 +42,7 @@ import { SettingsDrawer } from './SettingsDrawer';
 import { StatusSection } from './StatusSection';
 import { Title } from './Title';
 import { TopBar, type PrimaryAction } from './TopBar';
+import { TranslateLocale } from './TranslateLocale';
 import type { EntryMode, ReloadEntry } from './types';
 
 type EntryDocumentProps = {
@@ -75,6 +77,7 @@ export const EntryDocument = ({
   const { setup, saver, lifecycle, publishing, permissions, conflict, dirty } = entryDocument;
   const { store, entry, entryId, environment } = setup;
   const layout = useMemo(() => effectiveLayout(model), [model]);
+  const assistDocument = useAssistDocument({ model, mode, store, save: saver.save });
   const drawer = useSettingsDrawer();
   const preflight = usePreflightFlow(saver.save);
   // `?revision=` (Snapshots → Timeline, "Open this version") opens the history at that revision.
@@ -173,167 +176,187 @@ export const EntryDocument = ({
     layout.properties.length > 0;
   return (
     <FieldsProvider environment={environment} store={store}>
-      <EntrySiblings>
-        <Page
-          width="full"
-          className={cn(
-            'space-y-0 transition-[padding]',
-            // The settings drawer overlays the preview when both are open.
-            !preview.open && drawer.open && 'xl:pr-90',
-          )}
-        >
-          <TopBar
-            model={model}
-            title={heading}
-            status={entry?.status}
-            saveState={
-              mode.kind === 'edit' ? (
-                <SaveState state={saver.state} dirty={dirty} autosaved={autosaved} />
-              ) : null
-            }
-            presence={<Presence people={people} />}
-            locale={
-              model.localized && locale ? (
-                <LocaleSelect
-                  locales={locales}
-                  value={locale}
-                  onChange={onLocaleChange}
-                  states={entry?.locales ?? []}
-                  size="sm"
-                  className="w-auto"
-                />
-              ) : null
-            }
-            preview={
-              mode.kind === 'edit' ? (
-                <PreviewButton
-                  available={preview.available}
-                  pressed={preview.open && !preview.documentShown}
-                  onToggle={preview.toggle}
-                />
-              ) : null
-            }
-            onSave={showSave ? entryDocument.save : undefined}
-            saving={saver.state.status === 'saving' || lifecycle.creating}
-            blocked={blocked}
-            settingsOpen={drawer.open}
-            onToggleSettings={drawer.toggle}
-            primary={primary}
-          />
-          {/* The preview takes the right half of the screen under the top bar on lg and up. */}
-          <div className={cn(preview.open && 'lg:pr-[calc(50vw-2rem)]')}>
-            <article
-              aria-label={heading}
-              className="mx-auto w-full max-w-3xl space-y-6 pt-8 pb-40 lg:px-16"
-              data-entry-document
-            >
-              <Notices
-                conflict={conflict}
-                reloading={entryDocument.reloading}
-                onReload={entryDocument.reload}
-                newLocaleLabel={mode.kind === 'newLocale' ? labelOf(locale ?? '') : undefined}
-                referrers={lifecycle.referrers}
-                models={schema.models}
-                onDismissReferrers={lifecycle.clearReferrers}
-                outdated={
-                  model.draftAndPublish && !publishing.othersDismissed
-                    ? (entry?.sharedOutdatedLocales ?? [])
-                    : []
-                }
-                labelOf={labelOf}
-                publishing={publishing.publishing}
-                onPublishOthers={(others) => void publishing.publishOthers(others)}
-                onDismissOthers={publishing.dismissOthers}
-              />
-              {hasFields ? null : <NoFields model={model} canManageSchema={permissions.canManageSchema} />}
-              {layout.cover ? (
-                <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
-              ) : null}
-              <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
-              {layout.canvas.length > 0 ? (
-                <>
-                  <PropertiesStrip layout={layout} onMore={() => drawer.openAt({ section: 'properties' })} />
-                  <Canvas fields={layout.canvas} />
-                </>
-              ) : (
-                <PropertyGrid groups={layout.propertyGroups} />
-              )}
-            </article>
-          </div>
-        </Page>
-        <PreviewPane preview={preview} title={heading} />
-        <SettingsDrawer
-          open={drawer.open}
-          onOpenChange={drawer.setOpen}
-          focus={drawer.focus}
-          layout={layout}
-          expanded={drawer.expanded}
-          onToggleProperty={drawer.toggleProperty}
-          status={
-            <StatusSection
+      <AssistDocumentContext.Provider value={assistDocument}>
+        <EntrySiblings>
+          <Page
+            width="full"
+            className={cn(
+              'space-y-0 transition-[padding]',
+              // The settings drawer overlays the preview when both are open.
+              !preview.open && drawer.open && 'xl:pr-90',
+            )}
+          >
+            <TopBar
               model={model}
-              entry={entry}
-              locales={locales}
-              locale={locale}
-              defaultLocale={defaultLocale}
-              labelOf={labelOf}
-              onLocaleChange={onLocaleChange}
-              onCopyFromDefault={
-                model.localized && entryId !== null && defaultLocale !== undefined && locale !== defaultLocale
-                  ? lifecycle.copyFromDefault
-                  : undefined
+              title={heading}
+              status={entry?.status}
+              saveState={
+                mode.kind === 'edit' ? (
+                  <SaveState state={saver.state} dirty={dirty} autosaved={autosaved} />
+                ) : null
               }
-              confirmCopy={entryDocument.hasLocalizedValues}
+              presence={<Presence people={people} />}
+              locale={
+                model.localized && locale ? (
+                  <LocaleSelect
+                    locales={locales}
+                    value={locale}
+                    onChange={onLocaleChange}
+                    states={entry?.locales ?? []}
+                    size="sm"
+                    className="w-auto"
+                  />
+                ) : null
+              }
+              preview={
+                mode.kind === 'edit' ? (
+                  <PreviewButton
+                    available={preview.available}
+                    pressed={preview.open && !preview.documentShown}
+                    onToggle={preview.toggle}
+                  />
+                ) : null
+              }
+              onSave={showSave ? entryDocument.save : undefined}
+              saving={saver.state.status === 'saving' || lifecycle.creating}
+              blocked={blocked}
+              settingsOpen={drawer.open}
+              onToggleSettings={drawer.toggle}
+              primary={primary}
             />
-          }
-          cover={layout.cover ? <CoverSettings field={layout.cover} /> : null}
-          onOpenHistory={mode.kind === 'edit' ? () => setHistoryOpen(true) : undefined}
-          danger={
-            mode.kind === 'edit' ? (
-              <DangerZone
-                title={heading}
-                onUnpublish={canPublish && live ? publishing.unpublish : undefined}
-                onDuplicate={
-                  model.kind === 'collection' && permissions.canCreate
-                    ? () => void lifecycle.duplicate()
+            {/* The preview takes the right half of the screen under the top bar on lg and up. */}
+            <div className={cn(preview.open && 'lg:pr-[calc(50vw-2rem)]')}>
+              <article
+                aria-label={heading}
+                className="mx-auto w-full max-w-3xl space-y-6 pt-8 pb-40 lg:px-16"
+                data-entry-document
+              >
+                <Notices
+                  conflict={conflict}
+                  reloading={entryDocument.reloading}
+                  onReload={entryDocument.reload}
+                  newLocaleLabel={mode.kind === 'newLocale' ? labelOf(locale ?? '') : undefined}
+                  newLocaleAction={
+                    mode.kind === 'newLocale' && locale && mode.source.locale && entryDocument.editable ? (
+                      <TranslateLocale
+                        model={model}
+                        entryId={mode.entryId}
+                        from={mode.source.locale}
+                        fromLabel={labelOf(mode.source.locale)}
+                        targets={[{ code: locale, label: labelOf(locale) }]}
+                        onOpen={onLocaleChange}
+                      />
+                    ) : null
+                  }
+                  referrers={lifecycle.referrers}
+                  models={schema.models}
+                  onDismissReferrers={lifecycle.clearReferrers}
+                  outdated={
+                    model.draftAndPublish && !publishing.othersDismissed
+                      ? (entry?.sharedOutdatedLocales ?? [])
+                      : []
+                  }
+                  labelOf={labelOf}
+                  publishing={publishing.publishing}
+                  onPublishOthers={(others) => void publishing.publishOthers(others)}
+                  onDismissOthers={publishing.dismissOthers}
+                />
+                {hasFields ? null : <NoFields model={model} canManageSchema={permissions.canManageSchema} />}
+                {layout.cover ? (
+                  <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
+                ) : null}
+                <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
+                {layout.canvas.length > 0 ? (
+                  <>
+                    <PropertiesStrip
+                      layout={layout}
+                      onMore={() => drawer.openAt({ section: 'properties' })}
+                    />
+                    <Canvas fields={layout.canvas} />
+                  </>
+                ) : (
+                  <PropertyGrid groups={layout.propertyGroups} />
+                )}
+              </article>
+            </div>
+          </Page>
+          <PreviewPane preview={preview} title={heading} />
+          <SettingsDrawer
+            open={drawer.open}
+            onOpenChange={drawer.setOpen}
+            focus={drawer.focus}
+            layout={layout}
+            expanded={drawer.expanded}
+            onToggleProperty={drawer.toggleProperty}
+            status={
+              <StatusSection
+                model={model}
+                entry={entry}
+                locales={locales}
+                locale={locale}
+                defaultLocale={defaultLocale}
+                labelOf={labelOf}
+                onLocaleChange={onLocaleChange}
+                onCopyFromDefault={
+                  model.localized &&
+                  entryId !== null &&
+                  defaultLocale !== undefined &&
+                  locale !== defaultLocale
+                    ? lifecycle.copyFromDefault
                     : undefined
                 }
-                onDelete={permissions.canDelete ? lifecycle.remove : undefined}
+                confirmCopy={entryDocument.hasLocalizedValues}
               />
-            ) : null
-          }
-        />
-        {entryId && canPublish ? (
-          <PreflightSheet
-            open={preflight.open}
-            onOpenChange={preflight.setOpen}
-            entryId={entryId}
-            ready={preflight.ready}
-            labelOf={labelOf}
-            canSchedule={permissions.canSchedule}
-            canUseChangeSets={permissions.canUseChangeSets}
-            publishing={publishing.publishing || saver.state.status === 'saving'}
-            onPublish={publishing.publish}
-            onFix={reveal}
+            }
+            cover={layout.cover ? <CoverSettings field={layout.cover} /> : null}
+            onOpenHistory={mode.kind === 'edit' ? () => setHistoryOpen(true) : undefined}
+            danger={
+              mode.kind === 'edit' ? (
+                <DangerZone
+                  title={heading}
+                  onUnpublish={canPublish && live ? publishing.unpublish : undefined}
+                  onDuplicate={
+                    model.kind === 'collection' && permissions.canCreate
+                      ? () => void lifecycle.duplicate()
+                      : undefined
+                  }
+                  onDelete={permissions.canDelete ? lifecycle.remove : undefined}
+                />
+              ) : null
+            }
           />
-        ) : null}
-        {setup.mediaDialog}
-        {entryId && mode.kind === 'edit' ? (
-          <HistorySheet
-            open={historyOpen}
-            onOpenChange={setHistoryOpen}
-            model={model}
-            components={schema.components}
-            entryId={entryId}
-            locale={locale}
-            restoring={lifecycle.restoring}
-            confirmRestore={dirty}
-            onRestore={lifecycle.restore}
-            initialRevisionId={linkedRevision}
-          />
-        ) : null}
-        <UnsavedChangesGuard when={dirty && !blocked} />
-      </EntrySiblings>
+          {entryId && canPublish ? (
+            <PreflightSheet
+              open={preflight.open}
+              onOpenChange={preflight.setOpen}
+              entryId={entryId}
+              ready={preflight.ready}
+              labelOf={labelOf}
+              canSchedule={permissions.canSchedule}
+              canUseChangeSets={permissions.canUseChangeSets}
+              publishing={publishing.publishing || saver.state.status === 'saving'}
+              onPublish={publishing.publish}
+              onFix={reveal}
+            />
+          ) : null}
+          {setup.mediaDialog}
+          {entryId && mode.kind === 'edit' ? (
+            <HistorySheet
+              open={historyOpen}
+              onOpenChange={setHistoryOpen}
+              model={model}
+              components={schema.components}
+              entryId={entryId}
+              locale={locale}
+              restoring={lifecycle.restoring}
+              confirmRestore={dirty}
+              onRestore={lifecycle.restore}
+              initialRevisionId={linkedRevision}
+            />
+          ) : null}
+          <UnsavedChangesGuard when={dirty && !blocked} />
+        </EntrySiblings>
+      </AssistDocumentContext.Provider>
     </FieldsProvider>
   );
 };

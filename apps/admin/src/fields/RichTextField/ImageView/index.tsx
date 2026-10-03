@@ -1,12 +1,14 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { ImageOff, Trash2 } from 'lucide-react';
-import { useId } from 'react';
+import { useContext, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMediaAsset } from '@/api/media';
+import { SuggestAltButton } from '@/components/SuggestAltButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/helpers/cn';
+import { FieldsEnvironmentContext } from '../../form/context';
 import type { EditorAppearance } from '../../types';
 
 const PREVIEW_VARIANTS = ['w1280', 'w640'];
@@ -40,6 +42,7 @@ export const ImageView = ({
   const altId = useId();
   const captionId = useId();
   const canvas = appearance === 'canvas';
+  const locale = useContext(FieldsEnvironmentContext)?.locale;
   const setText = (name: 'alt' | 'title', text: string) =>
     updateAttributes({ [name]: text === '' ? null : text });
   return (
@@ -95,6 +98,15 @@ export const ImageView = ({
           data-alt-input
           onChange={(event) => setText('alt', event.target.value)}
         />
+        {editable ? (
+          <SuggestAltButton
+            assetId={mediaId}
+            mimeType={asset.data?.mimeType}
+            locale={locale}
+            onSuggest={(text) => setText('alt', text)}
+            className="shrink-0"
+          />
+        ) : null}
         {editable ? (
           <Button
             type="button"

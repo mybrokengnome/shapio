@@ -2,12 +2,17 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { Bold, Code, Heading2, Heading3, Italic, Link, List, Quote } from 'lucide-react';
+import { Bold, Code, Heading2, Heading3, Italic, Link, List, Quote, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '@/components/ui/separator';
 import { ToolButton } from '../../ToolButton';
 
-type BubbleToolbarProps = { editor: Editor; onLink: () => void };
+type BubbleToolbarProps = {
+  editor: Editor;
+  onLink: () => void;
+  /** "Rewrite…" with the instance's model (only while assist is on). */
+  onRewrite?: () => void;
+};
 
 /** Text is selected (not an image or rule, not inside code): the floating toolbar has something to do. */
 const hasTextSelection = ({ editor }: { editor: Editor }) => {
@@ -21,7 +26,7 @@ const hasTextSelection = ({ editor }: { editor: Editor }) => {
 };
 
 /** Formatting for the selected text, floating above it (Ghost/Notion style); every action has a shortcut. */
-export const BubbleToolbar = ({ editor, onLink }: BubbleToolbarProps) => {
+export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps) => {
   const { t } = useTranslation();
   const state = useEditorState({
     editor,
@@ -107,6 +112,17 @@ export const BubbleToolbar = ({ editor, onLink }: BubbleToolbarProps) => {
           disabled={false}
           onClick={() => chain().toggleBulletList().run()}
         />
+        {onRewrite ? (
+          <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <ToolButton
+              icon={Sparkles}
+              label={t('assist.rewrite.open')}
+              disabled={false}
+              onClick={onRewrite}
+            />
+          </>
+        ) : null}
       </div>
     </BubbleMenu>
   );

@@ -2,6 +2,7 @@ import { createLazyRoute } from '@tanstack/react-router';
 import { Settings } from '@/features/Settings';
 import { ApiTokens } from '@/features/Settings/ApiTokens';
 import { Appearance } from '@/features/Settings/Appearance';
+import { Assist } from '@/features/Settings/Assist';
 import { Locales } from '@/features/Settings/Locales';
 import { Profile } from '@/features/Settings/Profile';
 import { Sessions } from '@/features/Settings/Sessions';
@@ -13,5 +14,6 @@ export const settingsLazyRoutes = {
   sessions: createLazyRoute('/app/settings/sessions')({ component: Sessions }),
   theme: createLazyRoute('/app/settings/theme')({ component: Appearance }),
   locales: createLazyRoute('/app/settings/locales')({ component: Locales }),
+  assist: createLazyRoute('/app/settings/assist')({ component: Assist }),
   apiTokens: createLazyRoute('/app/settings/api-tokens')({ component: ApiTokens }),
 };

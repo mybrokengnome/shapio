@@ -1,11 +1,14 @@
+import { CONTENT_OPS_RULES, type ContentOpsRule } from '@shapio/client';
 import type { ModelDefinition } from '@shapio/schema';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAssistEnabled } from '@/api/assist';
 import { IconTile } from '@/components/IconTile';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GROUP_PREVIEW, RULE_ICONS, RULE_TITLE_KEYS } from '../../constants';
 import type { FindingGroup } from '../../hooks/useFindingGroups';
+import { ProposeFixes } from '../../ProposeFixes';
 import { Finding } from '../Finding';
 
 type RuleGroupProps = {
@@ -15,11 +18,15 @@ type RuleGroupProps = {
   showLocale: boolean;
 };
 
+const isContentOpsRule = (rule: string): rule is ContentOpsRule =>
+  (CONTENT_OPS_RULES as readonly string[]).includes(rule);
+
 /** One rule's findings: a heading with the count, the first few rows, and "Show all" in place. */
 export const RuleGroup = ({ group, models, localeLabel, showLocale }: RuleGroupProps) => {
   const { t } = useTranslation();
   const headingId = useId();
   const [expanded, setExpanded] = useState(false);
+  const assistEnabled = useAssistEnabled();
   const shown = expanded ? group.findings : group.findings.slice(0, GROUP_PREVIEW);
   const hidden = group.findings.length - shown.length;
   return (
@@ -33,6 +40,7 @@ export const RuleGroup = ({ group, models, localeLabel, showLocale }: RuleGroupP
           {group.count.toLocaleString()}
         </Badge>
       </div>
+      {assistEnabled && isContentOpsRule(group.rule) ? <ProposeFixes rule={group.rule} /> : null}
       <ul className="divide-y">
         {shown.map((finding) => (
           <Finding

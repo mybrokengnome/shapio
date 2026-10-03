@@ -3,11 +3,13 @@ import { EditorContent } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useAssistEnabled } from '@/api/assist';
 import { logError, reportError } from '@/helpers/reportError';
 import { useRegisterCanvasHandle, type CanvasFieldHandle } from '../../../form/canvasHandles';
 import { useFieldsEnvironment } from '../../../form/context';
 import { createRelay } from '../../../helpers/relay';
 import type { BuiltInEditorProps } from '../../../types';
+import { useRewriteSelection } from '../../hooks/useRewriteSelection';
 import { useRichTextEditor } from '../../hooks/useRichTextEditor';
 import { LinkPopover } from '../../LinkPopover';
 import { Notes } from '../../Notes';
@@ -16,6 +18,7 @@ import { topLevelBlockAt } from '../blockMove';
 import { edgeTarget, insertBlockAt, turnInto, type BlockType, type PickedImage } from '../blocks';
 import { BubbleToolbar } from '../BubbleToolbar';
 import { canvasExtensions } from '../extensions';
+import { RewritePopover } from '../RewritePopover';
 import { createSlashBridge } from '../slashCommand';
 import { SlashMenu } from '../SlashMenu';
 import { uploadIntoEditor } from '../uploadFiles';
@@ -107,6 +110,8 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
     onLinkShortcut: () => setLinkOpen(true),
     refuseFileDrops: !canUpload,
   });
+  const assistEnabled = useAssistEnabled();
+  const rewrite = useRewriteSelection(editor);
   const pickImages = useCallback(async (): Promise<PickedImage[]> => {
     try {
       const picked = await context.pickMedia({ multiple: true, allowedKinds: ['image'] });
@@ -151,7 +156,12 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
       <EditorContent editor={editor} />
       {editable ? (
         <>
-          <BubbleToolbar editor={editor} onLink={() => setLinkOpen(true)} />
+          <BubbleToolbar
+            editor={editor}
+            onLink={() => setLinkOpen(true)}
+            onRewrite={assistEnabled ? rewrite.start : undefined}
+          />
+          {assistEnabled ? <RewritePopover editor={editor} rewrite={rewrite} /> : null}
           <LinkPopover
             editor={editor}
             active={editor.isActive('link')}

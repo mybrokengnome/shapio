@@ -89,11 +89,19 @@ const scaffoldWithEditor = (editorFile: string, name: string): string => {
   return projectDir;
 };
 
+type ProjectServerOptions = {
+  /** Extra environment for this server only (e.g. assist's AI_* settings pointing at a fake provider). */
+  env?: Readonly<Record<string, string>>;
+};
+
 /**
  * Starts a project server. `name` keeps each suite's project directory, database and log apart, so a
  * suite that needs a fresh instance (empty models and media) never shares state with another.
  */
-export const startProjectServer = async (name = 'content'): Promise<ProjectServer> => {
+export const startProjectServer = async (
+  name = 'content',
+  { env = {} }: ProjectServerOptions = {},
+): Promise<ProjectServer> => {
   const projectDir = scaffoldWithEditor(await buildExampleEditor(), name);
   const database = `${E2E_DATABASE}_${name}`;
   await runSql(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`);
@@ -121,6 +129,7 @@ export const startProjectServer = async (name = 'content'): Promise<ProjectServe
         RATE_LIMIT_MAX: '5000',
         EMAIL_TRANSPORT: 'console',
         MEDIA_PATH: join(projectDir, 'media'),
+        ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },

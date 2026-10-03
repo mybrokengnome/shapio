@@ -1,8 +1,9 @@
 import { ArrowDown, ArrowUp, Layers, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isNotFound } from '@/api/errors';
 import { useMediaAsset, useUpdateMediaAsset } from '@/api/media';
+import { SuggestAltButton } from '@/components/SuggestAltButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Variants } from '@/features/Media/Details/Variants';
 import { Thumbnail } from '@/features/Media/Thumbnail';
 import { describeError } from '@/helpers/describeError';
+import { FieldsEnvironmentContext } from '../../form/context';
 
 type AssetTileProps = {
   assetId: string;
@@ -38,6 +40,7 @@ export const AssetTile = ({
   const asset = useMediaAsset(assetId);
   const update = useUpdateMediaAsset();
   const [alt, setAlt] = useState<string | undefined>();
+  const locale = useContext(FieldsEnvironmentContext)?.locale;
   const name = asset.data?.filename ?? assetId;
   const altId = `${inputId}-alt-${index}`;
   return (
@@ -92,6 +95,14 @@ export const AssetTile = ({
               </p>
               {update.isError ? (
                 <p className="text-meta text-destructive">{describeError(update.error)}</p>
+              ) : null}
+              {canEditAlt ? (
+                <SuggestAltButton
+                  assetId={asset.data.id}
+                  mimeType={asset.data.mimeType}
+                  locale={locale}
+                  onSuggest={setAlt}
+                />
               ) : null}
               {canEditAlt ? (
                 <Button type="submit" size="sm" disabled={update.isPending || alt === asset.data.alt}>

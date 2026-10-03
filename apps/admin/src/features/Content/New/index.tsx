@@ -1,5 +1,6 @@
 import { linkOptions } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { Describe } from './Describe';
 import { Form } from './Form';
 
 const KINDS = ['collection', 'singleton'] as const;
@@ -13,6 +14,7 @@ export const New = () => {
       kinds={KINDS}
       back={linkOptions({ to: '/content' })}
       backLabel={t('content.title')}
+      intro={<Describe />}
     />
   );
 };

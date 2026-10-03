@@ -102,6 +102,11 @@ export const queryKeys = {
       model: (modelId: string, days: number) => ['develop', 'usage', 'model', modelId, days] as const,
     },
   },
+  /** Editor assists: on/off and usage (rarely changes), and content-ops runs by ID. */
+  assist: {
+    status: ['assist', 'status'] as const,
+    run: (runId: string) => ['assist', 'runs', runId] as const,
+  },
   /** Open content health findings (the Inbox) and entries per model (the sidebar's places). */
   contentHealth: {
     all: ['contentHealth'] as const,

@@ -5,6 +5,7 @@ import { useMediaAsset, useUpdateMediaAsset } from '@/api/media';
 import { FocalPoint } from '@/components/FocalPoint';
 import { FormError } from '@/components/FormError';
 import { SubmitButton } from '@/components/SubmitButton';
+import { SuggestAltButton } from '@/components/SuggestAltButton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useFieldsEnvironment } from '@/fields/form/context';
@@ -21,7 +22,7 @@ type CoverSettingsProps = { field: FieldDefinition };
 export const CoverSettings = ({ field }: CoverSettingsProps) => {
   const { t } = useTranslation();
   const altId = useId();
-  const { readOnly } = useFieldsEnvironment();
+  const { readOnly, locale } = useFieldsEnvironment();
   const { canWrite } = useMediaPermissions();
   const { value } = useTopLevelValue(field);
   const asset = useMediaAsset(typeof value === 'string' ? value : undefined);
@@ -70,6 +71,14 @@ export const CoverSettings = ({ field }: CoverSettingsProps) => {
         <p id={`${altId}-hint`} className="text-meta text-muted-foreground">
           {t('content.media.altHint')}
         </p>
+        {editable ? (
+          <SuggestAltButton
+            assetId={current.id}
+            mimeType={current.mimeType}
+            locale={locale}
+            onSuggest={setAlt}
+          />
+        ) : null}
       </form>
       {editable && current.mimeType.startsWith('image/') ? (
         <FocalPoint

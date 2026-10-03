@@ -71,3 +71,13 @@ export const formatRelativeTime = (
   const [, size, unit] = RELATIVE_UNITS.find(([limit]) => Math.abs(diff) < limit) ?? RELATIVE_UNITS[0]!;
   return relativeFormatterFor(language).format(Math.round(diff / size), unit);
 };
+
+/** A calendar month (`2026-10`, as usage periods are named) as "October 2026"; other input as it is. */
+export const formatMonth = (month: string, language: string = i18next.language): string => {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) {
+    return month;
+  }
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
+  return new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
+};

@@ -6,6 +6,7 @@ import { FormError } from '@/components/FormError';
 import { FormTextareaField } from '@/components/FormTextareaField';
 import { FormTextField } from '@/components/FormTextField';
 import { SubmitButton } from '@/components/SubmitButton';
+import { SuggestAltButton } from '@/components/SuggestAltButton';
 import { FieldGroup } from '@/components/ui/field';
 import { isImage } from '../../helpers/fileKind';
 import type { AssetDetailsValues } from '../../hooks/useAssetDetailsForm';
@@ -48,6 +49,13 @@ export const MetadataForm = ({ asset, form, onSubmit, pending, error, readOnly }
               label={t('media.fields.alt')}
               rows={2}
               placeholder={t('media.details.altHint')}
+            />
+          ) : null}
+          {image && !readOnly ? (
+            <SuggestAltButton
+              assetId={asset.id}
+              mimeType={asset.mimeType}
+              onSuggest={(alt) => form.setValue('alt', alt, { shouldDirty: true, shouldValidate: true })}
             />
           ) : null}
           <FormTextareaField

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRelativeTime } from './formatDate';
+import { formatMonth, formatRelativeTime } from './formatDate';
 
 const NOW = Date.parse('2026-10-02T12:00:00Z');
 const relative = (iso: string) => formatRelativeTime(iso, { now: NOW, language: 'en' });
@@ -23,5 +23,13 @@ describe('formatRelativeTime', () => {
     expect(relative('')).toBe('');
     expect(formatRelativeTime(null)).toBe('');
     expect(relative('not a date')).toBe('');
+  });
+});
+
+describe('formatMonth', () => {
+  it('names a usage month, and leaves anything else as it is', () => {
+    expect(formatMonth('2026-10', 'en')).toBe('October 2026');
+    expect(formatMonth('2026-01', 'en')).toBe('January 2026');
+    expect(formatMonth('soon', 'en')).toBe('soon');
   });
 });

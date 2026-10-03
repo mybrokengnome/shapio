@@ -315,6 +315,24 @@ The one blocking dialog, for irreversible acknowledgements only (see Dialogs). F
 While `when`, in-app navigation asks before leaving and the browser warns on reload. The copy defaults to
 "Discard unsaved changes?".
 
+### Assist
+
+Editor assists show only while the server says assist is on (`useAssistEnabled()` from `api/assist`, one
+cached read of `GET /assist/status`); with it off they render nothing. Every result is a proposal the person
+reviews: it fills an input, replaces a selection on request, or lands as a draft. Nothing publishes.
+
+**`AssistButton`** `ButtonProps & { pending; pendingLabel; type?: 'button' | 'submit' }`
+Runs an assist: a sparkle icon (spinner and `pendingLabel` while the model works), `ghost`/`sm` by default.
+
+**`AssistError`** `{ error; id?; className? }`
+Why an assist failed, inline where it was asked for (`role="alert"`, 13px destructive): the per-actor rate
+limit and every `ASSIST_*` code have their own sentence (`describeAssistError`), anything else the server's
+message.
+
+**`SuggestAltButton`** `{ assetId; mimeType; locale?; onSuggest; disabled?; className? }`
+"Suggest alt text" beside an alt input (rich-text image, media field, cover, library details). Images only;
+`onSuggest` puts the proposal in the caller's input and the person saves.
+
 ### Primitives (`components/ui`)
 
 - `Button` variants: `default` (primary), `outline`, `ghost`, `destructive`, `destructive-ghost`

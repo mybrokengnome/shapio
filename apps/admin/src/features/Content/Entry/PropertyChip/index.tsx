@@ -1,7 +1,8 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { effectiveLayout, type FieldDefinition } from '@shapio/schema';
 import { CircleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAssistEnabled } from '@/api/assist';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useEntryForm, useFieldsEnvironment } from '@/fields/form/context';
 import { TopLevelField } from '@/fields/form/TopLevelField';
@@ -9,7 +10,9 @@ import { countIssuesUnder, issuesByPath } from '@/fields/helpers/issues';
 import { useTopLevelValue } from '@/fields/hooks/useTopLevelValue';
 import { ScopeIcon } from '@/fields/ScopeIcon';
 import { cn } from '@/helpers/cn';
+import { isSummarizable } from '../helpers/assistEligibility';
 import { PropertyValue } from '../PropertyValue';
+import { SummarizeAction } from '../SummarizeAction';
 
 type PropertyChipProps = { field: FieldDefinition };
 
@@ -24,6 +27,8 @@ export const PropertyChip = ({ field }: PropertyChipProps) => {
   const [open, setOpen] = useState(false);
   const path = `/${field.apiKey}`;
   const problems = useEntryForm((state) => countIssuesUnder(issuesByPath(state.issues), path));
+  const assistEnabled = useAssistEnabled();
+  const summarizable = useMemo(() => isSummarizable(effectiveLayout(model), field), [model, field]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -48,6 +53,7 @@ export const PropertyChip = ({ field }: PropertyChipProps) => {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))]">
         <TopLevelField field={field} />
+        {assistEnabled && summarizable ? <SummarizeAction field={field} /> : null}
       </PopoverContent>
     </Popover>
   );

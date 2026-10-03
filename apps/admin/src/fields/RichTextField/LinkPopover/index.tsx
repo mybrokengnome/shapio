@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { normalizeHref } from '../richTextDocument';
+import { selectionAnchor } from '../selectionAnchor';
 
 type LinkPopoverProps = {
   editor: Editor;
@@ -21,18 +22,6 @@ type LinkPopoverProps = {
    */
   anchorToSelection?: boolean;
 };
-
-/** Where the selection is on screen, for a popover anchored to it. */
-const selectionAnchor = (editor: Editor) => ({
-  current: {
-    getBoundingClientRect: () => {
-      const { from, to } = editor.state.selection;
-      const start = editor.view.coordsAtPos(from);
-      const end = editor.view.coordsAtPos(to);
-      return new DOMRect(start.left, start.top, Math.max(end.right - start.left, 1), end.bottom - start.top);
-    },
-  },
-});
 
 /** Add, change or remove the link on the selection (Mod+Shift+K). Only safe protocols are accepted. */
 export const LinkPopover = ({

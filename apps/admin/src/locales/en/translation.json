@@ -141,7 +141,20 @@
       "SITE_FORBIDDEN": "You have no role on this site.",
       "SITE_MISMATCH": "This credential belongs to another site.",
       "SITE_NOT_FOUND": "That site doesn't exist.",
-      "INVALID_SITES": "One of the chosen sites doesn't exist."
+      "INVALID_SITES": "One of the chosen sites doesn't exist.",
+      "ASSIST_DISABLED": "Assist is off on this server.",
+      "ASSIST_PROVIDER_ERROR": "The model provider returned an error. Try again in a moment.",
+      "ASSIST_PROVIDER_AUTH": "The model provider refused this server's credentials. Ask whoever runs Shapio to check the assist settings.",
+      "ASSIST_PROVIDER_BUSY": "The model provider is busy. Try again in a moment.",
+      "ASSIST_INVALID_OUTPUT": "The model's answer couldn't be used. Try again, or rephrase.",
+      "ASSIST_DECLINED": "The model declined this request.",
+      "ASSIST_VISION_UNSUPPORTED": "The configured model can't read images.",
+      "ASSIST_NOT_AN_IMAGE": "Alt text can only be suggested for images.",
+      "ASSIST_FIELD_NOT_SUMMARIZABLE": "This field can't be filled with a summary.",
+      "ASSIST_NOTHING_TO_SUMMARIZE": "There is no saved body text to summarize yet.",
+      "ASSIST_NOT_LOCALIZED": "This content type isn't localized.",
+      "ASSIST_SAME_LOCALE": "Pick a different locale to translate from.",
+      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists."
     }
   },
   "notFound": {
@@ -434,7 +447,8 @@
     "sessions": "Sessions",
     "appearance": "Theme",
     "locales": "Locales",
-    "apiTokens": "API tokens"
+    "apiTokens": "API tokens",
+    "assist": "Assist"
   },
   "profile": {
     "title": "Profile",
@@ -689,7 +703,13 @@
       "webhookRedeliver": "Redelivered webhook",
       "webhookRotateSecret": "Rotated webhook secret",
       "webhookTest": "Tested webhook",
-      "webhookUpdate": "Updated webhook"
+      "webhookUpdate": "Updated webhook",
+      "assistAltText": "Suggested alt text with assist",
+      "assistContentOps": "Proposed fixes with assist",
+      "assistRewrite": "Rewrote text with assist",
+      "assistSchemaDraft": "Proposed content types with assist",
+      "assistSummarize": "Summarized with assist",
+      "assistTranslate": "Translated with assist"
     },
     "targets": {
       "adminInvitation": "Invitation",
@@ -2853,5 +2873,94 @@
     "deleteConsequence": "Its tokens, webhooks, deployment connections and role assignments go with it.",
     "deleted": "{{name}} deleted.",
     "everySite": "Every site"
+  },
+  "assist": {
+    "working": "Writing…",
+    "discard": "Discard",
+    "truncated": "Shortened to fit the field's limit.",
+    "errors": {
+      "rateLimited": "Too many assist requests. Try again in a minute.",
+      "runFailed": "The proposal run failed."
+    },
+    "rewrite": {
+      "open": "Rewrite…",
+      "title": "Rewrite the selection",
+      "instruction": "Instruction",
+      "instructionPlaceholder": "Friendlier, for a general audience",
+      "marksHint": "The proposal is plain text: bold, italic, links and code in the selection are not kept when you replace it.",
+      "run": "Rewrite",
+      "shorten": "Shorten",
+      "expand": "Expand",
+      "proposal": "Proposed by {{model}}",
+      "replace": "Replace selection",
+      "stale": "The selected text changed meanwhile. Select it again and rewrite.",
+      "tooLong": "Select less text (at most {{max}} characters)."
+    },
+    "altText": {
+      "suggest": "Suggest alt text",
+      "pending": "Looking at the image…"
+    },
+    "saveFirst": "Save your changes first: assist reads the saved version.",
+    "saveFailed": "Your changes couldn't be saved, so assist didn't run. Check the document and try again.",
+    "summarize": {
+      "run": "Summarize from body",
+      "hint": "Writes a summary of the body into this field. Review it before you save: it's a proposal."
+    },
+    "translate": {
+      "run": "Translate {{locale}} from {{from}}",
+      "pending": "Translating into {{locale}}…"
+    },
+    "proposal": {
+      "title": "Proposed by {{model}}",
+      "description": "Translated from {{from}} as a draft. Review it before publishing.",
+      "issues": "Translation issues",
+      "dismiss": "Dismiss"
+    },
+    "describe": {
+      "title": "Describe it",
+      "label": "What will editors write here?",
+      "hint": "A model proposes the content types and fields from your description. Nothing changes until you ship the change set they go into.",
+      "placeholder": "Recipes with a title, a cover photo, ingredients, steps and a cooking time",
+      "run": "Propose content types",
+      "proposedBy": "Proposed by {{model}}. Review it in a change set before shipping.",
+      "proposalLabel": "Proposed content types",
+      "fieldType": "({{type}})",
+      "add": "Add to change set",
+      "setTitle": "Content types proposed by {{model}}"
+    },
+    "fixes": {
+      "propose": "Propose fixes",
+      "again": "Propose again",
+      "running": "Proposing fixes…",
+      "review_one": "Review {{count}} proposal",
+      "review_other": "Review {{count}} proposals",
+      "none": "No fixes to propose.",
+      "openSet_one": "{{count}} draft in a change set: review it",
+      "openSet_other": "{{count}} drafts in a change set: review them",
+      "nothingWritten": "No drafts written.",
+      "skipped_one": "{{count}} left as it is",
+      "skipped_other": "{{count}} left as they are",
+      "altTitle": "Proposed alt text",
+      "altDescription": "Proposed by {{model}}. Accepting saves the text to the file in the library.",
+      "accept": "Accept",
+      "reject": "Reject",
+      "accepted": "Accepted",
+      "rejected": "Rejected"
+    },
+    "settings": {
+      "status": "Status",
+      "on": "On",
+      "off": "Off",
+      "provider": "Provider",
+      "model": "Model",
+      "offDescription": "Editor assists are off: nothing is ever sent to a model provider. Whoever runs Shapio can turn them on with environment variables (AI_PROVIDER and AI_MODEL) and a restart.",
+      "guide": "How to set up assist",
+      "usage": "Usage in {{month}}",
+      "runs": "Requests",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "tryIt": "Try it",
+      "tryText": "Text"
+    }
   }
 }

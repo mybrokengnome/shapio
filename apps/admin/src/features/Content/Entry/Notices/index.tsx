@@ -1,7 +1,9 @@
 import type { EntryReferrer } from '@shapio/client';
 import type { ModelDefinition } from '@shapio/schema';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AssistProposalBanner } from '../AssistProposalBanner';
 import { ConflictBanner } from '../ConflictBanner';
 import { PublishOthersAlert } from '../PublishOthersAlert';
 import { ReferencedAlert } from '../ReferencedAlert';
@@ -12,6 +14,8 @@ type NoticesProps = {
   onReload: (keepChanges: boolean) => void;
   /** The locale being started (this entry has no version in it yet). */
   newLocaleLabel: string | undefined;
+  /** An action for the locale being started ("Translate from English", when assist is on). */
+  newLocaleAction?: ReactNode;
   referrers: readonly EntryReferrer[];
   models: ReadonlyMap<string, ModelDefinition>;
   onDismissReferrers: () => void;
@@ -29,6 +33,7 @@ export const Notices = ({
   reloading,
   onReload,
   newLocaleLabel,
+  newLocaleAction,
   referrers,
   models,
   onDismissReferrers,
@@ -51,9 +56,13 @@ export const Notices = ({
       ) : null}
       {newLocaleLabel ? (
         <Alert variant="info">
-          <AlertDescription>{t('content.locales.missing', { locale: newLocaleLabel })}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{t('content.locales.missing', { locale: newLocaleLabel })}</p>
+            {newLocaleAction}
+          </AlertDescription>
         </Alert>
       ) : null}
+      <AssistProposalBanner labelOf={labelOf} />
       {referrers.length > 0 ? (
         <ReferencedAlert referrers={referrers} models={models} onDismiss={onDismissReferrers} />
       ) : null}

@@ -1,5 +1,6 @@
 import type { RequestFn } from '../request.js';
 import { createAppUsersApi } from './appUsers.js';
+import { createAssistApi } from './assist.js';
 import { createChangeSetsApi } from './changeSets.js';
 import { createContentApi } from './content.js';
 import { createEditingApi } from './editing.js';
@@ -115,6 +116,7 @@ export const createAdminApi = (request: RequestFn) => ({
   ...createChangeSetsApi(request),
   ...createUsageApi(request),
   ...createSitesApi(request),
+  ...createAssistApi(request),
 });
 
 export type AdminApi = ReturnType<typeof createAdminApi>;
@@ -133,3 +135,5 @@ export { SITE_HEADER, SITES_PATHS } from './sites.js';
 export { toContentQueryString } from './contentQuery.js';
 export { buildUploadForm, resolveUploadUrl } from './media.js';
 export { HEALTH_RULES } from './editingTypes.js';
+export { ASSIST_PATHS } from './assist.js';
+export { CONTENT_OPS_RULES } from './assistTypes.js';

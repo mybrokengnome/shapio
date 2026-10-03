@@ -10,13 +10,17 @@ import { expectVisibleFocus, waitForAnimations } from './keyboard';
  */
 export type KeyboardSuite = { server: ProjectServer; page: Page; api: AdminApi };
 
-/** Starts a project server named `name`, creates the owner and returns a signed-in 1440×900 page. */
+/**
+ * Starts a project server named `name` (with `env` added to its environment), creates the owner and returns
+ * a signed-in 1440×900 page. Other specs that need their own server (assist) use it too.
+ */
 export const openKeyboardSuite = async (
   browser: Browser,
   name: string,
   pageErrors: string[],
+  env?: Readonly<Record<string, string>>,
 ): Promise<KeyboardSuite> => {
-  const server = await startProjectServer(name);
+  const server = await startProjectServer(name, env ? { env } : {});
   const setupContext = await browser.newContext();
   const setup = await setupContext.request.post(`${server.adminApi}/setup`, {
     data: { name: OWNER.name, email: OWNER.email, password: OWNER.password },
