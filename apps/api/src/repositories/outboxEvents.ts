@@ -1,4 +1,4 @@
-import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB, OutboxEvents } from '../db/types.js';
 
@@ -37,17 +37,17 @@ export const lockNextUndispatched = (
 export const markDispatched = (id: string, now: Date, trx: Executor = db) =>
   trx
     .updateTable('outbox_events')
-    .set({
+    .set((eb) => ({
       dispatched_at: now,
-      dispatch_attempts: sql<number>`dispatch_attempts + 1`,
+      dispatch_attempts: eb('dispatch_attempts', '+', eb.lit(1)),
       last_dispatch_error: null,
-    })
+    }))
     .where('id', '=', id)
     .execute();
 
 export const recordDispatchFailure = (id: string, error: string, trx: Executor = db) =>
   trx
     .updateTable('outbox_events')
-    .set({ dispatch_attempts: sql<number>`dispatch_attempts + 1`, last_dispatch_error: error })
+    .set((eb) => ({ dispatch_attempts: eb('dispatch_attempts', '+', eb.lit(1)), last_dispatch_error: error }))
     .where('id', '=', id)
     .execute();

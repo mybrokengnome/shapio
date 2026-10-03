@@ -8,6 +8,7 @@ import {
 import type { Transaction } from 'kysely';
 import { PRIMARY_SITE_ID } from '../../constants/sites.js';
 import type { Database } from '../../db/index.js';
+import { isUniqueViolation } from '../../db/sql/errors.js';
 import type { DB } from '../../db/types.js';
 import { writeOutboxEvent } from '../../jobs/outbox.js';
 import type { Principal } from '../../permissions/types.js';
@@ -74,9 +75,6 @@ export type ActivationResult = {
   revisionId: string | null;
   schemaVersion: number;
 };
-
-const isUniqueViolation = (error: unknown) =>
-  typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
 
 const referenceIssues = (
   active: readonly SchemaDefinition[],

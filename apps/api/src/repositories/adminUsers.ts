@@ -1,12 +1,7 @@
-import {
-  sql,
-  type Insertable,
-  type Kysely,
-  type Selectable,
-  type Transaction,
-  type Updateable,
-} from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
+import { emptyJsonArray, jsonAgg, jsonObject } from '../db/sql/json.js';
+import { emptyArray, sortedArrayAgg } from '../db/sql/values.js';
 import type { AdminUsers, DB } from '../db/types.js';
 import type { RoleAssignment } from '../permissions/types.js';
 
@@ -45,10 +40,10 @@ const withRoleIds = (trx: Executor) =>
         .coalesce(
           eb
             .selectFrom('admin_user_roles')
-            .select(sql<string[]>`array_agg(role_id order by role_id)`.as('ids'))
+            .select(sortedArrayAgg<string>('role_id').as('ids'))
             .whereRef('admin_user_roles.admin_user_id', '=', 'admin_users.id')
             .where('admin_user_roles.site_id', 'is', null),
-          sql<string[]>`'{}'::uuid[]`,
+          emptyArray<string>('uuid'),
         )
         .as('network_role_ids'),
     )
@@ -57,12 +52,14 @@ const withRoleIds = (trx: Executor) =>
         .coalesce(
           eb
             .selectFrom('admin_user_roles')
-            .select(
-              sql<RoleAssignment[]>`jsonb_agg(jsonb_build_object('roleId', role_id, 'siteId', site_id)
-                order by role_id, site_id nulls first)`.as('assignments'),
+            .select((sub) =>
+              jsonAgg<RoleAssignment>(
+                jsonObject({ roleId: sub.ref('role_id'), siteId: sub.ref('site_id') }),
+                [{ column: 'role_id' }, { column: 'site_id', nulls: 'first' }],
+              ).as('assignments'),
             )
             .whereRef('admin_user_roles.admin_user_id', '=', 'admin_users.id'),
-          sql<RoleAssignment[]>`'[]'::jsonb`,
+          emptyJsonArray<RoleAssignment>(),
         )
         .as('assignments'),
     );

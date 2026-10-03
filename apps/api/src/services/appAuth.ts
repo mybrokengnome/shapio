@@ -1,8 +1,8 @@
 import type { AppAuthRuntime } from '../appAuth/runtime.js';
 import { db } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import { AppError } from '../helpers/appError.js';
 import { hashPassword, verifyPassword } from '../helpers/password.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import type { AppUserPrincipal, Principal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import type { ActorContext, ClientInfo, SiteActorContext, SiteRef } from './actorContext.js';

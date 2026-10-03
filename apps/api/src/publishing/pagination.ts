@@ -1,4 +1,7 @@
-import { sql, type RawBuilder } from 'kysely';
+import type { RawBuilder } from 'kysely';
+import { rowLessThan } from '../db/sql/rows.js';
+import { timestampCursorText, timestampParam } from '../db/sql/time.js';
+import { uuidParam } from '../db/sql/values.js';
 import { AppError } from '../helpers/appError.js';
 
 /**
@@ -12,12 +15,11 @@ export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 200;
 
 /** The microsecond-precise cursor value of a timestamp column. */
-export const cursorAt = (column: string): RawBuilder<string> =>
-  sql<string>`to_char(${sql.ref(column)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+export const cursorAt = (column: string): RawBuilder<string> => timestampCursorText(column);
 
 /** Rows strictly after the cursor in `(at desc, id desc)` order. */
 export const beforeCursor = (atColumn: string, idColumn: string, cursor: KeysetCursor) =>
-  sql<boolean>`(${sql.ref(atColumn)}, ${sql.ref(idColumn)}) < (cast(${cursor.at} as timestamptz), cast(${cursor.id} as uuid))`;
+  rowLessThan([atColumn, idColumn], [timestampParam(cursor.at), uuidParam(cursor.id)]);
 
 export const encodeCursor = (cursor: KeysetCursor): string =>
   Buffer.from(JSON.stringify([cursor.at, cursor.id]), 'utf8').toString('base64url');

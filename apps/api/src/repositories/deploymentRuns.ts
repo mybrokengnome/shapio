@@ -1,5 +1,6 @@
-import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { jsonArrayAppend } from '../db/sql/json.js';
 import type { DB, DeploymentRuns } from '../db/types.js';
 import { beforeCursor, cursorAt, type KeysetCursor } from '../publishing/pagination.js';
 
@@ -69,28 +70,66 @@ export const list = (
     .limit(limit)
     .execute();
 
-/** The newest run of each connection, and the deployed run with the highest snapshot (what is live). */
-export const latestPerConnection = (connectionIds: readonly string[], trx: Executor = db) =>
-  connectionIds.length === 0
-    ? Promise.resolve([])
-    : withConnection(trx)
-        .where('deployment_runs.connection_id', 'in', connectionIds)
-        .distinctOn('deployment_runs.connection_id')
-        .orderBy('deployment_runs.connection_id')
-        .orderBy('deployment_runs.created_at', 'desc')
-        .execute();
+/**
+ * The first run of each connection in a window's order: the query ranks runs per connection with
+ * `row_number()` and keeps rank 1 (portable SQL; PostgreSQL's `DISTINCT ON` is not). The rank column is
+ * dropped from the rows.
+ */
+const firstOfEachConnection = (rows: Array<RunWithConnectionRow & { rank_in_connection: string }>) =>
+  rows.map(({ rank_in_connection: _rank, ...run }): RunWithConnectionRow => run);
 
-export const currentPerConnection = (connectionIds: readonly string[], trx: Executor = db) =>
+/** The newest run of each connection, and the deployed run with the highest snapshot (what is live). */
+export const latestPerConnection = async (connectionIds: readonly string[], trx: Executor = db) =>
   connectionIds.length === 0
-    ? Promise.resolve([])
-    : withConnection(trx)
-        .where('deployment_runs.connection_id', 'in', connectionIds)
-        .where('deployment_runs.status', '=', 'deployed')
-        .distinctOn('deployment_runs.connection_id')
-        .orderBy('deployment_runs.connection_id')
-        .orderBy(sql`deployment_runs.snapshot_seq desc nulls last`)
-        .orderBy('deployment_runs.finished_at', 'desc')
-        .execute();
+    ? []
+    : firstOfEachConnection(
+        await trx
+          .selectFrom(
+            withConnection(trx)
+              .select((eb) =>
+                eb.fn
+                  .agg<string>('row_number')
+                  .over((over) =>
+                    over
+                      .partitionBy('deployment_runs.connection_id')
+                      .orderBy('deployment_runs.created_at', 'desc'),
+                  )
+                  .as('rank_in_connection'),
+              )
+              .where('deployment_runs.connection_id', 'in', connectionIds)
+              .as('r'),
+          )
+          .selectAll('r')
+          .where('r.rank_in_connection', '=', '1')
+          .execute(),
+      );
+
+export const currentPerConnection = async (connectionIds: readonly string[], trx: Executor = db) =>
+  connectionIds.length === 0
+    ? []
+    : firstOfEachConnection(
+        await trx
+          .selectFrom(
+            withConnection(trx)
+              .select((eb) =>
+                eb.fn
+                  .agg<string>('row_number')
+                  .over((over) =>
+                    over
+                      .partitionBy('deployment_runs.connection_id')
+                      .orderBy('deployment_runs.snapshot_seq', (order) => order.desc().nullsLast())
+                      .orderBy('deployment_runs.finished_at', 'desc'),
+                  )
+                  .as('rank_in_connection'),
+              )
+              .where('deployment_runs.connection_id', 'in', connectionIds)
+              .where('deployment_runs.status', '=', 'deployed')
+              .as('r'),
+          )
+          .selectAll('r')
+          .where('r.rank_in_connection', '=', '1')
+          .execute(),
+      );
 
 /** Inserts a queued run unless one is already queued for the connection (coalescing). */
 export const insertQueued = (row: Insertable<DeploymentRuns>, trx: Executor = db) =>
@@ -147,7 +186,7 @@ export const transition = (id: string, next: RunTransition, trx: Executor = db) 
     .set({
       status: next.status,
       status_rank: next.rank,
-      timeline: sql`timeline || ${JSON.stringify([next.event])}::jsonb`,
+      timeline: jsonArrayAppend('timeline', next.event),
       updated_at: next.now,
       ...(next.providerRef !== undefined ? { provider_ref: next.providerRef } : {}),
       ...(next.logUrl !== undefined ? { log_url: next.logUrl } : {}),
@@ -165,7 +204,7 @@ export const transition = (id: string, next: RunTransition, trx: Executor = db) 
 export const appendTimeline = (id: string, event: unknown, now: Date, trx: Executor = db) =>
   trx
     .updateTable('deployment_runs')
-    .set({ timeline: sql`timeline || ${JSON.stringify([event])}::jsonb`, updated_at: now })
+    .set({ timeline: jsonArrayAppend('timeline', event), updated_at: now })
     .where('id', '=', id)
     .execute();
 

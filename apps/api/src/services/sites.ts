@@ -1,7 +1,7 @@
 import { db } from '../db/index.js';
 import type { Database } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import { AppError } from '../helpers/appError.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { assignedSiteIdsOf } from '../permissions/sites.js';
 import type { AdminPrincipal, TokenPrincipal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';

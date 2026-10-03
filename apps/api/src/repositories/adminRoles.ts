@@ -81,7 +81,7 @@ export const insertPermissionsIfAbsent = (rows: readonly NewAdminRolePermission[
     : trx
         .insertInto('admin_role_permissions')
         .values([...rows])
-        .onConflict((oc) => oc.constraint('admin_role_permissions_grant_uq').doNothing())
+        .onConflict((oc) => oc.columns(['role_id', 'action', 'model_id']).doNothing())
         .returning('id')
         .execute();
 

@@ -1,5 +1,6 @@
-import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { greatestOf } from '../db/sql/time.js';
 import type { DB, Jobs } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -31,13 +32,13 @@ type ClaimOptions = { workerId: string; limit: number; now: Date; leaseUntil: Da
 export const claimRunnable = ({ workerId, limit, now, leaseUntil }: ClaimOptions, trx: Executor = db) =>
   trx
     .updateTable('jobs')
-    .set({
+    .set((eb) => ({
       status: 'running',
       locked_by: workerId,
       locked_until: leaseUntil,
-      attempts: sql<number>`attempts + 1`,
+      attempts: eb('attempts', '+', eb.lit(1)),
       updated_at: now,
-    })
+    }))
     .where('id', 'in', (eb) =>
       eb
         .selectFrom('jobs')
@@ -125,14 +126,14 @@ export const markDead = async (fence: LeaseFence, error: string, now: Date, trx:
 export const release = async (fence: LeaseFence, now: Date, trx: Executor = db) =>
   applied(
     await fenced(trx, fence)
-      .set({
+      .set((eb) => ({
         status: 'pending',
         run_at: now,
-        attempts: sql<number>`greatest(attempts - 1, 0)`,
+        attempts: greatestOf(eb('attempts', '-', eb.lit(1)), eb.lit(0)),
         locked_by: null,
         locked_until: null,
         updated_at: now,
-      })
+      }))
       .executeTakeFirst(),
   );
 

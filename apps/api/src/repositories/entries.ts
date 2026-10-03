@@ -1,4 +1,4 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 
@@ -172,7 +172,7 @@ export const listLiveIdsAfter = (
   if (input.modelIds) {
     query =
       input.modelIds.length === 0
-        ? query.where(sql<boolean>`false`)
+        ? query.where((eb) => eb.lit(false))
         : query.where('model_id', 'in', input.modelIds);
   }
   return query.execute();

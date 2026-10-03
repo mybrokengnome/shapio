@@ -1,5 +1,7 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { startsWith } from '../db/sql/text.js';
+import { timestampCursorText, timestampParam } from '../db/sql/time.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -71,13 +73,13 @@ export const listEvents = (
         )
         .as('actor_name'),
       eb.fn.coalesce('u.email', 'au.email').as('actor_email'),
-      sql<string>`to_char(e.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('cursor_at'),
+      timestampCursorText('e.occurred_at').as('cursor_at'),
     ])
     .$if(filter.actorType !== undefined, (qb) => qb.where('e.actor_type', '=', filter.actorType ?? ''))
     .$if(filter.actorId !== undefined, (qb) => qb.where('e.actor_id', '=', filter.actorId ?? ''))
     .$if(filter.action !== undefined, (qb) => qb.where('e.action', '=', filter.action ?? ''))
     .$if(filter.actionPrefix !== undefined, (qb) =>
-      qb.where('e.action', 'like', `${(filter.actionPrefix ?? '').replace(/[\\%_]/g, '\\$&')}.%`),
+      qb.where((eb) => startsWith(eb.ref('e.action'), `${filter.actionPrefix ?? ''}.`)),
     )
     .$if(filter.targetType !== undefined, (qb) => qb.where('e.target_type', '=', filter.targetType ?? ''))
     .$if(filter.targetId !== undefined, (qb) => qb.where('e.target_id', '=', filter.targetId ?? ''))
@@ -85,7 +87,7 @@ export const listEvents = (
     .$if(filter.from !== undefined, (qb) => qb.where('e.occurred_at', '>=', filter.from ?? new Date(0)))
     .$if(filter.to !== undefined, (qb) => qb.where('e.occurred_at', '<', filter.to ?? new Date(0)))
     .$if(cursor !== undefined, (qb) => {
-      const at = sql<Date>`cast(${cursor?.occurredAt ?? null} as timestamptz)`;
+      const at = timestampParam(cursor?.occurredAt ?? null);
       return qb.where((eb) =>
         eb.or([
           eb('e.occurred_at', '<', at),

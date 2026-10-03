@@ -10,9 +10,9 @@ import { OAuthProviderError, type OAuthProfile } from '../appAuth/oauth/types.js
 import type { AppAuthRuntime } from '../appAuth/runtime.js';
 import { OAUTH_LOGIN_CODE_TTL_MS, OAUTH_STATE_TTL_MS } from '../constants/appAuth.js';
 import { db } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { generateToken, hashToken, safeEqual } from '../helpers/tokens.js';
 import { siteMismatch } from '../permissions/sites.js';
 import * as appLoginCodesRepository from '../repositories/appLoginCodes.js';

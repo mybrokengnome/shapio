@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import { AppError } from '../helpers/appError.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as mediaFoldersRepository from '../repositories/mediaFolders.js';
 import type { MediaFolderRow } from '../repositories/mediaFolders.js';

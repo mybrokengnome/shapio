@@ -1,11 +1,4 @@
-import {
-  sql,
-  type Insertable,
-  type Kysely,
-  type Selectable,
-  type Transaction,
-  type Updateable,
-} from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
 import type { ChangeSets, DB } from '../db/types.js';
 
@@ -52,7 +45,7 @@ export const update = (
 ) =>
   trx
     .updateTable('change_sets')
-    .set({ ...changes, version: sql<number>`version + 1`, updated_at: now })
+    .set((eb) => ({ ...changes, version: eb('version', '+', eb.lit(1)), updated_at: now }))
     .where('id', '=', id)
     .$if(expectedVersion !== undefined, (qb) => qb.where('version', '=', expectedVersion ?? 0))
     .returningAll()

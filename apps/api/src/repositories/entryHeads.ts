@@ -1,7 +1,8 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import type { HeadState } from '../content/model.js';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
+import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 import { entrySiteOf } from './entries.js';
 
@@ -22,7 +23,7 @@ const COLUMNS = [
   'updated_at',
 ] as const;
 
-const NEXT_CHANGE_SEQ = sql<string>`nextval('entry_heads_change_seq')`;
+const NEXT_CHANGE_SEQ = nextSequenceValue('entry_heads_change_seq');
 
 /** Every head of an entry, locked for the rest of the transaction. */
 export const lockForEntry = (entryId: string, trx: Transaction<DB>) =>
@@ -74,14 +75,14 @@ export const insert = (head: HeadWrite, trx: Executor = db) =>
 export const update = (head: HeadWrite, trx: Executor = db) =>
   trx
     .updateTable('entry_heads')
-    .set({
+    .set((eb) => ({
       revision_id: head.revisionId,
       data: head.data,
       autosaved_at: head.autosavedAt,
-      version: sql<number>`version + 1`,
+      version: eb('version', '+', eb.lit(1)),
       change_seq: NEXT_CHANGE_SEQ,
       updated_at: head.now,
-    })
+    }))
     .where('entry_id', '=', head.entryId)
     .where('locale', '=', head.locale)
     .where('state', '=', head.state)

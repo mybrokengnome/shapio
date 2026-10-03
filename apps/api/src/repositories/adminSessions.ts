@@ -1,5 +1,6 @@
-import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { emptyJsonArray, jsonAgg, jsonObject } from '../db/sql/json.js';
 import type { AdminSessions, DB } from '../db/types.js';
 import type { RoleAssignment } from '../permissions/types.js';
 
@@ -34,12 +35,14 @@ export const findActiveByTokenHash = (tokenHash: string, trx: Executor = db) =>
         .coalesce(
           eb
             .selectFrom('admin_user_roles')
-            .select(
-              sql<RoleAssignment[]>`jsonb_agg(jsonb_build_object('roleId', role_id, 'siteId', site_id)
-                order by role_id, site_id nulls first)`.as('assignments'),
+            .select((sub) =>
+              jsonAgg<RoleAssignment>(
+                jsonObject({ roleId: sub.ref('role_id'), siteId: sub.ref('site_id') }),
+                [{ column: 'role_id' }, { column: 'site_id', nulls: 'first' }],
+              ).as('assignments'),
             )
             .whereRef('admin_user_roles.admin_user_id', '=', 'admin_sessions.admin_user_id'),
-          sql<RoleAssignment[]>`'[]'::jsonb`,
+          emptyJsonArray<RoleAssignment>(),
         )
         .as('assignments'),
     )

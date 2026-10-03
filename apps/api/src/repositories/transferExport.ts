@@ -1,5 +1,6 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { emptyArray, sortedArrayAgg } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -177,9 +178,9 @@ export const listAppUsers = (
           eb
             .selectFrom('app_user_roles')
             .innerJoin('app_roles', 'app_roles.id', 'app_user_roles.role_id')
-            .select(sql<string[]>`array_agg(app_roles.key order by app_roles.key)`.as('keys'))
+            .select(sortedArrayAgg<string>('app_roles.key').as('keys'))
             .whereRef('app_user_roles.app_user_id', '=', 'app_users.id'),
-          sql<string[]>`'{}'::text[]`,
+          emptyArray<string>('text'),
         )
         .as('role_keys'),
     ])

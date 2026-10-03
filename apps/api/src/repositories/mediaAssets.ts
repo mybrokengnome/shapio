@@ -1,5 +1,7 @@
 import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
+import { containsInsensitive, startsWith } from '../db/sql/text.js';
+import { timestampCursorText, timestampParam } from '../db/sql/time.js';
 import type { DB, MediaAssets } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -19,8 +21,6 @@ export type MediaAssetFilter = {
 
 /** Keyset cursor: (created_at, id) of the last row, created_at as ISO-8601 with microseconds. */
 export type MediaAssetCursor = { createdAt: string; id: string };
-
-const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
 const live = (trx: Executor) => trx.selectFrom('media_assets').where('deleted_at', 'is', null);
 
@@ -109,14 +109,7 @@ export const list = (
 ) =>
   live(trx)
     .selectAll()
-    .select((eb) =>
-      eb
-        .fn<string>('to_char', [
-          eb.fn('timezone', [eb.val('UTC'), eb.ref('created_at')]),
-          eb.val('YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-        ])
-        .as('cursor_at'),
-    )
+    .select(timestampCursorText('created_at').as('cursor_at'))
     .where('site_id', '=', siteId)
     .$if(filter.folderId !== undefined, (qb) =>
       filter.folderId === null
@@ -126,22 +119,22 @@ export const list = (
     .$if(filter.mimeType !== undefined, (qb) => {
       const mimeType = filter.mimeType ?? '';
       return mimeType.endsWith('/*')
-        ? qb.where('mime_type', 'like', `${escapeLike(mimeType.slice(0, -1))}%`)
+        ? qb.where((eb) => startsWith(eb.ref('mime_type'), mimeType.slice(0, -1)))
         : qb.where('mime_type', '=', mimeType);
     })
     .$if(filter.search !== undefined, (qb) => {
-      const pattern = `%${escapeLike(filter.search ?? '')}%`;
+      const search = filter.search ?? '';
       return qb.where((eb) =>
         eb.or([
-          eb('original_filename', 'ilike', pattern),
-          eb('alt', 'ilike', pattern),
-          eb('caption', 'ilike', pattern),
+          containsInsensitive(eb.ref('original_filename'), search),
+          containsInsensitive(eb.ref('alt'), search),
+          containsInsensitive(eb.ref('caption'), search),
         ]),
       );
     })
     .$if(cursor !== undefined, (qb) =>
       qb.where((eb) => {
-        const at = eb.cast<Date>(eb.val(cursor?.createdAt ?? null), 'timestamptz');
+        const at = timestampParam(cursor?.createdAt ?? null);
         return eb.or([
           eb('created_at', '<', at),
           eb.and([eb('created_at', '=', at), eb('id', '<', cursor?.id ?? '')]),

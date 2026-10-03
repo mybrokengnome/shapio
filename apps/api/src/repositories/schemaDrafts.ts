@@ -1,4 +1,4 @@
-import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB, SchemaDrafts } from '../db/types.js';
 
@@ -51,7 +51,7 @@ export const insert = (draft: SchemaDraftWrite, trx: Executor = db) =>
       updated_by_type: draft.updatedByType,
       updated_by_id: draft.updatedById,
     })
-    .onConflict((oc) => oc.constraint('schema_drafts_set_definition_uq').doNothing())
+    .onConflict((oc) => oc.columns(['change_set_id', 'definition_id']).doNothing())
     .returningAll()
     .executeTakeFirst();
 
@@ -65,16 +65,16 @@ export const update = (
 ) =>
   trx
     .updateTable('schema_drafts')
-    .set({
+    .set((eb) => ({
       kind: draft.kind,
       api_key: draft.apiKey,
       base_version: draft.baseVersion,
       definition: definitionJson(draft.definition),
       updated_by_type: draft.updatedByType,
       updated_by_id: draft.updatedById,
-      version: sql<number>`version + 1`,
+      version: eb('version', '+', eb.lit(1)),
       updated_at: now,
-    })
+    }))
     .where('id', '=', id)
     .where('version', '=', expectedVersion)
     .returningAll()

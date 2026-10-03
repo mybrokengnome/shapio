@@ -1,4 +1,4 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 
@@ -14,7 +14,7 @@ export const getSchemaVersion = async (executor: Executor = db): Promise<number>
 export const bumpSchemaVersion = async (trx: Executor, now: Date): Promise<number> => {
   const row = await trx
     .updateTable('system_versions')
-    .set({ schema_version: sql<number>`schema_version + 1`, updated_at: now })
+    .set((eb) => ({ schema_version: eb('schema_version', '+', eb.lit(1)), updated_at: now }))
     .returning('schema_version')
     .executeTakeFirstOrThrow();
   return row.schema_version;

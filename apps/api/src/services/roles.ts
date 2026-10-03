@@ -1,8 +1,8 @@
 import type { Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import type { FieldVisibilityLookup } from '../permissions/policy.js';
 import {
   CONTENT_ACTIONS,

@@ -1,5 +1,6 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { concat } from '../db/sql/text.js';
 import type { DB } from '../db/types.js';
 import { beforeCursor, cursorAt, type KeysetCursor } from '../publishing/pagination.js';
 
@@ -42,7 +43,7 @@ export const distinctTypes = async (trx: Executor = db): Promise<string[]> =>
 export const requeueDead = (id: string, now: Date, trx: Executor = db) =>
   trx
     .updateTable('jobs')
-    .set({
+    .set((eb) => ({
       status: 'pending',
       attempts: 0,
       run_at: now,
@@ -50,8 +51,13 @@ export const requeueDead = (id: string, now: Date, trx: Executor = db) =>
       locked_by: null,
       locked_until: null,
       updated_at: now,
-      last_error: sql<string>`case when last_error is null then null else 'Retried by an admin after: ' || last_error end`,
-    })
+      last_error: eb
+        .case()
+        .when('last_error', 'is', null)
+        .then(null)
+        .else(concat('Retried by an admin after: ', eb.ref('last_error')))
+        .end(),
+    }))
     .where('id', '=', id)
     .where('status', '=', 'dead')
     .returningAll()

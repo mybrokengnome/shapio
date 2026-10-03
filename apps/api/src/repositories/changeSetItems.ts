@@ -1,6 +1,9 @@
-import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
+import type { ExpressionBuilder, Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
-import type { ChangeSetItems, DB } from '../db/types.js';
+import { jsonObject } from '../db/sql/json.js';
+import { rowLessThan } from '../db/sql/rows.js';
+import { uuidParam } from '../db/sql/values.js';
+import type { ChangeSetItems, DB, JsonObject } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -18,15 +21,18 @@ export const listForSet = (changeSetId: string, executor: Executor = db) =>
     .orderBy('id')
     .execute();
 
-const nextPosition = (changeSetId: string) =>
-  sql<number>`(select coalesce(max(position) + 1, 0) from change_set_items where change_set_id = ${changeSetId})`;
+const nextPosition = (changeSetId: string) => (eb: ExpressionBuilder<DB, 'change_set_items'>) =>
+  eb
+    .selectFrom('change_set_items')
+    .select((sub) => sub.fn.coalesce(sub(sub.fn.max('position'), '+', sub.lit(1)), sub.lit(0)).as('next'))
+    .where('change_set_id', '=', changeSetId);
 
 /**
  * An item's site is a copy of its set's (sites plan §H). Composite foreign keys tie it to the set and to the
  * item's entry, so an item can never reference another site's entry: the insert fails instead.
  */
-const setSiteOf = (changeSetId: string) =>
-  sql<string>`(select site_id from change_sets where id = ${changeSetId})`;
+const setSiteOf = (changeSetId: string) => (eb: ExpressionBuilder<DB, 'change_set_items'>) =>
+  eb.selectFrom('change_sets').select('site_id').where('id', '=', changeSetId);
 
 /** Adds an entry item; undefined when the set already has this (entry, locale). */
 export const insertEntryItem = (
@@ -176,7 +182,15 @@ export const listUnassigned = (
       'd.model_id',
       'd.locale',
       'd.updated_at',
-      sql<'draft' | 'modified'>`case when p.entry_id is null then 'draft' else 'modified' end`.as('status'),
+      (eb) =>
+        eb
+          .case()
+          .when('p.entry_id', 'is', null)
+          .then(eb.val('draft'))
+          .else(eb.val('modified'))
+          .end()
+          .$castTo<'draft' | 'modified'>()
+          .as('status'),
     ])
     .where('d.site_id', '=', filter.siteId)
     .where('d.state', '=', 'draft')
@@ -194,7 +208,7 @@ export const listUnassigned = (
           eb
             .selectFrom('change_set_items as i')
             .innerJoin('change_sets as s', 's.id', 'i.change_set_id')
-            .select(sql`1`.as('one'))
+            .select((sub) => sub.lit(1).as('one'))
             .whereRef('i.entry_id', '=', 'd.entry_id')
             .whereRef('i.locale', '=', 'd.locale')
             .where('s.status', 'in', ACTIVE_SET_STATUSES),
@@ -207,8 +221,11 @@ export const listUnassigned = (
     .limit(filter.limit);
   if (filter.after) {
     const { updatedAt, entryId, locale } = filter.after;
-    query = query.where(
-      sql<boolean>`(d.updated_at, d.entry_id, d.locale) < (${updatedAt}, ${entryId}::uuid, ${locale})`,
+    query = query.where((eb) =>
+      rowLessThan(
+        ['d.updated_at', 'd.entry_id', 'd.locale'],
+        [eb.val(updatedAt), uuidParam(entryId), eb.val(locale)],
+      ),
     );
   }
   return query.execute();
@@ -237,7 +254,7 @@ export const countEntriesBySite = (modelIds: readonly string[], executor: Execut
         .selectFrom('entry_heads as h')
         .innerJoin('sites as s', 's.id', 'h.site_id')
         .innerJoin('entries as e', 'e.id', 'h.entry_id')
-        .select(['s.id', 's.key', sql<string>`count(distinct h.entry_id)`.as('entries')])
+        .select((eb) => ['s.id', 's.key', eb.fn.count<string>('h.entry_id').distinct().as('entries')])
         .where('h.model_id', 'in', modelIds)
         .where('e.deleted_at', 'is', null)
         .groupBy(['s.id', 's.key'])
@@ -268,7 +285,7 @@ export const recordReviewedDraftVersions = (changeSetId: string, trx: Executor =
   trx
     .updateTable('change_set_items as i')
     .from('entry_heads as h')
-    .set({ ship_state: sql`jsonb_build_object('reviewedDraftVersion', h.version)` })
+    .set((eb) => ({ ship_state: jsonObject<JsonObject>({ reviewedDraftVersion: eb.ref('h.version') }) }))
     .whereRef('h.entry_id', '=', 'i.entry_id')
     .whereRef('h.locale', '=', 'i.locale')
     .where('h.state', '=', 'draft')

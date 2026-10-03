@@ -1,9 +1,9 @@
 import type { Transaction } from 'kysely';
 import { CHANGE_SET_EVENTS } from '../constants/publishing.js';
 import { entryNotFound } from '../content/errors.js';
+import { isForeignKeyViolation } from '../db/sql/errors.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
-import { isForeignKeyViolation } from '../helpers/pgErrors.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import { adminIdOf, tokenIdOf } from '../publishing/principals.js';
 import { resolvePublicationTarget, type PublicationTargetInput } from '../publishing/targets.js';

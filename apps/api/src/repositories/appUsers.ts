@@ -1,12 +1,8 @@
-import {
-  sql,
-  type Insertable,
-  type Kysely,
-  type Selectable,
-  type Transaction,
-  type Updateable,
-} from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
+import { containsInsensitive } from '../db/sql/text.js';
+import { timestampCursorText, timestampParam } from '../db/sql/time.js';
+import { emptyArray, sortedArrayAgg } from '../db/sql/values.js';
 import type { AppUsers, DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -40,21 +36,21 @@ const summaries = (trx: Executor) =>
         .coalesce(
           eb
             .selectFrom('app_user_roles')
-            .select(sql<string[]>`array_agg(role_id order by role_id)`.as('ids'))
+            .select(sortedArrayAgg<string>('role_id').as('ids'))
             .whereRef('app_user_roles.app_user_id', '=', 'app_users.id'),
-          sql<string[]>`'{}'::uuid[]`,
+          emptyArray<string>('uuid'),
         )
         .as('role_ids'),
       eb.fn
         .coalesce(
           eb
             .selectFrom('app_oauth_accounts')
-            .select(sql<string[]>`array_agg(distinct provider order by provider)`.as('providers'))
+            .select(sortedArrayAgg<string>('provider', { distinct: true }).as('providers'))
             .whereRef('app_oauth_accounts.app_user_id', '=', 'app_users.id'),
-          sql<string[]>`'{}'::text[]`,
+          emptyArray<string>('text'),
         )
         .as('providers'),
-      sql<boolean>`app_users.password_hash is not null`.as('has_password'),
+      eb('app_users.password_hash', 'is not', null).$castTo<boolean>().as('has_password'),
     ])
     .where('app_users.deleted_at', 'is', null);
 
@@ -63,8 +59,6 @@ const summaries = (trx: Executor) =>
  * microseconds so rows created within one millisecond are neither skipped nor repeated.
  */
 export type AppUserCursor = { createdAt: string; id: string };
-
-const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
 /** One site's accounts, newest first, optionally matching `search` in the email or name (case-insensitive). */
 export const listPage = (
@@ -78,19 +72,17 @@ export const listPage = (
 ) =>
   summaries(trx)
     .where('app_users.site_id', '=', siteId)
-    .select(
-      sql<string>`to_char(app_users.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
-        'cursor_at',
+    .select(timestampCursorText('app_users.created_at').as('cursor_at'))
+    .$if(search !== undefined, (qb) =>
+      qb.where((eb) =>
+        eb.or([
+          containsInsensitive(eb.ref('app_users.email'), search ?? ''),
+          containsInsensitive(eb.ref('app_users.name'), search ?? ''),
+        ]),
       ),
     )
-    .$if(search !== undefined, (qb) => {
-      const pattern = `%${escapeLike(search ?? '')}%`;
-      return qb.where((eb) =>
-        eb.or([eb('app_users.email', 'ilike', pattern), eb('app_users.name', 'ilike', pattern)]),
-      );
-    })
     .$if(cursor !== undefined, (qb) => {
-      const at = sql<Date>`cast(${cursor?.createdAt ?? null} as timestamptz)`;
+      const at = timestampParam(cursor?.createdAt ?? null);
       return qb.where((eb) =>
         eb.or([
           eb('app_users.created_at', '<', at),
@@ -123,7 +115,7 @@ export const findByEmailWithHash = (siteId: string, email: string, trx: Executor
     .selectFrom('app_users')
     .selectAll()
     .where('site_id', '=', siteId)
-    .where(sql`lower(email)`, '=', email.toLowerCase())
+    .where((eb) => eb(eb.fn<string>('lower', ['email']), '=', email.toLowerCase()))
     .where('deleted_at', 'is', null)
     .executeTakeFirst();
 
@@ -198,7 +190,7 @@ export const findTokenState = async (
 export const bumpTokenVersion = (id: string, trx: Executor = db) =>
   trx
     .updateTable('app_users')
-    .set({ token_version: sql<number>`token_version + 1` })
+    .set((eb) => ({ token_version: eb('token_version', '+', eb.lit(1)) }))
     .where('id', '=', id)
     .execute();
 

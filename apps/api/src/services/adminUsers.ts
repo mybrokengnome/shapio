@@ -1,8 +1,8 @@
 import type { Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { isUniqueViolation } from '../db/sql/errors.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
-import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { SYSTEM_ROLE_KEYS } from '../permissions/seedRoles.js';
 import type { Principal, RoleAssignment } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';

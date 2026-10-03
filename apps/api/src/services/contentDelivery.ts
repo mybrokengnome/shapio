@@ -1,5 +1,6 @@
-import { sql, type RawBuilder } from 'kysely';
+import type { RawBuilder } from 'kysely';
 import { compileHeadQuery, type HeadSource } from '../content/compiler/compile.js';
+import { entryIdIs } from '../content/compiler/conditions.js';
 import { paginationMeta, toLimitOffset, type Pagination } from '../content/compiler/paginate.js';
 import { maskAllows } from '../content/compiler/policy.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
@@ -203,7 +204,7 @@ export const readOneEntry = async (read: DeliveryRead, id: string) => {
     conditions: [
       ...queryConditions(context, { ...query, filter: null, search: null }, policy),
       ...(read.conditions ?? []),
-      sql`h.entry_id = ${id}::uuid`,
+      entryIdIs(id),
     ],
     orderBy: [],
     limit: 1,

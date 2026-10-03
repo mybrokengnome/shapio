@@ -1,6 +1,7 @@
-import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
+import type { Insertable, Kysely, Transaction } from 'kysely';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
+import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB, MediaAssets } from '../db/types.js';
 import { appUserSiteOf } from './appUsers.js';
 import { entrySiteOf } from './entries.js';
@@ -163,14 +164,14 @@ export const insertHead = (head: ImportedHead, trx: Executor = db) =>
 export const moveHead = (head: ImportedHead, trx: Executor = db) =>
   trx
     .updateTable('entry_heads')
-    .set({
+    .set((eb) => ({
       revision_id: head.revisionId,
       data: head.data,
       autosaved_at: head.autosavedAt,
-      version: sql<number>`version + 1`,
-      change_seq: sql<string>`nextval('entry_heads_change_seq')`,
+      version: eb('version', '+', eb.lit(1)),
+      change_seq: nextSequenceValue('entry_heads_change_seq'),
       updated_at: head.updatedAt,
-    })
+    }))
     .where('entry_id', '=', head.entryId)
     .where('locale', '=', head.locale)
     .where('state', '=', head.state)
@@ -266,11 +267,13 @@ export const findAppUsers = async (
       ? []
       : await executor
           .selectFrom('app_users')
-          .select(['id', sql<string>`lower(email)`.as('email')])
-          .where(
-            sql<string>`lower(email)`,
-            'in',
-            emails.map((email) => email.toLowerCase()),
+          .select((eb) => ['id', eb.fn<string>('lower', ['email']).as('email')])
+          .where((eb) =>
+            eb(
+              eb.fn<string>('lower', ['email']),
+              'in',
+              emails.map((email) => email.toLowerCase()),
+            ),
           )
           .where('deleted_at', 'is', null)
           .execute();

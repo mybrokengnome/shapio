@@ -1,5 +1,5 @@
-import { sql } from 'kysely';
 import type { HeadSource } from '../content/compiler/compile.js';
+import { entryIdIs } from '../content/compiler/conditions.js';
 import { paginationMeta } from '../content/compiler/paginate.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
@@ -156,7 +156,7 @@ const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
 };
 
 /** A preview token reads its one entry only. */
-const entryCondition = (token: PreviewTokenSummary) => [sql`h.entry_id = ${token.entry_id}::uuid`];
+const entryCondition = (token: PreviewTokenSummary) => [entryIdIs(token.entry_id)];
 
 const readOf = (scope: PreviewScope, executor: ReadEnvironment['executor'], query: ContentQuery) => ({
   context: scope.context,

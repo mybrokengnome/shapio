@@ -1,5 +1,5 @@
 import type { FieldDefinition } from '@shapio/schema';
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
@@ -7,6 +7,7 @@ import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
 import { compileHeadQuery, type HeadRow, type HeadSource, type LocaleScope } from './compiler/compile.js';
+import { entryIdIn } from './compiler/conditions.js';
 import { compileRowFilter } from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
@@ -61,7 +62,7 @@ export const fetchHeadsByIds = async (
     modelId: model.definition.id,
     source: env.source,
     locales: locales ?? readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
-    conditions: [sql`h.entry_id = any(${[...ids]}::uuid[])`, ...(rowFilter ? [rowFilter] : [])],
+    conditions: [entryIdIn(ids), ...(rowFilter ? [rowFilter] : [])],
     orderBy: [],
   });
   return contentQueriesRepository.runHeadQuery(rows, env.executor);

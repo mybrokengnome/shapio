@@ -1,5 +1,6 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { currentTimestamp } from '../db/sql/time.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -14,5 +15,8 @@ export const getPermissionsVersion = async (trx: Executor = db): Promise<number>
 export const bumpPermissionsVersion = (trx: Executor = db) =>
   trx
     .updateTable('system_versions')
-    .set({ permissions_version: sql<number>`permissions_version + 1`, updated_at: sql`now()` })
+    .set((eb) => ({
+      permissions_version: eb('permissions_version', '+', eb.lit(1)),
+      updated_at: currentTimestamp(),
+    }))
     .execute();

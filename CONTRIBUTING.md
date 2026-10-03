@@ -43,9 +43,12 @@ audit row) happen in **one** transaction.
 - Errors: services throw `AppError` (status, code, message); the central handler renders
   `{ error: { code, message, details? } }`. Never swallow an error; log with context through `request.log`
   or the app logger, never `console`.
-- SQL: through Kysely. Raw SQL only in `content/compiler` and migrations, with `sql` tags, never interpolated
-  identifiers or values. User content values are JSONB keyed by stable field IDs and queried through the
-  compiler's allowlist.
+- SQL: through Kysely's portable API. Database-specific SQL lives only in `apps/api/src/db/` (migrations, locks,
+  notifications and the named primitives in `db/sql/`) and `content/compiler`, with `sql` tags, never
+  interpolated identifiers or values. Everywhere else, use a `db/sql` primitive (add one there, with its
+  PostgreSQL form and the contract another dialect must keep) instead of writing SQL; `db/dialectBoundary.test.ts`
+  enforces this. User content values are JSONB keyed by stable field IDs and queried through the compiler's
+  allowlist.
 - Configuration: environment variables, declared once in `apps/api/src/config/schema.ts` and validated at
   start; never read `process.env` elsewhere. Run `pnpm docs:reference` after changing it.
 - Absolute URLs only through `helpers/publicUrl.ts` (`PUBLIC_URL` + `BASE_PATH`).

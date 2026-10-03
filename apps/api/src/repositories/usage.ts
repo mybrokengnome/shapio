@@ -1,11 +1,11 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { ExpressionBuilder, Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { concat, pathSegment } from '../db/sql/text.js';
+import { dateParam, greatestOf } from '../db/sql/time.js';
+import { anyOf, latestNonNull } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
-
-/** A `YYYY-MM-DD` day as a SQL date (never a JS Date, whose time zone would shift it). */
-const asDay = (day: string) => sql<Date>`${day}::date`;
 
 /**
  * Daily usage counters (`field_reads`, `token_reads`), written by the usage aggregator's flush and read by
@@ -55,10 +55,10 @@ export const upsertFieldReads = async (rows: readonly FieldReadRow[], trx: Execu
     .onConflict((conflict) =>
       conflict
         .columns(['day', 'site_id', 'model_id', 'field_path', 'principal_key', 'selection'])
-        .doUpdateSet({
-          reads: sql`field_reads.reads + excluded.reads`,
-          last_read_at: sql`greatest(field_reads.last_read_at, excluded.last_read_at)`,
-        }),
+        .doUpdateSet((eb) => ({
+          reads: eb('field_reads.reads', '+', eb.ref('excluded.reads')),
+          last_read_at: greatestOf(eb.ref('field_reads.last_read_at'), eb.ref('excluded.last_read_at')),
+        })),
     )
     .execute();
 };
@@ -80,22 +80,27 @@ export const upsertTokenReads = async (rows: readonly TokenReadRow[], trx: Execu
       })),
     )
     .onConflict((conflict) =>
-      conflict.columns(['day', 'site_id', 'principal_key']).doUpdateSet({
-        requests: sql`token_reads.requests + excluded.requests`,
+      conflict.columns(['day', 'site_id', 'principal_key']).doUpdateSet((eb) => ({
+        requests: eb('token_reads.requests', '+', eb.ref('excluded.requests')),
         // The newer flush's pin wins; a flush without a pin keeps the one already recorded.
-        last_snapshot: sql`case when excluded.last_read_at >= token_reads.last_read_at
-          then coalesce(excluded.last_snapshot, token_reads.last_snapshot)
-          else coalesce(token_reads.last_snapshot, excluded.last_snapshot) end`,
-        last_read_at: sql`greatest(token_reads.last_read_at, excluded.last_read_at)`,
-      }),
+        last_snapshot: eb
+          .case()
+          .when('excluded.last_read_at', '>=', eb.ref('token_reads.last_read_at'))
+          .then(eb.fn.coalesce('excluded.last_snapshot', 'token_reads.last_snapshot'))
+          .else(eb.fn.coalesce('token_reads.last_snapshot', 'excluded.last_snapshot'))
+          .end(),
+        last_read_at: greatestOf(eb.ref('token_reads.last_read_at'), eb.ref('excluded.last_read_at')),
+      })),
     )
     .execute();
 };
 
 /** The token's name for `token:<id>` keys (null for other principals and deleted tokens). */
-const tokenName = sql<string | null>`(
-  select t.name from api_tokens t where 'token:' || t.id::text = fr.principal_key
-)`;
+const tokenName = (eb: ExpressionBuilder<DB & { fr: { principal_key: string } }, 'fr'>) =>
+  eb
+    .selectFrom('api_tokens as t')
+    .select('t.name')
+    .where((w) => w(concat('token:', w.cast<string>('t.id', 'text')), '=', w.ref('fr.principal_key')));
 
 export type FieldUsageRow = {
   /** The site the reads were made on, with its key. */
@@ -149,13 +154,13 @@ export const fieldUsageForModel = async (
         'fr.field_path',
         'fr.principal_key',
         'fr.selection',
-        tokenName.as('token_name'),
+        (eb) => tokenName(eb).as('token_name'),
         (eb) => eb.fn.sum<string>('fr.reads').as('reads'),
         (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
       ])
       .where('fr.site_id', '=', siteId)
       .where('fr.model_id', '=', modelId)
-      .where('fr.day', '>=', asDay(sinceDay))
+      .where('fr.day', '>=', dateParam(sinceDay))
       .groupBy(['fr.site_id', 's.key', 'fr.field_path', 'fr.principal_key', 'fr.selection'])
       .orderBy('fr.field_path')
       .orderBy('reads', 'desc')
@@ -186,14 +191,16 @@ export const fieldUsageForFields = async (
         'fr.field_path',
         'fr.principal_key',
         'fr.selection',
-        tokenName.as('token_name'),
+        (eb) => tokenName(eb).as('token_name'),
         (eb) => eb.fn.sum<string>('fr.reads').as('reads'),
         (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
       ])
-      .where('fr.day', '>=', asDay(sinceDay))
-      .where(
-        sql<boolean>`(split_part(fr.field_path, '.', 1) = any(${ids}::text[])
-          or split_part(fr.field_path, '.', 2) = any(${ids}::text[]))`,
+      .where('fr.day', '>=', dateParam(sinceDay))
+      .where((eb) =>
+        eb.or([
+          anyOf(pathSegment(eb.ref('fr.field_path'), 1), ids, 'text'),
+          anyOf(pathSegment(eb.ref('fr.field_path'), 2), ids, 'text'),
+        ]),
       )
       .groupBy(['fr.site_id', 's.key', 'fr.field_path', 'fr.principal_key', 'fr.selection'])
       .execute()
@@ -221,14 +228,13 @@ export const principalSummaries = async (
     .selectFrom('token_reads as fr')
     .select([
       'fr.principal_key',
-      tokenName.as('token_name'),
+      (eb) => tokenName(eb).as('token_name'),
       (eb) => eb.fn.sum<string>('fr.requests').as('requests'),
       (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
-      sql<string | null>`(array_agg(fr.last_snapshot order by fr.day desc)
-        filter (where fr.last_snapshot is not null))[1]`.as('last_snapshot'),
+      latestNonNull<string>('fr.last_snapshot', 'fr.day').as('last_snapshot'),
     ])
     .where('fr.site_id', '=', siteId)
-    .where('fr.day', '>=', asDay(sinceDay))
+    .where('fr.day', '>=', dateParam(sinceDay))
     .groupBy('fr.principal_key')
     .orderBy('requests', 'desc')
     .execute();
@@ -255,7 +261,7 @@ export const pruneFieldReads = async (beforeDay: string, limit: number, trx: Exe
           eb
             .selectFrom('field_reads')
             .select(['day', 'model_id', 'field_path', 'principal_key', 'selection'])
-            .where('day', '<', asDay(beforeDay))
+            .where('day', '<', dateParam(beforeDay))
             .limit(limit)
             .$asTuple('day', 'model_id', 'field_path', 'principal_key', 'selection'),
         ),
@@ -275,7 +281,7 @@ export const pruneTokenReads = async (beforeDay: string, limit: number, trx: Exe
           eb
             .selectFrom('token_reads')
             .select(['day', 'principal_key'])
-            .where('day', '<', asDay(beforeDay))
+            .where('day', '<', dateParam(beforeDay))
             .limit(limit)
             .$asTuple('day', 'principal_key'),
         ),

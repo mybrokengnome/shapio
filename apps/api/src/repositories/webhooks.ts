@@ -1,12 +1,6 @@
-import {
-  sql,
-  type Insertable,
-  type Kysely,
-  type Selectable,
-  type Transaction,
-  type Updateable,
-} from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
+import { jsonArrayAppend } from '../db/sql/json.js';
 import type { DB, WebhookDeliveries, Webhooks } from '../db/types.js';
 import { beforeCursor, cursorAt, type KeysetCursor } from '../publishing/pagination.js';
 
@@ -111,7 +105,7 @@ export const update = (
 ) =>
   trx
     .updateTable('webhooks')
-    .set({ ...changes, version: sql<number>`version + 1`, updated_at: now })
+    .set((eb) => ({ ...changes, version: eb('version', '+', eb.lit(1)), updated_at: now }))
     .where('id', '=', id)
     .$if(expectedVersion !== undefined, (qb) => qb.where('version', '=', expectedVersion ?? 0))
     .returning(['id', 'version'])
@@ -178,7 +172,7 @@ export const recordAttempt = (
       attempts: outcome.attempts,
       last_response_status: outcome.responseStatus,
       last_error: outcome.error,
-      attempt_log: sql`attempt_log || ${JSON.stringify([outcome.summary])}::jsonb`,
+      attempt_log: jsonArrayAppend('attempt_log', outcome.summary),
       updated_at: outcome.now,
       ...(outcome.status === 'succeeded' ? { delivered_at: outcome.now } : {}),
     })

@@ -1,12 +1,6 @@
-import {
-  sql,
-  type Insertable,
-  type Kysely,
-  type Selectable,
-  type Transaction,
-  type Updateable,
-} from 'kysely';
+import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import { db } from '../db/index.js';
+import { arrayContains } from '../db/sql/values.js';
 import type { DB, DeploymentConnections } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -44,7 +38,7 @@ export const listTriggeredBy = (trigger: string, siteId: string | null, trx: Exe
     .selectFrom('deployment_connections')
     .select(['id', 'debounce_seconds'])
     .where('enabled', '=', true)
-    .where(sql<boolean>`${trigger} = any(trigger_policy)`)
+    .where((eb) => arrayContains(eb.ref('trigger_policy'), trigger))
     .$if(siteId !== null, (qb) => qb.where('site_id', '=', siteId ?? ''))
     .execute();
 
@@ -93,7 +87,7 @@ export const update = (
 ) =>
   trx
     .updateTable('deployment_connections')
-    .set({ ...changes, version: sql<number>`version + 1`, updated_at: now })
+    .set((eb) => ({ ...changes, version: eb('version', '+', eb.lit(1)), updated_at: now }))
     .where('id', '=', id)
     .$if(expectedVersion !== undefined, (qb) => qb.where('version', '=', expectedVersion ?? 0))
     .returningAll()

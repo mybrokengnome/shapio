@@ -1,4 +1,4 @@
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import { entrySiteOf } from './entries.js';
@@ -29,7 +29,7 @@ export const nextSeq = async (trx: Transaction<DB>, siteId: string, meta: Snapsh
   // One sequence per site (sites plan §H): publishing on one site never waits for another's.
   const row = await trx
     .updateTable('publication_state')
-    .set({ last_seq: sql`last_seq + 1` })
+    .set((eb) => ({ last_seq: eb('last_seq', '+', '1') }))
     .where('site_id', '=', siteId)
     .returning('last_seq')
     .executeTakeFirstOrThrow();
