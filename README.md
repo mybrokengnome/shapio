@@ -26,12 +26,13 @@ text, summaries, translations, rewrites and content-type drafts. It is off by de
 writes drafts into a change set; it never publishes.
 
 Publishing connects to your site's builds with signed webhooks and Cloudflare Pages, Vercel and Netlify
-adapters that report real build status. It runs as one Node.js process with PostgreSQL, from npm or Docker,
-with HTTPS built in and no reverse proxy, and sends nothing anywhere unless you configure it.
+adapters that report real build status. It runs as one Node.js process with PostgreSQL or SQLite, from npm or
+Docker, with HTTPS built in and no reverse proxy, and sends nothing anywhere unless you configure it.
 
 ## Quick start
 
-With npm (Node.js 24+ and a PostgreSQL 16+ database):
+With npm (Node.js 24+ and a PostgreSQL 16+ database, or `--database-url sqlite:./shapio.db` for a single-process
+install on SQLite):
 
 ```sh
 npx create-shapio@latest my-cms --database-url postgres://user:password@localhost:5432/shapio

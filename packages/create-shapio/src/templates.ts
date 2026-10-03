@@ -43,7 +43,7 @@ const env = ({ databaseUrl, sessionSecret }: TemplateInput) =>
     '# TLS_KEY_FILE=/etc/shapio/tls/privkey.pem',
     '# HTTP_PORT=80',
     '',
-    '# PostgreSQL >= 16',
+    '# PostgreSQL >= 16, or sqlite:<path> for a single-process install',
     `DATABASE_URL=${databaseUrl}`,
     'MIGRATE_ON_START=true',
     '',
@@ -125,7 +125,8 @@ const readme = ({ projectName }: TemplateInput) =>
 
 A [Shapio](https://github.com/mybrokengnome/shapio) project.
 
-1. Set \`DATABASE_URL\` in \`.env\` to a PostgreSQL (>= 16) database.
+1. Set \`DATABASE_URL\` in \`.env\` to a PostgreSQL (>= 16) database, or to \`sqlite:<path>\` for a
+   single-process install.
 2. \`npm run start\`. Migrations run on start. The first boot logs where to create the owner account: open
    \`/admin/\`; the first person to complete Setup becomes the owner.
 3. Under PM2: \`pm2 start ecosystem.config.cjs\`.

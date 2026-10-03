@@ -1,13 +1,14 @@
 # Install with npm
 
 Shapio is one npm package, `shapio`: the server, the prebuilt admin and the `shapio` command. `create-shapio`
-sets up a project around it. You run it with Node.js, under PM2 or systemd, against your PostgreSQL. No
-reverse proxy is needed (see [Networking](networking.md)).
+sets up a project around it. You run it with Node.js, under PM2 or systemd, against your PostgreSQL or a SQLite
+file. No reverse proxy is needed (see [Networking](networking.md)).
 
 ## Requirements
 
 - Node.js 24 or later (`node --version`).
-- PostgreSQL 16 or later, with a database Shapio owns.
+- PostgreSQL 16 or later, with a database Shapio owns, or SQLite for a single-process install
+  ([SQLite](sqlite.md)).
 - A Linux or macOS host. Shapio runs as one process (the API with its job worker inside); see
   [a separate worker](#a-separate-worker-process) to split them.
 
@@ -19,6 +20,9 @@ As a PostgreSQL superuser:
 psql -d postgres -c "create role shapio login password 'change-me'"
 createdb -O shapio shapio
 ```
+
+On SQLite there is no database server to set up: skip this step and pass the file path instead, as
+`--database-url sqlite:./shapio.db` in step 2. Shapio creates the file on start ([SQLite](sqlite.md)).
 
 Shapio creates and migrates its own tables on start. Your content models never get tables of their own, so
 modelling never runs a migration.
@@ -127,14 +131,15 @@ journalctl -u shapio -f
 ## A separate worker process
 
 Jobs (scheduled publishing, webhooks, deployments, image variants, imports) run inside the API process by
-default. To run them in their own process, set `WORKER_MODE=dedicated` in `.env` and start a second process
-with the same `.env` and project files:
+default. On PostgreSQL, to run them in their own process, set `WORKER_MODE=dedicated` in `.env` and start a
+second process with the same `.env` and project files:
 
 ```sh
 npm run worker
 ```
 
-With PM2, add a second app to `ecosystem.config.cjs` with `args: 'worker'`.
+With PM2, add a second app to `ecosystem.config.cjs` with `args: 'worker'`. SQLite refuses
+`WORKER_MODE=dedicated`: its jobs always run inside the API process ([SQLite](sqlite.md#limits)).
 
 ## Next
 
@@ -148,7 +153,8 @@ Any number of Shapio processes can share one database, on one machine (PM2 clust
 load balancer. They coordinate through PostgreSQL: migrations run once, schema changes and permission changes
 apply on every instance's next request (even without notifications, `SCHEMA_LISTEN=false`), jobs such as
 scheduled publishes and image variants run exactly once, and GraphQL is rebuilt on each instance after a
-change. The test suite runs two server processes against one database to prove it.
+change. The test suite runs two server processes against one database to prove it. This needs PostgreSQL: a
+SQLite database serves one process ([SQLite](sqlite.md#limits)).
 
 - **Workers:** either keep `WORKER_MODE=inline` on every instance, or set `WORKER_MODE=dedicated` everywhere
   and run one or more `shapio worker` processes. Both are fine.

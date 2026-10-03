@@ -12,7 +12,8 @@ Without --site: a Shapio project (the CMS server). With --site: a website that r
 
 Options:
   --site <${SITE_STARTERS.join('|')}>  Create a site starter instead (a blog: pages, articles, authors)
-  --database-url <url>   PostgreSQL connection string to put in .env (CMS project only)
+  --database-url <url>   Database URL to put in .env (PostgreSQL, or sqlite:<path> for a single-process
+                         install; CMS project only)
   --shapio-spec <spec>   Dependency spec for shapio (default: ^<this version>; a tarball path works too)
   --no-install           Skip npm install
   -h, --help             Show this help
