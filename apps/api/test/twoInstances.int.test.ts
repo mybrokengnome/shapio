@@ -5,7 +5,8 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA_PROCESS_JOB } from '../src/constants/media.js';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
-import { jsonHasKey } from './helpers/dialect.js';
+import { concat } from '../src/db/sql/text.js';
+import { jsonField, jsonHasKey } from './helpers/dialect.js';
 import { freePort } from './helpers/freePort.js';
 import { createPng, type MediaAssetBody, type UploadGrantBody } from './helpers/media.js';
 import { createRoleToken } from './helpers/schemaAdmin.js';
@@ -244,6 +245,22 @@ describe('two instances on one database', () => {
   });
 
   it('scheduled publishes run exactly once with both workers polling', async () => {
+    // The write-load test above leaves one content-health job per write (about 1,500) in the queue. Those run
+    // at background priority, below scheduled publications, but they still occupy worker slots and the
+    // database; drain them first so this test times only its own jobs.
+    await waitFor(
+      async () => {
+        const backlog = await database.current.db
+          .selectFrom('jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'running'])
+          .where('run_at', '<=', new Date())
+          .limit(1)
+          .execute();
+        return backlog.length === 0;
+      },
+      { timeoutMs: 60_000, intervalMs: 100 },
+    );
     await createModel('post', [{ apiKey: 'title', label: 'Title', type: 'string' }]);
     const entries = await Promise.all(
       Array.from({ length: 8 }, async (_, i) =>
@@ -272,14 +289,16 @@ describe('two instances on one database', () => {
           .select(['status', 'attempts'])
           .where('type', '=', PUBLISHING_JOBS.scheduledPublication)
           .execute();
-        return rows.length === ids.length && rows.every((row) => row.status === 'succeeded')
+        // Terminal state only: a dead job fails the assertions below instead of timing out here.
+        return rows.length === ids.length &&
+          rows.every((row) => row.status === 'succeeded' || row.status === 'dead')
           ? rows
           : undefined;
       },
       { timeoutMs: 20_000, intervalMs: 50 },
     );
     measure('8 scheduled publishes done after scheduling', elapsedSince(started));
-    expect(jobs.every((job) => job.attempts === 1)).toBe(true);
+    expect(jobs.map((job) => [job.status, job.attempts])).toEqual(ids.map(() => ['succeeded', 1]));
 
     const publications = await database.current.db
       .selectFrom('publication_log')
@@ -289,9 +308,9 @@ describe('two instances on one database', () => {
     expect(publications.map((row) => row.entry_id).sort()).toEqual([...ids].sort());
     const events = await database.current.db
       .selectFrom('outbox_events')
-      .select(sql<string>`payload->>'entryId'`.as('entryId'))
+      .select(jsonField('payload', 'entryId').as('entryId'))
       .where('type', '=', 'entry.published')
-      .where(sql<string>`payload->>'entryId'`, 'in', ids)
+      .where(jsonField('payload', 'entryId'), 'in', ids)
       .execute();
     expect(events.map((row) => row.entryId).sort()).toEqual([...ids].sort());
   });
@@ -337,6 +356,23 @@ describe('two instances on one database', () => {
 
     const processedBy = (server: SpawnedServer, assetId: string) =>
       server.logs.filter((line) => line.msg === 'media processed' && line.assetId === assetId).length;
+    // The handler marks the asset ready before the worker records the job as succeeded, and each server's
+    // log line arrives over its stdout pipe, so wait for both to settle before asserting "exactly once".
+    const jobs = await waitFor(
+      async () => {
+        const rows = await database.current.db
+          .selectFrom('jobs')
+          .select(['status', 'attempts'])
+          .where('type', '=', MEDIA_PROCESS_JOB)
+          .execute();
+        const settled = rows.every((job) => job.status === 'succeeded' || job.status === 'dead');
+        const logged = assets.every((asset) => processedBy(a, asset.id) + processedBy(b, asset.id) >= 1);
+        return settled && logged && rows;
+      },
+      { timeoutMs: 30_000, intervalMs: 100 },
+    );
+    expect(jobs).toHaveLength(uploads);
+    expect(jobs.every((job) => job.status === 'succeeded' && job.attempts === 1)).toBe(true);
     let onA = 0;
     for (const asset of assets) {
       const runsA = processedBy(a, asset.id);
@@ -344,13 +380,6 @@ describe('two instances on one database', () => {
       onA += runsA;
     }
     measure('uploads processed by A (the rest by B)', onA, 'of 6');
-    const jobs = await database.current.db
-      .selectFrom('jobs')
-      .select(['status', 'attempts'])
-      .where('type', '=', MEDIA_PROCESS_JOB)
-      .execute();
-    expect(jobs).toHaveLength(uploads);
-    expect(jobs.every((job) => job.status === 'succeeded' && job.attempts === 1)).toBe(true);
     // One row per (asset, variant), matching what the API reports.
     const reported = await Promise.all(
       assets.map(
@@ -362,7 +391,7 @@ describe('two instances on one database', () => {
     );
     const rows = await database.current.db
       .selectFrom('media_variants')
-      .select(sql<string>`asset_id || ':' || name`.as('key'))
+      .select(concat(sql.ref('asset_id'), ':', sql.ref('name')).as('key'))
       .where(
         'asset_id',
         'in',

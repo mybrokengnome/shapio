@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { Transaction } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import {
   MEDIA_EVENTS,
   MEDIA_GRANT_EXPIRE_JOB,
@@ -328,6 +329,7 @@ const enqueueProcessing = (trx: Transaction<DB>, assetId: string, storageKey: st
     {
       type: MEDIA_PROCESS_JOB,
       payload: { assetId, storageKey },
+      priority: JOB_PRIORITY.interactive,
       idempotencyKey: `${MEDIA_PROCESS_JOB}:${storageKey}`,
       maxAttempts: MEDIA_JOB_MAX_ATTEMPTS,
     },

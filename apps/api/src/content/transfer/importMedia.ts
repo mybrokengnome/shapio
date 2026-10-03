@@ -1,3 +1,4 @@
+import { JOB_PRIORITY } from '../../constants/jobPriorities.js';
 import { MEDIA_JOB_MAX_ATTEMPTS, MEDIA_PROCESS_JOB } from '../../constants/media.js';
 import type { Database } from '../../db/index.js';
 import { enqueueJob } from '../../jobs/queue.js';
@@ -107,6 +108,7 @@ export const importMediaBatch = async (
         {
           type: MEDIA_PROCESS_JOB,
           payload: { assetId: asset.id, storageKey: asset.storageKey },
+          priority: JOB_PRIORITY.interactive,
           idempotencyKey: `${MEDIA_PROCESS_JOB}:${asset.storageKey}`,
           maxAttempts: MEDIA_JOB_MAX_ATTEMPTS,
         },

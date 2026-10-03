@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
+import { CONTENT_HEALTH_JOBS, contentHealthOutboxSubscriber } from '../src/jobs/contentHealth.js';
 import type { Worker } from '../src/jobs/worker.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
 import { createAdmin, login } from './helpers/adminIdentity.js';
@@ -201,6 +203,50 @@ describe('scheduled publications', () => {
       runAt: new Date().toISOString(),
     });
     expect(response.statusCode).toBe(422);
+  });
+
+  it('a due scheduled publish is claimed ahead of a due content-health backlog', async () => {
+    const backlogSize = 200;
+    // Health checks enqueued through their real outbox subscriber, all due before the schedule.
+    await database.current.db.transaction().execute(async (trx) => {
+      for (let i = 0; i < backlogSize; i += 1) {
+        await contentHealthOutboxSubscriber(
+          {
+            id: String(i),
+            event_id: randomUUID(),
+            type: 'entry.updated',
+            aggregate_type: 'entry',
+            aggregate_id: randomUUID(),
+            payload: {},
+            site_id: null,
+            created_at: new Date(),
+            dispatched_at: null,
+            dispatch_attempts: 0,
+            last_dispatch_error: null,
+          },
+          trx,
+        );
+      }
+    });
+    const entry = await createEntry('Ahead of the backlog');
+    const created = expectStatus(await schedule(admin, entry.id, new Date()), 201).json<Schedule>();
+
+    const workerId = `claim-${randomUUID()}`;
+    const at = new Date(Date.now() + 1000);
+    const [claimed] = await jobsRepository.claimRunnable(
+      { workerId, limit: 1, now: at, leaseUntil: new Date(at.getTime() + 10_000) },
+      database.current.db,
+    );
+    expect(claimed).toMatchObject({
+      type: PUBLISHING_JOBS.scheduledPublication,
+      payload: { scheduleId: created.id },
+    });
+
+    // Hand the job back, drop the synthetic backlog, and let the schedule run to completion.
+    await jobsRepository.release({ id: claimed!.id, workerId }, new Date(), database.current.db);
+    await database.current.db.deleteFrom('jobs').where('type', '=', CONTENT_HEALTH_JOBS.entry).execute();
+    await drainJobs(worker(), database.current.db, { types: [PUBLISHING_JOBS.scheduledPublication] });
+    expect(await scheduleRow(created.id)).toMatchObject({ status: 'done' });
   });
 
   describe('exactly once across a worker restart', () => {

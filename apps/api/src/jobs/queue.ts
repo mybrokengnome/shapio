@@ -1,4 +1,5 @@
 import type { Kysely, Transaction } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import * as jobsRepository from '../repositories/jobs.js';
@@ -13,7 +14,7 @@ export type EnqueueJobInput = {
   payload?: Record<string, unknown>;
   /** Defaults to now. */
   runAt?: Date;
-  /** Higher runs first. */
+  /** Higher runs first; use a level from JOB_PRIORITY (constants/jobPriorities.ts). */
   priority?: number;
   maxAttempts?: number;
   /** Enqueueing the same key twice creates one job; the second call returns the existing one. */
@@ -32,7 +33,7 @@ export const enqueueJob = async (input: EnqueueJobInput, trx: Executor = db): Pr
       type: input.type,
       payload: JSON.stringify(input.payload ?? {}),
       run_at: input.runAt ?? new Date(),
-      priority: input.priority ?? 0,
+      priority: input.priority ?? JOB_PRIORITY.normal,
       max_attempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
       idempotency_key: input.idempotencyKey ?? null,
     },

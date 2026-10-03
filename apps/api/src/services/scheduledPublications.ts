@@ -1,3 +1,4 @@
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { PUBLICATION_JOB_MAX_ATTEMPTS, PUBLISHING_JOBS } from '../constants/publishing.js';
 import { AppError } from '../helpers/appError.js';
 import { enqueueJob } from '../jobs/queue.js';
@@ -77,6 +78,7 @@ export const createSchedule = async (
       {
         type: PUBLISHING_JOBS.scheduledPublication,
         payload: { scheduleId: inserted.id },
+        priority: JOB_PRIORITY.timeCritical,
         runAt: input.runAt,
         maxAttempts: PUBLICATION_JOB_MAX_ATTEMPTS,
         idempotencyKey: `schedule:${inserted.id}`,

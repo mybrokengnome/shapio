@@ -1,3 +1,4 @@
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { CHANGE_SET_EVENTS, PUBLICATION_JOB_MAX_ATTEMPTS, PUBLISHING_JOBS } from '../constants/publishing.js';
 import { AppError } from '../helpers/appError.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
@@ -130,6 +131,7 @@ export const scheduleChangeSet = async (
       {
         type: PUBLISHING_JOBS.changeSetShip,
         payload: { changeSetId: id, mode: 'scheduled' },
+        priority: JOB_PRIORITY.timeCritical,
         runAt: input.at,
         maxAttempts: PUBLICATION_JOB_MAX_ATTEMPTS,
       },

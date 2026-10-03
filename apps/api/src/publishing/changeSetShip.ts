@@ -1,4 +1,5 @@
 import type { Transaction } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { CHANGE_SET_EVENTS, PUBLICATION_JOB_MAX_ATTEMPTS, PUBLISHING_JOBS } from '../constants/publishing.js';
 import type { DB } from '../db/types.js';
 import { ensureQueuedRun } from '../deployments/runs.js';
@@ -248,6 +249,7 @@ export const startShipJob = async (
     {
       type: PUBLISHING_JOBS.changeSetShip,
       payload: { changeSetId: ship.row.id, mode: 'interactive' },
+      priority: JOB_PRIORITY.timeCritical,
       maxAttempts: PUBLICATION_JOB_MAX_ATTEMPTS,
     },
     trx,

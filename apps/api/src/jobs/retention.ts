@@ -1,4 +1,5 @@
 import type { Kysely } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import type { DB } from '../db/types.js';
 import * as assistRunsRepository from '../repositories/assistRuns.js';
 import * as retentionRepository from '../repositories/retention.js';
@@ -23,7 +24,10 @@ const dayKey = (at: Date) => `${RETENTION_JOB}:${at.toISOString().slice(0, 10)}`
 
 /** Ensures the retention job for the day of `now` exists (no-op if it was already created or ran). */
 export const ensureRetentionScheduled = (db: Kysely<DB>, now = new Date()) =>
-  enqueueJob({ type: RETENTION_JOB, runAt: now, idempotencyKey: dayKey(now) }, db);
+  enqueueJob(
+    { type: RETENTION_JOB, runAt: now, priority: JOB_PRIORITY.background, idempotencyKey: dayKey(now) },
+    db,
+  );
 
 /** Deletes in batches until a batch comes back short, stopping early on shutdown. */
 const pruneAll = async <T>(
@@ -85,7 +89,10 @@ export const createRetentionJobHandlers = (
         ),
       };
       const next = new Date(at.getTime() + DAY_MS);
-      await enqueueJob({ type: RETENTION_JOB, runAt: next, idempotencyKey: dayKey(next) }, db);
+      await enqueueJob(
+        { type: RETENTION_JOB, runAt: next, priority: JOB_PRIORITY.background, idempotencyKey: dayKey(next) },
+        db,
+      );
       job.log.info({ before, removed }, 'retention pruned finished bookkeeping');
       return { before: before.toISOString(), removed };
     },

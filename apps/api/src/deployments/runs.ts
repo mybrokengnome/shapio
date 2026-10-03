@@ -1,4 +1,5 @@
 import type { Kysely, Transaction } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { DEPLOYMENT_EVENTS, PROVIDER_POLL_MAX_MS, PUBLISHING_JOBS } from '../constants/publishing.js';
 import type { DB } from '../db/types.js';
 import { describeError } from '../helpers/errors.js';
@@ -69,6 +70,7 @@ export const ensureQueuedRun = async (
         {
           type: PUBLISHING_JOBS.deploymentTrigger,
           payload: { runId: inserted.id },
+          priority: JOB_PRIORITY.timeCritical,
           runAt: new Date(input.now.getTime() + input.debounceSeconds * 1000),
           maxAttempts: DEPLOYMENT_JOB_MAX_ATTEMPTS,
           idempotencyKey: `deployment-trigger:${inserted.id}`,

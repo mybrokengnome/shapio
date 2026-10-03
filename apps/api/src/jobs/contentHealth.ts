@@ -1,4 +1,5 @@
 import type { Kysely } from 'kysely';
+import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { MEDIA_EVENTS } from '../constants/media.js';
 import type { DB } from '../db/types.js';
 import * as mediaReferencesRepository from '../repositories/mediaReferences.js';
@@ -33,7 +34,13 @@ const dailyKey = (at: Date) => `${CONTENT_HEALTH_JOBS.sweep}:daily:${at.toISOStr
 /** Ensures today's daily sweep exists (no-op when it was already created or ran). */
 export const ensureHealthSweepScheduled = (db: Kysely<DB>, now = new Date()) =>
   enqueueJob(
-    { type: CONTENT_HEALTH_JOBS.sweep, runAt: now, payload: { daily: true }, idempotencyKey: dailyKey(now) },
+    {
+      type: CONTENT_HEALTH_JOBS.sweep,
+      runAt: now,
+      payload: { daily: true },
+      priority: JOB_PRIORITY.background,
+      idempotencyKey: dailyKey(now),
+    },
     db,
   );
 
@@ -90,6 +97,7 @@ export const createContentHealthJobHandlers = ({
       await enqueueJob(
         {
           type: CONTENT_HEALTH_JOBS.sweep,
+          priority: JOB_PRIORITY.background,
           runAt: next,
           payload: { daily: true },
           idempotencyKey: dailyKey(next),
@@ -111,6 +119,7 @@ export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx
     await enqueueJob(
       {
         type: CONTENT_HEALTH_JOBS.entry,
+        priority: JOB_PRIORITY.background,
         payload: { entryId: event.aggregate_id },
         idempotencyKey: `health:${event.event_id}`,
       },
@@ -124,6 +133,7 @@ export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx
       await enqueueJob(
         {
           type: CONTENT_HEALTH_JOBS.entry,
+          priority: JOB_PRIORITY.background,
           payload: { entryId },
           idempotencyKey: `health:${event.event_id}:${entryId}`,
         },
@@ -138,6 +148,7 @@ export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx
     await enqueueJob(
       {
         type: CONTENT_HEALTH_JOBS.sweep,
+        priority: JOB_PRIORITY.background,
         payload: modelIds ? { modelIds } : {},
         idempotencyKey: `health:${event.event_id}`,
       },
