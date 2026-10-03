@@ -3,13 +3,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { BUNDLE_CONTENT_TYPE } from '../content/transfer/format.js';
 import * as transferService from '../content/transfer/service.js';
 import type { TransferContext } from '../content/transfer/service.js';
+import { toSiteActorContext } from '../helpers/requestContext.js';
 import type { ExportQuery, ImportQuery, MediaUploadQuery } from '../routes/admin/transfer/schemas.js';
 
 /** The transfer service context for a request: the principal and the instance's storage and runtimes. */
 const transferContextFor = (request: FastifyRequest): TransferContext => ({
-  actor: request.principal,
-  requestId: request.id,
-  ip: request.ip,
+  ...toSiteActorContext(request),
   db: request.server.db,
   permissions: request.server.permissions,
   storage: request.server.mediaStorage,

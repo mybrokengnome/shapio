@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 import * as handlers from '../../controllers/deploymentCallbacks.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import { UuidSchema } from '../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../schemas/error.js';
 
@@ -24,6 +25,7 @@ export const CallbackBodySchema = Type.Object({
  * signature over the raw body is the credential). Encapsulated so its raw-body JSON parser applies here only.
  */
 export const hooksRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string', bodyLimit: 64 * 1024 },

@@ -16,6 +16,7 @@ export type UsageSelection = 'explicit' | 'implicit';
 
 export type FieldReadRow = {
   day: string;
+  siteId: string;
   modelId: string;
   fieldPath: string;
   principalKey: string;
@@ -26,6 +27,7 @@ export type FieldReadRow = {
 
 export type TokenReadRow = {
   day: string;
+  siteId: string;
   principalKey: string;
   requests: number;
   lastSnapshot: number | null;
@@ -41,6 +43,7 @@ export const upsertFieldReads = async (rows: readonly FieldReadRow[], trx: Execu
     .values(
       rows.map((row) => ({
         day: row.day,
+        site_id: row.siteId,
         model_id: row.modelId,
         field_path: row.fieldPath,
         principal_key: row.principalKey,
@@ -50,10 +53,12 @@ export const upsertFieldReads = async (rows: readonly FieldReadRow[], trx: Execu
       })),
     )
     .onConflict((conflict) =>
-      conflict.columns(['day', 'model_id', 'field_path', 'principal_key', 'selection']).doUpdateSet({
-        reads: sql`field_reads.reads + excluded.reads`,
-        last_read_at: sql`greatest(field_reads.last_read_at, excluded.last_read_at)`,
-      }),
+      conflict
+        .columns(['day', 'site_id', 'model_id', 'field_path', 'principal_key', 'selection'])
+        .doUpdateSet({
+          reads: sql`field_reads.reads + excluded.reads`,
+          last_read_at: sql`greatest(field_reads.last_read_at, excluded.last_read_at)`,
+        }),
     )
     .execute();
 };
@@ -67,6 +72,7 @@ export const upsertTokenReads = async (rows: readonly TokenReadRow[], trx: Execu
     .values(
       rows.map((row) => ({
         day: row.day,
+        site_id: row.siteId,
         principal_key: row.principalKey,
         requests: String(row.requests),
         last_snapshot: row.lastSnapshot === null ? null : String(row.lastSnapshot),
@@ -74,7 +80,7 @@ export const upsertTokenReads = async (rows: readonly TokenReadRow[], trx: Execu
       })),
     )
     .onConflict((conflict) =>
-      conflict.columns(['day', 'principal_key']).doUpdateSet({
+      conflict.columns(['day', 'site_id', 'principal_key']).doUpdateSet({
         requests: sql`token_reads.requests + excluded.requests`,
         // The newer flush's pin wins; a flush without a pin keeps the one already recorded.
         last_snapshot: sql`case when excluded.last_read_at >= token_reads.last_read_at

@@ -522,6 +522,7 @@
       "rolesManage": "Manage roles",
       "tokensManage": "Manage API tokens",
       "auditRead": "Read the audit log",
+      "sitesManage": "Manage sites",
       "mediaRead": "Browse the media library",
       "mediaWrite": "Upload and edit media",
       "mediaManage": "Delete media and change its visibility",
@@ -529,7 +530,8 @@
       "webhooksManage": "Manage webhooks",
       "deploymentsManage": "Manage deployment connections",
       "deploymentsTrigger": "Trigger and retry site builds",
-      "changesManage": "Create, review, schedule and ship change sets"
+      "changesManage": "Create and review change sets",
+      "changesShip": "Ship and schedule change sets"
     },
     "contentPermissions": "Content, on every model",
     "instancePermissions": "Instance",

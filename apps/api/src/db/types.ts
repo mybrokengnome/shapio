@@ -34,7 +34,7 @@ export interface AdminInvitations {
   id: Generated<string>;
   invited_by: string | null;
   revoked_at: Timestamp | null;
-  role_ids: Generated<string[]>;
+  role_assignments: Generated<Json>;
   token_hash: string | null;
   updated_at: Generated<Timestamp>;
 }
@@ -80,7 +80,9 @@ export interface AdminSessions {
 export interface AdminUserRoles {
   admin_user_id: string;
   created_at: Generated<Timestamp>;
+  id: Generated<string>;
   role_id: string;
+  site_id: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -105,6 +107,7 @@ export interface ApiTokens {
   name: string;
   revoked_at: Timestamp | null;
   role_id: string;
+  site_id: string | null;
   token_hash: string;
   token_prefix: string;
   updated_at: Generated<Timestamp>;
@@ -127,6 +130,7 @@ export interface AppOauthAccounts {
   id: Generated<string>;
   provider: string;
   provider_user_id: string;
+  site_id: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -182,6 +186,7 @@ export interface AppUserRoles {
   app_user_id: string;
   created_at: Generated<Timestamp>;
   role_id: string;
+  site_id: string;
 }
 
 export interface AppUsers {
@@ -195,6 +200,7 @@ export interface AppUsers {
   name: Generated<string>;
   password_changed_at: Timestamp | null;
   password_hash: string | null;
+  site_id: string;
   token_version: Generated<number>;
   updated_at: Generated<Timestamp>;
 }
@@ -209,6 +215,7 @@ export interface AuditEvents {
   occurred_at: Generated<Timestamp>;
   outcome: string;
   request_id: string | null;
+  site_id: string | null;
   target_id: string | null;
   target_type: string | null;
 }
@@ -255,6 +262,7 @@ export interface ChangeSets {
   ship_requested_by_token: string | null;
   shipped_at: Timestamp | null;
   shipped_seq: Int8 | null;
+  site_id: string;
   source: Generated<string>;
   status: Generated<string>;
   title: string;
@@ -274,6 +282,7 @@ export interface ContentHealthFindings {
   resolved_at: Timestamp | null;
   rule: string;
   severity: string;
+  site_id: string;
   subject: Generated<string>;
 }
 
@@ -304,6 +313,7 @@ export interface DeploymentConnections {
   secret_env_refs: Generated<Json>;
   secrets_encrypted: string;
   settings: Generated<Json>;
+  site_id: string;
   trigger_policy: Generated<string[]>;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
@@ -360,6 +370,7 @@ export interface Entries {
   id: Generated<string>;
   model_id: string;
   owner_app_user_id: string | null;
+  site_id: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -372,6 +383,7 @@ export interface EntryHeads {
   locale: string;
   model_id: string;
   revision_id: string;
+  site_id: string;
   state: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
@@ -392,6 +404,7 @@ export interface FieldReads {
   principal_key: string;
   reads: Generated<Int8>;
   selection: string;
+  site_id: string;
 }
 
 export interface Jobs {
@@ -438,6 +451,7 @@ export interface MediaAssets {
   mime_type: string;
   original_filename: string;
   processing_error: string | null;
+  site_id: string;
   size_bytes: Int8;
   status: Generated<string>;
   storage_driver: string;
@@ -454,6 +468,7 @@ export interface MediaFolders {
   id: Generated<string>;
   name: string;
   parent_id: string | null;
+  site_id: string;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }
@@ -481,6 +496,7 @@ export interface MediaUploadGrants {
   kind: string;
   max_size_bytes: Int8;
   original_filename: string;
+  site_id: string;
   status: Generated<string>;
   storage_driver: string;
   storage_key: string;
@@ -531,6 +547,7 @@ export interface OutboxEvents {
   id: Generated<Int8>;
   last_dispatch_error: string | null;
   payload: Generated<Json>;
+  site_id: string | null;
   type: string;
 }
 
@@ -556,6 +573,7 @@ export interface PreviewTokens {
   locale: string | null;
   model_id: string;
   revoked_at: Timestamp | null;
+  site_id: string;
   token_hash: string;
   token_prefix: string;
 }
@@ -568,6 +586,7 @@ export interface PublicationLog {
   model_id: string;
   published_at: Generated<Timestamp>;
   revision_id: string;
+  site_id: string;
   to_seq: Int8 | null;
 }
 
@@ -578,12 +597,13 @@ export interface PublicationSnapshots {
   created_at: Generated<Timestamp>;
   schema_version: number | null;
   seq: Int8;
+  site_id: string;
   source: string;
 }
 
 export interface PublicationState {
-  id: Generated<boolean>;
   last_seq: Generated<Int8>;
+  site_id: string;
 }
 
 export interface RelationEdges {
@@ -608,6 +628,7 @@ export interface ScheduledPublications {
   locale: string;
   model_id: string;
   run_at: Timestamp;
+  site_id: string;
   snapshot_seq: Int8 | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
@@ -677,6 +698,23 @@ export interface SetupTokens {
   used_at: Timestamp | null;
 }
 
+export interface SiteAppRoles {
+  audience: string;
+  created_at: Generated<Timestamp>;
+  role_id: string;
+  site_id: string;
+}
+
+export interface Sites {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_primary: Generated<boolean>;
+  key: string;
+  name: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface SystemSettings {
   key: string;
   updated_at: Generated<Timestamp>;
@@ -696,6 +734,7 @@ export interface TokenReads {
   last_snapshot: Int8 | null;
   principal_key: string;
   requests: Generated<Int8>;
+  site_id: string;
 }
 
 export interface UniqueValues {
@@ -703,6 +742,7 @@ export interface UniqueValues {
   field_id: string;
   locale: string;
   model_id: string;
+  site_id: string;
   state: string;
   value_hash: string;
 }
@@ -735,6 +775,7 @@ export interface Webhooks {
   max_attempts: Generated<number>;
   name: string;
   secret_encrypted: string;
+  site_id: string | null;
   updated_at: Generated<Timestamp>;
   url: string;
   version: Generated<number>;
@@ -791,6 +832,8 @@ export interface DB {
   schema_revisions: SchemaRevisions;
   schema_settings: SchemaSettings;
   setup_tokens: SetupTokens;
+  site_app_roles: SiteAppRoles;
+  sites: Sites;
   system_settings: SystemSettings;
   system_versions: SystemVersions;
   token_reads: TokenReads;

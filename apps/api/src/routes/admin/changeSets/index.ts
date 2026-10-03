@@ -1,15 +1,22 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/changeSets.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /**
  * /api/admin/change-sets: schema drafts and entry publications that ship as one publication snapshot
- * (developer-face plan §5). Needs `changes.manage`; entry items also need publish permission on their model
- * and schema drafts need schema permission (checked by the services when added and again when shipping).
+ * (developer-face plan §5). Needs `changes.manage`; entry items need update permission on their model when
+ * added and publish permission when shipped, schema drafts need schema permission (checked by the services).
+ * Shipping and scheduling a ship also need `changes.ship` (agentic plan §I).
  */
 export const adminChangeSetsRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('changes.manage') };
   const audited = (action: string) => ({ config: { audit: { action } }, ...manage });
+  const shipping = (action: string) => ({
+    config: { audit: { action } },
+    preHandler: [app.requireGlobalPermission('changes.manage'), app.requireGlobalPermission('changes.ship')],
+  });
 
   app.get('/', { schema: schemas.listChangeSetsSchema, ...manage }, handlers.listChangeSets);
   app.post(
@@ -60,10 +67,10 @@ export const adminChangeSetsRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get('/:id/review', { schema: schemas.getReviewSchema, ...manage }, handlers.getReview);
   app.get('/:id/timeline', { schema: schemas.getTimelineSchema, ...manage }, handlers.getChangeSetTimeline);
   // POST /:id/ship { expectedVersion, acknowledge*, itemVersions? }: 200 shipped/failed inline, 202 shipping
-  app.post('/:id/ship', { schema: schemas.shipSchema, ...audited('change_set.ship') }, handlers.ship);
+  app.post('/:id/ship', { schema: schemas.shipSchema, ...shipping('change_set.ship') }, handlers.ship);
   app.post(
     '/:id/schedule',
-    { schema: schemas.scheduleSchema, ...audited('change_set.schedule') },
+    { schema: schemas.scheduleSchema, ...shipping('change_set.schedule') },
     handlers.schedule,
   );
   app.post(

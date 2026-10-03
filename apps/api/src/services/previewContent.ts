@@ -21,6 +21,7 @@ import type { ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters, deliveryEnvironment, readEntryPage, readOneEntry } from './contentDelivery.js';
 import { parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
+import { getSiteRef } from './sites.js';
 
 /**
  * `/api/preview/content/:modelKey[/:id]` (brief §7): DRAFT content for a site's preview, in the delivery
@@ -51,7 +52,7 @@ export const createPreviewPermissions = (
   base: PermissionEvaluator,
   creator: Principal,
   fields: FieldVisibilityLookup,
-  binding: { tokenId: string; deliveryRoleId: string | null },
+  binding: { tokenId: string; deliveryRoleId: string | null; siteId: string },
 ): PermissionEvaluator => {
   const site: Principal | undefined = binding.deliveryRoleId
     ? {
@@ -59,6 +60,7 @@ export const createPreviewPermissions = (
         tokenId: `preview:${binding.tokenId}`,
         scope: 'delivery',
         roleId: binding.deliveryRoleId,
+        siteId: binding.siteId,
       }
     : undefined;
   return {
@@ -119,14 +121,22 @@ const authorize = async (
   if (model.definition.id !== token.model_id) {
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another model');
   }
-  const creator = await loadAdminPrincipal(runtime.db, token.created_by, `preview:${token.id}`).catch(() => {
+  const creator = await loadAdminPrincipal(
+    runtime.db,
+    token.created_by,
+    `preview:${token.id}`,
+    token.site_id,
+  ).catch(() => {
     throw unauthenticated();
   });
   const permissions = createPreviewPermissions(base.permissions, creator, fields, {
     tokenId: token.id,
     deliveryRoleId: token.delivery_role_id,
+    siteId: token.site_id,
   });
-  const context: ContentServiceContext = { ...base, actor: creator, permissions };
+  // The preview token's site is the request's site, whatever the request named (the credential wins).
+  const site = await getSiteRef(token.site_id, runtime.db);
+  const context: ContentServiceContext = { ...base, actor: creator, permissions, site };
   const policy = await permissions.evaluate(creator, { action: 'read', modelId: model.definition.id });
   if (!policy.allowed) {
     throw new AppError(403, 'FORBIDDEN', `The preview token may not read "${request.modelKey}"`);

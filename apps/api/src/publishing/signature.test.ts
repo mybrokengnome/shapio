@@ -1,6 +1,13 @@
 import { createHmac } from 'node:crypto';
+import { verifyWebhookSignature } from '@shapio/client';
 import { describe, expect, it } from 'vitest';
-import { computeSignature, signedHeaders, verifySignature } from './signature.js';
+import {
+  computeSignature,
+  SIGNATURE_HEADER,
+  signedHeaders,
+  TIMESTAMP_HEADER,
+  verifySignature,
+} from './signature.js';
 
 describe('webhook signatures', () => {
   const secret = 'whsec_test';
@@ -30,5 +37,18 @@ describe('webhook signatures', () => {
     expect(verifySignature(secret, { signature: `v1=bad, ${signature}`, timestamp, body }, now).ok).toBe(
       true,
     );
+  });
+
+  it("is what @shapio/client's verifyWebhookSignature accepts (one scheme on both ends)", async () => {
+    const headers = signedHeaders(secret, body, now);
+    await expect(
+      verifyWebhookSignature({
+        secret,
+        signature: headers[SIGNATURE_HEADER],
+        timestamp: headers[TIMESTAMP_HEADER],
+        body,
+        now,
+      }),
+    ).resolves.toEqual({ ok: true });
   });
 });

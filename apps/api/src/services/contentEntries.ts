@@ -40,7 +40,10 @@ import * as mediaReferencesService from './mediaReferences.js';
 
 /** The publication sequence of an entry write that publishes (models without drafts publish on save). */
 const publishSeqOf = (context: ContentServiceContext, trx: Transaction<DB>) =>
-  publicationsRepository.createSeqAllocator(trx, { source: 'publish', actor: actorColumns(context.actor) });
+  publicationsRepository.createSeqAllocator(trx, context.site.id, {
+    source: 'publish',
+    actor: actorColumns(context.actor),
+  });
 
 /**
  * Entry writes (build plan §4.E5). Each is one transaction under the transitional write policy
@@ -127,7 +130,10 @@ export const createEntry = async (
       }
     }
     await assertTargets(trx, outcome);
-    const entry = await entriesRepository.insert({ modelId: model.definition.id, ...ownerOf(context) }, trx);
+    const entry = await entriesRepository.insert(
+      { siteId: context.site.id, modelId: model.definition.id, ...ownerOf(context) },
+      trx,
+    );
     const hook = {
       trx,
       model,
@@ -411,7 +417,10 @@ export const deleteEntry = async (
     await context.hooks.run('beforeDelete', hook);
     const wasPublished = await publicationsRepository.hasOpen(id, trx);
     const seq = wasPublished
-      ? await publicationsRepository.nextSeq(trx, { source: 'delete', actor: actorColumns(context.actor) })
+      ? await publicationsRepository.nextSeq(trx, context.site.id, {
+          source: 'delete',
+          actor: actorColumns(context.actor),
+        })
       : null;
     if (seq !== null) {
       await publicationsRepository.close(id, null, seq, trx);
@@ -454,7 +463,10 @@ export const duplicateEntry = async (
     const drafts = (await entryHeadsRepository.findForEntry(id, trx)).filter(
       (head) => head.state === 'draft',
     );
-    const entry = await entriesRepository.insert({ modelId: model.definition.id, ...ownerOf(context) }, trx);
+    const entry = await entriesRepository.insert(
+      { siteId: context.site.id, modelId: model.definition.id, ...ownerOf(context) },
+      trx,
+    );
     for (const draft of drafts) {
       const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
       assertWritable(policy.writeMask, model.definition.fields, Object.keys(copy));

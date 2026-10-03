@@ -12,6 +12,7 @@ import {
   revokeSession,
   updateMe,
 } from '../../../controllers/auth.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import { createPerEmailRateLimit, CREDENTIAL_ROUTE_CONFIG } from '../rateLimits.js';
 import {
   changePasswordSchema,
@@ -28,6 +29,7 @@ import {
 
 /** Admin sign-in, the signed-in admin's profile and sessions, and password resets. */
 export const adminAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const signedIn = { preHandler: app.requireAdminSession };
 
   // POST /api/admin/auth/login
@@ -50,7 +52,8 @@ export const adminAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     logout,
   );
   // GET /api/admin/auth/me
-  app.get('/me', { schema: getMeSchema, ...signedIn }, getMe);
+  // Site route: `me` reports the permissions on the request's site (sites plan §H).
+  app.get('/me', { schema: getMeSchema, config: { site: 'site' }, ...signedIn }, getMe);
   // PATCH /api/admin/auth/me
   app.patch(
     '/me',

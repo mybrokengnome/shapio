@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import * as publicationsRepository from '../src/repositories/publications.js';
 import * as snapshotDiffRepository from '../src/repositories/snapshotDiff.js';
 import {
@@ -37,7 +38,7 @@ describe('snapshot changes', () => {
     expectStatus(await admin.post(`/api/admin/content/${modelKey}/${id}/publish`, { locales }), 200);
   const unpublish = async (modelKey: string, id: string, locales: string[] = ['en']) =>
     expectStatus(await admin.post(`/api/admin/content/${modelKey}/${id}/unpublish`, { locales }), 200);
-  const seq = () => publicationsRepository.currentSeq(database.current.db);
+  const seq = () => publicationsRepository.currentSeq(PRIMARY_SITE_ID, database.current.db);
   const diff = (query: Partial<snapshotDiffRepository.SnapshotDiffQuery> & { from: number; to: number }) =>
     snapshotDiffRepository.listChanges({ limit: 100, modelIds: null, ...query }, database.current.db);
 

@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { compileFilter, compileHeadQuery } from '../src/content/compiler/compile.js';
 import { fieldIndexName, fieldStatisticsName } from '../src/content/compiler/expressions.js';
 import { parseContentQuery } from '../src/content/compiler/parse.js';
@@ -39,7 +40,9 @@ describe('content indexes serve compiled queries', () => {
     const rank = fieldIdOf(definition, 'rank');
     await sql`
       with e as (
-        insert into entries (model_id) select ${definition.definition.id}::uuid from generate_series(1, 5000) returning id
+        insert into entries (site_id, model_id)
+        select ${PRIMARY_SITE_ID}::uuid, ${definition.definition.id}::uuid from generate_series(1, 5000)
+        returning id
       ), r as (
         insert into content_revisions (entry_id, locale, schema_revision_id, data, reason, author_type)
         select e.id, l.locale, ${active?.revisionId}::uuid,
@@ -48,8 +51,9 @@ describe('content indexes serve compiled queries', () => {
         from e cross join unnest(${[...locales]}::text[]) as l(locale)
         returning id, entry_id, locale, data
       )
-      insert into entry_heads (entry_id, model_id, locale, state, revision_id, data)
-      select entry_id, ${definition.definition.id}::uuid, locale, 'published', id, data from r
+      insert into entry_heads (entry_id, site_id, model_id, locale, state, revision_id, data)
+      select entry_id, ${PRIMARY_SITE_ID}::uuid, ${definition.definition.id}::uuid, locale, 'published', id, data
+      from r
     `.execute(database.current.db);
   };
 

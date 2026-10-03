@@ -15,6 +15,8 @@ const COLUMNS = [
 ] as const;
 
 export type NewEntry = {
+  /** The site the entry belongs to, for good: entries never move between sites. */
+  siteId: string;
   modelId: string;
   ownerAppUserId: string | null;
   createdByAdminId: string | null;
@@ -24,6 +26,7 @@ export const insert = (entry: NewEntry, trx: Executor = db) =>
   trx
     .insertInto('entries')
     .values({
+      site_id: entry.siteId,
       model_id: entry.modelId,
       owner_app_user_id: entry.ownerAppUserId,
       created_by_admin_id: entry.createdByAdminId,
@@ -147,3 +150,11 @@ export const countLiveByModel = (modelIds: readonly string[], executor: Executor
         .where('deleted_at', 'is', null)
         .groupBy('model_id')
         .execute();
+
+/**
+ * The entry's site as a subquery, for rows that carry a copy of it (heads, unique values, the publication
+ * log, findings, schedules): a composite foreign key to `entries (id, site_id)` keeps the copy equal.
+ * Pass the outer query's executor; the subquery is compiled into the outer statement.
+ */
+export const entrySiteOf = (executor: Executor, entryId: string) =>
+  executor.selectFrom('entries').select('entries.site_id').where('entries.id', '=', entryId);

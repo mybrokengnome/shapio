@@ -31,8 +31,10 @@ export const seedMediaReference = (assetId: string) =>
       modelId,
       `mediaE2e${Date.now()}`,
     ]);
+    // The entry belongs to the primary site, where the admin's media library lives (sites plan §H).
     const entry = await client.query<{ id: string }>(
-      `insert into entries (model_id) values ($1) returning id`,
+      `insert into entries (site_id, model_id)
+       select id, $1 from sites where is_primary returning id`,
       [modelId],
     );
     const entryId = entry.rows[0]?.id;

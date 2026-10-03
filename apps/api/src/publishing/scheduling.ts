@@ -33,8 +33,9 @@ export const createScheduledPublicationHandler =
         runtime.db,
         { adminUserId: row.created_by, tokenId: row.created_by_token },
         `schedule:${row.id}`,
+        row.site_id,
       );
-      const context = await jobContentContext(environment, actor);
+      const context = await jobContentContext(environment, actor, row.site_id);
       const { results } = await runPublicationBatch(
         context,
         [

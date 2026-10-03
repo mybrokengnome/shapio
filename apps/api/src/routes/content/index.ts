@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../controllers/delivery.js';
 import * as writeHandlers from '../../controllers/deliveryWrites.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import {
   ContentQuerySchema,
   DeliveryResponseSchema,
@@ -23,6 +24,7 @@ const SAVE = { exempt: 'content saves are recorded as revisions' } as const;
  * owner is set server-side and `ownedByPrincipal` limits updates and deletes to the caller's own entries.
  */
 export const deliveryRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const response = { 200: DeliveryResponseSchema, 304: { type: 'null' } };
   // GET /:modelKey
   app.get(

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { signMediaGet } from '../src/media/signing.js';
 import { addReferences } from '../src/services/mediaReferences.js';
 import { createAdmin, login, type TestSession } from './helpers/adminIdentity.js';
@@ -430,7 +431,7 @@ describe('media library (local storage)', () => {
       entryId = (
         await testApp.db
           .insertInto('entries')
-          .values({ model_id: modelId })
+          .values({ site_id: PRIMARY_SITE_ID, model_id: modelId })
           .returning('id')
           .executeTakeFirstOrThrow()
       ).id;

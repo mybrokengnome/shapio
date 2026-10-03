@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/adminContent.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 const SAVE = { exempt: 'content saves are recorded as revisions' } as const;
@@ -10,6 +11,7 @@ const SAVE = { exempt: 'content saves are recorded as revisions' } as const;
  * enforced by the services through the evaluator.
  */
 export const adminContentRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const admin = { preHandler: app.requireAdmin };
 
   // GET /:modelKey: drafts, with filters/sort/pagination/populate/fields/locale/q

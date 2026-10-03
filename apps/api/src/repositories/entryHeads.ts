@@ -3,6 +3,7 @@ import type { HeadState } from '../content/model.js';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -54,6 +55,8 @@ export const insert = (head: HeadWrite, trx: Executor = db) =>
     .insertInto('entry_heads')
     .values({
       entry_id: head.entryId,
+      // A copy of the entry's site (the composite foreign key keeps them equal).
+      site_id: entrySiteOf(trx, head.entryId),
       model_id: head.modelId,
       locale: head.locale,
       state: head.state,

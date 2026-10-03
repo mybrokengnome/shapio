@@ -412,7 +412,7 @@ export const runPublicationBatch = async <T>(
 ): Promise<{ results: PublicationResult[]; extra: T | undefined }> =>
   context.db.transaction().execute(async (trx) => {
     await hooks.before?.(trx);
-    const seq = createSeqAllocator(trx, meta);
+    const seq = createSeqAllocator(trx, context.site.id, meta);
     const results = await runPublicationBatchInTransaction(context, trx, items, via, seq);
     const extra = await hooks.after?.(trx, results);
     return { results, extra };

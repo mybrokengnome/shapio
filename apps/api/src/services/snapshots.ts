@@ -61,7 +61,7 @@ export const listSnapshots = async (
   return {
     items: page.map(toView),
     nextCursor: rows.length > limit && last ? String(last.seq) : null,
-    current: await publicationsRepository.currentSeq(context.db),
+    current: await publicationsRepository.currentSeq(context.site.id, context.db),
   };
 };
 

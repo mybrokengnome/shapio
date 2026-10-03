@@ -72,3 +72,15 @@ export const buildUploadForm = (grant: UploadGrant, file: Blob, filename: string
   form.append(grant.upload.fileField, file, filename);
   return form;
 };
+
+/**
+ * Where to send a grant's bytes. Shapio's own upload route (local storage) is addressed through the base URL
+ * the caller already talks to, which keeps it reachable when PUBLIC_URL differs from that address (the
+ * admin's dev server, a proxy, a container network). Bucket URLs (presigned POST) are used as given.
+ */
+export const resolveUploadUrl = (grant: UploadGrant, apiBaseUrl: string): string => {
+  const ownRoute = `/api/media/uploads/${encodeURIComponent(grant.grantId)}`;
+  const url = new URL(grant.upload.url);
+  const base = apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`;
+  return url.pathname.endsWith(ownRoute) ? new URL(ownRoute.slice(1), base).href : grant.upload.url;
+};

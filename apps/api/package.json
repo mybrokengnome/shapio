@@ -77,8 +77,10 @@
     "typebox": "catalog:"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "catalog:",
     "@shapio/cli": "workspace:*",
     "@shapio/client": "workspace:*",
+    "@shapio/mcp": "workspace:*",
     "@shapio/schema": "workspace:*",
     "@types/node": "catalog:",
     "@types/nodemailer": "catalog:",

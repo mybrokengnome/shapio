@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { createDefinitionControllers } from '../../../controllers/schemaDefinitions.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import type { DefinitionCategory } from '../../../services/schemaDefinitions.js';
 import { definitionRouteSchemas } from './schemas.js';
 
@@ -12,13 +13,17 @@ const PREVIEW = { exempt: 'plan preview; writes nothing' } as const;
 export const createDefinitionRoutes =
   (category: DefinitionCategory): FastifyPluginAsyncTypebox =>
   async (app) => {
+    declareSiteScope(app, 'network');
     const handlers = createDefinitionControllers(category);
     const schemas = definitionRouteSchemas(category);
     const admin = { preHandler: app.requireAdmin };
+    // Reads are site routes: whether an editor may see a definition depends on the content roles they hold
+    // on the request's site. Changes stay network routes (schema permissions are network-only anyway).
+    const siteRead = { ...admin, config: { site: 'site' as const } };
     const creator = { preHandler: app.requireGlobalPermission('schema.create') };
 
     // GET /: active definitions the caller may see
-    app.get('/', { ...admin, schema: schemas.list }, handlers.list);
+    app.get('/', { ...siteRead, schema: schemas.list }, handlers.list);
     // POST /: create (activates live)
     app.post(
       '/',
@@ -32,7 +37,7 @@ export const createDefinitionRoutes =
       handlers.planCreate,
     );
     // GET /:id
-    app.get('/:id', { ...admin, schema: schemas.get }, handlers.get);
+    app.get('/:id', { ...siteRead, schema: schemas.get }, handlers.get);
     // PUT /:id: change with the expected version (409 when stale)
     app.put(
       '/:id',
@@ -52,8 +57,8 @@ export const createDefinitionRoutes =
       handlers.remove,
     );
     // GET /:id/revisions, GET /:id/revisions/:revisionId
-    app.get('/:id/revisions', { ...admin, schema: schemas.listRevisions }, handlers.listRevisions);
-    app.get('/:id/revisions/:revisionId', { ...admin, schema: schemas.getRevision }, handlers.getRevision);
+    app.get('/:id/revisions', { ...siteRead, schema: schemas.listRevisions }, handlers.listRevisions);
+    app.get('/:id/revisions/:revisionId', { ...siteRead, schema: schemas.getRevision }, handlers.getRevision);
     // GET /:id/changes: planned changes (prerequisite jobs) and their outcome
-    app.get('/:id/changes', { ...admin, schema: schemas.listChanges }, handlers.listChanges);
+    app.get('/:id/changes', { ...siteRead, schema: schemas.listChanges }, handlers.listChanges);
   };

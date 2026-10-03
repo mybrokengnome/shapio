@@ -1,6 +1,5 @@
-import { type ShapioApiError } from '@shapio/client';
+import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
 import type { SchemaChange } from '@shapio/schema';
-import type { SyncResultItem } from './api.js';
 
 /** Human-readable output for schema sync: decisions, per-definition diffs and server refusals. */
 
@@ -57,7 +56,7 @@ const DECISION_LABELS: Readonly<Record<string, string>> = {
   changedOnTargetBeforeDelete: 'deleted locally but changed on the target since your last pull',
 };
 
-export const describeDecision = (item: SyncResultItem): string => {
+export const describeDecision = (item: SchemaSyncResult): string => {
   const { decision } = item;
   if (decision.action === 'skip' || decision.action === 'conflict') {
     return `${decision.action}: ${DECISION_LABELS[decision.reason] ?? decision.reason}`;
@@ -65,7 +64,7 @@ export const describeDecision = (item: SyncResultItem): string => {
   return decision.action;
 };
 
-export const formatItem = (item: SyncResultItem, names: ReadonlyMap<string, string>): string => {
+export const formatItem = (item: SchemaSyncResult, names: ReadonlyMap<string, string>): string => {
   const flags = [
     item.plan?.summary?.breaking ? 'BREAKING' : '',
     item.plan?.summary?.destructive ? 'DESTRUCTIVE' : '',
@@ -84,7 +83,7 @@ export const formatApiError = (
   filePaths: readonly string[],
   names: ReadonlyMap<string, string>,
 ): string => {
-  const details = (error.details ?? {}) as { conflicts?: SyncResultItem[]; issues?: Issue[] };
+  const details = (error.details ?? {}) as { conflicts?: SchemaSyncResult[]; issues?: Issue[] };
   const lines = [`${error.code}: ${error.message}`];
   for (const conflict of details.conflicts ?? []) {
     lines.push(formatItem(conflict, names));

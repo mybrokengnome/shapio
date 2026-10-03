@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { createToken, listTokens, revokeToken } from '../../../controllers/apiTokens.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import { createTokenSchema, listTokensSchema, revokeTokenSchema } from './schemas.js';
 
 /** API tokens: each bound to one role, shown once, stored hashed. */
 export const adminTokensRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manageTokens = { preHandler: app.requireGlobalPermission('tokens.manage') };
 
   // GET /api/admin/tokens

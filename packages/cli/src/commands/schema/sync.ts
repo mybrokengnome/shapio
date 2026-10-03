@@ -1,7 +1,6 @@
-import { createClient, ShapioApiError } from '@shapio/client';
+import { createClient, ShapioApiError, type SchemaApplyResult } from '@shapio/client';
 import { LOCK_FILE_FORMAT_VERSION, type LockFile } from '@shapio/schema';
 import type { CliIo } from '../../types.js';
-import { schemaApi, type ApplyResponse } from './api.js';
 import { readLocalFiles, readLockFile, type LocalFile } from './files.js';
 import { formatApiError, formatItem } from './format.js';
 import type { SchemaCommandOptions } from './options.js';
@@ -40,8 +39,9 @@ export const readLocalState = async (options: SchemaCommandOptions): Promise<Loc
   return { files, lock: (await readLockFile(options.lockPath)) ?? EMPTY_LOCK, names: collectNames(files) };
 };
 
+/** The schema sync endpoints (`export`, `apply`, `change`) of @shapio/client. */
 export const apiFor = (options: SchemaCommandOptions) =>
-  schemaApi(createClient({ baseUrl: options.baseUrl, token: options.token }));
+  createClient({ baseUrl: options.baseUrl, token: options.token }).admin.schema;
 
 /** Sends the local files with their lock-file bases; the server decides per definition (three-way). */
 export const sendApply = async (
@@ -49,7 +49,7 @@ export const sendApply = async (
   state: LocalState,
   dryRun: boolean,
   io: CliIo,
-): Promise<ApplyResponse | undefined> => {
+): Promise<SchemaApplyResult | undefined> => {
   try {
     return await apiFor(options).apply({
       definitions: state.files.map((file) => file.raw),
@@ -74,7 +74,7 @@ export const sendApply = async (
   }
 };
 
-export const printResults = (response: ApplyResponse, state: LocalState, io: CliIo, verbose: boolean) => {
+export const printResults = (response: SchemaApplyResult, state: LocalState, io: CliIo, verbose: boolean) => {
   for (const item of response.results) {
     if (verbose || item.decision.action !== 'skip' || item.decision.reason !== 'unchangedLocally') {
       io.stdout(`${formatItem(item, state.names)}\n`);

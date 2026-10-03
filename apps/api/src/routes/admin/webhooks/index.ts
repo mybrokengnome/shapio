@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/webhooks.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /** /api/admin/webhooks: signed event deliveries with a delivery log. Needs `webhooks.manage`. */
 export const adminWebhooksRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('webhooks.manage') };
   const audited = (action: string) => ({ config: { audit: { action } }, ...manage });
 

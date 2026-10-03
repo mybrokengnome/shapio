@@ -4,7 +4,7 @@ import { isUniqueViolation } from '../helpers/pgErrors.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as mediaFoldersRepository from '../repositories/mediaFolders.js';
 import type { MediaFolderRow } from '../repositories/mediaFolders.js';
-import type { ActorContext } from './actorContext.js';
+import type { ActorContext, SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 export type MediaFolderView = {
@@ -47,12 +47,14 @@ export const listFolders = async (): Promise<MediaFolderView[]> =>
   (await mediaFoldersRepository.listWithCounts()).map((row) => toView(row, Number(row.asset_count ?? 0)));
 
 export const createFolder = async (
+  site: SiteRef,
   createdBy: string | null,
   input: { name: string; parentId?: string | null },
 ): Promise<MediaFolderView> => {
   await assertParentExists(input.parentId);
   try {
     const row = await mediaFoldersRepository.insert({
+      site_id: site.id,
       name: input.name.trim(),
       parent_id: input.parentId ?? null,
       created_by: createdBy,

@@ -70,10 +70,10 @@ const writeRevisions = async (trx: Transaction<DB>, model: ContentModel, entry: 
   }
 };
 
-type PublicationStep = { seq: number | undefined };
+type PublicationStep = { siteId: string; seq: number | undefined };
 
 const nextSeqOnce = async (trx: Transaction<DB>, step: PublicationStep) => {
-  step.seq ??= await publicationsRepository.nextSeq(trx, { source: 'import' });
+  step.seq ??= await publicationsRepository.nextSeq(trx, step.siteId, { source: 'import' });
   return step.seq;
 };
 
@@ -135,7 +135,7 @@ const removeHead = async (
   }
 };
 
-export type EntryImportContext = { db: Database; actor: Principal };
+export type EntryImportContext = { db: Database; actor: Principal; siteId: string };
 
 export const importEntry = async (
   context: EntryImportContext,
@@ -153,7 +153,7 @@ export const importEntry = async (
     let target = await transferImportRepository.lockEntry(entry.id, trx);
     if (!target) {
       // Normally created by the job's entries pass (with its owner); this covers a single-entry retry.
-      await transferImportRepository.insertEntries([{ ...entry, ownerAppUserId: null }], trx);
+      await transferImportRepository.insertEntries(context.siteId, [{ ...entry, ownerAppUserId: null }], trx);
       target = await transferImportRepository.lockEntry(entry.id, trx);
     }
     const heads = await transferImportRepository.lockHeads(entry.id, trx);
@@ -170,7 +170,7 @@ export const importEntry = async (
     });
     await writeRevisions(trx, model, entry);
     const existing = new Map(heads.map((head) => [headKey(head), head]));
-    const step: PublicationStep = { seq: undefined };
+    const step: PublicationStep = { siteId: context.siteId, seq: undefined };
     for (const { head, outcome } of validated) {
       const current = existing.get(headKey(head));
       existing.delete(headKey(head));

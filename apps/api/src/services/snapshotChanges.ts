@@ -157,7 +157,7 @@ export const listSnapshotChanges = async (
   const readable = await readableModels(context);
   const byId = new Map(readable.map((model) => [model.definition.id, model]));
   return contentQueriesRepository.withConsistentRead(async (trx) => {
-    const current = await publicationsRepository.currentSeq(trx);
+    const current = await publicationsRepository.currentSeq(context.site.id, trx);
     const to = query.to ?? current;
     if (to > current) {
       throw snapshotInvalid(to, current);
@@ -222,7 +222,7 @@ export type CurrentSnapshot = {
 export const currentSnapshot = async (context: ContentServiceContext): Promise<CurrentSnapshot> => {
   await readableModels(context);
   return contentQueriesRepository.withConsistentRead(async (trx) => {
-    const snapshot = await publicationsRepository.currentSeq(trx);
+    const snapshot = await publicationsRepository.currentSeq(context.site.id, trx);
     const publishedAt = await snapshotDiffRepository.snapshotCreatedAt(snapshot, trx);
     // The active version (system_versions), read in the same moment as the sequence. Not the ledger's:
     // metadata-only activations (a label rename) take no snapshot number, so the newest ledger row can

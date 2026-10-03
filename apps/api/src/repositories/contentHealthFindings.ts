@@ -1,6 +1,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -29,6 +30,7 @@ export const replaceForEntry = async (
       .values(
         findings.map((finding) => ({
           entry_id: entry.entryId,
+          site_id: entrySiteOf(trx, entry.entryId),
           model_id: entry.modelId,
           locale: finding.locale,
           rule: finding.rule,

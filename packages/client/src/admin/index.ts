@@ -8,6 +8,7 @@ import { ADMIN_PATHS, withId } from './paths.js';
 import { createPublishingApi } from './publishing.js';
 import { toQueryString } from './query.js';
 import { createSchemaApi } from './schema.js';
+import { createSitesApi } from './sites.js';
 import type {
   AcceptInvitationInput,
   AdminSession,
@@ -113,18 +114,22 @@ export const createAdminApi = (request: RequestFn) => ({
   ...createAppUsersApi(request),
   ...createChangeSetsApi(request),
   ...createUsageApi(request),
+  ...createSitesApi(request),
 });
 
 export type AdminApi = ReturnType<typeof createAdminApi>;
 export { ADMIN_PATHS } from './paths.js';
 export * from './types.js';
 export * from './schemaTypes.js';
+export * from './schemaSyncTypes.js';
 export * from './mediaTypes.js';
 export * from './contentTypes.js';
 export * from './publishingTypes.js';
 export * from './appUsersTypes.js';
 export * from './changeSetTypes.js';
 export * from './usageTypes.js';
+export * from './sitesTypes.js';
+export { SITE_HEADER, SITES_PATHS } from './sites.js';
 export { toContentQueryString } from './contentQuery.js';
-export { buildUploadForm } from './media.js';
+export { buildUploadForm, resolveUploadUrl } from './media.js';
 export { HEALTH_RULES } from './editingTypes.js';

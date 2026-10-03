@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/changeSets.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /**
@@ -7,6 +8,7 @@ import * as schemas from './schemas.js';
  * content back to snapshot N; it goes live only when shipped). Needs `changes.manage`.
  */
 export const adminSnapshotsRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('changes.manage') };
 
   app.get('/', { schema: schemas.listSnapshotsSchema, ...manage }, handlers.getSnapshots);

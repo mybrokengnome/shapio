@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/previewTokens.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /**
@@ -7,6 +8,7 @@ import * as schemas from './schemas.js';
  * model by the service); creators revoke their own, `tokens.manage` revokes any.
  */
 export const adminPreviewRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const admin = { preHandler: app.requireAdmin };
   app.get('/tokens', { schema: schemas.listPreviewTokensSchema, ...admin }, handlers.listPreviewTokens);
   app.post(

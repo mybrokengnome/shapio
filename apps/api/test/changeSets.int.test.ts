@@ -399,6 +399,47 @@ describe('change sets (content)', () => {
     expect((await editor.get('/api/admin/change-sets')).statusCode).toBe(200);
   });
 
+  it('splits preparing from shipping: update proposes an item, changes.ship ships (agentic plan §I)', async () => {
+    const grant = (action: string) => ({ action, modelId: null, condition: null, fieldIds: null });
+    expectStatus(
+      await admin.post('/api/admin/roles', {
+        key: 'preparer',
+        name: 'Preparer',
+        kind: 'admin',
+        permissions: ['read', 'create', 'update', 'changes.manage'].map(grant),
+      }),
+      201,
+    );
+    const preparer = schemaClient(testApp.app, await createRoleToken(database.current.db, 'preparer'));
+    const entry = await createEntry('Prepared');
+    const set = expectStatus(
+      await preparer.post('/api/admin/change-sets', { title: 'Prepared' }),
+      201,
+    ).json<ChangeSet>();
+    // Proposing a publication needs update on the model, not publish.
+    const withItem = expectStatus(
+      await preparer.post(`/api/admin/change-sets/${set.id}/items`, {
+        modelKey: 'page',
+        entryId: entry.id,
+        action: 'publish',
+      }),
+      200,
+    ).json<ChangeSet>();
+    const refused = await preparer.post(`/api/admin/change-sets/${set.id}/ship`, {
+      expectedVersion: withItem.version,
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<{ error: { message: string } }>().error.message).toContain('changes.ship');
+    const scheduled = await preparer.post(`/api/admin/change-sets/${set.id}/schedule`, {
+      at: new Date(Date.now() + 3_600_000).toISOString(),
+      expectedVersion: withItem.version,
+    });
+    expect(scheduled.statusCode).toBe(403);
+    expect((await getSet(set.id)).status).toBe('open');
+    // A person holding changes.ship (and publish) ships what was prepared.
+    expect(expectStatus(await ship(set), 200).json<ChangeSet>().status).toBe('shipped');
+  });
+
   describe('a scheduled set across a worker restart ships every item exactly once (brief §10)', () => {
     const LEASE_MS = 1500;
     const children: SpawnedProcess[] = [];

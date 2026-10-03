@@ -46,7 +46,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     contentActions: ['read', 'create', 'update', 'delete', 'publish'],
     // Editors group publications into change sets and (re)trigger site builds; webhooks, deployment
     // connections and the jobs view stay with admins.
-    globalActions: ['media.read', 'media.write', 'changes.manage', 'deployments.trigger'],
+    globalActions: ['media.read', 'media.write', 'changes.manage', 'changes.ship', 'deployments.trigger'],
   },
   {
     key: SYSTEM_ROLE_KEYS.readOnly,

@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import type { SchemaApplyResult, SchemaSyncResult } from '@shapio/client';
 import type { LockFile } from '@shapio/schema';
 import type { CliCommand, CliIo } from '../../types.js';
-import type { ApplyResponse, SyncResultItem } from './api.js';
 import { removeFile, writeDefinitionFile, writeLockFile } from './files.js';
 import { COMMON_USAGE, parseSchemaOptions, type SchemaCommandOptions } from './options.js';
 import { apiFor, printResults, readLocalState, sendApply, type LocalState } from './sync.js';
@@ -9,10 +9,14 @@ import { apiFor, printResults, readLocalState, sendApply, type LocalState } from
 const POLL_INTERVAL_MS = 500;
 
 /** Waits for planned changes (prerequisite jobs) to activate or fail. Returns the failed ones. */
-const waitForChanges = async (options: SchemaCommandOptions, items: readonly SyncResultItem[], io: CliIo) => {
+const waitForChanges = async (
+  options: SchemaCommandOptions,
+  items: readonly SchemaSyncResult[],
+  io: CliIo,
+) => {
   const api = apiFor(options);
   const deadline = Date.now() + options.waitTimeoutMs;
-  const failed: SyncResultItem[] = [];
+  const failed: SchemaSyncResult[] = [];
   for (const item of items) {
     io.stdout(`Waiting for ${item.apiKey} (change ${item.changeId ?? ''})...\n`);
     for (;;) {
@@ -47,7 +51,7 @@ const waitForChanges = async (options: SchemaCommandOptions, items: readonly Syn
 const updateLocalState = async (
   options: SchemaCommandOptions,
   state: LocalState,
-  response: ApplyResponse,
+  response: SchemaApplyResult,
 ) => {
   const exported = await apiFor(options).export();
   const remote = new Map(exported.definitions.map((entry) => [entry.definition.id, entry]));

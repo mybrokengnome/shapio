@@ -82,6 +82,28 @@ shapio media migrate --from <local|s3> --to <local|s3> [--delete-source]
   Needs MEDIA_PATH and the STORAGE_S3_* settings. Afterwards set STORAGE_DRIVER to the new driver.
 ```
 
+### shapio mcp
+
+Print the configuration that connects Claude Code, Cursor or Claude Desktop through @shapio/mcp.
+
+```text
+shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship]
+  Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then
+  PUBLIC_URL + BASE_PATH. Create an admin API token whose role has no "changes.ship" and paste it in place
+  of the placeholder: agents prepare change sets, people ship them.
+```
+
+### shapio sites
+
+List or create sites directly in the database (sites list | sites create --key ... --name ...).
+
+```text
+shapio sites list
+shapio sites create --key <key> --name <name>
+  Lists or creates sites directly in the database (sites share the schema, admins and roles; each has its
+  own content, media, tokens and snapshots). Keys are lower case and fixed once created.
+```
+
 ### shapio extensions
 
 Validate shapio.config and list its hooks, routes, services, jobs and editors (extensions check).

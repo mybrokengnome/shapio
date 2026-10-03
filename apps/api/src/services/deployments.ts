@@ -29,7 +29,7 @@ import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as deploymentConnectionsRepository from '../repositories/deploymentConnections.js';
 import type { DeploymentConnectionRow } from '../repositories/deploymentConnections.js';
 import * as deploymentRunsRepository from '../repositories/deploymentRuns.js';
-import type { ActorContext } from './actorContext.js';
+import type { ActorContext, SiteActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 /**
@@ -310,7 +310,7 @@ export type ConnectionInput = {
 
 export const createConnection = async (
   runtime: PublishingRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   input: ConnectionInput,
 ): Promise<{ connection: ConnectionView; generatedSecrets: Record<string, string> }> => {
   const provider = providerFor(input.provider);
@@ -333,6 +333,7 @@ export const createConnection = async (
   const row = await runtime.db.transaction().execute(async (trx) => {
     const inserted = await deploymentConnectionsRepository.insert(
       {
+        site_id: context.site.id,
         name: input.name.trim(),
         provider: provider.id,
         settings: JSON.stringify(settings),

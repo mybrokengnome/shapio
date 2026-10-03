@@ -157,13 +157,21 @@ and revalidate the routes of the changed entries. With Next.js:
 ```ts
 // app/api/shapio-changed/route.ts
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@shapio/client';
+import { createClient, verifyWebhookSignature } from '@shapio/client';
 
 const shapio = createClient({ baseUrl: process.env.SHAPIO_URL!, token: process.env.SHAPIO_DELIVERY_TOKEN });
 let lastSnapshot = Number(process.env.SHAPIO_START_SNAPSHOT ?? 0);
 
-export async function POST() {
-  // Verify the webhook signature first (see Webhooks).
+export async function POST(request: Request) {
+  const check = await verifyWebhookSignature({
+    secret: process.env.SHAPIO_WEBHOOK_SECRET!,
+    signature: request.headers.get('x-shapio-signature'),
+    timestamp: request.headers.get('x-shapio-timestamp'),
+    body: await request.text(),
+  });
+  if (!check.ok) {
+    return new Response(check.reason, { status: 401 });
+  }
   const { snapshot } = await shapio.snapshots.current();
   const diff = await shapio.snapshots.allChanges({ from: lastSnapshot, to: snapshot });
   if (diff.schemaVersions.from !== diff.schemaVersions.to) {

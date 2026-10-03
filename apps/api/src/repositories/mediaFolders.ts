@@ -8,6 +8,7 @@ export type MediaFolderRow = Selectable<MediaFolders>;
 
 const FOLDER_COLUMNS = [
   'id',
+  'site_id',
   'parent_id',
   'name',
   'created_by',

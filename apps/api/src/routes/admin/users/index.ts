@@ -12,6 +12,7 @@ import {
   revokeUserSessions,
   updateUser,
 } from '../../../controllers/adminUsers.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import { CREDENTIAL_ROUTE_CONFIG } from '../rateLimits.js';
 import {
   acceptInvitationSchema,
@@ -29,6 +30,7 @@ import {
 
 /** Admin users and invitations. Registered under /api/admin. */
 export const adminUsersRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const manageUsers = { preHandler: app.requireGlobalPermission('users.manage') };
 
   // GET /api/admin/users

@@ -29,6 +29,8 @@ model never needs a rebuild, a restart or a deploy.
 - [End users](end-users.md): sign-up, sign-in, Google and GitHub, roles, owner-only writes.
 - [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, preview links.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.
+- [MCP server for coding agents](mcp.md): Claude Code, Cursor and Claude Desktop model content, write drafts
+  and open change sets; people ship them.
 - [Example site walkthrough](example-site.md): model a page, publish it, see an Astro site update.
 
 ## Run it

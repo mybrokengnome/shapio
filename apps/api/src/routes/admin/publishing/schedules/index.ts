@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../../controllers/scheduledPublications.js';
+import { declareSiteScope } from '../../../../plugins/siteResolution.js';
 import { cancelScheduleSchema, createScheduleSchema, listSchedulesSchema } from './schemas.js';
 
 /**
@@ -8,6 +9,7 @@ import { cancelScheduleSchema, createScheduleSchema, listSchedulesSchema } from 
  * needs `publishing.manage`, listing one entry's schedules needs read permission on its model.
  */
 export const adminSchedulesRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const admin = { preHandler: app.requireAdmin };
   // GET /?status=&entryId=&cursor=
   app.get('/', { schema: listSchedulesSchema, ...admin }, handlers.listSchedules);

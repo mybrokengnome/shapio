@@ -3,6 +3,7 @@ import { createUsageAggregator, type UsageBatch } from './aggregator.js';
 
 const log = { error: vi.fn(), warn: vi.fn() };
 const AT = new Date('2026-10-02T10:00:00Z');
+const SITE = 'site-a';
 
 const setup = (options: { maxKeys?: number; write?: (batch: UsageBatch) => Promise<void> } = {}) => {
   const batches: UsageBatch[] = [];
@@ -25,15 +26,15 @@ const setup = (options: { maxKeys?: number; write?: (batch: UsageBatch) => Promi
 describe('usage aggregator', () => {
   it('adds up reads per (day, model, path, principal, selection) and requests per (day, principal)', async () => {
     const { aggregator, batches, setClock } = setup();
-    aggregator.recordFieldReads('token:a', 'm1', [{ path: 'f1', selection: 'explicit' }]);
-    aggregator.recordFieldReads('token:a', 'm1', [
+    aggregator.recordFieldReads(SITE, 'token:a', 'm1', [{ path: 'f1', selection: 'explicit' }]);
+    aggregator.recordFieldReads(SITE, 'token:a', 'm1', [
       { path: 'f1', selection: 'explicit' },
       { path: 'f2', selection: 'implicit' },
     ]);
-    aggregator.recordRequest('token:a', null);
+    aggregator.recordRequest(SITE, 'token:a', null);
     setClock(new Date('2026-10-02T11:00:00Z'));
-    aggregator.recordRequest('token:a', 41);
-    aggregator.recordRequest('anonymous', null);
+    aggregator.recordRequest(SITE, 'token:a', 41);
+    aggregator.recordRequest(SITE, 'anonymous', null);
     await aggregator.flush();
 
     expect(batches).toHaveLength(1);
@@ -51,25 +52,39 @@ describe('usage aggregator', () => {
     expect(batches).toHaveLength(1);
   });
 
+  it('keeps sites apart: the same principal and field on two sites are two counters', async () => {
+    const { aggregator, batches } = setup();
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
+    aggregator.recordFieldReads('site-b', 'anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
+    aggregator.recordRequest(SITE, 'anonymous', null);
+    aggregator.recordRequest('site-b', 'anonymous', null);
+    await aggregator.flush();
+    expect(batches[0]?.fieldReads.map((row) => [row.siteId, row.reads])).toEqual([
+      [SITE, 1],
+      ['site-b', 1],
+    ]);
+    expect(batches[0]?.tokenReads.map((row) => row.siteId)).toEqual([SITE, 'site-b']);
+  });
+
   it('buckets by UTC day', async () => {
     const { aggregator, batches, setClock } = setup();
     setClock(new Date('2026-10-01T23:59:59Z'));
-    aggregator.recordFieldReads('anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
     setClock(new Date('2026-10-02T00:00:01Z'));
-    aggregator.recordFieldReads('anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);
     await aggregator.flush();
     expect(batches[0]?.fieldReads.map((row) => row.day)).toEqual(['2026-10-01', '2026-10-02']);
   });
 
   it('flushes early when it reaches the key cap', async () => {
     const { aggregator, batches } = setup({ maxKeys: 3 });
-    aggregator.recordFieldReads('anonymous', 'm1', [
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [
       { path: 'a', selection: 'explicit' },
       { path: 'b', selection: 'explicit' },
     ]);
     expect(batches).toHaveLength(0);
-    aggregator.recordRequest('anonymous', null);
-    aggregator.recordRequest('token:x', null);
+    aggregator.recordRequest(SITE, 'anonymous', null);
+    aggregator.recordRequest(SITE, 'token:x', null);
     await vi.waitFor(() => expect(batches).toHaveLength(1));
     expect(batches[0]?.fieldReads).toHaveLength(2);
   });
@@ -86,10 +101,10 @@ describe('usage aggregator', () => {
         return Promise.resolve();
       },
     });
-    aggregator.recordFieldReads('anonymous', 'm1', [{ path: 'a', selection: 'explicit' }]);
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'a', selection: 'explicit' }]);
     await aggregator.flush();
     expect(log.warn).toHaveBeenCalled();
-    aggregator.recordFieldReads('anonymous', 'm1', [{ path: 'a', selection: 'explicit' }]);
+    aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'a', selection: 'explicit' }]);
     fail = false;
     await aggregator.flush();
     expect(written[0]?.fieldReads).toEqual([expect.objectContaining({ fieldPath: 'a', reads: 2 })]);
@@ -97,7 +112,7 @@ describe('usage aggregator', () => {
 
   it('writes what is left on close', async () => {
     const { aggregator, batches } = setup();
-    aggregator.recordRequest('app_users', null);
+    aggregator.recordRequest(SITE, 'app_users', null);
     await aggregator.close();
     expect(batches[0]?.tokenReads).toEqual([
       expect.objectContaining({ principalKey: 'app_users', requests: 1 }),

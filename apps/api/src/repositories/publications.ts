@@ -1,6 +1,7 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -24,16 +25,19 @@ export type SnapshotMeta = {
  * Every number also gets a `publication_snapshots` ledger row (why, who, the schema version live with it),
  * written in the same transaction.
  */
-export const nextSeq = async (trx: Transaction<DB>, meta: SnapshotMeta): Promise<number> => {
+export const nextSeq = async (trx: Transaction<DB>, siteId: string, meta: SnapshotMeta): Promise<number> => {
+  // One sequence per site (sites plan §H): publishing on one site never waits for another's.
   const row = await trx
     .updateTable('publication_state')
     .set({ last_seq: sql`last_seq + 1` })
+    .where('site_id', '=', siteId)
     .returning('last_seq')
     .executeTakeFirstOrThrow();
   const seq = Number(row.last_seq);
   await trx
     .insertInto('publication_snapshots')
     .values((eb) => ({
+      site_id: siteId,
       seq: String(seq),
       schema_version: eb.selectFrom('system_versions').select('schema_version'),
       source: meta.source,
@@ -55,12 +59,16 @@ export type SeqAllocator = {
   taken: () => number | undefined;
 };
 
-export const createSeqAllocator = (trx: Transaction<DB>, meta: SnapshotMeta): SeqAllocator => {
+export const createSeqAllocator = (
+  trx: Transaction<DB>,
+  siteId: string,
+  meta: SnapshotMeta,
+): SeqAllocator => {
   let seq: Promise<number> | undefined;
   let value: number | undefined;
   return {
     next: () => {
-      seq ??= nextSeq(trx, meta).then((taken) => {
+      seq ??= nextSeq(trx, siteId, meta).then((taken) => {
         value = taken;
         return taken;
       });
@@ -70,8 +78,12 @@ export const createSeqAllocator = (trx: Transaction<DB>, meta: SnapshotMeta): Se
   };
 };
 
-export const currentSeq = async (executor: Executor = db): Promise<number> => {
-  const row = await executor.selectFrom('publication_state').select('last_seq').executeTakeFirstOrThrow();
+export const currentSeq = async (siteId: string, executor: Executor = db): Promise<number> => {
+  const row = await executor
+    .selectFrom('publication_state')
+    .select('last_seq')
+    .where('site_id', '=', siteId)
+    .executeTakeFirstOrThrow();
   return Number(row.last_seq);
 };
 
@@ -96,6 +108,8 @@ export const open = (
     .insertInto('publication_log')
     .values({
       entry_id: row.entryId,
+      // The log is per site (snapshot numbers are): a copy of the entry's site.
+      site_id: entrySiteOf(trx, row.entryId),
       model_id: row.modelId,
       locale: row.locale,
       revision_id: row.revisionId,

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { toActorContext } from '../helpers/requestContext.js';
+import { toActorContext, toSiteActorContext } from '../helpers/requestContext.js';
 import type {
   CreateConnectionBody,
   ListRunsQuery,
@@ -25,7 +25,7 @@ export const createConnection = async (
     .send(
       await deploymentsService.createConnection(
         request.server.publishing,
-        toActorContext(request),
+        toSiteActorContext(request),
         request.body,
       ),
     );

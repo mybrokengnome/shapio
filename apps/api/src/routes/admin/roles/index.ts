@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { createRole, deleteRole, getRole, listRoles, updateRole } from '../../../controllers/roles.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import {
   createRoleSchema,
   deleteRoleSchema,
@@ -10,6 +11,7 @@ import {
 
 /** Built-in and custom roles with their grants. Any admin may read them (to assign them); changes need roles.manage. */
 export const adminRolesRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const readRoles = { preHandler: app.requireAdmin };
   const manageRoles = { preHandler: app.requireGlobalPermission('roles.manage') };
 

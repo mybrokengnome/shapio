@@ -1,6 +1,7 @@
 import type { RequestFn } from '../request.js';
 import { ADMIN_PATHS, withId } from './paths.js';
 import { toQueryString } from './query.js';
+import type { SchemaApplyInput, SchemaApplyResult, SchemaExport } from './schemaSyncTypes.js';
 import type {
   ChangeOutcome,
   CreateDefinitionInput,
@@ -64,6 +65,11 @@ export const createSchemaApi = (request: RequestFn) => ({
     /** The global schema version and every visible definition's version (cheap; poll it for changes). */
     summary: () => request<SchemaSummary>(ADMIN_PATHS.schema),
     change: (changeId: string) => request<SchemaChangeJob>(withId(ADMIN_PATHS.schemaChanges, changeId)),
+    /** Every definition in the pull format, with the schema version they come from (`shapio schema pull`). */
+    export: () => request<SchemaExport>(ADMIN_PATHS.schemaExport),
+    /** Applies definition files live through the change planner; refuses when the base moved (409). */
+    apply: (body: SchemaApplyInput) =>
+      request<SchemaApplyResult>(ADMIN_PATHS.schemaApply, { method: 'POST', body }),
     settings: () => request<SchemaSettings>(ADMIN_PATHS.schemaSettings),
     updateSettings: (body: UpdateSchemaSettingsInput) =>
       request<SchemaSettings>(ADMIN_PATHS.schemaSettings, { method: 'PUT', body }),

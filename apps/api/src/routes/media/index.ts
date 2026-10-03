@@ -2,10 +2,12 @@ import multipart from '@fastify/multipart';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import type { preHandlerAsyncHookHandler } from 'fastify';
 import { getMediaFile, receiveUpload } from '../../controllers/mediaFiles.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import { getMediaFileSchema, receiveUploadSchema } from './schemas.js';
 
 /** /api/media: stored files (public at stable URLs, private only when signed) and local-driver uploads. */
 export const mediaFilesRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   // Scoped to this plugin: only the upload route parses multipart bodies.
   await app.register(multipart);
 

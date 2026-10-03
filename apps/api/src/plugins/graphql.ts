@@ -92,6 +92,8 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
           audit: {
             exempt: 'GraphQL mutations call the content services, which record revisions and audit events',
           },
+          // Delivery and admin content reads are about one site (its token's, `?site=`, else the primary).
+          site: 'site',
         },
         preHandler: [csrfForGet(app), pinSchema],
         onSend: cacheHeaders,

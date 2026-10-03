@@ -20,7 +20,22 @@ Each event is a `POST` with a JSON body `{ "id", "type", "createdAt", "data" }` 
 | `X-Shapio-Timestamp` | Unix seconds                                                           |
 | `X-Shapio-Signature` | `v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`               |
 
-Verify the signature over the raw body and reject timestamps older than a few minutes:
+Verify the signature over the raw body and reject timestamps older than a few minutes. With `@shapio/client`
+(Node, edge runtimes and browsers alike):
+
+```js
+import { verifyWebhookSignature } from '@shapio/client';
+
+const check = await verifyWebhookSignature({
+  secret: process.env.SHAPIO_WEBHOOK_SECRET,
+  signature: request.headers.get('x-shapio-signature'),
+  timestamp: request.headers.get('x-shapio-timestamp'),
+  body: rawBody, // the body exactly as received, not re-serialised JSON
+});
+if (!check.ok) return new Response(check.reason, { status: 401 });
+```
+
+Or by hand:
 
 ```js
 import { createHmac, timingSafeEqual } from 'node:crypto';

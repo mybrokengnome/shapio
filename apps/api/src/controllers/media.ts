@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { toActorContext } from '../helpers/requestContext.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   CreateFolderBody,
   CreateUploadBody,
@@ -25,7 +26,10 @@ export const listFolders = async () => ({ items: await mediaFoldersService.listF
 export const createFolder = async (
   request: FastifyRequest<{ Body: CreateFolderBody }>,
   reply: FastifyReply,
-) => reply.code(201).send(await mediaFoldersService.createFolder(adminIdOf(request), request.body));
+) =>
+  reply
+    .code(201)
+    .send(await mediaFoldersService.createFolder(getRequestSite(request), adminIdOf(request), request.body));
 
 export const updateFolder = async (request: FastifyRequest<{ Params: IdParams; Body: UpdateFolderBody }>) =>
   mediaFoldersService.updateFolder(request.params.id, request.body);

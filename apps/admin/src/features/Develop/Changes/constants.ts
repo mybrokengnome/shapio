@@ -3,6 +3,8 @@ import type { StatusTone } from '@/components/StatusChip';
 
 /** D0 renamed `releases.manage` to this in the change-sets migration. */
 export const CHANGES_MANAGE_PERMISSION = 'changes.manage';
+/** Shipping and scheduling a ship (split from `changes.manage`, agentic plan §I). */
+export const CHANGES_SHIP_PERMISSION = 'changes.ship';
 export const TOKENS_MANAGE_PERMISSION = 'tokens.manage';
 
 type Display = { labelKey: string; tone: StatusTone };

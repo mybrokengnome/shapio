@@ -199,7 +199,20 @@ export const replaceRoles = async (appUserId: string, roleIds: readonly string[]
   if (roleIds.length > 0) {
     await trx
       .insertInto('app_user_roles')
-      .values(roleIds.map((roleId) => ({ app_user_id: appUserId, role_id: roleId })))
+      .values(
+        roleIds.map((roleId) => ({
+          app_user_id: appUserId,
+          role_id: roleId,
+          site_id: appUserSiteOf(trx, appUserId),
+        })),
+      )
       .execute();
   }
 };
+
+/**
+ * The app user's site as a subquery, for rows that carry a copy of it (role assignments, OAuth identities).
+ * Pass the outer query's executor; the subquery is compiled into the outer statement.
+ */
+export const appUserSiteOf = (executor: Executor, appUserId: string) =>
+  executor.selectFrom('app_users').select('app_users.site_id').where('app_users.id', '=', appUserId);

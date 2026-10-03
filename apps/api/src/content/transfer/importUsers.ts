@@ -16,6 +16,7 @@ export type UserBatchResult = { added: number; unchanged: number; errors: UserIm
 
 export const importUserBatch = async (
   db: Database,
+  siteId: string,
   users: readonly AppUserRecord[],
 ): Promise<UserBatchResult> => {
   const existing = await transferImportRepository.findAppUsers(
@@ -49,7 +50,7 @@ export const importUserBatch = async (
   }
   await db.transaction().execute(async (trx) => {
     for (const user of added) {
-      await transferImportRepository.insertAppUser(user, trx);
+      await transferImportRepository.insertAppUser(siteId, user, trx);
       await appUsersRepository.replaceRoles(
         user.id,
         user.roleKeys.flatMap((key) => {

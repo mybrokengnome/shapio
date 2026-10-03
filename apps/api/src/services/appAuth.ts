@@ -5,7 +5,7 @@ import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { isUniqueViolation } from '../helpers/pgErrors.js';
 import type { AppUserPrincipal, Principal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
-import type { ActorContext, ClientInfo } from './actorContext.js';
+import type { ActorContext, ClientInfo, SiteActorContext } from './actorContext.js';
 import { normalizeEmail } from './adminUsers.js';
 import { requestRegistrationAttemptNotice } from './appAuthNotices.js';
 import {
@@ -50,13 +50,14 @@ const emailTaken = (cause: unknown) =>
 /** Creates the account; returns undefined when the address is taken (unique violation). */
 const insertAccount = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   input: { email: string; passwordHash: string; name?: string; client: ClientInfo },
 ): Promise<RegisterResult | undefined> => {
   try {
     return await db.transaction().execute(async (trx) => {
       const user = await appUsersRepository.insert(
         {
+          site_id: context.site.id,
           email: input.email,
           name: input.name?.trim() ?? '',
           password_hash: input.passwordHash,
@@ -110,7 +111,7 @@ const notifyExistingAccount = async (email: string): Promise<RegisterResult> => 
  */
 export const register = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   input: { email: string; password: string; name?: string; client: ClientInfo },
 ): Promise<RegisterResult> => {
   const email = normalizeEmail(input.email);

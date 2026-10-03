@@ -18,6 +18,7 @@ export const ACTION_LABEL_KEYS = {
   'roles.manage': 'roles.actions.rolesManage',
   'tokens.manage': 'roles.actions.tokensManage',
   'audit.read': 'roles.actions.auditRead',
+  'sites.manage': 'roles.actions.sitesManage',
   'media.read': 'roles.actions.mediaRead',
   'media.write': 'roles.actions.mediaWrite',
   'media.manage': 'roles.actions.mediaManage',
@@ -26,6 +27,7 @@ export const ACTION_LABEL_KEYS = {
   'deployments.manage': 'roles.actions.deploymentsManage',
   'deployments.trigger': 'roles.actions.deploymentsTrigger',
   'changes.manage': 'roles.actions.changesManage',
+  'changes.ship': 'roles.actions.changesShip',
 } as const satisfies Record<PermissionAction, string>;
 
 export const ROLE_KINDS: readonly RoleKind[] = ['admin', 'delivery'];

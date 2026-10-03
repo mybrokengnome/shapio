@@ -11,10 +11,15 @@ import { usageDayOf } from './keys.js';
 export type FieldRead = { path: string; selection: UsageSelection };
 
 export type UsageRecorder = {
-  /** One request by `principalKey` read these fields of `modelId`. */
-  recordFieldReads: (principalKey: string, modelId: string, fields: readonly FieldRead[]) => void;
-  /** One delivery request by `principalKey`; `snapshot` when it pinned `?snapshot=N`. */
-  recordRequest: (principalKey: string, snapshot: number | null) => void;
+  /** One request on `siteId` by `principalKey` read these fields of `modelId`. */
+  recordFieldReads: (
+    siteId: string,
+    principalKey: string,
+    modelId: string,
+    fields: readonly FieldRead[],
+  ) => void;
+  /** One delivery request on `siteId` by `principalKey`; `snapshot` when it pinned `?snapshot=N`. */
+  recordRequest: (siteId: string, principalKey: string, snapshot: number | null) => void;
 };
 
 export type UsageBatch = { fieldReads: FieldReadRow[]; tokenReads: TokenReadRow[] };
@@ -59,7 +64,9 @@ const emptyCounters = (): Counters => ({ fields: new Map(), tokens: new Map() })
 const countersSize = (counters: Counters) => counters.fields.size + counters.tokens.size;
 
 const addFieldRow = (counters: Counters, row: FieldReadRow) => {
-  const key = [row.day, row.modelId, row.fieldPath, row.principalKey, row.selection].join(SEPARATOR);
+  const key = [row.day, row.siteId, row.modelId, row.fieldPath, row.principalKey, row.selection].join(
+    SEPARATOR,
+  );
   const known = counters.fields.get(key);
   if (!known) {
     counters.fields.set(key, { ...row });
@@ -70,7 +77,7 @@ const addFieldRow = (counters: Counters, row: FieldReadRow) => {
 };
 
 const addTokenRow = (counters: Counters, row: TokenReadRow) => {
-  const key = [row.day, row.principalKey].join(SEPARATOR);
+  const key = [row.day, row.siteId, row.principalKey].join(SEPARATOR);
   const known = counters.tokens.get(key);
   if (!known) {
     counters.tokens.set(key, { ...row });
@@ -143,12 +150,13 @@ export const createUsageAggregator = ({
   };
 
   return {
-    recordFieldReads: (principalKey, modelId, fields) => {
+    recordFieldReads: (siteId, principalKey, modelId, fields) => {
       const at = now();
       const day = usageDayOf(at);
       for (const field of fields) {
         addFieldRow(counters, {
           day,
+          siteId,
           modelId,
           fieldPath: field.path,
           principalKey,
@@ -159,10 +167,11 @@ export const createUsageAggregator = ({
       }
       checkCapacity();
     },
-    recordRequest: (principalKey, snapshot) => {
+    recordRequest: (siteId, principalKey, snapshot) => {
       const at = now();
       addTokenRow(counters, {
         day: usageDayOf(at),
+        siteId,
         principalKey,
         requests: 1,
         lastSnapshot: snapshot,

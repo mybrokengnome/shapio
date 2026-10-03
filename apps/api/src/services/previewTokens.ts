@@ -151,6 +151,7 @@ export const createPreviewToken = async (
       {
         token_hash: hashToken(token),
         token_prefix: token.slice(0, PREFIX_DISPLAY_LENGTH),
+        site_id: context.site.id,
         model_id: model.definition.id,
         entry_id: input.entryId ?? null,
         locale,

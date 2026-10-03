@@ -1,0 +1,53 @@
+{
+  "name": "@shapio/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Shapio: lets coding agents model content, write drafts and open change sets for review.",
+  "license": "Apache-2.0",
+  "homepage": "https://shapio.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mybrokengnome/shapio.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/mybrokengnome/shapio/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "shapio-mcp": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "@shapio/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/embedDocs.mjs && tsdown",
+    "prepack": "node scripts/embedDocs.mjs && tsdown",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "catalog:",
+    "@shapio/client": "workspace:*",
+    "@shapio/schema": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "catalog:",
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

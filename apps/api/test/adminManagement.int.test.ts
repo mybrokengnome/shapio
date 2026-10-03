@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { createPermissionCache } from '../src/permissions/cache.js';
 import { createPermissionEvaluator } from '../src/permissions/evaluator.js';
 import { createStaticFieldVisibility, NO_FIELD_VISIBILITY } from '../src/permissions/policy.js';
@@ -77,7 +78,10 @@ describe('roles, admin users, API tokens and the audit log', () => {
     expect(await permissionsVersion()).toBe(before + 1);
     roleIdByKey.set(role.key, role.id);
 
-    const principal: Principal = { kind: 'admin', adminUserId: owner.id, sessionId: 's', roleIds: [role.id] };
+    const principal: Principal = testApp.principalFactory.admin({
+      adminUserId: owner.id,
+      roleIds: [role.id],
+    });
     expect(
       await testApp.app.permissions.evaluate(principal, { action: 'update', modelId: 'model-page' }),
     ).toEqual({
@@ -122,7 +126,10 @@ describe('roles, admin users, API tokens and the audit log', () => {
       permissions: [],
     });
     const role = created.json<RoleBody>();
-    const principal: Principal = { kind: 'admin', adminUserId: owner.id, sessionId: 's', roleIds: [role.id] };
+    const principal: Principal = testApp.principalFactory.admin({
+      adminUserId: owner.id,
+      roleIds: [role.id],
+    });
     expect(await other.canPerform(principal, 'schema.create')).toBe(false);
     await api('PATCH', `/api/admin/roles/${role.id}`, ownerSession, {
       expectedVersion: role.version,
@@ -341,6 +348,7 @@ describe('roles, admin users, API tokens and the audit log', () => {
       tokenId: apiToken.id,
       scope: 'delivery',
       roleId: role.json<RoleBody>().id,
+      siteId: PRIMARY_SITE_ID,
     };
     expect(
       await testApp.app.permissions.evaluate(principal, { action: 'read', modelId: 'model-page' }),

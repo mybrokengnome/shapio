@@ -25,15 +25,17 @@ export type PublicationTarget = {
 };
 
 /**
- * Checks that the caller may publish this entry now (the same checks as publishing it directly) and pins
- * the locale: the requested one for localized models, the entry's own locale otherwise. Scheduling and
- * releases re-check everything when they execute.
+ * Checks that the caller may act on this entry now and pins the locale: the requested one for localized
+ * models, the entry's own locale otherwise. `requiredAction` is `publish` (the same checks as publishing it
+ * directly) for scheduling; adding an item to a change set only proposes the publication and needs `update`
+ * (agentic plan §I). Scheduling and change sets re-check `publish` when they execute.
  */
 export const resolvePublicationTarget = async (
   context: ContentServiceContext,
   input: PublicationTargetInput,
+  requiredAction: 'publish' | 'update' = 'publish',
 ): Promise<PublicationTarget> => {
-  const { model, policy } = await modelWithPolicy(context, input.modelKey, 'publish');
+  const { model, policy } = await modelWithPolicy(context, input.modelKey, requiredAction);
   if (!model.definition.draftAndPublish) {
     throw publishingDisabled(input.modelKey);
   }

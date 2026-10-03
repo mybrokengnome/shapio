@@ -10,6 +10,7 @@ import { writeOutboxEvent } from '../jobs/outbox.js';
 import type { ContentAction, PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
 import type { EntryRow } from '../repositories/entries.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 /** Everything a content service call needs: no HTTP objects (CONTRIBUTING.md, code organisation). */
@@ -19,6 +20,8 @@ export type ContentServiceContext = {
   snapshot: SchemaSnapshot;
   permissions: PermissionEvaluator;
   actor: Principal;
+  /** The site the call is about (sites plan §H): every content query and write is scoped to it. */
+  site: SiteRef;
   hooks: ContentHooks;
   /** Media storage and URL builder (package G): media fields render as asset views with URLs. */
   media?: ReadEnvironment['media'];

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SESSION_COOKIE_NAME } from '../constants/auth.js';
 import { toActorContext, toClientInfo } from '../helpers/requestContext.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   ChangePasswordBody,
   ConfirmResetBody,
@@ -36,7 +37,12 @@ export const getMe = async (request: FastifyRequest, reply: FastifyReply) => {
   const principal = authService.requireAdminPrincipal(request.principal);
   const snapshot = await getRequestSchema(request);
   const modelIds = [...snapshot.modelsByApiKey.values()].map((active) => active.definition.id);
-  const me = await authService.getMe(principal, request.server.permissions, modelIds);
+  const me = await authService.getMe(
+    principal,
+    getRequestSite(request),
+    request.server.permissions,
+    modelIds,
+  );
   return reply.send({
     ...me,
     emailDelivery: request.server.config.email.transport,

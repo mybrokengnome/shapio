@@ -1,6 +1,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { appUserSiteOf } from './appUsers.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -20,6 +21,7 @@ export const insert = (
     .insertInto('app_oauth_accounts')
     .values({
       app_user_id: account.appUserId,
+      site_id: appUserSiteOf(trx, account.appUserId),
       provider: account.provider,
       provider_user_id: account.providerUserId,
       email: account.email,

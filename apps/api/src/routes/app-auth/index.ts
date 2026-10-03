@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { CREDENTIAL_RATE_LIMIT_PER_IP } from '../../constants/auth.js';
 import * as handlers from '../../controllers/appAuth.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import { createPerEmailRateLimit, CREDENTIAL_ROUTE_CONFIG } from '../admin/rateLimits.js';
 import * as schemas from './schemas.js';
 
@@ -14,6 +15,7 @@ const PUBLIC_CREDENTIAL = { ...CREDENTIAL_ROUTE_CONFIG, appToken: 'ignore' } as 
  * per-IP limit and, where an email is given, a per-address limit. CORS follows CORS_ORIGINS.
  */
 export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const signedIn = { preHandler: app.requireAppUser };
   // Bearer-authenticated (CSRF never applies to bearer requests); borrow the credential per-IP limit.
   const signedInCredential = { rateLimit: CREDENTIAL_RATE_LIMIT_PER_IP };

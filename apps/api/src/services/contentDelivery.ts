@@ -90,7 +90,7 @@ const atSnapshot = async <T>(
   read: (env: ReadEnvironment, seq: number) => Promise<T>,
 ): Promise<T> =>
   contentQueriesRepository.withConsistentRead(async (trx) => {
-    const current = await publicationsRepository.currentSeq(trx);
+    const current = await publicationsRepository.currentSeq(context.site.id, trx);
     if (query.snapshot !== undefined && options.drafts) {
       throw queryInvalid('snapshot reads published content; it cannot be combined with drafts');
     }
@@ -127,8 +127,8 @@ const recordUsage = async (
     query,
     policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
   });
-  options.usage.recordRequest(principalKey, query.snapshot ?? null);
-  options.usage.recordFieldReads(principalKey, model.definition.id, reads);
+  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null);
+  options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
 };
 
 const toEntries = (env: ReadEnvironment, projected: Awaited<ReturnType<typeof projectRows>>) =>

@@ -7,7 +7,7 @@ type Executor = Kysely<DB> | Transaction<DB>;
 export type AdminInvitationRow = Selectable<AdminInvitations>;
 export type NewAdminInvitation = Insertable<AdminInvitations>;
 
-const PUBLIC_COLUMNS = ['id', 'email', 'role_ids', 'invited_by', 'expires_at', 'created_at'] as const;
+const PUBLIC_COLUMNS = ['id', 'email', 'role_assignments', 'invited_by', 'expires_at', 'created_at'] as const;
 
 export const insert = (invitation: NewAdminInvitation, trx: Executor = db) =>
   trx.insertInto('admin_invitations').values(invitation).returning(PUBLIC_COLUMNS).executeTakeFirstOrThrow();

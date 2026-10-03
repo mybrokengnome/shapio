@@ -54,6 +54,7 @@ const actorFor = (environment: PublishingJobEnvironment, row: ChangeSetRow, sche
         }
       : { adminUserId: row.ship_requested_by, tokenId: row.ship_requested_by_token },
     `change-set:${row.id}`,
+    row.site_id,
   );
 
 /** One job checkpoint holds each pending change's prerequisite progress, keyed by change ID. */
@@ -206,7 +207,7 @@ export const createChangeSetShipHandler =
     let context: ChangeSetServiceContext | undefined;
     try {
       const actor = await actorFor(environment, row, scheduled);
-      context = { ...(await jobContentContext(environment, actor)), ports: deps.ports };
+      context = { ...(await jobContentContext(environment, actor, row.site_id)), ports: deps.ports };
       await (scheduled ? shipScheduled(context, deps, row, job) : finishShipping(context, deps, row, job));
       const shipped = await changeSetsRepository.findById(changeSetId, db);
       return { changeSetId, status: shipped?.status, snapshot: shipped?.shipped_seq ?? null };
@@ -223,7 +224,7 @@ export const createChangeSetShipHandler =
         throw error;
       }
       const failureContext = context ?? {
-        ...(await jobContentContext(environment, { kind: 'system', component: 'change-sets' })),
+        ...(await jobContentContext(environment, { kind: 'system', component: 'change-sets' }, row.site_id)),
         ports: deps.ports,
       };
       const failure = await failSet(failureContext, deps, changeSetId, error);

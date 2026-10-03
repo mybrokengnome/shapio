@@ -6,14 +6,17 @@ import {
   EmailSchema,
   GlobalActionSchema,
   IdParamsSchema,
+  NetworkActionSchema,
   OneTimeTokenSchema,
   PasswordAttemptSchema,
   PasswordSchema,
   PersonNameSchema,
   SessionStartedSchema,
+  SiteActionSchema,
   UuidSchema,
 } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
+import { SiteSummarySchema } from '../sites/schemas.js';
 
 const CsrfTokenSchema = Type.Object({ csrfToken: Type.String() });
 
@@ -35,7 +38,17 @@ export const getMeSchema = {
     200: Type.Object({
       user: AdminUserSchema,
       roles: Type.Array(Type.Object({ id: UuidSchema, key: Type.String(), name: Type.String() })),
+      /** The site this response is about (the request's site: `Shapio-Site`, else the primary site). */
+      site: SiteSummarySchema,
+      /** Every site this admin holds a role on (all sites for a role assigned on every site). */
+      sites: Type.Array(SiteSummarySchema),
+      /** Network actions (roles assigned on every site only). */
+      networkPermissions: Type.Array(NetworkActionSchema),
+      /** Site actions on the request's site. */
+      sitePermissions: Type.Array(SiteActionSchema),
+      /** `networkPermissions` and `sitePermissions` together, for screens that do not distinguish them. */
       globalPermissions: Type.Array(GlobalActionSchema),
+      /** Content actions per model ID on the request's site (models with none are left out). */
       modelPermissions: Type.Record(Type.String(), Type.Array(ContentActionSchema)),
       emailDelivery: Type.Union([Type.Literal('console'), Type.Literal('smtp')]),
       csrfToken: Type.String(),

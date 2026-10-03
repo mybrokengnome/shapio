@@ -51,7 +51,7 @@ export const getOwnerRoleId = async (trx: Transaction<DB>): Promise<string> => {
 
 /** Owners (and the CLI) may grant or remove the owner role and change owner accounts; nobody else. */
 export const isOwnerActor = (actor: Principal, ownerRoleId: string): boolean =>
-  actor.kind === 'system' || (actor.kind === 'admin' && actor.roleIds.includes(ownerRoleId));
+  actor.kind === 'system' || (actor.kind === 'admin' && actor.networkRoleIds.includes(ownerRoleId));
 
 /** Every role ID must exist and be an admin role (delivery roles are for tokens only). */
 export const assertAssignableRoles = async (roleIds: readonly string[], trx: Transaction<DB>) => {

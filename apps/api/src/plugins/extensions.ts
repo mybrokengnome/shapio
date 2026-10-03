@@ -4,6 +4,7 @@ import { EXTENSION_ROUTE_ROOT } from '../constants/extensions.js';
 import type { ExtensionRuntime } from '../extensions/runtime.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 import { recordAudit } from '../services/audit.js';
+import { declareSiteScope } from './siteResolution.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -51,6 +52,9 @@ export const extensionsPlugin = fp<ExtensionsPluginOptions>(
     for (const route of runtime.routes) {
       await app.register(
         async (scope) => {
+          // Custom routes are site routes: `request.site` is the request's site (its token's, `?site=` or
+          // `Shapio-Site`, else the primary site); a route may still declare `config.site = 'network'`.
+          declareSiteScope(scope, 'site');
           scope.addHook('onSend', auditCustomRoute);
           await scope.register(route.plugin, {
             services: runtime.services,

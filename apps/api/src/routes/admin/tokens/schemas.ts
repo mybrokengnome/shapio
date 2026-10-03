@@ -14,6 +14,8 @@ const ApiTokenSchema = Type.Object({
   tokenPrefix: Type.String(),
   roleId: UuidSchema,
   scope: Type.Union([Type.Literal('admin'), Type.Literal('delivery')]),
+  /** The token's site; null for a network admin token (its role applies on every site). */
+  siteId: Type.Union([UuidSchema, Type.Null()]),
   createdBy: Type.Union([UuidSchema, Type.Null()]),
   expiresAt: NullableDateTimeSchema,
   lastUsedAt: NullableDateTimeSchema,
@@ -28,6 +30,12 @@ export const CreateTokenBodySchema = Type.Object(
     name: Type.String({ minLength: 1, maxLength: 100 }),
     roleId: UuidSchema,
     expiresAt: Type.Optional(Type.Union([DateTimeInputSchema, Type.Null()])),
+    /**
+     * A network admin token: its role applies on every site and to network actions. Needs `users.manage`.
+     * Omitted: a network token when the creator may create one, else a token of the request's site.
+     * Delivery tokens always belong to the request's site.
+     */
+    network: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -39,6 +47,7 @@ export const createTokenSchema = {
   response: {
     201: Type.Object({ token: Type.String(), apiToken: ApiTokenSchema }),
     400: ErrorResponseSchema,
+    403: ErrorResponseSchema,
   },
 };
 

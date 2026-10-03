@@ -20,6 +20,8 @@ export const ADMIN_PATHS = {
   components: '/api/admin/components',
   schema: '/api/admin/schema',
   schemaChanges: '/api/admin/schema/changes',
+  schemaExport: '/api/admin/schema/export',
+  schemaApply: '/api/admin/schema/apply',
   schemaSettings: '/api/admin/schema/settings',
   locales: '/api/admin/locales',
   mediaFolders: '/api/admin/media/folders',

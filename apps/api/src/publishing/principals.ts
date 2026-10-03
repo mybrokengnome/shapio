@@ -1,5 +1,6 @@
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
+import { narrowToSite } from '../permissions/sites.js';
 import type { AdminPrincipal, Principal, TokenPrincipal } from '../permissions/types.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
@@ -13,6 +14,8 @@ export const loadAdminPrincipal = async (
   database: Database,
   adminUserId: string | null,
   label: string,
+  /** The site the deferred work is about: the principal holds that site's roles (null: network roles). */
+  siteId: string | null,
 ): Promise<AdminPrincipal> => {
   const user = adminUserId ? await adminUsersRepository.findSummaryById(adminUserId, database) : undefined;
   if (!user || user.status !== 'active') {
@@ -22,7 +25,7 @@ export const loadAdminPrincipal = async (
       'The admin who set this up no longer exists or is disabled; set it up again with an active account',
     );
   }
-  return { kind: 'admin', adminUserId: user.id, sessionId: label, roleIds: user.role_ids };
+  return narrowToSite({ adminUserId: user.id, sessionId: label, assignments: user.assignments }, siteId);
 };
 
 /** The admin user ID of a principal, for `created_by` columns (null for tokens and system work). */
@@ -48,7 +51,7 @@ const loadTokenPrincipal = async (
   ) {
     return undefined;
   }
-  return { kind: 'token', tokenId: row.id, scope: 'admin', roleId: row.role_id };
+  return { kind: 'token', tokenId: row.id, scope: 'admin', roleId: row.role_id, siteId: row.site_id };
 };
 
 /** Whoever set up deferred work: the admin user, else the admin token (both re-checked as they are now). */
@@ -56,10 +59,12 @@ export const loadActor = async (
   database: Database,
   actor: { adminUserId: string | null; tokenId: string | null },
   label: string,
+  /** The site the work is about; an admin is evaluated with that site's roles. */
+  siteId: string,
   now = new Date(),
 ): Promise<Principal> => {
   if (actor.adminUserId || !actor.tokenId) {
-    return loadAdminPrincipal(database, actor.adminUserId, label);
+    return loadAdminPrincipal(database, actor.adminUserId, label, siteId);
   }
   const token = await loadTokenPrincipal(database, actor.tokenId, now);
   if (!token) {

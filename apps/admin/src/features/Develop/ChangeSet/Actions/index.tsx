@@ -8,19 +8,24 @@ import { useDeploymentConnections } from '@/api/deployments';
 import { InlineConfirm } from '@/components/InlineConfirm';
 import { Button } from '@/components/ui/button';
 import { EDITABLE_STATUSES } from '../../Changes/constants';
+import { useDevelopPermissions } from '../../Changes/hooks/useDevelopPermissions';
 import { DeployPopover } from '../DeployPopover';
 import type { ShipFlow } from '../hooks/useShipFlow';
 import { SchedulePopover } from '../SchedulePopover';
 
 type ActionsProps = { set: ChangeSet; flow: ShipFlow };
 
-/** Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. */
+/**
+ * Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. The ship
+ * actions need `changes.ship` (the server enforces it).
+ */
 export const Actions = ({ set, flow }: ActionsProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const discard = useDiscardChangeSet();
   const unschedule = useUnscheduleChangeSet();
   const connections = useDeploymentConnections();
+  const { canShipChanges } = useDevelopPermissions();
   const enabledConnections = (connections.data ?? []).filter((connection) => connection.enabled);
   const editable = EDITABLE_STATUSES.has(set.status);
   const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping;
@@ -62,7 +67,7 @@ export const Actions = ({ set, flow }: ActionsProps) => {
           {t('changes.review.unschedule')}
         </Button>
       ) : null}
-      {editable ? (
+      {editable && canShipChanges ? (
         <>
           <SchedulePopover flow={flow} disabled={shipDisabled} />
           {enabledConnections.length > 0 ? (

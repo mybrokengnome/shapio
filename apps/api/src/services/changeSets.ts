@@ -28,8 +28,8 @@ import type { ContentServiceContext } from './contentAccess.js';
 /**
  * Change sets (developer-face plan §5): create, edit, add and remove entry items, discard, list. Schema drafts
  * are in changeSetDrafts.ts, review in changeSetReview.ts, shipping in publishing/changeSetShip.ts.
- * Routes guard with `changes.manage`; entry items also need publish permission on their model (checked when
- * added and again when the set ships), schema drafts need schema permission.
+ * Routes guard with `changes.manage`; entry items need update permission on their model when added and
+ * publish permission when the set ships, shipping needs `changes.ship`, schema drafts need schema permission.
  */
 export type ChangeSetServiceContext = ContentServiceContext & { ports: SchemaContentPorts };
 
@@ -135,6 +135,7 @@ export const createChangeSet = async (
   const row = await context.db.transaction().execute(async (trx) => {
     const inserted = await changeSetsRepository.insert(
       {
+        site_id: context.site.id,
         title: input.title.trim(),
         description: input.description ?? '',
         source: input.source ?? 'manual',
@@ -217,13 +218,16 @@ export const discardChangeSet = async (
   return getChangeSet(context, id);
 };
 
-/** Adds an (entry, locale) publication; checks the caller may publish it now. */
+/**
+ * Adds an (entry, locale) publication. Proposing needs `update` on the model; the ship checks `publish`
+ * (and `changes.ship`) for whoever ships it.
+ */
 export const addEntryItem = async (
   context: ContentServiceContext,
   id: string,
   input: PublicationTargetInput,
 ): Promise<ChangeSetView> => {
-  const target = await resolvePublicationTarget(context, input);
+  const target = await resolvePublicationTarget(context, input, 'update');
   await context.db.transaction().execute(async (trx) => {
     await lockEditable(trx, id);
     const inserted = await changeSetItemsRepository.insertEntryItem(

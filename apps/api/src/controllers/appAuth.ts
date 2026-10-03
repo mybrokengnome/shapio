@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { OAUTH_STATE_COOKIE_NAME } from '../constants/appAuth.js';
-import { toActorContext, toClientInfo } from '../helpers/requestContext.js';
+import { toActorContext, toClientInfo, toSiteActorContext } from '../helpers/requestContext.js';
 import type {
   ChangePasswordBody,
   DeleteMeBody,
@@ -21,7 +21,7 @@ import * as oauthService from '../services/appAuthOAuth.js';
 import * as sessionsService from '../services/appAuthSessions.js';
 
 export const register = async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
-  const result = await appAuthService.register(request.server.appAuth, toActorContext(request), {
+  const result = await appAuthService.register(request.server.appAuth, toSiteActorContext(request), {
     ...request.body,
     client: toClientInfo(request),
   });
@@ -122,7 +122,7 @@ export const completeOAuth = async (
   request: FastifyRequest<{ Params: ProviderParams; Querystring: OAuthCallbackQuery }>,
   reply: FastifyReply,
 ) => {
-  const result = await oauthService.completeOAuth(request.server.appAuth, toActorContext(request), {
+  const result = await oauthService.completeOAuth(request.server.appAuth, toSiteActorContext(request), {
     provider: request.params.provider,
     stateCookie: request.cookies[OAUTH_STATE_COOKIE_NAME],
     query: request.query,

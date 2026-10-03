@@ -139,6 +139,7 @@ const insertGrant = async (
   const grant = await db.transaction().execute(async (trx) => {
     const row = await mediaUploadGrantsRepository.insert(
       {
+        site_id: context.site.id,
         asset_id: target.assetId,
         kind: target.kind,
         storage_driver: adapter.driver,
@@ -345,6 +346,8 @@ const recordNewAsset = async (
   const asset = await mediaAssetsRepository.insert(
     {
       id: grant.asset_id,
+      // The site the upload was granted on (the folder, if any, is on the same site: composite key).
+      site_id: grant.site_id,
       folder_id: folderId,
       storage_driver: grant.storage_driver,
       storage_key: grant.storage_key,

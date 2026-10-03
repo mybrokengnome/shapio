@@ -4,11 +4,35 @@
  * implements roles and the real evaluator against this interface.
  */
 
+/** One role held by an admin user: on one site, or on every site (`siteId` null). */
+export type RoleAssignment = { roleId: string; siteId: string | null };
+
+/**
+ * An admin user as the session knows them: every role assignment, on any site. Never evaluated directly;
+ * `narrowToSite` (permissions/sites.ts) turns it into the `AdminPrincipal` of one request's site.
+ */
+export type AdminIdentity = {
+  adminUserId: string;
+  sessionId: string;
+  assignments: readonly RoleAssignment[];
+};
+
+/**
+ * An admin user narrowed to one site (sites plan §H). `roleIds`: roles assigned on this site or on every
+ * site; site actions and content actions are evaluated against them. `networkRoleIds`: roles assigned on
+ * every site only; network actions (users, roles, schema, audit, sites) are evaluated against them, so a
+ * site-only role can never reach the network. `siteId` null: a network route, where `roleIds` equals
+ * `networkRoleIds`.
+ */
 export type AdminPrincipal = {
   kind: 'admin';
   adminUserId: string;
   sessionId: string;
+  /** Every assignment, on any site (which sites the admin works on). */
+  assignments: readonly RoleAssignment[];
+  siteId: string | null;
   roleIds: readonly string[];
+  networkRoleIds: readonly string[];
 };
 
 export type AppUserPrincipal = {
@@ -23,6 +47,11 @@ export type TokenPrincipal = {
   tokenId: string;
   scope: 'admin' | 'delivery';
   roleId: string;
+  /**
+   * The token's site; null for a network admin token (its role applies on every site and to network
+   * actions). Delivery tokens always have a site.
+   */
+  siteId: string | null;
 };
 
 export type AnonymousPrincipal = { kind: 'anonymous' };
@@ -36,28 +65,44 @@ export type Principal =
 export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish', 'schemaManage'] as const;
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
 
+/** Content actions about the shared schema rather than one site's entries: network roles only. */
+export const NETWORK_CONTENT_ACTIONS: ReadonlySet<ContentAction> = new Set(['schemaManage']);
+
 /**
- * Actions that are not scoped to one model: creating a model has no model to grant on, and managing admin
- * users, roles, API tokens, reading the audit log and the media library are about the instance, not one model.
+ * Actions that are not scoped to one model, in two kinds (sites plan §H):
+ * - Network actions are about the whole instance (creating models, managing admin users, roles and sites,
+ *   reading the audit log). Only roles assigned on every site grant them: a role held on one site never does,
+ *   so a site admin cannot grant themselves other sites.
+ * - Site actions are about one site's library, tokens and publishing; any role held on the site grants them.
  */
-export const GLOBAL_ACTIONS = [
+export const NETWORK_ACTIONS = [
   'schema.create',
   'users.manage',
   'roles.manage',
-  'tokens.manage',
   'audit.read',
+  'sites.manage',
+] as const;
+export type NetworkAction = (typeof NETWORK_ACTIONS)[number];
+
+export const SITE_ACTIONS = [
+  'tokens.manage',
   // Media library (package G): browse; upload, edit and organise; delete and change visibility.
   'media.read',
   'media.write',
   'media.manage',
   // Publishing (package H): the jobs view and scheduling overview; webhooks; deployment connections;
-  // triggering and retrying deployment runs; change sets (schema + content shipped as one snapshot).
+  // triggering and retrying deployment runs; change sets (schema + content shipped as one snapshot) and
+  // shipping them (`changes.ship`, split so an agent's role can prepare change sets but not make them live).
   'publishing.manage',
   'webhooks.manage',
   'deployments.manage',
   'deployments.trigger',
   'changes.manage',
+  'changes.ship',
 ] as const;
+export type SiteAction = (typeof SITE_ACTIONS)[number];
+
+export const GLOBAL_ACTIONS = [...NETWORK_ACTIONS, ...SITE_ACTIONS] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
 
 /** Field visibility by stable field ID. `all` means every field the schema exposes to this principal kind. */

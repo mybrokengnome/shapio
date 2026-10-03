@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../controllers/previewContent.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import {
   ContentQuerySchema,
   DeliveryResponseSchema,
@@ -14,6 +15,7 @@ import { ErrorResponseSchema } from '../schemas/error.js';
  * `Authorization: Bearer shpv_…` (never a query parameter, so tokens stay out of access logs).
  */
 export const previewRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   // The preview token is not an app-user JWT: the app-user plugin must leave this bearer alone.
   const config = { appToken: 'ignore' as const };
   const response = {

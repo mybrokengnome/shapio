@@ -16,6 +16,7 @@ const LIST_COLUMNS = [
   'api_tokens.last_used_at',
   'api_tokens.revoked_at',
   'api_tokens.created_at',
+  'api_tokens.site_id',
   'admin_roles.kind as role_kind',
 ] as const;
 

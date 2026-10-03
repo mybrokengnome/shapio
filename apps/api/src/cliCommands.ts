@@ -14,9 +14,12 @@ import { probeStatus } from './helpers/healthProbe.js';
 import { loopbackUrl } from './helpers/publicUrl.js';
 import { generateToken } from './helpers/tokens.js';
 import { createLogger } from './logger.js';
+import { mcpCommand } from './mcp/cli.js';
 import { mediaCommand } from './media/cli.js';
 import { startServer } from './server.js';
+import { SYSTEM_CLI_ACTOR } from './services/actorContext.js';
 import { createAdminDirect } from './services/setup.js';
+import { createSite, listAllSites } from './services/sites.js';
 import { startDedicatedWorker } from './worker.js';
 
 /** Runs until a signal stops the process; the exit code is set by the shutdown handler. */
@@ -156,6 +159,55 @@ const adminCommand: CliCommand = {
   },
 };
 
+const SITES_USAGE =
+  'shapio sites list\n' +
+  'shapio sites create --key <key> --name <name>\n' +
+  '  Lists or creates sites directly in the database (sites share the schema, admins and roles; each has its\n' +
+  '  own content, media, tokens and snapshots). Keys are lower case and fixed once created.';
+
+const SITE_KEY_RE = /^[a-z][a-z0-9-]{0,62}$/;
+
+const runSites = async (subcommand: string | undefined, options: Map<string, string>, io: CliIo) => {
+  const config = loadConfig();
+  const db = createDb({ connectionString: config.database.url, poolMax: 2, applicationName: 'shapio-sites' });
+  try {
+    if ((await getPendingMigrations(db)).length > 0) {
+      io.stderr('Database migrations are pending; run `shapio migrate` (or start the server) first.\n');
+      return 1;
+    }
+    if (subcommand === 'list') {
+      for (const site of await listAllSites(db)) {
+        io.stdout(`${site.key}\t${site.name}${site.isPrimary ? '\t(primary)' : ''}\n`);
+      }
+      return 0;
+    }
+    const key = options.get('key') ?? '';
+    const name = options.get('name')?.trim() ?? '';
+    if (!SITE_KEY_RE.test(key) || name.length === 0) {
+      io.stderr(`Usage: ${SITES_USAGE}\n`);
+      return 1;
+    }
+    const site = await createSite(SYSTEM_CLI_ACTOR, { key, name }, db);
+    io.stdout(`Created site ${site.key} (${site.id}).\n`);
+    return 0;
+  } finally {
+    await db.destroy();
+  }
+};
+
+const sitesCommand: CliCommand = {
+  summary: 'List or create sites directly in the database (sites list | sites create --key ... --name ...)',
+  usage: SITES_USAGE,
+  run: async (args, io) => {
+    const [subcommand, ...rest] = args;
+    if (subcommand !== 'list' && subcommand !== 'create') {
+      io.stderr(`Usage: ${SITES_USAGE}\n`);
+      return 1;
+    }
+    return runSites(subcommand, parseOptions(rest), io);
+  },
+};
+
 const EXTENSIONS_USAGE =
   'shapio extensions check\n' +
   '  Loads shapio.config (SHAPIO_CONFIG_PATH, else the working directory), validates it and lists its hooks,\n' +
@@ -183,6 +235,8 @@ const LOCAL_COMMANDS: Readonly<Record<string, CliCommand>> = {
   version: versionCommand,
   admin: adminCommand,
   media: mediaCommand,
+  mcp: mcpCommand,
+  sites: sitesCommand,
   extensions: extensionsCommand,
 };
 

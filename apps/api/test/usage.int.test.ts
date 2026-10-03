@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { createRetentionJobHandlers, ensureRetentionScheduled } from '../src/jobs/retention.js';
 import { createWorker } from '../src/jobs/worker.js';
@@ -115,7 +116,7 @@ describe('field usage', () => {
   it('counts REST reads by token: explicit fields, whole-model reads and populated targets', async () => {
     expectStatus(await deliver('/api/content/articles?fields=title', siteToken), 200);
     expectStatus(await deliver('/api/content/articles?fields=title,author&populate=author', siteToken), 200);
-    const pinned = await publicationsRepository.currentSeq(database.current.db);
+    const pinned = await publicationsRepository.currentSeq(PRIMARY_SITE_ID, database.current.db);
     expectStatus(await deliver(`/api/content/articles/${post.id}?snapshot=${pinned}`, otherToken), 200);
     // Admin reads (here an admin-scope API token) are not consumers.
     expectStatus(await admin.get('/api/content/articles'), 200);
@@ -184,6 +185,7 @@ describe('field usage', () => {
     const day = usageDayOf(new Date());
     const row = {
       day,
+      siteId: PRIMARY_SITE_ID,
       modelId: article.definition.id,
       fieldPath: 'upsert-test',
       principalKey: 'anonymous',
@@ -219,6 +221,7 @@ describe('field usage', () => {
     await writeUsageBatch(database.current.db, {
       fieldReads: [old, recent].map((day) => ({
         day,
+        siteId: PRIMARY_SITE_ID,
         modelId: article.definition.id,
         fieldPath: `retention-${day}`,
         principalKey: 'anonymous',
@@ -228,6 +231,7 @@ describe('field usage', () => {
       })),
       tokenReads: [old, recent].map((day) => ({
         day,
+        siteId: PRIMARY_SITE_ID,
         principalKey: `retention-${day}`,
         requests: 1,
         lastSnapshot: null,

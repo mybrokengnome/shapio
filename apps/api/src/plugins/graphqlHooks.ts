@@ -4,6 +4,7 @@ import { Kind, type DocumentNode, type GraphQLSchema, type OperationDefinitionNo
 import { fragmentsOf } from '../schema/codegen/graphql/complexity.js';
 import { operationUsage, type OperationUsage } from '../schema/codegen/graphql/usageSelection.js';
 import { usagePrincipalKey } from '../usage/keys.js';
+import { getRequestSite } from './siteResolution.js';
 
 /** Route hooks of `/api/graphql` (plugins/graphql.ts). */
 
@@ -93,8 +94,9 @@ export const recordUsage = (request: FastifyRequest, hasData: boolean) => {
     return;
   }
   const { principalKey, usage } = pending;
-  request.server.usage.recordRequest(principalKey, usage.snapshot);
+  const site = getRequestSite(request);
+  request.server.usage.recordRequest(site.id, principalKey, usage.snapshot);
   for (const [modelId, reads] of usage.reads) {
-    request.server.usage.recordFieldReads(principalKey, modelId, reads);
+    request.server.usage.recordFieldReads(site.id, principalKey, modelId, reads);
   }
 };

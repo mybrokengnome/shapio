@@ -183,7 +183,10 @@ const changePublication = async (
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
     const locales = targetLocales(context, model, input.locales, heads);
     let metadata: Record<string, unknown>;
-    const seqs = createSeqAllocator(trx, { source: operation, actor: actorColumns(context.actor) });
+    const seqs = createSeqAllocator(trx, context.site.id, {
+      source: operation,
+      actor: actorColumns(context.actor),
+    });
     if (operation === 'publish') {
       const published = await publishLocalesInTransaction(
         { write, snapshot: context.snapshot, hooks: context.hooks, seq: seqs },

@@ -8,7 +8,7 @@ import * as appRolesRepository from '../../repositories/appRoles.js';
 import * as deploymentConnectionsRepository from '../../repositories/deploymentConnections.js';
 import * as transferImportRepository from '../../repositories/transferImport.js';
 import * as webhooksRepository from '../../repositories/webhooks.js';
-import type { ActorContext } from '../../services/actorContext.js';
+import type { SiteActorContext } from '../../services/actorContext.js';
 import { createAppRole, updateAppRole } from '../../services/appRoles.js';
 import type { AppPermissionInput } from '../../services/appRoles.js';
 import { recordAudit } from '../../services/audit.js';
@@ -30,7 +30,8 @@ import { EMPTY_LOCK, type ImportPlan } from './plan.js';
 export type ConfigDependencies = {
   /** A schema context on the current snapshot (re-read after each step that moves the schema). */
   schemaContext: () => Promise<SchemaServiceContext>;
-  actor: ActorContext;
+  /** The request's context; its site receives the bundle's folders and deployment connections. */
+  actor: SiteActorContext;
   publishing: PublishingRuntime;
   fieldVisibility: FieldVisibilityLookup;
 };
@@ -182,6 +183,7 @@ const insertConnection = async (deps: ConfigDependencies, connection: Connection
     await deploymentConnectionsRepository.insert(
       {
         id: connection.id,
+        site_id: deps.actor.site.id,
         name: connection.name,
         provider: provider.id,
         settings: JSON.stringify(connection.settings),
@@ -248,7 +250,7 @@ export const applyConfig = async (deps: ConfigDependencies, plan: ImportPlan): P
     }
   }
   for (const folder of orderFolders(plan.config.folders)) {
-    await transferImportRepository.insertFolder(folder);
+    await transferImportRepository.insertFolder(deps.actor.site.id, folder);
   }
   return { pendingChangeIds, webhookSecrets };
 };

@@ -18,7 +18,7 @@ import * as appLoginCodesRepository from '../repositories/appLoginCodes.js';
 import * as appOAuthAccountsRepository from '../repositories/appOAuthAccounts.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import type { AppUserRow } from '../repositories/appUsers.js';
-import type { ActorContext, ClientInfo } from './actorContext.js';
+import type { ActorContext, ClientInfo, SiteActorContext } from './actorContext.js';
 import { normalizeEmail } from './adminUsers.js';
 import { endAllSignIns, issueSession, signInStatus, type AppSession } from './appAuthSessions.js';
 import { recordAudit } from './audit.js';
@@ -157,13 +157,19 @@ const linkToExisting = async (
 };
 
 const createFromProfile = async (
-  context: ActorContext,
+  context: SiteActorContext,
   provider: string,
   profile: OAuthProfile & { email: string },
   trx: Transaction<DB>,
 ) => {
   const user = await appUsersRepository.insert(
-    { email: profile.email, name: profile.name.trim(), password_hash: null, confirmed_at: new Date() },
+    {
+      site_id: context.site.id,
+      email: profile.email,
+      name: profile.name.trim(),
+      password_hash: null,
+      confirmed_at: new Date(),
+    },
     trx,
   );
   await appOAuthAccountsRepository.insert(
@@ -183,7 +189,7 @@ const createFromProfile = async (
 /** Finds, links or creates the account for a provider profile; returns its ID. */
 const accountFor = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   provider: string,
   profile: OAuthProfile,
   trx: Transaction<DB>,
@@ -246,7 +252,7 @@ export type OAuthCallbackResult = { redirectUrl: string };
 
 const completeSignIn = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   provider: string,
   state: OAuthState,
   code: string,
@@ -283,7 +289,7 @@ const completeSignIn = async (
  */
 export const completeOAuth = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   input: OAuthCallbackInput,
 ): Promise<OAuthCallbackResult> => {
   providerOf(runtime, input.provider);

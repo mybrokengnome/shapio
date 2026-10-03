@@ -5,6 +5,7 @@ import type { PermissionEvaluator, Principal } from '../permissions/types.js';
 import { createSchemaFieldVisibility } from '../schema/fieldVisibility.js';
 import { createSchemaRegistry, type SchemaRegistry } from '../schema/registry.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
+import { getSiteRef } from '../services/sites.js';
 import type { PublishingRuntime } from './runtime.js';
 
 /**
@@ -40,10 +41,13 @@ export const createPublishingJobEnvironment = (
 export const jobContentContext = async (
   environment: PublishingJobEnvironment,
   actor: Principal,
+  /** The site the job works on (the scheduled publication's, the change set's). */
+  siteId: string,
 ): Promise<ContentServiceContext> => ({
   db: environment.runtime.db,
   snapshot: await environment.registry.getSnapshot(),
   permissions: environment.permissions,
   actor,
+  site: await getSiteRef(siteId, environment.runtime.db),
   hooks: environment.hooks,
 });

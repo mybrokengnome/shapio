@@ -6,6 +6,7 @@ import {
   type ValidationIssue,
 } from '@shapio/schema';
 import type { Transaction } from 'kysely';
+import { PRIMARY_SITE_ID } from '../../constants/sites.js';
 import type { Database } from '../../db/index.js';
 import type { DB } from '../../db/types.js';
 import { writeOutboxEvent } from '../../jobs/outbox.js';
@@ -53,6 +54,12 @@ export type ActivationRequest = {
   now?: Date;
   /** The change set shipping this activation (publication ledger, audit). */
   changeSetId?: string;
+  /**
+   * The site whose publication sequence the activation's number comes from: the change set's site. Without
+   * one, the primary site. Allocating one number per affected site belongs to the content engine package
+   * (sites plan §H, G2); until then conversions on other sites are numbered on this site.
+   */
+  siteId?: string;
   afterFlip?: AfterFlip;
 };
 
@@ -248,7 +255,7 @@ export const activateDefinitions = async (
 const createActivationContext = (trx: Transaction<DB>, request: ActivationRequest) => {
   const deferred: Array<(seq: number) => Promise<void>> = [];
   const activation: ActivationContext = {
-    seq: createSeqAllocator(trx, {
+    seq: createSeqAllocator(trx, request.siteId ?? PRIMARY_SITE_ID, {
       source: request.changeSetId ? 'change_set' : 'schema',
       changeSetId: request.changeSetId ?? null,
       actor: actorColumns(request.actor),

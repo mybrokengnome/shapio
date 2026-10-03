@@ -7,6 +7,7 @@ import {
   getSettings,
   updateSettings,
 } from '../../../controllers/schemaSync.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /** Large schemas (hundreds of models) must fit in one apply request. */
@@ -14,6 +15,7 @@ const APPLY_BODY_LIMIT = 10 * 1024 * 1024;
 
 /** /api/admin/schema: summary, git-like sync (export/apply), planned changes and the read-only lock. */
 export const schemaRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
 
   // GET /: global schema version and every visible definition's version and hash

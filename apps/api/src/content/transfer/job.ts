@@ -1,4 +1,5 @@
 import type { Readable } from 'node:stream';
+import { PRIMARY_SITE_ID } from '../../constants/sites.js';
 import type { Database } from '../../db/index.js';
 import { AppError } from '../../helpers/appError.js';
 import { describeError } from '../../helpers/errors.js';
@@ -10,6 +11,7 @@ import * as transferImportRepository from '../../repositories/transferImport.js'
 import { loadSnapshot } from '../../schema/loadSnapshot.js';
 import type { SchemaSnapshot } from '../../schema/snapshot.js';
 import { deleteEntry } from '../../services/contentEntries.js';
+import { getSiteRef } from '../../services/sites.js';
 import { createContentHooks } from '../hooks.js';
 import { openStoredBundle, removeStoredBundle, type StoredBundle } from './bundleFile.js';
 import type { AppUserRecord, BundleRecord, EntryRecord, MediaAssetRecord } from './format.js';
@@ -37,6 +39,8 @@ const PRUNE_ROUNDS = 5;
 
 export type ImportPayload = {
   importId: string;
+  /** The site the bundle is imported into (jobs queued before sites existed import into the primary site). */
+  siteId: string;
   bundle: StoredBundle;
   prune: boolean;
   pendingChangeIds: string[];
@@ -81,6 +85,7 @@ const readPayload = (payload: unknown): ImportPayload => {
   }
   return {
     importId: value.importId,
+    siteId: value.siteId ?? PRIMARY_SITE_ID,
     bundle: value.bundle,
     prune: value.prune === true,
     pendingChangeIds: value.pendingChangeIds ?? [],
@@ -164,7 +169,7 @@ const waitForSchema = async (run: Run) => {
 
 const importUsers = (run: Run) =>
   forEachBatch<AppUserRecord>(run, 'appUser', async (batch) => {
-    const result = await importUserBatch(run.deps.db, batch);
+    const result = await importUserBatch(run.deps.db, run.payload.siteId, batch);
     run.progress.counts.users.added += result.added;
     run.progress.counts.users.unchanged += result.unchanged;
     result.errors.forEach((error) => recordError(run, error));
@@ -172,7 +177,7 @@ const importUsers = (run: Run) =>
 
 const importMedia = (run: Run) =>
   forEachBatch<MediaAssetRecord>(run, 'mediaAsset', async (batch) => {
-    const result = await importMediaBatch(run.deps.db, run.deps.storage, batch);
+    const result = await importMediaBatch(run.deps.db, run.deps.storage, run.payload.siteId, batch);
     run.progress.counts.media.added += result.added;
     run.progress.counts.media.unchanged += result.unchanged;
     result.errors.forEach((error) => recordError(run, error));
@@ -186,6 +191,7 @@ const importEntryRows = (run: Run, snapshot: SchemaSnapshot) =>
       [],
     );
     await transferImportRepository.insertEntries(
+      run.payload.siteId,
       batch
         .filter((entry) => snapshot.byId.has(entry.modelId))
         .map((entry) => ({
@@ -214,7 +220,7 @@ const entryFailure = (error: unknown): Omit<ImportError, 'id'> | undefined => {
 
 const importContent = async (run: Run, initial: SchemaSnapshot) => {
   let snapshot = initial;
-  const context = { db: run.deps.db, actor: SYSTEM_ACTOR };
+  const context = { db: run.deps.db, actor: SYSTEM_ACTOR, siteId: run.payload.siteId };
   await forEachBatch<EntryRecord>(run, 'entry', async (batch) => {
     for (const entry of batch) {
       try {
@@ -255,6 +261,7 @@ const prune = async (run: Run, snapshot: SchemaSnapshot) => {
     snapshot,
     permissions: SYSTEM_PERMISSIONS,
     actor: SYSTEM_ACTOR,
+    site: await getSiteRef(run.payload.siteId, run.deps.db),
     hooks: createContentHooks(),
   };
   let failed: ImportError[] = [];

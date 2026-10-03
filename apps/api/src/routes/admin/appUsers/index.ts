@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/appUsers.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /** App users as administrators see them (Users → App users). Everything needs users.manage. */
 export const adminAppUsersRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manageUsers = { preHandler: app.requireGlobalPermission('users.manage') };
 
   // GET /api/admin/app-users?search=&cursor=&limit=

@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/appRoles.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /** App roles (built-in public/authenticated plus custom). Any admin may read them; changes need roles.manage. */
 export const adminAppRolesRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const readRoles = { preHandler: app.requireAdmin };
   const manageRoles = { preHandler: app.requireGlobalPermission('roles.manage') };
 

@@ -2,6 +2,8 @@ import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
 import type { DB, MediaAssets } from '../db/types.js';
+import { appUserSiteOf } from './appUsers.js';
+import { entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -62,6 +64,7 @@ export const lockEntry = (id: string, trx: Transaction<DB>) =>
 
 /** Entry rows with their original IDs and timestamps; existing rows are left alone. */
 export const insertEntries = async (
+  siteId: string,
   rows: ReadonlyArray<{
     id: string;
     modelId: string;
@@ -79,6 +82,7 @@ export const insertEntries = async (
     .values(
       rows.map((row) => ({
         id: row.id,
+        site_id: siteId,
         model_id: row.modelId,
         owner_app_user_id: row.ownerAppUserId,
         created_at: row.createdAt,
@@ -142,6 +146,7 @@ export const insertHead = (head: ImportedHead, trx: Executor = db) =>
     .insertInto('entry_heads')
     .values({
       entry_id: head.entryId,
+      site_id: entrySiteOf(trx, head.entryId),
       model_id: head.modelId,
       locale: head.locale,
       state: head.state,
@@ -229,6 +234,7 @@ export const findFolderIds = async (ids: readonly string[], executor: Executor =
       );
 
 export const insertFolder = (
+  siteId: string,
   folder: { id: string; parentId: string | null; name: string; createdAt: string; updatedAt: string },
   trx: Executor = db,
 ) =>
@@ -236,6 +242,7 @@ export const insertFolder = (
     .insertInto('media_folders')
     .values({
       id: folder.id,
+      site_id: siteId,
       parent_id: folder.parentId,
       name: folder.name,
       created_at: folder.createdAt,
@@ -274,6 +281,7 @@ export const findAppUsers = async (
 };
 
 export const insertAppUser = (
+  siteId: string,
   user: {
     id: string;
     email: string;
@@ -291,6 +299,7 @@ export const insertAppUser = (
     .insertInto('app_users')
     .values({
       id: user.id,
+      site_id: siteId,
       email: user.email,
       name: user.name,
       password_hash: user.passwordHash,
@@ -311,6 +320,8 @@ export const insertOAuthAccount = (
     .insertInto('app_oauth_accounts')
     .values({
       app_user_id: account.appUserId,
+      // A copy of the account's site (app users are per site).
+      site_id: appUserSiteOf(trx, account.appUserId),
       provider: account.provider,
       provider_user_id: account.providerUserId,
       email: account.email,

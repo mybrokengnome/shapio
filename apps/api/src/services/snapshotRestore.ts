@@ -190,7 +190,7 @@ export const restoreSnapshot = async (
   context: ChangeSetServiceContext,
   seq: number,
 ): Promise<ChangeSetView> => {
-  const current = await publicationsRepository.currentSeq(context.db);
+  const current = await publicationsRepository.currentSeq(context.site.id, context.db);
   if (seq > current) {
     throw snapshotNotFound(seq);
   }
@@ -224,6 +224,7 @@ export const restoreSnapshot = async (
   const id = await context.db.transaction().execute(async (trx) => {
     const row = await changeSetsRepository.insert(
       {
+        site_id: context.site.id,
         title: `Restore snapshot ${seq}`,
         description: `Brings live content back to what snapshot ${seq} served. The schema is not rolled back.`,
         source: 'restore',

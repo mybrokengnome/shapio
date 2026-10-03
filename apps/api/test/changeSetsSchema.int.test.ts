@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import type { Worker } from '../src/jobs/worker.js';
 import {
   createDefinition,
@@ -277,6 +278,7 @@ describe('change sets (schema + content)', () => {
       .insertInto('field_reads')
       .values({
         day: new Date().toISOString().slice(0, 10),
+        site_id: PRIMARY_SITE_ID,
         model_id: article.definition.id,
         field_path: bodyId,
         principal_key: `token:${tokenId}`,

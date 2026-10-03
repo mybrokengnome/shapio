@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { BUNDLE_CONTENT_TYPE } from '../../../content/transfer/format.js';
 import * as handlers from '../../../controllers/transfer.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /**
@@ -9,6 +10,7 @@ import * as schemas from './schemas.js';
  * The service authorises every call as an instance administrator.
  */
 export const adminTransferRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const passThrough = (_request: unknown, payload: unknown, done: (error: null, body: unknown) => void) =>
     done(null, payload);
   app.addContentTypeParser(BUNDLE_CONTENT_TYPE, passThrough);

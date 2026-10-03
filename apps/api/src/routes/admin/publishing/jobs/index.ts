@@ -1,9 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../../controllers/jobsAdmin.js';
+import { declareSiteScope } from '../../../../plugins/siteResolution.js';
 import { getJobSchema, jobsSummarySchema, listJobsSchema, retryJobSchema } from './schemas.js';
 
 /** /api/admin/jobs: the queue as admins see it (payloads redacted), and retrying dead jobs. */
 export const adminJobsRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('publishing.manage') };
   // GET /?status=&type=&cursor=
   app.get('/', { schema: listJobsSchema, ...manage }, handlers.listJobs);

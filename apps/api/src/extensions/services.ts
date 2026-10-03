@@ -2,6 +2,7 @@ import { isComponentDefinition, type ModelDefinition } from '@shapio/schema';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config/index.js';
 import { EXTENSION_JOB_PREFIX, EXTENSION_SYSTEM_COMPONENT } from '../constants/extensions.js';
+import { PRIMARY_SITE_ID } from '../constants/sites.js';
 import { createContentHooks } from '../content/hooks.js';
 import { resolveModel } from '../content/model.js';
 import type { Database } from '../db/index.js';
@@ -10,6 +11,7 @@ import { enqueueJob } from '../jobs/queue.js';
 import type { PermissionEvaluator, Principal } from '../permissions/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import type { SchemaRegistry } from '../schema/registry.js';
+import type { SiteRef } from '../services/actorContext.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
 import { getAdminEntry, listAdminEntries } from '../services/contentReads.js';
 import { listUsages } from '../services/mediaReferences.js';
@@ -35,6 +37,8 @@ export type ServiceEnvironment = {
   jobNames: ReadonlySet<string>;
 };
 
+const PRIMARY_SITE: SiteRef = { id: PRIMARY_SITE_ID, key: 'default' };
+
 const SYSTEM_PRINCIPAL: Principal = { kind: 'system', component: EXTENSION_SYSTEM_COMPONENT };
 
 const contentContext = async (
@@ -45,6 +49,9 @@ const contentContext = async (
   snapshot: await environment.registry.getSnapshot(),
   permissions: environment.permissions,
   actor: principal ?? SYSTEM_PRINCIPAL,
+  // Extension services read the primary site until extensions get a site of their own (sites plan §H, G5;
+  // ADR 0009 note).
+  site: PRIMARY_SITE,
   // Reads never reach a lifecycle hook point.
   hooks: createContentHooks(),
 });

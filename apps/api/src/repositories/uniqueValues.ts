@@ -1,6 +1,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -38,6 +39,8 @@ export const claim = async (
   const inserted = await trx
     .insertInto('unique_values')
     .values({
+      // Uniqueness is per site: the key includes the entry's site.
+      site_id: entrySiteOf(trx, key.entryId),
       field_id: key.fieldId,
       locale: key.locale,
       state: key.state,
@@ -54,6 +57,7 @@ export const claim = async (
   const owner = await trx
     .selectFrom('unique_values')
     .select('entry_id')
+    .where('site_id', '=', entrySiteOf(trx, key.entryId))
     .where('field_id', '=', key.fieldId)
     .where('locale', '=', key.locale)
     .where('state', '=', key.state)
@@ -106,6 +110,7 @@ export const findOtherOwners = (entryId: string, keys: readonly UniqueKey[], exe
         .selectFrom('unique_values')
         .select(['field_id', 'locale', 'state', 'value_hash', 'entry_id'])
         .where('entry_id', '!=', entryId)
+        .where('site_id', '=', entrySiteOf(executor, entryId))
         .where((eb) =>
           eb.or(
             keys.map((key) =>

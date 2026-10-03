@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/deployments.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /**
@@ -8,6 +9,7 @@ import * as schemas from './schemas.js';
  * `deployments.trigger` (editors have it).
  */
 export const adminDeploymentsRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('deployments.manage') };
   const admin = { preHandler: app.requireAdmin };
   const trigger = { preHandler: app.requireGlobalPermission('deployments.trigger') };

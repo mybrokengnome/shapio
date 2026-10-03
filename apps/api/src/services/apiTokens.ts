@@ -7,10 +7,10 @@ import { db } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
 import { SYSTEM_ROLE_KEYS } from '../permissions/seedRoles.js';
-import type { TokenPrincipal } from '../permissions/types.js';
+import type { PermissionEvaluator, TokenPrincipal } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
-import type { ActorContext } from './actorContext.js';
+import type { ActorContext, SiteActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 export type ApiTokenView = {
@@ -20,6 +20,8 @@ export type ApiTokenView = {
   tokenPrefix: string;
   roleId: string;
   scope: 'admin' | 'delivery';
+  /** The token's site; null for a network admin token (its role applies on every site). */
+  siteId: string | null;
   createdBy: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
@@ -37,6 +39,7 @@ const toApiTokenView = (row: ApiTokenListRow): ApiTokenView => ({
   tokenPrefix: row.token_prefix,
   roleId: row.role_id,
   scope: scopeOf(row.role_kind),
+  siteId: row.site_id,
   createdBy: row.created_by,
   expiresAt: row.expires_at,
   lastUsedAt: row.last_used_at,
@@ -49,14 +52,50 @@ export const isApiTokenFormat = (value: string): boolean => value.startsWith(API
 export const listApiTokens = async (): Promise<ApiTokenView[]> =>
   (await apiTokensRepository.list()).map(toApiTokenView);
 
-type CreateApiTokenInput = { name: string; roleId: string; expiresAt: Date | null };
+type CreateApiTokenInput = {
+  name: string;
+  roleId: string;
+  expiresAt: Date | null;
+  /** A network admin token (every site and network actions); omitted: network when the creator may grant it. */
+  network?: boolean | undefined;
+};
+
+/**
+ * Whether the new token is a network token (sites plan §H). A network admin token carries its role on every
+ * site and into network actions, so only someone who may assign roles on every site (`users.manage`, a
+ * network action) may mint one; anyone else's tokens belong to the request's site. Delivery tokens always
+ * belong to a site.
+ */
+const isNetworkToken = async (
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
+  roleKind: string,
+  requested: boolean | undefined,
+): Promise<boolean> => {
+  if (roleKind === 'delivery') {
+    if (requested === true) {
+      throw new AppError(400, 'INVALID_TOKEN_SITE', 'Delivery tokens always belong to one site');
+    }
+    return false;
+  }
+  const mayGrantNetwork = await permissions.canPerform(context.actor, 'users.manage');
+  if (requested === true && !mayGrantNetwork) {
+    throw new AppError(
+      403,
+      'FORBIDDEN',
+      'Only admins who manage users on every site can create network tokens',
+    );
+  }
+  return requested ?? mayGrantNetwork;
+};
 
 /**
  * Creates a token bound to one role. The value is returned once and stored only as a hash. The owner
  * role cannot be bound to a token: owner powers stay with people.
  */
 export const createApiToken = async (
-  context: ActorContext,
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
   input: CreateApiTokenInput,
 ): Promise<{ token: string; apiToken: ApiTokenView }> => {
   const now = new Date();
@@ -72,12 +111,14 @@ export const createApiToken = async (
     if (role.key === SYSTEM_ROLE_KEYS.owner) {
       throw new AppError(400, 'INVALID_ROLES', 'API tokens cannot hold the owner role');
     }
+    const network = await isNetworkToken(context, permissions, role.kind, input.network);
     const { id } = await apiTokensRepository.insert(
       {
         name: input.name.trim(),
         token_hash: hashToken(token),
         token_prefix: token.slice(0, API_TOKEN_DISPLAY_LENGTH),
         role_id: role.id,
+        site_id: network ? null : context.site.id,
         created_by: context.actor.kind === 'admin' ? context.actor.adminUserId : null,
         expires_at: input.expiresAt,
       },
@@ -87,7 +128,12 @@ export const createApiToken = async (
       ...context,
       action: 'api_token.create',
       target: { type: 'api_token', id },
-      metadata: { name: input.name, roleId: role.id, expiresAt: input.expiresAt?.toISOString() ?? null },
+      metadata: {
+        name: input.name,
+        roleId: role.id,
+        siteId: network ? null : context.site.id,
+        expiresAt: input.expiresAt?.toISOString() ?? null,
+      },
     });
     const row = await apiTokensRepository.findById(id, trx);
     if (!row) {
@@ -116,5 +162,11 @@ export const resolveApiToken = async (
     return undefined;
   }
   await apiTokensRepository.touchLastUsed(row.id, now, new Date(now.getTime() - LAST_SEEN_WRITE_INTERVAL_MS));
-  return { kind: 'token', tokenId: row.id, scope: scopeOf(row.role_kind), roleId: row.role_id };
+  return {
+    kind: 'token',
+    tokenId: row.id,
+    scope: scopeOf(row.role_kind),
+    roleId: row.role_id,
+    siteId: row.site_id,
+  };
 };

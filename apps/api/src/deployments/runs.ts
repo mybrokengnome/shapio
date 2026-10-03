@@ -184,7 +184,7 @@ export const createDeploymentTriggerHandler =
       await failRun(runtime, runId, row ? 'The connection is disabled' : 'The connection was deleted');
       return { status: 'failed' };
     }
-    const seq = await publicationsRepository.currentSeq(runtime.db);
+    const seq = await publicationsRepository.currentSeq(row.site_id, runtime.db);
     const schemaVersion = await schemaVersionsRepository.getSchemaVersion(runtime.db);
     await deploymentRunsRepository.setSnapshot(runId, { seq, schemaVersion }, runtime.db);
     const previous = (job.checkpoint as { sentAt?: string } | null)?.sentAt;

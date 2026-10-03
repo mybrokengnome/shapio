@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { createContentHooks } from '../src/content/hooks.js';
 import { createContentPorts } from '../src/content/ports.js';
 import type { SchemaContentPorts } from '../src/schema/planner/contentPorts.js';
@@ -227,6 +228,7 @@ describe('content and schema changes', () => {
         snapshot: stale,
         permissions: testApp.app.permissions,
         actor: testApp.principalFactory.system('test'),
+        site: { id: PRIMARY_SITE_ID, key: 'default' },
         hooks: createContentHooks(),
       },
       'page',

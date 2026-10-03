@@ -1,6 +1,7 @@
 import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { AdminSessions, DB } from '../db/types.js';
+import type { RoleAssignment } from '../permissions/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -27,16 +28,20 @@ export const findActiveByTokenHash = (tokenHash: string, trx: Executor = db) =>
       'admin_sessions.rotation_required',
       'admin_users.status as user_status',
     ])
+    // Every role assignment, on any site (site_id null = every site); narrowed per request (sites plan §H).
     .select((eb) =>
       eb.fn
         .coalesce(
           eb
             .selectFrom('admin_user_roles')
-            .select(sql<string[]>`array_agg(role_id order by role_id)`.as('ids'))
+            .select(
+              sql<RoleAssignment[]>`jsonb_agg(jsonb_build_object('roleId', role_id, 'siteId', site_id)
+                order by role_id, site_id nulls first)`.as('assignments'),
+            )
             .whereRef('admin_user_roles.admin_user_id', '=', 'admin_sessions.admin_user_id'),
-          sql<string[]>`'{}'::uuid[]`,
+          sql<RoleAssignment[]>`'[]'::jsonb`,
         )
-        .as('role_ids'),
+        .as('assignments'),
     )
     .where('admin_sessions.token_hash', '=', tokenHash)
     .where('admin_sessions.revoked_at', 'is', null)

@@ -10,7 +10,7 @@ import { GLOBAL_ACTIONS, type ContentAction, type PermissionEvaluator } from '..
 import type { PublishingRuntime } from '../../publishing/runtime.js';
 import * as jobsRepository from '../../repositories/jobs.js';
 import * as mediaAssetsRepository from '../../repositories/mediaAssets.js';
-import type { ActorContext } from '../../services/actorContext.js';
+import type { SiteActorContext } from '../../services/actorContext.js';
 import { recordAudit } from '../../services/audit.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
 import { applyConfig } from './applyConfig.js';
@@ -28,7 +28,7 @@ import { planImport, type ImportDiff, type ImportOptions } from './plan.js';
  * content, media, publishing config), so they need an instance administrator: every global permission and
  * every content action on every model, which the built-in owner and admin roles hold.
  */
-export type TransferContext = ActorContext & {
+export type TransferContext = SiteActorContext & {
   db: Database;
   permissions: PermissionEvaluator;
   storage: MediaStorage;
@@ -88,7 +88,7 @@ const audit = (
 export const exportBundle = async (context: TransferContext, options: ExportOptions): Promise<Readable> => {
   await assertInstanceAdmin(context, EXPORT_ACTIONS);
   await audit(context, 'transfer.export', options);
-  return createExportStream(context.db, options, (error) => {
+  return createExportStream(context.db, context.site.id, options, (error) => {
     if (!(error instanceof StreamClosedError)) {
       context.log.error({ err: error }, 'content export failed');
     }
@@ -145,6 +145,7 @@ export const importBundle = async (
     );
     const payload: ImportPayload = {
       importId,
+      siteId: context.site.id,
       bundle,
       prune: options.prune,
       pendingChangeIds: applied.pendingChangeIds,

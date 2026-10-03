@@ -8,6 +8,7 @@ import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
+import { narrowToSite } from '../permissions/sites.js';
 import type { AdminPrincipal } from '../permissions/types.js';
 import * as adminSessionsRepository from '../repositories/adminSessions.js';
 import type { ActorContext, ClientInfo } from './actorContext.js';
@@ -100,12 +101,9 @@ export const resolveSession = async (
   if (!row || row.user_status !== 'active' || isExpired(row, now)) {
     return undefined;
   }
-  const principalFor = (sessionId: string): AdminPrincipal => ({
-    kind: 'admin',
-    adminUserId: row.admin_user_id,
-    sessionId,
-    roleIds: row.role_ids,
-  });
+  // Network-narrowed until the site resolution hook narrows it to the request's site (sites plan §H).
+  const principalFor = (sessionId: string): AdminPrincipal =>
+    narrowToSite({ adminUserId: row.admin_user_id, sessionId, assignments: row.assignments }, null);
   if (row.rotation_required) {
     const rotated = await rotate(row, client, now);
     if (rotated) {

@@ -7,7 +7,10 @@ see the new field without the entries that use it, or half of a launch. Shipped 
 older snapshot, which is itself a reviewed change set.
 
 These live under **Develop → Changes** and **Develop → Snapshots** in the admin, for roles with the
-`changes.manage` permission (owners, admins and editors by default).
+`changes.manage` permission (owners, admins and editors by default). Shipping and scheduling a ship also need
+`changes.ship` (the same roles by default). A role with `changes.manage` but not `changes.ship` prepares change
+sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)).
+Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
 ## A change set
 
@@ -52,7 +55,7 @@ Open a set to review it, shaped like a pull request:
 
 ## Ship
 
-**Ship** puts the whole set live in one step:
+**Ship** (needs `changes.ship`) puts the whole set live in one step:
 
 1. Schema items that need checking first (existing entries against a new required field or unique constraint,
    value conversions, new indexes) run their checks in the background while the set shows _Shipping_. Content

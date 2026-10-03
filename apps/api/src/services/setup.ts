@@ -7,6 +7,7 @@ import { AppError } from '../helpers/appError.js';
 import { hashPassword } from '../helpers/password.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
 import { ensureSystemRoles } from '../permissions/seedRoles.js';
+import { narrowToSite } from '../permissions/sites.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
 import * as setupTokensRepository from '../repositories/setupTokens.js';
@@ -75,7 +76,10 @@ export const completeSetup = async (input: CompleteSetupInput): Promise<Authenti
     const session = await createSession(adminUserId, { client: input.client, now }, trx);
     await adminUsersRepository.update(adminUserId, { last_login_at: now }, trx);
     await recordAudit(trx, {
-      actor: { kind: 'admin', adminUserId, sessionId: session.sessionId, roleIds: [ownerRoleId] },
+      actor: narrowToSite(
+        { adminUserId, sessionId: session.sessionId, assignments: [{ roleId: ownerRoleId, siteId: null }] },
+        null,
+      ),
       action: 'setup.complete',
       target: { type: 'admin_user', id: adminUserId },
       requestId: input.requestId,

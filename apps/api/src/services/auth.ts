@@ -2,12 +2,17 @@ import { db } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { hashToken } from '../helpers/tokens.js';
+import { narrowToSite } from '../permissions/sites.js';
 import {
   CONTENT_ACTIONS,
   GLOBAL_ACTIONS,
+  NETWORK_ACTIONS,
+  SITE_ACTIONS,
   type AdminPrincipal,
   type ContentAction,
   type GlobalAction,
+  type NetworkAction,
+  type SiteAction,
   type PermissionEvaluator,
   type Principal,
 } from '../permissions/types.js';
@@ -15,10 +20,11 @@ import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminSessionsRepository from '../repositories/adminSessions.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
 import * as passwordResetsRepository from '../repositories/passwordResets.js';
-import type { ActorContext, ClientInfo } from './actorContext.js';
+import type { ActorContext, ClientInfo, SiteRef } from './actorContext.js';
 import { createSession, type IssuedSession } from './adminSessions.js';
 import { normalizeEmail, toAdminUserView, type AdminUserView } from './adminUsers.js';
 import { recordAudit } from './audit.js';
+import { getSiteSummary, listAccessibleSites, toSiteSummary, type SiteSummaryView } from './sites.js';
 
 export type AuthenticatedSession = { adminUserId: string; session: IssuedSession };
 
@@ -76,7 +82,7 @@ export const login = async (input: LoginInput): Promise<AuthenticatedSession> =>
     await adminUsersRepository.update(usable.id, { last_login_at: now }, trx);
     await recordAudit(trx, {
       ...audit,
-      actor: { kind: 'admin', adminUserId: usable.id, sessionId: session.sessionId, roleIds: [] },
+      actor: narrowToSite({ adminUserId: usable.id, sessionId: session.sessionId, assignments: [] }, null),
       action: 'auth.login',
       target: { type: 'admin_user', id: usable.id },
     });
@@ -98,10 +104,19 @@ export const logout = async (context: ActorContext): Promise<void> => {
 
 export type MeView = {
   user: AdminUserView;
+  /** The roles that apply on the request's site (assigned there or on every site). */
   roles: { id: string; key: string; name: string }[];
-  /** Instance-level actions this admin may perform (for showing or hiding admin screens). */
+  /** The request's site. */
+  site: SiteSummaryView;
+  /** The sites this admin works on (every site for a role assigned on every site). */
+  sites: SiteSummaryView[];
+  /** Network actions (roles assigned on every site only). */
+  networkPermissions: NetworkAction[];
+  /** Site actions on the request's site. */
+  sitePermissions: SiteAction[];
+  /** Network and site actions together (for showing or hiding admin screens). */
   globalPermissions: GlobalAction[];
-  /** Content actions per model ID, for showing places, Structure, New and Publish (models with none are omitted). */
+  /** Content actions per model ID on the request's site, for showing places, Structure, New and Publish. */
   modelPermissions: Record<string, ContentAction[]>;
 };
 
@@ -122,8 +137,19 @@ const modelPermissionsOf = async (
   return Object.fromEntries(entries.filter(([, actions]) => actions.length > 0));
 };
 
+const allowedActions = async <T extends GlobalAction>(
+  principal: AdminPrincipal,
+  permissions: PermissionEvaluator,
+  actions: readonly T[],
+): Promise<T[]> => {
+  const allowed = await Promise.all(actions.map((action) => permissions.canPerform(principal, action)));
+  return actions.filter((_action, index) => allowed[index]);
+};
+
+/** The signed-in admin on the request's site: who they are, where they work and what they may do there. */
 export const getMe = async (
   principal: AdminPrincipal,
+  site: SiteRef,
   permissions: PermissionEvaluator,
   modelIds: readonly string[],
 ): Promise<MeView> => {
@@ -131,14 +157,25 @@ export const getMe = async (
   if (!user) {
     throw new AppError(401, 'UNAUTHENTICATED', 'Sign in to continue');
   }
-  const roles = await adminRolesRepository.findByIds(user.role_ids);
-  const allowed = await Promise.all(
-    GLOBAL_ACTIONS.map((action) => permissions.canPerform(principal, action)),
-  );
+  const [roles, sites, current] = await Promise.all([
+    adminRolesRepository.findByIds(principal.roleIds),
+    listAccessibleSites(principal),
+    getSiteSummary(site.id),
+  ]);
+  const networkPermissions = await allowedActions(principal, permissions, NETWORK_ACTIONS);
+  const sitePermissions = await allowedActions(principal, permissions, SITE_ACTIONS);
   return {
     user: toAdminUserView(user),
     roles: roles.map(({ id, key, name }) => ({ id, key, name })),
-    globalPermissions: GLOBAL_ACTIONS.filter((_action, index) => allowed[index]),
+    site: current,
+    sites: sites.map(toSiteSummary),
+    networkPermissions,
+    sitePermissions,
+    globalPermissions: GLOBAL_ACTIONS.filter(
+      (action) =>
+        (networkPermissions as readonly string[]).includes(action) ||
+        (sitePermissions as readonly string[]).includes(action),
+    ),
     modelPermissions: await modelPermissionsOf(principal, permissions, modelIds),
   };
 };

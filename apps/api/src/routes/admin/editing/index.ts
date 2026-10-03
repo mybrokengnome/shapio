@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/editing.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 const READ_ONLY = { exempt: 'read-only check; records health findings only' } as const;
@@ -10,6 +11,7 @@ const PRESENCE = { exempt: 'presence is advisory and expires within a minute' } 
  * every service checks the model's permissions, row filters and read masks through the evaluator.
  */
 export const adminEditingRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const admin = { preHandler: app.requireAdmin };
 
   // POST /content/:modelKey/:id/preflight { locales }: what publishing would run into, without publishing

@@ -205,6 +205,7 @@ export const finalizeShip = async (context: ChangeSetServiceContext, input: Fina
       items: input.activation,
       actor: context.actor,
       changeSetId,
+      siteId: context.site.id,
       ...(context.requestId ? { requestId: context.requestId } : {}),
       ...(context.ip ? { ip: context.ip } : {}),
       afterFlip: (trx, flipped) =>
@@ -217,7 +218,7 @@ export const finalizeShip = async (context: ChangeSetServiceContext, input: Fina
   }
   await context.db.transaction().execute((trx) =>
     shipContent(context, trx, input, {
-      seq: createSeqAllocator(trx, {
+      seq: createSeqAllocator(trx, context.site.id, {
         source: 'change_set',
         changeSetId,
         actor: actorColumns(context.actor),

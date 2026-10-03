@@ -8,6 +8,7 @@ import {
 } from 'kysely';
 import { db } from '../db/index.js';
 import type { AdminUsers, DB } from '../db/types.js';
+import type { RoleAssignment } from '../permissions/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -28,7 +29,12 @@ const USER_COLUMNS = [
 export type AdminUserSummary = Pick<
   AdminUserRow,
   'id' | 'email' | 'name' | 'status' | 'last_login_at' | 'created_at' | 'updated_at'
-> & { role_ids: string[] };
+> & {
+  /** Roles assigned on every site (what the users API edits until site assignments reach it, G3). */
+  role_ids: string[];
+  /** Every assignment, on any site (site null = every site). */
+  assignments: RoleAssignment[];
+};
 
 const withRoleIds = (trx: Executor) =>
   trx
@@ -40,10 +46,25 @@ const withRoleIds = (trx: Executor) =>
           eb
             .selectFrom('admin_user_roles')
             .select(sql<string[]>`array_agg(role_id order by role_id)`.as('ids'))
-            .whereRef('admin_user_roles.admin_user_id', '=', 'admin_users.id'),
+            .whereRef('admin_user_roles.admin_user_id', '=', 'admin_users.id')
+            .where('admin_user_roles.site_id', 'is', null),
           sql<string[]>`'{}'::uuid[]`,
         )
         .as('role_ids'),
+    )
+    .select((eb) =>
+      eb.fn
+        .coalesce(
+          eb
+            .selectFrom('admin_user_roles')
+            .select(
+              sql<RoleAssignment[]>`jsonb_agg(jsonb_build_object('roleId', role_id, 'siteId', site_id)
+                order by role_id, site_id nulls first)`.as('assignments'),
+            )
+            .whereRef('admin_user_roles.admin_user_id', '=', 'admin_users.id'),
+          sql<RoleAssignment[]>`'[]'::jsonb`,
+        )
+        .as('assignments'),
     );
 
 export const countAll = async (trx: Executor = db): Promise<number> => {
@@ -84,8 +105,13 @@ export const update = (id: string, changes: Updateable<AdminUsers>, trx: Executo
 export const deleteById = (id: string, trx: Executor = db) =>
   trx.deleteFrom('admin_users').where('id', '=', id).executeTakeFirst();
 
+/** Replaces the roles assigned on every site; assignments on single sites are left as they are. */
 export const replaceRoles = async (adminUserId: string, roleIds: readonly string[], trx: Executor = db) => {
-  await trx.deleteFrom('admin_user_roles').where('admin_user_id', '=', adminUserId).execute();
+  await trx
+    .deleteFrom('admin_user_roles')
+    .where('admin_user_id', '=', adminUserId)
+    .where('site_id', 'is', null)
+    .execute();
   if (roleIds.length > 0) {
     await trx
       .insertInto('admin_user_roles')
@@ -102,6 +128,8 @@ export const lockActiveHoldersOfRoleKey = (roleKey: string, trx: Transaction<DB>
     .innerJoin('admin_roles', 'admin_roles.id', 'admin_user_roles.role_id')
     .select('admin_users.id')
     .where('admin_roles.key', '=', roleKey)
+    // Owner (like every network role) counts only where it is assigned on every site.
+    .where('admin_user_roles.site_id', 'is', null)
     .where('admin_users.status', '=', 'active')
     .forUpdate('admin_users')
     .execute();

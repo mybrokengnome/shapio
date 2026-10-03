@@ -2,6 +2,7 @@ import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { Principal } from '../permissions/types.js';
 import * as auditEventsRepository from '../repositories/auditEvents.js';
+import type { SiteRef } from './actorContext.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -17,6 +18,8 @@ export type AuditInput = {
   metadata?: Record<string, unknown>;
   requestId?: string;
   ip?: string;
+  /** The site the change happened on; absent for network changes (users, roles, schema, sites). */
+  site?: SiteRef;
 };
 
 const describeActor = (actor: Principal): { actorType: AuditActorType; actorId: string | null } => {
@@ -51,6 +54,7 @@ export const recordAudit = async (trx: Executor, input: AuditInput) => {
       metadata: JSON.stringify(input.metadata ?? {}),
       request_id: input.requestId ?? null,
       ip: input.ip ?? null,
+      site_id: input.site?.id ?? null,
     },
     trx,
   );

@@ -4,6 +4,7 @@ import { adminAuthRoutes } from './auth/index.js';
 import { adminEditingRoutes } from './editing/index.js';
 import { adminRolesRoutes } from './roles/index.js';
 import { adminSetupRoutes } from './setup/index.js';
+import { adminSitesRoutes } from './sites/index.js';
 import { adminTokensRoutes } from './tokens/index.js';
 import { adminUsageRoutes } from './usage/index.js';
 import { adminUsersRoutes } from './users/index.js';
@@ -21,4 +22,5 @@ export const adminIdentityRoutes: FastifyPluginAsyncTypebox = async (app) => {
   await app.register(adminAuditRoutes, { prefix: '/audit' });
   await app.register(adminEditingRoutes);
   await app.register(adminUsageRoutes, { prefix: '/usage' });
+  await app.register(adminSitesRoutes, { prefix: '/sites' });
 };

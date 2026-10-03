@@ -1,3 +1,4 @@
+import { narrowToSite } from '../../permissions/sites.js';
 import type { Principal } from '../../permissions/types.js';
 
 /** How schema tables record who made a change (same vocabulary as audit_events.actor_type). */
@@ -23,9 +24,9 @@ export const actorColumns = (actor: Principal): { type: string; id: string | nul
 export const principalFromColumns = (type: string, id: string | null): Principal => {
   switch (type) {
     case 'admin':
-      return { kind: 'admin', adminUserId: id ?? '', sessionId: '', roleIds: [] };
+      return narrowToSite({ adminUserId: id ?? '', sessionId: '', assignments: [] }, null);
     case 'token':
-      return { kind: 'token', tokenId: id ?? '', scope: 'admin', roleId: '' };
+      return { kind: 'token', tokenId: id ?? '', scope: 'admin', roleId: '', siteId: null };
     case 'app_user':
       return { kind: 'appUser', appUserId: id ?? '', roleIds: [] };
     case 'system':

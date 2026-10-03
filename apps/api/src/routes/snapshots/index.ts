@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { getCurrentSnapshot, listSnapshotChanges } from '../../controllers/snapshots.js';
+import { declareSiteScope } from '../../plugins/siteResolution.js';
 import { currentSnapshotSchema, snapshotChangesSchema } from './schemas.js';
 
 /**
@@ -8,6 +9,7 @@ import { currentSnapshotSchema, snapshotChangesSchema } from './schemas.js';
  * caller may read are reported.
  */
 export const snapshotsRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   // GET /api/snapshots/current
   app.get('/current', { schema: currentSnapshotSchema }, getCurrentSnapshot);
   // GET /api/snapshots/changes?from&to&after&limit

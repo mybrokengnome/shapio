@@ -273,7 +273,11 @@ async function* entryRecords(trx: Executor, options: ExportOptions): AsyncGenera
 }
 
 /** Every record of a bundle, read inside one consistent (REPEATABLE READ) transaction. */
-export async function* bundleRecords(trx: Executor, options: ExportOptions): AsyncGenerator<BundleRecord> {
+export async function* bundleRecords(
+  trx: Executor,
+  siteId: string,
+  options: ExportOptions,
+): AsyncGenerator<BundleRecord> {
   const counts: Record<string, number> = {};
   const count = (record: BundleRecord) => {
     counts[record.type] = (counts[record.type] ?? 0) + 1;
@@ -289,7 +293,7 @@ export async function* bundleRecords(trx: Executor, options: ExportOptions): Asy
     shapioVersion: SHAPIO_VERSION,
     exportedAt: new Date().toISOString(),
     schemaVersion: await schemaVersionsRepository.getSchemaVersion(trx),
-    snapshot: await publicationsRepository.currentSeq(trx),
+    snapshot: await publicationsRepository.currentSeq(siteId, trx),
     options,
   };
   for (const locale of await localesRepository.list(trx)) {
@@ -322,6 +326,7 @@ export async function* bundleRecords(trx: Executor, options: ExportOptions): Asy
  */
 export const createExportStream = (
   database: Kysely<DB>,
+  siteId: string,
   options: ExportOptions,
   onError: (error: unknown) => void,
 ): Readable => {
@@ -331,7 +336,7 @@ export const createExportStream = (
     .setIsolationLevel('repeatable read')
     .setAccessMode('read only')
     .execute(async (trx) => {
-      for await (const record of bundleRecords(trx, options)) {
+      for await (const record of bundleRecords(trx, siteId, options)) {
         await writeRecord(output, record);
       }
     })

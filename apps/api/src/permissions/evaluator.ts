@@ -7,10 +7,24 @@ import {
   type Audience,
   type FieldVisibilityLookup,
 } from './policy.js';
-import { DENIED_POLICY, type ContentAction, type PermissionEvaluator, type Principal } from './types.js';
+import { tokenNetworkRoleIds } from './sites.js';
+import {
+  DENIED_POLICY,
+  NETWORK_ACTIONS,
+  NETWORK_CONTENT_ACTIONS,
+  type ContentAction,
+  type GlobalAction,
+  type PermissionEvaluator,
+  type Principal,
+} from './types.js';
+
+const NETWORK_ACTION_SET: ReadonlySet<GlobalAction> = new Set(NETWORK_ACTIONS);
 
 type PrincipalRoles = {
+  /** Roles that apply on the request's site (content and site actions). */
   roleIds: readonly string[];
+  /** Roles that apply to the whole instance (network actions); a role held on one site is never here. */
+  networkRoleIds: readonly string[];
   audience: Audience;
   /** Content actions the principal kind may ever perform; `all` = whatever its roles grant. */
   actions: ReadonlySet<ContentAction> | 'all';
@@ -29,20 +43,36 @@ const rolesOf = (principal: Principal): PrincipalRoles | 'all' => {
     case 'system':
       return 'all';
     case 'admin':
-      return { roleIds: principal.roleIds, audience: 'admin', actions: 'all' };
+      return {
+        roleIds: principal.roleIds,
+        networkRoleIds: principal.networkRoleIds,
+        audience: 'admin',
+        actions: 'all',
+      };
     case 'token':
       return principal.scope === 'admin'
-        ? { roleIds: [principal.roleId], audience: 'admin', actions: 'all' }
+        ? {
+            roleIds: [principal.roleId],
+            networkRoleIds: tokenNetworkRoleIds(principal),
+            audience: 'admin',
+            actions: 'all',
+          }
         : // Delivery tokens only ever read, whatever their role says.
-          { roleIds: [principal.roleId], audience: 'delivery', actions: READ_ONLY };
+          { roleIds: [principal.roleId], networkRoleIds: [], audience: 'delivery', actions: READ_ONLY };
     case 'appUser':
       return {
         roleIds: [APP_ROLE_IDS.authenticated, ...principal.roleIds],
+        networkRoleIds: [],
         audience: 'delivery',
         actions: APP_ACTIONS,
       };
     case 'anonymous':
-      return { roleIds: [APP_ROLE_IDS.public], audience: 'delivery', actions: APP_ACTIONS };
+      return {
+        roleIds: [APP_ROLE_IDS.public],
+        networkRoleIds: [],
+        audience: 'delivery',
+        actions: APP_ACTIONS,
+      };
   }
 };
 
@@ -64,7 +94,9 @@ export const createPermissionEvaluator = ({
     if (roles.actions !== 'all' && !roles.actions.has(request.action)) {
       return DENIED_POLICY;
     }
-    const held = await grants.getGrants(roles.roleIds);
+    // Schema management is about the shared schema: only network roles grant it (sites plan §H).
+    const roleIds = NETWORK_CONTENT_ACTIONS.has(request.action) ? roles.networkRoleIds : roles.roleIds;
+    const held = await grants.getGrants(roleIds);
     if (held.length === 0) {
       return DENIED_POLICY;
     }
@@ -80,6 +112,8 @@ export const createPermissionEvaluator = ({
     if (roles.audience === 'delivery') {
       return false;
     }
-    return allowsGlobalAction(await grants.getGrants(roles.roleIds), action);
+    // Network actions only count roles assigned on every site, so a site role never reaches the network.
+    const roleIds = NETWORK_ACTION_SET.has(action) ? roles.networkRoleIds : roles.roleIds;
+    return allowsGlobalAction(await grants.getGrants(roleIds), action);
   },
 });

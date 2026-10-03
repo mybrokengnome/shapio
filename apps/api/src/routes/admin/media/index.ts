@@ -14,6 +14,7 @@ import {
   updateAsset,
   updateFolder,
 } from '../../../controllers/media.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 const NOT_AUDITED =
@@ -23,6 +24,7 @@ const GRANT_ONLY =
 
 /** /api/admin/media: the media library (folders, assets, uploads, usage). */
 export const adminMediaRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'site');
   const reader = { preHandler: app.requireGlobalPermission('media.read') };
   const writer = { preHandler: app.requireGlobalPermission('media.write') };
   const manager = { preHandler: app.requireGlobalPermission('media.manage') };

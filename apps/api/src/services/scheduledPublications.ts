@@ -63,6 +63,7 @@ export const createSchedule = async (
     const inserted = await scheduledPublicationsRepository.insert(
       {
         entry_id: target.entryId,
+        site_id: context.site.id,
         model_id: target.model.definition.id,
         locale: target.locale,
         action: target.action,

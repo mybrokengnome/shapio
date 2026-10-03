@@ -61,12 +61,24 @@ const authorizeDrafts = async (context: ChangeSetServiceContext, plans: readonly
 };
 
 /** Loads and checks a set's items for shipping, with the acknowledgements given (interactive or stored). */
+/**
+ * Shipping (and scheduling a ship) needs `changes.ship` on top of `changes.manage` (agentic plan §I): a role
+ * can prepare change sets without making them live. Checked here so interactive, scheduled and job-run
+ * ships all check it, with the actor that asked for the ship.
+ */
+const assertCanShip = async (context: ChangeSetServiceContext) => {
+  if (!(await context.permissions.canPerform(context.actor, 'changes.ship'))) {
+    throw new AppError(403, 'FORBIDDEN', 'Your role does not allow changes.ship');
+  }
+};
+
 export const planShip = async (
   context: ChangeSetServiceContext,
   row: ChangeSetRow,
   ack: Acknowledgement,
   executor: Transaction<DB>,
 ): Promise<ShipPlan> => {
+  await assertCanShip(context);
   const items = await changeSetItemsRepository.listForSet(row.id, executor);
   const entryItems = items.filter((item) => item.kind === 'entry');
   const drafts = await schemaDraftsRepository.listForSet(row.id, executor);

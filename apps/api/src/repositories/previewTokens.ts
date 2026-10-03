@@ -8,6 +8,7 @@ export type PreviewTokenRow = Selectable<PreviewTokens>;
 
 const PUBLIC_COLUMNS = [
   'id',
+  'site_id',
   'token_prefix',
   'model_id',
   'entry_id',

@@ -98,6 +98,10 @@ catalog:
   '@tiptap/extension-bubble-menu': 3.31.4
   '@tiptap/extension-file-handler': 3.31.4
   '@tiptap/suggestion': 3.31.4
+  # MCP server (A1, @shapio/mcp): official TypeScript SDK v2 split packages, Apache-2.0. 2.2.0 rather than
+  # 2.3.0, which is younger than the release-age window. The client is a dev dependency (stdio test only).
+  '@modelcontextprotocol/server': 2.2.0
+  '@modelcontextprotocol/client': 2.2.0
   # Example site (package L): static site generator, MIT. Telemetry is turned off in its scripts.
   astro: 7.3.5
   # Build and tooling

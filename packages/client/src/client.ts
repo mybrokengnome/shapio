@@ -1,5 +1,6 @@
 import { createAdminApi } from './admin/index.js';
 import { createAppAuthApi } from './appAuth/index.js';
+import { createDeliveryApi } from './delivery.js';
 import { createRequest, type FetchCredentials } from './request.js';
 import { createSnapshotsApi } from './snapshots.js';
 import type { HealthResponse, ReadyResponse, VersionResponse } from './types.js';
@@ -38,6 +39,8 @@ export const createClient = ({
       ready: (signal?: AbortSignal) => request<ReadyResponse>('/api/ready', signal ? { signal } : {}),
       version: (signal?: AbortSignal) => request<VersionResponse>('/api/version', signal ? { signal } : {}),
     },
+    /** Published content (the delivery API), typed by the caller. */
+    delivery: createDeliveryApi(request),
     admin: createAdminApi(request),
     /** Publication snapshots and the diff between two (incremental builds). */
     snapshots: createSnapshotsApi(request),

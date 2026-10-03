@@ -57,6 +57,7 @@ export type MediaBatchResult = { added: number; unchanged: number; errors: Media
 export const importMediaBatch = async (
   db: Database,
   storage: MediaStorage,
+  siteId: string,
   assets: readonly MediaAssetRecord[],
 ): Promise<MediaBatchResult> => {
   const existing = new Set(
@@ -80,6 +81,7 @@ export const importMediaBatch = async (
       await transferImportRepository.insertAsset(
         {
           id: asset.id,
+          site_id: siteId,
           folder_id: asset.folderId && folders.has(asset.folderId) ? asset.folderId : null,
           storage_driver: storage.active.driver,
           storage_key: asset.storageKey,

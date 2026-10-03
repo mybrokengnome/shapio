@@ -34,6 +34,7 @@ import { publishingPlugin } from './plugins/publishing.js';
 import { schemaSnapshotPlugin } from './plugins/schemaSnapshot.js';
 import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
+import { siteResolutionPlugin } from './plugins/siteResolution.js';
 import { staticAdminPlugin } from './plugins/staticAdmin.js';
 import { usagePlugin } from './plugins/usage.js';
 import type { HostResolver } from './publishing/outbound/ssrf.js';
@@ -180,6 +181,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     corsOrigins: config.http.corsOrigins,
     ...(deps.oauthEndpoints ? { oauthEndpoints: deps.oauthEndpoints } : {}),
   });
+  // After both authentication plugins (it narrows their principal to the request's site), before every route.
+  await app.register(siteResolutionPlugin, { apiPrefix: urls.withBasePath('/api/') });
   await app.register(csrfPlugin);
   await app.register(adminBootstrapPlugin, {
     db: deps.db,

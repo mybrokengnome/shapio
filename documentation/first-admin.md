@@ -66,8 +66,9 @@ server once). Creating the owner this way closes Setup before anyone else can re
 Custom roles (Settings → Roles) grant actions per model (`read`, `create`, `update`, `delete`, `publish`,
 `schemaManage`), optionally per field, plus instance-wide permissions (`schema.create`, `users.manage`,
 `roles.manage`, `tokens.manage`, `audit.read`, `media.*`, `publishing.manage`, `webhooks.manage`,
-`deployments.manage`, `deployments.trigger`, `changes.manage`). Everything is denied unless a role grants it.
-`changes.manage` covers change sets, snapshots and restore; the field-usage report needs `tokens.manage`.
+`deployments.manage`, `deployments.trigger`, `changes.manage`, `changes.ship`). Everything is denied unless a
+role grants it. `changes.manage` covers preparing change sets, snapshots and restore; `changes.ship` covers
+shipping and scheduling them; the field-usage report needs `tokens.manage`.
 
 ## Your team
 

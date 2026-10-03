@@ -6,10 +6,12 @@ import {
   setDefaultLocale,
   updateLocale,
 } from '../../../controllers/locales.js';
+import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 /** /api/admin/locales: content locales (code, label, default, fallback chain). */
 export const localesRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  declareSiteScope(app, 'network');
   const manager = { preHandler: app.requireGlobalPermission('schema.create') };
 
   // GET /

@@ -13,6 +13,8 @@ import * as addPublicationLogDiffIndexes from './20261002180000_add_publication_
 import * as createUsageTables from './20261002180100_create_usage_tables.js';
 import * as createChangeSets from './20261002180200_create_change_sets.js';
 import * as createEditorPresenceAndContentHealth from './20261002190000_create_editor_presence_and_content_health.js';
+import * as addChangesShipPermission from './20261003120000_add_changes_ship_permission.js';
+import * as createSites from './20261003130000_create_sites.js';
 
 /**
  * Every migration, listed explicitly. A static list works when the server is bundled for npm, where
@@ -34,6 +36,8 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261002180100_create_usage_tables': createUsageTables,
   '20261002180200_create_change_sets': createChangeSets,
   '20261002190000_create_editor_presence_and_content_health': createEditorPresenceAndContentHealth,
+  '20261003120000_add_changes_ship_permission': addChangesShipPermission,
+  '20261003130000_create_sites': createSites,
 };
 
 export const staticMigrationProvider: MigrationProvider = {
