@@ -31,7 +31,7 @@ const elapsedSince = (start: number) => performance.now() - start;
  * notifications; instance B does not (SCHEMA_LISTEN=false), so everything B does right relies on the
  * durable version checks alone. Both run the inline worker.
  */
-describe('two instances on one database', () => {
+describe('two instances on one database', { timeout: 120_000 }, () => {
   const database = useTestDatabase();
   const mediaPath = mkdtempSync(join(tmpdir(), 'shapio-two-instances-'));
   let a: SpawnedServer;
@@ -102,7 +102,9 @@ describe('two instances on one database', () => {
       SCHEMA_LISTEN: 'false',
     });
     // The servers seed the built-in roles at startup.
-    token = await waitFor(async () => createRoleToken(database.current.db).catch(() => undefined));
+    token = await waitFor(async () => createRoleToken(database.current.db).catch(() => undefined), {
+      description: 'an admin token (the servers seed the built-in roles at startup)',
+    });
   });
   afterAll(async () => {
     await Promise.all([a?.stop('SIGTERM'), b?.stop('SIGTERM')]);
@@ -127,7 +129,10 @@ describe('two instances on one database', () => {
       writer(b, statuses.b),
     ];
     const running = traffic.map((start) => start());
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Writes are landing on both instances before the change starts.
+    await waitFor(async () => statuses.a.length >= 4 && statuses.b.length >= 4, {
+      description: 'entry writes to complete on both instances before the activation',
+    });
 
     // Required with a default: existing entries are backfilled, and entries written meanwhile by either
     // instance are caught by the activation's re-check under the exclusive model lock.
@@ -142,11 +147,15 @@ describe('two instances on one database', () => {
       async () =>
         (await call<{ status: string }>(b, `/api/admin/schema/changes/${changeId}`)).body.status ===
         'activated',
-      { timeoutMs: 20_000, intervalMs: 20 },
+      { timeoutMs: 30_000, intervalMs: 20, description: `B to report schema change ${changeId} activated` },
     );
     measure('required-field activation under write load, seen on B', elapsedSince(started));
     expect((await modelOn(b, modelId)).version).toBe(2);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Keep writing until both instances have answered writes made after the flip, then stop.
+    const [afterA, afterB] = [statuses.a.length, statuses.b.length];
+    await waitFor(async () => statuses.a.length >= afterA + 4 && statuses.b.length >= afterB + 4, {
+      description: 'entry writes to complete on both instances after the activation',
+    });
     stop = true;
     await Promise.all(running);
 
@@ -154,9 +163,9 @@ describe('two instances on one database', () => {
       expect(list.filter((status) => status === 201).length).toBeGreaterThan(0);
       // Writes validated against the old version and committed after the flip are refused (409, retry).
       expect(
-        list.every((status) => status === 201 || status === 409),
-        list.join(','),
-      ).toBe(true);
+        list.filter((status) => status !== 201 && status !== 409),
+        'write statuses other than 201/409',
+      ).toEqual([]);
     }
     measure('writes during the activation test', statuses.a.length + statuses.b.length, 'requests');
     measure(
@@ -234,6 +243,7 @@ describe('two instances on one database', () => {
     await query('title');
     measure('GraphQL query on B with a warm schema', elapsedSince(started));
 
+    const rebuildsBefore = b.logs.filter((line) => line.msg === 'GraphQL schema rebuilt').length;
     expect(
       (await changeFields(a, modelId, [{ apiKey: 'venue', label: 'Venue', type: 'string' }])).status,
     ).toBe(200);
@@ -241,7 +251,11 @@ describe('two instances on one database', () => {
     const fresh = await query('title venue');
     measure('first GraphQL query on B after the change (includes the rebuild)', elapsedSince(started));
     expect(fresh.body).toEqual({ data: { events: { nodes: [{ title: 'Launch', venue: null }] } } });
-    expect(b.logs.some((line) => line.msg === 'GraphQL schema rebuilt')).toBe(true);
+    // B's log line travels over its stdout pipe and can arrive after the response: wait for it.
+    await waitFor(
+      async () => b.logs.filter((line) => line.msg === 'GraphQL schema rebuilt').length > rebuildsBefore,
+      { description: "B to log 'GraphQL schema rebuilt' for the change" },
+    );
   });
 
   it('scheduled publishes run exactly once with both workers polling', async () => {
@@ -259,7 +273,11 @@ describe('two instances on one database', () => {
           .execute();
         return backlog.length === 0;
       },
-      { timeoutMs: 60_000, intervalMs: 100 },
+      {
+        timeoutMs: 60_000,
+        intervalMs: 100,
+        description: 'the job queue to drain before the scheduling test',
+      },
     );
     await createModel('post', [{ apiKey: 'title', label: 'Title', type: 'string' }]);
     const entries = await Promise.all(
@@ -295,7 +313,7 @@ describe('two instances on one database', () => {
           ? rows
           : undefined;
       },
-      { timeoutMs: 20_000, intervalMs: 50 },
+      { timeoutMs: 30_000, intervalMs: 50, description: 'all 8 scheduled-publish jobs to finish' },
     );
     measure('8 scheduled publishes done after scheduling', elapsedSince(started));
     expect(jobs.map((job) => [job.status, job.attempts])).toEqual(ids.map(() => ['succeeded', 1]));
@@ -350,7 +368,7 @@ describe('two instances on one database', () => {
         }
         return true;
       },
-      { timeoutMs: 30_000, intervalMs: 100 },
+      { timeoutMs: 30_000, intervalMs: 100, description: 'every upload and its variants to be ready on B' },
     );
     measure(`${uploads} uploads processed (variants ready) after the last confirm`, elapsedSince(started));
 
@@ -369,10 +387,14 @@ describe('two instances on one database', () => {
         const logged = assets.every((asset) => processedBy(a, asset.id) + processedBy(b, asset.id) >= 1);
         return settled && logged && rows;
       },
-      { timeoutMs: 30_000, intervalMs: 100 },
+      {
+        timeoutMs: 30_000,
+        intervalMs: 100,
+        description: "every media job to finish and its 'media processed' line to arrive",
+      },
     );
+    expect(jobs.map((job) => [job.status, job.attempts])).toEqual(jobs.map(() => ['succeeded', 1]));
     expect(jobs).toHaveLength(uploads);
-    expect(jobs.every((job) => job.status === 'succeeded' && job.attempts === 1)).toBe(true);
     let onA = 0;
     for (const asset of assets) {
       const runsA = processedBy(a, asset.id);

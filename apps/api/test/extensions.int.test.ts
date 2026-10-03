@@ -409,10 +409,15 @@ describe('extension points', () => {
         DATABASE_URL: database.current.url,
         SHAPIO_CONFIG_PATH: join(broken, 'shapio.config.ts'),
       });
-      const fatal = await server.waitForLog((line) => line.msg === 'startup failed');
-      expect(JSON.stringify(fatal)).toContain(join(broken, 'shapio.config.ts'));
-      expect(JSON.stringify(fatal)).toContain('unknown setting');
-      await server.stop();
+      try {
+        const fatal = await server.waitForLog((line) => line.msg === 'startup failed', {
+          description: "'startup failed'",
+        });
+        expect(JSON.stringify(fatal)).toContain(join(broken, 'shapio.config.ts'));
+        expect(JSON.stringify(fatal)).toContain('unknown setting');
+      } finally {
+        await server.stop();
+      }
     });
 
     const runCheck = (configPath: string) =>

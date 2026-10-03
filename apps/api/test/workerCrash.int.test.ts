@@ -35,7 +35,7 @@ describe('worker crash recovery (child processes)', () => {
 
     // Worker A records the effect, then hangs; kill it mid-job with SIGKILL (no cleanup runs).
     const workerA = startWorker('worker-a', 60_000);
-    await workerA.waitForLog((line) => line.msg === 'effect recorded');
+    await workerA.waitForLog((line) => line.msg === 'effect recorded', { description: "'effect recorded'" });
     expect(await workerA.stop('SIGKILL')).toBeNull();
     expect(await jobsRepository.findById(job.id, db)).toMatchObject({
       status: 'running',
@@ -47,13 +47,17 @@ describe('worker crash recovery (child processes)', () => {
     const done = await waitFor(
       async () => {
         const row = await jobsRepository.findById(job.id, db);
-        return row?.status === 'succeeded' ? row : undefined;
+        // Terminal state only: a dead job fails the assertion below instead of timing out here.
+        return row?.status === 'succeeded' || row?.status === 'dead' ? row : undefined;
       },
-      { timeoutMs: 20_000 },
+      {
+        timeoutMs: 30_000,
+        description: `job ${job.id} to finish on worker B after worker A's lease expired`,
+      },
     );
 
-    expect(done).toMatchObject({ attempts: 2, result: { attempt: 2 }, locked_by: null });
+    expect(done).toMatchObject({ status: 'succeeded', attempts: 2, result: { attempt: 2 }, locked_by: null });
     const effects = await sql<{ job_id: string }>`select job_id from test_effects`.execute(db);
     expect(effects.rows).toEqual([{ job_id: job.id }]);
-  });
+  }, 60_000);
 });

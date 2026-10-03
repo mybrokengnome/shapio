@@ -20,6 +20,8 @@ import { createTestDatabase, useTestDatabase, type TestDatabase } from './helper
 import { waitFor } from './helpers/waitFor.js';
 
 const OPERATIONS_CONFIG = resolve(import.meta.dirname, 'fixtures/operationsProject/shapio.config.ts');
+/** Shutdown budget for the graceful-shutdown test: far above the slow job, so only a hang reaches it. */
+const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 /** Connections a process opened to `database`, by its application name. */
 const connectionsOf = async (database: TestDatabase, applicationName: string) =>
@@ -40,11 +42,12 @@ const runCli = async (args: string[], env: Record<string, string>) => {
   let stderr = '';
   child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
   child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-  const [code] = (await once(child, 'exit')) as [number | null];
+  // 'close', not 'exit': only then is all of stdout/stderr read.
+  const [code] = (await once(child, 'close')) as [number | null];
   return { code, stdout, stderr };
 };
 
-describe('graceful shutdown', () => {
+describe('graceful shutdown', { timeout: 60_000 }, () => {
   const database = useTestDatabase();
   let server: SpawnedServer;
 
@@ -53,7 +56,7 @@ describe('graceful shutdown', () => {
       DATABASE_URL: database.current.url,
       MIGRATE_ON_START: 'false',
       SHAPIO_CONFIG_PATH: OPERATIONS_CONFIG,
-      SHUTDOWN_TIMEOUT_MS: '8000',
+      SHUTDOWN_TIMEOUT_MS: String(SHUTDOWN_TIMEOUT_MS),
       WORKER_POLL_INTERVAL_MS: '50',
     });
   });
@@ -63,18 +66,25 @@ describe('graceful shutdown', () => {
 
   it('finishes in-flight requests and running jobs, then closes the pool and exits 0', async () => {
     const { db } = database.current;
-    const { job } = await enqueueJob({ type: 'ext.slow', payload: { ms: 1500 } }, db);
-    await server.waitForLog((line) => line.msg === 'slow job started');
+    // Long enough that both are still running when the signal goes out, even on a slow runner.
+    const { job } = await enqueueJob({ type: 'ext.slow', payload: { ms: 4000 } }, db);
+    await server.waitForLog((line) => line.msg === 'slow job started', { description: "'slow job started'" });
 
-    const inFlight = fetch(`${server.url}/api/ext/ops/slow?ms=1000`);
-    await server.waitForLog((line) => line.msg === 'slow request started');
+    const inFlight = fetch(`${server.url}/api/ext/ops/slow?ms=2500`);
+    await server.waitForLog((line) => line.msg === 'slow request started', {
+      description: "'slow request started'",
+    });
     // PostgreSQL only: SQLite has no server-side connection list.
     if (!isSqliteRun()) {
       expect(await connectionsOf(database.current, 'shapio-api')).toBeGreaterThan(0);
     }
 
+    // The job is mid-run when the signal goes out, so a succeeded job below means shutdown waited for it.
+    expect(await jobsRepository.findById(job.id, db), 'the slow job when SIGTERM is sent').toMatchObject({
+      status: 'running',
+    });
     const started = Date.now();
-    const exited = server.stop('SIGTERM');
+    const exited = server.stop('SIGTERM', { timeoutMs: SHUTDOWN_TIMEOUT_MS + 15_000 });
 
     // The request that was running when the signal arrived still gets its answer.
     const response = await inFlight;
@@ -83,25 +93,28 @@ describe('graceful shutdown', () => {
     // New connections are refused once the listener has closed.
     await expect(fetch(`${server.url}/api/health`)).rejects.toThrow();
 
-    expect(await exited).toBe(0);
-    const elapsed = Date.now() - started;
-    // It waited for the job (about 1.5 s) rather than aborting it, and did not hang until the timeout.
-    expect(elapsed).toBeGreaterThan(500);
-    expect(elapsed).toBeLessThan(8000);
+    expect(await exited, 'exit code after SIGTERM').toBe(0);
+    // It waited for the job rather than aborting it (aborted jobs go back to pending), and did not hang
+    // until the shutdown timeout.
+    expect(Date.now() - started).toBeLessThan(SHUTDOWN_TIMEOUT_MS);
     expect(await jobsRepository.findById(job.id, db)).toMatchObject({ status: 'succeeded', attempts: 1 });
     const messages = server.logs.map((line) => line.msg);
     expect(messages.indexOf('shutting down')).toBeGreaterThan(-1);
     expect(messages.indexOf('shutdown complete')).toBeGreaterThan(messages.indexOf('shutting down'));
-    // Every pooled connection was closed (the pool ended, not the process).
+    // Every pooled connection was closed (the pool ended, not the process). The database drops a closed
+    // session from its list a moment after the client hangs up, so poll for it.
     if (!isSqliteRun()) {
-      expect(await connectionsOf(database.current, 'shapio-api')).toBe(0);
+      await waitFor(async () => (await connectionsOf(database.current, 'shapio-api')) === 0, {
+        timeoutMs: 10_000,
+        description: "the server's database connections to be gone after it exited",
+      });
     }
   });
 });
 
 const outageSkip = dialectSkipReason(import.meta.url, 'database outage');
 
-describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), () => {
+describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), { timeout: 60_000 }, () => {
   const database = useTestDatabase();
   let proxy: TcpProxy;
   let server: SpawnedServer;
@@ -143,18 +156,31 @@ describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), () =>
     expect(warm.map((response) => response.status)).toEqual([200, 200, 200, 200]);
 
     await proxy.interrupt();
-    await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Liveness does not depend on the database; readiness does, with a clear reason.
+    // Readiness depends on the database, with a clear reason, once the process notices it is gone.
+    const down = await waitFor(
+      async () => {
+        const response = await get('/api/ready');
+        return response.status === 503 ? response : undefined;
+      },
+      {
+        timeoutMs: 15_000,
+        intervalMs: 100,
+        description: '/api/ready to answer 503 while the database is gone',
+      },
+    );
+    // Liveness does not depend on the database.
     expect((await get('/api/health')).status).toBe(200);
-    const down = await get('/api/ready');
-    expect(down.status).toBe(503);
     expect(await down.json()).toMatchObject({
       error: { code: 'NOT_READY', details: { checks: { database: 'failing' } } },
     });
 
     await proxy.resume();
-    await waitFor(async () => (await get('/api/ready')).status === 200, { timeoutMs: 10_000 });
+    await waitFor(async () => (await get('/api/ready')).status === 200, {
+      timeoutMs: 15_000,
+      intervalMs: 100,
+      description: '/api/ready to answer 200 again after the database came back',
+    });
 
     // Same process throughout: dropped connections never crashed it.
     expect(server.child.exitCode).toBeNull();
@@ -200,7 +226,7 @@ describe.skipIf(outageSkip)(withSkipReason('a connection that dies while checked
   });
 });
 
-describe('startup', () => {
+describe('startup', { timeout: 60_000 }, () => {
   const database = useTestDatabase();
 
   it('logs one summary line with version, mode, URL, storage driver and worker mode, and no secrets', async () => {
@@ -212,7 +238,9 @@ describe('startup', () => {
       PUBLIC_URL: 'http://cms.example.test:4300',
     });
     try {
-      const summary = await server.waitForLog((line) => line.msg?.startsWith('Shapio ') === true);
+      const summary = await server.waitForLog((line) => line.msg?.startsWith('Shapio ') === true, {
+        description: "the 'Shapio … running at …' startup summary",
+      });
       expect(summary).toMatchObject({
         version: expect.any(String) as unknown,
         mode: 'test',
@@ -228,7 +256,7 @@ describe('startup', () => {
       expect(everything).not.toContain(secret);
       expect(everything).not.toContain(new URL(database.current.url).password || '\u0000');
     } finally {
-      expect(await server.stop('SIGTERM')).toBe(0);
+      expect(await server.stop('SIGTERM'), 'exit code after SIGTERM').toBe(0);
     }
   });
 
@@ -252,7 +280,7 @@ describe('startup', () => {
       try {
         expect((await fetch(`${server.url}/api/ready`)).status).toBe(200);
       } finally {
-        expect(await server.stop('SIGTERM')).toBe(0);
+        expect(await server.stop('SIGTERM'), 'exit code after SIGTERM').toBe(0);
       }
     } finally {
       await empty.drop();

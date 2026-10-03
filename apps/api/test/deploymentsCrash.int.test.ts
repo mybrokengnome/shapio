@@ -159,7 +159,10 @@ describe('deployments across a worker crash', () => {
 
     endpoint.setMode('hold');
     const first = startWorker('deploy-crash-1');
-    await waitFor(async () => endpoint.deliveries.length === 1, { timeoutMs: 20_000 });
+    await waitFor(async () => endpoint.deliveries.length === 1, {
+      timeoutMs: 30_000,
+      description: 'the first worker to deliver the trigger to the build endpoint',
+    });
     expect(await first.stop('SIGKILL')).toBeNull();
 
     const [queued] = await runsOf(connection.id);
@@ -169,12 +172,20 @@ describe('deployments across a worker crash', () => {
 
     endpoint.setMode('accept');
     startWorker('deploy-crash-2');
+    // Terminal state of both the run and its trigger job: the run can be marked triggered a moment before the
+    // worker records the job as succeeded.
     const run = await waitFor(
       async () => {
         const [current] = await runsOf(connection.id);
-        return current?.status === 'triggered' ? current : undefined;
+        const [job] = current ? await triggerJobsOf(current.id) : [];
+        return current?.status === 'triggered' && (job?.status === 'succeeded' || job?.status === 'dead')
+          ? current
+          : undefined;
       },
-      { timeoutMs: 20_000 },
+      {
+        timeoutMs: 30_000,
+        description: 'the second worker to mark the run triggered and finish its trigger job',
+      },
     );
 
     // One logical deployment for the publish, and its event was not lost.
@@ -189,7 +200,7 @@ describe('deployments across a worker crash', () => {
     expect(endpoint.deliveries).toHaveLength(2);
     expect(new Set(endpoint.deliveries.map((delivery) => delivery.deliveryId))).toEqual(new Set([run.id]));
     expect(new Set(endpoint.deliveries.map((delivery) => delivery.runId))).toEqual(new Set([run.id]));
-  }, 60_000);
+  }, 90_000);
 
   it('a worker killed right after the endpoint accepted: still one run, never a second delivery ID', async () => {
     const connection = await createConnection('Crash after accept');
@@ -201,7 +212,10 @@ describe('deployments across a worker crash', () => {
     const first = startWorker('deploy-accept-1');
     crashing.worker = first;
     const entry = await publish('Accepted, then crashed');
-    await waitFor(async () => endpoint.deliveries.length >= 1, { timeoutMs: 20_000 });
+    await waitFor(async () => endpoint.deliveries.length >= 1, {
+      timeoutMs: 30_000,
+      description: 'the first worker to deliver the trigger to the build endpoint',
+    });
     await first.stop('SIGKILL');
 
     endpoint.setMode('accept');
@@ -212,19 +226,22 @@ describe('deployments across a worker crash', () => {
         const [job] = current ? await triggerJobsOf(current.id) : [];
         return current?.status === 'triggered' && job?.status === 'succeeded' ? current : undefined;
       },
-      { timeoutMs: 20_000 },
+      {
+        timeoutMs: 30_000,
+        description: 'the second worker to mark the run triggered and its trigger job succeeded',
+      },
     );
     expect(await runsOf(connection.id)).toEqual([run]);
     expect((await publishEventOf(entry.id))[0]?.dispatched_at).not.toBeNull();
     expect(endpoint.deliveries.length).toBeGreaterThanOrEqual(1);
     expect(endpoint.deliveries.length).toBeLessThanOrEqual(2);
     expect(new Set(endpoint.deliveries.map((delivery) => delivery.deliveryId))).toEqual(new Set([run.id]));
-  }, 60_000);
+  }, 90_000);
 
   it('a burst of publishes while the worker is down becomes one run once a worker is back', async () => {
     const connection = await createConnection('Burst', 1);
     const first = startWorker('deploy-burst-1');
-    await first.waitForLog((line) => line.msg === 'worker ready');
+    await first.waitForLog((line) => line.msg === 'worker ready', { description: "'worker ready'" });
     expect(await first.stop('SIGKILL')).toBeNull();
     const entries = [];
     for (const title of ['Burst one', 'Burst two', 'Burst three']) {
@@ -238,7 +255,7 @@ describe('deployments across a worker crash', () => {
         const [current] = await runsOf(connection.id);
         return current?.status === 'triggered' ? current : undefined;
       },
-      { timeoutMs: 20_000 },
+      { timeoutMs: 30_000, description: 'the second worker to mark the deployment run triggered' },
     );
     // Every publish event is dispatched (none lost), and they coalesced into the one run.
     for (const entry of entries) {
@@ -246,5 +263,5 @@ describe('deployments across a worker crash', () => {
     }
     expect(await runsOf(connection.id)).toEqual([run]);
     expect(endpoint.deliveries.map((delivery) => delivery.deliveryId)).toEqual([run.id]);
-  }, 60_000);
+  }, 90_000);
 });

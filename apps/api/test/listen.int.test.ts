@@ -12,7 +12,7 @@ import { waitFor } from './helpers/waitFor.js';
 
 const fingerprintOf = (certPem: string) => new X509Certificate(certPem).fingerprint256;
 
-describe('listening: custom PORT/HOST and built-in HTTPS (child processes)', () => {
+describe('listening: custom PORT/HOST and built-in HTTPS (child processes)', { timeout: 60_000 }, () => {
   const database = useTestDatabase();
   const certificate = createSelfSignedCertificate();
   const renewed = createSelfSignedCertificate();
@@ -85,12 +85,18 @@ describe('listening: custom PORT/HOST and built-in HTTPS (child processes)', () 
       copyFileSync(renewed.certFile, certFile);
       await server.waitForLog(
         (line) => line.msg?.startsWith('TLS certificate files could not be reloaded') === true,
+        { description: "'TLS certificate files could not be reloaded' for the half-written pair" },
       );
       expect(await servedFingerprint()).toBe(fingerprintOf(certificate.cert));
 
       copyFileSync(renewed.keyFile, keyFile);
-      await waitFor(async () => (await servedFingerprint()) === fingerprintOf(renewed.cert));
-      expect(server.logs.some((line) => line.msg?.startsWith('TLS certificate files changed'))).toBe(true);
+      await waitFor(async () => (await servedFingerprint()) === fingerprintOf(renewed.cert), {
+        description: 'the server to serve the renewed certificate',
+      });
+      // The line can reach this process a moment after the new certificate is served: wait for it.
+      await server.waitForLog((line) => line.msg?.startsWith('TLS certificate files changed') === true, {
+        description: "'TLS certificate files changed'",
+      });
     } finally {
       await server.stop();
       rmSync(directory, { recursive: true, force: true });

@@ -44,6 +44,7 @@ describe('a second instance with schema notifications disabled', () => {
     });
     const line = await second.waitForLog(
       (entry) => typeof entry.msg === 'string' && LISTENING.test(entry.msg),
+      { description: "'Server listening at …' from the second instance" },
     );
     secondUrl = LISTENING.exec(line.msg ?? '')?.[1] ?? '';
   });
@@ -132,13 +133,17 @@ describe('schema change notifications', () => {
     // PostgreSQL: one LISTEN connection; MySQL: one polling connection. SQLite: an in-process subscription
     // (no connection to inspect).
     if (!isSqliteRun()) {
-      await waitFor(async () => (await listenerPids()).length === 1);
+      await waitFor(async () => (await listenerPids()).length === 1, {
+        description: 'one schema-listen connection from the listening instance',
+      });
     }
     const admin = schemaClient(writer.app, await createRoleToken(database.current.db));
 
     await admin.post('/api/admin/models', { definition: pageDefinition() });
     const version = (await admin.get('/api/admin/schema')).json<{ schemaVersion: number }>().schemaVersion;
-    await waitFor(async () => registry.peek()?.version === version);
+    await waitFor(async () => registry.peek()?.version === version, {
+      description: `the listening instance's registry to reach schema version ${version}`,
+    });
 
     if (isSqliteRun()) {
       return;
@@ -146,12 +151,17 @@ describe('schema change notifications', () => {
     // Kill the listening connection: the listener reconnects and resynchronises.
     const [pid] = await listenerPids();
     await terminateConnection(database.current.db, pid!);
-    await waitFor(async () => {
-      const pids = await listenerPids();
-      return pids.length === 1 && pids[0] !== pid;
-    });
+    await waitFor(
+      async () => {
+        const pids = await listenerPids();
+        return pids.length === 1 && pids[0] !== pid;
+      },
+      { description: 'the schema listener to reconnect on a new connection' },
+    );
     await admin.post('/api/admin/models', { definition: pageDefinition({ apiKey: 'post', label: 'Post' }) });
     const next = (await admin.get('/api/admin/schema')).json<{ schemaVersion: number }>().schemaVersion;
-    await waitFor(async () => registry.peek()?.version === next);
+    await waitFor(async () => registry.peek()?.version === next, {
+      description: `the reconnected registry to reach schema version ${next}`,
+    });
   });
 });

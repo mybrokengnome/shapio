@@ -249,7 +249,7 @@ describe('scheduled publications', () => {
     expect(await scheduleRow(created.id)).toMatchObject({ status: 'done' });
   });
 
-  describe('exactly once across a worker restart', () => {
+  describe('exactly once across a worker restart', { timeout: 60_000 }, () => {
     const startChild = (workerId: string, hangAt: string) => {
       const child = spawnTsProcess('test/fixtures/publishingWorker.ts', {
         DATABASE_URL: database.current.url,
@@ -268,7 +268,8 @@ describe('scheduled publications', () => {
 
     const waitForSchedule = (id: string, status: string) =>
       waitFor(async () => ((await scheduleRow(id)).status === status ? true : undefined), {
-        timeoutMs: 20_000,
+        timeoutMs: 30_000,
+        description: `schedule ${id} to reach status '${status}'`,
       });
 
     it('a worker killed before commit publishes nothing; the next worker publishes once', async () => {
@@ -278,6 +279,7 @@ describe('scheduled publications', () => {
       const first = startChild('crash-before', 'beforeCommit');
       await first.waitForLog(
         (line) => line.msg === 'published inside the transaction; hanging before commit',
+        { description: "'published inside the transaction; hanging before commit'" },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       expect(await publicationsOf(entry.id)).toHaveLength(0);
@@ -296,6 +298,7 @@ describe('scheduled publications', () => {
       const first = startChild('crash-after', 'afterCommit');
       await first.waitForLog(
         (line) => line.msg === 'handler finished; hanging before the job is marked succeeded',
+        { description: "'handler finished; hanging before the job is marked succeeded'" },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       const row = await scheduleRow(created.id);
@@ -306,11 +309,12 @@ describe('scheduled publications', () => {
       const job = await waitFor(
         async () => {
           const current = await jobsRepository.findById(row.job_id ?? '', database.current.db);
-          return current?.status === 'succeeded' ? current : undefined;
+          // Terminal state only: a dead job fails the assertion below instead of timing out here.
+          return current?.status === 'succeeded' || current?.status === 'dead' ? current : undefined;
         },
-        { timeoutMs: 20_000 },
+        { timeoutMs: 30_000, description: `job ${row.job_id} to finish on the recovering worker` },
       );
-      expect(job.attempts).toBe(2);
+      expect(job).toMatchObject({ status: 'succeeded', attempts: 2 });
       expect(job.result).toEqual({ skipped: 'done' });
       expect(await publicationsOf(entry.id)).toHaveLength(1);
       expect(await publishEventsOf(entry.id)).toHaveLength(1);

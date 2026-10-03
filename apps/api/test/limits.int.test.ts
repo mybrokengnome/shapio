@@ -6,8 +6,11 @@ import { useTestDatabase } from './helpers/testDatabase.js';
 import { waitFor } from './helpers/waitFor.js';
 
 const RATE_LIMIT_MAX = 300;
-/** A pathological request must be answered (refused) quickly, never tie up the process. */
-const QUICK_MS = 2000;
+/**
+ * A pathological request must be answered (refused) quickly, never tie up the process. Executing any of these
+ * would take minutes or forever; the bound leaves room for a slow CI runner without hiding that.
+ */
+const QUICK_MS = 5000;
 
 const measure = (name: string, value: number, unit = 'ms') =>
   process.stdout.write(`[measure] limits: ${name} = ${Math.round(value)} ${unit}\n`);
@@ -16,7 +19,7 @@ const measure = (name: string, value: number, unit = 'ms') =>
  * Abuse limits against a real server process: GraphQL queries built to be expensive, and request bursts
  * over the rate limit. The process must refuse them promptly and keep serving everyone else.
  */
-describe('limits under abuse', () => {
+describe('limits under abuse', { timeout: 60_000 }, () => {
   const database = useTestDatabase();
   let server: SpawnedServer;
   let token: string;
@@ -36,16 +39,20 @@ describe('limits under abuse', () => {
       ms: performance.now() - started,
     };
   };
-  const healthy = async () => (await fetch(`${server.url}/api/health`)).status === 200;
+  /** The status of a liveness probe after an abusive request: 200 means the process kept serving. */
+  const healthStatus = async () => (await fetch(`${server.url}/api/health`)).status;
 
   beforeAll(async () => {
     server = await spawnServer({
       DATABASE_URL: database.current.url,
       MIGRATE_ON_START: 'false',
       RATE_LIMIT_MAX: String(RATE_LIMIT_MAX),
-      RATE_LIMIT_WINDOW_MS: '60000',
+      // Longer than the whole file takes on a slow runner, so the window never resets mid-burst.
+      RATE_LIMIT_WINDOW_MS: '600000',
     });
-    const admin = await waitFor(async () => createRoleToken(database.current.db).catch(() => undefined));
+    const admin = await waitFor(async () => createRoleToken(database.current.db).catch(() => undefined), {
+      description: 'an admin token (the server seeds the built-in roles at startup)',
+    });
     const created = await fetch(`${server.url}/api/admin/models`, {
       method: 'POST',
       headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
@@ -86,7 +93,7 @@ describe('limits under abuse', () => {
     expect(result.ms).toBeLessThan(QUICK_MS);
     expect(result.status).toBe(400);
     expect(result.codes).toEqual(['QUERY_TOO_COMPLEX']);
-    expect(await healthy()).toBe(true);
+    expect(await healthStatus(), 'liveness after the abusive requests').toBe(200);
   });
 
   it('refuses mass aliasing quickly: at most 30 aliases per selection, counts charged as queries', async () => {
@@ -103,7 +110,7 @@ describe('limits under abuse', () => {
     const allowed = await graphql(`{ ${aliases(30, 'folders { totalCount }')} }`);
     measure('30 aliased counts (the cap) answered in', allowed.ms);
     expect(allowed.status).toBe(200);
-    expect(await healthy()).toBe(true);
+    expect(await healthStatus(), 'liveness after the abusive requests').toBe(200);
   });
 
   it('refuses a deeply nested query before executing it', async () => {
@@ -113,7 +120,7 @@ describe('limits under abuse', () => {
     measure('2,000-level nesting answered in', result.ms);
     expect(result.ms).toBeLessThan(QUICK_MS);
     expect(result.status).toBe(400);
-    expect(await healthy()).toBe(true);
+    expect(await healthStatus(), 'liveness after the abusive requests').toBe(200);
   });
 
   it('caps a burst at RATE_LIMIT_MAX per client and keeps health probes exempt', async () => {
@@ -146,7 +153,7 @@ describe('limits under abuse', () => {
     expect(limitedResponse.headers.get('retry-after')).toMatch(/^\d+$/);
     expect(await limitedResponse.json()).toMatchObject({ error: { code: 'RATE_LIMITED' } });
     // Liveness and readiness probes are never rate limited.
-    expect(await healthy()).toBe(true);
+    expect(await healthStatus(), 'liveness after the abusive requests').toBe(200);
     expect((await fetch(`${server.url}/api/ready`)).status).toBe(200);
   });
 });

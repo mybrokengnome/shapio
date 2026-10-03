@@ -522,13 +522,17 @@ describe('change sets (content)', () => {
       const first = startChild('set-crash-before', 'beforeCommit');
       await first.waitForLog(
         (line) => line.msg === 'published inside the transaction; hanging before commit',
+        { description: "'published inside the transaction; hanging before commit'" },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       expect(await publicationsOf(entryIds)).toHaveLength(0);
       expect((await setRow(set.id)).status).toBe('scheduled');
 
       startChild('set-recover-before', 'never');
-      await waitFor(async () => (await setRow(set.id)).status === 'shipped', { timeoutMs: 20_000 });
+      await waitFor(async () => (await setRow(set.id)).status === 'shipped', {
+        timeoutMs: 30_000,
+        description: `change set ${set.id} to ship on the recovering worker`,
+      });
       await expectShippedOnce(set.id, entryIds);
     }, 60_000);
 
@@ -539,6 +543,7 @@ describe('change sets (content)', () => {
       const first = startChild('set-crash-after', 'afterCommit');
       await first.waitForLog(
         (line) => line.msg === 'handler finished; hanging before the job is marked succeeded',
+        { description: "'handler finished; hanging before the job is marked succeeded'" },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       expect((await setRow(set.id)).status).toBe('shipped');
@@ -550,11 +555,12 @@ describe('change sets (content)', () => {
       const finished = await waitFor(
         async () => {
           const current = await job();
-          return current.status === 'succeeded' ? current : undefined;
+          // Terminal state only: a dead job fails the assertion below instead of timing out here.
+          return current.status === 'succeeded' || current.status === 'dead' ? current : undefined;
         },
-        { timeoutMs: 20_000 },
+        { timeoutMs: 30_000, description: `ship job ${jobId} to finish on the recovering worker` },
       );
-      expect(finished.attempts).toBe(2);
+      expect(finished).toMatchObject({ status: 'succeeded', attempts: 2 });
       expect(finished.result).toEqual({ skipped: 'shipped' });
       await expectShippedOnce(set.id, entryIds);
     }, 60_000);

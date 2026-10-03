@@ -16,7 +16,9 @@ export const spawnServer = async (env: Record<string, string>): Promise<SpawnedS
     LOG_LEVEL: 'info',
     ...env,
   });
-  const line = await spawned.waitForLog((l) => typeof l.msg === 'string' && LISTENING.test(l.msg));
+  const line = await spawned.waitForLog((l) => typeof l.msg === 'string' && LISTENING.test(l.msg), {
+    description: "'Server listening at …' (it never started listening)",
+  });
   const url = LISTENING.exec(line.msg ?? '')?.[1];
   if (!url) {
     throw new Error('Could not determine the server address');

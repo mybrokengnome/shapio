@@ -15,8 +15,11 @@ type SchemaSummary = {
 };
 type RevisionList = { items: Array<{ id: string } & Record<string, unknown>> };
 
-/** How far ahead the scheduled publish runs: after the first process is stopped, before it would matter. */
-const SCHEDULE_DELAY_MS = 8_000;
+/**
+ * How far ahead the scheduled publish is queued: far enough that it can never run on the first process, however
+ * slow the machine. The test makes it due on the second process by moving its run time (see below).
+ */
+const SCHEDULE_DELAY_MS = 60 * 60_000;
 
 /**
  * Brief §10 "Restart/recovery preserves schemas, revisions, content, and queued jobs": a real server process
@@ -147,8 +150,8 @@ describe('restart and recovery', () => {
     expect(entryRevisionsBefore.items).toHaveLength(3);
     expect(modelRevisionsBefore.items).toHaveLength(2);
 
-    expect(await first.stop('SIGTERM')).toBe(0);
-    expect(first.logs.some((line) => line.msg === 'shutdown complete')).toBe(true);
+    expect(await first.stop('SIGTERM'), 'exit code of the first process after SIGTERM').toBe(0);
+    expect(first.logs.map((line) => line.msg)).toContain('shutdown complete');
 
     // While no process runs, the queued job is still there, untouched.
     const scheduleRow = await database.current.db
@@ -202,6 +205,12 @@ describe('restart and recovery', () => {
     expect((await http(restarted, deliveryToken, 'GET', `/api/content/articles/${later.id}`)).status).toBe(
       404,
     );
+    // Its time comes: the new process's worker picks it up from the queue (a moved clock, not a sleep).
+    await database.current.db
+      .updateTable('jobs')
+      .set({ run_at: new Date() })
+      .where('id', '=', jobId)
+      .execute();
     const job = await waitFor(
       async () => {
         const row = await database.current.db
@@ -209,11 +218,16 @@ describe('restart and recovery', () => {
           .selectAll()
           .where('id', '=', jobId)
           .executeTakeFirstOrThrow();
-        return row.status === 'succeeded' ? row : undefined;
+        // Terminal state only: a dead job fails the assertion below instead of timing out here.
+        return row.status === 'succeeded' || row.status === 'dead' ? row : undefined;
       },
-      { timeoutMs: SCHEDULE_DELAY_MS + 20_000, intervalMs: 100 },
+      {
+        timeoutMs: 30_000,
+        intervalMs: 100,
+        description: `the queued scheduled-publish job ${jobId} to finish on the restarted process`,
+      },
     );
-    expect(job.attempts).toBe(1);
+    expect(job).toMatchObject({ status: 'succeeded', attempts: 1 });
     expect(
       expectOk<{ data: Record<string, unknown> }>(
         await http(restarted, deliveryToken, 'GET', `/api/content/articles/${later.id}`),
@@ -226,6 +240,6 @@ describe('restart and recovery', () => {
       .executeTakeFirstOrThrow();
     expect(done).toEqual({ status: 'done', job_id: jobId });
 
-    expect(await restarted.stop('SIGTERM')).toBe(0);
-  }, 90_000);
+    expect(await restarted.stop('SIGTERM'), 'exit code of the restarted process after SIGTERM').toBe(0);
+  }, 120_000);
 });

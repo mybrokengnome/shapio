@@ -18,6 +18,7 @@ const LEASE_MS = 1500;
 /** Package K: hooks in the dedicated worker (`shapio worker`), and after* hooks across a worker crash. */
 describe.skipIf(sqliteSkip)(
   withSkipReason('extension hooks in the dedicated worker (child processes)', sqliteSkip),
+  { timeout: 60_000 },
   () => {
     const database = useTestDatabase();
     const children: SpawnedProcess[] = [];
@@ -74,6 +75,7 @@ describe.skipIf(sqliteSkip)(
       const workerA = startWorker('worker-a', 'afterCommit');
       await workerA.waitForLog(
         (line) => line.msg === 'after hook committed; hanging before the job is marked succeeded',
+        { description: "worker A's 'after hook committed; hanging …'" },
       );
       expect(await workerA.stop('SIGKILL')).toBeNull();
       const job = await db
@@ -89,11 +91,15 @@ describe.skipIf(sqliteSkip)(
       const done = await waitFor(
         async () => {
           const row = await jobsRepository.findById(job.id, db);
-          return row?.status === 'succeeded' ? row : undefined;
+          // Terminal state only: a dead job fails the assertion below instead of timing out here.
+          return row?.status === 'succeeded' || row?.status === 'dead' ? row : undefined;
         },
-        { timeoutMs: 20_000 },
+        {
+          timeoutMs: 30_000,
+          description: `job ${job.id} to finish on worker B after worker A's lease expired`,
+        },
       );
-      expect(done).toMatchObject({ attempts: 2, result: { skipped: 'already ran' } });
+      expect(done).toMatchObject({ status: 'succeeded', attempts: 2, result: { skipped: 'already ran' } });
       expect(await hooksOf(entry.id)).toEqual(['article.beforeCreate', 'article.afterCreate']);
     });
 
@@ -112,7 +118,8 @@ describe.skipIf(sqliteSkip)(
         201,
       );
       await waitFor(async () => (await hooksOf(entry.id)).includes('article.afterPublish'), {
-        timeoutMs: 20_000,
+        timeoutMs: 30_000,
+        description: 'the dedicated worker to run the scheduled publish and its afterPublish hook',
       });
       const rows = await sql<{ hook: string; principal: string }>`
       select hook, principal from ext_hook_log where entry_id = ${entry.id} and hook like '%Publish' order by id

@@ -81,7 +81,10 @@ describe('adding an optional field under load', () => {
       }
     };
     const traffic = [reader(), reader(), writer(), writer()];
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Traffic is flowing before the change starts.
+    await waitFor(async () => statuses.length >= 12, {
+      description: 'requests to complete before the change',
+    });
 
     const model = (await call(`/api/admin/models/${modelId}`, adminToken)).body as unknown as ModelBody;
     const changed = await call(`/api/admin/models/${modelId}`, adminToken, {
@@ -106,14 +109,18 @@ describe('adding an optional field under load', () => {
     });
     expect(written.status).toBe(201);
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Keep the traffic going until it has answered requests made after the change, then stop.
+    const afterChange = statuses.length;
+    await waitFor(async () => statuses.length >= afterChange + 12, {
+      description: 'requests to complete after the change',
+    });
     stop = true;
     await Promise.all(traffic);
 
     expect(statuses.length).toBeGreaterThan(20);
     // Writes validated against the old version and committed after the change are refused with 409 (retry).
     expect(statuses.filter((status) => status >= 500)).toEqual([]);
-    expect(statuses.every((status) => status === 200 || status === 201 || status === 409)).toBe(true);
+    expect(statuses.filter((status) => status !== 200 && status !== 201 && status !== 409)).toEqual([]);
     // Same process identity throughout: no restart.
     expect(server.child.exitCode).toBeNull();
     expect(server.child.pid).toBe(server.pid);
