@@ -49,7 +49,8 @@ With `npm run start`, a publish refreshes only the pages it changed, without a r
    uses `trailingSlash`, and Shapio does not follow the redirect), and writes its signing secret to
    `.env` as `SHAPIO_WEBHOOK_SECRET` (every run rotates it). Shapio never calls loopback or private addresses
    on its own: for a local site, start Shapio with `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST=127.0.0.1/32,::1/128`
-   (the seed turns on "Allow private network" for a `localhost` URL).
+   (the seed turns on "Allow private network" for a `localhost` URL; without the allowlist Shapio refuses the
+   webhook, and the seed says so and goes on without it).
 2. The route checks the signature (`verifyWebhookSignature` from `@shapio/client`), then asks Shapio what
    changed between the snapshot the site shows and the current one (`/api/snapshots/changes`), and calls
    `revalidatePath` for those pages: an article's page and its locale's list, a page by its slug (`home` is

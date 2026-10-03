@@ -154,7 +154,9 @@ Snapshots 38 → 42: 2 changed entries; routes to refresh:
 
 Server-rendered frameworks with on-demand revalidation can refresh just the changed pages. Point a Shapio
 [webhook](publishing.md) for publish events at a route in your app, remember the snapshot you last handled,
-and revalidate the routes of the changed entries. With Next.js:
+and revalidate the routes of the changed entries. The [Next.js starter](starters.md#incremental-rebuilds)
+does this end to end (`examples/next/src/app/api/revalidate/route.ts`, with slug lookups, the snapshot kept
+across restarts and pinned builds left alone). In outline:
 
 ```ts
 // app/api/shapio-changed/route.ts

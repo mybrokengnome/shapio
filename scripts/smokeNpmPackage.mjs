@@ -267,8 +267,9 @@ try {
     'npm',
     ['run', 'start'],
     project,
-    // The seed uploads media through grant URLs built from PUBLIC_URL, so it must be this server's address.
-    (url) => ({ PUBLIC_URL: url }),
+    // The seed uploads media through grant URLs built from PUBLIC_URL, so it must be this server's address;
+    // the allowlist lets it create the starter's revalidation webhook to localhost.
+    (url) => ({ PUBLIC_URL: url, OUTBOUND_PRIVATE_NETWORK_ALLOWLIST: '127.0.0.1/32,::1/128' }),
     async (url) => buildNextStarter(siteTarballs, url),
   );
 } catch (error) {

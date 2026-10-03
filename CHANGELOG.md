@@ -13,6 +13,9 @@ All notable changes to Shapio are listed here. The format follows
   snapshot per build, with `SHAPIO_SITE` for multi-site instances.
   `npx create-shapio my-site --site astro|next|sveltekit` writes one as a standalone project with the model
   files, a seed and a smoke check.
+- **Next.js starter: on-demand revalidation.** A signed Shapio webhook calls `/api/revalidate/`, which
+  refreshes only the pages changed since the site's snapshot; new articles and pages render without a rebuild.
+  See [Site starters](documentation/starters.md#incremental-rebuilds).
 - **Sites**: one instance runs many sites with a shared schema, admin users and roles, and per-site content,
   media, snapshots, change sets, app users, tokens, webhooks, deployments and field usage. Role assignments are
   per site or on all sites; network permissions (`schema.create`, `users.manage`, `roles.manage`, `audit.read`,

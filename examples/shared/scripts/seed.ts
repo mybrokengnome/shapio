@@ -327,6 +327,26 @@ const ensureRevalidateWebhook = async (client: ShapioClient, siteUrl: string, pa
   return created.secret;
 };
 
+/**
+ * Shapio refuses a webhook to a loopback or private address unless its OUTBOUND_PRIVATE_NETWORK_ALLOWLIST
+ * covers it. The site still builds and serves without the webhook, so the seed says how to turn it on and
+ * carries on; the revalidation route answers 503 until SHAPIO_WEBHOOK_SECRET is set.
+ */
+const tryRevalidateWebhook = async (client: ShapioClient, siteUrl: string, path: string) => {
+  try {
+    return await ensureRevalidateWebhook(client, siteUrl, path);
+  } catch (error) {
+    if (error instanceof ShapioApiError && error.code === 'DESTINATION_NOT_ALLOWED') {
+      log(
+        `Skipped the "${REVALIDATE_WEBHOOK_NAME}" webhook: ${error.message} For a local site, start Shapio with ` +
+          'OUTBOUND_PRIVATE_NETWORK_ALLOWLIST=127.0.0.1/32,::1/128 and run the seed again.',
+      );
+      return undefined;
+    }
+    throw error;
+  }
+};
+
 const writeEnv = async (url: string, deliveryToken: string, webhookSecret: string | undefined) => {
   const path = resolve('.env');
   const lines = [
@@ -359,7 +379,7 @@ const main = async () => {
     await ensurePreviewConnection(admin.client, siteUrl);
     const revalidatePath = values['revalidate-path'];
     const webhookSecret = revalidatePath
-      ? await ensureRevalidateWebhook(admin.client, siteUrl, revalidatePath)
+      ? await tryRevalidateWebhook(admin.client, siteUrl, revalidatePath)
       : undefined;
     await writeEnv(admin.url, await createDeliveryToken(admin.client), webhookSecret);
     log('Seeded. Build the site with: npm run build');
