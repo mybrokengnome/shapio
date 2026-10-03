@@ -52,6 +52,8 @@ const MYSQL_SKIPS: Readonly<Record<string, string>> = {
   'operations.int.test.ts > database outage': 'drops PostgreSQL connections through a TCP proxy',
   'schemaChanges.int.test.ts > invalid index':
     'INVALID indexes come from a failed CREATE INDEX CONCURRENTLY (PostgreSQL only)',
+  'load.int.test.ts > the partial-index ceiling on entry_heads':
+    'MySQL caps filterable or sortable fields at 56 per instance (MYSQL_MAX_FIELD_INDEXES, documentation/mysql.md); the case needs 250',
 };
 
 const SKIPS: Readonly<Partial<Record<DialectName, Readonly<Record<string, string>>>>> = {

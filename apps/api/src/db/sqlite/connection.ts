@@ -230,6 +230,21 @@ export class SqliteConnection {
     }
   }
 
+  /** The planner statistics this database holds (`sqlite_stat1`), as text to compare; '' when it has none. */
+  statistics(): string {
+    try {
+      const row = this.#database
+        .prepare(
+          `select group_concat(tbl || ' ' || coalesce(idx, '') || ' ' || stat, char(10)) as stats from sqlite_stat1`,
+        )
+        .get() as { stats: string | null } | undefined;
+      return row?.stats ?? '';
+    } catch {
+      // No sqlite_stat1 table yet: nothing has been analyzed.
+      return '';
+    }
+  }
+
   /** Runs SQL text with no parameters or results (pragmas, `vacuum into`). */
   exec(sql: string): void {
     this.#database.exec(sql);

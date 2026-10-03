@@ -124,16 +124,19 @@ describe('content query compiler on SQLite', () => {
       and h2.locale in (select value from json_each(?))
       and (case h2.locale when ? then 0 when ? then 1 end) < (case h.locale when ? then 0 when ? then 1 end))`;
   const chainParameters = ['["fr","en"]', '["fr","en"]', 'fr', 'en', 'fr', 'en'];
+  /** The joined entry's site and model: on the row query of a plain list in `entries` order only. */
+  const entryScope = ` and e.site_id = ? and e.model_id = '${MODEL}'`;
 
   it('ranks the locale chain without arrays and sorts missing values like PostgreSQL', () => {
     const query = compileFixtureQuery('sort=title:asc,rank:desc&page=2', sqlite);
     const where = `${from('entry_heads')} and h.state = ?${fallback('entry_heads', ' and h2.state = h.state')}`;
     expect(compile(query.rows)).toEqual({
-      sql: `${select}${where} order by ${text(F.title)} asc nulls last, ${numeric(F.rank)} desc nulls first, h.entry_id asc limit ? offset ?`,
+      sql: `${select}${where} order by ${text(F.title)} asc nulls last, ${numeric(F.rank)} desc nulls first, e.id asc limit ? offset ?`,
       parameters: [SITE, 'published', ...chainParameters, 25, 25],
     });
     expect(compile(query.count)).toEqual({
-      sql: `select count(*) as total ${where}`,
+      // No condition: live heads are counted without the entries join.
+      sql: `select count(*) as total ${where.replace(' join entries e on e.id = h.entry_id and e.deleted_at is null', '')}`,
       parameters: [SITE, 'published', ...chainParameters],
     });
   });
@@ -144,15 +147,33 @@ describe('content query compiler on SQLite', () => {
         compileFixtureQuery('sort=createdAt:asc', sqlite, { locales: { kind: 'chain', chain: ['en'] } }).rows,
       ),
     ).toEqual({
-      sql: `${select}${from('entry_heads')} and h.state = ? and h.locale = ? order by "e"."created_at" asc, h.entry_id asc limit ?`,
-      parameters: [SITE, 'published', 'en', 25],
+      sql: `${select}${from('entry_heads')} and h.state = ? and h.locale = ?${entryScope} order by "e"."created_at" asc, e.id asc limit ?`,
+      parameters: [SITE, 'published', 'en', SITE, 25],
     });
     expect(
       compile(compileFixtureQuery('', sqlite, { locales: { kind: 'any' }, state: 'draft' }).rows),
     ).toEqual({
-      sql: `${select}${from('entry_heads')} and h.state = ? order by h.entry_id asc limit ?`,
+      sql: `${select}${from('entry_heads')} and h.state = ? order by e.id asc limit ?`,
       parameters: [SITE, 'draft', 25],
     });
+  });
+
+  it('names the entry scope only on an unfiltered list in entries order', () => {
+    const rowsOf = (search: string) =>
+      compile(compileFixtureQuery(search, sqlite, { locales: { kind: 'any' } }).rows).sql;
+    expect(rowsOf('sort=createdAt:desc')).toContain(`${entryScope} order by "e"."created_at" desc`);
+    expect(rowsOf('sort=createdAt:desc&filters[title][$eq]=x')).not.toContain('e.site_id');
+    expect(rowsOf('sort=updatedAt:desc')).not.toContain('e.site_id');
+    expect(compile(compileFixtureQuery('sort=createdAt:desc', sqlite).count).sql).not.toContain('e.site_id');
+  });
+
+  it('counts live heads without the entries join unless a condition or a snapshot needs it', () => {
+    const countOf = (search: string) => compile(compileFixtureQuery(search, sqlite).count).sql;
+    expect(countOf('')).not.toContain('join entries');
+    expect(countOf('filters[title][$eq]=x')).toContain(
+      'join entries e on e.id = h.entry_id and e.deleted_at is null',
+    );
+    expect(countOf('snapshot=3')).toContain('join entries e on e.id = h.entry_id and e.deleted_at is null');
   });
 
   it('reads a snapshot from the publication log without casts', () => {
@@ -166,7 +187,7 @@ describe('content query compiler on SQLite', () => {
       and (pl.to_seq is null or pl.to_seq > ?)
   ) `;
     expect(compile(compileFixtureQuery('snapshot=3&filters[title][$eq]=x', sqlite).rows)).toEqual({
-      sql: `${cte}${select}${from('content_snapshot')}${fallback('content_snapshot', '')} and (${text(F.title)} is ?) order by h.entry_id asc limit ?`,
+      sql: `${cte}${select}${from('content_snapshot')}${fallback('content_snapshot', '')} and (${text(F.title)} is ?) order by e.id asc limit ?`,
       parameters: [SITE, 3, 3, SITE, ...chainParameters, 'x', 25],
     });
   });

@@ -370,6 +370,38 @@ describe('delivery API', () => {
     });
   });
 
+  it('counts only live entries in list totals: deleted ones never, unpublished ones only as drafts', async () => {
+    const tally = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'tally',
+      label: 'Tally',
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    });
+    const tallyToken = await createDeliveryToken(database.current.db, [{ modelId: tally.definition.id }]);
+    const [kept, deleted, unpublished] = await Promise.all(
+      ['kept', 'deleted', 'unpublished'].map((title) => create('tally', { title })),
+    );
+    for (const entry of [kept, deleted, unpublished]) {
+      await publish('tally', entry!.id);
+    }
+    await create('tally', { title: 'draft only' });
+    expect((await admin.delete(`/api/admin/content/tally/${deleted!.id}`)).statusCode).toBe(204);
+    expectStatus(await admin.post(`/api/admin/content/tally/${unpublished!.id}/unpublish`, {}), 200);
+
+    const delivered = expectStatus(
+      await deliver('/api/content/tallies', {}, tallyToken),
+      200,
+    ).json<DeliveryList>();
+    expect(delivered.data.map((entry) => entry.title)).toEqual(['kept']);
+    expect(delivered.meta.pagination.total).toBe(1);
+    const listed = expectStatus(await admin.get('/api/admin/content/tally'), 200).json<{
+      items: Array<{ data: { title: string } }>;
+      pagination: { total: number };
+    }>();
+    expect(listed.items.map((item) => item.data.title).sort()).toEqual(['draft only', 'kept', 'unpublished']);
+    expect(listed.pagination.total).toBe(3);
+  });
+
   it('renders rich text to sanitized HTML, selects fields and paginates', async () => {
     const entry = await create('article', {
       title: 'Rich',

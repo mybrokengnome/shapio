@@ -10,7 +10,7 @@ import {
 import type { ContentSqlDialect } from '../../src/content/compiler/dialect/types.js';
 import { parseContentQuery } from '../../src/content/compiler/parse.js';
 import { parseQueryTree } from '../../src/content/compiler/querystring.js';
-import { compileOrderBy } from '../../src/content/compiler/sort.js';
+import { compileOrderBy, leadsWithEntryColumn } from '../../src/content/compiler/sort.js';
 
 /**
  * One content model and its compiled queries, shared by the dialect unit tests
@@ -123,6 +123,7 @@ export const compileFixtureQuery = (
       locales,
       conditions: [...(filter ? [filter] : []), ...extraConditions],
       orderBy: compileOrderBy(query.sort, dialect),
+      orderedByEntry: leadsWithEntryColumn(query.sort),
       limit: query.pageSize,
       ...(query.page > 1 ? { offset: (query.page - 1) * query.pageSize } : {}),
     },

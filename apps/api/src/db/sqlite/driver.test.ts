@@ -1,14 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setCurrentDialect } from '../dialect.js';
 import { subscribeNotifications } from '../notifyHub.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../sql/errors.js';
 import { asJson, asTimestamp } from '../sql/typed.js';
 import { notificationKeyOf } from './driver.js';
-import { createSqliteDb } from './index.js';
+import { createSqliteDb, sqliteDriverOf } from './index.js';
 
 type Row = Record<string, unknown>;
 type TestDb = Kysely<Record<string, Row>>;
@@ -266,5 +266,81 @@ describe('SQLite in memory', () => {
     } finally {
       await memory.destroy();
     }
+  });
+});
+
+describe('SQLite planner statistics', () => {
+  const statsPath = join(directory, 'stats.db');
+  const statsOf = (handle: TestDb) =>
+    sql<{ tbl: string }>`select tbl from sqlite_stat1 where tbl = 'stats_rows'`.execute(handle);
+
+  it('analyzes unanalyzed tables when the writer opens and on request between writes', async () => {
+    const first = createSqliteDb<Record<string, Row>>({
+      location: { kind: 'file', path: statsPath },
+      readers: 1,
+    });
+    await sql`create table stats_rows (id integer primary key, k text not null)`.execute(first);
+    await sql`create index stats_rows_k_idx on stats_rows (k)`.execute(first);
+    await sql`insert into stats_rows (k) select 'k' || value from json_each(${JSON.stringify(
+      Array.from({ length: 200 }, (_, i) => i),
+    )})`.execute(first);
+    await expect(sql`select * from sqlite_stat1`.execute(first)).rejects.toThrow();
+    await sqliteDriverOf(first)!.optimizeStatistics('full');
+    expect((await statsOf(first)).rows).toEqual([{ tbl: 'stats_rows' }]);
+    await first.destroy();
+
+    rmSync(statsPath);
+    const second = createSqliteDb<Record<string, Row>>({
+      location: { kind: 'file', path: statsPath },
+      readers: 1,
+    });
+    await sql`create table stats_rows (id integer primary key, k text not null)`.execute(second);
+    await sql`create index stats_rows_k_idx on stats_rows (k)`.execute(second);
+    await sql`insert into stats_rows (k) values ('a'), ('b')`.execute(second);
+    await second.destroy();
+    const reopened = createSqliteDb<Record<string, Row>>({
+      location: { kind: 'file', path: statsPath },
+      readers: 1,
+    });
+    // Opening the writer (any statement) runs PRAGMA optimize=0x10002.
+    await sql`select 1`.execute(reopened);
+    expect((await statsOf(reopened)).rows).toEqual([{ tbl: 'stats_rows' }]);
+    await reopened.destroy();
+  });
+
+  it('reopens readers when the statistics change, so their plans use them', async () => {
+    const planPath = join(directory, 'plan.db');
+    const handle = createSqliteDb<Record<string, Row>>({
+      location: { kind: 'file', path: planPath },
+      readers: 1,
+    });
+    await sql`create table plan_rows (id integer primary key, a integer, b integer)`.execute(handle);
+    await sql`create index plan_rows_a on plan_rows (a)`.execute(handle);
+    await sql`create index plan_rows_b on plan_rows (b)`.execute(handle);
+    // An empty sqlite_stat1, as after migrating empty tables: filling it later changes no schema.
+    await sqliteDriverOf(handle)!.optimizeStatistics('full');
+    await sql`insert into plan_rows (a, b) select value % 2, value from json_each(${JSON.stringify(
+      Array.from({ length: 2000 }, (_, i) => i),
+    )})`.execute(handle);
+    const plan = async (executor: TestDb | Transaction<Record<string, Row>>) =>
+      (
+        await sql<{
+          detail: string;
+        }>`explain query plan select id from plan_rows where a = 1 and b > 1990`.execute(executor)
+      ).rows.map((row) => row.detail);
+    const inReadTransaction = () =>
+      handle
+        .transaction()
+        .setAccessMode('read only')
+        .execute((trx) => plan(trx));
+    // Without statistics the equality wins.
+    expect(await plan(handle)).toEqual(['SEARCH plan_rows USING INDEX plan_rows_a (a=?)']);
+    expect(await inReadTransaction()).toEqual(['SEARCH plan_rows USING INDEX plan_rows_a (a=?)']);
+
+    await sqliteDriverOf(handle)!.optimizeStatistics('full');
+    // With them, `a` is known to match half the rows: autocommit and transaction readers both see that.
+    expect(await plan(handle)).toEqual(['SEARCH plan_rows USING INDEX plan_rows_b (b>?)']);
+    expect(await inReadTransaction()).toEqual(['SEARCH plan_rows USING INDEX plan_rows_b (b>?)']);
+    await handle.destroy();
   });
 });

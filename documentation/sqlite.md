@@ -106,3 +106,11 @@ The SQLite driver, its value codec and the dialect rules are in `apps/api/src/db
 boundary"). The integration suite runs on SQLite with `TEST_DATABASE_URL=sqlite:` (temporary files) or
 `sqlite:<directory>`. Tests that cannot run there are listed, each with its reason, in
 `apps/api/test/helpers/dialect.ts`. Migrations follow the twin rule in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+Shapio keeps SQLite's query planner statistics (`sqlite_stat1`) up to date itself. The writer connection runs
+`PRAGMA optimize=0x10002` when it opens and after migrations, then `PRAGMA optimize` every 10 minutes between
+write transactions (`db/sqlite/driver.ts`). Both are usually no-ops; they analyze a table only when it has
+never been analyzed or its size changed a lot. Without statistics SQLite reads every head of a model to
+serve a page of the default newest-first list, instead of reading the entries index in order. A connection
+loads statistics only when it opens, so when they change the driver reopens its reader connections: idle
+ones at once, ones inside a transaction when it ends.

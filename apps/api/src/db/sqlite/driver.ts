@@ -66,6 +66,19 @@ const contextOf = (query: CompiledQuery): StatementContext => ({
   handWritten: RawNode.is(query.query),
 });
 
+/** How often the writer refreshes the query planner's statistics. */
+export const STATISTICS_INTERVAL_MS = 10 * 60 * 1000;
+
+/**
+ * Planner statistics (`sqlite_stat1`), as SQLite recommends for long-lived connections: `full` also
+ * analyzes tables that were never analyzed (0x10000: every table, not only those this connection queried);
+ * `refresh` re-analyzes the tables whose size changed a lot since. Both are usually no-ops. Without
+ * statistics SQLite cannot tell that a list in `created_at` order is best read through the entries index.
+ * A connection loads statistics when it opens (or its schema changes), so when they change the readers
+ * are reopened: idle ones at once, busy ones when released.
+ */
+const OPTIMIZE = { full: 'pragma optimize=0x10002', refresh: 'pragma optimize' } as const;
+
 /**
  * A Kysely driver over Node's built-in `node:sqlite` (no native dependency). One writer connection runs
  * every write, serialised by an in-process lock (`writeLock.ts`, `BEGIN IMMEDIATE`); reader connections
@@ -82,6 +95,10 @@ export class SqliteDriver implements Driver {
   #openReaders = 0;
   #readerWaiters: Array<(reader: SqliteConnection) => void> = [];
   #allConnections: SqliteConnection[] = [];
+  #statisticsTimer: NodeJS.Timeout | undefined;
+  /** Bumped when the statistics change; a reader opened under an older one is closed on release. */
+  #statisticsGeneration = 0;
+  readonly #readerGenerations = new WeakMap<SqliteConnection, number>();
 
   constructor(options: SqliteDriverOptions) {
     this.#options = options;
@@ -101,12 +118,59 @@ export class SqliteDriver implements Driver {
       strict: this.#options.strict,
     });
     this.#allConnections.push(connection);
+    if (role === 'reader') {
+      this.#readerGenerations.set(connection, this.#statisticsGeneration);
+    }
     return connection;
   }
 
+  #close(connection: SqliteConnection): void {
+    connection.close();
+    this.#allConnections = this.#allConnections.filter((candidate) => candidate !== connection);
+  }
+
+  /** Closes readers that hold old statistics: the autocommit one and idle ones now, busy ones on release. */
+  #retireReaders(): void {
+    this.#statisticsGeneration += 1;
+    if (this.#autocommitReader) {
+      // Statements run synchronously, so no statement is running on it between awaits.
+      this.#close(this.#autocommitReader);
+      this.#autocommitReader = undefined;
+    }
+    for (const reader of this.#idleReaders) {
+      this.#close(reader);
+      this.#openReaders -= 1;
+    }
+    this.#idleReaders = [];
+  }
+
   get writer(): SqliteConnection {
-    this.#writer ??= this.#open('writer');
+    if (!this.#writer) {
+      this.#writer = this.#open('writer');
+      // Nothing else can use a writer that is being opened, so this runs outside the write lock.
+      this.#writer.exec(OPTIMIZE.full);
+      this.#statisticsTimer = setInterval(() => {
+        this.optimizeStatistics('refresh').catch((error: unknown) => {
+          process.emitWarning(`SQLite statistics refresh (PRAGMA optimize) failed: ${String(error)}`);
+        });
+      }, STATISTICS_INTERVAL_MS);
+      this.#statisticsTimer.unref();
+    }
     return this.#writer;
+  }
+
+  /** Refreshes planner statistics on the writer, between write transactions (after migrations: `full`). */
+  async optimizeStatistics(mode: keyof typeof OPTIMIZE): Promise<void> {
+    const release = await this.lockWriter(OPTIMIZE[mode], false);
+    try {
+      const before = this.writer.statistics();
+      this.writer.exec(OPTIMIZE[mode]);
+      if (this.writer.statistics() !== before) {
+        this.#retireReaders();
+      }
+    } finally {
+      release();
+    }
   }
 
   async init(): Promise<void> {
@@ -147,6 +211,8 @@ export class SqliteDriver implements Driver {
   }
 
   async destroy(): Promise<void> {
+    clearInterval(this.#statisticsTimer);
+    this.#statisticsTimer = undefined;
     for (const connection of this.#allConnections) {
       connection.close();
     }
@@ -186,7 +252,12 @@ export class SqliteDriver implements Driver {
     return new Promise((resolve) => this.#readerWaiters.push(resolve));
   }
 
-  releaseReader(reader: SqliteConnection): void {
+  releaseReader(released: SqliteConnection): void {
+    let reader = released;
+    if ((this.#readerGenerations.get(released) ?? 0) < this.#statisticsGeneration) {
+      this.#close(released);
+      reader = this.#open('reader');
+    }
     const waiter = this.#readerWaiters.shift();
     if (waiter) {
       waiter(reader);

@@ -90,7 +90,7 @@ describe('content query compiler on MySQL', () => {
   it('sorts missing values like PostgreSQL by sorting on `is null` first', () => {
     const { sql } = compile(compileFixtureQuery('sort=title:asc,rank:desc', mysql).rows);
     expect(sql).toContain(
-      `order by (${text(F.title)} is null) asc, ${text(F.title)} asc, (${numeric(F.rank)} is null) desc, ${numeric(F.rank)} desc, h.entry_id asc`,
+      `order by (${text(F.title)} is null) asc, ${text(F.title)} asc, (${numeric(F.rank)} is null) desc, ${numeric(F.rank)} desc, e.id asc`,
     );
   });
 

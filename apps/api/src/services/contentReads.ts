@@ -10,7 +10,7 @@ import { paginationMeta, toLimitOffset, type Pagination } from '../content/compi
 import { parseContentQuery } from '../content/compiler/parse.js';
 import { compileRowFilter, maskAllows } from '../content/compiler/policy.js';
 import { parseQueryTree } from '../content/compiler/querystring.js';
-import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
+import { compileOrderBy, defaultSortTerms, leadsWithEntryColumn } from '../content/compiler/sort.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryLocaleNotFound, revisionNotFound } from '../content/errors.js';
 import { outdatedSharedLocales, readScopeFor } from '../content/locales.js';
@@ -270,17 +270,18 @@ export const listAdminEntries = async (
     allowAdminFilters: true,
   });
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
+  const sort =
+    query.sort.length > 0
+      ? query.sort
+      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
   const compiled = compileHeadQuery({
     siteId: context.site.id,
     modelId: model.definition.id,
     source: { kind: 'heads', state: 'draft' },
     locales: readScopeFor(context.snapshot, model.definition, query.locale, { fallback: true }),
     conditions: queryConditions(context, query, policy),
-    orderBy: compileOrderBy(
-      query.sort.length > 0
-        ? query.sort
-        : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field)),
-    ),
+    orderBy: compileOrderBy(sort),
+    orderedByEntry: leadsWithEntryColumn(sort),
     limit,
     offset,
   });

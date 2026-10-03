@@ -3,7 +3,7 @@ import { compileHeadQuery, type HeadSource } from '../content/compiler/compile.j
 import { entryIdIs } from '../content/compiler/conditions.js';
 import { paginationMeta, toLimitOffset, type Pagination } from '../content/compiler/paginate.js';
 import { maskAllows } from '../content/compiler/policy.js';
-import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
+import { compileOrderBy, defaultSortTerms, leadsWithEntryColumn } from '../content/compiler/sort.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
 import { readScopeFor } from '../content/locales.js';
@@ -170,17 +170,18 @@ const localesOf = (read: DeliveryRead) =>
 export const readEntryPage = async (read: DeliveryRead) => {
   const { context, env, model, policy, query } = read;
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
+  const sort =
+    query.sort.length > 0
+      ? query.sort
+      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
   const compiled = compileHeadQuery({
     siteId: context.site.id,
     modelId: model.definition.id,
     source: env.source,
     locales: localesOf(read),
     conditions: [...queryConditions(context, query, policy), ...(read.conditions ?? [])],
-    orderBy: compileOrderBy(
-      query.sort.length > 0
-        ? query.sort
-        : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field)),
-    ),
+    orderBy: compileOrderBy(sort),
+    orderedByEntry: leadsWithEntryColumn(sort),
     limit,
     offset,
   });

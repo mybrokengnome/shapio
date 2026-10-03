@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDeliveryToken } from './helpers/content.js';
+import { dialectSkipReason, isSqliteRun, jsonWithKey, withSkipReason } from './helpers/dialect.js';
 import { createRoleToken } from './helpers/schemaAdmin.js';
 import { spawnServer, type SpawnedServer } from './helpers/spawnServer.js';
 import { useTestDatabase, type TestDatabase } from './helpers/testDatabase.js';
@@ -216,7 +217,12 @@ describe.skipIf(!enabled)(suiteName('live field addition under sustained traffic
   }, 120_000);
 });
 
-describe.skipIf(!enabled)(suiteName('the partial-index ceiling on entry_heads'), () => {
+/** MySQL caps field indexes below what this case builds (dialect.ts says why). */
+const CEILING_SUITE = 'the partial-index ceiling on entry_heads';
+const ceilingSkip = dialectSkipReason(import.meta.url, CEILING_SUITE);
+const ceilingTitle = withSkipReason(suiteName(CEILING_SUITE), ceilingSkip);
+
+describe.skipIf(!enabled || ceilingSkip !== undefined)(ceilingTitle, () => {
   const database = useTestDatabase();
   let server: SpawnedServer;
   let api: ReturnType<typeof client>;
@@ -239,11 +245,18 @@ describe.skipIf(!enabled)(suiteName('the partial-index ceiling on entry_heads'),
     { apiKey: 'at', label: 'At', type: 'datetime', filterable: true, sortable: true },
   ];
 
+  /** Indexes on entry_heads and their size: PostgreSQL's catalog, or SQLite's schema and `dbstat` pages. */
   const indexStats = async () => {
-    const result = await sql<{ indexes: string; bytes: string }>`
-      select count(*)::text as indexes, coalesce(sum(pg_relation_size(indexrelid)), 0)::text as bytes
-      from pg_index where indrelid = 'entry_heads'::regclass
-    `.execute(database.current.db);
+    const result = isSqliteRun()
+      ? await sql<{ indexes: number; bytes: number | null }>`
+          select (select count(*) from sqlite_schema where type = 'index' and tbl_name = 'entry_heads') as indexes,
+            (select sum(pgsize) from dbstat where name in
+              (select name from sqlite_schema where type = 'index' and tbl_name = 'entry_heads')) as bytes
+        `.execute(database.current.db)
+      : await sql<{ indexes: string; bytes: string }>`
+          select count(*)::text as indexes, coalesce(sum(pg_relation_size(indexrelid)), 0)::text as bytes
+          from pg_index where indrelid = 'entry_heads'::regclass
+        `.execute(database.current.db);
     const row = result.rows[0];
     return { indexes: Number(row?.indexes ?? 0), bytes: Number(row?.bytes ?? 0) };
   };
@@ -265,7 +278,7 @@ describe.skipIf(!enabled)(suiteName('the partial-index ceiling on entry_heads'),
     for (let i = 0; i < 500; i += 1) {
       const start = performance.now();
       await sql`
-        update entry_heads set data = data || jsonb_build_object('bench', ${i}::int), version = version + 1
+        update entry_heads set data = ${jsonWithKey('data', 'bench', String(i))}, version = version + 1
         where entry_id = ${entryId} and state = 'draft'
       `.execute(database.current.db);
       updates.push(performance.now() - start);
@@ -311,6 +324,10 @@ describe.skipIf(!enabled)(suiteName('the partial-index ceiling on entry_heads'),
     await measureWrites('50 indexed models, writes to an indexed model', 'indexed0');
 
     expect(full.indexes - baseline.indexes).toBe(50 * FIELDS_PER_MODEL);
+    // SQLite has no extended statistics and no INVALID indexes (its index builds are not concurrent).
+    if (isSqliteRun()) {
+      return;
+    }
     const statistics = await sql<{ count: string }>`
       select count(*)::text as count from pg_statistic_ext where stxrelid = 'entry_heads'::regclass
     `.execute(database.current.db);

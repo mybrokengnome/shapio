@@ -44,7 +44,7 @@ export const createMigrator = (db: Kysely<DB>): Migrator =>
  * Runs pending migrations under a session advisory lock so concurrent instances starting together
  * migrate exactly once; the others wait, then find nothing to do.
  */
-export const migrateToLatest = async (db: Kysely<DB>, log: MigrationLogger): Promise<MigrationResult[]> =>
+const runMigrations = (db: Kysely<DB>, log: MigrationLogger): Promise<MigrationResult[]> =>
   withSessionAdvisoryLock(db, LOCK_NAMESPACE.migrations, MIGRATION_LOCK_KEY, async () => {
     const { error, results = [] } = await createMigrator(db).migrateToLatest();
     for (const result of results) {
@@ -62,6 +62,16 @@ export const migrateToLatest = async (db: Kysely<DB>, log: MigrationLogger): Pro
     }
     return results;
   });
+
+/**
+ * Runs pending migrations (see `runMigrations`), then refreshes SQLite's planner statistics: new tables and
+ * indexes have none yet (`sqlite/driver.ts`).
+ */
+export const migrateToLatest = async (db: Kysely<DB>, log: MigrationLogger): Promise<MigrationResult[]> => {
+  const results = await runMigrations(db, log);
+  await sqliteDriverOf(db)?.optimizeStatistics('full');
+  return results;
+};
 
 /** Names of migrations known to this build that have not run against the database. */
 export const getPendingMigrations = async (db: Kysely<DB>): Promise<string[]> => {

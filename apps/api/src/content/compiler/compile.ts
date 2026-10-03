@@ -193,6 +193,8 @@ export type HeadQueryPlan = {
   /** Extra conditions (filters, search, row filter, ID restriction), all ANDed. */
   conditions: readonly RawBuilder<unknown>[];
   orderBy: readonly RawBuilder<unknown>[];
+  /** Whether `orderBy` starts with an `entries` column (`sort.ts`, `leadsWithEntryColumn`). */
+  orderedByEntry?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -246,10 +248,37 @@ export type HeadRow = {
   owner_app_user_id: string | null;
 };
 
+/**
+ * The joined entry's site and model, which always equal the head's. Written out on the row query of a plain
+ * list in `entries` order (the default newest-first sort) so the planner can walk `entries_model_idx` in that
+ * order and stop at the page limit instead of sorting every head of the model. Not added when there are
+ * conditions or the sort is on the head: SQLite then prefers the entries index over a field index that
+ * serves the filter or the sort. Left off the COUNT, which reads every match either way.
+ */
+const entryScope = (plan: HeadQueryPlan, dialect: ContentSqlDialect): RawBuilder<unknown> =>
+  plan.orderedByEntry === true && plan.conditions.length === 0
+    ? sql` and e.site_id = ${dialect.uuid(plan.siteId)} and e.model_id = ${modelIdLiteral(plan.modelId)}`
+    : sql``;
+
+/**
+ * The COUNT's FROM. Live heads exist only for live entries (deleting an entry removes its heads in the same
+ * transaction; entries soft-deleted for having no head have none), so a count of heads with no condition
+ * (conditions may name `e` columns) needs no join: it is read from `entry_heads_model_locale_state_idx`
+ * alone. A snapshot keeps the join: the publication log still lists entries deleted since.
+ */
+const countFrom = (
+  plan: HeadQueryPlan,
+  table: RawBuilder<unknown>,
+  where: RawBuilder<unknown>,
+  joined: RawBuilder<unknown>,
+): RawBuilder<unknown> =>
+  plan.source.kind === 'heads' && plan.conditions.length === 0 ? sql`from ${table} h where ${where}` : joined;
+
 /** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
 export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect = contentDialect()) => {
   const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId, dialect);
-  const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${whereOf(plan, table, dialect)}`;
+  const where = whereOf(plan, table, dialect);
+  const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${where}`;
   const prefix = cte ?? sql``;
   const orderBy = plan.orderBy.length > 0 ? sql` order by ${sql.join([...plan.orderBy])}` : sql``;
   const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
@@ -257,7 +286,9 @@ export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect
   return {
     rows: sql<HeadRow>`${prefix}select h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
       h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id
-      ${from}${orderBy}${limit}${offset}`,
-    count: sql<{ total: string | number }>`${prefix}select count(*) as total ${from}`,
+      ${from}${entryScope(plan, dialect)}${orderBy}${limit}${offset}`,
+    count: sql<{
+      total: string | number;
+    }>`${prefix}select count(*) as total ${countFrom(plan, table, where, from)}`,
   };
 };
