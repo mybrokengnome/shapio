@@ -7,8 +7,8 @@ import type { AuditSearch } from '@/app/searchSchemas';
  * pages before this one are kept in memory, since the API pages forward only (newest first).
  */
 export const useAuditLogSearch = () => {
-  const search = useSearch({ from: '/app/settings/audit-log' });
-  const navigate = useNavigate({ from: '/settings/audit-log' });
+  const search = useSearch({ from: '/app/network/audit-log' });
+  const navigate = useNavigate({ from: '/network/audit-log' });
   const [previousCursors, setPreviousCursors] = useState<(string | undefined)[]>([]);
   const go = (changes: Partial<AuditSearch>) =>
     void navigate({ search: (previous) => ({ ...previous, ...changes }) });

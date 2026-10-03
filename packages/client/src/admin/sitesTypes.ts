@@ -20,3 +20,11 @@ export type CreateSiteInput = { key: string; name: string };
 
 /** Only the name changes; `expectedVersion` guards against concurrent edits (409 `VERSION_CONFLICT`). */
 export type UpdateSiteInput = { expectedVersion: number; name: string };
+
+/**
+ * The app roles a site binds: `public` applies to anonymous callers, `authenticated` to every signed-in app
+ * user of the site. A new site binds nothing (deny by default).
+ */
+export type SiteAppRoles = { siteId: string; public: string[]; authenticated: string[] };
+
+export type SetSiteAppRolesInput = { public: string[]; authenticated: string[] };

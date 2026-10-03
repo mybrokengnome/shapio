@@ -32,7 +32,7 @@ const withoutAlign = <T extends typeof TableCell | typeof TableHeader>(extension
 
 /**
  * The editor's schema: exactly the nodes, marks and attributes the server stores (ADR 0003,
- * `apps/api/src/content/richtext/spec.ts`). Anything else (strike, underline, colours, pasted styles) is
+ * `packages/schema/src/richtext/spec.ts`). Anything else (strike, underline, colours, pasted styles) is
  * not in the schema, so ProseMirror drops it on paste instead of the server rejecting the save. Link's
  * `title` attribute and table cells' `align` are removed for the same reason. `richTextContract.test.ts` checks the contract.
  */

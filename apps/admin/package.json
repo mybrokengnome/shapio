@@ -25,6 +25,7 @@
     "@shapio/client": "workspace:*",
     "@shapio/editor-sdk": "workspace:*",
     "@shapio/schema": "workspace:*",
+    "@shapio/visual": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tiptap/core": "catalog:",

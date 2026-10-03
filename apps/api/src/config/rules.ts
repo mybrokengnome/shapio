@@ -1,3 +1,4 @@
+import { assistProblems } from './assist.js';
 import { publishingProblems } from './publishing.js';
 import type { RawConfig } from './schema.js';
 
@@ -152,4 +153,5 @@ export const findConfigProblems = (raw: RawConfig): string[] => [
   ...emailProblems(raw),
   ...appAuthProblems(raw),
   ...publishingProblems(raw),
+  ...assistProblems(raw),
 ];

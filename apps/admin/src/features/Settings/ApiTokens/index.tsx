@@ -3,6 +3,7 @@ import { KeyRound, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useMe } from '@/api/auth';
 import { useRoleNames } from '@/api/roles';
 import { useApiTokens, useRevokeApiToken } from '@/api/tokens';
 import { EmptyState } from '@/components/EmptyState';
@@ -18,6 +19,7 @@ export const ApiTokens = () => {
   const { t } = useTranslation();
   const tokens = useApiTokens();
   const { names: roleNames } = useRoleNames();
+  const siteName = useMe().data?.site.name ?? '';
   const revoke = useRevokeApiToken();
   const [creating, setCreating] = useState(false);
   // The new token's secret, held only in memory until the admin says they've copied it.
@@ -57,7 +59,7 @@ export const ApiTokens = () => {
           />
         }
       >
-        {(data) => <Table tokens={data} roleNames={roleNames} onRevoke={revokeToken} />}
+        {(data) => <Table tokens={data} roleNames={roleNames} siteName={siteName} onRevoke={revokeToken} />}
       </QueryView>
       <CreateSheet
         open={creating}

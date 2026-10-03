@@ -14,7 +14,9 @@ export const useCreateWebhookForm = (open: boolean, onCreated: (created: Webhook
   });
   useResetOnOpen(open, form.reset, EMPTY_WEBHOOK, createWebhook.reset);
   const onSubmit = form.handleSubmit(async (values) => {
-    const created = await settle(createWebhook.mutateAsync(toWebhookInput(values)));
+    const created = await settle(
+      createWebhook.mutateAsync({ ...toWebhookInput(values), network: values.scope === 'network' }),
+    );
     if (created.ok) {
       form.reset(EMPTY_WEBHOOK);
       onCreated(created.value);

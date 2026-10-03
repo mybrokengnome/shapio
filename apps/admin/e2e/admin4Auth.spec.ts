@@ -67,7 +67,7 @@ test('signed-out visitors to a deep link sign in and land where they were going'
   await page.goto(`${ADMIN_URL}settings/roles`);
   await expect(page).toHaveURL(/\/login\?redirect=/);
   await signIn(OWNER.email, OWNER.password);
-  await expect(page).toHaveURL(/\/settings\/roles$/);
+  await expect(page).toHaveURL(/\/network\/roles$/);
   await signOut();
 });
 

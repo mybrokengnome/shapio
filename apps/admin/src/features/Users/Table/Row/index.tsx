@@ -15,13 +15,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { AccessSheet } from '../../AccessSheet';
+import { AssignmentBadges } from '../../AssignmentBadges';
 import { Person } from '../../Person';
-import { RoleBadges } from '../../RoleBadges';
-import { RolesEditor } from '../../RolesEditor';
 
 type RowProps = {
   user: AdminUser;
   roleNames: ReadonlyMap<string, string>;
+  siteNames: ReadonlyMap<string, string>;
   isSelf: boolean;
   onToggleStatus: (user: AdminUser) => void;
   /** Resolves once the user is removed (the confirmation waits for it). */
@@ -29,20 +30,15 @@ type RowProps = {
 };
 
 /**
- * One admin user. Its menu hands off to a roles checklist anchored to the Roles cell, or to an inline
- * confirmation anchored to the menu button.
+ * One admin user. Its menu hands off to the access sheet (role per site), or to an inline confirmation
+ * anchored to the menu button.
  */
-export const Row = ({ user, roleNames, isSelf, onToggleStatus, onRemove }: RowProps) => {
+export const Row = ({ user, roleNames, siteNames, isSelf, onToggleStatus, onRemove }: RowProps) => {
   const { t } = useTranslation();
   // Undefined until first opened, so rows that are never edited don't each hold a form.
-  const [editingRoles, setEditingRoles] = useState<boolean | undefined>(undefined);
+  const [editingAccess, setEditingAccess] = useState<boolean | undefined>(undefined);
   const [removing, setRemoving] = useState(false);
   const displayName = user.name || user.email;
-  const roles = (
-    <span className="flex flex-wrap gap-1">
-      <RoleBadges roleIds={user.roleIds} roleNames={roleNames} />
-    </span>
-  );
   return (
     <TableRow>
       <TableCell>
@@ -53,12 +49,11 @@ export const Row = ({ user, roleNames, isSelf, onToggleStatus, onRemove }: RowPr
         />
       </TableCell>
       <TableCell>
-        {editingRoles === undefined ? (
-          roles
-        ) : (
-          <RolesEditor open={editingRoles} onOpenChange={setEditingRoles} user={user}>
-            {roles}
-          </RolesEditor>
+        <span className="flex flex-wrap gap-1">
+          <AssignmentBadges assignments={user.assignments} roleNames={roleNames} siteNames={siteNames} />
+        </span>
+        {editingAccess === undefined ? null : (
+          <AccessSheet open={editingAccess} onOpenChange={setEditingAccess} user={user} />
         )}
       </TableCell>
       <TableCell>
@@ -91,11 +86,11 @@ export const Row = ({ user, roleNames, isSelf, onToggleStatus, onRemove }: RowPr
             </InlineConfirm>
             <DropdownMenuContent
               align="end"
-              onCloseAutoFocus={(event) => (removing || editingRoles) && event.preventDefault()}
+              onCloseAutoFocus={(event) => (removing || editingAccess) && event.preventDefault()}
             >
-              <DropdownMenuItem onSelect={() => setEditingRoles(true)}>
+              <DropdownMenuItem onSelect={() => setEditingAccess(true)}>
                 <ShieldCheck aria-hidden="true" />
-                {t('users.editRoles')}
+                {t('users.editAccess')}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onToggleStatus(user)}>
                 {user.status === 'active' ? <UserX aria-hidden="true" /> : <UserCheck aria-hidden="true" />}

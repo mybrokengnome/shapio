@@ -37,9 +37,6 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-const navLink = (name: string) =>
-  page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name });
-
 const settingsLink = (name: string) =>
   page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name });
 
@@ -58,7 +55,7 @@ test('home is the Inbox: an empty workspace shows the steps to get started', asy
 });
 
 test('users screen lists the owner', async () => {
-  await navLink('Users').click();
+  await page.goto(`${ADMIN_URL}network/users`);
   await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: new RegExp(OWNER.email) })).toBeVisible();
   await captureScreen(page, 'team-02-users', { viewports: ['desktop'] });
@@ -128,7 +125,7 @@ test('a pending invitation gets a new link after an inline confirmation, then is
 });
 
 test('settings → profile, with dirty-state protection', async () => {
-  await navLink('Settings').click();
+  await page.goto(`${ADMIN_URL}settings`);
   await expect(page).toHaveURL(/\/settings\/profile$/);
   await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
   await captureScreen(page, 'team-04-settings-profile', { viewports: ['desktop'] });
@@ -170,7 +167,7 @@ test('settings → locales lists the default locale', async () => {
 });
 
 test('settings → roles: built-ins plus a new custom role', async () => {
-  await settingsLink('Roles').click();
+  await page.goto(`${ADMIN_URL}network/roles`);
   await expect(page.getByRole('cell', { name: /Owner/ })).toBeVisible();
   await captureScreen(page, 'team-09-settings-roles', { viewports: ['desktop'] });
   await page.getByRole('button', { name: 'New role' }).click();
@@ -186,7 +183,7 @@ test('settings → roles: built-ins plus a new custom role', async () => {
 });
 
 test('settings → API tokens: created, shown once, listed, revoked', async () => {
-  await settingsLink('API tokens').click();
+  await page.goto(`${ADMIN_URL}settings/api-tokens`);
   await expect(page.getByText('No API tokens yet.')).toBeVisible();
   await captureScreen(page, 'team-11-settings-api-tokens-empty', { viewports: ['desktop'] });
   await page.getByRole('button', { name: 'New token' }).first().click();
@@ -215,7 +212,7 @@ test('settings → API tokens: created, shown once, listed, revoked', async () =
 });
 
 test('settings → audit log shows the changes just made, filterable', async () => {
-  await settingsLink('Audit log').click();
+  await page.goto(`${ADMIN_URL}network/audit-log`);
   // Actions read as words; the code stays in the cell's title.
   await expect(page.getByRole('cell', { name: 'Completed setup', exact: true })).toHaveAttribute(
     'title',

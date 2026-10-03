@@ -20,6 +20,8 @@ export const webhookSchema = z.object({
   enabled: z.boolean(),
   allowPrivateNetwork: z.boolean(),
   maxAttempts: z.string().trim().refine(inRange, 'validation.maxAttempts'),
+  /** Chosen on create only (fixed afterwards): `site` this site's events, `network` every site's. */
+  scope: z.enum(['site', 'network']),
 });
 
 export type WebhookFormValues = z.infer<typeof webhookSchema>;
@@ -31,6 +33,7 @@ export const EMPTY_WEBHOOK: WebhookFormValues = {
   enabled: true,
   allowPrivateNetwork: false,
   maxAttempts: String(DEFAULT_MAX_ATTEMPTS),
+  scope: 'site',
 };
 
 export const toWebhookValues = (webhook: Webhook): WebhookFormValues => ({
@@ -40,6 +43,7 @@ export const toWebhookValues = (webhook: Webhook): WebhookFormValues => ({
   enabled: webhook.enabled,
   allowPrivateNetwork: webhook.allowPrivateNetwork,
   maxAttempts: String(webhook.maxAttempts),
+  scope: webhook.site === null ? 'network' : 'site',
 });
 
 export const toWebhookInput = (values: WebhookFormValues): CreateWebhookInput => ({

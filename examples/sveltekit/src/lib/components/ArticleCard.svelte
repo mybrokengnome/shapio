@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shapioAttr } from '@shapio/visual';
   import { articlePath, type Strings } from '../site';
   import type { Article } from '../types';
   import Byline from './Byline.svelte';
@@ -12,7 +13,7 @@
   {#if article.cover}
     <ResponsiveImage media={article.cover} sizes="(min-width: 48rem) 33vw, 100vw" />
   {/if}
-  <h2><a href={articlePath(locale, article.slug)}>{article.title}</a></h2>
+  <h2 {...shapioAttr(article, 'title')}><a href={articlePath(locale, article.slug)}>{article.title}</a></h2>
   <Byline {article} {locale} {strings} />
   {#if article.excerpt}
     <p>{article.excerpt}</p>

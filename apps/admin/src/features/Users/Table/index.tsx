@@ -7,12 +7,20 @@ import { Row } from './Row';
 type TableProps = {
   users: AdminUser[];
   roleNames: ReadonlyMap<string, string>;
+  siteNames: ReadonlyMap<string, string>;
   currentUserId: string | undefined;
   onToggleStatus: (user: AdminUser) => void;
   onRemove: (user: AdminUser) => Promise<unknown>;
 };
 
-export const Table = ({ users, roleNames, currentUserId, onToggleStatus, onRemove }: TableProps) => {
+export const Table = ({
+  users,
+  roleNames,
+  siteNames,
+  currentUserId,
+  onToggleStatus,
+  onRemove,
+}: TableProps) => {
   const { t } = useTranslation();
   return (
     <TableCard>
@@ -34,6 +42,7 @@ export const Table = ({ users, roleNames, currentUserId, onToggleStatus, onRemov
               key={user.id}
               user={user}
               roleNames={roleNames}
+              siteNames={siteNames}
               isSelf={user.id === currentUserId}
               onToggleStatus={onToggleStatus}
               onRemove={onRemove}

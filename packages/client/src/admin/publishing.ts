@@ -15,6 +15,7 @@ import type {
   JobSummary,
   OpenPreviewInput,
   OpenPreviewResult,
+  PreviewTarget,
   Page,
   PreviewToken,
   PreviewTokenCreated,
@@ -107,6 +108,8 @@ export const createPublishingApi = (request: RequestFn) => ({
         request<PreviewTokenCreated>(ADMIN_PATHS.previewTokens, { method: 'POST', body }),
       revoke: (id: string) => request<void>(withId(ADMIN_PATHS.previewTokens, id), { method: 'DELETE' }),
     },
+    /** The site's connections with a preview URL (the entry form's Preview pane). */
+    targets: () => request<PreviewTarget[]>(`${ADMIN_PATHS.preview}/targets`),
     /** The entry form's Preview action: a short-lived entry token and the rendered preview URL. */
     open: (body: OpenPreviewInput) =>
       request<OpenPreviewResult>(`${ADMIN_PATHS.preview}/open`, { method: 'POST', body }),

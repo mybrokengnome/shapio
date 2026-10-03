@@ -18,6 +18,10 @@ export type PublishingConfig = {
   cloudflareDashboardUrl: string;
   /** GitHub REST API base (no trailing slash); set it for GitHub Enterprise Server. */
   githubApiUrl: string;
+  /** Vercel REST API base (no trailing slash); the Vercel API token is only ever sent here. */
+  vercelApiUrl: string;
+  /** Netlify API base (no trailing slash); the Netlify API token is only ever sent here. */
+  netlifyApiUrl: string;
 };
 
 const parseList = (value: string): string[] =>
@@ -64,6 +68,8 @@ export const toPublishingConfig = (raw: RawConfig): PublishingConfig => ({
   cloudflareApiUrl: trimSlash(raw.CLOUDFLARE_API_URL),
   cloudflareDashboardUrl: trimSlash(raw.CLOUDFLARE_DASHBOARD_URL),
   githubApiUrl: trimSlash(raw.GITHUB_API_URL),
+  vercelApiUrl: trimSlash(raw.VERCEL_API_URL),
+  netlifyApiUrl: trimSlash(raw.NETLIFY_API_URL),
 });
 
 const SECRET_ENV_ENTRY = /^[A-Za-z_][A-Za-z0-9_]*\*?$/;

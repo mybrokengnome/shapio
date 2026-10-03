@@ -205,6 +205,25 @@ export interface AppUsers {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AssistRuns {
+  action: string;
+  actor_id: string;
+  actor_type: string;
+  created_at: Generated<Timestamp>;
+  duration_ms: Generated<number>;
+  error_code: string | null;
+  finished_at: Timestamp | null;
+  id: Generated<string>;
+  input_tokens: Generated<number>;
+  job_id: string | null;
+  model: string;
+  output_tokens: Generated<number>;
+  provider: string;
+  rule: string | null;
+  site_id: string;
+  status: string;
+}
+
 export interface AuditEvents {
   action: string;
   actor_id: string | null;
@@ -798,6 +817,7 @@ export interface DB {
   app_roles: AppRoles;
   app_user_roles: AppUserRoles;
   app_users: AppUsers;
+  assist_runs: AssistRuns;
   audit_events: AuditEvents;
   change_set_items: ChangeSetItems;
   change_sets: ChangeSets;

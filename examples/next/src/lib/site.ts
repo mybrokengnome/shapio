@@ -20,6 +20,10 @@ const STRINGS = {
     switchTo: 'Français',
     skipToContent: 'Skip to content',
     footer: 'Built with Shapio',
+    previewBanner: 'Preview: this is a draft, not the published page.',
+    previewLoading: 'Loading the draft…',
+    previewFailed: 'The preview could not be loaded',
+    previewIncomplete: 'This preview link is incomplete.',
   },
   fr: {
     siteName: 'Studio Northwind',
@@ -29,6 +33,10 @@ const STRINGS = {
     switchTo: 'English',
     skipToContent: 'Aller au contenu',
     footer: 'Construit avec Shapio',
+    previewBanner: 'Aperçu : ceci est un brouillon, pas la page publiée.',
+    previewLoading: 'Chargement du brouillon…',
+    previewFailed: "L'aperçu n'a pas pu être chargé",
+    previewIncomplete: "Ce lien d'aperçu est incomplet.",
   },
 } as const satisfies Record<Locale, Record<string, string>>;
 

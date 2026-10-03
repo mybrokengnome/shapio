@@ -13,12 +13,59 @@ All notable changes to Shapio are listed here. The format follows
   snapshot per build, with `SHAPIO_SITE` for multi-site instances.
   `npx create-shapio my-site --site astro|next|sveltekit` writes one as a standalone project with the model
   files, a seed and a smoke check.
+- **Sites**: one instance runs many sites with a shared schema, admin users and roles, and per-site content,
+  media, snapshots, change sets, app users, tokens, webhooks, deployments and field usage. Role assignments are
+  per site or on all sites; network permissions (`schema.create`, `users.manage`, `roles.manage`, `audit.read`,
+  `sites.manage`, `schemaManage`) need a role on all sites. Requests name their site with `?site=` or the
+  `Shapio-Site` header (else the token's site, else the primary site). `shapio sites list|create`,
+  `/api/admin/sites` and `/api/admin/sites/:id/app-roles` (per-site `public`/`authenticated` bindings, none on a
+  new site); a `site` option in `@shapio/client`; `--site` for `shapio export|import` and `@shapio/mcp`;
+  `services.site`, `services.forSite()` and `site` on hook contexts for extensions. See
+  [Sites](documentation/sites.md).
+- **Vercel and Netlify deployment connections**, next to Cloudflare Pages: Vercel builds start through a
+  deploy hook and Netlify builds through its API, and both report real build status from the provider's API
+  (with a link to the deployment or deploy log). `VERCEL_API_URL` and `NETLIFY_API_URL` set the API bases
+  (defaults: the official APIs). See [Webhooks, deployments and preview](documentation/publishing.md).
+- **Importers**: `shapio import wordpress` and `shapio import strapi` (Strapi 5) in two steps. `--plan` reads
+  the export and writes schema files and an `import-map.json`, sending nothing; after `shapio schema apply`,
+  `--map` uploads the media, creates drafts and opens change sets with the entries that were published at the
+  source. Re-running `--map` resumes. See [Moving from WordPress or Strapi](documentation/importers.md).
+- `@shapio/schema` now holds the rich-text spec, validator and renderer, and adds `@shapio/schema/html`
+  (HTML → rich text).
+- Docs: an [extension points catalogue](documentation/extensions-catalogue.md) covering server extensions,
+  custom editors, webhooks, deployment providers, the client, CLI, export/import bundles and the MCP server.
+- **Assist**: editor assists with your own model provider (`AI_PROVIDER` = `anthropic`, `openai`, or
+  `openai-compatible` for Ollama, LM Studio and vLLM): alt text, summaries, translation, rewrites, content-type
+  drafts from a description, and content-ops proposals for missing alt text and missing locales. Off by
+  default; nothing is sent anywhere while it's off. Assist only proposes or writes drafts into a change set; it
+  never publishes. `assist_runs` records who used which model and how many tokens (no prompt or answer text),
+  pruned after `USAGE_RETENTION_DAYS`; audit events `assist.*`; settings `AI_MODEL`, `AI_API_KEY`,
+  `AI_BASE_URL`, `AI_MAX_TOKENS`, `AI_TIMEOUT_MS`, `AI_RATE_LIMIT_MAX`. See [Assist](documentation/assist.md).
+- **Preview and visual editing**: the entry document shows the site beside the document; clicking a field on the
+  page focuses it, and saves re-render the page. New package `@shapio/visual` (`shapioAttr`,
+  `initVisualEditing`). The admin's CSP frames exactly the preview sites' origins (never Shapio's own); preview
+  URLs on Shapio's origin are refused. The Astro, Next.js and SvelteKit starters have `/preview/` with visual
+  editing, and the seed creates a Preview connection. See [Visual editing](documentation/visual-editing.md).
 
 ### Changed
 
+- Change sets can have `source: 'assist'`.
 - The example site moved from `apps/example-site` to `examples/astro` (package `example-astro`); its model
   files and seed moved to `examples/shared`, where all three starters share them. The seed applies the models
   through the schema apply API and also seeds the `siteSettings` singleton.
+- **Upgrading to sites** moves everything to the primary site (key `default`); single-site instances behave as
+  before, except:
+  - app users' access tokens issued before the upgrade are rejected (`401 INVALID_TOKEN`) until the app
+    refreshes; refresh tokens keep working;
+  - model-wide preview tokens are deleted (preview tokens now always name an entry);
+  - field indexes are rebuilt in the background by the `schema.fieldIndexLayout` job;
+  - admin role assignments become "all sites", existing admin API tokens become network tokens and delivery
+    tokens belong to the primary site;
+  - new API tokens belong to the current site; a network admin token needs `"network": true` and
+    `users.manage`;
+  - webhook bodies gain `site`, and a network webhook (`"network": true`) receives every site's events;
+  - the users and invitations APIs take `assignments` (`roleIds` is deprecated and means "on all sites");
+  - rolling the migration back is refused while more than one site exists.
 
 ## [0.1.0] - 2026-10-03
 

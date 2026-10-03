@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useMe } from '@/api/auth';
 import { useRoleNames } from '@/api/roles';
+import { useSiteNames } from '@/api/sites';
 import { useRemoveUser, useSetUserStatus, useUsers } from '@/api/users';
 import { EmptyState } from '@/components/EmptyState';
 import { Page } from '@/components/Page';
@@ -16,13 +17,14 @@ import { InvitationLink } from './InvitationLink';
 import { Invitations } from './Invitations';
 import { InviteSheet } from './InviteSheet';
 import { Table } from './Table';
-import { Tabs } from './Tabs';
 
+/** Network → Users: the admins who sign in to this instance, where each works, and invitations. */
 export const Users = () => {
   const { t } = useTranslation();
   const { data: me } = useMe();
   const users = useUsers();
   const { names: roleNames } = useRoleNames();
+  const { names: siteNames } = useSiteNames();
   const setStatus = useSetUserStatus();
   const removeUser = useRemoveUser();
   const [inviting, setInviting] = useState(false);
@@ -35,7 +37,6 @@ export const Users = () => {
     <Page>
       <PageHeader
         title={t('users.title')}
-        tabs={<Tabs />}
         actions={
           <Button onClick={() => setInviting(true)}>
             <UserPlus aria-hidden="true" />
@@ -52,6 +53,7 @@ export const Users = () => {
           <Table
             users={data}
             roleNames={roleNames}
+            siteNames={siteNames}
             currentUserId={me?.user.id}
             onToggleStatus={(user) =>
               setStatus.mutate(
@@ -71,7 +73,11 @@ export const Users = () => {
           onDismiss={invitationLink.dismiss}
         />
       ) : null}
-      <Invitations onCopyLink={invitationLink.reveal} onCloseAutoFocus={invitationLink.keepFocusOnReveal} />
+      <Invitations
+        siteNames={siteNames}
+        onCopyLink={invitationLink.reveal}
+        onCloseAutoFocus={invitationLink.keepFocusOnReveal}
+      />
       <InviteSheet
         open={inviting}
         onOpenChange={setInviting}

@@ -60,6 +60,27 @@ export const findFirstWithPreview = (siteId: string, trx: Executor = db) =>
     .limit(1)
     .executeTakeFirst();
 
+/** Every site's enabled preview URL templates (the admin's CSP `frame-src`; services/previewOrigins.ts). */
+export const listPreviewTemplates = (trx: Executor = db) =>
+  trx
+    .selectFrom('deployment_connections')
+    .select('preview_url_template')
+    .distinct()
+    .where('enabled', '=', true)
+    .where('preview_url_template', 'is not', null)
+    .execute();
+
+/** One site's enabled connections with a preview URL template (the entry form's preview targets). */
+export const listWithPreview = (siteId: string, trx: Executor = db) =>
+  trx
+    .selectFrom('deployment_connections')
+    .select(['id', 'name', 'preview_url_template'])
+    .where('site_id', '=', siteId)
+    .where('enabled', '=', true)
+    .where('preview_url_template', 'is not', null)
+    .orderBy('created_at')
+    .execute();
+
 export const insert = (row: Insertable<DeploymentConnections>, trx: Executor = db) =>
   trx.insertInto('deployment_connections').values(row).returningAll().executeTakeFirstOrThrow();
 

@@ -70,7 +70,7 @@ export const Activity = () => {
       flush
       actions={
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/settings/audit-log">{t('home.viewAuditLog')}</Link>
+          <Link to="/network/audit-log">{t('home.viewAuditLog')}</Link>
         </Button>
       }
     >

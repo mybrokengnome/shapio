@@ -207,3 +207,10 @@ export const findAltOnSite = (siteId: string, ids: readonly string[], executor: 
         .where('id', 'in', ids)
         .where('deleted_at', 'is', null)
         .execute();
+
+/**
+ * Hard-deletes a site's soft-deleted assets (site deletion). Their objects were queued for purge when they
+ * were deleted; their variants and references cascade.
+ */
+export const deleteSoftDeletedOfSite = (siteId: string, trx: Executor = db) =>
+  trx.deleteFrom('media_assets').where('site_id', '=', siteId).where('deleted_at', 'is not', null).execute();

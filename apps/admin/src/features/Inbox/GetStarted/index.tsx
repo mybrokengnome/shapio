@@ -22,7 +22,7 @@ const InviteStep = () => {
       title={t('inbox.getStarted.invite.title')}
       description={t('inbox.getStarted.invite.description')}
       action={t('inbox.getStarted.invite.action')}
-      link={linkOptions({ to: '/users' })}
+      link={linkOptions({ to: '/network/users' })}
       done={done}
     />
   );

@@ -1,15 +1,15 @@
-import { RICHTEXT_FORMAT, RICHTEXT_FORMAT_VERSION } from '@shapio/schema';
+import { RICHTEXT_FORMAT, RICHTEXT_FORMAT_VERSION, validateRichText } from '@shapio/schema';
 import { getSchema } from '@tiptap/core';
 import { Node } from '@tiptap/pm/model';
 import { describe, expect, it } from 'vitest';
-// The server's validator is the contract (ADR 0003): what the editor produces must pass it unchanged.
-import { validateRichText } from '../../../../api/src/content/richtext/validate';
 import { richTextExtensions } from './extensions';
 import { normalizeHref, prepareRichText, sanitizePastedHtml, toRichTextValue } from './richTextDocument';
 
+// The server's validator (`validateRichText`) is the contract (ADR 0003): what the editor produces must pass it
+// unchanged.
 const IMAGE = '9c9c9c9c-9999-4999-8999-999999999999';
 
-/** The same baseline document as apps/api/src/content/richtext/richtext.test.ts. */
+/** The same baseline document as packages/schema/src/richtext/richtext.test.ts. */
 const BASELINE_DOC = {
   type: 'doc',
   content: [

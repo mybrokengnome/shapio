@@ -245,3 +245,10 @@ export const replaceRoles = async (appUserId: string, roleIds: readonly string[]
  */
 export const appUserSiteOf = (executor: Executor, appUserId: string) =>
   executor.selectFrom('app_users').select('app_users.site_id').where('app_users.id', '=', appUserId);
+
+/**
+ * Hard-deletes a site's soft-deleted app users (site deletion). Their roles, OAuth accounts, refresh tokens,
+ * login codes, password resets and email confirmations cascade; entries they owned keep no owner.
+ */
+export const deleteSoftDeletedOfSite = (siteId: string, trx: Executor = db) =>
+  trx.deleteFrom('app_users').where('site_id', '=', siteId).where('deleted_at', 'is not', null).execute();

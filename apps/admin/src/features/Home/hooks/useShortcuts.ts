@@ -34,7 +34,14 @@ export const useShortcuts = (models: readonly ModelSummary[] | undefined): Short
       ? [{ key: 'media', label: t('home.uploadMedia'), icon: ImageUp, link: linkOptions({ to: '/media' }) }]
       : []),
     ...(canInvite
-      ? [{ key: 'invite', label: t('home.invite'), icon: UserPlus, link: linkOptions({ to: '/users' }) }]
+      ? [
+          {
+            key: 'invite',
+            label: t('home.invite'),
+            icon: UserPlus,
+            link: linkOptions({ to: '/network/users' }),
+          },
+        ]
       : []),
   ];
 };

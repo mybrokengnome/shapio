@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { escapeHtml } from '../../../content/richtext/render.js';
+import { escapeHtml } from '@shapio/schema';
 
 /**
  * GraphiQL for admins (`/api/graphql/playground`), served entirely by Shapio: the vendored GraphiQL 3 and

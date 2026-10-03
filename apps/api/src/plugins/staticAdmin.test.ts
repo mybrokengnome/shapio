@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { addScriptSources, importMapHashes, injectBaseHref, looksLikeFile } from './staticAdmin.js';
+import {
+  addScriptSources,
+  importMapHashes,
+  injectBaseHref,
+  looksLikeFile,
+  setDirective,
+} from './staticAdmin.js';
 
 describe('injectBaseHref', () => {
   it('adds a base element as the first child of head', () => {
@@ -57,5 +63,21 @@ describe('looksLikeFile', () => {
     '/admin/login#x.y',
   ])('%s is an SPA route', (url) => {
     expect(looksLikeFile(url)).toBe(false);
+  });
+});
+
+describe('setDirective', () => {
+  it('replaces the directive with exactly the given sources', () => {
+    expect(
+      setDirective("default-src 'self';frame-src 'self';img-src data:", 'frame-src', ['https://a.test']),
+    ).toBe("default-src 'self';img-src data:;frame-src https://a.test");
+  });
+
+  it("adds it with 'none' when there is nothing to allow", () => {
+    expect(setDirective("default-src 'self'", 'frame-src', [])).toBe("default-src 'self';frame-src 'none'");
+  });
+
+  it('leaves directives that only share a prefix alone', () => {
+    expect(setDirective('frame-ancestors x', 'frame-src', [])).toBe("frame-ancestors x;frame-src 'none'");
   });
 });

@@ -4,6 +4,9 @@ import { AppError } from '../helpers/appError.js';
 import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { assignedSiteIdsOf } from '../permissions/sites.js';
 import type { AdminPrincipal, TokenPrincipal } from '../permissions/types.js';
+import * as appUsersRepository from '../repositories/appUsers.js';
+import * as contentPurgeRepository from '../repositories/contentPurge.js';
+import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as sitesRepository from '../repositories/sites.js';
 import type { SiteRow } from '../repositories/sites.js';
 import type { ActorContext, SiteRef } from './actorContext.js';
@@ -149,7 +152,8 @@ export const renameSite = async (
   });
 
 /**
- * Deletes an empty site: no entries, media, change sets or app users. Its tokens, webhooks, deployment
+ * Deletes an empty site: no live entries, media or app users, no folders or change sets. Its soft-deleted
+ * entries (with their history), media assets and app users are purged first; its tokens, webhooks, deployment
  * connections, role assignments, app role bindings, snapshot ledger and usage counters go with it.
  */
 export const deleteSite = async (context: ActorContext, id: string): Promise<void> => {
@@ -170,6 +174,9 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
         contents,
       );
     }
+    await contentPurgeRepository.purgeDeletedEntriesOfSite(id, trx);
+    await mediaAssetsRepository.deleteSoftDeletedOfSite(id, trx);
+    await appUsersRepository.deleteSoftDeletedOfSite(id, trx);
     await sitesRepository.deleteById(id, trx);
     await recordAudit(trx, {
       ...context,

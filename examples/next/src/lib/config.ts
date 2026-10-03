@@ -5,6 +5,8 @@
  * - SHAPIO_SNAPSHOT: optional; the publication snapshot to build. Without it, next.config.ts pins the latest
  *   snapshot once when `next build` starts, so every page of the build shows the same moment.
  * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
+ * - NEXT_PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL; inlined into
+ *   the client bundle at build time).
  */
 const read = (name: string): string | undefined => {
   const value = process.env[name];
@@ -38,3 +40,6 @@ export const configuredSnapshot = (): number | undefined => {
   }
   return snapshot;
 };
+
+/** The Shapio URL the preview page calls from the browser. Spelled out so Next inlines it into the client. */
+export const publicShapioUrl = () => process.env.NEXT_PUBLIC_SHAPIO_URL || 'http://localhost:4300';

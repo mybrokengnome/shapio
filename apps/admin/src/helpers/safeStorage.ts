@@ -4,7 +4,7 @@ import { createJSONStorage, type StateStorage } from 'zustand/middleware';
  * localStorage that never throws: it is unavailable in private windows, with blocked site data, or when
  * full. Persisted state is a convenience (theme, sidebar), so failures fall back to in-memory defaults.
  */
-const safeLocalStorage: StateStorage = {
+export const safeLocalStorage: StateStorage = {
   getItem: (name) => {
     try {
       return window.localStorage.getItem(name);

@@ -1,4 +1,5 @@
 import { createClient } from '@shapio/client';
+import { currentSite } from '@/app/currentSite';
 import { useSessionStore } from '@/stores/session';
 
 /**
@@ -9,9 +10,15 @@ export const apiBaseUrl = () => new URL('..', document.baseURI).href;
 
 export const CSRF_HEADER = 'x-csrf-token';
 
+/**
+ * Every request names this page load's site (the `Shapio-Site` header; `?site=` on delivery reads). With no
+ * site in the URL and none remembered, nothing is named and the API answers for the primary site, which is
+ * then the page's site (see app/currentSite). The site never changes during a page load.
+ */
 export const apiClient = createClient({
   baseUrl: apiBaseUrl(),
   credentials: 'same-origin',
+  site: currentSite().key,
   headers: (): Record<string, string> => {
     const token = useSessionStore.getState().csrfToken;
     return token ? { [CSRF_HEADER]: token } : {};

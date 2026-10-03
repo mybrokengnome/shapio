@@ -72,9 +72,9 @@ export const roleKeyOf = async (db: Database, roleId: string): Promise<string> =
   (await adminRolesRepository.findById(roleId, db))?.key ?? '';
 
 /**
- * An API token bound to a role ID, with the site the service would give it: a delivery token belongs to the
- * primary site (delivery tokens always have a site), an admin token is a network token (no site), as when a
- * network admin creates it.
+ * An API token bound to a role ID: a delivery token belongs to the primary site (delivery tokens always have a
+ * site), an admin token is a network token (no site), as when a network admin creates it with `network: true`,
+ * so tests can name any site with it.
  */
 export const createTokenForRole = async (db: Database, roleId: string): Promise<string> => {
   const role = await adminRolesRepository.findById(roleId, db);

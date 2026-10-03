@@ -18,6 +18,9 @@ const SETTING_NAMES = [
   'url',
   'accountId',
   'projectName',
+  'projectId',
+  'teamId',
+  'siteId',
   'owner',
   'repo',
   'branch',
@@ -31,6 +34,9 @@ export type SecretName = (typeof SECRET_NAMES)[number];
 
 type SecretSpec = { name: SecretName; requiredOnCreate: boolean };
 
+/** Settings a provider shows but does not require (everything else listed in `settings` is required). */
+export const OPTIONAL_SETTINGS: ReadonlySet<SettingName> = new Set(['teamId']);
+
 /** The settings (text inputs; GitHub's `mode` is a select) and write-only secrets of each provider. */
 export const PROVIDER_FIELDS = {
   generic_webhook: {
@@ -43,6 +49,17 @@ export const PROVIDER_FIELDS = {
       { name: 'deployHookUrl', requiredOnCreate: true },
       { name: 'apiToken', requiredOnCreate: true },
     ],
+  },
+  vercel: {
+    settings: ['projectId', 'teamId'],
+    secrets: [
+      { name: 'deployHookUrl', requiredOnCreate: true },
+      { name: 'apiToken', requiredOnCreate: true },
+    ],
+  },
+  netlify: {
+    settings: ['siteId'],
+    secrets: [{ name: 'apiToken', requiredOnCreate: true }],
   },
   github: {
     settings: ['owner', 'repo', 'branch', 'directory'],
@@ -95,7 +112,7 @@ export const connectionSchema = (mode: ConnectionFormMode) =>
     .superRefine((values, context) => {
       const fields = PROVIDER_FIELDS[values.provider];
       for (const name of fields.settings) {
-        if (values.settings[name].trim() === '') {
+        if (!OPTIONAL_SETTINGS.has(name) && values.settings[name].trim() === '') {
           context.addIssue({ code: 'custom', path: ['settings', name], message: 'validation.required' });
         }
       }

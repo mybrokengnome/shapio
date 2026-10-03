@@ -3,8 +3,10 @@ import { parseArgs } from 'node:util';
 /**
  * `npm run smoke`, after `npm run seed`, `npm run build` and starting the built site (`npm run start` or
  * `npm run preview`): fetches the site's pages over HTTP and checks the seeded content in English and French,
- * the site settings singleton, rich text, media variants and the author, and that the draft article is not
- * served. The same checks run against every starter, so all three render the same blog.
+ * the site settings singleton, rich text, media variants and the author, that the draft article is not
+ * served, that content carries the visual-editing attributes (@shapio/visual's `shapioAttr`), and that the
+ * preview page is served with a `frame-ancestors` policy. The same checks run against every starter, so all
+ * three render the same blog.
  *
  * `--url` is the running site's origin (default: SMOKE_URL, then http://localhost:4321).
  */
@@ -47,6 +49,9 @@ const PAGES: readonly PageCheck[] = [
       ['<table', 'rich-text table'],
       ['With Shapio', 'rich-text table cell'],
       ['Ada Moreau', 'populated author'],
+      ['data-shapio-entry="', 'visual-editing entry attribute'],
+      ['data-shapio-path="title"', 'visual-editing attribute on the title'],
+      ['data-shapio-path="body"', 'visual-editing attribute on the body'],
     ],
   },
   { path: `/fr/articles/${ARTICLE}/`, expect: [['Modéliser du contenu sans déploiement', 'title']] },
@@ -77,6 +82,12 @@ const main = async () => {
       check(html.includes(needle), `${page.path}: ${label}`);
     }
   }
+  const preview = await fetch(new URL('/preview/', origin));
+  check(preview.status === 200, `/preview/: HTTP ${preview.status}`);
+  check(
+    /frame-ancestors/.test(preview.headers.get('content-security-policy') ?? ''),
+    '/preview/: frame-ancestors policy (only the site and Shapio may frame it)',
+  );
   const list = await fetchPage(origin, '/en/articles/');
   check(!list.html.includes(DRAFT_TITLE), 'the unpublished draft is not listed');
   const draft = await fetchPage(origin, '/en/articles/winter-projects/');

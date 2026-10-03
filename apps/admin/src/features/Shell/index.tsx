@@ -1,31 +1,21 @@
-import { Outlet, useRouter } from '@tanstack/react-router';
+import { useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useMe } from '@/api/auth';
-import { CommandPalette } from '@/components/CommandPalette';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { useUiStore } from '@/stores/ui';
-import { useActiveNavKey } from './hooks/useActiveNavKey';
-import { useShellNavGroups } from './hooks/useShellNavGroups';
-import { useShellPaletteItems } from './hooks/useShellPaletteItems';
-import { MobileBar } from './MobileBar';
-import { Sidebar } from './Sidebar';
-import { StatusBar } from './StatusBar';
+import { hasSiteRole } from '@/helpers/sites';
+import { Frame } from './Frame';
+import { useIsNetworkView } from './hooks/useIsNetworkView';
+import { Navigated } from './Navigated';
+import { NoSiteAccess } from './NoSiteAccess';
 
 /**
  * Signed-in frame: sidebar, the current screen, the status bar and the ⌘K palette. No desktop top bar
- * (DESIGN.md): below lg a 48px row holds the sidebar trigger. Leaves for sign-in when the session ends.
+ * (DESIGN.md): below lg a 48px row holds the sidebar trigger. Leaves for sign-in when the session ends. On a
+ * site the admin holds no role on, only the site switcher and a page saying so (nothing of the site loads).
  */
 export const Shell = () => {
-  const { t } = useTranslation();
   const { data: me } = useMe();
   const router = useRouter();
-  const sidebarOpen = useUiStore((state) => state.sidebarOpen);
-  const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
-  const groups = useShellNavGroups();
-  const activeKey = useActiveNavKey(groups);
-  const section = groups.flatMap((group) => group.items).find((item) => item.key === activeKey)?.label;
-  useShellPaletteItems(groups);
+  const isNetworkView = useIsNetworkView();
   // The session ended (sign-out, expiry, revoked elsewhere): re-run the route guard, which sends the
   // visitor to sign in and remembers where they were.
   useEffect(() => {
@@ -33,26 +23,15 @@ export const Shell = () => {
       void router.invalidate();
     }
   }, [me, router]);
-  if (me === null) {
+  if (!me) {
     return null;
   }
-  return (
-    <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
-      <a
-        href="#main"
-        className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
-      >
-        {t('app.skipToContent')}
-      </a>
-      <Sidebar groups={groups} activeKey={activeKey} />
-      <SidebarInset className="min-w-0">
-        <MobileBar />
-        <div id="main" tabIndex={-1} className="min-w-0 flex-1 px-4 py-7 outline-none sm:px-8">
-          <Outlet />
-        </div>
-        <StatusBar section={section} />
-      </SidebarInset>
-      <CommandPalette />
-    </SidebarProvider>
-  );
+  if (!isNetworkView && !hasSiteRole(me)) {
+    return (
+      <Frame groups={[]} activeKey={undefined} section={undefined} searchable={false}>
+        <NoSiteAccess />
+      </Frame>
+    );
+  }
+  return <Navigated />;
 };

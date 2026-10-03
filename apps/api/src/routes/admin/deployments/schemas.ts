@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { DEPLOYMENT_PROVIDER_IDS } from '../../../deployments/types.js';
 import { DateTimeSchema, IdParamsSchema, UuidSchema } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
 import {
@@ -11,7 +12,7 @@ import {
   VersionSchema,
 } from '../../schemas/publishing.js';
 
-const ProviderSchema = Type.Enum(['generic_webhook', 'cloudflare_pages', 'github']);
+const ProviderSchema = Type.Enum(DEPLOYMENT_PROVIDER_IDS);
 const RunStatusSchema = Type.Enum(['queued', 'triggered', 'building', 'unknown', 'deployed', 'failed']);
 const TriggerPolicySchema = Type.Enum(['publish', 'change_set', 'schema', 'manual']);
 const StringMapSchema = Type.Record(Type.String({ maxLength: 50 }), Type.String({ maxLength: 4000 }));

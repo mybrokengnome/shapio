@@ -1,10 +1,10 @@
 import type { Invitation } from '@shapio/client';
 import { useTranslation } from 'react-i18next';
 import { FormError } from '@/components/FormError';
-import { FormRadioGroup } from '@/components/FormRadioGroup';
 import { FormSheet } from '@/components/FormSheet';
 import { FormTextField } from '@/components/FormTextField';
-import { useAdminRoleOptionsAndDefaults } from '../hooks/useAdminRoleOptionsAndDefaults';
+import { AssignmentsField } from '../AssignmentsField';
+import { useAssignmentOptions } from '../hooks/useAssignmentOptions';
 import { useInviteForm } from '../hooks/useInviteForm';
 
 type InviteSheetProps = {
@@ -16,17 +16,17 @@ type InviteSheetProps = {
   onCloseAutoFocus: (event: Event) => void;
 };
 
-/** Invites someone by email with exactly one role (Editor preselected; Owner isn't offered). */
+/**
+ * Invites someone by email with a role on all sites, or one role per site where there are several (Editor
+ * on all sites preselected; Owner isn't offered).
+ */
 export const InviteSheet = ({ open, onOpenChange, onInvited, onCloseAutoFocus }: InviteSheetProps) => {
   const { t } = useTranslation();
-  const {
-    options,
-    editorRoleId,
-    error: rolesError,
-  } = useAdminRoleOptionsAndDefaults({ includeOwner: false });
+  const options = useAssignmentOptions({ includeOwner: false });
   const { form, onSubmit, invite } = useInviteForm({
     open,
-    defaultRoleId: editorRoleId,
+    defaultRoleId: options.editorRoleId,
+    ownerRoleId: options.ownerRoleId,
     onInvited,
     onDone: () => onOpenChange(false),
   });
@@ -50,8 +50,15 @@ export const InviteSheet = ({ open, onOpenChange, onInvited, onCloseAutoFocus }:
         type="email"
         autoComplete="off"
       />
-      <FormRadioGroup control={form.control} name="roleId" legend={t('users.role')} options={options} />
-      <FormError error={invite.error ?? rolesError} />
+      <AssignmentsField
+        control={form.control}
+        roleOptions={options.roleOptions}
+        siteOptions={options.siteOptions}
+        siteIds={options.siteIds}
+        multiSite={options.multiSite}
+        defaultRoleId={options.editorRoleId}
+      />
+      <FormError error={invite.error ?? options.error} />
     </FormSheet>
   );
 };

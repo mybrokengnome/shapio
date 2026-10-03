@@ -2,10 +2,14 @@ import type { DeploymentProviderAdapter, DeploymentProviderId } from '../types.j
 import { cloudflarePagesProvider } from './cloudflarePages.js';
 import { genericWebhookProvider } from './genericWebhook.js';
 import { githubWriteBackProvider } from './githubWriteBack.js';
+import { netlifyProvider } from './netlify.js';
+import { vercelProvider } from './vercel.js';
 
 export const DEPLOYMENT_PROVIDERS: Readonly<Record<DeploymentProviderId, DeploymentProviderAdapter>> = {
   generic_webhook: genericWebhookProvider,
   cloudflare_pages: cloudflarePagesProvider,
+  vercel: vercelProvider,
+  netlify: netlifyProvider,
   github: githubWriteBackProvider,
 };
 

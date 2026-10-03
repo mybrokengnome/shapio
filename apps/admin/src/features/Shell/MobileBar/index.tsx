@@ -9,7 +9,12 @@ import { Wordmark } from '@/components/Wordmark';
 import { UserMenu } from '../UserMenu';
 
 /** Below lg only: the sidebar is a sheet, so this 48px row holds its trigger, the brand, search, the theme switch and the account. */
-export const MobileBar = () => {
+type MobileBarProps = {
+  /** Search (the ⌘K palette); off where there is nothing to search (no role on the site). */
+  searchable: boolean;
+};
+
+export const MobileBar = ({ searchable }: MobileBarProps) => {
   const { t } = useTranslation();
   const openPalette = useOpenCommandPalette();
   return (
@@ -26,9 +31,11 @@ export const MobileBar = () => {
         <Wordmark size="sm" />
       </Link>
       <div className="flex-1" />
-      <Button variant="ghost" size="icon" aria-label={t('shell.search')} onClick={openPalette}>
-        <Search aria-hidden="true" />
-      </Button>
+      {searchable ? (
+        <Button variant="ghost" size="icon" aria-label={t('shell.search')} onClick={openPalette}>
+          <Search aria-hidden="true" />
+        </Button>
+      ) : null}
       <ThemeToggle />
       <UserMenu variant="compact" />
     </div>

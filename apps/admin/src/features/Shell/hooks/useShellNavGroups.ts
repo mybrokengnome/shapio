@@ -7,10 +7,12 @@ import {
   DEVELOP_ITEMS,
   INBOX_ITEM,
   isVisible,
+  NETWORK_ITEMS,
   WORKSPACE_ITEMS,
   type NavAccess,
   type NavItemDefinition,
 } from '../navItems';
+import { useIsNetworkView } from './useIsNetworkView';
 import { useNavAccess } from './useNavAccess';
 import { usePlaces, type Place } from './usePlaces';
 
@@ -28,14 +30,14 @@ export type ShellNavItem = {
 };
 
 export type ShellNavGroup = {
-  key: 'inbox' | 'places' | 'library' | 'develop' | 'workspace';
+  key: 'inbox' | 'places' | 'library' | 'develop' | 'workspace' | 'network';
   label?: string;
   items: ShellNavItem[];
 };
 
 const PLACE_ICONS = { collection: FileStack, singleton: FileText } as const;
 
-const fromDefinitions = (
+export const fromDefinitions = (
   definitions: readonly NavItemDefinition[],
   access: NavAccess,
   label: (item: NavItemDefinition) => string,
@@ -58,16 +60,45 @@ const placeItem = (place: Place): ShellNavItem => ({
   ...(place.count === undefined ? {} : { count: place.count }),
 });
 
+/** The network view's one group: sites, admin users, roles and the audit log, as permitted. */
+const useNetworkNavGroups = (enabled: boolean): ShellNavGroup[] => {
+  const { t } = useTranslation();
+  const access = useNavAccess();
+  return useMemo(
+    () =>
+      enabled
+        ? [
+            {
+              key: 'network',
+              label: t('shell.groups.network'),
+              items: fromDefinitions(NETWORK_ITEMS, access, (item) => t(item.labelKey)),
+            },
+          ]
+        : [],
+    [enabled, access, t],
+  );
+};
+
 /**
  * The sidebar's groups for this admin: Inbox, the places (content types from the registry, with counts and
  * "+ New" for `schema.create`), Media and Publishing; Develop and Workspace when permitted. The word
- * "Models" is never shown (plan editor-experience §6).
+ * "Models" is never shown (plan editor-experience §6). On network pages, the network group instead.
  */
 export const useShellNavGroups = (): ShellNavGroup[] => {
+  const isNetworkView = useIsNetworkView();
+  const siteGroups = useSiteNavGroups(!isNetworkView);
+  const networkGroups = useNetworkNavGroups(isNetworkView);
+  return isNetworkView ? networkGroups : siteGroups;
+};
+
+const useSiteNavGroups = (enabled: boolean): ShellNavGroup[] => {
   const { t } = useTranslation();
   const access = useNavAccess();
   const places = usePlaces();
   return useMemo(() => {
+    if (!enabled) {
+      return [];
+    }
     const label = (item: NavItemDefinition) => t(item.labelKey);
     const placeItems = (places ?? []).map(placeItem);
     const addType: ShellNavItem[] = access.canCreateType
@@ -101,5 +132,5 @@ export const useShellNavGroups = (): ShellNavGroup[] => {
       },
     ];
     return groups.filter((group) => group.items.length > 0);
-  }, [access, places, t]);
+  }, [enabled, access, places, t]);
 };

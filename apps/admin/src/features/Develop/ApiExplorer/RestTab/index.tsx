@@ -1,6 +1,8 @@
 import { isModelDefinition, routeKeyOf } from '@shapio/schema';
 import { useMemo } from 'react';
 import { useAllDefinitions } from '@/api/schema';
+import { withSiteParameter } from '@/helpers/sites';
+import { useDeliverySiteKey } from '@/hooks/useDeliverySiteKey';
 import { EndpointNav } from '../EndpointNav';
 import type { DeliveryOperation, OperationGroup } from '../helpers/operations';
 import { isSendable, requestPath } from '../helpers/request';
@@ -28,7 +30,9 @@ export const RestTab = ({ groups, operation }: RestTabProps) => {
         .find((candidate) => routeKeyOf(candidate) === operation.routeKey),
     [definitions, operation.routeKey],
   );
-  const path = requestPath(operation, draft);
+  const siteKey = useDeliverySiteKey();
+  // A site other than the primary one is named in the URL, as a site's own requests would (sites plan §H).
+  const path = withSiteParameter(requestPath(operation, draft), siteKey);
   // The last response belongs to the operation it was sent for.
   const response = send.data && send.variables?.operationId === operation.id ? send.data : undefined;
   return (

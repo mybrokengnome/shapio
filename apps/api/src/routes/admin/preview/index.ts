@@ -10,6 +10,8 @@ import * as schemas from './schemas.js';
 export const adminPreviewRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
   const admin = { preHandler: app.requireAdmin };
+  // GET /targets: the site's connections with a preview URL (names and origins), for the Preview button
+  app.get('/targets', { schema: schemas.listPreviewTargetsSchema, ...admin }, handlers.listPreviewTargets);
   app.get('/tokens', { schema: schemas.listPreviewTokensSchema, ...admin }, handlers.listPreviewTokens);
   app.post(
     '/tokens',

@@ -30,7 +30,7 @@ export const variantsFor = (originalWidth: number): VariantDefinition[] =>
   VARIANT_DEFINITIONS.filter((variant) => variant.height !== undefined || originalWidth > variant.width);
 
 /** Decoding limit: about 100 megapixels, so a decompression bomb cannot exhaust memory. */
-const MAX_INPUT_PIXELS = 100_000_000;
+export const MAX_INPUT_PIXELS = 100_000_000;
 
 const open = (input: Buffer) => sharp(input, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS });
 

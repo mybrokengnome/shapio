@@ -1,6 +1,11 @@
-import { RICHTEXT_FORMAT, type DataType, type SchemaChange } from '@shapio/schema';
-import { plainTextToRichText, richTextToPlainText } from '../richtext/render.js';
-import type { RichTextDocument } from '../richtext/validate.js';
+import {
+  plainTextToRichText,
+  RICHTEXT_FORMAT,
+  richTextToPlainText,
+  type DataType,
+  type RichTextDocument,
+  type SchemaChange,
+} from '@shapio/schema';
 
 /**
  * Value conversions for `convert` prerequisites (brief §5: "type or rich-text format conversion"). Every

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderPreviewUrl } from './previewUrl.js';
+import { previewTemplateOrigin, renderPreviewUrl } from './previewUrl.js';
 
 describe('preview URL templates', () => {
   it('fills and encodes the variables', () => {
@@ -33,5 +33,18 @@ describe('preview URL templates', () => {
     expect(() =>
       renderPreviewUrl('{path}', { token: 't', modelKey: 'm', entryId: 'e', locale: 'en' }),
     ).toThrow();
+  });
+});
+
+describe('previewTemplateOrigin', () => {
+  it('is the origin every rendered URL opens on', () => {
+    expect(previewTemplateOrigin('https://site.test:8443/preview/{path}#token={token}')).toBe(
+      'https://site.test:8443',
+    );
+  });
+
+  it('is undefined when the origin depends on a variable, or the template is invalid', () => {
+    expect(previewTemplateOrigin('https://{locale}.site.test/{path}?token={token}')).toBeUndefined();
+    expect(previewTemplateOrigin('{path}?token={token}')).toBeUndefined();
   });
 });

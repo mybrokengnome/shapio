@@ -258,12 +258,23 @@ describe('sites (plan §H, G1 foundation)', () => {
 
     it('lets a network admin token name any site', async () => {
       const [adminRole] = await adminRolesRepository.findByKeys(['admin'], database.current.db);
-      const created = await createToken(owner, { name: 'ci', roleId: adminRole?.id });
+      const created = await createToken(owner, { name: 'ci', roleId: adminRole?.id, network: true });
       const { token, apiToken } = created.json<{ token: string; apiToken: { siteId: string | null } }>();
       expect(apiToken.siteId).toBeNull();
       const bearer = { authorization: `Bearer ${token}` };
       expect((await probe(bearer)).json()).toMatchObject({ key: 'default' });
       expect((await probe(bearer, '?site=marketing')).json()).toMatchObject({ key: 'marketing' });
+    });
+
+    it("gives a token the request's site unless a network token is asked for", async () => {
+      const [adminRole] = await adminRolesRepository.findByKeys(['admin'], database.current.db);
+      const created = await createToken(
+        owner,
+        { name: 'site ci', roleId: adminRole?.id },
+        { [SITE_HEADER]: 'marketing' },
+      );
+      expect(created.statusCode).toBe(201);
+      expect(created.json<{ apiToken: { siteId: string | null } }>().apiToken.siteId).toBe(other.id);
     });
 
     it("binds delivery tokens to the request's site and refuses network delivery tokens", async () => {

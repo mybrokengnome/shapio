@@ -15,8 +15,15 @@ export const SERVICE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,62}$/;
 export const JOB_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,62}$/;
 /** Hook keys are a model API key, a stable model ID, or `*`. */
 export const HOOK_MODEL_KEY_PATTERN = /^(\*|[A-Za-z0-9_-]{1,100})$/;
-/** Names Shapio's own services use in `services`. */
-export const RESERVED_SERVICE_NAMES: ReadonlySet<string> = new Set(['content', 'media', 'jobs', 'logger']);
+/** Names Shapio's own services use in `services` (a custom service of that name would replace Shapio's). */
+export const RESERVED_SERVICE_NAMES: ReadonlySet<string> = new Set([
+  'site',
+  'forSite',
+  'content',
+  'media',
+  'jobs',
+  'logger',
+]);
 
 const modelHooksSchema = Type.Object(
   Object.fromEntries([...BEFORE_EVENTS, ...AFTER_EVENTS].map((event) => [event, Type.Optional(anyFunction)])),

@@ -5,6 +5,7 @@ export const WORKER_MODES = ['inline', 'dedicated'] as const;
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 export const STORAGE_DRIVERS = ['local', 's3'] as const;
 export const EMAIL_TRANSPORTS = ['console', 'smtp'] as const;
+export const AI_PROVIDERS = ['anthropic', 'openai', 'openai-compatible'] as const;
 
 /**
  * Every setting Shapio reads from the environment. This is the only place that knows env var names;
@@ -159,6 +160,10 @@ export const configSchema = Type.Object({
   CLOUDFLARE_DASHBOARD_URL: Type.String({ pattern: '^https?://' }),
   /** GitHub REST API base for schema write-back (GitHub Enterprise Server: https://host/api/v3). */
   GITHUB_API_URL: Type.String({ pattern: '^https?://' }),
+  /** Vercel REST API base for the Vercel adapter's deployment status (tests point it at a local fake). */
+  VERCEL_API_URL: Type.String({ pattern: '^https?://' }),
+  /** Netlify API base for the Netlify adapter's builds and deploy status (tests point it at a local fake). */
+  NETLIFY_API_URL: Type.String({ pattern: '^https?://' }),
 
   /** GraphQL at /api/graphql (package J). Shares REST's permissions, filters and page-size limits. */
   GRAPHQL_ENABLED: Type.Boolean(),
@@ -176,6 +181,29 @@ export const configSchema = Type.Object({
   USAGE_RETENTION_DAYS: Type.Integer({ minimum: 1, maximum: 3650 }),
   /** How often each instance writes its in-memory usage counters to the database. */
   USAGE_FLUSH_INTERVAL_MS: Type.Integer({ minimum: 1000, maximum: 3_600_000 }),
+
+  /**
+   * Editor assists (alt text, summaries, translation, rewrites, schema drafts) with your own model provider.
+   * Unset (the default): assist is off and nothing is ever sent to a model provider. `openai-compatible`
+   * covers Ollama, LM Studio and vLLM (set AI_BASE_URL). See documentation/assist.md.
+   */
+  AI_PROVIDER: Type.Optional(Type.Enum(AI_PROVIDERS)),
+  /** The model name the provider expects, e.g. a model ID or `llama3.2-vision`. Required with AI_PROVIDER. */
+  AI_MODEL: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  /** The provider API key. Required for `anthropic` and `openai`; optional for `openai-compatible`. */
+  AI_API_KEY: Type.Optional(Type.String({ minLength: 1 })),
+  /**
+   * The provider's API base including its version path, e.g. `http://127.0.0.1:11434/v1` for Ollama
+   * (Shapio appends `/chat/completions` or `/messages`). Required for `openai-compatible`; overrides the public
+   * endpoint for the others. Loopback and private addresses are allowed: this is operator configuration.
+   */
+  AI_BASE_URL: Type.Optional(Type.String({ pattern: '^https?://' })),
+  /** Most tokens one model response may use. */
+  AI_MAX_TOKENS: Type.Integer({ minimum: 256, maximum: 128_000 }),
+  /** Timeout of each request to the model provider. */
+  AI_TIMEOUT_MS: Type.Integer({ minimum: 1000, maximum: 600_000 }),
+  /** Assist requests per minute and admin (or admin API token). */
+  AI_RATE_LIMIT_MAX: Type.Integer({ minimum: 1, maximum: 10_000 }),
 });
 
 export type RawConfig = Static<typeof configSchema>;
@@ -221,6 +249,8 @@ export const CONFIG_DEFAULTS = {
   CLOUDFLARE_API_URL: 'https://api.cloudflare.com/client/v4',
   CLOUDFLARE_DASHBOARD_URL: 'https://dash.cloudflare.com',
   GITHUB_API_URL: 'https://api.github.com',
+  VERCEL_API_URL: 'https://api.vercel.com',
+  NETLIFY_API_URL: 'https://api.netlify.com',
   GRAPHQL_ENABLED: true,
   GRAPHQL_MAX_DEPTH: 10,
   GRAPHQL_MAX_COMPLEXITY: 20_000,
@@ -229,4 +259,7 @@ export const CONFIG_DEFAULTS = {
   USAGE_TRACKING: true,
   USAGE_RETENTION_DAYS: 90,
   USAGE_FLUSH_INTERVAL_MS: 30_000,
+  AI_MAX_TOKENS: 8192,
+  AI_TIMEOUT_MS: 60_000,
+  AI_RATE_LIMIT_MAX: 20,
 } as const satisfies Partial<RawConfig>;

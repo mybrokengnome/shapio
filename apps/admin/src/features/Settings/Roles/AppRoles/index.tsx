@@ -67,7 +67,7 @@ export const AppRoles = () => {
         onOpenChange={setCreating}
         onCreated={(role) => {
           setCreating(false);
-          void navigate({ to: '/settings/roles/app/$roleId', params: { roleId: role.id } });
+          void navigate({ to: '/network/roles/app/$roleId', params: { roleId: role.id } });
         }}
       />
     </Page>

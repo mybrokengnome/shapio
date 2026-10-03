@@ -64,3 +64,38 @@ export const createPerEmailRateLimit = (
     },
   };
 };
+
+const actorKeyOf = (request: FastifyRequest): string => {
+  const { principal } = request;
+  switch (principal.kind) {
+    case 'admin':
+      return `admin:${principal.adminUserId}`;
+    case 'token':
+      return `token:${principal.tokenId}`;
+    default:
+      return `ip:${request.ip}`;
+  }
+};
+
+/**
+ * A limit per signed-in actor (admin user or API token) instead of per IP, for expensive endpoints (assist
+ * calls a paid model). Runs as a preHandler after authentication. In-memory, per process (ADR 0008).
+ */
+export const createPerActorRateLimit = (
+  app: FastifyInstance,
+  scope: string,
+  { max, timeWindow }: { max: number; timeWindow: number },
+): preHandlerAsyncHookHandler => {
+  const limiter = app.createRateLimit({
+    max,
+    timeWindow,
+    keyGenerator: (request) => `${scope}:${actorKeyOf(request)}`,
+  });
+  return async (request, reply) => {
+    const result = await limiter(request);
+    if (!result.isAllowed && result.isExceeded) {
+      void reply.header('retry-after', String(Math.max(1, result.ttlInSeconds)));
+      throw new AppError(429, 'RATE_LIMITED', `Too many ${scope} requests; try again in a minute`);
+    }
+  };
+};

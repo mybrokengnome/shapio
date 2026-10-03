@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { SITE_HEADER, ShapioApiError } from '@shapio/client';
+import { MAX_RATE_LIMIT_RETRIES, retryAfterMs } from '../../helpers/rateLimitRetry.js';
 import type { CliIo } from '../../types.js';
 
 /**
@@ -11,7 +12,6 @@ import type { CliIo } from '../../types.js';
  * SHAPIO_SITE) names it, else the token's site, else the primary site.
  */
 export const DEFAULT_URL = 'http://localhost:4300';
-const MAX_RETRIES = 8;
 
 export type Connection = { baseUrl: string; token: string; site?: string };
 
@@ -81,11 +81,6 @@ const errorFrom = async (response: Response) => {
   return new ShapioApiError(response.status, parsed);
 };
 
-const retryAfterMs = (response: Response, attempt: number) => {
-  const seconds = Number(response.headers.get('retry-after'));
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 500 * 2 ** attempt;
-};
-
 /** A request whose non-2xx answers throw `ShapioApiError`; returns the response for streaming its body. */
 export const send = async (
   connection: Connection,
@@ -107,7 +102,7 @@ export const send = async (
       },
       ...(body ? { body: Readable.toWeb(body) as ReadableStream, duplex: 'half' } : {}),
     });
-    if (response.status === 429 && attempt < MAX_RETRIES) {
+    if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
       await response.body?.cancel();
       await delay(retryAfterMs(response, attempt));
       continue;

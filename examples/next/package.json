@@ -12,12 +12,13 @@
     "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",
     "start": "NEXT_TELEMETRY_DISABLED=1 next start",
-    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts",
+    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:3000",
     "smoke": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:3000",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@shapio/client": "workspace:*",
+    "@shapio/visual": "workspace:*",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"

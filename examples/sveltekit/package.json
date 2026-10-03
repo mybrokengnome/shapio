@@ -17,12 +17,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
-    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts",
+    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:5173",
     "smoke": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4173",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {
-    "@shapio/client": "workspace:*"
+    "@shapio/client": "workspace:*",
+    "@shapio/visual": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "catalog:",

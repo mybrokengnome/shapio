@@ -18,7 +18,7 @@ const Admins = () => {
       label={t('home.admins')}
       value={users.data?.length}
       icon={Users}
-      link={linkOptions({ to: '/users' })}
+      link={linkOptions({ to: '/network/users' })}
     />
   );
 };

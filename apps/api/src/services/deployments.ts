@@ -15,7 +15,7 @@ import { AppError } from '../helpers/appError.js';
 import { generateToken } from '../helpers/tokens.js';
 import { assertDestinationAllowed } from '../publishing/destination.js';
 import { decodeCursor, pageSize, toPage, type Page } from '../publishing/pagination.js';
-import { renderPreviewUrl } from '../publishing/previewUrl.js';
+import { previewTemplateOrigin, renderPreviewUrl } from '../publishing/previewUrl.js';
 import { adminIdOf } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
 import {
@@ -282,7 +282,7 @@ const validateTriggers = (provider: DeploymentProviderAdapter, triggers: readonl
   return [...new Set(triggers)] as TriggerPolicy[];
 };
 
-const validatePreviewTemplate = (template: string | null | undefined) => {
+const validatePreviewTemplate = (runtime: PublishingRuntime, template: string | null | undefined) => {
   if (!template) {
     return null;
   }
@@ -293,6 +293,10 @@ const validatePreviewTemplate = (template: string | null | undefined) => {
     renderPreviewUrl(template, { token: 'token', modelKey: 'model', entryId: 'id', locale: 'en' });
   } catch {
     throw invalid('The preview URL template does not make a valid http(s) URL', 'previewUrlTemplate');
+  }
+  // The admin frames previews: a page on Shapio's own origin in that frame could script the admin.
+  if (previewTemplateOrigin(template) === new URL(runtime.urls.publicUrl).origin) {
+    throw invalid("The preview URL can't be on Shapio's own origin", 'previewUrlTemplate');
   }
   return template;
 };
@@ -336,7 +340,7 @@ export const createConnection = async (
   );
   const deliveryRoleId = await validateDeliveryRole(runtime, input.deliveryRoleId);
   const triggerPolicy = validateTriggers(provider, input.triggerPolicy);
-  const previewUrlTemplate = validatePreviewTemplate(input.previewUrlTemplate);
+  const previewUrlTemplate = validatePreviewTemplate(runtime, input.previewUrlTemplate);
   await assertDestinations(
     runtime,
     provider,
@@ -412,7 +416,7 @@ export const updateConnection = async (
         secret_env_refs: JSON.stringify(refs),
         ...(deliveryRoleId !== undefined ? { delivery_role_id: deliveryRoleId } : {}),
         ...(input.previewUrlTemplate !== undefined
-          ? { preview_url_template: validatePreviewTemplate(input.previewUrlTemplate) }
+          ? { preview_url_template: validatePreviewTemplate(runtime, input.previewUrlTemplate) }
           : {}),
         ...(input.triggerPolicy !== undefined
           ? { trigger_policy: validateTriggers(provider, input.triggerPolicy) }

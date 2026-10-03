@@ -5,14 +5,14 @@ import { SYSTEM_ADMIN_ROLE_KEYS } from '@/constants/roles';
 type AdminRoleOptionsInput = {
   /** Offer the owner role (owners only; the server refuses anyone else). */
   includeOwner: boolean;
-  /** The roles the user being edited holds: owner is offered when they hold it, and `heldRoleId` is set. */
+  /** The roles the user being edited holds: owner is offered when they hold it. */
   heldRoleIds?: readonly string[];
 };
 
 /**
  * Roles an admin user can hold (delivery roles are for tokens only), as single-choice options: an admin user
- * has exactly one role. Also returns the default choice for a new user (Editor) and the role the edited user
- * holds now (owner first, for accounts that still carry several roles).
+ * has one role per site. Also returns the default choice for a new user (Editor) and the owner role's ID
+ * (which can only be held on every site).
  */
 export const useAdminRoleOptionsAndDefaults = ({ includeOwner, heldRoleIds = [] }: AdminRoleOptionsInput) => {
   const roles = useRoles();
@@ -26,11 +26,11 @@ export const useAdminRoleOptionsAndDefaults = ({ includeOwner, heldRoleIds = [] 
     label: role.name,
     ...(role.description ? { description: role.description } : {}),
   }));
-  const held = offered.filter((role) => heldRoleIds.includes(role.id));
   return {
     options,
     editorRoleId: adminRoles.find((role) => role.key === SYSTEM_ADMIN_ROLE_KEYS.editor)?.id,
-    heldRoleId: (held.find((role) => isOwnerRole(role.key)) ?? held[0])?.id ?? '',
+    ownerRoleId: adminRoles.find((role) => isOwnerRole(role.key))?.id,
+    isPending: roles.isPending,
     error: roles.error,
   };
 };

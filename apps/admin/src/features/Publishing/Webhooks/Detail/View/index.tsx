@@ -14,6 +14,7 @@ import { useConflictReload } from '../../../hooks/useConflictReload';
 import { SignatureHelp } from '../../../SignatureHelp';
 import { useWebhookActions } from '../../hooks/useWebhookActions';
 import { SigningSecretReveal } from '../../SigningSecretReveal';
+import { SiteBadge } from '../../SiteBadge';
 import { Deliveries } from '../Deliveries';
 import { EditForm } from '../EditForm';
 
@@ -32,7 +33,12 @@ export const View = ({ webhook }: ViewProps) => {
           { label: t('publishing.nav.webhooks'), link: linkOptions({ to: '/publishing/webhooks' }) },
         ]}
         title={webhook.name}
-        badge={<EnabledChip enabled={webhook.enabled} />}
+        badge={
+          <span className="flex items-center gap-2">
+            <EnabledChip enabled={webhook.enabled} />
+            <SiteBadge webhook={webhook} />
+          </span>
+        }
         meta={<span className="font-mono text-xs break-all">{webhook.url}</span>}
         actions={
           <>

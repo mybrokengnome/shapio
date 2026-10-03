@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
+import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER } from '../../constants/sites.js';
 import { getPlaygroundAsset, getPlaygroundPage } from '../../controllers/graphqlPlayground.js';
 import { declareSiteScope } from '../../plugins/siteResolution.js';
 
@@ -10,8 +11,20 @@ import { declareSiteScope } from '../../plugins/siteResolution.js';
 export const graphqlPlaygroundRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
-  // GET /playground: the GraphiQL page
-  app.get('/playground', { ...admin, schema: { response: { 200: Type.String() } } }, getPlaygroundPage);
+  // GET /playground: the GraphiQL page; `?site=<key>` points it at that site's GraphQL endpoint
+  app.get(
+    '/playground',
+    {
+      ...admin,
+      schema: {
+        querystring: Type.Object({
+          [SITE_QUERY_PARAMETER]: Type.Optional(Type.String({ pattern: SITE_KEY_PATTERN })),
+        }),
+        response: { 200: Type.String() },
+      },
+    },
+    getPlaygroundPage,
+  );
   // GET /playground/:file: GraphiQL, React and the bootstrap script
   app.get(
     '/playground/:file',

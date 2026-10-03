@@ -50,21 +50,30 @@ export const renameIfVersion = (id: string, expectedVersion: number, name: strin
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('sites').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
 
-/** What keeps a site from being deleted: content, media, change sets and app users (counted per kind). */
+/**
+ * What keeps a site from being deleted: live content, media, change sets and app users (counted per kind).
+ * Soft-deleted entries, media assets and app users do not count; `deleteSite` purges them with the site.
+ */
 export const countContents = async (siteId: string, trx: Executor = db) => {
-  const count = (table: 'entries' | 'media_assets' | 'media_folders' | 'change_sets' | 'app_users') =>
-    trx
+  const count = (
+    table: 'entries' | 'media_assets' | 'media_folders' | 'change_sets' | 'app_users',
+    liveOnly = false,
+  ) => {
+    let query = trx
       .selectFrom(table)
       .select((eb) => eb.fn.countAll<string>().as('n'))
-      .where('site_id', '=', siteId)
-      .executeTakeFirstOrThrow()
-      .then((row) => Number(row.n));
+      .where('site_id', '=', siteId);
+    if (liveOnly) {
+      query = query.where('deleted_at', 'is', null);
+    }
+    return query.executeTakeFirstOrThrow().then((row) => Number(row.n));
+  };
   const [entries, mediaAssets, mediaFolders, changeSets, appUsers] = await Promise.all([
-    count('entries'),
-    count('media_assets'),
+    count('entries', true),
+    count('media_assets', true),
     count('media_folders'),
     count('change_sets'),
-    count('app_users'),
+    count('app_users', true),
   ]);
   return { entries, mediaAssets, mediaFolders, changeSets, appUsers };
 };

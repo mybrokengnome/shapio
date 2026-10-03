@@ -46,8 +46,8 @@ pnpm --filter example-astro build
 pnpm --filter example-astro preview
 ```
 
-`preview` serves `dist/` in the background and prints its address, <http://localhost:4321/> unless that port is
-taken (`pnpm --filter example-astro preview:stop` stops it). The home page redirects to `/en/`; the language
+`preview` serves `dist/` in the foreground and prints its address, <http://localhost:4321/> unless that port is
+taken; Ctrl+C stops it. The home page redirects to `/en/`; the language
 switch leads to `/fr/`. The build reads the
 current publication snapshot once, at the start, and passes it with every request (`?snapshot=N`), so content
 published while it runs cannot leave the site half old and half new. `/build.json` shows which snapshot it is.
@@ -90,11 +90,12 @@ pick images, publish, rebuild.
 
 1. Allow the site's origin to call the API from the browser: `CORS_ORIGINS=http://localhost:4321` in Shapio's
    environment (restart Shapio after changing it).
-2. Publishing → Deployments → New connection, provider **Generic webhook** with only the **Manual** trigger
-   (any reachable URL for now, e.g. a request bin: it is only called when you deploy), and set the **preview
-   URL template** (use the address `preview` printed if it is not port 4321):
-   `http://localhost:4321/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`.
-3. Open the article _Coming soon: our winter projects_ and click **Preview**. The site's `/preview/` page reads
+2. The seed created a deployment connection named **Preview** (Publishing → Deployments) whose **preview URL
+   template** is `http://localhost:4321/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`.
+   If `preview` printed another address, change the template (or run the seed again with `SITE_URL` set).
+3. Open the article _Coming soon: our winter projects_ and click **Preview**: the draft opens beside the
+   document, and clicking its title or body focuses that field ([Visual editing](visual-editing.md)). The site's
+   `/preview/` page reads
    the token from the URL fragment, removes it from the address bar, fetches the draft from
    `/api/preview/content/articles/<id>` (the template's `{modelKey}` is the plural API ID, `articles`) and renders it with the same code as the published pages.
 
@@ -106,7 +107,7 @@ through Cloudflare's API. Your Shapio must be reachable from the internet for th
 1. Push your copy of the repository to GitHub or GitLab.
 2. In Cloudflare: **Workers & Pages → Create → Pages → Connect to Git**, pick the repository, then:
    - Framework preset: **None**
-   - Build command: `pnpm --filter "@shapio/client..." build && pnpm --filter example-astro build`
+   - Build command: `pnpm --filter "@shapio/client..." --filter "@shapio/visual" build && pnpm --filter example-astro build`
    - Build output directory: `examples/astro/dist`
    - Root directory: (leave empty: the repository root, so the workspace packages are found)
    - Environment variables (Production): `NODE_VERSION` = `24`, `PNPM_VERSION` = `12.8.1`,

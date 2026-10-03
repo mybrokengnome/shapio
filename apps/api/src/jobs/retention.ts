@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely';
 import type { DB } from '../db/types.js';
+import * as assistRunsRepository from '../repositories/assistRuns.js';
 import * as retentionRepository from '../repositories/retention.js';
 import * as usageRepository from '../repositories/usage.js';
 import { usageDayOf } from '../usage/keys.js';
@@ -8,7 +9,8 @@ import type { JobHandler } from './types.js';
 
 /**
  * `system.retention`: once a day, delete finished bookkeeping older than RETENTION_DAYS (succeeded jobs,
- * dispatched outbox events, after-hook run records, resolved health findings) and stale presence rows. Dead jobs and undispatched events stay for an operator.
+ * dispatched outbox events, after-hook run records, resolved health findings) and stale presence rows; usage
+ * counters and assist runs older than USAGE_RETENTION_DAYS. Dead jobs and undispatched events stay for an operator.
  * One job per UTC day (idempotency key `system.retention:<date>`); each run schedules the next day's, and
  * every worker start makes sure today's exists, so instances starting together still create one.
  */
@@ -61,6 +63,13 @@ export const createRetentionJobHandlers = (
         extensionHookRuns: await pruneAll(retentionRepository.pruneExtensionHookRuns, db, before, job.signal),
         fieldReads: await pruneAll(usageRepository.pruneFieldReads, db, usageBefore, job.signal),
         tokenReads: await pruneAll(usageRepository.pruneTokenReads, db, usageBefore, job.signal),
+        // Assist runs (who used which model, token counts) are usage records: same retention.
+        assistRuns: await pruneAll(
+          assistRunsRepository.pruneRuns,
+          db,
+          new Date(at.getTime() - usageDays * DAY_MS),
+          job.signal,
+        ),
         healthFindings: await pruneAll(
           retentionRepository.pruneResolvedHealthFindings,
           db,

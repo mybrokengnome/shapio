@@ -1,15 +1,16 @@
 <script lang="ts">
+  import type { ShapioAttributes } from '@shapio/visual';
   import { safeHref } from '../site';
   import type { HeroSection } from '../types';
   import ResponsiveImage from './ResponsiveImage.svelte';
 
-  type Props = { section: HeroSection; isFirst: boolean };
-  let { section, isFirst }: Props = $props();
+  type Props = { section: HeroSection; isFirst: boolean; visual?: ShapioAttributes };
+  let { section, isFirst, visual }: Props = $props();
 </script>
 
 <section class="hero">
   <div class="hero-text">
-    <svelte:element this={isFirst ? 'h1' : 'h2'}>{section.heading}</svelte:element>
+    <svelte:element this={isFirst ? 'h1' : 'h2'} {...visual}>{section.heading}</svelte:element>
     {#if section.subheading}
       <p class="lead">{section.subheading}</p>
     {/if}

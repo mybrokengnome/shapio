@@ -34,8 +34,8 @@ const Form = ({ role, models }: FormProps) => {
   const editor = useAppRoleEditor(role);
   const explanation = role.isSystem ? builtInDescriptionKey(role.key) : undefined;
   const breadcrumb = [
-    { label: t('roles.title'), link: linkOptions({ to: '/settings/roles' }) },
-    { label: t('appRoles.title'), link: linkOptions({ to: '/settings/roles/app' }) },
+    { label: t('roles.title'), link: linkOptions({ to: '/network/roles' }) },
+    { label: t('appRoles.title'), link: linkOptions({ to: '/network/roles/app' }) },
   ];
   return (
     <form noValidate className="space-y-6" onSubmit={(event) => void editor.onSubmit(event)}>
@@ -80,7 +80,7 @@ const Form = ({ role, models }: FormProps) => {
 
 /** Settings → Roles → App roles → one role: its permission matrix (models × actions, own entries, fields). */
 export const Editor = () => {
-  const { roleId } = useParams({ from: '/app/settings/roles/app/$roleId' });
+  const { roleId } = useParams({ from: '/app/network/roles/app/$roleId' });
   const role = useAppRole(roleId);
   const models = useDefinitions('model');
   return (

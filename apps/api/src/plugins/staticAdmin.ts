@@ -6,7 +6,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 
-type StaticAdminOptions = { distPath: string | undefined; urls: UrlBuilder };
+type StaticAdminOptions = {
+  distPath: string | undefined;
+  urls: UrlBuilder;
+  /** The admin page's `frame-src` sources (services/previewOrigins.ts); none: nothing may be framed. */
+  frameSources?: () => Promise<readonly string[]>;
+};
 
 export const ADMIN_PATH = '/admin/';
 
@@ -56,11 +61,24 @@ export const addScriptSources = (csp: string, sources: readonly string[]): strin
 };
 
 /**
+ * Sets a CSP directive to exactly `sources` (`'none'` when empty), replacing the directive if present. Without
+ * an explicit `frame-src`, frames would fall back to `default-src 'self'`, which would let the admin frame its
+ * own origin.
+ */
+export const setDirective = (csp: string, name: string, sources: readonly string[]): string => {
+  const directives = csp
+    .split(';')
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !new RegExp(`^${name}(\\s|$)`, 'i').test(directive));
+  return [...directives, `${name} ${sources.length > 0 ? sources.join(' ') : "'none'"}`].join(';');
+};
+
+/**
  * Serves the prebuilt admin SPA at `${BASE_PATH}/admin/` with an SPA fallback, and redirects the bare
  * `${BASE_PATH}/` to it. Without a build (development before `vite build`), nothing is served here.
  */
 export const staticAdminPlugin = fp<StaticAdminOptions>(
-  async (app: FastifyInstance, { distPath, urls }) => {
+  async (app: FastifyInstance, { distPath, urls, frameSources }) => {
     const indexFile = distPath ? join(distPath, 'index.html') : undefined;
     if (!distPath || !indexFile || !existsSync(indexFile)) {
       app.log.info('admin bundle not found; the admin UI is not served (run the Vite dev server instead)');
@@ -70,10 +88,15 @@ export const staticAdminPlugin = fp<StaticAdminOptions>(
     const indexHtml = injectBaseHref(readFileSync(indexFile, 'utf8'), adminPrefix);
     const scriptHashes = importMapHashes(indexHtml);
     const sendIndex = async (_request: FastifyRequest, reply: FastifyReply) => {
-      // Helmet has set the CSP header by now (onRequest); allow exactly this page's inline import map.
+      // Helmet has set the CSP header by now (onRequest); allow exactly this page's inline import map, and frame
+      // exactly the playground and the preview sites.
       const csp = reply.getHeader('content-security-policy');
       if (typeof csp === 'string') {
-        void reply.header('content-security-policy', addScriptSources(csp, scriptHashes));
+        const frames = frameSources ? await frameSources() : [];
+        void reply.header(
+          'content-security-policy',
+          setDirective(addScriptSources(csp, scriptHashes), 'frame-src', frames),
+        );
       }
       return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').send(indexHtml);
     };

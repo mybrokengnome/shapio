@@ -73,12 +73,28 @@ export const openPreviewSchema = {
   body: OpenPreviewBodySchema,
   response: {
     200: Type.Object({
+      /** The token's ID: the admin revokes it when the preview closes or the token is replaced. */
+      id: UuidSchema,
       url: NullableString,
       apiUrl: Type.String(),
       token: Type.String(),
       expiresAt: DateTimeSchema,
       connectionId: Type.Union([UuidSchema, Type.Null()]),
     }),
+    ...errors,
+  },
+};
+
+export const listPreviewTargetsSchema = {
+  response: {
+    200: Type.Array(
+      Type.Object({
+        connectionId: UuidSchema,
+        name: Type.String(),
+        origin: NullableString,
+        framable: Type.Boolean(),
+      }),
+    ),
     ...errors,
   },
 };

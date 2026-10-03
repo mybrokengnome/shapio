@@ -42,7 +42,7 @@ export const CHANGE_SET_STATUSES = [
 export const ChangeSetStatusSchema = Type.Enum(CHANGE_SET_STATUSES);
 /** While `shipping`: preparing (prerequisite dry runs, index builds) or activating (the final transaction). */
 export const ShipPhaseSchema = Nullable(Type.Enum(['preparing', 'activating']));
-export const ChangeSetSourceSchema = Type.Enum(['manual', 'release', 'restore', 'builder']);
+export const ChangeSetSourceSchema = Type.Enum(['manual', 'release', 'restore', 'builder', 'assist']);
 export const ItemStatusSchema = Type.Enum(['pending', 'done', 'failed']);
 export const DefinitionCategorySchema = Type.Enum(['model', 'component']);
 export const SchemaOperationSchema = Type.Enum(['create', 'update', 'delete']);

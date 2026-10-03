@@ -162,8 +162,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build @shapio/client (the starters use its build, as a project installed from npm does)
-        run: pnpm --filter "@shapio/client..." build
+      - name: Build @shapio/client and @shapio/visual (the starters use their builds, as a project installed from npm does)
+        run: pnpm --filter "@shapio/client..." --filter "@shapio/visual" build
       - name: Start Shapio from source
         working-directory: apps/api
         # Only Shapio runs in development mode; the starters build for production.

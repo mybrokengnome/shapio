@@ -13,7 +13,7 @@ const InviteStep = () => {
   const alone = users.data !== undefined && users.data.length <= 1 && invitations.data?.length === 0;
   return alone ? (
     <NextStep
-      to="/users"
+      to="/network/users"
       icon={UserPlus}
       title={t('home.inviteTeam')}
       description={t('home.inviteTeamDescription')}

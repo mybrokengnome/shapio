@@ -1,4 +1,4 @@
-import { escapeHtml } from '../../content/richtext/render.js';
+import { escapeHtml } from '@shapio/schema';
 
 /**
  * A self-hosted, script-free HTML index of the OpenAPI document (build plan §3.10: no CDN). Endpoints are

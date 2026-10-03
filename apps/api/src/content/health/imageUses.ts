@@ -1,7 +1,6 @@
-import type { FieldDefinition } from '@shapio/schema';
+import type { FieldDefinition, RichTextNode } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { ContentModel } from '../model.js';
-import type { RichTextNode } from '../richtext/validate.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import { pointer } from '../validator/issues.js';
 

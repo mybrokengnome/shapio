@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import envSchema from 'env-schema';
+import { toAssistConfig, type AssistConfig } from './assist.js';
 import { toGraphqlConfig, type GraphqlConfig } from './graphql.js';
 import { toPublishingConfig, type PublishingConfig } from './publishing.js';
 import { ConfigError, findConfigProblems } from './rules.js';
@@ -111,6 +112,8 @@ export type AppConfig = {
   usage: UsageConfig;
   /** Content health rules (the Inbox). */
   health: { staleDays: number };
+  /** Editor assists with the operator's own model provider; off unless AI_PROVIDER is set. */
+  assist: AssistConfig;
 };
 
 type EnvSource = Record<string, string | undefined>;
@@ -256,6 +259,7 @@ const toAppConfig = (raw: RawConfig): AppConfig => {
     graphql: toGraphqlConfig(raw),
     usage: toUsageConfig(raw),
     health: { staleDays: raw.HEALTH_STALE_DAYS },
+    assist: toAssistConfig(raw),
   };
 };
 

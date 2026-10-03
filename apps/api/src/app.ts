@@ -21,6 +21,7 @@ import type { PermissionEvaluator } from './permissions/types.js';
 import { adminBootstrapPlugin } from './plugins/adminBootstrap.js';
 import { adminSessionPlugin } from './plugins/adminSession.js';
 import { appUserAuthPlugin } from './plugins/appUserAuth.js';
+import { assistPlugin } from './plugins/assist.js';
 import { auditDeclarationPlugin } from './plugins/auditDeclaration.js';
 import { contentHooksPlugin } from './plugins/contentHooks.js';
 import { csrfPlugin } from './plugins/csrf.js';
@@ -41,6 +42,7 @@ import type { HostResolver } from './publishing/outbound/ssrf.js';
 import { createPublishingRuntime } from './publishing/runtime.js';
 import { adminAppRolesRoutes } from './routes/admin/appRoles/index.js';
 import { adminAppUsersRoutes } from './routes/admin/appUsers/index.js';
+import { adminAssistRoutes } from './routes/admin/assist/index.js';
 import { componentsRoutes } from './routes/admin/components/index.js';
 import { adminContentRoutes } from './routes/admin/content/index.js';
 import { adminExtensionsRoutes } from './routes/admin/extensions/index.js';
@@ -63,6 +65,7 @@ import { snapshotsRoutes } from './routes/snapshots/index.js';
 import { createSchemaFieldVisibility } from './schema/fieldVisibility.js';
 import type { SchemaContentPorts } from './schema/planner/contentPorts.js';
 import { createSchemaRegistry } from './schema/registry.js';
+import { createPreviewFrameSources } from './services/previewOrigins.js';
 import { resolveSigningSecret } from './services/signingSecret.js';
 import type { CertificatePair } from './tls/certificates.js';
 
@@ -250,6 +253,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     }),
   });
   await app.register(adminPublishingRoutes, { prefix: urls.withBasePath('/api/admin') });
+  await app.register(assistPlugin, { config: config.assist, resolve: app.publishing.resolve });
+  await app.register(adminAssistRoutes, { prefix: urls.withBasePath('/api/admin/assist') });
   await app.register(adminTransferRoutes, { prefix: urls.withBasePath('/api/admin/transfer') });
   await app.register(previewRoutes, { prefix: urls.withBasePath('/api/preview') });
   await app.register(hooksRoutes, { prefix: urls.withBasePath('/api/hooks') });
@@ -257,6 +262,11 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   await app.register(staticAdminPlugin, {
     distPath: deps.adminDistPath === null ? undefined : (deps.adminDistPath ?? findAdminDist()),
     urls,
+    frameSources: createPreviewFrameSources({
+      db: deps.db,
+      urls,
+      playgroundEnabled: config.graphql.enabled && config.graphql.playgroundEnabled,
+    }),
   });
 
   return app;

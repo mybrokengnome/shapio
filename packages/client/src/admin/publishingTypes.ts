@@ -154,7 +154,13 @@ export type WebhookDelivery = {
 
 // Deployments --------------------------------------------------------------------------------------
 
-export const DEPLOYMENT_PROVIDERS = ['generic_webhook', 'cloudflare_pages', 'github'] as const;
+export const DEPLOYMENT_PROVIDERS = [
+  'generic_webhook',
+  'cloudflare_pages',
+  'vercel',
+  'netlify',
+  'github',
+] as const;
 export type DeploymentProvider = (typeof DEPLOYMENT_PROVIDERS)[number];
 
 export const DEPLOYMENT_TRIGGERS = ['publish', 'change_set', 'schema', 'manual'] as const;
@@ -316,9 +322,21 @@ export type OpenPreviewInput = {
 
 /** What the entry form's Preview button opens. `apiUrl` is the preview read endpoint for this entry. */
 export type OpenPreviewResult = {
+  /** The token's ID (revoke it when the preview closes). */
+  id: string;
   url: string | null;
   apiUrl: string;
   token: string;
   expiresAt: string;
   connectionId: string | null;
+};
+
+/** A connection the site's previews open on (names and origins only). */
+export type PreviewTarget = {
+  connectionId: string;
+  name: string;
+  /** null when the preview URL template's origin depends on a variable. */
+  origin: string | null;
+  /** Whether the admin can show it in its preview frame. */
+  framable: boolean;
 };

@@ -70,6 +70,10 @@ Restore into a scratch database from time to time; a backup you have not restore
 `shapio export` and `shapio import` move content between instances over HTTP, without database access: from
 staging to production, into a fresh install, or as a portable backup. They need an owner or admin API token.
 
+A bundle holds one [site](sites.md#export-and-import)'s content, media, app users, webhooks and deployment
+connections, with the shared schema, locales and roles. `--site <key>` (or `SHAPIO_SITE`) names the site to
+export from or import into; without it, the token's site, else the primary site.
+
 ```sh
 npx shapio export --url https://cms.example.com --token shp_… --with-media content.tar
 npx shapio import --url https://new.example.com --token shp_… --dry-run content.tar

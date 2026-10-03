@@ -8,14 +8,13 @@ import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { TableCard } from '@/components/TableCard';
-import { Tabs } from '../Tabs';
 import { APP_USERS_PAGE_SIZE } from './constants';
 import { useAppUserActions } from './hooks/useAppUserActions';
 import { useAppUsersSearch } from './hooks/useAppUsersSearch';
 import { Search } from './Search';
 import { Table } from './Table';
 
-/** Users → App users: the end users of the sites and apps built on Shapio. */
+/** App users: the end users of this site (they sign up and sign in on the site, not in this admin). */
 export const AppUsers = () => {
   const { t } = useTranslation();
   const { search, setQuery, goFirst, goPrevious, goNext } = useAppUsersSearch();
@@ -25,7 +24,7 @@ export const AppUsers = () => {
   const nextCursor = users.data?.nextCursor;
   return (
     <Page>
-      <PageHeader title={t('appUsers.title')} tabs={<Tabs />} />
+      <PageHeader title={t('appUsers.title')} />
       <TableCard
         toolbar={<Search query={search.q} onQueryChange={setQuery} />}
         footer={

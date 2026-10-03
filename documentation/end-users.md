@@ -7,15 +7,21 @@ app users are separate: an app user can never reach the admin.
 
 ## Access is denied until you allow it
 
-| Role             | Who holds it                                         | Starts with    |
-| ---------------- | ---------------------------------------------------- | -------------- |
-| `public`         | every anonymous request (no token)                   | no permissions |
-| `authenticated`  | every signed-in app user                             | no permissions |
-| custom app roles | the app users you assign them to (Users → App users) | what you grant |
+| Role             | Who holds it                                             | Starts with    |
+| ---------------- | -------------------------------------------------------- | -------------- |
+| `public`         | every anonymous request (no token)                       | no permissions |
+| `authenticated`  | every signed-in app user                                 | no permissions |
+| custom app roles | the app users you assign them to (Workspace → App users) | what you grant |
 
-Settings → Roles → App roles sets each role's grants per model: `read`, `create`, `update`, `delete`, `publish`, each
+Network → Roles → App roles sets each role's grants per model: `read`, `create`, `update`, `delete`, `publish`, each
 optionally limited to **own entries** (`ownedByPrincipal`) and to some fields. "Read on all models" is one
 click for `public` or `authenticated`. App users see `public` fields only, unless a grant names hidden ones.
+
+On an instance with several [sites](sites.md#app-users-and-anonymous-access), app users belong to one site: the
+same address can have a separate account on each, and sign-up, sign-in and OAuth happen on the request's site
+(`?site=` or `Shapio-Site`, else the primary site). An access token, refresh token, email link or OAuth code is
+refused on any other site (`403 SITE_MISMATCH`). Which roles `public` and `authenticated` hold is bound per site;
+a new site binds none.
 
 ## Sign-up and sign-in
 

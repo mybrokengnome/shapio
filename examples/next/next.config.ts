@@ -24,11 +24,38 @@ const pinSnapshot = async (): Promise<string> => {
   return String(snapshot);
 };
 
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Only this site and Shapio may frame its pages (Shapio's preview pane shows /preview/ beside the document).
+ * The origin comes from NEXT_PUBLIC_SHAPIO_URL, else SHAPIO_URL.
+ */
+const frameAncestors = () => {
+  const shapio = originOf(
+    process.env.NEXT_PUBLIC_SHAPIO_URL || process.env.SHAPIO_URL || 'http://localhost:4300',
+  );
+  return `frame-ancestors 'self'${shapio ? ` ${shapio}` : ''}`;
+};
+
 const nextConfig = async (phase: string): Promise<NextConfig> => ({
   trailingSlash: true,
+  headers: async () => [
+    { source: '/:path*', headers: [{ key: 'Content-Security-Policy', value: frameAncestors() }] },
+  ],
   // The front page lives under its locale (`/en/`), as in the Astro and SvelteKit starters.
   redirects: async () => [{ source: '/', destination: '/en/', permanent: false }],
-  ...(phase === PHASE_PRODUCTION_BUILD ? { env: { SHAPIO_SNAPSHOT: await pinSnapshot() } } : {}),
+  env: {
+    // The preview page calls Shapio from the browser: NEXT_PUBLIC_SHAPIO_URL, else SHAPIO_URL.
+    NEXT_PUBLIC_SHAPIO_URL:
+      process.env.NEXT_PUBLIC_SHAPIO_URL || process.env.SHAPIO_URL || 'http://localhost:4300',
+    ...(phase === PHASE_PRODUCTION_BUILD ? { SHAPIO_SNAPSHOT: await pinSnapshot() } : {}),
+  },
 });
 
 export default nextConfig;

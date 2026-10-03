@@ -1,6 +1,7 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
 import {
   buildUploadForm,
   ShapioApiError,
@@ -29,13 +30,21 @@ import { createPng } from './lib/png.js';
  *    as `shapio schema apply` and the admin);
  * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
  *    per locale;
- * 4. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
+ * 4. a deployment connection named "Preview" whose preview URL opens this starter's /preview/ page (the
+ *    entry document's Preview pane and visual editing; it triggers no builds). The site's URL is SITE_URL, else
+ *    the starter's `--site-url` (its local dev server);
+ * 5. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
  */
 const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
 const SCHEMA_KINDS = ['models', 'components'] as const;
 const SITE_MODELS = ['page', 'article', 'author', 'siteSettings'];
 const DELIVERY_ROLE_KEY = 'starter-delivery';
 const DELIVERY_TOKEN_NAME = 'starter build';
+const PREVIEW_CONNECTION_NAME = 'Preview';
+/** Where Shapio opens a draft: the starter's /preview/ page, the token in the fragment (never sent to a server). */
+const PREVIEW_PATH = '/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}';
+/** A placeholder build hook: the connection has no triggers, so nothing is ever sent to it. */
+const PREVIEW_BUILD_HOOK = 'https://build.invalid/shapio-starter';
 const MEDIA_READY_TIMEOUT_MS = 120_000;
 const SCHEMA_CHANGE_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 500;
@@ -260,6 +269,30 @@ const createDeliveryToken = async (client: ShapioClient) => {
   return (await client.admin.tokens.create({ name: DELIVERY_TOKEN_NAME, roleId: role.id })).token;
 };
 
+/** The "Preview" connection, created once and pointed at this starter's /preview/ page on every run. */
+const ensurePreviewConnection = async (client: ShapioClient, siteUrl: string) => {
+  const previewUrlTemplate = `${siteUrl.replace(/\/+$/, '')}${PREVIEW_PATH}`;
+  const existing = (await client.admin.deployments.connections.list()).find(
+    (connection) => connection.name === PREVIEW_CONNECTION_NAME,
+  );
+  if (existing) {
+    await client.admin.deployments.connections.update(existing.id, {
+      expectedVersion: existing.version,
+      previewUrlTemplate,
+    });
+  } else {
+    await client.admin.deployments.connections.create({
+      name: PREVIEW_CONNECTION_NAME,
+      provider: 'generic_webhook',
+      settings: { url: PREVIEW_BUILD_HOOK },
+      secrets: {},
+      triggerPolicy: [],
+      previewUrlTemplate,
+    });
+  }
+  log(`Preview opens ${previewUrlTemplate}`);
+};
+
 const writeEnv = async (url: string, deliveryToken: string) => {
   const path = resolve('.env');
   await writeFile(
@@ -271,6 +304,8 @@ const writeEnv = async (url: string, deliveryToken: string) => {
 };
 
 const main = async () => {
+  const { values } = parseArgs({ options: { 'site-url': { type: 'string' } } });
+  const siteUrl = process.env.SITE_URL || values['site-url'] || 'http://localhost:4321';
   const admin = await connectAdmin(process.env);
   try {
     await ensureLocale(admin.client);
@@ -281,6 +316,7 @@ const main = async () => {
     for (const spec of entries(media, authorId)) {
       await upsertEntry(admin.client, spec);
     }
+    await ensurePreviewConnection(admin.client, siteUrl);
     await writeEnv(admin.url, await createDeliveryToken(admin.client));
     log('Seeded. Build the site with: npm run build');
   } finally {

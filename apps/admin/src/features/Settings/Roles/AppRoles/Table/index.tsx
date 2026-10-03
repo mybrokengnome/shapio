@@ -59,7 +59,7 @@ export const Table = ({ roles, onDelete, onGrantReadAll, pendingRoleId }: TableP
                 <TableCell className="max-w-xs">
                   <span className="flex items-center gap-2">
                     <RowTitle asChild>
-                      <Link to="/settings/roles/app/$roleId" params={{ roleId: role.id }}>
+                      <Link to="/network/roles/app/$roleId" params={{ roleId: role.id }}>
                         {role.name}
                       </Link>
                     </RowTitle>

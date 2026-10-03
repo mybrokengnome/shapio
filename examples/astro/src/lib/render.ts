@@ -1,3 +1,4 @@
+import { shapioAttr, type EntryRef } from '@shapio/visual';
 import { articlePath, formatDate, type Strings } from './site.js';
 import type { Article, Author, Media, Section } from './types.js';
 
@@ -25,13 +26,25 @@ export const safeHref = (value: string | null | undefined): string => {
   return /^(https?:\/\/|mailto:|tel:|\/(?!\/)|#)/i.test(href) ? escapeHtml(href) : '#';
 };
 
+/**
+ * `shapioAttr` as an HTML attribute string: the field an element shows, so Shapio's preview can take a click on
+ * it back to that field (@shapio/visual). Harmless on published pages (entry IDs and API IDs only).
+ */
+export const visualAttributes = (entry: EntryRef, path: string): string =>
+  Object.entries(shapioAttr(entry, path))
+    .map(([name, value]) => ` ${name}="${escapeHtml(value)}"`)
+    .join('');
+
 const paragraph = (text: string | null | undefined, className = '') =>
   text ? `<p${className ? ` class="${className}"` : ''}>${escapeHtml(text)}</p>` : '';
 
-type ImageOptions = { sizes: string; eager?: boolean; className?: string };
+type ImageOptions = { sizes: string; eager?: boolean; className?: string; attributes?: string };
 
 /** A responsive `<img>`: WebP variants in `srcset`, intrinsic size set (no layout shift), lazy unless eager. */
-export const responsiveImage = (media: Media, { sizes, eager = false, className }: ImageOptions): string => {
+export const responsiveImage = (
+  media: Media,
+  { sizes, eager = false, className, attributes: extra = '' }: ImageOptions,
+): string => {
   const widths = media.variants
     .filter((variant) => variant.name.startsWith('w') && variant.width !== null)
     .sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
@@ -46,16 +59,16 @@ export const responsiveImage = (media: Media, { sizes, eager = false, className 
     'decoding="async"',
     className ? `class="${className}"` : '',
   ];
-  return `<img ${attributes.filter(Boolean).join(' ')}>`;
+  return `<img ${attributes.filter(Boolean).join(' ')}${extra}>`;
 };
 
-const renderSection = (section: Section, index: number): string => {
+const renderSection = (section: Section, index: number, entry: EntryRef): string => {
   switch (section.__component) {
     case 'hero': {
       const heading = index === 0 ? 'h1' : 'h2';
       return `<section class="hero">
   <div class="hero-text">
-    <${heading}>${escapeHtml(section.heading)}</${heading}>
+    <${heading}${visualAttributes(entry, `sections/${index}/heading`)}>${escapeHtml(section.heading)}</${heading}>
     ${paragraph(section.subheading, 'lead')}
     ${section.ctaLabel && section.ctaUrl ? `<a class="button" href="${safeHref(section.ctaUrl)}">${escapeHtml(section.ctaLabel)}</a>` : ''}
   </div>
@@ -92,10 +105,15 @@ const renderSection = (section: Section, index: number): string => {
 };
 
 /** A page's dynamic zone. The page title is the heading when the page does not open with a hero. */
-export const renderPage = (page: { title: string; sections: Section[] }): string => {
+export const renderPage = (page: {
+  id: string;
+  locale: string;
+  title: string;
+  sections: Section[];
+}): string => {
   const opensWithHero = page.sections[0]?.__component === 'hero';
-  return `${opensWithHero ? '' : `<h1 class="page-title">${escapeHtml(page.title)}</h1>`}${page.sections
-    .map((section, index) => renderSection(section, index))
+  return `${opensWithHero ? '' : `<h1 class="page-title"${visualAttributes(page, 'title')}>${escapeHtml(page.title)}</h1>`}${page.sections
+    .map((section, index) => renderSection(section, index, page))
     .join('\n')}`;
 };
 
@@ -111,18 +129,18 @@ export const renderArticle = (article: Article, context: RenderContext): string 
   const author = authorOf(article);
   return `<article class="article" lang="${escapeHtml(article.locale)}">
   <header>
-    <h1>${escapeHtml(article.title)}</h1>
+    <h1${visualAttributes(article, 'title')}>${escapeHtml(article.title)}</h1>
     ${byline(article, context)}
   </header>
-  ${article.cover ? responsiveImage(article.cover, { sizes: '(min-width: 48rem) 48rem, 100vw', eager: true, className: 'cover' }) : ''}
-  <div class="prose">${article.body?.html ?? ''}</div>
+  ${article.cover ? responsiveImage(article.cover, { sizes: '(min-width: 48rem) 48rem, 100vw', eager: true, className: 'cover', attributes: visualAttributes(article, 'cover') }) : ''}
+  <div class="prose"${visualAttributes(article, 'body')}>${article.body?.html ?? ''}</div>
   ${author ? `<aside class="author">${author.avatar ? responsiveImage(author.avatar, { sizes: '4rem', className: 'avatar' }) : ''}<div><p class="author-name">${escapeHtml(author.name)}</p>${paragraph(author.bio)}</div></aside>` : ''}
 </article>`;
 };
 
 export const renderArticleCard = (article: Article, context: RenderContext): string => `<li class="card">
   ${article.cover ? responsiveImage(article.cover, { sizes: '(min-width: 48rem) 33vw, 100vw' }) : ''}
-  <h2><a href="${escapeHtml(articlePath(context.locale, article.slug))}">${escapeHtml(article.title)}</a></h2>
+  <h2${visualAttributes(article, 'title')}><a href="${escapeHtml(articlePath(context.locale, article.slug))}">${escapeHtml(article.title)}</a></h2>
   ${byline(article, context)}
   ${paragraph(article.excerpt)}
 </li>`;

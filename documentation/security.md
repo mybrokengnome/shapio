@@ -29,8 +29,12 @@ see [SECURITY.md](../SECURITY.md).
 - A token bound to a **delivery** role can only read, whatever the role says.
 - App users (end users) get short-lived JWT access tokens (15 minutes) and rotating refresh tokens; reusing a
   refresh token revokes that login ([End users](end-users.md)).
-- Preview tokens are scoped to an entry or model and a locale, expire, and are sent as bearer tokens, never in
+- Preview tokens are scoped to one entry, a locale and its site, expire, and are sent as bearer tokens, never in
   query strings.
+- API tokens belong to the [site](sites.md) they are created on. A network admin token (every site, and network
+  permissions) is only created on explicit request (`"network": true`) by an admin with `users.manage`.
+- Site tokens, app-user tokens and preview tokens act on their own [site](sites.md) only; naming another site is
+  refused (`403 SITE_MISMATCH`), never redirected.
 
 ## Permissions
 
@@ -38,6 +42,9 @@ see [SECURITY.md](../SECURITY.md).
   gets nothing until the `public` role is granted something.
 - The server enforces everything (validation, permissions, schema consistency); the admin UI is never the only
   check.
+- [Sites](sites.md) are a tenancy boundary in every query: another site's entries, assets, change sets and tokens
+  read as not found, and relations and media never cross sites. A role held on one site never grants network
+  permissions (schema, users, roles, audit, sites).
 - Delivery never returns drafts, unpublished relation targets, private media without a signed URL, or fields
   the caller may not read. Filtering, sorting or searching on a field you may not read is refused, so queries
   cannot be used to guess hidden values.
@@ -83,7 +90,7 @@ out after `OUTBOUND_TIMEOUT_MS`.
 
 ## Audit log
 
-Settings → Audit log records who did what, from where and when: setup, sign-ins and sign-outs, session
+Network → Audit log records who did what, from where and when: setup, sign-ins and sign-outs, session
 revocations, password changes and resets, invitations, users, roles, API tokens and app-user accounts, schema
 changes and schema settings, publishing, unpublishing, scheduling and change sets (created, edited, scheduled, shipped, discarded), deletions, media uploads,
 replacements and removals, webhooks, deployment connections and runs, preview tokens, exports and imports, and

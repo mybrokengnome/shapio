@@ -24,10 +24,15 @@ one, read once when prerendering starts); `SHAPIO_SITE` picks the site on a mult
 | `src/lib/server/shapio.ts`   | reads the delivery API with `@shapio/client` at the pinned snapshot |
 | `src/routes/[locale]/…`      | the layout (site settings), pages, articles and the colophon        |
 | `src/lib/components/…`       | sections, articles and responsive images                            |
+| `src/routes/preview/`        | draft preview with visual editing (`@shapio/visual`)                |
+| `vite.config.ts`             | `frame-ancestors` for the servers and `build/_headers`              |
 | `shapio/`, `scripts/seed.ts` | the models and the seed                                             |
 
-Draft preview and visual editing (`@shapio/visual`) arrive with Shapio's visual-editing SDK; it plugs in at the
-marked spot in `src/routes/[locale]/+layout.svelte`.
+Preview: the seed creates a deployment connection named **Preview** that opens drafts at
+`http://localhost:5173/preview/` (`npm run dev`; set `SITE_URL` when seeding for another address). Add that
+origin to Shapio's `CORS_ORIGINS`. In Shapio's preview pane, clicking the title, body or cover focuses that
+field and saves re-render the draft ([visual editing](https://github.com/mybrokengnome/shapio/blob/main/documentation/visual-editing.md)). `PUBLIC_SHAPIO_URL` sets the Shapio URL the
+browser calls, when it differs from `SHAPIO_URL`.
 
 Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md). Inside the
 Shapio repository, run the scripts with `pnpm --filter example-sveltekit <script>` after `pnpm build`.

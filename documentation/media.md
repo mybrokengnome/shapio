@@ -110,6 +110,12 @@ the ready ones with their URL and size, ready for a `srcset`:
 }
 ```
 
+## Sites
+
+Each [site](sites.md) has its own library and folders; media fields only accept assets of the entry's site. File
+URLs are the same for every site: public files are public, and private files are reached through signed URLs that
+only reads on the asset's site issue.
+
 ## Used in, and safe deletes
 
 Every asset shows which entries use it (in fields, components and rich-text images). An asset that content still

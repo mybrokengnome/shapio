@@ -57,6 +57,6 @@ test('setup creates the owner and opens the shell', async () => {
   await page.getByLabel('Confirm password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Create owner account' }).click();
   await expect(page.getByRole('heading', { name: `Welcome, ${OWNER.name}` })).toBeVisible();
-  await expect(page).toHaveURL(/\/cms\/admin\/$/);
+  await expect(page).toHaveURL(/\/cms\/admin\/s\/default\/$/);
   await captureScreen(page, '03-home');
 });

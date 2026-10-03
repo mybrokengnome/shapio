@@ -1,7 +1,6 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { richTextMediaIds, type FieldDefinition, type RichTextDocument } from '@shapio/schema';
 import type { ContentData } from '../db/contentData.js';
 import type { ContentModel } from './model.js';
-import { richTextMediaIds, type RichTextDocument } from './richtext/validate.js';
 import { COMPONENT_KEY } from './validator/index.js';
 
 /**

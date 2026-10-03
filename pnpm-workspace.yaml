@@ -50,6 +50,11 @@ catalog:
   '@fastify/multipart': 10.1.2
   file-type: 22.1.1
   sharp: 0.35.5
+  # Importers (B3): HTML and Markdown to rich text, WordPress WXR, Strapi export archives
+  parse5: 8.0.1
+  marked: 18.0.14
+  saxes: 6.0.0
+  tar: 7.5.22
   # Admin
   react: 19.3.0
   react-dom: 19.3.0

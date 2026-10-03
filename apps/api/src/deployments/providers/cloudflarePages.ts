@@ -3,6 +3,7 @@ import type { RunReport } from '../status.js';
 import { runCheck, toTestResult } from '../testResult.js';
 import type { DeploymentProviderAdapter, ProviderContext, RunContext } from '../types.js';
 import { describeFailure, requestJson, type JsonResponse } from './http.js';
+import { createdSince, toEpochMs } from './matching.js';
 
 /**
  * Cloudflare Pages (build plan decision 5). A run is triggered through the project's deploy hook and its real
@@ -36,9 +37,6 @@ export type CloudflareDeployment = {
   latest_stage?: CloudflareStage;
   deployment_trigger?: { type?: string; metadata?: Record<string, unknown> };
 };
-
-/** Clock skew allowed between Shapio and Cloudflare when matching a deployment to a trigger. */
-const MATCH_SKEW_MS = 30_000;
 
 const envelopeOf = <T>(response: JsonResponse) => (response.json ?? {}) as CloudflareEnvelope<T>;
 
@@ -106,11 +104,10 @@ const findDeploymentSince = async (context: ProviderContext, since: Date) => {
     `${projectPath(context)}/deployments`,
   );
   return deployments.find((deployment) => {
-    const created = deployment.created_on ? Date.parse(deployment.created_on) : NaN;
     const fromHook =
       deployment.deployment_trigger?.type === undefined ||
       deployment.deployment_trigger.type === 'deploy_hook';
-    return fromHook && !Number.isNaN(created) && created >= since.getTime() - MATCH_SKEW_MS;
+    return fromHook && createdSince(toEpochMs(deployment.created_on), since);
   });
 };
 

@@ -31,6 +31,8 @@ import { NoFields } from './NoFields';
 import { Notices } from './Notices';
 import { PreflightSheet } from './PreflightSheet';
 import { Presence } from './Presence';
+import { PreviewPane } from './Preview';
+import { useEntryPreview } from './Preview/hooks/useEntryPreview';
 import { PreviewButton } from './PreviewButton';
 import { PropertiesStrip } from './PropertiesStrip';
 import { PropertyGrid } from './PropertyGrid';
@@ -82,6 +84,15 @@ export const EntryDocument = ({
   const reveal = useRevealField(environment.idPrefix, (apiKey) =>
     drawer.openAt({ section: 'properties', property: apiKey }),
   );
+  const preview = useEntryPreview({
+    model,
+    components: schema.components,
+    entryId: mode.kind === 'edit' ? entryId : null,
+    locale,
+    store,
+    saveStatus: saver.state.status,
+    reveal,
+  });
   const titleValue = useStore(store, (state) =>
     layout.title ? state.values[layout.title.apiKey] : undefined,
   );
@@ -163,7 +174,14 @@ export const EntryDocument = ({
   return (
     <FieldsProvider environment={environment} store={store}>
       <EntrySiblings>
-        <Page width="full" className={cn('space-y-0 transition-[padding]', drawer.open && 'xl:pr-90')}>
+        <Page
+          width="full"
+          className={cn(
+            'space-y-0 transition-[padding]',
+            // The settings drawer overlays the preview when both are open.
+            !preview.open && drawer.open && 'xl:pr-90',
+          )}
+        >
           <TopBar
             model={model}
             title={heading}
@@ -186,7 +204,15 @@ export const EntryDocument = ({
                 />
               ) : null
             }
-            preview={mode.kind === 'edit' ? <PreviewButton /> : null}
+            preview={
+              mode.kind === 'edit' ? (
+                <PreviewButton
+                  available={preview.available}
+                  pressed={preview.open && !preview.documentShown}
+                  onToggle={preview.toggle}
+                />
+              ) : null
+            }
             onSave={showSave ? entryDocument.save : undefined}
             saving={saver.state.status === 'saving' || lifecycle.creating}
             blocked={blocked}
@@ -194,44 +220,48 @@ export const EntryDocument = ({
             onToggleSettings={drawer.toggle}
             primary={primary}
           />
-          <article
-            aria-label={heading}
-            className="mx-auto w-full max-w-3xl space-y-6 pt-8 pb-40 lg:px-16"
-            data-entry-document
-          >
-            <Notices
-              conflict={conflict}
-              reloading={entryDocument.reloading}
-              onReload={entryDocument.reload}
-              newLocaleLabel={mode.kind === 'newLocale' ? labelOf(locale ?? '') : undefined}
-              referrers={lifecycle.referrers}
-              models={schema.models}
-              onDismissReferrers={lifecycle.clearReferrers}
-              outdated={
-                model.draftAndPublish && !publishing.othersDismissed
-                  ? (entry?.sharedOutdatedLocales ?? [])
-                  : []
-              }
-              labelOf={labelOf}
-              publishing={publishing.publishing}
-              onPublishOthers={(others) => void publishing.publishOthers(others)}
-              onDismissOthers={publishing.dismissOthers}
-            />
-            {hasFields ? null : <NoFields model={model} canManageSchema={permissions.canManageSchema} />}
-            {layout.cover ? (
-              <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
-            ) : null}
-            <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
-            {layout.canvas.length > 0 ? (
-              <>
-                <PropertiesStrip layout={layout} onMore={() => drawer.openAt({ section: 'properties' })} />
-                <Canvas fields={layout.canvas} />
-              </>
-            ) : (
-              <PropertyGrid groups={layout.propertyGroups} />
-            )}
-          </article>
+          {/* The preview takes the right half of the screen under the top bar on lg and up. */}
+          <div className={cn(preview.open && 'lg:pr-[calc(50vw-2rem)]')}>
+            <article
+              aria-label={heading}
+              className="mx-auto w-full max-w-3xl space-y-6 pt-8 pb-40 lg:px-16"
+              data-entry-document
+            >
+              <Notices
+                conflict={conflict}
+                reloading={entryDocument.reloading}
+                onReload={entryDocument.reload}
+                newLocaleLabel={mode.kind === 'newLocale' ? labelOf(locale ?? '') : undefined}
+                referrers={lifecycle.referrers}
+                models={schema.models}
+                onDismissReferrers={lifecycle.clearReferrers}
+                outdated={
+                  model.draftAndPublish && !publishing.othersDismissed
+                    ? (entry?.sharedOutdatedLocales ?? [])
+                    : []
+                }
+                labelOf={labelOf}
+                publishing={publishing.publishing}
+                onPublishOthers={(others) => void publishing.publishOthers(others)}
+                onDismissOthers={publishing.dismissOthers}
+              />
+              {hasFields ? null : <NoFields model={model} canManageSchema={permissions.canManageSchema} />}
+              {layout.cover ? (
+                <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
+              ) : null}
+              <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
+              {layout.canvas.length > 0 ? (
+                <>
+                  <PropertiesStrip layout={layout} onMore={() => drawer.openAt({ section: 'properties' })} />
+                  <Canvas fields={layout.canvas} />
+                </>
+              ) : (
+                <PropertyGrid groups={layout.propertyGroups} />
+              )}
+            </article>
+          </div>
         </Page>
+        <PreviewPane preview={preview} title={heading} />
         <SettingsDrawer
           open={drawer.open}
           onOpenChange={drawer.setOpen}

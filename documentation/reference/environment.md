@@ -128,6 +128,8 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `CLOUDFLARE_API_URL` | `https://api.cloudflare.com/client/v4` | URL (http or https) | Cloudflare API base for the Cloudflare Pages adapter (tests point it at a local fake). |
 | `CLOUDFLARE_DASHBOARD_URL` | `https://dash.cloudflare.com` | URL (http or https) | Cloudflare dashboard base, for the build-log links shown on deployment runs. |
 | `GITHUB_API_URL` | `https://api.github.com` | URL (http or https) | GitHub REST API base for schema write-back (GitHub Enterprise Server: https://host/api/v3). |
+| `VERCEL_API_URL` | `https://api.vercel.com` | URL (http or https) | Vercel REST API base for the Vercel adapter's deployment status (tests point it at a local fake). |
+| `NETLIFY_API_URL` | `https://api.netlify.com` | URL (http or https) | Netlify API base for the Netlify adapter's builds and deploy status (tests point it at a local fake). |
 
 ## GraphQL
 
@@ -146,6 +148,18 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `USAGE_TRACKING` | `true` | `true`, `false` | Count which fields delivery reads use, per token (counts only, never payloads; stays on this server). |
 | `USAGE_RETENTION_DAYS` | `90` | integer 1–3650 | Days of field-usage counters to keep. |
 | `USAGE_FLUSH_INTERVAL_MS` | `30000` | integer 1000–3600000 | How often each instance writes its in-memory usage counters to the database. |
+
+## Assist (your own model provider; off unless AI_PROVIDER is set)
+
+| Variable | Default | Values | Description |
+| --- | --- | --- | --- |
+| `AI_PROVIDER` | (unset) | `anthropic`, `openai`, `openai-compatible` | Editor assists (alt text, summaries, translation, rewrites, schema drafts) with your own model provider. Unset (the default): assist is off and nothing is ever sent to a model provider. `openai-compatible` covers Ollama, LM Studio and vLLM (set AI_BASE_URL). See documentation/assist.md. |
+| `AI_MODEL` | (unset) | text | The model name the provider expects, e.g. a model ID or `llama3.2-vision`. Required with AI_PROVIDER. |
+| `AI_API_KEY` | (unset) | text | The provider API key. Required for `anthropic` and `openai`; optional for `openai-compatible`. |
+| `AI_BASE_URL` | (unset) | URL (http or https) | The provider's API base including its version path, e.g. `http://127.0.0.1:11434/v1` for Ollama (Shapio appends `/chat/completions` or `/messages`). Required for `openai-compatible`; overrides the public endpoint for the others. Loopback and private addresses are allowed: this is operator configuration. |
+| `AI_MAX_TOKENS` | `8192` | integer 256–128000 | Most tokens one model response may use. |
+| `AI_TIMEOUT_MS` | `60000` | integer 1000–600000 | Timeout of each request to the model provider. |
+| `AI_RATE_LIMIT_MAX` | `20` | integer 1–10000 | Assist requests per minute and admin (or admin API token). |
 
 ## Extensions
 

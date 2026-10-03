@@ -31,3 +31,20 @@ export const renderPreviewUrl = (template: string, variables: PreviewUrlVariable
   }
   return url.toString();
 };
+
+const SAMPLE_A: PreviewUrlVariables = { token: 'a', modelKey: 'a', entryId: 'a', locale: 'a' };
+const SAMPLE_B: PreviewUrlVariables = { token: 'b', modelKey: 'b', entryId: 'b', locale: 'b' };
+
+/**
+ * The origin every URL from a template opens on, or undefined when the template is invalid or its origin
+ * depends on a variable (`https://{locale}.example.com/...`): such a preview can't be framed by the admin,
+ * whose CSP lists exact origins, and opens in a new tab instead.
+ */
+export const previewTemplateOrigin = (template: string): string | undefined => {
+  try {
+    const origin = new URL(renderPreviewUrl(template, SAMPLE_A)).origin;
+    return origin === new URL(renderPreviewUrl(template, SAMPLE_B)).origin ? origin : undefined;
+  } catch {
+    return undefined;
+  }
+};

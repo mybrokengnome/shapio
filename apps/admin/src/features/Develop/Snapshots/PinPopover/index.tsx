@@ -7,6 +7,8 @@ import { CopyButton } from '@/components/CopyButton';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { withSiteParameter } from '@/helpers/sites';
+import { useDeliverySiteKey } from '@/hooks/useDeliverySiteKey';
 
 type PinPopoverProps = {
   seq: number;
@@ -26,9 +28,11 @@ export const PinPopover = ({ seq, label, variant = 'ghost' }: PinPopoverProps) =
   const [open, setOpen] = useState(false);
   const [tokenId, setTokenId] = useState<string | undefined>(undefined);
   const tokens = useApiTokens();
+  const siteKey = useDeliverySiteKey();
   const active = (tokens.data ?? []).filter((token) => token.revokedAt === null);
   const token = active.find((candidate) => candidate.id === tokenId) ?? active[0];
-  const snippet = `curl -H "Authorization: Bearer ${token ? `${token.tokenPrefix}…` : '<token>'}" "${apiBaseUrl()}api/content/<model>?snapshot=${seq}"`;
+  const path = withSiteParameter(`api/content/<model>?snapshot=${seq}`, siteKey);
+  const snippet = `curl -H "Authorization: Bearer ${token ? `${token.tokenPrefix}…` : '<token>'}" "${apiBaseUrl()}${path}"`;
   return (
     <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>

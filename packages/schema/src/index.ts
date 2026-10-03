@@ -24,3 +24,6 @@ export * from './fileFormat/canonical.js';
 export * from './fileFormat/hash.js';
 export * from './fileFormat/lockFile.js';
 export * from './sync/threeWay.js';
+export * from './richtext/spec.js';
+export * from './richtext/validate.js';
+export * from './richtext/render.js';

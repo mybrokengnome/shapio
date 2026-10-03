@@ -106,6 +106,25 @@ export const isRestrictedAddress = (address: string): boolean => {
   return RESTRICTED.check(address, typeOf(address));
 };
 
+const EVERY_ADDRESS = (() => {
+  const list = new BlockList();
+  list.addSubnet('0.0.0.0', 0, 'ipv4');
+  list.addSubnet('::', 0, 'ipv6');
+  return list;
+})();
+
+/**
+ * The policy for destinations the operator configured in the environment, never an admin (provider APIs
+ * such as CLOUDFLARE_API_URL, the model provider's AI_BASE_URL): every address is allowed, loopback and
+ * private ones included (a local Ollama, a fake in tests). Requests still go through `sendOutbound`
+ * (pinned address, no redirects, bounded time and size).
+ */
+export const trustedOutboundPolicy = (resolve: HostResolver): OutboundPolicy => ({
+  allowPrivateNetwork: true,
+  allowlist: EVERY_ADDRESS,
+  resolve,
+});
+
 const isAllowedPrivate = (address: string, policy: OutboundPolicy) => {
   if (!policy.allowPrivateNetwork) {
     return false;

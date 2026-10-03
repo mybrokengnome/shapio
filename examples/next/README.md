@@ -22,14 +22,18 @@ instance. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in the npm scrip
 
 | File                         | Role                                                                |
 | ---------------------------- | ------------------------------------------------------------------- |
-| `next.config.ts`             | pins the snapshot for the whole build; `/` redirects to `/en/`      |
+| `next.config.ts`             | pins the snapshot; `/` redirects to `/en/`; `frame-ancestors`       |
 | `src/lib/shapio.ts`          | reads the delivery API with `@shapio/client` at the pinned snapshot |
 | `src/app/[locale]/…`         | the layout (site settings), pages, articles and the colophon        |
 | `src/components/…`           | sections, articles and responsive images                            |
+| `src/app/preview/`           | draft preview with visual editing (`@shapio/visual`)                |
 | `shapio/`, `scripts/seed.ts` | the models and the seed                                             |
 
-Draft preview, `revalidatePath` on publish and visual editing (`@shapio/visual`) arrive with Shapio's
-visual-editing SDK; it plugs in at the marked spot in `src/app/[locale]/layout.tsx`.
+Preview: the seed creates a deployment connection named **Preview** that opens drafts at
+`http://localhost:3000/preview/` (set `SITE_URL` when seeding for another address). Add that origin to Shapio's
+`CORS_ORIGINS`. In Shapio's preview pane, clicking the title, body or cover focuses that field and saves
+re-render the draft ([visual editing](https://github.com/mybrokengnome/shapio/blob/main/documentation/visual-editing.md)). `NEXT_PUBLIC_SHAPIO_URL` sets the Shapio URL the browser
+calls, when it differs from `SHAPIO_URL`.
 
 Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md). Inside the
 Shapio repository, run the scripts with `pnpm --filter example-next <script>` after `pnpm build`.

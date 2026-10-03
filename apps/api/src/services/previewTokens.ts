@@ -8,7 +8,7 @@ import { writeLocaleFor } from '../content/locales.js';
 import { resolveModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken, safeEqual } from '../helpers/tokens.js';
-import { renderPreviewUrl } from '../publishing/previewUrl.js';
+import { previewTemplateOrigin, renderPreviewUrl } from '../publishing/previewUrl.js';
 import { adminIdOf } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
 import { modelKeyOf } from '../publishing/targets.js';
@@ -220,6 +220,7 @@ export const openPreview = async (
   // The preview route, like delivery, is addressed by the route key (plural API ID of a collection).
   const routeKey = routeKeyOf(resolveModel(context.snapshot, input.modelKey).definition);
   return {
+    id: created.previewToken.id,
     url: created.url,
     apiUrl: runtime.urls.absoluteUrl(
       `/api/preview/content/${encodeURIComponent(routeKey)}/${encodeURIComponent(input.entryId)}${query}`,
@@ -228,6 +229,38 @@ export const openPreview = async (
     expiresAt: created.previewToken.expiresAt,
     connectionId: created.previewToken.connectionId,
   };
+};
+
+export type PreviewTarget = {
+  connectionId: string;
+  name: string;
+  /** Where its previews open; null when the template's origin depends on a variable. */
+  origin: string | null;
+  /** Whether the admin may show it in its preview frame (its CSP lists the origin; never Shapio's own). */
+  framable: boolean;
+};
+
+/**
+ * The site's connections a preview can open on (the entry form's Preview pane), for any signed-in admin: names
+ * and origins only, never the template, which may carry settings the reader may not manage.
+ */
+export const listPreviewTargets = async (
+  context: ContentServiceContext,
+  runtime: PublishingRuntime,
+): Promise<PreviewTarget[]> => {
+  const ownOrigin = new URL(runtime.urls.publicUrl).origin;
+  const rows = await deploymentConnectionsRepository.listWithPreview(context.site.id, context.db);
+  return rows.map((row) => {
+    const origin = row.preview_url_template
+      ? (previewTemplateOrigin(row.preview_url_template) ?? null)
+      : null;
+    return {
+      connectionId: row.id,
+      name: row.name,
+      origin,
+      framable: origin !== null && origin !== ownOrigin,
+    };
+  });
 };
 
 export const listPreviewTokens = async (

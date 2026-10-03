@@ -8,6 +8,8 @@ export const PUBLICATION_ACTION_LABELS = {
 export const PROVIDER_LABELS = {
   generic_webhook: 'publishing.deployments.providers.generic_webhook',
   cloudflare_pages: 'publishing.deployments.providers.cloudflare_pages',
+  vercel: 'publishing.deployments.providers.vercel',
+  netlify: 'publishing.deployments.providers.netlify',
   github: 'publishing.deployments.providers.github',
 } as const satisfies Record<DeploymentProvider, string>;
 

@@ -4,7 +4,7 @@ import { SubNav, SubNavGroup } from '@/components/SubNav';
 import { SubNavLink } from '@/components/SubNavLink';
 import { SETTINGS_GROUPS } from '../sections';
 
-/** Settings sections, grouped (Account, Workspace, Access, Developer); groups the admin can't use are hidden. */
+/** Settings sections, grouped (Account, Workspace, Developer); groups the admin can't use are hidden. */
 export const Nav = () => {
   const { t } = useTranslation();
   const permissions = useMe().data?.globalPermissions ?? [];

@@ -32,7 +32,7 @@ export const CreateTokenBodySchema = Type.Object(
     expiresAt: Type.Optional(Type.Union([DateTimeInputSchema, Type.Null()])),
     /**
      * A network admin token: its role applies on every site and to network actions. Needs `users.manage`.
-     * Omitted: a network token when the creator may create one, else a token of the request's site.
+     * Omitted or false: a token of the request's site.
      * Delivery tokens always belong to the request's site.
      */
     network: Type.Optional(Type.Boolean()),

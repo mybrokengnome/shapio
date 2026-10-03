@@ -90,13 +90,12 @@ const toast = (text: string) => page.getByText(text).first();
 const rowActions = (name: string) => page.getByRole('button', { name: `Actions: ${name}` });
 const appUserRow = (name: string) => page.getByRole('row').filter({ hasText: name });
 
-test('Users has an App users tab listing people who signed up on the sites', async () => {
+test('App users lists the people who signed up on the site', async () => {
   await page.goto(ADMIN_URL);
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Users' })
+    .getByRole('link', { name: 'App users' })
     .click();
-  await page.getByRole('navigation', { name: 'User types' }).getByRole('link', { name: 'App users' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'App users' })).toBeVisible();
   for (const user of Object.values(USERS)) {
     await expect(appUserRow(user.name)).toContainText(user.email);

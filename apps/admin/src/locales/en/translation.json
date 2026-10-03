@@ -58,7 +58,10 @@
     "url": "Enter a full URL starting with https:// or http://.",
     "selectEvents": "Choose at least one event.",
     "maxAttempts": "Enter a whole number from 1 to 20.",
-    "debounceSeconds": "Enter a whole number of seconds (0 to 86400)."
+    "debounceSeconds": "Enter a whole number of seconds (0 to 86400).",
+    "siteKey": "Use lower-case letters, digits and hyphens, starting with a letter.",
+    "siteTwice": "Each site can only be listed once.",
+    "ownerAllSites": "The owner role can only be given on all sites."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -130,7 +133,15 @@
       "REVISION_NOT_FOUND": "That version no longer exists.",
       "INVALID_QUERY": "This filter or sort can't be used on this model.",
       "FORBIDDEN_FIELD": "You don't have access to one of the fields in this filter or sort.",
-      "LOCALE_NOT_FOUND": "That locale doesn't exist."
+      "LOCALE_NOT_FOUND": "That locale doesn't exist.",
+      "SITE_NOT_EMPTY": "This site still has entries, media, change sets or app users. Delete them first.",
+      "SITE_IS_PRIMARY": "The primary site can't be deleted.",
+      "SITE_KEY_TAKEN": "Another site already uses this key.",
+      "OWNER_ALL_SITES": "The owner role applies to every site; it can't be given on one site.",
+      "SITE_FORBIDDEN": "You have no role on this site.",
+      "SITE_MISMATCH": "This credential belongs to another site.",
+      "SITE_NOT_FOUND": "That site doesn't exist.",
+      "INVALID_SITES": "One of the chosen sites doesn't exist."
     }
   },
   "notFound": {
@@ -232,7 +243,8 @@
     "groups": {
       "content": "Content",
       "develop": "Develop",
-      "workspace": "Workspace"
+      "workspace": "Workspace",
+      "network": "Network"
     },
     "nav": {
       "inbox": "Inbox",
@@ -250,7 +262,10 @@
       "users": "Users",
       "roles": "Roles",
       "locales": "Locales",
-      "settings": "Settings"
+      "settings": "Settings",
+      "appUsers": "App users",
+      "sites": "Sites",
+      "auditLog": "Audit log"
     }
   },
   "palette": {
@@ -414,15 +429,12 @@
     "sections": "Settings sections",
     "account": "Account",
     "workspace": "Workspace",
-    "access": "Access",
     "developer": "Developer",
     "profile": "Profile",
     "sessions": "Sessions",
     "appearance": "Theme",
     "locales": "Locales",
-    "roles": "Roles",
-    "apiTokens": "API tokens",
-    "auditLog": "Audit log"
+    "apiTokens": "API tokens"
   },
   "profile": {
     "title": "Profile",
@@ -563,7 +575,13 @@
     "revoked": "Token revoked.",
     "revokedBadge": "Revoked",
     "empty": "No API tokens yet.",
-    "emptyDescription": "Create one to let a site or the CLI talk to Shapio."
+    "emptyDescription": "Create one to let a site or the CLI talk to Shapio.",
+    "scope": "Works on",
+    "scopeSite": "This site ({{name}})",
+    "scopeSiteDescription": "The token's role applies on this site only.",
+    "scopeNetwork": "Every site (network token)",
+    "scopeNetworkDescription": "Its role applies on every site, including network actions such as managing users.",
+    "appliesTo": "Site"
   },
   "audit": {
     "title": "Audit log",
@@ -708,13 +726,11 @@
     "active": "Active",
     "disabled": "Disabled",
     "you": "You",
-    "editRoles": "Change roles",
     "disable": "Disable",
     "enable": "Enable",
     "inviteTitle": "Invite a user",
     "invited": "Invitation sent to {{email}}.",
-    "rolesTitle": "Roles for {{name}}",
-    "rolesSaved": "Roles updated.",
+    "rolesSaved": "Access updated.",
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "They will be signed out and can no longer sign in. Their past changes stay in the history.",
     "removed": "User removed.",
@@ -737,9 +753,16 @@
       "confirmDescription": "This creates a new link; any earlier link stops working.",
       "create": "Create link"
     },
-    "sections": "User types",
-    "tabAdmins": "Admins",
-    "tabAppUsers": "App users"
+    "editAccess": "Change access",
+    "accessTitle": "Access for {{name}}",
+    "access": {
+      "title": "Access",
+      "row": "Access {{n}}",
+      "site": "Site",
+      "remove": "Remove access {{n}}",
+      "add": "Add a site",
+      "badge": "{{role}} · {{site}}"
+    }
   },
   "models": {
     "creating": "Creating…",
@@ -1479,6 +1502,27 @@
       "newTitle": "New change set",
       "added": "Added to “{{title}}”. It goes live when the set ships.",
       "open": "Open"
+    },
+    "preview": {
+      "frameTitle": "Preview of {{title}} on {{site}}",
+      "site": "Site",
+      "reload": "Reload the preview",
+      "openInTab": "Open in a new tab",
+      "showDocument": "Document",
+      "close": "Close the preview",
+      "noUrlTitle": "This connection has no preview URL",
+      "noUrlDescription": "Add one to the deployment connection, or pick another site.",
+      "notFramableTitle": "This site opens in a new tab",
+      "notFramableDescription": "Its preview URL changes host with the entry or locale, so it can't be shown beside the document.",
+      "blockedTitle": "Reload the admin to show this site",
+      "blockedDescription": "The site was connected after the admin was loaded.",
+      "reloadAdmin": "Reload the admin",
+      "sdkMissingTitle": "The site isn't using @shapio/visual yet",
+      "sdkMissingDescription": "The preview reloads after each save. With @shapio/visual, clicking part of the page takes you to its field.",
+      "setupGuide": "How to set it up",
+      "otherEntry": "That part of the page belongs to another entry.",
+      "otherLocale": "That part of the page is in {{locale}}.",
+      "unknownField": "That part of the page isn't a field of this entry."
     }
   },
   "content": {
@@ -2050,7 +2094,10 @@
         "retrying": "Retrying",
         "succeeded": "Delivered",
         "dead": "Failed"
-      }
+      },
+      "scope": "Receives events from",
+      "scopeSite": "This site ({{name}})",
+      "scopeNetwork": "Every site's events; each delivery names its site. Can't be changed later."
     },
     "deployments": {
       "create": "New connection",
@@ -2063,6 +2110,8 @@
       "providers": {
         "generic_webhook": "Build hook (generic webhook)",
         "cloudflare_pages": "Cloudflare Pages",
+        "vercel": "Vercel",
+        "netlify": "Netlify",
         "github": "GitHub"
       },
       "enabled": "Enabled",
@@ -2076,6 +2125,9 @@
         "url": "Build hook URL",
         "accountId": "Account ID",
         "projectName": "Project name",
+        "projectId": "Project ID",
+        "teamId": "Team ID",
+        "siteId": "Site ID",
         "owner": "Owner",
         "repo": "Repository",
         "branch": "Branch",
@@ -2084,7 +2136,8 @@
       },
       "settingHints": {
         "url": "Shapio sends a signed POST here to start a build.",
-        "directory": "Where schema files go in the repository."
+        "directory": "Where schema files go in the repository.",
+        "teamId": "Leave empty for a project in your personal account."
       },
       "githubModes": {
         "commit": "Commit to the branch",
@@ -2099,8 +2152,13 @@
       "secretHints": {
         "signingSecret": "Signs triggers and callbacks. Leave empty to generate one.",
         "deployHookUrl": "From the project's build settings.",
-        "apiToken": "Optional. Lets Shapio read the build's status.",
+        "apiToken": "Lets Shapio read the build's status.",
         "token": "Needs read and write access to the repository's contents."
+      },
+      "providerSecretHints": {
+        "netlify": {
+          "apiToken": "A personal access token. Starts builds and reads their status."
+        }
       },
       "secretStored": "Stored",
       "replaceSecret": "Replace",
@@ -2747,5 +2805,53 @@
         "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
       }
     }
+  },
+  "sites": {
+    "network": "Network",
+    "switcher": {
+      "label": "Switch site (current: {{name}})",
+      "sites": "Sites",
+      "allSites": "All sites"
+    },
+    "noAccess": {
+      "title": "You have no role on this site",
+      "description": "Ask an owner for access, or open a site you work on.",
+      "noSites": "Ask an owner to give you a role on a site."
+    },
+    "notFound": {
+      "title": "This site doesn't exist",
+      "description": "It may have been deleted, or the address has a typo."
+    },
+    "title": "Sites",
+    "count_one": "{{count}} site",
+    "count_other": "{{count}} sites",
+    "create": "New site",
+    "createTitle": "Create site",
+    "name": "Name",
+    "key": "Key",
+    "keyHint": "The site's key appears in its admin URLs and names the site in API calls (the Shapio-Site header or ?site=).",
+    "keyFixed": "The key can't be changed once the site exists.",
+    "createdAt": "Created",
+    "created": "Site {{name}} created.",
+    "empty": "No sites yet.",
+    "primary": "Primary",
+    "open": "Open",
+    "openNamed": "Open {{name}}",
+    "details": "Details",
+    "renamed": "Site renamed.",
+    "appRoles": {
+      "title": "App roles",
+      "description": "What anonymous callers and signed-in app users of this site may do.",
+      "public": "Anonymous callers (public)",
+      "authenticated": "Signed-in app users (authenticated)",
+      "saved": "App roles saved."
+    },
+    "danger": "Delete site",
+    "deleteDescription": "Only an empty site can be deleted.",
+    "delete": "Delete site",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteConsequence": "Its tokens, webhooks, deployment connections and role assignments go with it.",
+    "deleted": "{{name}} deleted.",
+    "everySite": "Every site"
   }
 }

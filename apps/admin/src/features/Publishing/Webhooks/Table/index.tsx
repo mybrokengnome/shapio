@@ -15,6 +15,7 @@ import {
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
 import { EnabledChip } from '../../EnabledChip';
 import { DELIVERY_STATUS_DISPLAY } from '../../helpers/statusDisplay';
+import { SiteBadge } from '../SiteBadge';
 
 type TableProps = { webhooks: Webhook[] };
 
@@ -38,12 +39,15 @@ export const Table = ({ webhooks }: TableProps) => {
               : undefined;
             return (
               <TableRow key={webhook.id}>
-                <TableCell className="max-w-56">
-                  <RowTitle asChild className="block truncate">
-                    <Link to="/publishing/webhooks/$webhookId" params={{ webhookId: webhook.id }}>
-                      {webhook.name}
-                    </Link>
-                  </RowTitle>
+                <TableCell className="max-w-64">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <RowTitle asChild className="block truncate">
+                      <Link to="/publishing/webhooks/$webhookId" params={{ webhookId: webhook.id }}>
+                        {webhook.name}
+                      </Link>
+                    </RowTitle>
+                    <SiteBadge webhook={webhook} />
+                  </span>
                 </TableCell>
                 <TableCell className="max-w-72">
                   <span

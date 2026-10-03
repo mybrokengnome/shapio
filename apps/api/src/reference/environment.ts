@@ -150,6 +150,8 @@ export const GROUPS: ReadonlyArray<{ title: string; keys: readonly string[] }> =
       'CLOUDFLARE_API_URL',
       'CLOUDFLARE_DASHBOARD_URL',
       'GITHUB_API_URL',
+      'VERCEL_API_URL',
+      'NETLIFY_API_URL',
     ],
   },
   {
@@ -165,6 +167,18 @@ export const GROUPS: ReadonlyArray<{ title: string; keys: readonly string[] }> =
   {
     title: 'Field usage',
     keys: ['USAGE_TRACKING', 'USAGE_RETENTION_DAYS', 'USAGE_FLUSH_INTERVAL_MS'],
+  },
+  {
+    title: 'Assist (your own model provider; off unless AI_PROVIDER is set)',
+    keys: [
+      'AI_PROVIDER',
+      'AI_MODEL',
+      'AI_API_KEY',
+      'AI_BASE_URL',
+      'AI_MAX_TOKENS',
+      'AI_TIMEOUT_MS',
+      'AI_RATE_LIMIT_MAX',
+    ],
   },
   { title: 'Extensions', keys: ['SHAPIO_CONFIG_PATH'] },
 ];

@@ -8,8 +8,8 @@ export const Tabs = () => {
     <LinkTabs
       label={t('roles.sections')}
       tabs={[
-        { to: '/settings/roles', label: t('roles.tabAdmin') },
-        { to: '/settings/roles/app', label: t('roles.tabApp') },
+        { to: '/network/roles', label: t('roles.tabAdmin') },
+        { to: '/network/roles/app', label: t('roles.tabApp') },
       ]}
     />
   );

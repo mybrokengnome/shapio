@@ -14,16 +14,17 @@ import { ResetPassword } from '@/features/ResetPassword';
 import { RouteError } from '@/features/RouteError';
 import { Setup } from '@/features/Setup';
 import { Shell } from '@/features/Shell';
-import { Users } from '@/features/Users';
 import { AppUsers } from '@/features/Users/AppUsers';
 import { safeRedirectPath } from '@/helpers/safeRedirect';
 import { routerBasePath } from './basePath';
+import { currentSite } from './currentSite';
 import {
   redirectComponentBuilder,
   redirectModelBuilder,
   redirectModelsIndex,
   redirectNewModel,
 } from './modelRedirects';
+import { requireNetworkView } from './networkGuards';
 import { RootLayout } from './RootLayout';
 import {
   redirectIfSignedIn,
@@ -43,6 +44,7 @@ import {
   newModelSearchSchema,
   schedulesSearchSchema,
 } from './searchSchemas';
+import { createSiteRewrite } from './siteRewrite';
 
 export type RouterContext = { queryClient: QueryClient };
 
@@ -101,7 +103,14 @@ const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/' }).laz
   import('./lazyRoutes/inbox').then((module) => module.inboxLazyRoute),
 );
 
-const usersRoute = createRoute({ getParentRoute: () => appRoute, path: 'users', component: Users });
+/** Admin users moved to the network view (sites plan §H); old links keep working. */
+const usersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'users',
+  beforeLoad: () => {
+    throw redirect({ to: '/network/users', replace: true });
+  },
+});
 
 const appUsersRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -216,16 +225,78 @@ const profileRoute = settingsChild('profile', 'profile');
 const sessionsRoute = settingsChild('sessions', 'sessions');
 const appearanceRoute = settingsChild('theme', 'theme');
 const localesRoute = settingsChild('locales', 'locales');
-const rolesRoute = settingsChild('roles', 'roles');
-const appRolesRoute = settingsChild('roles/app', 'appRoles');
-const appRoleRoute = settingsChild('roles/app/$roleId', 'appRole');
 const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
 
-const auditLogRoute = createRoute({
+// Roles and the audit log moved to the network view (sites plan §H); old links keep working.
+const rolesRedirectRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'roles',
+  beforeLoad: () => {
+    throw redirect({ to: '/network/roles', replace: true });
+  },
+});
+
+const appRolesRedirectRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'roles/app',
+  beforeLoad: () => {
+    throw redirect({ to: '/network/roles/app', replace: true });
+  },
+});
+
+const appRoleRedirectRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'roles/app/$roleId',
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/network/roles/app/$roleId', params, replace: true });
+  },
+});
+
+const auditLogRedirectRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'audit-log',
   validateSearch: auditSearchSchema,
-}).lazy(() => settingsLazy().then((routes) => routes.auditLog));
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/network/audit-log', search, replace: true });
+  },
+});
+
+// The network view (sites plan §H): sites, admin users, roles and the audit log, about the whole instance.
+const networkLazy = () => import('./lazyRoutes/network').then((module) => module.networkLazyRoutes);
+
+type NetworkLazyKey = keyof Awaited<ReturnType<typeof networkLazy>>;
+
+const networkRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'network',
+  beforeLoad: ({ context }) => requireNetworkView(context.queryClient),
+});
+
+const networkIndexRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/network/sites', replace: true });
+  },
+});
+
+const networkChild = <TPath extends string>(path: TPath, key: NetworkLazyKey) =>
+  createRoute({ getParentRoute: () => networkRoute, path }).lazy(() =>
+    networkLazy().then((routes) => routes[key]),
+  );
+
+const sitesRoute = networkChild('sites', 'sites');
+const siteRoute = networkChild('sites/$siteId', 'site');
+const networkUsersRoute = networkChild('users', 'users');
+const networkRolesRoute = networkChild('roles', 'roles');
+const networkAppRolesRoute = networkChild('roles/app', 'appRoles');
+const networkAppRoleRoute = networkChild('roles/app/$roleId', 'appRole');
+
+const networkAuditLogRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'audit-log',
+  validateSearch: auditSearchSchema,
+}).lazy(() => networkLazy().then((routes) => routes.auditLog));
 
 // Publishing (package H): scheduled publications, deployments and webhooks.
 const publishingLazy = () => import('./lazyRoutes/publishing').then((module) => module.publishingLazyRoutes);
@@ -366,11 +437,21 @@ const routeTree = rootRoute.addChildren([
       sessionsRoute,
       appearanceRoute,
       localesRoute,
-      rolesRoute,
-      appRolesRoute,
-      appRoleRoute,
+      rolesRedirectRoute,
+      appRolesRedirectRoute,
+      appRoleRedirectRoute,
       apiTokensRoute,
-      auditLogRoute,
+      auditLogRedirectRoute,
+    ]),
+    networkRoute.addChildren([
+      networkIndexRoute,
+      sitesRoute,
+      siteRoute,
+      networkUsersRoute,
+      networkRolesRoute,
+      networkAppRolesRoute,
+      networkAppRoleRoute,
+      networkAuditLogRoute,
     ]),
   ]),
 ]);
@@ -379,6 +460,8 @@ export const createAppRouter = (queryClient: QueryClient) =>
   createRouter({
     routeTree,
     basepath: routerBasePath(),
+    // The address bar carries the site (`/admin/s/blog/...`); routes are site-free (app/siteRewrite).
+    rewrite: createSiteRewrite(() => currentSite().key),
     context: { queryClient },
     defaultPreload: 'intent',
     defaultErrorComponent: RouteError,

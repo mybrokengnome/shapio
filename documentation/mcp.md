@@ -15,7 +15,7 @@ sends nothing anywhere else. Your instance needs no extra setup or configuration
 
 Give the agent its own role, so its token can do only what you want it to.
 
-1. **Settings → Roles → New role**, kind _Admin_, for example "Agent":
+1. **Network → Roles → New role**, kind _Admin_, for example "Agent":
    - content, on every model: `read`, `create`, `update`;
    - `schema.create` (drafting new content types) and `schemaManage` on the models it may change;
    - `changes.manage` (creating and filling change sets);
@@ -75,7 +75,8 @@ web page) can contain instructions, and the agent might follow them. Leaving out
 
 On an instance with several sites, set `SHAPIO_SITE` (or pass `--site <key>`) to the site the agent works on;
 every request then sends it as the `Shapio-Site` header. Without it the agent works on its token's site, else
-the primary site. A token created on one site cannot reach another (`403 SITE_MISMATCH`). `shapio mcp --site
+the primary site. A site token cannot reach another site (`403 SITE_MISMATCH`); a network admin token works on
+whichever site you name ([Sites](sites.md#api-tokens)). `shapio mcp --site
 <key>` adds `SHAPIO_SITE` to the printed configuration.
 
 ## What the agent can do

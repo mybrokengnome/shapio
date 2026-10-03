@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shapioAttr } from '@shapio/visual';
   import { authorOf } from '../articles';
   import type { Strings } from '../site';
   import type { Article } from '../types';
@@ -13,13 +14,19 @@
 
 <article class="article" lang={article.locale}>
   <header>
-    <h1>{article.title}</h1>
+    <h1 {...shapioAttr(article, 'title')}>{article.title}</h1>
     <Byline {article} {locale} {strings} />
   </header>
   {#if article.cover}
-    <ResponsiveImage media={article.cover} sizes="(min-width: 48rem) 48rem, 100vw" eager class="cover" />
+    <ResponsiveImage
+      media={article.cover}
+      sizes="(min-width: 48rem) 48rem, 100vw"
+      eager
+      class="cover"
+      visual={shapioAttr(article, 'cover')}
+    />
   {/if}
-  <RichText value={article.body} />
+  <RichText value={article.body} visual={shapioAttr(article, 'body')} />
   {#if author}
     <aside class="author">
       {#if author.avatar}

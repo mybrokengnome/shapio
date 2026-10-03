@@ -10,18 +10,21 @@ import { LoadingState } from '@/components/LoadingState';
 import { Panel } from '@/components/Panel';
 import { SubNav, SubNavGroup } from '@/components/SubNav';
 import { SubNavLink } from '@/components/SubNavLink';
+import { withSiteParameter } from '@/helpers/sites';
+import { useDeliverySiteKey } from '@/hooks/useDeliverySiteKey';
 import { graphqlOperations } from '../helpers/graphqlQuery';
 
 type GraphqlTabProps = { selected: string | undefined };
 
 /**
  * GraphQL: the root query fields per place, with an example operation to copy, beside the vendored
- * GraphiQL (same origin, the admin session, introspection and docs included).
+ * GraphiQL (same origin, the admin session, introspection and docs included) on this page's site.
  */
 export const GraphqlTab = ({ selected }: GraphqlTabProps) => {
   const { t } = useTranslation();
   const { definitions } = useAllDefinitions();
   const available = useGraphqlPlaygroundAvailable();
+  const siteKey = useDeliverySiteKey();
   const groups = useMemo(
     () =>
       (definitions ?? [])
@@ -65,7 +68,7 @@ export const GraphqlTab = ({ selected }: GraphqlTabProps) => {
           ) : available.data ? (
             <iframe
               title={t('develop.api.graphql.playgroundFrame')}
-              src={graphqlPlaygroundUrl()}
+              src={withSiteParameter(graphqlPlaygroundUrl(), siteKey)}
               className="block h-[40rem] w-full rounded-b-xl bg-card"
             />
           ) : (

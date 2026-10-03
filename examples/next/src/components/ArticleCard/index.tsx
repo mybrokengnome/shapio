@@ -1,3 +1,4 @@
+import { shapioAttr } from '@shapio/visual';
 import Link from 'next/link';
 import { articlePath, type Strings } from '../../lib/site';
 import type { Article } from '../../lib/types';
@@ -9,7 +10,7 @@ type ArticleCardProps = { article: Article; locale: string; strings: Strings };
 export const ArticleCard = ({ article, locale, strings }: ArticleCardProps) => (
   <li className="card">
     {article.cover ? <ResponsiveImage media={article.cover} sizes="(min-width: 48rem) 33vw, 100vw" /> : null}
-    <h2>
+    <h2 {...shapioAttr(article, 'title')}>
       <Link href={articlePath(locale, article.slug)}>{article.title}</Link>
     </h2>
     <Byline article={article} locale={locale} strings={strings} />

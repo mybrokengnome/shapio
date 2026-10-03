@@ -1,14 +1,16 @@
 import {
   isComponentDefinition,
+  isEmptyRichText,
+  richTextMediaIds,
   SCALAR_DATA_TYPES,
   type ComponentDefinition,
   type FieldDefinition,
   type SchemaDefinition,
+  validateRichText,
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { SchemaSnapshot } from '../../schema/snapshot.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
-import { isEmptyRichText, richTextMediaIds, validateRichText } from '../richtext/validate.js';
 import { pointer, type ContentIssue } from './issues.js';
 import { checkScalar, isReferenceId } from './scalars.js';
 

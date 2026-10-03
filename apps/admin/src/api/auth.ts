@@ -12,9 +12,10 @@ import type {
   UpdateProfileInput,
 } from '@shapio/client';
 import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { currentSite, leaveUnknownSite } from '@/app/currentSite';
 import { adminApi } from './client';
 import { resetCsrfToken, setCsrfToken, withCsrf } from './csrf';
-import { isUnauthorized } from './errors';
+import { hasErrorCode, isUnauthorized } from './errors';
 import { queryKeys } from './queryKeys';
 
 /** The signed-in admin, or `null` when there is no valid session (401 is an answer, not an error). */
@@ -28,6 +29,12 @@ export const meQueryOptions = queryOptions({
     } catch (error) {
       if (isUnauthorized(error)) {
         return null;
+      }
+      // A remembered site that no longer exists: start again without it. A site named in the URL is the
+      // visitor's own request, so the route shows that it doesn't exist instead.
+      if (hasErrorCode(error, 'SITE_NOT_FOUND') && !currentSite().explicit) {
+        leaveUnknownSite();
+        return new Promise<never>(() => undefined);
       }
       throw error;
     }

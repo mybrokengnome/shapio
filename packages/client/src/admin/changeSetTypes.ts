@@ -18,7 +18,7 @@ export const CHANGE_SET_STATUSES = [
 export type ChangeSetStatus = (typeof CHANGE_SET_STATUSES)[number];
 /** While `shipping`: preparing (prerequisite dry runs, index builds) or activating (the final transaction). */
 export type ShipPhase = 'preparing' | 'activating';
-export type ChangeSetSource = 'manual' | 'release' | 'restore' | 'builder';
+export type ChangeSetSource = 'manual' | 'release' | 'restore' | 'builder' | 'assist';
 export type ChangeSetItemStatus = 'pending' | 'done' | 'failed';
 export type SchemaOperation = 'create' | 'update' | 'delete';
 

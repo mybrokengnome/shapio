@@ -1,4 +1,10 @@
-import { SHAPIO_DELIVERY_TOKEN, SHAPIO_SITE, SHAPIO_SNAPSHOT, SHAPIO_URL } from '$app/env/private';
+import {
+  PUBLIC_SHAPIO_URL,
+  SHAPIO_DELIVERY_TOKEN,
+  SHAPIO_SITE,
+  SHAPIO_SNAPSHOT,
+  SHAPIO_URL,
+} from '$app/env/private';
 
 /**
  * Build-time settings, from the environment (or `.env` in this folder, which `npm run seed` writes), declared
@@ -8,8 +14,12 @@ import { SHAPIO_DELIVERY_TOKEN, SHAPIO_SITE, SHAPIO_SNAPSHOT, SHAPIO_URL } from 
  * - SHAPIO_SNAPSHOT: optional; the publication snapshot to build. Without it the build pins the latest
  *   snapshot when prerendering starts, so every page shows the same moment.
  * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
+ * - PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL).
  */
 export const shapioUrl = () => SHAPIO_URL ?? 'http://localhost:4300';
+
+/** Handed to the preview page at build time: the URL its browser code reads drafts from. */
+export const publicShapioUrl = () => PUBLIC_SHAPIO_URL ?? shapioUrl();
 
 export const deliveryToken = () => {
   const token = SHAPIO_DELIVERY_TOKEN;

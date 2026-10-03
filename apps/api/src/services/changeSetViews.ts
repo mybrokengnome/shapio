@@ -60,7 +60,7 @@ export type ChangeSetSummaryView = {
   description: string;
   status: changeSetsRepository.ChangeSetStatus;
   shipPhase: 'preparing' | 'activating' | null;
-  source: 'manual' | 'release' | 'restore' | 'builder';
+  source: 'manual' | 'release' | 'restore' | 'builder' | 'assist';
   restoreOfSnapshot: number | null;
   scheduledFor: Date | null;
   deploymentConnectionId: string | null;

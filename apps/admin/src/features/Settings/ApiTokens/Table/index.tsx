@@ -18,11 +18,13 @@ import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
 type TableProps = {
   tokens: ApiToken[];
   roleNames: ReadonlyMap<string, string>;
+  /** This site's name: every token not marked "Every site" belongs to it. */
+  siteName: string;
   /** Resolves once the token is revoked (the confirmation waits for it). */
   onRevoke: (token: ApiToken) => Promise<unknown>;
 };
 
-export const Table = ({ tokens, roleNames, onRevoke }: TableProps) => {
+export const Table = ({ tokens, roleNames, siteName, onRevoke }: TableProps) => {
   const { t } = useTranslation();
   return (
     <TableCard>
@@ -32,6 +34,7 @@ export const Table = ({ tokens, roleNames, onRevoke }: TableProps) => {
             <TableHead>{t('apiTokens.name')}</TableHead>
             <TableHead>{t('apiTokens.prefix')}</TableHead>
             <TableHead>{t('apiTokens.role')}</TableHead>
+            <TableHead>{t('apiTokens.appliesTo')}</TableHead>
             <TableHead>{t('apiTokens.status')}</TableHead>
             <TableHead>{t('apiTokens.lastUsed')}</TableHead>
             <TableHead>{t('apiTokens.expires')}</TableHead>
@@ -48,6 +51,7 @@ export const Table = ({ tokens, roleNames, onRevoke }: TableProps) => {
               </TableCell>
               <TableCell className="font-mono text-xs">{`${token.tokenPrefix}…`}</TableCell>
               <TableCell>{roleNames.get(token.roleId) ?? t('common.unknown')}</TableCell>
+              <TableCell>{token.siteId === null ? t('sites.everySite') : siteName}</TableCell>
               <TableCell>
                 {token.revokedAt ? (
                   <StatusChip tone="muted" label={t('apiTokens.revokedBadge')} />

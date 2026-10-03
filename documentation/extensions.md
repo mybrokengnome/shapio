@@ -32,7 +32,7 @@ export const config = defineConfig({
 - **Where Shapio looks:** set `SHAPIO_CONFIG_PATH` to the file, or Shapio searches its working directory for `shapio.config.ts`, `.mts`, `.js` or `.mjs`, in that order. With no file there are no extensions. `extensions/` is resolved next to the config file.
 - **TypeScript without a build:** the file and everything it imports are loaded with [jiti](https://github.com/unjs/jiti). Stick to erasable syntax: types and annotations, but no `enum`, `namespace` or parameter properties. Import your own files with their extension (`./extensions/hooks.ts`).
 - **`shapio/config`** always resolves to the running Shapio's own copy, so `defineConfig` and `HookError` work wherever the config lives. Use the named export `config`; a default export is accepted too.
-- **Validation:** an unknown key, a hook name with a typo, a bad route prefix or a service named like one of Shapio's own (`content`, `media`, `jobs`, `logger`) stops startup with the file and every problem:
+- **Validation:** an unknown key, a hook name with a typo, a bad route prefix or a service named like one of Shapio's own (`site`, `forSite`, `content`, `media`, `jobs`, `logger`) stops startup with the file and every problem:
 
   ```
   shapio: ExtensionConfigError: Invalid Shapio config /srv/cms/shapio.config.ts:
@@ -99,6 +99,7 @@ Hooks fire however the change is made: the admin UI, the REST API, GraphQL mutat
 | Field                                                                                                         | `before*` | `after*`                |
 | ------------------------------------------------------------------------------------------------------------- | --------- | ----------------------- |
 | `event`, `model` (`id`, `apiKey`, `label`, `kind`, `localized`, `draftAndPublish`)                            | ✓         | ✓                       |
+| `site` (`id`, `key`): the entry's [site](sites.md); `services` read this site                                 | ✓         | ✓                       |
 | `entry` (`id`, `locale`, `state`: `draft`, `published` or `deleted`), `locale`                                | ✓         | ✓                       |
 | `data`: the document after the change, keyed by field API ID (media and relations as IDs; absent for deletes) | ✓         | ✓ (as it was at commit) |
 | `before`: the previous draft (update) or the live version being replaced (publish)                            | ✓         | ✓                       |
@@ -142,6 +143,7 @@ export const acmeRoutes: ExtensionRoute['plugin'] = async (app, { services, perm
   - **Audit:** every mutating route must declare `config: { audit: { action } }`, or `{ audit: { exempt: '<why>' } }`, or Shapio refuses to start. On a successful response Shapio records the declared action in the audit log, with the principal, request ID and IP.
   - **Errors:** thrown errors go through the central handler as `{ error: { code, message } }`, and a 500 never shows its text.
   - **Rate limiting:** the global per-IP limit (`RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_MS`) applies.
+  - **Sites:** custom routes are site routes. `request.site` (`{ id, key }`) is the request's [site](sites.md): the credential's, else `?site=` or the `Shapio-Site` header, else the primary site. A route about the whole instance declares `config: { site: 'network' }`, and then has no `request.site`.
 - Declare a JSON schema for `params`, `querystring`, `body` and `response`, as Shapio's own routes do.
 
 ## Services
@@ -165,6 +167,7 @@ services: {
   - `media.usages(assetId)`: where an asset is referenced.
   - `jobs.enqueue(name, payload?, { runAt?, idempotencyKey?, maxAttempts? })`: queues one of your jobs.
   - `logger`.
+  - `site` and `forSite(site)`: content and media are per [site](sites.md). The services a hook receives read the hook's site; those given to routes, jobs and factories read the primary site. `services.forSite(request.site)` returns the same services on the request's site.
 
 For typed access everywhere, augment `CustomServices`:
 
@@ -191,6 +194,32 @@ jobs: {
 - Jobs run in the worker with the same guarantees as Shapio's: leases, retries with backoff, dead-lettering and graceful shutdown (`signal`).
 - Delivery is at least once, so make side effects idempotent (use `jobId` or the `idempotencyKey` you enqueued with).
 - Enqueue a job with `services.jobs.enqueue('reindex', payload)`.
+
+## Sites
+
+On an instance with several [sites](sites.md), sites share the content types but each has its own
+content and media. Extensions are configured once for the whole instance, and each one knows which site it is
+working on:
+
+- **Hooks:** `context.site` (`{ id, key }`) is the site of the entry that changed, and `context.services` read
+  that site. Branch on `context.site.key` when a site needs different behaviour.
+- **Custom routes** are site routes. `request.site` is the request's site: the token's site, else the one the
+  request names (`Shapio-Site` header or `?site=`), else the primary site. A request naming a different site
+  than its token's is refused with `403 SITE_MISMATCH`. Declare `config: { site: 'network' }` on a route that is
+  about the whole instance rather than one site; it then has no `request.site`.
+- **Services:** `services.site` is the site that `content` and `media` read, and `services.forSite(site)`
+  returns the same services reading another site. The services given to routes, jobs and service factories
+  read the **primary site**, so in a route use `services.forSite(request.site)` for the request's site:
+
+  ```ts
+  app.get('/stats', { preHandler: requireAdmin }, async (request) => ({
+    articles: await services.forSite(request.site!).content.count('article'),
+  }));
+  ```
+
+- **Jobs** read the primary site too. Pass the site's key or ID in the payload and use `forSite` when a job is
+  about one site.
+- **Your own services** are constructed once and shared by every site. Pass them the site they should work on.
 
 ## Custom field editors
 

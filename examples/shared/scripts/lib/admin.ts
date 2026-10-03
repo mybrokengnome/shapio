@@ -62,6 +62,8 @@ export const connectAdmin = async (env: NodeJS.ProcessEnv): Promise<AdminConnect
   const created = await session.admin.tokens.create({
     name: 'starter seed (temporary)',
     roleId: admin.id,
+    // A network token: the seed applies models and adds locales, which are network actions.
+    network: true,
     expiresAt: new Date(Date.now() + SEED_TOKEN_TTL_MS).toISOString(),
   });
   return {

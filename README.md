@@ -15,9 +15,19 @@ reviewed like a pull request (field-level diffs, the planner's checks, and which
 fields a breaking change touches) and shipped as one snapshot, with an optional deploy after. Restoring an older
 snapshot is a change set too: reviewed, shipped as a new snapshot, nothing deleted.
 
-Publishing connects to your site's builds with signed webhooks and a Cloudflare Pages adapter that reports real
-build status. It runs as one Node.js process with PostgreSQL, from npm or Docker, with HTTPS built in and no
-reverse proxy, and sends nothing anywhere unless you configure it.
+**Many sites, one instance.** One Shapio can run a fleet of sites with one schema and one login: each site has
+its own content, media, snapshots, tokens and end users, and a role can be granted on one site or on all of them.
+
+**Visual editing.** Editors see the site beside the document while they write: clicking a part of the page
+focuses its field, and every save re-renders the preview.
+
+**Assist, if you want it.** Connect your own model provider, hosted or running on your own machine, for alt
+text, summaries, translations, rewrites and content-type drafts. It is off by default and only ever proposes or
+writes drafts into a change set; it never publishes.
+
+Publishing connects to your site's builds with signed webhooks and Cloudflare Pages, Vercel and Netlify
+adapters that report real build status. It runs as one Node.js process with PostgreSQL, from npm or Docker,
+with HTTPS built in and no reverse proxy, and sends nothing anywhere unless you configure it.
 
 ## Quick start
 
@@ -53,7 +63,7 @@ repository) or [develop Shapio](#develop-shapio) from a clone.
 - Use: [modelling](documentation/modelling.md) · [schema sync](documentation/schema-sync.md) ·
   [delivery API](documentation/delivery-api.md) · [GraphQL](documentation/graphql.md) ·
   [change sets, snapshots and restore](documentation/change-sets.md) ·
-  [publishing and deployments](documentation/publishing.md) · [site starters](documentation/starters.md) ·
+  [publishing and deployments](documentation/publishing.md) · [sites](documentation/sites.md) · [site starters](documentation/starters.md) ·
   [example site](documentation/example-site.md)
 - Run: [backup and restore](documentation/backup-restore.md) · [upgrades](documentation/upgrades.md) ·
   [security](documentation/security.md)

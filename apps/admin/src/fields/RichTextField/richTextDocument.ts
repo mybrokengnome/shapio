@@ -5,7 +5,7 @@ import { isEmptyValue, isRecord } from '../helpers/values';
 
 /**
  * The stored rich-text envelope (ADR 0003): `{ format: 'shapio-richtext', version, doc }`, where `doc` is
- * ProseMirror JSON limited to the node and mark set in `apps/api/src/content/richtext/spec.ts`.
+ * ProseMirror JSON limited to the node and mark set in `packages/schema/src/richtext/spec.ts`.
  */
 export type ProseMirrorDoc = JSONContent & { type: 'doc' };
 

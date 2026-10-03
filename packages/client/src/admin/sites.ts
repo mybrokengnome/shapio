@@ -1,5 +1,11 @@
 import type { RequestFn } from '../request.js';
-import type { CreateSiteInput, Site, UpdateSiteInput } from './sitesTypes.js';
+import type {
+  CreateSiteInput,
+  SetSiteAppRolesInput,
+  Site,
+  SiteAppRoles,
+  UpdateSiteInput,
+} from './sitesTypes.js';
 
 export const SITES_PATHS = { sites: '/api/admin/sites' } as const;
 
@@ -17,5 +23,12 @@ export const createSitesApi = (request: RequestFn) => ({
     update: (id: string, body: UpdateSiteInput) => request<Site>(sitePath(id), { method: 'PATCH', body }),
     /** Only an empty site (409 `SITE_NOT_EMPTY`); never the primary site (409 `SITE_IS_PRIMARY`). */
     remove: (id: string) => request<void>(sitePath(id), { method: 'DELETE' }),
+    /** The app roles bound to the site's anonymous callers (`public`) and signed-in app users (`authenticated`). */
+    appRoles: {
+      get: (id: string) => request<SiteAppRoles>(`${sitePath(id)}/app-roles`),
+      /** Replaces both bindings (`roles.manage`). */
+      set: (id: string, body: SetSiteAppRolesInput) =>
+        request<SiteAppRoles>(`${sitePath(id)}/app-roles`, { method: 'PUT', body }),
+    },
   },
 });

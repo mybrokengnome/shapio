@@ -169,7 +169,7 @@ shapio export [--url <origin>] [--token <admin token>] [--site <key>] [--with-me
 
 ### shapio import
 
-Import a bundle: plan (--dry-run), refuse on conflicts, then import as a resumable job.
+Import a bundle, or a WordPress or Strapi export (import wordpress|strapi).
 
 ```text
 shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>
@@ -178,4 +178,18 @@ shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run
   Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the
   files (git diff), `shapio schema apply`, then import again.
   --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.
+
+shapio import wordpress <export.xml> --plan <dir> [--force]
+       shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--site <key>] [--media-dir <uploads dir>]
+  --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json; it sends nothing.
+  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`, then run --map:
+  it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),
+  creates every post and page as a draft, and opens change sets with the published ones. Re-run --map to resume.
+
+shapio import strapi <export.tar.gz[.enc]> --plan <dir> [--key <encryption key>] [--force]
+       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]
+  --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models
+  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. Apply the schema with
+  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`, then run --map: it uploads the
+  media, creates every document as a draft and opens change sets with the published ones. Strapi 5 only.
 ```

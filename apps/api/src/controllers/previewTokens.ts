@@ -8,6 +8,9 @@ import type { IdParams } from '../routes/schemas/adminIdentity.js';
 import * as previewTokensService from '../services/previewTokens.js';
 import { contentContextFor } from './contentContext.js';
 
+export const listPreviewTargets = async (request: FastifyRequest) =>
+  previewTokensService.listPreviewTargets(await contentContextFor(request), request.server.publishing);
+
 export const listPreviewTokens = async (request: FastifyRequest<{ Querystring: ListPreviewTokensQuery }>) =>
   previewTokensService.listPreviewTokens(await contentContextFor(request), request.query);
 

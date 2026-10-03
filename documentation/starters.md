@@ -20,8 +20,9 @@ Each starter has:
 - responsive images from the WebP variants Shapio renders;
 - one pinned publication snapshot per build, and the site key for multi-site instances (below).
 
-The Astro starter also has draft preview, incremental builds and signed build callbacks
-([walkthrough](example-site.md)). Preview for the other two arrives together with visual editing.
+All three have draft preview at `/preview/` with [visual editing](visual-editing.md): in the admin's preview
+pane, clicking the title, body or cover focuses that field, and saves re-render the page. The Astro starter also
+has incremental builds and signed build callbacks ([walkthrough](example-site.md)).
 
 ## Create one
 
@@ -47,7 +48,9 @@ The seed signs in, uses a temporary admin API token (revoked when it ends; `SHAP
 instead of email and password) and is idempotent: run it again to reset the content. It adds the `fr` locale,
 applies the models through the schema apply API (the same change planner as the admin and
 `shapio schema apply`, with no restart), uploads placeholder images, creates and publishes the content in both
-locales (one article stays a draft), and creates a delivery role and token that read only the four models.
+locales (one article stays a draft), creates a deployment connection named **Preview** whose preview URL is the
+starter's `/preview/` page (it triggers no builds; `SITE_URL` overrides the local address it points at), and
+creates a delivery role and token that read only the four models.
 
 You need a running Shapio with an owner account ([npm](install-npm.md), [Docker](install-docker.md)).
 Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
@@ -56,13 +59,14 @@ Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
 
 Every starter reads its settings from the environment, or from `.env` (`.env.example` lists them):
 
-| Variable                | Meaning                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------ |
-| `SHAPIO_URL`            | Shapio's origin, with its `BASE_PATH` if any (default `http://localhost:4300`)             |
-| `SHAPIO_DELIVERY_TOKEN` | a read-only delivery token (Settings → API tokens, a delivery role); the seed writes one   |
-| `SHAPIO_SNAPSHOT`       | optional: build this publication snapshot instead of the latest                            |
-| `SHAPIO_SITE`           | optional: the site key on a multi-site instance                                            |
-| `PUBLIC_SHAPIO_URL`     | Astro only, optional: the origin the browser calls for previews (defaults to `SHAPIO_URL`) |
+| Variable                 | Meaning                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| `SHAPIO_URL`             | Shapio's origin, with its `BASE_PATH` if any (default `http://localhost:4300`)               |
+| `SHAPIO_DELIVERY_TOKEN`  | a read-only delivery token (Settings → API tokens, a delivery role); the seed writes one     |
+| `SHAPIO_SNAPSHOT`        | optional: build this publication snapshot instead of the latest                              |
+| `SHAPIO_SITE`            | optional: the site key on a multi-site instance                                              |
+| `PUBLIC_SHAPIO_URL`      | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
+| `NEXT_PUBLIC_SHAPIO_URL` | Next.js, optional: the same, inlined into the client bundle at build time                    |
 
 ### Pinned snapshots
 
@@ -84,10 +88,14 @@ Nothing in the starters sends data anywhere but your Shapio. Astro's and Next.js
 turned off in the npm scripts (`ASTRO_TELEMETRY_DISABLED=1`, `NEXT_TELEMETRY_DISABLED=1`; the Next starter's
 `.env.example` sets it too). SvelteKit has none.
 
-### Visual editing
+### Preview and visual editing
 
-Shapio's visual-editing SDK (`@shapio/visual`) is not released yet. Each starter's layout marks where its
-script will go; when it ships, the starters adopt it together with draft preview for Next.js and SvelteKit.
+Each starter's `/preview/` page reads a draft in the browser with the preview token from the URL fragment and
+renders it with the published pages' components; `@shapio/visual` turns on visual editing inside the admin's
+preview pane. Add the site's origin to Shapio's `CORS_ORIGINS`. The starters send
+`Content-Security-Policy: frame-ancestors 'self' <Shapio's origin>` (and write it to a `_headers` file in the
+static builds), so only the site and Shapio can frame their pages. Details per starter:
+[Visual editing](visual-editing.md#the-starters).
 
 ## In the Shapio repository
 
@@ -96,7 +104,7 @@ the HTTP smoke check they share live in `examples/shared`. `create-shapio`'s bui
 templates: workspace and catalog versions become the published versions, and the shared files are copied into
 each project.
 
-The starters use `@shapio/client`'s build, as an installed project does, so build the packages first:
+The starters use the builds of `@shapio/client` and `@shapio/visual`, as an installed project does, so build the packages first:
 
 ```sh
 pnpm install && pnpm build

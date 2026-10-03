@@ -1,8 +1,10 @@
 <script lang="ts">
+  import type { ShapioAttributes } from '@shapio/visual';
   import type { Media } from '../types';
 
-  type Props = { media: Media; sizes: string; eager?: boolean; class?: string };
-  let { media, sizes, eager = false, class: className }: Props = $props();
+  /** `visual`: the field the image shows (`shapioAttr`), for visual editing. */
+  type Props = { media: Media; sizes: string; eager?: boolean; class?: string; visual?: ShapioAttributes };
+  let { media, sizes, eager = false, class: className, visual }: Props = $props();
 
   // WebP variants in srcset, intrinsic size set (no layout shift), lazy unless eager.
   const widths = $derived(
@@ -24,4 +26,5 @@
   fetchpriority={eager ? 'high' : undefined}
   decoding="async"
   class={className}
+  {...visual}
 />

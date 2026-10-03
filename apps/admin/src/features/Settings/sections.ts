@@ -1,26 +1,15 @@
 import type { GlobalAction } from '@shapio/client';
-import {
-  Globe,
-  KeyRound,
-  MonitorSmartphone,
-  Palette,
-  ScrollText,
-  ShieldCheck,
-  UserRound,
-  type LucideIcon,
-} from 'lucide-react';
+import { Globe, KeyRound, MonitorSmartphone, Palette, UserRound, type LucideIcon } from 'lucide-react';
 
 type SettingsPath =
   | '/settings/profile'
   | '/settings/sessions'
   | '/settings/theme'
   | '/settings/locales'
-  | '/settings/roles'
-  | '/settings/api-tokens'
-  | '/settings/audit-log';
+  | '/settings/api-tokens';
 
 type SettingsSection = {
-  key: 'profile' | 'sessions' | 'appearance' | 'locales' | 'roles' | 'apiTokens' | 'auditLog';
+  key: 'profile' | 'sessions' | 'appearance' | 'locales' | 'apiTokens';
   to: SettingsPath;
   icon: LucideIcon;
   /** Hidden unless the admin holds this permission (the server enforces it either way). */
@@ -28,7 +17,7 @@ type SettingsSection = {
 };
 
 export const SETTINGS_GROUPS: readonly {
-  key: 'account' | 'workspace' | 'access' | 'developer';
+  key: 'account' | 'workspace' | 'developer';
   sections: readonly SettingsSection[];
 }[] = [
   {
@@ -40,12 +29,8 @@ export const SETTINGS_GROUPS: readonly {
     ],
   },
   { key: 'workspace', sections: [{ key: 'locales', to: '/settings/locales', icon: Globe }] },
-  { key: 'access', sections: [{ key: 'roles', to: '/settings/roles', icon: ShieldCheck }] },
   {
     key: 'developer',
-    sections: [
-      { key: 'apiTokens', to: '/settings/api-tokens', icon: KeyRound, permission: 'tokens.manage' },
-      { key: 'auditLog', to: '/settings/audit-log', icon: ScrollText, permission: 'audit.read' },
-    ],
+    sections: [{ key: 'apiTokens', to: '/settings/api-tokens', icon: KeyRound, permission: 'tokens.manage' }],
   },
 ];

@@ -23,7 +23,7 @@ The examples below use the [example site](example-site.md)'s models.
 
 ## Tokens
 
-Create a **delivery role** (Settings → Roles → New role, kind _Delivery_) with `read` on the models your site
+Create a **delivery role** (Network → Roles → New role, kind _Delivery_) with `read` on the models your site
 needs, then an API token bound to it (Settings → API tokens). Send it as a bearer token:
 
 ```sh
@@ -34,13 +34,13 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 - A role's grant covers every field marked `public` (the default); `public: false` fields are hidden unless the
   grant names them.
 - Without a token, a request is _anonymous_: it gets what the built-in **public** app role grants, which is
-  nothing until you allow it (Settings → Roles → App roles). Use that for content anyone may read from the
+  nothing until you allow it (Network → Roles → App roles). Use that for content anyone may read from the
   browser. App users' own tokens are covered in [End users](end-users.md).
 
 ## Sites
 
-One Shapio instance can host several sites that share the content types but each have their own content,
-tokens and snapshots. Every delivery request reads exactly one site:
+One Shapio instance can host several [sites](sites.md) that share the content types but each have their own
+content, tokens and snapshots. Every delivery request reads exactly one site:
 
 1. **The token's site.** Delivery tokens belong to the site they were created on, and only ever read it.
 2. **The site the request names**, with `?site=<key>` or the `Shapio-Site: <key>` header. Anonymous callers and
@@ -55,8 +55,9 @@ read as not found, and relations never cross sites.
 curl "$SHAPIO_URL/api/content/articles?site=marketing"
 ```
 
-Anonymous reads on a site other than the primary get only what that site's bound **public** app role grants.
-A new site binds none, so it serves nothing anonymously until you bind one.
+Anonymous reads get what the app roles bound to the request site's `public` audience grant. The primary site
+binds the built-in **public** role; a new site binds none, so it serves nothing anonymously until you bind one
+([Sites](sites.md#app-users-and-anonymous-access)).
 
 With `@shapio/client`, pass the site once:
 

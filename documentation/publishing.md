@@ -11,7 +11,7 @@ Publishing → Webhooks → New webhook: a URL and the events to send (`entry.*`
 shown once. The change set events (`change_set.scheduled`, `.shipping`, `.shipped`, `.failed`, `.discarded`) are
 described in [Change sets](change-sets.md#webhooks).
 
-Each event is a `POST` with a JSON body `{ "id", "type", "createdAt", "data" }` and these headers:
+Each event is a `POST` with a JSON body `{ "id", "type", "createdAt", "site", "data" }` and these headers:
 
 | Header               | Value                                                                  |
 | -------------------- | ---------------------------------------------------------------------- |
@@ -67,6 +67,13 @@ Webhooks and deployment connections never call private, loopback or link-local a
 time. To reach a host on your own network, list its address in `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST`
 (CIDR, comma-separated) **and** turn on "Allow private network" on that webhook or connection.
 
+### Sites
+
+On an instance with several [sites](sites.md), a webhook belongs to the site it was created on and receives that
+site's events, plus network events such as schema and locale changes. A **network** webhook (`"network": true`
+when creating it, which needs `webhooks.manage` on all sites) receives every site's events. `site` in the body
+is the event's site (`{ "id", "key" }`), or `null` for a network event.
+
 ## Deployment connections
 
 Publishing → Deployments → New connection. A connection says how to start a site build and when:
@@ -87,6 +94,8 @@ Publishing → Deployments → New connection. A connection says how to start a 
   anything else is refused with `SECRET_ENV_NOT_ALLOWED`, so an admin can never point a connection at the
   server's own settings such as `SESSION_SECRET` or `SMTP_PASSWORD`.
 - **Test connection** checks the settings without starting a build.
+- Connections belong to a [site](sites.md): a site's publishes and change sets build its own connections, and a
+  schema change (shared by every site) builds every site's connections that build on schema changes.
 
 ### Generic signed build webhook
 
@@ -140,6 +149,45 @@ A deploy hook cannot pass parameters, so a Pages build pins the snapshot that is
 generic webhook can pin the run's exact snapshot). The step-by-step for the example site, including the build
 settings, is in [Example site](example-site.md#5-deploy-to-cloudflare-pages).
 
+### Vercel
+
+Shapio starts the build through a Vercel **deploy hook** and reads its real progress from the Vercel API
+(queued, building, ready, error or canceled, with a link to the deployment's inspector page). Setup for a Vercel
+project that builds from your Git repository:
+
+1. In Vercel: **your project → Settings → Git → Deploy Hooks**: any name, the production branch. Copy the URL.
+2. **Account Settings → Tokens → Create**, scoped to the team that owns the project. Copy the token.
+3. Note the **project ID** (project → Settings → General, `prj_…`) and, for a team project, the **team ID**
+   (team → Settings → General, `team_…`). Leave the team ID empty for a project in your personal account.
+4. In Shapio: Publishing → Deployments → New connection → **Vercel**: project ID, team ID, the deploy hook URL
+   and the API token (for example as `${ENV:SHAPIO_SECRET_VERCEL_TOKEN}`), and the triggers you want.
+   **Test connection** checks the token can read the project.
+
+The deploy hook answers with a build job, not the deployment, so Shapio finds the run's deployment in the
+project's deployment list: the newest one created after the trigger that carries this hook's ID (or, when
+Vercel does not record the hook, the newest one that names no hook). As with Cloudflare, a deploy hook cannot
+pass parameters, so the build pins the snapshot that is current when it starts.
+
+### Netlify
+
+Shapio starts the build through the Netlify API and follows the deploy it produces (enqueued, building,
+processing, published, error, or skipped, with a link to the deploy log). There is no deploy hook to copy:
+
+1. In Netlify: **User settings → Applications → Personal access tokens → New access token**. Copy the token.
+   Netlify tokens cannot be limited to one site; a token from an account with access to only this site's team
+   keeps the reach small.
+2. Note the **site ID** (site → Site configuration → General → Site details → Site ID, a UUID).
+3. In Shapio: Publishing → Deployments → New connection → **Netlify**: site ID and the API token (for example as
+   `${ENV:SHAPIO_SECRET_NETLIFY_TOKEN}`), and the triggers you want. **Test connection** checks the token can
+   read the site.
+
+A build Netlify skips (for example through an ignore command) or cancels did not update the site, so its run
+fails with that reason. The build pins the snapshot that is current when it starts.
+
+Both adapters send the API token only to `VERCEL_API_URL` or `NETLIFY_API_URL` (the official APIs unless you
+change them). If the answer to a trigger is lost after the provider started the build, the retry takes over
+that build instead of starting a second one.
+
 ## Preview
 
 Editors preview drafts on the real site before publishing.
@@ -149,8 +197,9 @@ Editors preview drafts on the real site before publishing.
    Variables: `{token}`, `{modelKey}`, `{entryId}`, `{locale}`, and `{path}` (`modelKey/entryId`).
    `{modelKey}` is the model's route key, as in the delivery and preview APIs: the plural API ID of a collection
    (`articles`), the API ID of a single type (`homepage`).
-2. The entry form's **Preview** opens that URL with a fresh **preview token**: scoped to the entry (or model) and
-   locale, expiring, never an admin credential. Putting it after `#` keeps it out of server logs and Referer
+2. The entry document's **Preview** opens that URL beside the document with a fresh **preview token**: scoped to
+   the entry, its locale and its [site](sites.md), expiring after an hour (the admin replaces it before then),
+   never an admin credential. Putting it after `#` keeps it out of server logs and Referer
    headers.
 3. Your preview page reads the draft from the preview API, sending the token as a bearer token (never in the
    query string):
@@ -165,3 +214,8 @@ Editors preview drafts on the real site before publishing.
 Preview tokens are listed per entry and can be revoked. A page that calls the preview API from the browser
 needs its origin in `CORS_ORIGINS`. The [example site's](example-site.md) `/preview/` page is a working
 implementation.
+
+With `@shapio/visual` on the preview page, clicking a part of the page focuses its field in the document and
+saves re-render the page: see [Visual editing](visual-editing.md), which also covers the
+`frame-ancestors` header the site sends and the admin's `frame-src`. A preview URL on Shapio's own origin is
+refused.

@@ -1,8 +1,11 @@
-import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import {
+  renderRichTextHtml,
+  type ComponentDefinition,
+  type FieldDefinition,
+  type RichTextDocument,
+} from '@shapio/schema';
 import type { FieldMask } from '../../permissions/types.js';
 import type { ContentModel } from '../model.js';
-import { renderRichTextHtml } from '../richtext/render.js';
-import type { RichTextDocument } from '../richtext/validate.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import { maskAllows } from './policy.js';
 

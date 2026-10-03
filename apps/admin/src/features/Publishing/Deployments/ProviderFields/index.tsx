@@ -6,7 +6,7 @@ import { FormTextField } from '@/components/FormTextField';
 import { GITHUB_MODES, PROVIDER_FIELDS, type ConnectionFormValues } from '../helpers/connectionForm';
 import {
   GITHUB_MODE_LABELS,
-  SECRET_HINTS,
+  secretHintFor,
   SECRET_LABELS,
   SETTING_HINTS,
   SETTING_LABELS,
@@ -52,7 +52,7 @@ export const ProviderFields = ({ control, storedSecrets }: ProviderFieldsProps) 
           control={control}
           name={secret.name}
           label={t(SECRET_LABELS[secret.name])}
-          hint={t(SECRET_HINTS[secret.name])}
+          hint={t(secretHintFor(provider, secret.name))}
           stored={storedSecrets?.[secret.name]?.set ?? false}
           envVar={storedSecrets?.[secret.name]?.envVar ?? null}
         />

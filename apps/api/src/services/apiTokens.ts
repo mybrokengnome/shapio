@@ -69,15 +69,15 @@ type CreateApiTokenInput = {
   name: string;
   roleId: string;
   expiresAt: Date | null;
-  /** A network admin token (every site and network actions); omitted: network when the creator may grant it. */
+  /** A network admin token (every site and network actions); omitted or false: a token of the request's site. */
   network?: boolean | undefined;
 };
 
 /**
- * Whether the new token is a network token (sites plan §H). A network admin token carries its role on every
- * site and into network actions, so only someone who may assign roles on every site (`users.manage`, a
- * network action) may mint one; anyone else's tokens belong to the request's site. Delivery tokens always
- * belong to a site.
+ * Whether the new token is a network token (sites plan §H). Tokens belong to the request's site unless the
+ * creator asks for a network token explicitly. A network admin token carries its role on every site and
+ * into network actions, so only someone who may assign roles on every site (`users.manage`, a network
+ * action) may mint one. Delivery tokens always belong to a site.
  */
 const isNetworkToken = async (
   context: SiteActorContext,
@@ -91,15 +91,17 @@ const isNetworkToken = async (
     }
     return false;
   }
-  const mayGrantNetwork = await managesNetworkTokens(context, permissions);
-  if (requested === true && !mayGrantNetwork) {
+  if (requested !== true) {
+    return false;
+  }
+  if (!(await managesNetworkTokens(context, permissions))) {
     throw new AppError(
       403,
       'FORBIDDEN',
       'Only admins who manage users on every site can create network tokens',
     );
   }
-  return requested ?? mayGrantNetwork;
+  return true;
 };
 
 /**

@@ -107,7 +107,7 @@ Built-in editors live in `src/fields/<Name>/`, keyed by catalogue ID in `src/fie
 itself, with option schemas, is `EDITOR_CATALOGUE` in `@shapio/schema`). Every editor gets the public contract
 from `@shapio/editor-sdk` (`FieldEditorProps`); built-ins also get the field definition and the value's path.
 Rich text is Tiptap's open-source core, configured to produce exactly the `shapio-richtext` v1 document the server
-validates (`apps/api/src/content/richtext/spec.ts`); `src/fields/RichTextField/richTextContract.test.ts` checks the
+validates (`packages/schema/src/richtext/spec.ts`); `src/fields/RichTextField/richTextContract.test.ts` checks the
 schema against the server validator, and `richTextDocument.ts` holds the `format.version` migration hook. Media
 values are asset IDs (reads return asset views; the form keeps IDs and previews from the media query cache).
 

@@ -41,7 +41,7 @@ export const Actions = ({ role, onDelete }: ActionsProps) => {
       </InlineConfirm>
       <DropdownMenuContent align="end" onCloseAutoFocus={(event) => deleting && event.preventDefault()}>
         <DropdownMenuItem asChild>
-          <Link to="/settings/roles/app/$roleId" params={{ roleId: role.id }}>
+          <Link to="/network/roles/app/$roleId" params={{ roleId: role.id }}>
             <SlidersHorizontal aria-hidden="true" />
             {t('appRoles.editPermissions')}
           </Link>

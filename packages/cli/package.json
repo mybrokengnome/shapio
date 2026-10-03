@@ -18,7 +18,10 @@
   },
   "dependencies": {
     "@shapio/client": "workspace:*",
-    "@shapio/schema": "workspace:*"
+    "@shapio/schema": "workspace:*",
+    "marked": "catalog:",
+    "saxes": "catalog:",
+    "tar": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

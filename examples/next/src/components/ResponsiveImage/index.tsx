@@ -1,9 +1,17 @@
+import type { ShapioAttributes } from '@shapio/visual';
 import type { Media } from '../../lib/types';
 
-type ResponsiveImageProps = { media: Media; sizes: string; eager?: boolean; className?: string };
+type ResponsiveImageProps = {
+  media: Media;
+  sizes: string;
+  eager?: boolean;
+  className?: string;
+  /** The field the image shows (`shapioAttr`), for visual editing. */
+  visual?: ShapioAttributes;
+};
 
 /** WebP variants in `srcSet`, intrinsic size set (no layout shift), lazy unless eager. */
-export const ResponsiveImage = ({ media, sizes, eager = false, className }: ResponsiveImageProps) => {
+export const ResponsiveImage = ({ media, sizes, eager = false, className, visual }: ResponsiveImageProps) => {
   const widths = media.variants
     .filter((variant) => variant.name.startsWith('w') && variant.width !== null)
     .sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
@@ -22,6 +30,7 @@ export const ResponsiveImage = ({ media, sizes, eager = false, className }: Resp
       fetchPriority={eager ? 'high' : undefined}
       decoding="async"
       className={className}
+      {...visual}
     />
   );
 };

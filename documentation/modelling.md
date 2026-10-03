@@ -88,7 +88,7 @@ the sections of the entry form.
 A new field appears in the admin form, the REST and GraphQL APIs, the OpenAPI document and the generated
 TypeScript types as soon as you save. Because `public` defaults to on, a site's delivery token sees it at once.
 Turn `public` off for fields only editors should see (internal notes, prices before launch); a delivery role
-can still be granted those fields explicitly (Settings → Roles).
+can still be granted those fields explicitly (Network → Roles).
 
 ## What a change does
 
@@ -145,7 +145,7 @@ model it reads. A new model's indexes are built in the background, one at a time
 1. Models → New model: kind, label, API ID (and, for a collection, the plural API ID); add fields.
 2. Save. The model is listed under Content at once.
 3. Create an entry, Save, Publish.
-4. Give your site's delivery role `read` on the model (Settings → Roles), or grant the public app role read
+4. Give your site's delivery role `read` on the model (Network → Roles), or grant the public app role read
    access if anonymous visitors should read it ([End users](end-users.md)).
 
 Next: [Content](content.md), [Delivery API](delivery-api.md).

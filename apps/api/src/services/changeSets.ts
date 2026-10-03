@@ -138,7 +138,11 @@ export const listChangeSets = async (
 
 export const createChangeSet = async (
   context: ContentServiceContext,
-  input: { title: string; description?: string | undefined; source?: 'manual' | 'builder' | undefined },
+  input: {
+    title: string;
+    description?: string | undefined;
+    source?: 'manual' | 'builder' | 'assist' | undefined;
+  },
 ): Promise<ChangeSetView> => {
   const row = await context.db.transaction().execute(async (trx) => {
     const inserted = await changeSetsRepository.insert(

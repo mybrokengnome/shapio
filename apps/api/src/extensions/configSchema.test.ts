@@ -53,6 +53,18 @@ describe('shapio.config validation', () => {
     ]);
   });
 
+  it("reserves the names of Shapio's own services, including site and forSite", () => {
+    const problems = findConfigProblems({
+      services: { site: noop, forSite: noop, content: noop, media: noop, jobs: noop, logger: noop },
+    });
+    expect(problems).toEqual(
+      ['site', 'forSite', 'content', 'media', 'jobs', 'logger'].map((name) => ({
+        path: `/services/${name}`,
+        message: `"${name}" is one of Shapio's own services`,
+      })),
+    );
+  });
+
   it('rejects a config that is not an object', () => {
     expect(findConfigProblems(undefined)).toHaveLength(1);
     expect(findConfigProblems([])).toHaveLength(1);

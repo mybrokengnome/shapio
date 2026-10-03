@@ -6,7 +6,13 @@ import type { DeploymentRunRow } from '../repositories/deploymentRuns.js';
 import type { RunReport } from './status.js';
 import type { ConnectionTestResult } from './testResult.js';
 
-export const DEPLOYMENT_PROVIDER_IDS = ['generic_webhook', 'cloudflare_pages', 'github'] as const;
+export const DEPLOYMENT_PROVIDER_IDS = [
+  'generic_webhook',
+  'cloudflare_pages',
+  'vercel',
+  'netlify',
+  'github',
+] as const;
 export type DeploymentProviderId = (typeof DEPLOYMENT_PROVIDER_IDS)[number];
 
 export const TRIGGER_POLICIES = ['publish', 'change_set', 'schema', 'manual'] as const;
@@ -24,7 +30,7 @@ export type ProviderContext = {
   connection: ResolvedConnection;
   /** Outbound policy for admin-entered destinations (deploy hook, generic URL). */
   policy: OutboundPolicy;
-  /** Policy for operator-configured provider APIs (CLOUDFLARE_API_URL, GITHUB_API_URL). */
+  /** Policy for operator-configured provider APIs (CLOUDFLARE_API_URL, VERCEL_API_URL, NETLIFY_API_URL, GITHUB_API_URL). */
   trustedPolicy: OutboundPolicy;
   signal?: AbortSignal | undefined;
 };

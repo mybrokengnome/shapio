@@ -21,6 +21,11 @@
       "@shapio/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./html": {
+      "@shapio/source": "./src/html.ts",
+      "types": "./dist/html.d.ts",
+      "default": "./dist/html.js"
     }
   },
   "files": [
@@ -31,6 +36,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "parse5": "catalog:",
     "pluralize": "8.0.0",
     "typebox": "catalog:"
   },

@@ -2,18 +2,24 @@ import { linkOptions } from '@tanstack/react-router';
 import { Blocks, FilePlus2, Plus } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useMe } from '@/api/auth';
 import { usePaletteItems } from '@/components/CommandPalette/hooks/usePaletteItems';
 import type { PaletteItem } from '@/components/CommandPalette/types';
 import { SETTINGS_GROUPS } from '@/features/Settings/sections';
-import { isVisible } from '../navItems';
+import { canSeeNetwork } from '@/helpers/sites';
+import { isVisible, NETWORK_ITEMS } from '../navItems';
 import { useNavAccess } from './useNavAccess';
 import { usePlaces } from './usePlaces';
 import type { ShellNavGroup } from './useShellNavGroups';
 
-/** Every sidebar destination, then the settings pages the sidebar doesn't list, once each. */
+/**
+ * Every sidebar destination, then the settings pages and (for network admins, from any site) the network
+ * pages the sidebar doesn't list, once each.
+ */
 const useGoToItems = (groups: readonly ShellNavGroup[]): PaletteItem[] => {
   const { t } = useTranslation();
   const access = useNavAccess();
+  const { data: me } = useMe();
   return useMemo(() => {
     const items: PaletteItem[] = groups.flatMap((group) =>
       group.items.flatMap((item) =>
@@ -40,8 +46,19 @@ const useGoToItems = (groups: readonly ShellNavGroup[]): PaletteItem[] => {
         icon: section.icon,
         link: linkOptions({ to: section.to }),
       }));
-    return [...items, ...settings];
-  }, [groups, access, t]);
+    const network = canSeeNetwork(me)
+      ? NETWORK_ITEMS.filter((item) => isVisible(item, access) && !listed.has(item.to)).map(
+          (item): PaletteItem => ({
+            id: `goto:network:${item.key}`,
+            label: t(item.labelKey),
+            hint: t('shell.groups.network'),
+            icon: item.icon,
+            link: linkOptions({ to: item.to }),
+          }),
+        )
+      : [];
+    return [...items, ...settings, ...network];
+  }, [groups, access, me, t]);
 };
 
 /** "New Article" for each place the admin may add to, then a new content type or component. */

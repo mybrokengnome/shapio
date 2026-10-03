@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
 import {
   loadPlaygroundAssets,
@@ -8,12 +9,18 @@ import {
 
 let assets: Map<string, PlaygroundAsset> | undefined;
 
-export const getPlaygroundPage = async (request: FastifyRequest, reply: FastifyReply) => {
+type PlaygroundPageRequest = FastifyRequest<{ Querystring: { site?: string } }>;
+
+/** The page is a network route; `?site=` only chooses the site its GraphQL requests name (`?site=` on the endpoint). */
+export const getPlaygroundPage = async (request: PlaygroundPageRequest, reply: FastifyReply) => {
   const { urls } = request.server;
+  const endpoint = urls.withBasePath('/api/graphql');
+  const { site } = request.query;
   return reply.type('text/html; charset=utf-8').send(
     renderPlaygroundPage({
       assets: urls.withBasePath('/api/graphql/playground'),
-      endpoint: urls.withBasePath('/api/graphql'),
+      endpoint:
+        site === undefined ? endpoint : `${endpoint}?${SITE_QUERY_PARAMETER}=${encodeURIComponent(site)}`,
       csrf: urls.withBasePath('/api/admin/auth/csrf'),
     }),
   );

@@ -12,6 +12,11 @@ These live under **Develop → Changes** and **Develop → Snapshots** in the ad
 sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)).
 Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
+On an instance with several [sites](sites.md), change sets and snapshot numbers are per site: a set holds its
+site's entries only and ships as one snapshot there. A schema item changes the shared schema, so it needs schema
+permission held on all sites; its review lists affected entries per site, and a conversion takes a snapshot on
+every site whose published content it changes, recorded there as a conversion naming the set.
+
 ## A change set
 
 A change set has a title, an optional description and items:
@@ -129,7 +134,7 @@ restore a newer snapshot if you hit that (`422 CHANGE_SET_TOO_LARGE`).
 Shapio counts which fields your sites and apps actually read, so a breaking change shows who it breaks before
 you ship it. Every delivery read (REST and GraphQL) adds to a counter per day, per model, per field, per reader:
 each API token by name, app users as one group, anonymous callers as one group. Admin users, admin API tokens and
-previews are not counted. **Develop → Live** shows who reads what; the change set review shows the readers of
+previews are not counted. Counters are kept per [site](sites.md). **Develop → Live** shows who reads what; the change set review shows the readers of
 the fields a breaking change touches.
 
 Ask for the fields you use (`fields=` in REST, a selection in GraphQL). A REST read without `fields=` counts

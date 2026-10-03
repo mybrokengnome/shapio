@@ -29,6 +29,12 @@ export const queryKeys = {
     role: (id: string) => ['appRoles', id] as const,
   },
   tokens: ['tokens'] as const,
+  /** Sites (network view) and each site's app role bindings. */
+  sites: {
+    all: ['sites'] as const,
+    site: (id: string) => ['sites', id] as const,
+    appRoles: (id: string) => ['sites', id, 'appRoles'] as const,
+  },
   audit: {
     all: ['audit'] as const,
     list: (query: AuditQuery) => ['audit', 'list', query] as const,
@@ -143,6 +149,8 @@ export const queryKeys = {
       connection: (id: string) => ['publishing', 'deployments', 'connections', id] as const,
       runs: (query: DeploymentRunQuery) => ['publishing', 'deployments', 'runs', 'list', query] as const,
       run: (id: string) => ['publishing', 'deployments', 'runs', 'run', id] as const,
+      /** The connections previews open on: under `deployments`, so connection changes refresh it. */
+      previewTargets: ['publishing', 'deployments', 'previewTargets'] as const,
     },
   },
 };

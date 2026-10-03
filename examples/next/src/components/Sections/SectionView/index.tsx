@@ -1,15 +1,22 @@
+import { shapioAttr, type EntryRef } from '@shapio/visual';
 import type { Section } from '../../../lib/types';
 import { CallToAction } from '../CallToAction';
 import { FeatureGrid } from '../FeatureGrid';
 import { Gallery } from '../Gallery';
 import { Hero } from '../Hero';
 
-type SectionViewProps = { section: Section; index: number };
+type SectionViewProps = { section: Section; index: number; entry: EntryRef };
 
-export const SectionView = ({ section, index }: SectionViewProps) => {
+export const SectionView = ({ section, index, entry }: SectionViewProps) => {
   switch (section.__component) {
     case 'hero':
-      return <Hero section={section} isFirst={index === 0} />;
+      return (
+        <Hero
+          section={section}
+          isFirst={index === 0}
+          visual={shapioAttr(entry, `sections/${index}/heading`)}
+        />
+      );
     case 'featureGrid':
       return <FeatureGrid section={section} />;
     case 'gallery':

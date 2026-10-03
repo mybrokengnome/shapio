@@ -59,8 +59,6 @@ const LocaleLayout = async ({ children, params }: LocaleLayoutProps) => {
             {settings?.siteName ?? strings.siteName} · {settings?.footer ?? strings.footer} · Next.js
           </p>
         </footer>
-        {/* Visual editing (@shapio/visual) plugs in here: its script and the data-shapio attributes on content
-            arrive with Shapio's visual-editing SDK, together with draft preview. */}
       </body>
     </html>
   );

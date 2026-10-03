@@ -1,6 +1,7 @@
 name: Release npm packages
 
-# Publishes shapio, create-shapio, @shapio/schema, @shapio/client and @shapio/editor-sdk.
+# Publishes shapio, create-shapio, @shapio/schema, @shapio/client, @shapio/editor-sdk, @shapio/visual and
+# @shapio/mcp.
 # @shapio/cli and @shapio/admin are private (bundled into shapio). Versions are bumped before tagging.
 on:
   push:

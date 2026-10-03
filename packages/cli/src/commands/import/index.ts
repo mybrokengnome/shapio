@@ -14,6 +14,8 @@ import {
 } from '../export/http.js';
 import { BUNDLE_ENTRY, isTar, listTar, mediaEntryName, type TarEntry } from '../export/tar.js';
 import { formatPlan, type ImportDiff, type MediaFileNeed } from './plan.js';
+import { importStrapiCommand } from './strapi.js';
+import { importWordPressCommand } from './wordpress.js';
 
 const USAGE =
   'shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>\n' +
@@ -21,8 +23,16 @@ const USAGE =
   '  An import never changes an existing model: a model the target has in another form is a conflict.\n' +
   "  Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the\n" +
   '  files (git diff), `shapio schema apply`, then import again.\n' +
-  "  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.";
+  "  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.\n" +
+  '\n' +
+  `${importWordPressCommand.usage}\n\n${importStrapiCommand.usage}`;
 const FLAGS = ['dry-run', 'prune', 'no-wait'] as const;
+
+/** `shapio import wordpress|strapi …`: the importers (a bundle file is the only positional otherwise). */
+const IMPORTERS: Readonly<Record<string, CliCommand>> = {
+  wordpress: importWordPressCommand,
+  strapi: importStrapiCommand,
+};
 const POLL_INTERVAL_MS = 1000;
 const BUNDLE_CONTENT_TYPE = 'application/x-ndjson';
 
@@ -187,9 +197,13 @@ const waitForImport = async (connection: Connection, importId: string, io: CliIo
  * files a `--with-media` archive carries, then starts the import job and follows it to the end.
  */
 export const importCommand: CliCommand = {
-  summary: 'Import a bundle: plan (--dry-run), refuse on conflicts, then import as a resumable job',
+  summary: 'Import a bundle, or a WordPress or Strapi export (import wordpress|strapi)',
   usage: USAGE,
   run: async (args, io) => {
+    const importer = args[0] !== undefined ? IMPORTERS[args[0]] : undefined;
+    if (importer) {
+      return importer.run(args.slice(1), io);
+    }
     let parsed;
     try {
       parsed = parseTransferArgs(args, io, FLAGS);

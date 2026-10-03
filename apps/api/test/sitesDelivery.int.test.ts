@@ -174,7 +174,7 @@ describe('delivery per site', () => {
         { action: 'read', modelId },
         { action: 'create', modelId },
       ]);
-      const created = await admin('POST', '/api/admin/tokens', { name: 'writer', roleId });
+      const created = await admin('POST', '/api/admin/tokens', { name: 'writer', roleId, network: true });
       const { token } = expectStatus(created, 201).json<{ token: string }>();
       const write = (headers: Record<string, string>) =>
         testApp.app.inject({

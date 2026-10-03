@@ -63,19 +63,24 @@ server once). Creating the owner this way closes Setup before anyone else can re
 | Editor    | create, edit, publish and delete content in every model; upload media; change sets; trigger deploys |
 | Read-only | read content and media                                                                              |
 
-Custom roles (Settings → Roles) grant actions per model (`read`, `create`, `update`, `delete`, `publish`,
+Custom roles (Network → Roles) grant actions per model (`read`, `create`, `update`, `delete`, `publish`,
 `schemaManage`), optionally per field, plus instance-wide permissions (`schema.create`, `users.manage`,
 `roles.manage`, `tokens.manage`, `audit.read`, `media.*`, `publishing.manage`, `webhooks.manage`,
 `deployments.manage`, `deployments.trigger`, `changes.manage`, `changes.ship`). Everything is denied unless a
 role grants it. `changes.manage` covers preparing change sets, snapshots and restore; `changes.ship` covers
 shipping and scheduling them; the field-usage report needs `tokens.manage`.
 
+On an instance with several [sites](sites.md#permissions-and-assignments), a role is assigned on one site or on
+all sites. `schema.create`, `users.manage`, `roles.manage`, `audit.read`, `sites.manage` and `schemaManage` are
+network permissions: only roles held on all sites grant them. The Owner role is always held on all sites.
+
 ## Your team
 
-Users → **Invite user** sends an invitation link (valid 7 days) by email. Each person has exactly one role;
-Editor is preselected. The Owner role isn't offered when inviting: invite them with another role, then an
-owner can change it to Owner from the user's row (Change roles). Password reset emails work the same way
-(links valid one hour).
+Network → Users → **Invite user** sends an invitation link (valid 7 days) by email. Each person has one role per
+site, or one role on all sites; Editor on all sites is preselected. With a single site the form is just the role.
+With several, it lists **Access** rows of a site (or _All sites_) and a role, one row per site. The Owner role
+isn't offered when inviting: invite them with another role, then an owner can give them Owner on all sites from
+the user's row (**Change access**). Password reset emails work the same way (links valid one hour).
 
 ### Inviting people without email
 
@@ -99,5 +104,8 @@ Settings → API tokens creates a token bound to one role. It is shown once; Sha
   `shapio types` use: `--token shp_…` or `SHAPIO_TOKEN`.
 - A **delivery** token (bound to a delivery role, which can only grant `read`) is what your site's build uses
   to read published content. See [Delivery API](delivery-api.md#tokens).
+
+Tokens belong to the site they are created on. An admin with `users.manage` can instead create a **network**
+admin token, which works on every site ([Sites](sites.md#api-tokens)).
 
 Sessions, rate limits and the audit log: [Security](security.md).

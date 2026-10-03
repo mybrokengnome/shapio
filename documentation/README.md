@@ -19,6 +19,7 @@ model never needs a rebuild, a restart or a deploy.
 - [Localization](localization.md): locales, localized and shared fields, fallbacks, per-locale publishing.
 - [Schema sync](schema-sync.md): `shapio schema pull | diff | apply`, the lock file, git write-back.
 - [Content](content.md): drafts, autosave, revisions, publishing and scheduling.
+- [Assist](assist.md): editor assists with your own model provider; opt-in, proposals only.
 - [Change sets, snapshots and restore](change-sets.md): schema and content reviewed and shipped as one
   snapshot, restoring an older snapshot, field usage from real traffic.
 - [Media](media.md): local disk and S3/R2, uploads, private media, variants, `shapio media migrate`.
@@ -27,8 +28,15 @@ model never needs a rebuild, a restart or a deploy.
 - [Snapshots and the changes API](snapshots.md): pinning builds, what changed between two snapshots,
   incremental builds and `revalidatePath`.
 - [End users](end-users.md): sign-up, sign-in, Google and GitHub, roles, owner-only writes.
-- [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, preview links.
+- [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, Vercel, Netlify,
+  preview links.
+- [Sites](sites.md): several sites on one instance (shared schema and team, separate content, tokens, snapshots
+  and app users); which site a request reads, permissions, upgrade notes.
+- [Visual editing](visual-editing.md): preview drafts beside the document and click a part of the page to edit
+  its field.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.
+- [Extension points catalogue](extensions-catalogue.md): every way to extend or integrate Shapio, with its
+  contract, where it runs, versioning and limits.
 - [MCP server for coding agents](mcp.md): Claude Code, Cursor and Claude Desktop model content, write drafts
   and open change sets; people ship them.
 - [Site starters](starters.md): Astro, Next.js and SvelteKit sites on Shapio (`create-shapio --site`).
@@ -37,6 +45,8 @@ model never needs a rebuild, a restart or a deploy.
 ## Run it
 
 - [Backup and restore](backup-restore.md): PostgreSQL and media, and content export/import.
+- [Moving from WordPress or Strapi](importers.md): importing a WordPress or Strapi 5 export into reviewable
+  change sets.
 - [Upgrades](upgrades.md): what needs a restart and what never does.
 - [Security](security.md): sessions, CSRF, tokens, outbound requests, limits, reporting a vulnerability.
 

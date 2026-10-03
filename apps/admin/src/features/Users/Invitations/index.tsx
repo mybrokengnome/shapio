@@ -11,9 +11,10 @@ import { RowTitle } from '@/components/RowTitle';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
-import { RoleBadges } from '../RoleBadges';
+import { AssignmentBadges } from '../AssignmentBadges';
 
 type InvitationsProps = {
+  siteNames: ReadonlyMap<string, string>;
   /** Issues a fresh link for the invitation and shows it; resolves once it is shown. */
   onCopyLink: (invitation: Invitation) => Promise<unknown>;
   /** Keeps focus on a link that just appeared instead of returning it to the row's button. */
@@ -24,7 +25,7 @@ type InvitationsProps = {
  * Invitations not yet accepted; the panel only appears while there are some. Each row can issue a new link
  * to send by hand (the earlier one stops working) or revoke the invitation.
  */
-export const Invitations = ({ onCopyLink, onCloseAutoFocus }: InvitationsProps) => {
+export const Invitations = ({ siteNames, onCopyLink, onCloseAutoFocus }: InvitationsProps) => {
   const { t } = useTranslation();
   const invitations = useInvitations();
   const { names: roleNames } = useRoleNames();
@@ -56,7 +57,11 @@ export const Invitations = ({ onCopyLink, onCloseAutoFocus }: InvitationsProps) 
               </TableCell>
               <TableCell>
                 <span className="flex flex-wrap gap-1">
-                  <RoleBadges roleIds={invitation.roleIds} roleNames={roleNames} />
+                  <AssignmentBadges
+                    assignments={invitation.assignments}
+                    roleNames={roleNames}
+                    siteNames={siteNames}
+                  />
                 </span>
               </TableCell>
               <TableCell title={formatDateTime(invitation.expiresAt)}>

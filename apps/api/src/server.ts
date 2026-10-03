@@ -3,6 +3,7 @@ import closeWithGrace from 'close-with-grace';
 import type { FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
 import { buildApp } from './app.js';
+import { createAssistRuntime } from './assist/runtime.js';
 import type { AppConfig } from './config/index.js';
 import { SHAPIO_VERSION } from './constants/version.js';
 import { createContentPorts } from './content/ports.js';
@@ -16,6 +17,7 @@ import { createAdminEmailJobHandlers } from './email/jobs.js';
 import { loadProjectConfig, type LoadedProjectConfig } from './extensions/loader.js';
 import { createExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
 import { createUrlBuilder } from './helpers/publicUrl.js';
+import { createAssistJobHandlers } from './jobs/assistContentOps.js';
 import {
   contentHealthOutboxSubscriber,
   createContentHealthJobHandlers,
@@ -111,6 +113,11 @@ export const createConfiguredWorker = (
         db,
         staleDays: config.health.staleDays,
         log: logger.child({ component: 'content-health' }),
+      }),
+      ...createAssistJobHandlers({
+        environment: publishing,
+        assist: createAssistRuntime(config.assist, publishing.runtime.resolve),
+        storage,
       }),
     ]),
     subscribers: [

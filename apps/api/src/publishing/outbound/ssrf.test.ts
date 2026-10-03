@@ -6,6 +6,7 @@ import {
   OutboundBlockedError,
   parseDestination,
   resolveDestination,
+  trustedOutboundPolicy,
   type OutboundPolicy,
 } from './ssrf.js';
 
@@ -105,5 +106,20 @@ describe('SSRF address checks', () => {
     expect(() => parseDestination('file:///etc/passwd')).toThrow(OutboundBlockedError);
     expect(() => parseDestination('https://user:pass@example.com/')).toThrow(/credentials/);
     expect(() => parseDestination('not a url')).toThrow(OutboundBlockedError);
+  });
+
+  it('allows loopback and private destinations under the operator-trusted policy', async () => {
+    const trusted = trustedOutboundPolicy(() => Promise.resolve([{ address: '10.0.0.5', family: 4 }]));
+    await expect(resolveDestination(parseDestination('http://127.0.0.1:11434/v1'), trusted)).resolves.toEqual(
+      { address: '127.0.0.1', family: 4 },
+    );
+    await expect(resolveDestination(parseDestination('http://[::1]/v1'), trusted)).resolves.toEqual({
+      address: '::1',
+      family: 6,
+    });
+    await expect(resolveDestination(parseDestination('https://llm.internal/v1'), trusted)).resolves.toEqual({
+      address: '10.0.0.5',
+      family: 4,
+    });
   });
 });

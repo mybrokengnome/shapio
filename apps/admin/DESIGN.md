@@ -113,6 +113,22 @@ is written by the model's author and stays visible (13px meta).
 - A screen renders only its content: start with `Page` and `PageHeader`; don't add headers, gutters or
   backgrounds of your own.
 
+### Sites
+
+- The URL carries the site: `/admin/s/<siteKey>/…`. Routes are site-free (`/content/$modelKey`): the
+  router's `rewrite` (`app/siteRewrite.ts`) adds and strips the prefix, so links never name a site.
+  Network pages (`/admin/network/*`) and the signed-out screens carry none. A URL without a site lands on
+  the last site this browser used, else the primary one.
+- The site is fixed for a page load (`app/currentSite.ts`); the API client names it on every request.
+  Opening another site is a full navigation (`goToSite`), so no cache or store crosses sites.
+- **`SiteSwitcher`** (sidebar header, under the wordmark): the current site, the admin's other sites and,
+  for admins with a network action, "Network". On network pages the sidebar shows the network group
+  (Sites, Users, Roles, Audit log) instead of the site's navigation.
+- A site the admin has no role on shows `NoSiteAccess` in the frame (switcher, no navigation, no search);
+  an unknown site key shows `SiteNotFound`.
+- Show a site only where there is more than one: assignment forms are a role alone on a single-site
+  instance, rows of site + role otherwise.
+
 ## Component catalogue
 
 Shared components live in `src/components/<Name>` (Shapio's) and `src/components/ui` (shadcn primitives,

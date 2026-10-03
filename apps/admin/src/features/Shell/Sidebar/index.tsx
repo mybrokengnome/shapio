@@ -19,9 +19,15 @@ import { Wordmark } from '@/components/Wordmark';
 import type { ShellNavGroup } from '../hooks/useShellNavGroups';
 import { NavItem } from '../NavItem';
 import { SearchButton } from '../SearchButton';
+import { SiteSwitcher } from '../SiteSwitcher';
 import { UserMenu } from '../UserMenu';
 
-type SidebarProps = { groups: readonly ShellNavGroup[]; activeKey: string | undefined };
+type SidebarProps = {
+  groups: readonly ShellNavGroup[];
+  activeKey: string | undefined;
+  /** Search (the ⌘K palette); off where there is nothing to search (no role on the site). */
+  searchable: boolean;
+};
 
 type GroupProps = { group: ShellNavGroup; activeKey: string | undefined };
 
@@ -43,10 +49,10 @@ const Group = ({ group, activeKey }: GroupProps) => {
 };
 
 /**
- * Wordmark and search, the navigation groups, and the account menu with the theme switch. Memoized: the shell re-renders on
+ * Wordmark, the site switcher and search, the navigation groups, and the account menu with the theme switch. Memoized: the shell re-renders on
  * every location change (search params included), the sidebar only when its groups or active item change.
  */
-export const Sidebar = memo(function Sidebar({ groups, activeKey }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ groups, activeKey, searchable }: SidebarProps) {
   const { t } = useTranslation();
   const { isMobile } = useSidebar();
   return (
@@ -63,7 +69,8 @@ export const Sidebar = memo(function Sidebar({ groups, activeKey }: SidebarProps
           {/* The sheet closes with Escape or a tap outside; the visible trigger is for the desktop column. */}
           {isMobile ? null : <SidebarTrigger />}
         </div>
-        <SearchButton />
+        <SiteSwitcher />
+        {searchable ? <SearchButton /> : null}
       </SidebarHeader>
       <SidebarContent>
         <nav aria-label={t('shell.mainNavigation')}>

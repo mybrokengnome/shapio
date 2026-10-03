@@ -47,7 +47,7 @@ test('the sidebar: Inbox, places, Media, Publishing, Develop and Workspace; neve
     await expect(develop.getByRole('link', { name, exact: true })).toBeVisible();
   }
   const workspace = nav.getByRole('list', { name: 'Workspace' });
-  for (const name of ['Users', 'Roles', 'Locales', 'Settings']) {
+  for (const name of ['App users', 'Locales', 'Settings']) {
     await expect(workspace.getByRole('link', { name, exact: true })).toBeVisible();
   }
   await expect(nav.getByRole('link', { name: /models/i })).toHaveCount(0);
