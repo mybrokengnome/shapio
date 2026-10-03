@@ -4,7 +4,9 @@
 //   3. scaffold a project with the create-shapio tarball, copy examples/extension into it, check it with
 //      `npx shapio extensions check`, run `npm run start` until /api/ready is 200, and probe the custom route;
 //   4. scaffold each site starter (`create-shapio --site`) and check it is a standalone project: no workspace,
-//      catalog or source-condition references left, and a .gitignore.
+//      catalog or source-condition references left, and a .gitignore;
+//   5. install the scaffolded Next.js starter with the packed `@shapio/schema`, `@shapio/client` and
+//      `@shapio/visual`, seed it against the project from step 3 (started again) and run its `npm run build`.
 // Each run gets its own database, created and dropped on the server named by TEST_DATABASE_URL.
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,9 +30,9 @@ const { DATABASE_URL: _dropped, ...childBaseEnv } = process.env;
 
 const log = (message) => process.stdout.write(`[smoke] ${message}\n`);
 
-const run = (command, args, cwd) => {
+const run = (command, args, cwd, env = {}) => {
   log(`$ ${command} ${args.join(' ')}  (in ${cwd})`);
-  const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: childBaseEnv });
+  const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: { ...childBaseEnv, ...env } });
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with ${result.status}`);
   }
@@ -81,14 +83,18 @@ const waitForReady = async (url, child, timeoutMs = 60_000) => {
   throw new Error(`${url}/api/ready not 200 within ${timeoutMs}ms`);
 };
 
-/** Starts `command`, waits for readiness, checks /api/version (and `probe`), then SIGTERMs; expects exit 0. */
+/**
+ * Starts `command`, waits for readiness, checks /api/version (and `probe`), then SIGTERMs; expects exit 0.
+ * `env` is an object, or a function of the server's URL (for a PUBLIC_URL that matches the free port).
+ */
 const startAndProbe = async (label, command, args, cwd, env, probe = async () => {}) => {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   log(`${label}: $ ${command} ${args.join(' ')} on ${url}`);
+  const extraEnv = typeof env === 'function' ? env(url) : env;
   const child = spawn(command, args, {
     cwd,
-    env: { ...childBaseEnv, ...env, PORT: String(port), HOST: '127.0.0.1', LOG_PRETTY: 'false' },
+    env: { ...childBaseEnv, ...extraEnv, PORT: String(port), HOST: '127.0.0.1', LOG_PRETTY: 'false' },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   const exited = new Promise((done) => child.once('exit', (code, signal) => done({ code, signal })));
@@ -154,21 +160,52 @@ const checkSiteStarter = (createTgz, work, starter) => {
   log(`create-shapio --site ${starter}: standalone project scaffolded`);
 };
 
+const SITE_ADMIN_EMAIL = 'site-smoke@example.com';
+const SITE_ADMIN_PASSWORD = 'npm-smoke-site-starter-password';
+/** The workspace packages a scaffolded starter installs from npm; the smoke packs them instead. */
+const SITE_PACKAGES = ['@shapio/schema', '@shapio/client', '@shapio/visual'];
+
+/**
+ * The scaffolded Next.js starter as a user runs it: `npm install` (with the packed workspace packages, which
+ * are not on the registry for an unreleased version), `npm run seed` against a running Shapio, `npm run build`.
+ */
+const buildNextStarter = (siteTarballs, shapioUrl) => {
+  const site = join(work, 'site-next');
+  const started = Date.now();
+  run('npm', ['install', '--no-audit', '--no-fund', ...siteTarballs], site);
+  run('npm', ['run', 'seed'], site, {
+    SHAPIO_URL: shapioUrl,
+    SHAPIO_ADMIN_EMAIL: SITE_ADMIN_EMAIL,
+    SHAPIO_ADMIN_PASSWORD: SITE_ADMIN_PASSWORD,
+  });
+  run('npm', ['run', 'build'], site);
+  log(
+    `create-shapio --site next: installed, seeded and built in ${Math.round((Date.now() - started) / 1000)}s`,
+  );
+};
+
 const work = mkdtempSync(join(tmpdir(), 'shapio-smoke-'));
 const databases = [`shapio_smoke_npx_${process.pid}`, `shapio_smoke_create_${process.pid}`];
 try {
   const tarballs = join(work, 'tarballs');
   // A fresh clone has no dist/ anywhere: build what gets packed (and its workspace dependencies) first.
-  run('pnpm', ['--filter', 'shapio...', '--filter', 'create-shapio', 'build'], root);
+  const sitePackageFilters = SITE_PACKAGES.flatMap((name) => ['--filter', name]);
+  run('pnpm', ['--filter', 'shapio...', '--filter', 'create-shapio', ...sitePackageFilters, 'build'], root);
   run('pnpm', ['--filter', 'shapio', 'pack', '--pack-destination', tarballs], root);
   run('pnpm', ['--filter', 'create-shapio', 'pack', '--pack-destination', tarballs], root);
-  const tarball = (prefix) =>
+  run('pnpm', [...sitePackageFilters, 'pack', '--pack-destination', tarballs], root);
+  /** `<name>-<version>.tgz`, matched on the name exactly (`shapio-` is also the start of `shapio-client-`). */
+  const tarball = (name) =>
     join(
       tarballs,
-      readdirSync(tarballs).find((f) => f.startsWith(prefix)),
+      readdirSync(tarballs).find(
+        (file) => file.startsWith(`${name}-`) && /^\d/.test(file.slice(name.length + 1)),
+      ),
     );
-  const shapioTgz = tarball('shapio-');
-  const createTgz = tarball('create-shapio-');
+  const shapioTgz = tarball('shapio');
+  const createTgz = tarball('create-shapio');
+  // pnpm names a scoped package's tarball `<scope>-<name>-<version>.tgz`.
+  const siteTarballs = SITE_PACKAGES.map((name) => tarball(name.slice(1).replace('/', '-')));
 
   run('tar', ['-tzf', shapioTgz, 'package/dist/admin/index.html', 'package/dist/cli.js'], work);
 
@@ -220,6 +257,20 @@ try {
   for (const starter of SITE_STARTERS) {
     checkSiteStarter(createTgz, work, starter);
   }
+
+  // 5. the scaffolded Next.js starter builds against the project from step 2, started again
+  run('npx', ['shapio', 'admin', 'create', '--email', SITE_ADMIN_EMAIL], project, {
+    SHAPIO_ADMIN_PASSWORD: SITE_ADMIN_PASSWORD,
+  });
+  await startAndProbe(
+    'create-shapio --site next + npm run build',
+    'npm',
+    ['run', 'start'],
+    project,
+    // The seed uploads media through grant URLs built from PUBLIC_URL, so it must be this server's address.
+    (url) => ({ PUBLIC_URL: url }),
+    async (url) => buildNextStarter(siteTarballs, url),
+  );
 } catch (error) {
   process.exitCode = 1;
   process.stderr.write(`[smoke] FAILED: ${error instanceof Error ? error.stack : String(error)}\n`);

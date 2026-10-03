@@ -2,6 +2,8 @@ import type { FieldDefinition } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import { AppError } from '../../helpers/appError.js';
 import type { FieldMask, Policy, Principal, RowFilter } from '../../permissions/types.js';
+import { contentDialect } from './currentDialect.js';
+import type { ContentSqlDialect } from './dialect/types.js';
 
 /**
  * Policies in content queries (ADR 0005): row filters compile to SQL here (and only here); masks decide
@@ -15,6 +17,7 @@ const OWNER_COLUMNS = { admin: 'e.created_by_admin_id', appUser: 'e.owner_app_us
 export const compileRowFilter = (
   filter: RowFilter | null,
   principal: Principal,
+  dialect: ContentSqlDialect = contentDialect(),
 ): RawBuilder<unknown> | null => {
   if (!filter) {
     return null;
@@ -22,18 +25,18 @@ export const compileRowFilter = (
   switch (filter.kind) {
     case 'ownedByPrincipal':
       if (principal.kind === 'admin') {
-        return sql`${sql.ref(OWNER_COLUMNS.admin)} = ${principal.adminUserId}::uuid`;
+        return sql`${sql.ref(OWNER_COLUMNS.admin)} = ${dialect.uuid(principal.adminUserId)}`;
       }
       if (principal.kind === 'appUser') {
-        return sql`${sql.ref(OWNER_COLUMNS.appUser)} = ${principal.appUserId}::uuid`;
+        return sql`${sql.ref(OWNER_COLUMNS.appUser)} = ${dialect.uuid(principal.appUserId)}`;
       }
       // Tokens and anonymous callers own nothing.
       return sql`false`;
     case 'and':
     case 'or': {
-      const parts = filter.filters.map((child) => compileRowFilter(child, principal) ?? sql`true`);
+      const parts = filter.filters.map((child) => compileRowFilter(child, principal, dialect) ?? sql`true`);
       if (parts.length === 0) {
-        return sql`${filter.kind === 'and'}::boolean`;
+        return dialect.bool(filter.kind === 'and');
       }
       return sql`(${sql.join(parts, filter.kind === 'and' ? sql` and ` : sql` or `)})`;
     }
@@ -106,18 +109,19 @@ export const assertWritable = (
 export const compileModelRowFilters = (
   models: ReadonlyArray<{ modelId: string; rowFilter: RowFilter | null }>,
   principal: Principal,
+  dialect: ContentSqlDialect = contentDialect(),
 ): RawBuilder<unknown> | null => {
   if (models.every((model) => model.rowFilter === null)) {
     return null;
   }
   const open = models.filter((model) => model.rowFilter === null).map((model) => model.modelId);
   const parts = [
-    ...(open.length > 0 ? [sql`e.model_id = any(${open}::uuid[])`] : []),
+    ...(open.length > 0 ? [dialect.oneOf(sql`e.model_id`, open, 'uuid')] : []),
     ...models.flatMap((model) =>
       model.rowFilter === null
         ? []
         : [
-            sql`(e.model_id = ${model.modelId}::uuid and ${compileRowFilter(model.rowFilter, principal) ?? sql`true`})`,
+            sql`(e.model_id = ${dialect.uuid(model.modelId)} and ${compileRowFilter(model.rowFilter, principal, dialect) ?? sql`true`})`,
           ],
     ),
   ];

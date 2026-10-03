@@ -1,10 +1,13 @@
 import { sql, type Kysely } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { down, up } from '../src/db/migrations/20261003150000_widen_deployment_providers.js';
+import { dialectSkipReason, withSkipReason } from './helpers/dialect.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
+const sqliteSkip = dialectSkipReason(import.meta.url);
+
 /** Vercel and Netlify connections (plan agentic-ecosystem §B2); rolling back never deletes them. */
-describe('migration: widen deployment providers', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('migration: widen deployment providers', sqliteSkip), () => {
   const database = useTestDatabase();
 
   it('accepts Vercel and Netlify, and down refuses while such connections exist', async () => {

@@ -3,9 +3,9 @@ import { copyFileSync, createWriteStream, existsSync, readFileSync, rmSync, writ
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import pg from 'pg';
 import { scaffoldProject } from '../../../../packages/create-shapio/src/scaffold';
 import { ARTIFACTS_DIR, E2E_BASE_PATH, E2E_DATABASE } from '../support/constants';
+import { createDatabase, databaseUrlOf, dropDatabase } from '../support/testDatabases';
 
 /**
  * The content suite runs against its own Shapio: a project scaffolded by `create-shapio`, with the example
@@ -42,30 +42,6 @@ const freePort = () =>
       );
     });
   });
-
-const maintenanceUrl = () => {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) {
-    throw new Error('Set TEST_DATABASE_URL to run the e2e suite');
-  }
-  return url;
-};
-
-const withDatabase = (url: string, database: string) => {
-  const parsed = new URL(url);
-  parsed.pathname = `/${database}`;
-  return parsed.toString();
-};
-
-const runSql = async (statement: string) => {
-  const client = new pg.Client({ connectionString: maintenanceUrl() });
-  await client.connect();
-  try {
-    await client.query(statement);
-  } finally {
-    await client.end();
-  }
-};
 
 /** Builds the example editor with Vite's API and its own config: one ESM file importing react + the SDK. */
 const buildExampleEditor = async (): Promise<string> => {
@@ -104,8 +80,7 @@ export const startProjectServer = async (
 ): Promise<ProjectServer> => {
   const projectDir = scaffoldWithEditor(await buildExampleEditor(), name);
   const database = `${E2E_DATABASE}_${name}`;
-  await runSql(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`);
-  await runSql(`CREATE DATABASE ${pg.escapeIdentifier(database)}`);
+  await createDatabase(database);
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   const logPath = join(ARTIFACTS_DIR, `${name}-server.log`);
@@ -122,7 +97,7 @@ export const startProjectServer = async (
         PORT: String(port),
         BASE_PATH: E2E_BASE_PATH,
         PUBLIC_URL: origin,
-        DATABASE_URL: withDatabase(maintenanceUrl(), database),
+        DATABASE_URL: databaseUrlOf(database),
         MIGRATE_ON_START: 'true',
         LOG_LEVEL: 'info',
         LOG_PRETTY: 'false',
@@ -153,7 +128,7 @@ export const startProjectServer = async (
     stop: async () => {
       server.kill('SIGTERM');
       await sleep(1500);
-      await runSql(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(database)} WITH (FORCE)`);
+      await dropDatabase(database);
     },
   };
 };

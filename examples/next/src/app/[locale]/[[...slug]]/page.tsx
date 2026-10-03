@@ -4,8 +4,11 @@ import { Sections } from '../../../components/Sections';
 import { listPages } from '../../../lib/shapio';
 import { HOME_SLUG, toLocale, type Locale } from '../../../lib/site';
 
-/** Pages from the `page` collection; `home` is the locale's front page (`/en/`), the others `/en/<slug>/`. */
-export const dynamicParams = false;
+/**
+ * Pages from the `page` collection; `home` is the locale's front page (`/en/`), the others `/en/<slug>/`.
+ * Slugs published after the build render on their first request (and are cached); unknown slugs are a 404.
+ */
+export const dynamicParams = true;
 
 export const generateStaticParams = async ({ params }: { params: { locale: string } }) =>
   (await listPages(toLocale(params.locale))).map((page) => ({

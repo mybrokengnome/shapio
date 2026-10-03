@@ -46,8 +46,8 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 
 | Variable | Default | Values | Description |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | **required** | text | PostgreSQL (16 or later) connection string. |
-| `DATABASE_POOL_MAX` | `10` | integer 2–200 | Connections in the pool, per process. |
+| `DATABASE_URL` | **required** | text | PostgreSQL (16 or later) connection string, or `sqlite:<path>` for a single-process SQLite database (see SQLite). |
+| `DATABASE_POOL_MAX` | `10` | integer 2–200 | Connections in the pool, per process (SQLite: read connections; one connection writes). |
 | `MIGRATE_ON_START` | `true` | `true`, `false` | Apply pending migrations at startup, under an advisory lock (safe with several instances). |
 | `SCHEMA_LISTEN` | `true` | `true`, `false` | LISTEN for schema-change notifications to refresh caches early. Turn off where LISTEN does not work (e.g. PgBouncer in transaction mode); every request still checks the durable schema version. |
 
@@ -67,7 +67,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 
 | Variable | Default | Values | Description |
 | --- | --- | --- | --- |
-| `WORKER_MODE` | `inline` | `inline`, `dedicated` | `inline` runs the job worker inside the API process; `dedicated` expects a separate `shapio worker` process. |
+| `WORKER_MODE` | `inline` | `inline`, `dedicated` | `inline` runs the job worker inside the API process; `dedicated` expects a separate `shapio worker` process (PostgreSQL only). |
 | `WORKER_CONCURRENCY` | `4` | integer 1–64 | Jobs one worker runs at the same time. |
 | `WORKER_POLL_INTERVAL_MS` | `1000` | integer ≥ 50 | How often an idle worker looks for due jobs. |
 | `JOB_LEASE_MS` | `60000` | integer ≥ 500 | How long a claimed job is reserved before another worker may take it over (renewed while it runs). |

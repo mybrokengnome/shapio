@@ -13,7 +13,7 @@ export const runHeadQuery = async (query: RawBuilder<HeadRow>, executor: Executo
   (await query.execute(executor)).rows;
 
 export const runCountQuery = async (
-  query: RawBuilder<{ total: string }>,
+  query: RawBuilder<{ total: string | number }>,
   executor: Executor = db,
 ): Promise<number> => Number((await query.execute(executor)).rows[0]?.total ?? 0);
 

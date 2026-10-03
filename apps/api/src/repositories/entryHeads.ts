@@ -2,6 +2,7 @@ import type { Kysely, Transaction } from 'kysely';
 import type { HeadState } from '../content/model.js';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
+import { asBigint } from '../db/sql/typed.js';
 import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 import { entrySiteOf } from './entries.js';
@@ -22,8 +23,6 @@ const COLUMNS = [
   'created_at',
   'updated_at',
 ] as const;
-
-const NEXT_CHANGE_SEQ = nextSequenceValue('entry_heads_change_seq');
 
 /** Every head of an entry, locked for the rest of the transaction. */
 export const lockForEntry = (entryId: string, trx: Transaction<DB>) =>
@@ -80,7 +79,7 @@ export const update = (head: HeadWrite, trx: Executor = db) =>
       data: head.data,
       autosaved_at: head.autosavedAt,
       version: eb('version', '+', eb.lit(1)),
-      change_seq: NEXT_CHANGE_SEQ,
+      change_seq: nextSequenceValue('entry_heads_change_seq'),
       updated_at: head.now,
     }))
     .where('entry_id', '=', head.entryId)
@@ -153,7 +152,7 @@ export const countForLocale = async (locale: string, executor: Executor = db): P
 export const maxChangeSeq = async (modelIds: readonly string[], executor: Executor = db): Promise<string> => {
   const row = await executor
     .selectFrom('entry_heads')
-    .select(({ fn }) => fn.max('change_seq').as('max'))
+    .select(({ fn }) => asBigint<string | null>(fn.max('change_seq')).as('max'))
     .where('model_id', 'in', modelIds)
     .executeTakeFirst();
   return row?.max ?? '0';

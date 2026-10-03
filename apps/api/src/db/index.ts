@@ -1,5 +1,7 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
+import { dialectOfUrl, setCurrentDialect, sqliteLocationOfUrl } from './dialect.js';
+import { createSqliteDb } from './sqlite/index.js';
 import type { DB } from './types.js';
 
 export type Database = Kysely<DB>;
@@ -14,17 +16,33 @@ type CreateDbOptions = {
    * warning, so the error is never silent.
    */
   onIdleConnectionError?: (error: Error) => void;
+  /**
+   * SQLite only: fail on computed result columns that look like undecoded timestamps or JSON (tests turn it
+   * on, so a missing `db/sql/typed` marker is caught).
+   */
+  strict?: boolean;
 };
 
 const warnIdleConnectionError = (error: Error) =>
   process.emitWarning(`PostgreSQL connection lost while idle: ${error.message}`);
 
+/**
+ * The database handle for DATABASE_URL: PostgreSQL through a `pg` pool, or SQLite (`sqlite:<path>`) through
+ * Shapio's `node:sqlite` driver, where `poolMax` is the number of read connections (one connection writes).
+ * Sets the process dialect (`db/dialect.ts`) that SQL builders read.
+ */
 export const createDb = ({
   connectionString,
   poolMax,
   applicationName = 'shapio',
   onIdleConnectionError = warnIdleConnectionError,
+  strict = false,
 }: CreateDbOptions): Database => {
+  if (dialectOfUrl(connectionString) === 'sqlite') {
+    setCurrentDialect('sqlite');
+    return createSqliteDb<DB>({ location: sqliteLocationOfUrl(connectionString), readers: poolMax, strict });
+  }
+  setCurrentDialect('postgres');
   const pool = new pg.Pool({ connectionString, max: poolMax, application_name: applicationName });
   // Without a listener, pg's 'error' event on an idle client would crash the process on a database restart.
   pool.on('error', onIdleConnectionError);

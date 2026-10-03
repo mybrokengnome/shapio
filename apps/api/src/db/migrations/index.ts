@@ -1,4 +1,5 @@
 import type { Migration, MigrationProvider } from 'kysely/migration';
+import type { DialectName } from '../dialect.js';
 import * as createPlatformTables from './20261001120000_create_platform_tables.js';
 import * as createAdminIdentity from './20261001130000_create_admin_identity.js';
 import * as createSystemSettings from './20261001130500_create_system_settings.js';
@@ -19,6 +20,7 @@ import * as enqueueFieldIndexLayout from './20261003140200_enqueue_field_index_l
 import * as changeSetItemsSiteAndPreviewEntry from './20261003140500_change_set_items_site_and_preview_entry.js';
 import * as widenDeploymentProviders from './20261003150000_widen_deployment_providers.js';
 import * as createAssistRuns from './20261003160000_create_assist_runs.js';
+import { SQLITE_MIGRATIONS } from './sqlite/index.js';
 
 /**
  * Every migration, listed explicitly. A static list works when the server is bundled for npm, where
@@ -51,3 +53,11 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
 export const staticMigrationProvider: MigrationProvider = {
   getMigrations: () => Promise.resolve({ ...MIGRATIONS }),
 };
+
+/** SQLite's list: its baseline, then the twins of later migrations (`./sqlite/index.ts`). */
+export const sqliteMigrationProvider: MigrationProvider = {
+  getMigrations: () => Promise.resolve({ ...SQLITE_MIGRATIONS }),
+};
+
+export const migrationProviderFor = (dialect: DialectName): MigrationProvider =>
+  dialect === 'sqlite' ? sqliteMigrationProvider : staticMigrationProvider;

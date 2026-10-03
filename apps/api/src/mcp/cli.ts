@@ -8,14 +8,14 @@ import { createUrlBuilder } from '../helpers/publicUrl.js';
  * server run with npx). Prints configuration only: it creates no token and contacts nothing.
  */
 const MCP_USAGE =
-  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship] [--site <key>]\n' +
+  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--site <key>]\n' +
   '  Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then\n' +
   "  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else\n" +
-  '  the primary site).\n' +
+  '  the primary site). --client generic prints the stdio server definition any MCP client takes.\n' +
   '  Create an admin API token whose role has no "changes.ship" and paste it in place\n' +
   '  of the placeholder: agents prepare change sets, people ship them.';
 
-const CLIENTS = ['claude-code', 'cursor', 'claude-desktop'] as const;
+const CLIENTS = ['claude-code', 'cursor', 'claude-desktop', 'generic'] as const;
 type McpClientKind = (typeof CLIENTS)[number];
 
 export const TOKEN_PLACEHOLDER = '<admin API token>';
@@ -48,13 +48,16 @@ const serverEnv = ({ url, site }: McpTarget): Record<string, string> => ({
   ...(site !== undefined ? { SHAPIO_SITE: site } : {}),
 });
 
+/** The stdio server definition every MCP client takes: a command, its arguments and its environment. */
+const serverDefinition = (target: McpTarget) => ({
+  command: 'npx',
+  args: serverArgs(target),
+  env: serverEnv(target),
+});
+
 /** The `mcpServers` JSON block Cursor and Claude Desktop read. */
 const jsonConfig = (target: McpTarget) =>
-  JSON.stringify(
-    { mcpServers: { shapio: { command: 'npx', args: serverArgs(target), env: serverEnv(target) } } },
-    null,
-    2,
-  );
+  JSON.stringify({ mcpServers: { shapio: serverDefinition(target) } }, null, 2);
 
 /** `claude mcp add` flags; the token placeholder is quoted (it contains spaces). */
 const claudeCodeEnv = (target: McpTarget) =>
@@ -70,10 +73,13 @@ const SECTIONS: Record<McpClientKind, (target: McpTarget) => string> = {
   cursor: (target) => `Cursor (.cursor/mcp.json in your project):\n\n${jsonConfig(target)}\n`,
   'claude-desktop': (target) =>
     `Claude Desktop (claude_desktop_config.json, then restart the app):\n\n${jsonConfig(target)}\n`,
+  generic: (target) =>
+    `Any MCP client (stdio server):\n\n${JSON.stringify(serverDefinition(target), null, 2)}\n`,
 };
 
 export const mcpCommand: CliCommand = {
-  summary: 'Print the configuration that connects Claude Code, Cursor or Claude Desktop through @shapio/mcp',
+  summary:
+    'Print the configuration that connects Claude Code, Cursor, Claude Desktop or any MCP client through @shapio/mcp',
   usage: MCP_USAGE,
   run: async (args, io) => {
     let values;

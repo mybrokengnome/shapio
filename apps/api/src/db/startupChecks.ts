@@ -1,4 +1,5 @@
 import { sql, type Kysely } from 'kysely';
+import { dialectOfUrl, sqliteLocationOfUrl } from './dialect.js';
 import { getPendingMigrations } from './migrator.js';
 import type { DB } from './types.js';
 
@@ -10,8 +11,12 @@ export class StartupCheckError extends Error {
   }
 }
 
-/** `host:port/database` from DATABASE_URL, never the credentials. */
+/** `host:port/database` (PostgreSQL) or the file path (SQLite) from DATABASE_URL, never the credentials. */
 export const describeDatabaseTarget = (connectionString: string): string => {
+  if (dialectOfUrl(connectionString) === 'sqlite') {
+    const location = sqliteLocationOfUrl(connectionString);
+    return location.kind === 'memory' ? 'an in-memory database' : location.path;
+  }
   try {
     const url = new URL(connectionString);
     return `${url.hostname}:${url.port || '5432'}${url.pathname}`;
@@ -50,11 +55,18 @@ const connectionFailureReason = (error: unknown): string => {
   return error instanceof Error && error.message !== '' ? error.message : String(code ?? error);
 };
 
-/** Fails with an actionable message when PostgreSQL cannot be reached with DATABASE_URL. */
+/** Fails with an actionable message when the database cannot be reached with DATABASE_URL. */
 export const assertDatabaseReachable = async (db: Kysely<DB>, connectionString: string): Promise<void> => {
   try {
     await sql`select 1`.execute(db);
   } catch (error) {
+    if (dialectOfUrl(connectionString) === 'sqlite') {
+      throw new StartupCheckError(
+        `Cannot open the SQLite database at ${describeDatabaseTarget(connectionString)} (DATABASE_URL): ` +
+          `${connectionFailureReason(error)}. Check that its directory exists and is writable.`,
+        { cause: error },
+      );
+    }
     throw new StartupCheckError(
       `Cannot connect to PostgreSQL at ${describeDatabaseTarget(connectionString)} (DATABASE_URL): ` +
         `${connectionFailureReason(error)}. Check that PostgreSQL is running and DATABASE_URL is correct.`,

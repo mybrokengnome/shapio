@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
+import type { RawBuilder } from 'kysely';
 import { INDEX_BUILD_LOCK_KEY, LOCK_NAMESPACE } from '../../constants/lockKeys.js';
 import {
   analyzeHeadsStatement,
@@ -24,6 +25,13 @@ export type IndexBuildOutcome = 'built' | 'exists' | 'skipped';
  * The lock is a session lock on its own connection, idle outside any transaction, and waiting for it polls
  * rather than blocks, so neither the holder nor the waiters hold up the concurrent build itself.
  */
+/** Runs a statement the dialect may not have (extended statistics on SQLite). */
+const executeIfAny = async (db: Database, statement: RawBuilder<unknown> | null): Promise<void> => {
+  if (statement) {
+    await statement.execute(db);
+  }
+};
+
 const withIndexBuildLock = <T>(db: Database, fn: () => Promise<T>): Promise<T> =>
   withPolledSessionAdvisoryLock(db, LOCK_NAMESPACE.indexBuilds, INDEX_BUILD_LOCK_KEY, fn);
 
@@ -33,6 +41,10 @@ const withIndexBuildLock = <T>(db: Database, fn: () => Promise<T>): Promise<T> =
  * interrupted build is dropped and rebuilt. Each index gets an extended-statistics object on the same
  * expression (partial indexes carry no expression statistics), and a fresh build ends with ANALYZE so the
  * planner can use both at once. Without content tables (before package E) there is nothing to index.
+ *
+ * On SQLite the build is a plain `CREATE INDEX`: it holds the single write lock until it finishes, so writes
+ * wait for it (readers do not). That is the documented single-process limitation (ADR 0001, "D2: as
+ * built"); builds stay in this prerequisite job, never in activation, and their duration is logged.
  */
 export const buildFieldIndex = (
   db: Database,
@@ -60,20 +72,22 @@ const buildFieldIndexNow = async (
   const indexName = fieldIndexName(spec);
   const state = await getIndexState(db, indexName);
   if (state === 'valid') {
-    await createFieldStatisticsStatement(spec).execute(db);
+    await executeIfAny(db, createFieldStatisticsStatement(spec));
     return 'exists';
   }
   if (state === 'invalid') {
     log.warn({ indexName }, 'dropping invalid index left by an earlier build');
     await dropIndexStatement(indexName).execute(db);
   }
+  const startedAt = performance.now();
   await createFieldIndexStatement(spec).execute(db);
   if ((await getIndexState(db, indexName)) !== 'valid') {
     throw new Error(`Index ${indexName} is not valid after building`);
   }
-  await createFieldStatisticsStatement(spec).execute(db);
+  await executeIfAny(db, createFieldStatisticsStatement(spec));
   await analyzeHeadsStatement().execute(db);
-  log.info({ indexName, fieldId: step.fieldId }, 'field index built');
+  const durationMs = Math.round(performance.now() - startedAt);
+  log.info({ indexName, fieldId: step.fieldId, durationMs }, 'field index built');
   return 'built';
 };
 
@@ -81,6 +95,6 @@ export const dropFieldIndex = (db: Database, indexName: string): Promise<void> =
   withIndexBuildLock(db, async () => {
     if (await tableExists(db, CONTENT_HEADS_TABLE)) {
       await dropIndexStatement(indexName).execute(db);
-      await dropStatisticsStatement(indexName).execute(db);
+      await executeIfAny(db, dropStatisticsStatement(indexName));
     }
   });

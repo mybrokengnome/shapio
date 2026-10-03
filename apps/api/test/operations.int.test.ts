@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
+import { dialectSkipReason, isSqliteRun, withSkipReason } from './helpers/dialect.js';
 import { API_ROOT } from './helpers/env.js';
 import { spawnServer, type SpawnedServer } from './helpers/spawnServer.js';
 import { startTcpProxy, type TcpProxy } from './helpers/tcpProxy.js';
@@ -66,7 +67,10 @@ describe('graceful shutdown', () => {
 
     const inFlight = fetch(`${server.url}/api/ext/ops/slow?ms=1000`);
     await server.waitForLog((line) => line.msg === 'slow request started');
-    expect(await connectionsOf(database.current, 'shapio-api')).toBeGreaterThan(0);
+    // PostgreSQL only: SQLite has no server-side connection list.
+    if (!isSqliteRun()) {
+      expect(await connectionsOf(database.current, 'shapio-api')).toBeGreaterThan(0);
+    }
 
     const started = Date.now();
     const exited = server.stop('SIGTERM');
@@ -88,11 +92,15 @@ describe('graceful shutdown', () => {
     expect(messages.indexOf('shutting down')).toBeGreaterThan(-1);
     expect(messages.indexOf('shutdown complete')).toBeGreaterThan(messages.indexOf('shutting down'));
     // Every pooled connection was closed (the pool ended, not the process).
-    expect(await connectionsOf(database.current, 'shapio-api')).toBe(0);
+    if (!isSqliteRun()) {
+      expect(await connectionsOf(database.current, 'shapio-api')).toBe(0);
+    }
   });
 });
 
-describe('database outage', () => {
+const outageSkip = dialectSkipReason(import.meta.url, 'database outage');
+
+describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), () => {
   const database = useTestDatabase();
   let proxy: TcpProxy;
   let server: SpawnedServer;
@@ -154,7 +162,7 @@ describe('database outage', () => {
   });
 });
 
-describe('a connection that dies while checked out', () => {
+describe.skipIf(outageSkip)(withSkipReason('a connection that dies while checked out', outageSkip), () => {
   const database = useTestDatabase();
 
   it('fails the transaction using it, and never surfaces as an uncaught exception', async () => {
@@ -250,8 +258,11 @@ describe('startup', () => {
     }
   });
 
-  /** The test server's address and credentials with another database name. */
+  /** The test server's address and credentials with another database name (SQLite: a missing directory). */
   const missingDatabaseUrl = () => {
+    if (isSqliteRun()) {
+      return 'sqlite:/nonexistent-shapio-directory/shapio_no_such_database.db';
+    }
     const url = new URL(database.current.url);
     url.pathname = '/shapio_no_such_database';
     return url.toString();
@@ -271,8 +282,10 @@ describe('startup', () => {
     {
       name: 'a database that does not exist',
       env: () => ({ DATABASE_URL: missingDatabaseUrl() }),
-      message:
-        /Cannot connect to PostgreSQL at \S+\/shapio_no_such_database \(DATABASE_URL\): database "shapio_no_such_database" does not exist/,
+      message: () =>
+        isSqliteRun()
+          ? /Cannot open the SQLite database at \S+\/shapio_no_such_database\.db \(DATABASE_URL\): .*Check that its directory exists/
+          : /Cannot connect to PostgreSQL at \S+\/shapio_no_such_database \(DATABASE_URL\): database "shapio_no_such_database" does not exist/,
     },
     {
       name: 'production without PUBLIC_URL',
@@ -292,7 +305,7 @@ describe('startup', () => {
   ])('fails fast with an actionable message for $name', async ({ env, message }) => {
     const result = await runCli(['start'], { NODE_ENV: 'test', PORT: '0', ...env() });
     expect(result.code).toBe(1);
-    expect(result.stderr).toMatch(message);
+    expect(result.stderr).toMatch(typeof message === 'function' ? message() : message);
     // Credentials in DATABASE_URL never reach the output.
     expect(result.stdout + result.stderr).not.toContain('hunter2pass');
   });

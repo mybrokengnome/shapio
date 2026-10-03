@@ -2,6 +2,7 @@ import type { ExpressionBuilder, Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import { concat, pathSegment } from '../db/sql/text.js';
 import { dateParam, greatestOf } from '../db/sql/time.js';
+import { asBigint, asTimestamp } from '../db/sql/typed.js';
 import { anyOf, latestNonNull } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 
@@ -156,7 +157,7 @@ export const fieldUsageForModel = async (
         'fr.selection',
         (eb) => tokenName(eb).as('token_name'),
         (eb) => eb.fn.sum<string>('fr.reads').as('reads'),
-        (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
+        (eb) => asTimestamp(eb.fn.max('fr.last_read_at')).as('last_read_at'),
       ])
       .where('fr.site_id', '=', siteId)
       .where('fr.model_id', '=', modelId)
@@ -193,7 +194,7 @@ export const fieldUsageForFields = async (
         'fr.selection',
         (eb) => tokenName(eb).as('token_name'),
         (eb) => eb.fn.sum<string>('fr.reads').as('reads'),
-        (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
+        (eb) => asTimestamp(eb.fn.max('fr.last_read_at')).as('last_read_at'),
       ])
       .where('fr.day', '>=', dateParam(sinceDay))
       .where((eb) =>
@@ -230,8 +231,8 @@ export const principalSummaries = async (
       'fr.principal_key',
       (eb) => tokenName(eb).as('token_name'),
       (eb) => eb.fn.sum<string>('fr.requests').as('requests'),
-      (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
-      latestNonNull<string>('fr.last_snapshot', 'fr.day').as('last_snapshot'),
+      (eb) => asTimestamp(eb.fn.max('fr.last_read_at')).as('last_read_at'),
+      asBigint<string | null>(latestNonNull('fr.last_snapshot', 'fr.day')).as('last_snapshot'),
     ])
     .where('fr.site_id', '=', siteId)
     .where('fr.day', '>=', dateParam(sinceDay))

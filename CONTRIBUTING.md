@@ -46,8 +46,10 @@ audit row) happen in **one** transaction.
 - SQL: through Kysely's portable API. Database-specific SQL lives only in `apps/api/src/db/` (migrations, locks,
   notifications and the named primitives in `db/sql/`) and `content/compiler`, with `sql` tags, never
   interpolated identifiers or values. Everywhere else, use a `db/sql` primitive (add one there, with its
-  PostgreSQL form and the contract another dialect must keep) instead of writing SQL; `db/dialectBoundary.test.ts`
-  enforces this. User content values are JSONB keyed by stable field IDs and queried through the compiler's
+  PostgreSQL and SQLite forms and the contract every dialect keeps) instead of writing SQL;
+  `db/dialectBoundary.test.ts` enforces this. On SQLite a selected computed column (an aggregate, a `coalesce`)
+  has no type, so wrap it in a `db/sql/typed.ts` marker (`asTimestamp`, `asJson`, …); the SQLite test run fails
+  on a timestamp or JSON column that needs one. User content values are JSONB keyed by stable field IDs and queried through the compiler's
   allowlist.
 - Configuration: environment variables, declared once in `apps/api/src/config/schema.ts` and validated at
   start; never read `process.env` elsewhere. Run `pnpm docs:reference` after changing it.
@@ -72,6 +74,9 @@ each is easier to review, test and revert on its own.
 - `pnpm test:integration` runs the API against a **real PostgreSQL** (`TEST_DATABASE_URL`, a maintenance
   database such as `postgres`). A template database is migrated once; each test file gets its own copy. Do not
   mock the database: transactions, locks and concurrency are what these tests prove.
+- `TEST_DATABASE_URL=sqlite: pnpm test:integration` runs the same suite on SQLite (temporary files). A test
+  that cannot run there goes in the skip list in `apps/api/test/helpers/dialect.ts`, with its reason; raw SQL in
+  tests uses that file's helpers.
 - `pnpm --filter @shapio/admin e2e` drives the built admin with Playwright (see `apps/admin/README.md`).
 - `pnpm smoke:npm` packs and installs the npm packages and starts them.
 - The site starters (`examples/astro`, `examples/next`, `examples/sveltekit`) have their own check: build the
@@ -87,7 +92,8 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:integ
 ```
 
 CI runs lint, format, typecheck and the unit tests on Node 24, the integration tests on Node 24 and 26 against
-PostgreSQL 16 and 18, and also the admin end-to-end suite, the Docker build, the npm smoke test and the
+PostgreSQL 16 and 18 and on Node 24 against SQLite, and also the admin end-to-end suite (on PostgreSQL and on
+SQLite), the Docker build, the npm smoke test and the
 site starters.
 
 ## Adding a migration
@@ -101,6 +107,10 @@ Migrations are for Shapio's own tables only, never for user content models.
 3. `pnpm db:migrate`, then `pnpm db:codegen` to regenerate `apps/api/src/db/types.ts`, and commit both. Never
    edit `types.ts` by hand, and never edit a migration that has run anywhere: add a new one.
 4. Check that it rolls back: `pnpm db:rollback && pnpm db:migrate`.
+5. Twin it for SQLite (`apps/api/src/db/migrations/sqlite/index.ts`), under the same name. A migration that
+   only uses Kysely's portable schema builder exports `dialectNeutral = true` and is listed there as the same
+   module; any other gets its own SQLite file in that folder. `migrations/twins.test.ts` fails until the lists
+   match, and `test/sqliteBaseline.int.test.ts` compares the two schemas.
 
 Indexes on large tables are built `CONCURRENTLY` by jobs, not in migrations that hold locks.
 

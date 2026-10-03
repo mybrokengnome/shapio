@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { MIGRATIONS } from '../src/db/migrations/index.js';
 import { getPendingMigrations, migrateToLatest } from '../src/db/migrator.js';
+import { dialectSkipReason, withSkipReason } from './helpers/dialect.js';
 import { silentLogger } from './helpers/silentLogger.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
-describe('startup migrations', () => {
+const sqliteSkip = dialectSkipReason(import.meta.url);
+
+describe.skipIf(sqliteSkip)(withSkipReason('startup migrations', sqliteSkip), () => {
   const database = useTestDatabase({ empty: true });
 
   it('applies every migration exactly once when several instances start together', async () => {

@@ -22,11 +22,23 @@ const parseUrl = (value: string): URL | undefined => {
 
 const DATABASE_URL_PROTOCOLS = new Set(['postgres:', 'postgresql:']);
 
+/** `sqlite:<path>` or `sqlite::memory:` (documentation/sqlite.md). */
+const isSqliteUrl = (value: string) => value.startsWith('sqlite:') && value.length > 'sqlite:'.length;
+
 const databaseUrlProblems = (raw: RawConfig): string[] => {
+  if (isSqliteUrl(raw.DATABASE_URL)) {
+    return raw.WORKER_MODE === 'dedicated'
+      ? [
+          'WORKER_MODE=dedicated needs PostgreSQL: SQLite runs in one process (locks and notifications do not cross processes). Use WORKER_MODE=inline.',
+        ]
+      : [];
+  }
   const url = parseUrl(raw.DATABASE_URL);
   return url && DATABASE_URL_PROTOCOLS.has(url.protocol)
     ? []
-    : ['DATABASE_URL must be a postgres:// URL, e.g. postgres://user:password@localhost:5432/shapio'];
+    : [
+        'DATABASE_URL must be a postgres:// URL (e.g. postgres://user:password@localhost:5432/shapio) or a sqlite: path (e.g. sqlite:./shapio.db)',
+      ];
 };
 
 const publicUrlProblems = (raw: RawConfig): string[] => {

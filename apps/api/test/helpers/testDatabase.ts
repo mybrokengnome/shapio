@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
+import { copyFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, inject } from 'vitest';
+import { dialectOfUrl } from '../../src/db/dialect.js';
 import { createDb, type Database } from '../../src/db/index.js';
 import { withDatabaseName } from './env.js';
 
@@ -41,6 +44,32 @@ const createDatabase = async (statement: string) => {
   }
 };
 
+/** SQLite: a file copied from the migrated template (or a new empty file). */
+const createSqliteTestDatabase = (name: string, empty: boolean): TestDatabase => {
+  const path = join(inject('testSqliteDirectory'), `${name}.db`);
+  if (!empty) {
+    copyFileSync(inject('testDatabaseTemplate'), path);
+  }
+  const url = `sqlite:${path}`;
+  const db = createDb({ connectionString: url, poolMax: 10, strict: true });
+  let dropped = false;
+  return {
+    name,
+    url,
+    db,
+    drop: async () => {
+      if (dropped) {
+        return;
+      }
+      dropped = true;
+      await db.destroy();
+      for (const suffix of ['', '-wal', '-shm']) {
+        rmSync(`${path}${suffix}`, { force: true });
+      }
+    },
+  };
+};
+
 /**
  * Creates a database for one test file. By default it is cloned from the migrated template; with
  * `{ empty: true }` it has no tables (for migration tests).
@@ -49,6 +78,9 @@ export const createTestDatabase = async ({
   empty = false,
 }: { empty?: boolean } = {}): Promise<TestDatabase> => {
   const name = `shapio_t_${process.pid}_${randomBytes(4).toString('hex')}`;
+  if (dialectOfUrl(inject('testDatabaseAdminUrl')) === 'sqlite') {
+    return createSqliteTestDatabase(name, empty);
+  }
   const source = empty ? 'template0' : inject('testDatabaseTemplate');
   await createDatabase(
     `create database ${pg.escapeIdentifier(name)} template ${pg.escapeIdentifier(source)}`,

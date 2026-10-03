@@ -135,10 +135,16 @@ describe('invitations and password resets', () => {
     await runEmailJobs(testApp.app, testApp.db, mail);
     const first = lastTokenSentTo(mail, 'retry@example.com');
     // Simulate an at-least-once redelivery of the same job.
+    const invitationId = created.json<{ id: string }>().id;
+    const jobs = await testApp.db.selectFrom('jobs').select(['id', 'payload']).execute();
+    const jobIds = jobs
+      .filter((job) => (job.payload as { invitationId?: string } | null)?.invitationId === invitationId)
+      .map((job) => job.id);
+    expect(jobIds.length).toBeGreaterThan(0);
     await testApp.db
       .updateTable('jobs')
       .set({ status: 'pending', run_at: new Date() })
-      .where('payload', '@>', JSON.stringify({ invitationId: created.json<{ id: string }>().id }))
+      .where('id', 'in', jobIds)
       .execute();
     await runEmailJobs(testApp.app, testApp.db, mail);
     const second = lastTokenSentTo(mail, 'retry@example.com');

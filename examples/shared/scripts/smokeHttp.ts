@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { parseArgs } from 'node:util';
 
 /**
@@ -8,7 +9,9 @@ import { parseArgs } from 'node:util';
  * preview page is served with a `frame-ancestors` policy. The same checks run against every starter, so all
  * three render the same blog.
  *
- * `--url` is the running site's origin (default: SMOKE_URL, then http://localhost:4321).
+ * `--url` is the running site's origin (default: SMOKE_URL, then http://localhost:4321). `--revalidate` (the
+ * Next.js starter) also checks its on-demand revalidation route: an unsigned POST to /api/revalidate is refused,
+ * and an event signed with SHAPIO_WEBHOOK_SECRET is answered 200 with the paths it revalidated.
  */
 const DRAFT_TITLE = 'Coming soon: our winter projects';
 const ARTICLE = 'modelling-without-a-deploy';
@@ -72,8 +75,60 @@ const fetchPage = async (origin: string, path: string) => {
   return { status: response.status, html: await response.text() };
 };
 
+const REVALIDATE_PATH = '/api/revalidate/';
+
+const postEvent = (origin: string, body: string, headers: Record<string, string>) =>
+  fetch(new URL(REVALIDATE_PATH, origin), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body,
+  });
+
+/** Signed like Shapio's webhooks: `v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>`. */
+const signatureHeaders = (secret: string, body: string) => {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+  return { 'x-shapio-timestamp': timestamp, 'x-shapio-signature': `v1=${signature}` };
+};
+
+const checkRevalidation = async (origin: string) => {
+  const secret = process.env.SHAPIO_WEBHOOK_SECRET;
+  if (!secret) {
+    check(
+      false,
+      `${REVALIDATE_PATH}: SHAPIO_WEBHOOK_SECRET is set (the seed writes it with --revalidate-path)`,
+    );
+    return;
+  }
+  const body = JSON.stringify({
+    id: `smoke-${Date.now()}`,
+    type: 'entry.published',
+    createdAt: new Date().toISOString(),
+    site: null,
+    data: { modelKey: 'article', entryId: 'smoke', locale: 'en' },
+  });
+  const unsigned = await postEvent(origin, body, {});
+  check(
+    unsigned.status === 401,
+    `${REVALIDATE_PATH}: an unsigned event is refused (HTTP ${unsigned.status})`,
+  );
+  const response = await postEvent(origin, body, signatureHeaders(secret, body));
+  const text = await response.text();
+  check(response.status === 200, `${REVALIDATE_PATH}: a signed event is accepted (HTTP ${response.status})`);
+  let result: { revalidated?: unknown; skipped?: unknown; from?: unknown; to?: unknown } = {};
+  try {
+    result = JSON.parse(text) as typeof result;
+  } catch {
+    // Reported by the check below.
+  }
+  const listed = Array.isArray(result.revalidated) || typeof result.skipped === 'string';
+  check(listed, `${REVALIDATE_PATH}: the answer lists the revalidated paths: ${text}`);
+};
+
 const main = async () => {
-  const { values } = parseArgs({ options: { url: { type: 'string' } } });
+  const { values } = parseArgs({
+    options: { url: { type: 'string' }, revalidate: { type: 'boolean', default: false } },
+  });
   const origin = values.url ?? process.env.SMOKE_URL ?? 'http://localhost:4321';
   for (const page of PAGES) {
     const { status, html } = await fetchPage(origin, page.path);
@@ -92,6 +147,9 @@ const main = async () => {
   check(!list.html.includes(DRAFT_TITLE), 'the unpublished draft is not listed');
   const draft = await fetchPage(origin, '/en/articles/winter-projects/');
   check(draft.status === 404, `the unpublished draft is not served (HTTP ${draft.status})`);
+  if (values.revalidate) {
+    await checkRevalidation(origin);
+  }
   if (failures.length > 0) {
     throw new Error(`${failures.length} check(s) failed against ${origin}`);
   }

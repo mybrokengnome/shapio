@@ -25,12 +25,14 @@ export const NOTES: Readonly<Record<string, string>> = {
   RATE_LIMIT_MAX: 'Requests per window and client IP, for every route without a stricter limit of its own.',
   RATE_LIMIT_WINDOW_MS: 'The rate-limit window, in milliseconds.',
   TLS_KEY_FILE: 'Private key for TLS_CERT_FILE (PEM).',
-  DATABASE_URL: 'PostgreSQL (16 or later) connection string.',
-  DATABASE_POOL_MAX: 'Connections in the pool, per process.',
+  DATABASE_URL:
+    'PostgreSQL (16 or later) connection string, or `sqlite:<path>` for a single-process SQLite database (see SQLite).',
+  DATABASE_POOL_MAX:
+    'Connections in the pool, per process (SQLite: read connections; one connection writes).',
   MIGRATE_ON_START:
     'Apply pending migrations at startup, under an advisory lock (safe with several instances).',
   WORKER_MODE:
-    '`inline` runs the job worker inside the API process; `dedicated` expects a separate `shapio worker` process.',
+    '`inline` runs the job worker inside the API process; `dedicated` expects a separate `shapio worker` process (PostgreSQL only).',
   WORKER_CONCURRENCY: 'Jobs one worker runs at the same time.',
   WORKER_POLL_INTERVAL_MS: 'How often an idle worker looks for due jobs.',
   JOB_LEASE_MS:

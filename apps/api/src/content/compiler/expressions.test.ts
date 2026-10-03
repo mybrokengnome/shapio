@@ -14,9 +14,14 @@ import {
 
 // Compiles SQL without a connection.
 const compiler = new Kysely<Record<string, never>>({ dialect: new PostgresDialect({ pool: {} as never }) });
-const compile = (node: {
-  compile: (db: typeof compiler) => { sql: string; parameters: readonly unknown[] };
-}) => node.compile(compiler);
+const compile = (
+  node: { compile: (db: typeof compiler) => { sql: string; parameters: readonly unknown[] } } | null,
+) => {
+  if (!node) {
+    throw new Error('expected a statement');
+  }
+  return node.compile(compiler);
+};
 
 const MODEL = '00000000-0000-4000-8000-000000000001';
 const FIELD = '00000000-0000-4000-8000-000000000002';

@@ -1,12 +1,14 @@
 import { createClient, ShapioApiError, type DeliveryListQuery } from '@shapio/client';
-import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config';
+import { deliveryToken, shapioUrl, siteKey } from './config';
+import { liveSnapshot } from './liveSnapshot';
 import type { Locale } from './site';
 import type { Article, Page, SiteSettings } from './types';
 
 /**
  * The site's read side: Shapio's delivery API through `@shapio/client`, at one publication snapshot. Next
  * renders pages in several worker processes, so the snapshot is pinned once in next.config.ts (it sets
- * SHAPIO_SNAPSHOT for the whole build) and every request here sends it.
+ * SHAPIO_SNAPSHOT for the whole build) and every request here sends it. Under `next start`, /api/revalidate
+ * moves that snapshot forward (src/lib/liveSnapshot.ts).
  */
 const PAGE_SIZE = 100;
 
@@ -24,15 +26,9 @@ export const createShapio = () =>
   createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() });
 
 let client: ReturnType<typeof createShapio> | undefined;
-const shapio = () => (client ??= createShapio());
+export const shapio = () => (client ??= createShapio());
 
-const snapshot = () => {
-  const pinned = configuredSnapshot();
-  if (pinned === undefined) {
-    throw new Error('No pinned snapshot: next.config.ts sets SHAPIO_SNAPSHOT when `next build` starts');
-  }
-  return pinned;
-};
+const snapshot = liveSnapshot;
 
 /** Every published entry of a collection in one locale, page by page, at the pinned snapshot. */
 const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {

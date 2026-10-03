@@ -8,7 +8,7 @@ export const HOME_SLUG = 'home';
 
 export const isLocale = (value: string): value is Locale => (LOCALES as readonly string[]).includes(value);
 
-/** Reads a route's `[locale]` segment; the layout only generates known locales (dynamicParams = false). */
+/** Reads a route's `[locale]` segment; the layout answers 404 for any other value. */
 export const toLocale = (value: string): Locale => (isLocale(value) ? value : DEFAULT_LOCALE);
 
 const STRINGS = {

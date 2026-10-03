@@ -75,7 +75,7 @@ export const list = (
  * `row_number()` and keeps rank 1 (portable SQL; PostgreSQL's `DISTINCT ON` is not). The rank column is
  * dropped from the rows.
  */
-const firstOfEachConnection = (rows: Array<RunWithConnectionRow & { rank_in_connection: string }>) =>
+const firstOfEachConnection = (rows: Array<RunWithConnectionRow & { rank_in_connection: number | string }>) =>
   rows.map(({ rank_in_connection: _rank, ...run }): RunWithConnectionRow => run);
 
 /** The newest run of each connection, and the deployed run with the highest snapshot (what is live). */
@@ -88,7 +88,7 @@ export const latestPerConnection = async (connectionIds: readonly string[], trx:
             withConnection(trx)
               .select((eb) =>
                 eb.fn
-                  .agg<string>('row_number')
+                  .agg<number>('row_number')
                   .over((over) =>
                     over
                       .partitionBy('deployment_runs.connection_id')
@@ -100,7 +100,7 @@ export const latestPerConnection = async (connectionIds: readonly string[], trx:
               .as('r'),
           )
           .selectAll('r')
-          .where('r.rank_in_connection', '=', '1')
+          .where('r.rank_in_connection', '=', 1)
           .execute(),
       );
 
@@ -113,7 +113,7 @@ export const currentPerConnection = async (connectionIds: readonly string[], trx
             withConnection(trx)
               .select((eb) =>
                 eb.fn
-                  .agg<string>('row_number')
+                  .agg<number>('row_number')
                   .over((over) =>
                     over
                       .partitionBy('deployment_runs.connection_id')
@@ -127,7 +127,7 @@ export const currentPerConnection = async (connectionIds: readonly string[], trx
               .as('r'),
           )
           .selectAll('r')
-          .where('r.rank_in_connection', '=', '1')
+          .where('r.rank_in_connection', '=', 1)
           .execute(),
       );
 

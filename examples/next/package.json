@@ -12,9 +12,10 @@
     "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",
     "start": "NEXT_TELEMETRY_DISABLED=1 next start",
-    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:3000",
-    "smoke": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:3000",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:3000 --revalidate-path /api/revalidate/",
+    "smoke": "node --env-file-if-exists=.env --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:3000",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@shapio/client": "workspace:*",
@@ -28,6 +29,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

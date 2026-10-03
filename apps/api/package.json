@@ -73,6 +73,7 @@
     "mercurius": "catalog:",
     "nodemailer": "catalog:",
     "parse5": "catalog:",
+    "mysql2": "catalog:",
     "pg": "catalog:",
     "pino": "catalog:",
     "saxes": "catalog:",

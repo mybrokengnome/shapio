@@ -24,6 +24,9 @@ DATABASE_URL=postgres://you@localhost:5432/shapio_dev
 TEST_DATABASE_URL=postgres://you@localhost:5432/postgres
 ```
 
+To work on SQLite instead, use `DATABASE_URL=sqlite:./shapio-dev.db` and run the integration suite with
+`TEST_DATABASE_URL=sqlite:` ([SQLite](sqlite.md#for-contributors)).
+
 ```sh
 createdb shapio_dev
 pnpm install

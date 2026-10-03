@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setPublicGrants } from './helpers/appUsers.js';
 import { createDefinition, expectStatus, type EntryBody, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { jsonWithoutKey, withoutUpdateTrigger } from './helpers/dialect.js';
 import { dataOf, graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -203,10 +204,10 @@ describe('plural API IDs on definitions stored before them', () => {
     const { pluralApiKey: _plural, ...legacy } = created.definition;
     legacyHash = await hashDefinition(legacy as unknown as SchemaDefinition);
     await database.current.db.transaction().execute(async (trx) => {
-      await sql`alter table schema_revisions disable trigger schema_revisions_no_update`.execute(trx);
-      await sql`update schema_revisions set definition = definition - 'pluralApiKey', hash = ${legacyHash}
-        where model_id = ${legacyId}`.execute(trx);
-      await sql`alter table schema_revisions enable trigger schema_revisions_no_update`.execute(trx);
+      await withoutUpdateTrigger(trx, 'schema_revisions', 'schema_revisions_no_update', async () => {
+        await sql`update schema_revisions set definition = ${jsonWithoutKey('definition', 'pluralApiKey')},
+          hash = ${legacyHash} where model_id = ${legacyId}`.execute(trx);
+      });
     });
 
     testApp = await createTestApp(database.current, { schemaListen: false });

@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { sql } from 'kysely';
 import type { Database } from '../../src/db/index.js';
 import type { Worker } from '../../src/jobs/worker.js';
+import { testColumnTypes } from './dialect.js';
 import { API_ROOT } from './env.js';
 import { waitFor } from './waitFor.js';
 
@@ -9,13 +10,15 @@ import { waitFor } from './waitFor.js';
 export const FIXTURE_CONFIG = resolve(API_ROOT, 'test/fixtures/extensionProject/shapio.config.ts');
 export const REPO_ROOT = resolve(API_ROOT, '../..');
 
-export const createHookLog = (db: Database) =>
-  sql`
+export const createHookLog = (db: Database) => {
+  const types = testColumnTypes();
+  return sql`
     create table ext_hook_log (
-      id serial primary key, hook text not null, entry_id uuid not null, locale text, principal text not null,
-      data jsonb, before jsonb, event_id text
+      id ${types.serialKey}, hook text not null, entry_id ${types.uuid} not null, locale text, principal text not null,
+      data ${types.jsonb}, before ${types.jsonb}, event_id text
     )
   `.execute(db);
+};
 
 /** Hook names recorded for an entry, in the order they ran. */
 export const hooksOf = async (db: Database, entryId: string) =>

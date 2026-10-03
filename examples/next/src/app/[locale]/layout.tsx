@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { LocaleSwitch } from '../../components/LocaleSwitch';
 import { getSiteSettings } from '../../lib/shapio';
@@ -7,6 +8,7 @@ import {
   articlesPath,
   colophonPath,
   HOME_SLUG,
+  isLocale,
   LOCALES,
   otherLocale,
   pagePath,
@@ -15,8 +17,12 @@ import {
 } from '../../lib/site';
 import '../site.css';
 
-/** Only the site's locales exist; any other first segment is a 404. */
-export const dynamicParams = false;
+/**
+ * Only the site's locales exist; any other first segment is a 404 (notFound below). Not `dynamicParams = false`:
+ * Next answers a page that /api/revalidate marked stale with a 404 when its route allows no fallback, so every
+ * route here renders on demand and rejects unknown values itself.
+ */
+export const dynamicParams = true;
 export const generateStaticParams = () => LOCALES.map((locale) => ({ locale }));
 
 type LocaleParams = { params: Promise<{ locale: string }> };
@@ -31,7 +37,11 @@ type LocaleLayoutProps = LocaleParams & { children: ReactNode };
 
 /** The root layout: every page lives under its locale (`/en/…`, `/fr/…`). */
 const LocaleLayout = async ({ children, params }: LocaleLayoutProps) => {
-  const locale = toLocale((await params).locale);
+  const segment = (await params).locale;
+  if (!isLocale(segment)) {
+    notFound();
+  }
+  const locale = toLocale(segment);
   const strings = stringsFor(locale);
   // The name, tagline and footer come from the siteSettings singleton (built-in strings until it is published).
   const settings = await getSiteSettings(locale);

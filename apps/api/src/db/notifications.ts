@@ -1,12 +1,18 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import pg from 'pg';
+import { dialectOfUrl, isSqlite, sqliteLocationOfUrl } from './dialect.js';
+import { notificationKeyOf } from './sqlite/driver.js';
+import { subscribeNotifications } from './sqlite/notifyHub.js';
 import type { DB } from './types.js';
 
 /**
  * LISTEN/NOTIFY primitives (ADR 0002). Notifications are an optimisation only: a listener can miss
  * messages while disconnected, so every consumer must also check a durable version. Callers get an
  * `onConnect` callback after every (re)connect to resynchronise for anything missed in between.
+ *
+ * SQLite: `shapio_notify()` queues on the connection and an in-process bus delivers on commit
+ * (`sqlite/notifyHub.ts`); only listeners in the same process hear it.
  */
 
 /** Sends a notification. Inside a transaction it is delivered only if (and when) that transaction commits. */
@@ -15,6 +21,10 @@ export const notify = async (
   channel: string,
   payload: string,
 ): Promise<void> => {
+  if (isSqlite()) {
+    await sql`select shapio_notify(${channel}, ${payload})`.execute(executor);
+    return;
+  }
   await sql`select pg_notify(${channel}, ${payload})`.execute(executor);
 };
 
@@ -37,8 +47,37 @@ export type NotificationListenerOptions = {
   maxReconnectDelayMs?: number;
 };
 
+/** SQLite: a subscription to the in-process bus of the database file; connected until closed. */
+const createSqliteNotificationListener = (options: NotificationListenerOptions): NotificationListener => {
+  const { channels, onNotification, onConnect } = options;
+  let closed = false;
+  const unsubscribe = subscribeNotifications(
+    notificationKeyOf(sqliteLocationOfUrl(options.connectionString)),
+    (channel, payload) => {
+      if (!closed && channels.includes(channel)) {
+        onNotification(channel, payload);
+      }
+    },
+  );
+  setImmediate(() => {
+    if (!closed) {
+      onConnect?.();
+    }
+  });
+  return {
+    isConnected: () => !closed,
+    close: async () => {
+      closed = true;
+      unsubscribe();
+    },
+  };
+};
+
 /** A dedicated connection (not from the pool: pooled connections must not hold LISTEN state). */
 export const createNotificationListener = (options: NotificationListenerOptions): NotificationListener => {
+  if (dialectOfUrl(options.connectionString) === 'sqlite') {
+    return createSqliteNotificationListener(options);
+  }
   const {
     connectionString,
     channels,

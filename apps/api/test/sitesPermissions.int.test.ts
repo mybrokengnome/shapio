@@ -11,8 +11,9 @@ import {
   setPublicGrants,
   type AppSessionBody,
 } from './helpers/appUsers.js';
-import { createDefinition, expectStatus, type ModelBody } from './helpers/content.js';
+import { createDefinition, createRole, expectStatus, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
@@ -73,7 +74,7 @@ describe('sites and permissions (plan §H, G3)', () => {
     });
 
   beforeAll(async () => {
-    testApp = await createTestApp(database.current, { schemaListen: false });
+    testApp = await createTestApp(database.current, { schemaListen: false, env: GRAPHQL_ENV });
     owner = await login(testApp.app, await createAdmin(database.current.db));
     network = schemaClient(testApp.app, await createRoleToken(database.current.db));
     const site = expectStatus(
@@ -179,6 +180,55 @@ describe('sites and permissions (plan §H, G3)', () => {
       expect(codeOf(elsewhere)).toBe('SITE_FORBIDDEN');
       // Admin routes default to the primary site: no header is the primary site too.
       expect(codeOf(await as(editor).get('/api/admin/content/article'))).toBe('SITE_FORBIDDEN');
+    });
+
+    it('a site editor mints a delivery token for its site only; it cannot read another site', async () => {
+      // The built-in editor has no tokens.manage: a custom editor role that also manages tokens.
+      const grant = (action: string) => ({ action, modelId: null, condition: null, fieldIds: null });
+      const siteEditorRole = expectStatus(
+        await as(owner).post('/api/admin/roles', {
+          key: 'site-editor-tokens',
+          name: 'Site editor with tokens',
+          kind: 'admin',
+          permissions: ['read', 'create', 'update', 'delete', 'publish', 'tokens.manage'].map(grant),
+        }),
+        201,
+      ).json<{ id: string }>().id;
+      const editor = await adminWith([{ roleId: siteEditorRole, siteId: marketingId }]);
+      const deliveryRole = await createRole(database.current.db, 'delivery', [
+        { action: 'read', modelId: article.definition.id },
+      ]);
+      const token = expectStatus(
+        await as(editor, 'marketing').post('/api/admin/tokens', {
+          name: 'marketing site',
+          roleId: deliveryRole,
+        }),
+        201,
+      ).json<{ token: string }>().token;
+      const headers = { authorization: `Bearer ${token}` };
+
+      expectStatus(
+        await testApp.app.inject({ method: 'GET', url: '/api/content/articles?site=marketing', headers }),
+        200,
+      );
+      const rest = await testApp.app.inject({
+        method: 'GET',
+        url: '/api/content/articles?site=default',
+        headers,
+      });
+      expect(rest.statusCode).toBe(403);
+      expect(codeOf(rest)).toBe('SITE_MISMATCH');
+      const query = await graphql(testApp.app, '{ __typename }', {
+        url: '/api/graphql?site=default',
+        headers,
+      });
+      expect(query.statusCode).toBe(403);
+      expect(query.body.errors?.[0]?.extensions?.code).toBe('SITE_MISMATCH');
+
+      // The editor's admin session is refused on the other site as well.
+      const adminList = await as(editor, 'default').get('/api/admin/content/article');
+      expect(adminList.statusCode).toBe(403);
+      expect(codeOf(adminList)).toBe('SITE_FORBIDDEN');
     });
 
     it('me answers on every site, with that site’s permissions and the sites the admin works on', async () => {

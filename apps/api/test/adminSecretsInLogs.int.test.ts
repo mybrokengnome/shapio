@@ -14,6 +14,7 @@ import {
 import { APP_PASSWORD, bearer, loginAppUser, signUp, type AppSessionBody } from './helpers/appUsers.js';
 import { createDefinition, expectStatus, type EntryBody } from './helpers/content.js';
 import { createTestApp } from './helpers/createTestApp.js';
+import { jsonText } from './helpers/dialect.js';
 import { createLogCapture } from './helpers/logCapture.js';
 import { pathOf, uploadAsset } from './helpers/media.js';
 import { createMemoryEmailTransport, lastTokenSentTo } from './helpers/memoryEmailTransport.js';
@@ -277,10 +278,10 @@ describe('secrets never reach the logs', () => {
     // The signed media request was logged, with its signature redacted.
     expect(text).toMatch(/signature=%5Bredacted%5D/);
     const stored = await sql<{ payload: string }>`
-      select payload::text as payload from jobs
-      union all select coalesce(result::text, '') from jobs
+      select ${jsonText('payload')} as payload from jobs
+      union all select coalesce(${jsonText('result')}, '') from jobs
       union all select coalesce(last_error, '') from jobs
-      union all select payload::text from outbox_events
+      union all select ${jsonText('payload')} from outbox_events
     `.execute(db);
     const storedText = stored.rows.map((row) => row.payload).join('\n');
     expect(stored.rows.length).toBeGreaterThan(3);

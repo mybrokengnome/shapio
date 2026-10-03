@@ -5,7 +5,9 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants.js';
 /**
  * Pins one publication snapshot for the whole `next build`: Next renders pages in several worker processes, so
  * the snapshot is read here, once, before any page renders, and handed to every worker as SHAPIO_SNAPSHOT
- * (inlined into the build). A set SHAPIO_SNAPSHOT wins. `next dev` and `next start` do not read Shapio here.
+ * (inlined into the build). A set SHAPIO_SNAPSHOT wins and pins the site for good; otherwise `next start` moves
+ * forward from this snapshot as Shapio's webhook calls /api/revalidate (src/lib/liveSnapshot.ts). `next dev` and
+ * `next start` do not read Shapio here.
  */
 const pinSnapshot = async (): Promise<string> => {
   if (process.env.SHAPIO_SNAPSHOT) {
@@ -54,7 +56,13 @@ const nextConfig = async (phase: string): Promise<NextConfig> => ({
     // The preview page calls Shapio from the browser: NEXT_PUBLIC_SHAPIO_URL, else SHAPIO_URL.
     NEXT_PUBLIC_SHAPIO_URL:
       process.env.NEXT_PUBLIC_SHAPIO_URL || process.env.SHAPIO_URL || 'http://localhost:4300',
-    ...(phase === PHASE_PRODUCTION_BUILD ? { SHAPIO_SNAPSHOT: await pinSnapshot() } : {}),
+    ...(phase === PHASE_PRODUCTION_BUILD
+      ? {
+          SHAPIO_SNAPSHOT: await pinSnapshot(),
+          // A snapshot set by hand stays the site's snapshot under `next start`: /api/revalidate does nothing.
+          SHAPIO_SNAPSHOT_PINNED: process.env.SHAPIO_SNAPSHOT ? 'true' : 'false',
+        }
+      : {}),
   },
 });
 

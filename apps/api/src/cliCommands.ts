@@ -7,6 +7,7 @@ import { loadConfig } from './config/index.js';
 import { PASSWORD_MIN_LENGTH } from './constants/auth.js';
 import { SITE_KEY_PATTERN } from './constants/sites.js';
 import { SHAPIO_VERSION } from './constants/version.js';
+import { backupDatabase, BackupError } from './db/backup.js';
 import { createDb } from './db/index.js';
 import { getPendingMigrations, migrateToLatest } from './db/migrator.js';
 import { assertDatabaseReachable } from './db/startupChecks.js';
@@ -61,6 +62,37 @@ const migrateCommand: CliCommand = {
         results.length === 0 ? 'Database is up to date.\n' : `Applied ${results.length} migration(s).\n`,
       );
       return 0;
+    } finally {
+      await db.destroy();
+    }
+  },
+};
+
+const backupCommand: CliCommand = {
+  summary: 'Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump)',
+  usage: 'shapio backup <file>',
+  run: async (args, io) => {
+    const [target] = args;
+    if (!target) {
+      io.stderr('Usage: shapio backup <file>\n');
+      return 1;
+    }
+    const config = loadConfig();
+    const db = createDb({
+      connectionString: config.database.url,
+      poolMax: 2,
+      applicationName: 'shapio-backup',
+    });
+    try {
+      await assertDatabaseReachable(db, config.database.url);
+      io.stdout(`Backed up the database to ${await backupDatabase(db, target)}\n`);
+      return 0;
+    } catch (error) {
+      if (error instanceof BackupError) {
+        io.stderr(`${error.message}\n`);
+        return 1;
+      }
+      throw error;
     } finally {
       await db.destroy();
     }
@@ -232,6 +264,7 @@ const LOCAL_COMMANDS: Readonly<Record<string, CliCommand>> = {
   start: startCommand,
   worker: workerCommand,
   migrate: migrateCommand,
+  backup: backupCommand,
   healthcheck: healthcheckCommand,
   version: versionCommand,
   admin: adminCommand,

@@ -2,7 +2,8 @@ import type { Kysely } from 'kysely';
 import { Migrator, type MigrationResult } from 'kysely/migration';
 import { LOCK_NAMESPACE, MIGRATION_LOCK_KEY } from '../constants/lockKeys.js';
 import { withSessionAdvisoryLock } from './advisoryLocks.js';
-import { staticMigrationProvider } from './migrations/index.js';
+import { migrationProviderFor } from './migrations/index.js';
+import { sqliteDriverOf } from './sqlite/index.js';
 import type { DB } from './types.js';
 
 type MigrationLogger = {
@@ -19,9 +20,16 @@ export class MigrationError extends Error {
   }
 }
 
-/** Migrations must stay in order; out-of-order additions are rejected (see build plan §2). */
+/**
+ * Migrations must stay in order; out-of-order additions are rejected (see build plan §2). The list depends
+ * on the handle's dialect (SQLite starts from a baseline).
+ */
 export const createMigrator = (db: Kysely<DB>): Migrator =>
-  new Migrator({ db, provider: staticMigrationProvider, allowUnorderedMigrations: false });
+  new Migrator({
+    db,
+    provider: migrationProviderFor(sqliteDriverOf(db) ? 'sqlite' : 'postgres'),
+    allowUnorderedMigrations: false,
+  });
 
 /**
  * Runs pending migrations under a session advisory lock so concurrent instances starting together

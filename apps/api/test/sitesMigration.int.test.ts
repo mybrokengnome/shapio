@@ -2,7 +2,10 @@ import { sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { createMigrator } from '../src/db/migrator.js';
+import { dialectSkipReason, withSkipReason } from './helpers/dialect.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
+
+const sqliteSkip = dialectSkipReason(import.meta.url);
 
 /**
  * The sites migration (plan §H) on a database that already holds data: every row moves to the primary site,
@@ -15,7 +18,7 @@ const SITES = '20261003130000_create_sites';
 const MODEL_ID = '11111111-1111-4111-8111-111111111111';
 const FIELD_ID = '22222222-2222-4222-8222-222222222222';
 
-describe('sites migration', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('sites migration', sqliteSkip), () => {
   const database = useTestDatabase({ empty: true });
 
   const run = async (statement: ReturnType<typeof sql>) => statement.execute(database.current.db);

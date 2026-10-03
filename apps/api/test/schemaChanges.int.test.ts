@@ -5,6 +5,7 @@ import { getIndexState } from '../src/db/indexCatalog.js';
 import { NO_CONTENT_PORTS, type SchemaContentPorts } from '../src/schema/planner/contentPorts.js';
 import type { ContentStep } from '../src/schema/planner/steps.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { dialectSkipReason } from './helpers/dialect.js';
 import {
   createRoleToken,
   pageDefinition,
@@ -252,36 +253,40 @@ describe('expression index builds', () => {
     expect(await getIndexState(database.current.db, titleIndex)).toBe('valid');
   });
 
-  it('drops an INVALID index left by a failed build and rebuilds it', async () => {
-    const { db } = database.current;
-    const created = await admin.post('/api/admin/models', {
-      definition: pageDefinition({ apiKey: 'ticket', label: 'Ticket' }),
-    });
-    const id = created.json<{ definitionId: string }>().definitionId;
-    const model = (await admin.get(`/api/admin/models/${id}`)).json<ModelBody>();
-    const fieldId = model.definition.fields[0]?.id ?? '';
-    const name = indexOf(id, fieldId, 'string');
-    // A failed CREATE INDEX CONCURRENTLY leaves an INVALID index behind under the deterministic name.
-    for (const title of ['same', 'same']) {
-      const entry = await admin.post('/api/admin/content/ticket', { data: { title } });
-      expect(entry.statusCode, entry.body).toBe(201);
-    }
-    await expect(
-      sql`create unique index concurrently ${sql.id(name)} on entry_heads ((data ->> ${sql.lit(fieldId)}))`.execute(
-        db,
-      ),
-    ).rejects.toThrow();
-    expect(await getIndexState(db, name)).toBe('invalid');
+  it.skipIf(dialectSkipReason(import.meta.url, 'invalid index'))(
+    'drops an INVALID index left by a failed build and rebuilds it',
+    async () => {
+      const { db } = database.current;
+      const created = await admin.post('/api/admin/models', {
+        definition: pageDefinition({ apiKey: 'ticket', label: 'Ticket' }),
+      });
+      const id = created.json<{ definitionId: string }>().definitionId;
+      const model = (await admin.get(`/api/admin/models/${id}`)).json<ModelBody>();
+      const fieldId = model.definition.fields[0]?.id ?? '';
+      const name = indexOf(id, fieldId, 'string');
+      // A failed CREATE INDEX CONCURRENTLY leaves an INVALID index behind under the deterministic name.
+      for (const title of ['same', 'same']) {
+        const entry = await admin.post('/api/admin/content/ticket', { data: { title } });
+        expect(entry.statusCode, entry.body).toBe(201);
+      }
+      await expect(
+        sql`create unique index concurrently ${sql.id(name)} on entry_heads ((data ->> ${sql.lit(fieldId)}))`.execute(
+          db,
+        ),
+      ).rejects.toThrow();
+      expect(await getIndexState(db, name)).toBe('invalid');
 
-    const filterable = {
-      ...model.definition,
-      fields: model.definition.fields.map((field) => ({ ...field, filterable: true })),
-    };
-    expect(
-      (await admin.put(`/api/admin/models/${id}`, { definition: filterable, expectedVersion: 1 })).statusCode,
-    ).toBe(202);
-    await runSchemaJobs(db);
-    expect(await getIndexState(db, name)).toBe('valid');
-    expect((await admin.get(`/api/admin/models/${id}`)).json<ModelBody>().version).toBe(2);
-  });
+      const filterable = {
+        ...model.definition,
+        fields: model.definition.fields.map((field) => ({ ...field, filterable: true })),
+      };
+      expect(
+        (await admin.put(`/api/admin/models/${id}`, { definition: filterable, expectedVersion: 1 }))
+          .statusCode,
+      ).toBe(202);
+      await runSchemaJobs(db);
+      expect(await getIndexState(db, name)).toBe('valid');
+      expect((await admin.get(`/api/admin/models/${id}`)).json<ModelBody>().version).toBe(2);
+    },
+  );
 });

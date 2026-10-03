@@ -22,6 +22,7 @@ const ALLOWLIST: Readonly<Record<string, string>> = {};
 const FORBIDDEN: ReadonlyArray<{ name: string; pattern: RegExp }> = [
   { name: 'the `sql` tag from kysely', pattern: /import\s*\{[^}]*\bsql\b[^}]*\}\s*from\s*'kysely'/ },
   { name: 'the pg driver', pattern: /from\s*'pg'/ },
+  { name: 'the node:sqlite driver', pattern: /from\s*'node:sqlite'/ },
   { name: "Kysely's PostgreSQL helpers", pattern: /kysely\/helpers\/(postgres|mysql|sqlite|mssql)/ },
   { name: 'DISTINCT ON', pattern: /\.distinctOn\(/ },
   { name: 'a LIKE operator (use the text primitives, which escape per dialect)', pattern: /'(not )?i?like'/ },
@@ -83,6 +84,7 @@ describe('dialect boundary', () => {
     const samples = [
       "import { sql, type Kysely } from 'kysely';",
       "import pg from 'pg';",
+      "import { DatabaseSync } from 'node:sqlite';",
       "import { jsonArrayFrom } from 'kysely/helpers/postgres';",
       "qb.distinctOn('a')",
       "eb('email', 'ilike', pattern)",

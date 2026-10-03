@@ -61,6 +61,7 @@ describe('transactional outbox', () => {
     expect(jobs).toHaveLength(2);
     const pending = await database.current.db
       .selectFrom('outbox_events')
+      .select('id')
       .where('dispatched_at', 'is', null)
       .execute();
     expect(pending).toEqual([]);

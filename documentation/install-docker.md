@@ -112,6 +112,9 @@ Where certificates come from (certbot, your host, a Cloudflare origin certificat
 
 Back up the database and the media volume together: [Backup and restore](backup-restore.md).
 
+To run without PostgreSQL, set `DATABASE_URL=sqlite:/data/shapio.db` and mount a volume at `/data`
+([SQLite](sqlite.md#docker)); one container per database file.
+
 ## Updating
 
 ```sh

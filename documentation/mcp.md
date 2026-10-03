@@ -1,6 +1,6 @@
 # MCP server for coding agents
 
-`@shapio/mcp` connects coding agents such as Claude Code, Cursor and Claude Desktop to a Shapio instance over
+`@shapio/mcp` connects coding agents such as Claude Code, Cursor, Claude Desktop or any other MCP client to a Shapio instance over
 the [Model Context Protocol](https://modelcontextprotocol.io). An agent can read your content types, model new
 ones, write entries, upload media and open a change set for review.
 
@@ -32,8 +32,9 @@ Give the agent its own role, so its token can do only what you want it to.
 `SHAPIO_URL`, else `PUBLIC_URL` + `BASE_PATH`):
 
 ```sh
-npx shapio mcp                      # all three clients
+npx shapio mcp                      # every client
 npx shapio mcp --client claude-code
+npx shapio mcp --client generic     # the stdio server definition, for any other MCP client
 npx shapio mcp --site marketing     # a multi-site instance: work on the marketing site
 ```
 
@@ -56,6 +57,25 @@ claude mcp add shapio --env SHAPIO_URL=https://cms.example.com --env "SHAPIO_TOK
       "env": { "SHAPIO_URL": "https://cms.example.com", "SHAPIO_TOKEN": "shp_…" }
     }
   }
+}
+```
+
+**Any MCP client (stdio)**: `@shapio/mcp` is a stdio MCP server, so any client that can start one works. Give
+it this command and environment (`npx shapio mcp --client generic` prints it as JSON):
+
+| Setting        | Value                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| Command        | `npx -y @shapio/mcp`                                                                                    |
+| `SHAPIO_URL`   | Shapio's base URL.                                                                                      |
+| `SHAPIO_TOKEN` | The admin API token from step 1.                                                                        |
+| `SHAPIO_SITE`  | Optional: the site to work on, on an instance with several sites.                                       |
+| Flags          | Optional, after the package name: `--allow-ship`, `--media-root <dir>` (see [Options](#options) below). |
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@shapio/mcp", "--media-root", "/path/to/project/assets"],
+  "env": { "SHAPIO_URL": "https://cms.example.com", "SHAPIO_TOKEN": "shp_…", "SHAPIO_SITE": "marketing" }
 }
 ```
 

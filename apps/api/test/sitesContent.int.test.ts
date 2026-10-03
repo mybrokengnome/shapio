@@ -13,6 +13,7 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { jsonWithKey } from './helpers/dialect.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
@@ -173,8 +174,8 @@ describe('content per site', () => {
     const otherTag = await create(marketing, 'tag', { name: 'Leaky tag name' });
     const entry = await create(primary, 'article', { title: 'Forged link' });
     // Bypass the validator, as data written before sites (or by hand) could.
-    await sql`update entry_heads set data = data || jsonb_build_object(${fieldIdOf(article, 'tag')}::text, ${otherTag.id}::text)
-      where entry_id = ${entry.id}::uuid`.execute(database.current.db);
+    await sql`update entry_heads set data = ${jsonWithKey('data', fieldIdOf(article, 'tag'), otherTag.id)}
+      where entry_id = ${entry.id}`.execute(database.current.db);
     const read = expectStatus(
       await primary.get(`/api/admin/content/article?populate=tag&filters[title][$eq]=Forged%20link`),
       200,

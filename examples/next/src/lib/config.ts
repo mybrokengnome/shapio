@@ -3,7 +3,10 @@
  * - SHAPIO_URL: the Shapio origin (with BASE_PATH), e.g. https://cms.example.com.
  * - SHAPIO_DELIVERY_TOKEN: a read-only delivery token (Settings → API tokens, delivery role).
  * - SHAPIO_SNAPSHOT: optional; the publication snapshot to build. Without it, next.config.ts pins the latest
- *   snapshot once when `next build` starts, so every page of the build shows the same moment.
+ *   snapshot once when `next build` starts, so every page of the build shows the same moment. When set, the
+ *   site stays at that snapshot under `next start` too (on-demand revalidation is off).
+ * - SHAPIO_WEBHOOK_SECRET: the signing secret of the Shapio webhook that calls /api/revalidate (runtime only;
+ *   `npm run seed` writes it).
  * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
  * - NEXT_PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL; inlined into
  *   the client bundle at build time).
@@ -40,6 +43,15 @@ export const configuredSnapshot = (): number | undefined => {
   }
   return snapshot;
 };
+
+/**
+ * True when the build was pinned with SHAPIO_SNAPSHOT (next.config.ts records it): the site then keeps
+ * showing that snapshot and /api/revalidate does nothing. Spelled out so Next inlines it at build time.
+ */
+export const isSnapshotPinned = () => process.env.SHAPIO_SNAPSHOT_PINNED === 'true';
+
+/** The secret /api/revalidate checks webhook signatures with; undefined when it is not set. */
+export const webhookSecret = () => read('SHAPIO_WEBHOOK_SECRET');
 
 /** The Shapio URL the preview page calls from the browser. Spelled out so Next inlines it into the client. */
 export const publicShapioUrl = () => process.env.NEXT_PUBLIC_SHAPIO_URL || 'http://localhost:4300';

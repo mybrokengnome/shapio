@@ -21,17 +21,20 @@ import { createSchemaJobHandlers } from '../src/schema/planner/changeJob.js';
 import type { SchemaSnapshot } from '../src/schema/snapshot.js';
 import { createDefinition, fieldIdOf, runContentSchemaJobs, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { dialectSkipReason, withSkipReason } from './helpers/dialect.js';
 import { createRoleToken, schemaClient } from './helpers/schemaAdmin.js';
 import { silentLogger } from './helpers/silentLogger.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 import { waitFor } from './helpers/waitFor.js';
+
+const sqliteSkip = dialectSkipReason(import.meta.url);
 
 /**
  * The compiler and the index builder share one expression module (ADR 0001); these tests prove the
  * planner can actually use the indexes for the SQL the compiler emits: GIN for equality (containment),
  * the per-field expression index for ranges and sorts.
  */
-describe('content indexes serve compiled queries', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queries', sqliteSkip), () => {
   const database = useTestDatabase();
   let testApp: TestApp;
   let listing: ModelBody;
@@ -170,7 +173,7 @@ describe('content indexes serve compiled queries', () => {
   });
 });
 
-describe('field index builds', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('field index builds', sqliteSkip), () => {
   const database = useTestDatabase();
 
   it('builds the indexes of several new models in parallel without a deadlock or a retry', async () => {
@@ -240,7 +243,7 @@ describe('field index builds', () => {
   });
 });
 
-describe('field index layout v2 (sites)', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('field index layout v2 (sites)', sqliteSkip), () => {
   const database = useTestDatabase();
 
   it('rebuilds indexes of the layout before sites with the site leading, then drops the old ones', async () => {

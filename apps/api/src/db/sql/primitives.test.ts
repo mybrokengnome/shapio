@@ -1,10 +1,18 @@
-import { Kysely, PostgresDialect, sql } from 'kysely';
+import { Kysely, PostgresDialect, SqliteDialect, sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
+import { withDialect } from '../dialect.js';
 import { isForeignKeyViolation, isUniqueViolation } from './errors.js';
 import { emptyJsonArray, jsonAgg, jsonArrayAppend, jsonObject } from './json.js';
 import { rowLessThan } from './rows.js';
 import { concat, containsInsensitive, pathSegment, startsWith } from './text.js';
-import { currentTimestamp, dateParam, greatestOf, timestampCursorText, timestampParam } from './time.js';
+import {
+  currentTimestamp,
+  dateParam,
+  greatestOf,
+  timestampCursorText,
+  timestampParam,
+  toStoredTimestamp,
+} from './time.js';
 import {
   anyOf,
   arrayContains,
@@ -135,5 +143,72 @@ describe('error classification', () => {
     expect(isForeignKeyViolation({ code: '23503', constraint: 'fk' }, 'fk')).toBe(true);
     expect(isUniqueViolation(null)).toBe(false);
     expect(isUniqueViolation(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('SQLite forms', () => {
+  const sqlite = new Kysely<Record<string, never>>({ dialect: new SqliteDialect({ database: {} as never }) });
+  const onSqlite = <T>(build: () => { compile: (db: typeof sqlite) => T }): T =>
+    withDialect('sqlite', () => build().compile(sqlite));
+
+  it('stores timestamps as fixed-width UTC text', () => {
+    expect(toStoredTimestamp(new Date('2026-10-03T12:00:00.1Z'))).toBe('2026-10-03T12:00:00.100Z');
+    expect(toStoredTimestamp('2026-10-03T14:00:00.123456+02:00')).toBe('2026-10-03T12:00:00.123Z');
+    expect(() => toStoredTimestamp('not a time')).toThrow(RangeError);
+    expect(onSqlite(() => currentTimestamp()).sql).toBe('shapio_now()');
+    expect(onSqlite(() => timestampParam('2026-10-03T12:00:00.123456Z'))).toMatchObject({
+      sql: '?',
+      parameters: ['2026-10-03T12:00:00.123Z'],
+    });
+    expect(onSqlite(() => timestampCursorText('e.occurred_at')).sql).toBe(`("e"."occurred_at" || '')`);
+    expect(onSqlite(() => greatestOf(sql.ref('a'), sql.ref('b'))).sql).toBe(
+      'max(coalesce("a", "b"), coalesce("b", "a"))',
+    );
+  });
+
+  it('expands arrays with json_each and aggregates as JSON', () => {
+    expect(onSqlite(() => anyOf(sql.ref('h.entry_id'), [ID], 'uuid'))).toMatchObject({
+      sql: '"h"."entry_id" in (select value from json_each(?))',
+      parameters: [JSON.stringify([ID])],
+    });
+    expect(onSqlite(() => uuidParam(ID.toUpperCase())).parameters).toEqual([ID]);
+    expect(onSqlite(() => arrayContains(sql.ref('trigger_policy'), 'publish')).sql).toBe(
+      'exists (select 1 from json_each("trigger_policy") where value = ?)',
+    );
+    expect(onSqlite(() => sortedArrayAgg('role_id', { distinct: true })).sql).toBe(
+      'json_group_array(distinct "role_id" order by "role_id")',
+    );
+    expect(onSqlite(() => nextSequenceValue('entry_heads_change_seq')).sql).toBe(
+      `shapio_nextval('entry_heads_change_seq')`,
+    );
+    expect(onSqlite(() => jsonAgg(sql.ref('x'), [{ column: 'at', direction: 'desc' }])).sql).toBe(
+      'json_group_array("x" order by "at" desc nulls first)',
+    );
+    expect(onSqlite(() => jsonArrayAppend('timeline', { a: 1 }))).toMatchObject({
+      sql: `json_insert("timeline", '$[#]', json(?))`,
+      parameters: ['{"a":1}'],
+    });
+  });
+
+  it('matches text without LIKE', () => {
+    expect(onSqlite(() => containsInsensitive(sql.ref('email'), 'ÉTÉ_%'))).toMatchObject({
+      sql: 'instr(shapio_fold("email"), ?) > 0',
+      parameters: ['été_%'],
+    });
+    expect(onSqlite(() => startsWith(sql.ref('mime_type'), 'image/'))).toMatchObject({
+      sql: 'substr("mime_type", 1, 6) = ?',
+      parameters: ['image/'],
+    });
+  });
+
+  it('recognises SQLite constraint errors', () => {
+    const unique = { code: 'SQLITE_CONSTRAINT_UNIQUE', constraint: 'media_folders_sibling_name_uq' };
+    expect(isUniqueViolation(unique, 'media_folders_sibling_name_uq')).toBe(true);
+    expect(isUniqueViolation({ code: 'SQLITE_CONSTRAINT_PRIMARYKEY' })).toBe(true);
+    const foreignKey = { code: 'SQLITE_CONSTRAINT_FOREIGNKEY', table: 'change_set_items' };
+    expect(isForeignKeyViolation(foreignKey, 'change_set_items_entry_site_fk')).toBe(true);
+    expect(isForeignKeyViolation({ ...foreignKey, table: 'entries' }, 'change_set_items_entry_site_fk')).toBe(
+      false,
+    );
   });
 });

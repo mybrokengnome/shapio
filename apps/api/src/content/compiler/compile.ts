@@ -1,12 +1,17 @@
+import { SCALAR_DATA_TYPES } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import type { HeadState } from '../model.js';
+import { contentDialect } from './currentDialect.js';
+import type { ContentSqlDialect, EqualityTarget } from './dialect/types.js';
 import {
   castParameter,
-  containmentExpression,
-  fieldJsonExpression,
-  fieldTextExpression,
+  containsInsensitiveExpression,
+  fieldEqualsExpression,
+  fieldMissingExpression,
   fieldValueExpression,
   modelIdLiteral,
+  textMatchExpression,
+  valueCastFor,
 } from './expressions.js';
 import { isListValued, NUMERIC_STRING_TYPES } from './operators.js';
 import type { EntryListStatus, FilterNode, FilterOperator, FilterTarget } from './types.js';
@@ -15,6 +20,8 @@ import type { EntryListStatus, FilterNode, FilterOperator, FilterTarget } from '
  * AST → parameterised SQL (Kysely `sql` fragments only). Every value is a bound parameter; the only
  * identifiers are fixed column names and stable field/model IDs that come from the registry and are checked
  * by `expressions.ts`. Head queries alias `entry_heads` (or a snapshot of it) as `h` and `entries` as `e`.
+ * Database-specific spelling comes from the content dialect (`dialect/`), passed as the optional last
+ * argument of every exported function (the process's dialect by default).
  */
 
 /** Where heads come from: live heads in one state, or published revisions as of a publication sequence. */
@@ -36,36 +43,17 @@ const RANGE_SQL: Readonly<Partial<Record<FilterOperator, RawBuilder<unknown>>>> 
   $ne: sql`<>`,
 };
 
-const MISSING_JSON = sql`('null'::jsonb, '""'::jsonb, '[]'::jsonb)`;
-
-export const escapeLike = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
-
-const likePattern = (operator: FilterOperator, text: string) => {
-  const escaped = escapeLike(text);
-  switch (operator) {
-    case '$startsWith':
-      return `${escaped}%`;
-    case '$endsWith':
-      return `%${escaped}`;
-    default:
-      return `%${escaped}%`;
-  }
-};
-
 const anyOf = (parts: RawBuilder<unknown>[]): RawBuilder<unknown> =>
   parts.length === 0 ? sql`false` : sql`(${sql.join(parts, sql` or `)})`;
 
-const fieldEquals = (
-  target: Extract<FilterTarget, { kind: 'field' }>,
-  value: unknown,
-): RawBuilder<unknown> => {
-  const { field } = target;
-  if (NUMERIC_STRING_TYPES.has(field.type)) {
-    // "12.5" and "12.50" are equal numbers but different JSON strings: compare numerically.
-    return sql`(${fieldValueExpression(field.id, field.type)} = ${castParameter(value, field.type)})`;
-  }
-  return containmentExpression({ [field.id]: isListValued(field) ? [value] : value });
-};
+type FieldTarget = Extract<FilterTarget, { kind: 'field' }>;
+
+const equalityTarget = ({ field }: FieldTarget): EqualityTarget => ({
+  fieldId: field.id,
+  cast: SCALAR_DATA_TYPES.has(field.type) ? valueCastFor(field.type) : null,
+  list: isListValued(field),
+  numericString: NUMERIC_STRING_TYPES.has(field.type),
+});
 
 const SYSTEM_COLUMNS = { id: 'h.entry_id', createdAt: 'e.created_at', updatedAt: 'h.updated_at' } as const;
 
@@ -73,69 +61,76 @@ const systemCondition = (
   name: keyof typeof SYSTEM_COLUMNS,
   operator: FilterOperator,
   value: unknown,
+  dialect: ContentSqlDialect,
 ): RawBuilder<unknown> => {
   const column = sql.ref(SYSTEM_COLUMNS[name]);
-  const cast = name === 'id' ? sql`uuid` : sql`timestamptz`;
+  const element = name === 'id' ? 'uuid' : 'timestamp';
   switch (operator) {
     case '$in':
-      return sql`(${column} = any(${value}::${cast}[]))`;
+      return sql`(${dialect.oneOf(column, value as string[], element)})`;
     case '$nin':
-      return sql`(not (${column} = any(${value}::${cast}[])))`;
-    default:
-      return sql`(${column} ${RANGE_SQL[operator] ?? sql`=`} ${value}::${cast})`;
+      return sql`(not (${dialect.oneOf(column, value as string[], element)}))`;
+    default: {
+      const parameter = name === 'id' ? dialect.uuid(value as string) : dialect.timestamp(value as string);
+      return sql`(${column} ${RANGE_SQL[operator] ?? sql`=`} ${parameter})`;
+    }
   }
 };
 
 const fieldCondition = (
-  target: Extract<FilterTarget, { kind: 'field' }>,
+  target: FieldTarget,
   operator: FilterOperator,
   value: unknown,
+  dialect: ContentSqlDialect,
 ): RawBuilder<unknown> => {
   const { field } = target;
+  const equals = (item: unknown) => fieldEqualsExpression(equalityTarget(target), item, dialect);
   switch (operator) {
     case '$eq':
-      return fieldEquals(target, value);
+      return equals(value);
     case '$ne':
-      return sql`(not ${fieldEquals(target, value)})`;
+      return sql`(not ${equals(value)})`;
     case '$in':
-      return anyOf((value as unknown[]).map((item) => fieldEquals(target, item)));
+      return anyOf((value as unknown[]).map(equals));
     case '$nin':
-      return sql`(not ${anyOf((value as unknown[]).map((item) => fieldEquals(target, item)))})`;
+      return sql`(not ${anyOf((value as unknown[]).map(equals))})`;
     case '$null':
     case '$notNull': {
-      const json = fieldJsonExpression(field.id);
-      const missing = sql`(${json} is null or ${json} in ${MISSING_JSON})`;
+      const missing = fieldMissingExpression(field.id, dialect);
       return (operator === '$null') === value ? missing : sql`(not ${missing})`;
     }
     case '$lt':
     case '$lte':
     case '$gt':
     case '$gte':
-      return sql`(${fieldValueExpression(field.id, field.type)} ${RANGE_SQL[operator]} ${castParameter(value, field.type)})`;
+      return sql`(${fieldValueExpression(field.id, field.type, dialect)} ${RANGE_SQL[operator]} ${castParameter(value, field.type, dialect)})`;
     case '$contains':
     case '$startsWith':
     case '$endsWith':
-      return sql`(${fieldTextExpression(field.id)} like ${likePattern(operator, value as string)})`;
-    case '$containsi':
-      return sql`(${fieldTextExpression(field.id)} ilike ${likePattern(operator, value as string)})`;
     case '$notContains':
-      return sql`(coalesce(${fieldTextExpression(field.id)}, '') not like ${likePattern(operator, value as string)})`;
+      return textMatchExpression(field.id, operator, value as string, dialect);
+    case '$containsi':
+      return containsInsensitiveExpression(field.id, value as string, dialect);
   }
 };
 
 /** A filter AST as one boolean SQL expression. */
-export const compileFilter = (node: FilterNode): RawBuilder<unknown> => {
+export const compileFilter = (
+  node: FilterNode,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> => {
+  const compileChild = (child: FilterNode) => compileFilter(child, dialect);
   switch (node.kind) {
     case 'and':
-      return sql`(${sql.join(node.nodes.map(compileFilter), sql` and `)})`;
+      return sql`(${sql.join(node.nodes.map(compileChild), sql` and `)})`;
     case 'or':
-      return sql`(${sql.join(node.nodes.map(compileFilter), sql` or `)})`;
+      return sql`(${sql.join(node.nodes.map(compileChild), sql` or `)})`;
     case 'not':
-      return sql`(not ${compileFilter(node.node)})`;
+      return sql`(not ${compileChild(node.node)})`;
     case 'condition':
       return node.target.kind === 'system'
-        ? systemCondition(node.target.name, node.operator, node.value)
-        : fieldCondition(node.target, node.operator, node.value);
+        ? systemCondition(node.target.name, node.operator, node.value, dialect)
+        : fieldCondition(node.target, node.operator, node.value, dialect);
   }
 };
 
@@ -158,29 +153,31 @@ export const compileStatusCondition = (status: EntryListStatus): RawBuilder<unkn
 };
 
 /** Entries an admin user created (admin list `?author=`). */
-export const compileAuthorCondition = (adminUserId: string): RawBuilder<unknown> =>
-  sql`e.created_by_admin_id = ${adminUserId}::uuid`;
+export const compileAuthorCondition = (
+  adminUserId: string,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> => sql`e.created_by_admin_id = ${dialect.uuid(adminUserId)}`;
 
 /** Case-insensitive search of one text field. */
-export const compileSearch = (fieldId: string, text: string): RawBuilder<unknown> =>
-  sql`(${fieldTextExpression(fieldId)} ilike ${`%${escapeLike(text)}%`})`;
+export const compileSearch = (
+  fieldId: string,
+  text: string,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> => containsInsensitiveExpression(fieldId, text, dialect);
 
 const SNAPSHOT_CTE = 'content_snapshot';
 
 /** The FROM item for a source, aliased `alias`, and the CTE it needs (snapshots only). */
-const sourceOf = (source: HeadSource, modelId: string, siteId: string) => {
+const sourceOf = (source: HeadSource, modelId: string, siteId: string, dialect: ContentSqlDialect) => {
   if (source.kind === 'heads') {
     return { cte: null, table: sql.table('entry_heads') };
   }
-  const cte = sql`with ${sql.id(SNAPSHOT_CTE)} as (
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at
-    from publication_log pl
-    join content_revisions r on r.id = pl.revision_id
-    where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelIdLiteral(modelId)}
-      and pl.from_seq <= ${source.seq}::bigint
-      and (pl.to_seq is null or pl.to_seq > ${source.seq}::bigint)
-  ) `;
+  const cte = dialect.snapshotCte({
+    name: SNAPSHOT_CTE,
+    siteId,
+    modelId: modelIdLiteral(modelId),
+    seq: source.seq,
+  });
   return { cte, table: sql.id(SNAPSHOT_CTE) };
 };
 
@@ -200,7 +197,12 @@ export type HeadQueryPlan = {
   offset?: number;
 };
 
-const localeConditions = (scope: LocaleScope, table: RawBuilder<unknown>, source: HeadSource) => {
+const localeConditions = (
+  scope: LocaleScope,
+  table: RawBuilder<unknown>,
+  source: HeadSource,
+  dialect: ContentSqlDialect,
+) => {
   if (scope.kind === 'any') {
     return [];
   }
@@ -210,20 +212,20 @@ const localeConditions = (scope: LocaleScope, table: RawBuilder<unknown>, source
   const chain = [...scope.chain];
   const stateMatch = source.kind === 'heads' ? sql` and h2.state = h.state` : sql``;
   return [
-    sql`h.locale = any(${chain}::text[])`,
+    dialect.oneOf(sql`h.locale`, chain, 'text'),
     // The first locale in the chain that has a head serves the entry; later ones are fallbacks.
     sql`not exists (select 1 from ${table} h2 where h2.entry_id = h.entry_id${stateMatch}
-      and h2.locale = any(${chain}::text[])
-      and array_position(${chain}::text[], h2.locale) < array_position(${chain}::text[], h.locale))`,
+      and ${dialect.oneOf(sql`h2.locale`, chain, 'text')}
+      and ${dialect.localeRank(chain, sql`h2.locale`)} < ${dialect.localeRank(chain, sql`h.locale`)})`,
   ];
 };
 
-const whereOf = (plan: HeadQueryPlan, table: RawBuilder<unknown>) => {
+const whereOf = (plan: HeadQueryPlan, table: RawBuilder<unknown>, dialect: ContentSqlDialect) => {
   const conditions = [
-    sql`h.site_id = ${plan.siteId}::uuid`,
+    sql`h.site_id = ${dialect.uuid(plan.siteId)}`,
     sql`h.model_id = ${modelIdLiteral(plan.modelId)}`,
     ...(plan.source.kind === 'heads' ? [sql`h.state = ${plan.source.state}`] : []),
-    ...localeConditions(plan.locales, table, plan.source),
+    ...localeConditions(plan.locales, table, plan.source, dialect),
     ...plan.conditions,
   ];
   return sql.join(conditions, sql` and `);
@@ -245,9 +247,9 @@ export type HeadRow = {
 };
 
 /** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
-export const compileHeadQuery = (plan: HeadQueryPlan) => {
-  const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId);
-  const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${whereOf(plan, table)}`;
+export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect = contentDialect()) => {
+  const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId, dialect);
+  const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${whereOf(plan, table, dialect)}`;
   const prefix = cte ?? sql``;
   const orderBy = plan.orderBy.length > 0 ? sql` order by ${sql.join([...plan.orderBy])}` : sql``;
   const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
@@ -256,6 +258,6 @@ export const compileHeadQuery = (plan: HeadQueryPlan) => {
     rows: sql<HeadRow>`${prefix}select h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
       h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id
       ${from}${orderBy}${limit}${offset}`,
-    count: sql<{ total: string }>`${prefix}select count(*) as total ${from}`,
+    count: sql<{ total: string | number }>`${prefix}select count(*) as total ${from}`,
   };
 };

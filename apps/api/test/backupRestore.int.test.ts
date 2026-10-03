@@ -13,6 +13,7 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { dialectSkipReason } from './helpers/dialect.js';
 import { withDatabaseName } from './helpers/env.js';
 import { createPng, pathOf, runMediaJobs, uploadAsset, type MediaAssetBody } from './helpers/media.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
@@ -33,10 +34,12 @@ const findSkipReason = (): string | undefined => {
   return undefined;
 };
 
-const skipReason = findSkipReason();
-if (skipReason && required) {
-  throw new Error(`BACKUP_TEST_REQUIRED=1 but the backup/restore suite cannot run: ${skipReason}`);
+const sqliteSkip = dialectSkipReason(import.meta.url);
+const toolSkip = sqliteSkip === undefined ? findSkipReason() : undefined;
+if (toolSkip && required) {
+  throw new Error(`BACKUP_TEST_REQUIRED=1 but the backup/restore suite cannot run: ${toolSkip}`);
 }
+const skipReason = sqliteSkip ?? toolSkip;
 const suiteName = skipReason
   ? `database and media backup restore [skipped: ${skipReason}]`
   : 'database and media backup restore';

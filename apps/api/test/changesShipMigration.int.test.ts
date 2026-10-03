@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { down, up } from '../src/db/migrations/20261003120000_add_changes_ship_permission.js';
 import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import { getPermissionsVersion } from '../src/repositories/permissionsVersion.js';
+import { dialectSkipReason, withSkipReason } from './helpers/dialect.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
+const sqliteSkip = dialectSkipReason(import.meta.url);
+
 /** The `changes.ship` split keeps every existing role able to do what it could (agentic plan §I). */
-describe('migration: changes.ship', () => {
+describe.skipIf(sqliteSkip)(withSkipReason('migration: changes.ship', sqliteSkip), () => {
   const database = useTestDatabase();
 
   const actionsOf = async (roleId: string) =>

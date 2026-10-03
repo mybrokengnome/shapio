@@ -33,7 +33,10 @@ import { createPng } from './lib/png.js';
  * 4. a deployment connection named "Preview" whose preview URL opens this starter's /preview/ page (the
  *    entry document's Preview pane and visual editing; it triggers no builds). The site's URL is SITE_URL, else
  *    the starter's `--site-url` (its local dev server);
- * 5. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
+ * 5. with `--revalidate-path` (the Next.js starter's /api/revalidate), a webhook named "Site revalidation" that
+ *    sends publish, unpublish, delete, change set and schema events to SITE_URL + that path; its signing secret
+ *    (rotated on every run, as Shapio shows it only once) is written to .env as SHAPIO_WEBHOOK_SECRET;
+ * 6. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
  */
 const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
 const SCHEMA_KINDS = ['models', 'components'] as const;
@@ -45,6 +48,18 @@ const PREVIEW_CONNECTION_NAME = 'Preview';
 const PREVIEW_PATH = '/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}';
 /** A placeholder build hook: the connection has no triggers, so nothing is ever sent to it. */
 const PREVIEW_BUILD_HOOK = 'https://build.invalid/shapio-starter';
+const REVALIDATE_WEBHOOK_NAME = 'Site revalidation';
+/** The events that change what a published site shows (the starter's route ignores any others). */
+const REVALIDATE_EVENTS = [
+  'entry.published',
+  'entry.unpublished',
+  'entry.deleted',
+  'change_set.shipped',
+  'schema.activated',
+  'schema.deleted',
+];
+/** A local site needs Shapio's OUTBOUND_PRIVATE_NETWORK_ALLOWLIST too; the webhook opts in for loopback only. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MEDIA_READY_TIMEOUT_MS = 120_000;
 const SCHEMA_CHANGE_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 500;
@@ -293,18 +308,43 @@ const ensurePreviewConnection = async (client: ShapioClient, siteUrl: string) =>
   log(`Preview opens ${previewUrlTemplate}`);
 };
 
-const writeEnv = async (url: string, deliveryToken: string) => {
-  const path = resolve('.env');
-  await writeFile(
-    path,
-    `# Written by the seed. The delivery token is read-only; keep this file out of git.\nSHAPIO_URL=${url}\nSHAPIO_DELIVERY_TOKEN=${deliveryToken}\n`,
-    { mode: 0o600 },
+/** The "Site revalidation" webhook, created once and pointed at the site on every run; returns a fresh secret. */
+const ensureRevalidateWebhook = async (client: ShapioClient, siteUrl: string, path: string) => {
+  const url = `${siteUrl.replace(/\/+$/, '')}${path}`;
+  const allowPrivateNetwork = LOOPBACK_HOSTS.has(new URL(url).hostname);
+  const existing = (await client.admin.webhooks.list()).find(
+    (webhook) => webhook.name === REVALIDATE_WEBHOOK_NAME,
   );
-  log(`Wrote SHAPIO_URL and SHAPIO_DELIVERY_TOKEN to ${path}`);
+  const settings = { url, events: REVALIDATE_EVENTS, enabled: true, allowPrivateNetwork };
+  let created;
+  if (existing) {
+    await client.admin.webhooks.update(existing.id, { expectedVersion: existing.version, ...settings });
+    created = await client.admin.webhooks.rotateSecret(existing.id);
+  } else {
+    created = await client.admin.webhooks.create({ name: REVALIDATE_WEBHOOK_NAME, ...settings });
+  }
+  log(`Webhook "${REVALIDATE_WEBHOOK_NAME}" calls ${url}`);
+  return created.secret;
+};
+
+const writeEnv = async (url: string, deliveryToken: string, webhookSecret: string | undefined) => {
+  const path = resolve('.env');
+  const lines = [
+    '# Written by the seed. The delivery token is read-only; keep this file out of git.',
+    `SHAPIO_URL=${url}`,
+    `SHAPIO_DELIVERY_TOKEN=${deliveryToken}`,
+    ...(webhookSecret ? [`SHAPIO_WEBHOOK_SECRET=${webhookSecret}`] : []),
+  ];
+  await writeFile(path, `${lines.join('\n')}\n`, { mode: 0o600 });
+  log(
+    `Wrote SHAPIO_URL, SHAPIO_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
+  );
 };
 
 const main = async () => {
-  const { values } = parseArgs({ options: { 'site-url': { type: 'string' } } });
+  const { values } = parseArgs({
+    options: { 'site-url': { type: 'string' }, 'revalidate-path': { type: 'string' } },
+  });
   const siteUrl = process.env.SITE_URL || values['site-url'] || 'http://localhost:4321';
   const admin = await connectAdmin(process.env);
   try {
@@ -317,7 +357,11 @@ const main = async () => {
       await upsertEntry(admin.client, spec);
     }
     await ensurePreviewConnection(admin.client, siteUrl);
-    await writeEnv(admin.url, await createDeliveryToken(admin.client));
+    const revalidatePath = values['revalidate-path'];
+    const webhookSecret = revalidatePath
+      ? await ensureRevalidateWebhook(admin.client, siteUrl, revalidatePath)
+      : undefined;
+    await writeEnv(admin.url, await createDeliveryToken(admin.client), webhookSecret);
     log('Seeded. Build the site with: npm run build');
   } finally {
     await admin.close();

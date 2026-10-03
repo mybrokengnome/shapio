@@ -76,9 +76,21 @@ text answers `422 ASSIST_VISION_UNSUPPORTED`. Every other action still works.
 2. Start it (`ollama serve`, or the desktop app). It listens on `127.0.0.1:11434`.
 3. Set the three variables above and restart Shapio.
 4. `GET /api/admin/assist/status` (or **Settings → Assist**) shows `enabled: true` and the model.
-5. Write alt text for an image in the media library, translate an entry, and run "Propose fixes" for missing
-   locales in the Inbox. Check that the drafts appear in a change set marked as proposed by assist, and that
-   nothing was published.
+5. Try each action:
+   - **Alt text**: open an image in the media library and use **Suggest alt text**. The alt text input fills;
+     save as usual.
+   - **Summarize**: open an entry of a content type with a rich-text body, open the popover of a string or
+     text property under the title, and use **Summarize from body**. The property fills; review it and save.
+   - **Translate**: in the entry's Settings drawer, use **Translate {locale} from {source}** beside a locale
+     the entry doesn't have yet. The translation opens as that locale's first draft with a "Proposed by
+     {model}" banner.
+   - **Rewrite**: select some text in the body, choose **Rewrite…** in the floating toolbar, and run
+     **Shorten**, **Expand** or your own instruction. The proposal opens in an editable box; **Replace
+     selection** puts it in place.
+   - **Schema draft**: **New content type → Describe it**, describe what editors will write, then **Propose
+     content types**. Review the proposed types and use **Add to change set**; the change set's review opens.
+   - **Content-ops**: in the Inbox, run **Propose fixes** for missing locales.
+6. Check that the drafts appear in a change set marked as proposed by assist, and that nothing was published.
 
 ## What is sent to the provider
 

@@ -120,6 +120,11 @@ describe('loadConfig', () => {
     [{ DATABASE_URL: 'postgres://x' }, 'PUBLIC_URL is required in production'],
     [{ ...PRODUCTION, DATABASE_URL: 'notaurl' }, 'DATABASE_URL must be a postgres:// URL'],
     [{ ...PRODUCTION, DATABASE_URL: 'mysql://localhost/shapio' }, 'DATABASE_URL must be a postgres:// URL'],
+    [{ ...PRODUCTION, DATABASE_URL: 'sqlite:' }, 'or a sqlite: path'],
+    [
+      { ...PRODUCTION, DATABASE_URL: 'sqlite:./shapio.db', WORKER_MODE: 'dedicated' },
+      'WORKER_MODE=dedicated needs PostgreSQL',
+    ],
     [{ ...PRODUCTION, PUBLIC_URL: 'https://example.com/cms' }, 'put a sub-path in BASE_PATH'],
     [{ ...PRODUCTION, TLS_CERT_FILE: 'c.pem' }, 'must be set together'],
     [{ ...PRODUCTION, HTTP_PORT: '80' }, 'only used with HTTPS'],
@@ -129,4 +134,11 @@ describe('loadConfig', () => {
   ])('rejects inconsistent settings %o', (env, message) => {
     expect(problemsOf(env).join('\n')).toContain(message);
   });
+
+  it.each(['sqlite:./shapio.db', 'sqlite:/data/shapio.db', 'sqlite::memory:'])(
+    'accepts the SQLite URL %s',
+    (url) => {
+      expect(problemsOf({ ...PRODUCTION, DATABASE_URL: url })).toEqual([]);
+    },
+  );
 });

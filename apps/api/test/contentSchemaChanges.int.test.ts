@@ -15,6 +15,7 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { jsonHasKey } from './helpers/dialect.js';
 import { dataOf, graphql } from './helpers/graphql.js';
 import { createRoleToken, runSchemaJobs, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -204,7 +205,7 @@ describe('content and schema changes', () => {
       .selectFrom('entry_heads')
       .select('entry_id')
       .where('model_id', '=', task.definition.id)
-      .where(sql<boolean>`not (data ? ${dueId})`)
+      .where(sql<boolean>`not ${jsonHasKey('data', dueId)}`)
       .execute();
     expect(missing).toEqual([]);
     const total = await database.current.db

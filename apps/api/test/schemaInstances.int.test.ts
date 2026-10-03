@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { isSqliteRun } from './helpers/dialect.js';
 import { createRoleToken, pageDefinition, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { spawnTsProcess, type SpawnedProcess } from './helpers/spawnProcess.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -52,14 +53,17 @@ describe('a second instance with schema notifications disabled', () => {
   });
 
   it('serves and enforces a change made on the first instance, with no notification', async () => {
-    // Neither instance listens: no notification can reach the second one.
-    const listeners = await database.current.db
-      .selectFrom('pg_stat_activity' as never)
-      .select('application_name' as never)
-      .where('application_name' as never, '=', 'shapio-schema-listen' as never)
-      .where('datname' as never, '=', database.current.name as never)
-      .execute();
-    expect(listeners).toEqual([]);
+    // Neither instance listens: no notification can reach the second one (SQLite notifications never
+    // leave their process anyway).
+    if (!isSqliteRun()) {
+      const listeners = await database.current.db
+        .selectFrom('pg_stat_activity' as never)
+        .select('application_name' as never)
+        .where('application_name' as never, '=', 'shapio-schema-listen' as never)
+        .where('datname' as never, '=', database.current.name as never)
+        .execute();
+      expect(listeners).toEqual([]);
+    }
 
     const created = await admin.post('/api/admin/models', { definition: pageDefinition() });
     const { definitionId } = created.json<{ definitionId: string }>();
@@ -133,13 +137,19 @@ describe('schema change notifications', () => {
   it('refreshes the cache before any request, and keeps doing so after the connection drops', async () => {
     const registry = listening.app.schemaRegistry;
     await registry.getSnapshot();
-    await waitFor(async () => (await listenerPids()).length === 1);
+    // PostgreSQL: one LISTEN connection. SQLite: an in-process subscription (no connection to inspect).
+    if (!isSqliteRun()) {
+      await waitFor(async () => (await listenerPids()).length === 1);
+    }
     const admin = schemaClient(writer.app, await createRoleToken(database.current.db));
 
     await admin.post('/api/admin/models', { definition: pageDefinition() });
     const version = (await admin.get('/api/admin/schema')).json<{ schemaVersion: number }>().schemaVersion;
     await waitFor(async () => registry.peek()?.version === version);
 
+    if (isSqliteRun()) {
+      return;
+    }
     // Kill the LISTEN connection: the listener reconnects and resynchronises.
     const [pid] = await listenerPids();
     await database.current.db

@@ -4,8 +4,11 @@ import { ArticleView } from '../../../../components/ArticleView';
 import { listArticles } from '../../../../lib/shapio';
 import { stringsFor, toLocale, type Locale } from '../../../../lib/site';
 
-/** Published articles only: a draft has no route, so its URL is a 404. */
-export const dynamicParams = false;
+/**
+ * Published articles only: a draft's URL is a 404. Articles published after the build render on their first
+ * request (and are cached); /api/revalidate refreshes them when they change.
+ */
+export const dynamicParams = true;
 
 export const generateStaticParams = async ({ params }: { params: { locale: string } }) =>
   (await listArticles(toLocale(params.locale))).map((article) => ({ slug: article.slug }));

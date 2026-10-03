@@ -3,11 +3,11 @@
 Three small sites show how a website reads content from Shapio. They render the same blog, so you can pick
 the framework you already use:
 
-| Starter     | Framework                         | Output                                         | Serve the build   |
-| ----------- | --------------------------------- | ---------------------------------------------- | ----------------- |
-| `astro`     | [Astro](https://astro.build)      | static HTML in `dist/`                         | `npm run preview` |
-| `next`      | [Next.js](https://nextjs.org)     | App Router, every page generated at build time | `npm run start`   |
-| `sveltekit` | [SvelteKit 3](https://svelte.dev) | static HTML in `build/` (adapter-static)       | `npm run preview` |
+| Starter     | Framework                         | Output                                                            | Serve the build   |
+| ----------- | --------------------------------- | ----------------------------------------------------------------- | ----------------- |
+| `astro`     | [Astro](https://astro.build)      | static HTML in `dist/`                                            | `npm run preview` |
+| `next`      | [Next.js](https://nextjs.org)     | App Router, pages generated at build time, revalidated on publish | `npm run start`   |
+| `sveltekit` | [SvelteKit 3](https://svelte.dev) | static HTML in `build/` (adapter-static)                          | `npm run preview` |
 
 Each starter has:
 
@@ -22,7 +22,8 @@ Each starter has:
 
 All three have draft preview at `/preview/` with [visual editing](visual-editing.md): in the admin's preview
 pane, clicking the title, body or cover focuses that field, and saves re-render the page. The Astro starter also
-has incremental builds and signed build callbacks ([walkthrough](example-site.md)).
+has signed build callbacks ([walkthrough](example-site.md)); see [Incremental rebuilds](#incremental-rebuilds)
+for how each starter picks up a publish.
 
 ## Create one
 
@@ -49,8 +50,9 @@ instead of email and password) and is idempotent: run it again to reset the cont
 applies the models through the schema apply API (the same change planner as the admin and
 `shapio schema apply`, with no restart), uploads placeholder images, creates and publishes the content in both
 locales (one article stays a draft), creates a deployment connection named **Preview** whose preview URL is the
-starter's `/preview/` page (it triggers no builds; `SITE_URL` overrides the local address it points at), and
-creates a delivery role and token that read only the four models.
+starter's `/preview/` page (it triggers no builds; `SITE_URL` overrides the local address it points at), for
+the Next.js starter a webhook named **Site revalidation** to its `/api/revalidate/` route (the signing secret goes
+to `.env`), and creates a delivery role and token that read only the four models.
 
 You need a running Shapio with an owner account ([npm](install-npm.md), [Docker](install-docker.md)).
 Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
@@ -67,6 +69,7 @@ Every starter reads its settings from the environment, or from `.env` (`.env.exa
 | `SHAPIO_SITE`            | optional: the site key on a multi-site instance                                              |
 | `PUBLIC_SHAPIO_URL`      | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
 | `NEXT_PUBLIC_SHAPIO_URL` | Next.js, optional: the same, inlined into the client bundle at build time                    |
+| `SHAPIO_WEBHOOK_SECRET`  | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
 
 ### Pinned snapshots
 
@@ -75,6 +78,24 @@ A build reads the current publication snapshot once, when it starts, and sends i
 that mixes two moments ([Snapshots](snapshots.md)). Set `SHAPIO_SNAPSHOT=N` to build an exact moment, for
 example the snapshot a deployment trigger carries. Next.js renders pages in several worker processes, so its
 starter pins the snapshot in `next.config.ts` before any page renders and hands it to every worker.
+
+### Incremental rebuilds
+
+A publish should reach the site without rebuilding pages that did not change. Each starter does it the way its
+output allows, and all three read the [changes API](snapshots.md#what-changed-between-two-snapshots):
+
+- **Astro** (static): `npm run build:incremental` asks what changed since the last build's snapshot, prints the
+  routes it touches, and builds pinned to the new snapshot, or skips the build when nothing the site reads
+  changed ([Snapshots](snapshots.md#skipping-builds-that-change-nothing)).
+- **Next.js** (`next start`): on-demand revalidation. The seed's webhook calls `/api/revalidate/` on every
+  publish, unpublish, delete, change set ship and schema change; the route verifies the signature, diffs the
+  snapshot the site shows against the current one and calls `revalidatePath` for just those pages, which
+  re-render at the new snapshot. New articles and pages render on their first request. A local site needs
+  Shapio's `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST` to include `127.0.0.1/32,::1/128`, since Shapio never calls
+  loopback addresses otherwise. A build pinned with `SHAPIO_SNAPSHOT` stays at that snapshot. Details in the
+  starter's README.
+- **SvelteKit** (adapter-static): a full rebuild, started by a [deployment connection](publishing.md#deployment-connections)
+  that Shapio triggers on publish.
 
 ### Site key
 
@@ -111,7 +132,7 @@ pnpm install && pnpm build
 SHAPIO_ADMIN_EMAIL=you@example.com SHAPIO_ADMIN_PASSWORD='…' pnpm --filter example-astro seed
 cp examples/astro/.env examples/next/.env && cp examples/astro/.env examples/sveltekit/.env
 pnpm --filter example-next build && pnpm --filter example-next start   # then, in another shell:
-pnpm --filter example-next smoke
+pnpm --filter example-next smoke --revalidate   # with SHAPIO_WEBHOOK_SECRET set for both
 ```
 
 CI seeds a local Shapio once, then builds and smoke-tests all three.

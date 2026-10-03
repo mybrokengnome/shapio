@@ -1,5 +1,8 @@
 # Backup and restore
 
+On SQLite, back up the database with `shapio backup <file>` instead of `pg_dump`
+([SQLite](sqlite.md#back-up)); the rest of this page applies as it is.
+
 A Shapio instance is two things: its **PostgreSQL database** (models, content and history, users, settings,
 the job queue) and its **media files** (local `MEDIA_PATH`, or an S3/R2 bucket). Back up both, the database
 first. Also keep your project files (`shapio.config.ts`, `extensions/`) in version control, back up `.env`

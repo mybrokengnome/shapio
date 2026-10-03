@@ -5,6 +5,7 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA_PROCESS_JOB } from '../src/constants/media.js';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
+import { jsonHasKey } from './helpers/dialect.js';
 import { freePort } from './helpers/freePort.js';
 import { createPng, type MediaAssetBody, type UploadGrantBody } from './helpers/media.js';
 import { createRoleToken } from './helpers/schemaAdmin.js';
@@ -168,7 +169,7 @@ describe('two instances on one database', () => {
       .selectFrom('entry_heads')
       .select('entry_id')
       .where('model_id', '=', modelId)
-      .where(sql<boolean>`not (data ? ${dueId ?? ''})`)
+      .where(sql<boolean>`not ${jsonHasKey('data', dueId ?? '')}`)
       .execute();
     expect(missing).toEqual([]);
     const created = [...statuses.a, ...statuses.b].filter((status) => status === 201).length;

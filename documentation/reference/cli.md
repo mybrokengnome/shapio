@@ -46,6 +46,14 @@ Apply pending database migrations, then exit.
 shapio migrate
 ```
 
+### shapio backup
+
+Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump).
+
+```text
+shapio backup <file>
+```
+
 ### shapio healthcheck
 
 Exit 0 if this host's Shapio answers /api/ready (for Docker HEALTHCHECK and process monitors).
@@ -84,13 +92,13 @@ shapio media migrate --from <local|s3> --to <local|s3> [--delete-source]
 
 ### shapio mcp
 
-Print the configuration that connects Claude Code, Cursor or Claude Desktop through @shapio/mcp.
+Print the configuration that connects Claude Code, Cursor, Claude Desktop or any MCP client through @shapio/mcp.
 
 ```text
-shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship] [--site <key>]
+shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--site <key>]
   Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then
   PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else
-  the primary site).
+  the primary site). --client generic prints the stdio server definition any MCP client takes.
   Create an admin API token whose role has no "changes.ship" and paste it in place
   of the placeholder: agents prepare change sets, people ship them.
 ```

@@ -11,6 +11,8 @@ model never needs a rebuild, a restart or a deploy.
 - [First admin](first-admin.md)
 - [Networking without a reverse proxy](networking.md): `PUBLIC_URL`, `BASE_PATH`, HTTPS from your own
   certificate files, Cloudflare in front.
+- [SQLite](sqlite.md): one file instead of a PostgreSQL server, for a single process; limits, backups, moving
+  to PostgreSQL.
 - [Local development](local-development.md): working on Shapio itself.
 
 ## Build with it
