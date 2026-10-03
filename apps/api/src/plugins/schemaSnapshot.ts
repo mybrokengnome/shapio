@@ -47,7 +47,9 @@ export const schemaSnapshotPlugin = fp<SchemaSnapshotPluginOptions>(
       });
     }
     app.addHook('onClose', async () => {
+      // Listener first, so no notification starts a reload after the registry has drained.
       await listener?.close();
+      await registry.close();
     });
   },
   { name: 'shapio-schema-snapshot', dependencies: ['shapio-services'] },

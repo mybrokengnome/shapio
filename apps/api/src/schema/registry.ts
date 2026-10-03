@@ -19,6 +19,12 @@ export type SchemaRegistry = {
   hint: (version?: number) => void;
   /** Called with each newer snapshot once loaded (GraphQL/OpenAPI regeneration, admin live refresh). */
   onChange: (listener: SchemaChangeListener) => () => void;
+  /**
+   * Ignores later hints and waits for a background reload still in flight. Call on shutdown before the
+   * database is closed: a reload that is still acquiring a pooled connection when the pool ends never
+   * returns it, and the pool's `end()` then waits forever.
+   */
+  close: () => Promise<void>;
 };
 
 type RegistryOptions = { db: Database; log: FastifyBaseLogger };
@@ -26,6 +32,9 @@ type RegistryOptions = { db: Database; log: FastifyBaseLogger };
 export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegistry => {
   let cached: SchemaSnapshot | undefined;
   let loading: Promise<SchemaSnapshot> | undefined;
+  let closed = false;
+  /** Reloads started by `hint`, which nobody else awaits. */
+  const background = new Set<Promise<void>>();
   const listeners = new Set<SchemaChangeListener>();
 
   const publish = (snapshot: SchemaSnapshot) => {
@@ -72,16 +81,26 @@ export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegist
     },
     peek: () => cached,
     hint: (version) => {
-      if (version !== undefined && cached && cached.version >= version) {
+      if (closed || (version !== undefined && cached && cached.version >= version)) {
         return;
       }
-      loadAtLeast(version ?? 0).catch((error: unknown) => {
-        log.warn({ err: error }, 'schema snapshot refresh failed; the next request will retry');
-      });
+      const reload = loadAtLeast(version ?? 0).then(
+        () => undefined,
+        (error: unknown) => {
+          log.warn({ err: error }, 'schema snapshot refresh failed; the next request will retry');
+        },
+      );
+      background.add(reload);
+      void reload.finally(() => background.delete(reload));
     },
     onChange: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    close: async () => {
+      closed = true;
+      // Each reload settles without throwing (failures are logged above).
+      await Promise.all(background);
     },
   };
 };
