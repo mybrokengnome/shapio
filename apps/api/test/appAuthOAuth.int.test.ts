@@ -1,6 +1,9 @@
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OAUTH_STATE_COOKIE_NAME } from '../src/constants/appAuth.js';
+import { SITE_HEADER } from '../src/constants/sites.js';
+import { SYSTEM_CLI_ACTOR } from '../src/services/actorContext.js';
+import { createSite } from '../src/services/sites.js';
 import { nextTestIp } from './helpers/adminIdentity.js';
 import {
   APP_PASSWORD,
@@ -324,6 +327,48 @@ describe('app-user OAuth sign-in', () => {
       path: '/api/app-auth/oauth/',
       secure: true,
     });
+  });
+
+  it('signs in on the site the sign-in started on (sites plan §H): identities and accounts are per site', async () => {
+    await createSite(SYSTEM_CLI_ACTOR, { key: 'oauth-site', name: 'OAuth site' }, database.current.db);
+    const onSite = { [SITE_HEADER]: 'oauth-site' };
+    const identity = google({ sub: 'per-site-sub', email: 'per-site@example.com' });
+    // Started on the other site: the callback (which names no site) takes the site from the signed state.
+    const started = expectStatus(
+      await testApp.app.inject({
+        method: 'GET',
+        url: `/api/app-auth/oauth/google/start?redirectTo=${encodeURIComponent(RETURN_TO)}&codeChallenge=${pkce.codeChallenge}`,
+        remoteAddress: nextTestIp(),
+        headers: onSite,
+      }),
+      302,
+    );
+    const authorizationUrl = new URL(started.headers.location as string);
+    const code = providers.approve(authorizationUrl.toString(), identity);
+    const callback = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/app-auth/oauth/google/callback?code=${code}&state=${authorizationUrl.searchParams.get('state')}`,
+      headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=${stateCookieOf(started)?.value ?? ''}` },
+    });
+    const loginCode = new URL(callback.headers.location as string).searchParams.get('code') ?? '';
+    // The code belongs to the other site's account: exchanging it on the primary site is refused, unspent.
+    const elsewhere = await exchange(loginCode);
+    expect(elsewhere.statusCode).toBe(403);
+    expect(elsewhere.json<{ error: { code: string } }>().error.code).toBe('SITE_MISMATCH');
+    const siteSession = expectStatus(
+      await testApp.app.inject({
+        method: 'POST',
+        url: '/api/app-auth/oauth/exchange',
+        remoteAddress: nextTestIp(),
+        headers: onSite,
+        payload: { code: loginCode, codeVerifier: pkce.codeVerifier },
+      }),
+      200,
+    ).json<AppSessionBody>();
+    // The same provider identity on the primary site is another account.
+    const primarySession = await sessionFrom(await signInWith('google', identity));
+    expect(primarySession.user.id).not.toBe(siteSession.user.id);
+    expect(primarySession.user.email).toBe(siteSession.user.email);
   });
 });
 

@@ -45,6 +45,7 @@ const adminEnvironment = (context: ContentServiceContext, locale: string | undef
   snapshot: context.snapshot,
   permissions: context.permissions,
   actor: context.actor,
+  siteId: context.site.id,
   audience: 'admin',
   source: { kind: 'heads', state: 'draft' },
   locale,
@@ -194,7 +195,7 @@ export const viewAfterWrite = async (
   const entry = assertEntryVisible(
     writePolicy,
     context.actor,
-    await entriesRepository.findLive(entryId, model.definition.id, context.db),
+    await entriesRepository.findLive(entryId, model.definition.id, context.site.id, context.db),
     entryId,
   );
   return buildAdminEntryView(context, model, readPolicy.allowed ? readPolicy : writePolicy, entry, locale);
@@ -210,7 +211,7 @@ export const getAdminEntry = async (
   const entry = assertEntryVisible(
     policy,
     context.actor,
-    await entriesRepository.findLive(id, model.definition.id, context.db),
+    await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db),
     id,
   );
   return buildAdminEntryView(context, model, policy, entry, locale);
@@ -270,6 +271,7 @@ export const listAdminEntries = async (
   });
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const compiled = compileHeadQuery({
+    siteId: context.site.id,
     modelId: model.definition.id,
     source: { kind: 'heads', state: 'draft' },
     locales: readScopeFor(context.snapshot, model.definition, query.locale, { fallback: true }),
@@ -317,7 +319,7 @@ const visibleEntry = async (context: ContentServiceContext, modelKey: string, id
   const entry = assertEntryVisible(
     policy,
     context.actor,
-    await entriesRepository.findLive(id, model.definition.id, context.db),
+    await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db),
     id,
   );
   return { model, policy, entry };

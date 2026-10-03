@@ -22,7 +22,7 @@ import { recordAudit } from './audit.js';
 import { assertEntryVisible, modelWithPolicy, type ContentServiceContext } from './contentAccess.js';
 
 /**
- * Preview tokens (brief §7): scoped to one model, or one entry (and locale), expiring, revocable, signed with
+ * Preview tokens (brief §7): scoped to one entry (and locale) of one site, expiring, revocable, signed with
  * a key derived from the instance signing secret and stored only as a hash. They read DRAFT content through
  * `/api/preview/content` with the creator's current permissions (services/previewContent.ts). They are the
  * only credential that ever appears in a preview URL; admin credentials never do.
@@ -32,7 +32,7 @@ export type PreviewTokenView = {
   tokenPrefix: string;
   modelId: string;
   modelKey: string | null;
-  entryId: string | null;
+  entryId: string;
   locale: string | null;
   connectionId: string | null;
   /** Fields follow this delivery role's grants (within the creator's access); null = public fields. */
@@ -75,6 +75,21 @@ const hasValidMac = (runtime: PublishingRuntime, token: string) => {
   return Boolean(random && mac) && safeEqual(runtime.secrets.mac(random as string), mac as string);
 };
 
+/**
+ * The site of a presented live token, or undefined: the preview routes' credential site (sites plan §H), so
+ * a request naming another site is refused (403 SITE_MISMATCH) before anything is read.
+ */
+export const previewTokenSiteOf = async (
+  runtime: PublishingRuntime,
+  token: string | undefined,
+): Promise<string | undefined> => {
+  if (!token || !isPreviewTokenFormat(token) || !hasValidMac(runtime, token)) {
+    return undefined;
+  }
+  return (await previewTokensRepository.findLiveSiteByHash(hashToken(token), runtime.now(), runtime.db))
+    ?.site_id;
+};
+
 /** The live token row for a presented token, or undefined (unknown, forged, expired or revoked). */
 export const resolvePreviewToken = async (runtime: PublishingRuntime, token: string) => {
   if (!isPreviewTokenFormat(token) || !hasValidMac(runtime, token)) {
@@ -90,18 +105,24 @@ export const resolvePreviewToken = async (runtime: PublishingRuntime, token: str
 
 export type CreatePreviewTokenInput = {
   modelKey: string;
-  entryId?: string | undefined;
+  /** Required (sites plan §H): a preview token previews one entry of the request's site. */
+  entryId: string;
   locale?: string | undefined;
   ttlSeconds?: number | undefined;
   connectionId?: string | undefined;
   deliveryRoleId?: string | undefined;
 };
 
-const findPreviewConnection = async (runtime: PublishingRuntime, connectionId: string | undefined) => {
+/** The site's connection the preview URL comes from: the one asked for, else its first with a template. */
+const findPreviewConnection = async (
+  runtime: PublishingRuntime,
+  siteId: string,
+  connectionId: string | undefined,
+) => {
   if (!connectionId) {
-    return deploymentConnectionsRepository.findFirstWithPreview(runtime.db);
+    return deploymentConnectionsRepository.findFirstWithPreview(siteId, runtime.db);
   }
-  const connection = await deploymentConnectionsRepository.findById(connectionId, runtime.db);
+  const connection = await deploymentConnectionsRepository.findOnSite(siteId, connectionId, runtime.db);
   if (!connection) {
     throw new AppError(404, 'CONNECTION_NOT_FOUND', `No deployment connection ${connectionId}`);
   }
@@ -115,14 +136,12 @@ export const createPreviewToken = async (
   input: CreatePreviewTokenInput,
 ) => {
   const { model, policy } = await modelWithPolicy(context, input.modelKey, 'read');
-  if (input.entryId) {
-    assertEntryVisible(
-      policy,
-      context.actor,
-      await entriesRepository.findLive(input.entryId, model.definition.id, context.db),
-      input.entryId,
-    );
-  }
+  assertEntryVisible(
+    policy,
+    context.actor,
+    await entriesRepository.findLive(input.entryId, model.definition.id, context.site.id, context.db),
+    input.entryId,
+  );
   const createdBy = adminIdOf(context.actor);
   if (!createdBy) {
     throw new AppError(403, 'FORBIDDEN', 'Preview tokens are created by signed-in admins');
@@ -135,7 +154,7 @@ export const createPreviewToken = async (
     model.definition.localized && input.locale !== undefined
       ? writeLocaleFor(context.snapshot, model.definition, input.locale)
       : null;
-  const connection = await findPreviewConnection(runtime, input.connectionId);
+  const connection = await findPreviewConnection(runtime, context.site.id, input.connectionId);
   // Bound to a delivery role: explicitly, or by the connection whose preview URL the token is for.
   const deliveryRoleId = input.deliveryRoleId ?? connection?.delivery_role_id ?? null;
   if (deliveryRoleId) {
@@ -153,7 +172,7 @@ export const createPreviewToken = async (
         token_prefix: token.slice(0, PREFIX_DISPLAY_LENGTH),
         site_id: context.site.id,
         model_id: model.definition.id,
-        entry_id: input.entryId ?? null,
+        entry_id: input.entryId,
         locale,
         connection_id: connection?.id ?? null,
         delivery_role_id: deliveryRoleId,
@@ -164,23 +183,23 @@ export const createPreviewToken = async (
     );
     await recordAudit(trx, {
       actor: context.actor,
+      site: context.site,
       action: 'preview_token.create',
       target: { type: 'preview_token', id: inserted.id },
-      metadata: { modelKey: input.modelKey, entryId: input.entryId ?? null, locale, ttlSeconds: ttl },
+      metadata: { modelKey: input.modelKey, entryId: input.entryId, locale, ttlSeconds: ttl },
       ...(context.requestId ? { requestId: context.requestId } : {}),
       ...(context.ip ? { ip: context.ip } : {}),
     });
     return inserted;
   });
-  const url =
-    connection?.preview_url_template && input.entryId
-      ? renderPreviewUrl(connection.preview_url_template, {
-          token,
-          modelKey: routeKeyOf(model.definition),
-          entryId: input.entryId,
-          locale: locale ?? context.snapshot.defaultLocale,
-        })
-      : null;
+  const url = connection?.preview_url_template
+    ? renderPreviewUrl(connection.preview_url_template, {
+        token,
+        modelKey: routeKeyOf(model.definition),
+        entryId: input.entryId,
+        locale: locale ?? context.snapshot.defaultLocale,
+      })
+    : null;
   return { token, previewToken: toPreviewTokenView(context.snapshot, row), url };
 };
 
@@ -215,9 +234,12 @@ export const listPreviewTokens = async (
   context: ContentServiceContext,
   filter: { entryId?: string | undefined },
 ) =>
-  (await previewTokensRepository.list(filter.entryId ? { entryId: filter.entryId } : {}, context.db)).map(
-    (row) => toPreviewTokenView(context.snapshot, row),
-  );
+  (
+    await previewTokensRepository.list(
+      { siteId: context.site.id, ...(filter.entryId ? { entryId: filter.entryId } : {}) },
+      context.db,
+    )
+  ).map((row) => toPreviewTokenView(context.snapshot, row));
 
 /** Revokes a token. Its creator may revoke it; so may anyone allowed to manage tokens. */
 export const revokePreviewToken = async (
@@ -225,7 +247,7 @@ export const revokePreviewToken = async (
   id: string,
   { canManageAll }: { canManageAll: boolean },
 ) => {
-  const row = await previewTokensRepository.findById(id, context.db);
+  const row = await previewTokensRepository.findOnSite(context.site.id, id, context.db);
   if (!row || (!canManageAll && row.created_by !== adminIdOf(context.actor))) {
     throw new AppError(404, 'PREVIEW_TOKEN_NOT_FOUND', `No preview token ${id}`);
   }
@@ -233,6 +255,7 @@ export const revokePreviewToken = async (
     await previewTokensRepository.revoke(id, new Date(), trx);
     await recordAudit(trx, {
       actor: context.actor,
+      site: context.site,
       action: 'preview_token.revoke',
       target: { type: 'preview_token', id },
       ...(context.requestId ? { requestId: context.requestId } : {}),

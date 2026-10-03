@@ -29,7 +29,16 @@ const withRole = (trx: Executor) =>
 export const insert = (token: NewApiToken, trx: Executor = db) =>
   trx.insertInto('api_tokens').values(token).returning('id').executeTakeFirstOrThrow();
 
-export const list = (trx: Executor = db) => withRole(trx).orderBy('api_tokens.created_at', 'desc').execute();
+/** One site's tokens, plus network tokens (no site) when `includeNetwork` is set. Newest first. */
+export const listForSite = (siteId: string, includeNetwork: boolean, trx: Executor = db) =>
+  withRole(trx)
+    .where((eb) =>
+      includeNetwork
+        ? eb.or([eb('api_tokens.site_id', '=', siteId), eb('api_tokens.site_id', 'is', null)])
+        : eb('api_tokens.site_id', '=', siteId),
+    )
+    .orderBy('api_tokens.created_at', 'desc')
+    .execute();
 
 export const findById = (id: string, trx: Executor = db) =>
   withRole(trx).where('api_tokens.id', '=', id).executeTakeFirst();
@@ -49,12 +58,26 @@ export const touchLastUsed = (id: string, now: Date, staleBefore: Date, trx: Exe
     .where((eb) => eb.or([eb('last_used_at', 'is', null), eb('last_used_at', '<', staleBefore)]))
     .execute();
 
-export const revoke = async (id: string, now: Date, trx: Executor = db): Promise<boolean> => {
+/**
+ * Revokes a live token of one site, or a network token (no site) when `includeNetwork` is set. Another
+ * site's token is left alone (false, as for an unknown token).
+ */
+export const revoke = async (
+  id: string,
+  scope: { siteId: string; includeNetwork: boolean },
+  now: Date,
+  trx: Executor = db,
+): Promise<boolean> => {
   const result = await trx
     .updateTable('api_tokens')
     .set({ revoked_at: now, updated_at: now })
     .where('id', '=', id)
     .where('revoked_at', 'is', null)
+    .where((eb) =>
+      scope.includeNetwork
+        ? eb.or([eb('site_id', '=', scope.siteId), eb('site_id', 'is', null)])
+        : eb('site_id', '=', scope.siteId),
+    )
     .executeTakeFirst();
   return result.numUpdatedRows > 0n;
 };

@@ -53,4 +53,4 @@ export const replaceHeadReferences = async (
   );
 };
 
-export { listUsages } from './mediaAssets.js';
+export { listUsagesOnSite } from './mediaAssets.js';

@@ -18,6 +18,7 @@ import { buildSnapshot, type SchemaSnapshot } from '../schema/snapshot.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
 import { cacheHeaders, collectUsage, csrfForGet, recordUsage } from './graphqlHooks.js';
 import { getRequestSchema } from './schemaSnapshot.js';
+import { getRequestSite } from './siteResolution.js';
 
 type GraphqlPluginOptions = { config: GraphqlConfig; urls: UrlBuilder };
 
@@ -50,6 +51,9 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
     const cache = createGraphqlSchemaCache((schema) => app.graphql.replaceSchema(schema), log);
 
     const context = (request: FastifyRequest): GraphqlRequestContext => {
+      // Read on use, not here: mercurius's error handler also builds a context for requests that site
+      // resolution refused (403 SITE_MISMATCH, 404 SITE_NOT_FOUND), which have no site and never execute.
+      const site = () => getRequestSite(request);
       const permissions = memoizePermissions(request.server.permissions, request.principal);
       let base: Promise<ContentServiceContext> | undefined;
       const content = async (snapshot: SchemaSnapshot): Promise<ContentServiceContext> => {
@@ -60,7 +64,10 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
         request,
         permissions,
         isAdmin: isAdminPrincipal(request.principal),
-        loaders: createLoaders(content),
+        get site() {
+          return site();
+        },
+        loaders: createLoaders(() => site().id, content),
         content,
       };
     };

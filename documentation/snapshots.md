@@ -1,6 +1,8 @@
 # Snapshots and the changes API
 
-Every publish moves a global **publication snapshot** number forward. Delivery responses report the snapshot
+Every publish moves its site's **publication snapshot** number forward. Each site has its own sequence
+(snapshot 12 on one site says nothing about another), and the snapshot routes, `?snapshot=N` and GraphQL's
+`_snapshot` and `_changes` answer for the request's site ([Delivery API](delivery-api.md#sites)). Delivery responses report the snapshot
 they read in `meta.snapshot`, and `?snapshot=N` reads published content as it was at snapshot N
 ([Delivery API](delivery-api.md#snapshots-one-consistent-moment)). This page covers the parts built for site
 builds: pinning a build to a snapshot, asking what changed between two snapshots, and refreshing only the
@@ -131,13 +133,13 @@ const { items, schemaVersions } = await shapio.snapshots.allChanges({
 
 ## Skipping builds that change nothing
 
-The example site's `build:incremental` script reads the snapshot of the last build from `dist/build.json`
+The [Astro starter](example-site.md)'s `build:incremental` script reads the snapshot of the last build from `dist/build.json`
 (or `SHAPIO_FROM_SNAPSHOT`), asks for the changes up to the current snapshot, prints the routes they touch, and
 runs the build pinned to the new snapshot, or skips it when nothing this site reads changed:
 
 ```sh
-pnpm --filter example-site build:incremental            # build only if needed
-pnpm --filter example-site build:incremental --dry-run  # just print the routes
+pnpm --filter example-astro build:incremental            # build only if needed
+pnpm --filter example-astro build:incremental --dry-run  # just print the routes
 ```
 
 ```text

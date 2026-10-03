@@ -11,9 +11,17 @@ export type McpOptions = {
   allowShip: boolean;
   /** `media_upload` reads files only under this directory (`--media-root`, default: the working directory). */
   mediaRoot: string;
+  /**
+   * The site key every request is about (`--site`, else `SHAPIO_SITE`), on multi-site instances. Left out:
+   * the token's site (a site token), else the primary site. A site token cannot name another site.
+   */
+  site?: string;
 };
 
-export const USAGE = `Usage: shapio-mcp [--allow-ship] [--media-root <dir>]
+/** A site key as Shapio creates them (sites are named by key in URLs, `?site=` and config). */
+const SITE_KEY = /^[a-z][a-z0-9-]{0,62}$/;
+
+export const USAGE = `Usage: shapio-mcp [--allow-ship] [--media-root <dir>] [--site <key>]
 
 A Model Context Protocol server (stdio) for a Shapio instance.
 
@@ -21,11 +29,13 @@ Environment:
   SHAPIO_URL     Shapio's base URL, including any BASE_PATH (e.g. https://cms.example.com)
   SHAPIO_TOKEN   An admin-scope API token. Give its role no "changes.ship" permission: agents propose
                  change sets, people ship them.
-  SHAPIO_SITE    Reserved for multi-site instances; not read by this version.
+  SHAPIO_SITE    The site key to work on (multi-site instances); --site overrides it. Default: the
+                 token's site, else the primary site.
 
 Options:
   --allow-ship         Offer the change_sets_ship tool (the token's role must also allow changes.ship)
   --media-root <dir>   Directory media_upload may read files from (default: the working directory)
+  --site <key>         The site to work on (overrides SHAPIO_SITE)
   -h, --help           Show this help
 `;
 
@@ -49,6 +59,7 @@ export const parseOptions = (
       options: {
         'allow-ship': { type: 'boolean', default: false },
         'media-root': { type: 'string' },
+        site: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
       strict: true,
@@ -68,10 +79,15 @@ export const parseOptions = (
   if (!token) {
     throw new OptionsError('Set SHAPIO_TOKEN to an admin-scope API token.');
   }
+  const site = (parsed.values.site ?? env.SHAPIO_SITE)?.trim() || undefined;
+  if (site !== undefined && !SITE_KEY.test(site)) {
+    throw new OptionsError(`"${site}" is not a site key (lower case, starting with a letter).`);
+  }
   return {
     baseUrl: baseUrl.replace(/\/+$/, ''),
     token,
     allowShip: parsed.values['allow-ship'],
     mediaRoot: resolve(cwd, parsed.values['media-root'] ?? '.'),
+    ...(site !== undefined ? { site } : {}),
   };
 };

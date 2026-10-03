@@ -2,6 +2,7 @@
  * Publishing types (package H, `apps/api/src/routes/admin/{jobs,publishing,webhooks,deployments,preview}`).
  * Dates are ISO-8601 strings.
  */
+import type { SiteRef } from './sitesTypes.js';
 
 export type Page<T> = { items: T[]; nextCursor: string | null };
 
@@ -88,6 +89,8 @@ export type Webhook = {
   enabled: boolean;
   allowPrivateNetwork: boolean;
   maxAttempts: number;
+  /** The site whose events it receives; null for a network-wide webhook (every site's events). */
+  site: SiteRef | null;
   lastDelivery: { status: WebhookDeliveryStatus; at: string } | null;
   createdBy: string | null;
   createdAt: string;
@@ -102,9 +105,22 @@ export type CreateWebhookInput = {
   enabled?: boolean;
   allowPrivateNetwork?: boolean;
   maxAttempts?: number;
+  /** A network-wide webhook (every site's events); otherwise it belongs to the request's site. */
+  network?: boolean;
 };
 
-export type UpdateWebhookInput = Partial<CreateWebhookInput> & { expectedVersion: number };
+/** A webhook's site is fixed once created. */
+export type UpdateWebhookInput = Partial<Omit<CreateWebhookInput, 'network'>> & { expectedVersion: number };
+
+/** The JSON body every webhook delivery sends (signed; verify it with `verifyWebhookSignature`). */
+export type WebhookEventBody = {
+  id: string;
+  type: string;
+  createdAt: string;
+  /** The site the event is about; null for events about no site (network-wide). */
+  site: SiteRef | null;
+  data: unknown;
+};
 
 /** `secret` is shown once: on creation and after rotation. */
 export type WebhookWithSecret = { webhook: Webhook; secret: string };

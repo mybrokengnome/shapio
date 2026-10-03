@@ -13,11 +13,11 @@ import { readStoredDefinition } from '../schema/storedDefinition.js';
 
 /**
  * Generates documentation/reference/rest-api.md: the OpenAPI document Shapio generates for a schema, rendered
- * for the example site's `article` model (apps/example-site/shapio/). Every instance serves its own,
+ * for the starters' `article` model (examples/shared/shapio/). Every instance serves its own,
  * complete document at /api/docs; this page shows what one model's routes look like. `reference.test.ts`
  * fails when the page and the generator drift apart.
  */
-const EXAMPLE_SCHEMA_DIR = resolve(import.meta.dirname, '../../../example-site/shapio');
+const EXAMPLE_SCHEMA_DIR = resolve(import.meta.dirname, '../../../../examples/shared/shapio');
 const SAMPLE_MODEL = 'article';
 const ZERO_UUID = '00000000-0000-4000-8000-000000000000';
 
@@ -144,7 +144,7 @@ export const renderRestReference = async (): Promise<string> => {
     'for collections and singletons alike.',
     '',
     `Below are the routes generated for the \`${SAMPLE_MODEL}\` collection (plural API ID \`${routeKey}\`) of the`,
-    '[example site](../example-site.md) (`apps/example-site/shapio/models/article.json`). Every other model gets',
+    '[example site](../example-site.md) (`examples/shared/shapio/models/article.json`). Every other model gets',
     'the same set under its own API IDs.',
     'Usage, filters and examples are in the [delivery API guide](../delivery-api.md).',
     '',

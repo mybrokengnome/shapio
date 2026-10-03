@@ -115,12 +115,13 @@ describe('preview tokens and draft reads', () => {
     ).toEqual([draft.id]);
   });
 
-  it('a model token previews every draft of its model', async () => {
-    const { token } = await createToken({ modelKey: 'article' });
-    const titles = expectStatus(await preview('articles', token), 200)
-      .json<PreviewList>()
-      .data.map((entry) => entry.title);
-    expect(titles.sort()).toEqual(['Draft title', 'Other draft']);
+  it('refuses a model-wide token: a preview token previews one entry (sites plan §H)', async () => {
+    const response = await asAdmin({
+      method: 'POST',
+      url: '/api/admin/preview/tokens',
+      payload: { modelKey: 'article' },
+    });
+    expect(response.statusCode).toBe(400);
   });
 
   it('stops working when it expires, is revoked, is forged, or its creator is disabled', async () => {
@@ -321,9 +322,8 @@ describe('preview tokens and draft reads', () => {
       await admin.post('/api/admin/content/page', { data: { title: 'Page draft' } }),
       201,
     ).json<EntryBody>();
-    const modelToken = (await createToken({ modelKey: 'article' })).token;
     const entryToken = (await createToken({ modelKey: 'article', entryId: draft.id })).token;
-    for (const token of [modelToken, entryToken]) {
+    for (const token of [entryToken]) {
       for (const path of ['pages', `pages/${page.id}`]) {
         const response = await preview(path, token);
         expect(response.statusCode, path).toBe(403);

@@ -10,6 +10,12 @@ export type OutboxEventInput = {
   aggregateType: string;
   aggregateId: string;
   payload?: Record<string, unknown>;
+  /**
+   * The site the event is about (sites plan §H): site webhooks and deployments only see their site's events.
+   * Null: a network event (schema, locales, users), seen by every site's subscribers. Required, so every
+   * event says which it is.
+   */
+  siteId: string | null;
 };
 
 /** Events that fail dispatch this many times stop being retried and are left for an operator. */
@@ -27,6 +33,7 @@ export const writeOutboxEvent = (trx: Transaction<DB>, event: OutboxEventInput) 
       aggregate_type: event.aggregateType,
       aggregate_id: event.aggregateId,
       payload: JSON.stringify(event.payload ?? {}),
+      site_id: event.siteId,
     },
     trx,
   );

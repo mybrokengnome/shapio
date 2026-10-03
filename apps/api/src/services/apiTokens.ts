@@ -10,7 +10,7 @@ import { SYSTEM_ROLE_KEYS } from '../permissions/seedRoles.js';
 import type { PermissionEvaluator, TokenPrincipal } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
-import type { ActorContext, SiteActorContext } from './actorContext.js';
+import type { SiteActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 export type ApiTokenView = {
@@ -29,7 +29,7 @@ export type ApiTokenView = {
   createdAt: Date;
 };
 
-type ApiTokenListRow = Awaited<ReturnType<typeof apiTokensRepository.list>>[number];
+type ApiTokenListRow = Awaited<ReturnType<typeof apiTokensRepository.listForSite>>[number];
 
 const scopeOf = (roleKind: string): 'admin' | 'delivery' => (roleKind === 'delivery' ? 'delivery' : 'admin');
 
@@ -49,8 +49,21 @@ const toApiTokenView = (row: ApiTokenListRow): ApiTokenView => ({
 
 export const isApiTokenFormat = (value: string): boolean => value.startsWith(API_TOKEN_PREFIX);
 
-export const listApiTokens = async (): Promise<ApiTokenView[]> =>
-  (await apiTokensRepository.list()).map(toApiTokenView);
+/**
+ * Network tokens (no site) are visible and revocable only by admins who could mint them (`users.manage`, a
+ * network action); everyone else sees their site's tokens only.
+ */
+const managesNetworkTokens = (context: SiteActorContext, permissions: PermissionEvaluator) =>
+  permissions.canPerform(context.actor, 'users.manage');
+
+/** The request site's tokens, plus network tokens for those who manage them. */
+export const listApiTokens = async (
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
+): Promise<ApiTokenView[]> =>
+  (
+    await apiTokensRepository.listForSite(context.site.id, await managesNetworkTokens(context, permissions))
+  ).map(toApiTokenView);
 
 type CreateApiTokenInput = {
   name: string;
@@ -78,7 +91,7 @@ const isNetworkToken = async (
     }
     return false;
   }
-  const mayGrantNetwork = await permissions.canPerform(context.actor, 'users.manage');
+  const mayGrantNetwork = await managesNetworkTokens(context, permissions);
   if (requested === true && !mayGrantNetwork) {
     throw new AppError(
       403,
@@ -143,9 +156,15 @@ export const createApiToken = async (
   });
 };
 
-export const revokeApiToken = async (context: ActorContext, id: string): Promise<void> => {
+/** Revokes a token of the request's site (or a network token, for those who manage them). */
+export const revokeApiToken = async (
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
+  id: string,
+): Promise<void> => {
+  const scope = { siteId: context.site.id, includeNetwork: await managesNetworkTokens(context, permissions) };
   await db.transaction().execute(async (trx) => {
-    if (!(await apiTokensRepository.revoke(id, new Date(), trx))) {
+    if (!(await apiTokensRepository.revoke(id, scope, new Date(), trx))) {
       throw new AppError(404, 'NOT_FOUND', 'Active API token not found');
     }
     await recordAudit(trx, { ...context, action: 'api_token.revoke', target: { type: 'api_token', id } });

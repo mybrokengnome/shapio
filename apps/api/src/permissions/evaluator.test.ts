@@ -15,6 +15,7 @@ import {
 
 const staticGrants = (grants: readonly Grant[]): GrantSource => ({
   getGrants: (roleIds) => Promise.resolve(grants.filter((grant) => roleIds.includes(grant.roleId))),
+  getSiteAppRoleIds: () => Promise.resolve([]),
 });
 
 const MODEL = 'model-page';
@@ -60,6 +61,7 @@ const requestPrincipal: fc.Arbitrary<Principal> = fc.oneof(
   fc.record({
     kind: fc.constant('appUser' as const),
     appUserId: uuid,
+    siteId: fc.constant(SITE_A),
     roleIds: fc.array(uuid, { maxLength: 4 }),
   }),
   fc.record({
@@ -69,7 +71,7 @@ const requestPrincipal: fc.Arbitrary<Principal> = fc.oneof(
     roleId: uuid,
     siteId: fc.constantFrom(null, SITE_A),
   }),
-  fc.constant({ kind: 'anonymous' as const }),
+  fc.constant({ kind: 'anonymous' as const, siteId: SITE_A }),
 );
 
 const randomGrant: fc.Arbitrary<Grant> = fc.record({

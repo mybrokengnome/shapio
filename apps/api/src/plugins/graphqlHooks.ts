@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Kind, type DocumentNode, type GraphQLSchema, type OperationDefinitionNode } from 'graphql';
+import { DELIVERY_VARY } from '../constants/sites.js';
+import { appendVary } from '../helpers/vary.js';
 import { fragmentsOf } from '../schema/codegen/graphql/complexity.js';
 import { operationUsage, type OperationUsage } from '../schema/codegen/graphql/usageSelection.js';
 import { usagePrincipalKey } from '../usage/keys.js';
@@ -27,7 +29,7 @@ export const csrfForGet =
  * never stored.
  */
 export const cacheHeaders = async (request: FastifyRequest, reply: FastifyReply, payload: unknown) => {
-  reply.header('vary', 'Authorization, Cookie');
+  appendVary(reply, DELIVERY_VARY);
   if (request.method !== 'GET' || reply.statusCode !== 200 || typeof payload !== 'string') {
     reply.header('cache-control', 'no-store');
     return payload;

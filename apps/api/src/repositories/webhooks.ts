@@ -17,6 +17,7 @@ export type WebhookDeliveryRow = Selectable<WebhookDeliveries>;
 
 const WEBHOOK_COLUMNS = [
   'webhooks.id',
+  'webhooks.site_id',
   'webhooks.name',
   'webhooks.url',
   'webhooks.events',
@@ -29,11 +30,13 @@ const WEBHOOK_COLUMNS = [
   'webhooks.version',
 ] as const;
 
-/** Webhooks without their encrypted secret, with the newest delivery's status. */
+/** Webhooks without their encrypted secret, with their site's key and the newest delivery's status. */
 const withLastDelivery = (trx: Executor) =>
   trx
     .selectFrom('webhooks')
+    .leftJoin('sites', 'sites.id', 'webhooks.site_id')
     .select(WEBHOOK_COLUMNS)
+    .select('sites.key as site_key')
     .select((eb) => [
       eb
         .selectFrom('webhook_deliveries')
@@ -53,17 +56,48 @@ const withLastDelivery = (trx: Executor) =>
 
 export type WebhookSummaryRow = Awaited<ReturnType<typeof list>>[number];
 
-export const list = (trx: Executor = db) => withLastDelivery(trx).orderBy('webhooks.created_at').execute();
+/**
+ * Webhooks a site sees (sites plan §H): its own and the network ones (null site: every site's events).
+ */
+export const list = (siteId: string, trx: Executor = db) =>
+  withLastDelivery(trx)
+    .where((eb) => eb.or([eb('webhooks.site_id', 'is', null), eb('webhooks.site_id', '=', siteId)]))
+    .orderBy('webhooks.created_at')
+    .execute();
 
-export const findSummaryById = (id: string, trx: Executor = db) =>
-  withLastDelivery(trx).where('webhooks.id', '=', id).executeTakeFirst();
+/** One webhook a site sees (its own or a network one); another site's reads as not found. */
+export const findSummaryVisible = (siteId: string, id: string, trx: Executor = db) =>
+  withLastDelivery(trx)
+    .where('webhooks.id', '=', id)
+    .where((eb) => eb.or([eb('webhooks.site_id', 'is', null), eb('webhooks.site_id', '=', siteId)]))
+    .executeTakeFirst();
 
-/** With the encrypted secret: for delivery only. */
+/** With the encrypted secret, by ID on any site: for delivery and imports. */
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('webhooks').selectAll().where('id', '=', id).executeTakeFirst();
 
-export const listEnabled = (trx: Executor = db) =>
-  trx.selectFrom('webhooks').select(['id', 'events', 'max_attempts']).where('enabled', '=', true).execute();
+/** With the encrypted secret, if the site sees it (its own or a network one). */
+export const findVisible = (siteId: string, id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('webhooks')
+    .selectAll()
+    .where('id', '=', id)
+    .where((eb) => eb.or([eb('site_id', 'is', null), eb('site_id', '=', siteId)]))
+    .executeTakeFirst();
+
+/**
+ * Enabled webhooks an event goes to: the network webhooks and those of the event's site; every webhook for
+ * a network event (`siteId` null: a schema or locale change concerns every site).
+ */
+export const listEnabled = (siteId: string | null, trx: Executor = db) =>
+  trx
+    .selectFrom('webhooks')
+    .select(['id', 'events', 'max_attempts'])
+    .where('enabled', '=', true)
+    .$if(siteId !== null, (qb) =>
+      qb.where((eb) => eb.or([eb('site_id', 'is', null), eb('site_id', '=', siteId ?? '')])),
+    )
+    .execute();
 
 export const insert = (row: Insertable<Webhooks>, trx: Executor = db) =>
   trx.insertInto('webhooks').values(row).returning('id').executeTakeFirstOrThrow();

@@ -1,3 +1,4 @@
+import { AppError } from '../helpers/appError.js';
 import type { AdminIdentity, AdminPrincipal, Principal, RoleAssignment, TokenPrincipal } from './types.js';
 
 /**
@@ -44,13 +45,36 @@ export const identityOf = (principal: AdminPrincipal): AdminIdentity => ({
   assignments: principal.assignments,
 });
 
+/** A credential (token, app-user session, link or code) used on another site than its own. */
+export const siteMismatch = () =>
+  new AppError(403, 'SITE_MISMATCH', 'This credential belongs to another site than the one requested');
+
 /**
- * Re-narrows a principal to the request's site. Admins get that site's roles. Tokens keep theirs: a site
- * token's site is the request's site by resolution, and a network token's role applies on every site.
- * Other principals carry no roles that depend on the site here (app users are per site; G3).
+ * Re-narrows a principal to the request's site. Admins get that site's roles; anonymous callers get the site
+ * (its `public` bindings apply). Site credentials (a site token, an app user) act on their own site only:
+ * another site is refused (403 `SITE_MISMATCH`), whatever resolved it. A network token's role applies on
+ * every site.
  */
-export const principalForSite = (principal: Principal, siteId: string | null): Principal =>
-  principal.kind === 'admin' ? narrowToSite(identityOf(principal), siteId) : principal;
+export const principalForSite = (principal: Principal, siteId: string | null): Principal => {
+  switch (principal.kind) {
+    case 'admin':
+      return narrowToSite(identityOf(principal), siteId);
+    case 'anonymous':
+      return { kind: 'anonymous', siteId };
+    case 'appUser':
+      if (principal.siteId !== siteId) {
+        throw siteMismatch();
+      }
+      return principal;
+    case 'token':
+      if (principal.siteId !== null && principal.siteId !== siteId) {
+        throw siteMismatch();
+      }
+      return principal;
+    case 'system':
+      return principal;
+  }
+};
 
 /** The roles a token holds for network actions: only a network token's (site tokens never reach the network). */
 export const tokenNetworkRoleIds = (token: TokenPrincipal): readonly string[] =>

@@ -24,6 +24,7 @@ export const CONTENT_HEADS_TABLE = 'entry_heads';
 /** Columns of `entry_heads` the index layout depends on. Package E must keep these names. */
 export const CONTENT_HEADS_COLUMNS = {
   data: 'data',
+  siteId: 'site_id',
   modelId: 'model_id',
   locale: 'locale',
   state: 'state',
@@ -31,6 +32,14 @@ export const CONTENT_HEADS_COLUMNS = {
 
 /** Bump when any expression below changes: index names change with it, so old indexes are rebuilt. */
 export const EXPRESSION_VERSION = 1;
+
+/**
+ * Column layout of field indexes. 1: (locale, state, value). 2 (sites plan §H): `site_id` leads, because
+ * every content query names its site. The layout is part of the index name, so a new layout means new
+ * indexes; the `fieldIndexLayout` job builds the current layout and drops the old one.
+ */
+export type FieldIndexLayout = 1 | 2;
+export const FIELD_INDEX_LAYOUT: FieldIndexLayout = 2;
 
 export type ValueCast = 'text' | 'numeric' | 'boolean';
 
@@ -131,10 +140,14 @@ export type FieldIndexSpec = {
 /**
  * Deterministic index name: a hash of the model ID, field ID, value cast, column layout and expression
  * version, so the same field with the same expression and layout always maps to the same index, and a
- * changed one to a new one. 63 bytes is PostgreSQL's identifier limit; this is 3 + 32.
+ * changed one to a new one. 63 bytes is PostgreSQL's identifier limit; this is 3 + 32. `layoutVersion` 1
+ * gives the names indexes had before sites (to drop them).
  */
-export const fieldIndexName = ({ modelId, fieldId, type, localized = true }: FieldIndexSpec): string => {
-  const layout = localized ? '' : ':shared';
+export const fieldIndexName = (
+  { modelId, fieldId, type, localized = true }: FieldIndexSpec,
+  layoutVersion: FieldIndexLayout = FIELD_INDEX_LAYOUT,
+): string => {
+  const layout = `${localized ? '' : ':shared'}${layoutVersion === 1 ? '' : `:l${layoutVersion}`}`;
   const digest = createHash('sha256')
     .update(`${modelId}:${fieldId}:${valueCastFor(type)}:v${EXPRESSION_VERSION}${layout}`)
     .digest('hex');
@@ -159,14 +172,17 @@ const assertIndexName = (indexName: string): string => {
 export const fieldStatisticsName = (indexName: string): string => `es_${assertIndexName(indexName)}`;
 
 /**
- * `CREATE INDEX CONCURRENTLY` for a filterable/sortable field over the model's heads only: (locale, state,
- * value) for localized models, (state, value) otherwise. Must run outside a transaction.
+ * `CREATE INDEX CONCURRENTLY` for a filterable/sortable field over the model's heads only: (site, locale,
+ * state, value) for localized models, (site, state, value) otherwise; the site leads because every query
+ * names one (the compiler's base condition). Must run outside a transaction.
  */
 export const createFieldIndexStatement = (spec: FieldIndexSpec): RawBuilder<unknown> => {
   assertStableId(spec.modelId, 'a model ID');
-  const { modelId, locale, state } = CONTENT_HEADS_COLUMNS;
+  const { siteId, modelId, locale, state } = CONTENT_HEADS_COLUMNS;
   const leading =
-    spec.localized === false ? sql`${sql.ref(state)}` : sql`${sql.ref(locale)}, ${sql.ref(state)}`;
+    spec.localized === false
+      ? sql`${sql.ref(siteId)}, ${sql.ref(state)}`
+      : sql`${sql.ref(siteId)}, ${sql.ref(locale)}, ${sql.ref(state)}`;
   return sql`create index concurrently if not exists ${sql.id(fieldIndexName(spec))} on ${sql.table(CONTENT_HEADS_TABLE)} (${leading}, ${fieldValueExpression(spec.fieldId, spec.type)}) where ${sql.ref(modelId)} = ${sql.lit(spec.modelId)}`;
 };
 

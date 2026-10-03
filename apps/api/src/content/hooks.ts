@@ -2,6 +2,7 @@ import type { Transaction } from 'kysely';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
 import type { Principal } from '../permissions/types.js';
+import type { SiteRef } from '../services/actorContext.js';
 import type { ContentModel } from './model.js';
 
 /**
@@ -24,6 +25,8 @@ export type LifecycleEntryState = 'draft' | 'published' | 'deleted';
 
 export type LifecycleContext = {
   trx: Transaction<DB>;
+  /** The site the entry belongs to (sites plan §H; ADR 0009 note). */
+  site: SiteRef;
   model: ContentModel;
   entryId: string;
   locale: string | null;

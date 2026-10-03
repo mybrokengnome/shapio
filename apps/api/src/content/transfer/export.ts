@@ -89,7 +89,11 @@ async function* schemaRecords(trx: Executor): AsyncGenerator<BundleRecord> {
   }
 }
 
-async function* roleAndUserRecords(trx: Executor, options: ExportOptions): AsyncGenerator<BundleRecord> {
+async function* roleAndUserRecords(
+  trx: Executor,
+  siteId: string,
+  options: ExportOptions,
+): AsyncGenerator<BundleRecord> {
   const roles = await appRolesRepository.listRoles(trx);
   const grants = await appRolesRepository.listPermissionsForRoles(
     roles.map((role) => role.id),
@@ -127,7 +131,7 @@ async function* roleAndUserRecords(trx: Executor, options: ExportOptions): Async
     return;
   }
   for (let after: string | null = null; ;) {
-    const users = await transferExportRepository.listAppUsers(after, BATCH_SIZE, trx);
+    const users = await transferExportRepository.listAppUsers(siteId, after, BATCH_SIZE, trx);
     if (users.length === 0) {
       break;
     }
@@ -161,8 +165,8 @@ async function* roleAndUserRecords(trx: Executor, options: ExportOptions): Async
   }
 }
 
-async function* publishingRecords(trx: Executor): AsyncGenerator<BundleRecord> {
-  for (const webhook of await transferExportRepository.listWebhooks(trx)) {
+async function* publishingRecords(trx: Executor, siteId: string): AsyncGenerator<BundleRecord> {
+  for (const webhook of await transferExportRepository.listWebhooks(siteId, trx)) {
     yield {
       type: 'webhook',
       id: webhook.id,
@@ -174,7 +178,7 @@ async function* publishingRecords(trx: Executor): AsyncGenerator<BundleRecord> {
       maxAttempts: webhook.max_attempts,
     };
   }
-  for (const connection of await transferExportRepository.listDeploymentConnections(trx)) {
+  for (const connection of await transferExportRepository.listDeploymentConnections(siteId, trx)) {
     yield {
       type: 'deploymentConnection',
       id: connection.id,
@@ -191,8 +195,8 @@ async function* publishingRecords(trx: Executor): AsyncGenerator<BundleRecord> {
   }
 }
 
-async function* mediaRecords(trx: Executor): AsyncGenerator<BundleRecord> {
-  for (const folder of await transferExportRepository.listMediaFolders(trx)) {
+async function* mediaRecords(trx: Executor, siteId: string): AsyncGenerator<BundleRecord> {
+  for (const folder of await transferExportRepository.listMediaFolders(siteId, trx)) {
     yield {
       type: 'mediaFolder',
       id: folder.id,
@@ -203,7 +207,7 @@ async function* mediaRecords(trx: Executor): AsyncGenerator<BundleRecord> {
     };
   }
   for (let after: string | null = null; ;) {
-    const assets = await transferExportRepository.listLiveAssets(after, BATCH_SIZE, trx);
+    const assets = await transferExportRepository.listLiveAssets(siteId, after, BATCH_SIZE, trx);
     if (assets.length === 0) {
       break;
     }
@@ -232,9 +236,13 @@ async function* mediaRecords(trx: Executor): AsyncGenerator<BundleRecord> {
   }
 }
 
-async function* entryRecords(trx: Executor, options: ExportOptions): AsyncGenerator<EntryRecord> {
+async function* entryRecords(
+  trx: Executor,
+  siteId: string,
+  options: ExportOptions,
+): AsyncGenerator<EntryRecord> {
   for (let after: string | null = null; ;) {
-    const entries = await transferExportRepository.listLiveEntries(after, BATCH_SIZE, trx);
+    const entries = await transferExportRepository.listLiveEntries(siteId, after, BATCH_SIZE, trx);
     if (entries.length === 0) {
       break;
     }
@@ -272,7 +280,10 @@ async function* entryRecords(trx: Executor, options: ExportOptions): AsyncGenera
   }
 }
 
-/** Every record of a bundle, read inside one consistent (REPEATABLE READ) transaction. */
+/**
+ * Every record of one site's bundle, read inside one consistent (REPEATABLE READ) transaction. The schema,
+ * locales and roles are shared; content, media, app users, webhooks and connections are the site's.
+ */
 export async function* bundleRecords(
   trx: Executor,
   siteId: string,
@@ -307,10 +318,10 @@ export async function* bundleRecords(
   }
   for (const source of [
     schemaRecords(trx),
-    roleAndUserRecords(trx, options),
-    publishingRecords(trx),
-    mediaRecords(trx),
-    entryRecords(trx, options),
+    roleAndUserRecords(trx, siteId, options),
+    publishingRecords(trx, siteId),
+    mediaRecords(trx, siteId),
+    entryRecords(trx, siteId, options),
   ]) {
     for await (const record of source) {
       yield count(record);

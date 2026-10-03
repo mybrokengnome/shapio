@@ -177,8 +177,9 @@ const insertGrant = async (
   };
 };
 
-const assertFolderExists = async (folderId: string | null | undefined) => {
-  if (folderId && !(await mediaFoldersRepository.findById(folderId))) {
+/** The upload's folder must be on the request's site; another site's folder reads as missing. */
+const assertFolderExists = async (context: MediaServiceContext, folderId: string | null | undefined) => {
+  if (folderId && !(await mediaFoldersRepository.findById(context.site.id, folderId))) {
     throw new AppError(400, 'FOLDER_NOT_FOUND', 'The folder does not exist');
   }
 };
@@ -189,7 +190,7 @@ export const createUploadGrant = async (
   input: UploadGrantInput,
 ): Promise<UploadGrantView> => {
   const mimeType = assertUploadAllowed(context, input);
-  await assertFolderExists(input.folderId);
+  await assertFolderExists(context, input.folderId);
   return insertGrant(context, input, mimeType, {
     kind: 'create',
     assetId: randomUUID(),
@@ -205,7 +206,7 @@ export const createReplaceGrant = async (
   input: Omit<UploadGrantInput, 'folderId' | 'visibility'>,
 ): Promise<UploadGrantView> => {
   const mimeType = assertUploadAllowed(context, input);
-  const asset = await mediaAssetsRepository.findLiveById(assetId);
+  const asset = await mediaAssetsRepository.findLiveOnSite(context.site.id, assetId);
   if (!asset) {
     throw new AppError(404, 'NOT_FOUND', 'Media asset not found');
   }
@@ -342,7 +343,9 @@ const recordNewAsset = async (
   upload: InspectedUpload,
 ) => {
   const folderId =
-    grant.folder_id && (await mediaFoldersRepository.findById(grant.folder_id, trx)) ? grant.folder_id : null;
+    grant.folder_id && (await mediaFoldersRepository.findById(grant.site_id, grant.folder_id, trx))
+      ? grant.folder_id
+      : null;
   const asset = await mediaAssetsRepository.insert(
     {
       id: grant.asset_id,
@@ -368,6 +371,7 @@ const recordNewAsset = async (
   });
   await writeOutboxEvent(trx, {
     type: MEDIA_EVENTS.created,
+    siteId: grant.site_id,
     aggregateType: 'media_asset',
     aggregateId: asset.id,
     payload: { assetId: asset.id },
@@ -381,7 +385,7 @@ const recordReplacement = async (
   grant: MediaUploadGrantRow,
   upload: InspectedUpload,
 ) => {
-  const current = await mediaAssetsRepository.lockById(grant.asset_id, trx);
+  const current = await mediaAssetsRepository.lockOnSite(grant.site_id, grant.asset_id, trx);
   if (!current || current.deleted_at !== null) {
     throw new AppError(404, 'NOT_FOUND', 'Media asset not found');
   }
@@ -429,6 +433,7 @@ const recordReplacement = async (
   });
   await writeOutboxEvent(trx, {
     type: MEDIA_EVENTS.updated,
+    siteId: grant.site_id,
     aggregateType: 'media_asset',
     aggregateId: asset.id,
     payload: { assetId: asset.id, replaced: true },
@@ -445,7 +450,12 @@ export const confirmUpload = async (
   grantId: string,
 ): Promise<{ created: boolean; asset: MediaAssetView }> => {
   const grant = await mediaUploadGrantsRepository.findById(grantId);
-  if (!grant || grant.created_by_principal !== principalKey(context.actor)) {
+  // A grant is completed by whoever asked for it, on the site it was granted on (sites plan §H).
+  if (
+    !grant ||
+    grant.site_id !== context.site.id ||
+    grant.created_by_principal !== principalKey(context.actor)
+  ) {
     throw new AppError(404, 'NOT_FOUND', 'Upload grant not found');
   }
   if (grant.status !== 'pending') {

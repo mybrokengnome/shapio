@@ -6,6 +6,7 @@ import type { FieldUsageRow, UsageSelection } from '../repositories/usage.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { UsageBatch } from '../usage/aggregator.js';
 import { usageDayOf } from '../usage/keys.js';
+import type { SiteRef } from './actorContext.js';
 
 /**
  * Field usage from delivery traffic (plan developer-face §5): who reads which fields, from the daily
@@ -22,6 +23,8 @@ export const windowStartDay = (days: number, now: Date = new Date()): string =>
   usageDayOf(new Date(now.getTime() - (Math.max(days, 1) - 1) * DAY_MS));
 
 export type FieldPrincipalUsage = {
+  /** The site the reads were made on (a token is on one site; anonymous readers are counted per site). */
+  site: SiteRef;
   /** `token:<id>`, `app_users` or `anonymous`. */
   principalKey: string;
   /** The API token's name (tokens only, while the token exists). */
@@ -32,15 +35,28 @@ export type FieldPrincipalUsage = {
   selection: UsageSelection;
 };
 
-export type FieldConsumers = { fieldId: string; principals: FieldPrincipalUsage[] };
+/** Readers on sites the viewer may not see in detail: how many, and how many reads. */
+export type OtherSitesUsage = { consumers: number; reads: number };
 
-/** Sums rows per principal; `explicit` wins over `implicit` (the reader named the field at least once). */
+export type FieldConsumers = {
+  fieldId: string;
+  principals: FieldPrincipalUsage[];
+  /** Null when the viewer sees every site; otherwise the anonymous totals of the other sites. */
+  otherSites: OtherSitesUsage | null;
+};
+
+/**
+ * Sums rows per (site, principal); `explicit` wins over `implicit` (the reader named the field at least
+ * once).
+ */
 const byPrincipal = (rows: readonly FieldUsageRow[]): FieldPrincipalUsage[] => {
   const merged = new Map<string, FieldPrincipalUsage>();
   for (const row of rows) {
-    const known = merged.get(row.principalKey);
+    const key = `${row.siteId}\u0000${row.principalKey}`;
+    const known = merged.get(key);
     if (!known) {
-      merged.set(row.principalKey, {
+      merged.set(key, {
+        site: { id: row.siteId, key: row.siteKey },
         principalKey: row.principalKey,
         ...(row.tokenName !== null ? { tokenName: row.tokenName } : {}),
         reads: row.reads,
@@ -60,16 +76,39 @@ const byPrincipal = (rows: readonly FieldUsageRow[]): FieldPrincipalUsage[] => {
 const pathInvolves = (fieldPath: string, fieldId: string) => fieldPath.split('.').includes(fieldId);
 
 /**
- * Who read each of `fieldIds` in the last `days` days (today included), most reads first. A field counts
- * as read when it was read directly, as a populated relation's target field, or as a relation whose
- * targets were read through. Every requested field is in the result, with no principals when unread.
+ * Which sites' readers a viewer sees in detail (sites plan §H): every site for a network viewer (roles on
+ * every site, or a network token), otherwise their own site, with the other sites as anonymous totals.
  */
-export const consumersOf = async (fieldIds: readonly string[], days: number): Promise<FieldConsumers[]> => {
+export type ConsumersView = { siteId: string; network: boolean };
+
+const otherSitesOf = (principals: readonly FieldPrincipalUsage[]): OtherSitesUsage => ({
+  consumers: principals.length,
+  reads: principals.reduce((sum, principal) => sum + principal.reads, 0),
+});
+
+/**
+ * Who read each of `fieldIds` in the last `days` days (today included), most reads first, on every site (the
+ * schema is shared, so a breaking change affects every site's readers). A field counts as read when it was
+ * read directly, as a populated relation's target field, or as a relation whose targets were read through.
+ * Every requested field is in the result, with no principals when unread.
+ */
+export const consumersOf = async (
+  fieldIds: readonly string[],
+  days: number,
+  view: ConsumersView,
+): Promise<FieldConsumers[]> => {
   const rows = await usageRepository.fieldUsageForFields(fieldIds, windowStartDay(days));
-  return fieldIds.map((fieldId) => ({
-    fieldId,
-    principals: byPrincipal(rows.filter((row) => pathInvolves(row.fieldPath, fieldId))),
-  }));
+  return fieldIds.map((fieldId) => {
+    const principals = byPrincipal(rows.filter((row) => pathInvolves(row.fieldPath, fieldId)));
+    if (view.network) {
+      return { fieldId, principals, otherSites: null };
+    }
+    return {
+      fieldId,
+      principals: principals.filter((principal) => principal.site.id === view.siteId),
+      otherSites: otherSitesOf(principals.filter((principal) => principal.site.id !== view.siteId)),
+    };
+  });
 };
 
 export type ModelFieldUsage = {
@@ -120,9 +159,13 @@ const apiKeyPathOf = (snapshot: SchemaSnapshot, modelId: string, fieldPath: stri
   return target ? `${field.apiKey}.${target.apiKey}` : null;
 };
 
-/** `GET /api/admin/usage/fields`: per field of one model, reads by principal, plus per-principal totals. */
+/**
+ * `GET /api/admin/usage/fields`: per field of one model, reads by principal on the request's site, plus
+ * per-principal totals there.
+ */
 export const modelUsage = async (
   snapshot: SchemaSnapshot,
+  site: SiteRef,
   modelId: string,
   days: number,
 ): Promise<ModelUsage> => {
@@ -130,7 +173,7 @@ export const modelUsage = async (
     throw modelNotFound(modelId);
   }
   const since = windowStartDay(days);
-  const rows = await usageRepository.fieldUsageForModel(modelId, since);
+  const rows = await usageRepository.fieldUsageForModel(site.id, modelId, since);
   const paths = [...new Set(rows.map((row) => row.fieldPath))];
   const fields = paths
     .map((fieldPath) => {
@@ -145,7 +188,7 @@ export const modelUsage = async (
     })
     .sort((a, b) => b.reads - a.reads);
   const readers = new Set(rows.map((row) => row.principalKey));
-  const principals = (await usageRepository.principalSummaries(since))
+  const principals = (await usageRepository.principalSummaries(site.id, since))
     .filter((summary) => readers.has(summary.principalKey))
     .map(({ tokenName, ...summary }) => ({ ...summary, ...(tokenName !== null ? { tokenName } : {}) }));
   return { modelId, days, since, fields, principals };
@@ -174,9 +217,13 @@ const byKey =
 export const writeUsageBatch = (database: Database, batch: UsageBatch): Promise<void> =>
   database.transaction().execute(async (trx) => {
     const fieldReads = [...batch.fieldReads].sort(
-      byKey((row) => [row.day, row.modelId, row.fieldPath, row.principalKey, row.selection].join('\u0000')),
+      byKey((row) =>
+        [row.day, row.siteId, row.modelId, row.fieldPath, row.principalKey, row.selection].join('\u0000'),
+      ),
     );
-    const tokenReads = [...batch.tokenReads].sort(byKey((row) => `${row.day}\u0000${row.principalKey}`));
+    const tokenReads = [...batch.tokenReads].sort(
+      byKey((row) => [row.day, row.siteId, row.principalKey].join('\u0000')),
+    );
     for (const rows of chunks(fieldReads)) {
       await usageRepository.upsertFieldReads(rows, trx);
     }

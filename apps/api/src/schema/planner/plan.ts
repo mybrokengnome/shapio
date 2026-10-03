@@ -12,7 +12,7 @@ import {
   type SchemaDefinition,
   type ValidationIssue,
 } from '@shapio/schema';
-import { fieldIndexName } from '../../content/compiler/expressions.js';
+import { fieldIndexName, type FieldIndexSpec } from '../../content/compiler/expressions.js';
 import {
   findValueLocations,
   stepKey,
@@ -55,7 +55,8 @@ export type PlanInput = {
   hasContent: boolean;
 };
 
-const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
+/** The field indexes a definition needs (filterable or sortable, not deprecated), in the current layout. */
+export const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
   definition && definition.kind !== 'component'
     ? definition.fields
         .filter((field: FieldDefinition) => (field.filterable || field.sortable) && !field.deprecated)
@@ -77,6 +78,14 @@ const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
           };
         })
     : [];
+
+/** The expression-module spec of an index step. */
+export const indexSpecOf = (step: IndexStep): FieldIndexSpec => ({
+  modelId: step.modelId,
+  fieldId: step.fieldId,
+  type: step.fieldType,
+  ...(step.localized !== undefined ? { localized: step.localized } : {}),
+});
 
 const field = (definition: SchemaDefinition | null, fieldId: string | undefined) =>
   definition?.fields.find((candidate) => candidate.id === fieldId);
@@ -199,9 +208,13 @@ export const buildChangePlan = ({
   const newIndexes = afterIndexes.filter(
     (step) => !beforeIndexes.some((old) => old.indexName === step.indexName),
   );
+  // The layout before sites too: the index may not have been rebuilt yet (the fieldIndexLayout job).
   const droppedIndexes: FollowUpStep[] = beforeIndexes
     .filter((step) => !afterIndexes.some((kept) => kept.indexName === step.indexName))
-    .map((step) => ({ kind: 'dropIndex', indexName: step.indexName }));
+    .flatMap((step) => [
+      { kind: 'dropIndex', indexName: step.indexName },
+      { kind: 'dropIndex', indexName: fieldIndexName(indexSpecOf(step), 1) },
+    ]);
   const releasedUnique: FollowUpStep[] = changes
     .filter((change) => change.cleanup.includes('releaseUnique') && change.fieldId)
     .map((change) => ({ kind: 'releaseUnique', fieldId: change.fieldId as string }));

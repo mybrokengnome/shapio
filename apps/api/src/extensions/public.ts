@@ -9,10 +9,18 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** Who is calling. Anonymous unless a session cookie or API token resolved. Never null after onRequest. */
     principal: Principal;
+    /**
+     * The request's site on a site route (custom routes are site routes): the credential's site, else the
+     * `Shapio-Site` header or `?site=`, else the primary site. Undefined on a route declaring
+     * `config.site = 'network'`.
+     */
+    site: { id: string; key: string } | undefined;
   }
   interface FastifyContextConfig {
     /** Required on every mutating route: the audit action recorded on success, or `{ exempt: '<why>' }`. */
     audit?: RouteAuditConfig;
+    /** `'network'` for a custom route that is about the whole instance rather than one site. */
+    site?: 'site' | 'network';
   }
 }
 
@@ -36,6 +44,9 @@ export const EXTENSION_CONTRACT_VERSION = 1;
 export type BeforeHookEvent = 'beforeCreate' | 'beforeUpdate' | 'beforePublish' | 'beforeDelete';
 export type AfterHookEvent = 'afterCreate' | 'afterUpdate' | 'afterPublish' | 'afterDelete';
 export type HookEvent = BeforeHookEvent | AfterHookEvent;
+
+/** A site of a multi-site instance: its stable ID and its key (sites share the schema, not content). */
+export type ExtensionSite = { id: string; key: string };
 
 /** Entry data keyed by field API key (the admin API's shape; media and relations are IDs). */
 export type EntryData = Readonly<Record<string, unknown>>;
@@ -114,8 +125,18 @@ export type ExtensionJobService = {
   ) => Promise<{ id: string; created: boolean }>;
 };
 
-/** What Shapio offers extensions. Deliberately small; everything else goes through `trx` or HTTP. */
+/**
+ * What Shapio offers extensions. Deliberately small; everything else goes through `trx` or HTTP.
+ *
+ * Content and media are per site. The services handed to a hook read the hook's site; the services given to
+ * routes, jobs and service factories read the primary site. Use `forSite` for another one (in a custom
+ * route: `services.forSite(request.site)`).
+ */
 export type ShapioServices = {
+  /** The site `content` and `media` read. */
+  site: ExtensionSite;
+  /** The same services reading another site. */
+  forSite: (site: ExtensionSite) => ShapioServices;
   content: ContentReadService;
   media: MediaReferenceService;
   jobs: ExtensionJobService;
@@ -137,6 +158,8 @@ export interface CustomServices {}
 export type ExtensionServices = ShapioServices & CustomServices;
 
 type HookContextBase = {
+  /** The site the entry belongs to; `services` read this site. */
+  site: ExtensionSite;
   model: HookModel;
   entry: HookEntry;
   locale: string | null;

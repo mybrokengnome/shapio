@@ -71,8 +71,10 @@ each is easier to review, test and revert on its own.
   mock the database: transactions, locks and concurrency are what these tests prove.
 - `pnpm --filter @shapio/admin e2e` drives the built admin with Playwright (see `apps/admin/README.md`).
 - `pnpm smoke:npm` packs and installs the npm packages and starts them.
-- The example site has its own check: seed a local Shapio, then `pnpm --filter example-site build` and
-  `pnpm --filter example-site smoke` ([walkthrough](documentation/example-site.md)).
+- The site starters (`examples/astro`, `examples/next`, `examples/sveltekit`) have their own check: build the
+  packages (`pnpm build`), seed a local Shapio once (`pnpm --filter example-astro seed`, then copy its `.env`
+  to the other two), then build each starter and run its `smoke` against the built site
+  ([Site starters](documentation/starters.md)).
 
 Add tests with every change: unit tests next to the code (`*.test.ts`), integration tests in
 `apps/api/test/*.int.test.ts`. Before opening a pull request:
@@ -83,7 +85,7 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:integ
 
 CI runs lint, format, typecheck and the unit tests on Node 24, the integration tests on Node 24 and 26 against
 PostgreSQL 16 and 18, and also the admin end-to-end suite, the Docker build, the npm smoke test and the
-example site.
+site starters.
 
 ## Adding a migration
 

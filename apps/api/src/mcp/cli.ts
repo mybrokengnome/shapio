@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import type { CliCommand, CliIo } from '@shapio/cli';
+import { SITE_KEY_PATTERN } from '../constants/sites.js';
 import { createUrlBuilder } from '../helpers/publicUrl.js';
 
 /**
@@ -7,9 +8,11 @@ import { createUrlBuilder } from '../helpers/publicUrl.js';
  * server run with npx). Prints configuration only: it creates no token and contacts nothing.
  */
 const MCP_USAGE =
-  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship]\n' +
+  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship] [--site <key>]\n' +
   '  Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then\n' +
-  '  PUBLIC_URL + BASE_PATH. Create an admin API token whose role has no "changes.ship" and paste it in place\n' +
+  "  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else\n" +
+  '  the primary site).\n' +
+  '  Create an admin API token whose role has no "changes.ship" and paste it in place\n' +
   '  of the placeholder: agents prepare change sets, people ship them.';
 
 const CLIENTS = ['claude-code', 'cursor', 'claude-desktop'] as const;
@@ -32,30 +35,41 @@ const defaultUrl = (env: CliIo['env']) => {
   return 'http://localhost:4300';
 };
 
-const serverArgs = (allowShip: boolean) => ['-y', PACKAGE, ...(allowShip ? ['--allow-ship'] : [])];
+/** What the printed configuration connects to. */
+type McpTarget = { url: string; allowShip: boolean; site: string | undefined };
+
+const SITE_KEY = new RegExp(SITE_KEY_PATTERN);
+
+const serverArgs = ({ allowShip }: McpTarget) => ['-y', PACKAGE, ...(allowShip ? ['--allow-ship'] : [])];
+
+const serverEnv = ({ url, site }: McpTarget): Record<string, string> => ({
+  SHAPIO_URL: url,
+  SHAPIO_TOKEN: TOKEN_PLACEHOLDER,
+  ...(site !== undefined ? { SHAPIO_SITE: site } : {}),
+});
 
 /** The `mcpServers` JSON block Cursor and Claude Desktop read. */
-const jsonConfig = (url: string, allowShip: boolean) =>
+const jsonConfig = (target: McpTarget) =>
   JSON.stringify(
-    {
-      mcpServers: {
-        shapio: {
-          command: 'npx',
-          args: serverArgs(allowShip),
-          env: { SHAPIO_URL: url, SHAPIO_TOKEN: TOKEN_PLACEHOLDER },
-        },
-      },
-    },
+    { mcpServers: { shapio: { command: 'npx', args: serverArgs(target), env: serverEnv(target) } } },
     null,
     2,
   );
 
-const SECTIONS: Record<McpClientKind, (url: string, allowShip: boolean) => string> = {
-  'claude-code': (url, allowShip) =>
-    `Claude Code (run in your project):\n\n  claude mcp add shapio --env SHAPIO_URL=${url} --env "SHAPIO_TOKEN=${TOKEN_PLACEHOLDER}" -- npx ${serverArgs(allowShip).join(' ')}\n`,
-  cursor: (url, allowShip) => `Cursor (.cursor/mcp.json in your project):\n\n${jsonConfig(url, allowShip)}\n`,
-  'claude-desktop': (url, allowShip) =>
-    `Claude Desktop (claude_desktop_config.json, then restart the app):\n\n${jsonConfig(url, allowShip)}\n`,
+/** `claude mcp add` flags; the token placeholder is quoted (it contains spaces). */
+const claudeCodeEnv = (target: McpTarget) =>
+  Object.entries(serverEnv(target))
+    .map(([name, value]) =>
+      value === TOKEN_PLACEHOLDER ? `--env "${name}=${value}"` : `--env ${name}=${value}`,
+    )
+    .join(' ');
+
+const SECTIONS: Record<McpClientKind, (target: McpTarget) => string> = {
+  'claude-code': (target) =>
+    `Claude Code (run in your project):\n\n  claude mcp add shapio ${claudeCodeEnv(target)} -- npx ${serverArgs(target).join(' ')}\n`,
+  cursor: (target) => `Cursor (.cursor/mcp.json in your project):\n\n${jsonConfig(target)}\n`,
+  'claude-desktop': (target) =>
+    `Claude Desktop (claude_desktop_config.json, then restart the app):\n\n${jsonConfig(target)}\n`,
 };
 
 export const mcpCommand: CliCommand = {
@@ -70,6 +84,7 @@ export const mcpCommand: CliCommand = {
           url: { type: 'string' },
           client: { type: 'string' },
           'allow-ship': { type: 'boolean', default: false },
+          site: { type: 'string' },
         },
         strict: true,
       }));
@@ -87,7 +102,12 @@ export const mcpCommand: CliCommand = {
       io.stderr(`--url must be an http(s) URL (got ${url})\n`);
       return 1;
     }
-    const sections = (client ? [client] : CLIENTS).map((kind) => SECTIONS[kind](url, values['allow-ship']));
+    if (values.site !== undefined && !SITE_KEY.test(values.site)) {
+      io.stderr(`--site must be a site key (lower case, starting with a letter; got ${values.site})\n`);
+      return 1;
+    }
+    const target: McpTarget = { url, allowShip: values['allow-ship'], site: values.site };
+    const sections = (client ? [client] : CLIENTS).map((kind) => SECTIONS[kind](target));
     io.stdout(
       `${sections.join('\n')}\nReplace ${TOKEN_PLACEHOLDER} with an admin API token (Settings → API tokens). ` +
         'Give its role no "changes.ship": the agent drafts and opens change sets, a person ships them.' +

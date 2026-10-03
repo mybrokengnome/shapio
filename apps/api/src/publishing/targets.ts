@@ -42,7 +42,7 @@ export const resolvePublicationTarget = async (
   assertEntryVisible(
     policy,
     context.actor,
-    await entriesRepository.findLive(input.entryId, model.definition.id, context.db),
+    await entriesRepository.findLive(input.entryId, model.definition.id, context.site.id, context.db),
     input.entryId,
   );
   const locale = model.definition.localized

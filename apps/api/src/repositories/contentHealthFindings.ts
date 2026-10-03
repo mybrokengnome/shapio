@@ -79,6 +79,8 @@ export const resolveForEntry = (entryId: string, now: Date, executor: Executor =
     .execute();
 
 export type OpenFindingsQuery = {
+  /** Findings are per site (sites plan §H). */
+  siteId: string;
   modelIds: readonly string[];
   rule?: string;
   /** Keyset: findings after this (last_seen_at, id) in newest-first order. */
@@ -109,6 +111,7 @@ export const listOpen = (query: OpenFindingsQuery, executor: Executor = db) => {
       'e.owner_app_user_id',
       'e.created_by_admin_id',
     ])
+    .where('f.site_id', '=', query.siteId)
     .where('f.resolved_at', 'is', null)
     .where('e.deleted_at', 'is', null)
     .where('f.model_id', 'in', query.modelIds)
@@ -141,14 +144,15 @@ export const listOpenForEntry = (entryId: string, executor: Executor = db) =>
     .where('resolved_at', 'is', null)
     .execute();
 
-/** Open findings per rule and model, for live entries (the Inbox's groups). */
-export const countOpenByRule = (modelIds: readonly string[], executor: Executor = db) =>
+/** Open findings per rule and model of one site, for live entries (the Inbox's groups). */
+export const countOpenByRule = (siteId: string, modelIds: readonly string[], executor: Executor = db) =>
   modelIds.length === 0
     ? Promise.resolve([])
     : executor
         .selectFrom('content_health_findings as f')
         .innerJoin('entries as e', 'e.id', 'f.entry_id')
         .select(['f.rule', 'f.model_id', ({ fn }) => fn.countAll<string>().as('count')])
+        .where('f.site_id', '=', siteId)
         .where('f.resolved_at', 'is', null)
         .where('e.deleted_at', 'is', null)
         .where('f.model_id', 'in', modelIds)

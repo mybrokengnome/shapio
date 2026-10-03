@@ -34,6 +34,7 @@ const auditCustomRoute = async (request: FastifyRequest, reply: FastifyReply, pa
       metadata: { route: request.routeOptions.url, method: request.method, statusCode: reply.statusCode },
       requestId: request.id,
       ip: request.ip,
+      ...(request.site ? { site: request.site } : {}),
     });
   } catch (error) {
     request.log.error({ err: error, action: audit.action }, 'audit of a custom route failed');

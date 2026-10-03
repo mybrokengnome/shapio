@@ -60,7 +60,10 @@ const collectChanges = async (context: ChangeSetServiceContext, from: number, to
   let after: string | undefined;
   let total = 0;
   do {
-    const page = await listChanges({ from, to, after, limit: DIFF_PAGE, modelIds: null }, context.db);
+    const page = await listChanges(
+      { siteId: context.site.id, from, to, after, limit: DIFF_PAGE, modelIds: null },
+      context.db,
+    );
     changes.push(...page.items);
     total += page.items.reduce((sum, item) => sum + item.locales.length, 0);
     if (total > RESTORE_MAX_ITEMS) {

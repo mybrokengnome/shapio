@@ -11,8 +11,18 @@ export type NewScheduledPublication = Insertable<ScheduledPublications>;
 export const insert = (row: NewScheduledPublication, trx: Executor = db) =>
   trx.insertInto('scheduled_publications').values(row).returningAll().executeTakeFirstOrThrow();
 
+/** By ID on any site: for the schedule's job, which starts from the row it was queued for. */
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('scheduled_publications').selectAll().where('id', '=', id).executeTakeFirst();
+
+/** By ID on one site (sites plan §H): another site's schedule reads as not found. */
+export const findOnSite = (siteId: string, id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('scheduled_publications')
+    .selectAll()
+    .where('id', '=', id)
+    .where('site_id', '=', siteId)
+    .executeTakeFirst();
 
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('scheduled_publications').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
@@ -20,7 +30,7 @@ export const lockById = (id: string, trx: Transaction<DB>) =>
 export const setJob = (id: string, jobId: string, trx: Executor = db) =>
   trx.updateTable('scheduled_publications').set({ job_id: jobId }).where('id', '=', id).execute();
 
-export type ScheduleFilter = { status?: string; entryId?: string };
+export type ScheduleFilter = { siteId: string; status?: string; entryId?: string };
 
 export const list = (
   filter: ScheduleFilter,
@@ -32,6 +42,7 @@ export const list = (
     .selectFrom('scheduled_publications')
     .selectAll()
     .select(cursorAt('scheduled_publications.created_at').as('cursor_at'))
+    .where('site_id', '=', filter.siteId)
     .$if(filter.status !== undefined, (qb) => qb.where('status', '=', filter.status ?? ''))
     .$if(filter.entryId !== undefined, (qb) => qb.where('entry_id', '=', filter.entryId ?? ''))
     .$if(cursor !== undefined, (qb) =>

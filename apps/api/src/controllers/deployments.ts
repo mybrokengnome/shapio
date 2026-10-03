@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { toActorContext, toSiteActorContext } from '../helpers/requestContext.js';
+import { toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   CreateConnectionBody,
   ListRunsQuery,
@@ -11,10 +12,10 @@ import * as deploymentsService from '../services/deployments.js';
 type ById = FastifyRequest<{ Params: IdParams }>;
 
 export const listConnections = async (request: FastifyRequest) =>
-  deploymentsService.listConnections(request.server.publishing);
+  deploymentsService.listConnections(request.server.publishing, getRequestSite(request));
 
 export const getConnection = async (request: ById) =>
-  deploymentsService.getConnection(request.server.publishing, request.params.id);
+  deploymentsService.getConnection(request.server.publishing, getRequestSite(request), request.params.id);
 
 export const createConnection = async (
   request: FastifyRequest<{ Body: CreateConnectionBody }>,
@@ -35,7 +36,7 @@ export const updateConnection = async (
 ) =>
   deploymentsService.updateConnection(
     request.server.publishing,
-    toActorContext(request),
+    toSiteActorContext(request),
     request.params.id,
     request.body,
   );
@@ -43,14 +44,14 @@ export const updateConnection = async (
 export const deleteConnection = async (request: ById, reply: FastifyReply) => {
   await deploymentsService.deleteConnection(
     request.server.publishing,
-    toActorContext(request),
+    toSiteActorContext(request),
     request.params.id,
   );
   return reply.code(204).send();
 };
 
 export const testConnection = async (request: ById) =>
-  deploymentsService.testConnection(request.server.publishing, request.params.id);
+  deploymentsService.testConnection(request.server.publishing, getRequestSite(request), request.params.id);
 
 export const triggerRun = async (request: ById, reply: FastifyReply) =>
   reply
@@ -58,16 +59,16 @@ export const triggerRun = async (request: ById, reply: FastifyReply) =>
     .send(
       await deploymentsService.triggerRun(
         request.server.publishing,
-        toActorContext(request),
+        toSiteActorContext(request),
         request.params.id,
       ),
     );
 
 export const listRuns = async (request: FastifyRequest<{ Querystring: ListRunsQuery }>) =>
-  deploymentsService.listRuns(request.server.publishing, request.query);
+  deploymentsService.listRuns(request.server.publishing, getRequestSite(request), request.query);
 
 export const getRun = async (request: ById) =>
-  deploymentsService.getRun(request.server.publishing, request.params.id);
+  deploymentsService.getRun(request.server.publishing, getRequestSite(request), request.params.id);
 
 export const retryRun = async (request: ById, reply: FastifyReply) =>
   reply
@@ -75,7 +76,7 @@ export const retryRun = async (request: ById, reply: FastifyReply) =>
     .send(
       await deploymentsService.retryRun(
         request.server.publishing,
-        toActorContext(request),
+        toSiteActorContext(request),
         request.params.id,
       ),
     );

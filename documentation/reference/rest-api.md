@@ -13,7 +13,7 @@ The two APIs name a model differently. Delivery (and preview) addresses it by it
 for collections and singletons alike.
 
 Below are the routes generated for the `article` collection (plural API ID `articles`) of the
-[example site](../example-site.md) (`apps/example-site/shapio/models/article.json`). Every other model gets
+[example site](../example-site.md) (`examples/shared/shapio/models/article.json`). Every other model gets
 the same set under its own API IDs.
 Usage, filters and examples are in the [delivery API guide](../delivery-api.md).
 

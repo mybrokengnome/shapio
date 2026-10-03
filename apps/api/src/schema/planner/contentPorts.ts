@@ -5,14 +5,19 @@ import type { SeqAllocator } from '../../repositories/publications.js';
 import type { ContentStep, FollowUpStep } from './steps.js';
 
 /**
- * What the activation transaction offers the content rewrite: its one publication sequence number (taken
- * late, on first use) and a way to defer work until that number is known (rolling the publication log of
- * converted published heads after every rewrite, so the number's row lock is held as briefly as possible).
+ * What the activation transaction offers the content rewrite: one publication sequence number per affected
+ * site (sites plan §H, ADR 0010 amendment: one snapshot per affected site), each taken late, on first use,
+ * under the schema lock, and a way to defer work until a site's number is known (rolling the publication log
+ * of converted published heads after every rewrite, so the number's row lock is held as briefly as possible).
+ * A site whose content does not change takes no number.
  */
 export type ActivationContext = {
+  /** The origin site's number: the shipping change set's site (the primary site without a change set). */
   seq: SeqAllocator;
-  /** Runs `work` with the activation's sequence number, after every item's rewrite, before commit. */
-  atSeq: (work: (seq: number) => Promise<void>) => void;
+  /** The number of one site, for content converted on it. */
+  seqFor: (siteId: string) => SeqAllocator;
+  /** Runs `work` with the site's sequence number, after every item's rewrite, before commit. */
+  atSeq: (siteId: string, work: (seq: number) => Promise<void>) => void;
 };
 
 /**

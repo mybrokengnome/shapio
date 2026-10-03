@@ -149,6 +149,8 @@ const insertWebhook = async (deps: ConfigDependencies, webhook: WebhookRecord) =
     await webhooksRepository.insert(
       {
         id: webhook.id,
+        // A bundle's webhooks are its site's (an export carries only the site's own webhooks).
+        site_id: deps.actor.site.id,
         name: webhook.name,
         url: webhook.url,
         events: webhook.events.filter(isValidEventPattern),

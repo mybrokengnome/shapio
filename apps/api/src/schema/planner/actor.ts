@@ -28,10 +28,11 @@ export const principalFromColumns = (type: string, id: string | null): Principal
     case 'token':
       return { kind: 'token', tokenId: id ?? '', scope: 'admin', roleId: '', siteId: null };
     case 'app_user':
-      return { kind: 'appUser', appUserId: id ?? '', roleIds: [] };
+      // The site is not recorded with the change; this principal only names the requester in the audit row.
+      return { kind: 'appUser', appUserId: id ?? '', siteId: '', roleIds: [] };
     case 'system':
       return { kind: 'system', component: id ?? 'schema' };
     default:
-      return { kind: 'anonymous' };
+      return { kind: 'anonymous', siteId: null };
   }
 };

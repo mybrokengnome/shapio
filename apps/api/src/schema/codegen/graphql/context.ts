@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { MercuriusContext } from 'mercurius';
 import type { PermissionEvaluator } from '../../../permissions/types.js';
+import type { SiteRef } from '../../../services/actorContext.js';
 import type { ContentServiceContext } from '../../../services/contentAccess.js';
 import type { BatchReadOptions, DeliveryEntry } from '../../../services/contentBatchReads.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
@@ -22,6 +23,11 @@ export type GraphqlRequestContext = {
   permissions: PermissionEvaluator;
   /** Admin users and admin-scope API tokens: may read drafts (`publicationState: DRAFT`). */
   isAdmin: boolean;
+  /**
+   * The request's site (plugins/siteResolution.ts: the credential's, else `Shapio-Site` / `?site=`, else the
+   * primary site). Every read, `_snapshot` and `_changes` are about this site; the schema is shared.
+   */
+  site: SiteRef;
   loaders: GraphqlLoaders;
   /** The content service context of this request, built on first use. */
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>;

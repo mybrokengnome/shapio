@@ -33,4 +33,13 @@ describe('shapio mcp', () => {
     expect((await run(['--url', 'cms.example.com'])).code).toBe(1);
     expect((await run(['--bogus'])).code).toBe(1);
   });
+
+  it('adds SHAPIO_SITE with --site, and refuses an invalid site key', async () => {
+    const { code, stdout } = await run(['--site', 'marketing', '--url', 'https://cms.example.com']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('--env SHAPIO_SITE=marketing -- npx -y @shapio/mcp');
+    expect(stdout).toContain('"SHAPIO_SITE": "marketing"');
+    expect((await run([])).stdout).not.toContain('SHAPIO_SITE');
+    expect((await run(['--site', 'Not A Key'])).code).toBe(1);
+  });
 });

@@ -106,7 +106,7 @@ const conversionRevision = async (
 };
 
 const rollPublication = (context: Context, head: ScannedHead, revisionId: string) =>
-  context.activation.atSeq(async (seq) => {
+  context.activation.atSeq(head.site_id, async (seq) => {
     await publicationsRepository.close(head.entry_id, head.locale, seq, context.trx);
     await publicationsRepository.open(
       {
@@ -170,7 +170,7 @@ const rewriteEntry = async (
           modelId: first.model_id,
           change: step.change,
           proposed,
-          seq: context.activation.seq,
+          seqFor: context.activation.seqFor,
         });
       }
     }

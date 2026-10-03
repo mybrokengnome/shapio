@@ -133,8 +133,8 @@ jobs:
         run: pnpm build
       - run: pnpm smoke:npm
 
-  example-site:
-    name: Example site (seed a local Shapio, build, smoke)
+  examples:
+    name: Site starters (seed a local Shapio once; build and smoke Astro, Next.js, SvelteKit)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -145,7 +145,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      NODE_ENV: development
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/shapio_example
       PUBLIC_URL: http://localhost:4300
       MEDIA_PATH: /tmp/shapio-media
@@ -153,6 +152,8 @@ jobs:
       SHAPIO_URL: http://localhost:4300
       SHAPIO_ADMIN_EMAIL: ci@example.com
       SHAPIO_ADMIN_PASSWORD: example-site-ci-password
+      ASTRO_TELEMETRY_DISABLED: 1
+      NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -161,8 +162,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build @shapio/client (the starters use its build, as a project installed from npm does)
+        run: pnpm --filter "@shapio/client..." build
       - name: Start Shapio from source
         working-directory: apps/api
+        # Only Shapio runs in development mode; the starters build for production.
+        env:
+          NODE_ENV: development
         run: |
           psql postgres://postgres:postgres@localhost:5432/postgres -c 'create database shapio_example'
           node --conditions=@shapio/source --import tsx src/cli.ts migrate
@@ -171,11 +177,32 @@ jobs:
           for i in $(seq 1 60); do curl -fsS http://localhost:4300/api/ready && exit 0; sleep 1; done
           cat /tmp/shapio.log
           exit 1
-      - run: pnpm --filter example-site seed
-      - run: pnpm --filter example-site build
-      - run: pnpm --filter example-site smoke
+      - name: Seed once (models, content, a delivery token); every starter reads the same .env
+        run: |
+          pnpm --filter example-astro seed
+          cp examples/astro/.env examples/next/.env
+          cp examples/astro/.env examples/sveltekit/.env
+      - name: Astro (build, check the output and preview, then over HTTP)
+        run: |
+          pnpm --filter example-astro build
+          pnpm --filter example-astro smoke
+          pnpm --filter example-astro preview
+          pnpm --filter example-astro smoke:http
+          pnpm --filter example-astro preview:stop
+      - name: Next.js (build, next start, smoke over HTTP)
+        run: |
+          pnpm --filter example-next build
+          nohup pnpm --filter example-next start > /tmp/next.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/en/ && break; sleep 1; done
+          pnpm --filter example-next smoke
+      - name: SvelteKit (build, vite preview, smoke over HTTP)
+        run: |
+          pnpm --filter example-sveltekit build
+          nohup pnpm --filter example-sveltekit preview > /tmp/sveltekit.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4173/en/ && break; sleep 1; done
+          pnpm --filter example-sveltekit smoke
       - if: failure()
-        run: cat /tmp/shapio.log
+        run: cat /tmp/shapio.log /tmp/next.log /tmp/sveltekit.log 2>/dev/null || true
 
   admin-e2e:
     name: Admin end to end (Playwright; axe and keyboard checks in light and dark)

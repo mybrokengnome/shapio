@@ -12,11 +12,6 @@ const main = async () => {
     process.stderr.write(USAGE);
     return;
   }
-  if (process.env.SHAPIO_SITE) {
-    process.stderr.write(
-      'shapio-mcp: SHAPIO_SITE is reserved for multi-site instances and ignored by this version\n',
-    );
-  }
   const server = createShapioMcpServer(options);
   await server.connect(new StdioServerTransport());
 };

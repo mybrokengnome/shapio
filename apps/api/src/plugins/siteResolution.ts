@@ -22,6 +22,14 @@ export type RouteSiteScope = 'site' | 'network';
 declare module 'fastify' {
   interface FastifyContextConfig {
     site?: RouteSiteScope;
+    /** `unassigned`: admins without a role on the request's site may still call it (only `me`). */
+    siteAccess?: 'unassigned';
+    /**
+     * A site route whose credential is not a principal (a preview token, resolved by its service) names
+     * the credential's site here; undefined when the request carries no such credential. Its site wins and
+     * is checked against the requested site like a site token's.
+     */
+    siteCredential?: (request: FastifyRequest) => Promise<string | undefined>;
   }
   interface FastifyRequest {
     /** The request's site on a site route; undefined on network routes. Read it with `getRequestSite`. */
@@ -77,11 +85,35 @@ const requestedSiteKey = (request: FastifyRequest): string | undefined => {
   return fromHeader ?? fromQuery;
 };
 
-/** The site the credential belongs to, if it names one (site tokens; app users per site come with G3). */
-const credentialSiteOf = (request: FastifyRequest): string | undefined =>
-  request.principal.kind === 'token' && request.principal.siteId !== null
-    ? request.principal.siteId
-    : undefined;
+/**
+ * `?site=` belongs to site resolution, not to the route: it is removed from the parsed query once read, so a
+ * route's strict querystring schema never sees it (`rawQueryOf` drops it from the raw query likewise).
+ */
+const consumeSiteQuery = (request: FastifyRequest): void => {
+  const query = request.query as Record<string, unknown> | undefined;
+  if (query && typeof query === 'object' && SITE_QUERY_PARAMETER in query) {
+    delete query[SITE_QUERY_PARAMETER];
+  }
+};
+
+/**
+ * The site the principal's credential belongs to, if it names one: any principal carrying a `siteId` (site
+ * tokens, app users). Admin and anonymous principals never do: their `siteId` is the result of
+ * narrowing to the request's site, not part of the credential. Null or undefined: no credential site.
+ */
+const principalSiteOf = (request: FastifyRequest): string | undefined => {
+  const { principal } = request;
+  if (principal.kind === 'admin' || principal.kind === 'anonymous' || !('siteId' in principal)) {
+    return undefined;
+  }
+  return typeof principal.siteId === 'string' ? principal.siteId : undefined;
+};
+
+/** The credential's site: the route's own credential (`config.siteCredential`) first, else the principal's. */
+const credentialSiteOf = async (request: FastifyRequest): Promise<string | undefined> => {
+  const routeCredential = request.routeOptions.config?.siteCredential;
+  return (routeCredential ? await routeCredential(request) : undefined) ?? principalSiteOf(request);
+};
 
 type SiteResolutionOptions = { apiPrefix: string };
 
@@ -107,12 +139,20 @@ export const siteResolutionPlugin = fp<SiteResolutionOptions>(
       if (request.routeOptions.config?.site !== 'site') {
         return;
       }
-      const site = await resolveSite({
-        credentialSiteId: credentialSiteOf(request),
-        requestedKey: requestedSiteKey(request),
-      });
+      const requestedKey = requestedSiteKey(request);
+      consumeSiteQuery(request);
+      const site = await resolveSite({ credentialSiteId: await credentialSiteOf(request), requestedKey });
       request.site = site;
       request.principal = principalForSite(request.principal, site.id);
+      // An admin with no role on the site (none there, none on every site) cannot work on it at all; `me`
+      // still answers, so the admin can tell where they work and switch sites.
+      if (
+        request.principal.kind === 'admin' &&
+        request.principal.roleIds.length === 0 &&
+        request.routeOptions.config?.siteAccess !== 'unassigned'
+      ) {
+        throw new AppError(403, 'SITE_FORBIDDEN', 'You have no role on this site');
+      }
     });
   },
   { name: 'shapio-site-resolution', dependencies: ['shapio-admin-session'] },

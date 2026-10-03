@@ -21,6 +21,13 @@ export const listForSet = (changeSetId: string, executor: Executor = db) =>
 const nextPosition = (changeSetId: string) =>
   sql<number>`(select coalesce(max(position) + 1, 0) from change_set_items where change_set_id = ${changeSetId})`;
 
+/**
+ * An item's site is a copy of its set's (sites plan §H). Composite foreign keys tie it to the set and to the
+ * item's entry, so an item can never reference another site's entry: the insert fails instead.
+ */
+const setSiteOf = (changeSetId: string) =>
+  sql<string>`(select site_id from change_sets where id = ${changeSetId})`;
+
 /** Adds an entry item; undefined when the set already has this (entry, locale). */
 export const insertEntryItem = (
   item: {
@@ -37,6 +44,7 @@ export const insertEntryItem = (
     .insertInto('change_set_items')
     .values({
       change_set_id: item.changeSetId,
+      site_id: setSiteOf(item.changeSetId),
       kind: 'entry',
       position: nextPosition(item.changeSetId),
       entry_id: item.entryId,
@@ -71,6 +79,7 @@ export const insertEntryItems = async (
     .values(
       items.map((item, position) => ({
         change_set_id: changeSetId,
+        site_id: setSiteOf(changeSetId),
         kind: 'entry',
         position,
         entry_id: item.entryId,
@@ -88,6 +97,7 @@ export const insertSchemaItem = (changeSetId: string, schemaDraftId: string, trx
     .insertInto('change_set_items')
     .values({
       change_set_id: changeSetId,
+      site_id: setSiteOf(changeSetId),
       kind: 'schema',
       position: nextPosition(changeSetId),
       schema_draft_id: schemaDraftId,
@@ -145,7 +155,11 @@ export type UnassignedRow = {
  * (`modified`), newest first (keyset on updated_at, entry, locale).
  */
 export const listUnassigned = (
-  filter: { after?: { updatedAt: Date; entryId: string; locale: string }; limit: number },
+  filter: {
+    siteId: string;
+    after?: { updatedAt: Date; entryId: string; locale: string };
+    limit: number;
+  },
   executor: Executor = db,
 ): Promise<UnassignedRow[]> => {
   let query = executor
@@ -164,6 +178,7 @@ export const listUnassigned = (
       'd.updated_at',
       sql<'draft' | 'modified'>`case when p.entry_id is null then 'draft' else 'modified' end`.as('status'),
     ])
+    .where('d.site_id', '=', filter.siteId)
     .where('d.state', '=', 'draft')
     .where('e.deleted_at', 'is', null)
     .where((eb) =>
@@ -210,6 +225,24 @@ export const findHeadsForEntries = (entryIds: readonly string[], executor: Execu
         .execute();
 
 export type EntryHeadRow = Awaited<ReturnType<typeof findHeadsForEntries>>[number];
+
+/**
+ * Entries (distinct, every locale and state) of these models per site, with the site's key: the review of a
+ * schema change lists what it affects on each site (option a: one schema, one snapshot per affected site).
+ */
+export const countEntriesBySite = (modelIds: readonly string[], executor: Executor = db) =>
+  modelIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('entry_heads as h')
+        .innerJoin('sites as s', 's.id', 'h.site_id')
+        .innerJoin('entries as e', 'e.id', 'h.entry_id')
+        .select(['s.id', 's.key', sql<string>`count(distinct h.entry_id)`.as('entries')])
+        .where('h.model_id', 'in', modelIds)
+        .where('e.deleted_at', 'is', null)
+        .groupBy(['s.id', 's.key'])
+        .orderBy('s.key')
+        .execute();
 
 /** The entries among these that are not deleted. */
 export const findLiveEntryIds = async (

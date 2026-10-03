@@ -6,11 +6,17 @@ import type { SiteSummary } from './sitesTypes.js';
 
 export type AdminUserStatus = 'active' | 'disabled';
 
+/** A role held on one site, or on every site (`siteId` null). */
+export type RoleAssignment = { roleId: string; siteId: string | null };
+
 export type AdminUser = {
   id: string;
   email: string;
   name: string;
   status: AdminUserStatus;
+  /** Where each role applies. */
+  assignments: RoleAssignment[];
+  /** Deprecated: the distinct roles of `assignments`, on any site. */
   roleIds: string[];
   lastLoginAt: string | null;
   createdAt: string;
@@ -136,6 +142,9 @@ export type AdminSession = {
 export type Invitation = {
   id: string;
   email: string;
+  /** The role assignments the invitee gets on accepting. */
+  assignments: RoleAssignment[];
+  /** Deprecated: the distinct roles of `assignments`. */
   roleIds: string[];
   invitedBy: string | null;
   expiresAt: string;
@@ -145,9 +154,18 @@ export type Invitation = {
 /** A fresh accept link, shown once; issuing it makes earlier links (emailed or copied) stop working. */
 export type InvitationLink = { acceptUrl: string; expiresAt: string };
 
-export type InviteUserInput = { email: string; roleIds: string[] };
+/**
+ * Either `assignments` or (deprecated) `roleIds`, meaning those roles on every site; never both. Updating
+ * either replaces every assignment.
+ */
+type AssignmentsInput =
+  { assignments: RoleAssignment[]; roleIds?: never } | { roleIds: string[]; assignments?: never };
 
-export type UpdateAdminUserInput = { name?: string; status?: AdminUserStatus; roleIds?: string[] };
+export type InviteUserInput = { email: string } & AssignmentsInput;
+
+export type UpdateAdminUserInput = { name?: string; status?: AdminUserStatus } & (
+  AssignmentsInput | { assignments?: never; roleIds?: never }
+);
 
 export type RoleKind = 'admin' | 'delivery';
 

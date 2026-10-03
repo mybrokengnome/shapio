@@ -86,6 +86,7 @@ export const createSchedule = async (
     await scheduledPublicationsRepository.setJob(inserted.id, job.id, trx);
     await recordAudit(trx, {
       actor: context.actor,
+      site: context.site,
       action: `publishing.schedule.${target.action}`,
       target: { type: 'entry', id: target.entryId },
       metadata: {
@@ -107,7 +108,7 @@ const scheduleNotFound = (id: string) =>
 
 /** Cancels a pending (or failed) schedule. Needs publish permission on the entry's model. */
 export const cancelSchedule = async (context: ContentServiceContext, id: string): Promise<void> => {
-  const existing = await scheduledPublicationsRepository.findById(id, context.db);
+  const existing = await scheduledPublicationsRepository.findOnSite(context.site.id, id, context.db);
   const modelKey = existing ? modelKeyOf(context.snapshot, existing.model_id) : null;
   if (!existing) {
     throw scheduleNotFound(id);
@@ -125,6 +126,7 @@ export const cancelSchedule = async (context: ContentServiceContext, id: string)
     }
     await recordAudit(trx, {
       actor: context.actor,
+      site: context.site,
       action: 'publishing.schedule.cancel',
       target: { type: 'entry', id: existing.entry_id },
       metadata: { scheduleId: id, locale: existing.locale, action: existing.action },
@@ -149,6 +151,7 @@ export const listSchedules = async (
   const limit = pageSize(query.limit);
   const rows = await scheduledPublicationsRepository.list(
     {
+      siteId: context.site.id,
       ...(query.status ? { status: query.status } : {}),
       ...(query.entryId ? { entryId: query.entryId } : {}),
     },

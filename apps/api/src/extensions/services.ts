@@ -14,11 +14,12 @@ import type { SchemaRegistry } from '../schema/registry.js';
 import type { SiteRef } from '../services/actorContext.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
 import { getAdminEntry, listAdminEntries } from '../services/contentReads.js';
-import { listUsages } from '../services/mediaReferences.js';
+import { listUsagesOnSite } from '../services/mediaReferences.js';
 import { toHookModel } from './hooks.js';
 import type {
   ContentReadEntry,
   ExtensionHostConfig,
+  ExtensionSite,
   ExtensionServices,
   ServiceFactory,
   ShapioServices,
@@ -37,21 +38,22 @@ export type ServiceEnvironment = {
   jobNames: ReadonlySet<string>;
 };
 
+/** The site top-level services read (routes, jobs, factories) until they ask `forSite` for another one. */
 const PRIMARY_SITE: SiteRef = { id: PRIMARY_SITE_ID, key: 'default' };
 
 const SYSTEM_PRINCIPAL: Principal = { kind: 'system', component: EXTENSION_SYSTEM_COMPONENT };
 
 const contentContext = async (
   environment: ServiceEnvironment,
+  site: SiteRef,
   principal: Principal | undefined,
 ): Promise<ContentServiceContext> => ({
   db: environment.db,
   snapshot: await environment.registry.getSnapshot(),
   permissions: environment.permissions,
   actor: principal ?? SYSTEM_PRINCIPAL,
-  // Extension services read the primary site until extensions get a site of their own (sites plan §H, G5;
-  // ADR 0009 note).
-  site: PRIMARY_SITE,
+  // Content is per site (sites plan §H, ADR 0009 note): these services read their own site.
+  site,
   // Reads never reach a lifecycle hook point.
   hooks: createContentHooks(),
 });
@@ -59,12 +61,14 @@ const contentContext = async (
 const toReadEntry = (view: { id: string; locale: string; status: string; data: Record<string, unknown> }) =>
   ({ id: view.id, locale: view.locale, status: view.status, data: view.data }) satisfies ContentReadEntry;
 
-const createShapioServices = (environment: ServiceEnvironment): ShapioServices => ({
+const createShapioServices = (environment: ServiceEnvironment, site: SiteRef): ShapioServices => ({
+  site,
+  forSite: (other: ExtensionSite) => createShapioServices(environment, { id: other.id, key: other.key }),
   content: {
     get: async (modelKey, id, options = {}) =>
       toReadEntry(
         await getAdminEntry(
-          await contentContext(environment, options.principal),
+          await contentContext(environment, site, options.principal),
           modelKey,
           id,
           options.locale,
@@ -72,7 +76,7 @@ const createShapioServices = (environment: ServiceEnvironment): ShapioServices =
       ),
     list: async (modelKey, query = '', options = {}) => {
       const result = await listAdminEntries(
-        await contentContext(environment, options.principal),
+        await contentContext(environment, site, options.principal),
         modelKey,
         query,
       );
@@ -85,12 +89,12 @@ const createShapioServices = (environment: ServiceEnvironment): ShapioServices =
         .map(toHookModel),
     count: async (modelKey) => {
       const model = resolveModel(await environment.registry.getSnapshot(), modelKey);
-      return entriesRepository.countLive(model.definition.id, environment.db);
+      return entriesRepository.countLive(model.definition.id, site.id, environment.db);
     },
   },
   media: {
     usages: async (assetId) => {
-      const { items, total } = await listUsages(assetId);
+      const { items, total } = await listUsagesOnSite(site, assetId);
       return {
         items: items.map(({ entryId, modelId, fieldId, locale, state }) => ({
           entryId,
@@ -143,7 +147,9 @@ export const createExtensionServices = async (
   host: ExtensionHostConfig,
 ): Promise<ExtensionServices> => {
   // Custom services are only known to the type system through `CustomServices` augmentation.
-  const services: ShapioServices & Record<string, unknown> = { ...createShapioServices(environment) };
+  const services: ShapioServices & Record<string, unknown> = {
+    ...createShapioServices(environment, PRIMARY_SITE),
+  };
   for (const [name, factory] of Object.entries(factories)) {
     try {
       services[name] = await factory({

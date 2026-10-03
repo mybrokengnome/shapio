@@ -6,8 +6,18 @@ import * as webhooksRepository from '../repositories/webhooks.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
-/** The JSON body every delivery sends. Stored on the delivery so every attempt signs the same bytes. */
-export type WebhookBody = { id: string; type: string; createdAt: string; data: unknown };
+/**
+ * The JSON body every delivery sends. Stored on the delivery so every attempt signs the same bytes. `site`
+ * is the site the event is about (null for a network event such as a schema change; sites plan §H). Bodies
+ * stored before sites existed have no `site`.
+ */
+export type WebhookBody = {
+  id: string;
+  type: string;
+  createdAt: string;
+  site?: { id: string; key: string } | null;
+  data: unknown;
+};
 
 /**
  * Creates a delivery and its job in the caller's transaction. With an `eventId` the delivery is unique per

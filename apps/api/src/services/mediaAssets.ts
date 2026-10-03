@@ -11,6 +11,7 @@ import type { MediaAssetCursor, MediaAssetFilter, MediaAssetPatch } from '../rep
 import * as mediaFoldersRepository from '../repositories/mediaFolders.js';
 import * as mediaReferencesRepository from '../repositories/mediaReferences.js';
 import * as mediaVariantsRepository from '../repositories/mediaVariants.js';
+import type { SiteRef } from './actorContext.js';
 import { getOwnerRoleId, isOwnerActor } from './adminUsers.js';
 import { recordAudit } from './audit.js';
 import type { MediaServiceContext } from './mediaContext.js';
@@ -19,6 +20,13 @@ import { toAssetViewOne, toAssetViews, type MediaAssetView } from './mediaViews.
 const DEFAULT_PAGE_SIZE = 50;
 
 const notFound = () => new AppError(404, 'NOT_FOUND', 'Media asset not found');
+
+/** A folder an asset goes into must be on the asset's site; another site's folder reads as missing. */
+const assertFolderOnSite = async (site: SiteRef, folderId: string | null | undefined) => {
+  if (folderId && !(await mediaFoldersRepository.findById(site.id, folderId))) {
+    throw new AppError(400, 'FOLDER_NOT_FOUND', 'The folder does not exist');
+  }
+};
 
 const encodeCursor = (cursor: MediaAssetCursor) => Buffer.from(JSON.stringify(cursor)).toString('base64url');
 
@@ -40,13 +48,14 @@ const decodeCursor = (value: string): MediaAssetCursor => {
 
 export type ListAssetsInput = MediaAssetFilter & { cursor?: string; limit?: number };
 
-/** Newest first, keyset-paginated. */
+/** The site's assets, newest first, keyset-paginated. */
 export const listAssets = async (
   context: MediaServiceContext,
   input: ListAssetsInput,
 ): Promise<{ items: MediaAssetView[]; nextCursor: string | null }> => {
   const limit = input.limit ?? DEFAULT_PAGE_SIZE;
   const rows = await mediaAssetsRepository.list(
+    context.site.id,
     {
       ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType.toLowerCase() } : {}),
@@ -64,7 +73,7 @@ export const listAssets = async (
 };
 
 export const getAsset = async (context: MediaServiceContext, id: string): Promise<MediaAssetView> => {
-  const asset = await mediaAssetsRepository.findLiveById(id);
+  const asset = await mediaAssetsRepository.findLiveOnSite(context.site.id, id);
   if (!asset) {
     throw notFound();
   }
@@ -102,7 +111,7 @@ export const updateAsset = async (
   id: string,
   input: UpdateAssetInput,
 ): Promise<MediaAssetView> => {
-  const current = await mediaAssetsRepository.findLiveById(id);
+  const current = await mediaAssetsRepository.findLiveOnSite(context.site.id, id);
   if (!current) {
     throw notFound();
   }
@@ -110,11 +119,15 @@ export const updateAsset = async (
   if (visibilityChanged && !(await context.permissions.canPerform(context.actor, 'media.manage'))) {
     throw new AppError(403, 'FORBIDDEN', 'Your role does not allow media.manage (changing visibility)');
   }
-  if (input.folderId && !(await mediaFoldersRepository.findById(input.folderId))) {
-    throw new AppError(400, 'FOLDER_NOT_FOUND', 'The folder does not exist');
-  }
+  await assertFolderOnSite(context.site, input.folderId);
   const updated = await db.transaction().execute(async (trx) => {
-    const row = await mediaAssetsRepository.updateIfVersion(id, input.expectedVersion, toPatch(input), trx);
+    const row = await mediaAssetsRepository.updateIfVersion(
+      context.site.id,
+      id,
+      input.expectedVersion,
+      toPatch(input),
+      trx,
+    );
     if (!row) {
       throw new AppError(409, 'VERSION_CONFLICT', 'The asset changed since you loaded it', {
         expectedVersion: input.expectedVersion,
@@ -139,6 +152,7 @@ export const updateAsset = async (
     }
     await writeOutboxEvent(trx, {
       type: MEDIA_EVENTS.updated,
+      siteId: context.site.id,
       aggregateType: 'media_asset',
       aggregateId: id,
       payload: { assetId: id, fields: Object.keys(input).filter((key) => key !== 'expectedVersion') },
@@ -159,7 +173,7 @@ export const deleteAsset = async (
   force: boolean,
 ): Promise<void> => {
   await db.transaction().execute(async (trx) => {
-    const asset = await mediaAssetsRepository.lockById(id, trx);
+    const asset = await mediaAssetsRepository.lockOnSite(context.site.id, id, trx);
     if (!asset || asset.deleted_at !== null) {
       throw notFound();
     }
@@ -193,6 +207,7 @@ export const deleteAsset = async (
     });
     await writeOutboxEvent(trx, {
       type: MEDIA_EVENTS.deleted,
+      siteId: context.site.id,
       aggregateType: 'media_asset',
       aggregateId: id,
       payload: { assetId: id },
@@ -200,16 +215,18 @@ export const deleteAsset = async (
   });
 };
 
-/** Moves assets into a folder (null = root). Unknown or deleted IDs are skipped and reported. */
+/**
+ * Moves the site's assets into one of its folders (null = root). Unknown, deleted or other sites' IDs are
+ * skipped and reported.
+ */
 export const moveAssets = async (
+  site: SiteRef,
   assetIds: readonly string[],
   folderId: string | null,
 ): Promise<{ moved: string[]; skipped: string[] }> => {
-  if (folderId && !(await mediaFoldersRepository.findById(folderId))) {
-    throw new AppError(400, 'FOLDER_NOT_FOUND', 'The folder does not exist');
-  }
+  await assertFolderOnSite(site, folderId);
   const unique = [...new Set(assetIds)];
-  const moved = await mediaAssetsRepository.moveToFolder(unique, folderId);
+  const moved = await mediaAssetsRepository.moveToFolder(site.id, unique, folderId);
   const movedSet = new Set(moved);
   return { moved, skipped: unique.filter((id) => !movedSet.has(id)) };
 };
@@ -225,11 +242,10 @@ export type MediaUsageView = {
 
 const MAX_USAGES = 500;
 
-/** "Used in": the entry heads that reference the asset. */
-export const listUsages = async (id: string): Promise<{ items: MediaUsageView[]; total: number }> => {
-  if (!(await mediaAssetsRepository.findLiveById(id))) {
-    throw notFound();
-  }
+type MediaUsages = { items: MediaUsageView[]; total: number };
+
+/** The entry heads that reference an asset already found (references are written per site by content). */
+const loadUsages = async (id: string): Promise<MediaUsages> => {
   const [rows, total] = await Promise.all([
     mediaReferencesRepository.listForAsset(id, MAX_USAGES),
     mediaReferencesRepository.countForAsset(id),
@@ -245,4 +261,12 @@ export const listUsages = async (id: string): Promise<{ items: MediaUsageView[];
     })),
     total,
   };
+};
+
+/** "Used in": the entry heads that reference one of the site's assets; another site's asset is not found. */
+export const listUsagesOnSite = async (site: SiteRef, id: string): Promise<MediaUsages> => {
+  if (!(await mediaAssetsRepository.findLiveOnSite(site.id, id))) {
+    throw notFound();
+  }
+  return loadUsages(id);
 };

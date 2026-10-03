@@ -233,6 +233,7 @@ export interface ChangeSetItems {
   position: number;
   schema_draft_id: string | null;
   ship_state: Json | null;
+  site_id: string;
   source_revision_id: string | null;
   status: Generated<string>;
 }
@@ -566,7 +567,7 @@ export interface PreviewTokens {
   created_at: Generated<Timestamp>;
   created_by: string;
   delivery_role_id: string | null;
-  entry_id: string | null;
+  entry_id: string;
   expires_at: Timestamp;
   id: Generated<string>;
   last_used_at: Timestamp | null;

@@ -6,7 +6,7 @@ import type { DB } from '../db/types.js';
 type Executor = Kysely<DB> | Transaction<DB>;
 
 /**
- * The snapshot diff (plan developer-face §5): which (entry, locale) pairs serve different live content at
+ * The snapshot diff (plan developer-face §5) of one site's ledger: which of its (entry, locale) pairs serve different live content at
  * publication sequence `to` than at `from`, in one query over `publication_log` (db/snapshotDiffQuery.ts).
  *
  * Candidates are the pairs whose live period opened (`from_seq`) or closed (`to_seq`) in `(from, to]`; only
@@ -46,6 +46,8 @@ export type SnapshotEntryChange = {
 };
 
 export type SnapshotDiffQuery = {
+  /** The site whose ledger is diffed (snapshot numbers are per site). */
+  siteId: string;
   from: number;
   to: number;
   /** Keyset cursor: only entries with an ID greater than this. */
@@ -73,6 +75,7 @@ export const listChanges = async (
   }
   const rows = await selectSnapshotDiffRows(
     {
+      siteId: query.siteId,
       from: query.from,
       to: query.to,
       after: query.after,
@@ -94,6 +97,7 @@ export const listChanges = async (
  * ledger; numbers without a ledger row (snapshot 0, rows from before the ledger) are absent.
  */
 export const schemaVersionsAt = async (
+  siteId: string,
   seqs: readonly number[],
   executor: Executor = db,
 ): Promise<Map<number, number | null>> => {
@@ -103,6 +107,7 @@ export const schemaVersionsAt = async (
   const rows = await executor
     .selectFrom('publication_snapshots')
     .select(['seq', 'schema_version'])
+    .where('site_id', '=', siteId)
     .where(
       'seq',
       'in',
@@ -112,12 +117,17 @@ export const schemaVersionsAt = async (
   return new Map(rows.map((row) => [Number(row.seq), row.schema_version]));
 };
 
-/** When the snapshot `seq` was created, from the ledger (undefined without a ledger row). */
-export const snapshotCreatedAt = async (seq: number, executor: Executor = db): Promise<Date | undefined> =>
+/** When the site's snapshot `seq` was created, from the ledger (undefined without a ledger row). */
+export const snapshotCreatedAt = async (
+  siteId: string,
+  seq: number,
+  executor: Executor = db,
+): Promise<Date | undefined> =>
   (
     await executor
       .selectFrom('publication_snapshots')
       .select('created_at')
+      .where('site_id', '=', siteId)
       .where('seq', '=', String(seq))
       .executeTakeFirst()
   )?.created_at;

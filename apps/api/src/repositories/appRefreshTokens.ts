@@ -9,17 +9,25 @@ export type NewAppRefreshToken = Insertable<AppRefreshTokens>;
 export const insert = (token: NewAppRefreshToken, trx: Executor = db) =>
   trx.insertInto('app_refresh_tokens').values(token).returning(['id', 'family_id']).executeTakeFirstOrThrow();
 
-/** Locks the token row for this hash, so concurrent refreshes with one token rotate it at most once. */
-export const lockByTokenHash = (tokenHash: string, trx: Transaction<DB>) =>
+/** The token's columns plus its account's site (refresh tokens act on that site only). */
+const withSite = (trx: Executor) =>
   trx
     .selectFrom('app_refresh_tokens')
-    .selectAll()
-    .where('token_hash', '=', tokenHash)
-    .forUpdate()
-    .executeTakeFirst();
+    .selectAll('app_refresh_tokens')
+    .select((eb) =>
+      eb
+        .selectFrom('app_users')
+        .select('app_users.site_id')
+        .whereRef('app_users.id', '=', 'app_refresh_tokens.app_user_id')
+        .as('site_id'),
+    );
+
+/** Locks the token row for this hash, so concurrent refreshes with one token rotate it at most once. */
+export const lockByTokenHash = (tokenHash: string, trx: Transaction<DB>) =>
+  withSite(trx).where('token_hash', '=', tokenHash).forUpdate().executeTakeFirst();
 
 export const findByTokenHash = (tokenHash: string, trx: Executor = db) =>
-  trx.selectFrom('app_refresh_tokens').selectAll().where('token_hash', '=', tokenHash).executeTakeFirst();
+  withSite(trx).where('token_hash', '=', tokenHash).executeTakeFirst();
 
 export const markUsed = (id: string, now: Date, trx: Executor = db) =>
   trx.updateTable('app_refresh_tokens').set({ used_at: now }).where('id', '=', id).execute();

@@ -65,6 +65,7 @@ export const createScheduledPublicationHandler =
             await scheduledPublicationsRepository.markDone(row.id, snapshot, runtime.now(), trx);
             await recordAudit(trx, {
               actor: SCHEDULER,
+              site: context.site,
               action: 'publishing.schedule.execute',
               target: { type: 'entry', id: row.entry_id },
               metadata: {

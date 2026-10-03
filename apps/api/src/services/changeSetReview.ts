@@ -5,7 +5,6 @@ import { resolveModelById } from '../content/model.js';
 import { buildValidator } from '../content/validator/index.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetItems.js';
-import * as changeSetsRepository from '../repositories/changeSets.js';
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import { computeImpact, type PlanImpact } from '../schema/planner/impact.js';
@@ -15,13 +14,14 @@ import { planDrafts, type DraftPlan } from './changeSetPlanning.js';
 import type { ChangeSetServiceContext } from './changeSets.js';
 import {
   categoryOfKind,
-  changeSetNotFound,
+  findChangeSet,
   loadChangeSetView,
   operationOf,
   titleOf,
   type ChangeSetView,
   type SchemaOperation,
 } from './changeSetViews.js';
+import { seesEverySite } from './networkScope.js';
 import type { NotRestorable } from './snapshotRestore.js';
 import { consumersOf } from './usage.js';
 
@@ -60,6 +60,11 @@ export type ReviewSchemaItem = {
   stale: boolean;
   plan: ChangePlan | null;
   impact: PlanImpact | null;
+  /**
+   * Entries of the models the change affects, per site (sites plan §H, option a): the schema is shared, so
+   * shipping converts every site's content and takes one snapshot on each affected site.
+   */
+  affectedEntriesBySite: Array<{ site: { id: string; key: string }; entries: number }>;
   issues: Issue[];
   alsoChangedIn: Array<{ id: string; title: string }>;
 };
@@ -69,12 +74,16 @@ export type FieldConsumersView = {
   fieldId: string;
   apiKey: string;
   consumers: Array<{
+    /** The site the reads were made on. */
+    site: { id: string; key: string };
     principalKey: string;
     label: string | null;
     reads: number;
     lastReadAt: Date | null;
     selection: 'explicit' | 'implicit';
   }>;
+  /** Readers on sites the viewer does not see in detail, as totals; null when the viewer sees every site. */
+  otherSites: { consumers: number; reads: number } | null;
 };
 
 export type ChangeSetReview = {
@@ -248,6 +257,13 @@ const reviewSchema = async (
       stale: planned.stale,
       plan: planned.plan,
       impact: planned.plan ? await computeImpact(planned.plan, context.ports) : null,
+      affectedEntriesBySite: planned.plan
+        ? await changeSetItemsRepository
+            .countEntriesBySite(planned.plan.affectedModelIds, context.db)
+            .then((rows) =>
+              rows.map((row) => ({ site: { id: row.id, key: row.key }, entries: Number(row.entries) })),
+            )
+        : [],
       issues: planned.issues.map(({ path, code, message }) => ({ path, code, message })),
       alsoChangedIn: others
         .filter((other) => other.definition_id === planned.draft.definition_id)
@@ -274,17 +290,23 @@ const consumersFor = async (context: ChangeSetServiceContext, plans: readonly Dr
   const usage = await consumersOf(
     unique.map((entry) => entry.fieldId),
     REVIEW_USAGE_DAYS,
+    { siteId: context.site.id, network: seesEverySite(context.actor) },
   );
-  return unique.map((entry): FieldConsumersView => ({
-    ...entry,
-    consumers: (usage.find((row) => row.fieldId === entry.fieldId)?.principals ?? []).map((principal) => ({
-      principalKey: principal.principalKey,
-      label: principal.tokenName ?? null,
-      reads: principal.reads,
-      lastReadAt: principal.lastReadAt,
-      selection: principal.selection,
-    })),
-  }));
+  return unique.map((entry): FieldConsumersView => {
+    const found = usage.find((row) => row.fieldId === entry.fieldId);
+    return {
+      ...entry,
+      otherSites: found?.otherSites ?? null,
+      consumers: (found?.principals ?? []).map((principal) => ({
+        site: principal.site,
+        principalKey: principal.principalKey,
+        label: principal.tokenName ?? null,
+        reads: principal.reads,
+        lastReadAt: principal.lastReadAt,
+        selection: principal.selection,
+      })),
+    };
+  });
 };
 
 const checksOf = (
@@ -326,11 +348,8 @@ export const getChangeSetReview = async (
   context: ChangeSetServiceContext,
   id: string,
 ): Promise<ChangeSetReview> => {
-  const row = await changeSetsRepository.findById(id, context.db);
-  if (!row) {
-    throw changeSetNotFound(id);
-  }
-  const changeSet = await loadChangeSetView(context.db, context.snapshot, id);
+  const row = await findChangeSet(context, id);
+  const changeSet = await loadChangeSetView(context, id);
   const items = await changeSetItemsRepository.listForSet(id, context.db);
   const plans = await planDrafts(context, await schemaDraftsRepository.listForSet(id, context.db));
   const entryItems = items.filter((item) => item.kind === 'entry');

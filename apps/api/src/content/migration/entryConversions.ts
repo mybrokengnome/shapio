@@ -71,7 +71,7 @@ const publishAll = async (
   trx: Transaction<DB>,
   nextSeq: SeqAllocator,
   proposed: SchemaSnapshot,
-  entry: { id: string; modelId: string },
+  entry: { id: string; siteId: string; modelId: string },
   heads: readonly HeadRecord[],
 ) => {
   const model = resolveModelById(proposed, entry.modelId);
@@ -79,7 +79,7 @@ const publishAll = async (
   if (!model || pending.length === 0) {
     return;
   }
-  const write: WriteContext = { trx, model, actor: SYSTEM_ACTOR, now: new Date() };
+  const write: WriteContext = { trx, siteId: entry.siteId, model, actor: SYSTEM_ACTOR, now: new Date() };
   const seq = await nextSeq.next();
   for (const draft of pending) {
     const published = heads.find((head) => head.state === 'published' && head.locale === draft.locale);
@@ -96,8 +96,8 @@ export const convertEntry = async (
     modelId: string;
     change: SchemaChange;
     proposed: SchemaSnapshot;
-    /** The activation's one publication sequence number. */
-    seq: SeqAllocator;
+    /** The activation's publication sequence number of a site (the entry's). */
+    seqFor: (siteId: string) => SeqAllocator;
   },
 ): Promise<void> => {
   const { entryId, modelId, change, proposed } = input;
@@ -112,8 +112,14 @@ export const convertEntry = async (
   if (change.kind === 'field.localized' && change.to === false && change.fieldId) {
     await unifyField(trx, heads, change.fieldId, proposed.defaultLocale);
   } else if (change.kind === 'model.localized' && change.to === false) {
-    await keepOneLocale(trx, input.seq, entryId, heads, proposed.defaultLocale);
+    await keepOneLocale(trx, input.seqFor(entry.site_id), entryId, heads, proposed.defaultLocale);
   } else if (change.kind === 'model.draftAndPublish' && change.to === false) {
-    await publishAll(trx, input.seq, proposed, { id: entryId, modelId }, heads);
+    await publishAll(
+      trx,
+      input.seqFor(entry.site_id),
+      proposed,
+      { id: entryId, siteId: entry.site_id, modelId },
+      heads,
+    );
   }
 };

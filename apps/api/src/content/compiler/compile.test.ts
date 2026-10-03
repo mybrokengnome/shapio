@@ -12,6 +12,7 @@ import { compileOrderBy } from './sort.js';
 const compiler = new Kysely<Record<string, never>>({ dialect: new PostgresDialect({ pool: {} as never }) });
 
 const MODEL_ID = '0b5d6f3e-2d55-4f6c-9b1a-5d2c8e9f1a01';
+const SITE_ID = '9c9c9c9c-9999-4999-8999-999999999999';
 const ids = {
   title: '1a1a1a1a-1111-4111-8111-111111111111',
   rank: '2b2b2b2b-2222-4222-8222-222222222222',
@@ -68,6 +69,7 @@ const compileQuery = (search: string) => {
     ...(query.search ? [compileSearch(query.search.field.id, query.search.text)] : []),
   ];
   return compileHeadQuery({
+    siteId: SITE_ID,
     modelId: MODEL_ID,
     source: query.snapshot
       ? { kind: 'snapshot', seq: query.snapshot }
@@ -89,6 +91,26 @@ const status = (run: () => unknown) => {
 };
 
 describe('content query compiler', () => {
+  it('always scopes heads to the site, as a parameter, whatever the filter', () => {
+    for (const search of [
+      '',
+      'filters[title][$eq]=x',
+      'filters[$or][0][title][$eq]=x&filters[$or][1][rank][$gt]=1',
+    ]) {
+      const { sql, parameters } = compileQuery(search);
+      expect(sql).toContain('h.site_id = $1::uuid');
+      expect(parameters[0]).toBe(SITE_ID);
+      expect(sql).not.toContain(SITE_ID);
+    }
+  });
+
+  it('scopes a snapshot read to the site in the publication log', () => {
+    const { sql, parameters } = compileQuery('snapshot=3');
+    expect(sql).toMatch(/where pl\.site_id = \$1::uuid and pl\.model_id = /);
+    expect(sql).toContain('h.site_id = $');
+    expect(parameters.filter((value) => value === SITE_ID)).toHaveLength(2);
+  });
+
   it('compiles equality to containment with the value as a parameter', () => {
     const { sql, parameters } = compileQuery('filters[title][$eq]=x');
     expect(sql).toContain(`"data" @> $`);

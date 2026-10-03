@@ -128,10 +128,13 @@ export const applyReport = async (
     }
     const type = EVENT_BY_STATUS[report.status];
     if (type) {
+      // A run is about its connection's site: that site's webhooks (and the network's) hear of it.
+      const connection = await deploymentConnectionsRepository.findById(updated.connection_id, trx);
       await writeOutboxEvent(trx, {
         type,
         aggregateType: 'deployment_run',
         aggregateId: runId,
+        siteId: connection?.site_id ?? null,
         payload: {
           runId,
           connectionId: updated.connection_id,

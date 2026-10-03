@@ -1,7 +1,7 @@
 {
   "name": "create-shapio",
   "version": "0.1.0",
-  "description": "Scaffold a new Shapio project: npx create-shapio my-cms",
+  "description": "Scaffold a new Shapio project (npx create-shapio my-cms) or a site starter (--site astro|next|sveltekit)",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",
   "repository": {
@@ -20,16 +20,18 @@
     "create-shapio": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "scripts": {
-    "build": "tsdown",
-    "prepack": "tsdown",
+    "build": "tsdown && node --import tsx scripts/packTemplates.ts",
+    "prepack": "tsdown && node --import tsx scripts/packTemplates.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "tsdown": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

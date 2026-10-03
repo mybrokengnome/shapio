@@ -1,0 +1,32 @@
+{
+  "name": "example-astro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Astro starter: a static site built from Shapio content (pinned snapshot, EN + FR, preview, signed build callbacks).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "preview:stop": "ASTRO_TELEMETRY_DISABLED=1 astro preview stop",
+    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts",
+    "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke.ts",
+    "smoke:http": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4321",
+    "report-status": "node --env-file-if-exists=.env --import tsx scripts/reportStatus.ts",
+    "build:incremental": "node --env-file-if-exists=.env --import tsx scripts/incrementalBuild.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shapio/client": "workspace:*",
+    "astro": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

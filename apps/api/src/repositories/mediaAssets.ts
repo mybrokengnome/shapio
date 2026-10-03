@@ -27,18 +27,33 @@ const live = (trx: Executor) => trx.selectFrom('media_assets').where('deleted_at
 export const insert = (asset: NewMediaAsset, trx: Executor = db) =>
   trx.insertInto('media_assets').values(asset).returningAll().executeTakeFirstOrThrow();
 
+/** Any site's asset, deleted or not. Unscoped: jobs and exists-anywhere checks only; requests use `findLiveOnSite`. */
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('media_assets').selectAll().where('id', '=', id).executeTakeFirst();
 
-export const findLiveById = (id: string, trx: Executor = db) =>
-  live(trx).selectAll().where('id', '=', id).executeTakeFirst();
+/** A live asset of one site; another site's asset reads as missing (sites plan §H). */
+export const findLiveOnSite = (siteId: string, id: string, trx: Executor = db) =>
+  live(trx).selectAll().where('site_id', '=', siteId).where('id', '=', id).executeTakeFirst();
 
-export const findLiveByIds = (ids: readonly string[], trx: Executor = db) =>
-  ids.length === 0 ? Promise.resolve([]) : live(trx).selectAll().where('id', 'in', ids).execute();
+/** The live assets of one site among `ids`. */
+export const findLiveManyOnSite = (siteId: string, ids: readonly string[], trx: Executor = db) =>
+  ids.length === 0
+    ? Promise.resolve([])
+    : live(trx).selectAll().where('site_id', '=', siteId).where('id', 'in', ids).execute();
 
-/** Locks the row for the rest of the transaction (deleted rows too, so callers can report them). */
+/** Locks the row for the rest of the transaction (deleted rows too, so callers can report them). Jobs only. */
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('media_assets').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+
+/** Locks one site's asset row (deleted rows too); another site's asset reads as missing. */
+export const lockOnSite = (siteId: string, id: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('media_assets')
+    .selectAll()
+    .where('site_id', '=', siteId)
+    .where('id', '=', id)
+    .forUpdate()
+    .executeTakeFirst();
 
 export const findLiveByStorageKey = (key: string, trx: Executor = db) =>
   live(trx).selectAll().where('storage_key', '=', key).executeTakeFirst();
@@ -69,6 +84,7 @@ export const updateIfStorageKey = (
 
 /** Metadata edits by people: only when the caller saw the current version (optimistic concurrency). */
 export const updateIfVersion = (
+  siteId: string,
   id: string,
   expectedVersion: number,
   patch: MediaAssetPatch,
@@ -77,6 +93,7 @@ export const updateIfVersion = (
   trx
     .updateTable('media_assets')
     .set((eb) => ({ ...patch, version: eb('version', '+', 1), updated_at: new Date() }))
+    .where('site_id', '=', siteId)
     .where('id', '=', id)
     .where('version', '=', expectedVersion)
     .where('deleted_at', 'is', null)
@@ -84,6 +101,7 @@ export const updateIfVersion = (
     .executeTakeFirst();
 
 export const list = (
+  siteId: string,
   filter: MediaAssetFilter,
   cursor: MediaAssetCursor | undefined,
   limit: number,
@@ -99,6 +117,7 @@ export const list = (
         ])
         .as('cursor_at'),
     )
+    .where('site_id', '=', siteId)
     .$if(filter.folderId !== undefined, (qb) =>
       filter.folderId === null
         ? qb.where('folder_id', 'is', null)
@@ -134,12 +153,18 @@ export const list = (
     .limit(limit)
     .execute();
 
-/** Moves live assets into a folder (or the root); returns the IDs that moved. */
-export const moveToFolder = async (ids: readonly string[], folderId: string | null, trx: Executor = db) =>
+/** Moves one site's live assets into a folder of that site (or the root); returns the IDs that moved. */
+export const moveToFolder = async (
+  siteId: string,
+  ids: readonly string[],
+  folderId: string | null,
+  trx: Executor = db,
+) =>
   (
     await trx
       .updateTable('media_assets')
       .set((eb) => ({ folder_id: folderId, version: eb('version', '+', 1), updated_at: new Date() }))
+      .where('site_id', '=', siteId)
       .where('id', 'in', ids)
       .where('deleted_at', 'is', null)
       .returning('id')
@@ -171,13 +196,14 @@ export const listLiveByDriver = (
     .limit(limit)
     .execute();
 
-/** Library alt text and type of live assets (content health's alt-text rule). */
-export const findAltByIds = (ids: readonly string[], executor: Executor = db) =>
+/** Library alt text and type of one site's live assets among `ids` (content health's alt-text rule). */
+export const findAltOnSite = (siteId: string, ids: readonly string[], executor: Executor = db) =>
   ids.length === 0
     ? Promise.resolve([])
     : executor
         .selectFrom('media_assets')
         .select(['id', 'alt', 'mime_type'])
+        .where('site_id', '=', siteId)
         .where('id', 'in', ids)
         .where('deleted_at', 'is', null)
         .execute();

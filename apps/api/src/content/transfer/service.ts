@@ -77,6 +77,7 @@ const audit = (
 ) =>
   recordAudit(context.db, {
     actor: context.actor,
+    site: context.site,
     action,
     metadata,
     ...(target ? { target: { type: 'transfer', id: target } } : {}),
@@ -198,7 +199,7 @@ const assetNotFound = (id: string) => new AppError(404, 'NOT_FOUND', `No media a
 /** An asset's original file, read through its storage adapter (`shapio export --with-media`). */
 export const readMediaFile = async (context: TransferContext, assetId: string) => {
   await assertInstanceAdmin(context, EXPORT_ACTIONS);
-  const asset = await mediaAssetsRepository.findLiveById(assetId, context.db);
+  const asset = await mediaAssetsRepository.findLiveOnSite(context.site.id, assetId, context.db);
   if (!asset) {
     throw assetNotFound(assetId);
   }
@@ -263,6 +264,7 @@ export const writeMediaFile = async (
       `The file is larger than MEDIA_MAX_UPLOAD_BYTES (${context.maxUploadBytes})`,
     );
   }
+  // Asset IDs are unique across sites: an asset of this ID anywhere (any site, deleted or not) is a conflict.
   const existing = await mediaAssetsRepository.findById(assetId, context.db);
   if (existing) {
     if (existing.storage_key === upload.storageKey && existing.checksum_sha256 === upload.sha256) {

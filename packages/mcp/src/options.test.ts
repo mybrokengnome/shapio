@@ -24,4 +24,14 @@ describe('parseOptions', () => {
     expect(() => parseOptions([], { SHAPIO_URL: 'http://x' }, '/')).toThrow(/SHAPIO_TOKEN/);
     expect(() => parseOptions(['--ship'], ENV, '/')).toThrow(OptionsError);
   });
+
+  it('reads the site from --site, else SHAPIO_SITE, and refuses an invalid key', () => {
+    expect(parseOptions([], ENV, '/')).not.toHaveProperty('site');
+    expect(parseOptions([], { ...ENV, SHAPIO_SITE: 'marketing' }, '/')).toMatchObject({ site: 'marketing' });
+    expect(parseOptions(['--site', 'docs'], { ...ENV, SHAPIO_SITE: 'marketing' }, '/')).toMatchObject({
+      site: 'docs',
+    });
+    expect(parseOptions([], { ...ENV, SHAPIO_SITE: '  ' }, '/')).not.toHaveProperty('site');
+    expect(() => parseOptions(['--site', 'Marketing!'], ENV, '/')).toThrow(/site key/);
+  });
 });

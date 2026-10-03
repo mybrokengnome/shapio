@@ -112,4 +112,32 @@ describe('the Shapio MCP server', () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatchObject({ error: { code: 'TOOL_FAILED' } });
   });
+
+  it('names the --site / SHAPIO_SITE site on every request of its default client', async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ schemaVersion: 1, definitions: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    try {
+      const server = createShapioMcpServer({
+        baseUrl: 'http://cms.test',
+        token: 't',
+        allowShip: false,
+        mediaRoot: process.cwd(),
+        site: 'marketing',
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const mcp = new Client({ name: 'test', version: '1.0.0' });
+      await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
+      await mcp.callTool({ name: 'schema_list', arguments: {} });
+      const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(init.headers).toMatchObject({ 'shapio-site': 'marketing', authorization: 'Bearer t' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

@@ -16,11 +16,12 @@ import { BUNDLE_ENTRY, isTar, listTar, mediaEntryName, type TarEntry } from '../
 import { formatPlan, type ImportDiff, type MediaFileNeed } from './plan.js';
 
 const USAGE =
-  'shapio import [--url <origin>] [--token <admin token>] [--dry-run] [--prune] [--no-wait] <file>\n' +
+  'shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>\n' +
   '  Plans the import (--dry-run stops there) and refuses it, writing nothing, on any conflict.\n' +
   '  An import never changes an existing model: a model the target has in another form is a conflict.\n' +
   "  Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the\n" +
-  '  files (git diff), `shapio schema apply`, then import again.';
+  '  files (git diff), `shapio schema apply`, then import again.\n' +
+  "  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.";
 const FLAGS = ['dry-run', 'prune', 'no-wait'] as const;
 const POLL_INTERVAL_MS = 1000;
 const BUNDLE_CONTENT_TYPE = 'application/x-ndjson';

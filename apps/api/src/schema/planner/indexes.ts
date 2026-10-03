@@ -7,6 +7,7 @@ import {
   createFieldStatisticsStatement,
   dropIndexStatement,
   dropStatisticsStatement,
+  fieldIndexName,
   type FieldIndexSpec,
 } from '../../content/compiler/expressions.js';
 import { withPolledSessionAdvisoryLock } from '../../db/advisoryLocks.js';
@@ -54,22 +55,25 @@ const buildFieldIndexNow = async (
     type: step.fieldType,
     ...(step.localized !== undefined ? { localized: step.localized } : {}),
   };
-  const state = await getIndexState(db, step.indexName);
+  // The name of the index this build creates (the current layout), not the step's: a step planned before an
+  // upgrade that changed the layout carries the old layout's name.
+  const indexName = fieldIndexName(spec);
+  const state = await getIndexState(db, indexName);
   if (state === 'valid') {
     await createFieldStatisticsStatement(spec).execute(db);
     return 'exists';
   }
   if (state === 'invalid') {
-    log.warn({ indexName: step.indexName }, 'dropping invalid index left by an earlier build');
-    await dropIndexStatement(step.indexName).execute(db);
+    log.warn({ indexName }, 'dropping invalid index left by an earlier build');
+    await dropIndexStatement(indexName).execute(db);
   }
   await createFieldIndexStatement(spec).execute(db);
-  if ((await getIndexState(db, step.indexName)) !== 'valid') {
-    throw new Error(`Index ${step.indexName} is not valid after building`);
+  if ((await getIndexState(db, indexName)) !== 'valid') {
+    throw new Error(`Index ${indexName} is not valid after building`);
   }
   await createFieldStatisticsStatement(spec).execute(db);
   await analyzeHeadsStatement().execute(db);
-  log.info({ indexName: step.indexName, fieldId: step.fieldId }, 'field index built');
+  log.info({ indexName, fieldId: step.fieldId }, 'field index built');
   return 'built';
 };
 

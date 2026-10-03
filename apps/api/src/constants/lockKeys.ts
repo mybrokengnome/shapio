@@ -12,6 +12,8 @@ export const LOCK_NAMESPACE = {
   setup: 0x5348_0003,
   /** Field index builds and drops on entry_heads, one at a time. Key: INDEX_BUILD_LOCK_KEY. */
   indexBuilds: 0x5348_0004,
+  /** Creating a singleton's one entry on a site. Key: hash of `<model ID>:<site ID>`. */
+  singletons: 0x5348_0005,
 } as const;
 
 export const MIGRATION_LOCK_KEY = 1;

@@ -37,6 +37,37 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
   nothing until you allow it (Settings → Roles → App roles). Use that for content anyone may read from the
   browser. App users' own tokens are covered in [End users](end-users.md).
 
+## Sites
+
+One Shapio instance can host several sites that share the content types but each have their own content,
+tokens and snapshots. Every delivery request reads exactly one site:
+
+1. **The token's site.** Delivery tokens belong to the site they were created on, and only ever read it.
+2. **The site the request names**, with `?site=<key>` or the `Shapio-Site: <key>` header. Anonymous callers and
+   network admin tokens use this to pick a site.
+3. **The primary site**, when neither names one. An instance with a single site never needs to name it.
+
+Naming a different site than the token's is refused with `403 SITE_MISMATCH`, never redirected, and so is a
+request whose header and `?site=` disagree. An unknown key is `404 SITE_NOT_FOUND`. Entries of another site
+read as not found, and relations never cross sites.
+
+```sh
+curl "$SHAPIO_URL/api/content/articles?site=marketing"
+```
+
+Anonymous reads on a site other than the primary get only what that site's bound **public** app role grants.
+A new site binds none, so it serves nothing anonymously until you bind one.
+
+With `@shapio/client`, pass the site once:
+
+```ts
+const shapio = createClient({ baseUrl: process.env.SHAPIO_URL, token, site: 'marketing' });
+```
+
+The client sends it as `?site=` on delivery and snapshot reads, which keeps a cross-origin `GET` free of a
+CORS preflight and keeps URL-keyed caches apart. Every other request (writes, GraphQL, the admin API) carries
+the `Shapio-Site` header. Leave `site` out to read the token's site, or the primary site.
+
 ## Responses
 
 ```json
@@ -151,9 +182,11 @@ Details, the change classification and incremental-build recipes are in
 
 ## Caching
 
-Responses carry a strong `ETag` over the exact body and `Vary: Authorization, Cookie`. Send `If-None-Match`
-to get `304 Not Modified` when nothing changed. Anonymous responses are `Cache-Control: public, max-age=0,
-must-revalidate`; authenticated ones `private`.
+Responses carry a strong `ETag` over the exact body and `Vary: Authorization, Cookie, Shapio-Site`. Send
+`If-None-Match` to get `304 Not Modified` when nothing changed. Anonymous responses are `Cache-Control: public,
+max-age=0, must-revalidate`; authenticated ones `private`. A CDN that keys its cache on the URL alone and
+ignores `Vary` must be given the site as `?site=`, not as the header, so that two sites never share a cached
+response.
 
 ## Writes
 

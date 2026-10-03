@@ -11,6 +11,12 @@ The same credentials as REST, in the `Authorization: Bearer` header: a delivery 
 an app user's access token. Without one the request is anonymous and gets what the public app role grants.
 Requests made with the admin's session cookie must also send the `X-CSRF-Token` header.
 
+On an instance with several sites, a request reads one site, chosen as in REST
+([Delivery API](delivery-api.md#sites)): the token's site, else the `Shapio-Site` header or `?site=`, else the
+primary site. Naming another site than the token's is refused with `403 SITE_MISMATCH`. The schema is the same
+for every site; the entries, `_snapshot` and `_changes` are the request site's. GET responses vary on
+`Shapio-Site` as well as on the credentials.
+
 ## Schema shape
 
 For a collection `article` (plural API ID `articles`) Shapio generates:

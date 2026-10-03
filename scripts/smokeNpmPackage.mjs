@@ -2,7 +2,9 @@
 //   1. pack `shapio` (prepack builds it and copies the admin bundle in) and `create-shapio`;
 //   2. install the shapio tarball in an empty directory and run `npx shapio start` until /api/ready is 200;
 //   3. scaffold a project with the create-shapio tarball, copy examples/extension into it, check it with
-//      `npx shapio extensions check`, run `npm run start` until /api/ready is 200, and probe the custom route.
+//      `npx shapio extensions check`, run `npm run start` until /api/ready is 200, and probe the custom route;
+//   4. scaffold each site starter (`create-shapio --site`) and check it is a standalone project: no workspace,
+//      catalog or source-condition references left, and a .gitignore.
 // Each run gets its own database, created and dropped on the server named by TEST_DATABASE_URL.
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -106,6 +108,52 @@ const startAndProbe = async (label, command, args, cwd, env, probe = async () =>
   log(`${label}: stopped (code ${code}, signal ${signal})`);
 };
 
+const SITE_STARTERS = ['astro', 'next', 'sveltekit'];
+const REPOSITORY_ONLY = ['workspace:', 'catalog:', '@shapio/source', '../shared/'];
+
+const filesUnder = (directory) =>
+  readdirSync(directory, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name));
+
+const checkSiteStarter = (createTgz, work, starter) => {
+  run(
+    'npm',
+    [
+      'exec',
+      '--yes',
+      `--package=${createTgz}`,
+      '--',
+      'create-shapio',
+      `site-${starter}`,
+      '--site',
+      starter,
+      '--no-install',
+    ],
+    work,
+  );
+  const project = join(work, `site-${starter}`);
+  for (const required of [
+    '.gitignore',
+    'package.json',
+    'scripts/seed.ts',
+    'shapio/models/siteSettings.json',
+  ]) {
+    if (!existsSync(join(project, required))) {
+      throw new Error(`create-shapio --site ${starter}: ${required} is missing`);
+    }
+  }
+  for (const file of filesUnder(project)) {
+    const found = REPOSITORY_ONLY.filter((marker) => readFileSync(file, 'utf8').includes(marker));
+    if (found.length > 0) {
+      throw new Error(
+        `create-shapio --site ${starter}: ${file} still refers to the repository (${found.join(', ')})`,
+      );
+    }
+  }
+  log(`create-shapio --site ${starter}: standalone project scaffolded`);
+};
+
 const work = mkdtempSync(join(tmpdir(), 'shapio-smoke-'));
 const databases = [`shapio_smoke_npx_${process.pid}`, `shapio_smoke_create_${process.pid}`];
 try {
@@ -167,6 +215,11 @@ try {
     }
     log('create-shapio + npm run start: custom route /api/ext/example/stats served');
   });
+
+  // 4. create-shapio --site: the starters, packed from examples/, as standalone projects
+  for (const starter of SITE_STARTERS) {
+    checkSiteStarter(createTgz, work, starter);
+  }
 } catch (error) {
   process.exitCode = 1;
   process.stderr.write(`[smoke] FAILED: ${error instanceof Error ? error.stack : String(error)}\n`);

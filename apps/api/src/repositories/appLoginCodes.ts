@@ -18,11 +18,18 @@ export const insert = (row: NewLoginCode, trx: Executor = db) =>
     .returning('id')
     .executeTakeFirstOrThrow();
 
-/** Locks the code so it is exchanged at most once. */
+/** Locks the code so it is exchanged at most once. Carries its account's site (codes work on that site only). */
 export const lockByCodeHash = (codeHash: string, trx: Transaction<DB>) =>
   trx
     .selectFrom('app_login_codes')
-    .selectAll()
+    .selectAll('app_login_codes')
+    .select((eb) =>
+      eb
+        .selectFrom('app_users')
+        .select('app_users.site_id')
+        .whereRef('app_users.id', '=', 'app_login_codes.app_user_id')
+        .as('site_id'),
+    )
     .where('code_hash', '=', codeHash)
     .forUpdate()
     .executeTakeFirst();

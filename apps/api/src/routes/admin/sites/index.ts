@@ -1,6 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
+import { getSiteAppRoles, setSiteAppRoles } from '../../../controllers/siteAppRoles.js';
 import { createSite, deleteSite, getSite, listSites, updateSite } from '../../../controllers/sites.js';
 import { declareSiteScope } from '../../../plugins/siteResolution.js';
+import { getSiteAppRolesSchema, setSiteAppRolesSchema } from './appRoleSchemas.js';
 import {
   createSiteSchema,
   deleteSiteSchema,
@@ -17,6 +19,7 @@ export const adminSitesRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
   const manageSites = { preHandler: app.requireGlobalPermission('sites.manage') };
+  const manageRoles = { preHandler: app.requireGlobalPermission('roles.manage') };
 
   // GET /api/admin/sites
   app.get('/', { schema: listSitesSchema, ...admin }, listSites);
@@ -39,5 +42,18 @@ export const adminSitesRoutes: FastifyPluginAsyncTypebox = async (app) => {
     '/:id',
     { schema: deleteSiteSchema, config: { audit: { action: 'site.delete' } }, ...manageSites },
     deleteSite,
+  );
+  // GET /api/admin/sites/:id/app-roles: the app roles bound to the site's anonymous callers (`public`) and
+  // signed-in app users (`authenticated`).
+  app.get('/:id/app-roles', { schema: getSiteAppRolesSchema, ...admin }, getSiteAppRoles);
+  // PUT /api/admin/sites/:id/app-roles { public, authenticated }: replaces the bindings (roles.manage).
+  app.put(
+    '/:id/app-roles',
+    {
+      schema: setSiteAppRolesSchema,
+      config: { audit: { action: 'site.app_roles_update' } },
+      ...manageRoles,
+    },
+    setSiteAppRoles,
   );
 };

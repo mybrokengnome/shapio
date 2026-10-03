@@ -1,18 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { AppError } from '../helpers/appError.js';
 import { toActorContext } from '../helpers/requestContext.js';
 import type { CreateSiteBody, UpdateSiteBody } from '../routes/admin/sites/schemas.js';
 import type { IdParams } from '../routes/schemas/adminIdentity.js';
+import { requireAdminOrAdminToken } from '../services/auth.js';
 import * as sitesService from '../services/sites.js';
 
 /** Sites are listed for admin principals only (`requireAdmin` guards the routes). */
-const adminPrincipalOf = (request: FastifyRequest) => {
-  const { principal } = request;
-  if (principal.kind === 'admin' || (principal.kind === 'token' && principal.scope === 'admin')) {
-    return principal;
-  }
-  throw new AppError(403, 'FORBIDDEN', 'This needs an admin account or an admin API token');
-};
+const adminPrincipalOf = (request: FastifyRequest) => requireAdminOrAdminToken(request.principal);
 
 export const listSites = async (request: FastifyRequest) => sitesService.listSites(adminPrincipalOf(request));
 

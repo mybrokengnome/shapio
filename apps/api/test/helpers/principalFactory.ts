@@ -24,9 +24,11 @@ export const principalFactory = {
       ...overrides,
     };
   },
+  /** An app user of the primary site. */
   appUser: (overrides: Partial<AppUserPrincipal> = {}): AppUserPrincipal => ({
     kind: 'appUser',
     appUserId: randomUUID(),
+    siteId: PRIMARY_SITE_ID,
     roleIds: [],
     ...overrides,
   }),
@@ -38,6 +40,7 @@ export const principalFactory = {
     siteId: PRIMARY_SITE_ID,
     ...overrides,
   }),
-  anonymous: (): AnonymousPrincipal => ({ kind: 'anonymous' }),
+  /** An anonymous caller on a site (the primary one unless given; null = outside any site). */
+  anonymous: (siteId: string | null = PRIMARY_SITE_ID): AnonymousPrincipal => ({ kind: 'anonymous', siteId }),
   system: (component = 'test'): SystemPrincipal => ({ kind: 'system', component }),
 };

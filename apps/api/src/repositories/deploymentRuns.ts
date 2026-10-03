@@ -42,17 +42,22 @@ export type RunWithConnectionRow = Awaited<ReturnType<typeof findViewById>> & {}
 export const findViewById = (id: string, trx: Executor = db) =>
   withConnection(trx).where('deployment_runs.id', '=', id).executeTakeFirst();
 
+/** A run of one site's connection (sites plan §H): another site's run reads as not found. */
+export const findViewOnSite = (siteId: string, id: string, trx: Executor = db) =>
+  withConnection(trx).where('deployment_runs.id', '=', id).where('c.site_id', '=', siteId).executeTakeFirst();
+
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('deployment_runs').selectAll().where('id', '=', id).executeTakeFirst();
 
 export const list = (
-  filter: { connectionId?: string },
+  filter: { siteId: string; connectionId?: string },
   cursor: KeysetCursor | undefined,
   limit: number,
   trx: Executor = db,
 ) =>
   withConnection(trx)
     .select(cursorAt('deployment_runs.created_at').as('cursor_at'))
+    .where('c.site_id', '=', filter.siteId)
     .$if(filter.connectionId !== undefined, (qb) =>
       qb.where('deployment_runs.connection_id', '=', filter.connectionId ?? ''),
     )

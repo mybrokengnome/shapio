@@ -5,10 +5,17 @@ import { appUserSiteOf } from './appUsers.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
-export const findByIdentity = (provider: string, providerUserId: string, trx: Executor = db) =>
+/** The account a provider identity signs into on one site (identities are per site). */
+export const findByIdentity = (
+  siteId: string,
+  provider: string,
+  providerUserId: string,
+  trx: Executor = db,
+) =>
   trx
     .selectFrom('app_oauth_accounts')
     .selectAll()
+    .where('site_id', '=', siteId)
     .where('provider', '=', provider)
     .where('provider_user_id', '=', providerUserId)
     .executeTakeFirst();

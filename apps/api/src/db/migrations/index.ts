@@ -15,6 +15,8 @@ import * as createChangeSets from './20261002180200_create_change_sets.js';
 import * as createEditorPresenceAndContentHealth from './20261002190000_create_editor_presence_and_content_health.js';
 import * as addChangesShipPermission from './20261003120000_add_changes_ship_permission.js';
 import * as createSites from './20261003130000_create_sites.js';
+import * as enqueueFieldIndexLayout from './20261003140200_enqueue_field_index_layout.js';
+import * as changeSetItemsSiteAndPreviewEntry from './20261003140500_change_set_items_site_and_preview_entry.js';
 
 /**
  * Every migration, listed explicitly. A static list works when the server is bundled for npm, where
@@ -38,6 +40,8 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261002190000_create_editor_presence_and_content_health': createEditorPresenceAndContentHealth,
   '20261003120000_add_changes_ship_permission': addChangesShipPermission,
   '20261003130000_create_sites': createSites,
+  '20261003140200_enqueue_field_index_layout': enqueueFieldIndexLayout,
+  '20261003140500_change_set_items_site_and_preview_entry': changeSetItemsSiteAndPreviewEntry,
 };
 
 export const staticMigrationProvider: MigrationProvider = {

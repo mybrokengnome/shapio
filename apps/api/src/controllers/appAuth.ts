@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { OAUTH_STATE_COOKIE_NAME } from '../constants/appAuth.js';
 import { toActorContext, toClientInfo, toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   ChangePasswordBody,
   DeleteMeBody,
@@ -30,13 +31,21 @@ export const register = async (request: FastifyRequest<{ Body: RegisterBody }>, 
 };
 
 export const login = async (request: FastifyRequest<{ Body: LoginBody }>) =>
-  appAuthService.login(request.server.appAuth, { ...request.body, client: toClientInfo(request) });
+  appAuthService.login(request.server.appAuth, getRequestSite(request), {
+    ...request.body,
+    client: toClientInfo(request),
+  });
 
 export const refresh = async (request: FastifyRequest<{ Body: RefreshBody }>) =>
-  sessionsService.refreshSession(request.server.appAuth, request.body.refreshToken, toClientInfo(request));
+  sessionsService.refreshSession(
+    request.server.appAuth,
+    request.body.refreshToken,
+    getRequestSite(request).id,
+    toClientInfo(request),
+  );
 
 export const logout = async (request: FastifyRequest<{ Body: RefreshBody }>, reply: FastifyReply) => {
-  await sessionsService.revokeSession(request.body.refreshToken);
+  await sessionsService.revokeSession(request.body.refreshToken, getRequestSite(request).id);
   return reply.code(204).send();
 };
 
@@ -57,7 +66,7 @@ export const deleteMe = async (request: FastifyRequest<{ Body: DeleteMeBody }>, 
 };
 
 export const confirmEmail = async (request: FastifyRequest<{ Body: TokenBody }>, reply: FastifyReply) => {
-  await appAuthService.confirmEmail(toActorContext(request), request.body.token);
+  await appAuthService.confirmEmail(toSiteActorContext(request), request.body.token);
   return reply.code(204).send();
 };
 
@@ -65,7 +74,11 @@ export const resendConfirmation = async (
   request: FastifyRequest<{ Body: EmailBody }>,
   reply: FastifyReply,
 ) => {
-  await appAuthService.resendConfirmationByEmail(request.server.appAuth, request.body.email);
+  await appAuthService.resendConfirmationByEmail(
+    request.server.appAuth,
+    getRequestSite(request),
+    request.body.email,
+  );
   return reply.code(202).send();
 };
 
@@ -75,7 +88,7 @@ export const requestPasswordReset = async (
 ) => {
   await appAuthService.requestPasswordReset(
     request.server.appAuth,
-    toActorContext(request),
+    toSiteActorContext(request),
     request.body.email,
   );
   return reply.code(202).send();
@@ -85,7 +98,7 @@ export const confirmPasswordReset = async (
   request: FastifyRequest<{ Body: ResetBody }>,
   reply: FastifyReply,
 ) => {
-  await appAuthService.confirmPasswordReset(toActorContext(request), request.body);
+  await appAuthService.confirmPasswordReset(toSiteActorContext(request), request.body);
   return reply.code(204).send();
 };
 
@@ -106,10 +119,15 @@ export const startOAuth = async (
   request: FastifyRequest<{ Params: ProviderParams; Querystring: OAuthStartQuery }>,
   reply: FastifyReply,
 ) => {
-  const start = oauthService.startOAuth(request.server.appAuth, request.params.provider, {
-    redirectTo: request.query.redirectTo,
-    appCodeChallenge: request.query.codeChallenge,
-  });
+  const start = oauthService.startOAuth(
+    request.server.appAuth,
+    getRequestSite(request),
+    request.params.provider,
+    {
+      redirectTo: request.query.redirectTo,
+      appCodeChallenge: request.query.codeChallenge,
+    },
+  );
   return reply
     .setCookie(OAUTH_STATE_COOKIE_NAME, start.stateCookie, {
       ...oauthCookieOptions(request),
@@ -122,7 +140,7 @@ export const completeOAuth = async (
   request: FastifyRequest<{ Params: ProviderParams; Querystring: OAuthCallbackQuery }>,
   reply: FastifyReply,
 ) => {
-  const result = await oauthService.completeOAuth(request.server.appAuth, toSiteActorContext(request), {
+  const result = await oauthService.completeOAuth(request.server.appAuth, toActorContext(request), {
     provider: request.params.provider,
     stateCookie: request.cookies[OAUTH_STATE_COOKIE_NAME],
     query: request.query,
@@ -133,4 +151,9 @@ export const completeOAuth = async (
 };
 
 export const exchangeOAuthCode = async (request: FastifyRequest<{ Body: ExchangeBody }>) =>
-  oauthService.exchangeLoginCode(request.server.appAuth, request.body, toClientInfo(request));
+  oauthService.exchangeLoginCode(
+    request.server.appAuth,
+    getRequestSite(request),
+    request.body,
+    toClientInfo(request),
+  );

@@ -104,7 +104,12 @@ const queueDeploy = async (trx: Transaction<DB>, row: ChangeSetRow, now: Date) =
   if (!row.deployment_connection_id) {
     return null;
   }
-  const connection = await deploymentConnectionsRepository.findById(row.deployment_connection_id, trx);
+  // A set deploys through a connection of its own site.
+  const connection = await deploymentConnectionsRepository.findOnSite(
+    row.site_id,
+    row.deployment_connection_id,
+    trx,
+  );
   if (!connection?.enabled) {
     return null;
   }
@@ -148,6 +153,7 @@ const markShipped = async (
     type: CHANGE_SET_EVENTS.shipped,
     aggregateType: 'change_set',
     aggregateId: row.id,
+    siteId: row.site_id,
     payload: {
       changeSetId: row.id,
       title: row.title,
@@ -283,6 +289,7 @@ export const markShipping = async (
     aggregateType: 'change_set',
     aggregateId: ship.row.id,
     payload: { changeSetId: ship.row.id, title: ship.row.title },
+    siteId: ship.row.site_id,
   });
   await auditChangeSet(trx, context, ship.row.id, 'change_set.shipping', {
     mode: options.mode,
@@ -325,6 +332,7 @@ export const recordShipFailure = async (
       aggregateType: 'change_set',
       aggregateId: changeSetId,
       payload: { changeSetId, title: row.title, failedItemId: failure.itemId, error: failure.message },
+      siteId: row.site_id,
     });
     await auditChangeSet(
       trx,

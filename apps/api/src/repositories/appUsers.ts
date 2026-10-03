@@ -66,12 +66,18 @@ export type AppUserCursor = { createdAt: string; id: string };
 
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
 
-/** Newest first, optionally matching `search` in the email or name (case-insensitive substring). */
+/** One site's accounts, newest first, optionally matching `search` in the email or name (case-insensitive). */
 export const listPage = (
-  { search, cursor, limit }: { search: string | undefined; cursor: AppUserCursor | undefined; limit: number },
+  {
+    siteId,
+    search,
+    cursor,
+    limit,
+  }: { siteId: string; search: string | undefined; cursor: AppUserCursor | undefined; limit: number },
   trx: Executor = db,
 ) =>
   summaries(trx)
+    .where('app_users.site_id', '=', siteId)
     .select(
       sql<string>`to_char(app_users.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
         'cursor_at',
@@ -100,11 +106,23 @@ export const listPage = (
 export const findSummaryById = (id: string, trx: Executor = db): Promise<AppUserSummary | undefined> =>
   summaries(trx).where('app_users.id', '=', id).executeTakeFirst();
 
-/** Includes the password hash: for credential checks only. Live (not deleted) accounts only. */
-export const findByEmailWithHash = (email: string, trx: Executor = db) =>
+/** An account of one site (another site's account reads as not found). */
+export const findSummaryByIdInSite = (
+  id: string,
+  siteId: string,
+  trx: Executor = db,
+): Promise<AppUserSummary | undefined> =>
+  summaries(trx).where('app_users.id', '=', id).where('app_users.site_id', '=', siteId).executeTakeFirst();
+
+/**
+ * The live account with this address on one site (email is unique per site). Includes the password hash:
+ * for credential checks only.
+ */
+export const findByEmailWithHash = (siteId: string, email: string, trx: Executor = db) =>
   trx
     .selectFrom('app_users')
     .selectAll()
+    .where('site_id', '=', siteId)
     .where(sql`lower(email)`, '=', email.toLowerCase())
     .where('deleted_at', 'is', null)
     .executeTakeFirst();
@@ -124,6 +142,17 @@ export const lockById = (id: string, trx: Transaction<DB>) =>
     .selectFrom('app_users')
     .selectAll()
     .where('id', '=', id)
+    .where('deleted_at', 'is', null)
+    .forUpdate()
+    .executeTakeFirst();
+
+/** Locks the live account row of one site (another site's account reads as not found). */
+export const lockByIdInSite = (id: string, siteId: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('app_users')
+    .selectAll()
+    .where('id', '=', id)
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .forUpdate()
     .executeTakeFirst();

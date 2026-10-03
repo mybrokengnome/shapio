@@ -168,22 +168,28 @@ export const compileSearch = (fieldId: string, text: string): RawBuilder<unknown
 const SNAPSHOT_CTE = 'content_snapshot';
 
 /** The FROM item for a source, aliased `alias`, and the CTE it needs (snapshots only). */
-const sourceOf = (source: HeadSource, modelId: string) => {
+const sourceOf = (source: HeadSource, modelId: string, siteId: string) => {
   if (source.kind === 'heads') {
     return { cte: null, table: sql.table('entry_heads') };
   }
   const cte = sql`with ${sql.id(SNAPSHOT_CTE)} as (
-    select pl.entry_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
       r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at
     from publication_log pl
     join content_revisions r on r.id = pl.revision_id
-    where pl.model_id = ${modelIdLiteral(modelId)} and pl.from_seq <= ${source.seq}::bigint
+    where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelIdLiteral(modelId)}
+      and pl.from_seq <= ${source.seq}::bigint
       and (pl.to_seq is null or pl.to_seq > ${source.seq}::bigint)
   ) `;
   return { cte, table: sql.id(SNAPSHOT_CTE) };
 };
 
 export type HeadQueryPlan = {
+  /**
+   * The site whose content is read (sites plan §H). A tenancy boundary, always applied, separate from the
+   * ownership row filter in `conditions`. It comes from the service context, never from the request.
+   */
+  siteId: string;
   modelId: string;
   source: HeadSource;
   locales: LocaleScope;
@@ -214,6 +220,7 @@ const localeConditions = (scope: LocaleScope, table: RawBuilder<unknown>, source
 
 const whereOf = (plan: HeadQueryPlan, table: RawBuilder<unknown>) => {
   const conditions = [
+    sql`h.site_id = ${plan.siteId}::uuid`,
     sql`h.model_id = ${modelIdLiteral(plan.modelId)}`,
     ...(plan.source.kind === 'heads' ? [sql`h.state = ${plan.source.state}`] : []),
     ...localeConditions(plan.locales, table, plan.source),
@@ -239,7 +246,7 @@ export type HeadRow = {
 
 /** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
 export const compileHeadQuery = (plan: HeadQueryPlan) => {
-  const { cte, table } = sourceOf(plan.source, plan.modelId);
+  const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId);
   const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${whereOf(plan, table)}`;
   const prefix = cte ?? sql``;
   const orderBy = plan.orderBy.length > 0 ? sql` order by ${sql.join([...plan.orderBy])}` : sql``;

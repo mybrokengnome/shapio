@@ -23,6 +23,8 @@ import { syncUniqueValues, uniqueFields } from '../unique.js';
  */
 export type WriteContext = {
   trx: Transaction<DB>;
+  /** The entry's site (sites plan §H): relation and media targets must be on it. */
+  siteId: string;
   model: ContentModel;
   actor: Principal;
   now: Date;

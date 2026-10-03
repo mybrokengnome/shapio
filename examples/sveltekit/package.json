@@ -1,0 +1,38 @@
+{
+  "name": "example-sveltekit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SvelteKit starter: pages and articles from Shapio, prerendered to static HTML at one pinned snapshot, EN + FR.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "imports": {
+    "#lib": "./src/lib",
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts",
+    "smoke": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4173",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
+  },
+  "dependencies": {
+    "@shapio/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "catalog:",
+    "@sveltejs/kit": "catalog:",
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@types/node": "catalog:",
+    "svelte": "catalog:",
+    "svelte-check": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

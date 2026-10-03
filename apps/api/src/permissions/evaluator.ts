@@ -1,4 +1,4 @@
-import { APP_CONTENT_ACTIONS, APP_ROLE_IDS } from './appRoles.js';
+import { APP_CONTENT_ACTIONS } from './appRoles.js';
 import type { GrantSource } from './cache.js';
 import {
   ALLOW_ALL_POLICY,
@@ -34,11 +34,13 @@ const READ_ONLY: ReadonlySet<ContentAction> = new Set(['read']);
 const APP_ACTIONS: ReadonlySet<ContentAction> = new Set(APP_CONTENT_ACTIONS);
 
 /**
- * Which roles a principal holds and how its masks are computed. App users hold `authenticated` plus the
- * custom app roles resolved for them; anonymous callers hold `public`. Both are delivery audiences: they see
- * `public: false` fields only where a grant names them.
+ * Which roles a principal holds and how its masks are computed. App users hold the custom app roles assigned
+ * to them plus the roles their site binds to `authenticated`; anonymous callers hold the roles the request's
+ * site binds to `public` (`site_app_roles`: a site that binds nothing grants nothing, and an anonymous caller
+ * outside a site holds no role). Both are delivery audiences: they see `public: false` fields only where a
+ * grant names them.
  */
-const rolesOf = (principal: Principal): PrincipalRoles | 'all' => {
+const rolesOf = async (principal: Principal, grants: GrantSource): Promise<PrincipalRoles | 'all'> => {
   switch (principal.kind) {
     case 'system':
       return 'all';
@@ -61,14 +63,17 @@ const rolesOf = (principal: Principal): PrincipalRoles | 'all' => {
           { roleIds: [principal.roleId], networkRoleIds: [], audience: 'delivery', actions: READ_ONLY };
     case 'appUser':
       return {
-        roleIds: [APP_ROLE_IDS.authenticated, ...principal.roleIds],
+        roleIds: [
+          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated')),
+          ...principal.roleIds,
+        ],
         networkRoleIds: [],
         audience: 'delivery',
         actions: APP_ACTIONS,
       };
     case 'anonymous':
       return {
-        roleIds: [APP_ROLE_IDS.public],
+        roleIds: principal.siteId === null ? [] : await grants.getSiteAppRoleIds(principal.siteId, 'public'),
         networkRoleIds: [],
         audience: 'delivery',
         actions: APP_ACTIONS,
@@ -87,7 +92,7 @@ export const createPermissionEvaluator = ({
   fields,
 }: EvaluatorDependencies): PermissionEvaluator => ({
   evaluate: async (principal, request) => {
-    const roles = rolesOf(principal);
+    const roles = await rolesOf(principal, grants);
     if (roles === 'all') {
       return ALLOW_ALL_POLICY;
     }
@@ -105,7 +110,7 @@ export const createPermissionEvaluator = ({
     return buildPolicy(held, request, roles.audience, modelFields);
   },
   canPerform: async (principal, action) => {
-    const roles = rolesOf(principal);
+    const roles = await rolesOf(principal, grants);
     if (roles === 'all') {
       return true;
     }

@@ -30,8 +30,8 @@ export type AdminUserSummary = Pick<
   AdminUserRow,
   'id' | 'email' | 'name' | 'status' | 'last_login_at' | 'created_at' | 'updated_at'
 > & {
-  /** Roles assigned on every site (what the users API edits until site assignments reach it, G3). */
-  role_ids: string[];
+  /** Roles assigned on every site (network roles: what owner checks look at). */
+  network_role_ids: string[];
   /** Every assignment, on any site (site null = every site). */
   assignments: RoleAssignment[];
 };
@@ -50,7 +50,7 @@ const withRoleIds = (trx: Executor) =>
             .where('admin_user_roles.site_id', 'is', null),
           sql<string[]>`'{}'::uuid[]`,
         )
-        .as('role_ids'),
+        .as('network_role_ids'),
     )
     .select((eb) =>
       eb.fn
@@ -105,17 +105,23 @@ export const update = (id: string, changes: Updateable<AdminUsers>, trx: Executo
 export const deleteById = (id: string, trx: Executor = db) =>
   trx.deleteFrom('admin_users').where('id', '=', id).executeTakeFirst();
 
-/** Replaces the roles assigned on every site; assignments on single sites are left as they are. */
-export const replaceRoles = async (adminUserId: string, roleIds: readonly string[], trx: Executor = db) => {
-  await trx
-    .deleteFrom('admin_user_roles')
-    .where('admin_user_id', '=', adminUserId)
-    .where('site_id', 'is', null)
-    .execute();
-  if (roleIds.length > 0) {
+/** Replaces every role assignment of the user (on every site and on single sites). */
+export const replaceAssignments = async (
+  adminUserId: string,
+  assignments: readonly RoleAssignment[],
+  trx: Executor = db,
+) => {
+  await trx.deleteFrom('admin_user_roles').where('admin_user_id', '=', adminUserId).execute();
+  if (assignments.length > 0) {
     await trx
       .insertInto('admin_user_roles')
-      .values(roleIds.map((roleId) => ({ admin_user_id: adminUserId, role_id: roleId })))
+      .values(
+        assignments.map(({ roleId, siteId }) => ({
+          admin_user_id: adminUserId,
+          role_id: roleId,
+          site_id: siteId,
+        })),
+      )
       .execute();
   }
 };

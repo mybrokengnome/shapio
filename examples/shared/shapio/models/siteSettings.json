@@ -1,0 +1,87 @@
+{
+  "apiKey": "siteSettings",
+  "display": {
+    "titleFieldId": "e54b64bb-62c9-4a9c-8842-f8af5151feac"
+  },
+  "draftAndPublish": true,
+  "fields": [
+    {
+      "apiKey": "siteName",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "e54b64bb-62c9-4a9c-8842-f8af5151feac",
+      "label": "Site name",
+      "localized": true,
+      "public": true,
+      "required": true,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "tagline",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "51448036-f103-46fa-8e2c-25e56e1c25fd",
+      "label": "Tagline",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "footer",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "49c371ca-eb2f-4bed-b831-6dbc74ea6628",
+      "label": "Footer text",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "colophon",
+      "deprecated": false,
+      "editor": {
+        "id": "richText",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "797ba365-a0fe-4572-a90f-9b524d12dc06",
+      "label": "Colophon",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {
+        "formatVersion": 1
+      },
+      "sortable": false,
+      "type": "richtext",
+      "unique": false
+    }
+  ],
+  "id": "a1471f8b-5ee4-4a27-a7e0-934bb872b479",
+  "kind": "singleton",
+  "label": "Site settings",
+  "localized": true
+}

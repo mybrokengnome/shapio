@@ -1,9 +1,8 @@
 import { Type, type Static } from 'typebox';
+import { SITE_KEY_PATTERN } from '../../../constants/sites.js';
 import { DateTimeSchema, IdParamsSchema, UuidSchema } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
 
-/** A site key: lower case, starts with a letter (the same rule as role keys). Used in URLs and `?site=`. */
-export const SITE_KEY_PATTERN = '^[a-z][a-z0-9-]{0,62}$';
 export const SiteKeySchema = Type.String({ pattern: SITE_KEY_PATTERN });
 
 export const SiteSchema = Type.Object({

@@ -16,7 +16,7 @@ import {
 } from './changeSets.js';
 import {
   categoryOfKind,
-  changeSetNotFound,
+  findChangeSet,
   operationOf,
   type ChangeSetActorView,
   type ChangeSetView,
@@ -95,9 +95,7 @@ export const getSchemaDraft = async (
   id: string,
   definitionId: string,
 ): Promise<SchemaDraftView> => {
-  if (!(await changeSetsRepository.findById(id, context.db))) {
-    throw changeSetNotFound(id);
-  }
+  await findChangeSet(context, id);
   const draft = await schemaDraftsRepository.findForSet(id, definitionId, context.db);
   if (!draft) {
     throw draftNotFound(definitionId);
@@ -201,7 +199,7 @@ export const putSchemaDraft = async (
     updatedById: by.id,
   };
   const saved = await context.db.transaction().execute(async (trx) => {
-    await lockEditable(trx, id);
+    await lockEditable(trx, context, id);
     const existing = await schemaDraftsRepository.findForSet(id, definitionId, trx);
     let draft: SchemaDraftRow | undefined;
     if (existing) {
@@ -257,7 +255,7 @@ export const deleteSchemaDraft = async (
   definitionId: string,
 ): Promise<ChangeSetView> => {
   await context.db.transaction().execute(async (trx) => {
-    await lockEditable(trx, id);
+    await lockEditable(trx, context, id);
     const draft = await schemaDraftsRepository.findForSet(id, definitionId, trx);
     if (!draft) {
       throw draftNotFound(definitionId);

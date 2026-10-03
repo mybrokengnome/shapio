@@ -1,0 +1,22 @@
+{
+  "name": "example-shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What the three starters share: the blog's model files, the seed and the HTTP smoke check. create-shapio copies them into every starter template.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@shapio/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

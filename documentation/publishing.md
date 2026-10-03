@@ -114,7 +114,7 @@ The [example site](example-site.md) includes the sender:
 
 ```sh
 SHAPIO_CALLBACK_URL=… SHAPIO_RUN_ID=… SHAPIO_CALLBACK_SECRET=whsec_… \
-  pnpm --filter example-site report-status deployed "Built snapshot 42"
+  pnpm --filter example-astro report-status deployed "Built snapshot 42"
 ```
 
 Without callbacks a generic run stays at _triggered_: Shapio knows the trigger was accepted, not how the build

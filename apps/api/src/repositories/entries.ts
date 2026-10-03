@@ -6,6 +6,7 @@ type Executor = Kysely<DB> | Transaction<DB>;
 
 const COLUMNS = [
   'id',
+  'site_id',
   'model_id',
   'owner_app_user_id',
   'created_by_admin_id',
@@ -36,22 +37,31 @@ export const insert = (entry: NewEntry, trx: Executor = db) =>
 
 export type EntryRow = Awaited<ReturnType<typeof insert>>;
 
-export const findLive = (id: string, modelId: string, executor: Executor = db) =>
+/**
+ * A live entry of a model on one site. Another site's entry reads as missing (sites plan §H: the site is a
+ * tenancy boundary), exactly like an entry that does not exist.
+ */
+export const findLive = (id: string, modelId: string, siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('entries')
     .select(COLUMNS)
     .where('id', '=', id)
     .where('model_id', '=', modelId)
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .executeTakeFirst();
 
-/** Locks a live entry for the rest of the transaction: every write to one entry is serialized. */
-export const lockLive = (id: string, modelId: string, trx: Transaction<DB>) =>
+/**
+ * Locks a live entry of one site for the rest of the transaction: every write to one entry is serialized.
+ * Another site's entry reads as missing.
+ */
+export const lockLive = (id: string, modelId: string, siteId: string, trx: Transaction<DB>) =>
   trx
     .selectFrom('entries')
     .select(COLUMNS)
     .where('id', '=', id)
     .where('model_id', '=', modelId)
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .forUpdate()
     .executeTakeFirst();
@@ -81,18 +91,46 @@ export const softDeleteHeadless = (modelIds: readonly string[] | null, now: Date
   return query.executeTakeFirst();
 };
 
-export const countLive = async (modelId: string, executor: Executor = db): Promise<number> => {
+/** Live entries of a model on one site (a singleton holds at most one per site). */
+export const countLive = async (
+  modelId: string,
+  siteId: string,
+  executor: Executor = db,
+): Promise<number> => {
   const row = await executor
     .selectFrom('entries')
     .select(({ fn }) => fn.countAll<string>().as('count'))
     .where('model_id', '=', modelId)
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .executeTakeFirstOrThrow();
   return Number(row.count);
 };
 
-/** Live entries of a model among `ids` (relation target checks). */
-export const findLiveIds = async (modelId: string, ids: readonly string[], executor: Executor = db) => {
+/**
+ * The most live entries of a model any one site holds (a model may become a singleton only when no site
+ * holds more than one entry).
+ */
+export const maxLivePerSite = async (modelId: string, executor: Executor = db): Promise<number> => {
+  const row = await executor
+    .selectFrom('entries')
+    .select(({ fn }) => fn.countAll<string>().as('count'))
+    .where('model_id', '=', modelId)
+    .where('deleted_at', 'is', null)
+    .groupBy('site_id')
+    .orderBy('count', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return Number(row?.count ?? 0);
+};
+
+/** Live entries of a model on one site among `ids` (relation target checks: relations never cross sites). */
+export const findLiveIds = async (
+  modelId: string,
+  ids: readonly string[],
+  siteId: string,
+  executor: Executor = db,
+) => {
   if (ids.length === 0) {
     return [];
   }
@@ -100,6 +138,7 @@ export const findLiveIds = async (modelId: string, ids: readonly string[], execu
     .selectFrom('entries')
     .select('id')
     .where('model_id', '=', modelId)
+    .where('site_id', '=', siteId)
     .where('id', 'in', ids)
     .where('deleted_at', 'is', null)
     .execute();
@@ -139,13 +178,14 @@ export const listLiveIdsAfter = (
   return query.execute();
 };
 
-/** Live entries per model (one GROUP BY; the content counts of models without row filters). */
-export const countLiveByModel = (modelIds: readonly string[], executor: Executor = db) =>
+/** Live entries per model on one site (one GROUP BY; the content counts of models without row filters). */
+export const countLiveByModel = (siteId: string, modelIds: readonly string[], executor: Executor = db) =>
   modelIds.length === 0
     ? Promise.resolve([])
     : executor
         .selectFrom('entries')
         .select(['model_id', ({ fn }) => fn.countAll<string>().as('count')])
+        .where('site_id', '=', siteId)
         .where('model_id', 'in', modelIds)
         .where('deleted_at', 'is', null)
         .groupBy('model_id')

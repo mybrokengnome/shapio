@@ -8,6 +8,7 @@ import type { ChangeSetRow } from '../repositories/changeSets.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { SiteRef } from './actorContext.js';
 
 /**
  * Change set views (the shapes in routes/admin/changeSets/schemas.ts) and the errors every change-set
@@ -236,16 +237,25 @@ const toSchemaItem = (item: ChangeSetItemRow, draft: SchemaDraftRow): SchemaItem
   error: item.error,
 });
 
-/** Loads a set with its items (titles from the entries' heads, schema items from their drafts). */
-export const loadChangeSetView = async (
-  database: Database,
-  snapshot: SchemaSnapshot,
-  id: string,
-): Promise<ChangeSetView> => {
-  const row = await changeSetsRepository.findById(id, database);
+/** The site-scoped part of a service context a set is read with. */
+export type ChangeSetReadContext = { db: Database; snapshot: SchemaSnapshot; site: SiteRef };
+
+/** One set of the context's site; another site's set is not found (sites plan §H). */
+export const findChangeSet = async (context: ChangeSetReadContext, id: string): Promise<ChangeSetRow> => {
+  const row = await changeSetsRepository.findOnSite(context.site.id, id, context.db);
   if (!row) {
     throw changeSetNotFound(id);
   }
+  return row;
+};
+
+/** Loads a set with its items (titles from the entries' heads, schema items from their drafts). */
+export const loadChangeSetView = async (
+  context: ChangeSetReadContext,
+  id: string,
+): Promise<ChangeSetView> => {
+  const { db: database, snapshot } = context;
+  const row = await findChangeSet(context, id);
   const items = await changeSetItemsRepository.listForSet(id, database);
   const drafts = new Map(
     (await schemaDraftsRepository.listForSet(id, database)).map((draft) => [draft.id, draft]),

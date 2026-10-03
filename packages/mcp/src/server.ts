@@ -23,7 +23,11 @@ const INSTRUCTIONS =
 /** The MCP server for one Shapio instance, with every tool, resource and prompt registered. */
 export const createShapioMcpServer = (
   options: McpOptions,
-  client: ShapioClient = createClient({ baseUrl: options.baseUrl, token: options.token }),
+  client: ShapioClient = createClient({
+    baseUrl: options.baseUrl,
+    token: options.token,
+    ...(options.site !== undefined ? { site: options.site } : {}),
+  }),
 ): McpServer => {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },

@@ -15,6 +15,10 @@ import type { JobHandler, JobLogger, OutboxSubscriber } from './types.js';
  * - `content.health.sweep`: re-evaluates every live entry (or those of some models) in ID order, with a
  *   checkpoint. Runs daily (time-based rules such as stale drafts), after a schema activation (required
  *   flags, new fields) and after locales change (the locale-missing rule).
+ *
+ * Sites (plan §H): one sweep covers every site. Findings belong to their entry's site (a copy of it, tied by
+ * a composite key), and the schema, locales and the daily clock are shared, so one pass over all live
+ * entries does the same work as one sweep per site without multiplying jobs.
  */
 export const CONTENT_HEALTH_JOBS = {
   entry: 'content.health.entry',

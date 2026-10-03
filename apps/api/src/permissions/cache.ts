@@ -3,15 +3,38 @@ import type { DB } from '../db/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as appRolesRepository from '../repositories/appRoles.js';
 import * as permissionsVersionRepository from '../repositories/permissionsVersion.js';
+import * as siteAppRolesRepository from '../repositories/siteAppRoles.js';
+import type { AppRoleAudience } from '../repositories/siteAppRoles.js';
 import type { Grant } from './policy.js';
 import { CONTENT_ACTIONS, GLOBAL_ACTIONS, type ContentAction, type GlobalAction } from './types.js';
 
-/** Where the evaluator gets grants from. The database-backed cache in production, a fixed list in unit tests. */
+/**
+ * Where the evaluator gets grants from. The database-backed cache in production, a fixed list in unit tests.
+ * `getSiteAppRoleIds`: the app roles a site binds to anonymous callers (`public`) or to every signed-in app
+ * user (`authenticated`); a site that binds nothing grants them nothing (sites plan §H).
+ */
 export type GrantSource = {
   getGrants: (roleIds: readonly string[]) => Promise<readonly Grant[]>;
+  getSiteAppRoleIds: (siteId: string, audience: AppRoleAudience) => Promise<readonly string[]>;
 };
 
-type Snapshot = { version: number; byRole: ReadonlyMap<string, readonly Grant[]> };
+type Snapshot = {
+  version: number;
+  byRole: ReadonlyMap<string, readonly Grant[]>;
+  /** `<siteId>:<audience>` → bound app role IDs. */
+  bindings: ReadonlyMap<string, readonly string[]>;
+};
+
+const bindingKey = (siteId: string, audience: string) => `${siteId}:${audience}`;
+
+const groupBindings = (rows: readonly siteAppRolesRepository.SiteAppRoleBinding[]) => {
+  const bindings = new Map<string, string[]>();
+  for (const row of rows) {
+    const key = bindingKey(row.site_id, row.audience);
+    bindings.set(key, [...(bindings.get(key) ?? []), row.role_id]);
+  }
+  return bindings;
+};
 
 const KNOWN_ACTIONS: ReadonlySet<string> = new Set([...CONTENT_ACTIONS, ...GLOBAL_ACTIONS]);
 
@@ -57,7 +80,8 @@ export const createPermissionCache = (database: Kysely<DB>): GrantSource => {
       ...(await appRolesRepository.listAllPermissions(database)),
     ];
     const grants = rows.map(toGrant).filter((grant): grant is Grant => grant !== undefined);
-    return { version, byRole: groupByRole(grants) };
+    const bindings = groupBindings(await siteAppRolesRepository.listAll(database));
+    return { version, byRole: groupByRole(grants), bindings };
   };
 
   const current = async (): Promise<Snapshot> => {
@@ -82,6 +106,10 @@ export const createPermissionCache = (database: Kysely<DB>): GrantSource => {
       }
       const { byRole } = await current();
       return roleIds.flatMap((roleId) => byRole.get(roleId) ?? []);
+    },
+    getSiteAppRoleIds: async (siteId, audience) => {
+      const { bindings } = await current();
+      return bindings.get(bindingKey(siteId, audience)) ?? [];
     },
   };
 };

@@ -1,5 +1,7 @@
+import type { Transaction } from 'kysely';
 import { INVITATION_TTL_MS } from '../constants/auth.js';
 import { db } from '../db/index.js';
+import type { DB } from '../db/types.js';
 import { ADMIN_LINK_PATHS, tokenLink, type EmailDeliveryDependencies } from '../email/delivery.js';
 import { invitationEmail } from '../email/templates.js';
 import { AppError } from '../helpers/appError.js';
@@ -8,63 +10,69 @@ import type { UrlBuilder } from '../helpers/publicUrl.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
 import { enqueueJob } from '../jobs/queue.js';
 import { narrowToSite } from '../permissions/sites.js';
+import type { RoleAssignment } from '../permissions/types.js';
 import * as adminInvitationsRepository from '../repositories/adminInvitations.js';
 import type { AdminInvitationRow } from '../repositories/adminInvitations.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
+import * as sitesRepository from '../repositories/sites.js';
 import type { ActorContext, ClientInfo } from './actorContext.js';
 import { createSession } from './adminSessions.js';
-import {
-  assertAssignableRoles,
-  getOwnerRoleId,
-  insertAdminUser,
-  isOwnerActor,
-  normalizeEmail,
-} from './adminUsers.js';
+import { getOwnerRoleId, insertAdminUser, isOwnerActor, normalizeEmail } from './adminUsers.js';
 import { recordAudit } from './audit.js';
 import type { AuthenticatedSession } from './auth.js';
+import {
+  assertAssignableAssignments,
+  assignmentsOf,
+  holdsOwner,
+  roleIdsOf,
+  sortAssignments,
+  type AssignmentsInput,
+} from './roleAssignments.js';
 
 export const INVITATION_EMAIL_JOB = 'email.adminInvitation';
 
 export type InvitationView = {
   id: string;
   email: string;
+  /** The role assignments the invitee gets on accepting (`siteId` null: every site). */
+  assignments: RoleAssignment[];
+  /** Deprecated: the distinct roles of `assignments`. */
   roleIds: string[];
   invitedBy: string | null;
   expiresAt: Date;
   createdAt: Date;
 };
 
+const isAssignment = (value: unknown): value is RoleAssignment =>
+  typeof value === 'object' &&
+  value !== null &&
+  'roleId' in value &&
+  typeof value.roleId === 'string' &&
+  'siteId' in value &&
+  (value.siteId === null || typeof value.siteId === 'string');
+
+/** Role assignments stored on an invitation (`[{ roleId, siteId }]`, site null = every site). */
+const invitedAssignments = (stored: unknown): RoleAssignment[] =>
+  Array.isArray(stored) ? sortAssignments(stored.filter(isAssignment)) : [];
+
 const toInvitationView = (
   row: Pick<
     AdminInvitationRow,
     'id' | 'email' | 'role_assignments' | 'invited_by' | 'expires_at' | 'created_at'
   >,
-): InvitationView => ({
-  id: row.id,
-  email: row.email,
-  roleIds: invitedRoleIds(row.role_assignments),
-  invitedBy: row.invited_by,
-  expiresAt: row.expires_at,
-  createdAt: row.created_at,
-});
-
-/**
- * Role assignments stored on an invitation (`[{ roleId, siteId }]`, site null = every site). Invitations
- * assign on every site until site-scoped assignments reach the users API (sites plan §H, G3).
- */
-const invitedRoleIds = (assignments: unknown): string[] =>
-  Array.isArray(assignments)
-    ? [
-        ...new Set(
-          assignments.flatMap((assignment: unknown) =>
-            typeof assignment === 'object' && assignment !== null && 'roleId' in assignment
-              ? [String(assignment.roleId)]
-              : [],
-          ),
-        ),
-      ]
-    : [];
+): InvitationView => {
+  const assignments = invitedAssignments(row.role_assignments);
+  return {
+    id: row.id,
+    email: row.email,
+    assignments,
+    roleIds: roleIdsOf(assignments),
+    invitedBy: row.invited_by,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+  };
+};
 
 const invalidToken = () =>
   new AppError(400, 'INVALID_OR_EXPIRED_TOKEN', 'This invitation link is invalid or has expired');
@@ -73,18 +81,23 @@ const isPending = (row: AdminInvitationRow, now: Date) =>
   row.accepted_at === null && row.revoked_at === null && row.expires_at.getTime() > now.getTime();
 
 /**
- * Invites someone by email with the given roles. Re-inviting an address replaces its pending invitation.
- * The email (and its single-use token) is produced by a job, so the plain token never sits in the database.
+ * Invites someone by email with the given role assignments (`roleIds`, deprecated: those roles on every
+ * site). Re-inviting an address replaces its pending invitation. The email (and its single-use token) is
+ * produced by a job, so the plain token never sits in the database.
  */
 export const createInvitation = async (
   context: ActorContext,
-  input: { email: string; roleIds: string[] },
+  input: { email: string } & AssignmentsInput,
 ): Promise<InvitationView> =>
   db.transaction().execute(async (trx) => {
     const email = normalizeEmail(input.email);
-    const roleIds = await assertAssignableRoles(input.roleIds, trx);
     const ownerRoleId = await getOwnerRoleId(trx);
-    if (roleIds.includes(ownerRoleId) && !isOwnerActor(context.actor, ownerRoleId)) {
+    const requested = assignmentsOf(input);
+    if (!requested) {
+      throw new AppError(400, 'INVALID_ASSIGNMENTS', 'Send the role assignments (or roleIds)');
+    }
+    const assignments = await assertAssignableAssignments(requested, ownerRoleId, trx);
+    if (holdsOwner(assignments, ownerRoleId) && !isOwnerActor(context.actor, ownerRoleId)) {
       throw new AppError(403, 'OWNER_REQUIRED', 'Only owners can invite owners');
     }
     if (await adminUsersRepository.existsByEmail(email, trx)) {
@@ -95,7 +108,7 @@ export const createInvitation = async (
     const invitation = await adminInvitationsRepository.insert(
       {
         email,
-        role_assignments: JSON.stringify(roleIds.map((roleId) => ({ roleId, siteId: null }))),
+        role_assignments: JSON.stringify(assignments),
         invited_by: context.actor.kind === 'admin' ? context.actor.adminUserId : null,
         expires_at: new Date(now.getTime() + INVITATION_TTL_MS),
       },
@@ -106,7 +119,7 @@ export const createInvitation = async (
       ...context,
       action: 'invitation.create',
       target: { type: 'admin_invitation', id: invitation.id },
-      metadata: { email, roleIds },
+      metadata: { email, assignments },
     });
     return toInvitationView(invitation);
   });
@@ -168,6 +181,24 @@ export const inspectInvitation = async (token: string): Promise<{ email: string;
   return { email: row.email, expiresAt: row.expires_at };
 };
 
+/**
+ * Roles and sites may have been deleted since the invitation was sent: keep the assignments whose admin
+ * role and site (if any) still exist.
+ */
+const stillAssignable = async (
+  assignments: readonly RoleAssignment[],
+  trx: Transaction<DB>,
+): Promise<RoleAssignment[]> => {
+  const roles = await adminRolesRepository.findByIds(roleIdsOf(assignments), trx);
+  const adminRoleIds = new Set(roles.filter((role) => role.kind === 'admin').map((role) => role.id));
+  const siteIds = [...new Set(assignments.flatMap((assignment) => assignment.siteId ?? []))];
+  const liveSites = new Set((await sitesRepository.findByIds(siteIds, trx)).map((site) => site.id));
+  return assignments.filter(
+    (assignment) =>
+      adminRoleIds.has(assignment.roleId) && (assignment.siteId === null || liveSites.has(assignment.siteId)),
+  );
+};
+
 type AcceptInvitationInput = {
   token: string;
   name: string;
@@ -185,28 +216,19 @@ export const acceptInvitation = async (input: AcceptInvitationInput): Promise<Au
     if (!invitation || !isPending(invitation, now)) {
       throw invalidToken();
     }
-    // Roles may have been deleted since the invitation was sent; keep the admin roles that still exist.
-    const roles = await adminRolesRepository.findByIds(invitedRoleIds(invitation.role_assignments), trx);
-    const roleIds = roles.filter((role) => role.kind === 'admin').map((role) => role.id);
+    const assignments = await stillAssignable(invitedAssignments(invitation.role_assignments), trx);
     const adminUserId = await insertAdminUser(
-      { email: invitation.email, name: input.name, passwordHash, roleIds },
+      { email: invitation.email, name: input.name, passwordHash, assignments },
       trx,
     );
     await adminInvitationsRepository.markAccepted(invitation.id, now, trx);
     const session = await createSession(adminUserId, { client: input.client, now }, trx);
     await adminUsersRepository.update(adminUserId, { last_login_at: now }, trx);
     await recordAudit(trx, {
-      actor: narrowToSite(
-        {
-          adminUserId,
-          sessionId: session.sessionId,
-          assignments: roleIds.map((roleId) => ({ roleId, siteId: null })),
-        },
-        null,
-      ),
+      actor: narrowToSite({ adminUserId, sessionId: session.sessionId, assignments }, null),
       action: 'invitation.accept',
       target: { type: 'admin_invitation', id: invitation.id },
-      metadata: { adminUserId, roleIds },
+      metadata: { adminUserId, assignments },
       requestId: input.requestId,
       ...(input.client.ip ? { ip: input.client.ip } : {}),
     });

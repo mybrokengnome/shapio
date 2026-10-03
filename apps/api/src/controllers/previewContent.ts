@@ -1,5 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { appendVary } from '../helpers/vary.js';
 import * as previewContentService from '../services/previewContent.js';
+import { previewTokenSiteOf } from '../services/previewTokens.js';
 import { contentContextFor, rawQueryOf } from './contentContext.js';
 
 type ModelParams = { modelKey: string };
@@ -9,13 +11,18 @@ const BEARER = /^Bearer\s+(\S+)$/i;
 
 const tokenOf = (request: FastifyRequest) => BEARER.exec(request.headers.authorization ?? '')?.[1];
 
+/** The preview routes' credential site (`config.siteCredential`): the presented preview token's site. */
+export const previewSiteCredential = (request: FastifyRequest) =>
+  previewTokenSiteOf(request.server.publishing, tokenOf(request));
+
 /** Draft content must never be cached by browsers or shared caches. */
-const send = (reply: FastifyReply, payload: unknown) =>
-  reply
+const send = (reply: FastifyReply, payload: unknown) => {
+  appendVary(reply, 'Authorization');
+  return reply
     .header('cache-control', 'private, no-store')
-    .header('vary', 'Authorization')
     .type('application/json; charset=utf-8')
     .send(JSON.stringify(payload));
+};
 
 export const listPreview = async (request: FastifyRequest<{ Params: ModelParams }>, reply: FastifyReply) =>
   send(

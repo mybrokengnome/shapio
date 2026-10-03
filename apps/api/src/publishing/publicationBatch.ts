@@ -143,6 +143,7 @@ type EntryStep = { write: WriteContext; items: PublicationItem[]; heads: HeadRec
 
 const publishTransactionOf = (context: ContentServiceContext, step: EntryStep): PublishTransaction => ({
   write: step.write,
+  site: context.site,
   snapshot: context.snapshot,
   hooks: context.hooks,
   seq: step.seq,
@@ -308,7 +309,10 @@ const unpublishEntryItems = async (context: ContentServiceContext, step: EntrySt
   for (const { item, locale, live } of resolved) {
     if (live && seq !== null) {
       await unpublishLocale(write, entryId, locale, seq);
-      await writeEntryEvent(write.trx, write.model, 'entry.unpublished', entryId, { locale, snapshot: seq });
+      await writeEntryEvent(write.trx, write.siteId, write.model, 'entry.unpublished', entryId, {
+        locale,
+        snapshot: seq,
+      });
     }
     results.push({
       ref: item.ref,
@@ -331,13 +335,13 @@ const processEntry = async (
 ) => {
   const { id: entryId, items, seq } = entry;
   const { model, policy } = resolved;
-  const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+  const write: WriteContext = { trx, siteId: context.site.id, model, actor: context.actor, now: new Date() };
   const firstRef = items[0]?.ref ?? entryId;
   try {
     assertEntryVisible(
       policy,
       context.actor,
-      await entriesRepository.lockLive(entryId, model.definition.id, trx),
+      await entriesRepository.lockLive(entryId, model.definition.id, context.site.id, trx),
       entryId,
     );
   } catch (error) {

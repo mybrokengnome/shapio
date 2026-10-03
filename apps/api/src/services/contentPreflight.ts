@@ -65,7 +65,7 @@ const localeErrors = async (
   draft: HeadRecord,
 ): Promise<PreflightCheck[]> => {
   const outcome = buildValidator(context.snapshot, model).validate(draft.data);
-  const targets = await findTargetIssues(context.db, outcome, { lock: false });
+  const targets = await findTargetIssues(context.db, outcome, { siteId: context.site.id, lock: false });
   return [...outcome.issues, ...targets].map(issueCheck);
 };
 
@@ -109,7 +109,7 @@ export const runPreflight = async (
   assertEntryVisible(
     policy,
     context.actor,
-    await entriesRepository.findLive(id, model.definition.id, context.db),
+    await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db),
     id,
   );
   const heads = await entryHeadsRepository.findForEntry(id, context.db);

@@ -106,6 +106,7 @@ export const listFindings = async (context: ContentServiceContext, query: Findin
   const after = decodeCursor(query.cursor);
   const rows = await contentHealthFindingsRepository.listOpen(
     {
+      siteId: context.site.id,
       modelIds: [...readable.keys()],
       ...(query.rule ? { rule: query.rule } : {}),
       ...(after ? { after } : {}),
@@ -150,6 +151,7 @@ export const summarizeFindings = async (context: ContentServiceContext) => {
   const counts = new Map<string, number>();
   const add = (rule: string, count: number) => counts.set(rule, (counts.get(rule) ?? 0) + count);
   for (const row of await contentHealthFindingsRepository.countOpenByRule(
+    context.site.id,
     unfiltered.map((model) => model.definition.id),
     context.db,
   )) {
@@ -157,7 +159,7 @@ export const summarizeFindings = async (context: ContentServiceContext) => {
   }
   for (const model of filtered) {
     const rows = await contentHealthFindingsRepository.listOpen(
-      { modelIds: [model.definition.id], limit: 10_000 },
+      { siteId: context.site.id, modelIds: [model.definition.id], limit: 10_000 },
       context.db,
     );
     rows

@@ -19,6 +19,8 @@ export type SnapshotDiffLocaleRow = {
 export type SnapshotDiffRow = { entry_id: string; model_id: string; locales: SnapshotDiffLocaleRow[] };
 
 export type SnapshotDiffParams = {
+  /** The site whose publication log is diffed (snapshot numbers are per site). */
+  siteId: string;
   from: number;
   to: number;
   /** Keyset cursor: only entries with a greater ID. */
@@ -37,9 +39,9 @@ const afterCondition = (after: string | undefined) =>
   after === undefined ? sql`true` : sql`pl.entry_id > ${after}::uuid`;
 
 /** The revision of (entry, locale) live at `seq`, as a lateral subquery over `c`. */
-const liveAt = (seq: number) => sql`(
+const liveAt = (siteId: string, seq: number) => sql`(
   select p.revision_id from publication_log p
-  where p.entry_id = c.entry_id and p.locale = c.locale and p.from_seq <= ${seq}::bigint
+  where p.site_id = ${siteId}::uuid and p.entry_id = c.entry_id and p.locale = c.locale and p.from_seq <= ${seq}::bigint
     and (p.to_seq is null or p.to_seq > ${seq}::bigint)
   order by p.from_seq desc
   limit 1
@@ -50,7 +52,8 @@ export const selectSnapshotDiffRows = async (
   executor: Executor,
 ): Promise<SnapshotDiffRow[]> => {
   const { from, to } = params;
-  const scope = sql`${modelCondition(params.modelIds)} and ${afterCondition(params.after)}`;
+  const scope = sql`pl.site_id = ${params.siteId}::uuid and ${modelCondition(params.modelIds)}
+    and ${afterCondition(params.after)}`;
   const result = await sql<SnapshotDiffRow>`
     with candidates as (
       select pl.entry_id, pl.locale from publication_log pl
@@ -60,7 +63,8 @@ export const selectSnapshotDiffRows = async (
       where pl.to_seq > ${from}::bigint and pl.to_seq <= ${to}::bigint and ${scope}
     ),
     states as (
-      select c.entry_id, c.locale, ${liveAt(from)} as from_revision_id, ${liveAt(to)} as to_revision_id
+      select c.entry_id, c.locale, ${liveAt(params.siteId, from)} as from_revision_id,
+        ${liveAt(params.siteId, to)} as to_revision_id
       from candidates c
     ),
     changes as (

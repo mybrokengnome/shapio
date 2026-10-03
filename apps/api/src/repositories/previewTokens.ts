@@ -36,17 +36,35 @@ export const findLiveByHash = (hash: string, now: Date, trx: Executor = db) =>
     .where('expires_at', '>', now)
     .executeTakeFirst();
 
-export const list = (filter: { entryId?: string }, trx: Executor = db) =>
+/** One site's tokens (sites plan §H), newest first. */
+export const list = (filter: { siteId: string; entryId?: string }, trx: Executor = db) =>
   trx
     .selectFrom('preview_tokens')
     .select(PUBLIC_COLUMNS)
+    .where('site_id', '=', filter.siteId)
     .$if(filter.entryId !== undefined, (qb) => qb.where('entry_id', '=', filter.entryId ?? ''))
     .orderBy('created_at', 'desc')
     .limit(200)
     .execute();
 
-export const findById = (id: string, trx: Executor = db) =>
-  trx.selectFrom('preview_tokens').select(PUBLIC_COLUMNS).where('id', '=', id).executeTakeFirst();
+/** By ID on one site: another site's token reads as not found. */
+export const findOnSite = (siteId: string, id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('preview_tokens')
+    .select(PUBLIC_COLUMNS)
+    .where('id', '=', id)
+    .where('site_id', '=', siteId)
+    .executeTakeFirst();
+
+/** The site of a live token (the preview routes resolve the request's site from their credential). */
+export const findLiveSiteByHash = (hash: string, now: Date, trx: Executor = db) =>
+  trx
+    .selectFrom('preview_tokens')
+    .select('site_id')
+    .where('token_hash', '=', hash)
+    .where('revoked_at', 'is', null)
+    .where('expires_at', '>', now)
+    .executeTakeFirst();
 
 export const revoke = (id: string, now: Date, trx: Executor = db) =>
   trx

@@ -175,10 +175,15 @@ describe('field usage', () => {
     const [title, name, unread] = await consumersOf(
       [fieldIdOf(article, 'title'), nameId, '00000000-0000-4000-8000-000000000000'],
       7,
+      { siteId: PRIMARY_SITE_ID, network: true },
     );
     expect(title?.principals.map((principal) => principal.principalKey)).toContain(site);
     expect(name?.principals).toEqual([expect.objectContaining({ principalKey: site })]);
-    expect(unread).toEqual({ fieldId: '00000000-0000-4000-8000-000000000000', principals: [] });
+    expect(unread).toEqual({
+      fieldId: '00000000-0000-4000-8000-000000000000',
+      principals: [],
+      otherSites: null,
+    });
   });
 
   it('upserts concurrent flushes additively', async () => {
@@ -197,7 +202,12 @@ describe('field usage', () => {
       writeUsageBatch(database.current.db, { fieldReads: [row], tokenReads: [] }),
       writeUsageBatch(database.current.db, { fieldReads: [row], tokenReads: [] }),
     ]);
-    const rows = await usageRepository.fieldUsageForModel(article.definition.id, day, database.current.db);
+    const rows = await usageRepository.fieldUsageForModel(
+      PRIMARY_SITE_ID,
+      article.definition.id,
+      day,
+      database.current.db,
+    );
     expect(rows.find((candidate) => candidate.fieldPath === 'upsert-test')?.reads).toBe(6);
   });
 
@@ -261,13 +271,18 @@ describe('field usage', () => {
     });
     await worker.stop(500);
     const paths = (
-      await usageRepository.fieldUsageForModel(article.definition.id, '2000-01-01', database.current.db)
+      await usageRepository.fieldUsageForModel(
+        PRIMARY_SITE_ID,
+        article.definition.id,
+        '2000-01-01',
+        database.current.db,
+      )
     ).map((row) => row.fieldPath);
     expect(paths).toContain(`retention-${recent}`);
     expect(paths).not.toContain(`retention-${old}`);
-    const principals = (await usageRepository.principalSummaries('2000-01-01', database.current.db)).map(
-      (row) => row.principalKey,
-    );
+    const principals = (
+      await usageRepository.principalSummaries(PRIMARY_SITE_ID, '2000-01-01', database.current.db)
+    ).map((row) => row.principalKey);
     expect(principals).toContain(`retention-${recent}`);
     expect(principals).not.toContain(`retention-${old}`);
   });

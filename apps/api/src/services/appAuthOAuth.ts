@@ -14,14 +14,17 @@ import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { generateToken, hashToken, safeEqual } from '../helpers/tokens.js';
+import { siteMismatch } from '../permissions/sites.js';
 import * as appLoginCodesRepository from '../repositories/appLoginCodes.js';
 import * as appOAuthAccountsRepository from '../repositories/appOAuthAccounts.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import type { AppUserRow } from '../repositories/appUsers.js';
-import type { ActorContext, ClientInfo, SiteActorContext } from './actorContext.js';
+import * as sitesRepository from '../repositories/sites.js';
+import type { ActorContext, ClientInfo, SiteActorContext, SiteRef } from './actorContext.js';
 import { normalizeEmail } from './adminUsers.js';
 import { endAllSignIns, issueSession, signInStatus, type AppSession } from './appAuthSessions.js';
 import { recordAudit } from './audit.js';
+import { toSiteRef } from './sites.js';
 
 /**
  * Sign in with Google or GitHub (build plan §4.I2). The browser goes to the provider and back to Shapio's
@@ -80,14 +83,18 @@ export type OAuthStart = { authorizationUrl: string; stateCookie: string; cookie
  */
 export const startOAuth = (
   runtime: AppAuthRuntime,
+  site: SiteRef,
   provider: string,
   input: { redirectTo: string; appCodeChallenge: string },
 ): OAuthStart => {
   const { adapter, client } = providerOf(runtime, provider);
   const state = newOAuthState(
-    provider,
-    assertRedirectAllowed(runtime, input.redirectTo),
-    input.appCodeChallenge,
+    {
+      provider,
+      siteId: site.id,
+      redirectTo: assertRedirectAllowed(runtime, input.redirectTo),
+      appCodeChallenge: input.appCodeChallenge,
+    },
     OAUTH_STATE_TTL_MS,
   );
   return {
@@ -129,7 +136,7 @@ const assertUsable = (runtime: AppAuthRuntime, user: AppUserRow) => {
 
 /** An existing account takes the provider identity. Following the provider's verified email proves it. */
 const linkToExisting = async (
-  context: ActorContext,
+  context: SiteActorContext,
   provider: string,
   profile: OAuthProfile & { email: string },
   user: AppUserRow,
@@ -148,7 +155,7 @@ const linkToExisting = async (
   }
   await recordAudit(trx, {
     ...context,
-    actor: { kind: 'appUser', appUserId: user.id, roleIds: [] },
+    actor: { kind: 'appUser', appUserId: user.id, siteId: context.site.id, roleIds: [] },
     action: 'app_user.oauth_link',
     target: { type: 'app_user', id: user.id },
     metadata: { provider, wasConfirmed: user.confirmed_at !== null },
@@ -178,7 +185,7 @@ const createFromProfile = async (
   );
   await recordAudit(trx, {
     ...context,
-    actor: { kind: 'appUser', appUserId: user.id, roleIds: [] },
+    actor: { kind: 'appUser', appUserId: user.id, siteId: context.site.id, roleIds: [] },
     action: 'app_user.register',
     target: { type: 'app_user', id: user.id },
     metadata: { method: provider },
@@ -194,7 +201,12 @@ const accountFor = async (
   profile: OAuthProfile,
   trx: Transaction<DB>,
 ): Promise<string> => {
-  const known = await appOAuthAccountsRepository.findByIdentity(provider, profile.providerUserId, trx);
+  const known = await appOAuthAccountsRepository.findByIdentity(
+    context.site.id,
+    provider,
+    profile.providerUserId,
+    trx,
+  );
   if (known) {
     const user = await appUsersRepository.lockById(known.app_user_id, trx);
     if (!user) {
@@ -211,7 +223,7 @@ const accountFor = async (
     );
   }
   const verified = { ...profile, email: normalizeEmail(profile.email) };
-  const existing = await appUsersRepository.findByEmailWithHash(verified.email, trx);
+  const existing = await appUsersRepository.findByEmailWithHash(context.site.id, verified.email, trx);
   if (existing) {
     const locked = await appUsersRepository.lockById(existing.id, trx);
     if (!locked) {
@@ -283,13 +295,20 @@ const completeSignIn = async (
   }
 };
 
+/** The site the sign-in was started on, or undefined when it has been deleted since. */
+const siteOfState = async (state: OAuthState): Promise<SiteRef | undefined> => {
+  const site = await sitesRepository.findById(state.siteId);
+  return site ? toSiteRef(site) : undefined;
+};
+
 /**
  * Handles the provider's redirect. Without a valid state cookie nothing is trusted (not even where to send
- * the browser), so that is a 400. Every later failure goes back to the app as `?error=<CODE>`.
+ * the browser), so that is a 400. The site comes from the state (the provider's redirect names none). Every
+ * later failure goes back to the app as `?error=<CODE>`.
  */
 export const completeOAuth = async (
   runtime: AppAuthRuntime,
-  context: SiteActorContext,
+  networkContext: ActorContext,
   input: OAuthCallbackInput,
 ): Promise<OAuthCallbackResult> => {
   providerOf(runtime, input.provider);
@@ -303,6 +322,11 @@ export const completeOAuth = async (
   if (input.query.error !== undefined || !input.query.code) {
     return { redirectUrl: withQuery(state.redirectTo, { error: 'ACCESS_DENIED' }) };
   }
+  const site = await siteOfState(state);
+  if (!site) {
+    return { redirectUrl: withQuery(state.redirectTo, { error: 'SITE_NOT_FOUND' }) };
+  }
+  const context: SiteActorContext = { ...networkContext, site };
   try {
     const code = await completeSignIn(runtime, context, input.provider, state, input.query.code);
     return { redirectUrl: withQuery(state.redirectTo, { code }) };
@@ -322,10 +346,12 @@ const invalidCode = () =>
 /**
  * Exchanges the one-time code the app received for a session, given the verifier of the challenge the app
  * sent when it started the sign-in. Codes work once, within a minute. A wrong verifier spends the code too
- * (the safer choice: whoever intercepted it gets one attempt, never a retry), so the app starts over.
+ * (the safer choice: whoever intercepted it gets one attempt, never a retry), so the app starts over. A code
+ * of another site's account is refused (403 `SITE_MISMATCH`) without spending it.
  */
 export const exchangeLoginCode = async (
   runtime: AppAuthRuntime,
+  site: SiteRef,
   input: { code: string; codeVerifier: string },
   client: ClientInfo,
 ): Promise<AppSession> => {
@@ -334,6 +360,9 @@ export const exchangeLoginCode = async (
     const row = await appLoginCodesRepository.lockByCodeHash(hashToken(input.code), trx);
     if (!row || row.used_at !== null || row.expires_at.getTime() <= now.getTime()) {
       return { kind: 'rejected', error: invalidCode() };
+    }
+    if (row.site_id !== site.id) {
+      return { kind: 'rejected', error: siteMismatch() };
     }
     await appLoginCodesRepository.markUsed(row.id, now, trx);
     if (!safeEqual(codeChallengeOf(input.codeVerifier), row.code_challenge)) {

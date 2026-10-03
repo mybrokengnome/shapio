@@ -152,3 +152,8 @@ vite.config.ts.timestamp-*
 *.key
 # Astro (example site): generated types
 .astro/
+# Starters: Next's generated type references, SvelteKit's static output
+next-env.d.ts
+/examples/sveltekit/build/
+# create-shapio: starter templates, packed from examples/ at build time
+/packages/create-shapio/templates/

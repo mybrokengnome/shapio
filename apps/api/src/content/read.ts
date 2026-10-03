@@ -27,6 +27,8 @@ export type ReadEnvironment = {
   snapshot: SchemaSnapshot;
   permissions: PermissionEvaluator;
   actor: Principal;
+  /** The site read from (sites plan §H): heads, relation targets and media never cross it. */
+  siteId: string;
   /** Admin reads see draft heads and every relation ID; delivery reads see published content only. */
   audience: 'admin' | 'delivery';
   source: HeadSource;
@@ -55,6 +57,7 @@ export const fetchHeadsByIds = async (
   }
   const rowFilter = compileRowFilter(policy.rowFilter, env.actor);
   const { rows } = compileHeadQuery({
+    siteId: env.siteId,
     modelId: model.definition.id,
     source: env.source,
     locales: locales ?? readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
@@ -117,7 +120,7 @@ const loadMediaViews = async (
   if (ids.size === 0) {
     return new Map();
   }
-  const assets = await mediaAssetsRepository.findLiveByIds([...ids], env.executor);
+  const assets = await mediaAssetsRepository.findLiveManyOnSite(env.siteId, [...ids], env.executor);
   const views = await toAssetViews(env.media, assets);
   return new Map(views.map((view) => [view.id, env.audience === 'delivery' ? toDeliveryAsset(view) : view]));
 };

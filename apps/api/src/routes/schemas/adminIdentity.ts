@@ -22,11 +22,20 @@ export const PersonNameSchema = Type.String({ minLength: 1, maxLength: 200 });
 /** Single-use tokens from links and logs: 43 base64url characters. */
 export const OneTimeTokenSchema = Type.String({ minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' });
 
+/** A role held on one site, or on every site (`siteId` null). */
+export const RoleAssignmentSchema = Type.Object(
+  { roleId: UuidSchema, siteId: Type.Union([UuidSchema, Type.Null()]) },
+  { additionalProperties: false },
+);
+
 export const AdminUserSchema = Type.Object({
   id: UuidSchema,
   email: Type.String(),
   name: Type.String(),
   status: Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
+  /** Where each role applies. */
+  assignments: Type.Array(RoleAssignmentSchema),
+  /** Deprecated: the distinct roles of `assignments`, on any site. */
   roleIds: Type.Array(UuidSchema),
   lastLoginAt: NullableDateTimeSchema,
   createdAt: DateTimeSchema,

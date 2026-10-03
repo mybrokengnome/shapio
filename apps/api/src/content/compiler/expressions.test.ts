@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Kysely, PostgresDialect } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import {
@@ -60,13 +61,13 @@ describe('content expressions', () => {
     expect(fieldIndexName({ modelId: MODEL, fieldId: FIELD, type: 'integer' })).not.toBe(name);
   });
 
-  it('builds a concurrent partial index over (locale, state, value)', () => {
+  it('builds a concurrent partial index over (site, locale, state, value)', () => {
     const { sql, parameters } = compile(
       createFieldIndexStatement({ modelId: MODEL, fieldId: FIELD, type: 'number' }),
     );
     expect(parameters).toEqual([]);
     expect(sql).toBe(
-      `create index concurrently if not exists "${fieldIndexName({ modelId: MODEL, fieldId: FIELD, type: 'number' })}" on "entry_heads" ("locale", "state", (("data" ->> '${FIELD}')::numeric)) where "model_id" = '${MODEL}'`,
+      `create index concurrently if not exists "${fieldIndexName({ modelId: MODEL, fieldId: FIELD, type: 'number' })}" on "entry_heads" ("site_id", "locale", "state", (("data" ->> '${FIELD}')::numeric)) where "model_id" = '${MODEL}'`,
     );
   });
 
@@ -77,8 +78,17 @@ describe('content expressions', () => {
       fieldIndexName({ modelId: MODEL, fieldId: FIELD, type: 'number' }),
     );
     expect(compile(createFieldIndexStatement(spec)).sql).toBe(
-      `create index concurrently if not exists "${fieldIndexName(spec)}" on "entry_heads" ("state", (("data" ->> '${FIELD}')::numeric)) where "model_id" = '${MODEL}'`,
+      `create index concurrently if not exists "${fieldIndexName(spec)}" on "entry_heads" ("site_id", "state", (("data" ->> '${FIELD}')::numeric)) where "model_id" = '${MODEL}'`,
     );
+  });
+
+  it('names the site-leading layout apart from the layout before sites, which keeps its old names', () => {
+    const spec = { modelId: MODEL, fieldId: FIELD, type: 'number' as const, localized: false };
+    expect(fieldIndexName(spec)).not.toBe(fieldIndexName(spec, 1));
+    expect(fieldIndexName({ ...spec, localized: true }, 1)).not.toBe(fieldIndexName(spec, 1));
+    // The name the layout-1 builder gave: sha256 of "<model>:<field>:<cast>:v1[:shared]".
+    const legacy = createHash('sha256').update(`${MODEL}:${FIELD}:numeric:v1:shared`).digest('hex');
+    expect(fieldIndexName(spec, 1)).toBe(`eh_${legacy.slice(0, 32)}`);
   });
 
   it('pairs every index with a statistics object on the same expression', () => {

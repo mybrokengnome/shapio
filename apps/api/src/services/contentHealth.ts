@@ -39,15 +39,20 @@ const toSnapshot = (head: HeadRecord): HeadSnapshot => ({
   autosavedAt: head.autosaved_at,
 });
 
+/** The images the drafts use, from the entry's own site's library (media is per site; sites plan §H). */
 const loadAssets = async (
   executor: Executor,
   model: ContentModel,
   drafts: readonly HeadSnapshot[],
+  siteId: string | undefined,
 ): Promise<Map<string, AssetInfo>> => {
   const ids = [
     ...new Set(drafts.flatMap((draft) => imageUsesOf(model, draft.data).map((use) => use.assetId))),
   ];
-  const rows = await mediaAssetsRepository.findAltByIds(ids, executor);
+  if (siteId === undefined || ids.length === 0) {
+    return new Map();
+  }
+  const rows = await mediaAssetsRepository.findAltOnSite(siteId, ids, executor);
   return new Map(rows.map((row) => [row.id, { alt: row.alt, mimeType: row.mime_type }]));
 };
 
@@ -102,7 +107,7 @@ export const computeEntryHealth = async (
     drafts.map((draft) => [draft.locale, validator.validate(draft.data).issues]),
   );
   const [assets, edges, uniqueConflicts] = await Promise.all([
-    loadAssets(executor, model, drafts),
+    loadAssets(executor, model, drafts, heads[0]?.site_id),
     loadEdges(executor, env.snapshot, entryId),
     model.definition.draftAndPublish
       ? findPublishedUniqueConflicts(executor, { entryId, model: model.definition, drafts })

@@ -98,6 +98,9 @@ const tokenName = sql<string | null>`(
 )`;
 
 export type FieldUsageRow = {
+  /** The site the reads were made on, with its key. */
+  siteId: string;
+  siteKey: string;
   fieldPath: string;
   principalKey: string;
   tokenName: string | null;
@@ -107,6 +110,8 @@ export type FieldUsageRow = {
 };
 
 const toFieldUsage = (row: {
+  site_id: string;
+  site_key: string;
   field_path: string;
   principal_key: string;
   token_name: string | null;
@@ -114,6 +119,8 @@ const toFieldUsage = (row: {
   reads: string | number | bigint;
   last_read_at: Date;
 }): FieldUsageRow => ({
+  siteId: row.site_id,
+  siteKey: row.site_key,
   fieldPath: row.field_path,
   principalKey: row.principal_key,
   tokenName: row.token_name,
@@ -122,12 +129,23 @@ const toFieldUsage = (row: {
   lastReadAt: row.last_read_at,
 });
 
-/** Reads of one model's fields since `sinceDay` (inclusive), per field path, principal and selection. */
-export const fieldUsageForModel = async (modelId: string, sinceDay: string, trx: Executor = db) =>
+/**
+ * Reads of one model's fields on one site since `sinceDay` (inclusive), per field path, principal and
+ * selection.
+ */
+export const fieldUsageForModel = async (
+  siteId: string,
+  modelId: string,
+  sinceDay: string,
+  trx: Executor = db,
+) =>
   (
     await trx
       .selectFrom('field_reads as fr')
+      .innerJoin('sites as s', 's.id', 'fr.site_id')
       .select([
+        'fr.site_id',
+        's.key as site_key',
         'fr.field_path',
         'fr.principal_key',
         'fr.selection',
@@ -135,9 +153,10 @@ export const fieldUsageForModel = async (modelId: string, sinceDay: string, trx:
         (eb) => eb.fn.sum<string>('fr.reads').as('reads'),
         (eb) => eb.fn.max('fr.last_read_at').as('last_read_at'),
       ])
+      .where('fr.site_id', '=', siteId)
       .where('fr.model_id', '=', modelId)
       .where('fr.day', '>=', asDay(sinceDay))
-      .groupBy(['fr.field_path', 'fr.principal_key', 'fr.selection'])
+      .groupBy(['fr.site_id', 's.key', 'fr.field_path', 'fr.principal_key', 'fr.selection'])
       .orderBy('fr.field_path')
       .orderBy('reads', 'desc')
       .execute()
@@ -145,7 +164,8 @@ export const fieldUsageForModel = async (modelId: string, sinceDay: string, trx:
 
 /**
  * Reads since `sinceDay` of field paths that involve any of `fieldIds`: the field itself, a populated
- * relation's target field (`rel.<id>`), and a relation read through to its targets (`<id>.sub`).
+ * relation's target field (`rel.<id>`), and a relation read through to its targets (`<id>.sub`). Spans
+ * every site (the schema is shared), per site.
  */
 export const fieldUsageForFields = async (
   fieldIds: readonly string[],
@@ -159,7 +179,10 @@ export const fieldUsageForFields = async (
   return (
     await trx
       .selectFrom('field_reads as fr')
+      .innerJoin('sites as s', 's.id', 'fr.site_id')
       .select([
+        'fr.site_id',
+        's.key as site_key',
         'fr.field_path',
         'fr.principal_key',
         'fr.selection',
@@ -172,7 +195,7 @@ export const fieldUsageForFields = async (
         sql<boolean>`(split_part(fr.field_path, '.', 1) = any(${ids}::text[])
           or split_part(fr.field_path, '.', 2) = any(${ids}::text[]))`,
       )
-      .groupBy(['fr.field_path', 'fr.principal_key', 'fr.selection'])
+      .groupBy(['fr.site_id', 's.key', 'fr.field_path', 'fr.principal_key', 'fr.selection'])
       .execute()
   ).map(toFieldUsage);
 };
@@ -186,10 +209,11 @@ export type PrincipalSummaryRow = {
 };
 
 /**
- * Per principal since `sinceDay`: requests, the last read and the snapshot it last pinned (from the most
- * recent day that recorded one).
+ * Per principal on one site since `sinceDay`: requests, the last read and the snapshot it last pinned (from
+ * the most recent day that recorded one; snapshot numbers are per site).
  */
 export const principalSummaries = async (
+  siteId: string,
   sinceDay: string,
   trx: Executor = db,
 ): Promise<PrincipalSummaryRow[]> => {
@@ -203,6 +227,7 @@ export const principalSummaries = async (
       sql<string | null>`(array_agg(fr.last_snapshot order by fr.day desc)
         filter (where fr.last_snapshot is not null))[1]`.as('last_snapshot'),
     ])
+    .where('fr.site_id', '=', siteId)
     .where('fr.day', '>=', asDay(sinceDay))
     .groupBy('fr.principal_key')
     .orderBy('requests', 'desc')

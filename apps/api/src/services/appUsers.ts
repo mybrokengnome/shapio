@@ -9,12 +9,15 @@ import * as appUsersRepository from '../repositories/appUsers.js';
 import type { AppUserCursor, AppUserSummary } from '../repositories/appUsers.js';
 import * as appUserTokensRepository from '../repositories/appUserTokens.js';
 import * as permissionsVersionRepository from '../repositories/permissionsVersion.js';
-import type { ActorContext } from './actorContext.js';
+import type { ActorContext, SiteActorContext, SiteRef } from './actorContext.js';
 import { endAllSignIns } from './appAuthSessions.js';
 import { isLinkConfigured, linkNotConfigured, requestLink } from './appUserLinks.js';
 import { recordAudit } from './audit.js';
 
-/** App users as administrators manage them (Users → App users). */
+/**
+ * App users as administrators manage them (Users → App users). Accounts belong to one site: every call is
+ * about the request's site, and another site's account reads as not found.
+ */
 
 export type AdminAppUserView = {
   id: string;
@@ -70,14 +73,14 @@ const decodeCursor = (value: string): AppUserCursor => {
   throw new AppError(400, 'INVALID_CURSOR', 'The cursor is not valid');
 };
 
-/** One page of app users, newest first, optionally searched by email or name. */
-export const listAppUsers = async (options: {
-  search?: string;
-  cursor?: string;
-  limit: number;
-}): Promise<AppUserPage> => {
+/** One page of the site's app users, newest first, optionally searched by email or name. */
+export const listAppUsers = async (
+  site: SiteRef,
+  options: { search?: string; cursor?: string; limit: number },
+): Promise<AppUserPage> => {
   const search = options.search?.trim() || undefined;
   const rows = await appUsersRepository.listPage({
+    siteId: site.id,
     search,
     cursor: options.cursor ? decodeCursor(options.cursor) : undefined,
     limit: options.limit + 1,
@@ -91,8 +94,8 @@ export const listAppUsers = async (options: {
   };
 };
 
-export const getAppUser = async (id: string): Promise<AdminAppUserView> => {
-  const row = await appUsersRepository.findSummaryById(id);
+export const getAppUser = async (site: SiteRef, id: string): Promise<AdminAppUserView> => {
+  const row = await appUsersRepository.findSummaryByIdInSite(id, site.id);
   if (!row) {
     throw notFound();
   }
@@ -117,12 +120,12 @@ export type UpdateAppUserInput = { blocked?: boolean; roleIds?: string[] };
  * account's tokens stop working at once, and role changes apply without waiting for a refresh.
  */
 export const updateAppUser = async (
-  context: ActorContext,
+  context: SiteActorContext,
   id: string,
   input: UpdateAppUserInput,
 ): Promise<AdminAppUserView> =>
   db.transaction().execute(async (trx) => {
-    const user = await appUsersRepository.lockById(id, trx);
+    const user = await appUsersRepository.lockByIdInSite(id, context.site.id, trx);
     if (!user) {
       throw notFound();
     }
@@ -186,9 +189,9 @@ export const deleteAppUserInTransaction = async (
   });
 };
 
-export const deleteAppUser = async (context: ActorContext, id: string): Promise<void> => {
+export const deleteAppUser = async (context: SiteActorContext, id: string): Promise<void> => {
   await db.transaction().execute(async (trx) => {
-    const user = await appUsersRepository.lockById(id, trx);
+    const user = await appUsersRepository.lockByIdInSite(id, context.site.id, trx);
     if (!user) {
       throw notFound();
     }
@@ -198,7 +201,7 @@ export const deleteAppUser = async (context: ActorContext, id: string): Promise<
 
 /** Sends a new confirmation email to an unconfirmed account. */
 export const resendConfirmation = async (
-  context: ActorContext,
+  context: SiteActorContext,
   config: AppAuthConfig,
   id: string,
 ): Promise<void> => {
@@ -206,7 +209,7 @@ export const resendConfirmation = async (
     throw linkNotConfigured('confirmation');
   }
   await db.transaction().execute(async (trx) => {
-    const user = await appUsersRepository.lockById(id, trx);
+    const user = await appUsersRepository.lockByIdInSite(id, context.site.id, trx);
     if (!user) {
       throw notFound();
     }

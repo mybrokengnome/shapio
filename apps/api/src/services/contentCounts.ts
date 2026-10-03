@@ -19,6 +19,7 @@ type Readable = { definition: ModelDefinition; policy: Policy };
 const countFiltered = async (context: ContentServiceContext, { definition, policy }: Readable) => {
   const rowFilter = compileRowFilter(policy.rowFilter, context.actor);
   const compiled = compileHeadQuery({
+    siteId: context.site.id,
     modelId: definition.id,
     source: { kind: 'heads', state: 'draft' },
     locales: readScopeFor(context.snapshot, definition, undefined, { fallback: true }),
@@ -44,6 +45,7 @@ export const countContent = async (
     .map((definition, index) => ({ definition, policy: policies[index] as Policy }))
     .filter((model) => model.policy.allowed);
   const grouped = await entriesRepository.countLiveByModel(
+    context.site.id,
     readable.filter((model) => model.policy.rowFilter === null).map((model) => model.definition.id),
     context.db,
   );

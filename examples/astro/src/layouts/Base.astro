@@ -1,0 +1,54 @@
+---
+import '../styles/site.css';
+import { getSiteSettings } from '../lib/shapio.js';
+import { articlesPath, colophonPath, HOME_SLUG, otherLocale, pagePath, stringsFor, type Locale } from '../lib/site.js';
+
+type Props = {
+  title: string;
+  description?: string | null;
+  locale: Locale;
+  /** This page in the other locale. */
+  alternatePath?: string;
+  noindex?: boolean;
+};
+
+const { title, description, locale, alternatePath, noindex = false } = Astro.props;
+const strings = stringsFor(locale);
+const other = otherLocale(locale);
+// The name, tagline and footer come from the siteSettings singleton (the built-in strings until it is published).
+const settings = await getSiteSettings(locale);
+const siteName = settings?.siteName ?? strings.siteName;
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · {siteName}</title>
+    {description ? <meta name="description" content={description} /> : null}
+    {noindex ? <meta name="robots" content="noindex" /> : null}
+    {alternatePath ? <link rel="alternate" hreflang={other} href={alternatePath} /> : null}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#content">{strings.skipToContent}</a>
+    <header class="site-header">
+      <a class="brand" href={pagePath(locale, HOME_SLUG)}>{siteName}</a>
+      {settings?.tagline ? <p class="tagline">{settings.tagline}</p> : null}
+      <nav aria-label="Main">
+        <a href={articlesPath(locale)}>{strings.articles}</a>
+        <a href={colophonPath(locale)}>{strings.colophon}</a>
+        <a href={alternatePath ?? pagePath(other, HOME_SLUG)} hreflang={other} lang={other}>{strings.switchTo}</a>
+      </nav>
+    </header>
+    <main id="content">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <p>{siteName} · {settings?.footer ?? 'Built with Shapio'} · Astro</p>
+    </footer>
+    {/* Visual editing (@shapio/visual) plugs in here: its script and the data-shapio attributes on content
+        arrive with Shapio's visual-editing SDK. */}
+  </body>
+</html>

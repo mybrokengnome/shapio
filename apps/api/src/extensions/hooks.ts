@@ -22,6 +22,7 @@ import { PermanentJobError, type JobHandler, type OutboxSubscriber } from '../jo
 import type { Principal } from '../permissions/types.js';
 import * as extensionHookRunsRepository from '../repositories/extensionHookRuns.js';
 import * as outboxEventsRepository from '../repositories/outboxEvents.js';
+import type { SiteRef } from '../services/actorContext.js';
 import {
   HookError,
   isHookError,
@@ -31,6 +32,7 @@ import {
   type HookModel,
   type ModelHooks,
 } from './public.js';
+import { servicesForSite } from './siteServices.js';
 
 /**
  * Project lifecycle hooks on top of the content hook engine (content/hooks.ts, ADR 0009):
@@ -103,6 +105,7 @@ const runBeforeHooks = async (
   }
   const shared = {
     event,
+    site: context.site,
     model: toHookModel(context.model.definition),
     entry: { id: context.entryId, locale: context.locale, state: ENTRY_STATE_BY_EVENT[event] },
     locale: context.locale,
@@ -110,7 +113,7 @@ const runBeforeHooks = async (
     before: toEntryData(context.model, context.before),
     principal: context.actor,
     trx: context.trx,
-    services: environment.services,
+    services: servicesForSite(environment.services, context.site),
     signal: environment.signal,
     reject,
   };
@@ -126,6 +129,8 @@ const runBeforeHooks = async (
 /** What the outbox event carries for the post-commit run (kept out of job payloads, which admins can see). */
 export type AfterHookEventPayload = {
   event: AfterEvent;
+  /** The entry's site (absent on events recorded before sites: the primary site). */
+  site?: SiteRef;
   model: HookModel;
   entry: HookEntry;
   data: EntryData | null;
@@ -143,6 +148,7 @@ const recordAfterHookPoint = async (
   }
   const payload: AfterHookEventPayload = {
     event,
+    site: context.site,
     model: toHookModel(context.model.definition),
     entry: { id: context.entryId, locale: context.locale, state: ENTRY_STATE_BY_EVENT[event] },
     data: toEntryData(context.model, context.data) ?? null,
@@ -154,6 +160,7 @@ const recordAfterHookPoint = async (
     aggregateType: 'entry',
     aggregateId: context.entryId,
     payload,
+    siteId: context.site.id,
   });
 };
 
@@ -211,8 +218,10 @@ export const createAfterHookJobHandler =
         job.log.info({ hook: name }, 'after hook already ran for this event; skipped');
         return { skipped: 'already ran' };
       }
+      const site = payload.site ?? environment.services.site;
       await matched.hook({
         event: payload.event,
+        site,
         model: payload.model,
         entry: payload.entry,
         locale: payload.entry.locale,
@@ -220,7 +229,7 @@ export const createAfterHookJobHandler =
         before: payload.before ?? undefined,
         principal: payload.principal,
         trx,
-        services: environment.services,
+        services: servicesForSite(environment.services, site),
         logger: job.log.child({ hook: name }),
         signal: job.signal,
         eventId,

@@ -122,20 +122,27 @@ export const createEntry = async (
   const patch = inputPatch(validator, model, policy.writeMask, input.data);
   const outcome = validated(validator, applyPatch(defaultsOf(model.definition), patch), false);
   const entryId = await runEntryWrite(context.db, model, [locale], async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = {
+      trx,
+      siteId: context.site.id,
+      model,
+      actor: context.actor,
+      now: new Date(),
+    };
     if (model.definition.kind === 'singleton') {
-      await contentGuardsRepository.lockModelRow(model.definition.id, trx);
-      if ((await entriesRepository.countLive(model.definition.id, trx)) > 0) {
+      await contentGuardsRepository.lockSingleton(model.definition.id, context.site.id, trx);
+      if ((await entriesRepository.countLive(model.definition.id, context.site.id, trx)) > 0) {
         throw singletonExists(modelKey);
       }
     }
-    await assertTargets(trx, outcome);
+    await assertTargets(trx, outcome, context.site.id);
     const entry = await entriesRepository.insert(
       { siteId: context.site.id, modelId: model.definition.id, ...ownerOf(context) },
       trx,
     );
     const hook = {
       trx,
+      site: context.site,
       model,
       entryId: entry.id,
       locale,
@@ -151,10 +158,19 @@ export const createEntry = async (
       mode: 'revision',
       reason: 'create',
     });
-    await writeEntryEvent(trx, model, 'entry.created', entry.id, { locale, revisionId: draft.revision_id });
+    await writeEntryEvent(trx, context.site.id, model, 'entry.created', entry.id, {
+      locale,
+      revisionId: draft.revision_id,
+    });
     if (publish) {
       await publishLocalesInTransaction(
-        { write, snapshot: context.snapshot, hooks: context.hooks, seq: publishSeqOf(context, trx) },
+        {
+          write,
+          site: context.site,
+          snapshot: context.snapshot,
+          hooks: context.hooks,
+          seq: publishSeqOf(context, trx),
+        },
         entry.id,
         [locale],
         [draft],
@@ -251,7 +267,13 @@ const saveDraftChanges = async (
   if (!write.model.definition.draftAndPublish) {
     const heads = await entryHeadsRepository.lockForEntry(entryId, write.trx);
     await publishLocalesInTransaction(
-      { write, snapshot: context.snapshot, hooks: context.hooks, seq: publishSeqOf(context, write.trx) },
+      {
+        write,
+        site: context.site,
+        snapshot: context.snapshot,
+        hooks: context.hooks,
+        seq: publishSeqOf(context, write.trx),
+      },
       entryId,
       changes.map((change) => change.locale),
       heads,
@@ -273,11 +295,17 @@ export const updateEntry = async (
   const patch = inputPatch(validator, model, policy.writeMask, input.data);
   let servedLocale = locale;
   await runEntryWrite(context.db, model, [locale], async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = {
+      trx,
+      siteId: context.site.id,
+      model,
+      actor: context.actor,
+      now: new Date(),
+    };
     assertEntryVisible(
       policy,
       context.actor,
-      await entriesRepository.lockLive(id, model.definition.id, trx),
+      await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
@@ -299,9 +327,10 @@ export const updateEntry = async (
     }
     const before = previous?.data ?? newLocaleBase(model, heads);
     const outcome = validated(validator, applyPatch(before, patch), autosave);
-    await assertTargets(trx, outcome);
+    await assertTargets(trx, outcome, context.site.id);
     const hook = {
       trx,
+      site: context.site,
       model,
       entryId: id,
       locale: targetLocale,
@@ -321,7 +350,7 @@ export const updateEntry = async (
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
     if (!autosave) {
-      await writeEntryEvent(trx, model, 'entry.updated', id, {
+      await writeEntryEvent(trx, context.site.id, model, 'entry.updated', id, {
         locale: targetLocale,
         locales: changes.map((change) => change.locale),
         revisionId: written[0]?.revision_id ?? null,
@@ -348,11 +377,17 @@ export const restoreRevision = async (
   }
   const validator = buildValidator(context.snapshot, model);
   await runEntryWrite(context.db, model, [revision.locale], async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = {
+      trx,
+      siteId: context.site.id,
+      model,
+      actor: context.actor,
+      now: new Date(),
+    };
     assertEntryVisible(
       policy,
       context.actor,
-      await entriesRepository.lockLive(id, model.definition.id, trx),
+      await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
@@ -367,7 +402,7 @@ export const restoreRevision = async (
       model.definition.fields,
       changedSharedFieldIds(model.definition, previous.data, outcome.data),
     );
-    await assertTargets(trx, outcome);
+    await assertTargets(trx, outcome, context.site.id);
     const changes = draftChanges(model, heads, {
       locale: revision.locale,
       previous,
@@ -378,7 +413,7 @@ export const restoreRevision = async (
     await saveDraftChanges(context, write, id, changes, 'restore');
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
-    await writeEntryEvent(trx, model, 'entry.restored', id, {
+    await writeEntryEvent(trx, context.site.id, model, 'entry.restored', id, {
       locale: revision.locale,
       fromRevisionId: revisionId,
     });
@@ -399,7 +434,7 @@ export const deleteEntry = async (
     assertEntryVisible(
       policy,
       context.actor,
-      await entriesRepository.lockLive(id, model.definition.id, trx),
+      await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const referrers = await relationEdgesRepository.findReferrers(id, 10, trx);
@@ -413,7 +448,7 @@ export const deleteEntry = async (
         })),
       );
     }
-    const hook = { trx, model, entryId: id, locale: null, actor: context.actor };
+    const hook = { trx, site: context.site, model, entryId: id, locale: null, actor: context.actor };
     await context.hooks.run('beforeDelete', hook);
     const wasPublished = await publicationsRepository.hasOpen(id, trx);
     const seq = wasPublished
@@ -429,7 +464,7 @@ export const deleteEntry = async (
     await uniqueValuesRepository.removeForEntry(id, trx);
     await mediaReferencesService.removeReferences(trx, { entryId: id });
     await entriesRepository.softDelete(id, now, trx);
-    await writeEntryEvent(trx, model, 'entry.deleted', id, { wasPublished, snapshot: seq });
+    await writeEntryEvent(trx, context.site.id, model, 'entry.deleted', id, { wasPublished, snapshot: seq });
     await auditEntry(trx, context, model, 'content.delete', id, { wasPublished, snapshot: seq });
     await context.hooks.run('afterDelete', hook);
   });
@@ -453,11 +488,17 @@ export const duplicateEntry = async (
   const unique = new Set(uniqueFields(model.definition).map((field) => field.id));
   let firstLocale: string | undefined;
   const newId = await runEntryWrite(context.db, model, [], async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = {
+      trx,
+      siteId: context.site.id,
+      model,
+      actor: context.actor,
+      now: new Date(),
+    };
     assertEntryVisible(
       read.policy,
       context.actor,
-      await entriesRepository.findLive(id, model.definition.id, trx),
+      await entriesRepository.findLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const drafts = (await entryHeadsRepository.findForEntry(id, trx)).filter(
@@ -471,7 +512,7 @@ export const duplicateEntry = async (
       const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
       assertWritable(policy.writeMask, model.definition.fields, Object.keys(copy));
       const outcome = validated(validator, copy, true);
-      await assertTargets(trx, outcome);
+      await assertTargets(trx, outcome, context.site.id);
       await writeDraft(write, {
         entryId: entry.id,
         locale: draft.locale,
@@ -482,7 +523,7 @@ export const duplicateEntry = async (
       });
       firstLocale ??= draft.locale;
     }
-    await writeEntryEvent(trx, model, 'entry.created', entry.id, { duplicateOf: id });
+    await writeEntryEvent(trx, context.site.id, model, 'entry.created', entry.id, { duplicateOf: id });
     return entry.id;
   });
   return viewAfterWrite(context, model, policy, newId, firstLocale);

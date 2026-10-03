@@ -76,6 +76,8 @@ const commitLocaleChange = async <T>(
       aggregateType: 'locale',
       aggregateId: change.code,
       payload: metadata,
+      // Locales are instance-wide: a network event.
+      siteId: null,
     });
     await publishSchemaChanged(trx, schemaVersion);
     return result;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { LightMyRequestResponse } from 'fastify';
 import { API_TOKEN_DISPLAY_LENGTH, API_TOKEN_PREFIX } from '../../src/constants/auth.js';
+import { PRIMARY_SITE_ID } from '../../src/constants/sites.js';
 import { createContentPorts } from '../../src/content/ports.js';
 import type { Database } from '../../src/db/index.js';
 import { generateToken, hashToken } from '../../src/helpers/tokens.js';
@@ -70,8 +71,16 @@ export const createRole = async (db: Database, kind: 'admin' | 'delivery', grant
 export const roleKeyOf = async (db: Database, roleId: string): Promise<string> =>
   (await adminRolesRepository.findById(roleId, db))?.key ?? '';
 
-/** An API token bound to a role ID. */
+/**
+ * An API token bound to a role ID, with the site the service would give it: a delivery token belongs to the
+ * primary site (delivery tokens always have a site), an admin token is a network token (no site), as when a
+ * network admin creates it.
+ */
 export const createTokenForRole = async (db: Database, roleId: string): Promise<string> => {
+  const role = await adminRolesRepository.findById(roleId, db);
+  if (!role) {
+    throw new Error(`No role ${roleId}`);
+  }
   const token = `${API_TOKEN_PREFIX}${generateToken()}`;
   await apiTokensRepository.insert(
     {
@@ -79,6 +88,7 @@ export const createTokenForRole = async (db: Database, roleId: string): Promise<
       token_hash: hashToken(token),
       token_prefix: token.slice(0, API_TOKEN_DISPLAY_LENGTH),
       role_id: roleId,
+      site_id: role.kind === 'delivery' ? PRIMARY_SITE_ID : null,
     },
     db,
   );

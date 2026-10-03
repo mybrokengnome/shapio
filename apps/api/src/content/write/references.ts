@@ -11,19 +11,22 @@ type Executor = Kysely<DB> | Transaction<DB>;
 type TargetOutcome = { relations: readonly RelationReference[]; media: readonly MediaReferenceCheck[] };
 
 /**
+ * `siteId`: the site of the entry being written. Relation targets and media must be on it (sites plan §H:
+ * nothing crosses sites); another site's entry or asset is reported as missing, never as existing elsewhere.
  * `lock`: in a write transaction, media rows are held FOR SHARE until commit so an asset cannot be deleted
  * between the check and the reference rows the write adds. Read-only checks (the publish pre-flight) pass
  * `false` and take no locks.
  */
-export type TargetCheckOptions = { lock: boolean };
+export type TargetCheckOptions = { siteId: string; lock: boolean };
 
 /**
- * Relation values must point at live entries of the field's target model (brief §4: invalid relation
- * targets are rejected). The target may be a draft.
+ * Relation values must point at live entries of the field's target model on the same site (brief §4:
+ * invalid relation targets are rejected). The target may be a draft.
  */
 const findRelationIssues = async (
   executor: Executor,
   references: readonly RelationReference[],
+  siteId: string,
 ): Promise<ContentIssue[]> => {
   const byModel = new Map<string, Set<string>>();
   for (const reference of references) {
@@ -33,7 +36,7 @@ const findRelationIssues = async (
   }
   const live = new Set<string>();
   for (const [modelId, ids] of byModel) {
-    (await entriesRepository.findLiveIds(modelId, [...ids], executor)).forEach((id) =>
+    (await entriesRepository.findLiveIds(modelId, [...ids], siteId, executor)).forEach((id) =>
       live.add(`${modelId}:${id}`),
     );
   }
@@ -43,7 +46,7 @@ const findRelationIssues = async (
       .map((id) => ({
         path: reference.path,
         code: 'RELATION_TARGET_MISSING' as const,
-        message: `entry ${id} does not exist in the target model`,
+        message: `entry ${id} does not exist in the target model on this site`,
       })),
   );
 };
@@ -52,7 +55,7 @@ const findRelationIssues = async (
 const findMediaIssues = async (
   executor: Executor,
   checks: readonly MediaReferenceCheck[],
-  { lock }: TargetCheckOptions,
+  { lock, siteId }: TargetCheckOptions,
 ): Promise<ContentIssue[]> => {
   const ids = [...new Set(checks.flatMap((check) => check.assetIds))];
   if (ids.length === 0) {
@@ -60,14 +63,20 @@ const findMediaIssues = async (
   }
   const rows =
     lock && executor.isTransaction
-      ? await contentGuardsRepository.lockLiveMedia(ids, executor as Transaction<DB>)
-      : await contentGuardsRepository.findLiveMedia(ids, executor);
+      ? await contentGuardsRepository.lockLiveMedia(ids, siteId, executor as Transaction<DB>)
+      : await contentGuardsRepository.findLiveMedia(ids, siteId, executor);
   const live = new Map(rows.map((row) => [row.id, row.mime_type]));
   return checks.flatMap((check) =>
     check.assetIds.flatMap((id): ContentIssue[] => {
       const mimeType = live.get(id);
       if (mimeType === undefined) {
-        return [{ path: check.path, code: 'MEDIA_MISSING', message: `media asset ${id} does not exist` }];
+        return [
+          {
+            path: check.path,
+            code: 'MEDIA_MISSING',
+            message: `media asset ${id} does not exist on this site`,
+          },
+        ];
       }
       if (check.allowedKinds && !check.allowedKinds.includes(mediaKindOf(mimeType))) {
         return [
@@ -89,13 +98,16 @@ export const findTargetIssues = async (
   outcome: TargetOutcome,
   options: TargetCheckOptions,
 ): Promise<ContentIssue[]> => [
-  ...(await findRelationIssues(executor, outcome.relations)),
+  ...(await findRelationIssues(executor, outcome.relations, options.siteId)),
   ...(await findMediaIssues(executor, outcome.media, options)),
 ];
 
-/** Relation and media targets of a validated document, checked (and media locked) in the write transaction. */
-export const assertTargets = async (trx: Transaction<DB>, outcome: TargetOutcome) => {
-  const issues = await findTargetIssues(trx, outcome, { lock: true });
+/**
+ * Relation and media targets of a validated document on the entry's site, checked (and media locked) in the
+ * write transaction.
+ */
+export const assertTargets = async (trx: Transaction<DB>, outcome: TargetOutcome, siteId: string) => {
+  const issues = await findTargetIssues(trx, outcome, { siteId, lock: true });
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }

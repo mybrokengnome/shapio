@@ -25,6 +25,11 @@ export type AccessTokenClaims = {
   tv: number;
   /** Refresh-token family (one sign-in). */
   sid: string;
+  /**
+   * The account's site ID (sites plan §H). App users belong to one site; a request for another site is
+   * refused (403 `SITE_MISMATCH`). Tokens without it (issued before sites) are invalid: the app refreshes.
+   */
+  site: string;
 };
 
 const HEADER = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -59,7 +64,8 @@ const parseClaims = (payload: string): AccessTokenClaims | undefined => {
     isStringArray(claims.roles) &&
     Number.isInteger(claims.pv) &&
     Number.isInteger(claims.tv) &&
-    typeof claims.sid === 'string';
+    typeof claims.sid === 'string' &&
+    typeof claims.site === 'string';
   return valid ? (claims as AccessTokenClaims) : undefined;
 };
 

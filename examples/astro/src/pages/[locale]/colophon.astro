@@ -1,0 +1,19 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSiteSettings } from '../../lib/shapio.js';
+import { colophonPath, LOCALES, otherLocale, stringsFor, type Locale } from '../../lib/site.js';
+
+/** The singleton page: the siteSettings entry's colophon, one per locale. */
+export const getStaticPaths = () => LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+
+type Props = { locale: Locale };
+const { locale } = Astro.props;
+const strings = stringsFor(locale);
+const settings = await getSiteSettings(locale);
+---
+
+<Base title={strings.colophon} locale={locale} alternatePath={colophonPath(otherLocale(locale))}>
+  <h1 class="page-title">{strings.colophon}</h1>
+  {settings?.tagline ? <p class="lead">{settings.tagline}</p> : null}
+  <div class="prose" set:html={settings?.colophon?.html ?? ''} />
+</Base>

@@ -15,6 +15,7 @@ import {
   type SiteAction,
   type PermissionEvaluator,
   type Principal,
+  type TokenPrincipal,
 } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminSessionsRepository from '../repositories/adminSessions.js';
@@ -35,6 +36,14 @@ export const requireAdminPrincipal = (principal: Principal): AdminPrincipal => {
     throw new AppError(401, 'UNAUTHENTICATED', 'Sign in to continue');
   }
   return principal;
+};
+
+/** An admin user or an admin-scope API token (what `requireAdmin` lets through). */
+export const requireAdminOrAdminToken = (principal: Principal): AdminPrincipal | TokenPrincipal => {
+  if (principal.kind === 'admin' || (principal.kind === 'token' && principal.scope === 'admin')) {
+    return principal;
+  }
+  throw new AppError(403, 'FORBIDDEN', 'This needs an admin account or an admin API token');
 };
 
 type LoginInput = {
@@ -59,7 +68,7 @@ export const login = async (input: LoginInput): Promise<AuthenticatedSession> =>
   if (!valid || !usable) {
     await recordAudit(db, {
       ...audit,
-      actor: { kind: 'anonymous' },
+      actor: { kind: 'anonymous', siteId: null },
       action: 'auth.login',
       outcome: 'failure',
       ...(user ? { target: { type: 'admin_user', id: user.id } } : {}),

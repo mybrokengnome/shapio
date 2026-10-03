@@ -35,9 +35,15 @@ export type AdminPrincipal = {
   networkRoleIds: readonly string[];
 };
 
+/**
+ * An app user: an end user of one site (sites plan §H). `roleIds`: the custom app roles assigned to the
+ * account; the roles bound to the site's `authenticated` audience (`site_app_roles`) apply on top.
+ * `siteId`: the account's site, from the access token's `site` claim; the account acts on no other site.
+ */
 export type AppUserPrincipal = {
   kind: 'appUser';
   appUserId: string;
+  siteId: string;
   roleIds: readonly string[];
 };
 
@@ -54,7 +60,12 @@ export type TokenPrincipal = {
   siteId: string | null;
 };
 
-export type AnonymousPrincipal = { kind: 'anonymous' };
+/**
+ * A caller without credentials. On a site route `siteId` is the request's site, and the roles bound to the
+ * site's `public` audience (`site_app_roles`) apply. Null before site resolution and on network routes,
+ * where an anonymous caller holds no role at all.
+ */
+export type AnonymousPrincipal = { kind: 'anonymous'; siteId: string | null };
 
 /** Work Shapio does on its own behalf: scheduled jobs, migrations, the worker. Never derived from a request. */
 export type SystemPrincipal = { kind: 'system'; component: string };

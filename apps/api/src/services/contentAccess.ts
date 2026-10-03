@@ -50,7 +50,10 @@ export const modelWithPolicy = async (
   return { model, policy };
 };
 
-/** Entries outside the caller's row filter look like missing entries (no existence oracle). */
+/**
+ * Entries outside the caller's row filter look like missing entries (no existence oracle). Another site's
+ * entry never gets here: every lookup that feeds this is scoped to the request's site and reads it as missing.
+ */
 export const assertEntryVisible = (
   policy: Policy,
   actor: Principal,
@@ -71,15 +74,17 @@ export type EntryEvent =
   | 'entry.unpublished'
   | 'entry.restored';
 
-/** The outbox event of a content change, in the change's transaction (ADR 0007). */
+/** The outbox event of a content change on a site, in the change's transaction (ADR 0007). */
 export const writeEntryEvent = (
   trx: Transaction<DB>,
+  siteId: string,
   model: ContentModel,
   type: EntryEvent,
   entryId: string,
   payload: Record<string, unknown>,
 ) =>
   writeOutboxEvent(trx, {
+    siteId,
     type,
     aggregateType: 'entry',
     aggregateId: entryId,
@@ -100,6 +105,7 @@ export const auditEntry = (
     action,
     target: { type: 'entry', id: entryId },
     metadata: { modelId: model.definition.id, modelKey: model.definition.apiKey, ...metadata },
+    site: context.site,
     ...(context.requestId ? { requestId: context.requestId } : {}),
     ...(context.ip ? { ip: context.ip } : {}),
   });

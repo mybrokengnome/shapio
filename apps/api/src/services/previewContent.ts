@@ -21,7 +21,6 @@ import type { ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters, deliveryEnvironment, readEntryPage, readOneEntry } from './contentDelivery.js';
 import { parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
-import { getSiteRef } from './sites.js';
 
 /**
  * `/api/preview/content/:modelKey[/:id]` (brief §7): DRAFT content for a site's preview, in the delivery
@@ -134,9 +133,12 @@ const authorize = async (
     deliveryRoleId: token.delivery_role_id,
     siteId: token.site_id,
   });
-  // The preview token's site is the request's site, whatever the request named (the credential wins).
-  const site = await getSiteRef(token.site_id, runtime.db);
-  const context: ContentServiceContext = { ...base, actor: creator, permissions, site };
+  // The preview token's site is the request's site (the routes resolve it from the token); a token of another
+  // site never reads here.
+  if (base.site.id !== token.site_id) {
+    throw new AppError(403, 'SITE_MISMATCH', 'This preview token belongs to another site');
+  }
+  const context: ContentServiceContext = { ...base, actor: creator, permissions };
   const policy = await permissions.evaluate(creator, { action: 'read', modelId: model.definition.id });
   if (!policy.allowed) {
     throw new AppError(403, 'FORBIDDEN', `The preview token may not read "${request.modelKey}"`);
@@ -153,8 +155,8 @@ const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
   return scope.token.locale ? { ...query, locale: scope.token.locale } : query;
 };
 
-const entryCondition = (token: PreviewTokenSummary) =>
-  token.entry_id ? [sql`h.entry_id = ${token.entry_id}::uuid`] : [];
+/** A preview token reads its one entry only. */
+const entryCondition = (token: PreviewTokenSummary) => [sql`h.entry_id = ${token.entry_id}::uuid`];
 
 const readOf = (scope: PreviewScope, executor: ReadEnvironment['executor'], query: ContentQuery) => ({
   context: scope.context,
@@ -197,7 +199,7 @@ export const getPreview = async (
 ) => {
   assertItemParameters(request.rawQuery, ITEM_PARAMETERS);
   const scope = await authorize(runtime, base, fields, request);
-  if (scope.token.entry_id && scope.token.entry_id !== request.id) {
+  if (scope.token.entry_id !== request.id) {
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another entry');
   }
   const query = scopedQuery(scope, request.rawQuery);

@@ -1,4 +1,5 @@
 import { ShapioApiError } from './errors.js';
+import { applySite } from './site.js';
 
 /** Fetch's `credentials` mode (spelled out: the DOM lib type is not available to Node consumers). */
 export type FetchCredentials = 'omit' | 'same-origin' | 'include';
@@ -13,6 +14,8 @@ export type RequestConfig = {
   fetch: typeof globalThis.fetch;
   credentials: FetchCredentials | undefined;
   headers: (() => Readonly<Record<string, string>>) | undefined;
+  /** The site key every request names (see site.ts); undefined: the credential's site, else the primary. */
+  site: string | undefined;
 };
 
 const parseBody = async (response: Response): Promise<unknown> => {
@@ -28,10 +31,25 @@ const parseBody = async (response: Response): Promise<unknown> => {
 };
 
 /** Builds the JSON request function every endpoint group uses. Non-2xx responses throw ShapioApiError. */
-export const createRequest = ({ baseUrl, token, fetch, credentials, headers }: RequestConfig): RequestFn => {
+export const createRequest = ({
+  baseUrl,
+  token,
+  fetch,
+  credentials,
+  headers,
+  site,
+}: RequestConfig): RequestFn => {
   const origin = baseUrl.replace(/\/+$/, '');
-  return async <T>(path: string, { method = 'GET', body, signal }: RequestOptions = {}): Promise<T> => {
-    const requestHeaders: Record<string, string> = { accept: 'application/json', ...headers?.() };
+  return async <T>(
+    requestPath: string,
+    { method = 'GET', body, signal }: RequestOptions = {},
+  ): Promise<T> => {
+    const { path, headers: siteHeaders } = applySite(site, method, requestPath);
+    const requestHeaders: Record<string, string> = {
+      accept: 'application/json',
+      ...siteHeaders,
+      ...headers?.(),
+    };
     if (token) {
       requestHeaders.authorization = `Bearer ${token}`;
     }

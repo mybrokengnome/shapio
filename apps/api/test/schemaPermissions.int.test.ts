@@ -51,7 +51,7 @@ describe('field visibility from the schema registry (public flags)', () => {
     const [title, notes] = model.definition.fields;
 
     const evaluator = createPermissionEvaluator({
-      grants: { getGrants: async () => [readEverything] },
+      grants: { getGrants: async () => [readEverything], getSiteAppRoleIds: async () => [] },
       fields: createSchemaFieldVisibility(testApp.app.schemaRegistry),
     });
     const delivery = principalFactory.token({ scope: 'delivery', roleId: 'delivery-role' });

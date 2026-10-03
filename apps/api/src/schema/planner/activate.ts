@@ -11,7 +11,11 @@ import type { Database } from '../../db/index.js';
 import type { DB } from '../../db/types.js';
 import { writeOutboxEvent } from '../../jobs/outbox.js';
 import type { Principal } from '../../permissions/types.js';
-import { createSeqAllocator } from '../../repositories/publications.js';
+import {
+  createSeqAllocator,
+  type SeqAllocator,
+  type SnapshotSource,
+} from '../../repositories/publications.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import * as schemaVersionsRepository from '../../repositories/schemaVersions.js';
@@ -55,9 +59,9 @@ export type ActivationRequest = {
   /** The change set shipping this activation (publication ledger, audit). */
   changeSetId?: string;
   /**
-   * The site whose publication sequence the activation's number comes from: the change set's site. Without
-   * one, the primary site. Allocating one number per affected site belongs to the content engine package
-   * (sites plan §H, G2); until then conversions on other sites are numbered on this site.
+   * The change set's site (the origin of the activation). Content converted on other sites takes a number
+   * on each of them (`source: 'conversion'`, naming the change set); without a change set every affected
+   * site's number is a `schema` snapshot.
    */
   siteId?: string;
   afterFlip?: AfterFlip;
@@ -198,6 +202,8 @@ const recordActivation = async (
     aggregateType: isComponent ? 'component' : 'model',
     aggregateId: plan.definitionId,
     payload: metadata,
+    // The schema is shared by every site: a network event.
+    siteId: null,
   });
   await enqueueFollowUps(trx, plan, `${plan.definitionId}:${result.schemaVersion}`);
 };
@@ -247,30 +253,55 @@ export const activateDefinitions = async (
 
 /**
  * An activation that changes live content (converted published heads roll their log rows) or ships a change
- * set is a publication snapshot (ledger row `schema` or `change_set`, with the schema version it activated).
- * The number is taken on first use (a change set's publications, an entry-level conversion) or at the end,
- * and deferred work then runs with it. A metadata-only activation (a label rename) takes no number: live
- * content and every API response stay exactly as they were (brief §10).
+ * set is a publication snapshot on every site it changes (sites plan §H: one snapshot per affected site),
+ * with the schema version it activated. The ledger row of the change set's own site is `change_set`; other
+ * sites' rows are `conversion` and name the change set; without a change set every row is `schema`. Each
+ * site's number is taken on first use (a change set's publications, an entry-level conversion) or at the
+ * end, under the schema lock, and that site's deferred work then runs with it. Activations are serialised
+ * by the schema lock and every other publisher holds one site's sequence row at most, so taking several
+ * sites' rows in first-use order cannot deadlock. A metadata-only activation (a label rename) takes no
+ * number anywhere: live content and every API response stay exactly as they were (brief §10).
  */
 const createActivationContext = (trx: Transaction<DB>, request: ActivationRequest) => {
-  const deferred: Array<(seq: number) => Promise<void>> = [];
+  const origin = request.siteId ?? PRIMARY_SITE_ID;
+  const allocators = new Map<string, SeqAllocator>();
+  const deferred = new Map<string, Array<(seq: number) => Promise<void>>>();
+  const sourceFor = (siteId: string): SnapshotSource => {
+    if (!request.changeSetId) {
+      return 'schema';
+    }
+    return siteId === origin ? 'change_set' : 'conversion';
+  };
+  const seqFor = (siteId: string): SeqAllocator => {
+    let allocator = allocators.get(siteId);
+    if (!allocator) {
+      allocator = createSeqAllocator(trx, siteId, {
+        source: sourceFor(siteId),
+        changeSetId: request.changeSetId ?? null,
+        actor: actorColumns(request.actor),
+      });
+      allocators.set(siteId, allocator);
+    }
+    return allocator;
+  };
   const activation: ActivationContext = {
-    seq: createSeqAllocator(trx, request.siteId ?? PRIMARY_SITE_ID, {
-      source: request.changeSetId ? 'change_set' : 'schema',
-      changeSetId: request.changeSetId ?? null,
-      actor: actorColumns(request.actor),
-    }),
-    atSeq: (work) => {
-      deferred.push(work);
+    seq: seqFor(origin),
+    seqFor,
+    atSeq: (siteId, work) => {
+      deferred.set(siteId, [...(deferred.get(siteId) ?? []), work]);
     },
   };
   const finish = async () => {
-    if (deferred.length === 0 && !request.changeSetId && activation.seq.taken() === undefined) {
-      return;
-    }
-    const seq = await activation.seq.next();
-    for (const work of deferred) {
-      await work(seq);
+    const sites = new Set([
+      ...deferred.keys(),
+      ...[...allocators].filter(([, allocator]) => allocator.taken() !== undefined).map(([siteId]) => siteId),
+      ...(request.changeSetId ? [origin] : []),
+    ]);
+    for (const siteId of [...sites].sort()) {
+      const seq = await seqFor(siteId).next();
+      for (const work of deferred.get(siteId) ?? []) {
+        await work(seq);
+      }
     }
   };
   return { activation, finish };

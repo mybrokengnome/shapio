@@ -15,6 +15,7 @@ import type {
   StepOutcome,
 } from './contentPorts.js';
 import { buildFieldIndex, dropFieldIndex } from './indexes.js';
+import { createFieldIndexLayoutHandler, FIELD_INDEX_LAYOUT_JOB } from './indexLayout.js';
 import type { ChangePlan } from './plan.js';
 import {
   SCHEMA_CHANGE_JOB,
@@ -237,4 +238,5 @@ const createFollowUpHandler =
 export const createSchemaJobHandlers = (deps: HandlerDeps): Array<[string, JobHandler]> => [
   [SCHEMA_CHANGE_JOB, createSchemaChangeHandler(deps)],
   [SCHEMA_FOLLOW_UP_JOB, createFollowUpHandler(deps)],
+  [FIELD_INDEX_LAYOUT_JOB, createFieldIndexLayoutHandler(deps.db)],
 ];

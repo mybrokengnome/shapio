@@ -34,6 +34,7 @@ Give the agent its own role, so its token can do only what you want it to.
 ```sh
 npx shapio mcp                      # all three clients
 npx shapio mcp --client claude-code
+npx shapio mcp --site marketing     # a multi-site instance: work on the marketing site
 ```
 
 Replace `<admin API token>` with the token from step 1.
@@ -66,12 +67,16 @@ claude mcp add shapio --env SHAPIO_URL=https://cms.example.com --env "SHAPIO_TOK
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `--media-root <dir>` | The only directory `media_upload` reads files from (symlinks are resolved). Default: the directory the server starts in.     |
 | `--allow-ship`       | Also offers the `change_sets_ship` tool. This is a guard in the client only: the token's role must also hold `changes.ship`. |
+| `--site <key>`       | The site to work on; overrides `SHAPIO_SITE`.                                                                                |
 
 Keep `--allow-ship` off unless you want the agent to ship when you ask it to. Content an agent reads (an entry, a
 web page) can contain instructions, and the agent might follow them. Leaving out the tool and leaving out
 `changes.ship` from the role means it cannot ship even then.
 
-`SHAPIO_SITE` is reserved for multi-site instances and not read yet.
+On an instance with several sites, set `SHAPIO_SITE` (or pass `--site <key>`) to the site the agent works on;
+every request then sends it as the `Shapio-Site` header. Without it the agent works on its token's site, else
+the primary site. A token created on one site cannot reach another (`403 SITE_MISMATCH`). `shapio mcp --site
+<key>` adds `SHAPIO_SITE` to the printed configuration.
 
 ## What the agent can do
 

@@ -1,10 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { toActorContext, toSiteActorContext } from '../helpers/requestContext.js';
+import { toSiteActorContext } from '../helpers/requestContext.js';
 import type { CreateTokenBody } from '../routes/admin/tokens/schemas.js';
 import type { IdParams } from '../routes/schemas/adminIdentity.js';
 import * as apiTokensService from '../services/apiTokens.js';
 
-export const listTokens = async () => apiTokensService.listApiTokens();
+export const listTokens = async (request: FastifyRequest) =>
+  apiTokensService.listApiTokens(toSiteActorContext(request), request.server.permissions);
 
 export const createToken = async (
   request: FastifyRequest<{ Body: CreateTokenBody }>,
@@ -25,6 +26,10 @@ export const createToken = async (
 };
 
 export const revokeToken = async (request: FastifyRequest<{ Params: IdParams }>, reply: FastifyReply) => {
-  await apiTokensService.revokeApiToken(toActorContext(request), request.params.id);
+  await apiTokensService.revokeApiToken(
+    toSiteActorContext(request),
+    request.server.permissions,
+    request.params.id,
+  );
   return reply.code(204).send();
 };

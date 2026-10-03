@@ -13,7 +13,7 @@ const PreviewTokenSchema = Type.Object({
   tokenPrefix: Type.String(),
   modelId: UuidSchema,
   modelKey: NullableString,
-  entryId: Type.Union([UuidSchema, Type.Null()]),
+  entryId: UuidSchema,
   locale: NullableString,
   connectionId: Type.Union([UuidSchema, Type.Null()]),
   deliveryRoleId: Type.Union([UuidSchema, Type.Null()]),
@@ -39,7 +39,8 @@ export const listPreviewTokensSchema = {
 export const CreatePreviewTokenBodySchema = Type.Object(
   {
     modelKey: ModelKeySchema,
-    entryId: Type.Optional(UuidSchema),
+    /** A preview token previews one entry of the request's site. */
+    entryId: UuidSchema,
     locale: Type.Optional(LocaleCodeSchema),
     ttlSeconds: Type.Optional(Type.Integer({ minimum: 60, maximum: 30 * 24 * 60 * 60 })),
     connectionId: Type.Optional(UuidSchema),

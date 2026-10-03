@@ -149,7 +149,7 @@ export const importEntry = async (
   const validated = validateHeads(snapshot, model, entry);
   const locales = [...new Set(entry.heads.map((head) => head.locale))];
   return runEntryWrite(context.db, model, locales, async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = { trx, siteId: context.siteId, model, actor: context.actor, now: new Date() };
     let target = await transferImportRepository.lockEntry(entry.id, trx);
     if (!target) {
       // Normally created by the job's entries pass (with its owner); this covers a single-entry retry.
@@ -164,10 +164,14 @@ export const importEntry = async (
     if (classification.kind === 'unchanged') {
       return 'unchanged';
     }
-    await assertTargets(trx, {
-      relations: validated.flatMap(({ outcome }) => outcome.relations),
-      media: validated.flatMap(({ outcome }) => outcome.media),
-    });
+    await assertTargets(
+      trx,
+      {
+        relations: validated.flatMap(({ outcome }) => outcome.relations),
+        media: validated.flatMap(({ outcome }) => outcome.media),
+      },
+      context.siteId,
+    );
     await writeRevisions(trx, model, entry);
     const existing = new Map(heads.map((head) => [headKey(head), head]));
     const step: PublicationStep = { siteId: context.siteId, seq: undefined };

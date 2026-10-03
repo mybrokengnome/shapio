@@ -5,11 +5,13 @@ import { safeEqual } from '../../helpers/tokens.js';
  * The OAuth round trip's state, kept in a short-lived signed httpOnly cookie on the browser that started
  * it: the `state` parameter (CSRF on the callback), the PKCE verifier, where to send the app afterwards and
  * the app's own S256 challenge (bound to the one-time login code, so only the app that started the sign-in
- * can exchange it). Binding to the browser stops login CSRF (an attacker's callback URL is useless in a
+ * can exchange it) and the site the sign-in is for (the provider's redirect names no site, so the callback
+ * takes it from here). Binding to the browser stops login CSRF (an attacker's callback URL is useless in a
  * victim's browser).
  */
 export type OAuthState = {
   provider: string;
+  siteId: string;
   state: string;
   codeVerifier: string;
   redirectTo: string;
@@ -23,18 +25,12 @@ const randomValue = () => randomBytes(32).toString('base64url');
 export const codeChallengeOf = (verifier: string): string =>
   createHash('sha256').update(verifier).digest('base64url');
 
-export const newOAuthState = (
-  provider: string,
-  redirectTo: string,
-  appCodeChallenge: string,
-  ttlMs: number,
-  now = Date.now(),
-): OAuthState => ({
-  provider,
+export type NewOAuthStateInput = Pick<OAuthState, 'provider' | 'siteId' | 'redirectTo' | 'appCodeChallenge'>;
+
+export const newOAuthState = (input: NewOAuthStateInput, ttlMs: number, now = Date.now()): OAuthState => ({
+  ...input,
   state: randomValue(),
   codeVerifier: randomValue(),
-  redirectTo,
-  appCodeChallenge,
   expiresAt: now + ttlMs,
 });
 
@@ -50,6 +46,7 @@ const parse = (payload: string): OAuthState | undefined => {
     const value = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<OAuthState>;
     const valid =
       typeof value.provider === 'string' &&
+      typeof value.siteId === 'string' &&
       typeof value.state === 'string' &&
       typeof value.codeVerifier === 'string' &&
       typeof value.redirectTo === 'string' &&

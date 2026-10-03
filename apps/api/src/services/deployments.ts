@@ -29,7 +29,7 @@ import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as deploymentConnectionsRepository from '../repositories/deploymentConnections.js';
 import type { DeploymentConnectionRow } from '../repositories/deploymentConnections.js';
 import * as deploymentRunsRepository from '../repositories/deploymentRuns.js';
-import type { ActorContext, SiteActorContext } from './actorContext.js';
+import type { SiteActorContext, SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 /**
@@ -162,11 +162,24 @@ const viewsOf = async (runtime: PublishingRuntime, rows: readonly DeploymentConn
   );
 };
 
-export const listConnections = async (runtime: PublishingRuntime) =>
-  viewsOf(runtime, await deploymentConnectionsRepository.list(runtime.db));
+/** The site's connection (sites plan §H: deployments are per site); another site's is not found. */
+const findConnection = async (runtime: PublishingRuntime, site: SiteRef, id: string) => {
+  const row = await deploymentConnectionsRepository.findOnSite(site.id, id, runtime.db);
+  if (!row) {
+    throw connectionNotFound(id);
+  }
+  return row;
+};
 
-export const getConnection = async (runtime: PublishingRuntime, id: string): Promise<ConnectionView> => {
-  const row = await deploymentConnectionsRepository.findById(id, runtime.db);
+export const listConnections = async (runtime: PublishingRuntime, site: SiteRef) =>
+  viewsOf(runtime, await deploymentConnectionsRepository.list(site.id, runtime.db));
+
+export const getConnection = async (
+  runtime: PublishingRuntime,
+  site: SiteRef,
+  id: string,
+): Promise<ConnectionView> => {
+  const row = await deploymentConnectionsRepository.findOnSite(site.id, id, runtime.db);
   if (!row) {
     throw connectionNotFound(id);
   }
@@ -357,19 +370,16 @@ export const createConnection = async (
     });
     return inserted;
   });
-  return { connection: await getConnection(runtime, row.id), generatedSecrets: generated };
+  return { connection: await getConnection(runtime, context.site, row.id), generatedSecrets: generated };
 };
 
 export const updateConnection = async (
   runtime: PublishingRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   id: string,
   input: Partial<Omit<ConnectionInput, 'provider'>> & { expectedVersion: number },
 ): Promise<ConnectionView> => {
-  const current = await deploymentConnectionsRepository.findById(id, runtime.db);
-  if (!current) {
-    throw connectionNotFound(id);
-  }
+  const current = await findConnection(runtime, context.site, id);
   const provider = providerFor(current.provider);
   const settings = input.settings ? validateSettings(provider, input.settings) : settingsOf(current);
   const { literal, refs } = mergeSecrets(
@@ -432,12 +442,12 @@ export const updateConnection = async (
       },
     });
   });
-  return getConnection(runtime, id);
+  return getConnection(runtime, context.site, id);
 };
 
-export const deleteConnection = async (runtime: PublishingRuntime, context: ActorContext, id: string) => {
+export const deleteConnection = async (runtime: PublishingRuntime, context: SiteActorContext, id: string) => {
   await runtime.db.transaction().execute(async (trx) => {
-    const removed = await deploymentConnectionsRepository.deleteById(id, trx);
+    const removed = await deploymentConnectionsRepository.deleteOnSite(context.site.id, id, trx);
     if (removed.numDeletedRows === 0n) {
       throw connectionNotFound(id);
     }
@@ -451,12 +461,10 @@ export const deleteConnection = async (runtime: PublishingRuntime, context: Acto
 
 export const testConnection = async (
   runtime: PublishingRuntime,
+  site: SiteRef,
   id: string,
 ): Promise<ConnectionTestResult> => {
-  const row = await deploymentConnectionsRepository.findById(id, runtime.db);
-  if (!row) {
-    throw connectionNotFound(id);
-  }
+  const row = await findConnection(runtime, site, id);
   let connection: ResolvedConnection;
   try {
     connection = resolveConnection(runtime, row);
@@ -468,23 +476,25 @@ export const testConnection = async (
   return providerFor(row.provider).test(providerContextFor(runtime, connection));
 };
 
-const runView = async (runtime: PublishingRuntime, id: string): Promise<RunView> => {
-  const row = await deploymentRunsRepository.findViewById(id, runtime.db);
+const runNotFound = (id: string) => new AppError(404, 'RUN_NOT_FOUND', `No deployment run ${id}`, { id });
+
+/** A run of one of the site's connections; another site's run is not found. */
+export const getRun = async (runtime: PublishingRuntime, site: SiteRef, id: string): Promise<RunView> => {
+  const row = await deploymentRunsRepository.findViewOnSite(site.id, id, runtime.db);
   if (!row) {
-    throw new AppError(404, 'RUN_NOT_FOUND', `No deployment run ${id}`, { id });
+    throw runNotFound(id);
   }
   return toRunView(row);
 };
 
-export const getRun = runView;
-
 export const listRuns = async (
   runtime: PublishingRuntime,
+  site: SiteRef,
   query: { connectionId?: string; cursor?: string; limit?: number },
 ): Promise<Page<RunView>> => {
   const limit = pageSize(query.limit);
   const rows = await deploymentRunsRepository.list(
-    query.connectionId ? { connectionId: query.connectionId } : {},
+    { siteId: site.id, ...(query.connectionId ? { connectionId: query.connectionId } : {}) },
     decodeCursor(query.cursor),
     limit + 1,
     runtime.db,
@@ -495,7 +505,7 @@ export const listRuns = async (
 /** A manual run (or a retry): queued now with no debounce, or the run already queued (coalesced). */
 const queueRun = async (
   runtime: PublishingRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   row: DeploymentConnectionRow,
   trigger: 'manual' | 'retry',
   retryOf: string | null,
@@ -520,23 +530,23 @@ const queueRun = async (
     });
     return run.id;
   });
-  return runView(runtime, runId);
+  return getRun(runtime, context.site, runId);
 };
 
-export const triggerRun = async (runtime: PublishingRuntime, context: ActorContext, connectionId: string) => {
-  const row = await deploymentConnectionsRepository.findById(connectionId, runtime.db);
-  if (!row) {
-    throw connectionNotFound(connectionId);
-  }
-  return queueRun(runtime, context, row, 'manual', null);
-};
+export const triggerRun = async (
+  runtime: PublishingRuntime,
+  context: SiteActorContext,
+  connectionId: string,
+) => queueRun(runtime, context, await findConnection(runtime, context.site, connectionId), 'manual', null);
 
 /** Retrying creates a new run (linked by `retryOf`) at the current snapshot; the failed run stays as it was. */
-export const retryRun = async (runtime: PublishingRuntime, context: ActorContext, runId: string) => {
+export const retryRun = async (runtime: PublishingRuntime, context: SiteActorContext, runId: string) => {
   const run = await deploymentRunsRepository.findById(runId, runtime.db);
-  const row = run ? await deploymentConnectionsRepository.findById(run.connection_id, runtime.db) : undefined;
+  const row = run
+    ? await deploymentConnectionsRepository.findOnSite(context.site.id, run.connection_id, runtime.db)
+    : undefined;
   if (!run || !row) {
-    throw new AppError(404, 'RUN_NOT_FOUND', `No deployment run ${runId}`, { id: runId });
+    throw runNotFound(runId);
   }
   return queueRun(runtime, context, row, 'retry', run.id);
 };

@@ -189,7 +189,7 @@ export const outcomeOf = (steps: readonly ContentStep[], tallies: Tallies): Step
 
 const SINGLETON_REASON = 'A single type can hold only one entry; delete the others first';
 
-/** A model that becomes a singleton may hold at most one entry (definition-level `validateValues`). */
+/** A model that becomes a singleton may hold at most one entry per site (definition-level `validateValues`). */
 export const singletonViolation = async (
   steps: readonly ContentStep[],
   proposed: SchemaSnapshot,
@@ -202,7 +202,8 @@ export const singletonViolation = async (
     const model = resolveModelById(proposed, step.ownerId);
     if (
       model?.definition.kind === 'singleton' &&
-      (await entriesRepository.countLive(step.ownerId, executor)) > 1
+      // One entry per site (sites plan §H): only a site holding several entries blocks the change.
+      (await entriesRepository.maxLivePerSite(step.ownerId, executor)) > 1
     ) {
       return { ok: false, step: stepKey(step), reason: SINGLETON_REASON };
     }

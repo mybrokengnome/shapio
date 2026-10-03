@@ -31,6 +31,7 @@ model never needs a rebuild, a restart or a deploy.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.
 - [MCP server for coding agents](mcp.md): Claude Code, Cursor and Claude Desktop model content, write drafts
   and open change sets; people ship them.
+- [Site starters](starters.md): Astro, Next.js and SvelteKit sites on Shapio (`create-shapio --site`).
 - [Example site walkthrough](example-site.md): model a page, publish it, see an Astro site update.
 
 ## Run it

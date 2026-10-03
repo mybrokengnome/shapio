@@ -16,6 +16,7 @@ import {
   NullableString,
   PageSchema,
   PublicationActionSchema,
+  SiteRefSchema,
   VersionSchema,
 } from '../../schemas/publishing.js';
 import {
@@ -322,6 +323,8 @@ export const ReviewSchemaItemSchema = Type.Object({
   /** Planner output (classification, prerequisites, conversions) and its impact; null when invalid. */
   plan: Nullable(ChangePlanSchema),
   impact: Nullable(ImpactSchema),
+  /** Entries of the affected models per site: the schema is shared, so shipping converts every site's content. */
+  affectedEntriesBySite: Type.Array(Type.Object({ site: SiteRefSchema, entries: Type.Integer() })),
   issues: Type.Array(ReviewIssueSchema),
   /** Other open sets with a draft of the same definition. */
   alsoChangedIn: Type.Array(Type.Object({ id: UuidSchema, title: Type.String() })),
@@ -352,6 +355,8 @@ export const FieldConsumersSchema = Type.Object({
   apiKey: Type.String(),
   consumers: Type.Array(
     Type.Object({
+      /** The site the reads were made on. */
+      site: SiteRefSchema,
       /** `token:<id>`, `app_users` or `anonymous`. */
       principalKey: Type.String(),
       /** The token's name; null for app users and anonymous readers. */
@@ -362,6 +367,11 @@ export const FieldConsumersSchema = Type.Object({
       selection: Type.Enum(['explicit', 'implicit']),
     }),
   ),
+  /**
+   * Readers on other sites, as totals, when the viewer holds no role on every site; null when the viewer
+   * sees every site's readers above.
+   */
+  otherSites: Nullable(Type.Object({ consumers: Type.Integer(), reads: Type.Integer() })),
 });
 
 export const ChangeSetReviewSchema = Type.Object({

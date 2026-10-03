@@ -53,7 +53,8 @@ repository) or [develop Shapio](#develop-shapio) from a clone.
 - Use: [modelling](documentation/modelling.md) · [schema sync](documentation/schema-sync.md) ·
   [delivery API](documentation/delivery-api.md) · [GraphQL](documentation/graphql.md) ·
   [change sets, snapshots and restore](documentation/change-sets.md) ·
-  [publishing and deployments](documentation/publishing.md) · [example site](documentation/example-site.md)
+  [publishing and deployments](documentation/publishing.md) · [site starters](documentation/starters.md) ·
+  [example site](documentation/example-site.md)
 - Run: [backup and restore](documentation/backup-restore.md) · [upgrades](documentation/upgrades.md) ·
   [security](documentation/security.md)
 - Reference: [environment variables](documentation/reference/environment.md) ·

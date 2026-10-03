@@ -15,6 +15,7 @@ const claims: AccessTokenClaims = {
   pv: 3,
   tv: 0,
   sid: 'family',
+  site: '00000000-0000-4000-b000-000000000001',
 };
 
 const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -40,6 +41,12 @@ describe('app-user access tokens', () => {
   it('rejects tokens without a token version (issued before it existed)', () => {
     const { tv: _tv, ...withoutVersion } = claims;
     const token = signAccessToken(key, withoutVersion as AccessTokenClaims);
+    expect(verifyAccessToken(key, token, NOW)).toBeUndefined();
+  });
+
+  it('rejects tokens without a site (issued before sites)', () => {
+    const { site: _site, ...withoutSite } = claims;
+    const token = signAccessToken(key, withoutSite as AccessTokenClaims);
     expect(verifyAccessToken(key, token, NOW)).toBeUndefined();
   });
 

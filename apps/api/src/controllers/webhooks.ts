@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { toActorContext } from '../helpers/requestContext.js';
+import { toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   CreateWebhookBody,
   DeliveryParams,
@@ -11,13 +12,18 @@ import * as webhooksService from '../services/webhooks.js';
 
 type ById = FastifyRequest<{ Params: IdParams }>;
 
+const contextFor = (request: FastifyRequest): webhooksService.WebhookContext => ({
+  ...toSiteActorContext(request),
+  permissions: request.server.permissions,
+});
+
 export const listWebhooks = async (request: FastifyRequest) =>
-  webhooksService.listWebhooks(request.server.publishing);
+  webhooksService.listWebhooks(request.server.publishing, getRequestSite(request));
 
 export const listEventTypes = async () => ({ items: [...webhooksService.listEventTypes()] });
 
 export const getWebhook = async (request: ById) =>
-  webhooksService.getWebhook(request.server.publishing, request.params.id);
+  webhooksService.getWebhook(request.server.publishing, getRequestSite(request), request.params.id);
 
 export const createWebhook = async (
   request: FastifyRequest<{ Body: CreateWebhookBody }>,
@@ -25,25 +31,23 @@ export const createWebhook = async (
 ) =>
   reply
     .code(201)
-    .send(
-      await webhooksService.createWebhook(request.server.publishing, toActorContext(request), request.body),
-    );
+    .send(await webhooksService.createWebhook(request.server.publishing, contextFor(request), request.body));
 
 export const updateWebhook = async (request: FastifyRequest<{ Params: IdParams; Body: UpdateWebhookBody }>) =>
   webhooksService.updateWebhook(
     request.server.publishing,
-    toActorContext(request),
+    contextFor(request),
     request.params.id,
     request.body,
   );
 
 export const deleteWebhook = async (request: ById, reply: FastifyReply) => {
-  await webhooksService.deleteWebhook(request.server.publishing, toActorContext(request), request.params.id);
+  await webhooksService.deleteWebhook(request.server.publishing, contextFor(request), request.params.id);
   return reply.code(204).send();
 };
 
 export const rotateSecret = async (request: ById) =>
-  webhooksService.rotateWebhookSecret(request.server.publishing, toActorContext(request), request.params.id);
+  webhooksService.rotateWebhookSecret(request.server.publishing, contextFor(request), request.params.id);
 
 export const testWebhook = async (request: ById, reply: FastifyReply) =>
   reply
@@ -51,14 +55,20 @@ export const testWebhook = async (request: ById, reply: FastifyReply) =>
     .send(
       await webhooksService.sendTestDelivery(
         request.server.publishing,
-        toActorContext(request),
+        contextFor(request),
         request.params.id,
       ),
     );
 
 export const listDeliveries = async (
   request: FastifyRequest<{ Params: IdParams; Querystring: ListDeliveriesQuery }>,
-) => webhooksService.listDeliveries(request.server.publishing, request.params.id, request.query);
+) =>
+  webhooksService.listDeliveries(
+    request.server.publishing,
+    getRequestSite(request),
+    request.params.id,
+    request.query,
+  );
 
 export const redeliver = async (request: FastifyRequest<{ Params: DeliveryParams }>, reply: FastifyReply) =>
   reply
@@ -66,7 +76,7 @@ export const redeliver = async (request: FastifyRequest<{ Params: DeliveryParams
     .send(
       await webhooksService.redeliver(
         request.server.publishing,
-        toActorContext(request),
+        contextFor(request),
         request.params.id,
         request.params.deliveryId,
       ),

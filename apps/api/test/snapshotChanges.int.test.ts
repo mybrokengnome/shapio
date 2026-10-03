@@ -40,7 +40,10 @@ describe('snapshot changes', () => {
     expectStatus(await admin.post(`/api/admin/content/${modelKey}/${id}/unpublish`, { locales }), 200);
   const seq = () => publicationsRepository.currentSeq(PRIMARY_SITE_ID, database.current.db);
   const diff = (query: Partial<snapshotDiffRepository.SnapshotDiffQuery> & { from: number; to: number }) =>
-    snapshotDiffRepository.listChanges({ limit: 100, modelIds: null, ...query }, database.current.db);
+    snapshotDiffRepository.listChanges(
+      { siteId: PRIMARY_SITE_ID, limit: 100, modelIds: null, ...query },
+      database.current.db,
+    );
 
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { schemaListen: false, env: GRAPHQL_ENV });

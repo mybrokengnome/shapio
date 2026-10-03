@@ -5,7 +5,7 @@ import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { isUniqueViolation } from '../helpers/pgErrors.js';
 import type { AppUserPrincipal, Principal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
-import type { ActorContext, ClientInfo, SiteActorContext } from './actorContext.js';
+import type { ActorContext, ClientInfo, SiteActorContext, SiteRef } from './actorContext.js';
 import { normalizeEmail } from './adminUsers.js';
 import { requestRegistrationAttemptNotice } from './appAuthNotices.js';
 import {
@@ -31,9 +31,9 @@ export const requireAppUserPrincipal = (principal: Principal): AppUserPrincipal 
   return principal;
 };
 
-const appUserActor = (context: ActorContext, appUserId: string): ActorContext => ({
+const appUserActor = (context: SiteActorContext, appUserId: string): SiteActorContext => ({
   ...context,
-  actor: { kind: 'appUser', appUserId, roleIds: [] },
+  actor: { kind: 'appUser', appUserId, siteId: context.site.id, roleIds: [] },
 });
 
 /**
@@ -95,9 +95,9 @@ const insertAccount = async (
  * The address already has an account and confirmation is required: nothing is created or changed, the
  * account's owner is told by email (unless it is blocked), and the caller gets the usual answer.
  */
-const notifyExistingAccount = async (email: string): Promise<RegisterResult> => {
+const notifyExistingAccount = async (siteId: string, email: string): Promise<RegisterResult> => {
   await db.transaction().execute(async (trx) => {
-    const existing = await appUsersRepository.findByEmailWithHash(email, trx);
+    const existing = await appUsersRepository.findByEmailWithHash(siteId, email, trx);
     if (existing && existing.blocked_at === null) {
       await requestRegistrationAttemptNotice(existing.id, trx);
     }
@@ -117,18 +117,20 @@ export const register = async (
   const email = normalizeEmail(input.email);
   const passwordHash = await hashPassword(input.password);
   const created = await insertAccount(runtime, context, { ...input, email, passwordHash });
-  return created ?? notifyExistingAccount(email);
+  return created ?? notifyExistingAccount(context.site.id, email);
 };
 
 /**
- * Checks credentials and signs in. Unknown emails and OAuth-only accounts take the same time as a wrong
- * password (dummy-hash verification) and get the same error.
+ * Checks credentials and signs in to the account with this address on the request's site (each site has its
+ * own accounts). Unknown emails and OAuth-only accounts take the same time as a wrong password (dummy-hash
+ * verification) and get the same error.
  */
 export const login = async (
   runtime: AppAuthRuntime,
+  site: SiteRef,
   input: { email: string; password: string; client: ClientInfo },
 ): Promise<AppSession> => {
-  const user = await appUsersRepository.findByEmailWithHash(normalizeEmail(input.email));
+  const user = await appUsersRepository.findByEmailWithHash(site.id, normalizeEmail(input.email));
   const valid = await verifyPassword(input.password, user?.password_hash ?? undefined);
   if (!user || !valid) {
     throw invalidCredentials();
@@ -207,10 +209,10 @@ export const deleteMe = async (context: ActorContext, input: { password?: string
   });
 };
 
-/** Confirms the address a confirmation link was sent to. */
-export const confirmEmail = async (context: ActorContext, token: string): Promise<void> => {
+/** Confirms the address a confirmation link was sent to (a link of the request's site). */
+export const confirmEmail = async (context: SiteActorContext, token: string): Promise<void> => {
   await db.transaction().execute(async (trx) => {
-    const user = await consumeLink('confirmation', token, trx);
+    const user = await consumeLink('confirmation', token, context.site.id, trx);
     if (user.confirmed_at === null) {
       await appUsersRepository.update(user.id, { confirmed_at: new Date() }, trx);
     }
@@ -222,28 +224,32 @@ export const confirmEmail = async (context: ActorContext, token: string): Promis
   });
 };
 
-/** Sends a new confirmation link. Says nothing about whether the account exists. */
-export const resendConfirmationByEmail = async (runtime: AppAuthRuntime, rawEmail: string): Promise<void> => {
+/** Sends a new confirmation link to the site's account. Says nothing about whether the account exists. */
+export const resendConfirmationByEmail = async (
+  runtime: AppAuthRuntime,
+  site: SiteRef,
+  rawEmail: string,
+): Promise<void> => {
   if (!isLinkConfigured(runtime.config, 'confirmation')) {
     throw linkNotConfigured('confirmation');
   }
-  const user = await appUsersRepository.findByEmailWithHash(normalizeEmail(rawEmail));
+  const user = await appUsersRepository.findByEmailWithHash(site.id, normalizeEmail(rawEmail));
   if (!user || user.confirmed_at !== null || user.blocked_at !== null) {
     return;
   }
   await db.transaction().execute((trx) => requestLink('confirmation', user, trx));
 };
 
-/** Starts a password reset. Says nothing about whether the account exists. */
+/** Starts a password reset for the site's account. Says nothing about whether the account exists. */
 export const requestPasswordReset = async (
   runtime: AppAuthRuntime,
-  context: ActorContext,
+  context: SiteActorContext,
   rawEmail: string,
 ): Promise<void> => {
   if (!isLinkConfigured(runtime.config, 'reset')) {
     throw linkNotConfigured('reset');
   }
-  const user = await appUsersRepository.findByEmailWithHash(normalizeEmail(rawEmail));
+  const user = await appUsersRepository.findByEmailWithHash(context.site.id, normalizeEmail(rawEmail));
   if (!user || user.blocked_at !== null) {
     return;
   }
@@ -262,12 +268,12 @@ export const requestPasswordReset = async (
  * Following the link proves the address, so an unconfirmed account becomes confirmed.
  */
 export const confirmPasswordReset = async (
-  context: ActorContext,
+  context: SiteActorContext,
   input: { token: string; password: string },
 ): Promise<void> => {
   const passwordHash = await hashPassword(input.password);
   await db.transaction().execute(async (trx) => {
-    const user = await consumeLink('reset', input.token, trx);
+    const user = await consumeLink('reset', input.token, context.site.id, trx);
     const now = new Date();
     await appUsersRepository.update(
       user.id,

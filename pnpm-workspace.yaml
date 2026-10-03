@@ -1,6 +1,12 @@
 packages:
   - apps/*
   - packages/*
+  # The site starters (create-shapio --site) and what they share. Listed one by one: examples/custom-editor and
+  # examples/extension are standalone projects outside the workspace.
+  - examples/shared
+  - examples/astro
+  - examples/next
+  - examples/sveltekit
 
 # Versions verified against the npm registry on 2026-10-01. Exact pins; the lockfile pins transitives.
 # Notes:
@@ -104,6 +110,13 @@ catalog:
   '@modelcontextprotocol/client': 2.2.0
   # Example site (package L): static site generator, MIT. Telemetry is turned off in its scripts.
   astro: 7.3.5
+  # Starters (B1): Next.js App Router and SvelteKit 3 (static). Next's telemetry is turned off in its scripts.
+  next: 16.3.8
+  '@sveltejs/kit': 3.0.0
+  '@sveltejs/adapter-static': 4.0.0
+  '@sveltejs/vite-plugin-svelte': 7.3.1
+  svelte: 5.57.1
+  svelte-check: 4.7.6
   # Build and tooling
   typescript: 6.0.3
   '@types/node': 24.19.1

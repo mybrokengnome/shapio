@@ -25,14 +25,19 @@ const policyFor = (event: { type: string; payload: unknown }): TriggerPolicy | u
 /**
  * Deployment triggers from the outbox (ADR 0007): in the relay's transaction, every enabled connection whose
  * trigger policy matches gets a queued run (or joins the one already queued), so builds follow publishes
- * at least once and bursts coalesce.
+ * at least once and bursts coalesce. Deployments are per site (sites plan §H): a site's event builds that
+ * site's connections; a network event (a schema change, which every site shares) builds every site's.
  */
 export const deploymentOutboxSubscriber: OutboxSubscriber = async (event, trx) => {
   const policy = policyFor(event);
   if (!policy) {
     return;
   }
-  for (const connection of await deploymentConnectionsRepository.listTriggeredBy(policy, trx)) {
+  for (const connection of await deploymentConnectionsRepository.listTriggeredBy(
+    policy,
+    event.site_id,
+    trx,
+  )) {
     await ensureQueuedRun(trx, {
       connectionId: connection.id,
       debounceSeconds: connection.debounce_seconds,

@@ -13,6 +13,9 @@ export type Site = {
 
 export type SiteSummary = Pick<Site, 'id' | 'key' | 'name' | 'isPrimary'>;
 
+/** A site as webhook payloads and views name it. */
+export type SiteRef = Pick<Site, 'id' | 'key'>;
+
 export type CreateSiteInput = { key: string; name: string };
 
 /** Only the name changes; `expectedVersion` guards against concurrent edits (409 `VERSION_CONFLICT`). */

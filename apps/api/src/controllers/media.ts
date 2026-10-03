@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { toActorContext } from '../helpers/requestContext.js';
+import { toSiteActorContext } from '../helpers/requestContext.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   CreateFolderBody,
@@ -21,7 +21,9 @@ const adminIdOf = (request: FastifyRequest) =>
 
 // Folders
 
-export const listFolders = async () => ({ items: await mediaFoldersService.listFolders() });
+export const listFolders = async (request: FastifyRequest) => ({
+  items: await mediaFoldersService.listFolders(getRequestSite(request)),
+});
 
 export const createFolder = async (
   request: FastifyRequest<{ Body: CreateFolderBody }>,
@@ -32,10 +34,10 @@ export const createFolder = async (
     .send(await mediaFoldersService.createFolder(getRequestSite(request), adminIdOf(request), request.body));
 
 export const updateFolder = async (request: FastifyRequest<{ Params: IdParams; Body: UpdateFolderBody }>) =>
-  mediaFoldersService.updateFolder(request.params.id, request.body);
+  mediaFoldersService.updateFolder(getRequestSite(request), request.params.id, request.body);
 
 export const deleteFolder = async (request: FastifyRequest<{ Params: IdParams }>, reply: FastifyReply) => {
-  await mediaFoldersService.deleteFolder(toActorContext(request), request.params.id);
+  await mediaFoldersService.deleteFolder(toSiteActorContext(request), request.params.id);
   return reply.code(204).send();
 };
 
@@ -71,10 +73,10 @@ export const deleteAsset = async (
 };
 
 export const moveAssets = async (request: FastifyRequest<{ Body: MoveAssetsBody }>) =>
-  mediaAssetsService.moveAssets(request.body.assetIds, request.body.folderId);
+  mediaAssetsService.moveAssets(getRequestSite(request), request.body.assetIds, request.body.folderId);
 
 export const getAssetUsage = async (request: FastifyRequest<{ Params: IdParams }>) =>
-  mediaAssetsService.listUsages(request.params.id);
+  mediaAssetsService.listUsagesOnSite(getRequestSite(request), request.params.id);
 
 // Uploads
 

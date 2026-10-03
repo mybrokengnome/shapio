@@ -17,11 +17,30 @@ export type ChangeSetStatus = 'open' | 'scheduled' | 'shipping' | 'shipped' | 'f
 export const insert = (row: Insertable<ChangeSets>, trx: Executor = db) =>
   trx.insertInto('change_sets').values(row).returningAll().executeTakeFirstOrThrow();
 
+/** By ID on any site: for jobs and the ship pipeline, which start from a set they already hold. */
 export const findById = (id: string, executor: Executor = db) =>
   executor.selectFrom('change_sets').selectAll().where('id', '=', id).executeTakeFirst();
 
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('change_sets').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+
+/** By ID on one site (sites plan §H): another site's set reads as not found. For request-driven services. */
+export const findOnSite = (siteId: string, id: string, executor: Executor = db) =>
+  executor
+    .selectFrom('change_sets')
+    .selectAll()
+    .where('id', '=', id)
+    .where('site_id', '=', siteId)
+    .executeTakeFirst();
+
+export const lockOnSite = (siteId: string, id: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('change_sets')
+    .selectAll()
+    .where('id', '=', id)
+    .where('site_id', '=', siteId)
+    .forUpdate()
+    .executeTakeFirst();
 
 /** Applies changes and bumps the version, optionally only at an expected version. */
 export const update = (
@@ -41,9 +60,14 @@ export const update = (
 
 export type ChangeSetListRow = ChangeSetRow & { entry_items: string | null; schema_items: string | null };
 
-/** Newest first (keyset on created_at, id), with item counts. */
+/** One site's sets, newest first (keyset on created_at, id), with item counts. */
 export const list = (
-  filter: { statuses: readonly ChangeSetStatus[]; after?: { createdAt: Date; id: string }; limit: number },
+  filter: {
+    siteId: string;
+    statuses: readonly ChangeSetStatus[];
+    after?: { createdAt: Date; id: string };
+    limit: number;
+  },
   executor: Executor = db,
 ): Promise<ChangeSetListRow[]> => {
   let query = executor
@@ -63,6 +87,7 @@ export const list = (
         .where('change_set_items.kind', '=', 'schema')
         .as('schema_items'),
     ])
+    .where('site_id', '=', filter.siteId)
     .where('status', 'in', filter.statuses)
     .orderBy('created_at', 'desc')
     .orderBy('id', 'desc')
@@ -79,11 +104,19 @@ export const list = (
   return query.execute();
 };
 
-/** Titles of change sets, for ledger rows and "also changed in". */
+/**
+ * Titles of change sets with their site, for ledger rows ("changed by set X on site A": a schema set
+ * converts other sites' content too) and "also changed in".
+ */
 export const findTitles = (ids: readonly string[], executor: Executor = db) =>
   ids.length === 0
     ? Promise.resolve([])
-    : executor.selectFrom('change_sets').select(['id', 'title']).where('id', 'in', ids).execute();
+    : executor
+        .selectFrom('change_sets')
+        .innerJoin('sites', 'sites.id', 'change_sets.site_id')
+        .select(['change_sets.id', 'change_sets.title', 'change_sets.site_id', 'sites.key as site_key'])
+        .where('change_sets.id', 'in', ids)
+        .execute();
 
 /** Display names of the admins and tokens that created sets (one query each kind). */
 export const findActorNames = async (

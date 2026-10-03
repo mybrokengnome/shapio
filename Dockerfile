@@ -10,12 +10,16 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
 COPY apps/admin/package.json apps/admin/
 # Every workspace project's manifest is needed for a frozen install, even ones the image does not ship.
-COPY apps/example-site/package.json apps/example-site/
+COPY examples/shared/package.json examples/shared/
+COPY examples/astro/package.json examples/astro/
+COPY examples/next/package.json examples/next/
+COPY examples/sveltekit/package.json examples/sveltekit/
 COPY packages/schema/package.json packages/schema/
 COPY packages/client/package.json packages/client/
 COPY packages/cli/package.json packages/cli/
 COPY packages/create-shapio/package.json packages/create-shapio/
 COPY packages/editor-sdk/package.json packages/editor-sdk/
+COPY packages/mcp/package.json packages/mcp/
 RUN pnpm install --frozen-lockfile
 COPY . .
 # prepack builds shapio and its workspace dependencies plus the admin bundle, then copies the admin in.

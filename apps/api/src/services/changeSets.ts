@@ -1,7 +1,9 @@
 import type { Transaction } from 'kysely';
 import { CHANGE_SET_EVENTS } from '../constants/publishing.js';
+import { entryNotFound } from '../content/errors.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
+import { isForeignKeyViolation } from '../helpers/pgErrors.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import { adminIdOf, tokenIdOf } from '../publishing/principals.js';
 import { resolvePublicationTarget, type PublicationTargetInput } from '../publishing/targets.js';
@@ -38,6 +40,7 @@ const ALL_STATUSES: ReadonlySet<string> = new Set([...DEFAULT_STATUSES, 'discard
 
 export const auditFields = (context: ContentServiceContext) => ({
   actor: context.actor,
+  site: context.site,
   ...(context.requestId ? { requestId: context.requestId } : {}),
   ...(context.ip ? { ip: context.ip } : {}),
 });
@@ -59,9 +62,9 @@ export const auditChangeSet = (
     outcome,
   });
 
-/** Locks the set and checks its items can still change. */
-export const lockEditable = async (trx: Transaction<DB>, id: string) => {
-  const row = await changeSetsRepository.lockById(id, trx);
+/** Locks the set (on the context's site: another site's set is not found) and checks its items can still change. */
+export const lockEditable = async (trx: Transaction<DB>, context: ContentServiceContext, id: string) => {
+  const row = await changeSetsRepository.lockOnSite(context.site.id, id, trx);
   if (!row) {
     throw changeSetNotFound(id);
   }
@@ -76,7 +79,7 @@ export const touchChangeSet = (trx: Transaction<DB>, id: string) =>
   changeSetsRepository.update(id, {}, new Date(), trx);
 
 export const getChangeSet = (context: ContentServiceContext, id: string): Promise<ChangeSetView> =>
-  loadChangeSetView(context.db, context.snapshot, id);
+  loadChangeSetView(context, id);
 
 const parseStatuses = (raw: string | undefined): ChangeSetStatus[] => {
   if (!raw) {
@@ -114,7 +117,12 @@ export const listChangeSets = async (
   const limit = query.limit ?? 50;
   const after = decodeCursor(query.cursor);
   const rows = await changeSetsRepository.list(
-    { statuses: parseStatuses(query.status), limit: limit + 1, ...(after ? { after } : {}) },
+    {
+      siteId: context.site.id,
+      statuses: parseStatuses(query.status),
+      limit: limit + 1,
+      ...(after ? { after } : {}),
+    },
     context.db,
   );
   const page = rows.slice(0, limit);
@@ -150,8 +158,12 @@ export const createChangeSet = async (
   return getChangeSet(context, row.id);
 };
 
+/** A set deploys through a connection of its own site. */
 const assertConnection = async (context: ContentServiceContext, connectionId: string | null | undefined) => {
-  if (connectionId && !(await deploymentConnectionsRepository.findById(connectionId, context.db))) {
+  if (
+    connectionId &&
+    !(await deploymentConnectionsRepository.findOnSite(context.site.id, connectionId, context.db))
+  ) {
     throw new AppError(404, 'DEPLOYMENT_CONNECTION_NOT_FOUND', `No deployment connection ${connectionId}`);
   }
 };
@@ -168,7 +180,7 @@ export const updateChangeSet = async (
 ): Promise<ChangeSetView> => {
   await assertConnection(context, input.deploymentConnectionId);
   await context.db.transaction().execute(async (trx) => {
-    const current = await lockEditable(trx, id);
+    const current = await lockEditable(trx, context, id);
     const updated = await changeSetsRepository.update(
       id,
       {
@@ -199,7 +211,7 @@ export const discardChangeSet = async (
   id: string,
 ): Promise<ChangeSetView> => {
   await context.db.transaction().execute(async (trx) => {
-    const row = await lockEditable(trx, id);
+    const row = await lockEditable(trx, context, id);
     await changeSetsRepository.update(
       id,
       { status: 'discarded', schedule_job_id: null, scheduled_for: null },
@@ -212,6 +224,7 @@ export const discardChangeSet = async (
       aggregateType: 'change_set',
       aggregateId: id,
       payload: { changeSetId: id, title: row.title },
+      siteId: context.site.id,
     });
     await auditChangeSet(trx, context, id, 'change_set.discard', { title: row.title });
   });
@@ -229,17 +242,25 @@ export const addEntryItem = async (
 ): Promise<ChangeSetView> => {
   const target = await resolvePublicationTarget(context, input, 'update');
   await context.db.transaction().execute(async (trx) => {
-    await lockEditable(trx, id);
-    const inserted = await changeSetItemsRepository.insertEntryItem(
-      {
-        changeSetId: id,
-        entryId: target.entryId,
-        modelId: target.model.definition.id,
-        locale: target.locale,
-        action: target.action,
-      },
-      trx,
-    );
+    await lockEditable(trx, context, id);
+    const inserted = await changeSetItemsRepository
+      .insertEntryItem(
+        {
+          changeSetId: id,
+          entryId: target.entryId,
+          modelId: target.model.definition.id,
+          locale: target.locale,
+          action: target.action,
+        },
+        trx,
+      )
+      .catch((error: unknown) => {
+        // The entry is on another site than the set (the composite key refuses it): it does not exist here.
+        if (isForeignKeyViolation(error, 'change_set_items_entry_site_fk')) {
+          throw entryNotFound(target.entryId);
+        }
+        throw error;
+      });
     if (!inserted) {
       throw new AppError(
         409,
@@ -271,7 +292,7 @@ export const removeItem = async (
   itemId: string,
 ): Promise<ChangeSetView> => {
   await context.db.transaction().execute(async (trx) => {
-    await lockEditable(trx, id);
+    await lockEditable(trx, context, id);
     const removed = await changeSetItemsRepository.deleteItem(id, itemId, trx);
     if (!removed) {
       throw new AppError(404, 'CHANGE_SET_ITEM_NOT_FOUND', `No item ${itemId} in this change set`);

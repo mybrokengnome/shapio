@@ -76,6 +76,7 @@ export const deliveryEnvironment = (
   snapshot: context.snapshot,
   permissions: context.permissions,
   actor: context.actor,
+  siteId: context.site.id,
   audience: 'delivery',
   source,
   locale,
@@ -169,6 +170,7 @@ export const readEntryPage = async (read: DeliveryRead) => {
   const { context, env, model, policy, query } = read;
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const compiled = compileHeadQuery({
+    siteId: context.site.id,
     modelId: model.definition.id,
     source: env.source,
     locales: localesOf(read),
@@ -194,6 +196,7 @@ export const readEntryPage = async (read: DeliveryRead) => {
 export const readOneEntry = async (read: DeliveryRead, id: string) => {
   const { context, env, model, policy, query } = read;
   const byId = compileHeadQuery({
+    siteId: context.site.id,
     modelId: model.definition.id,
     source: env.source,
     locales: localesOf(read),

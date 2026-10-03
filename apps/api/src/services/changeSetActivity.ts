@@ -2,9 +2,8 @@ import type { TimelineEvent } from '../deployments/status.js';
 import { AppError } from '../helpers/appError.js';
 import * as auditLogRepository from '../repositories/auditLog.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
-import * as changeSetsRepository from '../repositories/changeSets.js';
 import * as deploymentRunsRepository from '../repositories/deploymentRuns.js';
-import { changeSetNotFound, titleOf, type ChangeSetActorView } from './changeSetViews.js';
+import { findChangeSet, titleOf, type ChangeSetActorView } from './changeSetViews.js';
 import type { ContentServiceContext } from './contentAccess.js';
 
 /**
@@ -94,10 +93,7 @@ export const getTimeline = async (
   context: ContentServiceContext,
   id: string,
 ): Promise<TimelineEventView[]> => {
-  const row = await changeSetsRepository.findById(id, context.db);
-  if (!row) {
-    throw changeSetNotFound(id);
-  }
+  const row = await findChangeSet(context, id);
   const audit = await auditLogRepository.listEvents(
     { targetType: 'change_set', targetId: id },
     undefined,
@@ -156,7 +152,7 @@ export const listUnassigned = async (
   const limit = query.limit ?? 50;
   const after = decodeCursor(query.cursor);
   const rows = await changeSetItemsRepository.listUnassigned(
-    { limit: limit + 1, ...(after ? { after } : {}) },
+    { siteId: context.site.id, limit: limit + 1, ...(after ? { after } : {}) },
     context.db,
   );
   const page = rows.slice(0, limit);

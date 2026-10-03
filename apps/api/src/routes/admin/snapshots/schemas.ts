@@ -33,6 +33,14 @@ export const SnapshotSchema = Type.Object({
   source: Type.Enum(SNAPSHOT_SOURCES),
   changeSetId: Nullable(UuidSchema),
   changeSetTitle: NullableString,
+  /** The change set that took the number, with its site (another site's set when it converted content here). */
+  changeSet: Nullable(
+    Type.Object({
+      id: UuidSchema,
+      title: Type.String(),
+      site: Type.Object({ id: UuidSchema, key: Type.String() }),
+    }),
+  ),
   actor: Type.Object({ type: Type.String(), id: NullableString }),
   /** (entry, locale) publications that started or ended at this snapshot. */
   changedEntries: Type.Integer(),

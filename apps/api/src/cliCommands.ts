@@ -5,6 +5,7 @@
 import { REMOTE_COMMANDS, type CliCommand, type CliIo } from '@shapio/cli';
 import { loadConfig } from './config/index.js';
 import { PASSWORD_MIN_LENGTH } from './constants/auth.js';
+import { SITE_KEY_PATTERN } from './constants/sites.js';
 import { SHAPIO_VERSION } from './constants/version.js';
 import { createDb } from './db/index.js';
 import { getPendingMigrations, migrateToLatest } from './db/migrator.js';
@@ -165,7 +166,7 @@ const SITES_USAGE =
   '  Lists or creates sites directly in the database (sites share the schema, admins and roles; each has its\n' +
   '  own content, media, tokens and snapshots). Keys are lower case and fixed once created.';
 
-const SITE_KEY_RE = /^[a-z][a-z0-9-]{0,62}$/;
+const SITE_KEY_RE = new RegExp(SITE_KEY_PATTERN);
 
 const runSites = async (subcommand: string | undefined, options: Map<string, string>, io: CliIo) => {
   const config = loadConfig();

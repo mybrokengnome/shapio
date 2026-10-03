@@ -162,11 +162,12 @@ export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     handlers.startOAuth,
   );
   // GET /api/app-auth/oauth/:provider/callback: the provider's redirect; sends the browser back to the app.
+  // A network route: the provider's redirect names no site, so the site comes from the signed OAuth state.
   app.get(
     '/oauth/:provider/callback',
     {
       schema: schemas.oauthCallbackSchema,
-      config: { rateLimit: CREDENTIAL_RATE_LIMIT_PER_IP, appToken: 'ignore' },
+      config: { rateLimit: CREDENTIAL_RATE_LIMIT_PER_IP, appToken: 'ignore', site: 'network' },
     },
     handlers.completeOAuth,
   );

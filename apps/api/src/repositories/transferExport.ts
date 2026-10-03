@@ -9,11 +9,20 @@ type Executor = Kysely<DB> | Transaction<DB>;
  * REPEATABLE READ transaction, so the bundle is one consistent moment. Lists are keyset-paged by ID.
  */
 
-/** Live entries after `afterId` (keyset), oldest model order irrelevant: IDs are the stable order. */
-export const listLiveEntries = (afterId: string | null, limit: number, executor: Executor = db) =>
+/**
+ * One site's live entries after `afterId` (keyset), oldest model order irrelevant: IDs are the stable order.
+ * A bundle is one site's content (sites plan §H: `--site`).
+ */
+export const listLiveEntries = (
+  siteId: string,
+  afterId: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
   executor
     .selectFrom('entries')
     .select(['id', 'model_id', 'owner_app_user_id', 'created_at', 'updated_at'])
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
     .orderBy('id')
@@ -92,11 +101,12 @@ export const listRevisionsByIds = (ids: readonly string[], executor: Executor = 
         .orderBy('id')
         .execute();
 
-/** Every media folder (a small tree). */
-export const listMediaFolders = (executor: Executor = db) =>
+/** Every media folder of one site (a small tree). */
+export const listMediaFolders = (siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('media_folders')
     .select(['id', 'parent_id', 'name', 'created_at', 'updated_at'])
+    .where('site_id', '=', siteId)
     .orderBy('created_at')
     .orderBy('id')
     .execute();
@@ -122,11 +132,17 @@ const ASSET_COLUMNS = [
   'updated_at',
 ] as const;
 
-/** Live media assets after `afterId` (keyset). */
-export const listLiveAssets = (afterId: string | null, limit: number, executor: Executor = db) =>
+/** One site's live media assets after `afterId` (keyset). */
+export const listLiveAssets = (
+  siteId: string,
+  afterId: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
   executor
     .selectFrom('media_assets')
     .select(ASSET_COLUMNS)
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
     .orderBy('id')
@@ -135,8 +151,13 @@ export const listLiveAssets = (afterId: string | null, limit: number, executor: 
 
 export type ExportAssetRow = Awaited<ReturnType<typeof listLiveAssets>>[number];
 
-/** Live app users after `afterId` (keyset), with their password hash and custom role keys. */
-export const listAppUsers = (afterId: string | null, limit: number, executor: Executor = db) =>
+/** One site's live app users after `afterId` (keyset), with their password hash and custom role keys. */
+export const listAppUsers = (
+  siteId: string,
+  afterId: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
   executor
     .selectFrom('app_users')
     .select([
@@ -162,6 +183,7 @@ export const listAppUsers = (afterId: string | null, limit: number, executor: Ex
         )
         .as('role_keys'),
     ])
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
     .orderBy('id')
@@ -180,18 +202,23 @@ export const listOAuthAccountsForUsers = (userIds: readonly string[], executor: 
         .orderBy('provider')
         .execute();
 
-/** Webhooks without their secret. */
-export const listWebhooks = (executor: Executor = db) =>
+/** One site's own webhooks without their secret (network webhooks are not a site's configuration). */
+export const listWebhooks = (siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('webhooks')
     .select(['id', 'name', 'url', 'events', 'enabled', 'allow_private_network', 'max_attempts'])
+    .where('site_id', '=', siteId)
     .orderBy('created_at')
     .execute();
 
-/** Deployment connections without their encrypted secrets (environment references are names, not secrets). */
-export const listDeploymentConnections = (executor: Executor = db) =>
+/**
+ * One site's deployment connections without their encrypted secrets (environment references are names, not
+ * secrets).
+ */
+export const listDeploymentConnections = (siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('deployment_connections')
+    .where('site_id', '=', siteId)
     .select([
       'id',
       'name',

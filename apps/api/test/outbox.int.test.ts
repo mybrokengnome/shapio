@@ -14,17 +14,26 @@ describe('transactional outbox', () => {
   });
 
   const write = (type: string, aggregateId = 'entry-1') =>
-    database.current.db
-      .transaction()
-      .execute((trx) =>
-        writeOutboxEvent(trx, { type, aggregateType: 'entry', aggregateId, payload: { locale: 'en' } }),
-      );
+    database.current.db.transaction().execute((trx) =>
+      writeOutboxEvent(trx, {
+        type,
+        aggregateType: 'entry',
+        aggregateId,
+        payload: { locale: 'en' },
+        siteId: null,
+      }),
+    );
 
   it('keeps an event only if the domain transaction commits', async () => {
     const { db } = database.current;
     await expect(
       db.transaction().execute(async (trx) => {
-        await writeOutboxEvent(trx, { type: 'entry.published', aggregateType: 'entry', aggregateId: 'x' });
+        await writeOutboxEvent(trx, {
+          type: 'entry.published',
+          aggregateType: 'entry',
+          aggregateId: 'x',
+          siteId: null,
+        });
         throw new Error('publish failed');
       }),
     ).rejects.toThrow('publish failed');

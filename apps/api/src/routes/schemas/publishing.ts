@@ -1,5 +1,5 @@
 import { Type, type TSchema } from 'typebox';
-import { NullableDateTimeSchema } from './adminIdentity.js';
+import { NullableDateTimeSchema, UuidSchema } from './adminIdentity.js';
 
 /** Schemas shared by the publishing routes (jobs, schedules, change sets, webhooks, deployments, preview). */
 
@@ -26,3 +26,6 @@ export const LocaleCodeSchema = Type.String({ minLength: 1, maxLength: 35 });
 export const PublicationActionSchema = Type.Union([Type.Literal('publish'), Type.Literal('unpublish')]);
 export const NameSchema = Type.String({ minLength: 1, maxLength: 200 });
 export const VersionSchema = Type.Integer({ minimum: 1 });
+
+/** The site a publishing record belongs to (sites plan §H): its ID and its key. */
+export const SiteRefSchema = Type.Object({ id: UuidSchema, key: Type.String() });

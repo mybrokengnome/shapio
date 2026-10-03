@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sendCallback } from '../../example-site/scripts/lib/callback.js';
+import { sendCallback } from '../../../examples/astro/scripts/lib/callback.js';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import { expectStatus } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
@@ -16,7 +16,7 @@ import { createRoleToken, schemaClient, type SchemaClient } from './helpers/sche
 import { useTestDatabase } from './helpers/testDatabase.js';
 
 /**
- * The example site's build callback sender (apps/example-site/scripts/lib/callback.ts) against the real
+ * The example site's build callback sender (examples/astro/scripts/lib/callback.ts) against the real
  * hooks endpoint: a generic-webhook run triggered by Shapio is moved to building, then deployed, by the
  * signed reports the site's build pipeline sends.
  */

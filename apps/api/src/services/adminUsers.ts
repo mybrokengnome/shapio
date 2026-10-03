@@ -4,13 +4,21 @@ import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { isUniqueViolation } from '../helpers/pgErrors.js';
 import { SYSTEM_ROLE_KEYS } from '../permissions/seedRoles.js';
-import type { Principal } from '../permissions/types.js';
+import type { Principal, RoleAssignment } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminSessionsRepository from '../repositories/adminSessions.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
 import type { AdminUserSummary } from '../repositories/adminUsers.js';
 import type { ActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
+import {
+  assertAssignableAssignments,
+  assignmentsOf,
+  holdsOwner,
+  roleIdsOf,
+  sortAssignments,
+  type AssignmentsInput,
+} from './roleAssignments.js';
 
 export type AdminUserStatus = 'active' | 'disabled';
 
@@ -19,6 +27,9 @@ export type AdminUserView = {
   email: string;
   name: string;
   status: AdminUserStatus;
+  /** Where each role applies: on one site, or on every site (`siteId` null). */
+  assignments: RoleAssignment[];
+  /** Deprecated: the distinct roles of `assignments`, on any site. */
   roleIds: string[];
   lastLoginAt: Date | null;
   createdAt: Date;
@@ -30,7 +41,8 @@ export const toAdminUserView = (row: AdminUserSummary): AdminUserView => ({
   email: row.email,
   name: row.name,
   status: row.status === 'disabled' ? 'disabled' : 'active',
-  roleIds: row.role_ids,
+  assignments: row.assignments,
+  roleIds: roleIdsOf(row.assignments),
   lastLoginAt: row.last_login_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -53,21 +65,12 @@ export const getOwnerRoleId = async (trx: Transaction<DB>): Promise<string> => {
 export const isOwnerActor = (actor: Principal, ownerRoleId: string): boolean =>
   actor.kind === 'system' || (actor.kind === 'admin' && actor.networkRoleIds.includes(ownerRoleId));
 
-/** Every role ID must exist and be an admin role (delivery roles are for tokens only). */
-export const assertAssignableRoles = async (roleIds: readonly string[], trx: Transaction<DB>) => {
-  const unique = [...new Set(roleIds)];
-  const roles = await adminRolesRepository.findByIds(unique, trx);
-  if (roles.length !== unique.length || roles.some((role) => role.kind !== 'admin')) {
-    throw new AppError(400, 'INVALID_ROLES', 'Every role must exist and be an admin role');
-  }
-  return unique;
-};
-
-type NewAdminUserInput = { email: string; name: string; passwordHash: string; roleIds: readonly string[] };
+type NewAdminUserInput = { email: string; name: string; passwordHash: string } & AssignmentsInput;
 
 /**
- * Inserts an admin user with roles. Shared by setup, invitations and `shapio admin create`; the caller
- * owns the transaction, authorisation and audit.
+ * Inserts an admin user with role assignments (`roleIds`: those roles on every site). Shared by setup,
+ * invitations and `shapio admin create`; the caller owns the transaction, validation, authorisation and
+ * audit.
  */
 export const insertAdminUser = async (input: NewAdminUserInput, trx: Transaction<DB>): Promise<string> => {
   const email = normalizeEmail(input.email);
@@ -79,7 +82,7 @@ export const insertAdminUser = async (input: NewAdminUserInput, trx: Transaction
       { email, name: input.name.trim(), password_hash: input.passwordHash },
       trx,
     );
-    await adminUsersRepository.replaceRoles(id, input.roleIds, trx);
+    await adminUsersRepository.replaceAssignments(id, assignmentsOf(input) ?? [], trx);
     return id;
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -110,12 +113,16 @@ const assertAnotherOwnerRemains = async (exceptUserId: string, trx: Transaction<
   }
 };
 
-export type UpdateAdminUserInput = { name?: string; status?: AdminUserStatus; roleIds?: string[] };
+export type UpdateAdminUserInput = { name?: string; status?: AdminUserStatus } & AssignmentsInput;
+
+const sameAssignments = (a: readonly RoleAssignment[], b: readonly RoleAssignment[]) =>
+  JSON.stringify(sortAssignments(a)) === JSON.stringify(sortAssignments(b));
 
 /**
- * Changes another admin's name, status or roles. Role changes rotate the user's sessions on their next
- * request; disabling revokes them. Owners are protected: only owners change owner accounts, and the last
- * active owner cannot lose the role or be disabled.
+ * Changes another admin's name, status or role assignments (`assignments` replaces them all; `roleIds`, the
+ * deprecated form, replaces them with those roles on every site). Assignment changes rotate the user's
+ * sessions on their next request; disabling revokes them. Owners are protected: only owners change owner
+ * accounts, and the last active owner cannot lose the role or be disabled.
  */
 export const updateAdminUser = async (
   context: ActorContext,
@@ -128,9 +135,12 @@ export const updateAdminUser = async (
       throw notFound();
     }
     const ownerRoleId = await getOwnerRoleId(trx);
-    const roleIds = input.roleIds ? await assertAssignableRoles(input.roleIds, trx) : target.role_ids;
-    const wasOwner = target.role_ids.includes(ownerRoleId);
-    const willBeOwner = roleIds.includes(ownerRoleId);
+    const requested = assignmentsOf(input);
+    const assignments = requested
+      ? await assertAssignableAssignments(requested, ownerRoleId, trx)
+      : target.assignments;
+    const wasOwner = target.network_role_ids.includes(ownerRoleId);
+    const willBeOwner = holdsOwner(assignments, ownerRoleId);
     if ((wasOwner || willBeOwner) && !isOwnerActor(context.actor, ownerRoleId)) {
       throw new AppError(
         403,
@@ -151,12 +161,9 @@ export const updateAdminUser = async (
       },
       trx,
     );
-    const rolesChanged =
-      input.roleIds !== undefined &&
-      (roleIds.length !== target.role_ids.length ||
-        roleIds.some((roleId) => !target.role_ids.includes(roleId)));
-    if (rolesChanged) {
-      await adminUsersRepository.replaceRoles(id, roleIds, trx);
+    const assignmentsChanged = requested !== undefined && !sameAssignments(assignments, target.assignments);
+    if (assignmentsChanged) {
+      await adminUsersRepository.replaceAssignments(id, assignments, trx);
       await adminSessionsRepository.requireRotationForUser(id, now, trx);
     }
     if (disabling) {
@@ -168,7 +175,9 @@ export const updateAdminUser = async (
       target: { type: 'admin_user', id },
       metadata: {
         fields: Object.keys(input),
-        ...(rolesChanged ? { roleIds: { from: target.role_ids, to: [...roleIds].sort() } } : {}),
+        ...(assignmentsChanged
+          ? { assignments: { from: sortAssignments(target.assignments), to: assignments } }
+          : {}),
         ...(input.status !== undefined ? { status: { from: target.status, to: input.status } } : {}),
       },
     });
@@ -189,7 +198,7 @@ export const deleteAdminUser = async (context: ActorContext, id: string): Promis
       throw notFound();
     }
     const ownerRoleId = await getOwnerRoleId(trx);
-    if (target.role_ids.includes(ownerRoleId)) {
+    if (target.network_role_ids.includes(ownerRoleId)) {
       if (!isOwnerActor(context.actor, ownerRoleId)) {
         throw new AppError(403, 'OWNER_REQUIRED', 'Only owners can delete owners');
       }
@@ -213,7 +222,7 @@ export const revokeAdminUserSessions = async (context: ActorContext, id: string)
       throw notFound();
     }
     const ownerRoleId = await getOwnerRoleId(trx);
-    if (target.role_ids.includes(ownerRoleId) && !isOwnerActor(context.actor, ownerRoleId)) {
+    if (target.network_role_ids.includes(ownerRoleId) && !isOwnerActor(context.actor, ownerRoleId)) {
       throw new AppError(403, 'OWNER_REQUIRED', 'Only owners can sign owners out');
     }
     await adminSessionsRepository.revokeAllForUser(id, new Date(), {}, trx);

@@ -313,7 +313,7 @@ describe('delivery API', () => {
 
   it('sends validators and cache headers', async () => {
     const first = expectStatus(await deliver('/api/content/articles'), 200);
-    expect(first.headers.vary).toBe('Authorization, Cookie');
+    expect(first.headers.vary).toBe('Authorization, Cookie, Shapio-Site');
     expect(first.headers['cache-control']).toContain('private');
     const etag = first.headers.etag as string;
     expect(etag).toMatch(/^"[\w-]+"$/);

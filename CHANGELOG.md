@@ -4,6 +4,22 @@ All notable changes to Shapio are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Site starters**: Astro, Next.js (App Router) and SvelteKit sites that render the same blog (pages with
+  sections, articles, authors and a `siteSettings` singleton) in English and French, pinned to one publication
+  snapshot per build, with `SHAPIO_SITE` for multi-site instances.
+  `npx create-shapio my-site --site astro|next|sveltekit` writes one as a standalone project with the model
+  files, a seed and a smoke check.
+
+### Changed
+
+- The example site moved from `apps/example-site` to `examples/astro` (package `example-astro`); its model
+  files and seed moved to `examples/shared`, where all three starters share them. The seed applies the models
+  through the schema apply API and also seeds the `siteSettings` singleton.
+
 ## [0.1.0] - 2026-10-03
 
 The first release.

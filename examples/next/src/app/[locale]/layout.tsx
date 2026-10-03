@@ -1,0 +1,69 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+import { LocaleSwitch } from '../../components/LocaleSwitch';
+import { getSiteSettings } from '../../lib/shapio';
+import {
+  articlesPath,
+  colophonPath,
+  HOME_SLUG,
+  LOCALES,
+  otherLocale,
+  pagePath,
+  stringsFor,
+  toLocale,
+} from '../../lib/site';
+import '../site.css';
+
+/** Only the site's locales exist; any other first segment is a 404. */
+export const dynamicParams = false;
+export const generateStaticParams = () => LOCALES.map((locale) => ({ locale }));
+
+type LocaleParams = { params: Promise<{ locale: string }> };
+
+export const generateMetadata = async ({ params }: LocaleParams): Promise<Metadata> => {
+  const locale = toLocale((await params).locale);
+  const siteName = (await getSiteSettings(locale))?.siteName ?? stringsFor(locale).siteName;
+  return { title: { template: `%s · ${siteName}`, default: siteName }, icons: '/favicon.svg' };
+};
+
+type LocaleLayoutProps = LocaleParams & { children: ReactNode };
+
+/** The root layout: every page lives under its locale (`/en/…`, `/fr/…`). */
+const LocaleLayout = async ({ children, params }: LocaleLayoutProps) => {
+  const locale = toLocale((await params).locale);
+  const strings = stringsFor(locale);
+  // The name, tagline and footer come from the siteSettings singleton (built-in strings until it is published).
+  const settings = await getSiteSettings(locale);
+  const other = otherLocale(locale);
+  return (
+    <html lang={locale}>
+      <body>
+        <a className="skip" href="#content">
+          {strings.skipToContent}
+        </a>
+        <header className="site-header">
+          <Link className="brand" href={pagePath(locale, HOME_SLUG)}>
+            {settings?.siteName ?? strings.siteName}
+          </Link>
+          {settings?.tagline ? <p className="tagline">{settings.tagline}</p> : null}
+          <nav aria-label="Main">
+            <Link href={articlesPath(locale)}>{strings.articles}</Link>
+            <Link href={colophonPath(locale)}>{strings.colophon}</Link>
+            <LocaleSwitch to={other} label={strings.switchTo} />
+          </nav>
+        </header>
+        <main id="content">{children}</main>
+        <footer className="site-footer">
+          <p>
+            {settings?.siteName ?? strings.siteName} · {settings?.footer ?? strings.footer} · Next.js
+          </p>
+        </footer>
+        {/* Visual editing (@shapio/visual) plugs in here: its script and the data-shapio attributes on content
+            arrive with Shapio's visual-editing SDK, together with draft preview. */}
+      </body>
+    </html>
+  );
+};
+
+export default LocaleLayout;

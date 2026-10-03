@@ -8,6 +8,7 @@ import type { EmailMessage } from '../email/types.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
 import { enqueueJob } from '../jobs/queue.js';
+import { siteMismatch } from '../permissions/sites.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import type { AppUserRow } from '../repositories/appUsers.js';
 import * as appUserTokensRepository from '../repositories/appUserTokens.js';
@@ -86,11 +87,12 @@ const invalidLink = () =>
 /**
  * Consumes a link token: locks the row, checks it is unused and unexpired and that the account still has the
  * address it was sent to, then marks every pending link of that kind for the account used. Returns the
- * locked account.
+ * locked account. A link of another site's account is refused (403 `SITE_MISMATCH`) and stays unused.
  */
 export const consumeLink = async (
   kind: AppUserLinkKind,
   token: string,
+  siteId: string,
   trx: Transaction<DB>,
 ): Promise<AppUserRow> => {
   const definition = LINKS[kind];
@@ -102,6 +104,9 @@ export const consumeLink = async (
   const user = await appUsersRepository.lockById(row.app_user_id, trx);
   if (!user || user.email !== row.email || user.blocked_at !== null) {
     throw invalidLink();
+  }
+  if (user.site_id !== siteId) {
+    throw siteMismatch();
   }
   await appUserTokensRepository.consumeAllForUser(definition.table, user.id, now, trx);
   return user;

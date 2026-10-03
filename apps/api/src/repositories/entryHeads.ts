@@ -9,6 +9,7 @@ type Executor = Kysely<DB> | Transaction<DB>;
 
 const COLUMNS = [
   'entry_id',
+  'site_id',
   'model_id',
   'locale',
   'state',
@@ -187,7 +188,17 @@ export const scanEntryBatch = (filter: EntryBatchFilter, executor: Executor = db
   }
   return executor
     .selectFrom('entry_heads')
-    .select(['entry_id', 'model_id', 'locale', 'state', 'revision_id', 'data', 'autosaved_at', 'change_seq'])
+    .select([
+      'entry_id',
+      'site_id',
+      'model_id',
+      'locale',
+      'state',
+      'revision_id',
+      'data',
+      'autosaved_at',
+      'change_seq',
+    ])
     .where('model_id', 'in', filter.modelIds)
     .where('entry_id', 'in', entries)
     .orderBy('entry_id')

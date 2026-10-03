@@ -7,6 +7,7 @@ import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
+import { siteMismatch } from '../permissions/sites.js';
 import type { AppUserPrincipal } from '../permissions/types.js';
 import * as appRefreshTokensRepository from '../repositories/appRefreshTokens.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
@@ -144,6 +145,7 @@ export const issueSession = async (
     pv: await permissionsVersionRepository.getPermissionsVersion(trx),
     tv: user.token_version,
     sid: familyId,
+    site: user.site_id,
   });
   return {
     user: await loadView(appUserId, trx),
@@ -204,15 +206,23 @@ const retryWithinGrace = async (
 const rotate = async (
   runtime: AppAuthRuntime,
   refreshToken: string,
+  siteId: string,
   client: ClientInfo,
   trx: Transaction<DB>,
 ): Promise<RefreshOutcome> => {
   const now = new Date();
   const row = await appRefreshTokensRepository.lockByTokenHash(hashToken(refreshToken), trx);
-  if (!row || row.revoked_at !== null || row.expires_at.getTime() <= now.getTime()) {
+  if (!row) {
     return { kind: 'rejected', error: invalidRefreshToken() };
   }
-  const actor: AppUserPrincipal = { kind: 'appUser', appUserId: row.app_user_id, roleIds: [] };
+  // Another site's token is refused before anything about it changes (no rotation, no reuse detection).
+  if (row.site_id !== siteId) {
+    return { kind: 'rejected', error: siteMismatch() };
+  }
+  if (row.revoked_at !== null || row.expires_at.getTime() <= now.getTime()) {
+    return { kind: 'rejected', error: invalidRefreshToken() };
+  }
+  const actor: AppUserPrincipal = { kind: 'appUser', appUserId: row.app_user_id, siteId, roleIds: [] };
   if (row.used_at !== null) {
     const retried = await retryWithinGrace(runtime, row, refreshToken, client, trx);
     if (retried) {
@@ -250,15 +260,17 @@ const rotate = async (
 };
 
 /**
- * Rotates a refresh token. A rejection that revoked something (reuse, unavailable account) commits before
- * the error is thrown, so the revocation and its audit row are never rolled back by the failure.
+ * Rotates a refresh token of an account on `siteId` (a token of another site is a 403 `SITE_MISMATCH`). A
+ * rejection that revoked something (reuse, unavailable account) commits before the error is thrown, so the
+ * revocation and its audit row are never rolled back by the failure.
  */
 export const refreshSession = async (
   runtime: AppAuthRuntime,
   refreshToken: string,
+  siteId: string,
   client: ClientInfo,
 ): Promise<AppSession> => {
-  const outcome = await db.transaction().execute((trx) => rotate(runtime, refreshToken, client, trx));
+  const outcome = await db.transaction().execute((trx) => rotate(runtime, refreshToken, siteId, client, trx));
   if (outcome.kind === 'rejected') {
     throw outcome.error;
   }
@@ -281,16 +293,19 @@ export const endAllSignIns = async (
 };
 
 /**
- * Signs one sign-in out: revokes the refresh token's whole family. Access tokens carry no sign-in of their
+ * Signs one sign-in out (a token of another site than `siteId` is refused): revokes the refresh token's whole family. Access tokens carry no sign-in of their
  * own that could be checked cheaply, so the account's token version moves too: every access token of the
  * account is rejected, and its other sign-ins get new ones on their next refresh. Unknown tokens and
  * families already revoked change nothing (a stale token cannot be used to sign everyone out repeatedly).
  */
-export const revokeSession = async (refreshToken: string): Promise<void> => {
+export const revokeSession = async (refreshToken: string, siteId: string): Promise<void> => {
   await db.transaction().execute(async (trx) => {
     const row = await appRefreshTokensRepository.findByTokenHash(hashToken(refreshToken), trx);
     if (!row) {
       return;
+    }
+    if (row.site_id !== siteId) {
+      throw siteMismatch();
     }
     const revoked = await appRefreshTokensRepository.revokeFamily(row.family_id, new Date(), 'logout', trx);
     if (revoked > 0) {
@@ -328,7 +343,7 @@ export const resolveAccessToken = async (
     return undefined;
   }
   if (claims.pv === version) {
-    return { kind: 'appUser', appUserId: claims.sub, roleIds: claims.roles };
+    return { kind: 'appUser', appUserId: claims.sub, siteId: claims.site, roleIds: claims.roles };
   }
   const key = `${claims.sub}:${version}`;
   let resolved = runtime.principals.get(key);
@@ -336,5 +351,7 @@ export const resolveAccessToken = async (
     resolved = await revalidate(runtime, claims.sub);
     runtime.principals.set(key, resolved);
   }
-  return resolved ? { kind: 'appUser', appUserId: claims.sub, roleIds: resolved.roleIds } : undefined;
+  return resolved
+    ? { kind: 'appUser', appUserId: claims.sub, siteId: claims.site, roleIds: resolved.roleIds }
+    : undefined;
 };

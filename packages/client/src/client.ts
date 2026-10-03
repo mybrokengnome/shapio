@@ -16,6 +16,12 @@ export type ShapioClientOptions = {
   credentials?: FetchCredentials;
   /** Extra headers computed per request (the admin's CSRF token). */
   headers?: () => Readonly<Record<string, string>>;
+  /**
+   * The site key (multi-site instances). Delivery reads send it as `?site=`, every other request as the
+   * `Shapio-Site` header. Leave it out to use the token's site, else the primary site. A site token only
+   * ever reads its own site: naming another one is refused (403 `SITE_MISMATCH`).
+   */
+  site?: string;
 };
 
 export const createClient = ({
@@ -24,8 +30,9 @@ export const createClient = ({
   fetch = globalThis.fetch,
   credentials,
   headers,
+  site,
 }: ShapioClientOptions) => {
-  const request = createRequest({ baseUrl, token, fetch, credentials, headers });
+  const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
 
   return {
     /**

@@ -13,8 +13,12 @@ const fields = createStaticFieldVisibility({
   ],
 });
 
+const SITE = '00000000-0000-4000-b000-000000000001';
+
+/** Grants, with the site binding the built-in `public` and `authenticated` roles (as the primary site does). */
 const staticGrants = (grants: readonly Grant[]): GrantSource => ({
   getGrants: (roleIds) => Promise.resolve(grants.filter((grant) => roleIds.includes(grant.roleId))),
+  getSiteAppRoleIds: (siteId, audience) => Promise.resolve(siteId === SITE ? [APP_ROLE_IDS[audience]] : []),
 });
 
 const grant = (overrides: Partial<Grant> & Pick<Grant, 'roleId' | 'action'>): Grant => ({
@@ -24,8 +28,13 @@ const grant = (overrides: Partial<Grant> & Pick<Grant, 'roleId' | 'action'>): Gr
   ...overrides,
 });
 
-const anonymous: Principal = { kind: 'anonymous' };
-const appUser = (roleIds: string[] = []): Principal => ({ kind: 'appUser', appUserId: 'u1', roleIds });
+const anonymous: Principal = { kind: 'anonymous', siteId: SITE };
+const appUser = (roleIds: string[] = []): Principal => ({
+  kind: 'appUser',
+  appUserId: 'u1',
+  siteId: SITE,
+  roleIds,
+});
 
 describe('app-user and anonymous principals', () => {
   it('denies anonymous callers when `public` grants nothing', async () => {
@@ -83,5 +92,32 @@ describe('app-user and anonymous principals', () => {
         expect(await evaluator.canPerform(principal, action)).toBe(false);
       }
     }
+  });
+
+  it('grants only what the site binds: another site, or no site at all, binds nothing (deny by default)', async () => {
+    const evaluator = createPermissionEvaluator({
+      grants: staticGrants([
+        grant({ roleId: APP_ROLE_IDS.public, action: 'read' }),
+        grant({ roleId: APP_ROLE_IDS.authenticated, action: 'read' }),
+        grant({ roleId: 'writer', action: 'create' }),
+      ]),
+      fields,
+    });
+    const otherSite = '00000000-0000-4000-b000-00000000000b';
+    const read = { action: 'read', modelId: MODEL } as const;
+    expect((await evaluator.evaluate(anonymous, read)).allowed).toBe(true);
+    expect(await evaluator.evaluate({ kind: 'anonymous', siteId: otherSite }, read)).toEqual(DENIED_POLICY);
+    expect(await evaluator.evaluate({ kind: 'anonymous', siteId: null }, read)).toEqual(DENIED_POLICY);
+    const appUserElsewhere: Principal = {
+      kind: 'appUser',
+      appUserId: 'u2',
+      siteId: otherSite,
+      roleIds: ['writer'],
+    };
+    expect(await evaluator.evaluate(appUserElsewhere, read)).toEqual(DENIED_POLICY);
+    // Custom roles assigned to the account still apply; only the site's audience bindings are missing.
+    expect((await evaluator.evaluate(appUserElsewhere, { action: 'create', modelId: MODEL })).allowed).toBe(
+      true,
+    );
   });
 });

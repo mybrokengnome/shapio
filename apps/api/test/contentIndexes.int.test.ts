@@ -2,7 +2,11 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { compileFilter, compileHeadQuery } from '../src/content/compiler/compile.js';
-import { fieldIndexName, fieldStatisticsName } from '../src/content/compiler/expressions.js';
+import {
+  fieldIndexName,
+  fieldStatisticsName,
+  fieldValueExpression,
+} from '../src/content/compiler/expressions.js';
 import { parseContentQuery } from '../src/content/compiler/parse.js';
 import { parseQueryTree } from '../src/content/compiler/querystring.js';
 import { compileOrderBy } from '../src/content/compiler/sort.js';
@@ -10,6 +14,7 @@ import { readScopeFor } from '../src/content/locales.js';
 import { resolveModel, type ContentModel } from '../src/content/model.js';
 import { createContentPorts } from '../src/content/ports.js';
 import { getIndexState } from '../src/db/indexCatalog.js';
+import { up as enqueueFieldIndexLayout } from '../src/db/migrations/20261003140200_enqueue_field_index_layout.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { createWorker } from '../src/jobs/worker.js';
 import { createSchemaJobHandlers } from '../src/schema/planner/changeJob.js';
@@ -98,6 +103,7 @@ describe('content indexes serve compiled queries', () => {
       resolveModel: () => undefined,
     });
     const compiled = compileHeadQuery({
+      siteId: PRIMARY_SITE_ID,
       modelId: model.definition.id,
       source: { kind: 'heads', state: 'published' },
       locales: readScopeFor(snapshot, model.definition, 'en', { fallback: false }),
@@ -228,6 +234,61 @@ describe('field index builds', () => {
       `.execute(database.current.db);
       expect(indexes.rows).toHaveLength(18);
       expect(indexes.rows.every((row) => row.valid)).toBe(true);
+    } finally {
+      await testApp.app.close();
+    }
+  });
+});
+
+describe('field index layout v2 (sites)', () => {
+  const database = useTestDatabase();
+
+  it('rebuilds indexes of the layout before sites with the site leading, then drops the old ones', async () => {
+    const testApp = await createTestApp(database.current, { schemaListen: false });
+    try {
+      const admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
+      const shop = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'shop',
+        label: 'Shop',
+        fields: [{ apiKey: 'rank', label: 'Rank', type: 'integer', filterable: true }],
+      });
+      await runContentSchemaJobs(database.current.db);
+      const spec = {
+        modelId: shop.definition.id,
+        fieldId: fieldIdOf(shop, 'rank'),
+        type: 'integer' as const,
+        localized: false,
+      };
+      const current = fieldIndexName(spec);
+      const legacy = fieldIndexName(spec, 1);
+      const { db } = database.current;
+      // An instance upgraded from before sites: the layout-1 index, no layout-2 one.
+      await sql`drop index ${sql.id(current)}`.execute(db);
+      await sql`create index ${sql.id(legacy)} on entry_heads (state, ${fieldValueExpression(spec.fieldId, spec.type)})
+        where model_id = ${sql.lit(spec.modelId)}`.execute(db);
+      await sql`create statistics ${sql.id(fieldStatisticsName(legacy))}
+        on ${fieldValueExpression(spec.fieldId, spec.type)} from entry_heads`.execute(db);
+
+      await enqueueFieldIndexLayout(db as never);
+      await enqueueFieldIndexLayout(db as never);
+      const queued = await db
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'schema.fieldIndexLayout')
+        .execute();
+      expect(queued).toHaveLength(1);
+      await runContentSchemaJobs(db);
+
+      expect(await getIndexState(db, current)).toBe('valid');
+      expect(await getIndexState(db, legacy)).toBe('missing');
+      const definition = await sql<{
+        indexdef: string;
+      }>`select indexdef from pg_indexes where indexname = ${current}`.execute(db);
+      expect(definition.rows[0]?.indexdef).toContain('(site_id, state,');
+      const statistics = await sql<{ stxname: string }>`select stxname from pg_statistic_ext
+        where stxname in (${fieldStatisticsName(current)}, ${fieldStatisticsName(legacy)})`.execute(db);
+      expect(statistics.rows.map((row) => row.stxname)).toEqual([fieldStatisticsName(current)]);
     } finally {
       await testApp.app.close();
     }

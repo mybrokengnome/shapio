@@ -1,18 +1,19 @@
 import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
-import { ShapioApiError } from '@shapio/client';
+import { SITE_HEADER, ShapioApiError } from '@shapio/client';
 import type { CliIo } from '../../types.js';
 
 /**
  * HTTP for `shapio export` and `shapio import`: the same base URL and admin API token as the other remote
  * commands (SHAPIO_URL / SHAPIO_TOKEN), plus streaming bodies, which the JSON client does not do. A 429 from
- * the instance's rate limit is waited out and retried.
+ * the instance's rate limit is waited out and retried. A bundle is one site's content: `--site <key>` (or
+ * SHAPIO_SITE) names it, else the token's site, else the primary site.
  */
 export const DEFAULT_URL = 'http://localhost:4300';
 const MAX_RETRIES = 8;
 
-export type Connection = { baseUrl: string; token: string };
+export type Connection = { baseUrl: string; token: string; site?: string };
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -23,7 +24,7 @@ export class UsageError extends Error {
 
 export type TransferArgs = { connection: Connection; flags: Record<string, boolean>; file: string };
 
-/** `[--url] [--token] [--<flag>...] <file>` for both commands. */
+/** `[--url] [--token] [--site] [--<flag>...] <file>` for both commands. */
 export const parseTransferArgs = (
   args: readonly string[],
   io: CliIo,
@@ -34,6 +35,7 @@ export const parseTransferArgs = (
     options: {
       url: { type: 'string' },
       token: { type: 'string' },
+      site: { type: 'string' },
       ...Object.fromEntries(flags.map((flag) => [flag, { type: 'boolean' as const, default: false }])),
     },
     allowPositionals: true,
@@ -46,8 +48,13 @@ export const parseTransferArgs = (
   if (!file || extra.length > 0) {
     throw new UsageError('Give exactly one bundle file');
   }
+  const site = values.site ?? io.env.SHAPIO_SITE;
   return {
-    connection: { baseUrl: values.url ?? io.env.SHAPIO_URL ?? DEFAULT_URL, token },
+    connection: {
+      baseUrl: values.url ?? io.env.SHAPIO_URL ?? DEFAULT_URL,
+      token,
+      ...(site ? { site } : {}),
+    },
     flags: Object.fromEntries(
       flags.map((flag) => [flag, (values as Record<string, unknown>)[flag] === true]),
     ),
@@ -95,6 +102,7 @@ export const send = async (
       method: input.method ?? 'GET',
       headers: {
         authorization: `Bearer ${connection.token}`,
+        ...(connection.site ? { [SITE_HEADER]: connection.site } : {}),
         ...(input.contentType ? { 'content-type': input.contentType } : {}),
       },
       ...(body ? { body: Readable.toWeb(body) as ReadableStream, duplex: 'half' } : {}),

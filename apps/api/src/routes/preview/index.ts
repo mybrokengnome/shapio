@@ -16,8 +16,9 @@ import { ErrorResponseSchema } from '../schemas/error.js';
  */
 export const previewRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
-  // The preview token is not an app-user JWT: the app-user plugin must leave this bearer alone.
-  const config = { appToken: 'ignore' as const };
+  // The preview token is not an app-user JWT: the app-user plugin must leave this bearer alone. Its site is
+  // the request's site: naming another one is refused (403 SITE_MISMATCH).
+  const config = { appToken: 'ignore' as const, siteCredential: handlers.previewSiteCredential };
   const response = {
     200: DeliveryResponseSchema,
     401: ErrorResponseSchema,

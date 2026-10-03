@@ -63,7 +63,11 @@ export const shipChangeSet = async (
 ): Promise<ShipOutcome> => {
   const versions = new Map((input.itemVersions ?? []).map((entry) => [entry.itemId, entry.draftVersion]));
   const prepared = await context.db.transaction().execute(async (trx) => {
-    const row = checkShippable(await changeSetsRepository.lockById(id, trx), id, input.expectedVersion);
+    const row = checkShippable(
+      await changeSetsRepository.lockOnSite(context.site.id, id, trx),
+      id,
+      input.expectedVersion,
+    );
     const ship = await planShip(context, row, input, trx);
     if (ship.needsJob) {
       await assertReviewedDraftVersions(trx, ship.entryItems, versions);
@@ -108,7 +112,7 @@ export const scheduleChangeSet = async (
     throw new AppError(400, 'SCHEDULE_IN_PAST', 'Choose a time in the future');
   }
   await context.db.transaction().execute(async (trx) => {
-    const row = await changeSetsRepository.lockById(id, trx);
+    const row = await changeSetsRepository.lockOnSite(context.site.id, id, trx);
     if (!row) {
       throw changeSetNotFound(id);
     }
@@ -151,6 +155,7 @@ export const scheduleChangeSet = async (
       aggregateType: 'change_set',
       aggregateId: id,
       payload: { changeSetId: id, at: input.at.toISOString() },
+      siteId: context.site.id,
     });
     await auditChangeSet(trx, context, id, 'change_set.schedule', { at: input.at.toISOString() });
   });
@@ -162,7 +167,7 @@ export const unscheduleChangeSet = async (
   id: string,
 ): Promise<ChangeSetView> => {
   await context.db.transaction().execute(async (trx) => {
-    const row = await changeSetsRepository.lockById(id, trx);
+    const row = await changeSetsRepository.lockOnSite(context.site.id, id, trx);
     if (!row) {
       throw changeSetNotFound(id);
     }

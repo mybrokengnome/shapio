@@ -21,6 +21,7 @@ import type { HeadRecord } from '../repositories/entryHeads.js';
 import { createSeqAllocator, type SeqAllocator } from '../repositories/publications.js';
 import { actorColumns } from '../schema/planner/actor.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { SiteRef } from './actorContext.js';
 import {
   assertEntryVisible,
   auditEntry,
@@ -37,6 +38,8 @@ import { viewAfterWrite, type AdminEntryView } from './contentReads.js';
  */
 export type PublishTransaction = {
   write: WriteContext;
+  /** The site published on (lifecycle hooks are told about it). */
+  site: SiteRef;
   snapshot: SchemaSnapshot;
   hooks: ContentHooks;
   /** The transaction's one publication sequence number (shared by a whole batch). */
@@ -52,7 +55,7 @@ export const publishLocalesInTransaction = async (
   locales: readonly string[],
   heads: readonly HeadRecord[],
 ): Promise<PublishedLocale[]> => {
-  const { write, snapshot, hooks } = tx;
+  const { write, snapshot, hooks, site } = tx;
   const { model, trx, actor } = write;
   const validator = buildValidator(snapshot, model);
   const drafts = heads.filter((head) => head.state === 'draft');
@@ -72,10 +75,11 @@ export const publishLocalesInTransaction = async (
         outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
       );
     }
-    await assertTargets(trx, outcome);
+    await assertTargets(trx, outcome, site.id);
     const published = heads.find((head) => head.state === 'published' && head.locale === locale);
     const context = {
       trx,
+      site,
       model,
       entryId,
       locale,
@@ -87,7 +91,11 @@ export const publishLocalesInTransaction = async (
     const seq = await tx.seq.next();
     const revisionId = await publishDraft(write, { draft: { ...draft, data: outcome.data }, published, seq });
     await hooks.run('afterPublish', context);
-    await writeEntryEvent(trx, model, 'entry.published', entryId, { locale, revisionId, snapshot: seq });
+    await writeEntryEvent(trx, site.id, model, 'entry.published', entryId, {
+      locale,
+      revisionId,
+      snapshot: seq,
+    });
     results.push({ locale, revisionId, snapshot: seq });
   }
   return results;
@@ -104,7 +112,7 @@ export const publishRevisionInTransaction = async (
   source: { id: string; data: ContentData },
   heads: readonly HeadRecord[],
 ): Promise<PublishedLocale> => {
-  const { write, snapshot, hooks } = tx;
+  const { write, snapshot, hooks, site } = tx;
   const { model, trx, actor } = write;
   const outcome = buildValidator(snapshot, model).validate(source.data);
   if (outcome.issues.length > 0) {
@@ -112,10 +120,11 @@ export const publishRevisionInTransaction = async (
       outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
     );
   }
-  await assertTargets(trx, outcome);
+  await assertTargets(trx, outcome, site.id);
   const published = heads.find((head) => head.state === 'published' && head.locale === locale);
   const context = {
     trx,
+    site,
     model,
     entryId,
     locale,
@@ -134,7 +143,11 @@ export const publishRevisionInTransaction = async (
     seq,
   });
   await hooks.run('afterPublish', context);
-  await writeEntryEvent(trx, model, 'entry.published', entryId, { locale, revisionId, snapshot: seq });
+  await writeEntryEvent(trx, site.id, model, 'entry.published', entryId, {
+    locale,
+    revisionId,
+    snapshot: seq,
+  });
   return { locale, revisionId, snapshot: seq };
 };
 
@@ -173,11 +186,17 @@ const changePublication = async (
   }
   const lockedLocales = model.definition.localized ? targetLocales(context, model, input.locales, []) : [];
   await runEntryWrite(context.db, model, lockedLocales, async (trx) => {
-    const write: WriteContext = { trx, model, actor: context.actor, now: new Date() };
+    const write: WriteContext = {
+      trx,
+      siteId: context.site.id,
+      model,
+      actor: context.actor,
+      now: new Date(),
+    };
     assertEntryVisible(
       policy,
       context.actor,
-      await entriesRepository.lockLive(id, model.definition.id, trx),
+      await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
@@ -189,7 +208,7 @@ const changePublication = async (
     });
     if (operation === 'publish') {
       const published = await publishLocalesInTransaction(
-        { write, snapshot: context.snapshot, hooks: context.hooks, seq: seqs },
+        { write, site: context.site, snapshot: context.snapshot, hooks: context.hooks, seq: seqs },
         id,
         locales,
         heads,
@@ -206,7 +225,10 @@ const changePublication = async (
       const seq = live.length > 0 ? await seqs.next() : null;
       for (const locale of live) {
         await unpublishLocale(write, id, locale, seq as number);
-        await writeEntryEvent(trx, model, 'entry.unpublished', id, { locale, snapshot: seq });
+        await writeEntryEvent(trx, context.site.id, model, 'entry.unpublished', id, {
+          locale,
+          snapshot: seq,
+        });
       }
       metadata = { locales: live, snapshot: seq };
     }

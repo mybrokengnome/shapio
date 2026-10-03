@@ -10,7 +10,7 @@ import type { ReadScope } from './context.js';
 
 /**
  * Per-request DataLoaders (ADR 0006): relation targets and `localizations` are batched per target model and
- * read scope (locale, fallback, draft/published, snapshot), so a list of N entries costs one query per
+ * read scope (site, locale, fallback, draft/published, snapshot), so a list of N entries costs one query per
  * relation field and level, never N. Media views are resolved inside each batch's projection.
  */
 export type GraphqlLoaders = {
@@ -26,9 +26,10 @@ export type GraphqlLoaders = {
   ) => DataLoader<string, DeliveryEntry[]>;
 };
 
-const keyOf = (kind: string, snapshot: SchemaSnapshot, modelId: string, scope: ReadScope) =>
+const keyOf = (kind: string, siteId: string, snapshot: SchemaSnapshot, modelId: string, scope: ReadScope) =>
   JSON.stringify([
     kind,
+    siteId,
     snapshot.version,
     modelId,
     scope.locale ?? null,
@@ -38,6 +39,7 @@ const keyOf = (kind: string, snapshot: SchemaSnapshot, modelId: string, scope: R
   ]);
 
 export const createLoaders = (
+  siteId: () => string,
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>,
 ): GraphqlLoaders => {
   const loaders = new Map<string, DataLoader<string, unknown>>();
@@ -52,7 +54,7 @@ export const createLoaders = (
   return {
     entries: (snapshot, modelId, scope) =>
       memo(
-        keyOf('entries', snapshot, modelId, scope),
+        keyOf('entries', siteId(), snapshot, modelId, scope),
         () =>
           new DataLoader<string, DeliveryEntry | null>(async (ids) => {
             const found = await loadDeliveryEntries(await content(snapshot), modelId, ids, scope);
@@ -61,7 +63,7 @@ export const createLoaders = (
       ),
     localizations: (snapshot, modelId, scope) =>
       memo(
-        keyOf('localizations', snapshot, modelId, scope),
+        keyOf('localizations', siteId(), snapshot, modelId, scope),
         () =>
           new DataLoader<string, DeliveryEntry[]>(async (ids) => {
             const found = await loadDeliveryLocalizations(await content(snapshot), modelId, ids, scope);

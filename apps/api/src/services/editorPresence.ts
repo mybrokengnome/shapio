@@ -47,7 +47,7 @@ const visibleEntry = async (context: ContentServiceContext, modelKey: string, id
   assertEntryVisible(
     policy,
     context.actor,
-    await entriesRepository.findLive(id, model.definition.id, context.db),
+    await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db),
     id,
   );
   return model;

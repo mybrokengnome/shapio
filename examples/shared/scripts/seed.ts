@@ -1,0 +1,296 @@
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import {
+  buildUploadForm,
+  ShapioApiError,
+  type MediaAsset,
+  type SchemaApplyInput,
+  type SchemaSyncResult,
+  type ShapioClient,
+} from '@shapio/client';
+import { connectAdmin } from './lib/admin.js';
+import {
+  AUTHOR,
+  entries,
+  IMAGES,
+  SITE_SETTINGS,
+  type EntrySpec,
+  type ImageSpec,
+  type MediaIds,
+} from './lib/content.js';
+import { createPng } from './lib/png.js';
+
+/**
+ * `npm run seed`: prepares a Shapio instance for this starter, idempotently (run it again to reset the
+ * content to the seed):
+ * 1. the `fr` locale;
+ * 2. the models and components in shapio/ through the schema apply API (live, no restart; the same planner
+ *    as `shapio schema apply` and the admin);
+ * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
+ *    per locale;
+ * 4. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
+ */
+const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
+const SCHEMA_KINDS = ['models', 'components'] as const;
+const SITE_MODELS = ['page', 'article', 'author', 'siteSettings'];
+const DELIVERY_ROLE_KEY = 'starter-delivery';
+const DELIVERY_TOKEN_NAME = 'starter build';
+const MEDIA_READY_TIMEOUT_MS = 120_000;
+const SCHEMA_CHANGE_TIMEOUT_MS = 120_000;
+const POLL_INTERVAL_MS = 500;
+/** No lock file: a first apply. Definitions that already match are skipped by the server. */
+const FIRST_APPLY_BASE: SchemaApplyInput['base'] = { formatVersion: 1, schemaVersion: 0, definitions: {} };
+
+const log = (line: string) => process.stdout.write(`${line}\n`);
+
+const ensureLocale = async (client: ShapioClient) => {
+  const locales = await client.admin.locales.list();
+  if (!locales.some((locale) => locale.code === 'fr')) {
+    await client.admin.locales.create({ code: 'fr', label: 'Français', fallbacks: ['en'] });
+    log('Created the fr locale');
+  }
+};
+
+/** The checked-in definition files (`shapio schema pull` format), models first. */
+const readDefinitions = async (): Promise<unknown[]> => {
+  const definitions: unknown[] = [];
+  for (const kind of SCHEMA_KINDS) {
+    const names = (await readdir(join(SCHEMA_DIR, kind))).filter((name) => name.endsWith('.json')).sort();
+    for (const name of names) {
+      definitions.push(JSON.parse(await readFile(join(SCHEMA_DIR, kind, name), 'utf8')));
+    }
+  }
+  return definitions;
+};
+
+/** A planned change waits for its prerequisite jobs (e.g. an index); this waits until it is live. */
+const waitForChange = async (client: ShapioClient, item: SchemaSyncResult) => {
+  const deadline = Date.now() + SCHEMA_CHANGE_TIMEOUT_MS;
+  for (;;) {
+    const change = await client.admin.schema.change(item.changeId ?? '');
+    if (change.status === 'activated') {
+      return;
+    }
+    if (change.status === 'failed' || change.status === 'cancelled') {
+      throw new Error(`The ${item.apiKey} change ${change.status}: ${JSON.stringify(change.error)}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`The ${item.apiKey} change is still ${change.status}; is the Shapio worker running?`);
+    }
+    await delay(POLL_INTERVAL_MS);
+  }
+};
+
+const applySchema = async (client: ShapioClient) => {
+  const response = await client.admin.schema.apply({
+    definitions: await readDefinitions(),
+    base: FIRST_APPLY_BASE,
+    prune: false,
+    dryRun: false,
+    acknowledgeBreaking: false,
+    acknowledgeDestructive: false,
+  });
+  for (const item of response.results) {
+    if (item.outcome === 'pending') {
+      await waitForChange(client, item);
+    }
+    log(`Schema: ${item.apiKey} ${item.decision.action}`);
+  }
+  log(`Schema version ${response.schemaVersion}`);
+};
+
+const findAsset = async (client: ShapioClient, filename: string) =>
+  (await client.admin.media.assets.list({ search: filename, limit: 50 })).items.find(
+    (asset) => asset.filename === filename,
+  );
+
+/** Uploads a generated PNG through the grant flow (the same for local disk and S3 storage), once. */
+const ensureImage = async (client: ShapioClient, spec: ImageSpec): Promise<MediaAsset> => {
+  const existing = await findAsset(client, spec.filename);
+  if (existing) {
+    return existing;
+  }
+  const png = createPng(spec.width, spec.height, spec.from, spec.to);
+  const grant = await client.admin.media.uploads.create({
+    filename: spec.filename,
+    mimeType: 'image/png',
+    sizeBytes: png.length,
+  });
+  const upload = await fetch(grant.upload.url, {
+    method: 'POST',
+    body: buildUploadForm(grant, new Blob([new Uint8Array(png)], { type: 'image/png' }), spec.filename),
+  });
+  if (!upload.ok) {
+    throw new Error(`Uploading ${spec.filename} failed: HTTP ${upload.status} ${await upload.text()}`);
+  }
+  const asset = await client.admin.media.uploads.confirm(grant.grantId);
+  const updated = await client.admin.media.assets.update(asset.id, {
+    expectedVersion: asset.version,
+    alt: spec.alt,
+  });
+  log(`Uploaded ${spec.filename}`);
+  return updated;
+};
+
+/** Variants are rendered by a background job; the site's srcsets need them. */
+const waitForMedia = async (client: ShapioClient, ids: readonly string[]) => {
+  const deadline = Date.now() + MEDIA_READY_TIMEOUT_MS;
+  for (;;) {
+    const assets = await Promise.all(ids.map((id) => client.admin.media.assets.get(id)));
+    if (assets.every((asset) => asset.status !== 'processing')) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error('Media processing did not finish in time; is the Shapio worker running?');
+    }
+    await delay(500);
+  }
+};
+
+const ensureMedia = async (client: ShapioClient): Promise<MediaIds> => {
+  const ids = {} as MediaIds;
+  for (const [key, spec] of Object.entries(IMAGES) as Array<[keyof MediaIds, ImageSpec]>) {
+    ids[key] = (await ensureImage(client, spec)).id;
+  }
+  await waitForMedia(client, Object.values(ids));
+  return ids;
+};
+
+const ensureAuthor = async (client: ShapioClient, avatar: string) => {
+  const page = await client.admin.content.list('author', { pageSize: 100 });
+  const existing = page.items.find((item) => item.data.name === AUTHOR.name);
+  const data = { ...AUTHOR, avatar };
+  const entry = existing
+    ? await client.admin.content.update('author', existing.id, { expectedVersion: existing.version, data })
+    : await client.admin.content.create('author', { data });
+  await client.admin.content.publish('author', entry.id);
+  return entry.id;
+};
+
+/** The locale's draft version, or null when the entry has none in that locale yet. */
+const versionIn = async (client: ShapioClient, model: string, id: string, locale: string) => {
+  try {
+    return (await client.admin.content.get(model, id, { locale })).version;
+  } catch (error) {
+    if (error instanceof ShapioApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+/** The singleton's one entry, created on the first run, then updated in both locales and published. */
+const ensureSiteSettings = async (client: ShapioClient) => {
+  const existing = (await client.admin.content.list('siteSettings', { locale: 'en' })).items[0];
+  const id = existing
+    ? (
+        await client.admin.content.update('siteSettings', existing.id, {
+          locale: 'en',
+          expectedVersion: await versionIn(client, 'siteSettings', existing.id, 'en'),
+          data: SITE_SETTINGS.en,
+        })
+      ).id
+    : (await client.admin.content.create('siteSettings', { locale: 'en', data: SITE_SETTINGS.en })).id;
+  await client.admin.content.update('siteSettings', id, {
+    locale: 'fr',
+    expectedVersion: await versionIn(client, 'siteSettings', id, 'fr'),
+    data: SITE_SETTINGS.fr,
+  });
+  await client.admin.content.publish('siteSettings', id, { locales: ['en', 'fr'] });
+  log('Published siteSettings (en, fr)');
+};
+
+const upsertEntry = async (client: ShapioClient, spec: EntrySpec) => {
+  const found = await client.admin.content.list(spec.model, {
+    filters: { slug: { $eq: spec.slug } },
+    locale: 'en',
+  });
+  let id = found.items[0]?.id;
+  if (id) {
+    const version = await versionIn(client, spec.model, id, 'en');
+    await client.admin.content.update(spec.model, id, {
+      locale: 'en',
+      expectedVersion: version,
+      data: spec.content.en,
+    });
+  } else {
+    id = (await client.admin.content.create(spec.model, { locale: 'en', data: spec.content.en })).id;
+  }
+  const frVersion = await versionIn(client, spec.model, id, 'fr');
+  await client.admin.content.update(spec.model, id, {
+    locale: 'fr',
+    expectedVersion: frVersion,
+    data: spec.content.fr,
+  });
+  if (spec.publish) {
+    await client.admin.content.publish(spec.model, id, { locales: ['en', 'fr'] });
+  }
+  log(`${spec.publish ? 'Published' : 'Saved draft'} ${spec.model} ${spec.slug} (en, fr)`);
+};
+
+/** A delivery role that reads the site's models, and a fresh token bound to it (older ones are revoked). */
+const createDeliveryToken = async (client: ShapioClient) => {
+  const summary = await client.admin.schema.summary();
+  const modelIds = summary.definitions
+    .filter((definition) => SITE_MODELS.includes(definition.apiKey))
+    .map((definition) => definition.id);
+  const permissions = modelIds.map((modelId) => ({
+    action: 'read' as const,
+    modelId,
+    condition: null,
+    fieldIds: null,
+  }));
+  const roles = await client.admin.roles.list();
+  const existing = roles.find((role) => role.key === DELIVERY_ROLE_KEY);
+  const role = existing
+    ? await client.admin.roles.update(existing.id, { expectedVersion: existing.version, permissions })
+    : await client.admin.roles.create({
+        key: DELIVERY_ROLE_KEY,
+        name: 'Starter site (delivery)',
+        description: 'Reads published pages, articles, authors and the site settings for the starter build.',
+        kind: 'delivery',
+        permissions,
+      });
+  for (const token of await client.admin.tokens.list()) {
+    if (token.name === DELIVERY_TOKEN_NAME && !token.revokedAt) {
+      await client.admin.tokens.revoke(token.id);
+    }
+  }
+  return (await client.admin.tokens.create({ name: DELIVERY_TOKEN_NAME, roleId: role.id })).token;
+};
+
+const writeEnv = async (url: string, deliveryToken: string) => {
+  const path = resolve('.env');
+  await writeFile(
+    path,
+    `# Written by the seed. The delivery token is read-only; keep this file out of git.\nSHAPIO_URL=${url}\nSHAPIO_DELIVERY_TOKEN=${deliveryToken}\n`,
+    { mode: 0o600 },
+  );
+  log(`Wrote SHAPIO_URL and SHAPIO_DELIVERY_TOKEN to ${path}`);
+};
+
+const main = async () => {
+  const admin = await connectAdmin(process.env);
+  try {
+    await ensureLocale(admin.client);
+    await applySchema(admin.client);
+    const media = await ensureMedia(admin.client);
+    await ensureSiteSettings(admin.client);
+    const authorId = await ensureAuthor(admin.client, media.avatar);
+    for (const spec of entries(media, authorId)) {
+      await upsertEntry(admin.client, spec);
+    }
+    await writeEnv(admin.url, await createDeliveryToken(admin.client));
+    log('Seeded. Build the site with: npm run build');
+  } finally {
+    await admin.close();
+  }
+};
+
+main().catch((error: unknown) => {
+  process.stderr.write(
+    `seed failed: ${error instanceof ShapioApiError ? `${error.code}: ${error.message} ${JSON.stringify(error.details ?? '')}` : error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
+  process.exitCode = 1;
+});

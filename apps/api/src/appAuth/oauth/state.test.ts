@@ -6,7 +6,16 @@ const key = randomBytes(32);
 const NOW = 1_800_000_000_000;
 
 describe('OAuth state cookie', () => {
-  const state = newOAuthState('google', 'https://app.example.com/after', 'app-challenge', 60_000, NOW);
+  const state = newOAuthState(
+    {
+      provider: 'google',
+      siteId: '00000000-0000-4000-b000-000000000001',
+      redirectTo: 'https://app.example.com/after',
+      appCodeChallenge: 'app-challenge',
+    },
+    60_000,
+    NOW,
+  );
   const cookie = sealOAuthState(key, state);
 
   it('opens only for the same provider and state, before expiry', () => {
@@ -25,6 +34,8 @@ describe('OAuth state cookie', () => {
     const [, signature] = cookie.split('.');
     const forged = `${Buffer.from(JSON.stringify({ ...state, redirectTo: 'https://evil.example' })).toString('base64url')}.${signature}`;
     expect(openOAuthState(key, forged, { provider: 'google', state: state.state }, NOW)).toBeUndefined();
+    const otherSite = `${Buffer.from(JSON.stringify({ ...state, siteId: 'another-site' })).toString('base64url')}.${signature}`;
+    expect(openOAuthState(key, otherSite, { provider: 'google', state: state.state }, NOW)).toBeUndefined();
     expect(openOAuthState(key, undefined, { provider: 'google', state: state.state }, NOW)).toBeUndefined();
   });
 

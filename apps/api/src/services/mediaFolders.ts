@@ -4,7 +4,7 @@ import { isUniqueViolation } from '../helpers/pgErrors.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as mediaFoldersRepository from '../repositories/mediaFolders.js';
 import type { MediaFolderRow } from '../repositories/mediaFolders.js';
-import type { ActorContext, SiteRef } from './actorContext.js';
+import type { SiteActorContext, SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
 export type MediaFolderView = {
@@ -36,22 +36,25 @@ const nameTaken = (error: unknown) =>
 
 const SIBLING_NAME_CONSTRAINT = 'media_folders_sibling_name_uq';
 
-const assertParentExists = async (parentId: string | null | undefined) => {
-  if (parentId && !(await mediaFoldersRepository.findById(parentId))) {
+/** The parent must be a folder of the same site; another site's folder reads as missing. */
+const assertParentExists = async (site: SiteRef, parentId: string | null | undefined) => {
+  if (parentId && !(await mediaFoldersRepository.findById(site.id, parentId))) {
     throw new AppError(400, 'FOLDER_NOT_FOUND', 'The parent folder does not exist');
   }
 };
 
-/** The whole folder tree as a flat list (clients build the tree from `parentId`). */
-export const listFolders = async (): Promise<MediaFolderView[]> =>
-  (await mediaFoldersRepository.listWithCounts()).map((row) => toView(row, Number(row.asset_count ?? 0)));
+/** The site's whole folder tree as a flat list (clients build the tree from `parentId`). */
+export const listFolders = async (site: SiteRef): Promise<MediaFolderView[]> =>
+  (await mediaFoldersRepository.listWithCounts(site.id)).map((row) =>
+    toView(row, Number(row.asset_count ?? 0)),
+  );
 
 export const createFolder = async (
   site: SiteRef,
   createdBy: string | null,
   input: { name: string; parentId?: string | null },
 ): Promise<MediaFolderView> => {
-  await assertParentExists(input.parentId);
+  await assertParentExists(site, input.parentId);
   try {
     const row = await mediaFoldersRepository.insert({
       site_id: site.id,
@@ -67,10 +70,11 @@ export const createFolder = async (
 
 /** Rename and/or move a folder. Moving a folder under itself or a descendant is rejected. */
 export const updateFolder = async (
+  site: SiteRef,
   id: string,
   input: { expectedVersion: number; name?: string; parentId?: string | null },
 ): Promise<MediaFolderView> => {
-  await assertParentExists(input.parentId);
+  await assertParentExists(site, input.parentId);
   try {
     return await db.transaction().execute(async (trx) => {
       if (
@@ -84,6 +88,7 @@ export const updateFolder = async (
         );
       }
       const row = await mediaFoldersRepository.updateIfVersion(
+        site.id,
         id,
         input.expectedVersion,
         {
@@ -93,7 +98,7 @@ export const updateFolder = async (
         trx,
       );
       if (!row) {
-        if (!(await mediaFoldersRepository.findById(id, trx))) {
+        if (!(await mediaFoldersRepository.findById(site.id, id, trx))) {
           throw notFound();
         }
         throw new AppError(409, 'VERSION_CONFLICT', 'The folder changed since you loaded it', {
@@ -108,9 +113,9 @@ export const updateFolder = async (
 };
 
 /** Only empty folders (no subfolders, no live assets) can be deleted. */
-export const deleteFolder = async (context: ActorContext, id: string): Promise<void> => {
+export const deleteFolder = async (context: SiteActorContext, id: string): Promise<void> => {
   await db.transaction().execute(async (trx) => {
-    const folder = await mediaFoldersRepository.findById(id, trx);
+    const folder = await mediaFoldersRepository.findById(context.site.id, id, trx);
     if (!folder) {
       throw notFound();
     }
@@ -120,7 +125,7 @@ export const deleteFolder = async (context: ActorContext, id: string): Promise<v
         assetCount,
       });
     }
-    await mediaFoldersRepository.deleteById(id, trx);
+    await mediaFoldersRepository.deleteById(context.site.id, id, trx);
     await recordAudit(trx, {
       ...context,
       action: 'media.folder.delete',

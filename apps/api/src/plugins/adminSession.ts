@@ -40,7 +40,7 @@ declare module 'fastify' {
 
 type AdminSessionOptions = { urls: UrlBuilder; secureCookies: boolean };
 
-const ANONYMOUS: Principal = Object.freeze({ kind: 'anonymous' });
+const ANONYMOUS: Principal = Object.freeze({ kind: 'anonymous', siteId: null });
 const BEARER = /^Bearer\s+(\S+)$/i;
 
 const unauthenticated = () => new AppError(401, 'UNAUTHENTICATED', 'Sign in to continue');

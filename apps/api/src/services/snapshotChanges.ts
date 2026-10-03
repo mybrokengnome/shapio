@@ -167,6 +167,7 @@ export const listSnapshotChanges = async (
     }
     const page = await snapshotDiffRepository.listChanges(
       {
+        siteId: context.site.id,
         from: query.from,
         to,
         after: query.after,
@@ -179,7 +180,7 @@ export const listSnapshotChanges = async (
       },
       trx,
     );
-    const versions = await snapshotDiffRepository.schemaVersionsAt([query.from, to], trx);
+    const versions = await snapshotDiffRepository.schemaVersionsAt(context.site.id, [query.from, to], trx);
     const describe = await describeEntries(page.items, byId, context.snapshot.defaultLocale, trx);
     return {
       from: query.from,
@@ -223,7 +224,7 @@ export const currentSnapshot = async (context: ContentServiceContext): Promise<C
   await readableModels(context);
   return contentQueriesRepository.withConsistentRead(async (trx) => {
     const snapshot = await publicationsRepository.currentSeq(context.site.id, trx);
-    const publishedAt = await snapshotDiffRepository.snapshotCreatedAt(snapshot, trx);
+    const publishedAt = await snapshotDiffRepository.snapshotCreatedAt(context.site.id, snapshot, trx);
     // The active version (system_versions), read in the same moment as the sequence. Not the ledger's:
     // metadata-only activations (a label rename) take no snapshot number, so the newest ledger row can
     // carry an older schema version than the live one.

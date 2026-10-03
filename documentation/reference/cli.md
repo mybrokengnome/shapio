@@ -87,9 +87,11 @@ shapio media migrate --from <local|s3> --to <local|s3> [--delete-source]
 Print the configuration that connects Claude Code, Cursor or Claude Desktop through @shapio/mcp.
 
 ```text
-shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship]
+shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop] [--allow-ship] [--site <key>]
   Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then
-  PUBLIC_URL + BASE_PATH. Create an admin API token whose role has no "changes.ship" and paste it in place
+  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else
+  the primary site).
+  Create an admin API token whose role has no "changes.ship" and paste it in place
   of the placeholder: agents prepare change sets, people ship them.
 ```
 
@@ -161,7 +163,8 @@ Usage:
 Export schema, locales, roles, content and media metadata to a bundle file (--with-media: tar with files).
 
 ```text
-shapio export [--url <origin>] [--token <admin token>] [--with-media] [--heads-only] [--include-users] <file>
+shapio export [--url <origin>] [--token <admin token>] [--site <key>] [--with-media] [--heads-only] [--include-users] <file>
+  Exports one site's content (--site or SHAPIO_SITE; default: the token's site, else the primary site).
 ```
 
 ### shapio import
@@ -169,9 +172,10 @@ shapio export [--url <origin>] [--token <admin token>] [--with-media] [--heads-o
 Import a bundle: plan (--dry-run), refuse on conflicts, then import as a resumable job.
 
 ```text
-shapio import [--url <origin>] [--token <admin token>] [--dry-run] [--prune] [--no-wait] <file>
+shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>
   Plans the import (--dry-run stops there) and refuses it, writing nothing, on any conflict.
   An import never changes an existing model: a model the target has in another form is a conflict.
   Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the
   files (git diff), `shapio schema apply`, then import again.
+  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.
 ```

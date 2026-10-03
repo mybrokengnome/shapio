@@ -53,7 +53,11 @@ export const adminAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
   );
   // GET /api/admin/auth/me
   // Site route: `me` reports the permissions on the request's site (sites plan §H).
-  app.get('/me', { schema: getMeSchema, config: { site: 'site' }, ...signedIn }, getMe);
+  app.get(
+    '/me',
+    { schema: getMeSchema, config: { site: 'site', siteAccess: 'unassigned' }, ...signedIn },
+    getMe,
+  );
   // PATCH /api/admin/auth/me
   app.patch(
     '/me',

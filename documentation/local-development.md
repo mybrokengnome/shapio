@@ -44,11 +44,14 @@ after `pnpm build`; in development open <http://localhost:5173/admin/> instead.
 | `pnpm lint`, `pnpm format`, `pnpm typecheck` | ESLint, Prettier, TypeScript (every package)                                |
 | `pnpm test`                                  | unit tests (packages, API, admin)                                           |
 | `pnpm test:integration`                      | API tests against real PostgreSQL (`TEST_DATABASE_URL`)                     |
-| `pnpm build`                                 | every package and the admin bundle (not the example site)                   |
+| `pnpm build`                                 | every package and the admin bundle (not the site starters)                  |
 | `pnpm db:migrate`, `pnpm db:rollback`        | run or undo every migration on `DATABASE_URL`                               |
 | `pnpm db:codegen`                            | regenerate `apps/api/src/db/types.ts` from the database (after a migration) |
 | `pnpm docs:reference`                        | regenerate the [reference pages](reference/environment.md)                  |
 | `pnpm smoke:npm`                             | pack the npm packages, install them in a temporary directory and start them |
+
+The [site starters](starters.md) in `examples/` read `@shapio/client` from its build, as a project installed
+from npm does: run `pnpm build` (or just `pnpm --filter "@shapio/client..." build`) before building one.
 
 Running the CLI from source: `cd apps/api && node --conditions=@shapio/source --import tsx src/cli.ts <command>`
 (it reads `.env` from the working directory, so export the repository's `.env` values first, e.g.
@@ -59,12 +62,15 @@ Running the CLI from source: `cd apps/api && node --conditions=@shapio/source --
 ```text
 apps/api            the server and the `shapio` command (published as `shapio`)
 apps/admin          the admin single-page app (built into the `shapio` package)
-apps/example-site   an Astro site built from Shapio content (see the example site walkthrough)
 packages/schema     @shapio/schema: model definitions, validators, diff, schema file format
 packages/client     @shapio/client: typed HTTP client for every API
 packages/cli        the remote commands (schema, export/import, types), bundled into `shapio`
 packages/editor-sdk @shapio/editor-sdk: the custom field editor contract
-packages/create-shapio  the project scaffolder
+packages/create-shapio  the project scaffolder (CMS projects, and the site starters packed from examples/)
+examples/astro      site starter: Astro (see the example site walkthrough)
+examples/next       site starter: Next.js App Router
+examples/sveltekit  site starter: SvelteKit
+examples/shared     what the starters share: model files, seed, HTTP smoke check
 documentation       these pages
 ```
 

@@ -8,6 +8,7 @@ import {
   NullableInteger,
   NullableString,
   PageSchema,
+  SiteRefSchema,
   VersionSchema,
 } from '../../schemas/publishing.js';
 
@@ -15,6 +16,8 @@ const DeliveryStatusSchema = Type.Enum(['pending', 'retrying', 'succeeded', 'dea
 
 const WebhookSchema = Type.Object({
   id: UuidSchema,
+  /** The webhook's site; null for a network webhook (every site's events). */
+  site: Type.Union([SiteRefSchema, Type.Null()]),
   name: Type.String(),
   url: Type.String(),
   events: Type.Array(Type.String()),
@@ -63,6 +66,8 @@ export const getWebhookSchema = { params: IdParamsSchema, response: { 200: Webho
 
 export const CreateWebhookBodySchema = Type.Object(
   {
+    /** A network webhook (every site's events); needs `webhooks.manage` on every site. Default: this site. */
+    network: Type.Optional(Type.Boolean()),
     name: NameSchema,
     url: UrlSchema,
     events: EventsSchema,

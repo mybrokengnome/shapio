@@ -160,11 +160,11 @@ describe('buildChangePlan', () => {
       hasContent: true,
     });
     expect(plan.prerequisites.map((step) => step.kind)).toEqual(['convert', 'validateValues', 'buildIndex']);
+    const dropped = { modelId: before.id, fieldId: id(51), type: 'number' as const, localized: false };
     expect(plan.followUps).toEqual([
-      {
-        kind: 'dropIndex',
-        indexName: fieldIndexName({ modelId: before.id, fieldId: id(51), type: 'number', localized: false }),
-      },
+      { kind: 'dropIndex', indexName: fieldIndexName(dropped) },
+      // The layout before sites, in case the layout job has not rebuilt it yet.
+      { kind: 'dropIndex', indexName: fieldIndexName(dropped, 1) },
     ]);
   });
 
