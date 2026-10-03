@@ -6,6 +6,11 @@ import { SCREENSHOT_DIR } from './constants';
 
 const SCHEMES = ['light', 'dark'] as const;
 const BLOCKING_IMPACTS = new Set(['serious', 'critical']);
+/** Sonner's toast list and each toast in it (see `src/components/ui/sonner.tsx`). */
+const TOASTER_SELECTOR = '[data-sonner-toaster]';
+const TOAST_SELECTOR = '[data-sonner-toast]';
+/** Toasts dismiss after Sonner's 4 s default; allow for that plus the exit transition. */
+const TOAST_SETTLE_TIMEOUT_MS = 5_000;
 
 /** Every screenshot taken in this run, for the report. */
 export const capturedScreenshots: string[] = [];
@@ -55,13 +60,14 @@ const captureSchemes = async (page: Page, name: string) => {
     // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
     // contrast checks, which would otherwise see half-faded colours.
     await page.waitForTimeout(100);
-    await page.waitForFunction(() =>
-      document.getAnimations().every((animation) => animation.playState !== 'running'),
-    );
+    await waitForAnimationsToSettle(page);
     const path = join(SCREENSHOT_DIR, `${name}-${scheme}.png`);
     await page.screenshot({ path, fullPage: true });
     capturedScreenshots.push(path);
+    await waitForToastsToClear(page);
     const results = await new AxeBuilder({ page })
+      // Toasts are transient and coloured by the library; a fading one fails contrast mid-transition.
+      .exclude(TOASTER_SELECTOR)
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
     const blocking = results.violations
@@ -75,4 +81,15 @@ const captureSchemes = async (page: Page, name: string) => {
     expect(blocking, `axe violations on ${name} (${scheme})`).toEqual([]);
   }
   await page.emulateMedia({ colorScheme: 'light' });
+};
+
+const waitForAnimationsToSettle = (page: Page) =>
+  page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
+
+/** No toast in the DOM and nothing mid-transition, so axe never sees half-faded colours. */
+const waitForToastsToClear = async (page: Page) => {
+  await expect(page.locator(TOAST_SELECTOR)).toHaveCount(0, { timeout: TOAST_SETTLE_TIMEOUT_MS });
+  await waitForAnimationsToSettle(page);
 };
