@@ -22,6 +22,11 @@ import { createTestDatabase } from './testDatabase.js';
 export type ContentTestDatabase = {
   dialect: ContentSqlDialect;
   execute: (statement: RawBuilder<unknown> | RowInsert) => Promise<void>;
+  /**
+   * Inserts many rows into one table: multi-row statements in one transaction, so a large fixture costs a
+   * few round trips and one commit instead of one of each per row.
+   */
+  insertRows: (table: string, rows: ReadonlyArray<Readonly<Record<string, unknown>>>) => Promise<void>;
   rows: <T>(query: RawBuilder<T>) => Promise<T[]>;
   /** SQLite: the `EXPLAIN QUERY PLAN` details of a query; MySQL: the lines of `EXPLAIN FORMAT=TREE`. */
   plan: (query: RawBuilder<unknown>) => Promise<string[]>;
@@ -41,9 +46,16 @@ const isRowInsert = (value: RawBuilder<unknown> | RowInsert): value is RowInsert
 
 const schemaRevisionIdOf = (modelId: string) => `${modelId.slice(0, 24)}5c4e5a000001`;
 
-/** Inserts `row`, creating the rows it references first (each once). */
-const rowInserter = (db: Kysely<DB>) => {
+/** Rows per multi-row insert (well under every database's bound-parameter limit). */
+const INSERT_CHUNK_SIZE = 500;
+
+/**
+ * Completes `row` for `table` with the columns the compiler does not read, creating the rows it references
+ * first (each once).
+ */
+const rowCompleter = (db: Kysely<DB>) => {
   const ensured = new Set<string>();
+  const modelOfEntry = new Map<string, string>();
   const once = async (key: string, insert: () => Promise<unknown>) => {
     if (!ensured.has(key)) {
       ensured.add(key);
@@ -74,7 +86,18 @@ const rowInserter = (db: Kysely<DB>) => {
         )
       : Promise.resolve();
 
-  return async ({ table, row }: RowInsert): Promise<void> => {
+  const modelIdOf = async (entryId: unknown): Promise<string> => {
+    const known = typeof entryId === 'string' ? modelOfEntry.get(entryId) : undefined;
+    if (known) {
+      return known;
+    }
+    const { rows } = await sql<{
+      model_id: string;
+    }>`select model_id from entries where id = ${entryId}`.execute(db);
+    return rows[0]?.model_id ?? '';
+  };
+
+  return async ({ table, row }: RowInsert): Promise<Record<string, unknown>> => {
     const full: Record<string, unknown> = { ...row };
     if (typeof row.site_id === 'string') {
       await ensureSite(row.site_id);
@@ -84,39 +107,53 @@ const rowInserter = (db: Kysely<DB>) => {
     }
     if (table === 'entries') {
       await ensureAdmin(row.created_by_admin_id);
+      if (typeof row.id === 'string' && typeof row.model_id === 'string') {
+        modelOfEntry.set(row.id, row.model_id);
+      }
     }
     if (table === 'content_revisions') {
-      const { rows } = await sql<{
-        model_id: string;
-      }>`select model_id from entries where id = ${row.entry_id}`.execute(db);
-      full.schema_revision_id ??= schemaRevisionIdOf(rows[0]?.model_id ?? '');
+      full.schema_revision_id ??= schemaRevisionIdOf(await modelIdOf(row.entry_id));
       full.locale ??= 'en';
       full.reason ??= 'create';
       full.author_type ??= 'system';
     }
-    // Through Kysely, so each dialect's plugin fills what the database leaves to it (MySQL: the change
-    // sequence, timestamps given as ISO text).
-    await db
-      .insertInto(table as keyof DB)
-      .values(full)
-      .execute();
+    return full;
   };
 };
+
+// Through Kysely, so each dialect's plugin fills what the database leaves to it (MySQL: the change
+// sequence, timestamps given as ISO text).
+const insertInto = (db: Kysely<DB>, table: string, rows: Array<Record<string, unknown>>) =>
+  db
+    .insertInto(table as keyof DB)
+    .values(rows)
+    .execute();
 
 const contentDatabase = (
   db: Kysely<DB>,
   dialect: ContentSqlDialect,
   close: () => Promise<void>,
 ): ContentTestDatabase => {
-  const insert = rowInserter(db);
+  const complete = rowCompleter(db);
   return {
     dialect,
     execute: async (statement) => {
       if (isRowInsert(statement)) {
-        await insert(statement);
+        await insertInto(db, statement.table, [await complete(statement)]);
         return;
       }
       await statement.execute(db);
+    },
+    insertRows: async (table, rows) => {
+      const full: Array<Record<string, unknown>> = [];
+      for (const row of rows) {
+        full.push(await complete({ table, row }));
+      }
+      await db.transaction().execute(async (trx) => {
+        for (let start = 0; start < full.length; start += INSERT_CHUNK_SIZE) {
+          await insertInto(trx, table, full.slice(start, start + INSERT_CHUNK_SIZE));
+        }
+      });
     },
     rows: async <T>(query: RawBuilder<T>) => (await query.execute(db)).rows,
     plan: async (query) => {

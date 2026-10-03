@@ -385,17 +385,18 @@ const INDEXED = {
 
 /** 4,000 published heads per locale, so the planner has a reason to choose; then the field indexes. */
 const seedIndexedHeads = async (database: ContentTestDatabase) => {
+  const entries: Array<Record<string, unknown>> = [];
+  const revisions: Array<Record<string, unknown>> = [];
+  const heads: Array<Record<string, unknown>> = [];
   for (let n = 1; n <= 4000; n += 1) {
     const entryId = id(10_000 + n);
-    await database.execute(
-      insertRow('entries', {
-        id: entryId,
-        site_id: SITE,
-        model_id: MODEL,
-        created_at: '2026-01-01T00:00:00.000Z',
-        updated_at: '2026-01-01T00:00:00.000Z',
-      }),
-    );
+    entries.push({
+      id: entryId,
+      site_id: SITE,
+      model_id: MODEL,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    });
     for (const locale of ['en', 'fr']) {
       const data = JSON.stringify({
         [F.title]: `title ${n % 997}`,
@@ -404,21 +405,23 @@ const seedIndexedHeads = async (database: ContentTestDatabase) => {
         [F.day]: `2026-01-${String((n % 28) + 1).padStart(2, '0')}`,
       });
       const revision = id(1_000_000 + n * 2 + (locale === 'en' ? 0 : 1));
-      await database.execute(insertRow('content_revisions', { id: revision, entry_id: entryId, data }));
-      await database.execute(
-        insertRow('entry_heads', {
-          entry_id: entryId,
-          site_id: SITE,
-          model_id: MODEL,
-          locale,
-          state: 'published',
-          revision_id: revision,
-          data,
-          updated_at: '2026-01-01T00:00:00.000Z',
-        }),
-      );
+      revisions.push({ id: revision, entry_id: entryId, data });
+      heads.push({
+        entry_id: entryId,
+        site_id: SITE,
+        model_id: MODEL,
+        locale,
+        state: 'published',
+        revision_id: revision,
+        data,
+        updated_at: '2026-01-01T00:00:00.000Z',
+      });
     }
   }
+  // Batched: 20,000 single-row autocommits made this hook slow and load-sensitive on CI's MySQL.
+  await database.insertRows('entries', entries);
+  await database.insertRows('content_revisions', revisions);
+  await database.insertRows('entry_heads', heads);
   for (const index of Object.values(INDEXED)) {
     const column = createFieldIndexColumnStatement(index, database.dialect);
     if (column) {
