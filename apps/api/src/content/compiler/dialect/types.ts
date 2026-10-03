@@ -8,7 +8,7 @@ import type { RawBuilder } from 'kysely';
  * Inputs are already safe: field, model and index identifiers are checked by `expressions.ts` before a
  * dialect sees them (stable IDs, deterministic index names), and every value is a bound parameter.
  */
-export type ContentDialectName = 'postgres' | 'sqlite';
+export type ContentDialectName = 'postgres' | 'sqlite' | 'mysql';
 
 /** How a scalar value compares: text (dates are ISO text), numeric, or boolean. */
 export type ValueCast = 'text' | 'numeric' | 'boolean';
@@ -41,6 +41,12 @@ export type FieldIndexDefinition = {
   modelIdColumn: string;
   /** The model ID as a literal (partial-index predicates only match literals). */
   modelId: RawBuilder<unknown>;
+  /** Whether `leading` includes the locale (localized models). */
+  localized: boolean;
+  /** How the indexed value compares. */
+  cast: ValueCast;
+  /** decimal and biginteger (JSON strings compared as numbers). */
+  numericString: boolean;
 };
 
 /** The snapshot CTE's inputs (`compile.ts`). */
@@ -62,14 +68,17 @@ export type ContentSqlDialect = {
     element: ListElement,
   ) => RawBuilder<boolean>;
 
-  /** A top-level scalar field cast for comparison and sorting: the expression field indexes are built on. */
-  fieldValue: (fieldId: string, cast: ValueCast) => RawBuilder<unknown>;
+  /**
+   * A top-level scalar field cast for comparison and sorting: the expression field indexes are built on.
+   * `numericString` (decimal, biginteger) lets a database compare those more exactly than other numbers.
+   */
+  fieldValue: (fieldId: string, cast: ValueCast, numericString?: boolean) => RawBuilder<unknown>;
   /** A top-level field as text, uncast. */
   fieldText: (fieldId: string) => RawBuilder<unknown>;
   /** A top-level field's raw JSON. */
   fieldJson: (fieldId: string) => RawBuilder<unknown>;
   /** A comparison value cast the way `fieldValue` casts the stored value. */
-  castParameter: (value: unknown, cast: ValueCast) => RawBuilder<unknown>;
+  castParameter: (value: unknown, cast: ValueCast, numericString?: boolean) => RawBuilder<unknown>;
 
   /** Equality (lists: membership). False, never null, for a missing value, except numeric strings. */
   fieldEquals: (target: EqualityTarget, value: unknown) => RawBuilder<unknown>;
@@ -84,9 +93,27 @@ export type ContentSqlDialect = {
   localeRank: (chain: readonly string[], column: RawBuilder<unknown>) => RawBuilder<unknown>;
   /** ORDER BY direction. Nullable sort keys put missing values last ascending and first descending. */
   sortDirection: (direction: 'asc' | 'desc', nullable: boolean) => RawBuilder<unknown>;
+  /**
+   * The whole ORDER BY term, where a database needs more than a direction for PostgreSQL's NULL placement
+   * (MySQL: `(expr is null), expr`). Absent: `<expression> <sortDirection>`.
+   */
+  sortTerm?: (
+    expression: RawBuilder<unknown>,
+    direction: 'asc' | 'desc',
+    nullable: boolean,
+  ) => RawBuilder<unknown>;
   /** `with <name> as (published revisions of the model as of the sequence) ` (note the trailing space). */
   snapshotCte: (source: SnapshotSource) => RawBuilder<unknown>;
 
+  /**
+   * The column a field index is built on, where the database indexes a generated column rather than the
+   * expression (MySQL: an invisible virtual column, added before the index and dropped after it, so the index
+   * builds online). Queries keep using the expression; the database matches it to the column.
+   */
+  fieldIndexColumn?: {
+    add: (index: FieldIndexDefinition) => RawBuilder<unknown>;
+    drop: (indexName: string) => RawBuilder<unknown>;
+  };
   /** Builds a field index without blocking writers where the database can. */
   createFieldIndex: (index: FieldIndexDefinition) => RawBuilder<unknown>;
   /** Extended statistics on the value expression; null where the database has none. */

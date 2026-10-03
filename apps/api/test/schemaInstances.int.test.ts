@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
-import { isSqliteRun } from './helpers/dialect.js';
+import { connectionIdsOf, isSqliteRun, terminateConnection } from './helpers/dialect.js';
 import { createRoleToken, pageDefinition, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { spawnTsProcess, type SpawnedProcess } from './helpers/spawnProcess.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -56,12 +56,11 @@ describe('a second instance with schema notifications disabled', () => {
     // Neither instance listens: no notification can reach the second one (SQLite notifications never
     // leave their process anyway).
     if (!isSqliteRun()) {
-      const listeners = await database.current.db
-        .selectFrom('pg_stat_activity' as never)
-        .select('application_name' as never)
-        .where('application_name' as never, '=', 'shapio-schema-listen' as never)
-        .where('datname' as never, '=', database.current.name as never)
-        .execute();
+      const listeners = await connectionIdsOf(
+        database.current.db,
+        database.current.name,
+        'shapio-schema-listen',
+      );
       expect(listeners).toEqual([]);
     }
 
@@ -124,20 +123,14 @@ describe('schema change notifications', () => {
     await writer.app.close();
   });
 
-  const listenerPids = async () =>
-    (
-      await database.current.db
-        .selectFrom('pg_stat_activity' as never)
-        .select('pid' as never)
-        .where('application_name' as never, '=', 'shapio-schema-listen' as never)
-        .where('datname' as never, '=', database.current.name as never)
-        .execute()
-    ).map((row) => (row as { pid: number }).pid);
+  const listenerPids = () =>
+    connectionIdsOf(database.current.db, database.current.name, 'shapio-schema-listen');
 
   it('refreshes the cache before any request, and keeps doing so after the connection drops', async () => {
     const registry = listening.app.schemaRegistry;
     await registry.getSnapshot();
-    // PostgreSQL: one LISTEN connection. SQLite: an in-process subscription (no connection to inspect).
+    // PostgreSQL: one LISTEN connection; MySQL: one polling connection. SQLite: an in-process subscription
+    // (no connection to inspect).
     if (!isSqliteRun()) {
       await waitFor(async () => (await listenerPids()).length === 1);
     }
@@ -150,11 +143,9 @@ describe('schema change notifications', () => {
     if (isSqliteRun()) {
       return;
     }
-    // Kill the LISTEN connection: the listener reconnects and resynchronises.
+    // Kill the listening connection: the listener reconnects and resynchronises.
     const [pid] = await listenerPids();
-    await database.current.db
-      .selectNoFrom((eb) => eb.fn('pg_terminate_backend', [eb.val(pid)]).as('done'))
-      .execute();
+    await terminateConnection(database.current.db, pid!);
     await waitFor(async () => {
       const pids = await listenerPids();
       return pids.length === 1 && pids[0] !== pid;

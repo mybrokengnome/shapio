@@ -210,6 +210,7 @@ export const listWebhooks = (siteId: string, executor: Executor = db) =>
     .select(['id', 'name', 'url', 'events', 'enabled', 'allow_private_network', 'max_attempts'])
     .where('site_id', '=', siteId)
     .orderBy('created_at')
+    .orderBy('id')
     .execute();
 
 /**
@@ -233,4 +234,5 @@ export const listDeploymentConnections = (siteId: string, executor: Executor = d
       'enabled',
     ])
     .orderBy('created_at')
+    .orderBy('id')
     .execute();

@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { afterAll, describe, expect, it } from 'vitest';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
+import { testColumnTypes } from './helpers/dialect.js';
 import { spawnTsProcess, type SpawnedProcess } from './helpers/spawnProcess.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 import { waitFor } from './helpers/waitFor.js';
@@ -29,7 +30,7 @@ describe('worker crash recovery (child processes)', () => {
 
   it("reclaims a killed worker's job and completes it once logically", async () => {
     const { db } = database.current;
-    await sql`create table test_effects (job_id uuid primary key)`.execute(db);
+    await sql`create table test_effects (job_id ${testColumnTypes().uuid} primary key)`.execute(db);
     const { job } = await enqueueJob({ type: 'test.recordThenHang', maxAttempts: 3 }, db);
 
     // Worker A records the effect, then hangs; kill it mid-job with SIGKILL (no cleanup runs).

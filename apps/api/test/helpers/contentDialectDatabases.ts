@@ -2,19 +2,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CompiledQuery, sql, type Kysely, type RawBuilder } from 'kysely';
+import { mysqlContentDialect } from '../../src/content/compiler/dialect/mysql.js';
 import { postgresContentDialect } from '../../src/content/compiler/dialect/postgres.js';
 import { sqliteContentDialect } from '../../src/content/compiler/dialect/sqlite.js';
 import type { ContentSqlDialect } from '../../src/content/compiler/dialect/types.js';
 import { createMigrator } from '../../src/db/migrator.js';
 import { createSqliteDb } from '../../src/db/sqlite/index.js';
 import type { DB } from '../../src/db/types.js';
-import { isSqliteRun } from './dialect.js';
+import { isMysqlRun, isSqliteRun } from './dialect.js';
 import { createTestDatabase } from './testDatabase.js';
 
 /**
  * Shapio's real content tables (`entries`, `entry_heads`, `content_revisions`, `publication_log`) on
- * PostgreSQL (the migrated test template) and on SQLite (a file migrated with the SQLite baseline), so one
- * test file can run the same compiled queries against both. Rows are given with the columns the compiler
+ * PostgreSQL or MySQL (the run's migrated test template) and on SQLite (a file migrated with the SQLite
+ * baseline), so one test file can run the same compiled queries against both. Rows are given with the columns the compiler
  * reads; `execute(insertRow(…))` fills the other required columns and creates the site, model, schema
  * revision and admin rows they reference.
  */
@@ -22,7 +23,7 @@ export type ContentTestDatabase = {
   dialect: ContentSqlDialect;
   execute: (statement: RawBuilder<unknown> | RowInsert) => Promise<void>;
   rows: <T>(query: RawBuilder<T>) => Promise<T[]>;
-  /** SQLite only: the `EXPLAIN QUERY PLAN` details of a query. */
+  /** SQLite: the `EXPLAIN QUERY PLAN` details of a query; MySQL: the lines of `EXPLAIN FORMAT=TREE`. */
   plan: (query: RawBuilder<unknown>) => Promise<string[]>;
   close: () => Promise<void>;
 };
@@ -51,8 +52,11 @@ const rowInserter = (db: Kysely<DB>) => {
   };
   const ensureSite = (siteId: string) =>
     once(`site:${siteId}`, () =>
-      sql`insert into sites (id, key, name) values (${siteId}, ${`site-${siteId.slice(-6)}`}, 'Fixture site')
-        on conflict (id) do nothing`.execute(db),
+      db
+        .insertInto('sites')
+        .values({ id: siteId, key: `site-${siteId.slice(-6)}`, name: 'Fixture site' })
+        .onConflict((conflict) => conflict.column('id').doNothing())
+        .execute(),
     );
   const ensureModel = (modelId: string) =>
     once(`model:${modelId}`, async () => {
@@ -90,9 +94,12 @@ const rowInserter = (db: Kysely<DB>) => {
       full.reason ??= 'create';
       full.author_type ??= 'system';
     }
-    const columns = Object.keys(full);
-    await sql`insert into ${sql.table(table)} (${sql.join(columns.map((column) => sql.id(column)))})
-      values (${sql.join(columns.map((column) => sql`${full[column]}`))})`.execute(db);
+    // Through Kysely, so each dialect's plugin fills what the database leaves to it (MySQL: the change
+    // sequence, timestamps given as ISO text).
+    await db
+      .insertInto(table as keyof DB)
+      .values(full)
+      .execute();
   };
 };
 
@@ -113,10 +120,16 @@ const contentDatabase = (
     },
     rows: async <T>(query: RawBuilder<T>) => (await query.execute(db)).rows,
     plan: async (query) => {
-      if (dialect !== sqliteContentDialect) {
-        throw new Error('plans are checked on SQLite only');
-      }
       const compiled = query.compile(db);
+      if (dialect === mysqlContentDialect) {
+        const result = await db.executeQuery<{ EXPLAIN: string }>(
+          CompiledQuery.raw(`explain format=tree ${compiled.sql}`, [...compiled.parameters]),
+        );
+        return result.rows.flatMap((row) => String(row.EXPLAIN).split('\n'));
+      }
+      if (dialect !== sqliteContentDialect) {
+        throw new Error('plans are checked on SQLite and MySQL only');
+      }
       const result = await db.executeQuery<{ detail: string }>(
         CompiledQuery.raw(`explain query plan ${compiled.sql}`, [...compiled.parameters]),
       );
@@ -130,6 +143,12 @@ const contentDatabase = (
 export const openPostgresContentDatabase = async (): Promise<ContentTestDatabase> => {
   const database = await createTestDatabase();
   return contentDatabase(database.db, postgresContentDialect, database.drop);
+};
+
+/** MySQL: a database cloned from the migrated template (only on a MySQL run). */
+export const openMysqlContentDatabase = async (): Promise<ContentTestDatabase> => {
+  const database = await createTestDatabase();
+  return contentDatabase(database.db, mysqlContentDialect, database.drop);
 };
 
 /** SQLite: a temporary file migrated with the SQLite baseline (on every run). */
@@ -149,11 +168,16 @@ export const openSqliteContentDatabase = async (): Promise<ContentTestDatabase> 
   });
 };
 
-/** The databases this run can open: both on a PostgreSQL run, SQLite alone on a SQLite run. */
-export const contentDatabasesOfRun = () =>
-  isSqliteRun()
-    ? ([['SQLite', openSqliteContentDatabase]] as const)
-    : ([
-        ['PostgreSQL', openPostgresContentDatabase],
-        ['SQLite', openSqliteContentDatabase],
-      ] as const);
+/**
+ * The databases this run can open: the run's server database (PostgreSQL or MySQL) and SQLite, or SQLite
+ * alone on a SQLite run.
+ */
+export const contentDatabasesOfRun = (): Array<[string, () => Promise<ContentTestDatabase>]> => {
+  const sqlite: [string, () => Promise<ContentTestDatabase>] = ['SQLite', openSqliteContentDatabase];
+  if (isSqliteRun()) {
+    return [sqlite];
+  }
+  return isMysqlRun()
+    ? [['MySQL', openMysqlContentDatabase], sqlite]
+    : [['PostgreSQL', openPostgresContentDatabase], sqlite];
+};

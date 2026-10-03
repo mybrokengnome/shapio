@@ -38,6 +38,9 @@ export const listForAsset = (assetId: string, limit: number, trx: Executor = db)
     .where('asset_id', '=', assetId)
     .orderBy('created_at', 'desc')
     .orderBy('entry_id')
+    .orderBy('field_id')
+    .orderBy('locale')
+    .orderBy('state')
     .limit(limit)
     .execute();
 

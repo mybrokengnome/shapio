@@ -26,7 +26,7 @@ export const NOTES: Readonly<Record<string, string>> = {
   RATE_LIMIT_WINDOW_MS: 'The rate-limit window, in milliseconds.',
   TLS_KEY_FILE: 'Private key for TLS_CERT_FILE (PEM).',
   DATABASE_URL:
-    'PostgreSQL (16 or later) connection string, or `sqlite:<path>` for a single-process SQLite database (see SQLite).',
+    'PostgreSQL (16 or later) connection string, `mysql://user:password@host:3306/database` for MySQL 8.4 (see MySQL), or `sqlite:<path>` for a single-process SQLite database (see SQLite).',
   DATABASE_POOL_MAX:
     'Connections in the pool, per process (SQLite: read connections; one connection writes).',
   MIGRATE_ON_START:

@@ -6,7 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
-import { dialectSkipReason, isSqliteRun, withSkipReason } from './helpers/dialect.js';
+import {
+  connectionIdsOf,
+  dialectSkipReason,
+  isMysqlRun,
+  isSqliteRun,
+  withSkipReason,
+} from './helpers/dialect.js';
 import { API_ROOT } from './helpers/env.js';
 import { spawnServer, type SpawnedServer } from './helpers/spawnServer.js';
 import { startTcpProxy, type TcpProxy } from './helpers/tcpProxy.js';
@@ -16,13 +22,8 @@ import { waitFor } from './helpers/waitFor.js';
 const OPERATIONS_CONFIG = resolve(import.meta.dirname, 'fixtures/operationsProject/shapio.config.ts');
 
 /** Connections a process opened to `database`, by its application name. */
-const connectionsOf = async (database: TestDatabase, applicationName: string) => {
-  const result = await sql<{ count: string }>`
-    select count(*)::text as count from pg_stat_activity
-    where datname = ${database.name} and application_name = ${applicationName}
-  `.execute(database.db);
-  return Number(result.rows[0]?.count ?? 0);
-};
+const connectionsOf = async (database: TestDatabase, applicationName: string) =>
+  (await connectionIdsOf(database.db, database.name, applicationName)).length;
 
 /** Runs `shapio <args>` (the real bin entry) to completion. */
 const runCli = async (args: string[], env: Record<string, string>) => {
@@ -282,10 +283,14 @@ describe('startup', () => {
     {
       name: 'a database that does not exist',
       env: () => ({ DATABASE_URL: missingDatabaseUrl() }),
-      message: () =>
-        isSqliteRun()
-          ? /Cannot open the SQLite database at \S+\/shapio_no_such_database\.db \(DATABASE_URL\): .*Check that its directory exists/
-          : /Cannot connect to PostgreSQL at \S+\/shapio_no_such_database \(DATABASE_URL\): database "shapio_no_such_database" does not exist/,
+      message: () => {
+        if (isSqliteRun()) {
+          return /Cannot open the SQLite database at \S+\/shapio_no_such_database\.db \(DATABASE_URL\): .*Check that its directory exists/;
+        }
+        return isMysqlRun()
+          ? /Cannot connect to MySQL at \S+\/shapio_no_such_database \(DATABASE_URL\): Unknown database 'shapio_no_such_database'/
+          : /Cannot connect to PostgreSQL at \S+\/shapio_no_such_database \(DATABASE_URL\): database "shapio_no_such_database" does not exist/;
+      },
     },
     {
       name: 'production without PUBLIC_URL',

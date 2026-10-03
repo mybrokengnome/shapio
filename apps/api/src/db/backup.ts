@@ -14,13 +14,15 @@ export class BackupError extends Error {
 
 /**
  * Writes a consistent copy of a SQLite database to `target` with `VACUUM INTO` while Shapio keeps running
- * (it reads one moment of the database and briefly holds the write lock). Refuses an existing target and
- * PostgreSQL, whose backups are `pg_dump`'s job (documentation/backup-restore.md). Returns the absolute path.
+ * (it reads one moment of the database and briefly holds the write lock). Refuses an existing target,
+ * PostgreSQL and MySQL, whose backups are `pg_dump`'s and `mysqldump`'s job (documentation/backup-restore.md).
+ * Returns the absolute path.
  */
 export const backupDatabase = async (db: Kysely<DB>, target: string): Promise<string> => {
   if (!sqliteDriverOf(db)) {
     throw new BackupError(
-      'shapio backup copies SQLite databases. Back up PostgreSQL with pg_dump (see documentation/backup-restore.md).',
+      'shapio backup copies SQLite databases. Back up PostgreSQL with pg_dump and MySQL with ' +
+        'mysqldump --single-transaction (see documentation/backup-restore.md).',
     );
   }
   const path = resolve(target);

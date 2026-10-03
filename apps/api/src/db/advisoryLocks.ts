@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { sleep } from '../helpers/sleep.js';
-import { isSqlite } from './dialect.js';
+import { isMysql, isSqlite } from './dialect.js';
 import { sqliteDriverOf } from './sqlite/index.js';
 import { withKeyedMutex } from './sqlite/keyedMutex.js';
 import type { DB } from './types.js';
@@ -29,6 +29,40 @@ const sqliteSessionLock = <T>(
   return driver && withKeyedMutex(`${driver.databaseKey}:${namespace}:${key}`, fn);
 };
 
+/** MySQL: the `GET_LOCK` name of a (namespace, key) pair in this database (at most 64 characters). */
+const mysqlLockName = (namespace: number, key: number) =>
+  sql`concat('shapio:', left(sha2(database(), 256), 16), ':', ${namespace}, ':', ${key})`;
+
+const mysqlSessionLock = <T>(
+  db: Kysely<DB>,
+  namespace: number,
+  key: number,
+  fn: () => Promise<T>,
+  pollMs: number | undefined,
+): Promise<T> =>
+  db.connection().execute(async (connection) => {
+    const name = mysqlLockName(namespace, key);
+    const tryLock = async (timeout: number) =>
+      String(
+        (await sql<{ locked: unknown }>`select get_lock(${name}, ${timeout}) as locked`.execute(connection))
+          .rows[0]?.locked,
+      ) === '1';
+    if (pollMs === undefined) {
+      if (!(await tryLock(-1))) {
+        throw new Error(`Could not take MySQL lock ${namespace}:${key}`);
+      }
+    } else {
+      while (!(await tryLock(0))) {
+        await sleep(pollMs);
+      }
+    }
+    try {
+      return await fn();
+    } finally {
+      await sql`select release_lock(${name})`.execute(connection);
+    }
+  });
+
 /**
  * Holds a session-level advisory lock on a dedicated pooled connection while `fn` runs, then releases it.
  * `fn` may use the pool freely (it does not run on the locking connection). Blocks until the lock is free.
@@ -40,6 +74,7 @@ export const withSessionAdvisoryLock = async <T>(
   fn: () => Promise<T>,
 ): Promise<T> =>
   sqliteSessionLock(db, namespace, key, fn) ??
+  (isMysql() ? mysqlSessionLock(db, namespace, key, fn, undefined) : undefined) ??
   db.connection().execute(async (connection) => {
     await sql`select pg_advisory_lock(${namespace}::int4, ${key}::int4)`.execute(connection);
     try {
@@ -64,6 +99,7 @@ export const withPolledSessionAdvisoryLock = async <T>(
   pollMs = 200,
 ): Promise<T> =>
   sqliteSessionLock(db, namespace, key, fn) ??
+  (isMysql() ? mysqlSessionLock(db, namespace, key, fn, pollMs) : undefined) ??
   db.connection().execute(async (connection) => {
     const tryLock = async () =>
       (
@@ -86,6 +122,24 @@ const assertSqliteWriteTransaction = async (trx: Transaction<DB>): Promise<void>
   await sql`select shapio_assert_write_transaction()`.execute(trx);
 };
 
+/** MySQL: an exclusive row lock on the pair's row (created if missing), held until commit or rollback. */
+const mysqlExclusiveRowLock = async (trx: Transaction<DB>, namespace: number, key: number) => {
+  await sql`insert into advisory_locks (namespace, lock_key) values (${namespace}, ${key})
+    on duplicate key update lock_key = lock_key`.execute(trx);
+};
+
+/**
+ * MySQL: a shared row lock on the pair's row. The first lock of a pair creates its row, which takes the
+ * row exclusively for that one transaction (stronger than shared, so still correct).
+ */
+const mysqlSharedRowLock = async (trx: Transaction<DB>, namespace: number, key: number) => {
+  const { rows } = await sql`select 1 from advisory_locks
+    where namespace = ${namespace} and lock_key = ${key} for share`.execute(trx);
+  if (rows.length === 0) {
+    await mysqlExclusiveRowLock(trx, namespace, key);
+  }
+};
+
 /** Exclusive transaction-level lock, released at commit/rollback. */
 export const acquireXactLock = async (
   trx: Transaction<DB>,
@@ -94,6 +148,9 @@ export const acquireXactLock = async (
 ): Promise<void> => {
   if (isSqlite()) {
     return assertSqliteWriteTransaction(trx);
+  }
+  if (isMysql()) {
+    return mysqlExclusiveRowLock(trx, namespace, key);
   }
   await sql`select pg_advisory_xact_lock(${namespace}::int4, ${key}::int4)`.execute(trx);
 };
@@ -106,6 +163,9 @@ export const acquireXactLockShared = async (
 ): Promise<void> => {
   if (isSqlite()) {
     return assertSqliteWriteTransaction(trx);
+  }
+  if (isMysql()) {
+    return mysqlSharedRowLock(trx, namespace, key);
   }
   await sql`select pg_advisory_xact_lock_shared(${namespace}::int4, ${key}::int4)`.execute(trx);
 };

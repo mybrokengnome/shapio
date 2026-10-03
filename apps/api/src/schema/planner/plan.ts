@@ -13,6 +13,7 @@ import {
   type ValidationIssue,
 } from '@shapio/schema';
 import { fieldIndexName, type FieldIndexSpec } from '../../content/compiler/expressions.js';
+import { maxFieldIndexes } from '../../db/limits.js';
 import {
   findValueLocations,
   stepKey,
@@ -177,6 +178,36 @@ const affectedModelsOf = (definition: SchemaDefinition, schema: readonly SchemaD
     ? findDependentModels(schema, definition.id).map((model) => model.id)
     : [definition.id];
 
+/**
+ * MySQL indexes every filterable or sortable field on one table, which allows a fixed number of indexes
+ * (`db/limits.ts`). A change that adds field indexes beyond that is refused; one that adds none is not, so
+ * an instance already over the limit can still be edited.
+ */
+const fieldIndexLimitIssues = (
+  after: SchemaDefinition | null,
+  newIndexes: readonly IndexStep[],
+  proposed: readonly SchemaDefinition[],
+): ValidationIssue[] => {
+  const limit = maxFieldIndexes();
+  if (limit === undefined || !after || newIndexes.length === 0) {
+    return [];
+  }
+  const total = proposed.reduce((sum, definition) => sum + indexStepsOf(definition).length, 0);
+  if (total <= limit) {
+    return [];
+  }
+  const position = after.fields.findIndex((candidate) => candidate.id === newIndexes[0]?.fieldId);
+  const flag = after.fields[position]?.filterable ? 'filterable' : 'sortable';
+  return [
+    {
+      path: `/fields/${position}/${flag}`,
+      code: 'UNSUPPORTED_FLAG',
+      message: `MySQL can index at most ${limit} filterable or sortable fields across all models (InnoDB allows 64 indexes per table); this change would need ${total}. Clear "filterable" or "sortable" on fields that do not need it.`,
+      definitionId: after.id,
+    },
+  ];
+};
+
 const deletionIssues = (
   definition: SchemaDefinition,
   active: readonly SchemaDefinition[],
@@ -227,6 +258,7 @@ export const buildChangePlan = ({
           markRebuild(step, before),
         )
       : [];
+  issues.push(...fieldIndexLimitIssues(after, newIndexes, proposed));
   const prerequisites = dedupe<PrerequisiteStep>([...contentSteps, ...(hasContent ? newIndexes : [])]);
   const followUps = dedupe<FollowUpStep>([
     ...(hasContent ? [] : newIndexes),

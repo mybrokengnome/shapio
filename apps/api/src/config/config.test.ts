@@ -119,7 +119,8 @@ describe('loadConfig', () => {
   it.each([
     [{ DATABASE_URL: 'postgres://x' }, 'PUBLIC_URL is required in production'],
     [{ ...PRODUCTION, DATABASE_URL: 'notaurl' }, 'DATABASE_URL must be a postgres:// URL'],
-    [{ ...PRODUCTION, DATABASE_URL: 'mysql://localhost/shapio' }, 'DATABASE_URL must be a postgres:// URL'],
+    [{ ...PRODUCTION, DATABASE_URL: 'mongodb://localhost/shapio' }, 'DATABASE_URL must be a postgres:// URL'],
+    [{ ...PRODUCTION, DATABASE_URL: 'mysql://localhost' }, 'DATABASE_URL must name the MySQL database'],
     [{ ...PRODUCTION, DATABASE_URL: 'sqlite:' }, 'or a sqlite: path'],
     [
       { ...PRODUCTION, DATABASE_URL: 'sqlite:./shapio.db', WORKER_MODE: 'dedicated' },
@@ -141,4 +142,14 @@ describe('loadConfig', () => {
       expect(problemsOf({ ...PRODUCTION, DATABASE_URL: url })).toEqual([]);
     },
   );
+
+  it('accepts a MySQL URL that names the database, with WORKER_MODE=dedicated', () => {
+    expect(
+      problemsOf({
+        ...PRODUCTION,
+        DATABASE_URL: 'mysql://shapio:secret@db:3306/shapio',
+        WORKER_MODE: 'dedicated',
+      }),
+    ).toEqual([]);
+  });
 });

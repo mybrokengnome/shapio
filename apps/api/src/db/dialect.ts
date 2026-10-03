@@ -1,11 +1,11 @@
 /**
  * The database dialect this process talks to (ADR 0001, "Dialect boundary"). Chosen from DATABASE_URL:
- * `postgres://…`/`postgresql://…` or `sqlite:<path>` (`sqlite::memory:` for a throwaway
+ * `postgres://…`/`postgresql://…`, `mysql://…` or `sqlite:<path>` (`sqlite::memory:` for a throwaway
  * in-memory database).
  * The `db/sql` primitives and the content compiler read `currentDialect()` while building SQL, so it is set
  * once, when the process creates its database handle (`createDb`), before any query is built.
  */
-export type DialectName = 'postgres' | 'sqlite';
+export type DialectName = 'postgres' | 'sqlite' | 'mysql';
 
 const SQLITE_PREFIX = 'sqlite:';
 const MEMORY = ':memory:';
@@ -14,6 +14,9 @@ const MEMORY = ':memory:';
 export const dialectOfUrl = (url: string): DialectName | undefined => {
   if (url.startsWith(SQLITE_PREFIX)) {
     return 'sqlite';
+  }
+  if (url.startsWith('mysql://')) {
+    return 'mysql';
   }
   return /^postgres(ql)?:\/\//.test(url) ? 'postgres' : undefined;
 };
@@ -67,3 +70,5 @@ export const withDialect = <T>(dialect: DialectName, fn: () => T): T => {
 };
 
 export const isSqlite = (): boolean => currentDialect() === 'sqlite';
+
+export const isMysql = (): boolean => currentDialect() === 'mysql';

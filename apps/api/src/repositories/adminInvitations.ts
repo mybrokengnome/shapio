@@ -23,6 +23,7 @@ export const listPending = (now: Date, trx: Executor = db) =>
     .where('revoked_at', 'is', null)
     .where('expires_at', '>', now)
     .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
     .execute();
 
 /** Locks the invitation for this token hash so it can be accepted at most once. */

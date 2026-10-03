@@ -26,8 +26,9 @@ export type AuditEventView = {
 export type AuditLogPage = { items: AuditEventView[]; nextCursor: string | null };
 
 const encodeCursor = (cursor: AuditLogCursor): string =>
-  Buffer.from(JSON.stringify([cursor.occurredAt, cursor.id]), 'utf8').toString('base64url');
+  Buffer.from(JSON.stringify([cursor.occurredAt, cursor.seq]), 'utf8').toString('base64url');
 
+/** A cursor from before `audit_events.seq` (its second part an event ID) is rejected like any invalid one. */
 const decodeCursor = (value: string): AuditLogCursor => {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
@@ -37,9 +38,9 @@ const decodeCursor = (value: string): AuditLogCursor => {
       typeof parsed[0] === 'string' &&
       !Number.isNaN(Date.parse(parsed[0])) &&
       typeof parsed[1] === 'string' &&
-      /^[0-9a-f-]{36}$/i.test(parsed[1])
+      /^\d{1,19}$/.test(parsed[1])
     ) {
-      return { occurredAt: parsed[0], id: parsed[1] };
+      return { occurredAt: parsed[0], seq: parsed[1] };
     }
   } catch {
     // Fall through to the error below: a malformed cursor is the caller's mistake, not ours.
@@ -74,6 +75,6 @@ export const listAuditEvents = async (
       metadata: row.metadata,
     })),
     nextCursor:
-      rows.length > limit && last ? encodeCursor({ occurredAt: last.cursor_at, id: last.id }) : null,
+      rows.length > limit && last ? encodeCursor({ occurredAt: last.cursor_at, seq: last.seq }) : null,
   };
 };

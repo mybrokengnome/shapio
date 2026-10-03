@@ -234,6 +234,7 @@ export interface AuditEvents {
   occurred_at: Generated<Timestamp>;
   outcome: string;
   request_id: string | null;
+  seq: Generated<Int8>;
   site_id: string | null;
   target_id: string | null;
   target_type: string | null;

@@ -20,7 +20,7 @@ const parseUrl = (value: string): URL | undefined => {
   }
 };
 
-const DATABASE_URL_PROTOCOLS = new Set(['postgres:', 'postgresql:']);
+const DATABASE_URL_PROTOCOLS = new Set(['postgres:', 'postgresql:', 'mysql:']);
 
 /** `sqlite:<path>` or `sqlite::memory:` (documentation/sqlite.md). */
 const isSqliteUrl = (value: string) => value.startsWith('sqlite:') && value.length > 'sqlite:'.length;
@@ -34,10 +34,13 @@ const databaseUrlProblems = (raw: RawConfig): string[] => {
       : [];
   }
   const url = parseUrl(raw.DATABASE_URL);
+  if (url?.protocol === 'mysql:' && url.pathname.length <= 1) {
+    return ['DATABASE_URL must name the MySQL database, e.g. mysql://user:password@localhost:3306/shapio'];
+  }
   return url && DATABASE_URL_PROTOCOLS.has(url.protocol)
     ? []
     : [
-        'DATABASE_URL must be a postgres:// URL (e.g. postgres://user:password@localhost:5432/shapio) or a sqlite: path (e.g. sqlite:./shapio.db)',
+        'DATABASE_URL must be a postgres:// URL (e.g. postgres://user:password@localhost:5432/shapio), a mysql:// URL (e.g. mysql://user:password@localhost:3306/shapio) or a sqlite: path (e.g. sqlite:./shapio.db)',
       ];
 };
 

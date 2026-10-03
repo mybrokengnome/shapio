@@ -1,9 +1,11 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import pg from 'pg';
-import { dialectOfUrl, isSqlite, sqliteLocationOfUrl } from './dialect.js';
+import { dialectOfUrl, isMysql, isSqlite, sqliteLocationOfUrl } from './dialect.js';
+import { createMysqlNotificationListener } from './mysql/notificationListener.js';
+import { NotificationChannel } from './mysql/parameters.js';
+import { subscribeNotifications } from './notifyHub.js';
 import { notificationKeyOf } from './sqlite/driver.js';
-import { subscribeNotifications } from './sqlite/notifyHub.js';
 import type { DB } from './types.js';
 
 /**
@@ -12,7 +14,10 @@ import type { DB } from './types.js';
  * `onConnect` callback after every (re)connect to resynchronise for anything missed in between.
  *
  * SQLite: `shapio_notify()` queues on the connection and an in-process bus delivers on commit
- * (`sqlite/notifyHub.ts`); only listeners in the same process hear it.
+ * (`notifyHub.ts`); only listeners in the same process hear it.
+ *
+ * MySQL: a row in `notifications`, inserted in the caller's transaction; listeners poll the table, and those
+ * in the publishing process hear it on commit through the same bus (`mysql/notificationListener.ts`).
  */
 
 /** Sends a notification. Inside a transaction it is delivered only if (and when) that transaction commits. */
@@ -23,6 +28,12 @@ export const notify = async (
 ): Promise<void> => {
   if (isSqlite()) {
     await sql`select shapio_notify(${channel}, ${payload})`.execute(executor);
+    return;
+  }
+  if (isMysql()) {
+    // The connection publishes the channel in this process once the transaction commits.
+    await sql`insert into notifications (channel, payload, created_at)
+      values (${new NotificationChannel(channel, payload)}, ${payload}, sysdate(6))`.execute(executor);
     return;
   }
   await sql`select pg_notify(${channel}, ${payload})`.execute(executor);
@@ -45,7 +56,12 @@ export type NotificationListenerOptions = {
   /** First reconnect delay; doubles up to `maxReconnectDelayMs`. */
   reconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
+  /** MySQL: how often the notifications table is polled. */
+  pollMs?: number;
 };
+
+/** MySQL: notifications from other processes arrive within this many milliseconds. */
+export const DEFAULT_NOTIFY_POLL_MS = 250;
 
 /** SQLite: a subscription to the in-process bus of the database file; connected until closed. */
 const createSqliteNotificationListener = (options: NotificationListenerOptions): NotificationListener => {
@@ -77,6 +93,14 @@ const createSqliteNotificationListener = (options: NotificationListenerOptions):
 export const createNotificationListener = (options: NotificationListenerOptions): NotificationListener => {
   if (dialectOfUrl(options.connectionString) === 'sqlite') {
     return createSqliteNotificationListener(options);
+  }
+  if (dialectOfUrl(options.connectionString) === 'mysql') {
+    return createMysqlNotificationListener({
+      ...options,
+      pollMs: options.pollMs ?? DEFAULT_NOTIFY_POLL_MS,
+      reconnectDelayMs: options.reconnectDelayMs ?? 100,
+      maxReconnectDelayMs: options.maxReconnectDelayMs ?? 5000,
+    });
   }
   const {
     connectionString,

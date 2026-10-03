@@ -20,10 +20,11 @@ export type AuditLogFilter = {
 };
 
 /**
- * Keyset cursor: the (occurred_at, id) of the last row of the previous page. `occurredAt` is ISO-8601 with
+ * Keyset cursor: the (occurred_at, seq) of the last row of the previous page. `occurredAt` is ISO-8601 with
  * microseconds, because a JavaScript Date (milliseconds) would skip or repeat rows within one millisecond.
+ * `seq` (decimal text) orders events written in the same instant the way they were written.
  */
-export type AuditLogCursor = { occurredAt: string; id: string };
+export type AuditLogCursor = { occurredAt: string; seq: string };
 
 /**
  * Newest first, keyset-paginated so deep pages stay as fast as the first. Admin, token and app-user actors are
@@ -55,6 +56,7 @@ export const listEvents = (
     )
     .select((eb) => [
       'e.id',
+      'e.seq',
       'e.occurred_at',
       'e.actor_type',
       'e.actor_id',
@@ -91,11 +93,11 @@ export const listEvents = (
       return qb.where((eb) =>
         eb.or([
           eb('e.occurred_at', '<', at),
-          eb.and([eb('e.occurred_at', '=', at), eb('e.id', '<', cursor?.id ?? '')]),
+          eb.and([eb('e.occurred_at', '=', at), eb('e.seq', '<', cursor?.seq ?? '0')]),
         ]),
       );
     })
     .orderBy('e.occurred_at', 'desc')
-    .orderBy('e.id', 'desc')
+    .orderBy('e.seq', 'desc')
     .limit(limit)
     .execute();

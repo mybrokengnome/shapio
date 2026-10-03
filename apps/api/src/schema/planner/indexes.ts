@@ -4,14 +4,17 @@ import { INDEX_BUILD_LOCK_KEY, LOCK_NAMESPACE } from '../../constants/lockKeys.j
 import {
   analyzeHeadsStatement,
   CONTENT_HEADS_TABLE,
+  createFieldIndexColumnStatement,
   createFieldIndexStatement,
   createFieldStatisticsStatement,
+  dropFieldIndexColumnStatement,
   dropIndexStatement,
   dropStatisticsStatement,
   fieldIndexName,
   type FieldIndexSpec,
 } from '../../content/compiler/expressions.js';
 import { withPolledSessionAdvisoryLock } from '../../db/advisoryLocks.js';
+import { executeIdempotentDdl } from '../../db/ddl.js';
 import type { Database } from '../../db/index.js';
 import { getIndexState, tableExists } from '../../db/indexCatalog.js';
 import type { IndexStep } from './steps.js';
@@ -25,12 +28,9 @@ export type IndexBuildOutcome = 'built' | 'exists' | 'skipped';
  * The lock is a session lock on its own connection, idle outside any transaction, and waiting for it polls
  * rather than blocks, so neither the holder nor the waiters hold up the concurrent build itself.
  */
-/** Runs a statement the dialect may not have (extended statistics on SQLite). */
-const executeIfAny = async (db: Database, statement: RawBuilder<unknown> | null): Promise<void> => {
-  if (statement) {
-    await statement.execute(db);
-  }
-};
+/** Runs a statement the dialect may not have (extended statistics on SQLite and MySQL). */
+const executeIfAny = (db: Database, statement: RawBuilder<unknown> | null): Promise<void> =>
+  executeIdempotentDdl(db, statement);
 
 const withIndexBuildLock = <T>(db: Database, fn: () => Promise<T>): Promise<T> =>
   withPolledSessionAdvisoryLock(db, LOCK_NAMESPACE.indexBuilds, INDEX_BUILD_LOCK_KEY, fn);
@@ -77,10 +77,12 @@ const buildFieldIndexNow = async (
   }
   if (state === 'invalid') {
     log.warn({ indexName }, 'dropping invalid index left by an earlier build');
-    await dropIndexStatement(indexName).execute(db);
+    await dropIndexNow(db, indexName);
   }
   const startedAt = performance.now();
-  await createFieldIndexStatement(spec).execute(db);
+  // MySQL indexes a virtual column holding the expression, added first (null elsewhere).
+  await executeIfAny(db, createFieldIndexColumnStatement(spec));
+  await executeIfAny(db, createFieldIndexStatement(spec));
   if ((await getIndexState(db, indexName)) !== 'valid') {
     throw new Error(`Index ${indexName} is not valid after building`);
   }
@@ -91,10 +93,16 @@ const buildFieldIndexNow = async (
   return 'built';
 };
 
+/** The index, then what only exists for it: its statistics (PostgreSQL) or its column (MySQL). */
+const dropIndexNow = async (db: Database, indexName: string): Promise<void> => {
+  await executeIfAny(db, dropIndexStatement(indexName));
+  await executeIfAny(db, dropFieldIndexColumnStatement(indexName));
+};
+
 export const dropFieldIndex = (db: Database, indexName: string): Promise<void> =>
   withIndexBuildLock(db, async () => {
     if (await tableExists(db, CONTENT_HEADS_TABLE)) {
-      await dropIndexStatement(indexName).execute(db);
+      await dropIndexNow(db, indexName);
       await executeIfAny(db, dropStatisticsStatement(indexName));
     }
   });

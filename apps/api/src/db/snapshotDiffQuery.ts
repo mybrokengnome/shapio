@@ -1,5 +1,6 @@
 import { sql, type Kysely, type RawBuilder, type Transaction } from 'kysely';
-import { isSqlite } from './dialect.js';
+import { isMysql, isSqlite } from './dialect.js';
+import { mysqlJsonArrayOf } from './sql/values.js';
 import type { DB } from './types.js';
 
 /**
@@ -38,32 +39,65 @@ export type SnapshotDiffParams = {
  * plain values, expands the model list with `json_each` and aggregates with `json_group_array`, whose text
  * result is parsed here).
  */
-const POSTGRES = {
+type DiffDialect = {
+  uuid: (value: string) => RawBuilder<unknown>;
+  seq: (value: number) => RawBuilder<unknown>;
+  inModels: (modelIds: readonly string[]) => RawBuilder<unknown>;
+  /** `a <op> b`: the two revision IDs differ (nulls compare as values). */
+  distinct: (a: RawBuilder<unknown>, b: RawBuilder<unknown>) => RawBuilder<unknown>;
+  /** The JSON objects of a group as an array ordered by locale. */
+  aggregate: (object: RawBuilder<unknown>) => RawBuilder<unknown>;
+  object: RawBuilder<unknown>;
+  /** The classification column's name (`change` is reserved on MySQL). */
+  change: RawBuilder<unknown>;
+};
+
+const POSTGRES: DiffDialect = {
   uuid: (value: string) => sql`${value}::uuid`,
   seq: (value: number) => sql`${value}::bigint`,
   inModels: (modelIds: readonly string[]) => sql`pl.model_id = any(${[...modelIds]}::uuid[])`,
-  distinct: sql`is distinct from`,
-  aggregate: sql`jsonb_agg`,
+  distinct: (a, b) => sql`${a} is distinct from ${b}`,
+  aggregate: (object) => sql`jsonb_agg(
+        ${object}
+        order by ch.locale
+      )`,
   object: sql`jsonb_build_object`,
+  change: sql`change`,
 };
 
-const SQLITE: typeof POSTGRES = {
+const SQLITE: DiffDialect = {
   uuid: (value) => sql`${value.toLowerCase()}`,
   seq: (value) => sql`${value}`,
   inModels: (modelIds) => sql`pl.model_id in (select value from json_each(${JSON.stringify(modelIds)}))`,
-  distinct: sql`is not`,
-  aggregate: sql`json_group_array`,
+  distinct: (a, b) => sql`${a} is not ${b}`,
+  aggregate: (object) => sql`json_group_array(
+        ${object}
+        order by ch.locale
+      )`,
   object: sql`json_object`,
+  change: sql`change`,
 };
 
-const modelCondition = (dialect: typeof POSTGRES, modelIds: readonly string[] | null) =>
+/** MySQL: `<=>` is null-safe equality; JSON_ARRAYAGG takes no ORDER BY (`mysqlJsonArrayOf`). */
+const MYSQL: DiffDialect = {
+  uuid: (value) => sql`${value.toLowerCase()}`,
+  seq: (value) => sql`${value}`,
+  inModels: (modelIds) =>
+    modelIds.length === 0 ? sql`false` : sql`pl.model_id in (${sql.join([...modelIds])})`,
+  distinct: (a, b) => sql`not (${a} <=> ${b})`,
+  aggregate: (object) => mysqlJsonArrayOf(sql`${object} order by ch.locale`),
+  object: sql`json_object`,
+  change: sql`\`change\``,
+};
+
+const modelCondition = (dialect: DiffDialect, modelIds: readonly string[] | null) =>
   modelIds === null ? sql`true` : dialect.inModels(modelIds);
 
-const afterCondition = (dialect: typeof POSTGRES, after: string | undefined) =>
+const afterCondition = (dialect: DiffDialect, after: string | undefined) =>
   after === undefined ? sql`true` : sql`pl.entry_id > ${dialect.uuid(after)}`;
 
 /** The revision of (entry, locale) live at `seq`, as a lateral subquery over `c`. */
-const liveAt = (dialect: typeof POSTGRES, siteId: string, seq: number) => sql`(
+const liveAt = (dialect: DiffDialect, siteId: string, seq: number) => sql`(
   select p.revision_id from publication_log p
   where p.site_id = ${dialect.uuid(siteId)} and p.entry_id = c.entry_id and p.locale = c.locale
     and p.from_seq <= ${dialect.seq(seq)} and (p.to_seq is null or p.to_seq > ${dialect.seq(seq)})
@@ -75,7 +109,7 @@ export const selectSnapshotDiffRows = async (
   params: SnapshotDiffParams,
   executor: Executor,
 ): Promise<SnapshotDiffRow[]> => {
-  const dialect = isSqlite() ? SQLITE : POSTGRES;
+  const dialect = isMysql() ? MYSQL : isSqlite() ? SQLITE : POSTGRES;
   const { from, to } = params;
   const scope = sql`pl.site_id = ${dialect.uuid(params.siteId)} and ${modelCondition(dialect, params.modelIds)}
     and ${afterCondition(dialect, params.after)}`;
@@ -98,20 +132,17 @@ export const selectSnapshotDiffRows = async (
           when s.from_revision_id is null then 'published'
           when s.to_revision_id is null then 'unpublished'
           else 'updated'
-        end as change
+        end as ${dialect.change}
       from states s
-      where s.from_revision_id ${dialect.distinct} s.to_revision_id
+      where ${dialect.distinct(sql`s.from_revision_id`, sql`s.to_revision_id`)}
     )
     select ch.entry_id, e.model_id,
-      ${dialect.aggregate}(
-        ${dialect.object}(
+      ${dialect.aggregate(sql`${dialect.object}(
           'locale', ch.locale,
-          'change', ch.change,
+          'change', ch.${dialect.change},
           'fromRevisionId', ch.from_revision_id,
           'toRevisionId', ch.to_revision_id
-        )
-        order by ch.locale
-      ) as locales
+        )`)} as locales
     from changes ch
     join entries e on e.id = ch.entry_id
     where ${params.rowFilter ?? sql`true`}

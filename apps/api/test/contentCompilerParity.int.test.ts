@@ -3,6 +3,7 @@ import { compileAuthorCondition, compileStatusCondition } from '../src/content/c
 import { entryIdIn } from '../src/content/compiler/conditions.js';
 import {
   analyzeHeadsStatement,
+  createFieldIndexColumnStatement,
   createFieldIndexStatement,
   fieldIndexName,
   type FieldIndexSpec,
@@ -19,13 +20,15 @@ import {
 import {
   contentDatabasesOfRun,
   insertRow,
+  openMysqlContentDatabase,
   openSqliteContentDatabase,
   type ContentTestDatabase,
 } from './helpers/contentDialectDatabases.js';
+import { isMysqlRun, withSkipReason } from './helpers/dialect.js';
 
 /**
  * The content compiler gives the same answers on every database (ADR 0001, "D2: as built"): one dataset,
- * one table of querystrings and one expected result per query, run on PostgreSQL and on SQLite. Values
+ * one table of querystrings and one expected result per query, run on PostgreSQL or MySQL and on SQLite. Values
  * cover each operator's edge cases: missing values (absent, null, "" and []), numbers stored as strings
  * ("12.5" and "12.50"), case and Unicode in text matches, LIKE wildcards in the text, locale fallback,
  * snapshots, drafts and deleted entries.
@@ -368,61 +371,70 @@ describe.each(contentDatabasesOfRun())('content compiler on %s', (_name, open) =
   });
 });
 
-describe('field indexes serve compiled queries on SQLite', () => {
-  let database: ContentTestDatabase;
-  const spec = (fieldId: string, type: FieldIndexSpec['type']): FieldIndexSpec => ({
-    modelId: MODEL,
-    fieldId,
-    type,
-  });
-  const INDEXED = {
-    title: spec(F.title, 'string'),
-    rank: spec(F.rank, 'integer'),
-    price: spec(F.price, 'decimal'),
-    day: spec(F.day, 'date'),
-  };
+const indexSpec = (fieldId: string, type: FieldIndexSpec['type']): FieldIndexSpec => ({
+  modelId: MODEL,
+  fieldId,
+  type,
+});
+const INDEXED = {
+  title: indexSpec(F.title, 'string'),
+  rank: indexSpec(F.rank, 'integer'),
+  price: indexSpec(F.price, 'decimal'),
+  day: indexSpec(F.day, 'date'),
+};
 
-  beforeAll(async () => {
-    database = await openSqliteContentDatabase();
-    // 4,000 published heads per locale, so the planner has a reason to choose.
-    for (let n = 1; n <= 4000; n += 1) {
-      const entryId = id(10_000 + n);
+/** 4,000 published heads per locale, so the planner has a reason to choose; then the field indexes. */
+const seedIndexedHeads = async (database: ContentTestDatabase) => {
+  for (let n = 1; n <= 4000; n += 1) {
+    const entryId = id(10_000 + n);
+    await database.execute(
+      insertRow('entries', {
+        id: entryId,
+        site_id: SITE,
+        model_id: MODEL,
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    for (const locale of ['en', 'fr']) {
+      const data = JSON.stringify({
+        [F.title]: `title ${n % 997}`,
+        [F.rank]: n % 1000,
+        [F.price]: `${n % 500}.25`,
+        [F.day]: `2026-01-${String((n % 28) + 1).padStart(2, '0')}`,
+      });
+      const revision = id(1_000_000 + n * 2 + (locale === 'en' ? 0 : 1));
+      await database.execute(insertRow('content_revisions', { id: revision, entry_id: entryId, data }));
       await database.execute(
-        insertRow('entries', {
-          id: entryId,
+        insertRow('entry_heads', {
+          entry_id: entryId,
           site_id: SITE,
           model_id: MODEL,
-          created_at: '2026-01-01T00:00:00.000Z',
+          locale,
+          state: 'published',
+          revision_id: revision,
+          data,
           updated_at: '2026-01-01T00:00:00.000Z',
         }),
       );
-      for (const locale of ['en', 'fr']) {
-        const data = JSON.stringify({
-          [F.title]: `title ${n % 997}`,
-          [F.rank]: n % 1000,
-          [F.price]: `${n % 500}.25`,
-          [F.day]: `2026-01-${String((n % 28) + 1).padStart(2, '0')}`,
-        });
-        const revision = id(1_000_000 + n * 2 + (locale === 'en' ? 0 : 1));
-        await database.execute(insertRow('content_revisions', { id: revision, entry_id: entryId, data }));
-        await database.execute(
-          insertRow('entry_heads', {
-            entry_id: entryId,
-            site_id: SITE,
-            model_id: MODEL,
-            locale,
-            state: 'published',
-            revision_id: revision,
-            data,
-            updated_at: '2026-01-01T00:00:00.000Z',
-          }),
-        );
-      }
     }
-    for (const index of Object.values(INDEXED)) {
-      await database.execute(createFieldIndexStatement(index, database.dialect));
+  }
+  for (const index of Object.values(INDEXED)) {
+    const column = createFieldIndexColumnStatement(index, database.dialect);
+    if (column) {
+      await database.execute(column);
     }
-    await database.execute(analyzeHeadsStatement(database.dialect));
+    await database.execute(createFieldIndexStatement(index, database.dialect));
+  }
+  await database.execute(analyzeHeadsStatement(database.dialect));
+};
+
+describe('field indexes serve compiled queries on SQLite', () => {
+  let database: ContentTestDatabase;
+
+  beforeAll(async () => {
+    database = await openSqliteContentDatabase();
+    await seedIndexedHeads(database);
   });
   afterAll(async () => {
     await database.close();
@@ -455,3 +467,33 @@ describe('field indexes serve compiled queries on SQLite', () => {
     expect(plan).not.toMatch(/USE TEMP B-TREE FOR ORDER BY/);
   });
 });
+
+const mysqlPlanSkip = isMysqlRun() ? undefined : 'checks MySQL query plans (MySQL runs only)';
+
+describe.skipIf(mysqlPlanSkip)(
+  withSkipReason('field indexes serve compiled queries on MySQL', mysqlPlanSkip),
+  () => {
+    let database: ContentTestDatabase;
+
+    beforeAll(async () => {
+      database = await openMysqlContentDatabase();
+      await seedIndexedHeads(database);
+    }, 120_000);
+    afterAll(async () => {
+      await database.close();
+    });
+
+    const planOf = async (search: string) =>
+      (await database.plan(compileFixtureQuery(search, database.dialect, EN).rows)).join('\n');
+
+    it.each([
+      ['equality on text', 'filters[title][$eq]=title 5', INDEXED.title, 'Index lookup'],
+      ['equality on a number', 'filters[rank][$eq]=5', INDEXED.rank, 'Index lookup'],
+      ['equality on a decimal string', 'filters[price][$eq]=5.25', INDEXED.price, 'Index lookup'],
+      ['a numeric range', 'filters[rank][$gt]=990', INDEXED.rank, 'Index range scan'],
+      ['a date range', 'filters[day][$lt]=2026-01-02', INDEXED.day, 'Index range scan'],
+    ] as const)('%s uses the field index', async (_what, search, index, access) => {
+      expect(await planOf(search)).toContain(`${access} on h using ${fieldIndexName(index)}`);
+    });
+  },
+);

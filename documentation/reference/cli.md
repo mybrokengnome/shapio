@@ -48,7 +48,7 @@ shapio migrate
 
 ### shapio backup
 
-Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump).
+Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump, MySQL mysqldump).
 
 ```text
 shapio backup <file>

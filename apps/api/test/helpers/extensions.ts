@@ -15,7 +15,7 @@ export const createHookLog = (db: Database) => {
   return sql`
     create table ext_hook_log (
       id ${types.serialKey}, hook text not null, entry_id ${types.uuid} not null, locale text, principal text not null,
-      data ${types.jsonb}, before ${types.jsonb}, event_id text
+      data ${types.jsonb}, ${sql.id('before')} ${types.jsonb}, event_id text
     )
   `.execute(db);
 };

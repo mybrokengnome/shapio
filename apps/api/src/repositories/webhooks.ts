@@ -37,6 +37,7 @@ const withLastDelivery = (trx: Executor) =>
         .select('status')
         .whereRef('webhook_deliveries.webhook_id', '=', 'webhooks.id')
         .orderBy('created_at', 'desc')
+        .orderBy('webhook_deliveries.id', 'desc')
         .limit(1)
         .as('last_status'),
       eb
@@ -44,6 +45,7 @@ const withLastDelivery = (trx: Executor) =>
         .select('updated_at')
         .whereRef('webhook_deliveries.webhook_id', '=', 'webhooks.id')
         .orderBy('created_at', 'desc')
+        .orderBy('webhook_deliveries.id', 'desc')
         .limit(1)
         .as('last_at'),
     ]);
@@ -57,6 +59,7 @@ export const list = (siteId: string, trx: Executor = db) =>
   withLastDelivery(trx)
     .where((eb) => eb.or([eb('webhooks.site_id', 'is', null), eb('webhooks.site_id', '=', siteId)]))
     .orderBy('webhooks.created_at')
+    .orderBy('webhooks.id')
     .execute();
 
 /** One webhook a site sees (its own or a network one); another site's reads as not found. */

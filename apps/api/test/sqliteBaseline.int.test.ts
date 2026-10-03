@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql, type Kysely } from 'kysely';
+import { NO_MIGRATIONS } from 'kysely/migration';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigrator } from '../src/db/migrator.js';
 import { BIGINT_ROWID_COLUMNS } from '../src/db/sqlite/codec.js';
 import { createSqliteDb } from '../src/db/sqlite/index.js';
 import { NULLS_NOT_DISTINCT_INDEXES } from '../src/db/sqlite/nullsNotDistinct.js';
 import type { DB } from '../src/db/types.js';
-import { isSqliteRun, withSkipReason } from './helpers/dialect.js';
+import { testDialect, withSkipReason } from './helpers/dialect.js';
 import { createTestDatabase, type TestDatabase } from './helpers/testDatabase.js';
 
 /**
@@ -289,8 +290,9 @@ const sortedSchema = (schema: LogicalSchema) => ({
   triggers: [...schema.triggers].sort(),
 });
 
-// Needs a PostgreSQL server; a SQLite run has none.
-const skipReason = isSqliteRun() ? 'compares against a migrated PostgreSQL database' : undefined;
+// Needs a PostgreSQL server; SQLite and MySQL runs have none.
+const skipReason =
+  testDialect() === 'postgres' ? undefined : 'compares against a migrated PostgreSQL database';
 
 describe.skipIf(skipReason)(
   withSkipReason('SQLite baseline matches the PostgreSQL migrations', skipReason),
@@ -336,7 +338,7 @@ describe.skipIf(skipReason)(
 
     it('rolls back and forward again', async () => {
       const migrator = createMigrator(sqlite);
-      expect((await migrator.migrateDown()).error).toBeUndefined();
+      expect((await migrator.migrateTo(NO_MIGRATIONS)).error).toBeUndefined();
       const { rows } = await sql<{ name: string }>`
       select name from sqlite_schema where type = 'table' and name not like 'kysely_%' and name <> 'sqlite_sequence'`.execute(
         sqlite,

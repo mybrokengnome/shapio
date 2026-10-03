@@ -66,6 +66,7 @@
     "@vitejs/plugin-react": "catalog:",
     "axe-core": "catalog:",
     "jsdom": "catalog:",
+    "mysql2": "catalog:",
     "pg": "catalog:",
     "tailwindcss": "catalog:",
     "tw-animate-css": "catalog:",

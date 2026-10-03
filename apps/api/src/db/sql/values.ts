@@ -1,5 +1,6 @@
 import { sql, type Expression, type RawBuilder } from 'kysely';
-import { isSqlite } from '../dialect.js';
+import { isMysql, isSqlite } from '../dialect.js';
+import { SequenceValue } from '../mysql/parameters.js';
 import { asBigint, asJson } from './typed.js';
 
 /**
@@ -19,10 +20,11 @@ const ARRAY_TYPES = {
 /**
  * A bound value read as a UUID.
  * PostgreSQL: `cast($1 as uuid)`. SQLite: the lowercased text (UUIDs are stored as lowercase text, which
- * compares and sorts like PostgreSQL's uuid; other values compare case-sensitively there).
+ * compares and sorts like PostgreSQL's uuid; other values compare case-sensitively there). MySQL: the
+ * lowercased text too (UUID columns are `CHAR(36)` with a case-insensitive collation).
  */
 export const uuidParam = (value: string | null): RawBuilder<string> =>
-  isSqlite()
+  isSqlite() || isMysql()
     ? sql<string>`${value === null ? null : value.toLowerCase()}`
     : sql<string>`cast(${value} as uuid)`;
 
@@ -30,38 +32,53 @@ export const uuidParam = (value: string | null): RawBuilder<string> =>
  * `value` equals one of `values`, bound as a single parameter (so the statement text and plan do not
  * depend on the list length).
  * PostgreSQL: `value = any($1::uuid[])`. SQLite: `value in (select value from json_each($1))` with the list
- * bound as JSON. Contract: false for an empty list; null never matches.
+ * bound as JSON. MySQL: `value in (?, …)` (its client binds parameters into the text, so there is no plan to
+ * keep stable). Contract: false for an empty list; null never matches.
  */
 export const anyOf = (
   value: Expression<unknown>,
   values: readonly string[],
   type: ArrayElementType,
-): RawBuilder<boolean> =>
-  isSqlite()
+): RawBuilder<boolean> => {
+  if (isMysql()) {
+    return values.length === 0 ? sql<boolean>`false` : sql<boolean>`${value} in (${sql.join([...values])})`;
+  }
+  return isSqlite()
     ? sql<boolean>`${value} in (select value from json_each(${JSON.stringify(values)}))`
     : sql<boolean>`${value} = any(${[...values]}::${ARRAY_TYPES[type]})`;
+};
 
 /**
  * An array column contains `value`.
  * PostgreSQL: `$1 = any(column)`. SQLite: `exists (select 1 from json_each(column) where value = $1)`.
+ * MySQL: `$1 member of (column)` (array columns are JSON).
  * Contract: false for a null or empty array.
  */
 export const arrayContains = (
   column: Expression<readonly string[] | null>,
   value: string,
-): RawBuilder<boolean> =>
-  isSqlite()
+): RawBuilder<boolean> => {
+  if (isMysql()) {
+    return sql<boolean>`${value} member of (${column})`;
+  }
+  return isSqlite()
     ? sql<boolean>`exists (select 1 from json_each(${column}) where value = ${value})`
     : sql<boolean>`${value} = any(${column})`;
+};
 
 /**
  * The values of `column` across the group, sorted by the value itself (optionally distinct); null when the
  * group is empty (pair with `emptyArray` in a `coalesce`, and mark the coalesce with `asJson`).
  * PostgreSQL: `array_agg([distinct] col order by col)`. SQLite: `json_group_array([distinct] col order by
- * col)`, which gives `[]` instead of null for an empty group. Contract: a JavaScript array once read.
+ * col)`, which gives `[]` instead of null for an empty group. MySQL: `group_concat` of the JSON-quoted text
+ * values, cast to JSON (`JSON_ARRAYAGG` has no ORDER BY); null for an empty group. Contract: a JavaScript
+ * array once read.
  */
 export const sortedArrayAgg = <T>(column: string, options: { distinct?: boolean } = {}): RawBuilder<T[]> => {
   const distinct = options.distinct ? sql`distinct ` : sql``;
+  if (isMysql()) {
+    return mysqlJsonArrayOf<T[]>(sql`${distinct}json_quote(${sql.ref(column)}) order by ${sql.ref(column)}`);
+  }
   return isSqlite()
     ? asJson<T[]>(sql`json_group_array(${distinct}${sql.ref(column)} order by ${sql.ref(column)})`)
     : sql<T[]>`array_agg(${distinct}${sql.ref(column)} order by ${sql.ref(column)})`;
@@ -69,23 +86,36 @@ export const sortedArrayAgg = <T>(column: string, options: { distinct?: boolean 
 
 /**
  * An empty array of the given element type.
- * PostgreSQL: `'{}'::uuid[]`. SQLite: `'[]'`. Contract: an empty JavaScript array once read.
+ * PostgreSQL: `'{}'::uuid[]`. SQLite: `'[]'`. MySQL: `json_array()`. Contract: an empty JavaScript array
+ * once read.
  */
-export const emptyArray = <T>(type: ArrayElementType): RawBuilder<T[]> =>
-  isSqlite() ? asJson<T[]>(sql`'[]'`) : sql<T[]>`'{}'::${ARRAY_TYPES[type]}`;
+export const emptyArray = <T>(type: ArrayElementType): RawBuilder<T[]> => {
+  if (isMysql()) {
+    return sql<T[]>`json_array()`;
+  }
+  return isSqlite() ? asJson<T[]>(sql`'[]'`) : sql<T[]>`'{}'::${ARRAY_TYPES[type]}`;
+};
 
 /**
  * The value of the first row (by `orderColumn` descending) whose `column` is not null, per group.
  * PostgreSQL: `(array_agg(col order by o desc) filter (where col is not null))[1]`. SQLite: the first
- * element of the matching `json_group_array`. Contract: null when no row of the group has a value. Mark the
- * selected result with its type (e.g. `asBigint`) for SQLite.
+ * element of the matching `json_group_array`. MySQL: the first element of an ordered `group_concat` (which
+ * skips nulls), as text. Contract: null when no row of the group has a value. Mark the selected result with
+ * its type (e.g. `asBigint`) for SQLite.
  */
-export const latestNonNull = <T>(column: string, orderColumn: string): RawBuilder<T | null> =>
-  isSqlite()
+export const latestNonNull = <T>(column: string, orderColumn: string): RawBuilder<T | null> => {
+  if (isMysql()) {
+    // group_concat skips nulls; the first element of the JSON array is the latest non-null value.
+    return sql<T | null>`json_unquote(json_extract(${mysqlJsonArrayOf(
+      sql`json_quote(cast(${sql.ref(column)} as char)) order by ${sql.ref(orderColumn)} desc`,
+    )}, '$[0]'))`;
+  }
+  return isSqlite()
     ? sql<T | null>`(json_group_array(${sql.ref(column)} order by ${sql.ref(orderColumn)} desc)
         filter (where ${sql.ref(column)} is not null)) ->> 0`
     : sql<T | null>`(array_agg(${sql.ref(column)} order by ${sql.ref(orderColumn)} desc)
         filter (where ${sql.ref(column)} is not null))[1]`;
+};
 
 /** Database sequences Shapio uses. */
 export type SequenceName = 'entry_heads_change_seq';
@@ -93,8 +123,23 @@ export type SequenceName = 'entry_heads_change_seq';
 /**
  * The next value of a database sequence.
  * PostgreSQL: `nextval('name')`. SQLite: `shapio_nextval('name')`, a counter row in `sequences` that rolls
- * back with its transaction (so SQLite numbers have no gaps). Contract: unique and increasing across every
+ * back with its transaction (so SQLite numbers have no gaps). MySQL: a parameter the driver fills just before
+ * the statement runs, from an AUTO_INCREMENT table (no lock held to commit). Contract: unique and increasing across every
  * transaction (gaps allowed; a value may commit after a higher one). Returned as a string (bigint).
  */
-export const nextSequenceValue = (name: SequenceName): RawBuilder<string> =>
-  isSqlite() ? asBigint(sql`shapio_nextval(${sql.lit(name)})`) : sql<string>`nextval(${sql.lit(name)})`;
+export const nextSequenceValue = (name: SequenceName): RawBuilder<string> => {
+  if (isMysql()) {
+    return sql<string>`${new SequenceValue(name)}`;
+  }
+  return isSqlite()
+    ? asBigint(sql`shapio_nextval(${sql.lit(name)})`)
+    : sql<string>`nextval(${sql.lit(name)})`;
+};
+
+/**
+ * MySQL: `cast(concat('[', group_concat(<json texts> separator ','), ']') as json)`, an ordered JSON array
+ * aggregate (`JSON_ARRAYAGG` takes no ORDER BY); null for an empty group, like PostgreSQL's aggregates.
+ * `items` is the inside of `group_concat`: JSON text per row and its ORDER BY.
+ */
+export const mysqlJsonArrayOf = <T>(items: RawBuilder<unknown>): RawBuilder<T> =>
+  sql<T>`cast(concat('[', group_concat(${items} separator ','), ']') as json)`;

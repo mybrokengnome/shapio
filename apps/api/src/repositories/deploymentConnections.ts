@@ -14,6 +14,7 @@ export const list = (siteId: string, trx: Executor = db) =>
     .selectAll()
     .where('site_id', '=', siteId)
     .orderBy('created_at')
+    .orderBy('id')
     .execute();
 
 /** By ID on any site: for jobs and callbacks, which start from a run or a signed callback. */
@@ -51,6 +52,7 @@ export const findFirstWithPreview = (siteId: string, trx: Executor = db) =>
     .where('enabled', '=', true)
     .where('preview_url_template', 'is not', null)
     .orderBy('created_at')
+    .orderBy('id')
     .limit(1)
     .executeTakeFirst();
 
@@ -73,6 +75,7 @@ export const listWithPreview = (siteId: string, trx: Executor = db) =>
     .where('enabled', '=', true)
     .where('preview_url_template', 'is not', null)
     .orderBy('created_at')
+    .orderBy('id')
     .execute();
 
 export const insert = (row: Insertable<DeploymentConnections>, trx: Executor = db) =>

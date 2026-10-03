@@ -44,6 +44,7 @@ export const list = (filter: { siteId: string; entryId?: string }, trx: Executor
     .where('site_id', '=', filter.siteId)
     .$if(filter.entryId !== undefined, (qb) => qb.where('entry_id', '=', filter.entryId ?? ''))
     .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
     .limit(200)
     .execute();
 

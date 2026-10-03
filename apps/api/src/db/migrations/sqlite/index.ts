@@ -1,5 +1,6 @@
 import type { Migration } from 'kysely/migration';
 import * as baseline from './0001_baseline.js';
+import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
 
 /**
  * SQLite migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -11,4 +12,5 @@ export const SQLITE_BASELINE_COVERS = '20261003160000_create_assist_runs';
 
 export const SQLITE_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '0001_baseline': baseline,
+  '20261003170000_audit_events_seq': auditEventsSeq,
 };

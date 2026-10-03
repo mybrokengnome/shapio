@@ -100,7 +100,8 @@ export const getTimeline = async (
     TIMELINE_LIMIT,
     context.db,
   );
-  const events: TimelineEventView[] = audit.map((event) => {
+  // The audit rows come newest first; reversed, the stable sort below keeps equal timestamps in their stored order.
+  const events: TimelineEventView[] = [...audit].reverse().map((event) => {
     const metadata = (event.metadata ?? {}) as Record<string, unknown>;
     return {
       at: event.occurred_at,

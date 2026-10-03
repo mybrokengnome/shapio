@@ -3,6 +3,8 @@ import { Migrator, type MigrationResult } from 'kysely/migration';
 import { LOCK_NAMESPACE, MIGRATION_LOCK_KEY } from '../constants/lockKeys.js';
 import { withSessionAdvisoryLock } from './advisoryLocks.js';
 import { migrationProviderFor } from './migrations/index.js';
+import { mysqlMigrationHint } from './mysql/errors.js';
+import { mysqlDriverOf } from './mysql/index.js';
 import { sqliteDriverOf } from './sqlite/index.js';
 import type { DB } from './types.js';
 
@@ -20,14 +22,21 @@ export class MigrationError extends Error {
   }
 }
 
+const dialectOfHandle = (db: Kysely<DB>) => {
+  if (sqliteDriverOf(db)) {
+    return 'sqlite';
+  }
+  return mysqlDriverOf(db) ? 'mysql' : 'postgres';
+};
+
 /**
  * Migrations must stay in order; out-of-order additions are rejected (see build plan §2). The list depends
- * on the handle's dialect (SQLite starts from a baseline).
+ * on the handle's dialect (SQLite and MySQL start from a baseline).
  */
 export const createMigrator = (db: Kysely<DB>): Migrator =>
   new Migrator({
     db,
-    provider: migrationProviderFor(sqliteDriverOf(db) ? 'sqlite' : 'postgres'),
+    provider: migrationProviderFor(dialectOfHandle(db)),
     allowUnorderedMigrations: false,
   });
 
@@ -42,7 +51,14 @@ export const migrateToLatest = async (db: Kysely<DB>, log: MigrationLogger): Pro
       log.info({ migration: result.migrationName, status: result.status }, 'migration');
     }
     if (error) {
-      throw new MigrationError('Database migration failed', results, { cause: error });
+      const hint = mysqlMigrationHint(error);
+      throw new MigrationError(
+        hint ? `Database migration failed: ${hint}` : 'Database migration failed',
+        results,
+        {
+          cause: error,
+        },
+      );
     }
     return results;
   });

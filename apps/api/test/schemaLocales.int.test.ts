@@ -54,6 +54,7 @@ describe('locales API', () => {
       .selectFrom('audit_events')
       .select('action')
       .where('target_id', '=', 'fr')
+      .orderBy('occurred_at')
       .execute();
     expect(audit.map((row) => row.action)).toEqual(['locale.create', 'locale.update']);
   });

@@ -1,12 +1,13 @@
 import { sql, type Expression, type OperationNode, type RawBuilder } from 'kysely';
-import { isSqlite } from '../dialect.js';
+import { isMysql, isSqlite } from '../dialect.js';
 
 /**
  * Result types for computed columns (dialect boundary, ADR 0001). PostgreSQL tells its driver the type of
  * every result column, so an aggregate or a `coalesce` over a timestamp comes back as a Date and a JSON
  * aggregate as an object. SQLite only knows the declared type of plain table columns; an expression's value
  * arrives as raw text or a number. Wrapping a selected expression in one of these markers tells the SQLite
- * driver how to decode it. PostgreSQL ignores them (the SQL is unchanged).
+ * driver how to decode it. MySQL types computed columns, but computes comparisons as integers, so its plugin
+ * decodes a column marked `asBoolean` (and the others) too. PostgreSQL ignores them (the SQL is unchanged).
  *
  * Mark the outermost selected expression (`asJson(eb.fn.coalesce(…)).as('x')`), not an inner one. In tests
  * the SQLite driver fails on an unmarked computed column whose value looks like a stored timestamp or a JSON
@@ -21,7 +22,7 @@ export const markedResultType = (node: OperationNode): ResultType | undefined =>
 
 const mark = <T>(expression: Expression<unknown>, type: ResultType): RawBuilder<T> => {
   const builder = sql<T>`${expression}`;
-  if (isSqlite()) {
+  if (isSqlite() || isMysql()) {
     MARKED.set(builder.toOperationNode(), type);
   }
   return builder;

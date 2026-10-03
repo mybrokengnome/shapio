@@ -8,7 +8,7 @@ import { defineConfig, HookError, type AfterHookContext, type BeforeHookContext 
 const record = (name: string) => async (context: BeforeHookContext | AfterHookContext) => {
   const eventId = 'eventId' in context ? context.eventId : null;
   await sql`
-    insert into ext_hook_log (hook, entry_id, locale, principal, data, before, event_id)
+    insert into ext_hook_log (hook, entry_id, locale, principal, data, ${sql.id('before')}, event_id)
     values (${name}, ${context.entry.id}, ${context.locale}, ${context.principal.kind},
             ${JSON.stringify(context.data ?? null)}, ${JSON.stringify(context.before ?? null)}, ${eventId})
   `.execute(context.trx);

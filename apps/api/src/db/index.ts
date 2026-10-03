@@ -1,6 +1,7 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { dialectOfUrl, setCurrentDialect, sqliteLocationOfUrl } from './dialect.js';
+import { createMysqlDb } from './mysql/index.js';
 import { createSqliteDb } from './sqlite/index.js';
 import type { DB } from './types.js';
 
@@ -26,26 +27,39 @@ type CreateDbOptions = {
 const warnIdleConnectionError = (error: Error) =>
   process.emitWarning(`PostgreSQL connection lost while idle: ${error.message}`);
 
+const warnIdleMysqlConnectionError = (error: Error) =>
+  process.emitWarning(`MySQL connection lost while idle: ${error.message}`);
+
 /**
- * The database handle for DATABASE_URL: PostgreSQL through a `pg` pool, or SQLite (`sqlite:<path>`) through
- * Shapio's `node:sqlite` driver, where `poolMax` is the number of read connections (one connection writes).
+ * The database handle for DATABASE_URL: PostgreSQL through a `pg` pool, MySQL (`mysql://…`) through a
+ * `mysql2` pool, or SQLite (`sqlite:<path>`) through Shapio's `node:sqlite` driver, where `poolMax` is the
+ * number of read connections (one connection writes).
  * Sets the process dialect (`db/dialect.ts`) that SQL builders read.
  */
 export const createDb = ({
   connectionString,
   poolMax,
   applicationName = 'shapio',
-  onIdleConnectionError = warnIdleConnectionError,
+  onIdleConnectionError,
   strict = false,
 }: CreateDbOptions): Database => {
   if (dialectOfUrl(connectionString) === 'sqlite') {
     setCurrentDialect('sqlite');
     return createSqliteDb<DB>({ location: sqliteLocationOfUrl(connectionString), readers: poolMax, strict });
   }
+  if (dialectOfUrl(connectionString) === 'mysql') {
+    setCurrentDialect('mysql');
+    return createMysqlDb<DB>({
+      url: connectionString,
+      poolMax,
+      applicationName,
+      onIdleConnectionError: onIdleConnectionError ?? warnIdleMysqlConnectionError,
+    });
+  }
   setCurrentDialect('postgres');
   const pool = new pg.Pool({ connectionString, max: poolMax, application_name: applicationName });
   // Without a listener, pg's 'error' event on an idle client would crash the process on a database restart.
-  pool.on('error', onIdleConnectionError);
+  pool.on('error', onIdleConnectionError ?? warnIdleConnectionError);
   // pg-pool drops its own listener while a client is checked out, yet a client whose socket dies still emits
   // 'error' (after rejecting its running query, or before the next query of a transaction). Unheard, that is
   // an uncaught exception that takes the process down. The error is not lost: the query or transaction using

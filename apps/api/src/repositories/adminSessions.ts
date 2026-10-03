@@ -61,6 +61,7 @@ export const listActiveForUser = (adminUserId: string, now: Date, trx: Executor 
     .where('revoked_at', 'is', null)
     .where('expires_at', '>', now)
     .orderBy('last_seen_at', 'desc')
+    .orderBy('id', 'desc')
     .execute();
 
 /** Writes `last_seen_at` only if it is older than `staleBefore`, so most requests do not write. */

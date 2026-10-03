@@ -3,6 +3,7 @@
 import { sql } from 'kysely';
 import { pino } from 'pino';
 import { createDb } from '../../src/db/index.js';
+import { isUniqueViolation } from '../../src/db/sql/errors.js';
 import { sleep } from '../../src/helpers/sleep.js';
 import { createJobHandlers } from '../../src/jobs/handlers/index.js';
 import { createWorker } from '../../src/jobs/worker.js';
@@ -23,7 +24,14 @@ const handlers = createJobHandlers([
   [
     'test.recordThenHang',
     async (context) => {
-      await sql`insert into test_effects (job_id) values (${context.id}) on conflict do nothing`.execute(db);
+      // Idempotent: a second attempt finds the effect already recorded.
+      try {
+        await sql`insert into test_effects (job_id) values (${context.id})`.execute(db);
+      } catch (error) {
+        if (!isUniqueViolation(error)) {
+          throw error;
+        }
+      }
       context.log.info({ attempt: context.attempt }, 'effect recorded');
       await sleep(hangMs, context.signal);
       return { attempt: context.attempt };

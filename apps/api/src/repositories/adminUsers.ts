@@ -73,7 +73,7 @@ export const countAll = async (trx: Executor = db): Promise<number> => {
 };
 
 export const list = (trx: Executor = db): Promise<AdminUserSummary[]> =>
-  withRoleIds(trx).orderBy('admin_users.created_at').execute();
+  withRoleIds(trx).orderBy('admin_users.created_at').orderBy('admin_users.id').execute();
 
 export const findSummaryById = (id: string, trx: Executor = db): Promise<AdminUserSummary | undefined> =>
   withRoleIds(trx).where('admin_users.id', '=', id).executeTakeFirst();

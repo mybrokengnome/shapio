@@ -7,6 +7,7 @@ import { dialectOfUrl } from '../src/db/dialect.js';
 import { createDb } from '../src/db/index.js';
 import { migrateToLatest } from '../src/db/migrator.js';
 import { getTestDatabaseAdminUrl, withDatabaseName } from './helpers/env.js';
+import { createMysqlDatabase, dropMysqlDatabase } from './helpers/mysqlAdmin.js';
 import { silentLogger } from './helpers/silentLogger.js';
 
 export const TEMPLATE_DATABASE = 'shapio_test_tpl';
@@ -62,15 +63,34 @@ const setupSqlite = async (project: TestProject, adminUrl: string) => {
   project.provide('testSqliteDirectory', directory);
 };
 
+/** MySQL: the template is a migrated database each test file clones (`helpers/mysqlAdmin.ts`). */
+const setupMysql = async (project: TestProject, adminUrl: string) => {
+  await createMysqlDatabase(adminUrl, TEMPLATE_DATABASE);
+  const db = createDb({ connectionString: withDatabaseName(adminUrl, TEMPLATE_DATABASE), poolMax: 2 });
+  try {
+    await migrateToLatest(db, silentLogger);
+  } finally {
+    await db.destroy();
+  }
+  project.provide('testDatabaseAdminUrl', adminUrl);
+  project.provide('testDatabaseTemplate', TEMPLATE_DATABASE);
+  project.provide('testSqliteDirectory', '');
+};
+
 /**
  * Builds the template database once per run by running every migration. Each test file then clones it
- * (PostgreSQL: CREATE DATABASE ... TEMPLATE; SQLite: a file copy), which is far faster than migrating per
- * file and isolates advisory locks and LISTEN/NOTIFY, both of which are per database.
+ * (PostgreSQL: CREATE DATABASE ... TEMPLATE; SQLite: a file copy; MySQL: a replay of its DDL and rows),
+ * which is far faster than migrating per file and isolates advisory locks and notifications, both of which
+ * are per database.
  */
 export const setup = async (project: TestProject) => {
   const adminUrl = getTestDatabaseAdminUrl();
   if (dialectOfUrl(adminUrl) === 'sqlite') {
     await setupSqlite(project, adminUrl);
+    return;
+  }
+  if (dialectOfUrl(adminUrl) === 'mysql') {
+    await setupMysql(project, adminUrl);
     return;
   }
   const template = pg.escapeIdentifier(TEMPLATE_DATABASE);
@@ -93,6 +113,10 @@ export const teardown = async () => {
     if (createdSqliteDirectory) {
       rmSync(createdSqliteDirectory, { recursive: true, force: true });
     }
+    return;
+  }
+  if (dialectOfUrl(adminUrl) === 'mysql') {
+    await dropMysqlDatabase(adminUrl, TEMPLATE_DATABASE);
     return;
   }
   await runAdmin(adminUrl, `drop database if exists ${pg.escapeIdentifier(TEMPLATE_DATABASE)} with (force)`);

@@ -1,35 +1,47 @@
+import type { Migration } from 'kysely/migration';
 import { describe, expect, it } from 'vitest';
+import { MYSQL_BASELINE_COVERS, MYSQL_MIGRATIONS } from './mysql/index.js';
 import { SQLITE_BASELINE_COVERS, SQLITE_MIGRATIONS } from './sqlite/index.js';
 import { MIGRATIONS } from './index.js';
 
 /**
- * The twin rule (CONTRIBUTING.md): after the SQLite baseline, every PostgreSQL migration exists under the
- * same name for SQLite, as its own SQLite file or, when it declares `dialectNeutral`, as the same module.
+ * The twin rule (CONTRIBUTING.md): after a dialect's baseline, every PostgreSQL migration exists under the
+ * same name for that dialect, as its own file or, when it declares `dialectNeutral`, as the same module.
  */
 const postgresNames = Object.keys(MIGRATIONS).sort();
-const afterBaseline = postgresNames.filter((name) => name > SQLITE_BASELINE_COVERS);
 
-describe('migration twins', () => {
+const DIALECTS: ReadonlyArray<{
+  name: string;
+  covers: string;
+  migrations: Readonly<Record<string, Migration>>;
+}> = [
+  { name: 'SQLite', covers: SQLITE_BASELINE_COVERS, migrations: SQLITE_MIGRATIONS },
+  { name: 'MySQL', covers: MYSQL_BASELINE_COVERS, migrations: MYSQL_MIGRATIONS },
+];
+
+describe.each(DIALECTS)('migration twins ($name)', ({ name, covers, migrations }) => {
+  const afterBaseline = postgresNames.filter((migration) => migration > covers);
+
   it('has a baseline that covers an existing PostgreSQL migration', () => {
-    expect(postgresNames).toContain(SQLITE_BASELINE_COVERS);
-    expect(Object.keys(SQLITE_MIGRATIONS).sort()[0]).toBe('0001_baseline');
+    expect(postgresNames).toContain(covers);
+    expect(Object.keys(migrations).sort()[0]).toBe('0001_baseline');
   });
 
-  it('lists every later migration for SQLite under the same name, and nothing else', () => {
-    const sqliteNames = Object.keys(SQLITE_MIGRATIONS)
-      .filter((name) => name !== '0001_baseline')
+  it(`lists every later migration for ${name} under the same name, and nothing else`, () => {
+    const names = Object.keys(migrations)
+      .filter((migration) => migration !== '0001_baseline')
       .sort();
-    expect(sqliteNames).toEqual(afterBaseline);
+    expect(names).toEqual(afterBaseline);
   });
 
-  it('shares dialect-neutral migrations and gives the others a SQLite twin', () => {
-    for (const name of afterBaseline) {
-      const postgres = MIGRATIONS[name] as { dialectNeutral?: boolean } | undefined;
-      const sqlite = SQLITE_MIGRATIONS[name];
+  it(`shares dialect-neutral migrations and gives the others a ${name} twin`, () => {
+    for (const migration of afterBaseline) {
+      const postgres = MIGRATIONS[migration] as { dialectNeutral?: boolean } | undefined;
+      const twin = migrations[migration];
       if (postgres?.dialectNeutral === true) {
-        expect(sqlite, name).toBe(postgres);
+        expect(twin, migration).toBe(postgres);
       } else {
-        expect(sqlite, name).not.toBe(postgres);
+        expect(twin, migration).not.toBe(postgres);
       }
     }
   });

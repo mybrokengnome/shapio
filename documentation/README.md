@@ -13,6 +13,7 @@ model never needs a rebuild, a restart or a deploy.
   certificate files, Cloudflare in front.
 - [SQLite](sqlite.md): one file instead of a PostgreSQL server, for a single process; limits, backups, moving
   to PostgreSQL.
+- [MySQL](mysql.md): MySQL 8.4 instead of PostgreSQL; setup, how it differs, backups.
 - [Local development](local-development.md): working on Shapio itself.
 
 ## Build with it

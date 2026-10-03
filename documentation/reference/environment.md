@@ -46,7 +46,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 
 | Variable | Default | Values | Description |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | **required** | text | PostgreSQL (16 or later) connection string, or `sqlite:<path>` for a single-process SQLite database (see SQLite). |
+| `DATABASE_URL` | **required** | text | PostgreSQL (16 or later) connection string, `mysql://user:password@host:3306/database` for MySQL 8.4 (see MySQL), or `sqlite:<path>` for a single-process SQLite database (see SQLite). |
 | `DATABASE_POOL_MAX` | `10` | integer 2–200 | Connections in the pool, per process (SQLite: read connections; one connection writes). |
 | `MIGRATE_ON_START` | `true` | `true`, `false` | Apply pending migrations at startup, under an advisory lock (safe with several instances). |
 | `SCHEMA_LISTEN` | `true` | `true`, `false` | LISTEN for schema-change notifications to refresh caches early. Turn off where LISTEN does not work (e.g. PgBouncer in transaction mode); every request still checks the durable schema version. |

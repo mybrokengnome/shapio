@@ -20,6 +20,8 @@ import * as enqueueFieldIndexLayout from './20261003140200_enqueue_field_index_l
 import * as changeSetItemsSiteAndPreviewEntry from './20261003140500_change_set_items_site_and_preview_entry.js';
 import * as widenDeploymentProviders from './20261003150000_widen_deployment_providers.js';
 import * as createAssistRuns from './20261003160000_create_assist_runs.js';
+import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
+import { MYSQL_MIGRATIONS } from './mysql/index.js';
 import { SQLITE_MIGRATIONS } from './sqlite/index.js';
 
 /**
@@ -48,6 +50,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261003140500_change_set_items_site_and_preview_entry': changeSetItemsSiteAndPreviewEntry,
   '20261003150000_widen_deployment_providers': widenDeploymentProviders,
   '20261003160000_create_assist_runs': createAssistRuns,
+  '20261003170000_audit_events_seq': auditEventsSeq,
 };
 
 export const staticMigrationProvider: MigrationProvider = {
@@ -59,5 +62,15 @@ export const sqliteMigrationProvider: MigrationProvider = {
   getMigrations: () => Promise.resolve({ ...SQLITE_MIGRATIONS }),
 };
 
-export const migrationProviderFor = (dialect: DialectName): MigrationProvider =>
-  dialect === 'sqlite' ? sqliteMigrationProvider : staticMigrationProvider;
+/** MySQL's list: its baseline, then the twins of later migrations (`./mysql/index.ts`). */
+export const mysqlMigrationProvider: MigrationProvider = {
+  getMigrations: () => Promise.resolve({ ...MYSQL_MIGRATIONS }),
+};
+
+const PROVIDERS: Readonly<Record<DialectName, MigrationProvider>> = {
+  postgres: staticMigrationProvider,
+  sqlite: sqliteMigrationProvider,
+  mysql: mysqlMigrationProvider,
+};
+
+export const migrationProviderFor = (dialect: DialectName): MigrationProvider => PROVIDERS[dialect];

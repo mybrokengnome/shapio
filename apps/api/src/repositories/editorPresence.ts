@@ -56,7 +56,10 @@ const activeQuery = (executor: Executor, since: Date) =>
     ])
     .where('p.last_seen_at', '>=', since)
     .where('e.deleted_at', 'is', null)
-    .orderBy('p.started_at');
+    .orderBy('p.started_at')
+    .orderBy('p.entry_id')
+    .orderBy('p.admin_user_id')
+    .orderBy('p.tab_id');
 
 /** Tabs that sent a heartbeat since `since` on one entry. */
 export const listActiveForEntry = (entryId: string, since: Date, executor: Executor = db) =>

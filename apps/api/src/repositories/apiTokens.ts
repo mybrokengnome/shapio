@@ -38,6 +38,7 @@ export const listForSite = (siteId: string, includeNetwork: boolean, trx: Execut
         : eb('api_tokens.site_id', '=', siteId),
     )
     .orderBy('api_tokens.created_at', 'desc')
+    .orderBy('api_tokens.id', 'desc')
     .execute();
 
 export const findById = (id: string, trx: Executor = db) =>

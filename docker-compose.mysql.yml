@@ -1,0 +1,44 @@
+# Shapio + MySQL 8.4 + a media volume (documentation/mysql.md).
+#   docker compose -f docker-compose.mysql.yml up -d
+#   docker compose -f docker-compose.mysql.yml logs shapio   # then open http://localhost:4300/admin/
+# Set MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD in a .env file next to this one before exposing anything
+# beyond localhost.
+services:
+  mysql:
+    image: mysql:8.4
+    # Binary logging stays on (MySQL's default); this lets Shapio's own user create the baseline's triggers.
+    command: ['--log-bin-trust-function-creators=1']
+    environment:
+      MYSQL_DATABASE: shapio
+      MYSQL_USER: shapio
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-shapio}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-shapio-root}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u shapio --password="$$MYSQL_PASSWORD" --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  shapio:
+    build: .
+    image: ghcr.io/mybrokengnome/shapio:latest
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://shapio:${MYSQL_PASSWORD:-shapio}@mysql:3306/shapio
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4300}
+      HOST: 0.0.0.0
+      WORKER_MODE: inline
+    ports:
+      - '127.0.0.1:${SHAPIO_PORT:-4300}:4300'
+    volumes:
+      - media:/data/media
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  media:

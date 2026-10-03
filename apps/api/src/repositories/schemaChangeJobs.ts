@@ -100,6 +100,7 @@ export const listForModel = (modelId: string, limit: number, executor: Executor 
     .selectAll()
     .where('model_id', '=', modelId)
     .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
     .limit(limit)
     .execute();
 
@@ -111,4 +112,5 @@ export const listInFlightForChangeSet = (changeSetId: string, executor: Executor
     .where('change_set_id', '=', changeSetId)
     .where('status', 'in', ['pending', 'running'])
     .orderBy('created_at')
+    .orderBy('id')
     .execute();

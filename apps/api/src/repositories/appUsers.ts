@@ -2,6 +2,7 @@ import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'ky
 import { db } from '../db/index.js';
 import { containsInsensitive } from '../db/sql/text.js';
 import { timestampCursorText, timestampParam } from '../db/sql/time.js';
+import { asBoolean } from '../db/sql/typed.js';
 import { emptyArray, sortedArrayAgg } from '../db/sql/values.js';
 import type { AppUsers, DB } from '../db/types.js';
 
@@ -50,7 +51,7 @@ const summaries = (trx: Executor) =>
           emptyArray<string>('text'),
         )
         .as('providers'),
-      eb('app_users.password_hash', 'is not', null).$castTo<boolean>().as('has_password'),
+      asBoolean(eb('app_users.password_hash', 'is not', null)).as('has_password'),
     ])
     .where('app_users.deleted_at', 'is', null);
 

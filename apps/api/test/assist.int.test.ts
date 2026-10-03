@@ -69,6 +69,7 @@ describe('assist engine', () => {
       .selectFrom('audit_events')
       .select(['action', 'outcome', 'metadata', 'target_id', 'site_id'])
       .where('action', '=', action)
+      .orderBy('occurred_at')
       .execute();
 
   /** What an assist call must never write: snapshots, published heads and revisions. */

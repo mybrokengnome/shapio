@@ -92,7 +92,8 @@ export const latestPerConnection = async (connectionIds: readonly string[], trx:
                   .over((over) =>
                     over
                       .partitionBy('deployment_runs.connection_id')
-                      .orderBy('deployment_runs.created_at', 'desc'),
+                      .orderBy('deployment_runs.created_at', 'desc')
+                      .orderBy('deployment_runs.id', 'desc'),
                   )
                   .as('rank_in_connection'),
               )
@@ -118,7 +119,8 @@ export const currentPerConnection = async (connectionIds: readonly string[], trx
                     over
                       .partitionBy('deployment_runs.connection_id')
                       .orderBy('deployment_runs.snapshot_seq', (order) => order.desc().nullsLast())
-                      .orderBy('deployment_runs.finished_at', 'desc'),
+                      .orderBy('deployment_runs.finished_at', 'desc')
+                      .orderBy('deployment_runs.id', 'desc'),
                   )
                   .as('rank_in_connection'),
               )

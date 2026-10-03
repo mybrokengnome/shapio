@@ -8,6 +8,12 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Added
 
+- **MySQL 8.4 as a third database** (`DATABASE_URL=mysql://user:password@host:3306/shapio`), with several
+  instances and a dedicated worker on one database, like PostgreSQL. Filterable and sortable fields are capped
+  at 56 per instance (InnoDB's 64-index limit); with binary logging on, the first migration needs
+  `log_bin_trust_function_creators = 1` or a user with SUPER. MariaDB is not supported. The integration suite
+  and the admin e2e run on MySQL in CI; `docker-compose.mysql.yml` starts Shapio with MySQL. See
+  [MySQL](documentation/mysql.md).
 - **SQLite as a second database** (`DATABASE_URL=sqlite:./shapio.db`) for single-process installs, on Node's
   built-in `node:sqlite` with no native dependency; the same admin, APIs, live modelling and change sets.
   `shapio backup <file>` copies a running SQLite database (`VACUUM INTO`). `WORKER_MODE=dedicated` is refused
@@ -61,6 +67,11 @@ All notable changes to Shapio are listed here. The format follows
 ### Changed
 
 - Change sets can have `source: 'assist'`.
+- Audit events have a write-order sequence (`audit_events.seq`), so events recorded in the same instant
+  (common on SQLite and MySQL, which store milliseconds) list in the order they happened: the audit log, change
+  set timelines, and other lists sorted by time now break ties by a stable key. The audit log is rewritten once
+  on upgrade. Audit log page cursors issued before the upgrade are rejected (`400 INVALID_CURSOR`); start
+  again from the first page.
 - The example site moved from `apps/example-site` to `examples/astro` (package `example-astro`); its model
   files and seed moved to `examples/shared`, where all three starters share them. The seed applies the models
   through the schema apply API and also seeds the `siteSettings` singleton.

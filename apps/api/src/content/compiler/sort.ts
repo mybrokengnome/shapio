@@ -19,12 +19,15 @@ const SYSTEM_SORT_COLUMNS = {
 
 const termSql = (term: SortTerm, dialect: ContentSqlDialect): RawBuilder<unknown> => {
   // System columns are never null; field values may be missing.
-  const direction = dialect.sortDirection(term.direction, term.target.kind === 'field');
+  const nullable = term.target.kind === 'field';
   const expression =
     term.target.kind === 'system'
       ? sql.ref(SYSTEM_SORT_COLUMNS[term.target.name])
       : fieldValueExpression(term.target.field.id, term.target.field.type, dialect);
-  return sql`${expression} ${direction}`;
+  if (dialect.sortTerm) {
+    return dialect.sortTerm(expression, term.direction, nullable);
+  }
+  return sql`${expression} ${dialect.sortDirection(term.direction, nullable)}`;
 };
 
 export const defaultSortTerms = (

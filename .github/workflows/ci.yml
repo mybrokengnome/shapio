@@ -133,6 +133,50 @@ jobs:
           pnpm db:rollback
           pnpm db:migrate
 
+  integration-mysql:
+    name: Integration (Node 24, MySQL 8.4)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent" --health-interval 5s
+          --health-timeout 5s --health-retries 30
+      # The MySQL baseline is compared with the PostgreSQL migrations (test/mysqlBaseline.int.test.ts).
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # Each test file gets a database cloned from a migrated template on this server.
+      TEST_DATABASE_URL: mysql://root:mysql@127.0.0.1:3306/
+      TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration
+      - name: The MySQL migrations roll back
+        env:
+          NODE_ENV: test
+          PUBLIC_URL: http://localhost:4300
+          DATABASE_URL: mysql://root:mysql@127.0.0.1:3306/shapio_ci
+        run: |
+          mysql -h 127.0.0.1 -uroot -pmysql -e 'create database shapio_ci character set utf8mb4 collate utf8mb4_0900_bin'
+          pnpm db:migrate
+          pnpm db:rollback
+          pnpm db:migrate
+
   npm-package:
     name: npm package smoke test (npx shapio start, create-shapio)
     runs-on: ubuntu-latest
@@ -243,6 +287,8 @@ jobs:
             test-database-url: postgres://postgres:postgres@localhost:5432/postgres
           - database: SQLite
             test-database-url: 'sqlite:'
+          - database: MySQL
+            test-database-url: mysql://root:mysql@127.0.0.1:3306/
     services:
       postgres:
         image: postgres:18
@@ -251,6 +297,14 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent" --health-interval 5s
+          --health-timeout 5s --health-retries 30
     env:
       TEST_DATABASE_URL: ${{ matrix.test-database-url }}
     steps:

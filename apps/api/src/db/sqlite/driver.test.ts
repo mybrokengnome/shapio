@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setCurrentDialect } from '../dialect.js';
+import { subscribeNotifications } from '../notifyHub.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../sql/errors.js';
 import { asJson, asTimestamp } from '../sql/typed.js';
 import { notificationKeyOf } from './driver.js';
-import { subscribeNotifications } from './notifyHub.js';
 import { createSqliteDb } from './index.js';
 
 type Row = Record<string, unknown>;

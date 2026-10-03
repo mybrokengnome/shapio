@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import { isStableId, SCALAR_DATA_TYPES, type DataType } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import { contentDialect } from './currentDialect.js';
-import type { ContentSqlDialect, EqualityTarget, TextMatchOperator, ValueCast } from './dialect/types.js';
+import type {
+  ContentSqlDialect,
+  EqualityTarget,
+  FieldIndexDefinition,
+  TextMatchOperator,
+  ValueCast,
+} from './dialect/types.js';
 import { CONTENT_HEADS_COLUMNS, CONTENT_HEADS_TABLE } from './heads.js';
 
 /**
@@ -40,6 +46,8 @@ export type FieldIndexLayout = 1 | 2;
 export const FIELD_INDEX_LAYOUT: FieldIndexLayout = 2;
 
 const NUMERIC_TYPES: ReadonlySet<DataType> = new Set(['number', 'integer', 'decimal', 'biginteger']);
+/** Numbers stored as JSON strings (exact decimals, big integers). */
+const NUMERIC_STRING_TYPES: ReadonlySet<DataType> = new Set(['decimal', 'biginteger']);
 
 export const valueCastFor = (type: DataType): ValueCast => {
   if (NUMERIC_TYPES.has(type)) {
@@ -74,7 +82,7 @@ export const fieldValueExpression = (
   if (!SCALAR_DATA_TYPES.has(type)) {
     throw new Error(`${type} fields have no scalar expression`);
   }
-  return dialect.fieldValue(fieldId, valueCastFor(type));
+  return dialect.fieldValue(fieldId, valueCastFor(type), NUMERIC_STRING_TYPES.has(type));
 };
 
 /** `data -> 'fieldId'`: the raw JSON value of a top-level field (any type). */
@@ -152,7 +160,7 @@ export const castParameter = (
   value: unknown,
   type: DataType,
   dialect: ContentSqlDialect = contentDialect(),
-): RawBuilder<unknown> => dialect.castParameter(value, valueCastFor(type));
+): RawBuilder<unknown> => dialect.castParameter(value, valueCastFor(type), NUMERIC_STRING_TYPES.has(type));
 
 export type FieldIndexSpec = {
   modelId: string;
@@ -207,24 +215,49 @@ export const fieldStatisticsName = (indexName: string): string => `es_${assertIn
  * PostgreSQL builds it `CONCURRENTLY` (outside a transaction); SQLite with a plain `CREATE INDEX`, which
  * holds the write lock while it builds. One index serves equality, ranges and sorts on SQLite.
  */
-export const createFieldIndexStatement = (
-  spec: FieldIndexSpec,
-  dialect: ContentSqlDialect = contentDialect(),
-): RawBuilder<unknown> => {
+/** The parts of a field index the dialect spells (`createFieldIndexStatement`). */
+const fieldIndexDefinition = (spec: FieldIndexSpec, dialect: ContentSqlDialect): FieldIndexDefinition => {
   assertStableId(spec.modelId, 'a model ID');
   const { siteId, modelId, locale, state } = CONTENT_HEADS_COLUMNS;
   const leading =
     spec.localized === false
       ? sql`${sql.ref(siteId)}, ${sql.ref(state)}`
       : sql`${sql.ref(siteId)}, ${sql.ref(locale)}, ${sql.ref(state)}`;
-  return dialect.createFieldIndex({
+  return {
     name: fieldIndexName(spec),
     table: CONTENT_HEADS_TABLE,
     leading,
     expression: fieldValueExpression(spec.fieldId, spec.type, dialect),
     modelIdColumn: modelId,
     modelId: sql.lit(spec.modelId),
-  });
+    localized: spec.localized !== false,
+    cast: valueCastFor(spec.type),
+    numericString: NUMERIC_STRING_TYPES.has(spec.type),
+  };
+};
+
+export const createFieldIndexStatement = (
+  spec: FieldIndexSpec,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> => dialect.createFieldIndex(fieldIndexDefinition(spec, dialect));
+
+/**
+ * Adds the generated column a field index is built on, where the dialect indexes one (MySQL); null
+ * elsewhere. Run before `createFieldIndexStatement`.
+ */
+export const createFieldIndexColumnStatement = (
+  spec: FieldIndexSpec,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> | null =>
+  dialect.fieldIndexColumn ? dialect.fieldIndexColumn.add(fieldIndexDefinition(spec, dialect)) : null;
+
+/** Drops a field index's generated column (MySQL); null elsewhere. Run after `dropIndexStatement`. */
+export const dropFieldIndexColumnStatement = (
+  indexName: string,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<unknown> | null => {
+  assertIndexName(indexName);
+  return dialect.fieldIndexColumn ? dialect.fieldIndexColumn.drop(indexName) : null;
 };
 
 /**

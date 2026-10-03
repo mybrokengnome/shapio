@@ -69,7 +69,8 @@ const migrateCommand: CliCommand = {
 };
 
 const backupCommand: CliCommand = {
-  summary: 'Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump)',
+  summary:
+    'Copy a SQLite database to a new file while Shapio runs (backup <file>; PostgreSQL uses pg_dump, MySQL mysqldump)',
   usage: 'shapio backup <file>',
   run: async (args, io) => {
     const [target] = args;

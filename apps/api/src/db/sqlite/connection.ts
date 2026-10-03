@@ -1,5 +1,6 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { CompiledQuery, QueryResult } from 'kysely';
+import { publishNotification } from '../notifyHub.js';
 import { toStoredTimestamp } from '../sql/time.js';
 import type { ResultType } from '../sql/typed.js';
 import {
@@ -11,7 +12,6 @@ import {
 } from './codec.js';
 import { translateSqliteError } from './errors.js';
 import { registerFunctions } from './functions.js';
-import { publishNotification } from './notifyHub.js';
 
 export type ConnectionOptions = {
   /** File path, or ':memory:'. */

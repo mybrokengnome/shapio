@@ -22,13 +22,14 @@ export const seedMediaReference = async (assetId: string) => {
     modelId,
     `mediaE2e${Date.now()}`,
   ]);
-  // The entry belongs to the primary site, where the admin's media library lives (sites plan §H).
-  const entry = await queryServerDatabase<{ id: string }>(
-    `insert into entries (site_id, model_id)
-     select id, ? from sites where is_primary returning id`,
-    [modelId],
+  // The entry belongs to the primary site, where the admin's media library lives (sites plan §H). Its ID is
+  // chosen here: MySQL has no RETURNING.
+  const entryId = randomUUID();
+  await queryServerDatabase(
+    `insert into entries (id, site_id, model_id)
+     select ?, id, ? from sites where is_primary`,
+    [entryId, modelId],
   );
-  const entryId = entry[0]?.id;
   for (const state of ['draft', 'published']) {
     await queryServerDatabase(
       `insert into media_references (asset_id, entry_id, model_id, field_id, locale, state)
