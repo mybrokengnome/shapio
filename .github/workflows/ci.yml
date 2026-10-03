@@ -186,9 +186,9 @@ jobs:
         run: |
           pnpm --filter example-astro build
           pnpm --filter example-astro smoke
-          pnpm --filter example-astro preview
+          nohup pnpm --filter example-astro preview > /tmp/astro.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4321/en/ && break; sleep 1; done
           pnpm --filter example-astro smoke:http
-          pnpm --filter example-astro preview:stop
       - name: Next.js (build, next start, smoke over HTTP)
         run: |
           pnpm --filter example-next build
@@ -202,7 +202,7 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4173/en/ && break; sleep 1; done
           pnpm --filter example-sveltekit smoke
       - if: failure()
-        run: cat /tmp/shapio.log /tmp/next.log /tmp/sveltekit.log 2>/dev/null || true
+        run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/sveltekit.log 2>/dev/null || true
 
   admin-e2e:
     name: Admin end to end (Playwright; axe and keyboard checks in light and dark)

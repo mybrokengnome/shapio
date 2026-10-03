@@ -12,7 +12,6 @@
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
-    "preview:stop": "ASTRO_TELEMETRY_DISABLED=1 astro preview stop",
     "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts",
     "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke.ts",
     "smoke:http": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4321",
