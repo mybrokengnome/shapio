@@ -13,6 +13,8 @@ describe('custom editor manifest', () => {
   let token: string;
   let projectDir: string;
   const MODULE = 'export const editor = { id: "acme.rating" };\n';
+  // Building the app with a project config is quick locally but has exceeded 60s on a cold, busy CI runner.
+  const SETUP_TIMEOUT_MS = 180_000;
 
   beforeAll(async () => {
     projectDir = mkdtempSync(join(tmpdir(), 'shapio-editors-'));
@@ -25,7 +27,7 @@ describe('custom editor manifest', () => {
     );
     testApp = await createTestApp(database.current, { env: { BASE_PATH: '/cms' }, projectDir });
     token = await createRoleToken(testApp.db, 'editor');
-  });
+  }, SETUP_TIMEOUT_MS);
   afterAll(async () => {
     await testApp.app.close();
     rmSync(projectDir, { recursive: true, force: true });
