@@ -8,6 +8,14 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Added
 
+- **SQLite as a second database** (`DATABASE_URL=sqlite:./shapio.db`) for single-process installs, on Node's
+  built-in `node:sqlite` with no native dependency; the same admin, APIs, live modelling and change sets.
+  `shapio backup <file>` copies a running SQLite database (`VACUUM INTO`). `WORKER_MODE=dedicated` is refused
+  on SQLite. The integration suite and the admin e2e run on SQLite in CI. See [SQLite](documentation/sqlite.md).
+- **MCP server** (`@shapio/mcp`, `npx -y @shapio/mcp`): an agent in any MCP client can read and draft the
+  schema, create and query entries, upload media, open change sets and read their review; `change_sets_ship`
+  exists only with `--allow-ship` and still needs the `changes.ship` permission. `shapio mcp` prints the client
+  configuration. See [MCP](documentation/mcp.md).
 - **Site starters**: Astro, Next.js (App Router) and SvelteKit sites that render the same blog (pages with
   sections, articles, authors and a `siteSettings` singleton) in English and French, pinned to one publication
   snapshot per build, with `SHAPIO_SITE` for multi-site instances.
