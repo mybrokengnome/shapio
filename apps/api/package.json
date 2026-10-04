@@ -1,6 +1,6 @@
 {
-  "name": "shapio",
-  "version": "0.2.0",
+  "name": "@shapio/cms",
+  "version": "0.2.1",
   "description": "Self-hosted headless CMS: model content live, deliver it over REST and GraphQL.",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",
@@ -38,7 +38,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch --conditions=@shapio/source --import tsx src/main.ts",
     "build": "tsdown",
-    "prepack": "pnpm --dir ../.. --filter \"shapio...\" --filter @shapio/admin build && node scripts/copyAdmin.mjs",
+    "prepack": "pnpm --dir ../.. --filter \"@shapio/cms...\" --filter @shapio/admin build && node scripts/copyAdmin.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p ../../examples/extension/tsconfig.json",
     "db:migrate": "kysely migrate:latest --no-outdated-check",
     "db:rollback": "kysely migrate:rollback --all --no-outdated-check",

@@ -8,10 +8,10 @@ Self-hosted headless CMS: model content live, deliver it over REST and GraphQL. 
 
 A project's `shapio.config.ts` (or `.mts`, `.js`, `.mjs`; `SHAPIO_CONFIG_PATH` to point elsewhere) adds code
 to Shapio: lifecycle hooks, custom routes under `/api/ext/<prefix>`, shared services, background jobs and
-custom field editors. Types and helpers come from `shapio/config`:
+custom field editors. Types and helpers come from `@shapio/cms/config`:
 
 ```ts
-import { defineConfig } from 'shapio/config';
+import { defineConfig } from '@shapio/cms/config';
 
 export const config = defineConfig({
   hooks: { article: { beforePublish: ({ data, reject }) => void (data?.cover || reject('Needs a cover')) } },

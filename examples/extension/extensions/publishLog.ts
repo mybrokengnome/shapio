@@ -1,4 +1,4 @@
-import type { AfterHook } from 'shapio/config';
+import type { AfterHook } from '@shapio/cms/config';
 
 /**
  * Runs after a publish committed, once per publish (it is a job: retried on error, never undoing the

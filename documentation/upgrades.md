@@ -18,7 +18,7 @@ Modelling is data, so it never needs any of this, in any environment, production
 2. [Back up](backup-restore.md) the database and media.
 3. Install the new version and restart:
 
-   - npm: `npm install shapio@latest` in the project, then `pm2 restart my-cms` (or
+   - npm: `npm install @shapio/cms@latest` in the project, then `pm2 restart my-cms` (or
      `sudo systemctl restart shapio`).
    - Docker: `docker compose pull && docker compose up -d`.
 
@@ -46,7 +46,7 @@ Shapio follows semantic versioning. Breaking changes to these come with a major 
 changelog:
 
 - the REST and GraphQL delivery APIs, and the admin API used by `@shapio/client`;
-- the extension contract (`shapio/config`, `EXTENSION_CONTRACT_VERSION`) and the custom editor contract
+- the extension contract (`@shapio/cms/config`, `EXTENSION_CONTRACT_VERSION`) and the custom editor contract
   (`@shapio/editor-sdk`, `EDITOR_CONTRACT_VERSION`);
 - the schema file format and lock file (`shapio schema`), and the export bundle format (`shapio export`);
 - configuration variable names.

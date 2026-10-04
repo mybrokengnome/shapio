@@ -3,7 +3,7 @@
 // rolled back. Titles drive behaviour: `reject…` makes before* hooks reject after writing their row,
 // `unpublishable…` only beforePublish.
 import { sql } from 'kysely';
-import { defineConfig, HookError, type AfterHookContext, type BeforeHookContext } from 'shapio/config';
+import { defineConfig, HookError, type AfterHookContext, type BeforeHookContext } from '@shapio/cms/config';
 
 const record = (name: string) => async (context: BeforeHookContext | AfterHookContext) => {
   const eventId = 'eventId' in context ? context.eventId : null;

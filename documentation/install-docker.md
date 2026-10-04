@@ -1,6 +1,6 @@
 # Install with Docker
 
-The Shapio image runs the same `shapio` package the npm path installs, as a non-root user, with a health check
+The Shapio image runs the same `@shapio/cms` package the npm path installs, as a non-root user, with a health check
 on `/api/ready`. `docker-compose.yml` in the repository runs it with PostgreSQL 18 and volumes for the
 database, media and certificates.
 
@@ -70,13 +70,13 @@ container as `healthy` once `/api/ready` answers.
 The CLI is in the image:
 
 ```sh
-docker compose exec shapio node node_modules/shapio/dist/cli.js help
+docker compose exec shapio node node_modules/@shapio/cms/dist/cli.js help
 docker compose exec -e SHAPIO_ADMIN_PASSWORD='a long password' shapio \
-  node node_modules/shapio/dist/cli.js admin create --email you@example.com
+  node node_modules/@shapio/cms/dist/cli.js admin create --email you@example.com
 ```
 
 Remote commands (`schema`, `export`, `import`, `types`) work from any machine with Node.js:
-`npx shapio <command> --url https://cms.example.com --token <admin API token>`.
+`npx @shapio/cms <command> --url https://cms.example.com --token <admin API token>`.
 
 ## HTTPS on ports 80 and 443
 

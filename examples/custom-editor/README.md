@@ -16,7 +16,7 @@ publishes an import map that resolves them to its own copies, so the editor shar
 ## Install in a Shapio project (`npx create-shapio my-cms`)
 
 1. Copy `dist/star-rating.js` to `my-cms/extensions/editors/star-rating.js`.
-2. In `my-cms/shapio.config.ts`, list it in `defineConfig` (imported from `shapio/config`):
+2. In `my-cms/shapio.config.ts`, list it in `defineConfig` (imported from `@shapio/cms/config`):
    `editors: ['star-rating.js']`.
 3. Restart Shapio (`npm run start`, or restart the PM2/systemd service).
 4. In the admin's model builder, set an integer field's editor to `acme.starRating`. The editor option `stars`

@@ -1,6 +1,6 @@
 {
   "name": "@shapio/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Shapio remote command library (schema sync, export/import, types). Bundled into the shapio bin.",
   "license": "Apache-2.0",

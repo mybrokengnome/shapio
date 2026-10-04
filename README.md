@@ -53,7 +53,6 @@ first person to complete Setup becomes the owner. For an install reachable by ot
 `SETUP_REQUIRE_TOKEN=true` (Setup then needs a one-time token from the log) or run `shapio admin create`
 first ([First admin](documentation/first-admin.md)).
 
-Shapio 0.1.0 is not on npm or GHCR yet. Until it is, use the Docker steps (they build the image from this
 repository) or [develop Shapio](#develop-shapio) from a clone.
 
 ## Documentation

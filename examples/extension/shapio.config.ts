@@ -1,7 +1,7 @@
 // Project configuration for Shapio (ADR 0009). Loaded once at startup with jiti, so TypeScript works without
 // a build step; changing this file or anything in ./extensions needs a restart (never a rebuild).
-// `shapio/config` always resolves to the running Shapio's own copy, so this loads wherever Shapio runs.
-import { defineConfig } from 'shapio/config';
+// `@shapio/cms/config` always resolves to the running Shapio's own copy, so this loads wherever Shapio runs.
+import { defineConfig } from '@shapio/cms/config';
 import { requireArticleCover } from './extensions/articleCover.ts';
 import { logPublish } from './extensions/publishLog.ts';
 import { statsReportJob } from './extensions/statsReportJob.ts';

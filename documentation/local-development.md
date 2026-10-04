@@ -64,11 +64,11 @@ Running the CLI from source: `cd apps/api && node --conditions=@shapio/source --
 ## The repository
 
 ```text
-apps/api            the server and the `shapio` command (published as `shapio`)
-apps/admin          the admin single-page app (built into the `shapio` package)
+apps/api            the server and the `shapio` command (published as `@shapio/cms`)
+apps/admin          the admin single-page app (built into the `@shapio/cms` package)
 packages/schema     @shapio/schema: model definitions, validators, diff, schema file format
 packages/client     @shapio/client: typed HTTP client for every API
-packages/cli        the remote commands (schema, export/import, types), bundled into `shapio`
+packages/cli        the remote commands (schema, export/import, types), bundled into `@shapio/cms`
 packages/editor-sdk @shapio/editor-sdk: the custom field editor contract
 packages/visual     @shapio/visual: visual editing for sites (field attributes, the preview-frame script)
 packages/create-shapio  the project scaffolder (CMS projects, and the site starters packed from examples/)

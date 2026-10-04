@@ -8,7 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 Nothing yet.
 
-## [0.2.0] - 2026-10-03
+## [0.2.1] - 2026-10-04
+
+0.2.0 was only partially published to npm (the server package was refused); 0.2.1 is the first complete
+release of these changes.
 
 ### Added
 
@@ -70,6 +73,8 @@ Nothing yet.
 
 ### Changed
 
+- The server package is published as `@shapio/cms`; the `shapio` command is unchanged. npm refuses the
+  unscoped name. Project extensions import from `@shapio/cms/config`.
 - Change sets can have `source: 'assist'`.
 - Audit events have a write-order sequence (`audit_events.seq`), so events recorded in the same instant
   (common on SQLite and MySQL, which store milliseconds) list in the order they happened: the audit log, change

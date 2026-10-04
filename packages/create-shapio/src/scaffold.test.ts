@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe('scaffoldProject', () => {
-  it('writes a runnable project that depends on shapio', () => {
+  it('writes a runnable project that depends on @shapio/cms', () => {
     const root = scaffoldProject({ directory: join(makeTemp(), 'My CMS'), shapioSpec: '^1.0.0' });
 
     const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<
@@ -27,7 +27,7 @@ describe('scaffoldProject', () => {
     >;
     expect(packageJson).toMatchObject({
       name: 'my-cms',
-      dependencies: { shapio: '^1.0.0' },
+      dependencies: { '@shapio/cms': '^1.0.0' },
       scripts: { start: 'shapio start' },
     });
     const env = readFileSync(join(root, '.env'), 'utf8');
@@ -37,6 +37,7 @@ describe('scaffoldProject', () => {
     expect(readFileSync(join(root, 'ecosystem.config.cjs'), 'utf8')).toContain("exec_mode: 'fork'");
     const projectConfig = readFileSync(join(root, 'shapio.config.ts'), 'utf8');
     expect(projectConfig).toContain('export const config = defineConfig(');
+    expect(projectConfig).toContain("from '@shapio/cms/config'");
     expect(projectConfig).not.toContain('export default');
     for (const path of ['extensions/editors/.gitkeep', 'media/.gitkeep', '.gitignore', 'README.md']) {
       expect(existsSync(join(root, path))).toBe(true);

@@ -75,8 +75,8 @@ const locationIn = (error: unknown, projectDir: string): string | undefined => {
 };
 
 /**
- * `shapio/config` always resolves to the running Shapio's own contract module: `defineConfig` and
- * `HookError` work even where `shapio` is not installed next to the config (Docker volumes, the repository's
+ * `@shapio/cms/config` always resolves to the running Shapio's own contract module: `defineConfig` and
+ * `HookError` work even where `@shapio/cms` is not installed next to the config (Docker volumes, the repository's
  * examples), and never come from a second, different copy. Source in development, `dist/config.js` when
  * bundled.
  */
@@ -88,7 +88,7 @@ const importConfigModule = async (file: string, projectDir: string): Promise<unk
   const jiti = createJiti(import.meta.url, {
     fsCache: false,
     moduleCache: false,
-    ...(PUBLIC_MODULE ? { alias: { 'shapio/config': PUBLIC_MODULE } } : {}),
+    ...(PUBLIC_MODULE ? { alias: { '@shapio/cms/config': PUBLIC_MODULE } } : {}),
   });
   try {
     const loaded = await jiti.import<{ config?: unknown; default?: unknown }>(file);

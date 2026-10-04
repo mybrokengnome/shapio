@@ -1,12 +1,12 @@
 # @shapio/admin
 
 The Shapio admin: a Vite + React 19 SPA, built once and served by the API at `{BASE_PATH}/admin/`. Private
-package; `apps/api`'s `prepack` copies `dist/` into the published `shapio` package.
+package; `apps/api`'s `prepack` copies `dist/` into the published `@shapio/cms` package.
 
 ## Develop
 
 ```sh
-pnpm --filter shapio dev          # API on http://127.0.0.1:4300
+pnpm --filter @shapio/cms dev      # API on http://127.0.0.1:4300
 pnpm --filter @shapio/admin dev   # admin on http://127.0.0.1:5173/admin/ (proxies /api to the API)
 ```
 
@@ -132,7 +132,7 @@ A project adds editors without rebuilding Shapio: **build, copy, list, restart.*
 3. List the file in the project's `shapio.config.ts` (written by `create-shapio`):
 
    ```ts
-   import { defineConfig } from 'shapio/config';
+   import { defineConfig } from '@shapio/cms/config';
 
    export const config = defineConfig({ hooks: {}, editors: ['star-rating.js'] });
    ```

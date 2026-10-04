@@ -1,4 +1,4 @@
-import type { ExtensionRoute } from 'shapio/config';
+import type { ExtensionRoute } from '@shapio/cms/config';
 
 /**
  * GET  /api/ext/example/stats    entry counts per model (admins and admin API tokens)

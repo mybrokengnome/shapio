@@ -1,4 +1,4 @@
-import type { BeforeHook } from 'shapio/config';
+import type { BeforeHook } from '@shapio/cms/config';
 
 /**
  * An article cannot go live without a cover image. Runs inside the publish transaction (REST, GraphQL,

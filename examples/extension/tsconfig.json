@@ -12,9 +12,9 @@
     "allowImportingTsExtensions": true,
     "types": ["node"],
     "typeRoots": ["../../apps/api/node_modules/@types"],
-    // Inside the Shapio repository only: type against the server's source. In your own project `shapio` is
-    // installed, this mapping finds nothing and TypeScript resolves `shapio/config` from node_modules.
-    "paths": { "shapio/config": ["../../apps/api/src/extensions/public.ts"] }
+    // Inside the Shapio repository only: type against the server's source. In your own project `@shapio/cms`
+    // is installed, this mapping finds nothing and TypeScript resolves `@shapio/cms/config` from node_modules.
+    "paths": { "@shapio/cms/config": ["../../apps/api/src/extensions/public.ts"] }
   },
   "include": ["shapio.config.ts", "extensions"]
 }

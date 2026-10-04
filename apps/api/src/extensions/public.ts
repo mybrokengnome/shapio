@@ -25,10 +25,10 @@ declare module 'fastify' {
 }
 
 /**
- * The project extension contract (ADR 0009), imported by project authors from `shapio/config`:
+ * The project extension contract (ADR 0009), imported by project authors from `@shapio/cms/config`:
  *
  * ```ts
- * import { defineConfig } from 'shapio/config';
+ * import { defineConfig } from '@shapio/cms/config';
  * export const config = defineConfig({ hooks: { article: { beforePublish: (ctx) => { ... } } } });
  * ```
  *
@@ -147,7 +147,7 @@ export type ShapioServices = {
  * Your own services, by name. Augment it for typed access everywhere services appear:
  *
  * ```ts
- * declare module 'shapio/config' {
+ * declare module '@shapio/cms/config' {
  *   interface CustomServices { stats: StatsService }
  * }
  * ```

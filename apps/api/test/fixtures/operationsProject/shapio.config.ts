@@ -1,6 +1,6 @@
 // Test project for the operations tests: a slow route and a slow job, so a test can send SIGTERM while a
 // request and a job are in flight and check that both finish before the process exits.
-import { defineConfig } from 'shapio/config';
+import { defineConfig } from '@shapio/cms/config';
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

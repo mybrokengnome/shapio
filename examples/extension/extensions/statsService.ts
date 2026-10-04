@@ -1,4 +1,4 @@
-import type { ServiceFactoryContext } from 'shapio/config';
+import type { ServiceFactoryContext } from '@shapio/cms/config';
 
 export type ModelCount = { model: string; entries: number };
 

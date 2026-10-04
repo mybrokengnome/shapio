@@ -18,7 +18,7 @@ Extensions are code you run inside Shapio, so they load once at startup. Changin
 A project made with `npx create-shapio` has a `shapio.config.ts` at its root and an `extensions/` folder next to it:
 
 ```ts
-import { defineConfig } from 'shapio/config';
+import { defineConfig } from '@shapio/cms/config';
 
 export const config = defineConfig({
   hooks: {}, // lifecycle hooks, by model
@@ -31,7 +31,7 @@ export const config = defineConfig({
 
 - **Where Shapio looks:** set `SHAPIO_CONFIG_PATH` to the file, or Shapio searches its working directory for `shapio.config.ts`, `.mts`, `.js` or `.mjs`, in that order. With no file there are no extensions. `extensions/` is resolved next to the config file.
 - **TypeScript without a build:** the file and everything it imports are loaded with [jiti](https://github.com/unjs/jiti). Stick to erasable syntax: types and annotations, but no `enum`, `namespace` or parameter properties. Import your own files with their extension (`./extensions/hooks.ts`).
-- **`shapio/config`** always resolves to the running Shapio's own copy, so `defineConfig` and `HookError` work wherever the config lives. Use the named export `config`; a default export is accepted too.
+- **`@shapio/cms/config`** always resolves to the running Shapio's own copy, so `defineConfig` and `HookError` work wherever the config lives. Use the named export `config`; a default export is accepted too.
 - **Validation:** an unknown key, a hook name with a typo, a bad route prefix or a service named like one of Shapio's own (`site`, `forSite`, `content`, `media`, `jobs`, `logger`) stops startup with the file and every problem:
 
   ```
@@ -118,7 +118,7 @@ routes: [{ prefix: 'acme', plugin: acmeRoutes }],
 ```
 
 ```ts
-import type { ExtensionRoute } from 'shapio/config';
+import type { ExtensionRoute } from '@shapio/cms/config';
 
 export const acmeRoutes: ExtensionRoute['plugin'] = async (app, { services, permissions, requireAdmin }) => {
   app.get('/stats', { preHandler: requireAdmin }, async () => ({
@@ -172,7 +172,7 @@ services: {
 For typed access everywhere, augment `CustomServices`:
 
 ```ts
-declare module 'shapio/config' {
+declare module '@shapio/cms/config' {
   interface CustomServices {
     stats: StatsService;
   }
@@ -298,7 +298,7 @@ error handler still writes the response.
 
 ## Versioning and stability
 
-- The contract is everything exported from `shapio/config`: the config shape, the hook contexts, `ShapioServices`, `HookError` and `defineConfig`. It follows semver and carries `EXTENSION_CONTRACT_VERSION` (currently 1). Breaking changes bump the major version of `shapio` and are listed in the upgrade notes.
+- The contract is everything exported from `@shapio/cms/config`: the config shape, the hook contexts, `ShapioServices`, `HookError` and `defineConfig`. It follows semver and carries `EXTENSION_CONTRACT_VERSION` (currently 1). Breaking changes bump the major version of `@shapio/cms` and are listed in the upgrade notes.
 - Shapio's database tables (reachable through `db` and `trx`) are **not** part of the contract and may change in any release. Prefer Shapio's services. If you keep data of your own in the database, use your own tables, created by your own tooling. Shapio's migrations never touch them.
 - The editor contract is versioned separately (`EDITOR_CONTRACT_VERSION` in `@shapio/editor-sdk`).
 

@@ -1,6 +1,7 @@
 // Smoke test for the npm install path (build plan §4.A Done):
-//   1. pack `shapio` (prepack builds it and copies the admin bundle in) and `create-shapio`;
-//   2. install the shapio tarball in an empty directory and run `npx shapio start` until /api/ready is 200;
+//   1. pack `@shapio/cms` (prepack builds it and copies the admin bundle in) and `create-shapio`;
+//   2. install the @shapio/cms tarball in an empty directory and run `npx shapio start` (its bin) until
+//      /api/ready is 200;
 //   3. scaffold a project with the create-shapio tarball, copy examples/extension into it, check it with
 //      `npx shapio extensions check`, run `npm run start` until /api/ready is 200, and probe the custom route;
 //   4. scaffold each site starter (`create-shapio --site`) and check it is a standalone project: no workspace,
@@ -190,11 +191,15 @@ try {
   const tarballs = join(work, 'tarballs');
   // A fresh clone has no dist/ anywhere: build what gets packed (and its workspace dependencies) first.
   const sitePackageFilters = SITE_PACKAGES.flatMap((name) => ['--filter', name]);
-  run('pnpm', ['--filter', 'shapio...', '--filter', 'create-shapio', ...sitePackageFilters, 'build'], root);
-  run('pnpm', ['--filter', 'shapio', 'pack', '--pack-destination', tarballs], root);
+  run(
+    'pnpm',
+    ['--filter', '@shapio/cms...', '--filter', 'create-shapio', ...sitePackageFilters, 'build'],
+    root,
+  );
+  run('pnpm', ['--filter', '@shapio/cms', 'pack', '--pack-destination', tarballs], root);
   run('pnpm', ['--filter', 'create-shapio', 'pack', '--pack-destination', tarballs], root);
   run('pnpm', [...sitePackageFilters, 'pack', '--pack-destination', tarballs], root);
-  /** `<name>-<version>.tgz`, matched on the name exactly (`shapio-` is also the start of `shapio-client-`). */
+  /** `<name>-<version>.tgz`, matched on the name exactly (`shapio-cms-` must not match `shapio-cms-x-`). */
   const tarball = (name) =>
     join(
       tarballs,
@@ -202,9 +207,9 @@ try {
         (file) => file.startsWith(`${name}-`) && /^\d/.test(file.slice(name.length + 1)),
       ),
     );
-  const shapioTgz = tarball('shapio');
-  const createTgz = tarball('create-shapio');
   // pnpm names a scoped package's tarball `<scope>-<name>-<version>.tgz`.
+  const shapioTgz = tarball('shapio-cms');
+  const createTgz = tarball('create-shapio');
   const siteTarballs = SITE_PACKAGES.map((name) => tarball(name.slice(1).replace('/', '-')));
 
   run('tar', ['-tzf', shapioTgz, 'package/dist/admin/index.html', 'package/dist/cli.js'], work);

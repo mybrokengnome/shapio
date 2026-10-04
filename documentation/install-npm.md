@@ -1,6 +1,6 @@
 # Install with npm
 
-Shapio is one npm package, `shapio`: the server, the prebuilt admin and the `shapio` command. `create-shapio`
+Shapio is one npm package, `@shapio/cms`: the server, the prebuilt admin and the `shapio` command. `create-shapio`
 sets up a project around it. You run it with Node.js, under PM2 or systemd, against your PostgreSQL or a SQLite
 file. No reverse proxy is needed (see [Networking](networking.md)).
 
@@ -38,7 +38,7 @@ This writes:
 
 | File                                      | What it is                                                                                      |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `package.json`                            | depends on `shapio`; scripts `start`, `migrate`, `worker`, `status`                             |
+| `package.json`                            | depends on `@shapio/cms`; scripts `start`, `migrate`, `worker`, `status`                        |
 | `.env`                                    | the configuration (every setting is an environment variable), with a generated `SESSION_SECRET` |
 | `shapio.config.ts`                        | code extensions: hooks, routes, services, jobs, custom editors ([Extensions](extensions.md))    |
 | `extensions/`, `media/`                   | extension code, and uploaded files (local storage)                                              |
@@ -109,7 +109,7 @@ Wants=network-online.target
 Type=simple
 User=shapio
 WorkingDirectory=/srv/my-cms
-ExecStart=/usr/bin/node node_modules/shapio/dist/cli.js start
+ExecStart=/usr/bin/node node_modules/@shapio/cms/dist/cli.js start
 Restart=on-failure
 # Shapio drains requests and jobs on SIGTERM (SHUTDOWN_TIMEOUT_MS, 10 s by default).
 TimeoutStopSec=30

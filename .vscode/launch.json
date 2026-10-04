@@ -7,7 +7,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "shapio", "dev"],
+      "runtimeArgs": ["--filter", "@shapio/cms", "dev"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,

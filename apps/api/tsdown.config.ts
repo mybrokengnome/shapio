@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown';
 /**
  * Bundles the server and the `shapio` bin. Runtime `dependencies` stay external (installed by npm);
  * workspace packages (@shapio/cli, @shapio/client, @shapio/schema) are dev dependencies and get bundled,
- * so the published `shapio` package is self-contained.
+ * so the published `@shapio/cms` package is self-contained.
  */
 export default defineConfig({
   entry: { index: 'src/index.ts', cli: 'src/cli.ts', config: 'src/extensions/public.ts' },

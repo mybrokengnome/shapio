@@ -1,4 +1,4 @@
-// prepack: put the prebuilt admin SPA inside the published `shapio` package (dist/admin).
+// prepack: put the prebuilt admin SPA inside the published `@shapio/cms` package (dist/admin).
 import { cpSync, existsSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

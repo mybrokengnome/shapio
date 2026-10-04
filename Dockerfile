@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Shapio image. The runtime stage installs the same `shapio` npm tarball the npm path publishes,
+# Shapio image. The runtime stage installs the same `@shapio/cms` npm tarball the npm path publishes,
 # so both install paths run identical code.
 
 FROM node:24-slim AS build
@@ -23,8 +23,8 @@ COPY packages/mcp/package.json packages/mcp/
 COPY packages/visual/package.json packages/visual/
 RUN pnpm install --frozen-lockfile
 COPY . .
-# prepack builds shapio and its workspace dependencies plus the admin bundle, then copies the admin in.
-RUN pnpm --filter shapio pack --pack-destination /out && mv /out/shapio-*.tgz /out/shapio.tgz
+# prepack builds @shapio/cms and its workspace dependencies plus the admin bundle, then copies the admin in.
+RUN pnpm --filter @shapio/cms pack --pack-destination /out && mv /out/shapio-cms-*.tgz /out/shapio-cms.tgz
 
 FROM node:24-slim AS runtime
 ENV NODE_ENV=production \
@@ -32,9 +32,9 @@ ENV NODE_ENV=production \
     PORT=4300 \
     MEDIA_PATH=/data/media
 WORKDIR /app
-COPY --from=build /out/shapio.tgz /tmp/shapio.tgz
-RUN npm install --omit=dev --no-audit --no-fund /tmp/shapio.tgz \
-    && rm /tmp/shapio.tgz \
+COPY --from=build /out/shapio-cms.tgz /tmp/shapio-cms.tgz
+RUN npm install --omit=dev --no-audit --no-fund /tmp/shapio-cms.tgz \
+    && rm /tmp/shapio-cms.tgz \
     && npm cache clean --force \
     && mkdir -p /data/media \
     && chown -R node:node /app /data
@@ -43,5 +43,5 @@ EXPOSE 4300
 VOLUME ["/data/media"]
 # `shapio healthcheck` probes /api/ready over loopback with the right scheme, port and BASE_PATH.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["node", "node_modules/shapio/dist/cli.js", "healthcheck"]
-CMD ["node", "node_modules/shapio/dist/cli.js", "start"]
+  CMD ["node", "node_modules/@shapio/cms/dist/cli.js", "healthcheck"]
+CMD ["node", "node_modules/@shapio/cms/dist/cli.js", "start"]

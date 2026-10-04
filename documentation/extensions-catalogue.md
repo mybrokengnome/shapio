@@ -19,7 +19,7 @@ Two rules hold for all of them:
 
 | Extension point                                         | Where it runs                     | Contract                                  | Change needs                |
 | ------------------------------------------------------- | --------------------------------- | ----------------------------------------- | --------------------------- |
-| [Project config](#project-config-shapioconfigts)        | Server extension (API and worker) | `shapio/config` (`defineConfig`)          | Restart                     |
+| [Project config](#project-config-shapioconfigts)        | Server extension (API and worker) | `@shapio/cms/config` (`defineConfig`)     | Restart                     |
 | [Lifecycle hooks](#lifecycle-hooks)                     | Server extension                  | `ModelHooks`, `Before/AfterHookContext`   | Restart                     |
 | [Custom routes](#custom-routes)                         | Server extension (API)            | `ExtensionRoute`, `ExtensionRouteOptions` | Restart                     |
 | [Services](#services)                                   | Server extension                  | `ServiceFactory`, `ShapioServices`        | Restart                     |
@@ -47,9 +47,9 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **What:** one file that declares every server extension and the custom editor modules.
 - **Where it runs:** loaded at startup by the API server and the worker (inline, or a dedicated `shapio worker`
   with the same `SHAPIO_CONFIG_PATH` and files).
-- **Contract:** `ShapioConfig` and `defineConfig` from `shapio/config`, which always resolves to the running
+- **Contract:** `ShapioConfig` and `defineConfig` from `@shapio/cms/config`, which always resolves to the running
   Shapio's own copy. Source: [`apps/api/src/extensions/public.ts`](../apps/api/src/extensions/public.ts)
-  (published as `shapio/config`). Loading: [`extensions/loader.ts`](../apps/api/src/extensions/loader.ts);
+  (published as `@shapio/cms/config`). Loading: [`extensions/loader.ts`](../apps/api/src/extensions/loader.ts);
   validation: [`extensions/configSchema.ts`](../apps/api/src/extensions/configSchema.ts).
 
   ```ts
@@ -65,7 +65,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Example:**
 
   ```ts
-  import { defineConfig } from 'shapio/config';
+  import { defineConfig } from '@shapio/cms/config';
 
   export const config = defineConfig({ hooks: {}, routes: [], services: {}, jobs: {}, editors: [] });
   ```
@@ -73,7 +73,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Lifecycle:** found through `SHAPIO_CONFIG_PATH`, else `shapio.config.ts`, `.mts`, `.js` or `.mjs` in the
   working directory; `extensions/` sits next to it. Loaded with jiti, so TypeScript needs no build (erasable
   syntax only). No file means no extensions.
-- **Versioning:** everything exported from `shapio/config` follows semver and carries
+- **Versioning:** everything exported from `@shapio/cms/config` follows semver and carries
   `EXTENSION_CONTRACT_VERSION` (currently `1`). Shapio's database tables, reachable through `db` and `trx`, are
   internal and may change in any release.
 - **Limits:** an unknown key, a misspelt hook name, a bad route prefix, a duplicate prefix or a service named
@@ -136,11 +136,11 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Contract:** `ExtensionRoute` (`{ prefix, plugin }`) and `ExtensionRouteOptions` (`services`, `permissions`,
   `logger`, `requireAdmin`) in [`public.ts`](../apps/api/src/extensions/public.ts); mounting in
   [`plugins/extensions.ts`](../apps/api/src/plugins/extensions.ts). The plugin is an ordinary Fastify plugin;
-  `request.principal` and `request.site` are typed by `shapio/config`.
+  `request.principal` and `request.site` are typed by `@shapio/cms/config`.
 - **Example:**
 
   ```ts
-  import type { ExtensionRoute } from 'shapio/config';
+  import type { ExtensionRoute } from '@shapio/cms/config';
 
   export const acmeRoutes: ExtensionRoute['plugin'] = async (app, { services, requireAdmin }) => {
     // A site route: count the requesting site's articles, not the primary site's.
@@ -195,7 +195,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   ```
 
   ```ts
-  declare module 'shapio/config' {
+  declare module '@shapio/cms/config' {
     interface CustomServices {
       stats: StatsService;
     }
@@ -488,7 +488,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
 
 ## CLI
 
-- **What:** one `shapio` command, shipped with the `shapio` package and the Docker image.
+- **What:** one `shapio` command, shipped with the `@shapio/cms` package and the Docker image.
 - **Where it runs:** **server commands** (`start`, `worker`, `migrate`, `healthcheck`, `version`, `admin`,
   `media migrate`, `sites`, `extensions check`, `mcp`) on the machine that runs Shapio, with its environment;
   **remote commands** (`status`, `schema pull|diff|apply`, `types generate`, `export`, `import`) over HTTP with
@@ -574,7 +574,7 @@ The full list of variables is in the [environment reference](reference/environme
 
 | Surface                                   | Stability                                                                    |
 | ----------------------------------------- | ---------------------------------------------------------------------------- |
-| `shapio/config` (server extensions)       | semver with `shapio`; `EXTENSION_CONTRACT_VERSION` = 1                       |
+| `@shapio/cms/config` (server extensions)  | semver with `@shapio/cms`; `EXTENSION_CONTRACT_VERSION` = 1                  |
 | `@shapio/editor-sdk` (custom editors)     | `EDITOR_CONTRACT_VERSION` = 1; mismatched editors fall back to built-in ones |
 | Webhook signature (`v1=`) and event names | versioned by the `v1` prefix                                                 |
 | HTTP APIs and `@shapio/client`            | semver with the packages; OpenAPI at `/api/docs`                             |

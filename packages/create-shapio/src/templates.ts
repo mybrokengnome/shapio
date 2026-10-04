@@ -18,7 +18,7 @@ const packageJson = ({ projectName, shapioSpec }: TemplateInput) =>
         worker: 'shapio worker',
         status: 'shapio status',
       },
-      dependencies: { shapio: shapioSpec },
+      dependencies: { '@shapio/cms': shapioSpec },
     },
     null,
     2,
@@ -26,7 +26,7 @@ const packageJson = ({ projectName, shapioSpec }: TemplateInput) =>
 
 const env = ({ databaseUrl, sessionSecret }: TemplateInput) =>
   [
-    '# Shapio configuration. Every setting is an environment variable; `shapio` loads this file.',
+    '# Shapio configuration. Every setting is an environment variable; the `shapio` command loads this file.',
     '# Real environment variables override values here.',
     'NODE_ENV=production',
     'HOST=127.0.0.1',
@@ -66,7 +66,7 @@ const shapioConfig =
 // with \`shapio schema pull\` / \`shapio schema apply\`. This file is code: changing it, or anything in
 // ./extensions, needs a restart (never a rebuild). Check it with \`npx shapio extensions check\`.
 // TypeScript works as is (erasable syntax only: no enums or namespaces). Guide: documentation/extensions.md in Shapio's repository.
-import { defineConfig } from 'shapio/config';
+import { defineConfig } from '@shapio/cms/config';
 
 export const config = defineConfig({
   // Lifecycle hooks by model API ID ('*' = every model). before* hooks run inside the write's transaction
@@ -107,7 +107,7 @@ module.exports = {
   apps: [
     {
       name: ${JSON.stringify(projectName)},
-      script: 'node_modules/shapio/dist/cli.js',
+      script: 'node_modules/@shapio/cms/dist/cli.js',
       args: 'start',
       exec_mode: 'fork',
       instances: 1,
@@ -115,7 +115,7 @@ module.exports = {
       env: { NODE_ENV: 'production' },
     },
     // Cluster variant (replace the app above): two processes sharing the port, each with its inline worker.
-    // { name: ${JSON.stringify(projectName)}, script: 'node_modules/shapio/dist/cli.js', args: 'start', exec_mode: 'cluster', instances: 2, kill_timeout: 20000, env: { NODE_ENV: 'production' } },
+    // { name: ${JSON.stringify(projectName)}, script: 'node_modules/@shapio/cms/dist/cli.js', args: 'start', exec_mode: 'cluster', instances: 2, kill_timeout: 20000, env: { NODE_ENV: 'production' } },
   ],
 };
 `;

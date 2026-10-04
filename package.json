@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter shapio --filter @shapio/admin dev",
+    "dev": "pnpm --parallel --filter @shapio/cms --filter @shapio/admin dev",
     "build": "pnpm -r --filter \"!example-*\" build",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -16,11 +16,11 @@
     "test": "vitest run --project unit --project admin",
     "test:integration": "vitest run --project integration",
     "smoke:npm": "node scripts/smokeNpmPackage.mjs",
-    "db:migrate": "pnpm --filter shapio db:migrate",
-    "db:rollback": "pnpm --filter shapio db:rollback",
-    "db:codegen": "pnpm --filter shapio db:codegen",
-    "db:reset": "pnpm --filter shapio db:reset",
-    "docs:reference": "pnpm --filter shapio docs:reference"
+    "db:migrate": "pnpm --filter @shapio/cms db:migrate",
+    "db:rollback": "pnpm --filter @shapio/cms db:rollback",
+    "db:codegen": "pnpm --filter @shapio/cms db:codegen",
+    "db:reset": "pnpm --filter @shapio/cms db:reset",
+    "docs:reference": "pnpm --filter @shapio/cms docs:reference"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
