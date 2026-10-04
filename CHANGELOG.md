@@ -6,6 +6,24 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Content types per site.** Each site now owns its content types and components; any of them can be shared
+  with every site instead. A definition created on a site belongs to that site unless created with
+  `scope: "network"` (shared); upgrading makes every existing definition shared, so existing sites see no
+  change. A site's view of the schema (its own definitions and the shared ones) is what its admin, REST,
+  GraphQL, API docs, extensions, schema files, bundles and agents see: two sites can each have a `post` with
+  different fields, and another site's content type is `404` there. A shared definition may only refer to
+  shared ones, and its API ID cannot be one any site uses. `PUT /api/admin/models/:id/scope` (and
+  `/components/:id/scope`) shares a definition with all sites or keeps a shared one on one site, refused with
+  `SCOPE_IN_USE` while another site still has entries of it; a scope change is audited (`schema.scope`) and
+  takes no snapshot. A role held on one site grants `schema.create` and `schemaManage` for that site's own
+  definitions; shared ones, scope changes, locales and the read-only lock still need a role on every site.
+  `me` reports `siteCount` and lists site-granted `schema.create` in `sitePermissions`. A change to a site's own
+  content type notifies only that site's webhooks and deployment connections and numbers only its snapshots.
+  A site that still owns content types cannot be deleted (`SITE_NOT_EMPTY` counts `definitions`). See
+  [Sites](documentation/sites.md#content-types-per-site).
+
 ### Changed
 
 - **GraphQL serves one schema per site.** `/api/graphql` answers with the request site's schema: its own
@@ -22,8 +40,13 @@ All notable changes to Shapio are listed here. The format follows
   tree can hold several sites: a site's pull and apply never send, rewrite, prune or delete another site's
   definitions. Apply refuses a file moved to another scope (`SCOPE_MISMATCH`), shared changes without
   permission on every site (`FORBIDDEN_SCOPE`, per item) and a tree pulled for other sites only
-  (`LOCK_SITE_MISMATCH`). New `shapio schema scope <apiKey> --shared | --site <key>` shares a content type
-  with all sites or keeps a shared one on one site. See [Schema sync](documentation/schema-sync.md#several-sites).
+  (`LOCK_SITE_MISMATCH`); files without site folders (and older CLIs) still create shared definitions. New
+  `shapio schema scope <apiKey> --shared | --site <key>` shares a content type with all sites or keeps a shared
+  one on one site. The `GET /api/admin/schema/export` response names its `site` and each definition's site.
+  GitHub write-back writes its connection's site view. See
+  [Schema sync](documentation/schema-sync.md#several-sites).
+- **Export and import carry scope.** A bundle holds its site's view of the schema with each definition's
+  scope; importing creates the site's own content types on the target site and shared ones shared.
 - **Importers, MCP and starters are site-aware.** `shapio import wordpress|strapi --plan --site <key>` plans the
   models as that site's own (without `--site` they are shared). The MCP server's schema tools list the site's
   view with each definition's scope, and `schema_draft` / `change_sets_add_schema_draft` take `shared: true`
@@ -34,8 +57,13 @@ All notable changes to Shapio are listed here. The format follows
   site (the default) or all sites (needs a role on every site); the choice shows only with more than one
   site. Shared types carry a small globe in the sidebar and the Components list, the builder's settings share
   a type with all sites or keep it on one, and the new Network → Content types page lists and creates shared
-  ones. A schema role held on one site shows shared types' structure read-only, and Locales now need a role
-  on every site in the sidebar too ([Sites](documentation/sites.md#content-types-in-the-admin)).
+  ones. A schema role held on one site shows shared types' structure read-only, change set review marks shared
+  schema items and names each breaking-field reader's site, and Locales now need a role on every site in the
+  sidebar too ([Sites](documentation/sites.md#content-types-in-the-admin)).
+
+### Fixed
+
+- `shapio import --prune` no longer lists other sites' entries and media as candidates for deletion.
 
 ## [0.2.1] - 2026-10-04
 

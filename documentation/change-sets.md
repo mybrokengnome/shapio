@@ -13,9 +13,12 @@ sets for someone else to ship: give it to API tokens used by coding agents ([MCP
 Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
 On an instance with several [sites](sites.md), change sets and snapshot numbers are per site: a set holds its
-site's entries only and ships as one snapshot there. A schema item changes the shared schema, so it needs schema
-permission held on all sites; its review lists affected entries per site, and a conversion takes a snapshot on
-every site whose published content it changes, recorded there as a conversion naming the set.
+site's entries only and ships as one snapshot there. Its schema items are drafts of definitions in the site's
+view. A draft of the site's own content type needs schema permission on that site, and converts content on that
+site only. A draft of a shared one (or of a new definition created shared) needs schema permission held on all
+sites and is marked "Shared, affects every site": its review lists affected entries per site, and a conversion
+takes a snapshot on every site whose published content it changes, recorded there as a conversion naming the
+set.
 
 ## A change set
 
@@ -135,7 +138,8 @@ Shapio counts which fields your sites and apps actually read, so a breaking chan
 you ship it. Every delivery read (REST and GraphQL) adds to a counter per day, per model, per field, per reader:
 each API token by name, app users as one group, anonymous callers as one group. Admin users, admin API tokens and
 previews are not counted. Counters are kept per [site](sites.md). **Develop → Live** shows who reads what; the change set review shows the readers of
-the fields a breaking change touches.
+the fields a breaking change touches: for a site's own content type that site's readers, for a shared one the
+readers on every site (each labelled with its site, or the other sites as totals for admins of one site).
 
 Ask for the fields you use (`fields=` in REST, a selection in GraphQL). A REST read without `fields=` counts
 every field as used, shown as "reads the whole model", which hides what a site really depends on.

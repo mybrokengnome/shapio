@@ -33,8 +33,8 @@ model never needs a rebuild, a restart or a deploy.
 - [End users](end-users.md): sign-up, sign-in, Google and GitHub, roles, owner-only writes.
 - [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, Vercel, Netlify,
   preview links.
-- [Sites](sites.md): several sites on one instance (shared schema and team, separate content, tokens, snapshots
-  and app users); which site a request reads, permissions, upgrade notes.
+- [Sites](sites.md): several sites on one instance (one team; content types per site or shared with all sites;
+  separate content, tokens, snapshots and app users); which site a request reads, permissions, upgrade notes.
 - [Visual editing](visual-editing.md): preview drafts beside the document and click a part of the page to edit
   its field.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.

@@ -1,42 +1,127 @@
 # Sites
 
 One Shapio instance can run several **sites**: a company site, a docs site and a campaign microsite, say, with
-one login and one set of content types. Each site has its own content; the schema and the team are shared.
+one login. Each site has its own content and its own content types; a content type can also be shared with
+every site, so a fleet of sites can have one `article` type and each site its own extras.
 
 | Shared by every site                          | Each site's own                                                   |
 | --------------------------------------------- | ----------------------------------------------------------------- |
-| content types and components (one schema)     | entries, with their history, drafts and schedules                 |
-| locales                                       | media library and folders                                         |
-| admin users and roles                         | snapshots (its own numbering) and change sets                     |
-| app roles (their grants)                      | app users (end users), and which app roles anonymous callers get  |
-| the extension config (hooks, routes, editors) | delivery tokens, webhooks, deployment connections, preview tokens |
+| content types and components shared with all  | its own content types and components                              |
+| locales                                       | entries, with their history, drafts and schedules                 |
+| admin users and roles                         | media library and folders                                         |
+| app roles (their grants)                      | snapshots (its own numbering) and change sets                     |
+| the extension config (hooks, routes, editors) | app users (end users), and which app roles anonymous callers get  |
+|                                               | delivery tokens, webhooks, deployment connections, preview tokens |
 |                                               | field usage counters and content health findings                  |
 
 Content never crosses sites. A relation or a media field can only point at an entry or asset on the same site;
 pointing at another site's is refused as `RELATION_TARGET_MISSING` or `MEDIA_MISSING` ("does not exist on this
 site"), the same answer as for an ID that exists nowhere. To publish the same article on two sites, create it on
-both. Every site has the same content types; a site that does not use one simply leaves it empty.
+both. A shared content type exists on every site, each with its own entries; a site that does not use it simply
+leaves it empty.
 
 An instance with one site works exactly as before: requests that name no site go to the primary site, and
 nothing in this page needs doing.
 
-## Content types in the admin
+## Content types per site
+
+Every content type and component has a **scope**:
+
+- **This site** (`site`): it belongs to one site. Only that site's admin, APIs, GraphQL schema, schema files
+  and agents see it. Another site can have its own content type with the same API ID and different fields:
+  two sites can each have a `post`.
+- **All sites** (`network`, _shared_): one definition that every site has, with content per site. This is how
+  every content type behaved before per-site schemas, and an upgraded instance finds all its existing content
+  types and components shared.
+
+A site's **view** of the schema is its own definitions plus the shared ones. Everything about content reads
+that view: the delivery and admin APIs (`/api/content/post` on a site without a `post` is `404`), GraphQL
+([one schema per site](graphql.md#authentication)), the API docs, extensions' `services.content.models()`,
+schema files and the MCP server. An entry can only be written on a site whose view has its model, also while
+the model's scope is changing.
+
+A few rules keep every view valid:
+
+- A site's content types may use shared components and relate to shared content types and to their own
+  site's. A shared definition may only refer to shared ones, since a site's are missing on the other sites.
+- API IDs (and plural API IDs and the generated GraphQL names) must be unique within each view. So a shared
+  content type can never have the API ID of any site's own, and creating a shared `post` is refused while a
+  site has a `post` of its own (`422 API_KEY_COLLISION`, naming the site in `details.issues[].siteKey`). Stable
+  IDs of definitions and fields stay unique across the whole instance.
+- A change to a site's definition is checked against that site's view; a change to a shared one against every
+  site's.
+
+### Who can change them
+
+A role held on one site grants `schema.create` and `schemaManage` (see [Permissions](#permissions-and-assignments))
+for that site's own content types and components: a site admin creates and changes their site's schema without
+any role elsewhere. Creating, changing or deleting a **shared** definition, and changing any definition's
+scope, needs the permission from a role held on all sites, as do locales and the
+[read-only lock](schema-sync.md#optional-a-read-only-lock).
+
+### Content types in the admin
 
 Where there is more than one site, creating a content type or a component asks where it is **available on**:
 _This site_ (the default) or _All sites_. A new type belongs to the site it was created on unless _All sites_ is
-chosen; that choice needs a role on every site, and is otherwise shown switched off with a hint. On a
-one-site instance the choice is not shown and new types belong to that site.
+chosen; that choice needs `schema.create` on every site, and is otherwise shown switched off with a hint. On a
+one-site instance the choice is not shown and new types belong to that site; share them before they are
+needed on a second site.
 
 In the sidebar, a content type shared with all sites has a small globe beside its name ("Shared with all
 sites"); a site's own types have no mark. The Components list marks shared components the same way.
 
-The builder's **Model settings** show where a type is available. With a role on every site, _Share with all
-sites_ or _Keep on this site_ changes it, after a confirmation; keeping a shared type on one site is refused
-while another site still has entries of it. An admin whose schema role is held on one site only can read a
-shared type's structure but not change it.
+The builder's **Model settings** show where a type is available. With schema permission on every site, _Share
+with all sites_ or _Keep on this site_ changes it, after a confirmation. An admin whose schema role is held on
+one site only can read a shared type's structure but not change it, and the builder says why.
 
 **Network → Content types** lists the content types and components shared with all sites, with their kind,
 and creates new shared ones. It is shown to admins with `schema.create` on every site.
+
+### Changing the scope
+
+Sharing a site's content type with all sites is allowed whenever the result is valid in every site's view:
+its API ID must not be taken on another site, and whatever it refers to must be shared first (share
+components and related types before the types that use them). Its entries stay on their site.
+
+Keeping a shared content type on one site is refused while:
+
+- another site still has entries of it (`409 SCOPE_IN_USE`, with the number of entries; admins who see every
+  site also get the count per site), or
+- a shared definition or another site's definition refers to it (`SCHEMA_INVALID`).
+
+Delete the other sites' entries, or the references, first. Once kept on one site, the type disappears from the
+other sites' admin, APIs and GraphQL schema.
+
+A site's own content type can also move to another site: `PUT /:id/scope` with `"scope": "site"` and the other
+site's `siteId`. It is allowed only while no site other than the target holds entries of it, so in practice its
+current site must have none; the same refusals and the same `schema.scope` audit apply. The admin and
+`shapio schema scope` cannot do this; it is done through the API.
+
+A scope change is metadata: the definition itself does not change, but it gets a new version (a save from a
+builder opened before the change is refused as a conflict), the schema version moves, and no snapshot is taken
+on any site. It is recorded in the audit log as `schema.scope`.
+
+### In the API
+
+`/api/admin/models` and `/api/admin/components` answer for the request's site (`Shapio-Site` or `?site=`):
+
+- `GET` lists the site's view; every item carries `scope` (`site` or `network`) and `siteId` (null when
+  shared). `?scope=network` lists the shared definitions only.
+- `POST` (and `POST /plan`) take an optional `scope`: `site` (the default) creates the definition on the
+  request's site, `network` shares it with all sites.
+- `PUT /:id/scope` with `{ "scope": "network" | "site", "version": <active version> }` changes the scope.
+  For `site` the definition goes to the request's site, or to `siteId` when given. A stale `version` is
+  `409 SCHEMA_VERSION_CONFLICT`.
+
+```sh
+curl -X PUT "$SHAPIO_URL/api/admin/models/<model id>/scope?site=blog" -H "Authorization: Bearer $SHAPIO_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"scope":"network","version":4}'
+```
+
+`GET /api/admin/auth/me` reports `siteCount` (how many sites the instance has) and lists `schema.create` in
+`sitePermissions` when a role on the site grants it there; `networkPermissions` lists it only when a role on
+every site does, which is what creating shared types needs. From the command line, `shapio schema scope` does
+the same ([Schema sync](schema-sync.md#several-sites)).
 
 ## Creating a site
 
@@ -63,8 +148,10 @@ site, and it cannot change. The name can (`PATCH /api/admin/sites/:id` with `exp
 A new site starts empty: snapshot 0, no tokens, no webhooks, and **no anonymous access** (see
 [App users](#app-users-and-anonymous-access)).
 
-A site can be deleted only when it is empty: no entries, media, folders, change sets or app users
-(`409 SITE_NOT_EMPTY` lists what is left). Its tokens, webhooks, deployment connections, role assignments and
+A site can be deleted only when it is empty: no entries, media, folders, change sets, app users or content
+types and components of its own (`409 SITE_NOT_EMPTY` lists what is left, with `definitions` counting its own
+content types and components). Delete them, or share them with all sites, first; definitions the site had
+already deleted go with it. Its tokens, webhooks, deployment connections, role assignments and
 snapshot history go with it. Sites cannot be merged or split later.
 
 ### The primary site
@@ -114,9 +201,11 @@ Each site numbers its own snapshots: snapshot 12 of one site says nothing about 
 ([Snapshots and the changes API](snapshots.md)). Publishing on one site never moves another site's number, so
 builds pinned on other sites are unaffected.
 
-A schema change is shared, so when it converts stored values it takes one snapshot on every site whose published
-content it changes, and none on the others. The change set's own site records it as the change set; the other
-sites record a **conversion** that names the change set and its site.
+A schema change that converts stored values takes one snapshot on every site whose published content it
+changes, and none on the others. A change to a site's own content type can only change that site's content, so
+it numbers that site alone; a change to a shared one can number several. The change set's own site records it as
+the change set; the other sites record a **conversion** that names the change set and its site. Changing a
+content type's scope takes no snapshot.
 
 ### Media files
 
@@ -136,13 +225,15 @@ Someone can be Editor on the marketing site, Read-only on the docs site and noth
 
 - **Network permissions** are about the whole instance: `schema.create`, `users.manage`, `roles.manage`,
   `audit.read`, `sites.manage`, and `schemaManage` on models. Only roles held on all sites grant them, so a site
-  admin cannot change the shared schema, invite people or give themselves another site.
+  admin cannot change shared content types, locales, invite people or give themselves another site. The one
+  exception is the site's own schema: a role held on a site grants `schema.create` and `schemaManage` there for
+  that site's own content types and components ([Who can change them](#who-can-change-them)).
 - **Site permissions** are about one site: `tokens.manage`, `media.*`, `publishing.manage`, `webhooks.manage`,
   `deployments.*`, `changes.manage` and `changes.ship`.
 - The **Owner** role can only be held on all sites.
 - An admin who holds no role on a site gets `403 SITE_FORBIDDEN` there. `GET /api/admin/auth/me` still answers on
-  every site, with `site`, `sites` (where they work), `networkPermissions`, `sitePermissions` and the model
-  permissions of that site, which is what the admin's site switcher uses.
+  every site, with `site`, `sites` (where they work), `siteCount`, `networkPermissions`, `sitePermissions` and the
+  model permissions of that site, which is what the admin's site switcher uses.
 
 The users and invitations APIs take assignments:
 
@@ -190,12 +281,13 @@ Settings → API tokens lists and revokes the current site's tokens, plus networ
 
 ## Webhooks and deployments
 
-- A **site webhook** receives its site's events and network events (schema and locale changes, which concern
-  every site). A **network webhook** receives every site's events. Create one with `"network": true`, which needs
+- A **site webhook** receives its site's events and network events (locale changes and changes to shared
+  content types, which concern every site; a change to a site's own content type is that site's event only). A **network webhook** receives every site's events. Create one with `"network": true`, which needs
   `webhooks.manage` on all sites; that choice is fixed once created. Every delivery body has a `site` field
   (`{ "id", "key" }`, or `null` for a network event). See [Webhooks](publishing.md#webhooks).
 - **Deployment connections** belong to a site. A site's publishes and change sets build its own connections; a
-  schema change builds every site's connections that build on schema changes.
+  change to a shared content type builds every site's connections that build on schema changes, a change to a
+  site's own content type only that site's.
 
 ## Preview
 
@@ -204,25 +296,31 @@ A preview token previews one entry of one site, and the preview API answers only
 
 ## Change sets, field usage and content health
 
-- A change set belongs to one site and ships as one snapshot there. It can only hold that site's entries. A
-  schema item in it changes the shared schema, so adding one needs schema permission held on all sites, and its
-  review lists the affected entries per site ([Change sets](change-sets.md)).
-- Field usage is counted per site. Before a breaking change, the review shows the readers of the affected fields
-  on every site (the schema is shared): with permissions on all sites you see each reader and its site, otherwise
-  your site's readers and the other sites as totals.
+- A change set belongs to one site and ships as one snapshot there. It can only hold that site's entries and
+  schema drafts of definitions in that site's view. A draft of the site's own content type needs schema
+  permission on the site; a draft of a shared one (or a new definition created shared) needs it on all sites,
+  and the review marks it "Shared, affects every site" and lists the affected entries per site
+  ([Change sets](change-sets.md)).
+- Field usage is counted per site. Before a breaking change, the review shows the readers of the affected fields.
+  A site's own content type is only read on that site, so its readers are that site's. A shared one is read on
+  every site: with permissions on all sites you see each reader and its site, otherwise your site's readers and
+  the other sites as totals.
 - Content health checks every site in one sweep; each site sees its own findings.
 
 ## Export and import
 
-A bundle holds one site's content, media, app users, webhooks and deployment connections, plus the shared schema,
-locales and roles:
+A bundle holds one site's content, media, app users, webhooks and deployment connections, plus its view of the
+schema (the site's own content types and the shared ones, each marked with its scope), locales and roles:
 
 ```sh
 npx shapio export --url https://cms.example.com --token shp_… --site marketing marketing.ndjson
 npx shapio import --url https://cms.example.com --token shp_… --site docs marketing.ndjson
 ```
 
-Without `--site` (or `SHAPIO_SITE`) the token's site is used, else the primary site. See
+Without `--site` (or `SHAPIO_SITE`) the token's site is used, else the primary site. On import, the exported
+site's own content types are created on the target site and shared ones are shared on the target instance, which
+needs schema permission on every site (refused definitions are listed before anything is written). Bundles from
+before per-site schemas mark nothing, and their content types import as shared. See
 [Backup and restore](backup-restore.md#content-export-and-import).
 
 ## Agents (MCP)
@@ -286,5 +384,9 @@ Existing admin API tokens become network tokens and existing delivery tokens bel
 both keep working. Role assignments become "all sites". Rolling the migration back is only possible while one
 site exists.
 
-Not yet available: choosing the site from the request's host name, a media library shared by several sites, and
-per-site differences in the schema.
+The later upgrade to per-site content types makes every existing content type and component shared with all
+sites, so nothing changes for existing sites. Content types created afterwards belong to their site unless
+shared (see [Content types per site](#content-types-per-site)). Its migration can be rolled back only while no
+content type or component belongs to a site.
+
+Not yet available: choosing the site from the request's host name, and a media library shared by several sites.

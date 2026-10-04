@@ -15,8 +15,9 @@ reviewed like a pull request (field-level diffs, the planner's checks, and which
 fields a breaking change touches) and shipped as one snapshot, with an optional deploy after. Restoring an older
 snapshot is a change set too: reviewed, shipped as a new snapshot, nothing deleted.
 
-**Many sites, one instance.** One Shapio can run a fleet of sites with one schema and one login: each site has
-its own content, media, snapshots, tokens and end users, and a role can be granted on one site or on all of them.
+**Many sites, one instance.** One Shapio can run a fleet of sites with one login: each site has its own content
+types (and can share any of them with every site), content, media, snapshots, tokens and end users, and a role
+can be granted on one site or on all of them.
 
 **Visual editing.** Editors see the site beside the document while they write: clicking a part of the page
 focuses its field, and every save re-renders the preview.

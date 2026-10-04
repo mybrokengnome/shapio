@@ -39,8 +39,9 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 
 ## Sites
 
-One Shapio instance can host several [sites](sites.md) that share the content types but each have their own
-content, tokens and snapshots. Every delivery request reads exactly one site:
+One Shapio instance can host several [sites](sites.md), each with its own content types (plus those shared with
+all sites), content, tokens and snapshots. A content type of another site is unknown on this one (`404`). Every
+delivery request reads exactly one site:
 
 1. **The token's site.** Delivery tokens belong to the site they were created on, and only ever read it.
 2. **The site the request names**, with `?site=<key>` or the `Shapio-Site: <key>` header. Anonymous callers and

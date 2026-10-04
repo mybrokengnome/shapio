@@ -75,8 +75,9 @@ Restore into a scratch database from time to time; a backup you have not restore
 staging to production, into a fresh install, or as a portable backup. They need an owner or admin API token.
 
 A bundle holds one [site](sites.md#export-and-import)'s content, media, app users, webhooks and deployment
-connections, with the shared schema, locales and roles. `--site <key>` (or `SHAPIO_SITE`) names the site to
-export from or import into; without it, the token's site, else the primary site.
+connections, with the site's content types (its own and the shared ones), locales and roles. `--site <key>` (or
+`SHAPIO_SITE`) names the site to export from or import into; without it, the token's site, else the primary
+site.
 
 ```sh
 npx shapio export --url https://cms.example.com --token shp_… --with-media content.tar
@@ -159,7 +160,7 @@ Entries other entries still point at are kept and reported.
 
 ### Running it
 
-The instance-wide part (locales, models, roles, publishing settings, folders) is applied by the request; the
+The configuration part (locales, models, roles, publishing settings, folders) is applied by the request; the
 content then imports as a **job**: resumable from its last checkpoint after a restart, idempotent, with its
 progress (phase and counts) is reported by the CLI. `shapio import` follows it to the end (`--no-wait` returns
 at once) and exits non-zero if any item could not be imported, listing why.

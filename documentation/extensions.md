@@ -163,7 +163,7 @@ services: {
   - `logger`.
   - `services`: Shapio's services and the custom services declared so far.
 - Shapio's own services:
-  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()`. These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
+  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()` (the site's content types: its own and the shared ones). These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
   - `media.usages(assetId)`: where an asset is referenced.
   - `jobs.enqueue(name, payload?, { runAt?, idempotencyKey?, maxAttempts? })`: queues one of your jobs.
   - `logger`.

@@ -70,7 +70,8 @@ time. To reach a host on your own network, list its address in `OUTBOUND_PRIVATE
 ### Sites
 
 On an instance with several [sites](sites.md), a webhook belongs to the site it was created on and receives that
-site's events, plus network events such as schema and locale changes. A **network** webhook (`"network": true`
+site's events (including changes to the site's own content types), plus network events such as locale changes
+and changes to content types shared with all sites. A **network** webhook (`"network": true`
 when creating it, which needs `webhooks.manage` on all sites) receives every site's events. `site` in the body
 is the event's site (`{ "id", "key" }`), or `null` for a network event.
 
@@ -94,8 +95,9 @@ Publishing → Deployments → New connection. A connection says how to start a 
   anything else is refused with `SECRET_ENV_NOT_ALLOWED`, so an admin can never point a connection at the
   server's own settings such as `SESSION_SECRET` or `SMTP_PASSWORD`.
 - **Test connection** checks the settings without starting a build.
-- Connections belong to a [site](sites.md): a site's publishes and change sets build its own connections, and a
-  schema change (shared by every site) builds every site's connections that build on schema changes.
+- Connections belong to a [site](sites.md): a site's publishes, change sets and changes to its own content types
+  build its own connections, and a change to a content type shared with all sites builds every site's
+  connections that build on schema changes.
 
 ### Generic signed build webhook
 

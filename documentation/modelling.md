@@ -14,6 +14,10 @@ saved. No rebuild, no restart, no deploy.
 | **Single type** | Exactly one entry: the home page, site settings                          | `/api/content/<apiKey>` reads it                                                  |
 | **Component**   | A reusable group of fields embedded in models, never addressed by itself | inside the entries that use it                                                    |
 
+On an instance with several [sites](sites.md), each definition belongs to the site it was created on, or is
+shared with all sites ([Content types per site](sites.md#content-types-per-site)). A site's own definitions may use
+shared ones; shared ones may only use shared ones.
+
 A **dynamic zone** is a field that holds an ordered list of components chosen from an allowed set: the
 sections of a page (hero, feature grid, gallery, call to action) are the usual example. Each item carries the
 component's API ID in `__component`.
@@ -43,6 +47,8 @@ when you save the model, IDs that would collide in GraphQL (`Query`, `String`, `
 `pageFilter` next to a model `page`, a model `posts` next to a collection whose plural API ID is `posts`) and
 field IDs that clash with system
 attributes (`id`, `locale`, `status`, `version`, `createdAt`, `updatedAt`, `publishedAt`, …).
+With several sites these checks run in each site's view (its own definitions and the shared ones): two sites
+may each have a `post`, but a shared definition cannot take an API ID that any site uses.
 
 ## Field types
 

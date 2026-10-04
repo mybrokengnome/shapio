@@ -130,8 +130,10 @@ npx shapio schema scope post --site blog            # keep the shared post on bl
 ```
 
 Keeping a shared type on one site is refused while other sites have entries of it (`SCOPE_IN_USE`, with the
-number of entries) or while something shared or on another site refers to it. `--version <n>` guards the change
-with the version you saw (default: the version the command reads first).
+number of entries) or while something shared or on another site refers to it. Moving a site's content type
+straight to another site is not a `shapio schema scope` option; it is done through the API
+([Sites](sites.md#changing-the-scope)). `--version <n>` guards the change with the version you saw (default: the
+version the command reads first).
 
 A lock written before per-site schemas (format 1) still works: all its definitions are shared, and it applies
 to every site. The next pull rewrites it in format 2. An old `shapio` CLI, or a tree without `sites/`, creates
@@ -185,11 +187,15 @@ and a token that can write contents (and pull requests). After each schema chang
 `schema pull` writes, plus the lock file, to that branch, or opens a pull request from `shapio/schema-sync`.
 Bursts of changes coalesce into one commit. Git mirrors production; it never locks it.
 
+A connection belongs to a site and writes that site's view, as `schema pull --site <key>` would: the shared
+folders and `sites/<key>/`, and a lock file covering that site only. It never removes another site's folder, but
+the lock file is rewritten for its own site, so give each site's connection its own branch or repository.
+
 ## Optional: a read-only lock
 
 Teams that want production changed only through `apply` can turn on the lock. The admin then shows models but
-refuses changes to them (`423 SCHEMA_READ_ONLY`); `shapio schema apply` keeps working. It is off by default and
-needs the `schema.create` permission:
+refuses changes to them (`423 SCHEMA_READ_ONLY`); `shapio schema apply` keeps working. The lock covers every
+site's content types. It is off by default and needs the `schema.create` permission from a role on every site:
 
 ```sh
 curl -X PUT "$SHAPIO_URL/api/admin/schema/settings" \

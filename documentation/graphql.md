@@ -1,7 +1,9 @@
 # GraphQL
 
-GraphQL is served at `{PUBLIC_URL}{BASE_PATH}/api/graphql` (POST, or GET for queries). Its schema is generated
-from your models, in memory: add a field in the admin and the next query can ask for it, with no restart. It
+GraphQL is served at `{PUBLIC_URL}{BASE_PATH}/api/graphql`: POST with a JSON body
+(`{ "query", "variables", "operationName" }`; `Content-Type: application/graphql` is not accepted, and neither are
+batched requests), or GET for queries (`?query=…&variables=<JSON>`; a mutation over GET is refused with `405`).
+Its schema is generated from your models, in memory: add a field in the admin and the next query can ask for it, with no restart. It
 uses the same permissions, filters, page sizes and services as the [REST delivery API](delivery-api.md), so a
 query returns exactly what the equivalent REST request returns.
 
@@ -21,7 +23,8 @@ Each site has its own schema: its own content types and the shared ones. Two sit
 with different fields, and each site's schema shows its own; a content type of one site is not in another
 site's schema or introspection, so a query for it there fails validation (`400`). Generate client types per
 site (introspect with `?site=` or `Shapio-Site`). A site's schema is built on its first request and rebuilt
-when a model changes.
+when a model changes; a site's schema that no request has used for ten minutes is dropped from memory and built
+again when next asked for.
 
 ## Schema shape
 
@@ -140,5 +143,6 @@ whose generated names would collide with them is refused when you save it.
 
 ## Playground
 
-Admins open GraphiQL at `/api/graphql/playground` (signed in to the admin). Its files are served by Shapio
+Admins open GraphiQL at `/api/graphql/playground` (signed in to the admin); `?site=<key>` points it at that
+site's schema, and the API docs page links it that way. Its files are served by Shapio
 itself, no CDN. Turn it off with `GRAPHQL_PLAYGROUND_ENABLED=false`.

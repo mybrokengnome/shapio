@@ -53,8 +53,9 @@ These differences are deliberate; ADR 0001 ("MySQL") explains each.
 
 - **Filterable and sortable fields: at most 56 per instance.** MySQL allows 64 indexes on a table and has no
   partial indexes, so every filterable or sortable field of every model is one index on the same content
-  table. Shapio refuses a model change that would need more, with a message naming the field. Clear
-  "filterable" or "sortable" on fields that do not need them.
+  table. The cap counts the models of every [site](sites.md) together, shared and site-owned: with several
+  sites, one site's filterable fields use up room the others then lack. Shapio refuses a model change that would
+  need more, with a message naming the field. Clear "filterable" or "sortable" on fields that do not need them.
 - **Text filters and sorts use the first 255 characters.** Equality with a longer value still compares the
   whole text. Two values that share their first 255 characters sort in an arbitrary order.
 - **Numbers compare as double precision**, exact to about 15 significant digits. Decimal and big integer

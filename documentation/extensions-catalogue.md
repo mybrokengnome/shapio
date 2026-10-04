@@ -203,9 +203,11 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   ```
 
 - **Lifecycle:** factories run in declaration order, may be async, and a throwing factory stops startup.
-- **Sites:** content and media are per site. Services handed to a hook read the hook's site; those given to
-  routes, jobs and factories read the primary site until you call `forSite`. Your custom services are shared
-  across sites as they are, so pass them the site they should work on.
+- **Sites:** content and media are per site, and so is the schema: `content.models()` lists the site's view
+  (its own content types and the shared ones), and `content.get`, `list` and `count` resolve a model's API ID in
+  that view, so a content type of another site is unknown there. Services handed to a hook read the hook's site;
+  those given to routes, jobs and factories read the primary site until you call `forSite`. Your custom services
+  are shared across sites as they are, so pass them the site they should work on.
 - **Limits:** content reads run as Shapio itself unless you pass a `principal`. They read committed data: inside a
   `before*` hook, read your own uncommitted writes through `trx`. Read your own settings from environment
   variables; `config` only carries `nodeEnv`, `publicUrl`, `basePath` and `projectDir`.
