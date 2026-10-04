@@ -27,7 +27,13 @@ import type { ActorContext, ClientInfo, SiteRef } from './actorContext.js';
 import { createSession, type IssuedSession } from './adminSessions.js';
 import { normalizeEmail, toAdminUserView, type AdminUserView } from './adminUsers.js';
 import { recordAudit } from './audit.js';
-import { getSiteSummary, listAccessibleSites, toSiteSummary, type SiteSummaryView } from './sites.js';
+import {
+  countSites,
+  getSiteSummary,
+  listAccessibleSites,
+  toSiteSummary,
+  type SiteSummaryView,
+} from './sites.js';
 
 export type AuthenticatedSession = { adminUserId: string; session: IssuedSession };
 
@@ -121,6 +127,8 @@ export type MeView = {
   site: SiteSummaryView;
   /** The sites this admin works on (every site for a role assigned on every site). */
   sites: SiteSummaryView[];
+  /** How many sites the instance has, whatever this admin's roles (1: no per-site schema UI). */
+  siteCount: number;
   /** Network actions (roles assigned on every site only). */
   networkPermissions: NetworkAction[];
   /**
@@ -171,10 +179,11 @@ export const getMe = async (
   if (!user) {
     throw new AppError(401, 'UNAUTHENTICATED', 'Sign in to continue');
   }
-  const [roles, sites, current] = await Promise.all([
+  const [roles, sites, current, siteCount] = await Promise.all([
     adminRolesRepository.findByIds(principal.roleIds),
     listAccessibleSites(principal),
     getSiteSummary(site.id),
+    countSites(),
   ]);
   const networkPermissions = await allowedActions(principal, permissions, NETWORK_ACTIONS);
   const siteActions = await allowedActions(principal, permissions, SITE_ACTIONS);
@@ -192,6 +201,7 @@ export const getMe = async (
     roles: roles.map(({ id, key, name }) => ({ id, key, name })),
     site: current,
     sites: sites.map(toSiteSummary),
+    siteCount,
     networkPermissions,
     sitePermissions,
     globalPermissions: GLOBAL_ACTIONS.filter(

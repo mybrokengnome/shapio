@@ -243,7 +243,7 @@ describe('two instances on one database', { timeout: 120_000 }, () => {
     await query('title');
     measure('GraphQL query on B with a warm schema', elapsedSince(started));
 
-    const rebuildsBefore = b.logs.filter((line) => line.msg === 'GraphQL schema rebuilt').length;
+    const rebuildsBefore = b.logs.filter((line) => line.msg === 'GraphQL schema built').length;
     expect(
       (await changeFields(a, modelId, [{ apiKey: 'venue', label: 'Venue', type: 'string' }])).status,
     ).toBe(200);
@@ -253,8 +253,8 @@ describe('two instances on one database', { timeout: 120_000 }, () => {
     expect(fresh.body).toEqual({ data: { events: { nodes: [{ title: 'Launch', venue: null }] } } });
     // B's log line travels over its stdout pipe and can arrive after the response: wait for it.
     await waitFor(
-      async () => b.logs.filter((line) => line.msg === 'GraphQL schema rebuilt').length > rebuildsBefore,
-      { description: "B to log 'GraphQL schema rebuilt' for the change" },
+      async () => b.logs.filter((line) => line.msg === 'GraphQL schema built').length > rebuildsBefore,
+      { description: "B to log 'GraphQL schema built' for the change" },
     );
   });
 

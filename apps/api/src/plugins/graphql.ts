@@ -1,150 +1,57 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
-import { Kind, type DocumentNode, type OperationDefinitionNode } from 'graphql';
-import mercurius from 'mercurius';
+import { specifiedRules, type ValidationRule } from 'graphql';
 import type { GraphqlConfig } from '../config/graphql.js';
-import { PRIMARY_SITE_ID } from '../constants/sites.js';
-import { contentContextFor } from '../controllers/contentContext.js';
-import { AppError } from '../helpers/appError.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 import type { Principal } from '../permissions/types.js';
-import { createLimitsRule, fragmentsOf, selectsIntrospection } from '../schema/codegen/graphql/complexity.js';
-import type { GraphqlContext, GraphqlRequestContext } from '../schema/codegen/graphql/context.js';
-import { createErrorFormatter } from '../schema/codegen/graphql/errors.js';
-import { createLoaders } from '../schema/codegen/graphql/loaders.js';
-import { memoizePermissions } from '../schema/codegen/graphql/permissions.js';
-import { buildGraphqlSchema } from '../schema/codegen/graphql/schemaBuilder.js';
-import { createGraphqlSchemaCache } from '../schema/codegen/graphql/schemaCache.js';
-import { buildSnapshot, type NetworkSchema, type SchemaSnapshot } from '../schema/snapshot.js';
-import type { ContentServiceContext } from '../services/contentAccess.js';
-import { cacheHeaders, collectUsage, csrfForGet, recordUsage } from './graphqlHooks.js';
-import { getRequestNetworkSchema } from './schemaSnapshot.js';
-import { getRequestSite } from './siteResolution.js';
+import { graphqlRoutes } from '../routes/graphql/index.js';
+import { createLimitsRule } from '../schema/codegen/graphql/complexity.js';
+import { createDocumentCache, type DocumentCache } from '../schema/codegen/graphql/documentCache.js';
+import { createGraphqlSchemaCache, type GraphqlSchemaCache } from '../schema/codegen/graphql/schemaCache.js';
+
+/** What `/api/graphql` requests share: the per-site schemas, the validated documents and the rules. */
+export type GraphqlRuntime = {
+  schemas: GraphqlSchemaCache;
+  documents: DocumentCache;
+  /** graphql-js's specified rules plus the depth, cost and alias limits. */
+  rules: readonly ValidationRule[];
+  /** Admin users and API tokens may introspect (anyone, with GRAPHQL_PUBLIC_INTROSPECTION=true). */
+  mayIntrospect: (principal: Principal) => boolean;
+};
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    graphqlRuntime: GraphqlRuntime;
+  }
+}
 
 type GraphqlPluginOptions = { config: GraphqlConfig; urls: UrlBuilder };
 
-const isAdminPrincipal = (principal: Principal) =>
-  principal.kind === 'admin' || (principal.kind === 'token' && principal.scope === 'admin');
-
-const introspectionDisabled = () =>
-  new AppError(
-    403,
-    'INTROSPECTION_DISABLED',
-    'Schema introspection needs an admin session or an API token (or GRAPHQL_PUBLIC_INTROSPECTION=true)',
-  );
-
-const operationsOf = (document: DocumentNode) =>
-  document.definitions.filter(
-    (definition): definition is OperationDefinitionNode => definition.kind === Kind.OPERATION_DEFINITION,
-  );
-
 /**
- * `/api/graphql` (ADR 0006): mercurius over a schema generated in memory from the active registry. Each
- * request pins its schema snapshot and, when the snapshot is newer than the served schema, waits for the
- * single-flight rebuild before executing; no restart is ever needed. Credentials, CSRF (cookie sessions,
- * every method), rate limits and the evaluator are the same as REST's.
+ * `/api/graphql` (ADR 0006): graphql-js over one schema per site view, generated in memory from the active
+ * registry. Each request pins its schema snapshot, takes its site's view and gets that view's schema from
+ * the cache (built on first use, rebuilt when the version moves); no restart is ever needed. Credentials,
+ * CSRF (cookie sessions, every method), rate limits and the evaluator are the same as REST's.
  */
 export const graphqlPlugin = fp<GraphqlPluginOptions>(
   async (app: FastifyInstance, { config, urls }) => {
     const log = app.log.child({ component: 'graphql' });
-    const mayIntrospect = (principal: Principal) =>
-      config.publicIntrospection || principal.kind === 'admin' || principal.kind === 'token';
-    const cache = createGraphqlSchemaCache((schema) => app.graphql.replaceSchema(schema), log);
-
-    const context = (request: FastifyRequest): GraphqlRequestContext => {
-      // Read on use, not here: mercurius's error handler also builds a context for requests that site
-      // resolution refused (403 SITE_MISMATCH, 404 SITE_NOT_FOUND), which have no site and never execute.
-      const site = () => getRequestSite(request);
-      const permissions = memoizePermissions(request.server.permissions, request.principal);
-      let base: Promise<ContentServiceContext> | undefined;
-      const content = async (snapshot: SchemaSnapshot): Promise<ContentServiceContext> => {
-        base ??= contentContextFor(request);
-        return { ...(await base), snapshot, permissions };
-      };
-      return {
-        request,
-        permissions,
-        isAdmin: isAdminPrincipal(request.principal),
-        get site() {
-          return site();
-        },
-        loaders: createLoaders(() => site().id, content),
-        content,
-      };
-    };
-
-    // Interim until per-site GraphQL schemas (plan site-schema P2): one served schema, the primary site's
-    // view (shared definitions and the primary site's own). Data is still read on the request's site.
-    const servedView = (network: NetworkSchema) => network.forSite(PRIMARY_SITE_ID);
-    const pinSchema = async (request: FastifyRequest, reply: FastifyReply) => {
-      await cache.ensure(servedView(await getRequestNetworkSchema(request)));
-      // mercurius's response schema types error paths as strings; GraphQL paths carry list indices as
-      // numbers. Results are plain JSON, so serialize them as they are.
-      reply.serializer((payload) => JSON.stringify(payload));
-    };
-    await app.register(mercurius, {
-      // Replaced by the first request's snapshot before anything executes.
-      schema: buildGraphqlSchema(buildSnapshot(0, [], [])).schema,
-      path: urls.withBasePath('/api/graphql'),
-      graphiql: false,
-      jit: 0,
-      allowBatchedQueries: false,
-      context,
-      // Callers who may not introspect also get no "Did you mean …?" hints naming schema members.
-      errorFormatter: createErrorFormatter(log, {
-        hideSuggestions: (formatterContext) => {
-          const request = formatterContext?.reply?.request;
-          return !request || !mayIntrospect(request.principal);
-        },
-      }),
-      validationRules: [createLimitsRule(config)],
-      additionalRouteOptions: {
-        config: {
-          audit: {
-            exempt: 'GraphQL mutations call the content services, which record revisions and audit events',
-          },
-          // Delivery and admin content reads are about one site (its token's, `?site=`, else the primary).
-          site: 'site',
-        },
-        preHandler: [csrfForGet(app), pinSchema],
-        onSend: cacheHeaders,
-      },
+    const schemas = createGraphqlSchemaCache({ log });
+    app.decorate('graphqlRuntime', {
+      schemas,
+      documents: createDocumentCache(),
+      rules: [...specifiedRules, createLimitsRule(config)],
+      mayIntrospect: (principal) =>
+        config.publicIntrospection || principal.kind === 'admin' || principal.kind === 'token',
     });
 
-    app.graphql.addHook('preExecution', async (_schema, document, executionContext) => {
-      const { request } = executionContext as unknown as GraphqlContext;
-      if (mayIntrospect(request.principal)) {
-        return;
-      }
-      const fragments = fragmentsOf(document.definitions);
-      if (
-        operationsOf(document).some((operation) => selectsIntrospection(operation.selectionSet, fragments))
-      ) {
-        throw introspectionDisabled();
-      }
-    });
+    await app.register(graphqlRoutes, { prefix: urls.withBasePath('/api/graphql') });
 
-    // Field usage: selections walked once per operation, counted when it resolves with data.
-    app.graphql.addHook('preExecution', (schema, document, executionContext, variables) => {
-      const { request } = executionContext as unknown as GraphqlContext;
-      collectUsage(request, schema, document, variables);
-    });
-    app.graphql.addHook('onResolution', (execution, executionContext) => {
-      const { request } = executionContext as unknown as GraphqlContext;
-      recordUsage(request, execution.data !== null && execution.data !== undefined);
-    });
-
-    // NOTIFY optimisation: rebuild as soon as this instance learns of a new version.
-    const unsubscribe = app.schemaRegistry.onChange((snapshot) => {
-      cache.ensure(servedView(snapshot)).catch((error: unknown) => {
-        log.warn(
-          { err: error, schemaVersion: snapshot.version },
-          'GraphQL rebuild failed; the next request retries',
-        );
-      });
-    });
+    // NOTIFY optimisation: sites already served get their new schema before their next request needs it.
+    const unsubscribe = app.schemaRegistry.onChange((network) => schemas.refresh(network));
     app.addHook('onClose', async () => {
       unsubscribe();
+      schemas.close();
     });
   },
   {

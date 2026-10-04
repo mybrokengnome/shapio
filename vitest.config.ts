@@ -14,8 +14,8 @@ const NODE_CONDITIONS = [
   ...defaultServerConditions.filter((condition) => condition !== 'module'),
 ];
 // Node ignores graphql's `module` field (it has no `exports`) and loads its CommonJS build; Vite would pick
-// index.mjs for Shapio's source while mercurius requires the CommonJS one, and graphql-js rejects schemas
-// across the two copies. Point every import at the build Node uses.
+// index.mjs for Shapio's source, and graphql-js rejects schemas across two copies should any CommonJS
+// dependency require the other one. Point every import at the build Node uses in production.
 const GRAPHQL_MAIN = createRequire(new URL('./apps/api/package.json', import.meta.url)).resolve('graphql');
 const nodeResolve = {
   conditions: NODE_CONDITIONS,

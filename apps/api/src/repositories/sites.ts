@@ -10,6 +10,15 @@ export type NewSite = Pick<Insertable<Sites>, 'key' | 'name'>;
 export const list = (trx: Executor = db) =>
   trx.selectFrom('sites').selectAll().orderBy('is_primary', 'desc').orderBy('name').orderBy('key').execute();
 
+/** How many sites the instance has. */
+export const count = async (trx: Executor = db): Promise<number> => {
+  const row = await trx
+    .selectFrom('sites')
+    .select((eb) => eb.fn.countAll<number | string | bigint>().as('count'))
+    .executeTakeFirst();
+  return Number(row?.count ?? 0);
+};
+
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('sites').selectAll().where('id', '=', id).executeTakeFirst();
 

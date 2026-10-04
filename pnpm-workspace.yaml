@@ -11,7 +11,7 @@ packages:
 # Versions verified against the npm registry on 2026-10-01. Exact pins; the lockfile pins transitives.
 # Notes:
 # - typescript stays on 6.0.x: typescript-eslint 8.x peers on typescript <6.1.0 (7.x is the native port).
-# - graphql stays on 16.x: mercurius 16 peers on graphql ^16.
+# - graphql stays on 16.x until a deliberate upgrade (ADR 0006).
 catalog:
   # Backend
   fastify: 5.12.5
@@ -39,9 +39,8 @@ catalog:
   '@fastify/cookie': 11.1.2
   '@fastify/csrf-protection': 8.0.1
   nodemailer: 10.0.13
-  # GraphQL (package J): graphql stays on 16.x (mercurius 16 peers on graphql ^16)
+  # GraphQL (package J, ADR 0006)
   graphql: 16.14.2
-  mercurius: 16.10.1
   dataloader: 2.2.3
   '@types/nodemailer': 8.0.2
   # Media (package G)

@@ -11,6 +11,7 @@ type SiteBody = { id: string; key: string; name: string; isPrimary: boolean; ver
 type MeBody = {
   site: { key: string };
   sites: Array<{ key: string }>;
+  siteCount: number;
   networkPermissions: string[];
   sitePermissions: string[];
   globalPermissions: string[];
@@ -72,9 +73,12 @@ describe('sites (plan §H, G1 foundation)', () => {
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { register: registerProbe });
     owner = await login(testApp.app, await createAdmin(database.current.db));
+    const siteCount = async () => (await as(owner).get('/api/admin/auth/me')).json<MeBody>().siteCount;
+    expect(await siteCount()).toBe(1);
     const created = await as(owner).post('/api/admin/sites', { key: 'marketing', name: 'Marketing' });
     expect(created.statusCode).toBe(201);
     other = created.json<SiteBody>();
+    expect(await siteCount()).toBe(2);
   });
 
   afterAll(async () => {
@@ -318,6 +322,10 @@ describe('sites (plan §H, G1 foundation)', () => {
       ).json<MeBody>();
       expect(onSite.site.key).toBe('marketing');
       expect(onSite.sites.map((site) => site.key)).toEqual(['marketing']);
+      // Every site of the instance counts, not only those this admin works on.
+      const allSites = (await as(owner).get('/api/admin/sites')).json<SiteBody[]>();
+      expect(onSite.siteCount).toBe(allSites.length);
+      expect(onSite.siteCount).toBeGreaterThan(1);
       expect(onSite.networkPermissions).toEqual([]);
       expect(onSite.sitePermissions).toContain('tokens.manage');
       expect(onSite.globalPermissions).toEqual(onSite.sitePermissions);

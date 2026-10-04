@@ -13,9 +13,15 @@ Requests made with the admin's session cookie must also send the `X-CSRF-Token` 
 
 On an instance with several [sites](sites.md), a request reads one site, chosen as in REST
 ([Delivery API](delivery-api.md#sites)): the token's site, else the `Shapio-Site` header or `?site=`, else the
-primary site. Naming another site than the token's is refused with `403 SITE_MISMATCH`. The schema is the same
-for every site; the entries, `_snapshot` and `_changes` are the request site's. GET responses vary on
-`Shapio-Site` as well as on the credentials.
+primary site. Naming another site than the token's is refused with `403 SITE_MISMATCH`. The entries,
+`_snapshot` and `_changes` are the request site's. GET responses vary on `Shapio-Site` as well as on the
+credentials.
+
+Each site has its own schema: its own content types and the shared ones. Two sites can each have a `post`
+with different fields, and each site's schema shows its own; a content type of one site is not in another
+site's schema or introspection, so a query for it there fails validation (`400`). Generate client types per
+site (introspect with `?site=` or `Shapio-Site`). A site's schema is built on its first request and rebuilt
+when a model changes.
 
 ## Schema shape
 

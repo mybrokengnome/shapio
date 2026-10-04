@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import * as apiDocsService from '../services/apiDocs.js';
 
 export const getOpenApi = async (request: FastifyRequest) =>
@@ -13,6 +14,7 @@ export const getDocsPage = async (request: FastifyRequest, reply: FastifyReply) 
         await getRequestSchema(request),
         request.server.urls,
         request.server.config.graphql,
+        getRequestSite(request).key,
       ),
     );
 

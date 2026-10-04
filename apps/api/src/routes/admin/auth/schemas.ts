@@ -42,6 +42,8 @@ export const getMeSchema = {
       site: SiteSummarySchema,
       /** Every site this admin holds a role on (all sites for a role assigned on every site). */
       sites: Type.Array(SiteSummarySchema),
+      /** How many sites the instance has, whatever this admin's roles (1: no per-site schema UI). */
+      siteCount: Type.Integer({ minimum: 1 }),
       /** Network actions (roles assigned on every site only). */
       networkPermissions: Type.Array(NetworkActionSchema),
       /** Site actions on the request's site. */

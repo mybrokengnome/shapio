@@ -1,5 +1,4 @@
 import type { FastifyRequest } from 'fastify';
-import type { MercuriusContext } from 'mercurius';
 import type { PermissionEvaluator } from '../../../permissions/types.js';
 import type { SiteRef } from '../../../services/actorContext.js';
 import type { ContentServiceContext } from '../../../services/contentAccess.js';
@@ -16,7 +15,7 @@ export type ReadScope = BatchReadOptions;
 /** The source object of every entry and component type: the delivery projection plus its read scope. */
 export type ValueNode = { data: Record<string, unknown>; scope: ReadScope };
 
-/** Per-request state, built by plugins/graphql.ts. */
+/** Per-request state, built by requestContext.ts. */
 export type GraphqlRequestContext = {
   request: FastifyRequest;
   /** The request's evaluator, memoized per (model, action): one evaluation per request (ADR 0005). */
@@ -25,7 +24,7 @@ export type GraphqlRequestContext = {
   isAdmin: boolean;
   /**
    * The request's site (plugins/siteResolution.ts: the credential's, else `Shapio-Site` / `?site=`, else the
-   * primary site). Every read, `_snapshot` and `_changes` are about this site; the schema is shared.
+   * primary site). Every read, `_snapshot` and `_changes` are about this site, and the schema is its view.
    */
   site: SiteRef;
   loaders: GraphqlLoaders;
@@ -33,7 +32,7 @@ export type GraphqlRequestContext = {
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>;
 };
 
-export type GraphqlContext = MercuriusContext & GraphqlRequestContext;
+export type GraphqlContext = GraphqlRequestContext;
 
 /** An entry as a GraphQL source object. Drafts carry no publication time. */
 export const entryNode = (entry: DeliveryEntry, scope: ReadScope): ValueNode => ({

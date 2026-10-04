@@ -21,7 +21,7 @@ import { QUERY_LIMITS } from '../../../content/compiler/types.js';
 
 /**
  * Depth and cost limits (ADR 0006), as one GraphQL validation rule so results are cached with the parsed
- * query (mercurius clears that cache whenever the schema is replaced). Introspection (`__schema`,
+ * query (documentCache.ts keys that cache by schema, so a new schema starts empty). Introspection (`__schema`,
  * `__type`) is exempt from both: it is bounded by the schema, and whether a caller may introspect at all is
  * decided per request (plugins/graphql.ts).
  *

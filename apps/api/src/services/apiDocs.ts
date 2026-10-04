@@ -1,4 +1,5 @@
 import type { GraphqlConfig } from '../config/graphql.js';
+import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { SHAPIO_VERSION } from '../constants/version.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 import { renderDocsPage } from '../schema/codegen/docsPage.js';
@@ -34,15 +35,23 @@ const forSnapshot = (snapshot: SchemaSnapshot, urls: UrlBuilder): Cached => {
 export const getOpenApiDocument = (snapshot: SchemaSnapshot, urls: UrlBuilder) =>
   forSnapshot(snapshot, urls).openApi;
 
-export const getDocsPage = (snapshot: SchemaSnapshot, urls: UrlBuilder, graphql: GraphqlConfig) => {
+/** The page is one site's (cached per site): its links name that site, so they open the same view. */
+export const getDocsPage = (
+  snapshot: SchemaSnapshot,
+  urls: UrlBuilder,
+  graphql: GraphqlConfig,
+  siteKey: string,
+) => {
   const entry = forSnapshot(snapshot, urls);
+  const forSite = (path: string) =>
+    `${urls.withBasePath(path)}?${SITE_QUERY_PARAMETER}=${encodeURIComponent(siteKey)}`;
   entry.html ??= renderDocsPage(
     entry.openApi as Parameters<typeof renderDocsPage>[0],
-    urls.withBasePath('/api/docs/openapi.json'),
+    forSite('/api/docs/openapi.json'),
     graphql.enabled
       ? {
-          endpoint: urls.withBasePath('/api/graphql'),
-          playground: graphql.playgroundEnabled ? urls.withBasePath('/api/graphql/playground') : undefined,
+          endpoint: forSite('/api/graphql'),
+          playground: graphql.playgroundEnabled ? forSite('/api/graphql/playground') : undefined,
         }
       : undefined,
   );

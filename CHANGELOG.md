@@ -6,7 +6,15 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **GraphQL serves one schema per site.** `/api/graphql` answers with the request site's schema: its own
+  content types and the shared ones, so two sites can each have a `post` with different fields, and a site's
+  content types are absent from another site's schema and introspection. The endpoint now runs on graphql-js
+  directly (mercurius removed); status codes and the error shape are unchanged (400 for parse and validation
+  errors, 200 when there is data, 405 for a mutation over GET). POST bodies must be JSON:
+  `Content-Type: application/graphql` is no longer accepted. The API docs page links the GraphQL endpoint,
+  the playground and the OpenAPI document with `?site=`.
 
 ## [0.2.1] - 2026-10-04
 

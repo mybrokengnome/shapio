@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { Kind, type DocumentNode, type GraphQLSchema, type OperationDefinitionNode } from 'graphql';
+import type { DocumentNode, GraphQLSchema, OperationDefinitionNode } from 'graphql';
 import { DELIVERY_VARY } from '../constants/sites.js';
 import { appendVary } from '../helpers/vary.js';
 import { fragmentsOf } from '../schema/codegen/graphql/complexity.js';
@@ -8,7 +8,7 @@ import { operationUsage, type OperationUsage } from '../schema/codegen/graphql/u
 import { usagePrincipalKey } from '../usage/keys.js';
 import { getRequestSite } from './siteResolution.js';
 
-/** Route hooks of `/api/graphql` (plugins/graphql.ts). */
+/** Route hooks and usage counting of `/api/graphql` (routes/graphql, controllers/graphql.ts). */
 
 /**
  * Cookie sessions need the CSRF header on every GraphQL request (ADR 0005). POSTs are already checked by
@@ -50,48 +50,30 @@ export const cacheHeaders = async (request: FastifyRequest, reply: FastifyReply,
   return payload;
 };
 
-const pendingUsage = new WeakMap<FastifyRequest, { principalKey: string; usage: OperationUsage }>();
-
-/** The operation mercurius executes: the only one, or the one named by the request's `operationName`. */
-const executedOperation = (request: FastifyRequest, document: DocumentNode) => {
-  const operations = document.definitions.filter(
-    (definition): definition is OperationDefinitionNode => definition.kind === Kind.OPERATION_DEFINITION,
-  );
-  if (operations.length <= 1) {
-    return operations[0];
-  }
-  const source = (request.method === 'GET' ? request.query : request.body) as {
-    operationName?: unknown;
-  } | null;
-  const name = source?.operationName;
-  return operations.find((operation) => operation.name?.value === name);
-};
+/** What one operation reads, counted once it resolves with data. */
+export type PendingUsage = { principalKey: string; usage: OperationUsage };
 
 /**
- * Field usage (plan developer-face §5), step 1 (`preExecution`): what the operation selects, walked once
- * per operation. Admin users and previews are not counted (usage/keys.ts).
+ * Field usage (plan developer-face §5), step 1 (before execution): what the executed operation selects,
+ * walked once per operation. Admin users and previews are not counted (usage/keys.ts).
  */
 export const collectUsage = (
   request: FastifyRequest,
   schema: GraphQLSchema,
   document: DocumentNode,
+  operation: OperationDefinitionNode,
   variables: Record<string, unknown> | undefined,
-) => {
+): PendingUsage | undefined => {
   const principalKey = usagePrincipalKey(request.principal);
-  const operation = executedOperation(request, document);
-  if (principalKey === null || !operation) {
-    return;
+  if (principalKey === null) {
+    return undefined;
   }
   const usage = operationUsage(schema, operation, fragmentsOf(document.definitions), variables ?? {});
-  if (usage.reads.size > 0) {
-    pendingUsage.set(request, { principalKey, usage });
-  }
+  return usage.reads.size > 0 ? { principalKey, usage } : undefined;
 };
 
-/** Step 2 (`onResolution`): counts the reads once the operation returned data. */
-export const recordUsage = (request: FastifyRequest, hasData: boolean) => {
-  const pending = pendingUsage.get(request);
-  pendingUsage.delete(request);
+/** Step 2 (after execution): counts the reads once the operation returned data. */
+export const recordUsage = (request: FastifyRequest, pending: PendingUsage | undefined, hasData: boolean) => {
   if (!pending || !hasData) {
     return;
   }

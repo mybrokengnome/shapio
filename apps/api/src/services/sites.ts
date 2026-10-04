@@ -53,6 +53,9 @@ export const toSiteRef = (row: Pick<SiteRow, 'id' | 'key'>): SiteRef => ({ id: r
 const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Site not found');
 
 /** A site's summary by ID (`me` for a site the admin holds no role on: they see its name, nothing else). */
+/** How many sites the instance has, whatever roles the caller holds (one: per-site schema UI is moot). */
+export const countSites = (): Promise<number> => sitesRepository.count();
+
 export const getSiteSummary = async (siteId: string): Promise<SiteSummaryView> => {
   const site = await sitesRepository.findById(siteId);
   if (!site) {
