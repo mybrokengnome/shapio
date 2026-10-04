@@ -51,6 +51,7 @@ const exampleOpenApi = async () => {
   const actives = await Promise.all(
     definitions.map(async (definition) => ({
       definition,
+      siteId: null,
       version: 1,
       revisionId: ZERO_UUID,
       hash: await hashDefinition(definition),

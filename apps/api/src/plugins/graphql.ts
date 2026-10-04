@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import { Kind, type DocumentNode, type OperationDefinitionNode } from 'graphql';
 import mercurius from 'mercurius';
 import type { GraphqlConfig } from '../config/graphql.js';
+import { PRIMARY_SITE_ID } from '../constants/sites.js';
 import { contentContextFor } from '../controllers/contentContext.js';
 import { AppError } from '../helpers/appError.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
@@ -14,10 +15,10 @@ import { createLoaders } from '../schema/codegen/graphql/loaders.js';
 import { memoizePermissions } from '../schema/codegen/graphql/permissions.js';
 import { buildGraphqlSchema } from '../schema/codegen/graphql/schemaBuilder.js';
 import { createGraphqlSchemaCache } from '../schema/codegen/graphql/schemaCache.js';
-import { buildSnapshot, type SchemaSnapshot } from '../schema/snapshot.js';
+import { buildSnapshot, type NetworkSchema, type SchemaSnapshot } from '../schema/snapshot.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
 import { cacheHeaders, collectUsage, csrfForGet, recordUsage } from './graphqlHooks.js';
-import { getRequestSchema } from './schemaSnapshot.js';
+import { getRequestNetworkSchema } from './schemaSnapshot.js';
 import { getRequestSite } from './siteResolution.js';
 
 type GraphqlPluginOptions = { config: GraphqlConfig; urls: UrlBuilder };
@@ -72,8 +73,11 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
       };
     };
 
+    // Interim until per-site GraphQL schemas (plan site-schema P2): one served schema, the primary site's
+    // view (shared definitions and the primary site's own). Data is still read on the request's site.
+    const servedView = (network: NetworkSchema) => network.forSite(PRIMARY_SITE_ID);
     const pinSchema = async (request: FastifyRequest, reply: FastifyReply) => {
-      await cache.ensure(await getRequestSchema(request));
+      await cache.ensure(servedView(await getRequestNetworkSchema(request)));
       // mercurius's response schema types error paths as strings; GraphQL paths carry list indices as
       // numbers. Results are plain JSON, so serialize them as they are.
       reply.serializer((payload) => JSON.stringify(payload));
@@ -132,7 +136,7 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
 
     // NOTIFY optimisation: rebuild as soon as this instance learns of a new version.
     const unsubscribe = app.schemaRegistry.onChange((snapshot) => {
-      cache.ensure(snapshot).catch((error: unknown) => {
+      cache.ensure(servedView(snapshot)).catch((error: unknown) => {
         log.warn(
           { err: error, schemaVersion: snapshot.version },
           'GraphQL rebuild failed; the next request retries',

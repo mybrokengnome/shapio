@@ -5,7 +5,11 @@ import { memoizePermissions } from './permissions.js';
 describe('memoizePermissions', () => {
   it('evaluates each (action, model) once per request', async () => {
     const evaluate = vi.fn<PermissionEvaluator['evaluate']>(async () => DENIED_POLICY);
-    const base: PermissionEvaluator = { evaluate, canPerform: async () => false };
+    const base: PermissionEvaluator = {
+      evaluate,
+      canPerform: async () => false,
+      canPerformOnSite: async () => false,
+    };
     const principal: Principal = { kind: 'anonymous', siteId: null };
     const memo = memoizePermissions(base, principal);
     await Promise.all([

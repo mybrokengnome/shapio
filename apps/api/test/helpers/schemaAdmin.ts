@@ -16,7 +16,12 @@ import { waitFor } from './waitFor.js';
  * An API token bound to a built-in role (`admin` by default: schema.create plus schemaManage on every
  * model), inserted directly. Bearer tokens need no CSRF header, which keeps schema tests short.
  */
-export const createRoleToken = async (db: Database, roleKey = 'admin'): Promise<string> => {
+export const createRoleToken = async (
+  db: Database,
+  roleKey = 'admin',
+  /** A site token (its role applies on that site only); default null: a network token. */
+  siteId: string | null = null,
+): Promise<string> => {
   const [role] = await adminRolesRepository.findByKeys([roleKey], db);
   if (!role) {
     throw new Error(`Role ${roleKey} is not seeded; build the app first`);
@@ -28,6 +33,7 @@ export const createRoleToken = async (db: Database, roleKey = 'admin'): Promise<
       token_hash: hashToken(token),
       token_prefix: token.slice(0, API_TOKEN_DISPLAY_LENGTH),
       role_id: role.id,
+      site_id: siteId,
     },
     db,
   );

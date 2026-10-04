@@ -12,7 +12,7 @@ import {
   PasswordSchema,
   PersonNameSchema,
   SessionStartedSchema,
-  SiteActionSchema,
+  SitePermissionSchema,
   UuidSchema,
 } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
@@ -45,7 +45,7 @@ export const getMeSchema = {
       /** Network actions (roles assigned on every site only). */
       networkPermissions: Type.Array(NetworkActionSchema),
       /** Site actions on the request's site. */
-      sitePermissions: Type.Array(SiteActionSchema),
+      sitePermissions: Type.Array(SitePermissionSchema),
       /** `networkPermissions` and `sitePermissions` together, for screens that do not distinguish them. */
       globalPermissions: Type.Array(GlobalActionSchema),
       /** Content actions per model ID on the request's site (models with none are left out). */

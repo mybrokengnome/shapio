@@ -22,14 +22,23 @@ export const createDefinition = async (
   admin: SchemaClient,
   definition: Record<string, unknown>,
   kind: 'models' | 'components' = 'models',
+  /** `network`: shared with every site; default: the request's site only (plan site-schema). */
+  scope?: 'network' | 'site',
 ): Promise<ModelBody> => {
-  const created = await admin.post(`/api/admin/${kind}`, { definition });
+  const created = await admin.post(`/api/admin/${kind}`, { definition, ...(scope ? { scope } : {}) });
   if (created.statusCode !== 201) {
     throw new Error(`Creating ${String(definition.apiKey)} failed: ${created.statusCode} ${created.body}`);
   }
   const { definitionId } = created.json<{ definitionId: string }>();
   return (await admin.get(`/api/admin/${kind}/${definitionId}`)).json<ModelBody>();
 };
+
+/** A definition shared with every site (`scope: 'network'`), for tests that use one model on several sites. */
+export const createSharedDefinition = (
+  admin: SchemaClient,
+  definition: Record<string, unknown>,
+  kind: 'models' | 'components' = 'models',
+): Promise<ModelBody> => createDefinition(admin, definition, kind, 'network');
 
 export const fieldIdOf = (model: ModelBody, apiKey: string): string => {
   const field = model.definition.fields.find((candidate) => candidate.apiKey === apiKey);

@@ -54,8 +54,10 @@ describe('shapio schema pull | diff | apply', () => {
   const schemaVersion = async () =>
     (await admin.get('/api/admin/schema')).json<{ schemaVersion: number }>().schemaVersion;
   const createModel = async (apiKey: string) => {
+    // Shared: the CLI writes `models/` (format-1 trees); site folders are covered by the per-site cases.
     const response = await admin.post('/api/admin/models', {
       definition: pageDefinition({ apiKey, label: apiKey }),
+      scope: 'network',
     });
     expect(response.statusCode, response.body).toBe(201);
     return response.json<{ definitionId: string }>().definitionId;

@@ -5,7 +5,7 @@ import * as entriesRepository from '../../repositories/entries.js';
 import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { StepOutcome } from '../../schema/planner/contentPorts.js';
 import { stepKey, type ContentStep } from '../../schema/planner/steps.js';
-import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import type { SchemaById } from '../../schema/snapshot.js';
 import { resolveModelById } from '../model.js';
 import { uniqueKeysOf } from '../unique.js';
 import { buildValidator, isMissingValue } from '../validator/index.js';
@@ -51,7 +51,7 @@ const lacksRequired = (step: Extract<ContentStep, { kind: 'validateRequired' }>,
       ),
     );
 
-const isValid = (proposed: SchemaSnapshot, head: ProposedHead) => {
+const isValid = (proposed: SchemaById, head: ProposedHead) => {
   const model = resolveModelById(proposed, head.model_id);
   return (
     !model ||
@@ -93,7 +93,7 @@ export const registryFieldIdOf = (step: Extract<ContentStep, { kind: 'checkUniqu
 const claimUnique = async (
   step: Extract<ContentStep, { kind: 'checkUnique' }>,
   proposal: EntryProposal,
-  proposed: SchemaSnapshot,
+  proposed: SchemaById,
   executor: Executor,
 ): Promise<boolean> => {
   const model = resolveModelById(proposed, step.modelId);
@@ -122,7 +122,7 @@ const add = (failures: StepFailures, key: string, count = 1) =>
 export const checkEntry = async (
   proposal: EntryProposal,
   steps: readonly ContentStep[],
-  context: { proposed: SchemaSnapshot; executor: Executor },
+  context: { proposed: SchemaById; executor: Executor },
 ): Promise<StepFailures> => {
   const failures: StepFailures = new Map(proposal.failedSteps);
   for (const head of proposal.heads) {
@@ -192,7 +192,7 @@ const SINGLETON_REASON = 'A single type can hold only one entry; delete the othe
 /** A model that becomes a singleton may hold at most one entry per site (definition-level `validateValues`). */
 export const singletonViolation = async (
   steps: readonly ContentStep[],
-  proposed: SchemaSnapshot,
+  proposed: SchemaById,
   executor: Executor,
 ): Promise<StepOutcome | undefined> => {
   for (const step of steps) {

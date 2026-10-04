@@ -86,7 +86,7 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
       fields: fields(false),
     });
     await runContentSchemaJobs(database.current.db);
-    snapshot = await testApp.app.schemaRegistry.getSnapshot();
+    snapshot = (await testApp.app.schemaRegistry.getSnapshot()).forSite(PRIMARY_SITE_ID);
     await seed(listing, ['en', 'fr']);
     await seed(catalog, ['en']);
     // Autovacuum's job in production; the index job also analyzes right after a build.

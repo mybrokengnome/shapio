@@ -6,7 +6,7 @@ import * as localesRepository from '../repositories/locales.js';
 import type { LocaleRow } from '../repositories/locales.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
-import { buildSnapshot, type ActiveDefinition, type SchemaSnapshot } from './snapshot.js';
+import { buildNetworkSchema, type ActiveDefinition, type NetworkSchema } from './snapshot.js';
 import { readStoredRevision } from './storedDefinition.js';
 
 export const toLocaleDefinition = (row: LocaleRow): LocaleDefinition => ({
@@ -20,6 +20,7 @@ export const toActiveDefinition = async (
   row: schemaModelsRepository.ActiveDefinitionRow,
 ): Promise<ActiveDefinition> => ({
   ...(await readStoredRevision(row.definition, row.hash)),
+  siteId: row.siteId,
   version: row.version,
   revisionId: row.revisionId,
   activatedAt: row.activatedAt,
@@ -30,18 +31,18 @@ export const toActiveDefinitions = (
 ): Promise<ActiveDefinition[]> => Promise.all(rows.map(toActiveDefinition));
 
 /** The schema as the executor sees it (inside an activation transaction: the state right after the flip). */
-export const readSnapshot = async (executor: Kysely<DB> | Transaction<DB>): Promise<SchemaSnapshot> => {
+export const readSnapshot = async (executor: Kysely<DB> | Transaction<DB>): Promise<NetworkSchema> => {
   const version = await schemaVersionsRepository.getSchemaVersion(executor);
   const rows = await schemaModelsRepository.findActiveDefinitions(executor);
   const locales = await localesRepository.list(executor);
-  return buildSnapshot(version, await toActiveDefinitions(rows), locales.map(toLocaleDefinition));
+  return buildNetworkSchema(version, await toActiveDefinitions(rows), locales.map(toLocaleDefinition));
 };
 
 /**
  * Reads the global version, every active definition and the locales in one REPEATABLE READ transaction,
  * so the snapshot is exactly the state at that version even if an activation commits meanwhile.
  */
-export const loadSnapshot = (db: Database): Promise<SchemaSnapshot> =>
+export const loadSnapshot = (db: Database): Promise<NetworkSchema> =>
   db
     .transaction()
     .setIsolationLevel('repeatable read')

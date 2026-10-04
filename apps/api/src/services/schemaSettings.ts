@@ -1,7 +1,7 @@
 import * as schemaSettingsRepository from '../repositories/schemaSettings.js';
 import { actorColumns } from '../schema/planner/actor.js';
 import { recordAudit } from './audit.js';
-import { assertCanCreate, type SchemaServiceContext } from './schemaAccess.js';
+import { assertCanChangeNetworkSchema, type SchemaServiceContext } from './schemaAccess.js';
 
 const toSettings = (row: schemaSettingsRepository.SchemaSettingsRow) => ({
   readOnly: row.read_only,
@@ -20,7 +20,7 @@ export const updateSchemaSettings = async (
   context: SchemaServiceContext,
   input: { readOnly: boolean; readOnlyReason?: string | null },
 ) => {
-  await assertCanCreate(context);
+  await assertCanChangeNetworkSchema(context);
   const by = actorColumns(context.actor);
   return context.db.transaction().execute(async (trx) => {
     await schemaSettingsRepository.update(

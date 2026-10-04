@@ -218,7 +218,7 @@ describe('content and schema changes', () => {
 
   it('a request pinned to the old schema cannot commit after an activation (409 SCHEMA_CHANGED)', async () => {
     const page = await model('page', [{ apiKey: 'title', label: 'Title', type: 'string' }]);
-    const stale = await testApp.app.schemaRegistry.getSnapshot();
+    const stale = (await testApp.app.schemaRegistry.getSnapshot()).forSite(PRIMARY_SITE_ID);
     expectStatus(
       await change(page, [...page.definition.fields, { apiKey: 'intro', label: 'Intro', type: 'text' }]),
       200,

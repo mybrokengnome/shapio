@@ -8,7 +8,7 @@ import * as publicationsRepository from '../src/repositories/publications.js';
 import { consumersOf } from '../src/services/usage.js';
 import { createAdmin, login, type TestSession } from './helpers/adminIdentity.js';
 import {
-  createDefinition,
+  createSharedDefinition,
   expectStatus,
   fieldIdOf,
   type EntryBody,
@@ -124,7 +124,7 @@ describe('publishing per site (plan §H, G5)', () => {
     siteB = clientFor('b');
     worker = createPublishingWorker({ db: database.current.db, app: testApp.app });
     receiver = await startReceiver();
-    article = await createDefinition(siteA, {
+    article = await createSharedDefinition(siteA, {
       kind: 'collection',
       apiKey: 'article',
       label: 'Article',

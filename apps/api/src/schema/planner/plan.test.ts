@@ -36,6 +36,9 @@ const page = define({
   ],
 });
 const active = [hero, section, page];
+/** Every definition shared (the planner takes the full set with scopes). */
+const shared = (definitions: readonly SchemaDefinition[]) =>
+  definitions.map((definition) => ({ definition, siteId: null }));
 
 describe('findValueLocations', () => {
   it('finds a component under every path of every embedding model', () => {
@@ -53,7 +56,14 @@ describe('buildChangePlan', () => {
       ...hero,
       fields: [...hero.fields, { id: id(12), apiKey: 'tagline', label: 't', type: 'string', required: true }],
     });
-    const plan = buildChangePlan({ before: hero, after, fromVersion: 1, active, hasContent: true });
+    const plan = buildChangePlan({
+      before: hero,
+      after,
+      fromVersion: 1,
+      active: shared(active),
+      siteId: null,
+      hasContent: true,
+    });
     expect(plan).toMatchObject({
       operation: 'update',
       affectedModelIds: [page.id],
@@ -89,7 +99,8 @@ describe('buildChangePlan', () => {
       before: null,
       after: fresh,
       fromVersion: null,
-      active,
+      active: shared(active),
+      siteId: null,
       hasContent: false,
     });
     expect(plan.operation).toBe('create');
@@ -129,7 +140,8 @@ describe('buildChangePlan', () => {
       before,
       after,
       fromVersion: 1,
-      active: [...active, before],
+      active: shared([...active, before]),
+      siteId: null,
       hasContent: true,
     });
     expect(plan.prerequisites.map((step) => step.kind)).toEqual([
@@ -156,7 +168,8 @@ describe('buildChangePlan', () => {
       before,
       after,
       fromVersion: 3,
-      active: [...active, before],
+      active: shared([...active, before]),
+      siteId: null,
       hasContent: true,
     });
     expect(plan.prerequisites.map((step) => step.kind)).toEqual(['convert', 'validateValues', 'buildIndex']);
@@ -171,9 +184,23 @@ describe('buildChangePlan', () => {
   it('reports schema-wide issues and blocks deleting referenced definitions', () => {
     const clash = define({ id: id(60), apiKey: 'pageFilter' });
     expect(
-      buildChangePlan({ before: null, after: clash, fromVersion: null, active, hasContent: false }).issues,
+      buildChangePlan({
+        before: null,
+        after: clash,
+        fromVersion: null,
+        active: shared(active),
+        siteId: null,
+        hasContent: false,
+      }).issues,
     ).toMatchObject([{ code: 'GENERATED_NAME_COLLISION' }]);
-    const deletion = buildChangePlan({ before: hero, after: null, fromVersion: 1, active, hasContent: true });
+    const deletion = buildChangePlan({
+      before: hero,
+      after: null,
+      fromVersion: 1,
+      active: shared(active),
+      siteId: null,
+      hasContent: true,
+    });
     expect(deletion.operation).toBe('delete');
     expect(deletion.issues.map((found) => found.code)).toEqual([
       'REFERENCED_DEFINITION',

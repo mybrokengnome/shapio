@@ -41,6 +41,7 @@ export type SchemaDraftView = {
   operation: SchemaOperation;
   baseVersion: number | null;
   definition: SchemaDefinition | null;
+  shared: boolean;
   version: number;
   updatedBy: ChangeSetActorView;
   createdAt: Date;
@@ -51,6 +52,8 @@ export type PutSchemaDraftInput = {
   category: DefinitionCategory;
   definition: unknown;
   baseVersion: number | null;
+  /** A new definition created shared with all sites (default: the set's site). */
+  shared?: boolean | undefined;
   expectedDraftVersion?: number | undefined;
 };
 
@@ -79,6 +82,7 @@ const toDraftView = async (
     operation: operationOf(draft),
     baseVersion: draft.base_version,
     definition: (draft.definition as SchemaDefinition | null) ?? null,
+    shared: draft.shared,
     version: draft.version,
     updatedBy: {
       type: ['admin', 'token'].includes(type) ? type : 'system',
@@ -110,10 +114,17 @@ const prepareDraft = async (
   input: PutSchemaDraftInput,
 ) => {
   const active = context.snapshot.byId.get(definitionId);
-  if (active && categoryOfKind(active.definition.kind) !== input.category) {
+  if (
+    (active && categoryOfKind(active.definition.kind) !== input.category) ||
+    // Another site's definition is not in this set's view.
+    (!active && context.snapshot.network.byId.has(definitionId))
+  ) {
     throw definitionNotFound(definitionId);
   }
-  await (active ? assertCanManage(context, definitionId) : assertCanCreate(context));
+  const shared = !active && input.shared === true;
+  await (active
+    ? assertCanManage(context, definitionId)
+    : assertCanCreate(context, shared ? null : context.snapshot.siteId));
   await assertWritable(context);
   const activeVersion = active?.version ?? null;
   if (input.baseVersion !== activeVersion) {
@@ -123,7 +134,7 @@ const prepareDraft = async (
     if (!active) {
       throw definitionNotFound(definitionId);
     }
-    return { kind: active.definition.kind, apiKey: active.definition.apiKey, definition: null };
+    return { kind: active.definition.kind, apiKey: active.definition.apiKey, definition: null, shared };
   }
   const parsed = parseDefinition(input.definition, active ? { previous: active.definition } : {});
   if (!parsed.ok) {
@@ -139,7 +150,12 @@ const prepareDraft = async (
       { path: '/kind', code: 'INVALID_STRUCTURE', message: `must be a ${input.category} kind` },
     ]);
   }
-  return { kind: parsed.definition.kind, apiKey: parsed.definition.apiKey, definition: parsed.definition };
+  return {
+    kind: parsed.definition.kind,
+    apiKey: parsed.definition.apiKey,
+    definition: parsed.definition,
+    shared,
+  };
 };
 
 /**
@@ -149,7 +165,10 @@ const prepareDraft = async (
 const assertPlannable = async (
   context: ChangeSetServiceContext,
   changeSetId: string,
-  proposal: Pick<SchemaDraftRow, 'definition_id' | 'kind' | 'api_key' | 'base_version' | 'definition'>,
+  proposal: Pick<
+    SchemaDraftRow,
+    'definition_id' | 'kind' | 'api_key' | 'base_version' | 'definition' | 'shared'
+  >,
 ) => {
   const others = (await schemaDraftsRepository.listForSet(changeSetId, context.db)).filter(
     (other) => other.definition_id !== proposal.definition_id,
@@ -186,6 +205,7 @@ export const putSchemaDraft = async (
     base_version: input.baseVersion,
     // Stored as JSON; the planner reads it back with readStoredDefinition.
     definition: prepared.definition as unknown as SchemaDraftRow['definition'],
+    shared: prepared.shared,
   });
   const by = actorColumns(context.actor);
   const write = {
@@ -195,6 +215,7 @@ export const putSchemaDraft = async (
     apiKey: prepared.apiKey,
     baseVersion: input.baseVersion,
     definition: prepared.definition,
+    shared: prepared.shared,
     updatedByType: by.type,
     updatedById: by.id,
   };

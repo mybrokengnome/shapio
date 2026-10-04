@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import {
   ChangeJobSchema,
+  DefinitionScopeSchema,
   DefinitionSchema,
   StableIdSchema,
   SyncApplyBodySchema,
@@ -31,18 +32,34 @@ export const getSummarySchema = {
           label: Type.String(),
           version: Type.Integer(),
           hash: Type.String(),
+          /** The key of the site the definition belongs to; null when shared. */
+          site: Type.Union([Type.String(), Type.Null()]),
         }),
       ),
     }),
   },
 };
 
+const ScopeQuerySchema = Type.Object(
+  { scope: Type.Optional(DefinitionScopeSchema) },
+  { additionalProperties: false },
+);
+
 export const exportSchema = {
+  querystring: ScopeQuerySchema,
   response: {
     200: Type.Object({
       schemaVersion: Type.Integer(),
+      /** The site whose view this is (shared definitions and its own); null on a network request. */
+      site: Type.Union([Type.Object({ id: Type.String(), key: Type.String() }), Type.Null()]),
       definitions: Type.Array(
-        Type.Object({ definition: DefinitionSchema, version: Type.Integer(), hash: Type.String() }),
+        Type.Object({
+          definition: DefinitionSchema,
+          version: Type.Integer(),
+          hash: Type.String(),
+          /** The key of the site the definition belongs to; null when shared. */
+          site: Type.Union([Type.String(), Type.Null()]),
+        }),
       ),
     }),
   },

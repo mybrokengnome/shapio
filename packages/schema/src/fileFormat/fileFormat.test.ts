@@ -3,11 +3,14 @@ import { field, id, model } from '../testing/fixtures.js';
 import { parseDefinition } from '../validators/parse.js';
 import { canonicalJson, serializeDefinition } from './canonical.js';
 import { hashDefinition, sha256 } from './hash.js';
+import { schemaFilePath, scopeOfSchemaFilePath } from './layout.js';
 import {
   LOCK_FILE_FORMAT_VERSION,
   LockFileError,
+  lockEntriesForSite,
   parseLockFile,
   serializeLockFile,
+  upgradeLockFile,
   type LockFile,
 } from './lockFile.js';
 
@@ -83,7 +86,57 @@ describe('lock file', () => {
 
   it('rejects malformed lock files with a clear error', () => {
     expect(() => parseLockFile('{')).toThrow(LockFileError);
-    expect(() => parseLockFile(JSON.stringify({ ...lock, formatVersion: 2 }))).toThrow(/formatVersion/);
+    expect(() => parseLockFile(JSON.stringify({ ...lock, formatVersion: 3 }))).toThrow(/formatVersion/);
     expect(() => parseLockFile(JSON.stringify({ ...lock, extra: true }))).toThrow(/unknown property: extra/);
+  });
+});
+
+describe('lock file format 2 (per-site schemas)', () => {
+  const v1: LockFile = {
+    formatVersion: 1,
+    schemaVersion: 4,
+    definitions: { [id(1)]: { kind: 'collection', apiKey: 'page', version: 1, hash: 'h1' } },
+  };
+  const v2: LockFile = {
+    formatVersion: LOCK_FILE_FORMAT_VERSION,
+    schemaVersion: 9,
+    sites: ['blog', 'shop'],
+    definitions: {
+      [id(1)]: { kind: 'collection', apiKey: 'page', version: 1, hash: 'h1', site: null },
+      [id(2)]: { kind: 'collection', apiKey: 'post', version: 2, hash: 'h2', site: 'blog' },
+      [id(3)]: { kind: 'collection', apiKey: 'post', version: 1, hash: 'h3', site: 'shop' },
+    },
+  };
+
+  it('still reads format 1 and upgrades it to every definition shared, covering no site', () => {
+    expect(parseLockFile(serializeLockFile(v1))).toEqual(v1);
+    expect(upgradeLockFile(v1)).toEqual({
+      formatVersion: 2,
+      schemaVersion: 4,
+      sites: [],
+      definitions: { [id(1)]: { kind: 'collection', apiKey: 'page', version: 1, hash: 'h1', site: null } },
+    });
+  });
+
+  it('round-trips format 2 and narrows entries to one site and the shared ones', () => {
+    expect(parseLockFile(serializeLockFile(v2))).toEqual(v2);
+    expect(Object.keys(lockEntriesForSite(v2, 'blog'))).toEqual([id(1), id(2)]);
+    expect(Object.keys(lockEntriesForSite(v2, null))).toEqual([id(1)]);
+  });
+});
+
+describe('schema file layout', () => {
+  it("puts shared definitions at the top and a site's own under sites/<key>/", () => {
+    expect(schemaFilePath({ kind: 'collection', apiKey: 'post' }, null)).toBe('models/post.json');
+    expect(schemaFilePath({ kind: 'component', apiKey: 'hero' }, 'blog')).toBe(
+      'sites/blog/components/hero.json',
+    );
+  });
+
+  it('reads a path back to its scope, and nothing else as a schema file', () => {
+    expect(scopeOfSchemaFilePath('models/post.json')).toEqual({ site: null });
+    expect(scopeOfSchemaFilePath('sites/blog/models/post.json')).toEqual({ site: 'blog' });
+    expect(scopeOfSchemaFilePath('sites/blog/notes.json')).toBeUndefined();
+    expect(scopeOfSchemaFilePath('models/readme.md')).toBeUndefined();
   });
 });

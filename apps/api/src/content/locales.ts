@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
 import type { ContentData } from '../db/contentData.js';
-import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { SchemaById } from '../schema/snapshot.js';
 import type { LocaleScope } from './compiler/compile.js';
 import { queryInvalid } from './compiler/types.js';
 import { isLocalizedField } from './model.js';
@@ -12,7 +12,7 @@ import { isLocalizedField } from './model.js';
  */
 
 /** The locale itself, then its configured fallbacks, then the default locale (always last). */
-export const fallbackChain = (snapshot: SchemaSnapshot, locale: string): string[] => {
+export const fallbackChain = (snapshot: SchemaById, locale: string): string[] => {
   const configured = snapshot.locales.find((candidate) => candidate.code === locale);
   const chain = [locale, ...(configured?.fallbacks ?? []), snapshot.defaultLocale];
   return chain.filter(
@@ -22,7 +22,7 @@ export const fallbackChain = (snapshot: SchemaSnapshot, locale: string): string[
 
 /** The locale a write targets: the requested one for localized models, the default locale otherwise. */
 export const writeLocaleFor = (
-  snapshot: SchemaSnapshot,
+  snapshot: SchemaById,
   model: ModelDefinition,
   requested: string | undefined,
 ) => {
@@ -41,7 +41,7 @@ export const writeLocaleFor = (
  * so they are read regardless of locale; localized models serve the requested locale or fall back.
  */
 export const readScopeFor = (
-  snapshot: SchemaSnapshot,
+  snapshot: SchemaById,
   model: ModelDefinition,
   requested: string | undefined,
   { fallback }: { fallback: boolean },

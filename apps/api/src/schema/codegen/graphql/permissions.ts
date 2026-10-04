@@ -21,5 +21,6 @@ export const memoizePermissions = (base: PermissionEvaluator, principal: Princip
       return policy;
     },
     canPerform: (caller, action) => base.canPerform(caller, action),
+    canPerformOnSite: (caller, action, siteId) => base.canPerformOnSite(caller, action, siteId),
   };
 };

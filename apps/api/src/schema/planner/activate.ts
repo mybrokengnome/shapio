@@ -1,7 +1,6 @@
 import {
   findReferencingDefinitions,
   hashDefinition,
-  validateSchema,
   type SchemaDefinition,
   type ValidationIssue,
 } from '@shapio/schema';
@@ -23,11 +22,13 @@ import * as schemaVersionsRepository from '../../repositories/schemaVersions.js'
 import { recordAudit } from '../../services/audit.js';
 import { apiKeyTaken, schemaChangeInProgress, schemaInvalid, schemaVersionConflict } from '../errors.js';
 import { publishSchemaChanged } from '../notify.js';
+import { validateScoped, type ScopedDefinition } from '../scopedValidation.js';
+import { loadSiteKeys } from '../siteKeys.js';
 import { readStoredDefinition } from '../storedDefinition.js';
 import { actorColumns } from './actor.js';
 import type { ActivationContext } from './contentPorts.js';
 import { lockForActivation } from './locks.js';
-import type { ChangePlan } from './plan.js';
+import { scopeOfPlan, type ChangePlan } from './plan.js';
 import { enqueueFollowUps } from './prerequisites.js';
 
 export type ActivationItem = {
@@ -43,6 +44,11 @@ export type ActivationItem = {
    * before the pointer flips and throws to abort the activation.
    */
   recheck?: (trx: Transaction<DB>, activation: ActivationContext) => Promise<void>;
+  /**
+   * The change moves the definition to `plan.siteId` (the scope change, services/schemaScope.ts). Without
+   * it, an existing definition must already be in that scope: nothing else ever changes a scope.
+   */
+  moveScope?: boolean;
 };
 
 /** Runs inside the activation transaction after the pointers flipped (a change set publishes its entries). */
@@ -91,10 +97,26 @@ const referenceIssues = (
       })),
   );
 
-/** Checks made under the locks: the version guards, one change at a time, and the whole schema still valid. */
+const scopeMismatch = (definitionId: string) =>
+  schemaInvalid([
+    {
+      path: '',
+      code: 'INVALID_STRUCTURE',
+      message: 'the definition belongs to another scope than the change names; change its scope explicitly',
+      definitionId,
+    },
+  ]);
+
+/**
+ * Checks made under the locks: the version guards, one change at a time, and every view the changes touch
+ * still valid (plan site-schema: a site change its site's view, a shared change or a scope change every view).
+ */
 export const verifyChangesUnderLock = async (trx: Transaction<DB>, items: readonly ActivationItem[]) => {
   const pointers = new Map<string, string | null>();
-  for (const { plan, expectedVersion, pending } of items) {
+  const rows = await schemaModelsRepository.findActiveDefinitions(trx);
+  const scopeById = new Map(rows.map((row) => [row.modelId, row.siteId]));
+  const touchedScopes: Array<string | null> = [];
+  for (const { plan, expectedVersion, pending, moveScope } of items) {
     const pointer = await schemaModelsRepository.findActivePointer(plan.definitionId, trx);
     const currentVersion = pointer?.version ?? null;
     if (currentVersion !== expectedVersion) {
@@ -107,18 +129,34 @@ export const verifyChangesUnderLock = async (trx: Transaction<DB>, items: readon
     if (inFlight && inFlight.id !== pending?.changeJobId) {
       throw schemaChangeInProgress(inFlight.id);
     }
+    const scope = scopeOfPlan(plan);
+    const model = await schemaModelsRepository.findModelById(plan.definitionId, trx);
+    const currentScope = model ? model.site_id : scope;
+    if (currentScope !== scope && !moveScope) {
+      throw scopeMismatch(plan.definitionId);
+    }
+    touchedScopes.push(scope, currentScope);
     pointers.set(plan.definitionId, pointer?.revision_id ?? null);
   }
-  const active = (await schemaModelsRepository.findActiveDefinitions(trx)).map((row) =>
-    readStoredDefinition(row.definition),
-  );
+  const active: ScopedDefinition[] = rows.map((row) => ({
+    definition: readStoredDefinition(row.definition),
+    siteId: scopeById.get(row.modelId) ?? null,
+  }));
   const touched = new Set(items.map((item) => item.plan.definitionId));
   const deleted = new Set(items.filter((item) => !item.after).map((item) => item.plan.definitionId));
-  const proposed = [
-    ...active.filter((definition) => !touched.has(definition.id)),
-    ...items.flatMap((item) => (item.after ? [item.after] : [])),
+  const proposed: ScopedDefinition[] = [
+    ...active.filter((entry) => !touched.has(entry.definition.id)),
+    ...items.flatMap((item) =>
+      item.after ? [{ definition: item.after, siteId: scopeOfPlan(item.plan) }] : [],
+    ),
   ];
-  const issues = [...validateSchema(proposed), ...referenceIssues(proposed, deleted)];
+  const issues = [
+    ...validateScoped(proposed, touchedScopes, { siteKeys: await loadSiteKeys(trx) }),
+    ...referenceIssues(
+      proposed.map((entry) => entry.definition),
+      deleted,
+    ),
+  ];
   if (issues.length > 0) {
     throw schemaInvalid(issues);
   }
@@ -138,7 +176,10 @@ const writeRevisionAndPointer = async (
   if (!revision) {
     const existing = await schemaModelsRepository.findModelById(after.id, trx);
     if (!existing) {
-      await schemaModelsRepository.insertModel({ id: after.id, kind: after.kind, apiKey: after.apiKey }, trx);
+      await schemaModelsRepository.insertModel(
+        { id: after.id, kind: after.kind, apiKey: after.apiKey, siteId: scopeOfPlan(item.plan) },
+        trx,
+      );
     }
     const latest = await schemaModelsRepository.findLatestRevisionVersion(after.id, trx);
     const by = actorColumns(context.actor);
@@ -157,7 +198,7 @@ const writeRevisionAndPointer = async (
   }
   const { now, schemaVersion } = context;
   await schemaModelsRepository.markModelActive(
-    { id: after.id, kind: after.kind, apiKey: after.apiKey, now },
+    { id: after.id, kind: after.kind, apiKey: after.apiKey, siteId: scopeOfPlan(item.plan), now },
     trx,
   );
   await schemaModelsRepository.upsertActivePointer(
@@ -172,6 +213,8 @@ const recordActivation = async (
   item: ActivationItem,
   result: ActivationResult,
   request: ActivationRequest,
+  /** The site whose webhooks and connections hear about it; null (every site) for a shared definition. */
+  eventSiteId: string | null,
 ) => {
   const { plan, after } = item;
   const isComponent = plan.kind === 'component';
@@ -199,9 +242,9 @@ const recordActivation = async (
     type: after ? 'schema.activated' : 'schema.deleted',
     aggregateType: isComponent ? 'component' : 'model',
     aggregateId: plan.definitionId,
-    payload: metadata,
-    // The schema is shared by every site: a network event.
-    siteId: null,
+    payload: { ...metadata, siteId: eventSiteId },
+    // A site definition's change concerns its site only; a shared one's (or a scope change) every site.
+    siteId: eventSiteId,
   });
   await enqueueFollowUps(trx, plan, `${plan.definitionId}:${result.schemaVersion}`);
 };
@@ -317,6 +360,9 @@ const flipItem = async (
 ): Promise<ActivationResult> => {
   const { request, pointers, schemaVersion, now } = context;
   const { plan, after } = item;
+  const previousScope = (await schemaModelsRepository.findModelById(plan.definitionId, trx))?.site_id;
+  const scope = scopeOfPlan(plan);
+  const eventSiteId = previousScope === undefined || previousScope === scope ? scope : null;
   let revision: { id: string; version: number } | undefined;
   if (after) {
     const parentRevisionId = pointers.get(plan.definitionId) ?? null;
@@ -338,7 +384,7 @@ const flipItem = async (
     revisionId: revision?.id ?? null,
     schemaVersion,
   };
-  await recordActivation(trx, item, result, request);
+  await recordActivation(trx, item, result, request, eventSiteId);
   return result;
 };
 

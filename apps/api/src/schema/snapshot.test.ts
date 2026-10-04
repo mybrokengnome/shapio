@@ -10,6 +10,7 @@ const active = (definition: SchemaDefinition): ActiveDefinition => ({
   revisionId: uuid(99),
   hash: 'stored',
   activatedAt: new Date(0),
+  siteId: null,
 });
 const model = (n: number, kind: 'collection' | 'singleton', apiKey: string, pluralApiKey?: string) =>
   normalizeDefinition({

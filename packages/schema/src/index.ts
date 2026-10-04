@@ -22,6 +22,7 @@ export * from './diff/diffDefinitions.js';
 export * from './diff/classify.js';
 export * from './fileFormat/canonical.js';
 export * from './fileFormat/hash.js';
+export * from './fileFormat/layout.js';
 export * from './fileFormat/lockFile.js';
 export * from './sync/threeWay.js';
 export * from './richtext/spec.js';

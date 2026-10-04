@@ -7,9 +7,7 @@ import type { SchemaRegistry } from './registry.js';
  * once, whether or not it got the notification. Deprecated fields are reported as non-public: they are
  * hidden from the API unless a role names them explicitly. Components are not delivery models.
  */
-export const createSchemaFieldVisibility = (
-  registry: SchemaRegistry,
-): FieldVisibilityLookup & { hasModel: (modelId: string) => Promise<boolean> } => {
+export const createSchemaFieldVisibility = (registry: SchemaRegistry): FieldVisibilityLookup => {
   const activeModel = async (modelId: string) => {
     const active = (await registry.getSnapshot()).byId.get(modelId);
     return active && active.definition.kind !== 'component' ? active.definition : undefined;
@@ -21,5 +19,7 @@ export const createSchemaFieldVisibility = (
         public: field.public && !field.deprecated,
       })),
     hasModel: async (modelId) => (await activeModel(modelId)) !== undefined,
+    // Components too: managing a site's component is a site's schema permission like its models'.
+    getModelSite: async (modelId) => (await registry.getSnapshot()).scopeOf(modelId) ?? null,
   };
 };

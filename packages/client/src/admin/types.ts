@@ -90,8 +90,11 @@ export type MeResponse = {
   sites: SiteSummary[];
   /** Network actions (roles assigned on every site only). */
   networkPermissions: NetworkAction[];
-  /** Site actions on the request's site. */
-  sitePermissions: SiteAction[];
+  /**
+   * Site actions on the request's site, plus `schema.create` when a role on the site grants it for the
+   * site's own definitions (`networkPermissions` lists it when shared definitions may be created too).
+   */
+  sitePermissions: Array<SiteAction | 'schema.create'>;
   /** `networkPermissions` and `sitePermissions` together. */
   globalPermissions: GlobalAction[];
   /** Content actions per model ID on the request's site (models without any action are left out). */

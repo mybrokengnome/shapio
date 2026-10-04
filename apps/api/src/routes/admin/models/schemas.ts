@@ -3,6 +3,7 @@ import {
   AcknowledgementSchema,
   ActiveDefinitionSchema,
   ChangeJobSchema,
+  DefinitionScopeSchema,
   ChangeOutcomeSchema,
   ChangePlanSchema,
   definitionInputFor,
@@ -20,8 +21,11 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
   const definition = definitionInputFor(category);
   const outcome = { 200: ChangeOutcomeSchema, 201: ChangeOutcomeSchema, 202: ChangeOutcomeSchema };
   const preview = { 200: Type.Object({ plan: ChangePlanSchema, impact: ImpactSchema }) };
+  /** Where a create lands: the request's site (default) or every site (`network`). */
+  const scope = { scope: Type.Optional(DefinitionScopeSchema) };
   return {
     list: {
+      querystring: Type.Object(scope, closed),
       response: {
         200: Type.Object({
           items: Type.Array(
@@ -48,8 +52,11 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
         ]),
       },
     },
-    create: { body: Type.Object({ definition, ...AcknowledgementSchema }, closed), response: outcome },
-    planCreate: { body: Type.Object({ definition }, closed), response: preview },
+    create: {
+      body: Type.Object({ definition, ...scope, ...AcknowledgementSchema }, closed),
+      response: outcome,
+    },
+    planCreate: { body: Type.Object({ definition, ...scope }, closed), response: preview },
     update: {
       params: IdParamsSchema,
       body: Type.Object({ definition, expectedVersion: ExpectedVersion, ...AcknowledgementSchema }, closed),
@@ -64,6 +71,29 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
       params: IdParamsSchema,
       querystring: Type.Object({ expectedVersion: ExpectedVersion }, closed),
       response: outcome,
+    },
+    changeScope: {
+      params: IdParamsSchema,
+      body: Type.Object(
+        {
+          scope: DefinitionScopeSchema,
+          /** For `site`: the site to keep it on (default: the request's site). */
+          siteId: Type.Optional(Type.String({ format: 'uuid' })),
+          /** The definition's active version (409 when it moved). */
+          version: ExpectedVersion,
+        },
+        closed,
+      ),
+      response: {
+        200: Type.Object({
+          status: Type.Union([Type.Literal('activated'), Type.Literal('unchanged')]),
+          definitionId: Type.String(),
+          scope: DefinitionScopeSchema,
+          siteId: Type.Union([Type.String(), Type.Null()]),
+          version: Type.Integer(),
+          schemaVersion: Type.Integer(),
+        }),
+      },
     },
     listRevisions: {
       params: IdParamsSchema,

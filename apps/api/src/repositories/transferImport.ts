@@ -178,7 +178,9 @@ export const moveHead = (head: ImportedHead, trx: Executor = db) =>
     .execute();
 
 /** Live entries of these models after `afterId` (keyset), for `--prune`. */
+/** Live entries of some models on one site (another site's entries are never an import's to prune). */
 export const listLiveEntryIds = async (
+  siteId: string,
   modelIds: readonly string[],
   afterId: string | null,
   limit: number,
@@ -189,6 +191,7 @@ export const listLiveEntryIds = async (
     : executor
         .selectFrom('entries')
         .select(['id', 'model_id'])
+        .where('site_id', '=', siteId)
         .where('model_id', 'in', modelIds)
         .where('deleted_at', 'is', null)
         .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
@@ -215,10 +218,17 @@ export const insertAsset = (asset: Insertable<MediaAssets>, trx: Executor = db) 
     .execute();
 
 /** Live assets after `afterId` (keyset), for `--prune`. */
-export const listLiveAssetIds = (afterId: string | null, limit: number, executor: Executor = db) =>
+/** Live media assets of one site. */
+export const listLiveAssetIds = (
+  siteId: string,
+  afterId: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
   executor
     .selectFrom('media_assets')
     .select('id')
+    .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
     .orderBy('id')

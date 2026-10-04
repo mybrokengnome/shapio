@@ -45,7 +45,7 @@ export const jobContentContext = async (
   siteId: string,
 ): Promise<ContentServiceContext> => ({
   db: environment.runtime.db,
-  snapshot: await environment.registry.getSnapshot(),
+  snapshot: (await environment.registry.getSnapshot()).forSite(siteId),
   permissions: environment.permissions,
   actor,
   site: await getSiteRef(siteId, environment.runtime.db),

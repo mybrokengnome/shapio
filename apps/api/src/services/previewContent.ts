@@ -88,6 +88,7 @@ export const createPreviewPermissions = (
       };
     },
     canPerform: () => Promise.resolve(false),
+    canPerformOnSite: () => Promise.resolve(false),
   };
 };
 

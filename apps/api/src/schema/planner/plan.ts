@@ -4,7 +4,6 @@ import {
   findDependentModels,
   findReferencingDefinitions,
   summarizeChanges,
-  validateSchema,
   type ChangeSummary,
   type ClassifiedChange,
   type FieldDefinition,
@@ -14,6 +13,7 @@ import {
 } from '@shapio/schema';
 import { fieldIndexName, type FieldIndexSpec } from '../../content/compiler/expressions.js';
 import { maxFieldIndexes } from '../../db/limits.js';
+import { validateScoped, type ScopedDefinition } from '../scopedValidation.js';
 import {
   findValueLocations,
   stepKey,
@@ -32,6 +32,11 @@ export type ChangePlan = {
   kind: SchemaDefinition['kind'];
   apiKey: string;
   operation: 'create' | 'update' | 'delete';
+  /**
+   * The definition's scope after the change: its site, or null when shared. Optional only because plans
+   * stored before per-site schemas have none (every definition was shared then).
+   */
+  siteId?: string | null;
   /** The active per-model version the plan was made against; null when the definition is new. */
   fromVersion: number | null;
   changes: ClassifiedChange[];
@@ -50,10 +55,14 @@ export type PlanInput = {
   /** Proposed definition; null to delete. */
   after: SchemaDefinition | null;
   fromVersion: number | null;
-  /** Every active definition right now. */
-  active: readonly SchemaDefinition[];
+  /** Every active definition right now, on every site, with its scope (the full set, never a view). */
+  active: readonly ScopedDefinition[];
+  /** The definition's scope: the site it belongs to, or null when shared. */
+  siteId: string | null;
   /** True when content may exist for this definition (an existing or restored model). */
   hasContent: boolean;
+  /** Site IDs to keys, to name the site in issues found in its view. */
+  siteKeys?: ReadonlyMap<string, string>;
 };
 
 /** The field indexes a definition needs (filterable or sortable, not deprecated), in the current layout. */
@@ -167,11 +176,18 @@ const dedupe = <T extends PrerequisiteStep | FollowUpStep>(steps: readonly T[]):
   });
 };
 
+/** The scope a plan's change lands in (null: shared; plans stored before per-site schemas are shared). */
+export const scopeOfPlan = (plan: Pick<ChangePlan, 'siteId'>): string | null => plan.siteId ?? null;
+
 const proposedSchema = (
-  active: readonly SchemaDefinition[],
+  active: readonly ScopedDefinition[],
   definitionId: string,
   after: SchemaDefinition | null,
-) => [...active.filter((definition) => definition.id !== definitionId), ...(after ? [after] : [])];
+  siteId: string | null,
+): ScopedDefinition[] => [
+  ...active.filter((entry) => entry.definition.id !== definitionId),
+  ...(after ? [{ definition: after, siteId }] : []),
+];
 
 const affectedModelsOf = (definition: SchemaDefinition, schema: readonly SchemaDefinition[]): string[] =>
   definition.kind === 'component'
@@ -202,7 +218,7 @@ const fieldIndexLimitIssues = (
     {
       path: `/fields/${position}/${flag}`,
       code: 'UNSUPPORTED_FLAG',
-      message: `MySQL can index at most ${limit} filterable or sortable fields across all models (InnoDB allows 64 indexes per table); this change would need ${total}. Clear "filterable" or "sortable" on fields that do not need it.`,
+      message: `MySQL can index at most ${limit} filterable or sortable fields across all models of all sites (InnoDB allows 64 indexes per table); this change would need ${total}. Clear "filterable" or "sortable" on fields that do not need it.`,
       definitionId: after.id,
     },
   ];
@@ -219,17 +235,28 @@ const deletionIssues = (
     definitionId: referrer.id,
   }));
 
+/**
+ * Plans one change. Validation runs in every view the change touches (`validateScoped`); everything about
+ * content (affected models, value locations, index counts) runs on the full set, because a shared component
+ * is embedded by models of every site and MySQL's index cap is per table, across all sites.
+ */
 export const buildChangePlan = ({
   before,
   after,
   fromVersion,
-  active,
+  active: scopedActive,
+  siteId,
   hasContent,
+  siteKeys,
 }: PlanInput): ChangePlan => {
   const subject = (after ?? before) as SchemaDefinition;
-  const proposed = proposedSchema(active, subject.id, after);
+  const scopedProposed = proposedSchema(scopedActive, subject.id, after, siteId);
+  const active = scopedActive.map((entry) => entry.definition);
+  const proposed = scopedProposed.map((entry) => entry.definition);
   const changes = classifyChanges(diffDefinitions(before, after), { before, after });
-  const issues = after ? validateSchema(proposed) : deletionIssues(subject, active);
+  const issues = after
+    ? validateScoped(scopedProposed, [siteId], siteKeys ? { siteKeys } : {})
+    : deletionIssues(subject, active);
   const affectedModelIds = [
     ...new Set([...affectedModelsOf(subject, active), ...affectedModelsOf(subject, proposed)]),
   ];
@@ -271,6 +298,7 @@ export const buildChangePlan = ({
     kind: subject.kind,
     apiKey: subject.apiKey,
     operation: !after ? 'delete' : fromVersion === null ? 'create' : 'update',
+    siteId,
     fromVersion,
     changes,
     summary: summarizeChanges(changes),

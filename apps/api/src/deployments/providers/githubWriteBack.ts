@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import {
   LOCK_FILE_FORMAT_VERSION,
   LOCK_FILE_PATH,
+  schemaFilePath,
+  scopeOfSchemaFilePath,
   serializeDefinition,
   serializeLockFile,
   type LockFile,
 } from '@shapio/schema';
 import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import { getSiteRef } from '../../services/sites.js';
 import { runCheck, toTestResult } from '../testResult.js';
 import type { DeploymentProviderAdapter, ProviderContext, RunContext } from '../types.js';
 import { describeFailure, requestJson } from './http.js';
@@ -65,37 +68,53 @@ export const gitBlobSha = (content: string): string => {
   return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 };
 
-/** The files `shapio schema pull` would write for this snapshot, keyed by repository path. */
-export const schemaFilesOf = (snapshot: SchemaSnapshot, directory: string): Map<string, string> => {
+/**
+ * The files `shapio schema pull --site <siteKey>` would write for a site's view, keyed by repository path:
+ * shared definitions in `models/` and `components/`, the site's own under `sites/<siteKey>/` (plan
+ * site-schema), and a format-2 lock covering that site.
+ */
+export const schemaFilesOf = (
+  snapshot: SchemaSnapshot,
+  directory: string,
+  siteKey: string,
+): Map<string, string> => {
   const files = new Map<string, string>();
   const lock: LockFile = {
     formatVersion: LOCK_FILE_FORMAT_VERSION,
     schemaVersion: snapshot.version,
+    sites: [siteKey],
     definitions: {},
   };
   for (const active of snapshot.definitions) {
     const { definition } = active;
-    const kindDir = definition.kind === 'component' ? 'components' : 'models';
-    files.set(`${directory}/${kindDir}/${definition.apiKey}.json`, serializeDefinition(definition));
+    const site = active.siteId === null ? null : siteKey;
+    files.set(`${directory}/${schemaFilePath(definition, site)}`, serializeDefinition(definition));
     lock.definitions[definition.id] = {
       kind: definition.kind,
       apiKey: definition.apiKey,
       version: active.version,
       hash: active.hash,
+      site,
     };
   }
   files.set(LOCK_FILE_PATH, serializeLockFile(lock));
   return files;
 };
 
-const isSchemaFile = (path: string, directory: string) =>
-  /\.json$/.test(path) &&
-  (path.startsWith(`${directory}/models/`) || path.startsWith(`${directory}/components/`));
+/** A schema file this site's write-back owns: shared ones and its own folder, never another site's. */
+const isSchemaFile = (path: string, directory: string, siteKey: string) => {
+  if (!path.startsWith(`${directory}/`)) {
+    return false;
+  }
+  const scope = scopeOfSchemaFilePath(path.slice(directory.length + 1));
+  return scope !== undefined && (scope.site === null || scope.site === siteKey);
+};
 
 const treeChanges = (
   existing: readonly GitTreeEntry[],
   desired: ReadonlyMap<string, string>,
   directory: string,
+  siteKey: string,
 ) => {
   const current = new Map(
     existing.filter((entry) => entry.type === 'blob').map((entry) => [entry.path, entry.sha]),
@@ -107,7 +126,7 @@ const treeChanges = (
     }
   }
   for (const path of current.keys()) {
-    if (isSchemaFile(path, directory) && !desired.has(path)) {
+    if (isSchemaFile(path, directory, siteKey) && !desired.has(path)) {
       changes.push({ path, mode: '100644', type: 'blob', sha: null });
     }
   }
@@ -145,7 +164,9 @@ const ensurePullRequest = async (context: ProviderContext, commitSha: string, ti
 
 const writeBack = async (context: RunContext) => {
   const { branch, mode, directory } = settingsOf(context);
-  const snapshot = await context.environment.registry.getSnapshot();
+  // The connection's site: shared definitions and the site's own (plan site-schema).
+  const site = await getSiteRef(context.connection.row.site_id, context.environment.runtime.db);
+  const snapshot = (await context.environment.registry.getSnapshot()).forSite(site.id);
   const head = await github<{ object: { sha: string } }>(
     context,
     'GET',
@@ -158,7 +179,12 @@ const writeBack = async (context: RunContext) => {
     'GET',
     `/git/trees/${commit.data.tree.sha}?recursive=1`,
   );
-  const changes = treeChanges(tree.data.tree, schemaFilesOf(snapshot, directory), directory);
+  const changes = treeChanges(
+    tree.data.tree,
+    schemaFilesOf(snapshot, directory, site.key),
+    directory,
+    site.key,
+  );
   if (changes.length === 0) {
     return {
       status: 'deployed' as const,

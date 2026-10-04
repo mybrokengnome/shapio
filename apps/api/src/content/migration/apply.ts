@@ -8,7 +8,7 @@ import * as relationEdgesRepository from '../../repositories/relationEdges.js';
 import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { ActivationContext, StepOutcome } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
-import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import type { SchemaById } from '../../schema/snapshot.js';
 import { resolveModelById, type HeadState } from '../model.js';
 import { edgesOf } from '../relations.js';
 import { syncUniqueValues, uniqueFields } from '../unique.js';
@@ -41,7 +41,7 @@ import { scanEntries } from './scan.js';
 type Context = {
   trx: Transaction<DB>;
   steps: readonly ContentStep[];
-  proposed: SchemaSnapshot;
+  proposed: SchemaById;
   activation: ActivationContext;
 };
 

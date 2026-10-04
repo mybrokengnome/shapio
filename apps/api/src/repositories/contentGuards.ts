@@ -7,11 +7,15 @@ import type { DB } from '../db/types.js';
  * Reads the content write path makes under its locks (ADR 0002 transitional write policy): the active
  * versions to re-check at commit, and locale rows held so a locale cannot be deleted mid-write.
  */
-export const findActiveVersions = (modelIds: readonly string[], trx: Transaction<DB>) =>
+export const findActiveVersions = (modelIds: readonly string[], siteId: string, trx: Transaction<DB>) =>
   trx
     .selectFrom('model_active_versions')
-    .select(['model_id', 'version'])
-    .where('model_id', 'in', modelIds)
+    // Only definitions the site may use (shared, or its own): a scope change that committed before the
+    // lock was granted makes the definition read as gone, and the write is refused (plan site-schema).
+    .innerJoin('models', 'models.id', 'model_active_versions.model_id')
+    .select(['model_active_versions.model_id as model_id', 'model_active_versions.version as version'])
+    .where('model_active_versions.model_id', 'in', modelIds)
+    .where((eb) => eb.or([eb('models.site_id', 'is', null), eb('models.site_id', '=', siteId)]))
     .execute();
 
 /** Holds the locale rows until commit (FOR SHARE); returns the codes that exist. */

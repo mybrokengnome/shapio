@@ -6,7 +6,7 @@ import {
   type ModelDefinition,
 } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
-import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { ActiveDefinition, SchemaById, SchemaSnapshot } from '../schema/snapshot.js';
 
 /** Head states (ADR 0001): every entry has a draft per locale and, once published, a published head. */
 export const HEAD_STATES = ['draft', 'published'] as const;
@@ -28,7 +28,7 @@ export type ContentModel = {
 export const modelNotFound = (key: string) =>
   new AppError(404, 'MODEL_NOT_FOUND', `No content model "${key}"`, { modelKey: key });
 
-const collectComponents = (snapshot: SchemaSnapshot, model: ModelDefinition): ContentModel['components'] => {
+const collectComponents = (snapshot: SchemaById, model: ModelDefinition): ContentModel['components'] => {
   const found = new Map<string, { definition: ComponentDefinition; version: number }>();
   const queue = embeddedComponentIds(model);
   while (queue.length > 0) {
@@ -43,18 +43,31 @@ const collectComponents = (snapshot: SchemaSnapshot, model: ModelDefinition): Co
   return found;
 };
 
-/** Resolves `/api/…/content/:modelKey` through the registry at request time (CONTRIBUTING.md rule 2). */
+const toContentModel = (
+  snapshot: SchemaById,
+  active: ActiveDefinition & { definition: ModelDefinition },
+): ContentModel => ({
+  definition: active.definition,
+  version: active.version,
+  revisionId: active.revisionId,
+  components: collectComponents(snapshot, active.definition),
+});
+
+const isModel = (
+  active: ActiveDefinition | undefined,
+): active is ActiveDefinition & { definition: ModelDefinition } =>
+  active !== undefined && !isComponentDefinition(active.definition);
+
+/**
+ * Resolves `/api/…/content/:modelKey` through the registry at request time (CONTRIBUTING.md rule 2). Only a
+ * site's view resolves API IDs: another site's model is not in it, so it reads as not found.
+ */
 export const resolveModel = (snapshot: SchemaSnapshot, modelKey: string): ContentModel => {
   const active = snapshot.modelsByApiKey.get(modelKey);
-  if (!active || isComponentDefinition(active.definition)) {
+  if (!isModel(active)) {
     throw modelNotFound(modelKey);
   }
-  return {
-    definition: active.definition,
-    version: active.version,
-    revisionId: active.revisionId,
-    components: collectComponents(snapshot, active.definition),
-  };
+  return toContentModel(snapshot, active);
 };
 
 /**
@@ -73,11 +86,10 @@ export const resolveRouteModel = (snapshot: SchemaSnapshot, routeKey: string): C
 export const apiKeyOfRoute = (snapshot: SchemaSnapshot, routeKey: string): string =>
   resolveRouteModel(snapshot, routeKey).definition.apiKey;
 
-export const resolveModelById = (snapshot: SchemaSnapshot, modelId: string): ContentModel | undefined => {
+/** By stable ID: works on a view and on the full set (jobs and conversions that already know the site). */
+export const resolveModelById = (snapshot: SchemaById, modelId: string): ContentModel | undefined => {
   const active = snapshot.byId.get(modelId);
-  return active && !isComponentDefinition(active.definition)
-    ? resolveModel(snapshot, active.definition.apiKey)
-    : undefined;
+  return isModel(active) ? toContentModel(snapshot, active) : undefined;
 };
 
 /** Whether a field's value differs per locale. Fields of a non-localized model are always shared. */

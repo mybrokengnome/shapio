@@ -92,7 +92,7 @@ export type ContentReadService = {
   ) => Promise<{ items: ContentReadEntry[]; total: number }>;
   /** Number of (non-deleted) entries of a model. */
   count: (modelKey: string) => Promise<number>;
-  /** The active content models (collections and singletons). */
+  /** The active content models (collections and singletons) of this site: shared ones and its own. */
   models: () => Promise<HookModel[]>;
 };
 

@@ -296,4 +296,49 @@ describe('permission evaluator', () => {
     expect(await evaluator.canPerform(siteToken, 'users.manage')).toBe(false);
     expect(await evaluator.canPerform(networkToken, 'users.manage')).toBe(true);
   });
+
+  describe('schema per site (plan site-schema)', () => {
+    const SITE_MODEL = 'model-site-a';
+    const scoped = createStaticFieldVisibility({}, { modelSites: { [SITE_MODEL]: SITE_A } });
+    const grants = [
+      grant({ roleId: 'r', action: 'schema.create' }),
+      grant({ roleId: 'r', action: 'schemaManage' }),
+    ];
+    const evaluator = createPermissionEvaluator({ grants: staticGrants(grants), fields: scoped });
+    const manage = (principal: Principal, modelId: string) =>
+      evaluator.evaluate(principal, { action: 'schemaManage', modelId }).then((policy) => policy.allowed);
+
+    it('a role on one site creates and manages that site’s definitions only, never shared ones', async () => {
+      const identity = { adminUserId: 'u', sessionId: 's', assignments: [{ roleId: 'r', siteId: SITE_A }] };
+      const onA = narrowToSite(identity, SITE_A);
+      const onB = narrowToSite(identity, SITE_B);
+      expect(await evaluator.canPerformOnSite(onA, 'schema.create', SITE_A)).toBe(true);
+      expect(await evaluator.canPerformOnSite(onB, 'schema.create', SITE_B)).toBe(false);
+      expect(await evaluator.canPerform(onA, 'schema.create')).toBe(false);
+      expect(await manage(onA, SITE_MODEL)).toBe(true);
+      expect(await manage(onB, SITE_MODEL)).toBe(false);
+      expect(await manage(onA, MODEL)).toBe(false);
+      // Asking for another site than the principal acts on counts network roles only.
+      expect(await evaluator.canPerformOnSite(onA, 'schema.create', SITE_B)).toBe(false);
+    });
+
+    it('a site token is denied schema.create on network routes; a network token has it everywhere', async () => {
+      const siteToken: Principal = {
+        kind: 'token',
+        tokenId: 't',
+        scope: 'admin',
+        roleId: 'r',
+        siteId: SITE_A,
+      };
+      const networkToken: Principal = { ...siteToken, siteId: null };
+      expect(await evaluator.canPerform(siteToken, 'schema.create')).toBe(false);
+      expect(await evaluator.canPerformOnSite(siteToken, 'schema.create', SITE_A)).toBe(true);
+      expect(await evaluator.canPerformOnSite(siteToken, 'schema.create', SITE_B)).toBe(false);
+      expect(await manage(siteToken, SITE_MODEL)).toBe(true);
+      expect(await manage(siteToken, MODEL)).toBe(false);
+      expect(await evaluator.canPerform(networkToken, 'schema.create')).toBe(true);
+      expect(await manage(networkToken, MODEL)).toBe(true);
+      expect(await manage(networkToken, SITE_MODEL)).toBe(true);
+    });
+  });
 });

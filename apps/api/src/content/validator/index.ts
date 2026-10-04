@@ -9,7 +9,7 @@ import {
   validateRichText,
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
-import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import type { SchemaById } from '../../schema/snapshot.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
 import { pointer, type ContentIssue } from './issues.js';
 import { checkScalar, isReferenceId } from './scalars.js';
@@ -361,14 +361,14 @@ const MAX_CACHED_VALIDATORS = 500;
 const cache = new Map<string, ModelValidator>();
 
 /** The cache key: the model's revision plus every embedded component's revision. */
-const cacheKey = (snapshot: SchemaSnapshot, model: ContentModel) =>
+const cacheKey = (snapshot: SchemaById, model: ContentModel) =>
   [
     model.revisionId,
     ...[...model.components.keys()].sort().map((id) => snapshot.byId.get(id)?.revisionId ?? id),
   ].join(':');
 
 /** The compiled validator for a model at the pinned snapshot, cached by schema revision IDs. */
-export const buildValidator = (snapshot: SchemaSnapshot, model: ContentModel): ModelValidator => {
+export const buildValidator = (snapshot: SchemaById, model: ContentModel): ModelValidator => {
   const key = cacheKey(snapshot, model);
   let validator = cache.get(key);
   if (!validator) {

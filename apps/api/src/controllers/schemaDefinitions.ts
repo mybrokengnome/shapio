@@ -1,12 +1,15 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as schemaDefinitionsService from '../services/schemaDefinitions.js';
 import type { DefinitionCategory } from '../services/schemaDefinitions.js';
+import * as schemaScopeService from '../services/schemaScope.js';
 import { schemaContextFor, toActiveDefinitionResponse, toChangeJobResponse } from './schemaContext.js';
 
 type Ack = { acknowledgeBreaking?: boolean; acknowledgeDestructive?: boolean };
 type IdParams = { id: string };
-type CreateRequest = FastifyRequest<{ Body: { definition: unknown } & Ack }>;
-type CreatePlanRequest = FastifyRequest<{ Body: { definition: unknown } }>;
+type Scope = schemaDefinitionsService.DefinitionScope;
+type ListRequest = FastifyRequest<{ Querystring: { scope?: Scope } }>;
+type CreateRequest = FastifyRequest<{ Body: { definition: unknown; scope?: Scope } & Ack }>;
+type CreatePlanRequest = FastifyRequest<{ Body: { definition: unknown; scope?: Scope } }>;
 type UpdateRequest = FastifyRequest<{
   Params: IdParams;
   Body: { definition: unknown; expectedVersion: number } & Ack;
@@ -14,6 +17,10 @@ type UpdateRequest = FastifyRequest<{
 type UpdatePlanRequest = FastifyRequest<{
   Params: IdParams;
   Body: { definition: unknown; expectedVersion: number };
+}>;
+type ScopeRequest = FastifyRequest<{
+  Params: IdParams;
+  Body: { scope: Scope; siteId?: string; version: number };
 }>;
 type DeleteRequest = FastifyRequest<{ Params: IdParams; Querystring: { expectedVersion: number } }>;
 type ByIdRequest = FastifyRequest<{ Params: IdParams }>;
@@ -24,8 +31,12 @@ const statusCodeFor = (outcome: schemaDefinitionsService.ChangeOutcome) =>
 
 /** Handlers for one definition category; models and components mount the same set. */
 export const createDefinitionControllers = (category: DefinitionCategory) => ({
-  list: async (request: FastifyRequest) => {
-    const items = await schemaDefinitionsService.listDefinitions(await schemaContextFor(request), category);
+  list: async (request: ListRequest) => {
+    const items = await schemaDefinitionsService.listDefinitions(
+      await schemaContextFor(request),
+      category,
+      request.query.scope,
+    );
     return {
       items: items.map(({ active, pendingChange }) => ({
         ...toActiveDefinitionResponse(active),
@@ -47,11 +58,12 @@ export const createDefinitionControllers = (category: DefinitionCategory) => ({
   },
 
   create: async (request: CreateRequest, reply: FastifyReply) => {
-    const { definition, ...ack } = request.body;
+    const { definition, scope, ...ack } = request.body;
     const outcome = await schemaDefinitionsService.applyChange(await schemaContextFor(request), {
       category,
       definition,
       expectedVersion: null,
+      ...(scope ? { scope } : {}),
       ...ack,
     });
     return reply.code(outcome.status === 'pending' ? 202 : 201).send(outcome);
@@ -62,6 +74,7 @@ export const createDefinitionControllers = (category: DefinitionCategory) => ({
       category,
       definition: request.body.definition,
       expectedVersion: null,
+      ...(request.body.scope ? { scope: request.body.scope } : {}),
     }),
 
   update: async (request: UpdateRequest, reply: FastifyReply) => {
@@ -82,6 +95,15 @@ export const createDefinitionControllers = (category: DefinitionCategory) => ({
       id: request.params.id,
       definition: request.body.definition,
       expectedVersion: request.body.expectedVersion,
+    }),
+
+  changeScope: async (request: ScopeRequest) =>
+    schemaScopeService.changeScope(await schemaContextFor(request), {
+      category,
+      id: request.params.id,
+      scope: request.body.scope,
+      siteId: request.body.siteId,
+      expectedVersion: request.body.version,
     }),
 
   remove: async (request: DeleteRequest, reply: FastifyReply) => {

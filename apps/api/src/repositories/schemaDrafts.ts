@@ -18,6 +18,8 @@ export type SchemaDraftWrite = {
   baseVersion: number | null;
   /** Null: the draft deletes the definition. */
   definition: unknown;
+  /** A new definition the draft creates shared with all sites. */
+  shared: boolean;
   updatedByType: string;
   updatedById: string | null;
 };
@@ -48,6 +50,7 @@ export const insert = (draft: SchemaDraftWrite, trx: Executor = db) =>
       api_key: draft.apiKey,
       base_version: draft.baseVersion,
       definition: definitionJson(draft.definition),
+      shared: draft.shared,
       updated_by_type: draft.updatedByType,
       updated_by_id: draft.updatedById,
     })
@@ -70,6 +73,7 @@ export const update = (
       api_key: draft.apiKey,
       base_version: draft.baseVersion,
       definition: definitionJson(draft.definition),
+      shared: draft.shared,
       updated_by_type: draft.updatedByType,
       updated_by_id: draft.updatedById,
       version: eb('version', '+', eb.lit(1)),

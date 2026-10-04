@@ -39,7 +39,16 @@ const page = normalizeDefinition({
 const { schema } = buildGraphqlSchema(
   buildSnapshot(
     1,
-    [{ definition: page, version: 1, revisionId: uuid(9), hash: 'h', activatedAt: new Date(0) }],
+    [
+      {
+        definition: page,
+        siteId: null,
+        version: 1,
+        revisionId: uuid(9),
+        hash: 'h',
+        activatedAt: new Date(0),
+      },
+    ],
     [],
   ),
 );

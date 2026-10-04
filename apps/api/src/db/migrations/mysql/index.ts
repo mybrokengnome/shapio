@@ -1,6 +1,7 @@
 import type { Migration } from 'kysely/migration';
 import * as baseline from './0001_baseline.js';
 import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
+import * as modelsSiteScope from './20261004120000_models_site_scope.js';
 
 /**
  * MySQL migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -13,4 +14,5 @@ export const MYSQL_BASELINE_COVERS = '20261003160000_create_assist_runs';
 export const MYSQL_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '0001_baseline': baseline,
   '20261003170000_audit_events_seq': auditEventsSeq,
+  '20261004120000_models_site_scope': modelsSiteScope,
 };

@@ -7,8 +7,10 @@ import type { AdminPrincipal, TokenPrincipal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import * as contentPurgeRepository from '../repositories/contentPurge.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
+import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import * as sitesRepository from '../repositories/sites.js';
 import type { SiteRow } from '../repositories/sites.js';
+import { lockSchema } from '../schema/planner/locks.js';
 import type { ActorContext, SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
@@ -152,8 +154,8 @@ export const renameSite = async (
   });
 
 /**
- * Deletes an empty site: no live entries, media or app users, no folders or change sets. Its soft-deleted
- * entries (with their history), media assets and app users are purged first; its tokens, webhooks, deployment
+ * Deletes an empty site: no live entries, media or app users, no folders, change sets or definitions of its
+ * own. Its soft-deleted entries (with their history), definitions, media assets and app users are purged first; its tokens, webhooks, deployment
  * connections, role assignments, app role bindings, snapshot ledger and usage counters go with it.
  */
 export const deleteSite = async (context: ActorContext, id: string): Promise<void> => {
@@ -165,16 +167,25 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
     if (site.is_primary) {
       throw new AppError(409, 'SITE_IS_PRIMARY', 'The primary site cannot be deleted');
     }
-    const contents = await sitesRepository.countContents(id, trx);
+    // Serialised with schema changes, so no definition can be created on the site meanwhile.
+    await lockSchema(trx);
+    const contents = {
+      ...(await sitesRepository.countContents(id, trx)),
+      // The site's own content types and components (plan site-schema): delete or share them first.
+      definitions: await schemaModelsRepository.countSiteDefinitions(id, trx),
+    };
     if (Object.values(contents).some((count) => count > 0)) {
       throw new AppError(
         409,
         'SITE_NOT_EMPTY',
-        'Only an empty site can be deleted: remove its entries, media, change sets and app users first',
+        'Only an empty site can be deleted: remove its entries, media, change sets, app users and content types first',
         contents,
       );
     }
     await contentPurgeRepository.purgeDeletedEntriesOfSite(id, trx);
+    const deletedDefinitions = await schemaModelsRepository.findDeletedIdsOfSite(id, trx);
+    await contentPurgeRepository.purgeDeletedEntriesOfModels(deletedDefinitions, trx);
+    await schemaModelsRepository.purgeDefinitions(deletedDefinitions, trx);
     await mediaAssetsRepository.deleteSoftDeletedOfSite(id, trx);
     await appUsersRepository.deleteSoftDeletedOfSite(id, trx);
     await sitesRepository.deleteById(id, trx);

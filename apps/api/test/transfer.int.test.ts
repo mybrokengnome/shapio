@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { CliIo } from '@shapio/cli';
 import { REMOTE_COMMANDS } from '@shapio/cli';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SITE_HEADER } from '../src/constants/sites.js';
 import { createContentPorts } from '../src/content/ports.js';
 import { createTransferJobHandlers } from '../src/content/transfer/job.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
@@ -534,5 +535,121 @@ describe('content export and import (shapio export / shapio import)', () => {
     expect(response.statusCode).toBe(403);
     const anonymous = await instance.testApp.app.inject({ method: 'GET', url: '/api/admin/transfer/export' });
     expect(anonymous.statusCode).toBe(401);
+  });
+});
+
+describe('export and import of one site’s schema (plan site-schema)', () => {
+  let source: Instance | undefined;
+  let target: Instance | undefined;
+  let worker: Worker | undefined;
+  let workdir: string;
+
+  type ListBody = { items: Array<{ definition: { apiKey: string }; scope: string; siteId: string | null }> };
+  const scopesOn = async (instance: Instance, siteKey: string) =>
+    (
+      await instance.testApp.app.inject({
+        method: 'GET',
+        url: '/api/admin/models',
+        headers: { authorization: `Bearer ${instance.adminToken}`, [SITE_HEADER]: siteKey },
+      })
+    )
+      .json<ListBody>()
+      .items.map((item) => `${item.definition.apiKey}:${item.scope}:${item.siteId ?? 'shared'}`)
+      .sort();
+
+  beforeAll(async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'shapio-transfer-sites-'));
+  });
+
+  afterAll(async () => {
+    await worker?.stop(5000);
+    await stopInstance(source);
+    await stopInstance(target);
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it('recreates the site’s own definitions on the target site and shared ones shared', async () => {
+    const bundle = join(workdir, 'site.ndjson');
+    // Instances run one after the other: repositories share one process-wide database handle.
+    source = await startInstance(await createTestDatabase());
+    const sourceAdmin = schemaClient(source.testApp.app, source.adminToken);
+    await createDefinition(sourceAdmin, {
+      kind: 'collection',
+      apiKey: 'story',
+      label: 'Story',
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    });
+    await createDefinition(
+      sourceAdmin,
+      {
+        kind: 'collection',
+        apiKey: 'label',
+        label: 'Label',
+        fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
+      },
+      'models',
+      'network',
+    );
+    // An entry of the shared model, so the bundle covers it and a prune considers it.
+    expectStatus(await sourceAdmin.post('/api/admin/content/label', { data: { name: 'From source' } }), 201);
+    const exported = await runCli('export', [
+      '--url',
+      source.url,
+      '--token',
+      source.adminToken,
+      '--site',
+      'default',
+      bundle,
+    ]);
+    expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    await stopInstance(source);
+    source = undefined;
+
+    target = await startInstance(await createTestDatabase());
+    worker = startWorker(target);
+    const site = await target.testApp.app.inject({
+      method: 'POST',
+      url: '/api/admin/sites',
+      headers: { authorization: `Bearer ${target.adminToken}` },
+      payload: { key: 'blog', name: 'Blog' },
+    });
+    const blogId = expectStatus(site, 201).json<{ id: string }>().id;
+    const imported = await runCli('import', [
+      '--url',
+      target.url,
+      '--token',
+      target.adminToken,
+      '--site',
+      'blog',
+      bundle,
+    ]);
+    expect(imported, `${imported.stdout}\n${imported.stderr}`).toMatchObject({ code: 0 });
+    expect(await scopesOn(target, 'blog')).toEqual(['label:network:shared', `story:site:${blogId}`]);
+    expect(await scopesOn(target, 'default')).toEqual(['label:network:shared']);
+  });
+
+  it('prunes on the target site only: another site’s entries of a shared model stay untouched', async () => {
+    const instance = target as Instance;
+    const bundle = join(workdir, 'site.ndjson');
+    const onDefault = await instance.testApp.app.inject({
+      method: 'POST',
+      url: '/api/admin/content/label',
+      headers: { authorization: `Bearer ${instance.adminToken}`, [SITE_HEADER]: 'default' },
+      payload: { data: { name: 'Only on the default site' } },
+    });
+    const kept = expectStatus(onDefault, 201).json<EntryBody>();
+    const args = ['--url', instance.url, '--token', instance.adminToken, '--site', 'blog'];
+    const planned = await runCli('import', [...args, '--dry-run', '--prune', bundle]);
+    expect(planned, planned.stderr).toMatchObject({ code: 0 });
+    expect(planned.stdout).toContain('Prune: 0 target entries');
+    const pruned = await runCli('import', [...args, '--prune', bundle]);
+    expect(pruned, `${pruned.stdout}\n${pruned.stderr}`).toMatchObject({ code: 0, stderr: '' });
+    expect(pruned.stdout).toContain('pruned entries: 0');
+    const live = await instance.database.db
+      .selectFrom('entries')
+      .select(['id', 'deleted_at'])
+      .where('id', '=', kept.id)
+      .executeTakeFirstOrThrow();
+    expect(live.deleted_at).toBeNull();
   });
 });

@@ -385,6 +385,8 @@ const planSchema = async (
   try {
     const result = await applySchema(context, {
       definitions: definitions.map((record) => record.definition),
+      // A site definition lands on the target site; a shared one (or one from an older bundle) shared.
+      scopes: definitions.map((record) => record.scope ?? 'network'),
       base: EMPTY_LOCK,
       prune: false,
       dryRun: true,
@@ -487,10 +489,15 @@ const planPublishing = async (
 };
 
 /** Live target entries (of the bundle's models) and assets the bundle does not have. */
-const planPrune = async (acc: Accumulator) => {
+const planPrune = async (acc: Accumulator, siteId: string) => {
   let entries = 0;
   for (let after: string | null = null; ;) {
-    const rows = await transferImportRepository.listLiveEntryIds([...acc.config.entryModelIds], after, 1000);
+    const rows = await transferImportRepository.listLiveEntryIds(
+      siteId,
+      [...acc.config.entryModelIds],
+      after,
+      1000,
+    );
     if (rows.length === 0) {
       break;
     }
@@ -499,7 +506,7 @@ const planPrune = async (acc: Accumulator) => {
   }
   let assets = 0;
   for (let after: string | null = null; ;) {
-    const rows = await transferImportRepository.listLiveAssetIds(after, 1000);
+    const rows = await transferImportRepository.listLiveAssetIds(siteId, after, 1000);
     if (rows.length === 0) {
       break;
     }
@@ -507,6 +514,14 @@ const planPrune = async (acc: Accumulator) => {
     after = rows.at(-1)?.id ?? null;
   }
   return { entries, assets };
+};
+
+/** The import's target site: transfer routes are site routes, so the context is that site's view. */
+const siteOf = (context: SchemaServiceContext): string => {
+  if (context.snapshot.siteId === null) {
+    throw new Error('An import plan needs the target site’s view of the schema');
+  }
+  return context.snapshot.siteId;
 };
 
 export const planImport = async (
@@ -539,7 +554,7 @@ export const planImport = async (
     deliveryRoles: await planDeliveryRoles(config.deliveryRoles),
     ...acc.diff,
     ...(await planPublishing(config)),
-    prune: options.prune ? await planPrune(acc) : null,
+    prune: options.prune ? await planPrune(acc, siteOf(context)) : null,
     conflicts: 0,
   };
   diff.conflicts =

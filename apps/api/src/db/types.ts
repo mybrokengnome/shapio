@@ -555,6 +555,7 @@ export interface Models {
   deleted_at: Timestamp | null;
   id: string;
   kind: string;
+  site_id: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -683,6 +684,7 @@ export interface SchemaDrafts {
   definition_id: string;
   id: Generated<string>;
   kind: string;
+  shared: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   updated_by_id: string | null;
   updated_by_type: string;

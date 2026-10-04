@@ -38,12 +38,18 @@ export type ModelField = { id: string; public: boolean };
 export type FieldVisibilityLookup = {
   getModelFields: (modelId: string) => Promise<readonly ModelField[] | undefined>;
   hasModel: (modelId: string) => Promise<boolean>;
+  /**
+   * The site a definition belongs to: null when it is shared (or unknown). Schema management of a site's
+   * definition is granted by roles held on that site (plan site-schema, rule 4).
+   */
+  getModelSite: (modelId: string) => Promise<string | null>;
 };
 
 /** Used until the schema registry is wired in: no model is known, so delivery principals see nothing. */
 export const NO_FIELD_VISIBILITY: FieldVisibilityLookup = {
   getModelFields: () => Promise.resolve(undefined),
   hasModel: () => Promise.resolve(false),
+  getModelSite: () => Promise.resolve(null),
 };
 
 const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };
@@ -138,8 +144,13 @@ export const allowsGlobalAction = (grants: readonly Grant[], action: GlobalActio
  */
 export const createStaticFieldVisibility = (
   models: Readonly<Record<string, readonly ModelField[]>>,
-  { knownModelsOnly = false }: { knownModelsOnly?: boolean } = {},
+  {
+    knownModelsOnly = false,
+    modelSites = {},
+  }: { knownModelsOnly?: boolean; modelSites?: Readonly<Record<string, string>> } = {},
 ): FieldVisibilityLookup => ({
   getModelFields: (modelId) => Promise.resolve(Object.hasOwn(models, modelId) ? models[modelId] : undefined),
   hasModel: (modelId) => Promise.resolve(!knownModelsOnly || Object.hasOwn(models, modelId)),
+  getModelSite: (modelId) =>
+    Promise.resolve(Object.hasOwn(modelSites, modelId) ? (modelSites[modelId] ?? null) : null),
 });

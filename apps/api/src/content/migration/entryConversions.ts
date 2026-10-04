@@ -7,7 +7,7 @@ import type { HeadRecord } from '../../repositories/entryHeads.js';
 import * as publicationsRepository from '../../repositories/publications.js';
 import type { SeqAllocator } from '../../repositories/publications.js';
 import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
-import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import type { SchemaById } from '../../schema/snapshot.js';
 import * as mediaReferencesService from '../../services/mediaReferences.js';
 import { resolveModelById } from '../model.js';
 import { publishDraft, syncEntryUniqueValues, type WriteContext } from '../write/heads.js';
@@ -70,7 +70,7 @@ const keepOneLocale = async (
 const publishAll = async (
   trx: Transaction<DB>,
   nextSeq: SeqAllocator,
-  proposed: SchemaSnapshot,
+  proposed: SchemaById,
   entry: { id: string; siteId: string; modelId: string },
   heads: readonly HeadRecord[],
 ) => {
@@ -95,7 +95,7 @@ export const convertEntry = async (
     entryId: string;
     modelId: string;
     change: SchemaChange;
-    proposed: SchemaSnapshot;
+    proposed: SchemaById;
     /** The activation's publication sequence number of a site (the entry's). */
     seqFor: (siteId: string) => SeqAllocator;
   },

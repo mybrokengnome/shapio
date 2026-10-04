@@ -4,4 +4,5 @@ import { DENIED_POLICY, type PermissionEvaluator } from './types.js';
 export const denyAllEvaluator: PermissionEvaluator = {
   evaluate: () => Promise.resolve(DENIED_POLICY),
   canPerform: () => Promise.resolve(false),
+  canPerformOnSite: () => Promise.resolve(false),
 };

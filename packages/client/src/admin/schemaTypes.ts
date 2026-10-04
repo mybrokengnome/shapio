@@ -15,8 +15,14 @@ import type {
 /** `/api/admin/models` serves collections and singletons; `/api/admin/components` serves components. */
 export type DefinitionCategory = 'model' | 'component';
 
+/** Where a definition lives: one site (`site`), or shared with every site (`network`). */
+export type DefinitionScope = 'network' | 'site';
+
 export type ActiveDefinition = {
   definition: SchemaDefinition;
+  scope: DefinitionScope;
+  /** The site a `site` definition belongs to; null when shared. */
+  siteId: string | null;
   /** Per-definition version: send it back as `expectedVersion` when changing the definition. */
   version: number;
   hash: string;
@@ -60,6 +66,8 @@ export type ChangePlan = {
   kind: SchemaDefinition['kind'];
   apiKey: string;
   operation: 'create' | 'update' | 'delete';
+  /** The definition's site after the change; null when shared. */
+  siteId?: string | null;
   fromVersion: number | null;
   changes: ClassifiedChange[];
   summary: ChangeSummary;
@@ -94,7 +102,29 @@ export type DefinitionPayload = DefinitionInput | SchemaDefinition;
 
 export type Acknowledgement = { acknowledgeBreaking?: boolean; acknowledgeDestructive?: boolean };
 
-export type CreateDefinitionInput = { definition: DefinitionPayload } & Acknowledgement;
+export type CreateDefinitionInput = {
+  definition: DefinitionPayload;
+  /** Default `site`: the request's site. `network` shares it with all sites (schema.create on every site). */
+  scope?: DefinitionScope;
+} & Acknowledgement;
+
+/** `PUT /api/admin/{models,components}/:id/scope`: share with all sites, or keep on one site. */
+export type ChangeScopeInput = {
+  scope: DefinitionScope;
+  /** For `site`: the site to keep it on (default: the request's site). */
+  siteId?: string;
+  /** The definition's active version (409 SCHEMA_VERSION_CONFLICT when it moved). */
+  version: number;
+};
+
+export type ChangeScopeOutcome = {
+  status: 'activated' | 'unchanged';
+  definitionId: string;
+  scope: DefinitionScope;
+  siteId: string | null;
+  version: number;
+  schemaVersion: number;
+};
 
 export type UpdateDefinitionInput = {
   definition: DefinitionPayload;
@@ -120,6 +150,8 @@ export type SchemaSummaryItem = {
   label: string;
   version: number;
   hash: string;
+  /** The key of the site the definition belongs to; null when shared. */
+  site: string | null;
 };
 
 export type SchemaSummary = {

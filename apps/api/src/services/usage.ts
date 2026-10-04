@@ -79,7 +79,15 @@ const pathInvolves = (fieldPath: string, fieldId: string) => fieldPath.split('.'
  * Which sites' readers a viewer sees in detail (sites plan §H): every site for a network viewer (roles on
  * every site, or a network token), otherwise their own site, with the other sites as anonymous totals.
  */
-export type ConsumersView = { siteId: string; network: boolean };
+export type ConsumersView = {
+  siteId: string;
+  network: boolean;
+  /**
+   * Fields of the site's own definitions (plan site-schema): only this site can read them, so their readers
+   * are this site's, with no other-site totals (counters left from before a scope change are dropped).
+   */
+  siteFieldIds?: ReadonlySet<string>;
+};
 
 const otherSitesOf = (principals: readonly FieldPrincipalUsage[]): OtherSitesUsage => ({
   consumers: principals.length,
@@ -100,6 +108,13 @@ export const consumersOf = async (
   const rows = await usageRepository.fieldUsageForFields(fieldIds, windowStartDay(days));
   return fieldIds.map((fieldId) => {
     const principals = byPrincipal(rows.filter((row) => pathInvolves(row.fieldPath, fieldId)));
+    if (view.siteFieldIds?.has(fieldId)) {
+      return {
+        fieldId,
+        principals: principals.filter((principal) => principal.site.id === view.siteId),
+        otherSites: null,
+      };
+    }
     if (view.network) {
       return { fieldId, principals, otherSites: null };
     }

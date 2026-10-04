@@ -232,6 +232,8 @@ export const SchemaDraftSchema = Type.Object({
   baseVersion: NullableInteger,
   /** The proposed definition (normalized); null when the draft deletes the definition. */
   definition: Nullable(DefinitionSchema),
+  /** A new definition the draft creates shared with all sites (otherwise it belongs to the set's site). */
+  shared: Type.Boolean(),
   version: Type.Integer(),
   updatedBy: ActorSchema,
   createdAt: DateTimeSchema,
@@ -253,6 +255,11 @@ export const PutSchemaDraftBodySchema = Type.Object(
     definition: Nullable(Type.Unknown()),
     /** The active version the edit is based on (null: a new definition). Checked again when shipping. */
     baseVersion: Nullable(VersionSchema),
+    /**
+     * For a new definition: create it shared with all sites (needs schema.create on every site). Default
+     * false: it belongs to the set's site. Ignored for an existing definition, which keeps its scope.
+     */
+    shared: Type.Optional(Type.Boolean()),
     /** The draft row version the caller saw; omit when creating the draft. */
     expectedDraftVersion: Type.Optional(VersionSchema),
   },

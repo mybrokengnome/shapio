@@ -75,6 +75,7 @@ const applyDefinitions = async (deps: ConfigDependencies, plan: ImportPlan): Pro
   }
   const result = await applySchema(await deps.schemaContext(), {
     definitions: plan.config.definitions.map((record) => record.definition),
+    scopes: plan.config.definitions.map((record) => record.scope ?? 'network'),
     base: EMPTY_LOCK,
     prune: false,
     dryRun: false,

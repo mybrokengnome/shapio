@@ -1,9 +1,10 @@
 import { parseDefinition, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import { buildChangePlan, type ChangePlan } from '../schema/planner/plan.js';
+import { scopedDefinitionsOf, type ScopedDefinition } from '../schema/scopedValidation.js';
 import { readStoredDefinition } from '../schema/storedDefinition.js';
 import type { SchemaServiceContext } from './schemaAccess.js';
-import { findDeletedDefinition } from './schemaDefinitions.js';
+import { findDeletedDefinition, plannerInputOf } from './schemaDefinitions.js';
 
 /**
  * Planning a change set's schema drafts with the same planner as the builder and `schema apply`. Each draft
@@ -28,16 +29,29 @@ export type DraftPlan = {
 export const storedDraftDefinition = (draft: SchemaDraftRow): SchemaDefinition | null =>
   draft.definition === null ? null : readStoredDefinition(draft.definition);
 
+/**
+ * A draft's scope: an existing definition keeps its own; a new one belongs to the change set's site unless
+ * the draft creates a shared definition (`shared`). Drafts never change a scope.
+ */
+export const draftScopeOf = (
+  context: SchemaServiceContext,
+  draft: Pick<SchemaDraftRow, 'definition_id' | 'shared'>,
+) => {
+  const active = context.snapshot.network.byId.get(draft.definition_id);
+  return active ? active.siteId : draft.shared ? null : context.snapshot.siteId;
+};
+
 /** The active definitions with these drafts applied (deletions removed, proposals swapped in or added). */
 export const proposedDefinitions = (
-  active: readonly SchemaDefinition[],
+  context: SchemaServiceContext,
+  active: readonly ScopedDefinition[],
   drafts: readonly SchemaDraftRow[],
-): SchemaDefinition[] => {
-  const byId = new Map(active.map((definition) => [definition.id, definition]));
+): ScopedDefinition[] => {
+  const byId = new Map(active.map((entry) => [entry.definition.id, entry]));
   for (const draft of drafts) {
     const proposal = storedDraftDefinition(draft);
     if (proposal) {
-      byId.set(draft.definition_id, proposal);
+      byId.set(draft.definition_id, { definition: proposal, siteId: draftScopeOf(context, draft) });
     } else {
       byId.delete(draft.definition_id);
     }
@@ -64,9 +78,23 @@ export const planDraft = async (
 ): Promise<DraftPlan> => {
   const active = context.snapshot.byId.get(draft.definition_id);
   const activeVersion = active?.version ?? null;
+  if (!active && context.snapshot.network.byId.has(draft.definition_id)) {
+    // Another site's definition: never this set's to change (prepareDraft refuses it; this covers a set
+    // whose draft became that after a scope change).
+    return {
+      draft,
+      before: null,
+      after: null,
+      plan: null,
+      activeVersion,
+      stale: true,
+      issues: [{ path: '', code: 'INVALID_STRUCTURE', message: 'the definition belongs to another site' }],
+    };
+  }
+  const siteId = draftScopeOf(context, draft);
   const before =
     active?.definition ??
-    (draft.definition === null ? null : await findDeletedDefinition(context, draft.definition_id));
+    (draft.definition === null ? null : await findDeletedDefinition(context, draft.definition_id, siteId));
   const base = { draft, before, activeVersion, stale: draft.base_version !== activeVersion };
   let after: SchemaDefinition | null = null;
   if (draft.definition !== null) {
@@ -83,15 +111,19 @@ export const planDraft = async (
       issues: [{ path: '', code: 'INVALID_STRUCTURE', message: 'the definition to delete is not active' }],
     };
   }
+  const { siteKeys } = await plannerInputOf(context);
   const plan = buildChangePlan({
     before,
     after,
     fromVersion: activeVersion,
     active: proposedDefinitions(
-      context.snapshot.definitions.map((entry) => entry.definition),
+      context,
+      scopedDefinitionsOf(context.snapshot.network.definitions),
       others.filter((other) => other.id !== draft.id),
     ),
+    siteId,
     hasContent: before !== null,
+    siteKeys,
   });
   return { ...base, after, plan, issues: [...plan.issues, ...unsupportedIssues(plan)] };
 };

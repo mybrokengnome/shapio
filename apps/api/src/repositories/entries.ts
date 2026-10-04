@@ -1,4 +1,4 @@
-import type { Kysely, Transaction } from 'kysely';
+import type { ExpressionBuilder, Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 
@@ -23,12 +23,24 @@ export type NewEntry = {
   createdByAdminId: string | null;
 };
 
+/**
+ * The model, only if it may hold entries on the site: shared, or the site's own (plan site-schema). For
+ * another site's model the subquery is empty and the insert fails (the model column is required), so an
+ * entry can never land on a site whose view lacks its model, whatever resolved it.
+ */
+const modelInScope = (modelId: string, siteId: string) => (eb: ExpressionBuilder<DB, 'entries'>) =>
+  eb
+    .selectFrom('models')
+    .select('models.id')
+    .where('models.id', '=', modelId)
+    .where((scope) => scope.or([scope('models.site_id', 'is', null), scope('models.site_id', '=', siteId)]));
+
 export const insert = (entry: NewEntry, trx: Executor = db) =>
   trx
     .insertInto('entries')
     .values({
       site_id: entry.siteId,
-      model_id: entry.modelId,
+      model_id: modelInScope(entry.modelId, entry.siteId),
       owner_app_user_id: entry.ownerAppUserId,
       created_by_admin_id: entry.createdByAdminId,
     })
@@ -198,3 +210,19 @@ export const countLiveByModel = (siteId: string, modelIds: readonly string[], ex
  */
 export const entrySiteOf = (executor: Executor, entryId: string) =>
   executor.selectFrom('entries').select('entries.site_id').where('entries.id', '=', entryId);
+
+/**
+ * Live entries of a model on sites other than `siteId`, per site (a definition can only move to one site
+ * while no other site holds entries of it: plan site-schema, rule 2). Deleted ones do not count: once the
+ * model is not in their site's view they can no longer be restored, and the trash purge removes them.
+ */
+export const countBySiteOutside = (modelId: string, siteId: string, executor: Executor = db) =>
+  executor
+    .selectFrom('entries')
+    .select((eb) => ['site_id', eb.fn.countAll<number | string | bigint>().as('count')])
+    .where('model_id', '=', modelId)
+    .where('site_id', '<>', siteId)
+    .where('deleted_at', 'is', null)
+    .groupBy('site_id')
+    .orderBy('site_id')
+    .execute();

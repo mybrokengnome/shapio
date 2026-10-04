@@ -121,7 +121,7 @@ export const createEntry = async (
   const validator = buildValidator(context.snapshot, model);
   const patch = inputPatch(validator, model, policy.writeMask, input.data);
   const outcome = validated(validator, applyPatch(defaultsOf(model.definition), patch), false);
-  const entryId = await runEntryWrite(context.db, model, [locale], async (trx) => {
+  const entryId = await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,
@@ -294,7 +294,7 @@ export const updateEntry = async (
   const validator = buildValidator(context.snapshot, model);
   const patch = inputPatch(validator, model, policy.writeMask, input.data);
   let servedLocale = locale;
-  await runEntryWrite(context.db, model, [locale], async (trx) => {
+  await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,
@@ -376,7 +376,7 @@ export const restoreRevision = async (
     throw revisionNotFound(revisionId);
   }
   const validator = buildValidator(context.snapshot, model);
-  await runEntryWrite(context.db, model, [revision.locale], async (trx) => {
+  await runEntryWrite(context.db, model, context.site.id, [revision.locale], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,
@@ -429,7 +429,7 @@ export const deleteEntry = async (
   id: string,
 ): Promise<void> => {
   const { model, policy } = await modelWithPolicy(context, modelKey, 'delete');
-  await runEntryWrite(context.db, model, [], async (trx) => {
+  await runEntryWrite(context.db, model, context.site.id, [], async (trx) => {
     const now = new Date();
     assertEntryVisible(
       policy,
@@ -487,7 +487,7 @@ export const duplicateEntry = async (
   const validator = buildValidator(context.snapshot, model);
   const unique = new Set(uniqueFields(model.definition).map((field) => field.id));
   let firstLocale: string | undefined;
-  const newId = await runEntryWrite(context.db, model, [], async (trx) => {
+  const newId = await runEntryWrite(context.db, model, context.site.id, [], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,

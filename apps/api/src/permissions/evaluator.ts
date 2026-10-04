@@ -12,6 +12,7 @@ import {
   DENIED_POLICY,
   NETWORK_ACTIONS,
   NETWORK_CONTENT_ACTIONS,
+  SITE_GRANTABLE_ACTIONS,
   type ContentAction,
   type GlobalAction,
   type PermissionEvaluator,
@@ -84,6 +85,21 @@ const rolesOf = async (principal: Principal, grants: GrantSource): Promise<Princ
 type EvaluatorDependencies = { grants: GrantSource; fields: FieldVisibilityLookup };
 
 /**
+ * Whether the principal acts on `siteId`: an admin narrowed to it, a site token of it, or a network token
+ * (whose role applies on every site). Never an app user or anonymous caller (schema actions are admin-only).
+ */
+const actsOnSite = (principal: Principal, siteId: string): boolean => {
+  switch (principal.kind) {
+    case 'admin':
+      return principal.siteId === siteId;
+    case 'token':
+      return principal.scope === 'admin' && (principal.siteId === null || principal.siteId === siteId);
+    default:
+      return false;
+  }
+};
+
+/**
  * The one permission evaluator (ADR 0005): principal → roles → grants → Policy, for REST and GraphQL.
  * Deny by default at every step.
  */
@@ -99,8 +115,13 @@ export const createPermissionEvaluator = ({
     if (roles.actions !== 'all' && !roles.actions.has(request.action)) {
       return DENIED_POLICY;
     }
-    // Schema management is about the shared schema: only network roles grant it (sites plan §H).
-    const roleIds = NETWORK_CONTENT_ACTIONS.has(request.action) ? roles.networkRoleIds : roles.roleIds;
+    // Schema management of a shared definition: network roles only (sites plan §H). Of a site's own
+    // definition: the roles that apply on that site, when the principal acts there (plan site-schema).
+    let roleIds = roles.roleIds;
+    if (NETWORK_CONTENT_ACTIONS.has(request.action)) {
+      const modelSite = await fields.getModelSite(request.modelId);
+      roleIds = modelSite !== null && actsOnSite(principal, modelSite) ? roles.roleIds : roles.networkRoleIds;
+    }
     const held = await grants.getGrants(roleIds);
     if (held.length === 0) {
       return DENIED_POLICY;
@@ -120,5 +141,19 @@ export const createPermissionEvaluator = ({
     // Network actions only count roles assigned on every site, so a site role never reaches the network.
     const roleIds = NETWORK_ACTION_SET.has(action) ? roles.networkRoleIds : roles.roleIds;
     return allowsGlobalAction(await grants.getGrants(roleIds), action);
+  },
+  canPerformOnSite: async (principal, action, siteId) => {
+    const roles = await rolesOf(principal, grants);
+    if (roles === 'all') {
+      return true;
+    }
+    if (roles.audience === 'delivery') {
+      return false;
+    }
+    const counted =
+      !NETWORK_ACTION_SET.has(action) || (SITE_GRANTABLE_ACTIONS.has(action) && actsOnSite(principal, siteId))
+        ? roles.roleIds
+        : roles.networkRoleIds;
+    return allowsGlobalAction(await grants.getGrants(counted), action);
   },
 });

@@ -112,6 +112,9 @@ const proposedSnapshotOf = (snapshot: SchemaSnapshot, plans: readonly DraftPlan[
     if (planned.after) {
       byId.set(planned.draft.definition_id, {
         definition: planned.after,
+        // A new definition belongs to the set's site unless its draft creates a shared one.
+        siteId:
+          byId.get(planned.draft.definition_id)?.siteId ?? (planned.draft.shared ? null : snapshot.siteId),
         version: (planned.activeVersion ?? 0) + 1,
         revisionId: planned.draft.id,
         hash: '',
@@ -121,7 +124,7 @@ const proposedSnapshotOf = (snapshot: SchemaSnapshot, plans: readonly DraftPlan[
       byId.delete(planned.draft.definition_id);
     }
   }
-  return buildSnapshot(snapshot.version, [...byId.values()], snapshot.locales);
+  return buildSnapshot(snapshot.version, [...byId.values()], snapshot.locales, snapshot.siteId);
 };
 
 /** Models whose stored values the set converts or backfills (their drafts are checked after conversion). */
@@ -290,7 +293,15 @@ const consumersFor = async (context: ChangeSetServiceContext, plans: readonly Dr
   const usage = await consumersOf(
     unique.map((entry) => entry.fieldId),
     REVIEW_USAGE_DAYS,
-    { siteId: context.site.id, network: seesEverySite(context.actor) },
+    {
+      siteId: context.site.id,
+      network: seesEverySite(context.actor),
+      siteFieldIds: new Set(
+        unique
+          .filter((entry) => context.snapshot.scopeOf(entry.modelId) === context.site.id)
+          .map((entry) => entry.fieldId),
+      ),
+    },
   );
   return unique.map((entry): FieldConsumersView => {
     const found = usage.find((row) => row.fieldId === entry.fieldId);

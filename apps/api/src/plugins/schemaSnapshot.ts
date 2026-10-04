@@ -4,7 +4,7 @@ import type { NotificationListener } from '../db/notifications.js';
 import { startSchemaChangeListener } from '../schema/notify.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import type { SchemaRegistry } from '../schema/registry.js';
-import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { NetworkSchema, SchemaSnapshot } from '../schema/snapshot.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -13,8 +13,8 @@ declare module 'fastify' {
     schemaContent: SchemaContentPorts;
   }
   interface FastifyRequest {
-    /** Set on first use by `getRequestSchema`; the same snapshot for the rest of the request. */
-    schemaSnapshotPin: Promise<SchemaSnapshot> | null;
+    /** Set on first use by `getRequestSchema`; the same full schema for the rest of the request. */
+    schemaSnapshotPin: Promise<NetworkSchema> | null;
   }
 }
 
@@ -55,8 +55,17 @@ export const schemaSnapshotPlugin = fp<SchemaSnapshotPluginOptions>(
   { name: 'shapio-schema-snapshot', dependencies: ['shapio-services'] },
 );
 
-/** The schema snapshot this request is pinned to. */
-export const getRequestSchema = (request: FastifyRequest): Promise<SchemaSnapshot> => {
+/** The full schema (every site's definitions and the shared ones) this request is pinned to. */
+export const getRequestNetworkSchema = (request: FastifyRequest): Promise<NetworkSchema> => {
   request.schemaSnapshotPin ??= request.server.schemaRegistry.getSnapshot();
   return request.schemaSnapshotPin;
+};
+
+/**
+ * The schema this request sees, at its pinned version: on a site route the site's view (shared definitions
+ * and the site's own), on a network route the shared definitions alone.
+ */
+export const getRequestSchema = async (request: FastifyRequest): Promise<SchemaSnapshot> => {
+  const network = await getRequestNetworkSchema(request);
+  return request.site ? network.forSite(request.site.id) : network.shared();
 };

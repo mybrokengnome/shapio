@@ -39,3 +39,43 @@ export const purgeDeletedEntriesOfSite = async (siteId: string, trx: Transaction
     .execute();
   await trx.deleteFrom('entries').where('site_id', '=', siteId).where('deleted_at', 'is not', null).execute();
 };
+
+/** The IDs of the soft-deleted entries of some models (on any site), as a subquery. */
+const deletedEntryIdsOfModels = (modelIds: readonly string[], trx: Transaction<DB>) =>
+  trx
+    .selectFrom('entries')
+    .select('id')
+    .where('model_id', 'in', modelIds)
+    .where('deleted_at', 'is not', null);
+
+/**
+ * Hard-deletes the soft-deleted entries of some models wherever they are, like `purgeDeletedEntriesOfSite`
+ * (same order, same cascades). Used before purging a deleted site's definitions: an entry deleted on
+ * another site while the definition was still shared keeps referencing it (plan site-schema).
+ */
+export const purgeDeletedEntriesOfModels = async (modelIds: readonly string[], trx: Transaction<DB>) => {
+  if (modelIds.length === 0) {
+    return;
+  }
+  await trx
+    .deleteFrom('publication_log')
+    .where('entry_id', 'in', deletedEntryIdsOfModels(modelIds, trx))
+    .execute();
+  await trx
+    .deleteFrom('entry_heads')
+    .where('entry_id', 'in', deletedEntryIdsOfModels(modelIds, trx))
+    .execute();
+  await trx
+    .deleteFrom('relation_edges')
+    .where('target_entry_id', 'in', deletedEntryIdsOfModels(modelIds, trx))
+    .execute();
+  await trx
+    .deleteFrom('content_revisions')
+    .where('entry_id', 'in', deletedEntryIdsOfModels(modelIds, trx))
+    .execute();
+  await trx
+    .deleteFrom('entries')
+    .where('model_id', 'in', modelIds)
+    .where('deleted_at', 'is not', null)
+    .execute();
+};

@@ -18,10 +18,12 @@ export const schemaRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
 
+  // The summary, export and apply are about one site's view (shared definitions and the site's own).
+  const site = { config: { site: 'site' as const } };
   // GET /: global schema version and every visible definition's version and hash
-  app.get('/', { ...admin, schema: schemas.getSummarySchema }, getSchemaSummary);
-  // GET /export: canonical definitions + lock data for `shapio schema pull`
-  app.get('/export', { ...admin, schema: schemas.exportSchema }, exportSchema);
+  app.get('/', { ...admin, ...site, schema: schemas.getSummarySchema }, getSchemaSummary);
+  // GET /export?scope=network: canonical definitions + lock data for `shapio schema pull`
+  app.get('/export', { ...admin, ...site, schema: schemas.exportSchema }, exportSchema);
   // POST /apply: three-way apply for `shapio schema apply` (dryRun for `shapio schema diff`)
   app.post(
     '/apply',
@@ -29,7 +31,7 @@ export const schemaRoutes: FastifyPluginAsyncTypebox = async (app) => {
       ...admin,
       bodyLimit: APPLY_BODY_LIMIT,
       schema: schemas.applySchema,
-      config: { audit: { action: 'schema.activate' } },
+      config: { audit: { action: 'schema.activate' }, site: 'site' },
     },
     applySchema,
   );

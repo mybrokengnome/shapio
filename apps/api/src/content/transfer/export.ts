@@ -70,21 +70,25 @@ const toHead = (head: ExportHeadRow): EntryRecord['heads'][number] => ({
   publishedAt: head.state === 'published' ? iso(head.published_at) : null,
 });
 
-async function* schemaRecords(trx: Executor): AsyncGenerator<BundleRecord> {
+/** The site's view: the shared definitions and the site's own (another site's never leave with a bundle). */
+async function* schemaRecords(trx: Executor, siteId: string): AsyncGenerator<BundleRecord> {
   const schemaVersion = await schemaVersionsRepository.getSchemaVersion(trx);
   // Through the stored-definition reader, so collections saved before plural API IDs carry the derived one.
-  const definitions = await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(trx));
+  const definitions = (
+    await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(trx))
+  ).filter((active) => active.siteId === null || active.siteId === siteId);
   const lock: LockFile = { formatVersion: 1, schemaVersion, definitions: {} };
   for (const { definition, version, hash } of definitions) {
     lock.definitions[definition.id] = { kind: definition.kind, apiKey: definition.apiKey, version, hash };
   }
   yield { type: 'schemaLock', lock };
-  for (const { definition, version, hash } of definitions) {
+  for (const { definition, version, hash, siteId: scope } of definitions) {
     yield {
       type: 'definition',
       definition: definition as unknown as Record<string, unknown>,
       version,
       hash,
+      scope: scope === null ? 'network' : 'site',
     };
   }
 }
@@ -317,7 +321,7 @@ export async function* bundleRecords(
     });
   }
   for (const source of [
-    schemaRecords(trx),
+    schemaRecords(trx, siteId),
     roleAndUserRecords(trx, siteId, options),
     publishingRecords(trx, siteId),
     mediaRecords(trx, siteId),

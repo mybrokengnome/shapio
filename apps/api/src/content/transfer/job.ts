@@ -97,6 +97,7 @@ const SYSTEM_ACTOR: Principal = { kind: 'system', component: 'transfer' };
 const SYSTEM_PERMISSIONS: PermissionEvaluator = {
   evaluate: async () => ALLOW_ALL_POLICY,
   canPerform: async () => true,
+  canPerformOnSite: async () => true,
 };
 
 export type TransferJobDependencies = { db: Database; storage: MediaStorage };
@@ -183,6 +184,10 @@ const importMedia = (run: Run) =>
     result.errors.forEach((error) => recordError(run, error));
   });
 
+/** The target site's view of the current schema: entries of other sites' models read as unknown. */
+const loadSiteSnapshot = async (run: Run): Promise<SchemaSnapshot> =>
+  (await loadSnapshot(run.deps.db)).forSite(run.payload.siteId);
+
 /** Entry rows first (IDs only), so relations between bundle entries resolve whatever their order. */
 const importEntryRows = (run: Run, snapshot: SchemaSnapshot) =>
   forEachBatch<EntryRecord>(run, 'entry', async (batch) => {
@@ -231,7 +236,7 @@ const importContent = async (run: Run, initial: SchemaSnapshot) => {
           if (!(error instanceof AppError) || error.code !== 'SCHEMA_CHANGED') {
             throw error;
           }
-          snapshot = await loadSnapshot(run.deps.db);
+          snapshot = await loadSiteSnapshot(run);
           outcome = await importEntry(context, snapshot, entry);
         }
         run.progress.counts.entries[outcome] += 1;
@@ -269,7 +274,12 @@ const prune = async (run: Run, snapshot: SchemaSnapshot) => {
     failed = [];
     let deleted = 0;
     for (let after: string | null = null; ;) {
-      const rows = await transferImportRepository.listLiveEntryIds([...models], after, 500);
+      const rows = await transferImportRepository.listLiveEntryIds(
+        run.payload.siteId,
+        [...models],
+        after,
+        500,
+      );
       if (rows.length === 0) {
         break;
       }
@@ -304,11 +314,11 @@ const runPhase = async (run: Run, phase: ImportPhase) => {
     case 'media':
       return importMedia(run);
     case 'entries':
-      return importEntryRows(run, await loadSnapshot(run.deps.db));
+      return importEntryRows(run, await loadSiteSnapshot(run));
     case 'content':
-      return importContent(run, await loadSnapshot(run.deps.db));
+      return importContent(run, await loadSiteSnapshot(run));
     case 'prune':
-      return run.payload.prune ? prune(run, await loadSnapshot(run.deps.db)) : undefined;
+      return run.payload.prune ? prune(run, await loadSiteSnapshot(run)) : undefined;
     case 'cleanup':
       return removeStoredBundle(run.deps.storage, run.payload.bundle).catch((error: unknown) =>
         run.job.log.warn(

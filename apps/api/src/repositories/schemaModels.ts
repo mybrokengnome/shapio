@@ -16,6 +16,7 @@ export const findActiveDefinitions = (executor: Executor = db) =>
     .select([
       'models.id as modelId',
       'models.kind as kind',
+      'models.site_id as siteId',
       'active.version as version',
       'active.revision_id as revisionId',
       'active.activated_at as activatedAt',
@@ -31,17 +32,79 @@ export type ActiveDefinitionRow = Awaited<ReturnType<typeof findActiveDefinition
 export const findModelById = (id: string, executor: Executor = db) =>
   executor.selectFrom('models').selectAll().where('id', '=', id).executeTakeFirst();
 
-export const insertModel = (model: { id: string; kind: string; apiKey: string }, trx: Executor = db) =>
-  trx.insertInto('models').values({ id: model.id, kind: model.kind, api_key: model.apiKey }).execute();
+/** `siteId` null: a shared definition (every site); otherwise the one site it belongs to. */
+export const insertModel = (
+  model: { id: string; kind: string; apiKey: string; siteId: string | null },
+  trx: Executor = db,
+) =>
+  trx
+    .insertInto('models')
+    .values({ id: model.id, kind: model.kind, api_key: model.apiKey, site_id: model.siteId })
+    .execute();
 
-/** Keeps the denormalised kind and API key in step with the active revision; also undeletes. */
+/** Definitions of one site that are not deleted (active or still pending their first activation). */
+export const countSiteDefinitions = async (siteId: string, executor: Executor = db): Promise<number> => {
+  const row = await executor
+    .selectFrom('models')
+    .select((eb) => eb.fn.countAll<number | string | bigint>().as('count'))
+    .where('site_id', '=', siteId)
+    .where('deleted_at', 'is', null)
+    .executeTakeFirst();
+  return Number(row?.count ?? 0);
+};
+
+/** A site's deleted definitions (what `deleteSite` purges with the site). */
+export const findDeletedIdsOfSite = async (siteId: string, executor: Executor = db): Promise<string[]> =>
+  (
+    await executor
+      .selectFrom('models')
+      .select('id')
+      .where('site_id', '=', siteId)
+      .where('deleted_at', 'is not', null)
+      .execute()
+  ).map((row) => row.id);
+
+/**
+ * Purges deleted definitions with their history (`deleteSite`, once the site has no live definition and the
+ * definitions' deleted entries are purged): change rows, revisions, then the models rows.
+ */
+export const purgeDefinitions = async (ids: readonly string[], trx: Executor = db): Promise<void> => {
+  if (ids.length === 0) {
+    return;
+  }
+  await trx.deleteFrom('schema_change_jobs').where('model_id', 'in', ids).execute();
+  await trx.deleteFrom('model_active_versions').where('model_id', 'in', ids).execute();
+  // Newest first, one row at a time: a revision's parent always has a lower version, and MySQL checks the
+  // self-reference row by row.
+  const revisions = await trx
+    .selectFrom('schema_revisions')
+    .select('id')
+    .where('model_id', 'in', ids)
+    .orderBy('version', 'desc')
+    .execute();
+  for (const revision of revisions) {
+    await trx.deleteFrom('schema_revisions').where('id', '=', revision.id).execute();
+  }
+  await trx.deleteFrom('models').where('id', 'in', ids).execute();
+};
+
+/**
+ * Keeps the denormalised kind, API key and scope in step with the active revision; also undeletes. The scope
+ * only differs from the stored one for a scope change (`ActivationItem.moveScope`).
+ */
 export const markModelActive = (
-  model: { id: string; kind: string; apiKey: string; now: Date },
+  model: { id: string; kind: string; apiKey: string; siteId: string | null; now: Date },
   trx: Executor = db,
 ) =>
   trx
     .updateTable('models')
-    .set({ kind: model.kind, api_key: model.apiKey, updated_at: model.now, deleted_at: null })
+    .set({
+      kind: model.kind,
+      api_key: model.apiKey,
+      site_id: model.siteId,
+      updated_at: model.now,
+      deleted_at: null,
+    })
     .where('id', '=', model.id)
     .execute();
 

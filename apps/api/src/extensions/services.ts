@@ -49,7 +49,8 @@ const contentContext = async (
   principal: Principal | undefined,
 ): Promise<ContentServiceContext> => ({
   db: environment.db,
-  snapshot: await environment.registry.getSnapshot(),
+  // The site's view (plan site-schema): shared definitions and the site's own.
+  snapshot: (await environment.registry.getSnapshot()).forSite(site.id),
   permissions: environment.permissions,
   actor: principal ?? SYSTEM_PRINCIPAL,
   // Content is per site (sites plan §H, ADR 0009 note): these services read their own site.
@@ -83,12 +84,12 @@ const createShapioServices = (environment: ServiceEnvironment, site: SiteRef): S
       return { items: result.items.map(toReadEntry), total: result.pagination.total };
     },
     models: async () =>
-      [...(await environment.registry.getSnapshot()).byId.values()]
+      [...(await environment.registry.getSnapshot()).forSite(site.id).byId.values()]
         .map((active) => active.definition)
         .filter((definition): definition is ModelDefinition => !isComponentDefinition(definition))
         .map(toHookModel),
     count: async (modelKey) => {
-      const model = resolveModel(await environment.registry.getSnapshot(), modelKey);
+      const model = resolveModel((await environment.registry.getSnapshot()).forSite(site.id), modelKey);
       return entriesRepository.countLive(model.definition.id, site.id, environment.db);
     },
   },

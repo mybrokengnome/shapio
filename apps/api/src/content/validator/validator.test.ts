@@ -67,6 +67,7 @@ const snapshot = buildSnapshot(
     revisionId: id(900 + index),
     hash: 'x',
     activatedAt: new Date(),
+    siteId: null,
   })),
   [{ code: 'en', label: 'English', isDefault: true, fallbacks: [] }],
 );

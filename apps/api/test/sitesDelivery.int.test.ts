@@ -77,6 +77,8 @@ describe('delivery per site', () => {
         label: 'Post',
         fields: [{ apiKey: 'title', label: 'Title', type: 'string', filterable: true }],
       },
+      // Shared with every site: each site delivers its own entries of it.
+      scope: 'network',
     });
     modelId = expectStatus(model, 201).json<{ definitionId: string }>().definitionId;
 

@@ -10,7 +10,7 @@ import { recordAudit } from '../../services/audit.js';
 import { verifyChangesUnderLock } from './activate.js';
 import { actorColumns } from './actor.js';
 import { lockSchema } from './locks.js';
-import type { ChangePlan } from './plan.js';
+import { scopeOfPlan, type ChangePlan } from './plan.js';
 import { enqueueSchemaChange } from './prerequisites.js';
 
 export type ChangeRequest = {
@@ -37,7 +37,10 @@ export const insertPendingChange = async (
   let revisionId: string | null = null;
   if (after) {
     if (!(await schemaModelsRepository.findModelById(after.id, trx))) {
-      await schemaModelsRepository.insertModel({ id: after.id, kind: after.kind, apiKey: after.apiKey }, trx);
+      await schemaModelsRepository.insertModel(
+        { id: after.id, kind: after.kind, apiKey: after.apiKey, siteId: scopeOfPlan(plan) },
+        trx,
+      );
     }
     const latest = await schemaModelsRepository.findLatestRevisionVersion(after.id, trx);
     const revision = await schemaModelsRepository.insertRevision(

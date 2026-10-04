@@ -18,14 +18,14 @@ import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as relationEdgesRepository from '../repositories/relationEdges.js';
-import type { SchemaSnapshot } from '../schema/snapshot.js';
+import type { SchemaById } from '../schema/snapshot.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
 /** What evaluating health needs: no HTTP objects, usable from requests and jobs alike. */
 export type HealthEnvironment = {
   db: Kysely<DB>;
-  snapshot: SchemaSnapshot;
+  snapshot: SchemaById;
   /** HEALTH_STALE_DAYS. */
   staleDays: number;
   now?: () => Date;
@@ -57,11 +57,7 @@ const loadAssets = async (
 };
 
 /** The draft heads' relation edges, with each target's state (deleted, published locales, its model). */
-const loadEdges = async (
-  executor: Executor,
-  snapshot: SchemaSnapshot,
-  entryId: string,
-): Promise<EdgeInfo[]> => {
+const loadEdges = async (executor: Executor, snapshot: SchemaById, entryId: string): Promise<EdgeInfo[]> => {
   const edges = await relationEdgesRepository.listForEntryState(entryId, 'draft', executor);
   const targetIds = [...new Set(edges.map((edge) => edge.target_entry_id))];
   const [targets, published] = await Promise.all([

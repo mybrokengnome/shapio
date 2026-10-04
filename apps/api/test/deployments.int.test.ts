@@ -4,7 +4,7 @@ import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import type { Worker } from '../src/jobs/worker.js';
 import { startFakeCloudflare, type FakeCloudflare } from './fixtures/cloudflareApi.js';
 import { startFakeGitHub, type FakeGitHub } from './fixtures/githubApi.js';
-import { createDefinition, expectStatus, type EntryBody } from './helpers/content.js';
+import { createDefinition, createSharedDefinition, expectStatus, type EntryBody } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
 import {
   createPublishingTestApp,
@@ -707,7 +707,8 @@ describe('deployments', () => {
           200,
         ).json(),
       ).toMatchObject({ ok: true });
-      await createDefinition(admin, {
+      // Shared with every site: `models/`; the primary site's own `page` goes under `sites/default/`.
+      await createSharedDefinition(admin, {
         kind: 'collection',
         apiKey: 'author',
         label: 'Author',
@@ -722,12 +723,19 @@ describe('deployments', () => {
         '.shapio/schema-lock.json',
         'README.md',
         'schema/models/author.json',
-        'schema/models/page.json',
+        'schema/sites/default/models/page.json',
       ]);
       expect(JSON.parse(files.get('schema/models/author.json') ?? '{}')).toMatchObject({ apiKey: 'author' });
       const lock = JSON.parse(files.get('.shapio/schema-lock.json') ?? '{}') as {
-        definitions: Record<string, { apiKey: string }>;
+        sites: string[];
+        definitions: Record<string, { apiKey: string; site: string | null }>;
       };
+      expect(lock.sites).toEqual(['default']);
+      expect(
+        Object.values(lock.definitions)
+          .map((entry) => `${entry.apiKey}:${entry.site ?? 'shared'}`)
+          .sort(),
+      ).toEqual(['author:shared', 'page:default']);
       expect(
         Object.values(lock.definitions)
           .map((entry) => entry.apiKey)
@@ -752,7 +760,7 @@ describe('deployments', () => {
       });
       await drain(worker());
       expect(github.pulls).toHaveLength(1);
-      expect(github.filesOn('shapio/schema-sync').has('schema/models/tag.json')).toBe(true);
+      expect(github.filesOn('shapio/schema-sync').has('schema/sites/default/models/tag.json')).toBe(true);
       expect((await runsOf(connection.id))[0]).toMatchObject({
         status: 'deployed',
         logUrl: 'https://github.test/pull/1',

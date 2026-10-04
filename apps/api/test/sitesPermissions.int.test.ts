@@ -11,7 +11,7 @@ import {
   setPublicGrants,
   type AppSessionBody,
 } from './helpers/appUsers.js';
-import { createDefinition, createRole, expectStatus, type ModelBody } from './helpers/content.js';
+import { createSharedDefinition, createRole, expectStatus, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
@@ -88,7 +88,7 @@ describe('sites and permissions (plan §H, G3)', () => {
     )) {
       roleIds[role.key] = role.id;
     }
-    article = await createDefinition(network, {
+    article = await createSharedDefinition(network, {
       kind: 'collection',
       apiKey: 'article',
       label: 'Article',
@@ -259,10 +259,14 @@ describe('sites and permissions (plan §H, G3)', () => {
       const siteAdmin = await adminWith([{ roleId: roleIds.admin ?? '', siteId: marketingId }]);
       const onSite = as(siteAdmin, 'marketing');
       expect((await onSite.get('/api/admin/users')).statusCode).toBe(403);
+      // A role on one site creates that site's own definitions (plan site-schema), never shared ones.
       const newModel = {
         definition: { kind: 'collection', apiKey: 'nope', label: 'Nope', fields: [] },
       };
-      expect((await onSite.post('/api/admin/models', newModel)).statusCode).toBe(403);
+      expect((await onSite.post('/api/admin/models', { ...newModel, scope: 'network' })).statusCode).toBe(
+        403,
+      );
+      expectStatus(await onSite.post('/api/admin/models', newModel), 201);
       expect(
         (await onSite.put(`/api/admin/sites/${marketingId}/app-roles`, { public: [], authenticated: [] }))
           .statusCode,

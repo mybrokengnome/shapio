@@ -2,9 +2,9 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/index.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
 import { loadSnapshot } from './loadSnapshot.js';
-import type { SchemaSnapshot } from './snapshot.js';
+import { siteIdsOf, type NetworkSchema } from './snapshot.js';
 
-export type SchemaChangeListener = (snapshot: SchemaSnapshot) => void;
+export type SchemaChangeListener = (snapshot: NetworkSchema) => void;
 
 export type SchemaRegistry = {
   /**
@@ -12,9 +12,9 @@ export type SchemaRegistry = {
    * `system_versions` when the cache is current; reloads (single-flight) when it is not. This durable
    * check is what keeps every instance correct; notifications only make reloads happen sooner.
    */
-  getSnapshot: () => Promise<SchemaSnapshot>;
+  getSnapshot: () => Promise<NetworkSchema>;
   /** The cached snapshot without any check (may be stale or absent). */
-  peek: () => SchemaSnapshot | undefined;
+  peek: () => NetworkSchema | undefined;
   /** A hint that the version moved (NOTIFY). Reloads in the background; never throws. */
   hint: (version?: number) => void;
   /** Called with each newer snapshot once loaded (GraphQL/OpenAPI regeneration, admin live refresh). */
@@ -30,23 +30,27 @@ export type SchemaRegistry = {
 type RegistryOptions = { db: Database; log: FastifyBaseLogger };
 
 export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegistry => {
-  let cached: SchemaSnapshot | undefined;
-  let loading: Promise<SchemaSnapshot> | undefined;
+  let cached: NetworkSchema | undefined;
+  let loading: Promise<NetworkSchema> | undefined;
   let closed = false;
   /** Reloads started by `hint`, which nobody else awaits. */
   const background = new Set<Promise<void>>();
   const listeners = new Set<SchemaChangeListener>();
 
-  const publish = (snapshot: SchemaSnapshot) => {
+  const publish = (snapshot: NetworkSchema) => {
     if (cached && cached.version >= snapshot.version) {
       return cached;
     }
     cached = snapshot;
-    for (const collision of snapshot.routeKeyCollisions) {
-      log.error(
-        { ...collision, schemaVersion: snapshot.version },
-        'two models share a delivery route key; set a plural API ID on the hidden one',
-      );
+    // Route keys only collide within a view (two sites may each serve `/posts`).
+    const views = [snapshot.shared(), ...siteIdsOf(snapshot.definitions).map((id) => snapshot.forSite(id))];
+    for (const view of views) {
+      for (const collision of view.routeKeyCollisions) {
+        log.error(
+          { ...collision, siteId: view.siteId, schemaVersion: snapshot.version },
+          'two models share a delivery route key; set a plural API ID on the hidden one',
+        );
+      }
     }
     for (const listener of listeners) {
       try {
@@ -59,7 +63,7 @@ export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegist
   };
 
   /** Single-flight: concurrent callers share one load; a load that turns out too old is repeated. */
-  const loadAtLeast = async (version: number): Promise<SchemaSnapshot> => {
+  const loadAtLeast = async (version: number): Promise<NetworkSchema> => {
     for (;;) {
       loading ??= loadSnapshot(db).finally(() => {
         loading = undefined;

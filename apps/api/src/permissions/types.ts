@@ -76,7 +76,10 @@ export type Principal =
 export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish', 'schemaManage'] as const;
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
 
-/** Content actions about the shared schema rather than one site's entries: network roles only. */
+/**
+ * Content actions about the schema rather than one site's entries: network roles only for a shared
+ * definition; for a site's own definition, the roles that apply on that site (when the principal acts there).
+ */
 export const NETWORK_CONTENT_ACTIONS: ReadonlySet<ContentAction> = new Set(['schemaManage']);
 
 /**
@@ -94,6 +97,17 @@ export const NETWORK_ACTIONS = [
   'sites.manage',
 ] as const;
 export type NetworkAction = (typeof NETWORK_ACTIONS)[number];
+
+/**
+ * Network actions a role held on one site also grants for that site alone (plan site-schema, rule 4):
+ * `schema.create` creates that site's own definitions. They are checked with `canPerformOnSite` and the
+ * request's site; `canPerform` keeps the every-site meaning (shared definitions, locales, the schema lock).
+ */
+export const SITE_GRANTABLE_ACTION_LIST = ['schema.create'] as const satisfies readonly NetworkAction[];
+export type SiteGrantableAction = (typeof SITE_GRANTABLE_ACTION_LIST)[number];
+export const SITE_GRANTABLE_ACTIONS: ReadonlySet<GlobalAction> = new Set<GlobalAction>(
+  SITE_GRANTABLE_ACTION_LIST,
+);
 
 export const SITE_ACTIONS = [
   'tokens.manage',
@@ -143,6 +157,12 @@ export type PolicyRequest = {
 export type PermissionEvaluator = {
   evaluate: (principal: Principal, request: PolicyRequest) => Promise<Policy>;
   canPerform: (principal: Principal, action: GlobalAction) => Promise<boolean>;
+  /**
+   * `canPerform` for the request's site: an action in `SITE_GRANTABLE_ACTIONS` also counts the roles that
+   * apply on `siteId` when the principal acts on that site (an admin narrowed to it, a site token of it, a
+   * network token). Any other action is `canPerform`.
+   */
+  canPerformOnSite: (principal: Principal, action: GlobalAction, siteId: string) => Promise<boolean>;
 };
 
 const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };

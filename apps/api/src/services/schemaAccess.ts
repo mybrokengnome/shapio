@@ -33,8 +33,30 @@ export const assertCanManage = async (context: SchemaServiceContext, definitionI
   }
 };
 
-/** Creating definitions and changing instance-wide schema settings (locales, the read-only lock). */
-export const assertCanCreate = async (context: SchemaServiceContext): Promise<void> => {
+/**
+ * Creating a definition in `scope` (plan site-schema, rule 4): a site's own definition needs `schema.create`
+ * from the roles that apply on that site; a shared one (null) from roles on every site. The scope of a
+ * site definition is always the request's site: a view never creates on another site.
+ */
+export const assertCanCreate = async (context: SchemaServiceContext, scope: string | null): Promise<void> => {
+  if (scope !== null && scope !== context.snapshot.siteId) {
+    throw forbidden('A definition can only be created on the site of the request');
+  }
+  const allowed =
+    scope === null
+      ? await context.permissions.canPerform(context.actor, 'schema.create')
+      : await context.permissions.canPerformOnSite(context.actor, 'schema.create', scope);
+  if (!allowed) {
+    throw forbidden(
+      scope === null
+        ? 'Sharing a definition with all sites needs schema.create on every site'
+        : 'Your role does not allow schema.create',
+    );
+  }
+};
+
+/** Instance-wide schema settings (locales, the read-only lock): `schema.create` from roles on every site. */
+export const assertCanChangeNetworkSchema = async (context: SchemaServiceContext): Promise<void> => {
   if (!(await context.permissions.canPerform(context.actor, 'schema.create'))) {
     throw forbidden('Your role does not allow schema.create');
   }

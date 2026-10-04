@@ -52,6 +52,7 @@ const snapshot = buildSnapshot(
     revisionId: id(900 + index),
     hash: 'x',
     activatedAt: NOW,
+    siteId: null,
   })),
   [
     { code: 'en', label: 'English', isDefault: true, fallbacks: [] },

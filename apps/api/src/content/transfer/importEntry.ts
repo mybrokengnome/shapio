@@ -148,7 +148,7 @@ export const importEntry = async (
   }
   const validated = validateHeads(snapshot, model, entry);
   const locales = [...new Set(entry.heads.map((head) => head.locale))];
-  return runEntryWrite(context.db, model, locales, async (trx) => {
+  return runEntryWrite(context.db, model, context.siteId, locales, async (trx) => {
     const write: WriteContext = { trx, siteId: context.siteId, model, actor: context.actor, now: new Date() };
     let target = await transferImportRepository.lockEntry(entry.id, trx);
     if (!target) {

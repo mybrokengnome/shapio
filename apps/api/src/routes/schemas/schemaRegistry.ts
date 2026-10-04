@@ -30,8 +30,14 @@ export const definitionInputFor = (category: 'model' | 'component'): TSchema =>
 /** A normalized definition: serialized against the input schema (every normalized one satisfies it). */
 export const DefinitionSchema = Type.Unsafe<SchemaDefinition>(DefinitionInputSchema);
 
+/** Where a definition lives: one site (`site`) or every site (`network`, a shared definition). */
+export const DefinitionScopeSchema = Type.Union([Type.Literal('network'), Type.Literal('site')]);
+
 export const ActiveDefinitionSchema = Type.Object({
   definition: DefinitionSchema,
+  scope: DefinitionScopeSchema,
+  /** The site a `site` definition belongs to; null when shared. */
+  siteId: NullableString,
   version: Type.Integer(),
   hash: Type.String(),
   revisionId: Type.String(),
@@ -57,6 +63,8 @@ export const ChangePlanSchema = Type.Object({
   kind: Type.String(),
   apiKey: Type.String(),
   operation: Type.String(),
+  /** The definition's site after the change; null when shared. */
+  siteId: Type.Optional(NullableString),
   fromVersion: NullableInt,
   changes: JsonObjectList,
   summary: Type.Object({
@@ -101,6 +109,11 @@ export const SyncApplyBodySchema = Type.Object(
   {
     /** One entry per local schema file. Validated per file by the service so errors name the file. */
     definitions: Type.Array(Type.Unknown(), { maxItems: 5000 }),
+    /**
+     * Each file's scope, parallel to `definitions`: its folder (`models/` → network, `sites/<key>/` →
+     * site). Absent: every file is shared (format-1 trees and older CLIs). Only creates use it.
+     */
+    scopes: Type.Optional(Type.Array(DefinitionScopeSchema, { maxItems: 5000 })),
     base: LockFileSchema,
     prune: Type.Optional(Type.Boolean()),
     dryRun: Type.Optional(Type.Boolean()),

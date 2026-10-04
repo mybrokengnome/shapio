@@ -385,6 +385,7 @@ export const runPublicationBatchInTransaction = async (
   await guardModelVersions(
     trx,
     [...models.values()].map((resolved) => resolved.model),
+    context.site.id,
   );
   await lockItemLocales(trx, items, models);
   const byEntry = new Map<string, PublicationItem[]>();

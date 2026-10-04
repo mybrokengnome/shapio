@@ -832,11 +832,11 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
   },
   models: {
     primaryKey: ['id'],
-    columns: ['id', 'kind', 'api_key', 'created_at', 'updated_at', 'deleted_at'],
-    nullable: ['deleted_at'],
+    columns: ['id', 'kind', 'api_key', 'created_at', 'updated_at', 'deleted_at', 'site_id'],
+    nullable: ['deleted_at', 'site_id'],
     timestamps: ['created_at', 'updated_at', 'deleted_at'],
     uniqueKeys: [
-      { name: 'models_api_key_uq', columns: ['api_key'] },
+      { name: 'models_api_key_uq', columns: ['site_id', 'api_key'] },
       { name: 'models_pkey', columns: ['id'] },
     ],
   },
@@ -1033,6 +1033,7 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
       'updated_by_id',
       'created_at',
       'updated_at',
+      'shared',
     ],
     nullable: ['base_version', 'definition', 'updated_by_id'],
     timestamps: ['created_at', 'updated_at'],

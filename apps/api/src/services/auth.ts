@@ -8,6 +8,8 @@ import {
   GLOBAL_ACTIONS,
   NETWORK_ACTIONS,
   SITE_ACTIONS,
+  SITE_GRANTABLE_ACTION_LIST,
+  type SiteGrantableAction,
   type AdminPrincipal,
   type ContentAction,
   type GlobalAction,
@@ -121,8 +123,11 @@ export type MeView = {
   sites: SiteSummaryView[];
   /** Network actions (roles assigned on every site only). */
   networkPermissions: NetworkAction[];
-  /** Site actions on the request's site. */
-  sitePermissions: SiteAction[];
+  /**
+   * Site actions on the request's site, plus network actions a role on the site grants for the site alone
+   * (`schema.create`: creating the site's own definitions; `networkPermissions` keeps the every-site meaning).
+   */
+  sitePermissions: Array<SiteAction | SiteGrantableAction>;
   /** Network and site actions together (for showing or hiding admin screens). */
   globalPermissions: GlobalAction[];
   /** Content actions per model ID on the request's site, for showing places, Structure, New and Publish. */
@@ -172,7 +177,16 @@ export const getMe = async (
     getSiteSummary(site.id),
   ]);
   const networkPermissions = await allowedActions(principal, permissions, NETWORK_ACTIONS);
-  const sitePermissions = await allowedActions(principal, permissions, SITE_ACTIONS);
+  const siteActions = await allowedActions(principal, permissions, SITE_ACTIONS);
+  const siteGranted = (
+    await Promise.all(
+      SITE_GRANTABLE_ACTION_LIST.map(async (action) =>
+        (await permissions.canPerformOnSite(principal, action, site.id)) ? [action] : [],
+      ),
+    )
+  ).flat();
+  // In `GLOBAL_ACTIONS` order (network actions first), like `globalPermissions`.
+  const sitePermissions: Array<SiteAction | SiteGrantableAction> = [...siteGranted, ...siteActions];
   return {
     user: toAdminUserView(user),
     roles: roles.map(({ id, key, name }) => ({ id, key, name })),

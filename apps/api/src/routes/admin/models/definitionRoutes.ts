@@ -13,18 +13,19 @@ const PREVIEW = { exempt: 'plan preview; writes nothing' } as const;
 export const createDefinitionRoutes =
   (category: DefinitionCategory): FastifyPluginAsyncTypebox =>
   async (app) => {
-    declareSiteScope(app, 'network');
+    // Site routes (plan site-schema): the request's site is the view definitions resolve in (shared ones
+    // and the site's own), where creates land by default, and whose roles may grant schema permission on
+    // its own definitions. The services check `schema.create` / `schemaManage` per scope.
+    declareSiteScope(app, 'site');
     const handlers = createDefinitionControllers(category);
     const schemas = definitionRouteSchemas(category);
     const admin = { preHandler: app.requireAdmin };
-    // Reads are site routes: whether an editor may see a definition depends on the content roles they hold
-    // on the request's site. Changes stay network routes (schema permissions are network-only anyway).
-    const siteRead = { ...admin, config: { site: 'site' as const } };
-    const creator = { preHandler: app.requireGlobalPermission('schema.create') };
+    const siteRead = admin;
+    const creator = admin;
 
-    // GET /: active definitions the caller may see
+    // GET /?scope=network: active definitions of the site's view the caller may see (shared ones only)
     app.get('/', { ...siteRead, schema: schemas.list }, handlers.list);
-    // POST /: create (activates live)
+    // POST /: create (activates live) on the site, or shared with `scope: 'network'`
     app.post(
       '/',
       { ...creator, schema: schemas.create, config: { audit: { action: 'schema.activate' } } },
@@ -49,6 +50,12 @@ export const createDefinitionRoutes =
       '/:id/plan',
       { ...admin, schema: schemas.planUpdate, config: { audit: PREVIEW } },
       handlers.planUpdate,
+    );
+    // PUT /:id/scope { scope, siteId?, version }: share with all sites, or keep on one site
+    app.put(
+      '/:id/scope',
+      { ...admin, schema: schemas.changeScope, config: { audit: { action: 'schema.scope' } } },
+      handlers.changeScope,
     );
     // DELETE /:id?expectedVersion=N: soft delete (entries are kept)
     app.delete(

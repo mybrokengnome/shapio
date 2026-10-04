@@ -12,7 +12,7 @@ import { publishSchemaChanged } from '../schema/notify.js';
 import { lockSchema } from '../schema/planner/locks.js';
 import { SCHEMA_FOLLOW_UP_JOB } from '../schema/planner/prerequisites.js';
 import { recordAudit } from './audit.js';
-import { assertCanCreate, type SchemaServiceContext } from './schemaAccess.js';
+import { assertCanChangeNetworkSchema, type SchemaServiceContext } from './schemaAccess.js';
 
 /**
  * Locales are part of the schema snapshot (delivery fallbacks, localized fields), so every change bumps the
@@ -90,7 +90,7 @@ export const createLocale = async (
   context: SchemaServiceContext,
   input: LocaleInputBody,
 ): Promise<LocaleDefinition> => {
-  await assertCanCreate(context);
+  await assertCanChangeNetworkSchema(context);
   const known = new Set(context.snapshot.locales.map((locale) => locale.code));
   if (known.has(input.code)) {
     throw new AppError(409, 'LOCALE_EXISTS', `Locale "${input.code}" already exists`);
@@ -107,7 +107,7 @@ export const updateLocale = async (
   code: string,
   input: { label: string; fallbacks?: string[] },
 ): Promise<LocaleDefinition> => {
-  await assertCanCreate(context);
+  await assertCanChangeNetworkSchema(context);
   const known = new Set(context.snapshot.locales.map((locale) => locale.code));
   if (!known.has(code)) {
     throw notFound(code);
@@ -131,7 +131,7 @@ export const setDefaultLocale = async (
   code: string,
   acknowledgeBreaking: boolean,
 ) => {
-  await assertCanCreate(context);
+  await assertCanChangeNetworkSchema(context);
   if (!context.snapshot.locales.some((locale) => locale.code === code)) {
     throw notFound(code);
   }
@@ -161,7 +161,7 @@ export const deleteLocale = async (
   code: string,
   acknowledgeDestructive: boolean,
 ) => {
-  await assertCanCreate(context);
+  await assertCanChangeNetworkSchema(context);
   if (!context.snapshot.locales.some((locale) => locale.code === code)) {
     throw notFound(code);
   }

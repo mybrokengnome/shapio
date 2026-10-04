@@ -15,6 +15,7 @@ const active = (definition: SchemaDefinition): ActiveDefinition => ({
   revisionId: uuid(900),
   hash: 'h',
   activatedAt: new Date(0),
+  siteId: null,
 });
 
 const author = define({

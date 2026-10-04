@@ -4,11 +4,14 @@ import { toQueryString } from './query.js';
 import type { SchemaApplyInput, SchemaApplyResult, SchemaExport } from './schemaSyncTypes.js';
 import type {
   ChangeOutcome,
+  ChangeScopeInput,
+  ChangeScopeOutcome,
   CreateDefinitionInput,
   CreateLocaleInput,
   DefinitionCategory,
   DefinitionPayload,
   DefinitionDetail,
+  DefinitionScope,
   DefinitionListItem,
   DefinitionRevision,
   DeleteLocaleResult,
@@ -33,13 +36,21 @@ const DEFINITION_PATHS = {
 export const createDefinitionApi = (request: RequestFn, category: DefinitionCategory) => {
   const base = DEFINITION_PATHS[category];
   return {
-    list: async () => (await request<{ items: DefinitionListItem[] }>(base)).items,
+    /** The site's view (shared definitions and its own); `{ scope: 'network' }` lists the shared ones. */
+    list: async (options: { scope?: DefinitionScope } = {}) =>
+      (await request<{ items: DefinitionListItem[] }>(`${base}${toQueryString(options)}`)).items,
     get: (id: string) => request<DefinitionDetail>(withId(base, id)),
     /** Creates and activates a definition (`pending` when prerequisites must run first). */
     create: (body: CreateDefinitionInput) => request<ChangeOutcome>(base, { method: 'POST', body }),
     /** Plan preview of a create: classification and impact, nothing written. */
-    planCreate: (definition: DefinitionPayload) =>
-      request<PlanPreview>(`${base}/plan`, { method: 'POST', body: { definition } }),
+    planCreate: (definition: DefinitionPayload, scope?: DefinitionScope) =>
+      request<PlanPreview>(`${base}/plan`, {
+        method: 'POST',
+        body: scope ? { definition, scope } : { definition },
+      }),
+    /** Shares a definition with all sites, or keeps it on one (needs schema.create on every site). */
+    changeScope: (id: string, body: ChangeScopeInput) =>
+      request<ChangeScopeOutcome>(`${withId(base, id)}/scope`, { method: 'PUT', body }),
     /** Changes a definition; 409 SCHEMA_VERSION_CONFLICT when `expectedVersion` is stale. */
     update: (id: string, body: UpdateDefinitionInput) =>
       request<ChangeOutcome>(withId(base, id), { method: 'PUT', body }),
@@ -66,7 +77,8 @@ export const createSchemaApi = (request: RequestFn) => ({
     summary: () => request<SchemaSummary>(ADMIN_PATHS.schema),
     change: (changeId: string) => request<SchemaChangeJob>(withId(ADMIN_PATHS.schemaChanges, changeId)),
     /** Every definition in the pull format, with the schema version they come from (`shapio schema pull`). */
-    export: () => request<SchemaExport>(ADMIN_PATHS.schemaExport),
+    export: (options: { scope?: DefinitionScope } = {}) =>
+      request<SchemaExport>(`${ADMIN_PATHS.schemaExport}${toQueryString(options)}`),
     /** Applies definition files live through the change planner; refuses when the base moved (409). */
     apply: (body: SchemaApplyInput) =>
       request<SchemaApplyResult>(ADMIN_PATHS.schemaApply, { method: 'POST', body }),

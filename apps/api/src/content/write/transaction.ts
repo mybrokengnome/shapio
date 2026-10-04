@@ -16,6 +16,8 @@ import type { ContentModel } from '../model.js';
 export const guardModelVersions = async (
   trx: Transaction<DB>,
   models: readonly ContentModel[],
+  /** The site the write is on: a definition that is no longer in its view counts as changed. */
+  siteId: string,
 ): Promise<void> => {
   const keys = [...new Set(models.map((model) => lockKeyFromId(model.definition.id)))].sort((a, b) => a - b);
   for (const key of keys) {
@@ -28,7 +30,7 @@ export const guardModelVersions = async (
       expected.set(id, component.version);
     }
   }
-  const active = await contentGuardsRepository.findActiveVersions([...expected.keys()], trx);
+  const active = await contentGuardsRepository.findActiveVersions([...expected.keys()], siteId, trx);
   if (active.length !== expected.size || active.some((row) => expected.get(row.model_id) !== row.version)) {
     throw schemaChanged();
   }
@@ -52,7 +54,8 @@ export const lockWriteLocales = async (
  * 1. the shared advisory lock of the model (the same key the planner's activation takes exclusively, so an
  *    activation waits for in-flight writes and blocks new ones while it re-checks and flips the pointer);
  * 2. a re-check that the model and every component it embeds are still at the versions this request
- *    validated against (an activation that committed before the lock was granted is detected here);
+ *    validated against, and still in the site's view (an activation or scope change that committed before
+ *    the lock was granted is detected here);
  * 3. the target locale rows held FOR SHARE, so a locale cannot be deleted under the write.
  * Component activations lock every dependent model, so the model's own key covers them too.
  * Scheduled and release publications (publishing/publicationBatch.ts) apply the same guard to several models.
@@ -60,11 +63,12 @@ export const lockWriteLocales = async (
 export const runEntryWrite = <T>(
   database: Database,
   model: ContentModel,
+  siteId: string,
   locales: readonly string[],
   write: (trx: Transaction<DB>) => Promise<T>,
 ): Promise<T> =>
   database.transaction().execute(async (trx) => {
-    await guardModelVersions(trx, [model]);
+    await guardModelVersions(trx, [model], siteId);
     const missing = await lockWriteLocales(trx, locales);
     if (missing !== undefined) {
       throw unknownLocale(missing);

@@ -185,7 +185,9 @@ const shipContent = async (
   if (input.logChangedAfterReview) {
     await logChangedAfterReview(context, trx, row.id, input.entryItems);
   }
-  const snapshot = half.schemaVersion === null ? context.snapshot : await readSnapshot(trx);
+  // After a schema flip, the set's site's view of the schema that just became active.
+  const snapshot =
+    half.schemaVersion === null ? context.snapshot : (await readSnapshot(trx)).forSite(context.site.id);
   const results =
     input.entryItems.length === 0
       ? []

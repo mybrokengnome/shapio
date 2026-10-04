@@ -185,7 +185,7 @@ const changePublication = async (
     throw publishingDisabled(modelKey);
   }
   const lockedLocales = model.definition.localized ? targetLocales(context, model, input.locales, []) : [];
-  await runEntryWrite(context.db, model, lockedLocales, async (trx) => {
+  await runEntryWrite(context.db, model, context.site.id, lockedLocales, async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,

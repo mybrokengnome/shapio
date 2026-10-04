@@ -65,6 +65,11 @@ const DefinitionSchema = Type.Object(
     definition: JsonObject,
     version: Type.Integer({ minimum: 1 }),
     hash: Type.String(),
+    /**
+     * `site`: the exported site's own definition, imported onto the target site. `network` (or absent, in
+     * bundles from before per-site schemas): shared with all sites on the target too.
+     */
+    scope: Type.Optional(Type.Union([Type.Literal('network'), Type.Literal('site')])),
   },
   { additionalProperties: false },
 );

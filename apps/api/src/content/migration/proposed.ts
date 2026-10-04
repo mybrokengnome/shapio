@@ -4,7 +4,7 @@ import * as localesRepository from '../../repositories/locales.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import { toActiveDefinitions, toLocaleDefinition } from '../../schema/loadSnapshot.js';
-import { buildSnapshot, type ActiveDefinition, type SchemaSnapshot } from '../../schema/snapshot.js';
+import { buildNetworkSchema, type ActiveDefinition, type NetworkSchema } from '../../schema/snapshot.js';
 import { readStoredRevision } from '../../schema/storedDefinition.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -15,7 +15,7 @@ type Executor = Kysely<DB> | Transaction<DB>;
  * pending revision of that set too (a model and the component it embeds can ship together). Steps only carry
  * IDs, so the definitions come from the in-flight schema changes; without one, the active schema is used.
  */
-export const loadProposedSnapshot = async (executor: Executor, ownerId: string): Promise<SchemaSnapshot> => {
+export const loadProposedSnapshot = async (executor: Executor, ownerId: string): Promise<NetworkSchema> => {
   const active = await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(executor));
   const locales = (await localesRepository.list(executor)).map(toLocaleDefinition);
   const change = await schemaChangeJobsRepository.findInFlight({ type: 'model', id: ownerId }, executor);
@@ -30,8 +30,10 @@ export const loadProposedSnapshot = async (executor: Executor, ownerId: string):
       ? await schemaModelsRepository.findRevisionById(pending.to_revision_id, executor)
       : undefined;
     if (revision) {
+      const model = await schemaModelsRepository.findModelById(revision.model_id, executor);
       proposed.push({
         ...(await readStoredRevision(revision.definition, revision.hash)),
+        siteId: model?.site_id ?? null,
         version: revision.version,
         revisionId: revision.id,
         activatedAt: revision.created_at,
@@ -43,7 +45,7 @@ export const loadProposedSnapshot = async (executor: Executor, ownerId: string):
     changes.filter((pending) => !pending.to_revision_id).map((pending) => pending.target_id),
   );
   const replaced = new Set(proposed.map((entry) => entry.definition.id));
-  return buildSnapshot(
+  return buildNetworkSchema(
     -1,
     [
       ...active.filter((entry) => !replaced.has(entry.definition.id) && !removed.has(entry.definition.id)),

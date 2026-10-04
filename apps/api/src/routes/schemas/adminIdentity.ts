@@ -1,6 +1,12 @@
 import { Type, type Static } from 'typebox';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../../constants/auth.js';
-import { CONTENT_ACTIONS, GLOBAL_ACTIONS, NETWORK_ACTIONS, SITE_ACTIONS } from '../../permissions/types.js';
+import {
+  CONTENT_ACTIONS,
+  GLOBAL_ACTIONS,
+  NETWORK_ACTIONS,
+  SITE_ACTIONS,
+  SITE_GRANTABLE_ACTION_LIST,
+} from '../../permissions/types.js';
 
 /** Schemas shared by the admin identity routes (setup, auth, users, roles, tokens). */
 
@@ -49,6 +55,8 @@ export const ContentActionSchema = Type.Enum(CONTENT_ACTIONS);
 export const GlobalActionSchema = Type.Enum(GLOBAL_ACTIONS);
 export const NetworkActionSchema = Type.Enum(NETWORK_ACTIONS);
 export const SiteActionSchema = Type.Enum(SITE_ACTIONS);
+/** What `me.sitePermissions` lists: site actions, and network actions a role on the site grants there. */
+export const SitePermissionSchema = Type.Enum([...SITE_ACTIONS, ...SITE_GRANTABLE_ACTION_LIST]);
 
 export const PermissionSchema = Type.Object(
   {

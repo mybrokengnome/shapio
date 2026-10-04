@@ -4,6 +4,7 @@ import { BUNDLE_CONTENT_TYPE } from '../content/transfer/format.js';
 import * as transferService from '../content/transfer/service.js';
 import type { TransferContext } from '../content/transfer/service.js';
 import { toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import type { ExportQuery, ImportQuery, MediaUploadQuery } from '../routes/admin/transfer/schemas.js';
 
 /** The transfer service context for a request: the principal and the instance's storage and runtimes. */
@@ -16,7 +17,8 @@ const transferContextFor = (request: FastifyRequest): TransferContext => ({
   // each see the previous one's result.
   schemaContext: async () => ({
     db: request.server.db,
-    snapshot: await request.server.schemaRegistry.getSnapshot(),
+    // The site's view: a bundle carries the shared definitions and this site's.
+    snapshot: (await request.server.schemaRegistry.getSnapshot()).forSite(getRequestSite(request).id),
     ports: request.server.schemaContent,
     permissions: request.server.permissions,
     actor: request.principal,

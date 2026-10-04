@@ -15,8 +15,13 @@ export const schemaContextFor = async (request: FastifyRequest): Promise<SchemaS
   ip: request.ip,
 });
 
+export const scopeLabelOf = (siteId: string | null): 'network' | 'site' =>
+  siteId === null ? 'network' : 'site';
+
 export const toActiveDefinitionResponse = (active: ActiveDefinition) => ({
   definition: active.definition,
+  scope: scopeLabelOf(active.siteId),
+  siteId: active.siteId,
   version: active.version,
   hash: active.hash,
   revisionId: active.revisionId,

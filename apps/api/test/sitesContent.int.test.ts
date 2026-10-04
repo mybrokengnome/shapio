@@ -5,7 +5,7 @@ import { PRIMARY_SITE_ID, SITE_HEADER } from '../src/constants/sites.js';
 import * as publicationsRepository from '../src/repositories/publications.js';
 import * as snapshotDiffRepository from '../src/repositories/snapshotDiff.js';
 import {
-  createDefinition,
+  createSharedDefinition,
   expectStatus,
   fieldIdOf,
   runContentSchemaJobs,
@@ -69,7 +69,7 @@ describe('content per site', () => {
     expectStatus(await site.post(`/api/admin/content/${modelKey}`, { data, publish }), 201).json<EntryBody>();
   const seqOf = (siteId: string) => publicationsRepository.currentSeq(siteId, database.current.db);
   const model = (apiKey: string, fields: unknown[], extra: Record<string, unknown> = {}) =>
-    createDefinition(network, { kind: 'collection', apiKey, label: apiKey, fields, ...extra });
+    createSharedDefinition(network, { kind: 'collection', apiKey, label: apiKey, fields, ...extra });
   const changeModel = async (current: ModelBody, patch: Record<string, unknown>) => {
     const response = await network.put(`/api/admin/models/${current.definition.id}`, {
       definition: { ...current.definition, ...patch },
@@ -212,7 +212,7 @@ describe('content per site', () => {
   });
 
   it('gives a singleton one entry per site', async () => {
-    await createDefinition(network, {
+    await createSharedDefinition(network, {
       kind: 'singleton',
       apiKey: 'settings',
       label: 'Settings',

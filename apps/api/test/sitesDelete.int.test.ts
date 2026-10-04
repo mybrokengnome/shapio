@@ -3,7 +3,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID, SITE_HEADER } from '../src/constants/sites.js';
 import {
-  createDefinition,
+  createSharedDefinition,
   expectStatus,
   runContentSchemaJobs,
   type EntryBody,
@@ -117,13 +117,13 @@ describe('deleting a site with deleted content', () => {
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { schemaListen: false });
     network = schemaClient(testApp.app, await createRoleToken(database.current.db));
-    tag = await createDefinition(network, {
+    tag = await createSharedDefinition(network, {
       kind: 'collection',
       apiKey: 'tag',
       label: 'Tag',
       fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
     });
-    article = await createDefinition(network, {
+    article = await createSharedDefinition(network, {
       kind: 'collection',
       apiKey: 'article',
       label: 'Article',

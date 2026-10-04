@@ -10,7 +10,7 @@ import { verifyChangesUnderLock, type ActivationItem } from '../schema/planner/a
 import { lockSchema } from '../schema/planner/locks.js';
 import type { ChangePlan } from '../schema/planner/plan.js';
 import { insertPendingChange } from '../schema/planner/request.js';
-import { planDrafts, type DraftPlan } from '../services/changeSetPlanning.js';
+import { draftScopeOf, planDrafts, type DraftPlan } from '../services/changeSetPlanning.js';
 import type { ChangeSetServiceContext } from '../services/changeSets.js';
 import { assertCanCreate, assertCanManage } from '../services/schemaAccess.js';
 import { assertAcknowledged, assertWritable, type Acknowledgement } from '../services/schemaDefinitions.js';
@@ -55,7 +55,7 @@ const staleDraft = (plans: readonly DraftPlan[]) => {
 const authorizeDrafts = async (context: ChangeSetServiceContext, plans: readonly DraftPlan[]) => {
   for (const planned of plans) {
     await (planned.activeVersion === null
-      ? assertCanCreate(context)
+      ? assertCanCreate(context, draftScopeOf(context, planned.draft))
       : assertCanManage(context, planned.draft.definition_id));
   }
 };
