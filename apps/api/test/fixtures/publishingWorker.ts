@@ -1,7 +1,9 @@
 // Child-process worker for the "scheduled publish fires exactly once across a worker restart" tests.
 // HANG_AT=beforeCommit: an afterPublish hook (inside the publishing transaction) logs and hangs, so a
-// SIGKILL rolls the publish back. HANG_AT=afterCommit: the handler finishes (committed) and the process then
-// hangs before the job is marked succeeded, so the job is reclaimed and re-run after a SIGKILL.
+// SIGKILL rolls the publish back. HANG_AT=afterCommit: the handler of a HANG_JOB_TYPE job finishes
+// (committed) and the process then hangs before the job is marked succeeded, so the job is reclaimed and
+// re-run after a SIGKILL. Only that job type hangs: other publishing jobs (webhook deliveries from the entry's
+// own events) run through, so the line a test waits for can only come from the job it targets.
 import { pino } from 'pino';
 import { loadConfig } from '../../src/config/index.js';
 import { createContentHooks } from '../../src/content/hooks.js';
@@ -27,6 +29,7 @@ const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: env('DATABASE_URL'),
 const db = createDb({ connectionString: config.database.url, poolMax: 4 });
 const log = pino({ level: 'info' });
 const hangAt = process.env.HANG_AT ?? 'never';
+const hangJobType = hangAt === 'afterCommit' ? env('HANG_JOB_TYPE') : undefined;
 
 const hooks = createContentHooks();
 if (hangAt === 'beforeCommit') {
@@ -48,8 +51,8 @@ const handlers = createPublishingJobHandlers(createPublishingJobEnvironment(runt
     type,
     async (context) => {
       const result = await handler(context);
-      if (hangAt === 'afterCommit') {
-        log.info({ result }, 'handler finished; hanging before the job is marked succeeded');
+      if (type === hangJobType) {
+        log.info({ result, type }, 'handler finished; hanging before the job is marked succeeded');
         await sleep(60_000);
       }
       return result;

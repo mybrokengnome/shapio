@@ -257,6 +257,8 @@ describe('scheduled publications', () => {
         LEASE_MS: String(LEASE_MS),
         SIGNING_SECRET: testApp.app.signingSecret,
         HANG_AT: hangAt,
+        // After commit, only the job under test hangs (other publishing jobs run through).
+        HANG_JOB_TYPE: PUBLISHING_JOBS.scheduledPublication,
       });
       children.push(child);
       return child;
@@ -297,8 +299,12 @@ describe('scheduled publications', () => {
 
       const first = startChild('crash-after', 'afterCommit');
       await first.waitForLog(
-        (line) => line.msg === 'handler finished; hanging before the job is marked succeeded',
-        { description: "'handler finished; hanging before the job is marked succeeded'" },
+        (line) =>
+          line.msg === 'handler finished; hanging before the job is marked succeeded' &&
+          line.type === PUBLISHING_JOBS.scheduledPublication,
+        {
+          description: `'handler finished; hanging before the job is marked succeeded' for ${PUBLISHING_JOBS.scheduledPublication}`,
+        },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       const row = await scheduleRow(created.id);

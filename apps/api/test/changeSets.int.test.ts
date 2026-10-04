@@ -451,6 +451,8 @@ describe('change sets (content)', () => {
         LEASE_MS: String(LEASE_MS),
         SIGNING_SECRET: testApp.app.signingSecret,
         HANG_AT: hangAt,
+        // After commit, only the job under test hangs (other publishing jobs run through).
+        HANG_JOB_TYPE: PUBLISHING_JOBS.changeSetShip,
       });
       children.push(child);
       return child;
@@ -542,8 +544,12 @@ describe('change sets (content)', () => {
       const jobId = (await setRow(set.id)).schedule_job_id ?? '';
       const first = startChild('set-crash-after', 'afterCommit');
       await first.waitForLog(
-        (line) => line.msg === 'handler finished; hanging before the job is marked succeeded',
-        { description: "'handler finished; hanging before the job is marked succeeded'" },
+        (line) =>
+          line.msg === 'handler finished; hanging before the job is marked succeeded' &&
+          line.type === PUBLISHING_JOBS.changeSetShip,
+        {
+          description: `'handler finished; hanging before the job is marked succeeded' for ${PUBLISHING_JOBS.changeSetShip}`,
+        },
       );
       expect(await first.stop('SIGKILL')).toBeNull();
       expect((await setRow(set.id)).status).toBe('shipped');
