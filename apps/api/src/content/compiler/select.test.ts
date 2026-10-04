@@ -1,7 +1,8 @@
 import { normalizeDefinition, type ModelDefinition } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import type { ContentModel } from '../model.js';
-import { projectData, selectFields } from './select.js';
+import { projectData, RICH_TEXT_HTML, selectFields, type DeliveredRichText } from './select.js';
+import type { RichTextMode } from './types.js';
 
 const ids = {
   body: '1a1a1a1a-1111-4111-8111-111111111111',
@@ -33,15 +34,21 @@ const definition = normalizeDefinition({
 
 const model: ContentModel = { definition, version: 1, revisionId: 'r', components: new Map() };
 
-const project = (data: Record<string, unknown>) =>
+const project = (data: Record<string, unknown>, richText: RichTextMode | null = 'both') =>
   projectData(data, {
     model,
     fields: selectFields(model, { mode: 'all' }, null),
     visibleTargets: null,
     populated: new Map(),
-    richTextHtml: true,
+    ...(richText ? { richText } : {}),
     mediaAssets: null,
   });
+
+const richDoc = {
+  format: 'shapio-richtext',
+  version: 1,
+  doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hi' }] }] },
+};
 
 describe('projectData', () => {
   it('emits values written under an older field type as empty, never as the new type', () => {
@@ -77,5 +84,32 @@ describe('projectData', () => {
       body: { version: 1 },
     });
     expect((projected.body as { html: string }).html).toContain('Hi');
+  });
+
+  describe('rich text by mode', () => {
+    it('returns the stored document with json, carrying the renderer only behind a symbol', () => {
+      const body = project({ [ids.body]: richDoc }, 'json').body as DeliveredRichText;
+      expect(JSON.parse(JSON.stringify(body))).toEqual(richDoc);
+      expect(body[RICH_TEXT_HTML]?.()).toBe('<p>Hi</p>');
+    });
+
+    it('returns the envelope and HTML without the document with html', () => {
+      const body = project({ [ids.body]: richDoc }, 'html').body;
+      expect(JSON.parse(JSON.stringify(body))).toEqual({
+        format: 'shapio-richtext',
+        version: 1,
+        html: '<p>Hi</p>',
+      });
+    });
+
+    it('returns the document and HTML with both', () => {
+      const body = project({ [ids.body]: richDoc }, 'both').body;
+      expect(JSON.parse(JSON.stringify(body))).toEqual({ ...richDoc, html: '<p>Hi</p>' });
+    });
+
+    it('leaves the stored value untouched without a mode (admin reads, hooks)', () => {
+      const body = project({ [ids.body]: richDoc }, null).body;
+      expect(body).toBe(richDoc);
+    });
   });
 });

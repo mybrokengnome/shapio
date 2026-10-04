@@ -36,4 +36,12 @@ describe('delivery api', () => {
     expect(url(0)).toBe('https://cms.test/api/content/articles/e1?snapshot=3');
     expect(url(1)).toBe('https://cms.test/api/content/homepage');
   });
+
+  it('asks for a rich-text shape, alone or after the snapshot', async () => {
+    const { client, url } = setup();
+    await client.delivery.get('articles', 'e1', { richText: 'html' });
+    await client.delivery.list('articles', { locale: 'fr', snapshot: 4, richText: 'both' });
+    expect(url(0)).toBe('https://cms.test/api/content/articles/e1?richText=html');
+    expect(url(1)).toBe('https://cms.test/api/content/articles?locale=fr&snapshot=4&richText=both');
+  });
 });

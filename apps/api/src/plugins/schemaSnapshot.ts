@@ -5,6 +5,7 @@ import { startSchemaChangeListener } from '../schema/notify.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import type { SchemaRegistry } from '../schema/registry.js';
 import type { NetworkSchema, SchemaSnapshot } from '../schema/snapshot.js';
+import { getRequestState } from './requestState.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -28,13 +29,17 @@ type SchemaSnapshotPluginOptions = {
 
 /**
  * The schema registry and per-request snapshot pinning (ADR 0002). The pin is lazy: requests that never
- * touch the schema (health, static admin) pay nothing; the first call in a request does the version check.
+ * touch the schema (health, static admin) pay nothing; the first call in a request checks the cache against
+ * the request's schema version (`getRequestState`, read once per request).
  */
 export const schemaSnapshotPlugin = fp<SchemaSnapshotPluginOptions>(
   async (app: FastifyInstance, { registry, listen, contentPorts }) => {
     app.decorate('schemaRegistry', registry);
     app.decorate('schemaContent', contentPorts);
     app.decorateRequest('schemaSnapshotPin', null);
+    // The request's state (`plugins/requestState.ts`), read once and shared with site resolution.
+    app.decorateRequest('requestState', null);
+    app.decorateRequest('requestPermissions', null);
 
     let listener: NotificationListener | undefined;
     if (listen) {
@@ -57,7 +62,9 @@ export const schemaSnapshotPlugin = fp<SchemaSnapshotPluginOptions>(
 
 /** The full schema (every site's definitions and the shared ones) this request is pinned to. */
 export const getRequestNetworkSchema = (request: FastifyRequest): Promise<NetworkSchema> => {
-  request.schemaSnapshotPin ??= request.server.schemaRegistry.getSnapshot();
+  request.schemaSnapshotPin ??= getRequestState(request).then(({ versions }) =>
+    request.server.schemaRegistry.getSnapshot(undefined, versions),
+  );
   return request.schemaSnapshotPin;
 };
 

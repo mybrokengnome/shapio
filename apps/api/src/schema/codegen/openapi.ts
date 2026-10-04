@@ -11,7 +11,7 @@ import {
   type SchemaDefinition,
 } from '@shapio/schema';
 import { operatorsFor } from '../../content/compiler/operators.js';
-import { QUERY_LIMITS } from '../../content/compiler/types.js';
+import { DEFAULT_RICH_TEXT_MODE, QUERY_LIMITS, RICH_TEXT_MODES } from '../../content/compiler/types.js';
 import type { SchemaSnapshot } from '../snapshot.js';
 import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
 
@@ -171,13 +171,16 @@ const COMMON_SCHEMAS: Record<string, JsonSchema> = {
     required: ['format', 'version', 'doc'],
   },
   RichTextOutput: {
-    allOf: [
-      ref('RichText'),
-      {
-        type: 'object',
-        properties: { html: { type: 'string', description: 'Sanitized HTML rendered from the JSON' } },
-      },
-    ],
+    type: 'object',
+    description:
+      'Rich text as delivered, per the `richText` query parameter: `doc` with `json` (the default), `html` with `html`, both with `both`.',
+    properties: {
+      format: { const: 'shapio-richtext' },
+      version: { const: 1 },
+      doc: { type: 'object' },
+      html: { type: 'string', description: 'Sanitized HTML rendered from the JSON' },
+    },
+    required: ['format', 'version'],
   },
   MediaAsset: {
     type: 'object',
@@ -285,6 +288,12 @@ const itemParameters = (delivery: boolean) => [
           in: 'query',
           schema: { type: 'integer', minimum: 1 },
           description: 'Read content as of this publication sequence number (`meta.snapshot`)',
+        },
+        {
+          name: 'richText',
+          in: 'query',
+          schema: { type: 'string', enum: [...RICH_TEXT_MODES], default: DEFAULT_RICH_TEXT_MODE },
+          description: 'Rich-text shape: the JSON document, sanitized HTML rendered from it, or both',
         },
       ]
     : []),

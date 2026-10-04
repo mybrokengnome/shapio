@@ -3,6 +3,13 @@ import fp from 'fastify-plugin';
 import { AppError } from '../helpers/appError.js';
 import type { ErrorResponse } from '../routes/schemas/error.js';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** The `error.code` this handler answered with; the request's response line carries it (requestLog.ts). */
+    errorCode: string | undefined;
+  }
+}
+
 const STATUS_CODES: Readonly<Record<number, string>> = {
   400: 'BAD_REQUEST',
   401: 'UNAUTHORIZED',
@@ -66,12 +73,16 @@ const toErrorResponse = (error: FastifyError | AppError): { statusCode: number; 
 /** The single error handler: consistent `{ error: { code, message, details? } }` bodies and logging. */
 export const errorHandlerPlugin = fp(
   async (app: FastifyInstance) => {
+    app.decorateRequest('errorCode', undefined);
+
     app.setErrorHandler((error: FastifyError | AppError, request: FastifyRequest, reply: FastifyReply) => {
       const { statusCode, body } = toErrorResponse(error);
+      request.errorCode = body.error.code;
       if (statusCode >= 500) {
         request.log.error({ err: error }, 'request failed');
       } else {
-        request.log.info({ statusCode, code: body.error.code }, 'request rejected');
+        // The response line (plugins/requestLog.ts) carries the status and code at info.
+        request.log.debug({ statusCode, code: body.error.code }, 'request rejected');
       }
       return reply.code(statusCode).send(body);
     });
@@ -80,6 +91,7 @@ export const errorHandlerPlugin = fp(
       const body: ErrorResponse = {
         error: { code: 'NOT_FOUND', message: `Route ${request.method} ${request.url} not found` },
       };
+      request.errorCode = body.error.code;
       return reply.code(404).send(body);
     });
   },

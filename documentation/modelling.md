@@ -55,23 +55,23 @@ may each have a `post`, but a shared definition cannot take an API ID that any s
 The stored **data type** and the **editor** that renders it are separate choices: you can switch a boolean from
 a toggle to a checkbox, or a string to a colour picker, live, without touching data.
 
-| Data type                  | Stored as                          | Editors                                         | Notes                                                                                       |
-| -------------------------- | ---------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `string`                   | text                               | `textInput`, `textarea`, `color`                | min/max length, pattern                                                                     |
-| `text`                     | text                               | `textarea`                                      | long plain text                                                                             |
-| `richtext`                 | versioned JSON document            | `richText`                                      | headings, lists, links, quotes, code, images, tables; delivered as JSON plus sanitised HTML |
-| `number`, `integer`        | JSON number                        | `numberInput`                                   | min/max                                                                                     |
-| `decimal`, `biginteger`    | string (exact)                     | `numberInput`                                   | precision/scale; no floating-point loss                                                     |
-| `boolean`                  | true/false                         | `toggle`, `checkbox`, `segmented`               |                                                                                             |
-| `date`, `datetime`, `time` | ISO 8601 text (UTC)                | `datePicker`, `dateTimePicker`, `timePicker`    | min/max                                                                                     |
-| `enum`                     | one value or a list                | `select`, `radio`, `segmented`, `checkboxGroup` | `multiple` for lists                                                                        |
-| `slug`                     | text                               | `slugInput`                                     | generated from a source field                                                               |
-| `email`, `url`, `uid`      | text                               | `textInput`                                     | validated formats                                                                           |
-| `json`                     | any JSON                           | `jsonEditor`                                    | not filterable                                                                              |
-| `media`                    | asset ID(s)                        | `mediaPicker`                                   | allowed kinds (image, video, audio, document), `multiple`                                   |
-| `relation`                 | entry ID(s)                        | `relationPicker`                                | target model, `one` or `many`                                                               |
-| `component`                | an object (a list when repeatable) | `componentEditor`                               | min/max items                                                                               |
-| `dynamiczone`              | a list of components               | `dynamicZoneEditor`                             | allowed components, min/max                                                                 |
+| Data type                  | Stored as                          | Editors                                         | Notes                                                                                                           |
+| -------------------------- | ---------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `string`                   | text                               | `textInput`, `textarea`, `color`                | min/max length, pattern                                                                                         |
+| `text`                     | text                               | `textarea`                                      | long plain text                                                                                                 |
+| `richtext`                 | versioned JSON document            | `richText`                                      | headings, lists, links, quotes, code, images, tables; delivered as JSON, or sanitised HTML with `richText=html` |
+| `number`, `integer`        | JSON number                        | `numberInput`                                   | min/max                                                                                                         |
+| `decimal`, `biginteger`    | string (exact)                     | `numberInput`                                   | precision/scale; no floating-point loss                                                                         |
+| `boolean`                  | true/false                         | `toggle`, `checkbox`, `segmented`               |                                                                                                                 |
+| `date`, `datetime`, `time` | ISO 8601 text (UTC)                | `datePicker`, `dateTimePicker`, `timePicker`    | min/max                                                                                                         |
+| `enum`                     | one value or a list                | `select`, `radio`, `segmented`, `checkboxGroup` | `multiple` for lists                                                                                            |
+| `slug`                     | text                               | `slugInput`                                     | generated from a source field                                                                                   |
+| `email`, `url`, `uid`      | text                               | `textInput`                                     | validated formats                                                                                               |
+| `json`                     | any JSON                           | `jsonEditor`                                    | not filterable                                                                                                  |
+| `media`                    | asset ID(s)                        | `mediaPicker`                                   | allowed kinds (image, video, audio, document), `multiple`                                                       |
+| `relation`                 | entry ID(s)                        | `relationPicker`                                | target model, `one` or `many`                                                                                   |
+| `component`                | an object (a list when repeatable) | `componentEditor`                               | min/max items                                                                                                   |
+| `dynamiczone`              | a list of components               | `dynamicZoneEditor`                             | allowed components, min/max                                                                                     |
 
 Field options:
 

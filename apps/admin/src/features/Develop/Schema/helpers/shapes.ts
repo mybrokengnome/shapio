@@ -43,11 +43,11 @@ export const restEndpoints = (definition: SchemaDefinition): RestEndpoint[] => {
   ];
 };
 
+/** Delivery's default rich-text shape (`richText=json`); `html` and `both` add the rendered HTML. */
 const RICH_TEXT_SAMPLE = {
   format: 'shapio-richtext',
   version: 1,
   doc: { type: 'doc', content: [] },
-  html: '',
 };
 
 const MEDIA_SAMPLE = { id: '<uuid>', url: '<url>', mimeType: '<mime type>', alt: '' };

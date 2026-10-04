@@ -67,6 +67,7 @@ import { shapioAttr } from '@shapio/visual';
 
 <h1 {...shapioAttr(article, 'title')}>{article.title}</h1>
 <img src={cover.url} alt={cover.alt} {...shapioAttr(article, 'cover')} />
+{/* body read with richText=html */}
 <div className="prose" {...shapioAttr(article, 'body')} dangerouslySetInnerHTML={{ __html: article.body.html }} />
 <h2 {...shapioAttr(page, `sections/${index}/heading`)}>{section.heading}</h2>
 ```

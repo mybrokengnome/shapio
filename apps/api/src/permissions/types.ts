@@ -163,6 +163,14 @@ export type PolicyRequest = {
  */
 export type PermissionExecutor = Database;
 
+/**
+ * Durable versions a request already read (`repositories/requestState.ts`, once per request, before any
+ * transaction). A lookup given one compares its cache against it instead of reading it again, and still
+ * reloads when its cache is older; a change made after the read applies from the next request. Omitted: the
+ * lookup reads the version itself (jobs, the worker, the CLI).
+ */
+export type KnownVersions = { schemaVersion?: number; permissionsVersion?: number };
+
 export type PermissionEvaluator = {
   evaluate: (principal: Principal, request: PolicyRequest, executor?: PermissionExecutor) => Promise<Policy>;
   canPerform: (principal: Principal, action: GlobalAction, executor?: PermissionExecutor) => Promise<boolean>;
@@ -177,6 +185,11 @@ export type PermissionEvaluator = {
     siteId: string,
     executor?: PermissionExecutor,
   ) => Promise<boolean>;
+  /**
+   * The same evaluator, checking its caches against versions the request already read instead of reading
+   * them on every call. Absent on evaluators without durable caches (fixed test evaluators, wrappers).
+   */
+  atVersions?: (versions: KnownVersions) => PermissionEvaluator;
 };
 
 const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };

@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
   CreateWebhookBody,
@@ -14,7 +15,7 @@ type ById = FastifyRequest<{ Params: IdParams }>;
 
 const contextFor = (request: FastifyRequest): webhooksService.WebhookContext => ({
   ...toSiteActorContext(request),
-  permissions: request.server.permissions,
+  permissions: getRequestPermissions(request),
 });
 
 export const listWebhooks = async (request: FastifyRequest) =>

@@ -1,28 +1,22 @@
-import type { RawBuilder } from 'kysely';
-import { compileHeadQuery, type HeadSource } from '../content/compiler/compile.js';
-import { entryIdIs } from '../content/compiler/conditions.js';
-import { paginationMeta, toLimitOffset, type Pagination } from '../content/compiler/paginate.js';
-import { maskAllows } from '../content/compiler/policy.js';
-import { compileOrderBy, defaultSortTerms, leadsWithEntryColumn } from '../content/compiler/sort.js';
+import type { HeadSource } from '../content/compiler/compile.js';
+import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
-import { readScopeFor } from '../content/locales.js';
 import { resolveModel, type ContentModel } from '../content/model.js';
-import { projectRows, systemAttributes, type ReadEnvironment } from '../content/read.js';
 import { AppError } from '../helpers/appError.js';
 import type { Policy } from '../permissions/types.js';
-import * as contentQueriesRepository from '../repositories/contentQueries.js';
-import * as publicationsRepository from '../repositories/publications.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { restFieldReads } from '../usage/restFieldReads.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { parseQueryFor, queryConditions } from './contentReads.js';
+import { readEntryPage, readOneEntry } from './contentDeliveryReads.js';
+import { parseQueryFor } from './contentReads.js';
 
 /**
  * The delivery API (build plan §4.E6): published heads only, through the permission evaluator (delivery
- * tokens, app users, anonymous callers). Each response reads one consistent moment (a REPEATABLE READ
- * transaction) and reports the publication sequence it saw, which a site build can pin with `?snapshot=N`.
+ * tokens, app users, anonymous callers). Each response reads one consistent moment (one statement, or a
+ * REPEATABLE READ transaction when it needs more: `contentDeliveryReads.ts`) and reports the publication
+ * sequence it saw, which a site build can pin with `?snapshot=N`.
  */
 export type DeliveryMeta = {
   /** The requested locale (or the default); each entry's own `locale` says which one served it. */
@@ -51,6 +45,11 @@ export type DeliveryReadOptions = {
    * (plugins/graphql.ts), so its root reads through this service pass none.
    */
   usage?: UsageRecorder;
+  /**
+   * Runs usage recording after the response is sent (REST passes the request's after-response queue); without
+   * it the read records before returning.
+   */
+  defer?: (task: () => Promise<void>) => void;
 };
 
 const readableModel = async (context: ContentServiceContext, modelKey: string) => {
@@ -67,45 +66,26 @@ const readableModel = async (context: ContentServiceContext, modelKey: string) =
   return { model, policy };
 };
 
-export const deliveryEnvironment = (
-  context: ContentServiceContext,
-  executor: ReadEnvironment['executor'],
-  source: HeadSource,
-  locale: string | undefined,
-): ReadEnvironment => ({
-  executor,
-  snapshot: context.snapshot,
-  permissions: context.permissions,
-  actor: context.actor,
-  siteId: context.site.id,
-  audience: 'delivery',
-  source,
-  locale,
-  ...(context.media ? { media: context.media } : {}),
-});
+/** The heads a read serves: drafts (GraphQL previews), a pinned snapshot, or the published heads. */
+const sourceOf = (query: ContentQuery, options: DeliveryReadOptions): HeadSource => {
+  if (query.snapshot !== undefined && options.drafts) {
+    throw queryInvalid('snapshot reads published content; it cannot be combined with drafts');
+  }
+  return options.drafts
+    ? { kind: 'heads', state: 'draft' }
+    : query.snapshot !== undefined
+      ? { kind: 'snapshot', seq: query.snapshot }
+      : { kind: 'heads', state: 'published' };
+};
 
-/** Runs a delivery read in one consistent transaction at the requested (or current) publication sequence. */
-const atSnapshot = async <T>(
-  context: ContentServiceContext,
-  query: ContentQuery,
-  options: DeliveryReadOptions,
-  read: (env: ReadEnvironment, seq: number) => Promise<T>,
-): Promise<T> =>
-  contentQueriesRepository.withConsistentRead(async (trx) => {
-    const current = await publicationsRepository.currentSeq(context.site.id, trx);
-    if (query.snapshot !== undefined && options.drafts) {
-      throw queryInvalid('snapshot reads published content; it cannot be combined with drafts');
-    }
+/** A pinned snapshot must already exist: checked against the sequence the read itself saw. */
+const snapshotCheck =
+  (query: ContentQuery) =>
+  (current: number): void => {
     if (query.snapshot !== undefined && query.snapshot > current) {
       throw snapshotInvalid(query.snapshot, current);
     }
-    const source: HeadSource = options.drafts
-      ? { kind: 'heads', state: 'draft' }
-      : query.snapshot !== undefined
-        ? { kind: 'snapshot', seq: query.snapshot }
-        : { kind: 'heads', state: 'published' };
-    return read(deliveryEnvironment(context, trx, source, query.locale), query.snapshot ?? current);
-  }, context.db);
+  };
 
 /**
  * Counts a successful REST read for field usage (plan developer-face §5): once per request, after the
@@ -133,10 +113,16 @@ const recordUsage = async (
   options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
 };
 
-const toEntries = (env: ReadEnvironment, projected: Awaited<ReturnType<typeof projectRows>>) =>
-  projected.map(({ row, data }) => ({ ...systemAttributes(env, row), ...data }));
+/** Records usage after the response when the caller can defer it (REST), else before returning. */
+const afterRead = async (options: DeliveryReadOptions, task: () => Promise<void>) => {
+  if (options.defer) {
+    options.defer(task);
+    return;
+  }
+  await task();
+};
 
-const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'snapshot']);
+const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'snapshot', 'richText']);
 
 /** Reading one entry takes only these query parameters; anything else is refused, not ignored. */
 export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<string>): void => {
@@ -148,73 +134,6 @@ export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<stri
   }
 };
 
-/**
- * A delivery-shaped read of one model, once the caller is authorised and the query parsed. The source
- * (published heads, a snapshot, or drafts for preview) comes from the read environment; `conditions` adds
- * row restrictions on top of the query's own (a preview token's entry scope).
- */
-export type DeliveryRead = {
-  context: ContentServiceContext;
-  env: ReadEnvironment;
-  model: ContentModel;
-  policy: Policy;
-  query: ContentQuery;
-  fallback: boolean;
-  conditions?: readonly RawBuilder<unknown>[];
-};
-
-const localesOf = (read: DeliveryRead) =>
-  readScopeFor(read.context.snapshot, read.model.definition, read.query.locale, { fallback: read.fallback });
-
-/** One page of entries in the delivery shape, with the total and the page size used. */
-export const readEntryPage = async (read: DeliveryRead) => {
-  const { context, env, model, policy, query } = read;
-  const { limit, offset } = toLimitOffset(query.page, query.pageSize);
-  const sort =
-    query.sort.length > 0
-      ? query.sort
-      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
-  const compiled = compileHeadQuery({
-    siteId: context.site.id,
-    modelId: model.definition.id,
-    source: env.source,
-    locales: localesOf(read),
-    conditions: [...queryConditions(context, query, policy), ...(read.conditions ?? [])],
-    orderBy: compileOrderBy(sort),
-    orderedByEntry: leadsWithEntryColumn(sort),
-    limit,
-    offset,
-  });
-  const rows = await contentQueriesRepository.runHeadQuery(compiled.rows, env.executor);
-  const entries = toEntries(env, await projectRows(env, model, policy, rows, query));
-  return {
-    entries,
-    limit,
-    count: () => contentQueriesRepository.runCountQuery(compiled.count, env.executor),
-  };
-};
-
-/** One entry by ID in the delivery shape, or undefined when it is not there for this read. */
-export const readOneEntry = async (read: DeliveryRead, id: string) => {
-  const { context, env, model, policy, query } = read;
-  const byId = compileHeadQuery({
-    siteId: context.site.id,
-    modelId: model.definition.id,
-    source: env.source,
-    locales: localesOf(read),
-    conditions: [
-      ...queryConditions(context, { ...query, filter: null, search: null }, policy),
-      ...(read.conditions ?? []),
-      entryIdIs(id),
-    ],
-    orderBy: [],
-    limit: 1,
-  });
-  const rows = await contentQueriesRepository.runHeadQuery(byId.rows, env.executor);
-  const [entry] = toEntries(env, await projectRows(env, model, policy, rows, query));
-  return entry;
-};
-
 /** `GET /api/content/:modelKey`: a page of a collection, or a singleton's one entry. */
 export const listDelivery = async (
   context: ContentServiceContext,
@@ -223,30 +142,28 @@ export const listDelivery = async (
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
   const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true });
+  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true, allowRichText: true });
   const locale = query.locale ?? context.snapshot.defaultLocale;
-  const result = await atSnapshot(context, query, options, async (env, seq) => {
-    const { entries, limit, count } = await readEntryPage({
-      context,
-      env,
-      model,
-      policy,
-      query,
-      fallback: options.fallback ?? true,
-    });
-    if (model.definition.kind === 'singleton') {
-      const [entry] = entries;
-      if (!entry) {
-        throw entryNotFound(modelKey);
-      }
-      return { data: entry, meta: { locale, snapshot: seq } };
+  const singleton = model.definition.kind === 'singleton';
+  const { entries, limit, total, seq } = await readEntryPage(
+    { context, source: sourceOf(query, options), model, policy, query, fallback: options.fallback ?? true },
+    { total: !singleton, check: snapshotCheck(query) },
+  );
+  const snapshot = query.snapshot ?? seq;
+  let result: DeliveryList | DeliveryItem;
+  if (singleton) {
+    const [entry] = entries;
+    if (!entry) {
+      throw entryNotFound(modelKey);
     }
-    return {
+    result = { data: entry, meta: { locale, snapshot } };
+  } else {
+    result = {
       data: entries,
-      meta: { locale, snapshot: seq, pagination: paginationMeta(query.page, limit, await count()) },
+      meta: { locale, snapshot, pagination: paginationMeta(query.page, limit, total) },
     };
-  });
-  await recordUsage(context, options, model, policy, query);
+  }
+  await afterRead(options, () => recordUsage(context, options, model, policy, query));
   return result;
 };
 
@@ -260,17 +177,18 @@ export const getDelivery = async (
 ): Promise<DeliveryItem> => {
   assertItemParameters(rawQuery, ITEM_PARAMETERS);
   const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true });
-  const result = await atSnapshot(context, query, options, async (env, seq) => {
-    const entry = await readOneEntry(
-      { context, env, model, policy, query, fallback: options.fallback ?? true },
-      id,
-    );
-    if (!entry) {
-      throw entryNotFound(id);
-    }
-    return { data: entry, meta: { locale: query.locale ?? context.snapshot.defaultLocale, snapshot: seq } };
-  });
-  await recordUsage(context, options, model, policy, query);
-  return result;
+  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true, allowRichText: true });
+  const { entry, seq } = await readOneEntry(
+    { context, source: sourceOf(query, options), model, policy, query, fallback: options.fallback ?? true },
+    id,
+    { check: snapshotCheck(query) },
+  );
+  if (!entry) {
+    throw entryNotFound(id);
+  }
+  await afterRead(options, () => recordUsage(context, options, model, policy, query));
+  return {
+    data: entry,
+    meta: { locale: query.locale ?? context.snapshot.defaultLocale, snapshot: query.snapshot ?? seq },
+  };
 };

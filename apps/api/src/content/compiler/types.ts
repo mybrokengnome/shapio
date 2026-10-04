@@ -53,11 +53,24 @@ export type ContentQuery = {
   populate: PopulateTree;
   locale: string | undefined;
   snapshot: number | undefined;
+  /** Delivery and preview only: how rich-text values are returned (`?richText=`); undefined on admin reads. */
+  richText?: RichTextMode;
   /** Admin list only: entries whose draft in the served locale has this status. */
   status?: EntryListStatus;
   /** Admin list only: entries created by this admin user. */
   author?: string;
 };
+
+/**
+ * Delivery shapes of a rich-text value (ADR 0003): `json` the stored document `{ format, version, doc }`,
+ * `html` `{ format, version, html }` (sanitized HTML rendered from the document), `both` the document plus
+ * `html`.
+ */
+export const RICH_TEXT_MODES = ['json', 'html', 'both'] as const;
+export type RichTextMode = (typeof RICH_TEXT_MODES)[number];
+
+/** What a delivery read returns for rich text when the request does not say (`?richText=`). */
+export const DEFAULT_RICH_TEXT_MODE: RichTextMode = 'json';
 
 export const ENTRY_LIST_STATUSES = ['draft', 'published', 'modified'] as const;
 export type EntryListStatus = (typeof ENTRY_LIST_STATUSES)[number];

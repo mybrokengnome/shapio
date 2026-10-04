@@ -23,6 +23,12 @@ type PreviewTokenCreated = {
 type PreviewItem = { data: Record<string, unknown>; meta: { preview: boolean; locale: string } };
 type PreviewList = { data: Array<Record<string, unknown>>; meta: { preview: boolean } };
 
+const DRAFT_BODY = {
+  format: 'shapio-richtext',
+  version: 1,
+  doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Draft body' }] }] },
+};
+
 describe('preview tokens and draft reads', () => {
   const database = useTestDatabase();
   let testApp: TestApp;
@@ -57,6 +63,7 @@ describe('preview tokens and draft reads', () => {
       fields: [
         { apiKey: 'title', label: 'Title', type: 'string' },
         { apiKey: 'notes', label: 'Internal notes', type: 'string', public: false },
+        { apiKey: 'body', label: 'Body', type: 'richtext' },
       ],
     });
     const editor = await createAdmin(database.current.db, { roleKeys: ['editor'] });
@@ -71,7 +78,7 @@ describe('preview tokens and draft reads', () => {
       await admin.put(`/api/admin/content/article/${published.id}`, {
         expectedVersion: (await admin.get(`/api/admin/content/article/${published.id}`)).json<EntryBody>()
           .version,
-        data: { title: 'Draft title', notes: 'secret' },
+        data: { title: 'Draft title', notes: 'secret', body: DRAFT_BODY },
       }),
       200,
     ).json<EntryBody>();
@@ -113,6 +120,20 @@ describe('preview tokens and draft reads', () => {
         .json<PreviewList>()
         .data.map((entry) => entry.id),
     ).toEqual([draft.id]);
+  });
+
+  it('returns rich text in the shape the site asks for, the stored document by default', async () => {
+    const { token } = await createToken({ modelKey: 'article', entryId: draft.id });
+    const read = async (query: string) =>
+      expectStatus(await preview(`articles/${draft.id}${query}`, token), 200).json<PreviewItem>().data.body;
+    expect(await read('')).toEqual(DRAFT_BODY);
+    expect(await read('?richText=html')).toEqual({
+      format: 'shapio-richtext',
+      version: 1,
+      html: '<p>Draft body</p>',
+    });
+    expect(await read('?richText=both')).toEqual({ ...DRAFT_BODY, html: '<p>Draft body</p>' });
+    expect((await preview(`articles/${draft.id}?richText=pdf`, token)).statusCode).toBe(400);
   });
 
   it('refuses a model-wide token: a preview token previews one entry (sites plan §H)', async () => {

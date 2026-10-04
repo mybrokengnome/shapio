@@ -4,12 +4,23 @@ import type { ContentListQuery } from './admin/contentTypes.js';
  * The delivery API (`/api/content/:routeKey`): published content as sites and apps read it. `routeKey` is a
  * collection's plural API ID (`articles`) or a singleton's API ID (`homepage`).
  */
+/**
+ * How rich-text fields come back: `json` (the server's default) the stored document `{ format, version, doc }`,
+ * `html` `{ format, version, html }` with sanitized HTML rendered on the server, `both` the document and `html`.
+ */
+export type RichTextMode = 'json' | 'html' | 'both';
+
 export type DeliveryListQuery = Omit<ContentListQuery, 'status' | 'author'> & {
   /** Read the publication snapshot N (`GET /api/snapshots/current` gives the newest) instead of now. */
   snapshot?: number;
+  /** The shape of rich-text fields (`json` when absent). */
+  richText?: RichTextMode;
 };
 
-export type DeliveryGetQuery = Pick<DeliveryListQuery, 'locale' | 'fields' | 'populate' | 'snapshot'>;
+export type DeliveryGetQuery = Pick<
+  DeliveryListQuery,
+  'locale' | 'fields' | 'populate' | 'snapshot' | 'richText'
+>;
 
 export type DeliveryMeta = { locale: string; snapshot: number };
 

@@ -8,6 +8,7 @@ import type { FieldMask } from '../../permissions/types.js';
 import type { ContentModel } from '../model.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import { maskAllows } from './policy.js';
+import type { RichTextMode } from './types.js';
 
 /**
  * Storage → API projection with explicit masks (build plan §3.10: generic content routes cannot carry
@@ -34,10 +35,38 @@ export type ProjectionOptions = {
   visibleTargets: ReadonlySet<string> | null;
   /** Expanded targets: relation field ID → target entry ID → projected entry. */
   populated: ReadonlyMap<string, ReadonlyMap<string, unknown>>;
-  /** Add sanitized HTML next to rich-text JSON (delivery). */
-  richTextHtml: boolean;
+  /**
+   * Delivery reads: the shape of rich-text values (`?richText=`), each also carrying its HTML rendering behind
+   * `RICH_TEXT_HTML` for GraphQL's `html` field. Absent: the stored document as is (admin reads, hooks).
+   */
+  richText?: RichTextMode;
   /** Asset views by ID (media fields become views, missing assets are dropped); null leaves IDs as stored. */
   mediaAssets: ReadonlyMap<string, { url: string }> | null;
+};
+
+/**
+ * Renders a delivered rich-text value's HTML on demand (GraphQL's `RichText.html` resolver). A symbol key, so
+ * `JSON.stringify` never writes it: REST responses carry `html` only when the request asked for it.
+ */
+export const RICH_TEXT_HTML: unique symbol = Symbol('shapio.richTextHtml');
+
+export type DeliveredRichText = Record<string, unknown> & { [RICH_TEXT_HTML]?: () => string };
+
+const projectRichText = (
+  document: RichTextDocument,
+  mode: RichTextMode,
+  options: ProjectionOptions,
+): DeliveredRichText => {
+  const render = () => renderRichTextHtml(document, (id) => options.mediaAssets?.get(id)?.url);
+  const { doc, ...envelope } = document;
+  const shaped: DeliveredRichText =
+    mode === 'json'
+      ? { ...document }
+      : mode === 'html'
+        ? { ...envelope, html: render() }
+        : { ...envelope, doc, html: render() };
+  shaped[RICH_TEXT_HTML] = render;
+  return shaped;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -143,12 +172,7 @@ const projectValue = (
         return component && projected ? [{ [COMPONENT_KEY]: component.apiKey, ...projected }] : [];
       });
     case 'richtext':
-      return options.richTextHtml
-        ? {
-            ...(value as RichTextDocument),
-            html: renderRichTextHtml(value as RichTextDocument, (id) => options.mediaAssets?.get(id)?.url),
-          }
-        : value;
+      return options.richText ? projectRichText(value as RichTextDocument, options.richText, options) : value;
     case 'media': {
       if (!options.mediaAssets) {
         return value;

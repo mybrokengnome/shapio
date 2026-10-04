@@ -4,7 +4,6 @@ import { paginationMeta } from '../content/compiler/paginate.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
 import { resolveRouteModel, type ContentModel } from '../content/model.js';
-import type { ReadEnvironment } from '../content/read.js';
 import { AppError } from '../helpers/appError.js';
 import type { FieldVisibilityLookup } from '../permissions/policy.js';
 import {
@@ -15,10 +14,10 @@ import {
 } from '../permissions/types.js';
 import { loadAdminPrincipal } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
-import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { assertItemParameters, deliveryEnvironment, readEntryPage, readOneEntry } from './contentDelivery.js';
+import { assertItemParameters } from './contentDelivery.js';
+import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
 
@@ -32,7 +31,7 @@ import { resolvePreviewToken } from './previewTokens.js';
  * The read itself is the delivery read (services/contentDelivery.ts) over draft heads.
  */
 const DRAFT: HeadSource = { kind: 'heads', state: 'draft' };
-const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale']);
+const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'richText']);
 
 export type PreviewMeta = { locale: string; preview: true; expiresAt: Date };
 
@@ -149,7 +148,10 @@ const authorize = async (
 
 /** The token's locale wins; a different `locale` in the query is refused rather than silently ignored. */
 const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
-  const query = parseQueryFor(scope.context, scope.model, scope.policy, rawQuery, { allowSnapshot: false });
+  const query = parseQueryFor(scope.context, scope.model, scope.policy, rawQuery, {
+    allowSnapshot: false,
+    allowRichText: true,
+  });
   if (scope.token.locale && query.locale && query.locale !== scope.token.locale) {
     throw new AppError(403, 'PREVIEW_SCOPE', `This preview token is for locale "${scope.token.locale}"`);
   }
@@ -159,9 +161,9 @@ const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
 /** A preview token reads its one entry only. */
 const entryCondition = (token: PreviewTokenSummary) => [entryIdIs(token.entry_id)];
 
-const readOf = (scope: PreviewScope, executor: ReadEnvironment['executor'], query: ContentQuery) => ({
+const readOf = (scope: PreviewScope, query: ContentQuery): DeliveryRead => ({
   context: scope.context,
-  env: deliveryEnvironment(scope.context, executor, DRAFT, query.locale),
+  source: DRAFT,
   model: scope.model,
   policy: scope.policy,
   query,
@@ -183,13 +185,11 @@ export const listPreview = async (
 ) => {
   const scope = await authorize(runtime, base, fields, request);
   const query = scopedQuery(scope, request.rawQuery);
-  return contentQueriesRepository.withConsistentRead(async (trx) => {
-    const { entries, limit, count } = await readEntryPage(readOf(scope, trx, query));
-    return {
-      data: entries,
-      meta: { ...metaOf(scope, query), pagination: paginationMeta(query.page, limit, await count()) },
-    };
-  }, scope.context.db);
+  const { entries, limit, total } = await readEntryPage(readOf(scope, query));
+  return {
+    data: entries,
+    meta: { ...metaOf(scope, query), pagination: paginationMeta(query.page, limit, total) },
+  };
 };
 
 export const getPreview = async (
@@ -204,11 +204,9 @@ export const getPreview = async (
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another entry');
   }
   const query = scopedQuery(scope, request.rawQuery);
-  return contentQueriesRepository.withConsistentRead(async (trx) => {
-    const entry = await readOneEntry(readOf(scope, trx, query), request.id);
-    if (!entry) {
-      throw entryNotFound(request.id);
-    }
-    return { data: entry, meta: metaOf(scope, query) };
-  }, scope.context.db);
+  const { entry } = await readOneEntry(readOf(scope, query), request.id);
+  if (!entry) {
+    throw entryNotFound(request.id);
+  }
+  return { data: entry, meta: metaOf(scope, query) };
 };

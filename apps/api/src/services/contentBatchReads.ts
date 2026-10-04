@@ -3,7 +3,7 @@ import { readScopeFor } from '../content/locales.js';
 import { resolveModelById } from '../content/model.js';
 import { fetchHeadsByIds, projectRows, readPolicy, systemAttributes } from '../content/read.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { deliveryEnvironment } from './contentDelivery.js';
+import { deliveryEnvironment } from './contentDeliveryReads.js';
 
 /**
  * Batched delivery reads by entry ID, for GraphQL's per-request DataLoaders (relation targets and

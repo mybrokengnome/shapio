@@ -7,6 +7,7 @@ import type { AdminPrincipal, TokenPrincipal } from '../permissions/types.js';
 import * as appUsersRepository from '../repositories/appUsers.js';
 import * as contentPurgeRepository from '../repositories/contentPurge.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
+import type { SiteLookup } from '../repositories/requestState.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import * as sitesRepository from '../repositories/sites.js';
 import type { SiteRow } from '../repositories/sites.js';
@@ -208,17 +209,34 @@ export type SiteResolutionInput = {
   requestedKey: string | undefined;
 };
 
+/** Reads the site a lookup names; undefined when none matches. */
+export type SiteReader = (lookup: SiteLookup) => Promise<SiteRef | undefined>;
+
+/** The site a lookup names, read on its own (a request whose state was read without its site). */
+export const findSite: SiteReader = async (lookup) => {
+  switch (lookup.by) {
+    case 'id':
+      return sitesRepository.findById(lookup.id).then((row) => row && toSiteRef(row));
+    case 'key':
+      return sitesRepository.findByKey(lookup.key).then((row) => row && toSiteRef(row));
+    case 'primary':
+      return toSiteRef(await sitesRepository.findPrimary());
+  }
+};
+
 /**
  * Which site a request is about (sites plan §H): the credential's site, else the site the request names,
  * else the primary site. A request that names a different site than its credential is refused
  * (403 `SITE_MISMATCH`), never redirected; an unknown key is 404 `SITE_NOT_FOUND`.
+ * `read`: where the site is read; a request passes its once-per-request state read
+ * (`repositories/requestState.ts`), which reads the site with the versions in one statement.
  */
-export const resolveSite = async ({
-  credentialSiteId,
-  requestedKey,
-}: SiteResolutionInput): Promise<SiteRef> => {
+export const resolveSite = async (
+  { credentialSiteId, requestedKey }: SiteResolutionInput,
+  read: SiteReader = findSite,
+): Promise<SiteRef> => {
   if (credentialSiteId !== undefined) {
-    const site = await sitesRepository.findById(credentialSiteId);
+    const site = await read({ by: 'id', id: credentialSiteId });
     if (!site) {
       throw siteNotFound();
     }
@@ -229,14 +247,19 @@ export const resolveSite = async ({
         `This credential belongs to site "${site.key}", not "${requestedKey}"`,
       );
     }
-    return toSiteRef(site);
+    return site;
   }
   if (requestedKey !== undefined) {
-    const site = await sitesRepository.findByKey(requestedKey);
+    const site = await read({ by: 'key', key: requestedKey });
     if (!site) {
       throw new AppError(404, 'SITE_NOT_FOUND', `No site has the key "${requestedKey}"`);
     }
-    return toSiteRef(site);
+    return site;
   }
-  return toSiteRef(await sitesRepository.findPrimary());
+  const primary = await read({ by: 'primary' });
+  if (!primary) {
+    // Every instance has exactly one primary site (migrations create it; it can never be deleted).
+    throw new Error('No primary site');
+  }
+  return primary;
 };

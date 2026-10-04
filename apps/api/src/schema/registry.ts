@@ -13,8 +13,10 @@ export type SchemaRegistry = {
    * check is what keeps every instance correct; notifications only make reloads happen sooner.
    * `executor`: the caller's open transaction, which the check (and a reload, when the cache is stale) then
    * reads through, so it never waits for a second pooled connection while holding one.
+   * `versions.schemaVersion`: the version the request already read (`repositories/requestState.ts`); the
+   * check compares against it instead of reading it again, and still reloads when the cache is older.
    */
-  getSnapshot: (executor?: Database) => Promise<NetworkSchema>;
+  getSnapshot: (executor?: Database, versions?: { schemaVersion?: number }) => Promise<NetworkSchema>;
   /** The cached snapshot without any check (may be stale or absent). */
   peek: () => NetworkSchema | undefined;
   /** A hint that the version moved (NOTIFY). Reloads in the background; never throws. */
@@ -78,8 +80,9 @@ export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegist
   };
 
   return {
-    getSnapshot: async (executor) => {
-      const version = await schemaVersionsRepository.getSchemaVersion(executor ?? db);
+    getSnapshot: async (executor, versions) => {
+      const version =
+        versions?.schemaVersion ?? (await schemaVersionsRepository.getSchemaVersion(executor ?? db));
       if (cached && cached.version >= version) {
         return cached;
       }

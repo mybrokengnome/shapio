@@ -154,17 +154,17 @@ Paths are relative to `examples/astro`; the model files and the seed are shared 
 [starters](starters.md) and live in `examples/shared` (a project made with `create-shapio --site astro` has
 them in its own `shapio/` and `scripts/`).
 
-| File                                                    | Role                                                                                             |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `../shared/shapio/models/*.json`, `…/components/*.json` | the content models, as `shapio schema pull` writes them                                          |
-| `src/lib/shapio.ts`                                     | reads the delivery API with `@shapio/client`, pinned to one snapshot                             |
-| `src/lib/render.ts`                                     | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitised `html`) |
-| `src/layouts/Base.astro`                                | the header and footer, from the `siteSettings` singleton                                         |
-| `src/pages/[locale]/…`                                  | one static page per published page and article, per locale, and the colophon (the singleton)     |
-| `src/pages/preview.astro`, `src/lib/preview.ts`         | the preview page                                                                                 |
-| `../shared/scripts/seed.ts`                             | the seed                                                                                         |
-| `scripts/reportStatus.ts`, `scripts/lib/callback.ts`    | signed build status for generic-webhook deployments                                              |
-| `scripts/smoke.ts`, `../shared/scripts/smokeHttp.ts`    | the HTML and preview checks; the HTTP checks every starter runs                                  |
+| File                                                    | Role                                                                                                                        |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `../shared/shapio/models/*.json`, `…/components/*.json` | the content models, as `shapio schema pull` writes them                                                                     |
+| `src/lib/shapio.ts`                                     | reads the delivery API with `@shapio/client`, pinned to one snapshot                                                        |
+| `src/lib/render.ts`                                     | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitised `html`, read with `richText=html`) |
+| `src/layouts/Base.astro`                                | the header and footer, from the `siteSettings` singleton                                                                    |
+| `src/pages/[locale]/…`                                  | one static page per published page and article, per locale, and the colophon (the singleton)                                |
+| `src/pages/preview.astro`, `src/lib/preview.ts`         | the preview page                                                                                                            |
+| `../shared/scripts/seed.ts`                             | the seed                                                                                                                    |
+| `scripts/reportStatus.ts`, `scripts/lib/callback.ts`    | signed build status for generic-webhook deployments                                                                         |
+| `scripts/smoke.ts`, `../shared/scripts/smokeHttp.ts`    | the HTML and preview checks; the HTTP checks every starter runs                                                             |
 
 Images use the variants Shapio renders (`srcset` of WebP widths) with their intrinsic size, lazily below the
 fold; the pages have no client-side JavaScript except the preview page. Astro's telemetry is turned off in

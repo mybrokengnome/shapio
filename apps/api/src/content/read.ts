@@ -11,7 +11,7 @@ import { entryIdIn } from './compiler/conditions.js';
 import { compileRowFilter } from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
-import type { PopulateTree } from './compiler/types.js';
+import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
@@ -37,6 +37,8 @@ export type ReadEnvironment = {
   locale: string | undefined;
   /** Media storage for asset URLs; without it media fields stay asset IDs. */
   media?: MediaViewDependencies;
+  /** Delivery reads: the shape of rich-text values, populated targets included (`?richText=`; the default when absent). */
+  richText?: RichTextMode;
 };
 
 /** Evaluated through the read's executor: a read inside a transaction never asks the pool for a second connection. */
@@ -69,19 +71,23 @@ export const fetchHeadsByIds = async (
   return contentQueriesRepository.runHeadQuery(rows, env.executor);
 };
 
+/** Target heads read for relation visibility, by target model, for populate to reuse (same policy and locales). */
+type FetchedTargets = Map<string, { ids: ReadonlySet<string>; rows: readonly HeadRow[] }>;
+
 /**
  * Relation targets the caller may see in these rows: for delivery, only targets that are published (at the
  * same snapshot) and readable under their model's policy, so a published entry never leaks the ID of a
- * draft (brief §10). Admin reads see every ID (null).
+ * draft (brief §10). Admin reads see every ID (null). The heads read are returned for populate.
  */
-export const visibleRelationTargets = async (
+const relationTargets = async (
   env: ReadEnvironment,
   model: ContentModel,
   rows: readonly HeadRow[],
   fields: readonly FieldDefinition[],
-): Promise<Set<string> | null> => {
+): Promise<{ visible: Set<string> | null; fetched: FetchedTargets }> => {
+  const fetched: FetchedTargets = new Map();
   if (env.audience === 'admin') {
-    return null;
+    return { visible: null, fetched };
   }
   const visible = new Set<string>();
   const targets = targetsByModel(
@@ -95,9 +101,48 @@ export const visibleRelationTargets = async (
       continue;
     }
     const policy = await readPolicy(env, targetModelId);
-    (await fetchHeadsByIds(env, target, policy, [...ids])).forEach((row) => visible.add(row.entry_id));
+    const found = await fetchHeadsByIds(env, target, policy, [...ids]);
+    found.forEach((row) => visible.add(row.entry_id));
+    fetched.set(targetModelId, { ids, rows: found });
   }
-  return visible;
+  return { visible, fetched };
+};
+
+/**
+ * `fetchHeadsByIds` for populate, answered from the heads relation visibility already read when it asked for
+ * every one of these IDs under the same policy and locale scope (populate's default), else from the database.
+ */
+const fetchReusing =
+  (fetched: FetchedTargets): PopulateEnvironment['fetch'] =>
+  async (env, model, policy, ids) => {
+    const known = fetched.get(model.definition.id);
+    if (known && ids.every((id) => known.ids.has(id))) {
+      const wanted = new Set(ids);
+      return known.rows.filter((row) => wanted.has(row.entry_id));
+    }
+    return fetchHeadsByIds(env, model, policy, ids);
+  };
+
+/**
+ * Whether projecting these rows reads anything more (relation targets, populated entries, asset views). When
+ * not, a delivery read is complete in the one statement that fetched the rows (plan delivery-perf).
+ */
+export const needsFollowUpReads = (
+  env: ReadEnvironment,
+  model: ContentModel,
+  rows: readonly HeadRow[],
+  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+  policy: Policy,
+): boolean => {
+  if (query.populate.size > 0) {
+    return true;
+  }
+  const fields = selectFields(model, policy.readMask, query.fields);
+  const documents = rows.map((row) => row.data);
+  return (
+    (env.audience === 'delivery' && targetsByModel(model, documents, fields).size > 0) ||
+    (env.media !== undefined && mediaIdsOf(model, documents, fields).size > 0)
+  );
 };
 
 /**
@@ -170,11 +215,11 @@ export const projectRows = async (
   query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
 ): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
   const fields = selectFields(model, policy.readMask, query.fields);
-  const visibleTargets = await visibleRelationTargets(env, model, rows, fields);
+  const { visible: visibleTargets, fetched } = await relationTargets(env, model, rows, fields);
   const populateEnv: PopulateEnvironment = {
     ...env,
     project: projectRows,
-    fetch: fetchHeadsByIds,
+    fetch: fetchReusing(fetched),
     policyFor: readPolicy,
     system: systemAttributes,
   };
@@ -187,7 +232,7 @@ export const projectRows = async (
       fields,
       visibleTargets,
       populated,
-      richTextHtml: env.audience === 'delivery',
+      ...(env.audience === 'delivery' ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE } : {}),
       mediaAssets,
     }),
   }));

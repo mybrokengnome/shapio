@@ -9,11 +9,13 @@ import { findFieldByApiKey } from '../model.js';
 import { assertOperatorAllowed, coerceOperand, isListOperator, isSortable } from './operators.js';
 import { toList, type QueryTree, type QueryValue } from './querystring.js';
 import {
+  DEFAULT_RICH_TEXT_MODE,
   ENTRY_LIST_STATUSES,
   FILTER_OPERATORS,
   QUERY_LIMITS,
   queryForbidden,
   queryInvalid,
+  RICH_TEXT_MODES,
   SYSTEM_ATTRIBUTES,
   type ContentQuery,
   type EntryListStatus,
@@ -21,6 +23,7 @@ import {
   type FilterOperator,
   type FilterTarget,
   type PopulateTree,
+  type RichTextMode,
   type SortTerm,
   type SystemAttribute,
 } from './types.js';
@@ -41,6 +44,8 @@ export type ParseContext = {
   allowSnapshot: boolean;
   /** `?status=` and `?author=` are admin list features. */
   allowAdminFilters?: boolean;
+  /** `?richText=` is a delivery and preview feature (admin reads return the stored document). */
+  allowRichText?: boolean;
   /** Target models of relation fields, for nested populate paths. */
   resolveModel: (modelId: string) => ModelDefinition | undefined;
 };
@@ -54,6 +59,7 @@ const TOP_LEVEL_KEYS = new Set([
   'populate',
   'locale',
   'snapshot',
+  'richText',
   'q',
   'status',
   'author',
@@ -303,6 +309,23 @@ const parseAdminFilters = (tree: QueryTree, context: ParseContext) => {
   };
 };
 
+const RICH_TEXT_MODE_SET: ReadonlySet<string> = new Set(RICH_TEXT_MODES);
+
+/** `?richText=json|html|both` on delivery and preview reads; the default there, nothing on admin reads. */
+const parseRichText = (tree: QueryTree, context: ParseContext): { richText?: RichTextMode } => {
+  const value = single(tree.richText, 'richText');
+  if (!context.allowRichText) {
+    if (value !== undefined) {
+      throw queryInvalid('richText is only available on the delivery and preview APIs');
+    }
+    return {};
+  }
+  if (value !== undefined && !RICH_TEXT_MODE_SET.has(value)) {
+    throw queryInvalid(`"richText" must be one of ${RICH_TEXT_MODES.join(', ')}`);
+  }
+  return { richText: (value as RichTextMode | undefined) ?? DEFAULT_RICH_TEXT_MODE };
+};
+
 export const parseContentQuery = (tree: QueryTree, context: ParseContext): ContentQuery => {
   for (const key of Object.keys(tree)) {
     if (!TOP_LEVEL_KEYS.has(key)) {
@@ -332,6 +355,7 @@ export const parseContentQuery = (tree: QueryTree, context: ParseContext): Conte
     populate: parsePopulate(context, tree.populate),
     locale,
     snapshot,
+    ...parseRichText(tree, context),
     ...parseAdminFilters(tree, context),
   };
 };

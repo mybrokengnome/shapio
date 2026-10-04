@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { Kysely, PostgresDialect } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../helpers/appError.js';
-import { compileFilter, compileHeadQuery, compileSearch } from './compile.js';
+import { compileFilter, compileHeadPage, compileHeadQuery, compileSearch } from './compile.js';
 import { parseContentQuery } from './parse.js';
 import { parseQueryTree } from './querystring.js';
 import { compileOrderBy } from './sort.js';
@@ -253,5 +253,43 @@ describe('content query compiler', () => {
     );
     // The generator must reach the compiler often enough for the property to mean something.
     expect(compiledCount).toBeGreaterThan(200);
+  });
+
+  it('reads richText on delivery and preview reads only, defaulting to json', () => {
+    const delivery = { ...context, allowRichText: true };
+    const richText = (search: string, ctx: Parameters<typeof parseContentQuery>[1] = delivery) =>
+      parseContentQuery(parseQueryTree(search), ctx).richText;
+    expect(richText('')).toBe('json');
+    expect(richText('richText=html')).toBe('html');
+    expect(richText('richText=both')).toBe('both');
+    expect(status(() => richText('richText=xml'))).toBe(400);
+    expect(status(() => richText('richText=html&richText=json'))).toBe(400);
+    expect(richText('', context)).toBeUndefined();
+    expect(status(() => richText('richText=html', context))).toBe(400);
+  });
+
+  it('reads a page, its total and the site sequence in one statement', () => {
+    const plan = {
+      siteId: SITE_ID,
+      modelId: MODEL_ID,
+      source: { kind: 'heads', state: 'published' } as const,
+      locales: { kind: 'any' } as const,
+      conditions: [],
+      orderBy: [],
+      limit: 20,
+    };
+    const seq = 'select ps.last_seq from publication_state ps where ps.site_id = $';
+    const page = compileHeadPage(plan, { total: true });
+    const { sql: rows, parameters } = page.rows.compile(compiler);
+    expect(rows).toContain('(select count(*) from "entry_heads" h where h.site_id = $');
+    expect(rows).toContain(seq);
+    expect(rows).toMatch(
+      /as page_total, \(select ps\.last_seq .*\) as page_seq\s+from "entry_heads" h join entries e/s,
+    );
+    expect(parameters.filter((value) => value === SITE_ID).length).toBeGreaterThanOrEqual(3);
+    expect(page.meta.compile(compiler).sql).not.toContain(' join entries e');
+    expect(compileHeadPage(plan, { total: false }).rows.compile(compiler).sql).toContain(
+      'null as page_total',
+    );
   });
 });

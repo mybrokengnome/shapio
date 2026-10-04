@@ -48,6 +48,8 @@ const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T
   for (let page = 1; ; page += 1) {
     const result = await shapio().delivery.list<T>(routeKey, {
       ...query,
+      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document.
+      richText: 'html',
       snapshot: await snapshot(),
       page,
       pageSize: PAGE_SIZE,
@@ -82,6 +84,7 @@ const readSiteSettings = async (locale: Locale): Promise<SiteSettings | null> =>
       locale,
       snapshot: await snapshot(),
       fields: SITE_SETTINGS_FIELDS,
+      richText: 'html',
     });
     return data;
   } catch (error) {

@@ -11,6 +11,7 @@ import {
   GLOBAL_ACTIONS,
   type ContentAction,
   type GlobalAction,
+  type KnownVersions,
   type PermissionExecutor,
 } from './types.js';
 
@@ -20,11 +21,16 @@ import {
  * user (`authenticated`); a site that binds nothing grants them nothing (sites plan §H).
  */
 export type GrantSource = {
-  getGrants: (roleIds: readonly string[], executor?: PermissionExecutor) => Promise<readonly Grant[]>;
+  getGrants: (
+    roleIds: readonly string[],
+    executor?: PermissionExecutor,
+    versions?: KnownVersions,
+  ) => Promise<readonly Grant[]>;
   getSiteAppRoleIds: (
     siteId: string,
     audience: AppRoleAudience,
     executor?: PermissionExecutor,
+    versions?: KnownVersions,
   ) => Promise<readonly string[]>;
 };
 
@@ -74,8 +80,9 @@ const groupByRole = (grants: readonly Grant[]): Map<string, Grant[]> => {
 
 /**
  * Every role's grants, held in memory and reloaded when `system_versions.permissions_version` moves.
- * The version is read on every lookup: that durable check is what makes a permission change visible to
- * every instance at once (NOTIFY would only be an optimisation). Lookups on the pool share one reload; a
+ * The version is checked on every lookup: read here, or read once by the request (`versions`, see
+ * `KnownVersions`). That durable check is what makes a permission change visible to every instance from the
+ * next request (NOTIFY would only be an optimisation). Lookups on the pool share one reload; a
  * lookup inside a transaction reads (and, when stale, reloads) through that transaction alone, never
  * through a reload running on another request's transaction.
  */
@@ -101,8 +108,10 @@ export const createPermissionCache = (database: Kysely<DB>): GrantSource => {
       reloading = undefined;
     }));
 
-  const current = async (executor?: PermissionExecutor): Promise<Snapshot> => {
-    const version = await permissionsVersionRepository.getPermissionsVersion(executor ?? database);
+  const current = async (executor?: PermissionExecutor, versions?: KnownVersions): Promise<Snapshot> => {
+    const version =
+      versions?.permissionsVersion ??
+      (await permissionsVersionRepository.getPermissionsVersion(executor ?? database));
     if (snapshot && snapshot.version === version) {
       return snapshot;
     }
@@ -114,15 +123,15 @@ export const createPermissionCache = (database: Kysely<DB>): GrantSource => {
   };
 
   return {
-    getGrants: async (roleIds, executor) => {
+    getGrants: async (roleIds, executor, versions) => {
       if (roleIds.length === 0) {
         return [];
       }
-      const { byRole } = await current(executor);
+      const { byRole } = await current(executor, versions);
       return roleIds.flatMap((roleId) => byRole.get(roleId) ?? []);
     },
-    getSiteAppRoleIds: async (siteId, audience, executor) => {
-      const { bindings } = await current(executor);
+    getSiteAppRoleIds: async (siteId, audience, executor, versions) => {
+      const { bindings } = await current(executor, versions);
       return bindings.get(bindingKey(siteId, audience)) ?? [];
     },
   };

@@ -9,6 +9,7 @@ export const schemaContextFor = async (request: FastifyRequest): Promise<SchemaS
   db: request.server.db,
   snapshot: await getRequestSchema(request),
   ports: request.server.schemaContent,
+  // The live evaluator, not the request's: schema writes move the schema version mid-request.
   permissions: request.server.permissions,
   actor: request.principal,
   requestId: request.id,

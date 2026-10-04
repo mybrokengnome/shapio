@@ -34,15 +34,19 @@ const sendCacheable = (request: FastifyRequest, reply: FastifyReply, payload: un
   return reply.type('application/json; charset=utf-8').send(body);
 };
 
+/** Field usage is counted after the response is sent, off its path (plan delivery-perf). */
+const usageOptions = (request: FastifyRequest) => ({
+  usage: request.server.usage,
+  defer: (task: () => Promise<void>) => request.server.recordUsageAfterResponse(request.log, task),
+});
+
 export const listDelivery = async (request: FastifyRequest<{ Params: ModelParams }>, reply: FastifyReply) => {
   const context = await contentContextFor(request);
   const apiKey = apiKeyOfRoute(context.snapshot, request.params.modelKey);
   return sendCacheable(
     request,
     reply,
-    await contentDeliveryService.listDelivery(context, apiKey, rawQueryOf(request), {
-      usage: request.server.usage,
-    }),
+    await contentDeliveryService.listDelivery(context, apiKey, rawQueryOf(request), usageOptions(request)),
   );
 };
 
@@ -52,8 +56,12 @@ export const getDelivery = async (request: FastifyRequest<{ Params: EntryParams 
   return sendCacheable(
     request,
     reply,
-    await contentDeliveryService.getDelivery(context, apiKey, request.params.id, rawQueryOf(request), {
-      usage: request.server.usage,
-    }),
+    await contentDeliveryService.getDelivery(
+      context,
+      apiKey,
+      request.params.id,
+      rawQueryOf(request),
+      usageOptions(request),
+    ),
   );
 };

@@ -92,7 +92,7 @@ describe('content with media', () => {
     const delivered = expectStatus(
       await testApp.app.inject({
         method: 'GET',
-        url: `/api/content/galleries/${entry.id}`,
+        url: `/api/content/galleries/${entry.id}?richText=html`,
         headers: { authorization: `Bearer ${token}` },
       }),
       200,

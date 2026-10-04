@@ -8,6 +8,7 @@ import { toClientInfo } from '../helpers/requestContext.js';
 import type { GlobalAction, Principal } from '../permissions/types.js';
 import { resolveSession } from '../services/adminSessions.js';
 import { isApiTokenFormat, resolveApiToken } from '../services/apiTokens.js';
+import { getRequestPermissions } from './requestState.js';
 
 /** `appToken`: an app-user JWT, resolved by plugins/appUserAuth.ts. */
 export type AuthMethod = 'none' | 'session' | 'token' | 'appToken';
@@ -140,7 +141,7 @@ export const adminSessionPlugin = fp<AdminSessionOptions>(
     app.decorate('requireGlobalPermission', (action: GlobalAction): preHandlerAsyncHookHandler => {
       return async function requireGlobalPermission(this: FastifyInstance, request, reply) {
         await requireAdmin.call(this, request, reply);
-        if (!(await app.permissions.canPerform(request.principal, action))) {
+        if (!(await getRequestPermissions(request).canPerform(request.principal, action))) {
           throw new AppError(403, 'FORBIDDEN', `Your role does not allow ${action}`);
         }
       };

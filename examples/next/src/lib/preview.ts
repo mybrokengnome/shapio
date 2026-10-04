@@ -45,6 +45,7 @@ export const loadDraft = async (shapioUrl: string, request: PreviewRequest): Pro
   const client = createClient({ baseUrl: shapioUrl, token: request.token });
   const params = new URLSearchParams({
     locale: request.locale,
+    richText: 'html',
     ...(request.modelKey === 'articles' ? { populate: 'author' } : {}),
   });
   const { data } = await client.request<DeliveryItem<Page | Article>>(

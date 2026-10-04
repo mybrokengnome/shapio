@@ -3,7 +3,12 @@ import { existsSync } from 'node:fs';
 import type { Server as HttpServer } from 'node:http';
 import { resolve } from 'node:path';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
-import Fastify, { type FastifyBaseLogger, type FastifyHttpOptions, type FastifyInstance } from 'fastify';
+import Fastify, {
+  LogController,
+  type FastifyBaseLogger,
+  type FastifyHttpOptions,
+  type FastifyInstance,
+} from 'fastify';
 import type { OAuthEndpoints, OAuthProviderId } from './appAuth/oauth/types.js';
 import type { AppConfig } from './config/index.js';
 import type { ContentHooks } from './content/hooks.js';
@@ -33,6 +38,7 @@ import { gracefulClosePlugin } from './plugins/gracefulClose.js';
 import { graphqlPlugin } from './plugins/graphql.js';
 import { mediaStoragePlugin } from './plugins/mediaStorage.js';
 import { publishingPlugin } from './plugins/publishing.js';
+import { requestLogPlugin } from './plugins/requestLog.js';
 import { schemaSnapshotPlugin } from './plugins/schemaSnapshot.js';
 import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
@@ -142,6 +148,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     ...(deps.tls ? { https: { key: deps.tls.key, cert: deps.tls.cert } } : {}),
     trustProxy: toFastifyTrustProxy(config.server.trustProxy),
     genReqId: () => randomUUID(),
+    // plugins/requestLog.ts writes one line per request instead of Fastify's two.
+    logController: new LogController({ disableRequestLogging: true }),
     ajv: { customOptions: { removeAdditional: false } },
   } as FastifyHttpOptions<HttpServer, FastifyBaseLogger>;
   const app = Fastify(options).withTypeProvider<TypeBoxTypeProvider>();
@@ -154,6 +162,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
 
   // Order matters: the audit check must see every route registered after it.
   await app.register(auditDeclarationPlugin);
+  // First, so its onRequest hook logs the request before any other hook can reject it.
+  await app.register(requestLogPlugin);
   await app.register(gracefulClosePlugin);
   await app.register(errorHandlerPlugin);
   await app.register(servicesPlugin, {

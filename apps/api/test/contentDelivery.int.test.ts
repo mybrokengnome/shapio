@@ -429,7 +429,7 @@ describe('delivery API', () => {
     });
     await publish('article', entry.id);
     const body = expectStatus(
-      await deliver(`/api/content/articles/${entry.id}?fields=title,body`),
+      await deliver(`/api/content/articles/${entry.id}?fields=title,body&richText=html`),
       200,
     ).json<{
       data: Record<string, unknown>;
@@ -443,9 +443,25 @@ describe('delivery API', () => {
       'title',
       'updatedAt',
     ]);
-    expect((body.data.body as { html: string }).html).toBe(
-      '<h2>&lt;script&gt;x&lt;/script&gt;</h2><p><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">link</a></p>',
-    );
+    expect(body.data.body).toEqual({
+      format: 'shapio-richtext',
+      version: 1,
+      html: '<h2>&lt;script&gt;x&lt;/script&gt;</h2><p><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">link</a></p>',
+    });
+    // The default is the stored document alone; `both` adds the HTML next to it.
+    const byDefault = expectStatus(await deliver(`/api/content/articles/${entry.id}?fields=body`), 200).json<{
+      data: { body: Record<string, unknown> };
+    }>();
+    expect(Object.keys(byDefault.data.body).sort()).toEqual(['doc', 'format', 'version']);
+    const both = expectStatus(
+      await deliver(`/api/content/articles/${entry.id}?fields=body&richText=both`),
+      200,
+    ).json<{ data: { body: Record<string, unknown> } }>();
+    expect(both.data.body).toEqual({
+      ...byDefault.data.body,
+      html: (body.data.body as { html: string }).html,
+    });
+    expect((await deliver(`/api/content/articles/${entry.id}?richText=markdown`)).statusCode).toBe(400);
     // Sorting follows PostgreSQL's NULL order (last ascending, first descending) so the field's index serves it.
     const page = expectStatus(
       await deliver('/api/content/articles?pageSize=2&page=1&sort=views:desc&filters[views][$notNull]=true'),

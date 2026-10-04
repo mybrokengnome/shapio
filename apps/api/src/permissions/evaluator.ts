@@ -15,6 +15,7 @@ import {
   SITE_GRANTABLE_ACTIONS,
   type ContentAction,
   type GlobalAction,
+  type KnownVersions,
   type PermissionEvaluator,
   type PermissionExecutor,
   type Principal,
@@ -46,6 +47,7 @@ const rolesOf = async (
   principal: Principal,
   grants: GrantSource,
   executor: PermissionExecutor | undefined,
+  versions: KnownVersions | undefined,
 ): Promise<PrincipalRoles | 'all'> => {
   switch (principal.kind) {
     case 'system':
@@ -70,7 +72,7 @@ const rolesOf = async (
     case 'appUser':
       return {
         roleIds: [
-          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated', executor)),
+          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated', executor, versions)),
           ...principal.roleIds,
         ],
         networkRoleIds: [],
@@ -82,7 +84,7 @@ const rolesOf = async (
         roleIds:
           principal.siteId === null
             ? []
-            : await grants.getSiteAppRoleIds(principal.siteId, 'public', executor),
+            : await grants.getSiteAppRoleIds(principal.siteId, 'public', executor, versions),
         networkRoleIds: [],
         audience: 'delivery',
         actions: APP_ACTIONS,
@@ -109,59 +111,65 @@ const actsOnSite = (principal: Principal, siteId: string): boolean => {
 
 /**
  * The one permission evaluator (ADR 0005): principal → roles → grants → Policy, for REST and GraphQL.
- * Deny by default at every step.
+ * Deny by default at every step. `atVersions` gives the same evaluator for one request, whose caches are
+ * checked against the versions the request read once instead of read again on every call.
  */
-export const createPermissionEvaluator = ({
-  grants,
-  fields,
-}: EvaluatorDependencies): PermissionEvaluator => ({
-  evaluate: async (principal, request, executor) => {
-    const roles = await rolesOf(principal, grants, executor);
-    if (roles === 'all') {
-      return ALLOW_ALL_POLICY;
-    }
-    if (roles.actions !== 'all' && !roles.actions.has(request.action)) {
-      return DENIED_POLICY;
-    }
-    // Schema management of a shared definition: network roles only (sites plan §H). Of a site's own
-    // definition: the roles that apply on that site, when the principal acts there (plan site-schema).
-    let roleIds = roles.roleIds;
-    if (NETWORK_CONTENT_ACTIONS.has(request.action)) {
-      const modelSite = await fields.getModelSite(request.modelId, executor);
-      roleIds = modelSite !== null && actsOnSite(principal, modelSite) ? roles.roleIds : roles.networkRoleIds;
-    }
-    const held = await grants.getGrants(roleIds, executor);
-    if (held.length === 0) {
-      return DENIED_POLICY;
-    }
-    const modelFields =
-      roles.audience === 'delivery' ? await fields.getModelFields(request.modelId, executor) : undefined;
-    return buildPolicy(held, request, roles.audience, modelFields);
-  },
-  canPerform: async (principal, action, executor) => {
-    const roles = await rolesOf(principal, grants, executor);
-    if (roles === 'all') {
-      return true;
-    }
-    if (roles.audience === 'delivery') {
-      return false;
-    }
-    // Network actions only count roles assigned on every site, so a site role never reaches the network.
-    const roleIds = NETWORK_ACTION_SET.has(action) ? roles.networkRoleIds : roles.roleIds;
-    return allowsGlobalAction(await grants.getGrants(roleIds, executor), action);
-  },
-  canPerformOnSite: async (principal, action, siteId, executor) => {
-    const roles = await rolesOf(principal, grants, executor);
-    if (roles === 'all') {
-      return true;
-    }
-    if (roles.audience === 'delivery') {
-      return false;
-    }
-    const counted =
-      !NETWORK_ACTION_SET.has(action) || (SITE_GRANTABLE_ACTIONS.has(action) && actsOnSite(principal, siteId))
-        ? roles.roleIds
-        : roles.networkRoleIds;
-    return allowsGlobalAction(await grants.getGrants(counted, executor), action);
-  },
-});
+export const createPermissionEvaluator = ({ grants, fields }: EvaluatorDependencies): PermissionEvaluator => {
+  const at = (versions: KnownVersions | undefined): PermissionEvaluator => ({
+    evaluate: async (principal, request, executor) => {
+      const roles = await rolesOf(principal, grants, executor, versions);
+      if (roles === 'all') {
+        return ALLOW_ALL_POLICY;
+      }
+      if (roles.actions !== 'all' && !roles.actions.has(request.action)) {
+        return DENIED_POLICY;
+      }
+      // Schema management of a shared definition: network roles only (sites plan §H). Of a site's own
+      // definition: the roles that apply on that site, when the principal acts there (plan site-schema).
+      let roleIds = roles.roleIds;
+      if (NETWORK_CONTENT_ACTIONS.has(request.action)) {
+        const modelSite = await fields.getModelSite(request.modelId, executor, versions);
+        roleIds =
+          modelSite !== null && actsOnSite(principal, modelSite) ? roles.roleIds : roles.networkRoleIds;
+      }
+      const held = await grants.getGrants(roleIds, executor, versions);
+      if (held.length === 0) {
+        return DENIED_POLICY;
+      }
+      const modelFields =
+        roles.audience === 'delivery'
+          ? await fields.getModelFields(request.modelId, executor, versions)
+          : undefined;
+      return buildPolicy(held, request, roles.audience, modelFields);
+    },
+    canPerform: async (principal, action, executor) => {
+      const roles = await rolesOf(principal, grants, executor, versions);
+      if (roles === 'all') {
+        return true;
+      }
+      if (roles.audience === 'delivery') {
+        return false;
+      }
+      // Network actions only count roles assigned on every site, so a site role never reaches the network.
+      const roleIds = NETWORK_ACTION_SET.has(action) ? roles.networkRoleIds : roles.roleIds;
+      return allowsGlobalAction(await grants.getGrants(roleIds, executor, versions), action);
+    },
+    canPerformOnSite: async (principal, action, siteId, executor) => {
+      const roles = await rolesOf(principal, grants, executor, versions);
+      if (roles === 'all') {
+        return true;
+      }
+      if (roles.audience === 'delivery') {
+        return false;
+      }
+      const counted =
+        !NETWORK_ACTION_SET.has(action) ||
+        (SITE_GRANTABLE_ACTIONS.has(action) && actsOnSite(principal, siteId))
+          ? roles.roleIds
+          : roles.networkRoleIds;
+      return allowsGlobalAction(await grants.getGrants(counted, executor, versions), action);
+    },
+    atVersions: at,
+  });
+  return at(undefined);
+};

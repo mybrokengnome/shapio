@@ -18,7 +18,8 @@ export const NOTES: Readonly<Record<string, string>> = {
     '`production` (the default) requires PUBLIC_URL. Elsewhere PUBLIC_URL defaults to where the server listens: `http://localhost:<PORT>` (or `https://` with TLS on, and HOST instead of `localhost` when HOST is not a loopback or wildcard address). Also passed to extensions (`config.nodeEnv`).',
   HOST: 'Interface to listen on. `0.0.0.0` to accept connections from other machines (Docker sets it).',
   PORT: 'Port of the API and admin (HTTPS when TLS is on). `0` picks a free port.',
-  LOG_LEVEL: 'Structured log level (pino).',
+  LOG_LEVEL:
+    'Structured log level (pino). `info` writes one line per request (`reqId`, `method`, `route`, `path` without the query string, `status`, `ms`, and `site`, `principal` kind and error `code` when known); health and readiness probes only at `debug`. `debug` adds a request-start line with the redacted URL, host and remote address. `warn` and above write no request lines.',
   LOG_PRETTY: 'Human-readable logs; needs the `pino-pretty` dev dependency. Leave off in production.',
   CORS_ORIGINS:
     'Comma-separated origins of your own sites and apps that call the API from a browser (previews included). The admin needs none. Empty disables CORS.',

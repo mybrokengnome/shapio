@@ -53,8 +53,18 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
 
   const bearer = (value: string | null): Record<string, string> =>
     value ? { authorization: `Bearer ${value}` } : {};
+  // REST twins ask for rich text as GraphQL selects it (`body { json html }`): the document and its HTML.
+  const withBothRichText = (url: string) =>
+    url.startsWith('/api/content/') && !url.includes('richText=')
+      ? `${url}${url.includes('?') ? '&' : '?'}richText=both`
+      : url;
   const deliver = (url: string, options: Partial<InjectOptions> = {}, as: string | null = token) =>
-    testApp.app.inject({ method: 'GET', url, ...options, headers: { ...bearer(as), ...options.headers } });
+    testApp.app.inject({
+      method: 'GET',
+      url: withBothRichText(url),
+      ...options,
+      headers: { ...bearer(as), ...options.headers },
+    });
   const gql = <T = Record<string, unknown>>(
     query: string,
     variables?: Record<string, unknown>,

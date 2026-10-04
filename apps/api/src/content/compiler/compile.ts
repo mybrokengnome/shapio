@@ -274,21 +274,59 @@ const countFrom = (
 ): RawBuilder<unknown> =>
   plan.source.kind === 'heads' && plan.conditions.length === 0 ? sql`from ${table} h where ${where}` : joined;
 
-/** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
-export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect = contentDialect()) => {
+const HEAD_COLUMNS = sql`h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
+      h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id`;
+
+/** The parts every statement over a plan's heads shares. */
+const headQueryParts = (plan: HeadQueryPlan, dialect: ContentSqlDialect) => {
   const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId, dialect);
   const where = whereOf(plan, table, dialect);
   const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${where}`;
-  const prefix = cte ?? sql``;
   const orderBy = plan.orderBy.length > 0 ? sql` order by ${sql.join([...plan.orderBy])}` : sql``;
   const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
   const offset = plan.offset ? sql` offset ${plan.offset}` : sql``;
   return {
-    rows: sql<HeadRow>`${prefix}select h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
-      h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id
-      ${from}${entryScope(plan, dialect)}${orderBy}${limit}${offset}`,
+    prefix: cte ?? sql``,
+    rows: sql`${from}${entryScope(plan, dialect)}${orderBy}${limit}${offset}`,
+    countFrom: countFrom(plan, table, where, from),
+  };
+};
+
+/** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
+export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect = contentDialect()) => {
+  const { prefix, rows, countFrom: counted } = headQueryParts(plan, dialect);
+  return {
+    rows: sql<HeadRow>`${prefix}select ${HEAD_COLUMNS}
+      ${rows}`,
     count: sql<{
       total: string | number;
-    }>`${prefix}select count(*) as total ${countFrom(plan, table, where, from)}`,
+    }>`${prefix}select count(*) as total ${counted}`,
+  };
+};
+
+/** The page's total (when asked for) and the site's publication sequence, read in the same statement. */
+export type HeadPageMeta = { page_total: string | number | null; page_seq: string | number | null };
+
+/**
+ * One delivery read as a single statement (plan delivery-perf): the page's heads with, on every row, the
+ * matching total and the site's current publication sequence (`publication_state.last_seq`), so all three
+ * come from one snapshot of the database on every dialect without a transaction. The uncorrelated
+ * subqueries run once per statement. An empty page carries no row, so `meta` reads the total and the
+ * sequence alone, for callers that read it in the same transaction as `rows`.
+ */
+export const compileHeadPage = (
+  plan: HeadQueryPlan,
+  options: { total: boolean },
+  dialect: ContentSqlDialect = contentDialect(),
+) => {
+  const { prefix, rows, countFrom: counted } = headQueryParts(plan, dialect);
+  const total = options.total ? sql`(select count(*) ${counted})` : sql`null`;
+  const seq = sql`(select ps.last_seq from publication_state ps where ps.site_id = ${dialect.uuid(plan.siteId)})`;
+  return {
+    rows: sql<
+      HeadRow & HeadPageMeta
+    >`${prefix}select ${HEAD_COLUMNS}, ${total} as page_total, ${seq} as page_seq
+      ${rows}`,
+    meta: sql<HeadPageMeta>`${prefix}select ${total} as page_total, ${seq} as page_seq`,
   };
 };

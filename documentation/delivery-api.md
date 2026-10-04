@@ -87,8 +87,7 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
       "body": {
         "format": "shapio-richtext",
         "version": 1,
-        "doc": { "type": "doc", "content": [] },
-        "html": "<p>…</p>"
+        "doc": { "type": "doc", "content": [] }
       },
       "cover": { "id": "…", "url": "…", "width": 1600, "height": 900, "alt": "…", "variants": [] },
       "author": "0b7e…",
@@ -104,8 +103,10 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
 ```
 
 - Entries are flat: system attributes, then every readable field by API ID, `null` (or `[]`) when empty.
-- **Rich text** is the stored JSON document plus `html`, rendered on the server from the JSON with an allow-list
-  sanitiser (safe link protocols only, images resolved through the media library).
+- **Rich text** is the stored JSON document by default. Ask for `richText=html` to get
+  `{ format, version, html }` instead, or `richText=both` for the document and `html` together. The HTML is
+  rendered on the server from the JSON with an allow-list sanitiser (safe link protocols only, images resolved
+  through the media library), on the request that asks for it; it is never stored.
 - **Media** fields are asset objects with URLs and ready [variants](media.md#image-variants); private assets
   carry an expiring signed URL.
 - **Relations** are target IDs unless you `populate` them. A target that is not published, or that your token
@@ -130,6 +131,7 @@ unknown model or entry.
 | `populate`         | `populate=author`                     | relation paths: `author`, `author,tags.author`, or `*`; at most 3 levels          |
 | `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one) |
 | `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                         |
+| `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                |
 
 ### Filters
 

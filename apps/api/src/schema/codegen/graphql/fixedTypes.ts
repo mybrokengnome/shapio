@@ -17,6 +17,7 @@ import {
   type GraphQLInputType,
 } from 'graphql';
 import { OPERATORS_BY_FAMILY } from '../../../content/compiler/operators.js';
+import { RICH_TEXT_HTML, type DeliveredRichText } from '../../../content/compiler/select.js';
 import type { FilterOperator } from '../../../content/compiler/types.js';
 
 /**
@@ -148,7 +149,7 @@ const createPageInfo = () =>
     },
   });
 
-type RichTextValue = { html?: unknown } & Record<string, unknown>;
+type RichTextValue = DeliveredRichText & { html?: unknown };
 
 const createRichText = (json: GraphQLScalarType) =>
   new GraphQLObjectType<RichTextValue>({
@@ -158,9 +159,13 @@ const createRichText = (json: GraphQLScalarType) =>
       json: {
         type: nonNull(json),
         description: '`{ format, version, doc }` (ProseMirror JSON)',
-        resolve: ({ html: _html, ...document }) => document,
+        resolve: ({ html: _html, [RICH_TEXT_HTML]: _render, ...document }) => document,
       },
-      html: { type: nonNull(GraphQLString), resolve: (value) => value.html ?? '' },
+      // Rendered only when selected: the projection carries the renderer, not the HTML (ADR 0003).
+      html: {
+        type: nonNull(GraphQLString),
+        resolve: (value) => value[RICH_TEXT_HTML]?.() ?? (typeof value.html === 'string' ? value.html : ''),
+      },
     },
   });
 

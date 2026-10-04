@@ -149,7 +149,6 @@ export const toInputFormat = (
     fields: present,
     visibleTargets: null,
     populated: new Map(),
-    richTextHtml: false,
     mediaAssets: null,
   });
 };

@@ -21,7 +21,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `BASE_PATH` | `/` | a path, e.g. `/cms` | Sub-path Shapio is served under, e.g. /cms. Prefixes every route and the admin. |
 | `TRUST_PROXY` | `false` | `true`, `false` or a hop count | `true`, `false`, or the number of proxy hops to trust for X-Forwarded-* headers. |
 | `INSTANCE_ID` | (unset) | text | Names this process in job leases and logs. Defaults to the host name and process ID. |
-| `LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` | Structured log level (pino). |
+| `LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` | Structured log level (pino). `info` writes one line per request (`reqId`, `method`, `route`, `path` without the query string, `status`, `ms`, and `site`, `principal` kind and error `code` when known); health and readiness probes only at `debug`. `debug` adds a request-start line with the redacted URL, host and remote address. `warn` and above write no request lines. |
 | `LOG_PRETTY` | `false` | `true`, `false` | Human-readable logs; needs the `pino-pretty` dev dependency. Leave off in production. |
 
 ## HTTP and limits

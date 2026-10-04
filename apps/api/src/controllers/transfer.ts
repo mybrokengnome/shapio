@@ -4,6 +4,7 @@ import { BUNDLE_CONTENT_TYPE } from '../content/transfer/format.js';
 import * as transferService from '../content/transfer/service.js';
 import type { TransferContext } from '../content/transfer/service.js';
 import { toSiteActorContext } from '../helpers/requestContext.js';
+import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import type { ExportQuery, ImportQuery, MediaUploadQuery } from '../routes/admin/transfer/schemas.js';
 
@@ -11,7 +12,7 @@ import type { ExportQuery, ImportQuery, MediaUploadQuery } from '../routes/admin
 const transferContextFor = (request: FastifyRequest): TransferContext => ({
   ...toSiteActorContext(request),
   db: request.server.db,
-  permissions: request.server.permissions,
+  permissions: getRequestPermissions(request),
   storage: request.server.mediaStorage,
   // The current snapshot on every call (not the request's pin): an import's locale and schema steps must
   // each see the previous one's result.
@@ -20,6 +21,7 @@ const transferContextFor = (request: FastifyRequest): TransferContext => ({
     // The site's view: a bundle carries the shared definitions and this site's.
     snapshot: (await request.server.schemaRegistry.getSnapshot()).forSite(getRequestSite(request).id),
     ports: request.server.schemaContent,
+    // The live evaluator, like the snapshot above: an import's schema steps move the schema version.
     permissions: request.server.permissions,
     actor: request.principal,
     requestId: request.id,

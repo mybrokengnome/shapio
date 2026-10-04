@@ -53,6 +53,7 @@ List published Article entries.
 | `populate` | query | string | Relations to expand: `author,tags.author` or `*` (at most 3 levels) |
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
+| `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
 
 Responses: 200 OK; 304 Not modified (If-None-Match); 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
 
@@ -67,6 +68,7 @@ Read one published Article entry.
 | `populate` | query | string | Relations to expand: `author,tags.author` or `*` (at most 3 levels) |
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
+| `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
 
 Responses: 200 OK; 304 Not modified; 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
 

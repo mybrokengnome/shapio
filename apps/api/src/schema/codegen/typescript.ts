@@ -26,8 +26,11 @@ export type RichTextNode = {
 
 export type RichText = { format: 'shapio-richtext'; version: 1; doc: RichTextNode };
 
-/** Delivery adds sanitized HTML rendered from the JSON. */
-export type RichTextOutput = RichText & { html: string };
+/**
+ * Rich text as delivery returns it, per the request's \`richText\`: \`doc\` with \`json\` (the default), sanitized
+ * \`html\` rendered from the document with \`html\`, both with \`both\`.
+ */
+export type RichTextOutput = { format: 'shapio-richtext'; version: 1; doc?: RichTextNode; html?: string };
 
 export type MediaAsset = {
   id: string;

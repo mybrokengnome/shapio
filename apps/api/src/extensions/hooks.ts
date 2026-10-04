@@ -83,7 +83,6 @@ const toEntryData = (model: ContentModel, data: Readonly<ContentData> | undefine
         fields: model.definition.fields.filter((field) => !field.deprecated),
         visibleTargets: null,
         populated: new Map(),
-        richTextHtml: false,
         mediaAssets: null,
       });
 

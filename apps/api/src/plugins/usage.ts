@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import type { UsageConfig } from '../config/usage.js';
 import type { Database } from '../db/index.js';
@@ -7,10 +7,36 @@ import { createUsageAggregator, NOOP_USAGE_TRACKER, type UsageTracker } from '..
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Field usage counters for delivery reads (a no-op with USAGE_TRACKING=false). */
+    /**
+     * Field usage counters for delivery reads (a no-op with USAGE_TRACKING=false). `flush` first waits for
+     * the recordings `recordUsageAfterResponse` has queued.
+     */
     usage: UsageTracker;
+    /**
+     * Records a read's usage off the response path: the task starts once the current I/O phase (which sends
+     * the response) is over. Failures are logged, never surfaced to the caller.
+     */
+    recordUsageAfterResponse: (log: FastifyBaseLogger, task: () => Promise<void>) => void;
   }
 }
+
+/** Starts queued recordings after the response and lets `flush` and shutdown wait for them. */
+const createAfterResponseQueue = () => {
+  const pending = new Set<Promise<void>>();
+  const run = (log: FastifyBaseLogger, task: () => Promise<void>) => {
+    const started = new Promise<void>((resolve) => setImmediate(resolve))
+      .then(task)
+      .catch((error: unknown) => {
+        log.error({ err: error }, 'recording field usage failed');
+      })
+      .finally(() => pending.delete(started));
+    pending.add(started);
+  };
+  const settled = async () => {
+    await Promise.all([...pending]);
+  };
+  return { run, settled };
+};
 
 type UsagePluginOptions = { config: UsageConfig; db: Database };
 
@@ -20,6 +46,8 @@ type UsagePluginOptions = { config: UsageConfig; db: Database };
  */
 export const usagePlugin = fp<UsagePluginOptions>(
   async (app: FastifyInstance, { config, db }) => {
+    const queue = createAfterResponseQueue();
+    app.decorate('recordUsageAfterResponse', queue.run);
     if (!config.enabled) {
       app.decorate('usage', NOOP_USAGE_TRACKER);
       return;
@@ -30,8 +58,15 @@ export const usagePlugin = fp<UsagePluginOptions>(
       flushIntervalMs: config.flushIntervalMs,
       log,
     });
-    app.decorate('usage', aggregator);
+    app.decorate('usage', {
+      ...aggregator,
+      flush: async () => {
+        await queue.settled();
+        await aggregator.flush();
+      },
+    });
     app.addHook('onClose', async () => {
+      await queue.settled();
       await aggregator.close();
     });
   },

@@ -6,14 +6,17 @@ export const DELIVERY_PATH = '/api/content';
 
 const routePath = (routeKey: string) => `${DELIVERY_PATH}/${encodeURIComponent(routeKey)}`;
 
-/** The content query string plus `snapshot`, which only delivery reads take. */
-const deliveryQueryString = ({ snapshot, ...query }: DeliveryListQuery): string => {
+/** The content query string plus `snapshot` and `richText`, which only delivery reads take. */
+const deliveryQueryString = ({ snapshot, richText, ...query }: DeliveryListQuery): string => {
+  const extra = [
+    ...(snapshot === undefined ? [] : [`snapshot=${encodeURIComponent(String(snapshot))}`]),
+    ...(richText === undefined ? [] : [`richText=${encodeURIComponent(richText)}`]),
+  ];
   const base = toContentQueryString(query);
-  if (snapshot === undefined) {
+  if (extra.length === 0) {
     return base;
   }
-  const pinned = `snapshot=${encodeURIComponent(String(snapshot))}`;
-  return base ? `${base}&${pinned}` : `?${pinned}`;
+  return base ? `${base}&${extra.join('&')}` : `?${extra.join('&')}`;
 };
 
 /**

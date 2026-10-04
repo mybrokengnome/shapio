@@ -5,6 +5,7 @@ import { AppError } from '../helpers/appError.js';
 import { principalForSite } from '../permissions/sites.js';
 import type { SiteRef } from '../services/actorContext.js';
 import { resolveSite } from '../services/sites.js';
+import { readRequestSite } from './requestState.js';
 
 /**
  * Sites (plan agentic-ecosystem §H, ADR 0011). Every API route declares whether it is about one site
@@ -141,7 +142,11 @@ export const siteResolutionPlugin = fp<SiteResolutionOptions>(
       }
       const requestedKey = requestedSiteKey(request);
       consumeSiteQuery(request);
-      const site = await resolveSite({ credentialSiteId: await credentialSiteOf(request), requestedKey });
+      // Read with the request's schema and permissions versions, in one statement (`getRequestState`).
+      const site = await resolveSite(
+        { credentialSiteId: await credentialSiteOf(request), requestedKey },
+        (lookup) => readRequestSite(request, lookup),
+      );
       request.site = site;
       request.principal = principalForSite(request.principal, site.id);
       // An admin with no role on the site (none there, none on every site) cannot work on it at all; `me`

@@ -24,6 +24,7 @@ export type Media = {
   variants: MediaVariant[];
 };
 
+/** Rich text as delivery returns it with `richText=html`: sanitized HTML rendered from the document. */
 export type RichText = { format: 'shapio-richtext'; version: number; html: string };
 
 type EntryBase = {

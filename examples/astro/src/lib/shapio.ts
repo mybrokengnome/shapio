@@ -58,7 +58,8 @@ const listAll = async <T>(
   const entries: T[] = [];
   for (let page = 1; ; page += 1) {
     const result = await shapio().request<DeliveryList<T>>(
-      `/api/content/${routeKey}?${query({ locale, snapshot, page, pageSize: PAGE_SIZE, ...extra })}`,
+      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document.
+      `/api/content/${routeKey}?${query({ locale, snapshot, page, pageSize: PAGE_SIZE, richText: 'html', ...extra })}`,
     );
     entries.push(...result.data);
     if (page >= result.meta.pagination.pageCount) {
@@ -89,6 +90,7 @@ export const getSiteSettings = (locale: Locale): Promise<SiteSettings | null> =>
           locale,
           snapshot,
           fields: SITE_SETTINGS_FIELDS,
+          richText: 'html',
         });
         return data;
       } catch (error) {

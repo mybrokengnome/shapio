@@ -188,7 +188,11 @@ export const resolveApiToken = async (
   if (!row || (row.expires_at !== null && row.expires_at.getTime() <= now.getTime())) {
     return undefined;
   }
-  await apiTokensRepository.touchLastUsed(row.id, now, new Date(now.getTime() - LAST_SEEN_WRITE_INTERVAL_MS));
+  const staleBefore = new Date(now.getTime() - LAST_SEEN_WRITE_INTERVAL_MS);
+  // Skips the statement when the row just read is recent; the WHERE clause still guards concurrent writers.
+  if (row.last_used_at === null || row.last_used_at.getTime() < staleBefore.getTime()) {
+    await apiTokensRepository.touchLastUsed(row.id, now, staleBefore);
+  }
   return {
     kind: 'token',
     tokenId: row.id,
