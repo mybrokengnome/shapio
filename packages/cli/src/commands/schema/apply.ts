@@ -1,10 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { SchemaApplyResult, SchemaSyncResult } from '@shapio/client';
-import type { LockFile } from '@shapio/schema';
+import { upgradeLockFile, type ScopedLockFile } from '@shapio/schema';
 import type { CliCommand, CliIo } from '../../types.js';
 import { removeFile, writeDefinitionFile, writeLockFile } from './files.js';
 import { COMMON_USAGE, parseSchemaOptions, type SchemaCommandOptions } from './options.js';
-import { apiFor, printResults, readLocalState, sendApply, type LocalState } from './sync.js';
+import { coverSiteIfHeld } from './siteTree.js';
+import { apiFor, printResults, readSiteState, sendApply, type SiteState } from './sync.js';
 
 const POLL_INTERVAL_MS = 500;
 
@@ -45,20 +46,22 @@ const waitForChanges = async (
 
 /**
  * Records the new state in the lock file and rewrites the files of applied definitions in canonical form
- * (e.g. with server-assigned field IDs). Definitions skipped because they were unchanged locally keep
- * their old base, so a later apply still treats them as untouched.
+ * (e.g. with server-assigned field IDs), in their scope's folder. Definitions skipped because they were
+ * unchanged locally keep their old base, so a later apply still treats them as untouched. Other sites'
+ * entries are kept as they are.
  */
 const updateLocalState = async (
   options: SchemaCommandOptions,
-  state: LocalState,
+  state: SiteState,
   response: SchemaApplyResult,
 ) => {
   const exported = await apiFor(options).export();
   const remote = new Map(exported.definitions.map((entry) => [entry.definition.id, entry]));
-  const lock: LockFile = {
-    ...state.lock,
+  const upgraded = upgradeLockFile(state.lock);
+  const lock: ScopedLockFile = {
+    ...upgraded,
     schemaVersion: exported.schemaVersion,
-    definitions: { ...state.lock.definitions },
+    definitions: { ...upgraded.definitions },
   };
   for (const item of response.results) {
     const settled =
@@ -72,8 +75,8 @@ const updateLocalState = async (
       delete lock.definitions[item.definitionId];
       continue;
     }
-    const previous = state.files.find((file) => file.id === item.definitionId);
-    const path = await writeDefinitionFile(options.dir, entry.definition);
+    const previous = state.sent.find((file) => file.id === item.definitionId);
+    const path = await writeDefinitionFile(options.dir, entry.definition, entry.site);
     if (previous && previous.path !== path) {
       await removeFile(previous.path);
     }
@@ -82,21 +85,26 @@ const updateLocalState = async (
       apiKey: entry.definition.apiKey,
       version: entry.version,
       hash: entry.hash,
+      site: entry.site,
     };
   }
-  await writeLockFile(options.lockPath, lock);
+  await writeLockFile(options.lockPath, coverSiteIfHeld(lock, state.siteKey));
 };
 
 /**
  * `shapio schema apply`: applies local schema files to a running instance live, through the same planner as
  * the admin UI. Three-way per definition against the lock file; refuses (and changes nothing) on conflicts.
+ * It sends the shared files and the site's own (`sites/<key>/`), never another site's.
  */
 export const schemaApplyCommand: CliCommand = {
   summary: 'Apply local schema files to the instance live (three-way, per model; refuses on conflicts)',
   usage: `shapio schema apply ${COMMON_USAGE} [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]`,
   run: async (args, io) => {
     const options = parseSchemaOptions(args, io);
-    const state = await readLocalState(options);
+    const state = await readSiteState(options, io);
+    if (!state) {
+      return 1;
+    }
     const response = await sendApply(options, state, false, io);
     if (!response) {
       return 1;

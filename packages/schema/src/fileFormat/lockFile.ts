@@ -20,8 +20,11 @@ export const LockEntrySchema = Type.Object(
     version: Type.Integer({ minimum: 1 }),
     /** `hashDefinition` of the pulled definition; a local file with another hash has been edited. */
     hash: Type.String(),
-    /** The key of the site the definition belongs to; null (or absent, format 1) when shared. */
-    site: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    /**
+     * The key of the site the definition belongs to; null (or absent, format 1) when shared. Null comes first:
+     * Fastify's Ajv coerces types, and a string branch tried first would turn null into "" (no site at all).
+     */
+    site: Type.Optional(Type.Union([Type.Null(), Type.String()])),
   },
   { additionalProperties: false },
 );
@@ -67,6 +70,44 @@ export const lockEntriesForSite = (lock: LockFile, siteKey: string | null): Lock
       ([, entry]) => (entry.site ?? null) === null || entry.site === siteKey,
     ),
   );
+
+/** A tree applies to a site when it covers no site yet (shared only, or format 1) or lists that site. */
+export const lockCoversSite = (lock: LockFile, siteKey: string): boolean => {
+  const sites = lock.sites ?? [];
+  return sites.length === 0 || sites.includes(siteKey);
+};
+
+/** `sites` plus `siteKey`, sorted and without duplicates (stable diffs in git). */
+export const withSiteCovered = (sites: readonly string[], siteKey: string): string[] =>
+  [...new Set([...sites, siteKey])].sort();
+
+/**
+ * The lock after pulling one site's view (`shapio schema pull --site <siteKey>`): the shared entries and that
+ * site's are replaced by what was pulled, another site's entries are kept as they are (one tree can hold
+ * several sites), and the tree now covers `siteKey`. A format 1 lock upgrades first (every entry shared).
+ */
+export const mergePulledLock = (
+  lock: LockFile | undefined,
+  pulled: { schemaVersion: number; siteKey: string; definitions: readonly ExportedDefinition[] },
+): ScopedLockFile => {
+  const current = lock ? upgradeLockFile(lock) : undefined;
+  const pulledIds = new Set(pulled.definitions.map(({ definition }) => definition.id));
+  const kept = Object.entries(current?.definitions ?? {}).filter(
+    ([id, entry]) => entry.site !== null && entry.site !== pulled.siteKey && !pulledIds.has(id),
+  );
+  return {
+    formatVersion: LOCK_FILE_FORMAT_VERSION,
+    schemaVersion: pulled.schemaVersion,
+    sites: withSiteCovered(current?.sites ?? [], pulled.siteKey),
+    definitions: Object.fromEntries([
+      ...kept,
+      ...pulled.definitions.map(({ definition, version, hash, site }): [string, ScopedLockEntry] => [
+        definition.id,
+        { kind: definition.kind, apiKey: definition.apiKey, version, hash, site },
+      ]),
+    ]),
+  };
+};
 
 /** One definition as `schema export` returns it, with its scope (a site key, or null when shared). */
 export type ExportedDefinition = {

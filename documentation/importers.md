@@ -27,6 +27,11 @@ npx shapio import wordpress --map ./import --url https://cms.example.com --token
 admin API token that may create models' entries, upload media and manage change sets), and `--site <key>` (or
 `SHAPIO_SITE`) to import into one [site](sites.md) of a multi-site instance.
 
+On a multi-site instance, plan with `--site <key>` (or `SHAPIO_SITE`) too: the planned models then belong to
+that site (`<dir>/schema/sites/<key>/`, applied with `shapio schema apply … --site <key>`), and the plan records
+the site, so `--map` without `--site` imports into it. A `--map --site` that names another site is refused.
+Without `--site`, the plan's models are shared with all sites.
+
 ## What happens to your edits and re-runs
 
 - **Entries follow stable IDs, not names.** The plan gives every model and field a stable ID, and `--map` finds

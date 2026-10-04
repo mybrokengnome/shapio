@@ -44,12 +44,15 @@ const resolveReferences = (definition: DraftDefinition, idsByApiKey: ReadonlyMap
 /**
  * Puts a definition into a change set as a draft: picks its stable ID (the active definition's, the set's
  * existing draft's, or a new one), its base version and the draft version to replace, then lets the server
- * parse, validate and plan it. Nothing goes live until a person ships the set.
+ * parse, validate and plan it. Nothing goes live until a person ships the set. The site's view decides what
+ * exists: a new definition belongs to the site, or is shared with all sites when `shared` (creates only; an
+ * existing definition keeps its scope).
  */
 export const putDefinitionDraft = async (
   client: ShapioClient,
   changeSetId: string,
   definition: DraftDefinition,
+  { shared = false }: { shared?: boolean } = {},
 ) => {
   if (typeof definition.apiKey !== 'string' || typeof definition.kind !== 'string') {
     throw new Error('A definition needs at least "kind" (collection, singleton or component) and "apiKey"');
@@ -76,6 +79,7 @@ export const putDefinitionDraft = async (
     category: definition.kind === 'component' ? 'component' : 'model',
     definition: payload,
     baseVersion: active?.version ?? null,
+    ...(!active && shared ? { shared: true } : {}),
     ...(drafted ? { expectedDraftVersion: drafted.draftVersion } : {}),
   });
   return { changeSetId, definitionId: id, operation: draft.operation, draftVersion: draft.version, draft };

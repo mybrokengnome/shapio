@@ -1,6 +1,6 @@
 import type { CliCommand } from '../../types.js';
 import { COMMON_USAGE, parseSchemaOptions } from './options.js';
-import { printResults, readLocalState, sendApply } from './sync.js';
+import { printResults, readSiteState, sendApply } from './sync.js';
 
 /** `shapio schema diff`: what `apply` would do, per definition, without changing anything. */
 export const schemaDiffCommand: CliCommand = {
@@ -8,7 +8,10 @@ export const schemaDiffCommand: CliCommand = {
   usage: `shapio schema diff ${COMMON_USAGE} [--prune]`,
   run: async (args, io) => {
     const options = parseSchemaOptions(args, io);
-    const state = await readLocalState(options);
+    const state = await readSiteState(options, io);
+    if (!state) {
+      return 1;
+    }
     const response = await sendApply(options, state, true, io);
     if (!response) {
       return 1;

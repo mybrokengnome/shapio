@@ -26,7 +26,8 @@ export const registerResources = ({ server, client }: ToolContext) => {
     }),
     {
       title: 'Content type definition',
-      description: 'A model or component in the schema file format, with stable IDs.',
+      description:
+        "A model or component of this server's site (its own or shared with all sites) in the schema file format, with stable IDs.",
       mimeType: 'application/json',
     },
     async (uri, variables) => {

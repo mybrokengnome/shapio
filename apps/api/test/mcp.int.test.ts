@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SITE_HEADER } from '../src/constants/sites.js';
 import { expectStatus } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { API_ROOT } from './helpers/env.js';
@@ -255,6 +256,49 @@ describe('@shapio/mcp over stdio', () => {
     await expect(
       call(agent, 'change_sets_ship', { changeSetId: set.id, expectedVersion: 1 }),
     ).rejects.toThrow(/change_sets_ship not found/);
+  });
+
+  it("reads its site's own schema, and drafts a shared definition only when asked", async () => {
+    const onB = { [SITE_HEADER]: 'b' };
+    expectStatus(await owner.post('/api/admin/sites', { key: 'b', name: 'Site B' }), 201);
+    const agentB = await connect(['--site', 'b']);
+    type Drafted = { changeSetId: string; draft: { shared: boolean } };
+    const set = await ok<Drafted>(agentB, 'schema_draft', {
+      title: 'Site B',
+      definition: { kind: 'collection', apiKey: 'note', label: 'Note', fields: [] },
+    });
+    const topic = await ok<Drafted>(agentB, 'change_sets_add_schema_draft', {
+      changeSetId: set.changeSetId,
+      shared: true,
+      definition: { kind: 'collection', apiKey: 'topic', label: 'Topic', fields: [] },
+    });
+    expect([set.draft.shared, topic.draft.shared]).toEqual([false, true]);
+    const drafts = expectStatus(
+      await owner.request({ method: 'GET', url: `/api/admin/change-sets/${set.changeSetId}`, headers: onB }),
+      200,
+    ).json<{ version: number }>();
+    const shipped = await owner.request({
+      method: 'POST',
+      url: `/api/admin/change-sets/${set.changeSetId}/ship`,
+      payload: { expectedVersion: drafts.version },
+      headers: onB,
+    });
+    if (shipped.statusCode === 202) {
+      await runSchemaJobs(database.current.db);
+    } else {
+      expectStatus(shipped, 200);
+    }
+
+    type Listed = { definitions: Array<{ apiKey: string; scope: string }> };
+    const onSiteB = (await ok<Listed>(agentB, 'schema_list')).definitions;
+    expect(onSiteB.map((item) => `${item.apiKey}:${item.scope}`).sort()).toEqual(['note:b', 'topic:shared']);
+    const onDefault = (await ok<Listed>(await connect(), 'schema_list')).definitions.map(
+      (item) => item.apiKey,
+    );
+    expect(onDefault).toEqual(expect.arrayContaining(['author', 'post', 'topic']));
+    expect(onDefault).not.toContain('note');
+    const missing = await call(agentB, 'schema_get', { apiKey: 'post' });
+    expect(missing.isError).toBe(true);
   });
 
   it('refuses to ship for a token whose role lacks changes.ship, even with --allow-ship', async () => {

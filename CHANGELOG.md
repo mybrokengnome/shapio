@@ -15,6 +15,21 @@ All notable changes to Shapio are listed here. The format follows
   errors, 200 when there is data, 405 for a mutation over GET). POST bodies must be JSON:
   `Content-Type: application/graphql` is no longer accepted. The API docs page links the GraphQL endpoint,
   the playground and the OpenAPI document with `?site=`.
+- **Schema files per site.** `shapio schema pull|diff|apply --site <key>` (or `SHAPIO_SITE`) works on one
+  site's view: shared definitions stay in `models/` and `components/`, the site's own go to
+  `sites/<key>/models/` and `sites/<key>/components/`. The lock file moves to format 2 (each entry's site, and
+  the sites the tree covers); a format 1 lock still reads as all shared and is rewritten on the next pull. One
+  tree can hold several sites: a site's pull and apply never send, rewrite, prune or delete another site's
+  definitions. Apply refuses a file moved to another scope (`SCOPE_MISMATCH`), shared changes without
+  permission on every site (`FORBIDDEN_SCOPE`, per item) and a tree pulled for other sites only
+  (`LOCK_SITE_MISMATCH`). New `shapio schema scope <apiKey> --shared | --site <key>` shares a content type
+  with all sites or keeps a shared one on one site. See [Schema sync](documentation/schema-sync.md#several-sites).
+- **Importers, MCP and starters are site-aware.** `shapio import wordpress|strapi --plan --site <key>` plans the
+  models as that site's own (without `--site` they are shared). The MCP server's schema tools list the site's
+  view with each definition's scope, and `schema_draft` / `change_sets_add_schema_draft` take `shared: true`
+  to create a definition shared with all sites. The starters' seed creates the models as the site's own
+  (`SHAPIO_SITE`, else the token's site) and writes `SHAPIO_SITE` to `.env`; seeding one starter onto a second
+  site is refused until its models are shared ([Site starters](documentation/starters.md#site-key)).
 
 ## [0.2.1] - 2026-10-04
 

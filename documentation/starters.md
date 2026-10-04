@@ -103,6 +103,15 @@ On an instance with several sites, `SHAPIO_SITE` names the site to read; it is p
 `site` option, which sends it with every request. Without it the delivery token's site is used, else the
 primary site. A token bound to one site never reads another (`403 SITE_MISMATCH`).
 
+The seed honours `SHAPIO_SITE` too: it creates the models, content and tokens on that site (else the admin
+token's site, else the primary) and writes `SHAPIO_SITE` to `.env`. The models become **that site's own**
+content types: a starter's schema belongs to the first site it is seeded on. Seeding the same starter onto a
+second site of the instance is refused (`DUPLICATE_ID`: its model files carry the same stable IDs). To use it
+on a second site, share its models and components with all sites first, from the site they were seeded on,
+with a network admin token (`shapio schema scope <apiKey> --shared --site <that site>` for each, or **Share
+with all sites** in the builder). A shared definition may only refer to shared ones, so share the components
+and `author` before `page` and `article`. Then seed the second site; or seed a separate Shapio instance.
+
 ### Telemetry
 
 Nothing in the starters sends data anywhere but your Shapio. Astro's and Next.js's anonymous telemetry are

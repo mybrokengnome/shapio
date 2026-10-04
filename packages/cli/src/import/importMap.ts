@@ -56,6 +56,11 @@ export type ImportMap = {
   formatVersion: typeof IMPORT_MAP_FORMAT_VERSION;
   source: { kind: ImportSourceKind; path: string; sha256: string };
   plannedAt: string;
+  /**
+   * The site the plan's schema belongs to (`--plan --site`); `--map` without `--site` uses it. Null or absent
+   * (a map written before sites had their own schema): shared definitions, the token's site or the primary.
+   */
+  site?: string | null;
   definitions: Record<string, PlannedDefinitionIds>;
   media: Record<string, { filename: string; url?: string; path?: string }>;
   entries: Record<string, PlannedEntry>;

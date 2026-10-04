@@ -15,6 +15,7 @@ export const formatPlanSummary = (
   definitions: readonly SchemaDefinition[],
   dir: string,
   command: string,
+  site?: string,
 ): string => {
   const keyOf = new Map(source.definitions.map((definition) => [definition.apiKey, definition.key]));
   const lines = [`Planned ${definitions.length} definition(s) in ${display(`${dir}/${PLAN_SCHEMA_DIR}`)}:`];
@@ -34,10 +35,16 @@ export const formatPlanSummary = (
   );
   lines.push(...source.notes);
   lines.push(
+    site
+      ? `The models and components will belong to site "${site}".`
+      : 'No --site given: the models and components will be shared with all sites. Plan again with --site <key> to keep them on one site.',
+  );
+  const siteFlag = site ? ` --site ${site}` : '';
+  lines.push(
     'Next:',
     '  1. Review the files: rename API IDs or delete fields you do not want (entries follow the stable IDs).',
-    `  2. shapio schema apply --dir ${display(`${dir}/${PLAN_SCHEMA_DIR}`)} --lock ${display(`${dir}/${PLAN_LOCK_FILE}`)}`,
-    `  3. shapio import ${command} --map ${display(dir)}`,
+    `  2. shapio schema apply --dir ${display(`${dir}/${PLAN_SCHEMA_DIR}`)} --lock ${display(`${dir}/${PLAN_LOCK_FILE}`)}${siteFlag}`,
+    `  3. shapio import ${command} --map ${display(dir)}${siteFlag}`,
   );
   return `${lines.join('\n')}\n`;
 };

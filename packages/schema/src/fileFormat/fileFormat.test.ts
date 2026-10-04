@@ -7,7 +7,9 @@ import { schemaFilePath, scopeOfSchemaFilePath } from './layout.js';
 import {
   LOCK_FILE_FORMAT_VERSION,
   LockFileError,
+  lockCoversSite,
   lockEntriesForSite,
+  mergePulledLock,
   parseLockFile,
   serializeLockFile,
   upgradeLockFile,
@@ -122,6 +124,66 @@ describe('lock file format 2 (per-site schemas)', () => {
     expect(parseLockFile(serializeLockFile(v2))).toEqual(v2);
     expect(Object.keys(lockEntriesForSite(v2, 'blog'))).toEqual([id(1), id(2)]);
     expect(Object.keys(lockEntriesForSite(v2, null))).toEqual([id(1)]);
+  });
+
+  it('covers a site when it lists it, or lists none (a shared-only or format 1 tree)', () => {
+    expect(lockCoversSite(v2, 'blog')).toBe(true);
+    expect(lockCoversSite(v2, 'docs')).toBe(false);
+    expect(lockCoversSite(v1, 'docs')).toBe(true);
+  });
+
+  const exported = (n: number, apiKey: string, site: string | null) => ({
+    definition: model({ id: id(n), apiKey }),
+    version: 5,
+    hash: `p${n}`,
+    site,
+  });
+
+  it("a pull replaces the shared entries and the site's own, and keeps another site's", () => {
+    const merged = mergePulledLock(v2, {
+      schemaVersion: 12,
+      siteKey: 'blog',
+      // page (1) changed, blog's post (2) was deleted, a new blog model (4) appeared.
+      definitions: [exported(1, 'page', null), exported(4, 'news', 'blog')],
+    });
+    expect(merged).toEqual({
+      formatVersion: 2,
+      schemaVersion: 12,
+      sites: ['blog', 'shop'],
+      definitions: {
+        [id(1)]: { kind: 'collection', apiKey: 'page', version: 5, hash: 'p1', site: null },
+        [id(3)]: { kind: 'collection', apiKey: 'post', version: 1, hash: 'h3', site: 'shop' },
+        [id(4)]: { kind: 'collection', apiKey: 'news', version: 5, hash: 'p4', site: 'blog' },
+      },
+    });
+  });
+
+  it('pulling a second site into one tree keeps the first, and covers both', () => {
+    const first = mergePulledLock(undefined, {
+      schemaVersion: 1,
+      siteKey: 'shop',
+      definitions: [exported(1, 'page', null), exported(3, 'post', 'shop')],
+    });
+    const second = mergePulledLock(first, {
+      schemaVersion: 2,
+      siteKey: 'blog',
+      definitions: [exported(1, 'page', null), exported(2, 'post', 'blog')],
+    });
+    expect(second.sites).toEqual(['blog', 'shop']);
+    expect(Object.keys(second.definitions).sort()).toEqual([id(1), id(2), id(3)]);
+  });
+
+  it('upgrades a format 1 lock on pull, and a definition that moved scope keeps one entry', () => {
+    const merged = mergePulledLock(v1, {
+      schemaVersion: 7,
+      siteKey: 'blog',
+      definitions: [exported(1, 'page', 'blog')],
+    });
+    expect(merged.formatVersion).toBe(2);
+    expect(merged.sites).toEqual(['blog']);
+    expect(merged.definitions).toEqual({
+      [id(1)]: { kind: 'collection', apiKey: 'page', version: 5, hash: 'p1', site: 'blog' },
+    });
   });
 });
 

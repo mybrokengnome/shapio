@@ -105,8 +105,8 @@ Tools (names are stable):
 
 | Tool                                                              | What it does                                                                                                                      |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_list`, `schema_get`                                       | The content types: API IDs, kinds, fields; one definition in full with its version.                                               |
-| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given).                                             |
+| `schema_list`, `schema_get`                                       | The site's content types (its own and the shared ones): API IDs, kinds, scope, fields; one definition in full with its version.   |
+| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given). `shared: true` shares a new one.            |
 | `change_sets_add_schema_draft`                                    | The same, into a given change set.                                                                                                |
 | `content_query`, `content_get`                                    | Entries: drafts by default; `published: true` or `snapshot: N` reads what the delivery API serves. Filters, sort, locale, paging. |
 | `content_create`, `content_update`                                | Saves drafts (never publishes). Updates send the version they read; a stale version is refused (`CONTENT_VERSION_CONFLICT`).      |
@@ -119,9 +119,12 @@ Tools (names are stable):
 | `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                     |
 
 Definitions use the authored format of [schema files](schema-sync.md). IDs are optional: an existing type keeps
-its IDs (matched by API ID), and relation targets and component references may be given as API IDs.
+its IDs (matched by API ID), and relation targets and component references may be given as API IDs. A new
+definition belongs to the agent's site; `shared: true` (on `schema_draft` and `change_sets_add_schema_draft`)
+creates it shared with all sites instead, which needs schema permission on every site. An existing definition
+keeps its scope: change it with [`shapio schema scope`](schema-sync.md#several-sites) or in the admin.
 
-Resources: `shapio://schema/{apiKey}` (a definition in the schema file format, with stable IDs) and
+Resources: `shapio://schema/{apiKey}` (a definition of the site's view in the schema file format, with stable IDs) and
 `shapio://docs/delivery-api` (the [delivery API guide](delivery-api.md)).
 
 Prompts: **Model a content type for …** (`model_content_type`) and **Review change set N**

@@ -46,9 +46,23 @@ export class ImportRefusedError extends Error {
   }
 }
 
+/**
+ * The site `--map` writes to: `--site` (or SHAPIO_SITE), else the site the plan was made for. A requested site
+ * that disagrees with the planned one is refused: the planned models exist on that site only.
+ */
+export const resolveMapSite = (map: Pick<ImportMap, 'site'>, requested: string | undefined) => {
+  const planned = map.site ?? undefined;
+  if (requested !== undefined && planned !== undefined && requested !== planned) {
+    throw new ImportRefusedError(
+      `This import was planned for site "${planned}", not "${requested}": run --map with --site ${planned}, or plan again with --site ${requested}`,
+    );
+  }
+  return requested ?? planned;
+};
+
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const checkSourceAndSite = async (map: ImportMap, options: MapOptions) => {
+const checkSourceAndSite = async (map: ImportMap, site: string | undefined) => {
   const sha256 = await sha256File(map.source.path).catch((error: unknown) => {
     throw new ImportRefusedError(`The source ${map.source.path} cannot be read: ${messageOf(error)}`);
   });
@@ -58,14 +72,20 @@ const checkSourceAndSite = async (map: ImportMap, options: MapOptions) => {
     );
   }
   const started = Object.keys(map.state.entries).length > 0 || Object.keys(map.state.media).length > 0;
-  if (started && (map.state.site ?? null) !== (options.site ?? null)) {
+  if (started && (map.state.site ?? null) !== (site ?? null)) {
     throw new ImportRefusedError(
       `This import was started on site ${map.state.site ?? '(default)'}: re-run it with the same --site`,
     );
   }
 };
 
-const loadLiveSchema = async (client: ShapioClient, map: ImportMap, dir: string) => {
+/** The target site's view (the client names the site): its own definitions and the shared ones. */
+const loadLiveSchema = async (
+  client: ShapioClient,
+  map: ImportMap,
+  dir: string,
+  site: string | undefined,
+) => {
   const exported = await client.admin.schema.export();
   const live = resolveLiveSchema(
     map,
@@ -74,7 +94,7 @@ const loadLiveSchema = async (client: ShapioClient, map: ImportMap, dir: string)
   if (live.missing.length > 0) {
     throw new ImportRefusedError(
       `The instance does not have the planned models yet: ${live.missing.join(', ')}.\n` +
-        `Apply them first: shapio schema apply --dir ${join(dir, PLAN_SCHEMA_DIR)} --lock ${join(dir, PLAN_LOCK_FILE)}`,
+        `Apply them first: shapio schema apply --dir ${join(dir, PLAN_SCHEMA_DIR)} --lock ${join(dir, PLAN_LOCK_FILE)}${site ? ` --site ${site}` : ''}`,
     );
   }
   return live;
@@ -270,17 +290,18 @@ const printSummary = (run: Run, source: ImportSource, changeSetFailures: number)
 
 export const runMap = async (options: MapOptions, io: CliIo): Promise<number> => {
   const map = await readImportMap(options.dir);
-  await checkSourceAndSite(map, options);
+  const site = resolveMapSite(map, options.site);
+  await checkSourceAndSite(map, site);
   const client = createClient({
     baseUrl: options.baseUrl,
     token: options.token,
     fetch: createRateLimitedFetch(options.fetch),
-    ...(options.site ? { site: options.site } : {}),
+    ...(site ? { site } : {}),
   });
-  const live = await loadLiveSchema(client, map, options.dir);
+  const live = await loadLiveSchema(client, map, options.dir, site);
   const source = await options.load(map);
   await checkLocales(client, source);
-  map.state.site = options.site ?? null;
+  map.state.site = site ?? null;
   map.state.baseUrl = options.baseUrl;
   const run: Run = {
     options,

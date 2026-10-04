@@ -6,6 +6,7 @@ import { parseLockFile } from '@shapio/schema';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readLocalFiles } from '../commands/schema/files.js';
 import { readImportMap, writeImportMap } from './importMap.js';
+import { resolveMapSite } from './mapper.js';
 import { writePlan } from './planner.js';
 import { wordpressSource } from './wordpress/adapter.js';
 import { readWxr } from './wordpress/wxr.js';
@@ -67,6 +68,29 @@ describe('writePlan', () => {
       filename: 'engine.png',
       url: 'http://blog.test/wp-content/uploads/2024/05/engine.png',
     });
+  });
+
+  it("with --site, writes the planned definitions into that site's folder", async () => {
+    const source = wordpressSource(await readWxr(FIXTURE));
+    await writePlan(dir, source, INFO, { site: 'blog' });
+    const files = await readLocalFiles(join(dir, 'schema'));
+    expect(files.map((file) => [file.path.slice(dir.length), file.site])).toContainEqual([
+      '/schema/sites/blog/models/post.json',
+      'blog',
+    ]);
+    expect(files.every((file) => file.site === 'blog')).toBe(true);
+    expect((await readImportMap(dir)).site).toBe('blog');
+  });
+
+  it('--map uses the planned site unless --site names it, and refuses another one', () => {
+    expect(resolveMapSite({ site: 'blog' }, undefined)).toBe('blog');
+    expect(resolveMapSite({ site: 'blog' }, 'blog')).toBe('blog');
+    expect(() => resolveMapSite({ site: 'blog' }, 'shop')).toThrow(
+      'This import was planned for site "blog", not "shop"',
+    );
+    // A plan without a site (or written before plans recorded one): --site decides, as before.
+    expect(resolveMapSite({ site: null }, 'shop')).toBe('shop');
+    expect(resolveMapSite({}, undefined)).toBeUndefined();
   });
 
   it('replaces a plan only with force, and never one whose import started', async () => {

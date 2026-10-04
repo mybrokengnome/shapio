@@ -61,18 +61,23 @@ const parse = (args: readonly string[], spec: ImporterSpec): Parsed => {
   return { values, file: positionals[0] };
 };
 
+/** `--site`, else SHAPIO_SITE: the site the plan's schema belongs to and the map step writes to. */
+const siteOf = (values: ImporterValues, io: CliIo) =>
+  ((values.site as string | undefined) ?? io.env.SHAPIO_SITE)?.trim() || undefined;
+
 const runPlan = async (spec: ImporterSpec, file: string, values: ImporterValues, io: CliIo) => {
   const dir = resolve(String(values.plan));
   const path = resolve(file);
   await checkPlanDirectory(dir, values.force === true);
   const source = await spec.plan(path, dir, values);
+  const site = siteOf(values, io);
   const { definitions } = await writePlan(
     dir,
     source,
     { kind: source.kind, path, sha256: await sha256File(path) },
-    { force: values.force === true },
+    { force: values.force === true, site },
   );
-  io.stdout(formatPlanSummary(source, definitions, dir, spec.name));
+  io.stdout(formatPlanSummary(source, definitions, dir, spec.name, site));
   return 0;
 };
 
@@ -82,7 +87,7 @@ const runMapStep = (spec: ImporterSpec, values: ImporterValues, io: CliIo) => {
     throw new UsageError('An admin API token is required: pass --token or set SHAPIO_TOKEN');
   }
   const dir = resolve(String(values.map));
-  const site = (values.site as string | undefined) ?? io.env.SHAPIO_SITE;
+  const site = siteOf(values, io);
   return runMap(
     {
       dir,

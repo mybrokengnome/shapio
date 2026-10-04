@@ -6,10 +6,16 @@ import type { CliIo } from '../../types.js';
 export const DEFAULT_URL = 'http://localhost:4300';
 export const DEFAULT_SCHEMA_DIR = 'schema';
 
-export type SchemaCommandOptions = {
+/** Where a schema command connects: the instance, the admin API token and the site whose view it syncs. */
+export type ConnectionOptions = {
   baseUrl: string;
   token: string;
-  /** Directory holding `models/` and `components/`. */
+  /** The site key (`--site`, else SHAPIO_SITE); absent: the token's site, else the primary site. */
+  site?: string;
+};
+
+export type SchemaCommandOptions = ConnectionOptions & {
+  /** Directory holding `models/`, `components/` and `sites/<key>/` (one folder per site). */
   dir: string;
   lockPath: string;
   prune: boolean;
@@ -27,13 +33,31 @@ export class UsageError extends Error {
   }
 }
 
-/** Shared flags of `shapio schema pull|diff|apply`. URL and token also come from SHAPIO_URL / SHAPIO_TOKEN. */
+export const CONNECTION_FLAGS = {
+  url: { type: 'string' },
+  token: { type: 'string' },
+  site: { type: 'string' },
+} as const;
+
+/** URL, token and site from the flags, else SHAPIO_URL / SHAPIO_TOKEN / SHAPIO_SITE. */
+export const resolveConnection = (
+  values: { url?: string | undefined; token?: string | undefined; site?: string | undefined },
+  io: CliIo,
+): ConnectionOptions => {
+  const token = values.token ?? io.env.SHAPIO_TOKEN;
+  if (!token) {
+    throw new UsageError('An admin API token is required: pass --token or set SHAPIO_TOKEN');
+  }
+  const site = (values.site ?? io.env.SHAPIO_SITE)?.trim() || undefined;
+  return { baseUrl: values.url ?? io.env.SHAPIO_URL ?? DEFAULT_URL, token, ...(site ? { site } : {}) };
+};
+
+/** Shared flags of `shapio schema pull|diff|apply`. */
 export const parseSchemaOptions = (args: readonly string[], io: CliIo): SchemaCommandOptions => {
   const { values } = parseArgs({
     args: [...args],
     options: {
-      url: { type: 'string' },
-      token: { type: 'string' },
+      ...CONNECTION_FLAGS,
       dir: { type: 'string' },
       lock: { type: 'string' },
       prune: { type: 'boolean', default: false },
@@ -45,17 +69,13 @@ export const parseSchemaOptions = (args: readonly string[], io: CliIo): SchemaCo
     },
     allowPositionals: false,
   });
-  const token = values.token ?? io.env.SHAPIO_TOKEN;
-  if (!token) {
-    throw new UsageError('An admin API token is required: pass --token or set SHAPIO_TOKEN');
-  }
+  const connection = resolveConnection(values, io);
   const waitTimeoutSeconds = Number(values['wait-timeout'] ?? 600);
   if (!Number.isFinite(waitTimeoutSeconds) || waitTimeoutSeconds <= 0) {
     throw new UsageError('--wait-timeout must be a positive number of seconds');
   }
   return {
-    baseUrl: values.url ?? io.env.SHAPIO_URL ?? DEFAULT_URL,
-    token,
+    ...connection,
     dir: resolve(values.dir ?? DEFAULT_SCHEMA_DIR),
     lockPath: resolve(values.lock ?? LOCK_FILE_PATH),
     prune: values.prune,
@@ -67,5 +87,5 @@ export const parseSchemaOptions = (args: readonly string[], io: CliIo): SchemaCo
   };
 };
 
-export const COMMON_USAGE =
-  '[--url <origin>] [--token <admin token>] [--dir schema] [--lock .shapio/schema-lock.json]';
+export const CONNECTION_USAGE = '[--url <origin>] [--token <admin token>] [--site <key>]';
+export const COMMON_USAGE = `${CONNECTION_USAGE} [--dir schema] [--lock .shapio/schema-lock.json]`;

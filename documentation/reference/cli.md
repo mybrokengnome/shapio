@@ -136,20 +136,22 @@ shapio status [--url <origin>]   (defaults to $SHAPIO_URL or http://localhost:43
 
 ### shapio schema
 
-Sync models and components with schema files: pull | diff | apply.
+Sync models and components with schema files: pull | diff | apply | scope.
 
 ```text
-shapio schema <pull|diff|apply> [options]
+shapio schema <pull|diff|apply|scope> [options]
 ```
 
 ```text
 Usage:
-  shapio schema pull [--url <origin>] [--token <admin token>] [--dir schema] [--lock .shapio/schema-lock.json] [--force]
-      Write the instance’s models and components to schema files and the lock file
-  shapio schema diff [--url <origin>] [--token <admin token>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune]
+  shapio schema pull [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--force]
+      Write a site’s models and components (shared and its own) to schema files and the lock file
+  shapio schema diff [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune]
       Show what `shapio schema apply` would change on the instance (dry run)
-  shapio schema apply [--url <origin>] [--token <admin token>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]
+  shapio schema apply [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]
       Apply local schema files to the instance live (three-way, per model; refuses on conflicts)
+  shapio schema scope <apiKey> (--site <key> | --shared [--site <key>]) [--url <origin>] [--token <admin token>] [--version <n>]
+      Keep a shared model or component on one site (--site), or share a site’s with all sites (--shared)
 ```
 
 ### shapio types
@@ -187,17 +189,22 @@ shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run
   files (git diff), `shapio schema apply`, then import again.
   --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.
 
-shapio import wordpress <export.xml> --plan <dir> [--force]
+shapio import wordpress <export.xml> --plan <dir> [--site <key>] [--force]
        shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--site <key>] [--media-dir <uploads dir>]
   --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json; it sends nothing.
-  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`, then run --map:
+  With --site (or SHAPIO_SITE) the models belong to that site (<dir>/schema/sites/<key>/); without, they are shared;
+  --map without --site then imports into the planned site.
+  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
   it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),
   creates every post and page as a draft, and opens change sets with the published ones. Re-run --map to resume.
 
-shapio import strapi <export.tar.gz[.enc]> --plan <dir> [--key <encryption key>] [--force]
+shapio import strapi <export.tar.gz[.enc]> --plan <dir> [--key <encryption key>] [--site <key>] [--force]
        shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]
   --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models
-  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. Apply the schema with
-  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`, then run --map: it uploads the
-  media, creates every document as a draft and opens change sets with the published ones. Strapi 5 only.
+  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. With --site (or SHAPIO_SITE)
+  they belong to that site (<dir>/schema/sites/<key>/); without, they are shared (--map
+  without --site imports into the planned site). Apply the schema with
+  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
+  it uploads the media, creates every document as a draft and opens change sets with the published ones.
+  Strapi 5 only.
 ```

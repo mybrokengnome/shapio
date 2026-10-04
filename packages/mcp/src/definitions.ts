@@ -4,7 +4,10 @@ import { isModelDefinition, routeKeyOf as modelRouteKeyOf, type SchemaDefinition
 type Exported = Awaited<ReturnType<ShapioClient['admin']['schema']['export']>>;
 export type ExportedDefinition = Exported['definitions'][number];
 
-/** The active schema (the pull format), read fresh for each call: models change live. */
+/**
+ * The site's active schema (the pull format): its own definitions and the shared ones, for the site the
+ * client names (`--site`, else the token's site, else the primary). Read fresh for each call: models change live.
+ */
 export const readSchema = (client: ShapioClient): Promise<Exported> => client.admin.schema.export();
 
 /** An active definition by API ID (or stable ID); throws a message the agent can act on. */
@@ -33,8 +36,10 @@ export const routeKeyOf = (definition: SchemaDefinition): string => {
 };
 
 /** A one-line summary per definition, for listings that should not carry every field's settings. */
-export const summarize = ({ definition, version }: ExportedDefinition) => ({
+export const summarize = ({ definition, version, site }: ExportedDefinition) => ({
   id: definition.id,
+  /** `shared` (every site), or the key of the site it belongs to. */
+  scope: site === null ? 'shared' : site,
   kind: definition.kind,
   apiKey: definition.apiKey,
   ...(definition.kind === 'collection' ? { pluralApiKey: modelRouteKeyOf(definition) } : {}),

@@ -27,7 +27,8 @@ import { createPng } from './lib/png.js';
  * content to the seed):
  * 1. the `fr` locale;
  * 2. the models and components in shapio/ through the schema apply API (live, no restart; the same planner
- *    as `shapio schema apply` and the admin);
+ *    as `shapio schema apply` and the admin), as the site's own (SHAPIO_SITE, else the token's site, else the
+ *    primary): a starter's schema belongs to the first site it is seeded on;
  * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
  *    per locale;
  * 4. a deployment connection named "Preview" whose preview URL opens this starter's /preview/ page (the
@@ -64,7 +65,12 @@ const MEDIA_READY_TIMEOUT_MS = 120_000;
 const SCHEMA_CHANGE_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 500;
 /** No lock file: a first apply. Definitions that already match are skipped by the server. */
-const FIRST_APPLY_BASE: SchemaApplyInput['base'] = { formatVersion: 1, schemaVersion: 0, definitions: {} };
+const FIRST_APPLY_BASE: SchemaApplyInput['base'] = {
+  formatVersion: 2,
+  schemaVersion: 0,
+  sites: [],
+  definitions: {},
+};
 
 const log = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -106,15 +112,43 @@ const waitForChange = async (client: ShapioClient, item: SchemaSyncResult) => {
   }
 };
 
+/** A refusal the seed explains itself: printed without a stack. */
+class SeedRefusedError extends Error {}
+
+/** The schema files' IDs already belong to another site's definitions (the starter was seeded there first). */
+const isSeededElsewhere = (error: unknown) =>
+  error instanceof ShapioApiError &&
+  error.code === 'SCHEMA_INVALID' &&
+  ((error.details as { issues?: Array<{ code?: string }> } | undefined)?.issues ?? []).some(
+    (issue) => issue.code === 'DUPLICATE_ID',
+  );
+
 const applySchema = async (client: ShapioClient) => {
-  const response = await client.admin.schema.apply({
-    definitions: await readDefinitions(),
-    base: FIRST_APPLY_BASE,
-    prune: false,
-    dryRun: false,
-    acknowledgeBreaking: false,
-    acknowledgeDestructive: false,
-  });
+  const definitions = await readDefinitions();
+  let response;
+  try {
+    response = await client.admin.schema.apply({
+      definitions,
+      // Every definition is the site's own (sites/<key>/ in a pulled tree), never shared by default.
+      scopes: definitions.map(() => 'site' as const),
+      base: FIRST_APPLY_BASE,
+      prune: false,
+      dryRun: false,
+      acknowledgeBreaking: false,
+      acknowledgeDestructive: false,
+    });
+  } catch (error) {
+    if (isSeededElsewhere(error)) {
+      throw new SeedRefusedError(
+        "This starter's schema already belongs to another site of this instance: a starter's schema belongs " +
+          'to the first site it is seeded on. To reuse it on this site, share it with all sites ' +
+          'with a network admin token (`shapio schema scope <apiKey> --shared --site <that site>` for each ' +
+          'component, then author, page, article and siteSettings) and seed again, or seed a separate instance.',
+        { cause: error },
+      );
+    }
+    throw error;
+  }
   for (const item of response.results) {
     if (item.outcome === 'pending') {
       await waitForChange(client, item);
@@ -347,17 +381,24 @@ const tryRevalidateWebhook = async (client: ShapioClient, siteUrl: string, path:
   }
 };
 
-const writeEnv = async (url: string, deliveryToken: string, webhookSecret: string | undefined) => {
+const writeEnv = async (
+  url: string,
+  site: string | undefined,
+  deliveryToken: string,
+  webhookSecret: string | undefined,
+) => {
   const path = resolve('.env');
   const lines = [
     '# Written by the seed. The delivery token is read-only; keep this file out of git.',
     `SHAPIO_URL=${url}`,
     `SHAPIO_DELIVERY_TOKEN=${deliveryToken}`,
+    // The site the content was seeded on: the starter reads the same one.
+    ...(site ? [`SHAPIO_SITE=${site}`] : []),
     ...(webhookSecret ? [`SHAPIO_WEBHOOK_SECRET=${webhookSecret}`] : []),
   ];
   await writeFile(path, `${lines.join('\n')}\n`, { mode: 0o600 });
   log(
-    `Wrote SHAPIO_URL, SHAPIO_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
+    `Wrote SHAPIO_URL, ${site ? 'SHAPIO_SITE, ' : ''}SHAPIO_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
   );
 };
 
@@ -381,16 +422,24 @@ const main = async () => {
     const webhookSecret = revalidatePath
       ? await tryRevalidateWebhook(admin.client, siteUrl, revalidatePath)
       : undefined;
-    await writeEnv(admin.url, await createDeliveryToken(admin.client), webhookSecret);
+    await writeEnv(admin.url, admin.site, await createDeliveryToken(admin.client), webhookSecret);
     log('Seeded. Build the site with: npm run build');
   } finally {
     await admin.close();
   }
 };
 
+const describeFailure = (error: unknown) => {
+  if (error instanceof SeedRefusedError) {
+    return error.message;
+  }
+  if (error instanceof ShapioApiError) {
+    return `${error.code}: ${error.message} ${JSON.stringify(error.details ?? '')}`;
+  }
+  return error instanceof Error ? (error.stack ?? error.message) : String(error);
+};
+
 main().catch((error: unknown) => {
-  process.stderr.write(
-    `seed failed: ${error instanceof ShapioApiError ? `${error.code}: ${error.message} ${JSON.stringify(error.details ?? '')}` : error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-  );
+  process.stderr.write(`seed failed: ${describeFailure(error)}\n`);
   process.exitCode = 1;
 });

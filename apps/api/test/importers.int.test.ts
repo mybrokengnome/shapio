@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { REMOTE_COMMANDS, type CliIo } from '@shapio/cli';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildStrapiExport } from '../../../packages/cli/src/testing/strapiExport.js';
+import { SITE_HEADER } from '../src/constants/sites.js';
 import { expectStatus, runContentSchemaJobs } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { API_ROOT } from './helpers/env.js';
@@ -66,7 +67,7 @@ type Instance = {
   readMap: (dir: string) => Promise<ImportMapState>;
   changeSet: (id: string) => Promise<ChangeSetBody>;
   entry: (model: string, id: string, locale?: string) => Promise<EntryBody>;
-  applyPlan: (dir: string) => Promise<void>;
+  applyPlan: (dir: string, extra?: string[]) => Promise<void>;
 };
 
 /** A listening instance on its own database (each importer plans models with the same API IDs). */
@@ -101,10 +102,18 @@ const useImportInstance = (): Instance => {
           200,
         ).json<EntryBody>(),
       // `schema apply` of the plan's files; activation jobs run here (the test app has no worker).
-      applyPlan: async (dir: string) => {
+      applyPlan: async (dir: string, extra: string[] = []) => {
         const applied = await runCli(
           'schema',
-          ['apply', '--dir', join(dir, 'schema'), '--lock', join(dir, 'schema-lock.json'), '--no-wait'],
+          [
+            'apply',
+            '--dir',
+            join(dir, 'schema'),
+            '--lock',
+            join(dir, 'schema-lock.json'),
+            '--no-wait',
+            ...extra,
+          ],
           env,
         );
         expect(applied.code, applied.stderr).toBe(0);
@@ -204,6 +213,58 @@ describe('shapio import wordpress', () => {
       items: unknown[];
     }>();
     expect(posts.items).toHaveLength(2);
+  });
+});
+
+describe('shapio import onto one site of several', () => {
+  const instance = useImportInstance();
+
+  it("plans with --site into the site's folder; the models and entries belong to that site only", async () => {
+    expectStatus(await instance.admin.post('/api/admin/sites', { key: 'blog', name: 'Blog' }), 201);
+    const wxr = join(instance.workdir, 'blog.xml');
+    await writeFile(
+      wxr,
+      (await readFile(WXR_FIXTURE, 'utf8'))
+        .replaceAll('http://blog.test', instance.media.origin)
+        .replaceAll('https://cdn.example.org', `${instance.media.origin}/cdn`),
+    );
+    const dir = join(instance.workdir, 'wordpress-blog');
+    const planned = await runCli('import', ['wordpress', wxr, '--plan', dir, '--site', 'blog'], instance.env);
+    expect(planned.code, planned.stderr).toBe(0);
+    expect(planned.stdout).toContain('will belong to site "blog"');
+    expect(planned.stdout).toContain('--site blog');
+    expect(await readFile(join(dir, 'schema', 'sites', 'blog', 'models', 'post.json'), 'utf8')).toContain(
+      '"apiKey": "post"',
+    );
+
+    await instance.applyPlan(dir, ['--site', 'blog']);
+    // Another site than the planned one is refused, before anything is sent.
+    const elsewhere = await runCli('import', ['wordpress', '--map', dir, '--site', 'default'], instance.env);
+    expect(elsewhere.code).toBe(1);
+    expect(elsewhere.stderr).toContain('planned for site "blog", not "default"');
+    // Without --site, --map imports into the site the plan recorded.
+    const mapped = await runCli('import', ['wordpress', '--map', dir], instance.env);
+    expect(mapped.code, mapped.stderr).toBe(0);
+    expect(mapped.stdout).toContain('/admin/s/blog/changes/');
+
+    type Listed = { items: Array<{ definition: { apiKey: string }; scope: string }> };
+    const onBlog = expectStatus(
+      await instance.admin.request({
+        method: 'GET',
+        url: '/api/admin/models',
+        headers: { [SITE_HEADER]: 'blog' },
+      }),
+      200,
+    ).json<Listed>();
+    expect(onBlog.items.find((item) => item.definition.apiKey === 'post')?.scope).toBe('site');
+    const onDefault = expectStatus(await instance.admin.get('/api/admin/models'), 200).json<Listed>();
+    expect(onDefault.items.map((item) => item.definition.apiKey)).not.toContain('post');
+    const posts = await instance.admin.request({
+      method: 'GET',
+      url: '/api/admin/content/post',
+      headers: { [SITE_HEADER]: 'blog' },
+    });
+    expect(expectStatus(posts, 200).json<{ items: unknown[] }>().items.length).toBeGreaterThan(0);
   });
 });
 
