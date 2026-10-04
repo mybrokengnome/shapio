@@ -30,6 +30,12 @@ All notable changes to Shapio are listed here. The format follows
   to create a definition shared with all sites. The starters' seed creates the models as the site's own
   (`SHAPIO_SITE`, else the token's site) and writes `SHAPIO_SITE` to `.env`; seeding one starter onto a second
   site is refused until its models are shared ([Site starters](documentation/starters.md#site-key)).
+- **Admin: content types per site.** Creating a content type or component asks where it is available: this
+  site (the default) or all sites (needs a role on every site); the choice shows only with more than one
+  site. Shared types carry a small globe in the sidebar and the Components list, the builder's settings share
+  a type with all sites or keep it on one, and the new Network → Content types page lists and creates shared
+  ones. A schema role held on one site shows shared types' structure read-only, and Locales now need a role
+  on every site in the sidebar too ([Sites](documentation/sites.md#content-types-in-the-admin)).
 
 ## [0.2.1] - 2026-10-04
 

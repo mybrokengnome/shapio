@@ -1,4 +1,5 @@
 import type {
+  ChangeScopeInput,
   CreateDefinitionInput,
   DefinitionCategory,
   DefinitionListItem,
@@ -30,6 +31,29 @@ export const definitionsQueryOptions = (category: DefinitionCategory) =>
   });
 
 export const useDefinitions = (category: DefinitionCategory) => useQuery(definitionsQueryOptions(category));
+
+const KIND_ORDER = { collection: 0, singleton: 1, component: 2 } as const;
+
+/**
+ * The models and components shared with all sites (`?scope=network`), for the network view: collections,
+ * single types, then components, each by label.
+ */
+export const useSharedDefinitions = () =>
+  useQuery({
+    queryKey: queryKeys.schema.sharedDefinitions,
+    queryFn: async () => {
+      const [models, components] = await Promise.all([
+        adminApi.models.list({ scope: 'network' }),
+        adminApi.components.list({ scope: 'network' }),
+      ]);
+      return [...models, ...components].sort(
+        (a, b) =>
+          KIND_ORDER[a.definition.kind] - KIND_ORDER[b.definition.kind] ||
+          a.definition.label.localeCompare(b.definition.label),
+      );
+    },
+    meta: silent,
+  });
 
 /** Models and components together (relation targets, component pickers, cross-definition validation). */
 export const useAllDefinitions = () => {
@@ -141,5 +165,31 @@ export const useDeleteDefinition = () => {
       expectedVersion: number;
     }) => withCsrf(() => definitionApi(category).remove(id, expectedVersion)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.schema.all }),
+  });
+};
+
+/**
+ * Shares a definition with all sites or keeps it on one (409 SCOPE_IN_USE while another site has entries,
+ * 409 SCHEMA_VERSION_CONFLICT when it moved). `me` is read again: who may manage the definition changed.
+ */
+export const useChangeScope = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['schema', 'scope'],
+    meta: silent,
+    mutationFn: ({
+      category,
+      id,
+      input,
+    }: {
+      category: DefinitionCategory;
+      id: string;
+      input: ChangeScopeInput;
+    }) => withCsrf(() => definitionApi(category).changeScope(id, input)),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.schema.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+      ]),
   });
 };

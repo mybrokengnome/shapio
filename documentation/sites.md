@@ -20,6 +20,24 @@ both. Every site has the same content types; a site that does not use one simply
 An instance with one site works exactly as before: requests that name no site go to the primary site, and
 nothing in this page needs doing.
 
+## Content types in the admin
+
+Where there is more than one site, creating a content type or a component asks where it is **available on**:
+_This site_ (the default) or _All sites_. A new type belongs to the site it was created on unless _All sites_ is
+chosen; that choice needs a role on every site, and is otherwise shown switched off with a hint. On a
+one-site instance the choice is not shown and new types belong to that site.
+
+In the sidebar, a content type shared with all sites has a small globe beside its name ("Shared with all
+sites"); a site's own types have no mark. The Components list marks shared components the same way.
+
+The builder's **Model settings** show where a type is available. With a role on every site, _Share with all
+sites_ or _Keep on this site_ changes it, after a confirmation; keeping a shared type on one site is refused
+while another site still has entries of it. An admin whose schema role is held on one site only can read a
+shared type's structure but not change it.
+
+**Network → Content types** lists the content types and components shared with all sites, with their kind,
+and creates new shared ones. It is shown to admins with `schema.create` on every site.
+
 ## Creating a site
 
 From the server host (direct database access, like `shapio admin create`):

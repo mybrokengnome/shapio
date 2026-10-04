@@ -1,4 +1,5 @@
 import { routeKeyOf, type ValidationIssue } from '@shapio/schema';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { followPlural } from '../../helpers/followPlural';
@@ -8,10 +9,15 @@ import { TextControl } from '../controls/TextControl';
 import { PanelSection } from '../PanelSection';
 import { Display } from './Display';
 
-type DefinitionPanelProps = { issues: readonly ValidationIssue[]; disabled: boolean };
+type DefinitionPanelProps = {
+  issues: readonly ValidationIssue[];
+  disabled: boolean;
+  /** Where the definition is available (the `Scope` section), first; absent on a single-site instance. */
+  scopeSection?: ReactNode;
+};
 
 /** The definition's own settings (the expanded Model settings panel): naming, content and display. */
-export const DefinitionPanel = ({ issues, disabled }: DefinitionPanelProps) => {
+export const DefinitionPanel = ({ issues, disabled, scopeSection }: DefinitionPanelProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
   const base = useDefinitionDraftStore((state) => state.base);
@@ -33,6 +39,7 @@ export const DefinitionPanel = ({ issues, disabled }: DefinitionPanelProps) => {
     );
   return (
     <div className="space-y-6">
+      {scopeSection}
       <PanelSection title={t('models.builder.general')}>
         <TextControl
           id="definition-label"

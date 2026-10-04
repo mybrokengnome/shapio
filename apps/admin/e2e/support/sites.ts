@@ -9,13 +9,17 @@ export const siteApi = (request: APIRequestContext, siteKey?: string) => {
   const siteHeader: Record<string, string> = siteKey ? { 'shapio-site': siteKey } : {};
   const csrf = async () =>
     ((await (await request.get(`${ADMIN_API}/auth/csrf`)).json()) as { csrfToken: string }).csrfToken;
-  const fetch = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, data?: unknown) =>
+  const fetch = async (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown) =>
     request.fetch(`${ADMIN_API}${path}`, {
       method,
       headers: { ...siteHeader, ...(method === 'GET' ? {} : { 'x-csrf-token': await csrf() }) },
       ...(data === undefined ? {} : { data }),
     });
-  const send = async <T>(method: 'POST' | 'PUT' | 'DELETE', path: string, data?: unknown): Promise<T> => {
+  const send = async <T>(
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    data?: unknown,
+  ): Promise<T> => {
     const response = await fetch(method, path, data);
     expect(response.ok(), `${method} ${path}: ${await response.text()}`).toBe(true);
     return (response.status() === 204 ? undefined : await response.json()) as T;

@@ -84,6 +84,7 @@ export const AUDIT_ACTION_LABEL_KEYS = {
   'schema.change.request': 'audit.actions.schemaChangeRequest',
   'schema.create': 'audit.actions.schemaCreate',
   'schema.delete': 'audit.actions.schemaDelete',
+  'schema.scope': 'audit.actions.schemaScope',
   'schema.settings.update': 'audit.actions.schemaSettingsUpdate',
   'session.revoke': 'audit.actions.sessionRevoke',
   'session.revoke_all': 'audit.actions.sessionRevokeAll',

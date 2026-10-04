@@ -1,6 +1,7 @@
 import type { SchemaDefinition } from '@shapio/schema';
 import type { DeploymentRunStatus, Page, PublicationAction } from './publishingTypes.js';
 import type { ChangePlan, DefinitionCategory, DefinitionPayload, PlanImpact } from './schemaTypes.js';
+import type { SiteRef } from './sitesTypes.js';
 
 /**
  * Change sets and snapshots (developer-face plan §5), mirroring the TypeBox route schemas in
@@ -124,6 +125,8 @@ export type SchemaDraft = {
   baseVersion: number | null;
   /** Null when the draft deletes the definition. */
   definition: SchemaDefinition | null;
+  /** A new definition the draft creates shared with all sites (otherwise it belongs to the set's site). */
+  shared: boolean;
   version: number;
   updatedBy: ChangeSetActor;
   createdAt: string;
@@ -136,6 +139,8 @@ export type PutSchemaDraftInput = {
   definition: DefinitionPayload | null;
   /** The active version the edit is based on (null: a new definition). */
   baseVersion: number | null;
+  /** For a new definition: create it shared with all sites (default false: the set's site). */
+  shared?: boolean;
   /** The draft row version the caller saw; omit when creating the draft. */
   expectedDraftVersion?: number;
 };
@@ -172,6 +177,8 @@ export type ReviewSchemaItem = {
   stale: boolean;
   plan: ChangePlan | null;
   impact: PlanImpact | null;
+  /** Entries of the affected models per site (a shared definition converts every site's content). */
+  affectedEntriesBySite: Array<{ site: SiteRef; entries: number }>;
   issues: ReviewIssue[];
   alsoChangedIn: Array<{ id: string; title: string }>;
 };
@@ -197,6 +204,8 @@ export type NotRestorable = {
 };
 
 export type FieldConsumer = {
+  /** The site the reads were made on. */
+  site: SiteRef;
   /** `token:<id>`, `app_users` or `anonymous`. */
   principalKey: string;
   label: string | null;
@@ -206,7 +215,17 @@ export type FieldConsumer = {
   selection: 'explicit' | 'implicit';
 };
 
-export type FieldConsumers = { modelId: string; fieldId: string; apiKey: string; consumers: FieldConsumer[] };
+export type FieldConsumers = {
+  modelId: string;
+  fieldId: string;
+  apiKey: string;
+  consumers: FieldConsumer[];
+  /**
+   * Readers on other sites, as totals, when the viewer holds no role on every site; null when the viewer
+   * sees every site's readers in `consumers`.
+   */
+  otherSites: { consumers: number; reads: number } | null;
+};
 
 export type ChangeSetReview = {
   changeSet: ChangeSet;

@@ -3,7 +3,6 @@ import { Globe, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { useHasGlobalPermission } from '@/api/auth';
 import { useLocales, useSetDefaultLocale } from '@/api/locales';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EmptyState } from '@/components/EmptyState';
@@ -11,6 +10,7 @@ import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { Button } from '@/components/ui/button';
+import { useNetworkPermission } from '@/features/Network/hooks/useNetworkPermission';
 import { useConfirmTarget } from '@/hooks/useConfirmTarget';
 import { useDeleteLocaleFlow } from './hooks/useDeleteLocaleFlow';
 import { LocaleSheet } from './LocaleSheet';
@@ -20,7 +20,8 @@ import { Table } from './Table';
 export const Locales = () => {
   const { t } = useTranslation();
   const locales = useLocales();
-  const canManage = useHasGlobalPermission('schema.create');
+  // Locales are shared by every site: a role granting schema.create on one site doesn't manage them.
+  const canManage = useNetworkPermission('schema.create');
   const setDefault = useSetDefaultLocale();
   const makeDefault = useConfirmTarget<Locale>();
   const deletion = useDeleteLocaleFlow();

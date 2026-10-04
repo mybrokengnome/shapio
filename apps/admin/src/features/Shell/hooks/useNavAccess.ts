@@ -9,6 +9,7 @@ export const useNavAccess = (): NavAccess & { develop: boolean; canCreateType: b
   return useMemo(
     () => ({
       globalPermissions: me?.globalPermissions ?? [],
+      networkPermissions: me?.networkPermissions ?? [],
       schema: hasSchemaPermission(me),
       develop: canSeeDevelop(me),
       canCreateType: me?.globalPermissions.includes('schema.create') ?? false,

@@ -56,6 +56,8 @@ export const queryKeys = {
     definitions: (category: DefinitionCategory) => ['schema', 'definitions', category] as const,
     definition: (category: DefinitionCategory, id: string) =>
       ['schema', 'definitions', category, id] as const,
+    /** The models and components shared with all sites (the Network → Content types page). */
+    sharedDefinitions: ['schema', 'shared'] as const,
     change: (changeId: string) => ['schema', 'changes', changeId] as const,
   },
   /** Entries per model; invalidate `content.model(key)` after any write to that model. */

@@ -88,6 +88,8 @@ export type MeResponse = {
   site: SiteSummary;
   /** Every site this admin holds a role on (all of them for a role assigned on every site). */
   sites: SiteSummary[];
+  /** Sites on this instance (whether or not the admin holds a role on them); scope is shown only above 1. */
+  siteCount: number;
   /** Network actions (roles assigned on every site only). */
   networkPermissions: NetworkAction[];
   /**

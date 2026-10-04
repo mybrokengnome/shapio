@@ -6,15 +6,22 @@ import { Panel } from '@/components/Panel';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { usePrincipalLabel } from '../../Changes/hooks/usePrincipalLabel';
 
 type ConsumersTabProps = { review: ChangeSetReview };
 
-/** Who read the fields this set's breaking changes affect, from real delivery traffic. */
+/**
+ * Who read the fields this set's breaking changes affect, from real delivery traffic: each reader with
+ * the site it read on (where there is more than one), and readers on sites the admin can't see as totals.
+ */
 export const ConsumersTab = ({ review }: ConsumersTabProps) => {
   const { t } = useTranslation();
   const principalLabel = usePrincipalLabel();
-  const fields = review.consumers.filter((field) => field.consumers.length > 0);
+  const { multiSite } = useSchemaScopeAccess();
+  const fields = review.consumers.filter(
+    (field) => field.consumers.length > 0 || (field.otherSites?.consumers ?? 0) > 0,
+  );
   if (fields.length === 0) {
     return (
       <EmptyState
@@ -41,6 +48,7 @@ export const ConsumersTab = ({ review }: ConsumersTabProps) => {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('changes.consumers.reader')}</TableHead>
+                {multiSite ? <TableHead>{t('changes.consumers.site')}</TableHead> : null}
                 <TableHead className="text-right">{t('changes.consumers.reads')}</TableHead>
                 <TableHead>{t('changes.consumers.lastRead')}</TableHead>
                 <TableHead>{t('changes.consumers.selection')}</TableHead>
@@ -48,10 +56,15 @@ export const ConsumersTab = ({ review }: ConsumersTabProps) => {
             </TableHeader>
             <TableBody>
               {field.consumers.map((consumer) => (
-                <TableRow key={consumer.principalKey}>
+                <TableRow key={`${consumer.site.id}:${consumer.principalKey}`}>
                   <TableCell className="font-semibold">
                     {principalLabel(consumer.principalKey, consumer.label)}
                   </TableCell>
+                  {multiSite ? (
+                    <TableCell className="font-mono text-meta text-muted-foreground">
+                      {consumer.site.key}
+                    </TableCell>
+                  ) : null}
                   <TableCell className="text-right tabular-nums">{consumer.reads.toLocaleString()}</TableCell>
                   <TableCell className="whitespace-nowrap" title={formatDateTime(consumer.lastReadAt)}>
                     {consumer.lastReadAt ? formatRelativeTime(consumer.lastReadAt) : t('common.never')}
@@ -65,6 +78,16 @@ export const ConsumersTab = ({ review }: ConsumersTabProps) => {
                   </TableCell>
                 </TableRow>
               ))}
+              {field.otherSites && field.otherSites.consumers > 0 ? (
+                <TableRow data-other-sites>
+                  <TableCell colSpan={multiSite ? 5 : 4} className="text-muted-foreground">
+                    {t('changes.consumers.otherSites', {
+                      count: field.otherSites.consumers,
+                      reads: field.otherSites.reads.toLocaleString(),
+                    })}
+                  </TableCell>
+                </TableRow>
+              ) : null}
             </TableBody>
           </Table>
         </Panel>

@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
+import { siteApi } from './support/sites';
 
 /**
  * Content types against the real API: create them live from "+ New content type", edit them in the
@@ -473,4 +474,40 @@ test('the builder works at phone width', async () => {
   await expect(page.getByRole('switch', { name: 'Public' })).toBeVisible();
   await captureScreen(page, 'models-17-builder-field-mobile', { viewports: ['phone'] });
   await page.setViewportSize({ width: 1360, height: 900 });
+});
+
+test('with a second site, a new content type asks where it is available: "All sites" shares it', async () => {
+  const api = siteApi(page.request);
+  const shop = await api.send<{ id: string }>('POST', '/sites', { key: 'shop', name: 'Shop' });
+  let brandId = '';
+  try {
+    await page.goto(ADMIN_URL);
+    const form = await createDefinition('Brand');
+    const availableOn = form.getByRole('group', { name: 'Available on' });
+    await expect(availableOn.getByRole('radio', { name: 'This site' })).toBeChecked();
+    await expect(availableOn.getByRole('radio', { name: 'This site' })).toHaveAccessibleDescription(
+      'Only on Default site.',
+    );
+    await availableOn.getByRole('radio', { name: 'All sites' }).check();
+    await captureScreen(page, 'models-18-available-on', { viewports: ['desktop', 'phone'] });
+    await form.getByRole('button', { name: 'Create' }).click();
+    await expect(toast('Created — no restart needed.')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Brand' })).toBeVisible();
+    // Shared: marked in the sidebar (its name stays the label) and listed on the other site too.
+    await expect(nav().getByRole('link', { name: 'Brand', exact: true })).toHaveAccessibleDescription(
+      'Shared with all sites',
+    );
+    const onShop = await siteApi(page.request, 'shop').get<{
+      items: { definition: { id: string; apiKey: string }; scope: string }[];
+    }>('/models');
+    const brand = onShop.items.find(({ definition }) => definition.apiKey === 'brand');
+    expect(brand?.scope).toBe('network');
+    brandId = brand?.definition.id ?? '';
+  } finally {
+    if (brandId) {
+      const { version } = await api.get<{ version: number }>(`/models/${brandId}`);
+      await api.send('DELETE', `/models/${brandId}?expectedVersion=${version}`);
+    }
+    await api.send('DELETE', `/sites/${shop.id}`);
+  }
 });

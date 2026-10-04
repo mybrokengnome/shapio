@@ -6,6 +6,7 @@ import { FieldLegend, FieldSet } from '@/components/ui/field';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { KIND_DESCRIPTION_KEYS, KIND_ICONS, KIND_LABEL_KEYS } from '@/features/Models/constants';
 import type { CreateDefinitionValues } from '@/features/Models/hooks/useCreateDefinitionForm';
+import { cn } from '@/helpers/cn';
 
 type KindPickerProps = { control: Control<CreateDefinitionValues>; kinds: readonly DefinitionKind[] };
 
@@ -20,7 +21,12 @@ export const KindPicker = ({ control, kinds }: KindPickerProps) => {
       <FieldLegend variant="label" className="mb-0">
         {t('models.kind')}
       </FieldLegend>
-      <RadioGroup ref={ref} value={value} onValueChange={onChange} className="gap-3 sm:grid-cols-2">
+      <RadioGroup
+        ref={ref}
+        value={value}
+        onValueChange={onChange}
+        className={cn('gap-3 sm:grid-cols-2', kinds.length > 2 && 'sm:grid-cols-3')}
+      >
         {kinds.map((kind) => (
           <RadioTile
             key={kind}

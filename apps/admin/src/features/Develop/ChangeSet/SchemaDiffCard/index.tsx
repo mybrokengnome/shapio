@@ -1,12 +1,13 @@
 import type { ReviewSchemaItem } from '@shapio/client';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Globe2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { describeChange } from '@/features/Models/helpers/describeChange';
 import { cn } from '@/helpers/cn';
+import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { ClassificationChip } from '../ClassificationChip';
 import { classOfChange, signOfChange } from '../helpers/classification';
 import { useSchemaItemDefinitions } from '../hooks/useSchemaItemDefinitions';
@@ -25,10 +26,14 @@ const OPERATION_KEYS = {
 
 type SchemaDiffCardProps = { changeSetId: string; item: ReviewSchemaItem };
 
-/** A schema item as a diff: one `+`/`−`/`~` line per planned change, each with its classification. */
+/**
+ * A schema item as a diff: one `+`/`−`/`~` line per planned change, each with its classification, and a
+ * quiet badge when the definition is shared (shipping it affects every site).
+ */
 export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
   const { t } = useTranslation();
-  const { before, after } = useSchemaItemDefinitions(changeSetId, item);
+  const { before, after, shared } = useSchemaItemDefinitions(changeSetId, item);
+  const { multiSite } = useSchemaScopeAccess();
   const changes = item.plan?.changes ?? [];
   const title = after?.label ?? before?.label ?? item.apiKey;
   return (
@@ -39,6 +44,12 @@ export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{t(OPERATION_KEYS[item.operation])}</Badge>
+          {multiSite && shared ? (
+            <Badge variant="outline" data-shared>
+              <Globe2 aria-hidden="true" />
+              {t('changes.review.shared')}
+            </Badge>
+          ) : null}
           <span className="font-mono text-meta text-muted-foreground">{item.apiKey}</span>
         </div>
       }

@@ -14,6 +14,8 @@ export type Place = {
   /** Entries the admin can read; undefined until counts load (or for single types, which need none). */
   count: number | undefined;
   canCreate: boolean;
+  /** Shared with all sites (rather than this site's own). */
+  shared: boolean;
 };
 
 const KIND_ORDER = { collection: 0, singleton: 1 } as const;
@@ -30,7 +32,7 @@ export const usePlaces = (): Place[] | undefined => {
   return useMemo(
     () =>
       definitions
-        ?.flatMap(({ definition }): Place[] =>
+        ?.flatMap(({ definition, scope }): Place[] =>
           definition.kind !== 'component' && canOnModel(me, definition.id, 'read')
             ? [
                 {
@@ -40,6 +42,7 @@ export const usePlaces = (): Place[] | undefined => {
                   kind: definition.kind,
                   count: definition.kind === 'collection' ? counts?.get(definition.id) : undefined,
                   canCreate: canOnModel(me, definition.id, 'create'),
+                  shared: scope === 'network',
                 },
               ]
             : [],

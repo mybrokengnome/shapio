@@ -32,8 +32,9 @@ export const adminApiFor = (request: APIRequestContext, base: string) => {
     put: async (path: string, data: unknown) =>
       request.fetch(`${base}${path}`, { method: 'PUT', headers: { 'x-csrf-token': await csrf() }, data }),
     createLocale: (code: string, label: string) => send('POST', '/locales', { code, label }),
-    createDefinition: (category: 'models' | 'components', definition: unknown) =>
-      send<{ status: string }>('POST', `/${category}`, { definition }),
+    /** Belongs to the request's site unless `scope` is `network` (shared with all sites). */
+    createDefinition: (category: 'models' | 'components', definition: unknown, scope?: 'network') =>
+      send<{ status: string }>('POST', `/${category}`, scope ? { definition, scope } : { definition }),
     /** Uploads a PNG through the same grant → upload → confirm flow as the admin. */
     uploadPng: async (filename: string, width: number, height: number) => {
       const bytes = createPng(width, height);

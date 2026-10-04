@@ -33,7 +33,7 @@ export const ContentHome = () => {
         title={t('content.empty.title')}
         action={
           <Button asChild>
-            <Link to="/models/new">{t('content.empty.action')}</Link>
+            <Link to="/content/new">{t('content.empty.action')}</Link>
           </Button>
         }
       />

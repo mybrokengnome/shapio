@@ -134,7 +134,7 @@
       "INVALID_QUERY": "This filter or sort can't be used on this model.",
       "FORBIDDEN_FIELD": "You don't have access to one of the fields in this filter or sort.",
       "LOCALE_NOT_FOUND": "That locale doesn't exist.",
-      "SITE_NOT_EMPTY": "This site still has entries, media, change sets or app users. Delete them first.",
+      "SITE_NOT_EMPTY": "This site still has content types, components, entries, media, change sets or app users. Delete them first.",
       "SITE_IS_PRIMARY": "The primary site can't be deleted.",
       "SITE_KEY_TAKEN": "Another site already uses this key.",
       "OWNER_ALL_SITES": "The owner role applies to every site; it can't be given on one site.",
@@ -278,7 +278,8 @@
       "settings": "Settings",
       "appUsers": "App users",
       "sites": "Sites",
-      "auditLog": "Audit log"
+      "auditLog": "Audit log",
+      "sharedContentTypes": "Content types"
     }
   },
   "palette": {
@@ -402,7 +403,23 @@
   "contentTypes": {
     "newTitle": "New content type",
     "newComponentTitle": "New component",
-    "noComponents": "No components yet"
+    "noComponents": "No components yet",
+    "availableOn": "Available on",
+    "thisSite": "This site",
+    "thisSiteDescription": "Only on {{site}}.",
+    "allSites": "All sites",
+    "allSitesDescription": "Every site has it, each with its own content.",
+    "allSitesNeedsNetwork": "Sharing with all sites needs a role on every site.",
+    "sharedWithAllSites": "Shared with all sites",
+    "network": {
+      "title": "Content types",
+      "count_one": "{{count}} shared with all sites",
+      "count_other": "{{count}} shared with all sites",
+      "create": "New shared type",
+      "newTitle": "New shared content type",
+      "empty": "Nothing is shared yet",
+      "emptyDescription": "Content types and components shared with all sites are listed here."
+    }
   },
   "userMenu": {
     "label": "Account menu",
@@ -709,7 +726,8 @@
       "assistRewrite": "Rewrote text with assist",
       "assistSchemaDraft": "Proposed content types with assist",
       "assistSummarize": "Summarized with assist",
-      "assistTranslate": "Translated with assist"
+      "assistTranslate": "Translated with assist",
+      "schemaScope": "Changed where a model is available"
     },
     "targets": {
       "adminInvitation": "Invitation",
@@ -813,7 +831,8 @@
       "apiKey": "API IDs",
       "fields": "Fields",
       "version": "Version",
-      "activated": "Active since"
+      "activated": "Active since",
+      "kind": "Kind"
     },
     "kinds": {
       "collection": "Collection",
@@ -1233,7 +1252,21 @@
       "INVALID_REFERENCE_TARGET": "This kind of model or component can't be used here.",
       "COMPONENT_CYCLE": "Components can't contain themselves, directly or through others.",
       "COMPONENT_TOO_DEEP": "Components are nested too deeply.",
-      "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first."
+      "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first.",
+      "apiKeyTakenOnSite": "Already used on {{site}}."
+    },
+    "scope": {
+      "onlyOn": "Only on {{site}}",
+      "share": "Share with all sites",
+      "keep": "Keep on this site",
+      "shareTitle": "Share {{label}} with all sites?",
+      "shareDescription": "Every site gets it, each with its own content.",
+      "keepTitle": "Keep {{label}} on {{site}} only?",
+      "keepDescription": "Other sites lose it. Refused while another site has entries of it.",
+      "blocked": "Save or discard your changes first.",
+      "shared": "Shared with all sites.",
+      "kept": "Now only on this site.",
+      "readOnly": "Shared with all sites: changing it needs a role on every site."
     }
   },
   "media": {
@@ -2487,7 +2520,8 @@
         "unique_conflict": "A unique value is now taken by another entry."
       },
       "healthTitle": "Content health",
-      "noHealthFindings": "No open health findings on these entries."
+      "noHealthFindings": "No open health findings on these entries.",
+      "shared": "Shared, affects every site"
     },
     "consumers": {
       "window_one": "Reads from delivery traffic over the last {{count}} day.",
@@ -2501,7 +2535,10 @@
       "lastRead": "Last read",
       "selection": "How",
       "explicit": "Selects this field",
-      "implicit": "Reads the whole model"
+      "implicit": "Reads the whole model",
+      "site": "Site",
+      "otherSites_one": "Other sites: {{count}} reader, {{reads}} reads",
+      "otherSites_other": "Other sites: {{count}} readers, {{reads}} reads"
     },
     "timeline": {
       "empty": "Nothing has happened yet.",

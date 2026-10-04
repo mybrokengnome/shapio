@@ -15,6 +15,9 @@ test.describe.configure({ mode: 'serial' });
 
 const SITE = { key: 'blog', name: 'Blog' };
 const MODEL = { key: 'siteNote', plural: 'siteNotes', label: 'Site note' };
+/** The blog's own content type and component (created on the blog: they belong to it). */
+const BLOG_MODEL = { key: 'blogPost', plural: 'blogPosts', label: 'Blog post' };
+const BLOG_COMPONENT = { key: 'blogQuote', label: 'Blog quote' };
 const MAIN_NOTE = 'A note on the main site';
 const BLOG_NOTE = 'A note on the blog';
 const SET_TITLE = 'Main site only launch';
@@ -24,6 +27,8 @@ const BOTH = { viewports: ['desktop', 'phone'] } as const;
 let page: Page;
 let editorPage: Page | undefined;
 let modelId = '';
+let blogModelId = '';
+let blogComponentId = '';
 let siteId = '';
 let blogEntryId = '';
 let changeSetId = '';
@@ -33,6 +38,12 @@ const pageErrors: string[] = [];
 
 const owner = () => siteApi(page.request);
 const onBlog = () => siteApi(page.request, SITE.key);
+
+/** Deletes a definition at its active version, through the site whose view has it. */
+const deleteDefinition = async (api: ReturnType<typeof siteApi>, path: string) => {
+  const { version } = await api.get<{ version: number }>(path);
+  await api.send('DELETE', `${path}?expectedVersion=${version}`);
+};
 
 const switcher = (on: Page) => on.getByRole('button', { name: /^Switch site/ });
 
@@ -51,7 +62,9 @@ const openPage = async (browser: Browser) => {
 test.beforeAll(async ({ browser }) => {
   page = await openPage(browser);
   await signInAsOwner(page);
+  // Shared with all sites: the blog reads and writes it too.
   const created = await owner().send<{ definitionId: string }>('POST', '/models', {
+    scope: 'network',
     definition: {
       kind: 'collection',
       apiKey: MODEL.key,
@@ -94,6 +107,19 @@ test.afterAll(async () => {
   if (blog) {
     if (blogEntryId) {
       await onBlog().send('DELETE', `/content/${MODEL.key}/${blogEntryId}`);
+    }
+    // A site with definitions of its own can't be deleted. The blog post may have moved (scope test).
+    if (blogComponentId) {
+      await deleteDefinition(onBlog(), `/components/${blogComponentId}`);
+    }
+    if (blogModelId) {
+      for (const api of [onBlog(), owner()]) {
+        const found = await api.fetch('GET', `/models/${blogModelId}`);
+        if (found.ok()) {
+          await deleteDefinition(api, `/models/${blogModelId}`);
+          break;
+        }
+      }
     }
     await owner().send('DELETE', `/sites/${blog.id}`);
   }
@@ -190,6 +216,105 @@ test('the switcher opens another site: the URL carries its key and its content i
   await expect(page.getByRole('row').filter({ hasText: BLOG_NOTE })).toHaveCount(0);
 });
 
+test("a site's own content types stay on it; shared ones are on every site", async () => {
+  const post = await onBlog().send<{ definitionId: string }>('POST', '/models', {
+    definition: {
+      kind: 'collection',
+      apiKey: BLOG_MODEL.key,
+      pluralApiKey: BLOG_MODEL.plural,
+      label: BLOG_MODEL.label,
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    },
+  });
+  blogModelId = post.definitionId;
+  const quote = await onBlog().send<{ definitionId: string }>('POST', '/components', {
+    definition: {
+      kind: 'component',
+      apiKey: BLOG_COMPONENT.key,
+      label: BLOG_COMPONENT.label,
+      fields: [{ apiKey: 'text', label: 'Text', type: 'text' }],
+    },
+  });
+  blogComponentId = quote.definitionId;
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+
+  // On the blog: its own type (no mark) and the shared one (marked, its name still the label).
+  await page.goto(`${ADMIN_URL}s/${SITE.key}/`);
+  await expect(nav.getByRole('link', { name: BLOG_MODEL.label, exact: true })).toHaveAccessibleDescription(
+    '',
+  );
+  await expect(nav.getByRole('link', { name: MODEL.label, exact: true })).toHaveAccessibleDescription(
+    'Shared with all sites',
+  );
+  await captureScreen(page, 'sites-08-shared-mark', { viewports: ['desktop'] });
+  await page.goto(`${ADMIN_URL}s/${SITE.key}/develop/components`);
+  await expect(page.getByRole('row').filter({ hasText: BLOG_COMPONENT.label })).toBeVisible();
+
+  // On the main site: the shared type only; the blog's type and component aren't there at all.
+  await page.goto(`${ADMIN_URL}s/default/`);
+  await expect(nav.getByRole('link', { name: MODEL.label, exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: BLOG_MODEL.label })).toHaveCount(0);
+  await page.goto(`${ADMIN_URL}s/default/develop/components`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Components' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: BLOG_COMPONENT.label })).toHaveCount(0);
+  const mainModels = await owner().get<{ items: { definition: { apiKey: string } }[] }>('/models');
+  expect(mainModels.items.map(({ definition }) => definition.apiKey)).not.toContain(BLOG_MODEL.key);
+  expect((await owner().fetch('GET', `/content/${BLOG_MODEL.key}`)).status()).toBe(404);
+});
+
+test('the builder shares a type with all sites and keeps it on one; a type with entries elsewhere stays', async () => {
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  const settings = () => page.getByRole('button', { name: 'Model settings' });
+  const availableOn = () => page.getByRole('heading', { name: 'Available on' }).locator('..');
+
+  await page.goto(`${ADMIN_URL}s/${SITE.key}/content/${BLOG_MODEL.key}?tab=structure`);
+  await expect(page.getByRole('heading', { level: 1, name: BLOG_MODEL.label })).toBeVisible();
+  await settings().click();
+  await expect(availableOn()).toContainText(`Only on ${SITE.name}`);
+  await availableOn().getByRole('button', { name: 'Share with all sites' }).click();
+  const share = page.getByRole('alertdialog', { name: `Share ${BLOG_MODEL.label} with all sites?` });
+  await expect(share).toBeVisible();
+  await captureScreen(page, 'sites-09-share-confirm', { viewports: ['desktop'] });
+  await share.getByRole('button', { name: 'Share with all sites' }).click();
+  await expect(page.getByText('Shared with all sites.').first()).toBeVisible();
+  await expect(availableOn().getByRole('button', { name: 'Keep on this site' })).toBeVisible();
+  await captureScreen(page, 'sites-10-scope-shared', { viewports: ['desktop', 'phone'] });
+
+  // Shared: the main site has it now; keeping it there moves it off the blog (which has no entries of it).
+  await page.goto(`${ADMIN_URL}s/default/content/${BLOG_MODEL.key}?tab=structure`);
+  await expect(page.getByRole('heading', { level: 1, name: BLOG_MODEL.label })).toBeVisible();
+  await settings().click();
+  await availableOn().getByRole('button', { name: 'Keep on this site' }).click();
+  await page
+    .getByRole('alertdialog', { name: `Keep ${BLOG_MODEL.label} on Default site only?` })
+    .getByRole('button', { name: 'Keep on this site' })
+    .click();
+  await expect(page.getByText('Now only on this site.').first()).toBeVisible();
+  await expect(availableOn()).toContainText('Only on Default site');
+  const blogModels = await onBlog().get<{ items: { definition: { apiKey: string } }[] }>('/models');
+  expect(blogModels.items.map(({ definition }) => definition.apiKey)).not.toContain(BLOG_MODEL.key);
+  await deleteDefinition(owner(), `/models/${blogModelId}`);
+  blogModelId = '';
+  // Deleted through the API: a fresh load shows the sidebar without it.
+  await page.goto(`${ADMIN_URL}s/default/`);
+  await expect(nav.getByRole('link', { name: MODEL.label, exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: BLOG_MODEL.label })).toHaveCount(0);
+
+  // The shared note has an entry on the blog: it can't be kept on the main site alone.
+  await page.goto(`${ADMIN_URL}s/default/content/${MODEL.key}?tab=structure`);
+  await expect(page.getByRole('heading', { level: 1, name: MODEL.label })).toBeVisible();
+  await settings().click();
+  await availableOn().getByRole('button', { name: 'Keep on this site' }).click();
+  const keep = page.getByRole('alertdialog', { name: `Keep ${MODEL.label} on Default site only?` });
+  await keep.getByRole('button', { name: 'Keep on this site' }).click();
+  await expect(keep.getByText(/Other sites still have 1 entry of this content type/)).toBeVisible();
+  await captureScreen(page, 'sites-11-scope-in-use', { viewports: ['desktop'] });
+  await keep.getByRole('button', { name: 'Cancel' }).click();
+  await expect(availableOn()).toContainText('Shared with all sites');
+  // A fresh load: the next test's focus checks start without a preceding mouse click.
+  await page.goto(`${ADMIN_URL}s/default/`);
+});
+
 test('the switcher works from the keyboard with a visible focus in both themes', async () => {
   const trigger = switcher(page);
   await inBothSchemes(page, async () => {
@@ -267,7 +392,7 @@ test('an editor with a role on one site only: the other site says so, and its AP
   await expect(editor.getByRole('heading', { level: 1, name: `Welcome, ${EDITOR.name}` })).toBeVisible();
   const nav = editor.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByRole('link', { name: MODEL.label, exact: true })).toBeVisible();
-  // The schema is shared and needs a network role: a site editor sees no Structure tab and no Develop.
+  // The note is shared and the editor role grants no schema action: no Structure tab and no Develop.
   await expect(nav.getByRole('list', { name: 'Develop' })).toHaveCount(0);
   await nav.getByRole('link', { name: MODEL.label, exact: true }).click();
   await expect(editor.getByRole('row').filter({ hasText: BLOG_NOTE })).toBeVisible();
@@ -322,18 +447,53 @@ test("an owner changes an admin's access per site; the owner role stays on all s
   await expect(row).toContainText('Read-only · Default site');
 });
 
+test("a site admin creates the site's own types; a shared type's builder is read-only", async () => {
+  const editor = editorPage;
+  expect(editor).toBeDefined();
+  if (!editor) {
+    return;
+  }
+  const users = await owner().get<{ id: string; email: string }[]>('/users');
+  const roles = await owner().get<{ id: string; key: string | null }[]>('/roles');
+  const userId = users.find((user) => user.email === EDITOR.email)?.id ?? '';
+  const adminRoleId = roles.find((role) => role.key === 'admin')?.id ?? '';
+  await owner().send('PATCH', `/users/${userId}`, { assignments: [{ roleId: adminRoleId, siteId }] });
+
+  // Admin on the blog only: "All sites" is off when creating, and the shared note can be read, not changed.
+  await editor.goto(`${ADMIN_URL}s/${SITE.key}/content/new`);
+  const availableOn = editor.getByRole('group', { name: 'Available on' });
+  await expect(availableOn.getByRole('radio', { name: 'This site' })).toBeChecked();
+  await expect(availableOn.getByRole('radio', { name: 'All sites' })).toBeDisabled();
+  await captureScreen(editor, 'sites-12-available-on-site-only', { viewports: ['desktop'] });
+
+  await editor.goto(`${ADMIN_URL}s/${SITE.key}/content/${MODEL.key}?tab=structure`);
+  await expect(editor.getByRole('heading', { level: 1, name: MODEL.label })).toBeVisible();
+  await expect(
+    editor.getByText('Shared with all sites: changing it needs a role on every site.'),
+  ).toBeVisible();
+  await editor.getByRole('button', { name: 'Model settings' }).click();
+  await expect(editor.getByRole('textbox', { name: 'Label' }).first()).toBeDisabled();
+  await expect(editor.getByRole('button', { name: 'Keep on this site' })).toHaveCount(0);
+  await captureScreen(editor, 'sites-13-shared-read-only', { viewports: ['desktop'] });
+});
+
 test('a site with content cannot be deleted; once emptied it can', async () => {
   await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
   await page.getByRole('button', { name: 'Delete site' }).click();
   const confirm = page.getByRole('alertdialog', { name: `Delete ${SITE.name}?` });
   await confirm.getByRole('button', { name: 'Delete' }).click();
   await expect(
-    confirm.getByText('This site still has entries, media, change sets or app users.', { exact: false }),
+    confirm.getByText(
+      'This site still has content types, components, entries, media, change sets or app users.',
+      { exact: false },
+    ),
   ).toBeVisible();
   await confirm.getByRole('button', { name: 'Cancel' }).click();
 
-  // Once its content is deleted, the site is empty and goes. This page load works on the blog (it was the
-  // last site opened), so deleting it reloads the sites list for the primary site.
+  // Once its content and its own definitions are deleted, the site is empty and goes. This page load works
+  // on the blog (it was the last site opened), so deleting it reloads the sites list for the primary site.
+  await deleteDefinition(onBlog(), `/components/${blogComponentId}`);
+  blogComponentId = '';
   await onBlog().send('DELETE', `/content/${MODEL.key}/${blogEntryId}`);
   blogEntryId = '';
   await page.goto(`${ADMIN_URL}s/${SITE.key}/`);

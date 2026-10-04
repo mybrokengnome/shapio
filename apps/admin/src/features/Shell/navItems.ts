@@ -1,8 +1,9 @@
-import type { GlobalAction } from '@shapio/client';
+import type { GlobalAction, NetworkAction } from '@shapio/client';
 import type { ParseKeys } from 'i18next';
 import {
   Activity,
   Blocks,
+  Boxes,
   Camera,
   FileCode2,
   GitPullRequestArrow,
@@ -25,6 +26,8 @@ import {
 /** What the admin may see, worked out once from `me` (helpers/modelPermissions). */
 export type NavAccess = {
   globalPermissions: readonly GlobalAction[];
+  /** Actions from roles on every site only (`schema.create` here means shared definitions and locales). */
+  networkPermissions: readonly NetworkAction[];
   /** `schema.create`, or `schemaManage` on any model. */
   schema: boolean;
 };
@@ -45,11 +48,16 @@ export type NavPath =
   | '/settings/locales'
   | '/settings'
   | '/network/sites'
+  | '/network/content-types'
   | '/network/users'
   | '/network/roles'
   | '/network/audit-log';
 
-type NavRequirement = { permission?: GlobalAction; schema?: boolean };
+/**
+ * `permission` counts site and network roles; `networkPermission` only roles on every site (for actions a
+ * site role can also grant for its own site, such as `schema.create`, where the screen needs every site).
+ */
+type NavRequirement = { permission?: GlobalAction; networkPermission?: NetworkAction; schema?: boolean };
 
 /** A fixed destination; `exact` items match only their own path (the Inbox at `/`). */
 export type NavItemDefinition = NavRequirement & {
@@ -61,7 +69,9 @@ export type NavItemDefinition = NavRequirement & {
 };
 
 export const isVisible = (item: NavRequirement, access: NavAccess) =>
-  (!item.permission || access.globalPermissions.includes(item.permission)) && (!item.schema || access.schema);
+  (!item.permission || access.globalPermissions.includes(item.permission)) &&
+  (!item.networkPermission || access.networkPermissions.includes(item.networkPermission)) &&
+  (!item.schema || access.schema);
 
 /** Above the places: the Inbox is home for everyone. */
 export const INBOX_ITEM = {
@@ -141,7 +151,8 @@ export const WORKSPACE_ITEMS: readonly NavItemDefinition[] = [
     labelKey: 'shell.nav.locales',
     icon: Globe,
     to: '/settings/locales',
-    permission: 'schema.create',
+    // Locales are shared by every site, so only a role on every site may manage them.
+    networkPermission: 'schema.create',
   },
   { key: 'settings', labelKey: 'shell.nav.settings', icon: Settings, to: '/settings' },
 ];
@@ -149,6 +160,13 @@ export const WORKSPACE_ITEMS: readonly NavItemDefinition[] = [
 /** The network view (sites plan §H): about the whole instance rather than one site. */
 export const NETWORK_ITEMS: readonly NavItemDefinition[] = [
   { key: 'sites', labelKey: 'shell.nav.sites', icon: Globe2, to: '/network/sites' },
+  {
+    key: 'contentTypes',
+    labelKey: 'shell.nav.sharedContentTypes',
+    icon: Boxes,
+    to: '/network/content-types',
+    networkPermission: 'schema.create',
+  },
   {
     key: 'users',
     labelKey: 'shell.nav.users',

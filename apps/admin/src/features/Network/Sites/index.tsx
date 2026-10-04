@@ -14,7 +14,7 @@ import { useNetworkPermission } from '../hooks/useNetworkPermission';
 import { CreateSheet } from './CreateSheet';
 import { Table } from './Table';
 
-/** Network → Sites: every site on this instance; one login and one schema, separate content. */
+/** Network → Sites: every site on this instance; one login, each with its own content types and content. */
 export const Sites = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();

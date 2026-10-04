@@ -24,7 +24,7 @@ import {
   redirectModelsIndex,
   redirectNewModel,
 } from './modelRedirects';
-import { requireNetworkView } from './networkGuards';
+import { requireNetworkPermission, requireNetworkView } from './networkGuards';
 import { RootLayout } from './RootLayout';
 import {
   redirectIfSignedIn,
@@ -293,6 +293,21 @@ const networkRolesRoute = networkChild('roles', 'roles');
 const networkAppRolesRoute = networkChild('roles/app', 'appRoles');
 const networkAppRoleRoute = networkChild('roles/app/$roleId', 'appRole');
 
+// Shared content types need schema.create on every site (any other network action opens the view).
+const networkContentTypesRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'content-types',
+  beforeLoad: ({ context }) => requireNetworkPermission(context.queryClient, 'schema.create'),
+});
+const networkContentTypesIndexRoute = createRoute({
+  getParentRoute: () => networkContentTypesRoute,
+  path: '/',
+}).lazy(() => networkLazy().then((routes) => routes.contentTypes));
+const networkNewContentTypeRoute = createRoute({
+  getParentRoute: () => networkContentTypesRoute,
+  path: 'new',
+}).lazy(() => networkLazy().then((routes) => routes.newContentType));
+
 const networkAuditLogRoute = createRoute({
   getParentRoute: () => networkRoute,
   path: 'audit-log',
@@ -449,6 +464,7 @@ const routeTree = rootRoute.addChildren([
       networkIndexRoute,
       sitesRoute,
       siteRoute,
+      networkContentTypesRoute.addChildren([networkContentTypesIndexRoute, networkNewContentTypeRoute]),
       networkUsersRoute,
       networkRolesRoute,
       networkAppRolesRoute,

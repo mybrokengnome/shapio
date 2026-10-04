@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import type { DefinitionScope } from '@shapio/client';
 import {
   foldApiKey,
   isModelDefinition,
@@ -31,6 +32,8 @@ const createSchema = z
     pluralApiKey: z.string().trim(),
     description: z.string().trim(),
     localized: z.boolean(),
+    /** Where it lives: this site (the default) or shared with all sites. */
+    scope: z.enum(['site', 'network']),
   })
   .superRefine((values, context) => {
     const message =
@@ -42,13 +45,14 @@ const createSchema = z
 
 export type CreateDefinitionValues = z.infer<typeof createSchema>;
 
-const blank = (kind: CreateDefinitionValues['kind']): CreateDefinitionValues => ({
+const blank = (kind: CreateDefinitionValues['kind'], scope: DefinitionScope): CreateDefinitionValues => ({
   kind,
   label: '',
   apiKey: '',
   pluralApiKey: '',
   description: '',
   localized: false,
+  scope,
 });
 
 const toDefinition = ({
@@ -81,15 +85,19 @@ const ISSUE_FIELDS = ['apiKey', 'pluralApiKey'] as const;
 /**
  * Creates an empty model or component, live (a new definition has no content, so it activates at once),
  * then opens it in the builder. The API key follows the label, and a collection's plural API ID follows
- * the API key, until the user edits them.
+ * the API key, until the user edits them. It belongs to this site unless `scope` says otherwise (the
+ * network view creates shared definitions only).
  */
-export const useCreateDefinitionForm = (initialKind: CreateDefinitionValues['kind']) => {
+export const useCreateDefinitionForm = (
+  initialKind: CreateDefinitionValues['kind'],
+  initialScope: DefinitionScope = 'site',
+) => {
   const createDefinition = useCreateDefinition();
   const { definitions } = useAllDefinitions();
   const navigate = useNavigate();
   const form = useForm<CreateDefinitionValues>({
     resolver: zodResolver(createSchema),
-    defaultValues: blank(initialKind),
+    defaultValues: blank(initialKind, initialScope),
   });
   const { setValue, setError, getValues } = form;
   const label = useWatch({ control: form.control, name: 'label' });
@@ -117,7 +125,10 @@ export const useCreateDefinitionForm = (initialKind: CreateDefinitionValues['kin
     }
     const category = categoryOfKind(values.kind);
     const created = await settle(
-      createDefinition.mutateAsync({ category, input: { definition: toDefinition(values) } }),
+      createDefinition.mutateAsync({
+        category,
+        input: { definition: toDefinition(values), scope: values.scope },
+      }),
     );
     if (!created.ok) {
       const issues = schemaIssuesOf(createDefinition.error);

@@ -33,7 +33,7 @@ const PlaceScreen = ({ schema, model, locales }: PlaceScreenProps) => {
   const permissions = usePlacePermissions(model);
   const placeSearch = usePlaceSearch(model, locales.current);
   const requested = placeSearch.search.tab ?? 'entries';
-  const tab: PlaceTab = permissions.canManageSchema ? requested : 'entries';
+  const tab: PlaceTab = permissions.canSeeStructure ? requested : 'entries';
   const collection = model.kind === 'collection';
   const list = useEntryList(model.apiKey, placeSearch.query, collection && tab === 'entries');
   const search = placeSearch.search;
@@ -87,7 +87,7 @@ const PlaceScreen = ({ schema, model, locales }: PlaceScreenProps) => {
         );
     }
   };
-  return permissions.canManageSchema ? (
+  return permissions.canSeeStructure ? (
     <Tabs tab={tab} placeLabel={model.label} document={tab === 'entries' && !collection}>
       {content()}
     </Tabs>

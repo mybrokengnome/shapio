@@ -1,3 +1,4 @@
+import type { DefinitionScope } from '@shapio/client';
 import type { DefinitionKind } from '@shapio/schema';
 import { Link, type LinkOptions } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
@@ -18,8 +19,10 @@ import { useCreateDefinitionForm } from '@/features/Models/hooks/useCreateDefini
 import { useSchemaLock } from '@/features/Models/hooks/useSchemaLock';
 import { LockNotice } from '@/features/Models/LockNotice';
 import { cn } from '@/helpers/cn';
+import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { EndpointPreview } from '../EndpointPreview';
 import { KindPicker } from '../KindPicker';
+import { ScopePicker } from '../ScopePicker';
 
 type FormProps = {
   title: string;
@@ -30,16 +33,20 @@ type FormProps = {
   backLabel: string;
   /** Shown above the form (content types: "Describe it", when assist is on). */
   intro?: ReactNode;
+  /** A fixed scope hides the "Available on" control (the network view creates shared definitions). */
+  scope?: DefinitionScope;
 };
 
 /**
  * Creates a content type (collection or single type) or a component, live, then opens it for editing.
- * Shared by `/content/new` and `/develop/components/new`.
+ * Shared by `/content/new`, `/develop/components/new` and `/network/content-types/new`. Where there is more
+ * than one site, it asks where the definition is available (this site unless "All sites" is chosen).
  */
-export const Form = ({ title, kinds, back, backLabel, intro }: FormProps) => {
+export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps) => {
   const { t } = useTranslation();
   const { locked, reason } = useSchemaLock();
-  const { form, onSubmit, pending, error } = useCreateDefinitionForm(kinds[0]);
+  const { multiSite, canShare } = useSchemaScopeAccess();
+  const { form, onSubmit, pending, error } = useCreateDefinitionForm(kinds[0], scope);
   const [kind, apiKey, pluralApiKey] = useWatch({
     control: form.control,
     name: ['kind', 'apiKey', 'pluralApiKey'],
@@ -55,6 +62,9 @@ export const Form = ({ title, kinds, back, backLabel, intro }: FormProps) => {
         <form noValidate onSubmit={(event) => void onSubmit(event)}>
           <FieldGroup className="gap-5">
             {kinds.length > 1 ? <KindPicker control={form.control} kinds={kinds} /> : null}
+            {scope === undefined && multiSite ? (
+              <ScopePicker control={form.control} canShare={canShare} />
+            ) : null}
             <FormTextField control={form.control} name="label" label={t('models.label')} autoComplete="off" />
             {/* A collection's two API IDs sit side by side, with the names they produce below both. */}
             <div className={cn('grid items-start gap-5', isCollection && 'sm:grid-cols-2')}>

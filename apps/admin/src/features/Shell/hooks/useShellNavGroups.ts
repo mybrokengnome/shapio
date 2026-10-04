@@ -2,6 +2,7 @@ import { linkOptions, type LinkOptions } from '@tanstack/react-router';
 import { FileStack, FileText, Plus, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import {
   CONTENT_ITEMS,
   DEVELOP_ITEMS,
@@ -27,6 +28,8 @@ export type ShellNavItem = {
   count?: number;
   /** The quiet "+ New" row at the end of the places. */
   variant?: 'add';
+  /** A place shared with all sites (marked only where there is more than one site). */
+  shared?: boolean;
 };
 
 export type ShellNavGroup = {
@@ -52,12 +55,13 @@ export const fromDefinitions = (
       ...(item.exact ? { exact: true } : {}),
     }));
 
-const placeItem = (place: Place): ShellNavItem => ({
+const placeItem = (place: Place, multiSite: boolean): ShellNavItem => ({
   key: `place:${place.id}`,
   label: place.label,
   icon: PLACE_ICONS[place.kind],
   link: linkOptions({ to: '/content/$modelKey', params: { modelKey: place.apiKey } }),
   ...(place.count === undefined ? {} : { count: place.count }),
+  ...(multiSite && place.shared ? { shared: true } : {}),
 });
 
 /** The network view's one group: sites, admin users, roles and the audit log, as permitted. */
@@ -95,12 +99,13 @@ const useSiteNavGroups = (enabled: boolean): ShellNavGroup[] => {
   const { t } = useTranslation();
   const access = useNavAccess();
   const places = usePlaces();
+  const { multiSite } = useSchemaScopeAccess();
   return useMemo(() => {
     if (!enabled) {
       return [];
     }
     const label = (item: NavItemDefinition) => t(item.labelKey);
-    const placeItems = (places ?? []).map(placeItem);
+    const placeItems = (places ?? []).map((place) => placeItem(place, multiSite));
     const addType: ShellNavItem[] = access.canCreateType
       ? [
           {
@@ -132,5 +137,5 @@ const useSiteNavGroups = (enabled: boolean): ShellNavGroup[] => {
       },
     ];
     return groups.filter((group) => group.items.length > 0);
-  }, [enabled, access, places, t]);
+  }, [enabled, access, places, multiSite, t]);
 };

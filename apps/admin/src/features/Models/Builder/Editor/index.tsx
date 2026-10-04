@@ -11,11 +11,15 @@ import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { useSaveShortcut } from '@/hooks/useSaveShortcut';
+import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { draftKeyOf, useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { useSchemaLock } from '../../hooks/useSchemaLock';
+import { useSharedReadOnly } from '../../hooks/useSharedReadOnly';
 import { LockNotice } from '../../LockNotice';
+import { SharedNotice } from '../../SharedNotice';
 import { ActionFooter } from '../ActionFooter';
 import { ChangeProgress } from '../ChangeProgress';
+import { Scope } from '../DefinitionPanel/Scope';
 import { FieldList } from '../FieldList';
 import { FieldPanel } from '../FieldPanel';
 import { Header } from '../Header';
@@ -50,10 +54,13 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const { issues } = useDraftIssues();
   const { field, index } = useSelectedField();
   const { locked, reason } = useSchemaLock();
+  const sharedReadOnly = useSharedReadOnly(detail.scope);
+  const { multiSite } = useSchemaScopeAccess();
   const deleteDefinition = useDeleteDefinition();
   const newField = useNewField();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dismissedChangeId, setDismissedChangeId] = useState<string | undefined>(undefined);
+  const [scopeConflict, setScopeConflict] = useState(false);
 
   // A fresh draft each time the builder opens; it is forgotten when the builder closes.
   const initial = useRef(detail);
@@ -66,10 +73,10 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const visibleChangeId = changeId === dismissedChangeId ? undefined : changeId;
   const changeRunning = visibleChangeId !== undefined;
   const { changedElsewhere } = useRemoteChangeNotice(id, baseVersion, changeRunning || flow.applying);
-  const saveBlocked = locked || changeRunning;
+  const saveBlocked = locked || sharedReadOnly || changeRunning;
   const canReview = dirty && issues.length === 0 && !saveBlocked && !flow.reviewing;
   const planOpen = flow.state.step === 'review';
-  const conflict = flow.state.step === 'conflict';
+  const conflict = flow.state.step === 'conflict' || scopeConflict;
   useSaveShortcut(() => void flow.review(), canReview && !planOpen);
 
   if (loadedKey !== key || !draft) {
@@ -81,7 +88,19 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       logError(error, 'reloading the definition');
       toast.error(describeError(error));
     });
-  const editingDisabled = locked;
+  const editingDisabled = locked || sharedReadOnly;
+
+  const scopeSection = multiSite ? (
+    <Scope
+      category={category}
+      id={id}
+      label={draft.label}
+      scope={detail.scope}
+      blocked={dirty || changeRunning || flow.applying}
+      locked={locked}
+      onConflict={() => setScopeConflict(true)}
+    />
+  ) : null;
 
   const saveActions = {
     canDiscard: dirty,
@@ -108,6 +127,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
         onDelete={() => setConfirmingDelete(true)}
       />
       {locked ? <LockNotice reason={reason} /> : null}
+      {sharedReadOnly ? <SharedNotice /> : null}
       {changedElsewhere || conflict ? (
         <RemoteChangeBanner
           key={conflict ? 'conflict' : 'remote'}
@@ -115,10 +135,12 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
           dirty={dirty}
           onReload={() => {
             flow.resetStep();
+            setScopeConflict(false);
             reload('replace');
           }}
           onKeepEdits={() => {
             flow.resetStep();
+            setScopeConflict(false);
             reload('rebase');
           }}
         />
@@ -136,11 +158,12 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       ) : null}
       {/*
         One column below xl: settings, fields, then the properties pane (shown for a selected field).
-        Locked: every control is disabled individually, so fields can still be selected and read.
+        Locked (or shared and not ours to change): every control is disabled individually, so fields can
+        still be selected and read.
       */}
       <div className="grid min-w-0 gap-6 xl:grid-cols-[22.5rem_minmax(0,1fr)] xl:items-start">
         <div className="min-w-0 space-y-6">
-          <ModelSettings issues={issues} disabled={editingDisabled} />
+          <ModelSettings issues={issues} disabled={editingDisabled} scopeSection={scopeSection} />
           <FieldList issues={issues} disabled={editingDisabled} onAdd={newField.add} />
         </div>
         {field ? (
