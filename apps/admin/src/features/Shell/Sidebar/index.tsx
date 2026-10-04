@@ -57,14 +57,14 @@ export const Sidebar = memo(function Sidebar({ groups, activeKey, searchable }: 
   const { isMobile } = useSidebar();
   return (
     <SidebarRoot collapsible="icon">
-      <SidebarHeader className="gap-3 px-3 pt-5 pb-2">
+      <SidebarHeader className="gap-3 px-3 pt-4 pb-2 group-data-[collapsible=icon]:px-2">
         <div className="flex items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col">
           <Link
             to="/"
             aria-label={t('shell.home')}
             className="rounded-md px-1 outline-none group-data-[collapsible=icon]:px-0 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/50"
           >
-            <Wordmark className="group-data-[collapsible=icon]:[&>[data-slot=wordmark-letters]]:hidden" />
+            <Wordmark className="group-data-[collapsible=icon]:[&>[data-slot=wordmark-letters]]:hidden group-data-[collapsible=icon]:[&>svg]:h-8" />
           </Link>
           {/* The sheet closes with Escape or a tap outside; the visible trigger is for the desktop column. */}
           {isMobile ? null : <SidebarTrigger />}

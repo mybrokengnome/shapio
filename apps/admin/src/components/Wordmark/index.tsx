@@ -6,17 +6,17 @@ import { LETTER_PATHS, LETTERS_VIEWBOX } from './letters';
 
 /**
  * Mark and letters share one height, so the letters keep the logo's own proportions (x-height ≈ 0.35 × the
- * mark); the gap is the logo's own (0.15 × the mark).
+ * mark); the gap is the logo's own (about 0.15 × the mark).
  */
 const wordmarkVariants = cva('inline-flex shrink-0 items-center [&>svg]:w-auto', {
   variants: {
     size: {
-      /** Sidebar and the auth screens' compact header: 28px, letters read like text-xl. */
-      default: 'gap-1 [&>svg]:h-7',
-      /** Status bar and the phone header: 20px, letters read like text-sm. */
-      sm: 'gap-0.75 [&>svg]:h-5',
-      /** The auth brand panel: 40px. */
-      lg: 'gap-1.5 [&>svg]:h-10',
+      /** Sidebar and the auth screens' compact header: 36px. */
+      default: 'gap-1.5 [&>svg]:h-9',
+      /** Status bar and the phone header: 24px. */
+      sm: 'gap-1 [&>svg]:h-6',
+      /** The auth brand panel: 52px. */
+      lg: 'gap-2 [&>svg]:h-13',
     },
     variant: {
       /** Logo-blue mark, letters ink on light and ivory on dark. */

@@ -365,9 +365,9 @@ panel). Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
 
 **`Wordmark`** `{ size?: 'default' | 'sm' | 'lg'; variant?: 'default' | 'reverse'; className? }`: the logo,
 mark + the outlined "shapio" letters (`src/assets/brand/wordmark.svg`, `Wordmark/letters.ts`), announced as
-"Shapio". Mark and letters share one height so the lockup keeps the logo's proportions: `default` 28px
-(sidebar, the auth screens' compact header), `sm` 20px (status bar, phone bar), `lg` 40px (auth brand panel,
-with `variant="reverse"`). The letters take `currentColor`: ink on light, ivory on dark (`reverse`: the
+"Shapio". Mark and letters share one height so the lockup keeps the logo's proportions: `default` 36px
+(sidebar, the auth screens' compact header; the collapsed sidebar shows the mark alone at 32px), `sm` 24px
+(status bar, phone bar), `lg` 52px (auth brand panel, with `variant="reverse"`). The letters take `currentColor`: ink on light, ivory on dark (`reverse`: the
 surface's text colour). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
 the mark alone. Never set "shapio" as text for the brand.
 
