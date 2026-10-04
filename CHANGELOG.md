@@ -6,6 +6,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.1] - 2026-10-04
+
 ### Added
 
 - **Named admin themes.** Each person picks a theme and a colour mode (System, Light or Dark) from the account
