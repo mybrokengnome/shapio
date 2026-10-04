@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Shapio</title>
+    <!-- PNG first, SVG last: browsers that can use the SVG pick it, the rest fall back to the PNG. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Applies the saved or OS theme before first paint (no flash). External: the CSP forbids inline scripts. -->
     <script src="/theme-init.js"></script>
   </head>

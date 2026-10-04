@@ -64,7 +64,7 @@ export const Sidebar = memo(function Sidebar({ groups, activeKey, searchable }: 
             aria-label={t('shell.home')}
             className="rounded-md px-1 outline-none group-data-[collapsible=icon]:px-0 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/50"
           >
-            <Wordmark className="group-data-[collapsible=icon]:[&>span]:hidden" />
+            <Wordmark className="group-data-[collapsible=icon]:[&>[data-slot=wordmark-letters]]:hidden" />
           </Link>
           {/* The sheet closes with Escape or a tap outside; the visible trigger is for the desktop column. */}
           {isMobile ? null : <SidebarTrigger />}

@@ -2,30 +2,63 @@ import { cva } from 'class-variance-authority';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/helpers/cn';
 import { Logo } from '../Logo';
+import { LETTER_PATHS, LETTERS_VIEWBOX } from './letters';
 
-const wordmarkVariants = cva('inline-flex items-center', {
+/**
+ * Mark and letters share one height, so the letters keep the logo's own proportions (x-height ≈ 0.35 × the
+ * mark); the gap is the logo's own (0.15 × the mark).
+ */
+const wordmarkVariants = cva('inline-flex shrink-0 items-center [&>svg]:w-auto', {
   variants: {
     size: {
-      /** Sidebar and auth screens: 28px mark. */
-      default: 'gap-2 [&>span]:text-xl [&>svg]:size-7',
-      /** Status bar and the phone header: 16px mark. */
-      sm: 'gap-1.5 [&>span]:text-sm [&>svg]:size-4',
+      /** Sidebar and the auth screens' compact header: 28px, letters read like text-xl. */
+      default: 'gap-1 [&>svg]:h-7',
+      /** Status bar and the phone header: 20px, letters read like text-sm. */
+      sm: 'gap-0.75 [&>svg]:h-5',
+      /** The auth brand panel: 40px. */
+      lg: 'gap-1.5 [&>svg]:h-10',
+    },
+    variant: {
+      /** Logo-blue mark, letters ink on light and ivory on dark. */
+      default: 'text-ink dark:text-ivory',
+      /** For cobalt surfaces: reverse mark, letters in the surface's text colour. */
+      reverse: '',
     },
   },
-  defaultVariants: { size: 'default' },
+  defaultVariants: { size: 'default', variant: 'default' },
 });
 
-type WordmarkProps = { size?: 'default' | 'sm'; className?: string };
+type WordmarkProps = {
+  size?: 'default' | 'sm' | 'lg';
+  variant?: 'default' | 'reverse';
+  className?: string;
+};
 
-/** Mark + "shapio" in Manrope ExtraBold, as in the brand sheet. Ink on light, ivory on dark. */
-export const Wordmark = ({ size, className }: WordmarkProps) => {
+/**
+ * The Shapio logo: mark + "shapio" letters (src/assets/brand/logo-horizontal.svg). The letters take
+ * `currentColor`. Announced as "Shapio"; the letters carry `data-slot="wordmark-letters"` so a container can
+ * hide them (the collapsed sidebar shows the mark only).
+ */
+export const Wordmark = ({ size, variant, className }: WordmarkProps) => {
   const { t } = useTranslation();
   return (
-    <span className={cn(wordmarkVariants({ size }), className)}>
-      <Logo />
-      <span className="font-extrabold tracking-tight text-ink lowercase dark:text-ivory">
-        {t('app.name')}
-      </span>
+    <span
+      role="img"
+      aria-label={t('app.name')}
+      className={cn(wordmarkVariants({ size, variant }), className)}
+    >
+      <Logo variant={variant ?? 'default'} />
+      <svg
+        viewBox={LETTERS_VIEWBOX}
+        aria-hidden="true"
+        focusable="false"
+        data-slot="wordmark-letters"
+        className="fill-current"
+      >
+        {LETTER_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
     </span>
   );
 };

@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
     "e2e": "playwright test",
-    "e2e:locked": "node scripts/e2eLocked.mjs"
+    "e2e:locked": "node scripts/e2eLocked.mjs",
+    "brand:icons": "node scripts/brandIcons.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "catalog:",
@@ -68,6 +69,7 @@
     "jsdom": "catalog:",
     "mysql2": "catalog:",
     "pg": "catalog:",
+    "sharp": "catalog:",
     "tailwindcss": "catalog:",
     "tw-animate-css": "catalog:",
     "typescript": "catalog:",

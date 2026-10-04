@@ -32,7 +32,8 @@ the `info` status chip (`info-muted`); status tones are semantic and allowed.
 | `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds (`info-muted`: the info chip only in light)           |
 | `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                                       |
 | `sidebar*`                                              | the sidebar column (deeper ivory), active pill (white, ink text), active bar (`sidebar-primary`)   |
-| `cobalt`, `periwinkle`, `ink`, `ivory`                  | brand: the wordmark and deliberate accents only                                                    |
+| `cobalt`, `periwinkle`, `ink`, `ivory`                  | brand: deliberate accents, the wordmark letters (ink/ivory)                                        |
+| `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): its own blue `#2F5BFF` and white S; never UI                               |
 
 Radius: `--radius` is 8px. Controls and buttons `rounded-lg` (8px), cards/panels/dialogs `rounded-xl`
 (12px), chips `rounded-full`.
@@ -48,10 +49,10 @@ toasts already do.
 Both faces are variable, self-hosted from `public/fonts` (latin + latin-ext subsets, `font-display: swap`,
 no runtime request to a font service), declared in `src/styles/index.css`.
 
-| Face                                                     | Token        | Use                                                             | Licence                                          |
-| -------------------------------------------------------- | ------------ | --------------------------------------------------------------- | ------------------------------------------------ |
-| Manrope (wght 200–800, roman)                            | `font-sans`  | the whole UI, the default on `body`; ExtraBold for the wordmark | SIL OFL 1.1, `public/fonts/OFL.txt`              |
-| Source Serif 4 (wght 200–900, roman + italic, no `opsz`) | `font-serif` | the reading face: rich-text body in the document canvas only    | SIL OFL 1.1, `public/fonts/OFL-SourceSerif4.txt` |
+| Face                                                     | Token        | Use                                                          | Licence                                          |
+| -------------------------------------------------------- | ------------ | ------------------------------------------------------------ | ------------------------------------------------ |
+| Manrope (wght 200–800, roman)                            | `font-sans`  | the whole UI, the default on `body`                          | SIL OFL 1.1, `public/fonts/OFL.txt`              |
+| Source Serif 4 (wght 200–900, roman + italic, no `opsz`) | `font-serif` | the reading face: rich-text body in the document canvas only | SIL OFL 1.1, `public/fonts/OFL-SourceSerif4.txt` |
 
 The serif is for what people write, never for chrome: no serif buttons, labels, tables, menus or titles
 outside the canvas. The document title stays Manrope (`text-display`).
@@ -358,11 +359,22 @@ message.
 ### Brand
 
 **`Logo`** `{ variant?: 'default' | 'reverse'; className? }`
-The mark, decorative (`aria-hidden`), 32px by default. `default` is full colour; `reverse` is ivory bands
-on a cobalt tile, for cobalt surfaces (the auth brand panel). Geometry from `brand/shapio-mark*.svg`.
+The mark, decorative (`aria-hidden`), 32px by default. `default`: the logo-blue rounded tile with a white S,
+the same in light and dark. `reverse`: an ivory tile with the S cut out, for cobalt surfaces (the auth brand
+panel). Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
 
-**`Wordmark`** `{ size?: 'default' | 'sm'; className? }`: mark + "shapio" (sidebar, mobile bar, status bar, the auth
-screens' compact header).
+**`Wordmark`** `{ size?: 'default' | 'sm' | 'lg'; variant?: 'default' | 'reverse'; className? }`: the logo,
+mark + the outlined "shapio" letters (`src/assets/brand/wordmark.svg`, `Wordmark/letters.ts`), announced as
+"Shapio". Mark and letters share one height so the lockup keeps the logo's proportions: `default` 28px
+(sidebar, the auth screens' compact header), `sm` 20px (status bar, phone bar), `lg` 40px (auth brand panel,
+with `variant="reverse"`). The letters take `currentColor`: ink on light, ivory on dark (`reverse`: the
+surface's text colour). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
+the mark alone. Never set "shapio" as text for the brand.
+
+Brand files live in `src/assets/brand/` (`mark.svg`, `wordmark.svg`, `logo-horizontal.svg`; the letters are
+`currentColor`, navy by default and white under a dark colour scheme). `pnpm --filter @shapio/admin
+brand:icons` regenerates `public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` from `mark.svg`;
+`Logo/brandAssets.test.ts` keeps the components, the files and the favicon on the same geometry.
 
 **`BrandMessage`** `{ title; description; actions; className? }`
 A whole-screen message on brand (not found, a route that failed): mark, title, one line, actions.

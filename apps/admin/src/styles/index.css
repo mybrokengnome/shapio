@@ -89,6 +89,9 @@
   --color-periwinkle: #a5b4fc;
   --color-ink: #0f172a;
   --color-ivory: #faf9f6;
+  /* The logo's own blue and its white S (components/Logo). The mark only: never a UI colour, which stays cobalt. */
+  --color-brand-logo: #2f5bff;
+  --color-brand-logo-foreground: #ffffff;
 
   /* Type scale additions (DESIGN.md): document title, page title, meta/hint text, tiny chips. Registered in
      helpers/cn.ts. */
