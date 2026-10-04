@@ -1,15 +1,15 @@
 # Extensions
 
 Extensions are your own code running inside Shapio: lifecycle hooks, custom routes, shared services, background
-jobs and custom field editors. They are configured in the project's `shapio.config.ts` and its `extensions/`
+jobs, custom field editors and admin colour themes. They are configured in the project's `shapio.config.ts` and its `extensions/`
 folder.
 
 Shapio has two kinds of change, and they behave differently:
 
-| You change                                                              | How                                  | Restart? | Rebuild? |
-| ----------------------------------------------------------------------- | ------------------------------------ | -------- | -------- |
-| Content models, fields, editors chosen per field, permissions           | Admin UI or `shapio schema apply`    | **No**   | **No**   |
-| Extensions: hooks, custom routes, services, jobs, custom editor modules | `shapio.config.ts` and `extensions/` | **Yes**  | **No**   |
+| You change                                                                            | How                                  | Restart? | Rebuild? |
+| ------------------------------------------------------------------------------------- | ------------------------------------ | -------- | -------- |
+| Content models, fields, editors chosen per field, permissions                         | Admin UI or `shapio schema apply`    | **No**   | **No**   |
+| Extensions: hooks, custom routes, services, jobs, custom editor modules, admin themes | `shapio.config.ts` and `extensions/` | **Yes**  | **No**   |
 
 Extensions are code you run inside Shapio, so they load once at startup. Changing them means restarting Shapio (`pm2 restart`, `docker compose restart`, `systemctl restart`). You never rebuild Shapio or its admin. Modelling never needs a restart.
 
@@ -26,6 +26,7 @@ export const config = defineConfig({
   services: {}, // shared objects, constructed once
   jobs: {}, // background job handlers
   editors: [], // custom field editor modules in extensions/editors/
+  themes: [], // admin colour themes
 });
 ```
 
@@ -42,7 +43,7 @@ export const config = defineConfig({
 
   A file that fails to load reports `file:line:column` where possible.
 
-- **Check in CI:** `npx shapio extensions check` loads and validates the config without a database. It lists every hook, route, service, job and editor, and exits 1 on any problem, including an editor file that is missing from `extensions/editors/`.
+- **Check in CI:** `npx shapio extensions check` loads and validates the config without a database. It lists every hook, route, service, job, editor and theme, and exits 1 on any problem, including an editor file that is missing from `extensions/editors/`. Theme contrast problems are listed as warnings and do not fail it.
 
 The API server and the worker (`WORKER_MODE=inline`, or a separate `shapio worker`) load the same config. Give a dedicated worker the same `SHAPIO_CONFIG_PATH` and files as the API.
 
@@ -275,6 +276,65 @@ An editor built for another contract version, a module without an editor, a dupl
 fails to load is skipped (logged), and the field falls back to its built-in editor; so does a field whose
 editor throws while rendering. `npx shapio extensions check` reports missing editor files.
 
+## Admin themes
+
+`themes` adds colour themes to the admin. They appear after the built-in ones (Shapio, Classic, Murdered out,
+Snowed) in the account menu, in Settings → Appearance and on the sign-in screen. A theme is a set of values for
+the admin's colour tokens, for a light variant, a dark variant, or both:
+
+```ts
+import { defineConfig, type ThemeDefinition } from '@shapio/cms/config';
+
+const sepia: ThemeDefinition = {
+  key: 'sepia', // lower-case letters, digits and dashes
+  name: 'Sepia', // shown as is (not translated)
+  description: 'Warm paper and walnut. Light only.',
+  light: {
+    background: '#f6efe3',
+    foreground: '#2b2118',
+    primary: '#7a3e12',
+    'primary-foreground': '#fffaf2',
+    // ...every other UI token
+  },
+};
+
+export const config = defineConfig({ themes: [sepia] });
+```
+
+[`examples/extension/extensions/sepiaTheme.ts`](../examples/extension/extensions/sepiaTheme.ts) is the complete
+theme. Changing a theme needs a restart, like the rest of the config.
+
+- **Tokens:** the names are `THEME_TOKENS` in
+  [`packages/schema/src/themes/tokens.ts`](../packages/schema/src/themes/tokens.ts). A variant must set every UI
+  token (`THEME_SEMANTIC_TOKENS`: `background`, `foreground`, `card`, `card-foreground`, `popover`,
+  `popover-foreground`, `primary`, `primary-foreground`, `primary-hover`, `secondary`, `secondary-foreground`,
+  `muted`, `muted-foreground`, `accent`, `accent-foreground`, `destructive`, `destructive-foreground`,
+  `destructive-muted`, `success`, `success-muted`, `warning`, `warning-muted`, `info`, `info-muted`, `border`,
+  `input`, `ring`, `link`, `overlay`, `sidebar`, `sidebar-foreground`, `sidebar-primary`,
+  `sidebar-primary-foreground`, `sidebar-accent`, `sidebar-accent-foreground`, `sidebar-border`,
+  `sidebar-ring`). The brand tokens (`THEME_BRAND_TOKENS`: `brand-logo`, `brand-logo-foreground`,
+  `brand-letters`, `brand-panel-from`, `brand-panel-to`, `brand-panel-foreground`, `brand-panel-mark`) are
+  optional; without them the logo and the sign-in brand panel use Shapio's colours. What each token is for:
+  the admin's design notes, [`apps/admin/DESIGN.md`](../apps/admin/DESIGN.md#tokens).
+- **Variants:** a theme with only `light` or only `dark` always renders that variant, whatever the person's
+  colour mode (the mode is greyed out while it is picked).
+- **Validation** (startup and `shapio extensions check` stop with the path of each problem): the key must match
+  `^[a-z][a-z0-9-]{0,40}$`, may not be a built-in theme's key (`shapio`, `classic`, `murdered-out`, `snowed`) and
+  may not repeat; a theme needs at least one variant; a missing or unknown token is named
+  (`/themes/0/light/backgrund: unknown theme token "backgrund"`); and every value must be a colour: `#rgb`,
+  `#rrggbb`, `#rrggbbaa`, or `rgb()`, `hsl()`, `oklch()`, `oklab()` with plain arguments. Nothing else is
+  accepted, so a value can't inject CSS.
+- **Contrast:** `npx shapio extensions check` measures the pairs the built-in themes are held to (WCAG 2.1 AA:
+  text at 4.5:1, control borders and focus rings at 3:1) and lists each failure under **Warnings**, for
+  example `sepia (light): --muted-foreground on --muted is 3.90:1, needs 4.5:1`. Warnings don't fail the check.
+  Only `#rrggbb` values can be measured; a variant using other formats is reported as not fully checked.
+- **How the admin gets them:** two public routes (no session, since the sign-in screen uses them; they hold
+  colours only). `GET /api/admin/extensions/themes` lists `{ key, name, description, variants }`, and
+  `GET /api/admin/extensions/themes.css` is the stylesheet (empty without themes, revalidated on each load
+  with an `ETag`). The admin links the stylesheet render-blocking from its page and remembers the chosen
+  theme's variants in the browser, so a custom theme applies before first paint like a built-in one. If a
+  theme is removed, people who had picked it get Shapio.
+
 ## Error reporting
 
 Shapio ships no error-reporting integration; add one yourself if you want it. Every request that fails with a
@@ -304,7 +364,7 @@ error handler still writes the response.
 
 ## Example
 
-[`examples/extension`](../examples/extension) has a `beforePublish` hook that rejects an Article without a cover image, a `*` `afterPublish` hook, a `stats` service, the routes `GET /api/ext/example/stats` and `POST /api/ext/example/reports`, and an `ext.statsReport` job. To try it:
+[`examples/extension`](../examples/extension) has a `beforePublish` hook that rejects an Article without a cover image, a `*` `afterPublish` hook, a `stats` service, the routes `GET /api/ext/example/stats` and `POST /api/ext/example/reports`, an `ext.statsReport` job, and a light-only admin theme, Sepia. To try it:
 
 ```sh
 cp -r examples/extension/shapio.config.ts examples/extension/extensions my-cms/

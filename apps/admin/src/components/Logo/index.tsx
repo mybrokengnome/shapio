@@ -5,8 +5,8 @@ type LogoVariant = 'default' | 'reverse';
 
 type LogoProps = {
   /**
-   * `default`: the logo-blue tile with a white S, on light and dark. `reverse`: an ivory tile with the S cut out,
-   * for cobalt surfaces (the auth brand panel), where the blue tile would not stand out.
+   * `default`: the brand tile with its S, on any ground. `reverse`: for the auth brand panel, the tile in the
+   * theme's brand-panel-mark colour (the S stays the brand's, so the mark reads the same in every theme).
    */
   variant?: LogoVariant;
   className?: string;
@@ -21,13 +21,7 @@ export const Logo = ({ variant = 'default', className }: LogoProps) => (
     data-slot="logo"
     className={cn('size-8 shrink-0', className)}
   >
-    {variant === 'reverse' ? (
-      <path className="fill-ivory" d={MARK_PATH} />
-    ) : (
-      <>
-        <path className="fill-brand-logo-foreground" d={MARK_S_PATH} />
-        <path className="fill-brand-logo" d={MARK_PATH} />
-      </>
-    )}
+    <path className="fill-brand-logo-foreground" d={MARK_S_PATH} />
+    <path className={variant === 'reverse' ? 'fill-brand-panel-mark' : 'fill-brand-logo'} d={MARK_PATH} />
   </svg>
 );

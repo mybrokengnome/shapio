@@ -1,22 +1,16 @@
 import { useEffect } from 'react';
+import { useResolvedScheme } from '@/hooks/useResolvedScheme';
 import { useThemeStore } from '@/stores/theme';
 
-const DARK_QUERY = '(prefers-color-scheme: dark)';
-
-/** Keeps the `dark` class on <html> in sync with the saved preference and, for "system", the OS setting. */
+/**
+ * Keeps `data-theme` and the `dark` class on <html> in step with the saved theme and appearance (and, for
+ * "system", the OS setting). public/theme-init.js sets the same before first paint.
+ */
 export const useApplyTheme = () => {
-  const preference = useThemeStore((state) => state.preference);
+  const theme = useThemeStore((state) => state.theme);
+  const scheme = useResolvedScheme();
   useEffect(() => {
-    const media = window.matchMedia(DARK_QUERY);
-    const apply = () => {
-      const dark = preference === 'dark' || (preference === 'system' && media.matches);
-      document.documentElement.classList.toggle('dark', dark);
-    };
-    apply();
-    if (preference !== 'system') {
-      return undefined;
-    }
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [preference]);
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', scheme === 'dark');
+  }, [theme, scheme]);
 };

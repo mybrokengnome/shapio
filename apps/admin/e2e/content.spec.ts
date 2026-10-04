@@ -3,7 +3,7 @@ import { adminApiFor, id, type AdminApi } from './content/api';
 import { startProjectServer, type ProjectServer } from './content/projectServer';
 import { author, feature, hero, page as pageModel, siteSettings } from './content/schema';
 import { OWNER } from './support/accounts';
-import { captureScreen, type ViewportName } from './support/capture';
+import { captureRendered, captureScreen, type ViewportName } from './support/capture';
 import { entryDocument } from './support/entryDocument';
 
 /**
@@ -123,6 +123,34 @@ test('a place: its name, New, an empty state, and Structure and API tabs for sch
   await captureScreen(page, 'place-02-structure', DESKTOP);
   await tabs.getByRole('tab', { name: 'Entries' }).click();
   await expect(page.getByText('No Page entries yet')).toBeVisible();
+});
+
+test("the project's colour theme is in the theme menu on sign-in and applies before first paint", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const signedOut = await context.newPage();
+  signedOut.on('pageerror', (error) => pageErrors.push(error.message));
+  await signedOut.emulateMedia({ colorScheme: 'dark' });
+  await signedOut.goto(server.adminUrl);
+  await expect(signedOut.getByRole('button', { name: 'Sign in' })).toBeVisible();
+  await signedOut.getByRole('button', { name: 'Change theme' }).click();
+  await signedOut.getByRole('menuitemradio', { name: 'Sepia' }).click();
+  await signedOut.keyboard.press('Escape');
+  const html = signedOut.locator('html');
+  // Light only: the OS's dark preference does not apply.
+  await expect(html).toHaveAttribute('data-theme', 'sepia');
+  await expect(html).not.toHaveClass(/\bdark\b/);
+  const background = () => signedOut.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(await background()).toBe('rgb(246, 239, 227)');
+  // The pre-paint script and the render-blocking stylesheet apply it before the admin's script runs.
+  await signedOut.reload({ waitUntil: 'commit' });
+  await signedOut.waitForFunction(() => document.body !== null);
+  expect(await signedOut.evaluate(() => document.documentElement.dataset.theme)).toBe('sepia');
+  await expect(signedOut.getByRole('button', { name: 'Sign in' })).toBeVisible();
+  expect(await background()).toBe('rgb(246, 239, 227)');
+  await captureRendered(signedOut, 'theme-sepia-light-sign-in');
+  await context.close();
 });
 
 test("the project's custom editor is served from the create-shapio project and loads at runtime", async () => {

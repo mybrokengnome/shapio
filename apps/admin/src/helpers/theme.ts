@@ -1,11 +1,23 @@
-import type { ThemePreference } from '@/stores/theme';
+import type { ThemeVariant } from '@shapio/schema';
+import type { Appearance } from '@/constants/themes';
 
-/** The theme actually rendered: light or dark, never "system". */
-export type ResolvedTheme = Exclude<ThemePreference, 'system'>;
+/**
+ * The variant actually rendered: the appearance (the OS's for "system") when the theme has that variant,
+ * else the theme's only variant. public/theme-init.js repeats this before first paint (test/themeInit.test.ts
+ * keeps the two in step).
+ */
+export const resolveScheme = (
+  appearance: Appearance,
+  variants: readonly ThemeVariant[],
+  systemPrefersDark: boolean,
+): ThemeVariant => {
+  const preferred: ThemeVariant =
+    appearance === 'system' ? (systemPrefersDark ? 'dark' : 'light') : appearance;
+  return variants.includes(preferred) ? preferred : (variants[0] ?? preferred);
+};
 
-/** What a preference renders as, given whether the OS currently prefers dark. */
-export const resolveTheme = (preference: ThemePreference, systemPrefersDark: boolean): ResolvedTheme =>
-  preference === 'system' ? (systemPrefersDark ? 'dark' : 'light') : preference;
+/** A theme with one variant ignores the appearance setting. */
+export const hasSingleVariant = (variants: readonly ThemeVariant[]) => variants.length === 1;
 
-/** The explicit theme a one-click switch moves to: the opposite of what is rendered now. */
-export const oppositeTheme = (theme: ResolvedTheme): ResolvedTheme => (theme === 'dark' ? 'light' : 'dark');
+/** The explicit appearance a one-click switch moves to: the opposite of what is rendered now. */
+export const oppositeScheme = (scheme: ThemeVariant): ThemeVariant => (scheme === 'dark' ? 'light' : 'dark');

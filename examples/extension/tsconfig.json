@@ -10,6 +10,8 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
+    // Inside the repository: workspace packages from their TypeScript source, as in the other examples.
+    "customConditions": ["@shapio/source"],
     "types": ["node"],
     "typeRoots": ["../../apps/api/node_modules/@types"],
     // Inside the Shapio repository only: type against the server's source. In your own project `@shapio/cms`

@@ -1,3 +1,4 @@
+import type { ThemeToken } from '@shapio/schema';
 import type { FastifyBaseLogger, FastifyPluginAsync, preHandlerAsyncHookHandler } from 'fastify';
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
@@ -256,6 +257,24 @@ export type JobHandlerContext = {
 /** Throw to retry with backoff; the return value (JSON) is stored as the job result. */
 export type ExtensionJobHandler = (context: JobHandlerContext) => Promise<unknown>;
 
+/**
+ * A colour theme for the admin: token values for a light variant, a dark variant, or both. Every UI token is
+ * required in a variant; the `brand-*` tokens may be left out (Shapio's are used). Values are `#rrggbb`
+ * (contrast is checked by `shapio extensions check`), `#rgb`, `#rrggbbaa`, or `rgb()`, `hsl()`, `oklch()`,
+ * `oklab()` with plain arguments.
+ */
+export type ThemeTokens = Partial<Record<ThemeToken, string>>;
+
+export type ThemeDefinition = {
+  /** Lower-case letters, digits and dashes; not a built-in theme's key. Saved in each browser's setting. */
+  key: string;
+  /** Shown in the theme menu (not translated). */
+  name: string;
+  description?: string;
+  light?: ThemeTokens;
+  dark?: ThemeTokens;
+};
+
 export type ShapioConfig = {
   /** Lifecycle hooks by model API ID (or stable model UUID); `*` runs for every model. */
   hooks?: Record<string, ModelHooks>;
@@ -266,6 +285,8 @@ export type ShapioConfig = {
   editors?: string[];
   /** Job handlers by name; registered as `ext.<name>`. */
   jobs?: Record<string, ExtensionJobHandler>;
+  /** Admin colour themes, listed after the built-in ones in the theme menu. */
+  themes?: ThemeDefinition[];
 };
 
 /** Identity helper for completion and type checking in `shapio.config.ts`. */

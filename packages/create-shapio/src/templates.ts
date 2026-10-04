@@ -83,6 +83,10 @@ export const config = defineConfig({
   // ['star-rating.js']. The admin loads them at runtime; installing one is a file copy plus a restart.
   editors: [],
 
+  // Admin colour themes, listed after the built-in ones. Each variant sets every UI token; see
+  // documentation/extensions.md (Admin themes) and examples/extension/extensions/sepiaTheme.ts.
+  // themes: [{ key: 'acme', name: 'Acme', dark: { background: '#101014', foreground: '#f4f4f5', ... } }],
+
   // Custom Fastify routes, mounted at /api/ext/<prefix>. Mutating routes must declare config.audit.
   // routes: [{ prefix: 'acme', plugin: async (app) => { app.get('/ping', async () => ({ ok: true })); } }],
 

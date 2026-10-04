@@ -6,7 +6,29 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Named admin themes.** Each person picks a theme and a colour mode (System, Light or Dark) from the account
+  menu, Settings → Appearance or the sign-in screen; the choice is saved in that browser and applied before
+  first paint. Four are built in: **Shapio** (the new brand: plum, cream and acid yellow; light and dark, the
+  default), **Classic** (the previous cobalt look, colours unchanged; light and dark), **Murdered out** (dark
+  only) and **Snowed** (light only). A theme with one variant ignores the colour mode. Every built-in theme is
+  checked for WCAG 2.1 AA contrast. See [First admin: appearance](documentation/first-admin.md#appearance).
+- **Extension themes.** `shapio.config` takes `themes: ThemeDefinition[]`: token values for a light and/or dark
+  variant. Startup validates the keys, tokens and colour values; `shapio extensions check` lists themes and warns
+  about contrast below AA. The admin reads them from two public routes, `GET /api/admin/extensions/themes` and
+  `GET /api/admin/extensions/themes.css`. The token list is exported from `@shapio/schema` (`THEME_TOKENS`).
+  `examples/extension` adds a Sepia theme. See [Extensions: admin themes](documentation/extensions.md#admin-themes).
+
+### Changed
+
+- **New brand: acid yellow and plum.** The logo is an acid-yellow tile with a plum S; the letters are plum on
+  light grounds and cream on dark. It is used in every theme, Classic included, and in the favicon and touch
+  icon. The previous blue logo files stay in `brand/` as `classic-*`.
+- **Upgrading:** anyone who had chosen System, Light or Dark keeps that colour mode and moves to the **Classic**
+  theme, so the admin looks as before (apart from the logo) until they pick another theme. People who never chose
+  one, and new installs, get **Shapio** following the operating system. Settings → Theme is now Settings →
+  Appearance.
 
 ## [0.3.0] - 2026-10-04
 

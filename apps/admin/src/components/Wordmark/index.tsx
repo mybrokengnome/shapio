@@ -19,9 +19,9 @@ const wordmarkVariants = cva('inline-flex shrink-0 items-center [&>svg]:w-auto',
       lg: 'gap-2 [&>svg]:h-13',
     },
     variant: {
-      /** Logo-blue mark, letters ink on light and ivory on dark. */
-      default: 'text-ink dark:text-ivory',
-      /** For cobalt surfaces: reverse mark, letters in the surface's text colour. */
+      /** The mark, letters in the theme's brand-letters colour (plum on light grounds, cream on dark). */
+      default: 'text-brand-letters',
+      /** For the brand panel: the panel mark, letters in the surface's text colour. */
       reverse: '',
     },
   },

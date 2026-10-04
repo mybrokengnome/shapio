@@ -6,34 +6,96 @@ Rules from `CONTRIBUTING.md` (Tailwind only, `cn()`, semantic tokens, dark mode,
 
 ## Tokens
 
-Defined once in `src/styles/index.css` as CSS variables with a light and a dark value, exposed to
-Tailwind as colours (`bg-card`, `text-muted-foreground`, ...). Components use these names, never hex,
-arbitrary colours (`bg-[#…]`) or Tailwind's default palette (`bg-green-100`, `text-white`).
-`src/test/conventions.test.ts` fails on all three; `src/test/contrast.test.ts` checks every text pair at
-4.5:1 and every control/focus pair at 3:1 in both themes.
+Components use semantic tokens, exposed to Tailwind as colours (`bg-card`, `text-muted-foreground`, ...),
+never hex, arbitrary colours (`bg-[#…]`) or Tailwind's default palette (`bg-green-100`, `text-white`).
+`src/test/conventions.test.ts` fails on all three.
 
-**One accent, never a surface.** Cobalt (`primary`, `link`, `ring`, `sidebar-primary`) marks primary
-buttons, links, the focus ring and the active nav bar, nothing else. Every surface, including hover and
-selection, is a warm neutral (red ≥ green ≥ blue) in both themes. The only blue-tinted fill in light is
-the `info` status chip (`info-muted`); status tones are semantic and allowed.
+### Themes
 
-| Token                                                   | Use                                                                                                |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `background`                                            | the page (ivory / warm near-black; surfaces are warm neutral, never blue)                          |
-| `card`, `popover`                                       | cards, panels, tables, dialogs, sheets, menus                                                      |
-| `foreground`                                            | text (ink)                                                                                         |
-| `muted`, `muted-foreground`                             | subtle fills (table header, hover, icon tiles, info alert), secondary text                         |
-| `primary` (+ `primary-hover`, `primary-foreground`)     | the one accent: primary buttons, active tab bar, focus ring, icons on tiles; never a fill          |
-| `accent`, `accent-foreground`                           | selection and menu focus, warm neutral with ink text (selected tiles add a `primary` border)       |
-| `border`                                                | 1px borders everywhere; cards have no shadow                                                       |
-| `input`                                                 | control borders (a mid grey: 3:1 on every surface, WCAG 1.4.11, darker than the mockup on purpose) |
-| `ring`                                                  | focus rings, always `ring-[3px] ring-ring/50`                                                      |
-| `link`                                                  | text links (cobalt; periwinkle in dark)                                                            |
-| `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds (`info-muted`: the info chip only in light)           |
-| `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                                       |
-| `sidebar*`                                              | the sidebar column (deeper ivory), active pill (white, ink text), active bar (`sidebar-primary`)   |
-| `cobalt`, `periwinkle`, `ink`, `ivory`                  | brand: deliberate accents, the wordmark letters (ink/ivory)                                        |
-| `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): its own blue `#2F5BFF` and white S; never UI                               |
+A theme is a named, complete set of the tokens below for a light variant, a dark variant, or both. The token
+list is `THEME_TOKENS` in `@shapio/schema` (shared with the API, which validates extension themes). Each
+built-in theme is one file, `src/styles/themes/<key>.css`, imported by `src/styles/index.css` and scoped to
+`[data-theme='<key>']` (light, or the only variant) and `[data-theme='<key>'].dark`. Shapio's values also sit
+on zero-specificity `:where(:root)` / `:where(:root.dark)` blocks: the fallback before the theme script runs
+or when a saved theme's CSS is gone. `index.css` maps the tokens to Tailwind (`@theme inline`) and holds no
+colour values.
+
+- `public/theme-init.js` sets `data-theme` and `dark` on `<html>` before first paint from the theme store
+  (`stores/theme.ts`: `theme`, `appearance`, and the theme's cached `variants`), so there is no flash;
+  `hooks/useApplyTheme.ts` keeps them in step afterwards. A single-variant theme renders its only variant
+  whatever the appearance, and `dark` is set for every dark-rendering theme, so `dark:` variants and
+  `color-scheme` follow. `src/test/themeInit.test.ts` keeps the script and `helpers/theme.ts` in step.
+- `src/test/contrast.test.ts` checks every theme and variant: exactly `THEME_TOKENS`, `#rrggbb` values, every
+  text pair at 4.5:1 and every control/focus pair at 3:1 (pairs in `@shapio/schema` `themes/contrast.ts`).
+  `src/test/classicTheme.test.ts` pins Classic to the original values.
+- A preview of another theme is a subtree with `data-theme` (and `dark`): `ThemeSwatches`. Swatches only,
+  never live components, since `dark:` variants match ancestors.
+- Status tones are per theme (the shared ones fail on plum and cream).
+- Extensions add themes in `shapio.config` (`themes`); see `documentation/extensions.md`.
+
+| Theme            | Variants     | Character                                                                       |
+| ---------------- | ------------ | ------------------------------------------------------------------------------- |
+| **Shapio**       | light + dark | the default: plum, cream and acid yellow                                        |
+| **Classic**      | light + dark | the original cobalt look, values unchanged (the logo is the new mark)           |
+| **Murdered out** | dark only    | blacked out: pure black, white actions, no hue except status tones and the logo |
+| **Snowed**       | light only   | white and snow grey, ink actions, ice-blue selection                            |
+
+Final values (every pair checked by the contrast test):
+
+| Token                      | Shapio light          | Shapio dark           | Classic light         | Classic dark          | Murdered out          | Snowed                |
+| -------------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- |
+| `background`               | `#f7f2ea`             | `#231527`             | `#faf9f6`             | `#0f0f0e`             | `#000000`             | `#ffffff`             |
+| `foreground`               | `#1e1422`             | `#f5ebd8`             | `#0f172a`             | `#f2f1ee`             | `#f2f2f2`             | `#0f172a`             |
+| `card`                     | `#ffffff`             | `#2b1b30`             | `#ffffff`             | `#161615`             | `#0a0a0a`             | `#f7f9fc`             |
+| `popover`                  | `#ffffff`             | `#352239`             | `#ffffff`             | `#1c1c1a`             | `#141414`             | `#ffffff`             |
+| `primary`                  | `#1e1422`             | `#e9f26e`             | `#2563eb`             | `#2563eb`             | `#f2f2f2`             | `#0f172a`             |
+| `primary-foreground`       | `#f7f2ea`             | `#1e1422`             | `#ffffff`             | `#ffffff`             | `#000000`             | `#ffffff`             |
+| `primary-hover`            | `#3a2541`             | `#f3fa8a`             | `#1d4ed8`             | `#1d4ed8`             | `#d4d4d4`             | `#1e293b`             |
+| `secondary`                | `#efe8dd`             | `#352239`             | `#f1efea`             | `#232321`             | `#1a1a1a`             | `#eef2f7`             |
+| `muted`                    | `#f3ede4`             | `#2e1d33`             | `#f5f3ee`             | `#1f1f1d`             | `#111111`             | `#f3f6fa`             |
+| `muted-foreground`         | `#5b4c61`             | `#c9b9cf`             | `#475569`             | `#a9a7a1`             | `#9a9a9a`             | `#4b5a6e`             |
+| `accent`                   | `#eff3b4`             | `#45304b`             | `#eceae4`             | `#262a3a`             | `#262626`             | `#dce6f5`             |
+| `accent-foreground`        | `#1e1422`             | `#f5ebd8`             | `#0f172a`             | `#c7d0fd`             | `#ffffff`             | `#0f172a`             |
+| `destructive`              | `#b42318`             | `#ff8a80`             | `#b91c1c`             | `#ef5350`             | `#ff6b6b`             | `#b91c1c`             |
+| `destructive-muted`        | `#fbe1dc`             | `#4a1f2a`             | `#fee2e2`             | `#3b1519`             | `#2a0e0e`             | `#fee2e2`             |
+| `success` / `-muted`       | `#17703a` / `#dcf2e1` | `#6ee7a0` / `#1d3a2b` | `#15803d` / `#dcfce7` | `#4ade80` / `#12301f` | `#4ade80` / `#0c2415` | `#15803d` / `#dcfce7` |
+| `warning` / `-muted`       | `#965006` / `#fbecc8` | `#fcc94d` / `#43311a` | `#b45309` / `#fef3c7` | `#fbbf24` / `#36270a` | `#fbbf24` / `#2a1f05` | `#a14b07` / `#fef3c7` |
+| `info` / `-muted`          | `#4a2e55` / `#ece2f0` | `#c3cbff` / `#33295a` | `#1d4ed8` / `#e0e7ff` | `#a5b4fc` / `#1e2a4a` | `#d4d4d4` / `#1f1f1f` | `#1d4ed8` / `#e0e7ff` |
+| `border`                   | `#e4dcd2`             | `#3e2b43`             | `#e2dfd8`             | `#2c2c29`             | `#262626`             | `#d9e0ea`             |
+| `input`                    | `#8a7c84`             | `#8f7c95`             | `#808898`             | `#76756f`             | `#737373`             | `#7c8899`             |
+| `ring`                     | `#4a2e55`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#ffffff`             | `#2563eb`             |
+| `link`                     | `#4a2e55`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#d4d4d4`             | `#1d4ed8`             |
+| `sidebar`                  | `#f0e9de`             | `#1c1020`             | `#f3f1ec`             | `#0b0b0a`             | `#050505`             | `#f3f6fa`             |
+| `sidebar-primary`          | `#1e1422`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#f2f2f2`             | `#0f172a`             |
+| `brand-letters`            | `#231527`             | `#f5ebd8`             | `#231527`             | `#f5ebd8`             | `#f2f2f2`             | `#0f172a`             |
+| `brand-panel-from` / `-to` | `#352239` / `#1e1422` | `#352239` / `#140b17` | `#2563eb` / `#1d4ed8` | `#1d4ed8` / `#0f172a` | `#141414` / `#000000` | `#dce6f5` / `#f7f9fc` |
+
+The remaining tokens (`*-foreground` on cards and popovers, `destructive-foreground`, `overlay`, the other
+`sidebar-*`) are in the theme files. `brand-logo` (`#e9f26e`) and `brand-logo-foreground` (`#231527`) are the
+same in every theme; `brand-panel-mark` is the logo yellow everywhere today.
+
+In Shapio light the yellow is a background highlight only (`accent`, selection): as text, as a hover under
+light text or as a focus ring it fails contrast on cream, so actions are ink and focus and links are plum.
+
+| Token                                                   | Use                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `background`                                            | the page                                                                                    |
+| `card`, `popover`                                       | cards, panels, tables, dialogs, sheets, menus                                               |
+| `foreground`                                            | text                                                                                        |
+| `muted`, `muted-foreground`                             | subtle fills (table header, hover, icon tiles, info alert), secondary text                  |
+| `primary` (+ `primary-hover`, `primary-foreground`)     | the one accent: primary buttons, active tab bar, icons on tiles; never a surface            |
+| `accent`, `accent-foreground`                           | selection and menu focus (selected tiles add a `primary` border)                            |
+| `border`                                                | 1px borders everywhere; cards have no shadow                                                |
+| `input`                                                 | control borders and unchecked switches (3:1 on every surface, WCAG 1.4.11)                  |
+| `ring`                                                  | focus rings, always `ring-[3px] ring-ring/50`                                               |
+| `link`                                                  | text links, and the dark blockquote rule in rich text                                       |
+| `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds                                                |
+| `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                                |
+| `sidebar*`                                              | the sidebar column, active pill, active bar (`sidebar-primary`)                             |
+| `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): the yellow tile and plum S; never UI                                |
+| `brand-letters`                                         | the wordmark letters (`Wordmark`)                                                           |
+| `brand-panel-from`, `-to`, `-foreground`, `-mark`       | the signed-out brand panel (`AuthLayout/BrandPanel`): gradient, its text, the panel's mark  |
+| `cobalt`, `periwinkle`, `ink`, `ivory`                  | the original brand palette, kept as fixed `@theme` colours for now; unused by any component |
 
 Radius: `--radius` is 8px. Controls and buttons `rounded-lg` (8px), cards/panels/dialogs `rounded-xl`
 (12px), chips `rounded-full`.
@@ -108,9 +170,12 @@ is written by the model's author and stays visible (13px meta).
   polls by itself; it isn't a live region.
 - Below lg (1024px) the sidebar is a sheet, opened from a 48px sticky row (trigger, wordmark, avatar
   menu). `useIsMobile()` is true below lg.
-- Theme is in the account menu (Profile, Theme ▸ System/Light/Dark, Sign out), with a one-click light ⇄ dark
-  switch (`ThemeToggle`) beside it in the sidebar footer and in the phone bar. The switch saves an explicit
-  Light or Dark; on System it switches to the opposite of what is rendered.
+- Theme is in the account menu (Profile, Theme ▸ the themes with their swatches, then Colour mode
+  System/Light/Dark, Sign out; the same body is the signed-out screens' `ThemeMenu`), with a one-click
+  light ⇄ dark switch (`ThemeToggle`) beside it in the sidebar footer and in the phone bar. The switch saves
+  an explicit Light or Dark; on System it switches to the opposite of what is rendered. For a single-variant
+  theme the colour modes are disabled with a note, and the switch is `aria-disabled` with a tooltip saying
+  why. Settings → Appearance shows the themes as cards (`RadioTile` with `ThemeSwatches`) and the modes.
 - A screen renders only its content: start with `Page` and `PageHeader`; don't add headers, gutters or
   backgrounds of your own.
 
@@ -359,22 +424,28 @@ message.
 ### Brand
 
 **`Logo`** `{ variant?: 'default' | 'reverse'; className? }`
-The mark, decorative (`aria-hidden`), 32px by default. `default`: the logo-blue rounded tile with a white S,
-the same in light and dark. `reverse`: an ivory tile with the S cut out, for cobalt surfaces (the auth brand
-panel). Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
+The mark, decorative (`aria-hidden`), 32px by default. `default`: the acid-yellow rounded tile (`brand-logo`,
+`#E9F26E`) with a plum S (`brand-logo-foreground`, `#231527`), in every theme, light and dark. On dark grounds
+the S stays plum, never white: the S is a cut-out in the source, so the mark always draws its plum backing
+underneath. `reverse`: for the auth brand panel, the tile in `brand-panel-mark` with the same plum S drawn
+underneath (no cut-out), so the mark reads the same on every panel colour. Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
 
 **`Wordmark`** `{ size?: 'default' | 'sm' | 'lg'; variant?: 'default' | 'reverse'; className? }`: the logo,
 mark + the outlined "shapio" letters (`src/assets/brand/wordmark.svg`, `Wordmark/letters.ts`), announced as
 "Shapio". Mark and letters share one height so the lockup keeps the logo's proportions: `default` 36px
 (sidebar, the auth screens' compact header; the collapsed sidebar shows the mark alone at 32px), `sm` 24px
-(status bar, phone bar), `lg` 52px (auth brand panel, with `variant="reverse"`). The letters take `currentColor`: ink on light, ivory on dark (`reverse`: the
-surface's text colour). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
+(status bar, phone bar), `lg` 52px (auth brand panel, with `variant="reverse"`). The letters take
+`currentColor` from `brand-letters`: plum `#231527` on light grounds, cream `#F5EBD8` on dark ones (`reverse`:
+the panel's text colour). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
 the mark alone. Never set "shapio" as text for the brand.
 
-Brand files live in `src/assets/brand/` (`mark.svg`, `wordmark.svg`, `logo-horizontal.svg`; the letters are
-`currentColor`, navy by default and white under a dark colour scheme). `pnpm --filter @shapio/admin
-brand:icons` regenerates `public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` from `mark.svg`;
-`Logo/brandAssets.test.ts` keeps the components, the files and the favicon on the same geometry.
+Brand files live in `src/assets/brand/` (`mark.svg`, `wordmark.svg`, `logo-horizontal.svg`, generated by
+`node brand/build.mjs` in the Shapio palette; the letters are `currentColor`, plum by default and cream under a
+dark colour scheme). The original blue logo is kept in the repo-root `brand/` as `classic-*` and is not used by
+the admin; the Classic UI theme shows the Shapio logo too. `pnpm --filter @shapio/admin brand:icons` regenerates
+`public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (plum S on full-bleed yellow) from
+`mark.svg`; `Logo/brandAssets.test.ts` keeps the components, the files, the favicon and the `classic-*` set on
+the same geometry.
 
 **`BrandMessage`** `{ title; description; actions; className? }`
 A whole-screen message on brand (not found, a route that failed): mark, title, one line, actions.

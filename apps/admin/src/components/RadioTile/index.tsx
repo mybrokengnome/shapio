@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 import type { LucideIcon } from 'lucide-react';
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 import { cn } from '@/helpers/cn';
 import { IconTile } from '../IconTile';
 
@@ -26,7 +26,10 @@ type RadioTileProps = {
   value: string;
   label: string;
   description?: string;
-  icon: LucideIcon;
+  /** Shown above the name (a row shows it before the name). Give `icon` or `media`. */
+  icon?: LucideIcon;
+  /** A picture in place of the icon (a card only): a theme preview, say. Decorative. */
+  media?: ReactNode;
   /** Rows and tiles show only the name; their description is still announced (aria-describedby). */
   variant?: 'card' | 'tile' | 'row';
   /** Not selectable (arrow keys skip it); say why in `description`. */
@@ -43,6 +46,7 @@ export const RadioTile = ({
   label,
   description,
   icon: Icon,
+  media,
   variant,
   disabled,
   className,
@@ -58,16 +62,17 @@ export const RadioTile = ({
       aria-describedby={descriptionId}
       className={cn(tileVariants({ variant }), className)}
     >
-      {variant === 'row' ? (
-        <span
-          aria-hidden="true"
-          className="flex size-4 shrink-0 items-center justify-center text-muted-foreground group-data-[state=checked]/tile:text-primary [&_svg]:size-4"
-        >
-          <Icon />
-        </span>
-      ) : (
-        <IconTile icon={Icon} size="sm" />
-      )}
+      {media ??
+        (Icon && variant === 'row' ? (
+          <span
+            aria-hidden="true"
+            className="flex size-4 shrink-0 items-center justify-center text-muted-foreground group-data-[state=checked]/tile:text-primary [&_svg]:size-4"
+          >
+            <Icon />
+          </span>
+        ) : Icon ? (
+          <IconTile icon={Icon} size="sm" />
+        ) : null)}
       <span className={cn('min-w-0', variant !== 'tile' && 'space-y-1')}>
         <span
           id={labelId}

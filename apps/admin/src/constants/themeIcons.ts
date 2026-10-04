@@ -1,7 +1,7 @@
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react';
-import type { ThemePreference } from '@/stores/theme';
+import type { Appearance } from './themes';
 
 export const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon } satisfies Record<
-  ThemePreference,
+  Appearance,
   LucideIcon
 >;

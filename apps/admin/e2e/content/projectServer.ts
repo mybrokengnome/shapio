@@ -17,6 +17,8 @@ import { createDatabase, databaseUrlOf, dropDatabase } from '../support/testData
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 const API_DIR = join(REPO_ROOT, 'apps', 'api');
 const EXAMPLE_DIR = join(REPO_ROOT, 'examples', 'custom-editor');
+/** An extension colour theme (light only), installed beside the editor. */
+const THEME_FILE = join(REPO_ROOT, 'examples', 'extension', 'extensions', 'sepiaTheme.ts');
 const TSX_LOADER = pathToFileURL(join(API_DIR, 'node_modules', 'tsx', 'dist', 'loader.mjs')).href;
 const POLL_MS = 200;
 
@@ -50,7 +52,10 @@ const buildExampleEditor = async (): Promise<string> => {
   return join(EXAMPLE_DIR, 'dist', 'star-rating.js');
 };
 
-/** `npx create-shapio`, then install the editor: copy the file, list it in shapio.config.ts. */
+/**
+ * `npx create-shapio`, then install the editor (copy the file, list it in shapio.config.ts) and the example
+ * Sepia theme (copy it, list it in `themes`).
+ */
 const scaffoldWithEditor = (editorFile: string, name: string): string => {
   const projectDir = join(ARTIFACTS_DIR, `${name}-project`);
   rmSync(projectDir, { recursive: true, force: true });
@@ -61,7 +66,14 @@ const scaffoldWithEditor = (editorFile: string, name: string): string => {
   if (!config.includes('editors: []')) {
     throw new Error('The create-shapio template changed: shapio.config.ts has no `editors: []`');
   }
-  writeFileSync(configFile, config.replace('editors: []', "editors: ['star-rating.js']"));
+  copyFileSync(THEME_FILE, join(projectDir, 'extensions', 'sepiaTheme.ts'));
+  writeFileSync(
+    configFile,
+    `import { sepiaTheme } from './extensions/sepiaTheme.ts';\n${config.replace(
+      'editors: []',
+      "editors: ['star-rating.js'],\n  themes: [sepiaTheme]",
+    )}`,
+  );
   return projectDir;
 };
 

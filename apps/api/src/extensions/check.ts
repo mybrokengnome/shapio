@@ -6,6 +6,7 @@ import { AFTER_EVENTS, BEFORE_EVENTS } from '../content/hooks.js';
 import { describeError } from '../helpers/errors.js';
 import { buildEditorManifest } from './editorManifest.js';
 import { loadProjectConfig, type LocateOptions } from './loader.js';
+import { themeContrastWarnings } from './themeContrast.js';
 
 /**
  * `shapio extensions check` (ADR 0009): loads and validates the project config without a database and
@@ -47,6 +48,8 @@ export const checkExtensions = async (options: LocateOptions): Promise<Extension
         (event) => `${key}.${event} (${AFTER.has(event) ? 'after commit, as a job' : 'in the transaction'})`,
       ),
   );
+  const themes = config.themes ?? [];
+  const contrastWarnings = themeContrastWarnings(themes);
   const section = (title: string, items: readonly string[]) =>
     `${title} (${items.length})\n${items.map((item) => `  ${item}\n`).join('')}`;
   const text = [
@@ -65,7 +68,13 @@ export const checkExtensions = async (options: LocateOptions): Promise<Extension
       'Editors',
       editors.entries.map((entry) => entry.file),
     ),
+    section(
+      'Themes',
+      themes.map((theme) => `${theme.key} (${theme.name})`),
+    ),
     ...(editorProblems.length > 0 ? [section('Problems', editorProblems)] : []),
+    // Contrast is a warning: the check still passes.
+    ...(contrastWarnings.length > 0 ? [section('Warnings', contrastWarnings)] : []),
   ].join('');
   return { ok: editorProblems.length === 0, text };
 };

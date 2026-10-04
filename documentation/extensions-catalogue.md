@@ -25,6 +25,7 @@ Two rules hold for all of them:
 | [Services](#services)                                   | Server extension                  | `ServiceFactory`, `ShapioServices`        | Restart                     |
 | [Jobs](#jobs)                                           | Server extension (worker)         | `ExtensionJobHandler`                     | Restart                     |
 | [Custom field editors](#custom-field-editors)           | Admin runtime (browser)           | `@shapio/editor-sdk` (`defineEditor`)     | File copy + restart         |
+| [Admin themes](#admin-themes)                           | Admin runtime (browser)           | `ThemeDefinition` in `shapio.config`      | Restart                     |
 | [Webhooks](#webhooks)                                   | HTTP, Shapio → your receiver      | Signed `POST`, `verifyWebhookSignature`   | Live (admin)                |
 | [Deployment connections](#deployment-connections)       | HTTP, Shapio → build provider     | Built-in adapters                         | Live (admin)                |
 | [Preview](#preview)                                     | HTTP, your site → Shapio          | URL template + preview API                | Live (admin)                |
@@ -59,6 +60,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
     services?: Record<string, ServiceFactory>;
     editors?: string[]; // file names in extensions/editors/
     jobs?: Record<string, ExtensionJobHandler>;
+    themes?: ThemeDefinition[]; // admin colour themes
   };
   ```
 
@@ -306,6 +308,42 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   network client, session, token or secret. The server validates the value exactly as for the built-in editor.
   Style with the admin's CSS variables so it follows light and dark mode. Guide:
   [Extensions: custom field editors](extensions.md#custom-field-editors).
+
+### Admin themes
+
+- **What:** colour themes for the admin, listed after the built-in ones (Shapio, Classic, Murdered out,
+  Snowed) in the theme menu, in Settings → Appearance and on the sign-in screen.
+- **Where it runs:** declared in `shapio.config` (server); applied in the admin, in the browser.
+- **Contract:** `ThemeDefinition` and `ThemeTokens` from `@shapio/cms/config`; the token names are
+  `THEME_TOKENS` (`THEME_SEMANTIC_TOKENS`, all required per variant, and `THEME_BRAND_TOKENS`, optional) in
+  [`packages/schema/src/themes/tokens.ts`](../packages/schema/src/themes/tokens.ts). Validation:
+  [`extensions/configSchema.ts`](../apps/api/src/extensions/configSchema.ts); stylesheet:
+  [`extensions/themeStylesheet.ts`](../apps/api/src/extensions/themeStylesheet.ts), served at
+  `GET /api/admin/extensions/themes.css` with the list at `GET /api/admin/extensions/themes` (both public:
+  colours only, and the sign-in screen needs them).
+- **Example:**
+
+  ```ts
+  import { defineConfig } from '@shapio/cms/config';
+  import { sepiaTheme } from './extensions/sepiaTheme.ts';
+
+  export const config = defineConfig({ themes: [sepiaTheme] });
+  ```
+
+  The full theme (light only, every UI token) is
+  [`examples/extension/extensions/sepiaTheme.ts`](../examples/extension/extensions/sepiaTheme.ts).
+
+- **Lifecycle:** read at startup; changing a theme needs a restart, never a rebuild of the admin. The admin links
+  the stylesheet render-blocking and caches the chosen theme's variants in the browser, so a custom theme
+  applies before first paint. A theme with one variant ignores the person's colour mode. If a theme disappears,
+  people who picked it get Shapio.
+- **Versioning:** part of `@shapio/cms/config` (`EXTENSION_CONTRACT_VERSION` 1). Making a new token required
+  would be a breaking change, released as one.
+- **Limits:** keys match `^[a-z][a-z0-9-]{0,40}$` and can't reuse a built-in key; a missing or unknown token, or
+  a value that isn't a colour (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `hsl()`, `oklch()`, `oklab()`), stops
+  startup naming it. `npx shapio extensions check` warns, without failing, on any text pair below 4.5:1 or
+  control/focus pair below 3:1 (WCAG 2.1 AA); only `#rrggbb` values are measured. Guide:
+  [Extensions: admin themes](extensions.md#admin-themes).
 
 ## Outbound integrations
 

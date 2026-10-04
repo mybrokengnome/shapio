@@ -11,6 +11,9 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Applies the saved or OS theme before first paint (no flash). External: the CSP forbids inline scripts. -->
     <script src="/theme-init.js"></script>
+    <!-- Themes declared by extensions (shapio.config): render-blocking, so they apply on first paint too. The
+         API serves it (empty without extension themes); `vite-ignore` keeps Vite from bundling it. -->
+    <link rel="stylesheet" href="../api/admin/extensions/themes.css" vite-ignore />
   </head>
   <body>
     <div id="root"></div>

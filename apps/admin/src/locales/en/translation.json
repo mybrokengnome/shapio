@@ -462,7 +462,7 @@
     "developer": "Developer",
     "profile": "Profile",
     "sessions": "Sessions",
-    "appearance": "Theme",
+    "appearance": "Appearance",
     "locales": "Locales",
     "apiTokens": "API tokens",
     "assist": "Assist"
@@ -492,9 +492,30 @@
     "empty": "No other sessions."
   },
   "appearance": {
-    "title": "Theme",
+    "title": "Appearance",
+    "theme": "Theme",
     "mode": "Colour mode",
-    "storedHere": "Saved on this device. System follows your operating system."
+    "storedHere": "Saved on this device. System follows your operating system.",
+    "onlyDark": "{{theme}} has a dark version only.",
+    "onlyLight": "{{theme}} has a light version only.",
+    "themes": {
+      "shapio": {
+        "name": "Shapio",
+        "description": "Plum, cream and acid yellow. Light and dark."
+      },
+      "classic": {
+        "name": "Classic",
+        "description": "The original cobalt look. Light and dark."
+      },
+      "murdered-out": {
+        "name": "Murdered out",
+        "description": "Blacked out, no colour. Dark only."
+      },
+      "snowed": {
+        "name": "Snowed",
+        "description": "White and ice blue. Light only."
+      }
+    }
   },
   "locales": {
     "title": "Locales",

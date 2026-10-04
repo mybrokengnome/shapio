@@ -11,6 +11,7 @@ import { createContentPorts } from './content/ports.js';
 import { setDb, type Database } from './db/index.js';
 import { buildEditorManifest, type EditorManifest } from './extensions/editorManifest.js';
 import { loadExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
+import { buildThemeCatalogue } from './extensions/themeStylesheet.js';
 import { createUrlBuilder } from './helpers/publicUrl.js';
 import { createLoggerOptions } from './logger.js';
 import { resolveMediaOrigins } from './media/origins.js';
@@ -37,6 +38,7 @@ import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
 import { siteResolutionPlugin } from './plugins/siteResolution.js';
 import { staticAdminPlugin } from './plugins/staticAdmin.js';
+import { themeCataloguePlugin } from './plugins/themeCatalogue.js';
 import { usagePlugin } from './plugins/usage.js';
 import type { HostResolver } from './publishing/outbound/ssrf.js';
 import { createPublishingRuntime } from './publishing/runtime.js';
@@ -231,6 +233,9 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
         extensions.loaded.config.editors ?? [],
         app.log.child({ component: 'extensions' }),
       ),
+  });
+  await app.register(themeCataloguePlugin, {
+    catalogue: buildThemeCatalogue(extensions.loaded.config.themes ?? []),
   });
   await app.register(adminExtensionsRoutes, { prefix: urls.withBasePath('/api/admin/extensions') });
   await app.register(deliveryRoutes, { prefix: urls.withBasePath('/api/content') });

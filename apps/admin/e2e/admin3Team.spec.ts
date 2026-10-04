@@ -7,7 +7,7 @@ import { signInAsOwner } from './support/session';
 
 /**
  * Users and every settings screen against the real API: the user list, an invitation link, profile with
- * dirty-state protection, sessions, theme, locales, roles, API tokens and the audit log.
+ * dirty-state protection, sessions, appearance, locales, roles, API tokens and the audit log.
  * The admin*.spec.ts files run in name order (Playwright sorts files): admin1Setup does first-run setup,
  * admin3Team sends the invitation admin4Auth accepts.
  */
@@ -149,8 +149,8 @@ test('settings → sessions lists this device', async () => {
   await captureScreen(page, 'team-06-settings-sessions', { viewports: ['desktop'] });
 });
 
-test('settings → theme switches and remembers the choice', async () => {
-  await settingsLink('Theme').click();
+test('settings → appearance switches and remembers the choice', async () => {
+  await settingsLink('Appearance').click();
   await captureScreen(page, 'team-07-settings-theme', { viewports: ['desktop'] });
   await page.getByRole('radio', { name: 'Dark' }).click();
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);

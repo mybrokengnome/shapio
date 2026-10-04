@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronsUpDown, LogOut, Palette, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLogout, useMe } from '@/api/auth';
-import { ThemeOptions } from '@/components/ThemeMenu/Options';
+import { ThemeMenuContent } from '@/components/ThemeMenu/Content';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -63,8 +63,8 @@ export const UserMenu = ({ variant = 'sidebar' }: UserMenuProps) => {
           <Palette aria-hidden="true" />
           {t('theme.label')}
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent>
-          <ThemeOptions />
+        <DropdownMenuSubContent className="min-w-52">
+          <ThemeMenuContent />
         </DropdownMenuSubContent>
       </DropdownMenuSub>
       <DropdownMenuSeparator />

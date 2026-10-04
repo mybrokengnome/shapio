@@ -1,12 +1,13 @@
 import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
-import { useThemeStore } from '@/stores/theme';
+import { useResolvedScheme } from '@/hooks/useResolvedScheme';
 
-// Shapio: theme comes from the admin's theme store (shadcn's default used next-themes).
+// Shapio: the rendered scheme comes from the admin's theme store (shadcn's default used next-themes); a
+// single-variant theme renders its own variant whatever the appearance.
 const Toaster = ({ ...props }: ToasterProps) => {
   const { t } = useTranslation();
-  const theme = useThemeStore((state) => state.preference);
+  const theme = useResolvedScheme();
 
   return (
     <Sonner

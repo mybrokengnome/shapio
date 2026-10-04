@@ -51,36 +51,44 @@ export const captureScreen = async (page: Page, name: string, { viewports }: Cap
 };
 
 const captureSchemes = async (page: Page, name: string) => {
-  mkdirSync(SCREENSHOT_DIR, { recursive: true });
   // No stray hover state (tooltips, hover colours) in screenshots.
   await page.mouse.move(0, 0);
   for (const scheme of SCHEMES) {
     await page.emulateMedia({ colorScheme: scheme });
     await expect(page.locator('html')).toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
-    // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
-    // contrast checks, which would otherwise see half-faded colours.
-    await page.waitForTimeout(100);
-    await waitForAnimationsToSettle(page);
-    const path = join(SCREENSHOT_DIR, `${name}-${scheme}.png`);
-    await page.screenshot({ path, fullPage: true });
-    capturedScreenshots.push(path);
-    await waitForToastsToClear(page);
-    const results = await new AxeBuilder({ page })
-      // Toasts are transient and coloured by the library; a fading one fails contrast mid-transition.
-      .exclude(TOASTER_SELECTOR)
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-    const blocking = results.violations
-      .filter((violation) => BLOCKING_IMPACTS.has(violation.impact ?? ''))
-      .map((violation) => ({
-        id: violation.id,
-        impact: violation.impact,
-        help: violation.help,
-        targets: violation.nodes.map((node) => node.target.join(' ')).slice(0, 5),
-      }));
-    expect(blocking, `axe violations on ${name} (${scheme})`).toEqual([]);
+    await captureRendered(page, `${name}-${scheme}`);
   }
   await page.emulateMedia({ colorScheme: 'light' });
+};
+
+/**
+ * Screenshots the screen as it is rendered now (`{name}.png`) and runs axe: no serious or critical
+ * violations allowed. `captureScreen` calls it once per colour scheme; the theme suite once per theme.
+ */
+export const captureRendered = async (page: Page, name: string) => {
+  mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
+  // contrast checks, which would otherwise see half-faded colours.
+  await page.waitForTimeout(100);
+  await waitForAnimationsToSettle(page);
+  const path = join(SCREENSHOT_DIR, `${name}.png`);
+  await page.screenshot({ path, fullPage: true });
+  capturedScreenshots.push(path);
+  await waitForToastsToClear(page);
+  const results = await new AxeBuilder({ page })
+    // Toasts are transient and coloured by the library; a fading one fails contrast mid-transition.
+    .exclude(TOASTER_SELECTOR)
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  const blocking = results.violations
+    .filter((violation) => BLOCKING_IMPACTS.has(violation.impact ?? ''))
+    .map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      help: violation.help,
+      targets: violation.nodes.map((node) => node.target.join(' ')).slice(0, 5),
+    }));
+  expect(blocking, `axe violations on ${name}`).toEqual([]);
 };
 
 const waitForAnimationsToSettle = (page: Page) =>

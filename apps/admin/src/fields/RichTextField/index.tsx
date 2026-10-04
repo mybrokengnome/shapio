@@ -24,7 +24,7 @@ const CONTENT_CLASSES = [
   '[&_h5]:mt-2 [&_h5]:font-semibold [&_h6]:mt-2 [&_h6]:font-semibold [&_h6]:text-muted-foreground',
   '[&_p]:my-2 [&_a]:text-link [&_a]:underline [&_a]:underline-offset-2',
   '[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6',
-  '[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-border dark:[&_blockquote]:border-periwinkle [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground',
+  '[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-border dark:[&_blockquote]:border-link [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground',
   '[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]',
   '[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0',
   '[&_hr]:my-4 [&_hr]:border-border',

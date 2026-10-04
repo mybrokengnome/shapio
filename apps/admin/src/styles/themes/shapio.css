@@ -1,0 +1,109 @@
+/*
+ * Shapio: the brand theme (plum, cream and acid yellow), the default. Light: a warm cream ground, ink
+ * actions; yellow is a background highlight only (as text, a hover under light text or a focus ring it
+ * fails contrast on cream). Dark: plum grounds, cream text, yellow actions, links and focus. Status tones
+ * are tuned per ground. Every pair is checked by test/contrast.test.ts.
+ * The zero-specificity `:where(:root)` blocks are the safety net: before the theme script has run, or for a
+ * saved theme whose CSS is gone (an extension removed), the admin still renders, in Shapio.
+ */
+:where(:root),
+[data-theme='shapio'] {
+  --background: #f7f2ea;
+  --foreground: #1e1422;
+  --card: #ffffff;
+  --card-foreground: #1e1422;
+  --popover: #ffffff;
+  --popover-foreground: #1e1422;
+  --primary: #1e1422;
+  --primary-foreground: #f7f2ea;
+  --primary-hover: #3a2541;
+  --secondary: #efe8dd;
+  --secondary-foreground: #1e1422;
+  --muted: #f3ede4;
+  --muted-foreground: #5b4c61;
+  /* Selection and hover: a pale acid yellow under ink text. */
+  --accent: #eff3b4;
+  --accent-foreground: #1e1422;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --destructive-muted: #fbe1dc;
+  --success: #17703a;
+  --success-muted: #dcf2e1;
+  --warning: #965006;
+  --warning-muted: #fbecc8;
+  --info: #4a2e55;
+  --info-muted: #ece2f0;
+  --border: #e4dcd2;
+  --input: #8a7c84;
+  --ring: #4a2e55;
+  --link: #4a2e55;
+  --overlay: #1e1422;
+
+  --sidebar: #f0e9de;
+  --sidebar-foreground: #1e1422;
+  --sidebar-primary: #1e1422;
+  --sidebar-primary-foreground: #f7f2ea;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #1e1422;
+  --sidebar-border: #e4dcd2;
+  --sidebar-ring: #4a2e55;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #231527;
+  --brand-panel-from: #352239;
+  --brand-panel-to: #1e1422;
+  --brand-panel-foreground: #f5ebd8;
+  --brand-panel-mark: #e9f26e;
+}
+
+:where(:root.dark),
+[data-theme='shapio'].dark {
+  --background: #231527;
+  --foreground: #f5ebd8;
+  --card: #2b1b30;
+  --card-foreground: #f5ebd8;
+  --popover: #352239;
+  --popover-foreground: #f5ebd8;
+  --primary: #e9f26e;
+  --primary-foreground: #1e1422;
+  --primary-hover: #f3fa8a;
+  --secondary: #352239;
+  --secondary-foreground: #f5ebd8;
+  --muted: #2e1d33;
+  --muted-foreground: #c9b9cf;
+  /* Selection only: a plum step lighter. */
+  --accent: #45304b;
+  --accent-foreground: #f5ebd8;
+  --destructive: #ff8a80;
+  --destructive-foreground: #231527;
+  --destructive-muted: #4a1f2a;
+  --success: #6ee7a0;
+  --success-muted: #1d3a2b;
+  --warning: #fcc94d;
+  --warning-muted: #43311a;
+  --info: #c3cbff;
+  --info-muted: #33295a;
+  --border: #3e2b43;
+  --input: #8f7c95;
+  --ring: #e9f26e;
+  --link: #e9f26e;
+  --overlay: #0d070f;
+
+  --sidebar: #1c1020;
+  --sidebar-foreground: #ede2cf;
+  --sidebar-primary: #e9f26e;
+  --sidebar-primary-foreground: #1e1422;
+  --sidebar-accent: #2e1d33;
+  --sidebar-accent-foreground: #e9f26e;
+  --sidebar-border: #2e1d33;
+  --sidebar-ring: #e9f26e;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #f5ebd8;
+  --brand-panel-from: #352239;
+  --brand-panel-to: #140b17;
+  --brand-panel-foreground: #f5ebd8;
+  --brand-panel-mark: #e9f26e;
+}

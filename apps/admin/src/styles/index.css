@@ -1,10 +1,15 @@
 /*
  * Tailwind entry: fonts, design tokens, base layer. The only global CSS in the admin (DESIGN.md).
- * Brand colours are defined once here; components use semantic tokens (bg-background, text-primary...)
- * which carry a light and a dark value, or the brand tokens (bg-cobalt, text-ink) for deliberate accents.
+ * Components use semantic tokens (bg-background, text-primary...). Their values come from the theme files in
+ * ./themes, one per built-in theme, each scoped to `[data-theme='<key>']` (light, or the only variant) and
+ * `[data-theme='<key>'].dark`; public/theme-init.js sets both on <html> before first paint.
  */
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import './themes/shapio.css';
+@import './themes/classic.css';
+@import './themes/murdered-out.css';
+@import './themes/snowed.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -89,9 +94,6 @@
   --color-periwinkle: #a5b4fc;
   --color-ink: #0f172a;
   --color-ivory: #faf9f6;
-  /* The logo's own blue and its white S (components/Logo). The mark only: never a UI colour, which stays cobalt. */
-  --color-brand-logo: #2f5bff;
-  --color-brand-logo-foreground: #ffffff;
 
   /* Type scale additions (DESIGN.md): document title, page title, meta/hint text, tiny chips. Registered in
      helpers/cn.ts. */
@@ -116,95 +118,6 @@
   --radius: 0.5rem;
   /* Height of the Shell's status bar (md and up); sticky footers and toasts sit above it. */
   --statusbar-h: 2rem;
-
-  --background: #faf9f6;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --primary-hover: #1d4ed8;
-  --secondary: #f1efea;
-  --secondary-foreground: #0f172a;
-  /* Warm neutrals (red >= green >= blue), as in dark: cobalt marks actions, links, focus and the active
-     nav bar only, never a surface. #f5f3ee (a touch lighter than the sidebar) keeps status text at 4.5:1. */
-  --muted: #f5f3ee;
-  --muted-foreground: #475569;
-  /* Selection and hover only (selected rows and tiles, current sub-nav item, menu focus). */
-  --accent: #eceae4;
-  --accent-foreground: #0f172a;
-  --destructive: #b91c1c;
-  --destructive-foreground: #ffffff;
-  --destructive-muted: #fee2e2;
-  --success: #15803d;
-  --success-muted: #dcfce7;
-  --warning: #b45309;
-  --warning-muted: #fef3c7;
-  --info: #1d4ed8;
-  /* The info status chip only (status tones are semantic): no other light surface is blue. */
-  --info-muted: #e0e7ff;
-  --border: #e2dfd8;
-  /* Form-control borders and unchecked switches: 3:1 on every surface (WCAG 1.4.11; test/contrast.test.ts). */
-  --input: #808898;
-  --ring: #2563eb;
-  --link: #2563eb;
-  /* Sheet and dialog backdrops (used at /40). */
-  --overlay: #0f172a;
-
-  --sidebar: #f3f1ec;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffffff;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e6e2da;
-  --sidebar-ring: #2563eb;
-}
-
-.dark {
-  /* Warm-neutral near-black (red >= green >= blue): no blue in the surfaces. Cobalt is the one colour,
-     periwinkle marks selection, focus and links. Every pair is checked by test/contrast.test.ts. */
-  --background: #0f0f0e;
-  --foreground: #f2f1ee;
-  --card: #161615;
-  --card-foreground: #f2f1ee;
-  --popover: #1c1c1a;
-  --popover-foreground: #f2f1ee;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --primary-hover: #1d4ed8;
-  --secondary: #232321;
-  --secondary-foreground: #f2f1ee;
-  --muted: #1f1f1d;
-  --muted-foreground: #a9a7a1;
-  /* Selection only (selected rows and tiles, current sub-nav item). */
-  --accent: #262a3a;
-  --accent-foreground: #c7d0fd;
-  --destructive: #ef5350;
-  --destructive-foreground: #0f0f0e;
-  --destructive-muted: #3b1519;
-  --success: #4ade80;
-  --success-muted: #12301f;
-  --warning: #fbbf24;
-  --warning-muted: #36270a;
-  --info: #a5b4fc;
-  --info-muted: #1e2a4a;
-  --border: #2c2c29;
-  --input: #76756f;
-  --ring: #a5b4fc;
-  --link: #a5b4fc;
-  --overlay: #000000;
-
-  --sidebar: #0b0b0a;
-  --sidebar-foreground: #e4e2dd;
-  --sidebar-primary: #a5b4fc;
-  --sidebar-primary-foreground: #0f0f0e;
-  --sidebar-accent: #1e1e1c;
-  --sidebar-accent-foreground: #a5b4fc;
-  --sidebar-border: #232321;
-  --sidebar-ring: #a5b4fc;
 }
 
 @theme inline {
@@ -251,6 +164,15 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* The logo (components/Logo, Wordmark) and the signed-out brand panel: set per theme, never UI colours. */
+  --color-brand-logo: var(--brand-logo);
+  --color-brand-logo-foreground: var(--brand-logo-foreground);
+  --color-brand-letters: var(--brand-letters);
+  --color-brand-panel-from: var(--brand-panel-from);
+  --color-brand-panel-to: var(--brand-panel-to);
+  --color-brand-panel-foreground: var(--brand-panel-foreground);
+  --color-brand-panel-mark: var(--brand-panel-mark);
 }
 
 @layer base {

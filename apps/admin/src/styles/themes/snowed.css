@@ -1,0 +1,53 @@
+/*
+ * Snowed: light only. White ground, cool snow-grey surfaces, ink actions, an ice-blue selection. Every pair
+ * is checked by test/contrast.test.ts.
+ */
+[data-theme='snowed'] {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #f7f9fc;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
+  --primary-foreground: #ffffff;
+  --primary-hover: #1e293b;
+  --secondary: #eef2f7;
+  --secondary-foreground: #0f172a;
+  --muted: #f3f6fa;
+  --muted-foreground: #4b5a6e;
+  /* Selection and hover: ice. */
+  --accent: #dce6f5;
+  --accent-foreground: #0f172a;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-muted: #fee2e2;
+  --success: #15803d;
+  --success-muted: #dcfce7;
+  --warning: #a14b07;
+  --warning-muted: #fef3c7;
+  --info: #1d4ed8;
+  --info-muted: #e0e7ff;
+  --border: #d9e0ea;
+  --input: #7c8899;
+  --ring: #2563eb;
+  --link: #1d4ed8;
+  --overlay: #0f172a;
+
+  --sidebar: #f3f6fa;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e3e8f0;
+  --sidebar-ring: #2563eb;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #0f172a;
+  --brand-panel-from: #dce6f5;
+  --brand-panel-to: #f7f9fc;
+  --brand-panel-foreground: #0f172a;
+  --brand-panel-mark: #e9f26e;
+}

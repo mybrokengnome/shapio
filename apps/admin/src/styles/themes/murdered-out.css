@@ -1,0 +1,52 @@
+/*
+ * Murdered out: dark only, blacked out. Pure black ground, near-black surfaces, white actions; no hue
+ * anywhere except the status tones and the logo. Every pair is checked by test/contrast.test.ts.
+ */
+[data-theme='murdered-out'] {
+  --background: #000000;
+  --foreground: #f2f2f2;
+  --card: #0a0a0a;
+  --card-foreground: #f2f2f2;
+  --popover: #141414;
+  --popover-foreground: #f2f2f2;
+  --primary: #f2f2f2;
+  --primary-foreground: #000000;
+  --primary-hover: #d4d4d4;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #f2f2f2;
+  --muted: #111111;
+  --muted-foreground: #9a9a9a;
+  --accent: #262626;
+  --accent-foreground: #ffffff;
+  --destructive: #ff6b6b;
+  --destructive-foreground: #000000;
+  --destructive-muted: #2a0e0e;
+  --success: #4ade80;
+  --success-muted: #0c2415;
+  --warning: #fbbf24;
+  --warning-muted: #2a1f05;
+  --info: #d4d4d4;
+  --info-muted: #1f1f1f;
+  --border: #262626;
+  --input: #737373;
+  --ring: #ffffff;
+  --link: #d4d4d4;
+  --overlay: #000000;
+
+  --sidebar: #050505;
+  --sidebar-foreground: #e5e5e5;
+  --sidebar-primary: #f2f2f2;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #ffffff;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #f2f2f2;
+  --brand-panel-from: #141414;
+  --brand-panel-to: #000000;
+  --brand-panel-foreground: #f2f2f2;
+  --brand-panel-mark: #e9f26e;
+}

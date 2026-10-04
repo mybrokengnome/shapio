@@ -34,6 +34,7 @@ export const ADMIN_PATHS = {
   contentHealth: '/api/admin/content-health',
   presence: '/api/admin/presence',
   editorManifest: '/api/admin/extensions/editors',
+  extensionThemes: '/api/admin/extensions/themes',
   jobs: '/api/admin/jobs',
   schedules: '/api/admin/publishing/schedules',
   changeSets: '/api/admin/change-sets',

@@ -174,3 +174,14 @@ export type EditorManifestItem = {
 };
 
 export type EditorManifest = { items: EditorManifestItem[] };
+
+/** An admin colour theme a project declares in `shapio.config` (its CSS is served as `themes.css`). */
+export type ExtensionTheme = {
+  key: string;
+  name: string;
+  description?: string;
+  /** The variants it defines; one means it ignores the light/dark setting. */
+  variants: Array<'light' | 'dark'>;
+};
+
+export type ExtensionThemeList = { items: ExtensionTheme[] };

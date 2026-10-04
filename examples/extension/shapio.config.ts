@@ -4,6 +4,7 @@
 import { defineConfig } from '@shapio/cms/config';
 import { requireArticleCover } from './extensions/articleCover.ts';
 import { logPublish } from './extensions/publishLog.ts';
+import { sepiaTheme } from './extensions/sepiaTheme.ts';
 import { statsReportJob } from './extensions/statsReportJob.ts';
 import { statsRoutes } from './extensions/statsRoutes.ts';
 import { createStatsService } from './extensions/statsService.ts';
@@ -23,4 +24,6 @@ export const config = defineConfig({
   jobs: { statsReport: statsReportJob },
   // Custom field editors built into ./extensions/editors/*.js (see examples/custom-editor).
   editors: [],
+  // Admin colour themes, listed after the built-in ones in the theme menu.
+  themes: [sepiaTheme],
 });

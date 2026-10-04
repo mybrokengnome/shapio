@@ -437,10 +437,106 @@ describe('extension points', () => {
       expect(example.stdout).toContain('article.beforePublish (in the transaction)');
       expect(example.stdout).toContain('/api/ext/example');
       expect(example.stdout).toContain('ext.statsReport');
+      expect(example.stdout).toContain('sepia (Sepia)');
+      expect(example.stdout).not.toContain('Warnings');
 
       const failed = runCheck(join(broken, 'shapio.config.ts'));
       expect(failed.status).toBe(1);
       expect(failed.stderr).toContain('unknown setting "extensions"');
+    });
+
+    it('serves extension themes publicly, as a list and a stylesheet with a revalidation tag', async () => {
+      const project = mkdtempSync(join(tmpdir(), 'shapio-themes-'));
+      const sepia = resolve(REPO_ROOT, 'examples/extension/extensions/sepiaTheme.ts');
+      writeFileSync(
+        join(project, 'shapio.config.ts'),
+        `import { sepiaTheme } from ${JSON.stringify(sepia)};\n` +
+          "export const config = { themes: [sepiaTheme, { key: 'walnut', name: 'Walnut', dark: sepiaTheme.light, light: sepiaTheme.light }] };\n",
+      );
+      try {
+        const themed = await createTestApp(database.current, { schemaListen: false, projectDir: project });
+        try {
+          // No session: the sign-in screen needs them too.
+          const list = await themed.app.inject({ method: 'GET', url: '/api/admin/extensions/themes' });
+          expect(list.statusCode).toBe(200);
+          expect(list.json()).toEqual({
+            items: [
+              {
+                key: 'sepia',
+                name: 'Sepia',
+                description: 'Warm paper and walnut. Light only.',
+                variants: ['light'],
+              },
+              { key: 'walnut', name: 'Walnut', variants: ['light', 'dark'] },
+            ],
+          });
+          const css = await themed.app.inject({ method: 'GET', url: '/api/admin/extensions/themes.css' });
+          expect(css.statusCode).toBe(200);
+          expect(css.headers['content-type']).toBe('text/css; charset=utf-8');
+          expect(css.headers['cache-control']).toBe('no-cache');
+          expect(css.body).toContain("[data-theme='sepia'] {\n  --background: #f6efe3;");
+          expect(css.body).toContain("[data-theme='walnut'].dark {");
+          const etag = String(css.headers.etag);
+          const revalidated = await themed.app.inject({
+            method: 'GET',
+            url: '/api/admin/extensions/themes.css',
+            headers: { 'if-none-match': etag },
+          });
+          expect(revalidated.statusCode).toBe(304);
+        } finally {
+          await themed.app.close();
+        }
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
+    });
+
+    it('serves an empty stylesheet without extension themes', async () => {
+      const css = await testApp.app.inject({ method: 'GET', url: '/api/admin/extensions/themes.css' });
+      expect(css.statusCode).toBe(200);
+      expect(css.body).toBe('');
+      expect(
+        (await testApp.app.inject({ method: 'GET', url: '/api/admin/extensions/themes' })).json(),
+      ).toEqual({ items: [] });
+    });
+
+    it('fails startup on an unknown theme token or a value that is not a colour, naming it', async () => {
+      const project = mkdtempSync(join(tmpdir(), 'shapio-bad-theme-'));
+      const sepia = resolve(REPO_ROOT, 'examples/extension/extensions/sepiaTheme.ts');
+      writeFileSync(
+        join(project, 'shapio.config.ts'),
+        `import { sepiaTheme } from ${JSON.stringify(sepia)};\n` +
+          "export const config = { themes: [{ ...sepiaTheme, light: { ...sepiaTheme.light, backgrund: '#000000', card: 'url(x)' } }] };\n",
+      );
+      try {
+        const startup = createTestApp(database.current, { schemaListen: false, projectDir: project });
+        await expect(startup).rejects.toBeInstanceOf(ExtensionConfigError);
+        await expect(startup).rejects.toThrow('/themes/0/light/backgrund: unknown theme token "backgrund"');
+        await expect(startup).rejects.toThrow('/themes/0/light/card: "url(x)" is not a colour');
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
+    });
+
+    it('`shapio extensions check` lists themes and warns, without failing, on low contrast', () => {
+      const project = mkdtempSync(join(tmpdir(), 'shapio-low-contrast-'));
+      const sepia = resolve(REPO_ROOT, 'examples/extension/extensions/sepiaTheme.ts');
+      writeFileSync(
+        join(project, 'shapio.config.ts'),
+        `import { sepiaTheme } from ${JSON.stringify(sepia)};\n` +
+          "export const config = { themes: [{ ...sepiaTheme, light: { ...sepiaTheme.light, foreground: '#eeeeee' } }] };\n",
+      );
+      try {
+        const report = runCheck(join(project, 'shapio.config.ts'));
+        expect(report.status).toBe(0);
+        expect(report.stdout).toContain('Themes (1)\n  sepia (Sepia)');
+        expect(report.stdout).toContain('Warnings');
+        expect(report.stdout).toMatch(
+          /sepia \(light\): --foreground on --background is [\d.]+:1, needs 4\.5:1/,
+        );
+      } finally {
+        rmSync(project, { recursive: true, force: true });
+      }
     });
 
     it('loads a fresh create-shapio scaffold, which has no extensions, and serves with it', async () => {

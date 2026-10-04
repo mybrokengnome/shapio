@@ -1,3 +1,11 @@
+import {
+  BUILT_IN_THEME_KEYS,
+  THEME_BRAND_TOKENS,
+  THEME_COLOUR_PATTERN,
+  THEME_KEY_PATTERN,
+  THEME_SEMANTIC_TOKENS,
+  THEME_VARIANTS,
+} from '@shapio/schema';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { AFTER_EVENTS, BEFORE_EVENTS } from '../content/hooks.js';
@@ -30,6 +38,26 @@ const modelHooksSchema = Type.Object(
   closed,
 );
 
+/** One theme variant: every UI token, brand tokens optional; values are checked in findThemeProblems. */
+const themeTokensSchema = Type.Object(
+  {
+    ...Object.fromEntries(THEME_SEMANTIC_TOKENS.map((token) => [token, Type.String()])),
+    ...Object.fromEntries(THEME_BRAND_TOKENS.map((token) => [token, Type.Optional(Type.String())])),
+  },
+  closed,
+);
+
+const themeSchema = Type.Object(
+  {
+    key: Type.String(),
+    name: Type.String({ minLength: 1, maxLength: 60 }),
+    description: Type.Optional(Type.String({ maxLength: 200 })),
+    light: Type.Optional(themeTokensSchema),
+    dark: Type.Optional(themeTokensSchema),
+  },
+  closed,
+);
+
 export const shapioConfigSchema = Type.Object(
   {
     hooks: Type.Optional(Type.Record(Type.String(), modelHooksSchema)),
@@ -38,6 +66,7 @@ export const shapioConfigSchema = Type.Object(
     // File names are checked (and missing files reported) by the editor manifest, as before package K.
     editors: Type.Optional(Type.Array(Type.String())),
     jobs: Type.Optional(Type.Record(Type.String(), anyFunction)),
+    themes: Type.Optional(Type.Array(themeSchema)),
   },
   closed,
 );
@@ -59,6 +88,9 @@ const unknownKeyMessage = (path: string): string => {
   }
   if (segments[0] === 'hooks' && segments.length === 3) {
     return `unknown hook "${key}"; allowed: ${HOOK_EVENTS.join(', ')}`;
+  }
+  if (segments[0] === 'themes' && segments.length === 4) {
+    return `unknown theme token "${key}"; the tokens are listed in documentation/extensions.md`;
   }
   return `unknown key "${key}"`;
 };
@@ -103,6 +135,49 @@ const findNamingProblems = (config: Record<string, unknown>): ConfigProblem[] =>
       });
     }
   }
+  return [...problems, ...findThemeProblems(config.themes)];
+};
+
+const BUILT_IN_THEMES: ReadonlySet<string> = new Set(BUILT_IN_THEME_KEYS);
+
+/** Theme keys (pattern, built-in, unique), at least one variant, and colour values (no CSS injection). */
+const findThemeProblems = (themes: unknown): ConfigProblem[] => {
+  const problems: ConfigProblem[] = [];
+  const keys = new Set<string>();
+  (Array.isArray(themes) ? (themes as unknown[]) : []).forEach((theme, index) => {
+    if (!isRecord(theme)) {
+      return;
+    }
+    const path = `/themes/${index}`;
+    if (typeof theme.key === 'string') {
+      if (!THEME_KEY_PATTERN.test(theme.key)) {
+        problems.push({
+          path: `${path}/key`,
+          message:
+            'must start with a lower-case letter and use lower-case letters, digits and dashes (41 at most)',
+        });
+      } else if (BUILT_IN_THEMES.has(theme.key)) {
+        problems.push({ path: `${path}/key`, message: `"${theme.key}" is a built-in theme` });
+      } else if (keys.has(theme.key)) {
+        problems.push({ path: `${path}/key`, message: `"${theme.key}" is used twice` });
+      }
+      keys.add(theme.key);
+    }
+    if (!THEME_VARIANTS.some((variant) => theme[variant] !== undefined)) {
+      problems.push({ path, message: 'needs a light or a dark variant (or both)' });
+    }
+    for (const variant of THEME_VARIANTS) {
+      const tokens = theme[variant];
+      for (const [token, value] of Object.entries(isRecord(tokens) ? tokens : {})) {
+        if (typeof value === 'string' && !THEME_COLOUR_PATTERN.test(value)) {
+          problems.push({
+            path: `${path}/${variant}/${token}`,
+            message: `"${value}" is not a colour: use #rrggbb, rgb(), hsl(), oklch() or oklab()`,
+          });
+        }
+      }
+    }
+  });
   return problems;
 };
 

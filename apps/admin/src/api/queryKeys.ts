@@ -131,6 +131,7 @@ export const queryKeys = {
   },
   /** Custom field editors installed in the project (read once per session). */
   editorManifest: ['extensions', 'editors'] as const,
+  extensionThemes: ['extensions', 'themes'] as const,
   /** Jobs, schedules, webhooks and deployments (package H). */
   publishing: {
     jobs: {
