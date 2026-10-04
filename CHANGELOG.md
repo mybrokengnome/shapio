@@ -6,6 +6,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-10-03
+
 ### Added
 
 - **MySQL 8.4 as a third database** (`DATABASE_URL=mysql://user:password@host:3306/shapio`), with several
