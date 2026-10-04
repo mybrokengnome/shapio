@@ -53,7 +53,7 @@ first person to complete Setup becomes the owner. For an install reachable by ot
 `SETUP_REQUIRE_TOKEN=true` (Setup then needs a one-time token from the log) or run `shapio admin create`
 first ([First admin](documentation/first-admin.md)).
 
-repository) or [develop Shapio](#develop-shapio) from a clone.
+To work on Shapio itself, [develop it from a clone](#develop-shapio).
 
 ## Documentation
 
