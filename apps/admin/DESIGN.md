@@ -12,70 +12,76 @@ never hex, arbitrary colours (`bg-[#…]`) or Tailwind's default palette (`bg-gr
 
 ### Themes
 
-A theme is a named, complete set of the tokens below for a light variant, a dark variant, or both. The token
-list is `THEME_TOKENS` in `@shapio/schema` (shared with the API, which validates extension themes). Each
-built-in theme is one file, `src/styles/themes/<key>.css`, imported by `src/styles/index.css` and scoped to
-`[data-theme='<key>']` (light, or the only variant) and `[data-theme='<key>'].dark`. Shapio's values also sit
-on zero-specificity `:where(:root)` / `:where(:root.dark)` blocks: the fallback before the theme script runs
-or when a saved theme's CSS is gone. `index.css` maps the tokens to Tailwind (`@theme inline`) and holds no
-colour values.
+A theme is a named, complete set of the tokens below for a light variant, a dark variant, or both; a **look**
+is one theme in one variant, and the person picks exactly one look (nothing follows the operating system).
+Every built-in theme is a single look. The token list is `THEME_TOKENS` in `@shapio/schema` (shared with the
+API, which validates extension themes). Each built-in theme is one file, `src/styles/themes/<key>.css`,
+imported by `src/styles/index.css` and scoped to `[data-theme='<key>']`; an extension theme with both variants
+adds `[data-theme='<key>'].dark`. Shapio's values also sit on a zero-specificity `:where(:root)` block: the
+fallback before the theme script runs or when a saved theme's CSS is gone. `index.css` maps the tokens to
+Tailwind (`@theme inline`) and holds no colour values.
 
 - `public/theme-init.js` sets `data-theme` and `dark` on `<html>` before first paint from the theme store
-  (`stores/theme.ts`: `theme`, `appearance`, and the theme's cached `variants`), so there is no flash;
-  `hooks/useApplyTheme.ts` keeps them in step afterwards. A single-variant theme renders its only variant
-  whatever the appearance, and `dark` is set for every dark-rendering theme, so `dark:` variants and
-  `color-scheme` follow. `src/test/themeInit.test.ts` keeps the script and `helpers/theme.ts` in step.
-- `src/test/contrast.test.ts` checks every theme and variant: exactly `THEME_TOKENS`, `#rrggbb` values, every
-  text pair at 4.5:1 and every control/focus pair at 3:1 (pairs in `@shapio/schema` `themes/contrast.ts`).
-  `src/test/classicTheme.test.ts` pins Classic to the original values.
-- A preview of another theme is a subtree with `data-theme` (and `dark`): `ThemeSwatches`. Swatches only,
+  (`stores/theme.ts`: `theme`, `appearance` = the look's variant, and the theme's cached `variants`), so there
+  is no flash; `hooks/useApplyTheme.ts` keeps them in step afterwards. `dark` is set for every dark look, so
+  `dark:` variants and `color-scheme` follow. With nothing stored the look is Shapio. A pre-theme (version 1)
+  setting becomes Cobalt; a version 2 colour mode becomes the theme's look. `src/test/themeInit.test.ts` keeps
+  the script, the store's migration and `helpers/theme.ts` in step.
+- `src/test/contrast.test.ts` checks every built-in look: exactly `THEME_TOKENS`, `#rrggbb` values, every text
+  pair at 4.5:1 and every control/focus pair at 3:1 (pairs in `@shapio/schema` `themes/contrast.ts`).
+  `src/test/classicTheme.test.ts` pins Cobalt (key `classic`) to the original dark values.
+- A preview of another look is a subtree with `data-theme` (and `dark`): `ThemeSwatches`. Swatches only,
   never live components, since `dark:` variants match ancestors.
 - Status tones are per theme (the shared ones fail on plum and cream).
-- Extensions add themes in `shapio.config` (`themes`); see `documentation/extensions.md`.
+- Extensions add themes in `shapio.config` (`themes`); see `documentation/extensions.md`. One with both
+  variants is listed twice in the picker, as "Name Light" and "Name Dark".
 
-| Theme            | Variants     | Character                                                                       |
-| ---------------- | ------------ | ------------------------------------------------------------------------------- |
-| **Shapio**       | light + dark | the default: plum, cream and acid yellow                                        |
-| **Classic**      | light + dark | the original cobalt look, values unchanged (the logo is the new mark)           |
-| **Murdered out** | dark only    | blacked out: pure black, white actions, no hue except status tones and the logo |
-| **Snowed**       | light only   | white and snow grey, ink actions, ice-blue selection                            |
+| Look             | Variant | Character                                                                                 |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------- |
+| **Shapio**       | dark    | the default: plum grounds, cream text, acid-yellow actions                                |
+| **Cobalt**       | dark    | the original dark cobalt look, values unchanged (the logo is the new mark); key `classic` |
+| **Murdered out** | dark    | blacked out: pure black, dark grey actions, nothing light but text and icons              |
+| **Forest**       | dark    | deep green grounds, mint text, lime actions, links and focus                              |
+| **Snowed**       | light   | white and snow grey, ink actions, ice-blue selection                                      |
+| **Butter**       | light   | butter-yellow ground, cream surfaces, ink actions, ochre focus                            |
 
 Final values (every pair checked by the contrast test):
 
-| Token                      | Shapio light          | Shapio dark           | Classic light         | Classic dark          | Murdered out          | Snowed                |
+| Token                      | Shapio                | Cobalt                | Murdered out          | Forest                | Snowed                | Butter                |
 | -------------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- |
-| `background`               | `#f7f2ea`             | `#231527`             | `#faf9f6`             | `#0f0f0e`             | `#000000`             | `#ffffff`             |
-| `foreground`               | `#1e1422`             | `#f5ebd8`             | `#0f172a`             | `#f2f1ee`             | `#f2f2f2`             | `#0f172a`             |
-| `card`                     | `#ffffff`             | `#2b1b30`             | `#ffffff`             | `#161615`             | `#0a0a0a`             | `#f7f9fc`             |
-| `popover`                  | `#ffffff`             | `#352239`             | `#ffffff`             | `#1c1c1a`             | `#141414`             | `#ffffff`             |
-| `primary`                  | `#1e1422`             | `#e9f26e`             | `#2563eb`             | `#2563eb`             | `#f2f2f2`             | `#0f172a`             |
-| `primary-foreground`       | `#f7f2ea`             | `#1e1422`             | `#ffffff`             | `#ffffff`             | `#000000`             | `#ffffff`             |
-| `primary-hover`            | `#3a2541`             | `#f3fa8a`             | `#1d4ed8`             | `#1d4ed8`             | `#d4d4d4`             | `#1e293b`             |
-| `secondary`                | `#efe8dd`             | `#352239`             | `#f1efea`             | `#232321`             | `#1a1a1a`             | `#eef2f7`             |
-| `muted`                    | `#f3ede4`             | `#2e1d33`             | `#f5f3ee`             | `#1f1f1d`             | `#111111`             | `#f3f6fa`             |
-| `muted-foreground`         | `#5b4c61`             | `#c9b9cf`             | `#475569`             | `#a9a7a1`             | `#9a9a9a`             | `#4b5a6e`             |
-| `accent`                   | `#eff3b4`             | `#45304b`             | `#eceae4`             | `#262a3a`             | `#262626`             | `#dce6f5`             |
-| `accent-foreground`        | `#1e1422`             | `#f5ebd8`             | `#0f172a`             | `#c7d0fd`             | `#ffffff`             | `#0f172a`             |
-| `destructive`              | `#b42318`             | `#ff8a80`             | `#b91c1c`             | `#ef5350`             | `#ff6b6b`             | `#b91c1c`             |
-| `destructive-muted`        | `#fbe1dc`             | `#4a1f2a`             | `#fee2e2`             | `#3b1519`             | `#2a0e0e`             | `#fee2e2`             |
-| `success` / `-muted`       | `#17703a` / `#dcf2e1` | `#6ee7a0` / `#1d3a2b` | `#15803d` / `#dcfce7` | `#4ade80` / `#12301f` | `#4ade80` / `#0c2415` | `#15803d` / `#dcfce7` |
-| `warning` / `-muted`       | `#965006` / `#fbecc8` | `#fcc94d` / `#43311a` | `#b45309` / `#fef3c7` | `#fbbf24` / `#36270a` | `#fbbf24` / `#2a1f05` | `#a14b07` / `#fef3c7` |
-| `info` / `-muted`          | `#4a2e55` / `#ece2f0` | `#c3cbff` / `#33295a` | `#1d4ed8` / `#e0e7ff` | `#a5b4fc` / `#1e2a4a` | `#d4d4d4` / `#1f1f1f` | `#1d4ed8` / `#e0e7ff` |
-| `border`                   | `#e4dcd2`             | `#3e2b43`             | `#e2dfd8`             | `#2c2c29`             | `#262626`             | `#d9e0ea`             |
-| `input`                    | `#8a7c84`             | `#8f7c95`             | `#808898`             | `#76756f`             | `#737373`             | `#7c8899`             |
-| `ring`                     | `#4a2e55`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#ffffff`             | `#2563eb`             |
-| `link`                     | `#4a2e55`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#d4d4d4`             | `#1d4ed8`             |
-| `sidebar`                  | `#f0e9de`             | `#1c1020`             | `#f3f1ec`             | `#0b0b0a`             | `#050505`             | `#f3f6fa`             |
-| `sidebar-primary`          | `#1e1422`             | `#e9f26e`             | `#2563eb`             | `#a5b4fc`             | `#f2f2f2`             | `#0f172a`             |
-| `brand-letters`            | `#231527`             | `#f5ebd8`             | `#231527`             | `#f5ebd8`             | `#f2f2f2`             | `#0f172a`             |
-| `brand-panel-from` / `-to` | `#352239` / `#1e1422` | `#352239` / `#140b17` | `#2563eb` / `#1d4ed8` | `#1d4ed8` / `#0f172a` | `#141414` / `#000000` | `#dce6f5` / `#f7f9fc` |
+| `background`               | `#231527`             | `#0f0f0e`             | `#000000`             | `#0f1f17`             | `#ffffff`             | `#f9edbc`             |
+| `foreground`               | `#f5ebd8`             | `#f2f1ee`             | `#f2f2f2`             | `#eaf5ec`             | `#0f172a`             | `#0f172a`             |
+| `card`                     | `#2b1b30`             | `#161615`             | `#0a0a0a`             | `#16291f`             | `#f7f9fc`             | `#fff7d6`             |
+| `popover`                  | `#352239`             | `#1c1c1a`             | `#141414`             | `#1d3528`             | `#ffffff`             | `#fffbea`             |
+| `primary`                  | `#e9f26e`             | `#2563eb`             | `#626262`             | `#9be15d`             | `#0f172a`             | `#0f172a`             |
+| `primary-foreground`       | `#1e1422`             | `#ffffff`             | `#f2f2f2`             | `#0f1f17`             | `#ffffff`             | `#ffffff`             |
+| `primary-hover`            | `#f3fa8a`             | `#1d4ed8`             | `#575757`             | `#b8f08a`             | `#1e293b`             | `#1e293b`             |
+| `secondary`                | `#352239`             | `#232321`             | `#1a1a1a`             | `#1d3528`             | `#eef2f7`             | `#f2e4a8`             |
+| `muted`                    | `#2e1d33`             | `#1f1f1d`             | `#111111`             | `#132519`             | `#f3f6fa`             | `#f5e7b0`             |
+| `muted-foreground`         | `#c9b9cf`             | `#a9a7a1`             | `#9a9a9a`             | `#a9c4b2`             | `#4b5a6e`             | `#5b5636`             |
+| `accent`                   | `#45304b`             | `#262a3a`             | `#1f1f1f`             | `#26412f`             | `#dce6f5`             | `#f2df8a`             |
+| `accent-foreground`        | `#f5ebd8`             | `#c7d0fd`             | `#ffffff`             | `#eaf5ec`             | `#0f172a`             | `#0f172a`             |
+| `destructive`              | `#ff8a80`             | `#ef5350`             | `#ff6b6b`             | `#ff8a80`             | `#b91c1c`             | `#a61b1b`             |
+| `destructive-muted`        | `#4a1f2a`             | `#3b1519`             | `#2a0e0e`             | `#3d1e1f`             | `#fee2e2`             | `#f8dcc8`             |
+| `success` / `-muted`       | `#6ee7a0` / `#1d3a2b` | `#4ade80` / `#12301f` | `#4ade80` / `#0c2415` | `#7ee0a6` / `#183a28` | `#15803d` / `#dcfce7` | `#146c34` / `#dff0c4` |
+| `warning` / `-muted`       | `#fcc94d` / `#43311a` | `#fbbf24` / `#36270a` | `#fbbf24` / `#2a1f05` | `#fcc94d` / `#3a3117` | `#a14b07` / `#fef3c7` | `#864500` / `#f6dc9a` |
+| `info` / `-muted`          | `#c3cbff` / `#33295a` | `#a5b4fc` / `#1e2a4a` | `#d4d4d4` / `#1f1f1f` | `#9fd3ff` / `#18324a` | `#1d4ed8` / `#e0e7ff` | `#1d4ed8` / `#e6e4f2` |
+| `border`                   | `#3e2b43`             | `#2c2c29`             | `#262626`             | `#264233`             | `#d9e0ea`             | `#e6d79a`             |
+| `input`                    | `#8f7c95`             | `#76756f`             | `#6a6a6a`             | `#6f9a7d`             | `#7c8899`             | `#857a50`             |
+| `ring`                     | `#e9f26e`             | `#a5b4fc`             | `#8a8a8a`             | `#9be15d`             | `#2563eb`             | `#8a6d00`             |
+| `link`                     | `#e9f26e`             | `#a5b4fc`             | `#d4d4d4`             | `#b8f08a`             | `#1d4ed8`             | `#1d4ed8`             |
+| `sidebar`                  | `#1c1020`             | `#0b0b0a`             | `#050505`             | `#0b1811`             | `#f3f6fa`             | `#f4e5a9`             |
+| `sidebar-primary`          | `#e9f26e`             | `#a5b4fc`             | `#f2f2f2`             | `#9be15d`             | `#0f172a`             | `#0f172a`             |
+| `brand-letters`            | `#f5ebd8`             | `#f5ebd8`             | `#f2f2f2`             | `#eaf5ec`             | `#0f172a`             | `#0f172a`             |
+| `brand-panel-from` / `-to` | `#352239` / `#140b17` | `#1d4ed8` / `#0f172a` | `#141414` / `#000000` | `#1d3528` / `#0a160f` | `#dce6f5` / `#f7f9fc` | `#f2df8a` / `#fff7d6` |
 
 The remaining tokens (`*-foreground` on cards and popovers, `destructive-foreground`, `overlay`, the other
 `sidebar-*`) are in the theme files. `brand-logo` (`#e9f26e`) and `brand-logo-foreground` (`#231527`) are the
-same in every theme; `brand-panel-mark` is the logo yellow everywhere today.
+same in every theme; `brand-panel-mark` is the logo yellow except on Butter's pale panel, where it is plum.
 
-In Shapio light the yellow is a background highlight only (`accent`, selection): as text, as a hover under
-light text or as a focus ring it fails contrast on cream, so actions are ink and focus and links are plum.
+Murdered out's actions are the darkest grey that still reads at 3:1 on every surface (`#626262`), and its
+control borders the darkest that does on the selection surface (`#6a6a6a`); darker greys fail the
+control-contrast pairs.
 
 | Token                                                   | Use                                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -170,12 +176,10 @@ is written by the model's author and stays visible (13px meta).
   polls by itself; it isn't a live region.
 - Below lg (1024px) the sidebar is a sheet, opened from a 48px sticky row (trigger, wordmark, avatar
   menu). `useIsMobile()` is true below lg.
-- Theme is in the account menu (Profile, Theme ▸ the themes with their swatches, then Colour mode
-  System/Light/Dark, Sign out; the same body is the signed-out screens' `ThemeMenu`), with a one-click
-  light ⇄ dark switch (`ThemeToggle`) beside it in the sidebar footer and in the phone bar. The switch saves
-  an explicit Light or Dark; on System it switches to the opposite of what is rendered. For a single-variant
-  theme the colour modes are disabled with a note, and the switch is `aria-disabled` with a tooltip saying
-  why. Settings → Appearance shows the themes as cards (`RadioTile` with `ThemeSwatches`) and the modes.
+- Theme is in the account menu (Profile, Theme ▸ the looks with their swatches, Sign out; the same body is
+  the signed-out screens' `ThemeMenu`). There is no colour-mode setting and no light ⇄ dark switch: each look
+  is fixed. Settings → Appearance shows the looks as cards (`RadioTile` with `ThemeSwatches`: the logo, a
+  surface and the primary on the look's ground).
 - A screen renders only its content: start with `Page` and `PageHeader`; don't add headers, gutters or
   backgrounds of your own.
 
@@ -442,7 +446,7 @@ the mark alone. Never set "shapio" as text for the brand.
 Brand files live in `src/assets/brand/` (`mark.svg`, `wordmark.svg`, `logo-horizontal.svg`, generated by
 `node brand/build.mjs` in the Shapio palette; the letters are `currentColor`, plum by default and cream under a
 dark colour scheme). The original blue logo is kept in the repo-root `brand/` as `classic-*` and is not used by
-the admin; the Classic UI theme shows the Shapio logo too. `pnpm --filter @shapio/admin brand:icons` regenerates
+the admin; the Cobalt UI theme shows the Shapio logo too. `pnpm --filter @shapio/admin brand:icons` regenerates
 `public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (plum S on full-bleed yellow) from
 `mark.svg`; `Logo/brandAssets.test.ts` keeps the components, the files, the favicon and the `classic-*` set on
 the same geometry.

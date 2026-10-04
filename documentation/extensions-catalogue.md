@@ -311,8 +311,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 
 ### Admin themes
 
-- **What:** colour themes for the admin, listed after the built-in ones (Shapio, Classic, Murdered out,
-  Snowed) in the theme menu, in Settings → Appearance and on the sign-in screen.
+- **What:** colour themes for the admin, listed after the built-in looks (Shapio, Cobalt, Murdered out,
+  Forest, Snowed, Butter) in the theme menu, in Settings → Appearance and on the sign-in screen.
 - **Where it runs:** declared in `shapio.config` (server); applied in the admin, in the browser.
 - **Contract:** `ThemeDefinition` and `ThemeTokens` from `@shapio/cms/config`; the token names are
   `THEME_TOKENS` (`THEME_SEMANTIC_TOKENS`, all required per variant, and `THEME_BRAND_TOKENS`, optional) in
@@ -335,8 +335,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 
 - **Lifecycle:** read at startup; changing a theme needs a restart, never a rebuild of the admin. The admin links
   the stylesheet render-blocking and caches the chosen theme's variants in the browser, so a custom theme
-  applies before first paint. A theme with one variant ignores the person's colour mode. If a theme disappears,
-  people who picked it get Shapio.
+  applies before first paint. Each variant is one look in the picker (a theme with both is listed twice). If a
+  theme disappears, people who picked it get Shapio.
 - **Versioning:** part of `@shapio/cms/config` (`EXTENSION_CONTRACT_VERSION` 1). Making a new token required
   would be a breaking change, released as one.
 - **Limits:** keys match `^[a-z][a-z0-9-]{0,40}$` and can't reuse a built-in key; a missing or unknown token, or

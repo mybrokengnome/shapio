@@ -152,12 +152,15 @@ test('settings → sessions lists this device', async () => {
 test('settings → appearance switches and remembers the choice', async () => {
   await settingsLink('Appearance').click();
   await captureScreen(page, 'team-07-settings-theme', { viewports: ['desktop'] });
-  await page.getByRole('radio', { name: 'Dark' }).click();
-  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+  const html = page.locator('html');
+  await page.getByRole('radio', { name: 'Snowed' }).click();
+  await expect(html).toHaveAttribute('data-theme', 'snowed');
+  await expect(html).not.toHaveClass(/\bdark\b/);
   await page.reload();
-  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-  await page.getByRole('radio', { name: 'System' }).click();
-  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
+  await expect(html).toHaveAttribute('data-theme', 'snowed');
+  await page.getByRole('radio', { name: 'Shapio' }).click();
+  await expect(html).toHaveAttribute('data-theme', 'shapio');
+  await expect(html).toHaveClass(/\bdark\b/);
 });
 
 test('settings → locales lists the default locale', async () => {

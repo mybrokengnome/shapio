@@ -1,0 +1,53 @@
+/*
+ * Forest: dark only. Deep green grounds, mint text, lime actions, links and focus. Every pair is checked by
+ * test/contrast.test.ts.
+ */
+[data-theme='forest'] {
+  --background: #0f1f17;
+  --foreground: #eaf5ec;
+  --card: #16291f;
+  --card-foreground: #eaf5ec;
+  --popover: #1d3528;
+  --popover-foreground: #eaf5ec;
+  --primary: #9be15d;
+  --primary-foreground: #0f1f17;
+  --primary-hover: #b8f08a;
+  --secondary: #1d3528;
+  --secondary-foreground: #eaf5ec;
+  --muted: #132519;
+  --muted-foreground: #a9c4b2;
+  /* Selection only: a green step lighter. */
+  --accent: #26412f;
+  --accent-foreground: #eaf5ec;
+  --destructive: #ff8a80;
+  --destructive-foreground: #0f1f17;
+  --destructive-muted: #3d1e1f;
+  --success: #7ee0a6;
+  --success-muted: #183a28;
+  --warning: #fcc94d;
+  --warning-muted: #3a3117;
+  --info: #9fd3ff;
+  --info-muted: #18324a;
+  --border: #264233;
+  --input: #6f9a7d;
+  --ring: #9be15d;
+  --link: #b8f08a;
+  --overlay: #050c08;
+
+  --sidebar: #0b1811;
+  --sidebar-foreground: #ddede1;
+  --sidebar-primary: #9be15d;
+  --sidebar-primary-foreground: #0f1f17;
+  --sidebar-accent: #16291f;
+  --sidebar-accent-foreground: #b8f08a;
+  --sidebar-border: #16291f;
+  --sidebar-ring: #9be15d;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #eaf5ec;
+  --brand-panel-from: #1d3528;
+  --brand-panel-to: #0a160f;
+  --brand-panel-foreground: #eaf5ec;
+  --brand-panel-mark: #e9f26e;
+}

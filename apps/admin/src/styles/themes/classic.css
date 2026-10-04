@@ -1,63 +1,9 @@
 /*
- * Classic: the admin's original cobalt palette (light and dark), values unchanged; only the logo is the new
- * brand mark. test/classicTheme.test.ts pins these values. Every pair is checked by test/contrast.test.ts.
+ * Cobalt (key `classic`): the admin's original dark cobalt palette, values unchanged; only the logo is the new
+ * brand mark. Dark only. test/classicTheme.test.ts pins these values. Every pair is checked by
+ * test/contrast.test.ts.
  */
 [data-theme='classic'] {
-  --background: #faf9f6;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --primary-hover: #1d4ed8;
-  --secondary: #f1efea;
-  --secondary-foreground: #0f172a;
-  /* Warm neutrals (red >= green >= blue), as in dark: cobalt marks actions, links, focus and the active
-     nav bar only, never a surface. #f5f3ee (a touch lighter than the sidebar) keeps status text at 4.5:1. */
-  --muted: #f5f3ee;
-  --muted-foreground: #475569;
-  /* Selection and hover only (selected rows and tiles, current sub-nav item, menu focus). */
-  --accent: #eceae4;
-  --accent-foreground: #0f172a;
-  --destructive: #b91c1c;
-  --destructive-foreground: #ffffff;
-  --destructive-muted: #fee2e2;
-  --success: #15803d;
-  --success-muted: #dcfce7;
-  --warning: #b45309;
-  --warning-muted: #fef3c7;
-  --info: #1d4ed8;
-  /* The info status chip only (status tones are semantic): no other light surface is blue. */
-  --info-muted: #e0e7ff;
-  --border: #e2dfd8;
-  /* Form-control borders and unchecked switches: 3:1 on every surface (WCAG 1.4.11). */
-  --input: #808898;
-  --ring: #2563eb;
-  --link: #2563eb;
-  /* Sheet and dialog backdrops (used at /40). */
-  --overlay: #0f172a;
-
-  --sidebar: #f3f1ec;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffffff;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e6e2da;
-  --sidebar-ring: #2563eb;
-
-  --brand-logo: #e9f26e;
-  --brand-logo-foreground: #231527;
-  --brand-letters: #231527;
-  --brand-panel-from: #2563eb;
-  --brand-panel-to: #1d4ed8;
-  --brand-panel-foreground: #faf9f6;
-  --brand-panel-mark: #e9f26e;
-}
-
-[data-theme='classic'].dark {
   /* Warm-neutral near-black (red >= green >= blue): no blue in the surfaces. Cobalt is the one colour,
      periwinkle marks selection, focus and links. */
   --background: #0f0f0e;

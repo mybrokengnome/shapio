@@ -2,7 +2,6 @@ import { Link } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useOpenCommandPalette } from '@/components/CommandPalette/hooks/useOpenCommandPalette';
-import { ThemeToggle } from '@/components/ThemeMenu/Toggle';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Wordmark } from '@/components/Wordmark';
@@ -36,7 +35,6 @@ export const MobileBar = ({ searchable }: MobileBarProps) => {
           <Search aria-hidden="true" />
         </Button>
       ) : null}
-      <ThemeToggle />
       <UserMenu variant="compact" />
     </div>
   );

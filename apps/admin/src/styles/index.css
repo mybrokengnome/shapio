@@ -1,15 +1,18 @@
 /*
  * Tailwind entry: fonts, design tokens, base layer. The only global CSS in the admin (DESIGN.md).
  * Components use semantic tokens (bg-background, text-primary...). Their values come from the theme files in
- * ./themes, one per built-in theme, each scoped to `[data-theme='<key>']` (light, or the only variant) and
- * `[data-theme='<key>'].dark`; public/theme-init.js sets both on <html> before first paint.
+ * ./themes, one per built-in theme, each scoped to `[data-theme='<key>']` (every built-in theme is one look,
+ * light or dark); public/theme-init.js sets it, and the `dark` class for a dark look, on <html> before first
+ * paint. An extension theme may have both variants: `[data-theme='<key>']` and `[data-theme='<key>'].dark`.
  */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import './themes/shapio.css';
 @import './themes/classic.css';
 @import './themes/murdered-out.css';
+@import './themes/forest.css';
 @import './themes/snowed.css';
+@import './themes/butter.css';
 
 @custom-variant dark (&:is(.dark *));
 

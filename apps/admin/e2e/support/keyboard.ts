@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { renderScheme } from './schemes';
 
 /**
  * Keyboard-only helpers: walk focus with Tab, check that every stop shows a visible focus indicator, and
@@ -257,12 +258,11 @@ export const expectFocusTrappedIn = async (
   throw new Error(`Focus did not cycle inside the dialog within ${max} presses`);
 };
 
-/** Runs `check` in light and in dark (the admin follows the OS preference by default). */
+/** Runs `check` in a light and a dark look (support/schemes.ts). */
 export const inBothSchemes = async (page: Page, check: (scheme: Scheme) => Promise<unknown>) => {
   for (const scheme of SCHEMES) {
-    await page.emulateMedia({ colorScheme: scheme });
-    await expect(page.locator('html')).toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
+    const restore = await renderScheme(page, scheme);
     await check(scheme);
+    await restore();
   }
-  await page.emulateMedia({ colorScheme: 'light' });
 };

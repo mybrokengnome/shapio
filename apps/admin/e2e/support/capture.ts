@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
 import { SCREENSHOT_DIR } from './constants';
+import { renderScheme } from './schemes';
 
 const SCHEMES = ['light', 'dark'] as const;
 const BLOCKING_IMPACTS = new Set(['serious', 'critical']);
@@ -32,8 +33,8 @@ type CaptureOptions = {
 };
 
 /**
- * Screenshots the current screen in light and dark (OS preference, which the default "system" theme follows)
- * and runs axe in both: no serious or critical violations allowed.
+ * Screenshots the current screen in a light and a dark look (support/schemes.ts) and runs axe in both: no
+ * serious or critical violations allowed.
  */
 export const captureScreen = async (page: Page, name: string, { viewports }: CaptureOptions = {}) => {
   if (!viewports) {
@@ -54,11 +55,10 @@ const captureSchemes = async (page: Page, name: string) => {
   // No stray hover state (tooltips, hover colours) in screenshots.
   await page.mouse.move(0, 0);
   for (const scheme of SCHEMES) {
-    await page.emulateMedia({ colorScheme: scheme });
-    await expect(page.locator('html')).toHaveClass(scheme === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b).*$/);
+    const restore = await renderScheme(page, scheme);
     await captureRendered(page, `${name}-${scheme}`);
+    await restore();
   }
-  await page.emulateMedia({ colorScheme: 'light' });
 };
 
 /**

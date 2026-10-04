@@ -4,49 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { SRC_DIR } from './sourceFiles';
 
 /**
- * Classic is the admin's original palette, verbatim (docs/plans/themes.md, acceptance 2): these are the values
- * styles/index.css carried before themes existed. Only the brand tokens (the new logo) are new.
+ * Cobalt (key `classic`) is the admin's original dark palette, verbatim (docs/plans/themes.md, acceptance 2):
+ * these are the values styles/index.css carried for `.dark` before themes existed. Only the brand tokens (the
+ * new logo) are new.
  */
-const LIGHT = {
-  background: '#faf9f6',
-  foreground: '#0f172a',
-  card: '#ffffff',
-  'card-foreground': '#0f172a',
-  popover: '#ffffff',
-  'popover-foreground': '#0f172a',
-  primary: '#2563eb',
-  'primary-foreground': '#ffffff',
-  'primary-hover': '#1d4ed8',
-  secondary: '#f1efea',
-  'secondary-foreground': '#0f172a',
-  muted: '#f5f3ee',
-  'muted-foreground': '#475569',
-  accent: '#eceae4',
-  'accent-foreground': '#0f172a',
-  destructive: '#b91c1c',
-  'destructive-foreground': '#ffffff',
-  'destructive-muted': '#fee2e2',
-  success: '#15803d',
-  'success-muted': '#dcfce7',
-  warning: '#b45309',
-  'warning-muted': '#fef3c7',
-  info: '#1d4ed8',
-  'info-muted': '#e0e7ff',
-  border: '#e2dfd8',
-  input: '#808898',
-  ring: '#2563eb',
-  link: '#2563eb',
-  overlay: '#0f172a',
-  sidebar: '#f3f1ec',
-  'sidebar-foreground': '#0f172a',
-  'sidebar-primary': '#2563eb',
-  'sidebar-primary-foreground': '#ffffff',
-  'sidebar-accent': '#ffffff',
-  'sidebar-accent-foreground': '#0f172a',
-  'sidebar-border': '#e6e2da',
-  'sidebar-ring': '#2563eb',
-};
-
 const DARK = {
   background: '#0f0f0e',
   foreground: '#f2f1ee',
@@ -99,12 +60,8 @@ const blockValues = (selector: string) => {
   );
 };
 
-describe('Classic theme', () => {
-  it('keeps the original light values', () => {
-    expect(blockValues("[data-theme='classic']")).toEqual(LIGHT);
-  });
-
+describe('Cobalt theme (key classic)', () => {
   it('keeps the original dark values', () => {
-    expect(blockValues("[data-theme='classic'].dark")).toEqual(DARK);
+    expect(blockValues("[data-theme='classic']")).toEqual(DARK);
   });
 });

@@ -1,18 +1,18 @@
 import { useTranslation } from 'react-i18next';
 import { DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu';
 import { ThemeSwatches } from '../../ThemeSwatches';
-import { useThemeSelection } from '../hooks/useThemeSelection';
+import { useLookSelection } from '../hooks/useLookSelection';
 
-/** The themes as radio items with their colours, for any dropdown menu (the theme menu, the account menu). */
+/** The looks as radio items with their colours, for any dropdown menu (the theme menu, the account menu). */
 export const ThemeMenuThemes = () => {
   const { t } = useTranslation();
-  const { themes, themeKey, selectTheme } = useThemeSelection();
+  const { looks, selectedLook, selectLook } = useLookSelection();
   return (
-    <DropdownMenuRadioGroup aria-label={t('theme.label')} value={themeKey} onValueChange={selectTheme}>
-      {themes.map((option) => (
-        <DropdownMenuRadioItem key={option.key} value={option.key}>
-          <ThemeSwatches themeKey={option.key} variants={option.variants} />
-          {option.name}
+    <DropdownMenuRadioGroup aria-label={t('theme.label')} value={selectedLook} onValueChange={selectLook}>
+      {looks.map((look) => (
+        <DropdownMenuRadioItem key={look.value} value={look.value}>
+          <ThemeSwatches themeKey={look.themeKey} variant={look.variant} />
+          {look.name}
         </DropdownMenuRadioItem>
       ))}
     </DropdownMenuRadioGroup>

@@ -49,7 +49,7 @@ const MediaValue = ({ value }: { value: unknown }) => {
 export const PropertyValue = ({ field, value }: PropertyValueProps) => {
   const { t } = useTranslation();
   if (isEmptyValue(value)) {
-    return <span className="text-muted-foreground/80">{t('entry.properties.empty')}</span>;
+    return <span className="text-muted-foreground">{t('entry.properties.empty')}</span>;
   }
   switch (field.type) {
     case 'relation':

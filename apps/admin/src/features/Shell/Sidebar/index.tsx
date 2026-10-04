@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { memo, useId } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ThemeToggle } from '@/components/ThemeMenu/Toggle';
 import {
   SidebarContent,
   SidebarFooter,
@@ -83,7 +82,6 @@ export const Sidebar = memo(function Sidebar({ groups, activeKey, searchable }: 
         <div className="min-w-0 flex-1">
           <UserMenu />
         </div>
-        <ThemeToggle />
       </SidebarFooter>
       <SidebarRail />
     </SidebarRoot>

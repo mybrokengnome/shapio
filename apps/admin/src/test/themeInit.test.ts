@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import type { ThemeVariant } from '@shapio/schema';
 import { afterEach, describe, expect, it } from 'vitest';
-import { APPEARANCES } from '@/constants/themes';
+import { BUILT_IN_THEMES } from '@/constants/themes';
 import { resolveScheme } from '@/helpers/theme';
 import { migrateThemeState, THEME_STORAGE_KEY } from '@/stores/theme';
 import { SRC_DIR } from './sourceFiles';
@@ -17,6 +17,7 @@ const executeScript = () => {
   runInNewContext(SCRIPT, { window, document });
 };
 
+/** The OS preference must never matter: every case runs with the OS asking for dark and for light. */
 const stubSystemDark = (matches: boolean) => {
   Object.defineProperty(window, 'matchMedia', {
     value: (query: string) => ({ matches, media: query }) as MediaQueryList,
@@ -37,6 +38,12 @@ const runScript = (stored: unknown, systemDark: boolean) => {
   return { theme: root.getAttribute('data-theme'), dark: root.classList.contains('dark') };
 };
 
+/** What the store makes of a stored value (it migrates on load), rendered as the admin would. */
+const expected = (stored: { state: unknown; version: number }) => {
+  const migrated = migrateThemeState(stored.state, stored.version);
+  return { theme: migrated.theme, dark: resolveScheme(migrated.appearance, migrated.variants) === 'dark' };
+};
+
 afterEach(() => {
   document.documentElement.removeAttribute('data-theme');
   document.documentElement.classList.remove('dark');
@@ -44,51 +51,47 @@ afterEach(() => {
 });
 
 const VARIANT_SETS: ReadonlyArray<readonly ThemeVariant[]> = [['light', 'dark'], ['light'], ['dark']];
-const CASES = ['shapio', 'classic', 'murdered-out', 'snowed', 'acme-night'].flatMap((theme) =>
-  VARIANT_SETS.flatMap((variants) =>
-    APPEARANCES.flatMap((appearance) =>
-      [true, false].map((systemDark) => ({ theme, variants, appearance, systemDark })),
+const THEME_KEYS = [...BUILT_IN_THEMES.map(({ key }) => key), 'acme-night'];
+const CASES = [2, 3].flatMap((version) =>
+  THEME_KEYS.flatMap((theme) =>
+    VARIANT_SETS.flatMap((variants) =>
+      ['system', 'light', 'dark'].flatMap((appearance) =>
+        [true, false].map((systemDark) => ({ version, theme, variants, appearance, systemDark })),
+      ),
     ),
   ),
 );
 
 describe('public/theme-init.js', () => {
   it.each(CASES)(
-    '$theme $variants $appearance (OS dark: $systemDark) matches resolveScheme',
-    ({ theme, variants, appearance, systemDark }) => {
-      const stored = { state: { theme, appearance, variants }, version: 2 };
-      expect(runScript(stored, systemDark)).toEqual({
-        theme,
-        dark: resolveScheme(appearance, variants, systemDark) === 'dark',
-      });
+    'v$version $theme $variants $appearance (OS dark: $systemDark) matches the store',
+    ({ version, theme, variants, appearance, systemDark }) => {
+      const stored = { state: { theme, appearance, variants }, version };
+      expect(runScript(stored, systemDark)).toEqual(expected(stored));
     },
   );
 
   it.each(
-    APPEARANCES.flatMap((preference) => [true, false].map((systemDark) => ({ preference, systemDark }))),
-  )(
-    'reads a version 1 value ($preference, OS dark: $systemDark) as the store migrates it',
-    ({ preference, systemDark }) => {
-      const migrated = migrateThemeState({ preference }, 1);
-      expect(migrated.theme).toBe('classic');
-      expect(runScript({ state: { preference }, version: 1 }, systemDark)).toEqual({
-        theme: 'classic',
-        dark: resolveScheme(migrated.appearance, migrated.variants, systemDark) === 'dark',
-      });
-    },
-  );
+    ['system', 'light', 'dark'].flatMap((preference) =>
+      [true, false].map((systemDark) => ({ preference, systemDark })),
+    ),
+  )('reads a version 1 value ($preference, OS dark: $systemDark) as Cobalt', ({ preference, systemDark }) => {
+    const stored = { state: { preference }, version: 1 };
+    expect(expected(stored)).toEqual({ theme: 'classic', dark: true });
+    expect(runScript(stored, systemDark)).toEqual({ theme: 'classic', dark: true });
+  });
 
-  it('defaults to Shapio following the OS when nothing is stored', () => {
+  it('defaults to Shapio (dark) when nothing is stored, whatever the OS says', () => {
     expect(runScript(undefined, true)).toEqual({ theme: 'shapio', dark: true });
-    expect(runScript(undefined, false)).toEqual({ theme: 'shapio', dark: false });
+    expect(runScript(undefined, false)).toEqual({ theme: 'shapio', dark: true });
   });
 
   it('ignores a malformed theme key and appearance', () => {
     const stored = {
       state: { theme: "x'] {", appearance: 'sepia', variants: ['light', 'dark'] },
-      version: 2,
+      version: 3,
     };
-    expect(runScript(stored, true)).toEqual({ theme: 'shapio', dark: true });
+    expect(runScript(stored, false)).toEqual({ theme: 'shapio', dark: true });
   });
 
   it('survives unreadable storage', () => {
@@ -96,5 +99,6 @@ describe('public/theme-init.js', () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, '{not json');
     executeScript();
     expect(document.documentElement.getAttribute('data-theme')).toBe('shapio');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 });

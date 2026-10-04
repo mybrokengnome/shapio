@@ -180,9 +180,6 @@
   },
   "theme": {
     "label": "Theme",
-    "system": "System",
-    "light": "Light",
-    "dark": "Dark",
     "toggle": "Change theme"
   },
   "auth": {
@@ -249,10 +246,6 @@
     "mainNavigation": "Main navigation",
     "home": "Inbox",
     "search": "Search or jump to…",
-    "theme": {
-      "switchToLight": "Switch to light theme",
-      "switchToDark": "Switch to dark theme"
-    },
     "groups": {
       "content": "Content",
       "develop": "Develop",
@@ -494,26 +487,36 @@
   "appearance": {
     "title": "Appearance",
     "theme": "Theme",
-    "mode": "Colour mode",
-    "storedHere": "Saved on this device. System follows your operating system.",
-    "onlyDark": "{{theme}} has a dark version only.",
-    "onlyLight": "{{theme}} has a light version only.",
+    "storedHere": "Saved on this device.",
+    "lookName": "{{theme}} {{variant}}",
+    "variants": {
+      "light": "Light",
+      "dark": "Dark"
+    },
     "themes": {
       "shapio": {
         "name": "Shapio",
-        "description": "Plum, cream and acid yellow. Light and dark."
+        "description": "Plum, cream and acid yellow."
       },
       "classic": {
-        "name": "Classic",
-        "description": "The original cobalt look. Light and dark."
+        "name": "Cobalt",
+        "description": "The original cobalt look."
       },
       "murdered-out": {
         "name": "Murdered out",
-        "description": "Blacked out, no colour. Dark only."
+        "description": "Blacked out, no colour."
+      },
+      "forest": {
+        "name": "Forest",
+        "description": "Deep green and lime."
       },
       "snowed": {
         "name": "Snowed",
-        "description": "White and ice blue. Light only."
+        "description": "White and ice blue."
+      },
+      "butter": {
+        "name": "Butter",
+        "description": "Butter yellow and ink."
       }
     }
   },

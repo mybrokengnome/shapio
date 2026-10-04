@@ -280,9 +280,9 @@ editor throws while rendering. `npx shapio extensions check` reports missing edi
 
 ## Admin themes
 
-`themes` adds colour themes to the admin. They appear after the built-in ones (Shapio, Classic, Murdered out,
-Snowed) in the account menu, in Settings → Appearance and on the sign-in screen. A theme is a set of values for
-the admin's colour tokens, for a light variant, a dark variant, or both:
+`themes` adds colour themes to the admin. They appear after the built-in looks (Shapio, Cobalt, Murdered out,
+Forest, Snowed, Butter) in the account menu, in Settings → Appearance and on the sign-in screen. A theme is a
+set of values for the admin's colour tokens, for a light variant, a dark variant, or both:
 
 ```ts
 import { defineConfig, type ThemeDefinition } from '@shapio/cms/config';
@@ -318,11 +318,11 @@ theme. Changing a theme needs a restart, like the rest of the config.
   `brand-letters`, `brand-panel-from`, `brand-panel-to`, `brand-panel-foreground`, `brand-panel-mark`) are
   optional; without them the logo and the sign-in brand panel use Shapio's colours. What each token is for:
   the admin's design notes, [`apps/admin/DESIGN.md`](../apps/admin/DESIGN.md#tokens).
-- **Variants:** a theme with only `light` or only `dark` always renders that variant, whatever the person's
-  colour mode (the mode is greyed out while it is picked).
+- **Variants:** each variant is a look the person can pick. A theme with only `light` or only `dark` is listed
+  once, by its name; one with both is listed twice, as "Sepia Light" and "Sepia Dark".
 - **Validation** (startup and `shapio extensions check` stop with the path of each problem): the key must match
-  `^[a-z][a-z0-9-]{0,40}$`, may not be a built-in theme's key (`shapio`, `classic`, `murdered-out`, `snowed`) and
-  may not repeat; a theme needs at least one variant; a missing or unknown token is named
+  `^[a-z][a-z0-9-]{0,40}$`, may not be a built-in theme's key (`shapio`, `classic`, `murdered-out`, `forest`,
+  `snowed`, `butter`) and may not repeat; a theme needs at least one variant; a missing or unknown token is named
   (`/themes/0/light/backgrund: unknown theme token "backgrund"`); and every value must be a colour: `#rgb`,
   `#rrggbb`, `#rrggbbaa`, or `rgb()`, `hsl()`, `oklch()`, `oklab()` with plain arguments. Nothing else is
   accepted, so a value can't inject CSS.

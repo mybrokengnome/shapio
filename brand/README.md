@@ -36,7 +36,7 @@ file is generated from it.
 | Navy      | `#0F1B3D` | The letters on light backgrounds, and the monochrome mark |
 | White     | `#FFFFFF` | The S, and the letters on dark backgrounds                |
 
-The admin's Classic UI theme (cobalt primary) is a colour theme, not the old logo: it shows the Shapio logo too.
+The admin's Cobalt UI theme (cobalt primary) is a colour theme, not the old logo: it shows the Shapio logo too.
 
 ## Usage
 

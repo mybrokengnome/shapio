@@ -1,6 +1,7 @@
 /*
- * Murdered out: dark only, blacked out. Pure black ground, near-black surfaces, white actions; no hue
- * anywhere except the status tones and the logo. Every pair is checked by test/contrast.test.ts.
+ * Murdered out: dark only, blacked out. Pure black ground, near-black surfaces, grey actions (the darkest
+ * grey that still reads at 3:1 on every surface): nothing light but text and icons, no hue anywhere except
+ * the status tones and the logo. Every pair is checked by test/contrast.test.ts.
  */
 [data-theme='murdered-out'] {
   --background: #000000;
@@ -9,14 +10,14 @@
   --card-foreground: #f2f2f2;
   --popover: #141414;
   --popover-foreground: #f2f2f2;
-  --primary: #f2f2f2;
-  --primary-foreground: #000000;
-  --primary-hover: #d4d4d4;
+  --primary: #626262;
+  --primary-foreground: #f2f2f2;
+  --primary-hover: #575757;
   --secondary: #1a1a1a;
   --secondary-foreground: #f2f2f2;
   --muted: #111111;
   --muted-foreground: #9a9a9a;
-  --accent: #262626;
+  --accent: #1f1f1f;
   --accent-foreground: #ffffff;
   --destructive: #ff6b6b;
   --destructive-foreground: #000000;
@@ -28,8 +29,8 @@
   --info: #d4d4d4;
   --info-muted: #1f1f1f;
   --border: #262626;
-  --input: #737373;
-  --ring: #ffffff;
+  --input: #6a6a6a;
+  --ring: #8a8a8a;
   --link: #d4d4d4;
   --overlay: #000000;
 
@@ -40,7 +41,7 @@
   --sidebar-accent: #1a1a1a;
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #1a1a1a;
-  --sidebar-ring: #ffffff;
+  --sidebar-ring: #8a8a8a;
 
   --brand-logo: #e9f26e;
   --brand-logo-foreground: #231527;

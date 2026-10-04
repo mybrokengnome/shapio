@@ -113,16 +113,15 @@ Sessions, rate limits and the audit log: [Security](security.md).
 ## Appearance
 
 Each person picks how the admin looks, from the account menu (**Theme**) or Settings → **Appearance**; the
-signed-out screens have the same menu behind the palette button. There are two choices:
+signed-out screens have the same menu behind the palette button. You pick one look, and that is it: nothing
+follows your operating system.
 
-- **Theme**: **Shapio** (plum, cream and acid yellow; the default), **Classic** (the original cobalt look),
-  **Murdered out** (blacked out) and **Snowed** (white and ice blue). A project can add its own themes
-  ([Extensions: admin themes](extensions.md#admin-themes)); they are listed after these.
-- **Colour mode**: System (follows your operating system), Light or Dark. The sun/moon button beside the
-  account menu switches between light and dark in one click.
+- Dark: **Shapio** (plum, cream and acid yellow; the default), **Cobalt** (the original cobalt look),
+  **Murdered out** (blacked out, nothing light but text and icons) and **Forest** (deep green and lime).
+- Light: **Snowed** (white and ice blue) and **Butter** (butter yellow and ink).
 
-Murdered out has a dark version only and Snowed a light version only: with them the colour mode does nothing
-(it is greyed out, and the one-click switch says why). Your colour mode is kept for when you pick another theme.
+A project can add its own themes ([Extensions: admin themes](extensions.md#admin-themes)); they are listed
+after these, a theme with both a light and a dark version twice ("Sepia Light", "Sepia Dark").
 
-The choice is saved in this browser only, not in your account: another browser or device starts with Shapio,
-following the operating system. It is applied before the page first paints, so there is no flash on load.
+The choice is saved in this browser only, not in your account: another browser or device starts with Shapio.
+It is applied before the page first paints, so there is no flash on load.

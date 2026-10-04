@@ -8,6 +8,15 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Changed
 
+- **Admin themes are looks: pick one, nothing follows the OS.** Settings → Appearance and the account menu
+  list six looks: **Shapio**, **Cobalt**, **Murdered out** and **Forest** (dark), **Snowed** and **Butter**
+  (light). The colour-mode setting (System, Light, Dark) and the light ⇄ dark button beside the account menu
+  are gone. Classic is renamed **Cobalt** and keeps its original dark colours; Shapio is the plum dark look.
+  Forest (deep green and lime) and Butter (butter yellow and ink) are new. Murdered out is all dark: grey
+  actions, no white buttons. An extension theme with both variants is listed twice, as "Name Light" and "Name
+  Dark". **Upgrading:** a saved Classic or pre-theme setting becomes Cobalt; Shapio light becomes Shapio; with
+  nothing saved the admin opens in Shapio. The keys `forest` and `butter` are now built in, so an extension
+  theme can no longer use them. See [First admin: appearance](documentation/first-admin.md#appearance).
 - **One log line per request.** Fastify's "incoming request" and "request completed" lines, and the extra
   "request rejected" line on every 4xx, are replaced by one `info` line per response: `reqId`, `method`,
   `route` (the pattern), `path` (no query string), `status`, `ms`, and `site`, `principal` (its kind, never an

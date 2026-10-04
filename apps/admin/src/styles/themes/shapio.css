@@ -1,64 +1,11 @@
 /*
- * Shapio: the brand theme (plum, cream and acid yellow), the default. Light: a warm cream ground, ink
- * actions; yellow is a background highlight only (as text, a hover under light text or a focus ring it
- * fails contrast on cream). Dark: plum grounds, cream text, yellow actions, links and focus. Status tones
- * are tuned per ground. Every pair is checked by test/contrast.test.ts.
- * The zero-specificity `:where(:root)` blocks are the safety net: before the theme script has run, or for a
+ * Shapio: the brand look (plum grounds, cream text, acid-yellow actions, links and focus), dark only, and the
+ * default. Status tones are tuned for plum. Every pair is checked by test/contrast.test.ts.
+ * The zero-specificity `:where(:root)` block is the safety net: before the theme script has run, or for a
  * saved theme whose CSS is gone (an extension removed), the admin still renders, in Shapio.
  */
 :where(:root),
 [data-theme='shapio'] {
-  --background: #f7f2ea;
-  --foreground: #1e1422;
-  --card: #ffffff;
-  --card-foreground: #1e1422;
-  --popover: #ffffff;
-  --popover-foreground: #1e1422;
-  --primary: #1e1422;
-  --primary-foreground: #f7f2ea;
-  --primary-hover: #3a2541;
-  --secondary: #efe8dd;
-  --secondary-foreground: #1e1422;
-  --muted: #f3ede4;
-  --muted-foreground: #5b4c61;
-  /* Selection and hover: a pale acid yellow under ink text. */
-  --accent: #eff3b4;
-  --accent-foreground: #1e1422;
-  --destructive: #b42318;
-  --destructive-foreground: #ffffff;
-  --destructive-muted: #fbe1dc;
-  --success: #17703a;
-  --success-muted: #dcf2e1;
-  --warning: #965006;
-  --warning-muted: #fbecc8;
-  --info: #4a2e55;
-  --info-muted: #ece2f0;
-  --border: #e4dcd2;
-  --input: #8a7c84;
-  --ring: #4a2e55;
-  --link: #4a2e55;
-  --overlay: #1e1422;
-
-  --sidebar: #f0e9de;
-  --sidebar-foreground: #1e1422;
-  --sidebar-primary: #1e1422;
-  --sidebar-primary-foreground: #f7f2ea;
-  --sidebar-accent: #ffffff;
-  --sidebar-accent-foreground: #1e1422;
-  --sidebar-border: #e4dcd2;
-  --sidebar-ring: #4a2e55;
-
-  --brand-logo: #e9f26e;
-  --brand-logo-foreground: #231527;
-  --brand-letters: #231527;
-  --brand-panel-from: #352239;
-  --brand-panel-to: #1e1422;
-  --brand-panel-foreground: #f5ebd8;
-  --brand-panel-mark: #e9f26e;
-}
-
-:where(:root.dark),
-[data-theme='shapio'].dark {
   --background: #231527;
   --foreground: #f5ebd8;
   --card: #2b1b30;

@@ -119,11 +119,11 @@ test('a nested admin URL loads directly (SPA fallback under BASE_PATH)', async (
   await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible();
 });
 
-/** Picks System, Light or Dark in the account menu's Theme submenu (sidebar footer or phone bar). */
+/** Picks a look in the account menu's Theme submenu (sidebar footer or phone bar). */
 const chooseTheme = async (name: string) => {
   await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('menuitem', { name: 'Theme' }).hover();
-  await page.getByRole('menuitemradio', { name }).click();
+  await page.getByRole('menuitemradio', { name, exact: true }).click();
 };
 
 test('the shell works at phone width', async () => {
@@ -131,13 +131,11 @@ test('the shell works at phone width', async () => {
   await page.goto(ADMIN_URL);
   await expect(page.getByRole('heading', { name: `Welcome, ${OWNER.name}` })).toBeVisible();
   await captureScreen(page, '17-home-mobile');
-  // The phone bar has the same one-click theme switch.
-  const mobileBar = page.locator('[data-slot="mobile-bar"]');
-  await mobileBar.getByRole('button', { name: 'Switch to dark theme' }).click();
-  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-  await mobileBar.getByRole('button', { name: 'Switch to light theme' }).click();
-  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-  await chooseTheme('System');
+  // The phone bar's account menu holds the looks too.
+  await chooseTheme('Snowed');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'snowed');
+  await chooseTheme('Shapio');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'shapio');
   await page.getByRole('button', { name: 'Toggle sidebar' }).first().click();
   await expect(page.getByRole('dialog', { name: 'Sidebar' })).toBeVisible();
   await captureScreen(page, '18-sidebar-mobile');
@@ -148,7 +146,7 @@ test('the shell works at phone width', async () => {
 const navLink = (name: string) =>
   page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name });
 
-test('desktop shell: status bar, a visible collapse control, theme in the account menu and a one-click switch', async () => {
+test('desktop shell: status bar, a visible collapse control and the looks in the account menu', async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(ADMIN_URL);
   await expect(page.getByRole('heading', { name: `Welcome, ${OWNER.name}` })).toBeVisible();
@@ -168,32 +166,22 @@ test('desktop shell: status bar, a visible collapse control, theme in the accoun
   await toggle.click();
   await expect(sidebar).toHaveAttribute('data-state', 'expanded');
 
-  // The theme lives in the account menu, with a one-click switch beside it.
+  // The look lives in the account menu: one list, kept across a reload; nothing else to switch.
   const html = page.locator('html');
-  await chooseTheme('Dark');
-  await expect(html).toHaveClass(/\bdark\b/);
-  await chooseTheme('System');
+  await chooseTheme('Snowed');
+  await expect(html).toHaveAttribute('data-theme', 'snowed');
   await expect(html).not.toHaveClass(/\bdark\b/);
-
-  // The one-click switch beside the account menu saves an explicit theme, kept across a reload and shown
-  // in the account menu's Theme options.
-  const footer = page.locator('[data-slot="sidebar-footer"]');
-  await footer.getByRole('button', { name: 'Switch to dark theme' }).click();
-  await expect(html).toHaveClass(/\bdark\b/);
   await page.reload();
-  await expect(html).toHaveClass(/\bdark\b/);
+  await expect(html).toHaveAttribute('data-theme', 'snowed');
   await page.getByRole('button', { name: 'Account menu' }).click();
   await page.getByRole('menuitem', { name: 'Theme' }).hover();
-  await expect(page.getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('menuitemradio', { name: 'Snowed' })).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  const toLight = footer.getByRole('button', { name: 'Switch to light theme' });
-  await toLight.focus();
-  await page.keyboard.press('Enter');
-  await expect(html).not.toHaveClass(/\bdark\b/);
-  await page.reload();
-  await expect(html).not.toHaveClass(/\bdark\b/);
-  await chooseTheme('System');
+  await expect(page.getByRole('button', { name: /Switch to (light|dark) theme/ })).toHaveCount(0);
+  await chooseTheme('Shapio');
+  await expect(html).toHaveAttribute('data-theme', 'shapio');
+  await expect(html).toHaveClass(/\bdark\b/);
   await page.setViewportSize({ width: 1360, height: 900 });
 });
 

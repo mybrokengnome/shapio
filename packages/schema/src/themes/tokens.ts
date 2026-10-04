@@ -70,7 +70,14 @@ export type ThemeVariant = (typeof THEME_VARIANTS)[number];
 export const THEME_KEY_PATTERN = /^[a-z][a-z0-9-]{0,40}$/;
 
 /** The themes the admin ships; an extension theme may not reuse these keys. */
-export const BUILT_IN_THEME_KEYS = ['shapio', 'classic', 'murdered-out', 'snowed'] as const;
+export const BUILT_IN_THEME_KEYS = [
+  'shapio',
+  'classic',
+  'murdered-out',
+  'forest',
+  'snowed',
+  'butter',
+] as const;
 
 export type BuiltInThemeKey = (typeof BUILT_IN_THEME_KEYS)[number];
 

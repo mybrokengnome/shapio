@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 import { useResolvedScheme } from '@/hooks/useResolvedScheme';
 
-// Shapio: the rendered scheme comes from the admin's theme store (shadcn's default used next-themes); a
-// single-variant theme renders its own variant whatever the appearance.
+// Shapio: the rendered scheme comes from the admin's theme store (shadcn's default used next-themes): the
+// saved look's variant.
 const Toaster = ({ ...props }: ToasterProps) => {
   const { t } = useTranslation();
   const theme = useResolvedScheme();

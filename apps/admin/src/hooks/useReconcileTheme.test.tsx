@@ -21,28 +21,36 @@ const wrapperWith = (seed?: { items: unknown[] }) => {
   );
 };
 
-const choose = (theme: string, variants: Array<'light' | 'dark'>) =>
-  act(() => useThemeStore.getState().setTheme(theme, variants));
+const choose = (theme: string, appearance: 'light' | 'dark', variants: Array<'light' | 'dark'>) =>
+  act(() => useThemeStore.getState().setLook(theme, appearance, variants));
 
-beforeEach(() => choose('shapio', ['light', 'dark']));
+beforeEach(() => choose('shapio', 'dark', ['dark']));
 
 describe('useReconcileTheme', () => {
   it('falls back to Shapio when the saved theme no longer exists', () => {
-    choose('gone', ['dark']);
+    choose('gone', 'light', ['light']);
     renderHook(useReconcileTheme, { wrapper: wrapperWith({ items: [] }) });
-    expect(useThemeStore.getState()).toMatchObject({ theme: 'shapio', variants: ['light', 'dark'] });
+    expect(useThemeStore.getState()).toMatchObject({
+      theme: 'shapio',
+      appearance: 'dark',
+      variants: ['dark'],
+    });
   });
 
-  it('keeps an extension theme and refreshes its cached variants from the server', () => {
-    choose('sepia', ['light', 'dark']);
+  it('keeps an extension theme and refreshes its cached variants (and a lost variant) from the server', () => {
+    choose('sepia', 'dark', ['light', 'dark']);
     renderHook(useReconcileTheme, {
       wrapper: wrapperWith({ items: [{ key: 'sepia', name: 'Sepia', variants: ['light'] }] }),
     });
-    expect(useThemeStore.getState()).toMatchObject({ theme: 'sepia', variants: ['light'] });
+    expect(useThemeStore.getState()).toMatchObject({
+      theme: 'sepia',
+      appearance: 'light',
+      variants: ['light'],
+    });
   });
 
   it('judges nothing while the project list is still loading', () => {
-    choose('sepia', ['light']);
+    choose('sepia', 'light', ['light']);
     renderHook(useReconcileTheme, { wrapper: wrapperWith() });
     expect(useThemeStore.getState()).toMatchObject({ theme: 'sepia', variants: ['light'] });
   });

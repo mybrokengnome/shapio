@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { captureScreen, VIEWPORTS } from './support/capture';
 import { ADMIN_URL, SCREENSHOT_DIR } from './support/constants';
+import { renderScheme } from './support/schemes';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 
 /**
@@ -94,7 +95,7 @@ const captureWithFrame = async (on: Page, name: string) => {
     await on.setViewportSize(VIEWPORTS[viewport]);
     await on.mouse.move(0, 0);
     for (const scheme of ['light', 'dark'] as const) {
-      await on.emulateMedia({ colorScheme: scheme });
+      const restore = await renderScheme(on, scheme);
       await on.waitForTimeout(300);
       await on.screenshot({
         path: join(SCREENSHOT_DIR, `${name}-${viewport}-${scheme}.png`),
@@ -111,9 +112,9 @@ const captureWithFrame = async (on: Page, name: string) => {
         blocking.map((violation) => violation.id),
         `axe violations on ${name}-${viewport} (${scheme})`,
       ).toEqual([]);
+      await restore();
     }
   }
-  await on.emulateMedia({ colorScheme: 'light' });
   await on.setViewportSize({ width: 1360, height: 900 });
 };
 

@@ -49,7 +49,6 @@ describe('built-in theme tokens', () => {
   it('falls back to Shapio (zero specificity) when no theme or an unknown theme is set', () => {
     const css = readTheme('shapio');
     expect(tokensOf(css, ':where(:root)')).toEqual(tokensOf(css, "[data-theme='shapio']"));
-    expect(tokensOf(css, ':where(:root.dark)')).toEqual(tokensOf(css, "[data-theme='shapio'].dark"));
   });
 });
 

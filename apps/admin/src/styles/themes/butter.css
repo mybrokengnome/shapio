@@ -1,0 +1,53 @@
+/*
+ * Butter: light only. A butter-yellow ground, cream surfaces, ink actions, a deeper butter selection and an
+ * ochre focus ring. Every pair is checked by test/contrast.test.ts.
+ */
+[data-theme='butter'] {
+  --background: #f9edbc;
+  --foreground: #0f172a;
+  --card: #fff7d6;
+  --card-foreground: #0f172a;
+  --popover: #fffbea;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
+  --primary-foreground: #ffffff;
+  --primary-hover: #1e293b;
+  --secondary: #f2e4a8;
+  --secondary-foreground: #0f172a;
+  --muted: #f5e7b0;
+  --muted-foreground: #5b5636;
+  /* Selection and hover: a deeper butter. */
+  --accent: #f2df8a;
+  --accent-foreground: #0f172a;
+  --destructive: #a61b1b;
+  --destructive-foreground: #ffffff;
+  --destructive-muted: #f8dcc8;
+  --success: #146c34;
+  --success-muted: #dff0c4;
+  --warning: #864500;
+  --warning-muted: #f6dc9a;
+  --info: #1d4ed8;
+  --info-muted: #e6e4f2;
+  --border: #e6d79a;
+  --input: #857a50;
+  --ring: #8a6d00;
+  --link: #1d4ed8;
+  --overlay: #0f172a;
+
+  --sidebar: #f4e5a9;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff7d6;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e6d79a;
+  --sidebar-ring: #8a6d00;
+
+  --brand-logo: #e9f26e;
+  --brand-logo-foreground: #231527;
+  --brand-letters: #0f172a;
+  --brand-panel-from: #f2df8a;
+  --brand-panel-to: #fff7d6;
+  --brand-panel-foreground: #0f172a;
+  --brand-panel-mark: #231527;
+}
