@@ -48,6 +48,9 @@ export default tseslint.config(
         'error',
         {
           groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          // Workspace packages sort with the other packages wherever they resolve to (a symlink, a built
+          // `dist/`, or nothing yet in CI); without this a self-import such as `@shapio/cms/config` flips group.
+          pathGroups: [{ pattern: '@shapio/**', group: 'external' }],
           'newlines-between': 'never',
           alphabetize: { order: 'asc', caseInsensitive: true },
         },
