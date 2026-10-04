@@ -110,8 +110,9 @@ List or create sites directly in the database (sites list | sites create --key .
 ```text
 shapio sites list
 shapio sites create --key <key> --name <name>
-  Lists or creates sites directly in the database (sites share the schema, admins and roles; each has its
-  own content, media, tokens and snapshots). Keys are lower case and fixed once created.
+  Lists or creates sites directly in the database (sites share the admins, roles and shared content types;
+  each has its own content types, content, media, tokens and snapshots). Keys are lower case and fixed once
+  created.
 ```
 
 ### shapio extensions

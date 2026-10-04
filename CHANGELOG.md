@@ -6,6 +6,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-10-04
+
 ### Added
 
 - **Content types per site.** Each site now owns its content types and components; any of them can be shared

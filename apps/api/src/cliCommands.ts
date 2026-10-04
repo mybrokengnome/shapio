@@ -196,8 +196,9 @@ const adminCommand: CliCommand = {
 const SITES_USAGE =
   'shapio sites list\n' +
   'shapio sites create --key <key> --name <name>\n' +
-  '  Lists or creates sites directly in the database (sites share the schema, admins and roles; each has its\n' +
-  '  own content, media, tokens and snapshots). Keys are lower case and fixed once created.';
+  '  Lists or creates sites directly in the database (sites share the admins, roles and shared content types;\n' +
+  '  each has its own content types, content, media, tokens and snapshots). Keys are lower case and fixed once\n' +
+  '  created.';
 
 const SITE_KEY_RE = new RegExp(SITE_KEY_PATTERN);
 
