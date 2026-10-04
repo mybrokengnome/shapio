@@ -2,7 +2,14 @@ import { describeStatus, isSuccessStatus, sendOutbound } from '../../publishing/
 import type { OutboundPolicy } from '../../publishing/outbound/ssrf.js';
 import type { PublishingRuntime } from '../../publishing/runtime.js';
 
-export type JsonResponse = { status: number; ok: boolean; json: unknown; text: string };
+export type JsonResponse = {
+  status: number;
+  ok: boolean;
+  json: unknown;
+  text: string;
+  /** The `Location` header, which tells a real redirect apart from a 3xx such as 304 Not Modified. */
+  location: string | undefined;
+};
 
 /** A JSON request through the SSRF-safe outbound client. Never throws on HTTP status; network errors throw. */
 export const requestJson = async (
@@ -36,7 +43,13 @@ export const requestJson = async (
   } catch {
     json = undefined;
   }
-  return { status: response.status, ok: isSuccessStatus(response.status), json, text: response.body };
+  return {
+    status: response.status,
+    ok: isSuccessStatus(response.status),
+    json,
+    text: response.body,
+    location: response.headers.location,
+  };
 };
 
 /** A short, safe description of a failed provider response (status plus the provider's own message). */

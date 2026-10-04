@@ -16,6 +16,8 @@ import type { AddressInfo } from 'node:net';
  *   stages: [{ name: queued | initialize | clone_repo | build | deploy, started_on, ended_on, status: idle |
  *   active | success | failure | canceled | skipped }], deployment_trigger: { type: "ad_hoc" | "github:push" |
  *   "deploy_hook", metadata: { branch, commit_hash, commit_message, commit_dirty } } }`.
+ * - Deploy hook while a deployment is already queued for its branch (seen on Cloudflare): `304` with no body
+ *   and no `Location`; no deployment is created.
  * - Errors: `{ success: false, errors: [{ code: 10000, message: "Authentication error" }], messages: [],
  *   result: null }` with 403.
  */
@@ -27,6 +29,7 @@ type Deployment = {
   created_on: string;
   stage: FakeStage;
   status: FakeStageStatus;
+  trigger?: 'deploy_hook' | 'github:push';
 };
 
 const STAGES: readonly FakeStage[] = ['queued', 'initialize', 'clone_repo', 'build', 'deploy'];
@@ -41,6 +44,8 @@ export type FakeCloudflare = {
   hookCalls: number;
   /** Whether the deploy hook response includes the deployment ID (it does on Cloudflare). */
   hookReturnsId: boolean;
+  /** How the deploy hook answers: normally, 304 (already queued), or a real redirect (302 with Location). */
+  hookMode: 'create' | 'already_queued' | 'redirect';
   deployments: Deployment[];
   setStage: (id: string, stage: FakeStage, status: FakeStageStatus) => void;
   close: () => Promise<void>;
@@ -78,7 +83,7 @@ const toDeployment = (fake: FakeCloudflare, deployment: Deployment) => ({
           : 'idle',
   })),
   deployment_trigger: {
-    type: 'deploy_hook',
+    type: deployment.trigger ?? 'deploy_hook',
     metadata: { branch: 'main', commit_hash: 'abc123', commit_message: 'Deploy hook', commit_dirty: false },
   },
 });
@@ -92,6 +97,7 @@ export const startFakeCloudflare = async (now: () => Date = () => new Date()): P
     apiToken: 'cf-test-token',
     hookCalls: 0,
     hookReturnsId: true,
+    hookMode: 'create',
     deployments: [] as Deployment[],
   } as FakeCloudflare;
 
@@ -105,6 +111,16 @@ export const startFakeCloudflare = async (now: () => Date = () => new Date()): P
     req.on('end', () => {
       if (req.method === 'POST' && path === '/pages/webhooks/deploy_hooks/hook-1') {
         fake.hookCalls += 1;
+        if (fake.hookMode === 'already_queued') {
+          res.writeHead(304);
+          res.end();
+          return;
+        }
+        if (fake.hookMode === 'redirect') {
+          res.writeHead(302, { location: `${fake.url}/elsewhere` });
+          res.end();
+          return;
+        }
         counter += 1;
         const deployment: Deployment = {
           id: `dep-${counter}-${'0'.repeat(24)}`,

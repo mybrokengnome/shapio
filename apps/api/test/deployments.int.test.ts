@@ -686,6 +686,65 @@ describe('deployments', () => {
         cloudflare.hookReturnsId = true;
       }
     });
+
+    it('follows the already queued deployment when the deploy hook answers 304, without retrying', async () => {
+      const pushed = {
+        id: `push-1-${'0'.repeat(24)}`,
+        created_on: new Date(clock.now().getTime() - 5 * 60 * 1000).toISOString(),
+        stage: 'queued' as const,
+        status: 'idle' as const,
+        trigger: 'github:push' as const,
+      };
+      cloudflare.deployments.unshift(pushed);
+      cloudflare.hookMode = 'already_queued';
+      try {
+        const { connection } = await cloudflareConnection();
+        const hookCallsBefore = cloudflare.hookCalls;
+        const run = expectStatus(
+          await admin.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}),
+          201,
+        ).json<Run>();
+        const running = worker();
+        await drain(running);
+        expect(cloudflare.hookCalls).toBe(hookCallsBefore + 1);
+        const triggered = await getRun(run.id);
+        expect(triggered).toMatchObject({ status: 'triggered', providerRef: pushed.id });
+        expect(triggered.timeline.at(-1)?.message).toMatch(
+          /already queued for this branch \(deploy hook HTTP 304\)/,
+        );
+
+        cloudflare.setStage(pushed.id, 'deploy', 'success');
+        clock.advance(2000);
+        await drain(running);
+        expect(await getRun(run.id)).toMatchObject({ status: 'deployed', providerRef: pushed.id });
+        expect(cloudflare.hookCalls).toBe(hookCallsBefore + 1);
+      } finally {
+        cloudflare.hookMode = 'create';
+      }
+    });
+
+    it('still refuses a real redirect from the deploy hook', async () => {
+      // No earlier deployment for a retry to adopt.
+      cloudflare.deployments.length = 0;
+      cloudflare.hookMode = 'redirect';
+      try {
+        const { connection } = await cloudflareConnection();
+        const run = expectStatus(
+          await admin.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}),
+          201,
+        ).json<Run>();
+        const running = worker();
+        for (let round = 0; round < 6; round += 1) {
+          await drain(running);
+          clock.advance(10 * 60 * 1000);
+        }
+        const failed = await getRun(run.id);
+        expect(failed.status).toBe('failed');
+        expect(failed.error).toMatch(/HTTP 302 \(redirects are not followed\)/);
+      } finally {
+        cloudflare.hookMode = 'create';
+      }
+    });
   });
 
   describe('GitHub schema write-back', () => {

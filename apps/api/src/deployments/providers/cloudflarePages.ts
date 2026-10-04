@@ -14,7 +14,8 @@ import { createdSince, toEpochMs } from './matching.js';
  * A deployment's `latest_stage` ({ name: queued | initialize | clone_repo | build | deploy, status: idle |
  * active | success | failure | canceled | skipped }) gives the state: only `deploy` + `success` is deployed.
  * When the hook does not return the deployment ID, the run is matched to the newest deploy-hook deployment
- * created after the trigger was sent.
+ * created after the trigger was sent. The hook answers 304 (no Location) when a deployment is already queued
+ * for its branch, for example by a git push: nothing new is created, so the run follows that deployment.
  */
 type CloudflareEnvelope<T> = {
   success?: boolean;
@@ -111,6 +112,39 @@ const findDeploymentSince = async (context: ProviderContext, since: Date) => {
   });
 };
 
+const isFinished = (deployment: CloudflareDeployment) => {
+  const { name, status } = deployment.latest_stage ?? {};
+  return (
+    status === 'failure' ||
+    status === 'canceled' ||
+    status === 'skipped' ||
+    (name === 'deploy' && status === 'success')
+  );
+};
+
+/** The newest unfinished deployment, whatever started it (the build a 304 from the deploy hook refers to). */
+const findPendingDeployment = async (context: ProviderContext) => {
+  const deployments = await apiRequest<CloudflareDeployment[]>(
+    context,
+    `${projectPath(context)}/deployments`,
+  );
+  return deployments.find((deployment) => !isFinished(deployment));
+};
+
+/** A 304 without Location: Cloudflare already has a deployment queued for the hook's branch. */
+const isAlreadyQueued = (response: JsonResponse) => response.status === 304 && !response.location;
+
+const ALREADY_QUEUED_MESSAGE =
+  'Cloudflare: a deployment was already queued for this branch (deploy hook HTTP 304), so no new one was started';
+
+const followQueuedDeployment = async (context: RunContext): Promise<RunReport> => {
+  const pending = await findPendingDeployment(context);
+  if (!pending) {
+    return { status: 'triggered', message: ALREADY_QUEUED_MESSAGE };
+  }
+  return { ...reportOf(context, pending), message: `${ALREADY_QUEUED_MESSAGE}; following it` };
+};
+
 const deploymentOf = (context: RunContext) => {
   const id = context.run.provider_ref;
   return id
@@ -151,6 +185,9 @@ export const cloudflarePagesProvider: DeploymentProviderAdapter = {
       policy: context.policy,
       signal: context.signal,
     });
+    if (isAlreadyQueued(response)) {
+      return followQueuedDeployment(context);
+    }
     const envelope = envelopeOf<{ id?: string }>(response);
     if (!response.ok || envelope.success === false) {
       throw new Error(`Cloudflare deploy hook ${describeFailure(response, errorMessageOf(response))}`);

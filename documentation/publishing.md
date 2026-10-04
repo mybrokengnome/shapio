@@ -147,6 +147,9 @@ builds from your Git repository:
    deploy hook URL and the API token (for example as `${ENV:SHAPIO_SECRET_CF_PAGES_TOKEN}`), and the triggers you want.
    **Test connection** checks the token can read the project.
 
+If a build is already queued for the branch (a git push usually got there first), Cloudflare answers the deploy
+hook with HTTP 304 and starts nothing new; the run then follows that queued build and reports its result.
+
 A deploy hook cannot pass parameters, so a Pages build pins the snapshot that is current when it starts (a
 generic webhook can pin the run's exact snapshot). The step-by-step for the example site, including the build
 settings, is in [Example site](example-site.md#5-deploy-to-cloudflare-pages).
