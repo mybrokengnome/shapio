@@ -82,6 +82,8 @@ Hooks fire however the change is made: the admin UI, the REST API, GraphQL mutat
 - These hooks hold the write's locks while they run, so keep them fast and never call slow external services from them.
 - A change set publishes all its items in one transaction, so one rejected item fails the whole set.
 
+The write holds one pooled database connection while your hook runs. Do every database read and write through `context.trx`. The `services` (`content.get`, `content.list` and the others) read committed data through the pool, so each call needs a second connection while the write still holds its first. Under load every connection ends up waiting for another, and the request fails after `DATABASE_POOL_ACQUIRE_TIMEOUT_MS` with `503 DATABASE_BUSY`.
+
 ### Post-commit: `after*`
 
 `after*` hooks run **after the write committed**, as background jobs.

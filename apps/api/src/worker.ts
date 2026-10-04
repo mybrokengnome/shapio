@@ -21,6 +21,7 @@ export const startDedicatedWorker = async (config: AppConfig) => {
   const db = createDb({
     connectionString: config.database.url,
     poolMax: Math.max(2, config.worker.concurrency + 1),
+    acquireTimeoutMs: config.database.acquireTimeoutMs,
     applicationName: 'shapio-worker',
     onIdleConnectionError: (error) =>
       logger.warn({ err: error }, 'database connection lost; it will be replaced on the next query'),

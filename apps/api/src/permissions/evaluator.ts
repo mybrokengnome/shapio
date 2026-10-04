@@ -16,6 +16,7 @@ import {
   type ContentAction,
   type GlobalAction,
   type PermissionEvaluator,
+  type PermissionExecutor,
   type Principal,
 } from './types.js';
 
@@ -41,7 +42,11 @@ const APP_ACTIONS: ReadonlySet<ContentAction> = new Set(APP_CONTENT_ACTIONS);
  * outside a site holds no role). Both are delivery audiences: they see `public: false` fields only where a
  * grant names them.
  */
-const rolesOf = async (principal: Principal, grants: GrantSource): Promise<PrincipalRoles | 'all'> => {
+const rolesOf = async (
+  principal: Principal,
+  grants: GrantSource,
+  executor: PermissionExecutor | undefined,
+): Promise<PrincipalRoles | 'all'> => {
   switch (principal.kind) {
     case 'system':
       return 'all';
@@ -65,7 +70,7 @@ const rolesOf = async (principal: Principal, grants: GrantSource): Promise<Princ
     case 'appUser':
       return {
         roleIds: [
-          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated')),
+          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated', executor)),
           ...principal.roleIds,
         ],
         networkRoleIds: [],
@@ -74,7 +79,10 @@ const rolesOf = async (principal: Principal, grants: GrantSource): Promise<Princ
       };
     case 'anonymous':
       return {
-        roleIds: principal.siteId === null ? [] : await grants.getSiteAppRoleIds(principal.siteId, 'public'),
+        roleIds:
+          principal.siteId === null
+            ? []
+            : await grants.getSiteAppRoleIds(principal.siteId, 'public', executor),
         networkRoleIds: [],
         audience: 'delivery',
         actions: APP_ACTIONS,
@@ -107,8 +115,8 @@ export const createPermissionEvaluator = ({
   grants,
   fields,
 }: EvaluatorDependencies): PermissionEvaluator => ({
-  evaluate: async (principal, request) => {
-    const roles = await rolesOf(principal, grants);
+  evaluate: async (principal, request, executor) => {
+    const roles = await rolesOf(principal, grants, executor);
     if (roles === 'all') {
       return ALLOW_ALL_POLICY;
     }
@@ -119,19 +127,19 @@ export const createPermissionEvaluator = ({
     // definition: the roles that apply on that site, when the principal acts there (plan site-schema).
     let roleIds = roles.roleIds;
     if (NETWORK_CONTENT_ACTIONS.has(request.action)) {
-      const modelSite = await fields.getModelSite(request.modelId);
+      const modelSite = await fields.getModelSite(request.modelId, executor);
       roleIds = modelSite !== null && actsOnSite(principal, modelSite) ? roles.roleIds : roles.networkRoleIds;
     }
-    const held = await grants.getGrants(roleIds);
+    const held = await grants.getGrants(roleIds, executor);
     if (held.length === 0) {
       return DENIED_POLICY;
     }
     const modelFields =
-      roles.audience === 'delivery' ? await fields.getModelFields(request.modelId) : undefined;
+      roles.audience === 'delivery' ? await fields.getModelFields(request.modelId, executor) : undefined;
     return buildPolicy(held, request, roles.audience, modelFields);
   },
-  canPerform: async (principal, action) => {
-    const roles = await rolesOf(principal, grants);
+  canPerform: async (principal, action, executor) => {
+    const roles = await rolesOf(principal, grants, executor);
     if (roles === 'all') {
       return true;
     }
@@ -140,10 +148,10 @@ export const createPermissionEvaluator = ({
     }
     // Network actions only count roles assigned on every site, so a site role never reaches the network.
     const roleIds = NETWORK_ACTION_SET.has(action) ? roles.networkRoleIds : roles.roleIds;
-    return allowsGlobalAction(await grants.getGrants(roleIds), action);
+    return allowsGlobalAction(await grants.getGrants(roleIds, executor), action);
   },
-  canPerformOnSite: async (principal, action, siteId) => {
-    const roles = await rolesOf(principal, grants);
+  canPerformOnSite: async (principal, action, siteId, executor) => {
+    const roles = await rolesOf(principal, grants, executor);
     if (roles === 'all') {
       return true;
     }
@@ -154,6 +162,6 @@ export const createPermissionEvaluator = ({
       !NETWORK_ACTION_SET.has(action) || (SITE_GRANTABLE_ACTIONS.has(action) && actsOnSite(principal, siteId))
         ? roles.roleIds
         : roles.networkRoleIds;
-    return allowsGlobalAction(await grants.getGrants(counted), action);
+    return allowsGlobalAction(await grants.getGrants(counted, executor), action);
   },
 });

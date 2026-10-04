@@ -1,6 +1,6 @@
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
-import type { PermissionEvaluator, Principal } from '../permissions/types.js';
+import type { PermissionEvaluator, PermissionExecutor, Principal } from '../permissions/types.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 
@@ -23,11 +23,17 @@ export type SchemaServiceContext = {
  */
 const forbidden = (message: string) => new AppError(403, 'FORBIDDEN', message);
 
-export const assertCanManage = async (context: SchemaServiceContext, definitionId: string): Promise<void> => {
-  const policy = await context.permissions.evaluate(context.actor, {
-    action: 'schemaManage',
-    modelId: definitionId,
-  });
+/** `executor` (here and below): the caller's open transaction, when there is one. */
+export const assertCanManage = async (
+  context: SchemaServiceContext,
+  definitionId: string,
+  executor?: PermissionExecutor,
+): Promise<void> => {
+  const policy = await context.permissions.evaluate(
+    context.actor,
+    { action: 'schemaManage', modelId: definitionId },
+    executor,
+  );
   if (!policy.allowed) {
     throw forbidden('Your role does not allow changing this definition');
   }
@@ -38,14 +44,18 @@ export const assertCanManage = async (context: SchemaServiceContext, definitionI
  * from the roles that apply on that site; a shared one (null) from roles on every site. The scope of a
  * site definition is always the request's site: a view never creates on another site.
  */
-export const assertCanCreate = async (context: SchemaServiceContext, scope: string | null): Promise<void> => {
+export const assertCanCreate = async (
+  context: SchemaServiceContext,
+  scope: string | null,
+  executor?: PermissionExecutor,
+): Promise<void> => {
   if (scope !== null && scope !== context.snapshot.siteId) {
     throw forbidden('A definition can only be created on the site of the request');
   }
   const allowed =
     scope === null
-      ? await context.permissions.canPerform(context.actor, 'schema.create')
-      : await context.permissions.canPerformOnSite(context.actor, 'schema.create', scope);
+      ? await context.permissions.canPerform(context.actor, 'schema.create', executor)
+      : await context.permissions.canPerformOnSite(context.actor, 'schema.create', scope, executor);
   if (!allowed) {
     throw forbidden(
       scope === null

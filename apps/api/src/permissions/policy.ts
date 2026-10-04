@@ -3,6 +3,7 @@ import {
   type ContentAction,
   type FieldMask,
   type GlobalAction,
+  type PermissionExecutor,
   type Policy,
   type PolicyRequest,
   type RowCondition,
@@ -36,13 +37,16 @@ export type ModelField = { id: string; public: boolean };
  * only name real models.
  */
 export type FieldVisibilityLookup = {
-  getModelFields: (modelId: string) => Promise<readonly ModelField[] | undefined>;
-  hasModel: (modelId: string) => Promise<boolean>;
+  getModelFields: (
+    modelId: string,
+    executor?: PermissionExecutor,
+  ) => Promise<readonly ModelField[] | undefined>;
+  hasModel: (modelId: string, executor?: PermissionExecutor) => Promise<boolean>;
   /**
    * The site a definition belongs to: null when it is shared (or unknown). Schema management of a site's
    * definition is granted by roles held on that site (plan site-schema, rule 4).
    */
-  getModelSite: (modelId: string) => Promise<string | null>;
+  getModelSite: (modelId: string, executor?: PermissionExecutor) => Promise<string | null>;
 };
 
 /** Used until the schema registry is wired in: no model is known, so delivery principals see nothing. */

@@ -63,16 +63,16 @@ export const createPreviewPermissions = (
       }
     : undefined;
   return {
-    evaluate: async (_principal, request): Promise<Policy> => {
+    evaluate: async (_principal, request, executor): Promise<Policy> => {
       if (request.action !== 'read') {
         return DENIED_POLICY;
       }
-      const policy = await base.evaluate(creator, request);
-      const modelFields = await fields.getModelFields(request.modelId);
+      const policy = await base.evaluate(creator, request, executor);
+      const modelFields = await fields.getModelFields(request.modelId, executor);
       if (!policy.allowed || !modelFields) {
         return DENIED_POLICY;
       }
-      const sitePolicy = site ? await base.evaluate(site, request) : undefined;
+      const sitePolicy = site ? await base.evaluate(site, request, executor) : undefined;
       if (sitePolicy && !sitePolicy.allowed) {
         return DENIED_POLICY;
       }

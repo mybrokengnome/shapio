@@ -49,6 +49,7 @@ const openDatabase = (config: AppConfig, role: string, logger: Logger): Database
   createDb({
     connectionString: config.database.url,
     poolMax: config.database.poolMax,
+    acquireTimeoutMs: config.database.acquireTimeoutMs,
     applicationName: `shapio-${role}`,
     onIdleConnectionError: (error) =>
       logger.warn({ err: error }, 'database connection lost; it will be replaced on the next query'),

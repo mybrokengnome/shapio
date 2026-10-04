@@ -81,6 +81,10 @@ each is easier to review, test and revert on its own.
   `TEST_POSTGRES_URL` to compare the MySQL baseline with PostgreSQL). A test that cannot run on one of them goes
   in the skip list in `apps/api/test/helpers/dialect.ts`, with its reason; raw SQL in tests uses that file's
   helpers.
+- Test databases are strict: on PostgreSQL and MySQL a query that asks the pool for a connection while its
+  transaction holds one fails at once with `NestedPoolAcquireError` (`db/connectionScope.ts`). Such a failure
+  is a real bug that deadlocks the pool under load: run the query on the transaction's `trx` (or pass it down
+  as the executor) instead of the pool.
 - `pnpm --filter @shapio/admin e2e` drives the built admin with Playwright (see `apps/admin/README.md`).
 - `pnpm smoke:npm` packs and installs the npm packages and starts them.
 - The site starters (`examples/astro`, `examples/next`, `examples/sveltekit`) have their own check: build the

@@ -91,7 +91,11 @@ export type BatchHooks<T> = {
 
 type ResolvedModel = { model: ContentModel; policy: Policy };
 
-const resolveModels = async (context: ContentServiceContext, items: readonly PublicationItem[]) => {
+const resolveModels = async (
+  context: ContentServiceContext,
+  trx: Transaction<DB>,
+  items: readonly PublicationItem[],
+) => {
   const models = new Map<string, ResolvedModel>();
   for (const modelId of new Set(items.map((item) => item.modelId))) {
     const model = resolveModelById(context.snapshot, modelId);
@@ -103,7 +107,7 @@ const resolveModels = async (context: ContentServiceContext, items: readonly Pub
       const ref = items.find((item) => item.modelId === modelId)?.ref ?? modelId;
       throw new PublicationItemError(ref, publishingDisabled(model.definition.apiKey));
     }
-    models.set(modelId, await modelWithPolicy(context, model.definition.apiKey, 'publish'));
+    models.set(modelId, await modelWithPolicy(context, model.definition.apiKey, 'publish', trx));
   }
   return models;
 };
@@ -381,7 +385,7 @@ export const runPublicationBatchInTransaction = async (
   via: string,
   seq: SeqAllocator,
 ): Promise<PublicationResult[]> => {
-  const models = await resolveModels(context, items);
+  const models = await resolveModels(context, trx, items);
   await guardModelVersions(
     trx,
     [...models.values()].map((resolved) => resolved.model),

@@ -1,3 +1,5 @@
+import type { Database } from '../db/index.js';
+
 /**
  * Principals and policies (ADR 0005). One evaluator serves admin users, app users, tokens and anonymous
  * callers, for REST and GraphQL alike. Package A ships the types and a deny-all evaluator; package B
@@ -154,15 +156,27 @@ export type PolicyRequest = {
   modelId: string;
 };
 
+/**
+ * Where a permission lookup reads its durable version checks (and any reload): the open transaction when
+ * the caller is inside one, so the lookup never waits for a second pooled connection while it holds one
+ * (an exhausted pool would then wait forever). Omitted: the pool.
+ */
+export type PermissionExecutor = Database;
+
 export type PermissionEvaluator = {
-  evaluate: (principal: Principal, request: PolicyRequest) => Promise<Policy>;
-  canPerform: (principal: Principal, action: GlobalAction) => Promise<boolean>;
+  evaluate: (principal: Principal, request: PolicyRequest, executor?: PermissionExecutor) => Promise<Policy>;
+  canPerform: (principal: Principal, action: GlobalAction, executor?: PermissionExecutor) => Promise<boolean>;
   /**
    * `canPerform` for the request's site: an action in `SITE_GRANTABLE_ACTIONS` also counts the roles that
    * apply on `siteId` when the principal acts on that site (an admin narrowed to it, a site token of it, a
    * network token). Any other action is `canPerform`.
    */
-  canPerformOnSite: (principal: Principal, action: GlobalAction, siteId: string) => Promise<boolean>;
+  canPerformOnSite: (
+    principal: Principal,
+    action: GlobalAction,
+    siteId: string,
+    executor?: PermissionExecutor,
+  ) => Promise<boolean>;
 };
 
 const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };

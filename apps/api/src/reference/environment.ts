@@ -85,7 +85,16 @@ export const GROUPS: ReadonlyArray<{ title: string; keys: readonly string[] }> =
     title: 'HTTPS without a reverse proxy',
     keys: ['TLS_CERT_FILE', 'TLS_KEY_FILE', 'TLS_RELOAD_INTERVAL_MS', 'HTTP_PORT'],
   },
-  { title: 'Database', keys: ['DATABASE_URL', 'DATABASE_POOL_MAX', 'MIGRATE_ON_START', 'SCHEMA_LISTEN'] },
+  {
+    title: 'Database',
+    keys: [
+      'DATABASE_URL',
+      'DATABASE_POOL_MAX',
+      'DATABASE_POOL_ACQUIRE_TIMEOUT_MS',
+      'MIGRATE_ON_START',
+      'SCHEMA_LISTEN',
+    ],
+  },
   { title: 'Secrets', keys: ['SESSION_SECRET'] },
   { title: 'First-run setup', keys: ['SETUP_REQUIRE_TOKEN'] },
   {

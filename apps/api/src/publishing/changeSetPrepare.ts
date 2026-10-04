@@ -52,11 +52,15 @@ const staleDraft = (plans: readonly DraftPlan[]) => {
   );
 };
 
-const authorizeDrafts = async (context: ChangeSetServiceContext, plans: readonly DraftPlan[]) => {
+const authorizeDrafts = async (
+  context: ChangeSetServiceContext,
+  plans: readonly DraftPlan[],
+  executor: Transaction<DB>,
+) => {
   for (const planned of plans) {
     await (planned.activeVersion === null
-      ? assertCanCreate(context, draftScopeOf(context, planned.draft))
-      : assertCanManage(context, planned.draft.definition_id));
+      ? assertCanCreate(context, draftScopeOf(context, planned.draft), executor)
+      : assertCanManage(context, planned.draft.definition_id, executor));
   }
 };
 
@@ -66,8 +70,8 @@ const authorizeDrafts = async (context: ChangeSetServiceContext, plans: readonly
  * can prepare change sets without making them live. Checked here so interactive, scheduled and job-run
  * ships all check it, with the actor that asked for the ship.
  */
-const assertCanShip = async (context: ChangeSetServiceContext) => {
-  if (!(await context.permissions.canPerform(context.actor, 'changes.ship'))) {
+const assertCanShip = async (context: ChangeSetServiceContext, executor: Transaction<DB>) => {
+  if (!(await context.permissions.canPerform(context.actor, 'changes.ship', executor))) {
     throw new AppError(403, 'FORBIDDEN', 'Your role does not allow changes.ship');
   }
 };
@@ -78,7 +82,7 @@ export const planShip = async (
   ack: Acknowledgement,
   executor: Transaction<DB>,
 ): Promise<ShipPlan> => {
-  await assertCanShip(context);
+  await assertCanShip(context, executor);
   const items = await changeSetItemsRepository.listForSet(row.id, executor);
   const entryItems = items.filter((item) => item.kind === 'entry');
   const drafts = await schemaDraftsRepository.listForSet(row.id, executor);
@@ -88,9 +92,11 @@ export const planShip = async (
   if (drafts.length === 0) {
     return { row, entryItems, schema: [], needsJob: false };
   }
-  await assertWritable(context);
-  const plans = await planDrafts(context, drafts);
-  await authorizeDrafts(context, plans);
+  // The checks and plans below read through the ship's transaction, never a second pooled connection.
+  const inTransaction: ChangeSetServiceContext = { ...context, db: executor };
+  await assertWritable(inTransaction);
+  const plans = await planDrafts(inTransaction, drafts);
+  await authorizeDrafts(context, plans, executor);
   const stale = staleDraft(plans);
   if (stale) {
     throw stale;

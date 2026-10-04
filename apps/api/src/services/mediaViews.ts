@@ -1,3 +1,4 @@
+import type { Database } from '../db/index.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 import type { MediaVisibility } from '../media/keys.js';
 import type { MediaStorage, StorageDriver } from '../media/types.js';
@@ -115,12 +116,17 @@ const toAssetView = async (
 /**
  * API views of assets with their variants (one query for all variants) and URLs: stable for public
  * assets, signed and expiring for private ones. Package E can use this to resolve media fields.
+ * `executor`: the caller's open transaction, when there is one.
  */
 export const toAssetViews = async (
   deps: ViewDependencies,
   assets: readonly MediaAssetRow[],
+  executor?: Database,
 ): Promise<MediaAssetView[]> => {
-  const variants = await mediaVariantsRepository.listForAssets(assets.map((asset) => asset.id));
+  const variants = await mediaVariantsRepository.listForAssets(
+    assets.map((asset) => asset.id),
+    executor,
+  );
   const byAsset = Map.groupBy(variants, (variant) => variant.asset_id);
   return Promise.all(assets.map((asset) => toAssetView(deps, asset, byAsset.get(asset.id) ?? [])));
 };

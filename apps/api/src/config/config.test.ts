@@ -30,7 +30,7 @@ describe('loadConfig', () => {
         basePath: '',
       },
       tls: { mode: 'off' },
-      database: { url: PRODUCTION.DATABASE_URL, poolMax: 10, migrateOnStart: true },
+      database: { url: PRODUCTION.DATABASE_URL, poolMax: 10, acquireTimeoutMs: 10_000, migrateOnStart: true },
       schema: { listen: true },
       worker: { mode: 'inline', concurrency: 4 },
       storage: { driver: 'local' },

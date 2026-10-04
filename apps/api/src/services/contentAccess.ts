@@ -7,7 +7,13 @@ import type { ReadEnvironment } from '../content/read.js';
 import type { Database } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
-import type { ContentAction, PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
+import type {
+  ContentAction,
+  PermissionEvaluator,
+  PermissionExecutor,
+  Policy,
+  Principal,
+} from '../permissions/types.js';
 import type { EntryRow } from '../repositories/entries.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
@@ -38,14 +44,22 @@ const ACTION_LABELS: Readonly<Record<ContentAction, string>> = {
   schemaManage: 'managing',
 };
 
-/** Resolves the model and the caller's policy for one action; 403 when not allowed (CONTRIBUTING.md rule 5). */
+/**
+ * Resolves the model and the caller's policy for one action; 403 when not allowed (CONTRIBUTING.md rule 5).
+ * `executor`: the caller's open transaction, when there is one.
+ */
 export const modelWithPolicy = async (
   context: ContentServiceContext,
   modelKey: string,
   action: ContentAction,
+  executor?: PermissionExecutor,
 ): Promise<{ model: ContentModel; policy: Policy }> => {
   const model = resolveModel(context.snapshot, modelKey);
-  const policy = await context.permissions.evaluate(context.actor, { action, modelId: model.definition.id });
+  const policy = await context.permissions.evaluate(
+    context.actor,
+    { action, modelId: model.definition.id },
+    executor,
+  );
   assertAllowed(policy, `${ACTION_LABELS[action]} "${modelKey}" entries`);
   return { model, policy };
 };

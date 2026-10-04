@@ -39,8 +39,9 @@ export type ReadEnvironment = {
   media?: MediaViewDependencies;
 };
 
+/** Evaluated through the read's executor: a read inside a transaction never asks the pool for a second connection. */
 export const readPolicy = (env: ReadEnvironment, modelId: string): Promise<Policy> =>
-  env.permissions.evaluate(env.actor, { action: 'read', modelId });
+  env.permissions.evaluate(env.actor, { action: 'read', modelId }, env.executor);
 
 /**
  * Heads of the given entries that the policy lets the caller read, served per the locale chain (or per
@@ -122,7 +123,7 @@ const loadMediaViews = async (
     return new Map();
   }
   const assets = await mediaAssetsRepository.findLiveManyOnSite(env.siteId, [...ids], env.executor);
-  const views = await toAssetViews(env.media, assets);
+  const views = await toAssetViews(env.media, assets, env.executor);
   return new Map(views.map((view) => [view.id, env.audience === 'delivery' ? toDeliveryAsset(view) : view]));
 };
 

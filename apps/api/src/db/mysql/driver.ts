@@ -7,7 +7,9 @@ import {
   type UnknownRow,
 } from 'kysely';
 import mysql, { type Pool, type PoolConnection, type PoolOptions, type ResultSetHeader } from 'mysql2';
+import { assertNotNested, outsideConnectionScope } from '../connectionScope.js';
 import { publishNotification } from '../notifyHub.js';
+import { DEFAULT_POOL_ACQUIRE_TIMEOUT_MS, PoolAcquireTimeoutError } from '../poolAcquire.js';
 import { encodeParameter, typeCast } from './codec.js';
 import { planOf } from './compiler.js';
 import { annotateMysqlError } from './errors.js';
@@ -37,6 +39,13 @@ const UNPIN_TIMESTAMP = 'set timestamp = default';
 export type MysqlDriverOptions = {
   url: string;
   poolMax: number;
+  /**
+   * How long `acquireConnection` waits for a free pooled connection (mysql2's pool has no such bound).
+   * Default `DEFAULT_POOL_ACQUIRE_TIMEOUT_MS`.
+   */
+  acquireTimeoutMs?: number;
+  /** Fail a pool acquisition inside an open transaction (`db/connectionScope.ts`); tests turn it on. */
+  strict?: boolean;
   /** Reported as the `program_name` connection attribute (PostgreSQL's application_name). */
   applicationName?: string;
   /** Reports an idle pooled connection that failed (the pool replaces it). */
@@ -130,9 +139,12 @@ class MysqlConnection implements DatabaseConnection {
     this.#inTransaction = false;
     await Promise.all([this.#query(command), this.#query(UNPIN_TIMESTAMP)]);
     if (command === 'commit') {
-      for (const { channel, payload, id } of pending) {
-        publishNotification(this.#databaseKey, channel, payload, id);
-      }
+      // Listeners start work of their own (a schema reload), not work of the transaction that committed.
+      outsideConnectionScope(() => {
+        for (const { channel, payload, id } of pending) {
+          publishNotification(this.#databaseKey, channel, payload, id);
+        }
+      });
     }
   }
 
@@ -237,6 +249,11 @@ class MysqlConnection implements DatabaseConnection {
 export class MysqlDriver implements Driver {
   readonly #options: MysqlDriverOptions;
   readonly databaseKey: string;
+
+  get strict(): boolean {
+    return this.#options.strict ?? false;
+  }
+
   #pool: Pool | undefined;
   readonly #connections = new WeakMap<PoolConnection, MysqlConnection>();
 
@@ -269,10 +286,36 @@ export class MysqlDriver implements Driver {
     return this.#pool;
   }
 
-  async acquireConnection(): Promise<DatabaseConnection> {
-    const raw = await new Promise<PoolConnection>((resolve, reject) => {
-      this.#pooled().getConnection((error, connection) => (error ? reject(error) : resolve(connection)));
+  /**
+   * A pooled connection, or `PoolAcquireTimeoutError` once `acquireTimeoutMs` passes. mysql2 cannot withdraw
+   * a queued request, so a connection that arrives after the timeout goes straight back to the pool.
+   */
+  #getConnection(): Promise<PoolConnection> {
+    const { acquireTimeoutMs = DEFAULT_POOL_ACQUIRE_TIMEOUT_MS, poolMax } = this.#options;
+    return new Promise<PoolConnection>((resolve, reject) => {
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        reject(new PoolAcquireTimeoutError(acquireTimeoutMs, poolMax));
+      }, acquireTimeoutMs);
+      this.#pooled().getConnection((error, connection) => {
+        clearTimeout(timer);
+        if (timedOut) {
+          connection?.release();
+        } else if (error) {
+          reject(error);
+        } else {
+          resolve(connection);
+        }
+      });
     });
+  }
+
+  async acquireConnection(): Promise<DatabaseConnection> {
+    if (this.#options.strict) {
+      assertNotNested();
+    }
+    const raw = await this.#getConnection();
     let connection = this.#connections.get(raw);
     if (!connection) {
       connection = new MysqlConnection(raw, this.databaseKey);

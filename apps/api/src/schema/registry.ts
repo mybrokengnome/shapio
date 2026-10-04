@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/index.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
-import { loadSnapshot } from './loadSnapshot.js';
+import { loadSnapshot, readSnapshot } from './loadSnapshot.js';
 import { siteIdsOf, type NetworkSchema } from './snapshot.js';
 
 export type SchemaChangeListener = (snapshot: NetworkSchema) => void;
@@ -11,8 +11,10 @@ export type SchemaRegistry = {
    * The snapshot for the current global schema version. Costs one primary-key read of
    * `system_versions` when the cache is current; reloads (single-flight) when it is not. This durable
    * check is what keeps every instance correct; notifications only make reloads happen sooner.
+   * `executor`: the caller's open transaction, which the check (and a reload, when the cache is stale) then
+   * reads through, so it never waits for a second pooled connection while holding one.
    */
-  getSnapshot: () => Promise<NetworkSchema>;
+  getSnapshot: (executor?: Database) => Promise<NetworkSchema>;
   /** The cached snapshot without any check (may be stale or absent). */
   peek: () => NetworkSchema | undefined;
   /** A hint that the version moved (NOTIFY). Reloads in the background; never throws. */
@@ -76,12 +78,14 @@ export const createSchemaRegistry = ({ db, log }: RegistryOptions): SchemaRegist
   };
 
   return {
-    getSnapshot: async () => {
-      const version = await schemaVersionsRepository.getSchemaVersion(db);
+    getSnapshot: async (executor) => {
+      const version = await schemaVersionsRepository.getSchemaVersion(executor ?? db);
       if (cached && cached.version >= version) {
         return cached;
       }
-      return loadAtLeast(version);
+      // Through the caller's transaction: this caller's own read, not cached, since a transaction that is
+      // not REPEATABLE READ can see an activation commit between its reads. The pool path refreshes the cache.
+      return executor ? readSnapshot(executor) : loadAtLeast(version);
     },
     peek: () => cached,
     hint: (version) => {

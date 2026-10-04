@@ -1,4 +1,5 @@
 import type { FieldVisibilityLookup, ModelField } from '../permissions/policy.js';
+import type { PermissionExecutor } from '../permissions/types.js';
 import type { SchemaRegistry } from './registry.js';
 
 /**
@@ -8,18 +9,19 @@ import type { SchemaRegistry } from './registry.js';
  * hidden from the API unless a role names them explicitly. Components are not delivery models.
  */
 export const createSchemaFieldVisibility = (registry: SchemaRegistry): FieldVisibilityLookup => {
-  const activeModel = async (modelId: string) => {
-    const active = (await registry.getSnapshot()).byId.get(modelId);
+  const activeModel = async (modelId: string, executor: PermissionExecutor | undefined) => {
+    const active = (await registry.getSnapshot(executor)).byId.get(modelId);
     return active && active.definition.kind !== 'component' ? active.definition : undefined;
   };
   return {
-    getModelFields: async (modelId) =>
-      (await activeModel(modelId))?.fields.map((field): ModelField => ({
+    getModelFields: async (modelId, executor) =>
+      (await activeModel(modelId, executor))?.fields.map((field): ModelField => ({
         id: field.id,
         public: field.public && !field.deprecated,
       })),
-    hasModel: async (modelId) => (await activeModel(modelId)) !== undefined,
+    hasModel: async (modelId, executor) => (await activeModel(modelId, executor)) !== undefined,
     // Components too: managing a site's component is a site's schema permission like its models'.
-    getModelSite: async (modelId) => (await registry.getSnapshot()).scopeOf(modelId) ?? null,
+    getModelSite: async (modelId, executor) =>
+      (await registry.getSnapshot(executor)).scopeOf(modelId) ?? null,
   };
 };

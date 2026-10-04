@@ -1,13 +1,15 @@
+import type { Transaction } from 'kysely';
 import {
   API_TOKEN_DISPLAY_LENGTH,
   API_TOKEN_PREFIX,
   LAST_SEEN_WRITE_INTERVAL_MS,
 } from '../constants/auth.js';
 import { db } from '../db/index.js';
+import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
 import { SYSTEM_ROLE_KEYS } from '../permissions/seedRoles.js';
-import type { PermissionEvaluator, TokenPrincipal } from '../permissions/types.js';
+import type { PermissionEvaluator, PermissionExecutor, TokenPrincipal } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
 import type { SiteActorContext } from './actorContext.js';
@@ -53,8 +55,11 @@ export const isApiTokenFormat = (value: string): boolean => value.startsWith(API
  * Network tokens (no site) are visible and revocable only by admins who could mint them (`users.manage`, a
  * network action); everyone else sees their site's tokens only.
  */
-const managesNetworkTokens = (context: SiteActorContext, permissions: PermissionEvaluator) =>
-  permissions.canPerform(context.actor, 'users.manage');
+const managesNetworkTokens = (
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
+  executor?: PermissionExecutor,
+) => permissions.canPerform(context.actor, 'users.manage', executor);
 
 /** The request site's tokens, plus network tokens for those who manage them. */
 export const listApiTokens = async (
@@ -84,6 +89,7 @@ const isNetworkToken = async (
   permissions: PermissionEvaluator,
   roleKind: string,
   requested: boolean | undefined,
+  trx: Transaction<DB>,
 ): Promise<boolean> => {
   if (roleKind === 'delivery') {
     if (requested === true) {
@@ -94,7 +100,7 @@ const isNetworkToken = async (
   if (requested !== true) {
     return false;
   }
-  if (!(await managesNetworkTokens(context, permissions))) {
+  if (!(await managesNetworkTokens(context, permissions, trx))) {
     throw new AppError(
       403,
       'FORBIDDEN',
@@ -126,7 +132,7 @@ export const createApiToken = async (
     if (role.key === SYSTEM_ROLE_KEYS.owner) {
       throw new AppError(400, 'INVALID_ROLES', 'API tokens cannot hold the owner role');
     }
-    const network = await isNetworkToken(context, permissions, role.kind, input.network);
+    const network = await isNetworkToken(context, permissions, role.kind, input.network, trx);
     const { id } = await apiTokensRepository.insert(
       {
         name: input.name.trim(),

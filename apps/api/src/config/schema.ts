@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { DEFAULT_POOL_ACQUIRE_TIMEOUT_MS } from '../db/poolAcquire.js';
 
 export const NODE_ENVS = ['development', 'production', 'test'] as const;
 export const WORKER_MODES = ['inline', 'dedicated'] as const;
@@ -40,6 +41,11 @@ export const configSchema = Type.Object({
 
   DATABASE_URL: Type.String({ minLength: 1 }),
   DATABASE_POOL_MAX: Type.Integer({ minimum: 2, maximum: 200 }),
+  /**
+   * How long a request waits for a free pooled connection (PostgreSQL and MySQL) before it fails with
+   * 503 `DATABASE_BUSY` and a logged error, instead of queueing forever. SQLite never waits for one.
+   */
+  DATABASE_POOL_ACQUIRE_TIMEOUT_MS: Type.Integer({ minimum: 100 }),
   MIGRATE_ON_START: Type.Boolean(),
   /**
    * LISTEN for schema-change notifications to refresh caches early. Turn off where LISTEN does not work
@@ -222,6 +228,7 @@ export const CONFIG_DEFAULTS = {
   MEDIA_RATE_LIMIT_MAX: 6000,
   TLS_RELOAD_INTERVAL_MS: 60_000,
   DATABASE_POOL_MAX: 10,
+  DATABASE_POOL_ACQUIRE_TIMEOUT_MS: DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,
   MIGRATE_ON_START: true,
   SETUP_REQUIRE_TOKEN: false,
   SCHEMA_LISTEN: true,

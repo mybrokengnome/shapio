@@ -6,7 +6,9 @@ import {
   type Dialect,
   type Driver,
   type QueryCompiler,
+  type TransactionBuilder,
 } from 'kysely';
+import { withConnectionScope } from '../connectionScope.js';
 import { ShapioMysqlQueryCompiler } from './compiler.js';
 import { MysqlDriver, type MysqlDriverOptions } from './driver.js';
 import { MysqlPlugin } from './plugin.js';
@@ -61,6 +63,12 @@ export class MysqlKysely<DB> extends Kysely<DB> {
   constructor(driver: MysqlDriver) {
     super({ dialect: new ShapioMysqlDialect(driver), plugins: [new MysqlPlugin()] });
     this.mysqlDriver = driver;
+  }
+
+  /** Strict mode runs transactions in a connection scope (`db/connectionScope.ts`). */
+  override transaction(): TransactionBuilder<DB> {
+    const builder = super.transaction();
+    return this.mysqlDriver.strict ? withConnectionScope(builder) : builder;
   }
 }
 

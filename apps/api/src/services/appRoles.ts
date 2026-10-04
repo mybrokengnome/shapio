@@ -178,7 +178,7 @@ export const updateAppRole = async (
     }
     if (input.permissions) {
       validateAppPermissions(input.permissions);
-      await assertModelsExist(input.permissions, schema);
+      await assertModelsExist(input.permissions, schema, trx);
     }
     const updated = await appRolesRepository.updateIfVersion(
       id,

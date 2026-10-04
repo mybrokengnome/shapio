@@ -30,6 +30,21 @@ All notable changes to Shapio are listed here. The format follows
   one, and new installs, get **Shapio** following the operating system. Settings → Theme is now Settings →
   Appearance.
 
+### Fixed
+
+- **Delivery reads no longer deadlock the connection pool under load.** A delivery read runs in one
+  transaction; checking a relation target's read permission then read the permissions and schema versions
+  through a second pooled connection. With as many concurrent reads as pool connections (10 by default) every
+  connection waited for another and the server stopped answering until restarted (seen with
+  `?populate=`; relation IDs alone could hit it too). The same nesting happened in GraphQL relation reads,
+  admin reads with media, scheduled and change-set publishing, change-set shipping and scheduling, API token
+  creation and role edits. Every check inside a transaction now reads through that transaction.
+- **An exhausted pool fails fast instead of hanging.** A request that waits longer than
+  `DATABASE_POOL_ACQUIRE_TIMEOUT_MS` (default 10000) for a database connection gets `503 DATABASE_BUSY` and
+  the error is logged (PostgreSQL and MySQL; SQLite never waits for a pooled connection). On PostgreSQL, a new
+  connection that cannot be opened within that time gives `503 DATABASE_UNAVAILABLE`. See
+  [Environment variables](documentation/reference/environment.md).
+
 ## [0.3.0] - 2026-10-04
 
 ### Added

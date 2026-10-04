@@ -1,7 +1,9 @@
-import { Kysely, PostgresDialect } from 'kysely';
+import { Kysely, PostgresDialect, type PostgresPool, type TransactionBuilder } from 'kysely';
 import pg from 'pg';
+import { assertNotNested, withConnectionScope } from './connectionScope.js';
 import { dialectOfUrl, setCurrentDialect, sqliteLocationOfUrl } from './dialect.js';
 import { createMysqlDb } from './mysql/index.js';
+import { DEFAULT_POOL_ACQUIRE_TIMEOUT_MS, pgAcquireError } from './poolAcquire.js';
 import { createSqliteDb } from './sqlite/index.js';
 import type { DB } from './types.js';
 
@@ -10,6 +12,13 @@ export type Database = Kysely<DB>;
 type CreateDbOptions = {
   connectionString: string;
   poolMax: number;
+  /**
+   * PostgreSQL and MySQL: how long a query waits for a free pooled connection before it fails with a 503
+   * (`PoolAcquireTimeoutError`). On PostgreSQL it also bounds opening a new connection (503
+   * `DatabaseUnavailableError`). SQLite never waits for a pooled connection: autocommit reads share one
+   * reader, and a write that would wait for its own transaction fails at once (`db/sqlite/writeLock.ts`).
+   */
+  acquireTimeoutMs?: number;
   applicationName?: string;
   /**
    * Called when an idle pooled connection fails (PostgreSQL restarted, a network blip). The pool already
@@ -18,14 +27,47 @@ type CreateDbOptions = {
    */
   onIdleConnectionError?: (error: Error) => void;
   /**
-   * SQLite only: fail on computed result columns that look like undecoded timestamps or JSON (tests turn it
-   * on, so a missing `db/sql/typed` marker is caught).
+   * Tests turn it on. SQLite: fail on computed result columns that look like undecoded timestamps or JSON,
+   * so a missing `db/sql/typed` marker is caught. PostgreSQL and MySQL: fail a query that asks the pool for
+   * a connection inside an open transaction (`db/connectionScope.ts`).
    */
   strict?: boolean;
 };
 
 const warnIdleConnectionError = (error: Error) =>
   process.emitWarning(`PostgreSQL connection lost while idle: ${error.message}`);
+
+/**
+ * The pg pool as Kysely sees it: an exhausted pool's queue timeout becomes `PoolAcquireTimeoutError`, a
+ * connection that cannot be opened in time `DatabaseUnavailableError`, and in strict mode a nested
+ * acquisition fails at once.
+ */
+const acquiringPool = (
+  pool: pg.Pool,
+  poolMax: number,
+  acquireTimeoutMs: number,
+  strict: boolean,
+): PostgresPool => ({
+  options: pool.options,
+  connect: async () => {
+    if (strict) {
+      assertNotNested();
+    }
+    try {
+      return await pool.connect();
+    } catch (error) {
+      throw pgAcquireError(error, poolMax, acquireTimeoutMs);
+    }
+  },
+  end: () => pool.end(),
+});
+
+/** Kysely on PostgreSQL in strict mode: transactions run in a connection scope (`db/connectionScope.ts`). */
+class StrictPostgresKysely<DB> extends Kysely<DB> {
+  override transaction(): TransactionBuilder<DB> {
+    return withConnectionScope(super.transaction());
+  }
+}
 
 const warnIdleMysqlConnectionError = (error: Error) =>
   process.emitWarning(`MySQL connection lost while idle: ${error.message}`);
@@ -39,6 +81,7 @@ const warnIdleMysqlConnectionError = (error: Error) =>
 export const createDb = ({
   connectionString,
   poolMax,
+  acquireTimeoutMs = DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,
   applicationName = 'shapio',
   onIdleConnectionError,
   strict = false,
@@ -52,12 +95,20 @@ export const createDb = ({
     return createMysqlDb<DB>({
       url: connectionString,
       poolMax,
+      acquireTimeoutMs,
       applicationName,
       onIdleConnectionError: onIdleConnectionError ?? warnIdleMysqlConnectionError,
+      strict,
     });
   }
   setCurrentDialect('postgres');
-  const pool = new pg.Pool({ connectionString, max: poolMax, application_name: applicationName });
+  const pool = new pg.Pool({
+    connectionString,
+    max: poolMax,
+    // Bounds both the wait for a free connection and the opening of a new one.
+    connectionTimeoutMillis: acquireTimeoutMs,
+    application_name: applicationName,
+  });
   // Without a listener, pg's 'error' event on an idle client would crash the process on a database restart.
   pool.on('error', onIdleConnectionError ?? warnIdleConnectionError);
   // pg-pool drops its own listener while a client is checked out, yet a client whose socket dies still emits
@@ -67,7 +118,12 @@ export const createDb = ({
   pool.on('connect', (client) => {
     client.on('error', () => undefined);
   });
-  return new Kysely<DB>({ dialect: new PostgresDialect({ pool }) });
+  const dialect = new PostgresDialect({
+    pool: acquiringPool(pool, poolMax, acquireTimeoutMs, strict),
+    // What the pool would use itself; Kysely opens it to cancel a query.
+    controlClient: pg.Client,
+  });
+  return strict ? new StrictPostgresKysely<DB>({ dialect }) : new Kysely<DB>({ dialect });
 };
 
 /**

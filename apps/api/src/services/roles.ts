@@ -9,6 +9,7 @@ import {
   GLOBAL_ACTIONS,
   type ContentAction,
   type GlobalAction,
+  type PermissionExecutor,
   type RowCondition,
 } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
@@ -102,13 +103,17 @@ export const validatePermissions = (kind: RoleKind, permissions: readonly Permis
   });
 };
 
-/** Every model a grant names must exist (the registry decides; package D implements the lookup). */
+/**
+ * Every model a grant names must exist (the registry decides; package D implements the lookup).
+ * `executor`: the caller's open transaction, when there is one.
+ */
 export const assertModelsExist = async (
   permissions: readonly PermissionInput[],
   schema: FieldVisibilityLookup,
+  executor?: PermissionExecutor,
 ) => {
   const modelIds = [...new Set(permissions.flatMap((p) => (p.modelId === null ? [] : [p.modelId])))];
-  const exists = await Promise.all(modelIds.map((modelId) => schema.hasModel(modelId)));
+  const exists = await Promise.all(modelIds.map((modelId) => schema.hasModel(modelId, executor)));
   const unknown = modelIds.filter((_modelId, index) => !exists[index]);
   if (unknown.length > 0) {
     throw new AppError(400, 'UNKNOWN_MODEL', 'Grants name models that do not exist', { modelIds: unknown });
@@ -211,7 +216,7 @@ export const updateRole = async (
     const kind: RoleKind = role.kind === 'delivery' ? 'delivery' : 'admin';
     if (input.permissions) {
       validatePermissions(kind, input.permissions);
-      await assertModelsExist(input.permissions, schema);
+      await assertModelsExist(input.permissions, schema, trx);
     }
     const updated = await adminRolesRepository.updateIfVersion(
       id,

@@ -81,7 +81,7 @@ export type AppConfig = {
   };
   tls: TlsConfig;
   log: { level: RawConfig['LOG_LEVEL']; pretty: boolean };
-  database: { url: string; poolMax: number; migrateOnStart: boolean };
+  database: { url: string; poolMax: number; acquireTimeoutMs: number; migrateOnStart: boolean };
   /** `listen`: use LISTEN/NOTIFY to refresh schema caches early (correctness never depends on it). */
   schema: { listen: boolean };
   http: {
@@ -233,7 +233,12 @@ const toAppConfig = (raw: RawConfig): AppConfig => {
     },
     tls,
     log: { level: raw.LOG_LEVEL, pretty: raw.LOG_PRETTY },
-    database: { url: raw.DATABASE_URL, poolMax: raw.DATABASE_POOL_MAX, migrateOnStart: raw.MIGRATE_ON_START },
+    database: {
+      url: raw.DATABASE_URL,
+      poolMax: raw.DATABASE_POOL_MAX,
+      acquireTimeoutMs: raw.DATABASE_POOL_ACQUIRE_TIMEOUT_MS,
+      migrateOnStart: raw.MIGRATE_ON_START,
+    },
     schema: { listen: raw.SCHEMA_LISTEN },
     http: {
       corsOrigins: parseList(raw.CORS_ORIGINS),

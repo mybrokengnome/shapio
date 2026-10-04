@@ -46,13 +46,13 @@ const createDatabase = async (statement: string) => {
 };
 
 /** SQLite: a file copied from the migrated template (or a new empty file). */
-const createSqliteTestDatabase = (name: string, empty: boolean): TestDatabase => {
+const createSqliteTestDatabase = (name: string, empty: boolean, poolMax: number): TestDatabase => {
   const path = join(inject('testSqliteDirectory'), `${name}.db`);
   if (!empty) {
     copyFileSync(inject('testDatabaseTemplate'), path);
   }
   const url = `sqlite:${path}`;
-  const db = createDb({ connectionString: url, poolMax: 10, strict: true });
+  const db = createDb({ connectionString: url, poolMax, strict: true });
   let dropped = false;
   return {
     name,
@@ -72,7 +72,11 @@ const createSqliteTestDatabase = (name: string, empty: boolean): TestDatabase =>
 };
 
 /** MySQL: a database cloned from the migrated template (or a new empty one). */
-const createMysqlTestDatabase = async (name: string, empty: boolean): Promise<TestDatabase> => {
+const createMysqlTestDatabase = async (
+  name: string,
+  empty: boolean,
+  pool: { poolMax: number; acquireTimeoutMs?: number },
+): Promise<TestDatabase> => {
   const adminUrl = inject('testDatabaseAdminUrl');
   if (empty) {
     await createMysqlDatabase(adminUrl, name);
@@ -80,7 +84,7 @@ const createMysqlTestDatabase = async (name: string, empty: boolean): Promise<Te
     await cloneMysqlDatabase(adminUrl, inject('testDatabaseTemplate'), name);
   }
   const url = withDatabaseName(adminUrl, name);
-  const db = createDb({ connectionString: url, poolMax: 10 });
+  const db = createDb({ connectionString: url, ...pool, strict: true });
   let dropped = false;
   return {
     name,
@@ -97,26 +101,43 @@ const createMysqlTestDatabase = async (name: string, empty: boolean): Promise<Te
   };
 };
 
+type TestDatabaseOptions = {
+  /** No tables (for migration tests); by default the database is cloned from the migrated template. */
+  empty?: boolean;
+  /** Pooled connections (SQLite: readers). */
+  poolMax?: number;
+  /** PostgreSQL and MySQL: how long a query waits for a pooled connection (default: the server's). */
+  acquireTimeoutMs?: number;
+};
+
 /**
- * Creates a database for one test file. By default it is cloned from the migrated template; with
- * `{ empty: true }` it has no tables (for migration tests).
+ * Creates a database for one test file. Its handle is strict: on PostgreSQL and MySQL a query that asks
+ * the pool for a connection inside an open transaction fails (`db/connectionScope.ts`).
  */
 export const createTestDatabase = async ({
   empty = false,
-}: { empty?: boolean } = {}): Promise<TestDatabase> => {
+  poolMax = 10,
+  acquireTimeoutMs,
+}: TestDatabaseOptions = {}): Promise<TestDatabase> => {
   const name = `shapio_t_${process.pid}_${randomBytes(4).toString('hex')}`;
   if (dialectOfUrl(inject('testDatabaseAdminUrl')) === 'sqlite') {
-    return createSqliteTestDatabase(name, empty);
+    return createSqliteTestDatabase(name, empty, poolMax);
   }
   if (dialectOfUrl(inject('testDatabaseAdminUrl')) === 'mysql') {
-    return createMysqlTestDatabase(name, empty);
+    return createMysqlTestDatabase(name, empty, { poolMax, acquireTimeoutMs });
   }
   const source = empty ? 'template0' : inject('testDatabaseTemplate');
   await createDatabase(
     `create database ${pg.escapeIdentifier(name)} template ${pg.escapeIdentifier(source)}`,
   );
   const url = withDatabaseName(inject('testDatabaseAdminUrl'), name);
-  const db = createDb({ connectionString: url, poolMax: 10, applicationName: 'shapio-test' });
+  const db = createDb({
+    connectionString: url,
+    poolMax,
+    acquireTimeoutMs,
+    applicationName: 'shapio-test',
+    strict: true,
+  });
   let dropped = false;
   return {
     name,
@@ -134,7 +155,7 @@ export const createTestDatabase = async ({
 };
 
 /** Registers beforeAll/afterAll hooks; read `.current` inside tests. */
-export const useTestDatabase = (options: { empty?: boolean } = {}) => {
+export const useTestDatabase = (options: TestDatabaseOptions = {}) => {
   const handle = {} as { current: TestDatabase };
   beforeAll(async () => {
     handle.current = await createTestDatabase(options);

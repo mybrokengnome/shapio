@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID, SITE_HEADER } from '../src/constants/sites.js';
 import { resolveModel } from '../src/content/model.js';
 import { guardModelVersions } from '../src/content/write/transaction.js';
+import { outsideConnectionScope } from '../src/db/connectionScope.js';
 import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import * as entriesRepository from '../src/repositories/entries.js';
 import * as publicationsRepository from '../src/repositories/publications.js';
@@ -415,8 +416,9 @@ describe('per-site schema', () => {
           { siteId: siteB.id, modelId: model.definition.id, ownerAppUserId: null, createdByAdminId: null },
           trx,
         );
-        // The scope change starts while this writer holds the model's shared lock.
-        response = changeScope(onA, racing, { scope: 'site' });
+        // The scope change starts while this writer holds the model's shared lock (as another request, not
+        // as work of this transaction).
+        response = outsideConnectionScope(() => changeScope(onA, racing, { scope: 'site' }));
       });
       const refused = await (response as Promise<LightMyRequestResponse>);
       expect(refused.statusCode).toBe(409);
