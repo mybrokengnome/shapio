@@ -238,7 +238,8 @@ export const createFixedTypes = () => {
     entry: createEntry(),
     publicationState: new GraphQLEnumType({
       name: 'PublicationState',
-      description: 'DRAFT is for admin principals only (previews).',
+      description:
+        'DRAFT is for admin principals and delivery tokens granted Read drafts (development servers).',
       values: { PUBLISHED: { value: 'published' }, DRAFT: { value: 'draft' } },
     }),
     sortDirection: new GraphQLEnumType({

@@ -17,3 +17,6 @@ export const SITE_QUERY_PARAMETER = 'site';
  * and the header that selects the site. CDNs that key on the URL only need `?site=` instead of the header.
  */
 export const DELIVERY_VARY = 'Authorization, Cookie, Shapio-Site';
+
+/** `Cache-Control` of delivery responses that carry drafts (REST and GraphQL; plan drafts-mode): never stored. */
+export const DRAFTS_CACHE_CONTROL = 'private, no-store';

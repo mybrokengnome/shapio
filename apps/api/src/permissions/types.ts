@@ -79,10 +79,23 @@ export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish',
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
 
 /**
+ * What a delivery role may grant (plan drafts-mode §1): `read`, and `readDrafts`, which lets a delivery token
+ * read draft heads (`?publicationState=draft`, GraphQL `publicationState: DRAFT`) on top of `read`. A
+ * `readDrafts` grant always covers every model (no model, condition or field list), so one check per request
+ * covers relation targets too. Admin and app roles never hold it; admin principals read drafts without it.
+ */
+export const DELIVERY_ACTIONS = ['read', 'readDrafts'] as const;
+export type DeliveryAction = (typeof DELIVERY_ACTIONS)[number];
+export const READ_DRAFTS_ACTION = 'readDrafts' satisfies DeliveryAction;
+
+/** Any action evaluated per model: content actions, and `readDrafts`. */
+export type ModelAction = ContentAction | DeliveryAction;
+
+/**
  * Content actions about the schema rather than one site's entries: network roles only for a shared
  * definition; for a site's own definition, the roles that apply on that site (when the principal acts there).
  */
-export const NETWORK_CONTENT_ACTIONS: ReadonlySet<ContentAction> = new Set(['schemaManage']);
+export const NETWORK_CONTENT_ACTIONS: ReadonlySet<ModelAction> = new Set<ModelAction>(['schemaManage']);
 
 /**
  * Actions that are not scoped to one model, in two kinds (sites plan §H):
@@ -154,7 +167,7 @@ export type Policy = {
 };
 
 export type PolicyRequest = {
-  action: ContentAction;
+  action: ModelAction;
   modelId: string;
 };
 

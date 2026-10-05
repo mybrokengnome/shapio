@@ -6,9 +6,12 @@ import { AppError } from '../helpers/appError.js';
 import type { FieldVisibilityLookup } from '../permissions/policy.js';
 import {
   CONTENT_ACTIONS,
+  DELIVERY_ACTIONS,
   GLOBAL_ACTIONS,
+  READ_DRAFTS_ACTION,
   type ContentAction,
   type GlobalAction,
+  type ModelAction,
   type PermissionExecutor,
   type RowCondition,
 } from '../permissions/types.js';
@@ -22,7 +25,7 @@ import { recordAudit } from './audit.js';
 export type RoleKind = 'admin' | 'delivery';
 
 export type PermissionInput = {
-  action: ContentAction | GlobalAction;
+  action: ModelAction | GlobalAction;
   /** null = every model. Must be null for global actions. */
   modelId: string | null;
   condition: RowCondition['kind'] | null;
@@ -43,7 +46,8 @@ export type RoleView = {
   updatedAt: Date;
 };
 
-const CONTENT_ACTION_SET: ReadonlySet<string> = new Set(CONTENT_ACTIONS);
+const MODEL_ACTION_SET: ReadonlySet<string> = new Set([...CONTENT_ACTIONS, ...DELIVERY_ACTIONS]);
+const DELIVERY_ACTION_SET: ReadonlySet<string> = new Set(DELIVERY_ACTIONS);
 const GLOBAL_ACTION_SET: ReadonlySet<string> = new Set(GLOBAL_ACTIONS);
 const FIELD_SCOPED_ACTIONS: ReadonlySet<string> = new Set<ContentAction>(['read', 'create', 'update']);
 
@@ -71,16 +75,29 @@ const invalidPermissions = (message: string, details?: unknown) =>
   new AppError(400, 'INVALID_PERMISSIONS', message, details);
 
 /**
+ * `readDrafts` (plan drafts-mode §1): delivery roles only, and always on every model with no condition or
+ * field list, so one check per request covers every model a draft read reaches (relation targets too).
+ */
+const validateReadDrafts = (kind: RoleKind, permission: PermissionInput, at: object): void => {
+  if (kind !== 'delivery') {
+    throw invalidPermissions('Read drafts is for delivery roles only', at);
+  }
+  if (permission.modelId !== null || permission.condition !== null || permission.fieldIds !== null) {
+    throw invalidPermissions('Read drafts applies to every model, with no condition or field list', at);
+  }
+};
+
+/**
  * The server-side rules for grants (never only the UI): known actions, global actions only without a
- * model, conditions and field lists only where they mean something, delivery roles read-only, no
- * duplicate (action, model) pairs.
+ * model, conditions and field lists only where they mean something, delivery roles read-only (`read`, and
+ * `readDrafts` on every model), no duplicate (action, model) pairs.
  */
 export const validatePermissions = (kind: RoleKind, permissions: readonly PermissionInput[]): void => {
   const seen = new Set<string>();
   permissions.forEach((permission, index) => {
     const at = { index, action: permission.action };
     const isGlobal = GLOBAL_ACTION_SET.has(permission.action);
-    if (!isGlobal && !CONTENT_ACTION_SET.has(permission.action)) {
+    if (!isGlobal && !MODEL_ACTION_SET.has(permission.action)) {
       throw invalidPermissions('Unknown action', at);
     }
     if (
@@ -89,8 +106,11 @@ export const validatePermissions = (kind: RoleKind, permissions: readonly Permis
     ) {
       throw invalidPermissions('Global actions take no model, condition or field list', at);
     }
-    if (kind === 'delivery' && permission.action !== 'read') {
+    if (kind === 'delivery' && !DELIVERY_ACTION_SET.has(permission.action)) {
       throw invalidPermissions('Delivery roles can only read', at);
+    }
+    if (permission.action === READ_DRAFTS_ACTION) {
+      validateReadDrafts(kind, permission, at);
     }
     if (permission.fieldIds !== null && !FIELD_SCOPED_ACTIONS.has(permission.action)) {
       throw invalidPermissions('Field lists apply to read, create and update only', at);

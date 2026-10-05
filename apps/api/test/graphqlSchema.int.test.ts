@@ -345,7 +345,7 @@ describe('GraphQL schema and runtime', () => {
           id: created.id,
         }),
       ),
-    ).toEqual(['FORBIDDEN']);
+    ).toEqual(['DRAFTS_FORBIDDEN']);
 
     const published = dataOf(
       await gql<{ publishNote: { status: string } }>(

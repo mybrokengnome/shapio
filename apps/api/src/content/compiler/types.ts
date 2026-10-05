@@ -57,6 +57,8 @@ export type ContentQuery = {
   richText?: RichTextMode;
   /** Delivery and preview only: SEO fields as stored (`raw`, the default) or with the site's defaults (`?seo=`). */
   seo?: SeoMode;
+  /** Delivery only: `?publicationState=draft` reads draft heads (the caller must be allowed; plan drafts-mode). */
+  publicationState?: PublicationState;
   /** Admin list only: entries whose draft in the served locale has this status. */
   status?: EntryListStatus;
   /** Admin list only: entries created by this admin user. */
@@ -75,6 +77,10 @@ export type RichTextMode = (typeof RICH_TEXT_MODES)[number];
 export const DEFAULT_RICH_TEXT_MODE: RichTextMode = 'json';
 
 /** `?seo=`: SEO fields as stored, or merged with the site's SEO defaults (plan seo-fields). */
+/** Which heads a delivery read serves (`?publicationState=`, GraphQL's `publicationState`). */
+export const PUBLICATION_STATES = ['published', 'draft'] as const;
+export type PublicationState = (typeof PUBLICATION_STATES)[number];
+
 export const SEO_MODES = ['raw', 'resolved'] as const;
 export type SeoMode = (typeof SEO_MODES)[number];
 

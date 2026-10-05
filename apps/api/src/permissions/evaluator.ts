@@ -9,13 +9,14 @@ import {
 } from './policy.js';
 import { tokenNetworkRoleIds } from './sites.js';
 import {
+  DELIVERY_ACTIONS,
   DENIED_POLICY,
   NETWORK_ACTIONS,
   NETWORK_CONTENT_ACTIONS,
   SITE_GRANTABLE_ACTIONS,
-  type ContentAction,
   type GlobalAction,
   type KnownVersions,
+  type ModelAction,
   type PermissionEvaluator,
   type PermissionExecutor,
   type Principal,
@@ -29,12 +30,14 @@ type PrincipalRoles = {
   /** Roles that apply to the whole instance (network actions); a role held on one site is never here. */
   networkRoleIds: readonly string[];
   audience: Audience;
-  /** Content actions the principal kind may ever perform; `all` = whatever its roles grant. */
-  actions: ReadonlySet<ContentAction> | 'all';
+  /** Per-model actions the principal kind may ever perform; `all` = whatever its roles grant. */
+  actions: ReadonlySet<ModelAction> | 'all';
 };
 
-const READ_ONLY: ReadonlySet<ContentAction> = new Set(['read']);
-const APP_ACTIONS: ReadonlySet<ContentAction> = new Set(APP_CONTENT_ACTIONS);
+/** Delivery tokens read, and read drafts where their role grants `readDrafts`. */
+const DELIVERY_TOKEN_ACTIONS: ReadonlySet<ModelAction> = new Set(DELIVERY_ACTIONS);
+/** App users and anonymous callers: never `readDrafts`, whatever a role says. */
+const APP_ACTIONS: ReadonlySet<ModelAction> = new Set(APP_CONTENT_ACTIONS);
 
 /**
  * Which roles a principal holds and how its masks are computed. App users hold the custom app roles assigned
@@ -67,8 +70,13 @@ const rolesOf = async (
             audience: 'admin',
             actions: 'all',
           }
-        : // Delivery tokens only ever read, whatever their role says.
-          { roleIds: [principal.roleId], networkRoleIds: [], audience: 'delivery', actions: READ_ONLY };
+        : // Delivery tokens only ever read (drafts included when granted), whatever their role says.
+          {
+            roleIds: [principal.roleId],
+            networkRoleIds: [],
+            audience: 'delivery',
+            actions: DELIVERY_TOKEN_ACTIONS,
+          };
     case 'appUser':
       return {
         roleIds: [

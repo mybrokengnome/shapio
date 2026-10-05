@@ -5,7 +5,7 @@ import { PRIMARY_SITE_ID } from '../../src/constants/sites.js';
 import { createContentPorts } from '../../src/content/ports.js';
 import type { Database } from '../../src/db/index.js';
 import { generateToken, hashToken } from '../../src/helpers/tokens.js';
-import type { ContentAction } from '../../src/permissions/types.js';
+import type { ModelAction } from '../../src/permissions/types.js';
 import * as adminRolesRepository from '../../src/repositories/adminRoles.js';
 import * as apiTokensRepository from '../../src/repositories/apiTokens.js';
 import * as permissionsVersionRepository from '../../src/repositories/permissionsVersion.js';
@@ -49,7 +49,7 @@ export const fieldIdOf = (model: ModelBody, apiKey: string): string => {
 };
 
 export type GrantSpec = {
-  action: ContentAction;
+  action: ModelAction;
   modelId: string | null;
   fieldIds?: string[] | null;
   condition?: 'ownedByPrincipal' | null;

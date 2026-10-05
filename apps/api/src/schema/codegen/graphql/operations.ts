@@ -52,19 +52,20 @@ const readArgs = (build: SchemaBuild): GraphQLFieldConfigArgumentMap => ({
   publicationState: {
     type: build.fixed.publicationState,
     defaultValue: 'published',
-    description: 'DRAFT needs an admin user or an admin API token',
+    description: 'DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts',
   },
   snapshot: { type: GraphQLInt, description: 'Read published content as of this publication sequence' },
 });
 
-const draftsForbidden = () =>
-  new AppError(403, 'FORBIDDEN', 'publicationState DRAFT needs an admin user or an admin API token');
-
-/** The read scope of a root read; drafts only for admin principals (never delivery principals). */
+/**
+ * The read scope of a root read. Drafts: the delivery service checks the caller may read them (admin
+ * principals, delivery tokens granted Read drafts; plan drafts-mode) before reading any head, and the
+ * response is marked never to be stored.
+ */
 const scopeOf = (args: ReadArgs, context: GraphqlContext): ReadScope => {
   const drafts = args.publicationState === 'draft';
-  if (drafts && !context.isAdmin) {
-    throw draftsForbidden();
+  if (drafts) {
+    context.markDrafts();
   }
   return {
     locale: args.locale ?? undefined,

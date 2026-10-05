@@ -1,5 +1,6 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { OperationTypeNode } from 'graphql';
+import { DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
@@ -75,8 +76,13 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
     prepared.operation,
     input.variables ?? undefined,
   );
-  const result = await executeOperation(schema, prepared, input, createGraphqlRequestContext(request));
+  const context = createGraphqlRequestContext(request);
+  const result = await executeOperation(schema, prepared, input, context);
   recordUsage(request, usage, result.data !== null && result.data !== undefined);
+  if (context.readDrafts()) {
+    // Drafts (plan drafts-mode §3) are never stored by a cache, as REST draft reads.
+    reply.header('cache-control', DRAFTS_CACHE_CONTROL);
+  }
   return send(reply, formatGraphqlResult(result, { log: request.log }));
 };
 

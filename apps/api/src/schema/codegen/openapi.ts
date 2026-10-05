@@ -14,6 +14,7 @@ import {
 import { operatorsFor } from '../../content/compiler/operators.js';
 import {
   DEFAULT_RICH_TEXT_MODE,
+  PUBLICATION_STATES,
   QUERY_LIMITS,
   RICH_TEXT_MODES,
   SEO_MODES,
@@ -316,6 +317,13 @@ const itemParameters = (model: ModelDefinition, delivery: boolean) => [
           schema: { type: 'string', enum: [...RICH_TEXT_MODES], default: DEFAULT_RICH_TEXT_MODE },
           description: 'Rich-text shape: the JSON document, sanitized HTML rendered from it, or both',
         },
+        {
+          name: 'publicationState',
+          in: 'query',
+          schema: { type: 'string', enum: [...PUBLICATION_STATES], default: 'published' },
+          description:
+            'Drafts mode: `draft` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with `snapshot`.',
+        },
         ...seoParameters(model),
       ]
     : []),
@@ -335,7 +343,14 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
   const name = toTypeName(model.apiKey);
   const routeKey = routeKeyOf(model);
   const tag = model.label;
-  const meta = { type: 'object', properties: { locale: { type: 'string' }, snapshot: { type: 'integer' } } };
+  const meta = {
+    type: 'object',
+    properties: {
+      locale: { type: 'string' },
+      snapshot: { type: 'integer' },
+      publicationState: { type: 'string', enum: ['draft'], description: 'Present on draft reads only' },
+    },
+  };
   const listMeta = { allOf: [meta, { type: 'object', properties: { pagination: ref('Pagination') } }] };
   const single = model.kind === 'singleton';
   const adminEntry = {

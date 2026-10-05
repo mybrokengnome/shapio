@@ -18,8 +18,13 @@ export type ValueNode = { data: Record<string, unknown>; scope: ReadScope };
 export type GraphqlRequestContext = {
   /** The request's evaluator, memoized per (model, action): one evaluation per request (ADR 0005). */
   permissions: PermissionEvaluator;
-  /** Admin users and admin-scope API tokens: may read drafts (`publicationState: DRAFT`). */
-  isAdmin: boolean;
+  /**
+   * Records that a root field asked for drafts (`publicationState: DRAFT`), so the response is sent with
+   * `cache-control: private, no-store`. Whether the caller may read drafts is the delivery service's check.
+   */
+  markDrafts: () => void;
+  /** Whether any root field of the operation asked for drafts. */
+  readDrafts: () => boolean;
   /**
    * The request's site (plugins/siteResolution.ts: the credential's, else `Shapio-Site` / `?site=`, else the
    * primary site). Every read, `_snapshot` and `_changes` are about this site, and the schema is its view.

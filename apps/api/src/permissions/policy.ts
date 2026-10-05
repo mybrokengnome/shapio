@@ -1,9 +1,9 @@
 import {
   DENIED_POLICY,
-  type ContentAction,
   type FieldMask,
   type GlobalAction,
   type KnownVersions,
+  type ModelAction,
   type PermissionExecutor,
   type Policy,
   type PolicyRequest,
@@ -14,7 +14,7 @@ import {
 /** One permission row of a role: an action on one model (or every model when `modelId` is null). */
 export type Grant = {
   roleId: string;
-  action: ContentAction | GlobalAction;
+  action: ModelAction | GlobalAction;
   /** null = every model, including ones created later. Always null for global actions. */
   modelId: string | null;
   condition: RowCondition['kind'] | null;
@@ -71,9 +71,9 @@ export const ALLOW_ALL_POLICY: Policy = Object.freeze<Policy>({
   writeMask: { mode: 'all' },
 });
 
-const WRITE_ACTIONS: ReadonlySet<ContentAction> = new Set(['create', 'update']);
+const WRITE_ACTIONS: ReadonlySet<ModelAction> = new Set<ModelAction>(['create', 'update']);
 
-const grantsFor = (grants: readonly Grant[], action: ContentAction, modelId: string) =>
+const grantsFor = (grants: readonly Grant[], action: ModelAction, modelId: string) =>
   grants.filter((grant) => grant.action === action && (grant.modelId === null || grant.modelId === modelId));
 
 /** Rows: the union of what each grant allows. Any unconditional grant means no restriction. */

@@ -162,6 +162,35 @@ describe('permission evaluator', () => {
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
   });
 
+  it('lets only delivery tokens evaluate readDrafts, and only when their role grants it', async () => {
+    const roleId = 'r';
+    const withDrafts = createPermissionEvaluator({
+      grants: staticGrants([grant({ roleId, action: 'read' }), grant({ roleId, action: 'readDrafts' })]),
+      fields,
+    });
+    const readOnly = createPermissionEvaluator({
+      grants: staticGrants([grant({ roleId, action: 'read' })]),
+      fields,
+    });
+    const request = { action: 'readDrafts' as const, modelId: MODEL };
+    const token: Principal = { kind: 'token', tokenId: 't', scope: 'delivery', roleId, siteId: SITE_A };
+    expect((await withDrafts.evaluate(token, request)).allowed).toBe(true);
+    expect(await readOnly.evaluate(token, request)).toEqual(DENIED_POLICY);
+    // App users and anonymous callers never hold it, whatever their roles say.
+    const appUser: Principal = { kind: 'appUser', appUserId: 'a', siteId: SITE_A, roleIds: [roleId] };
+    expect(await withDrafts.evaluate(appUser, request)).toEqual(DENIED_POLICY);
+    const anonymousEvaluator = createPermissionEvaluator({
+      grants: {
+        ...staticGrants([grant({ roleId, action: 'readDrafts' })]),
+        getSiteAppRoleIds: () => Promise.resolve([roleId]),
+      },
+      fields,
+    });
+    expect(await anonymousEvaluator.evaluate({ kind: 'anonymous', siteId: SITE_A }, request)).toEqual(
+      DENIED_POLICY,
+    );
+  });
+
   it('denies delivery reads of a model the schema does not know', async () => {
     const evaluator = createPermissionEvaluator({
       grants: staticGrants([grant({ roleId: 'r', action: 'read' })]),

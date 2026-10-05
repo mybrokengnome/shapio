@@ -8,9 +8,8 @@ import type { AppRoleAudience } from '../repositories/siteAppRoles.js';
 import type { Grant } from './policy.js';
 import {
   CONTENT_ACTIONS,
+  DELIVERY_ACTIONS,
   GLOBAL_ACTIONS,
-  type ContentAction,
-  type GlobalAction,
   type KnownVersions,
   type PermissionExecutor,
 } from './types.js';
@@ -52,7 +51,11 @@ const groupBindings = (rows: readonly siteAppRolesRepository.SiteAppRoleBinding[
   return bindings;
 };
 
-const KNOWN_ACTIONS: ReadonlySet<string> = new Set([...CONTENT_ACTIONS, ...GLOBAL_ACTIONS]);
+const KNOWN_ACTIONS: ReadonlySet<string> = new Set([
+  ...CONTENT_ACTIONS,
+  ...DELIVERY_ACTIONS,
+  ...GLOBAL_ACTIONS,
+]);
 
 const KNOWN_CONDITIONS: ReadonlySet<string> = new Set<NonNullable<Grant['condition']>>(['ownedByPrincipal']);
 
@@ -70,7 +73,7 @@ export const toGrant = (row: adminRolesRepository.PermissionGrantRow): Grant | u
   }
   return {
     roleId: row.role_id,
-    action: row.action as ContentAction | GlobalAction,
+    action: row.action as Grant['action'],
     modelId: row.model_id,
     condition: row.condition as Grant['condition'],
     fieldIds: row.field_ids,

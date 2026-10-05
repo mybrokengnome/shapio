@@ -16,6 +16,7 @@ import {
   QUERY_LIMITS,
   queryForbidden,
   queryInvalid,
+  PUBLICATION_STATES,
   RICH_TEXT_MODES,
   SEO_MODES,
   SYSTEM_ATTRIBUTES,
@@ -25,6 +26,7 @@ import {
   type FilterOperator,
   type FilterTarget,
   type PopulateTree,
+  type PublicationState,
   type RichTextMode,
   type SeoMode,
   type SortTerm,
@@ -51,6 +53,8 @@ export type ParseContext = {
   allowRichText?: boolean;
   /** `?seo=` is a delivery and preview feature. */
   allowSeo?: boolean;
+  /** `?publicationState=` is a delivery feature. */
+  allowPublicationState?: boolean;
   /** Target models of relation fields, for nested populate paths. */
   resolveModel: (modelId: string) => ModelDefinition | undefined;
 };
@@ -66,6 +70,7 @@ const TOP_LEVEL_KEYS = new Set([
   'snapshot',
   'richText',
   'seo',
+  'publicationState',
   'q',
   'status',
   'author',
@@ -355,6 +360,26 @@ const parseSeo = (tree: QueryTree, context: ParseContext): { seo?: SeoMode } => 
   return { seo: value as SeoMode };
 };
 
+const PUBLICATION_STATE_SET: ReadonlySet<string> = new Set(PUBLICATION_STATES);
+
+/** `?publicationState=published|draft` on delivery reads; whether the caller may read drafts is the service's check. */
+const parsePublicationState = (
+  tree: QueryTree,
+  context: ParseContext,
+): { publicationState?: PublicationState } => {
+  const value = single(tree.publicationState, 'publicationState');
+  if (value === undefined) {
+    return {};
+  }
+  if (!context.allowPublicationState) {
+    throw queryInvalid('publicationState is only available on the delivery API');
+  }
+  if (!PUBLICATION_STATE_SET.has(value)) {
+    throw queryInvalid(`"publicationState" must be one of ${PUBLICATION_STATES.join(', ')}`);
+  }
+  return { publicationState: value as PublicationState };
+};
+
 export const parseContentQuery = (tree: QueryTree, context: ParseContext): ContentQuery => {
   for (const key of Object.keys(tree)) {
     if (!TOP_LEVEL_KEYS.has(key)) {
@@ -386,6 +411,7 @@ export const parseContentQuery = (tree: QueryTree, context: ParseContext): Conte
     snapshot,
     ...parseRichText(tree, context),
     ...parseSeo(tree, context),
+    ...parsePublicationState(tree, context),
     ...parseAdminFilters(tree, context),
   };
 };

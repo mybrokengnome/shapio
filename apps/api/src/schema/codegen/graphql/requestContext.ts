@@ -9,8 +9,6 @@ type GraphqlContextInput = {
   site: SiteRef;
   /** The operation's evaluator, memoized per (model, action). */
   permissions: PermissionEvaluator;
-  /** Admin users and admin-scope API tokens: may read drafts. */
-  isAdmin: boolean;
   /** The content service context, built on first use; the snapshot is the one the schema was built from. */
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>;
 };
@@ -22,13 +20,22 @@ type GraphqlContextInput = {
 export const createGraphqlContext = ({
   site,
   permissions,
-  isAdmin,
   content,
 }: GraphqlContextInput): GraphqlRequestContext => {
   let base: Promise<ContentServiceContext> | undefined;
+  let drafts = false;
   const contentAt = async (snapshot: SchemaSnapshot): Promise<ContentServiceContext> => {
     base ??= content(snapshot);
     return { ...(await base), snapshot, permissions };
   };
-  return { permissions, isAdmin, site, loaders: createLoaders(() => site.id, contentAt), content: contentAt };
+  return {
+    permissions,
+    markDrafts: () => {
+      drafts = true;
+    },
+    readDrafts: () => drafts,
+    site,
+    loaders: createLoaders(() => site.id, contentAt),
+    content: contentAt,
+  };
 };

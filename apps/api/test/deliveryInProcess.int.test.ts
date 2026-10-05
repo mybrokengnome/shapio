@@ -13,6 +13,8 @@ import { publishServerRelease } from '../src/services/deliveryDescriptor.js';
 import {
   createDefinition,
   createDeliveryToken,
+  createRole,
+  createTokenForRole,
   expectStatus,
   fieldIdOf,
   type EntryBody,
@@ -195,6 +197,35 @@ describe.skipIf(skipReason !== undefined)(withSkipReason('in-process delivery', 
     for (const path of ['/api/content/articles', '/api/site', '/api/content/home']) {
       expect(await inProcess(anonymous, path), `anonymous ${path}`).toStrictEqual(await http(path, null));
     }
+  });
+
+  it('reads drafts in process with a token granted Read drafts, and refuses them otherwise', async () => {
+    const draftsToken = await createTokenForRole(
+      database.current.db,
+      await createRole(database.current.db, 'delivery', [
+        { action: 'read', modelId: null },
+        { action: 'readDrafts', modelId: null },
+      ]),
+    );
+    const drafts = createInProcessRequest(runtime, { token: draftsToken });
+    for (const path of [
+      '/api/content/articles?publicationState=draft&populate=author',
+      `/api/content/articles/${ids.draft}?publicationState=draft`,
+    ]) {
+      expect(await inProcess(drafts, path), path).toStrictEqual(await http(path, draftsToken));
+    }
+    const list = await drafts<{ data: Array<{ title: string }>; meta: { publicationState?: string } }>(
+      '/api/content/articles?publicationState=draft',
+    );
+    expect(list.data.map((entry) => entry.title)).toContain('Draft only');
+    expect(list.meta.publicationState).toBe('draft');
+    const refused = await inProcess(local, '/api/content/articles?publicationState=draft');
+    expect(refused).toStrictEqual(await http('/api/content/articles?publicationState=draft'));
+    expect(refused.status).toBe(403);
+    expect((refused.body as { error: { code: string } }).error.code).toBe('DRAFTS_FORBIDDEN');
+    const anonymousRefused = await inProcess(anonymous, '/api/content/articles?publicationState=draft');
+    expect(anonymousRefused.status).toBeGreaterThanOrEqual(401);
+    expect(JSON.stringify(anonymousRefused.body)).not.toContain('Draft only');
   });
 
   it('serves published content only, with media URLs as the server builds them', async () => {

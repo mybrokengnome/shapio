@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DocumentNode, GraphQLSchema, OperationDefinitionNode } from 'graphql';
-import { DELIVERY_VARY } from '../constants/sites.js';
+import { DELIVERY_VARY, DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
 import { appendVary } from '../helpers/vary.js';
 import { fragmentsOf } from '../schema/codegen/graphql/complexity.js';
 import { operationUsage, type OperationUsage } from '../schema/codegen/graphql/usageSelection.js';
@@ -26,10 +26,13 @@ export const csrfForGet =
 /**
  * Responses vary by credentials. GET queries get REST's validators (a strong ETag over the body, 304 on a
  * match) and its caching policy (public for anonymous callers, private otherwise); everything else is
- * never stored.
+ * never stored. An operation that read drafts (the controller set `DRAFTS_CACHE_CONTROL`) keeps it.
  */
 export const cacheHeaders = async (request: FastifyRequest, reply: FastifyReply, payload: unknown) => {
   appendVary(reply, DELIVERY_VARY);
+  if (reply.getHeader('cache-control') === DRAFTS_CACHE_CONTROL) {
+    return payload;
+  }
   if (request.method !== 'GET' || reply.statusCode !== 200 || typeof payload !== 'string') {
     reply.header('cache-control', 'no-store');
     return payload;

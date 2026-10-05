@@ -246,6 +246,7 @@ export const parseQueryFor = (
     allowAdminFilters?: boolean;
     allowRichText?: boolean;
     allowSeo?: boolean;
+    allowPublicationState?: boolean;
   },
 ): ContentQuery =>
   parseContentQuery(parseQueryTree(rawQuery), {
@@ -256,6 +257,7 @@ export const parseQueryFor = (
     allowAdminFilters: options.allowAdminFilters ?? false,
     allowRichText: options.allowRichText ?? false,
     allowSeo: options.allowSeo ?? false,
+    allowPublicationState: options.allowPublicationState ?? false,
     resolveModel: (modelId) => resolveModelById(context.snapshot, modelId)?.definition,
   });
 

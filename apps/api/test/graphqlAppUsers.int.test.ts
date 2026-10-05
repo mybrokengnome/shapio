@@ -253,7 +253,7 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
         undefined,
         alice.accessToken,
       );
-      expect(errorCodes(result)).toEqual(['FORBIDDEN']);
+      expect(errorCodes(result)).toEqual(['DRAFTS_FORBIDDEN']);
     });
   });
 });

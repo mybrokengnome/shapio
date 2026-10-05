@@ -4,6 +4,7 @@ import {
   CONTENT_ACTIONS,
   GLOBAL_ACTIONS,
   NETWORK_ACTIONS,
+  READ_DRAFTS_ACTION,
   SITE_ACTIONS,
   SITE_GRANTABLE_ACTION_LIST,
 } from '../../permissions/types.js';
@@ -60,7 +61,7 @@ export const SitePermissionSchema = Type.Enum([...SITE_ACTIONS, ...SITE_GRANTABL
 
 export const PermissionSchema = Type.Object(
   {
-    action: Type.Enum([...CONTENT_ACTIONS, ...GLOBAL_ACTIONS]),
+    action: Type.Enum([...CONTENT_ACTIONS, READ_DRAFTS_ACTION, ...GLOBAL_ACTIONS]),
     modelId: Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()]),
     condition: Type.Union([Type.Literal('ownedByPrincipal'), Type.Null()]),
     fieldIds: Type.Union([
