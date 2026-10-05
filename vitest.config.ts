@@ -38,6 +38,8 @@ export default defineConfig({
             'packages/*/src/**/*.test.ts',
             'apps/api/src/**/*.test.ts',
             'examples/next/src/**/*.test.ts',
+            'examples/astro/src/**/*.test.ts',
+            'examples/sveltekit/src/**/*.test.ts',
           ],
         },
       },

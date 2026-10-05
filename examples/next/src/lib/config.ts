@@ -76,6 +76,9 @@ export const configuredSnapshot = (): number | undefined => {
  */
 export const isSnapshotPinned = () => process.env.SHAPIO_SNAPSHOT_PINNED === 'true';
 
+/** True under `next dev`. Spelled out so Next inlines it. */
+export const isDevServer = () => process.env.NODE_ENV === 'development';
+
 /** The secret /api/revalidate checks webhook signatures with; undefined when it is not set. */
 export const webhookSecret = () => read('SHAPIO_WEBHOOK_SECRET');
 

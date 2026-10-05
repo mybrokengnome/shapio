@@ -85,7 +85,10 @@ A build reads the current publication snapshot once, when it starts, and sends i
 (`?snapshot=N`), so content published during the build waits for the next build instead of producing a site
 that mixes two moments ([Snapshots](snapshots.md)). Set `SHAPIO_SNAPSHOT=N` to build an exact moment, for
 example the snapshot a deployment trigger carries. Next.js renders pages in several worker processes, so its
-starter pins the snapshot in `next.config.ts` before any page renders and hands it to every worker.
+starter pins the snapshot in `next.config.ts` before any page renders and hands it to every worker. The dev
+servers (`npm run dev`) pin nothing: in dev, a publish shows on reload (unless `SHAPIO_SNAPSHOT` is set). One
+exception in Astro: a page published for the first time after the dev server started needs a restart, because
+Astro caches each route's list of pages in dev.
 
 ### Incremental rebuilds
 

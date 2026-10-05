@@ -4,9 +4,11 @@ import {
   type DeliverySite,
   type ShapioDeliveryClient,
 } from '@shapio/client';
+import { configuredSnapshot, isDevServer } from './config';
 import { liveSnapshot } from './liveSnapshot';
 import { createShapioClient } from './shapioClient';
 import type { Locale } from './site';
+import { createSnapshotResolver } from './snapshotResolver';
 import type { Article, Page, SiteSettings } from './types';
 
 /**
@@ -14,7 +16,8 @@ import type { Article, Page, SiteSettings } from './types';
  * src/lib/shapioClient.ts), at one publication snapshot. Next
  * renders pages in several worker processes, so the snapshot is pinned once in next.config.ts (it sets
  * SHAPIO_SNAPSHOT for the whole build) and every request here sends it. Under `next start`, /api/revalidate
- * moves that snapshot forward (src/lib/liveSnapshot.ts).
+ * moves that snapshot forward (src/lib/liveSnapshot.ts). `next dev` pins nothing: it reads the current snapshot
+ * again once the last read is a second old, so a publish shows on reload (src/lib/snapshotResolver.ts).
  *
  * The client tags every read with the site, model and entry, and /api/revalidate expires the tags of what
  * changed (src/lib/revalidationTags.ts) as well as the pages. No `next: { cache }` option: reads pinned to a
@@ -36,7 +39,17 @@ const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 let client: ShapioDeliveryClient | undefined;
 export const shapio = () => (client ??= createShapioClient());
 
-const snapshot = liveSnapshot;
+let devSnapshot: (() => Promise<number>) | undefined;
+
+/** The build's snapshot (moved forward by /api/revalidate); under `next dev`, the current one. */
+const snapshot = async (): Promise<number> =>
+  isDevServer()
+    ? (devSnapshot ??= createSnapshotResolver({
+        dev: true,
+        configured: configuredSnapshot(),
+        current: async () => (await shapio().snapshots.current()).snapshot,
+      }))()
+    : liveSnapshot();
 
 /** Every published entry of a collection in one locale, page by page, at the pinned snapshot. */
 const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {
@@ -48,7 +61,7 @@ const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T
       // its SEO fields with the site's defaults filled in.
       richText: 'html',
       seo: 'resolved',
-      snapshot: snapshot(),
+      snapshot: await snapshot(),
       page,
       pageSize: PAGE_SIZE,
     });
@@ -74,7 +87,7 @@ export const getSiteSettings = async (locale: Locale): Promise<SiteSettings | nu
   try {
     const { data } = await shapio().delivery.singleton<SiteSettings>(SITE_SETTINGS, {
       locale,
-      snapshot: snapshot(),
+      snapshot: await snapshot(),
       fields: SITE_SETTINGS_FIELDS,
       richText: 'html',
     });

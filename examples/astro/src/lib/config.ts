@@ -40,3 +40,6 @@ export const configuredSnapshot = (): number | undefined => {
 export const publicShapioUrl = () => read('PUBLIC_SHAPIO_URL') ?? shapioUrl();
 
 export const siteKey = () => read('SHAPIO_SITE');
+
+/** True under `astro dev` (Vite's import.meta.env.DEV); false in builds and in the scripts. */
+export const isDev = () => (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;

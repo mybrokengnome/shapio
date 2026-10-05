@@ -1,6 +1,8 @@
 ---
 import Base from '../../../layouts/Base.astro';
+import { isDev } from '../../../lib/config.js';
 import { renderArticle } from '../../../lib/render.js';
+import { findBySlug, renderTimeEntry } from '../../../lib/renderTime.js';
 import { listArticles } from '../../../lib/shapio.js';
 import { articlePath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
 import type { Article } from '../../../lib/types.js';
@@ -16,7 +18,16 @@ export const getStaticPaths = async () => {
 };
 
 type Props = { locale: Locale; article: Article };
-const { locale, article } = Astro.props;
+const { locale } = Astro.props;
+// In `astro dev`, read at render time (src/lib/renderTime.ts); a build renders the props above.
+const article = await renderTimeEntry({
+  dev: isDev(),
+  props: Astro.props.article,
+  read: async () => findBySlug(await listArticles(locale), Astro.params.slug ?? ''),
+});
+if (!article) {
+  return Astro.rewrite('/404/');
+}
 const context = { locale, strings: stringsFor(locale) };
 ---
 

@@ -6,6 +6,15 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The site starters follow publishes in dev.** `astro dev`, `next dev` and `vite dev` showed the content of
+  the snapshot they first read until restarted (and `next dev` needed `SHAPIO_SNAPSHOT` set to render at all).
+  In dev the starters now read the current snapshot again once the last read is a second old and cache site
+  settings and lists no longer than that, and the Astro starter's dynamic pages read their entry when they
+  render (a 404 once it is unpublished), so a publish shows on reload. Builds are unchanged: one pinned
+  snapshot, `SHAPIO_SNAPSHOT` and `/build.json` as before.
+
 ## [0.5.0] - 2026-10-05
 
 ### Added

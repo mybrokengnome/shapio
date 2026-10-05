@@ -1,13 +1,15 @@
 import { createClient, ShapioApiError, type DeliverySite } from '@shapio/client';
-import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config.js';
+import { configuredSnapshot, deliveryToken, isDev, shapioUrl, siteKey } from './config.js';
 import type { Locale } from './site.js';
+import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver.js';
 import type { Article, DeliveryList, Page, SiteSettings } from './types.js';
 
 /**
  * The site's read side: Shapio's delivery API through `@shapio/client`, pinned to one publication snapshot
  * for the whole build. The snapshot is read once, when the build starts (or taken from SHAPIO_SNAPSHOT), and
  * sent with every request, so a page built a minute later still shows the same moment: a publish during the
- * build never yields a site that mixes old and new content.
+ * build never yields a site that mixes old and new content. Under `astro dev` the snapshot and the site settings
+ * are read again once the last read is a second old, so a publish shows on reload (src/lib/snapshotResolver.ts).
  */
 const PAGE_SIZE = 100;
 
@@ -30,20 +32,25 @@ let client: ReturnType<typeof createClient> | undefined;
 const shapio = () =>
   (client ??= createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() }));
 
-let pinned: Promise<number> | undefined;
+let resolver: (() => Promise<number>) | undefined;
 
-/** The snapshot every request of this build reads. */
-export const pinnedSnapshot = (): Promise<number> =>
-  (pinned ??= (async () => {
-    const configured = configuredSnapshot();
-    if (configured !== undefined) {
-      return configured;
-    }
-    const { snapshot } = await shapio().snapshots.current();
-    // Shared with any other copy of this module in the build (one value per build).
-    process.env.SHAPIO_SNAPSHOT = String(snapshot);
-    return snapshot;
-  })());
+/** The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s). */
+export const pinnedSnapshot = async (): Promise<number> => {
+  const dev = isDev();
+  resolver ??= createSnapshotResolver({
+    dev,
+    configured: configuredSnapshot(),
+    current: async () => {
+      const { snapshot } = await shapio().snapshots.current();
+      if (!dev) {
+        // Shared with any other copy of this module in the build (one value per build).
+        process.env.SHAPIO_SNAPSHOT = String(snapshot);
+      }
+      return snapshot;
+    },
+  });
+  return resolver();
+};
 
 const query = (params: Record<string, string | number>) =>
   new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])).toString();
@@ -78,46 +85,52 @@ export const listArticles = (locale: Locale) =>
     sort: 'publishedOn:desc',
   });
 
-const settingsByLocale = new Map<Locale, Promise<SiteSettings | null>>();
+const readSiteSettings = async (locale: Locale): Promise<SiteSettings | null> => {
+  try {
+    const { data } = await shapio().delivery.singleton<SiteSettings>(SITE_SETTINGS, {
+      locale,
+      snapshot: await pinnedSnapshot(),
+      fields: SITE_SETTINGS_FIELDS,
+      richText: 'html',
+    });
+    return data;
+  } catch (error) {
+    if (error instanceof ShapioApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const settingsByLocale = new Map<Locale, () => Promise<SiteSettings | null>>();
 
 /** The site settings singleton in one locale at the pinned snapshot; null until it is published. */
 export const getSiteSettings = (locale: Locale): Promise<SiteSettings | null> => {
   let settings = settingsByLocale.get(locale);
   if (!settings) {
-    settings = (async () => {
-      try {
-        const snapshot = await pinnedSnapshot();
-        const { data } = await shapio().delivery.singleton<SiteSettings>(SITE_SETTINGS, {
-          locale,
-          snapshot,
-          fields: SITE_SETTINGS_FIELDS,
-          richText: 'html',
-        });
-        return data;
-      } catch (error) {
-        if (error instanceof ShapioApiError && error.status === 404) {
-          return null;
-        }
-        throw error;
-      }
-    })();
+    settings = cachedRead(() => readSiteSettings(locale), cacheWindow(isDev()));
     settingsByLocale.set(locale, settings);
   }
-  return settings;
+  return settings();
 };
 
-let site: Promise<DeliverySite | null> | undefined;
+const readSite = async (): Promise<DeliverySite | null> => {
+  try {
+    return await shapio().site.get();
+  } catch (error) {
+    if (error instanceof ShapioApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+let site: (() => Promise<DeliverySite | null>) | undefined;
 
 /**
  * The site and its SEO defaults (name and title template per locale, default image, Twitter handle), once per
- * build. Null when the Shapio predates them: the pages still render, with plain titles.
+ * build (in dev, re-read after 1 s). Null when the Shapio predates them: the pages still render, with plain
+ * titles.
  */
 export const getSite = (): Promise<DeliverySite | null> =>
-  (site ??= shapio()
-    .site.get()
-    .catch((error: unknown) => {
-      if (error instanceof ShapioApiError && error.status === 404) {
-        return null;
-      }
-      throw error;
-    }));
+  (site ??= cachedRead(readSite, cacheWindow(isDev())))();

@@ -1,6 +1,8 @@
 ---
 import Base from '../../../layouts/Base.astro';
+import { isDev } from '../../../lib/config.js';
 import { renderArticleCard } from '../../../lib/render.js';
+import { renderTimeEntry } from '../../../lib/renderTime.js';
 import { listArticles } from '../../../lib/shapio.js';
 import { articlesPath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
 import type { Article } from '../../../lib/types.js';
@@ -11,7 +13,10 @@ export const getStaticPaths = async () =>
   );
 
 type Props = { locale: Locale; articles: Article[] };
-const { locale, articles } = Astro.props;
+const { locale } = Astro.props;
+// In `astro dev`, read at render time (src/lib/renderTime.ts); a build renders the props above.
+const articles =
+  (await renderTimeEntry({ dev: isDev(), props: Astro.props.articles, read: () => listArticles(locale) })) ?? [];
 const strings = stringsFor(locale);
 const context = { locale, strings };
 ---

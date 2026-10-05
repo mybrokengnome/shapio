@@ -1,12 +1,16 @@
 import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
+import { dev } from '$app/env';
 import type { Locale } from '../site';
 import type { Article, Page, SiteSettings } from '../types';
 import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config';
+import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver';
 
 /**
  * The site's read side: Shapio's delivery API through `@shapio/client`, pinned to one publication snapshot
  * for the whole build. The snapshot is read once, when prerendering starts (or taken from SHAPIO_SNAPSHOT),
  * and sent with every request, so a publish during the build never yields a site that mixes old and new.
+ * Under `vite dev` the snapshot and every read are reused for a second at most, so a publish shows on reload
+ * (src/lib/server/snapshotResolver.ts).
  */
 const PAGE_SIZE = 100;
 
@@ -25,21 +29,25 @@ const createShapio = () => createClient({ baseUrl: shapioUrl(), token: deliveryT
 let client: ReturnType<typeof createShapio> | undefined;
 const shapio = () => (client ??= createShapio());
 
-let pinned: Promise<number> | undefined;
+let resolver: (() => Promise<number>) | undefined;
 
-/** The snapshot every request of this build reads. */
+/** The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s). */
 const snapshot = (): Promise<number> =>
-  (pinned ??= (async () => configuredSnapshot() ?? (await shapio().snapshots.current()).snapshot)());
+  (resolver ??= createSnapshotResolver({
+    dev,
+    configured: configuredSnapshot(),
+    current: async () => (await shapio().snapshots.current()).snapshot,
+  }))();
 
-/** Each collection is read once per locale, however many pages render from it. */
-const memo = new Map<string, Promise<unknown>>();
+/** Each collection is read once per locale however many pages render from it (in dev, at most 1 s apart). */
+const memo = new Map<string, () => Promise<unknown>>();
 const once = <T>(key: string, read: () => Promise<T>): Promise<T> => {
-  let value = memo.get(key) as Promise<T> | undefined;
-  if (!value) {
-    value = read();
-    memo.set(key, value);
+  let cached = memo.get(key) as (() => Promise<T>) | undefined;
+  if (!cached) {
+    cached = cachedRead(read, cacheWindow(dev));
+    memo.set(key, cached);
   }
-  return value;
+  return cached();
 };
 
 /** Every published entry of a collection in one locale, page by page, at the pinned snapshot. */

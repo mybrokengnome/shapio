@@ -1,6 +1,8 @@
 ---
 import Base from '../../layouts/Base.astro';
+import { isDev } from '../../lib/config.js';
 import { renderPage } from '../../lib/render.js';
+import { findBySlug, renderTimeEntry } from '../../lib/renderTime.js';
 import { listPages } from '../../lib/shapio.js';
 import { HOME_SLUG, LOCALES, otherLocale, pagePath, type Locale } from '../../lib/site.js';
 import type { Page } from '../../lib/types.js';
@@ -20,7 +22,16 @@ export const getStaticPaths = async () => {
 };
 
 type Props = { page: Page; locale: Locale };
-const { page, locale } = Astro.props;
+const { locale } = Astro.props;
+// In `astro dev`, read at render time (src/lib/renderTime.ts); a build renders the props above.
+const page = await renderTimeEntry({
+  dev: isDev(),
+  props: Astro.props.page,
+  read: async () => findBySlug(await listPages(locale), Astro.params.slug ?? HOME_SLUG),
+});
+if (!page) {
+  return Astro.rewrite('/404/');
+}
 ---
 
 <Base title={page.title} seo={page.seo} locale={locale} alternatePath={pagePath(otherLocale(locale), page.slug)}>
