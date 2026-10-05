@@ -61,7 +61,9 @@
     "debounceSeconds": "Enter a whole number of seconds (0 to 86400).",
     "siteKey": "Use lower-case letters, digits and hyphens, starting with a letter.",
     "siteTwice": "Each site can only be listed once.",
-    "ownerAllSites": "The owner role can only be given on all sites."
+    "ownerAllSites": "The owner role can only be given on all sites.",
+    "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
+    "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -262,6 +264,7 @@
       "schema": "Schema as code",
       "components": "Components",
       "apiExplorer": "API explorer",
+      "graphql": "GraphQL",
       "live": "Live",
       "apiTokens": "API tokens",
       "webhooks": "Webhooks",
@@ -457,6 +460,7 @@
     "sessions": "Sessions",
     "appearance": "Appearance",
     "locales": "Locales",
+    "seo": "SEO",
     "apiTokens": "API tokens",
     "assist": "Assist"
   },
@@ -598,7 +602,8 @@
       "deploymentsManage": "Manage deployment connections",
       "deploymentsTrigger": "Trigger and retry site builds",
       "changesManage": "Create and review change sets",
-      "changesShip": "Ship and schedule change sets"
+      "changesShip": "Ship and schedule change sets",
+      "siteSettings": "Site settings"
     },
     "contentPermissions": "Content, on every model",
     "instancePermissions": "Instance",
@@ -1246,7 +1251,8 @@
       "mediaPicker": "Media picker",
       "relationPicker": "Relation picker",
       "componentEditor": "Component editor",
-      "dynamicZoneEditor": "Dynamic zone editor"
+      "dynamicZoneEditor": "Dynamic zone editor",
+      "seoEditor": "SEO editor"
     },
     "issues": {
       "INVALID_STRUCTURE": "This value isn't valid.",
@@ -2670,6 +2676,13 @@
   "develop": {
     "schemaTitle": "Schema",
     "apiExplorerTitle": "API explorer",
+    "graphql": {
+      "title": "GraphQL",
+      "hint": "GraphiQL on this site's GraphQL API, built live from its content types; the Docs panel describes every type and field. Your admin session can read drafts (publicationState: DRAFT); site tokens and visitors only ever see published content.",
+      "frame": "GraphiQL playground",
+      "unavailable": "GraphiQL is turned off",
+      "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
+    },
     "noAccess": "You don't have access to this",
     "noAccessDescription": "Ask an owner for a role that includes it.",
     "actors": {
@@ -2804,8 +2817,7 @@
       "meta_other": "{{version}} · {{count}} delivery endpoints, live from the registry",
       "tabs": {
         "label": "API",
-        "rest": "REST",
-        "graphql": "GraphQL"
+        "rest": "REST"
       },
       "endpoints": "Delivery endpoints",
       "empty": "No delivery endpoints yet",
@@ -2880,10 +2892,9 @@
         "operations": "GraphQL queries",
         "example": "Example: {{name}}",
         "query": "Query",
-        "playground": "GraphiQL",
-        "playgroundFrame": "GraphiQL playground",
-        "unavailable": "GraphiQL is turned off",
-        "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
+        "fromRest": "The same request as the REST tab's for this endpoint.",
+        "skipped": "Not carried over from REST: {{params}}",
+        "openInPlayground": "Open in playground"
       }
     }
   },
@@ -3022,6 +3033,51 @@
       "outputTokens": "Output tokens",
       "tryIt": "Try it",
       "tryText": "Text"
+    }
+  },
+  "seo": {
+    "builder": {
+      "menu": "More ways to add",
+      "field": "Field",
+      "seoFields": "SEO fields",
+      "askAdmin": "Ask a network admin to enable SEO.",
+      "present": "This content type already has SEO fields.",
+      "enableTitle": "Enable SEO for every site?",
+      "enableDescription": "Adds a shared SEO component to the schema of every site in the network. Each content type still chooses whether to use it.",
+      "enable": "Enable SEO",
+      "enabling": "Enabling…",
+      "added": "SEO fields added. Review to ship them.",
+      "conflict": "A component called {{label}} already uses the API ID \"{{apiKey}}\". Change its API ID, then enable SEO again."
+    },
+    "field": {
+      "counter": "{{count}} of {{max}} characters",
+      "counterOver": "{{count}} of {{max}} characters: search results may cut it off",
+      "preview": "Search result preview",
+      "noTitle": "No title yet",
+      "noindex": "Hidden from search engines."
+    },
+    "settings": {
+      "title": "SEO",
+      "textsTitle": "Default texts",
+      "siteName": "Site name",
+      "siteNameHint": "Shown as the title of pages that have none, and to social networks as the site's name.",
+      "titleTemplate": "Title template",
+      "titleTemplateHint": "How page titles appear in search results and browser tabs: %s is replaced by the page's title.",
+      "titleTemplatePlaceholder": "%s · Site name",
+      "description": "Default description",
+      "descriptionHint": "Used for pages whose SEO description is empty.",
+      "socialTitle": "Social sharing",
+      "image": "Default social image",
+      "imageHint": "Shown when a page with no image of its own is shared. Choose a public image.",
+      "chooseImage": "Choose image",
+      "changeImage": "Change image",
+      "imagePrivate": "This image is private, so it would never be shown. Choose a public image or make this one public in the media library.",
+      "twitterHandle": "Twitter handle",
+      "twitterHandleHint": "The site's account on X (Twitter), for the twitter:site tag.",
+      "twitterHandlePlaceholder": "@yoursite",
+      "saved": "SEO settings saved.",
+      "conflict": "Someone else changed the SEO settings. Reload to see their version, then make your changes again.",
+      "reload": "Reload"
     }
   }
 }

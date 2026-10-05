@@ -4,6 +4,7 @@ import {
   Activity,
   Blocks,
   Boxes,
+  Braces,
   Camera,
   FileCode2,
   GitPullRequestArrow,
@@ -42,6 +43,7 @@ export type NavPath =
   | '/snapshots'
   | '/schema'
   | '/api-explorer'
+  | '/develop/graphql'
   | '/live'
   | '/settings/api-tokens'
   | '/users/app'
@@ -117,6 +119,7 @@ export const DEVELOP_ITEMS: readonly NavItemDefinition[] = [
     schema: true,
   },
   { key: 'apiExplorer', labelKey: 'shell.nav.apiExplorer', icon: SquareTerminal, to: '/api-explorer' },
+  { key: 'graphql', labelKey: 'shell.nav.graphql', icon: Braces, to: '/develop/graphql' },
   { key: 'live', labelKey: 'shell.nav.live', icon: Activity, to: '/live' },
   {
     key: 'apiTokens',

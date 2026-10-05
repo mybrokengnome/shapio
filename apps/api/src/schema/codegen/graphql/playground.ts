@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { escapeHtml } from '@shapio/schema';
+import type { PLAYGROUND_THEMES } from '../../../constants/graphql.js';
 
 /**
  * GraphiQL for admins (`/api/graphql/playground`), served entirely by Shapio: the vendored GraphiQL 3 and
@@ -28,9 +29,16 @@ const BOOTSTRAP = `(() => {
   const root = document.getElementById('graphiql');
   const endpoint = root.dataset.endpoint;
   const csrfUrl = root.dataset.csrf;
+  const props = { shouldPersistHeaders: false };
+  if (root.dataset.query) {
+    props.query = root.dataset.query;
+  }
+  if (root.dataset.theme) {
+    props.forcedTheme = root.dataset.theme;
+  }
   const start = (csrfToken) => {
     const fetcher = GraphiQL.createFetcher({ url: endpoint, headers: { 'x-csrf-token': csrfToken } });
-    ReactDOM.createRoot(root).render(React.createElement(GraphiQL, { fetcher, shouldPersistHeaders: false }));
+    ReactDOM.createRoot(root).render(React.createElement(GraphiQL, { ...props, fetcher }));
   };
   fetch(csrfUrl, { credentials: 'same-origin' })
     .then((response) => {
@@ -64,9 +72,24 @@ export const loadPlaygroundAssets = (): Map<string, PlaygroundAsset> => {
   return assets;
 };
 
+export type PlaygroundTheme = (typeof PLAYGROUND_THEMES)[number];
+
+/**
+ * What the page opens with: `query` fills the editor (a new tab unless one already holds it) and `theme`
+ * fixes GraphiQL's light or dark theme (the admin passes its look's variant); both optional.
+ */
+export type PlaygroundOptions = { query?: string; theme?: PlaygroundTheme };
+
+const dataAttribute = (name: string, value: string | undefined) =>
+  value === undefined || value === '' ? '' : ` data-${name}="${escapeHtml(value)}"`;
+
 /** The playground page; `assetsPath` and the URLs are absolute paths (BASE_PATH included). */
-export const renderPlaygroundPage = (urls: { assets: string; endpoint: string; csrf: string }): string => {
+export const renderPlaygroundPage = (
+  urls: { assets: string; endpoint: string; csrf: string },
+  options: PlaygroundOptions = {},
+): string => {
   const asset = (file: string) => escapeHtml(`${urls.assets}/${file}`);
+  const extra = dataAttribute('query', options.query) + dataAttribute('theme', options.theme);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shapio GraphQL</title>
@@ -74,7 +97,7 @@ export const renderPlaygroundPage = (urls: { assets: string; endpoint: string; c
 <link rel="stylesheet" href="${asset('playground.css')}">
 </head>
 <body>
-<div id="graphiql" data-endpoint="${escapeHtml(urls.endpoint)}" data-csrf="${escapeHtml(urls.csrf)}">Loading…</div>
+<div id="graphiql" data-endpoint="${escapeHtml(urls.endpoint)}" data-csrf="${escapeHtml(urls.csrf)}"${extra}>Loading…</div>
 <script src="${asset('react.production.min.js')}"></script>
 <script src="${asset('react-dom.production.min.js')}"></script>
 <script src="${asset('graphiql.min.js')}"></script>

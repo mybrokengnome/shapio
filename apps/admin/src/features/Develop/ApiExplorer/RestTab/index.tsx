@@ -5,8 +5,7 @@ import { withSiteParameter } from '@/helpers/sites';
 import { useDeliverySiteKey } from '@/hooks/useDeliverySiteKey';
 import { EndpointNav } from '../EndpointNav';
 import type { DeliveryOperation, OperationGroup } from '../helpers/operations';
-import { isSendable, requestPath } from '../helpers/request';
-import { useRequestDraft } from '../hooks/useRequestDraft';
+import { isSendable, requestPath, type RequestDraft } from '../helpers/request';
 import { absoluteApiUrl, useSendRequest } from '../hooks/useSendRequest';
 import { RequestBuilder } from '../RequestBuilder';
 import { ResponseView } from '../ResponseView';
@@ -14,11 +13,16 @@ import { ShapePanel } from '../ShapePanel';
 import { Snippets } from '../Snippets';
 import { useExplorerTokenStore } from '../stores/token';
 
-type RestTabProps = { groups: readonly OperationGroup[]; operation: DeliveryOperation };
+type RestTabProps = {
+  groups: readonly OperationGroup[];
+  operation: DeliveryOperation;
+  /** The operation's request builder values (kept by the explorer, shared with the GraphQL tab). */
+  draft: RequestDraft;
+  onDraftChange: (draft: RequestDraft) => void;
+};
 
 /** REST: endpoints per place, the request builder, the snippets, the live response and the shape. */
-export const RestTab = ({ groups, operation }: RestTabProps) => {
-  const { draft, setDraft } = useRequestDraft(operation.id);
+export const RestTab = ({ groups, operation, draft, onDraftChange }: RestTabProps) => {
   const token = useExplorerTokenStore((state) => state.token);
   const send = useSendRequest();
   const { definitions } = useAllDefinitions();
@@ -43,7 +47,7 @@ export const RestTab = ({ groups, operation }: RestTabProps) => {
           <RequestBuilder
             operation={operation}
             draft={draft}
-            onDraftChange={setDraft}
+            onDraftChange={onDraftChange}
             path={path}
             sendable={isSendable(operation, draft)}
             sending={send.isPending}

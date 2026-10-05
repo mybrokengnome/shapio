@@ -1,16 +1,14 @@
-import { join } from 'node:path';
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { captureScreen, VIEWPORTS } from './support/capture';
-import { ADMIN_URL, SCREENSHOT_DIR } from './support/constants';
-import { renderScheme } from './support/schemes';
+import { captureScreen } from './support/capture';
+import { ADMIN_URL } from './support/constants';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 
 /**
  * The developer pages of package D3 against the real API: Schema as code (the files `shapio schema pull`
  * writes, edited with the server's validation, previewed, applied as change-set drafts behind the
  * three-way guard) and the API explorer (delivery endpoints from the live OpenAPI document, a request sent
- * as a site would send it, GraphiQL). Every screen is captured at 1440 and 390 in light and dark with axe.
+ * as a site would send it); the GraphQL page and the explorer's GraphQL tab are in graphql.spec.ts. Every
+ * screen is captured at 1440 and 390 in light and dark with axe.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -85,38 +83,6 @@ test.afterAll(async () => {
   }
   await page.context().close();
 });
-
-/**
- * `captureScreen` for a screen that embeds the vendored GraphiQL: the same sizes, schemes and axe tags, with
- * the iframe excluded from axe (GraphiQL 3's own markup is third-party and has known issues of its own).
- */
-const captureWithFrame = async (on: Page, name: string) => {
-  for (const viewport of ['desktop', 'phone'] as const) {
-    await on.setViewportSize(VIEWPORTS[viewport]);
-    await on.mouse.move(0, 0);
-    for (const scheme of ['light', 'dark'] as const) {
-      const restore = await renderScheme(on, scheme);
-      await on.waitForTimeout(300);
-      await on.screenshot({
-        path: join(SCREENSHOT_DIR, `${name}-${viewport}-${scheme}.png`),
-        fullPage: true,
-      });
-      const results = await new AxeBuilder({ page: on })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-        .exclude('iframe')
-        .analyze();
-      const blocking = results.violations.filter((violation) =>
-        ['serious', 'critical'].includes(violation.impact ?? ''),
-      );
-      expect(
-        blocking.map((violation) => violation.id),
-        `axe violations on ${name}-${viewport} (${scheme})`,
-      ).toEqual([]);
-      await restore();
-    }
-  }
-  await on.setViewportSize({ width: 1360, height: 900 });
-};
 
 const editor = (on: Page = page) => on.getByRole('textbox', { name: `${ARTICLE_FILE} (JSON)` });
 
@@ -258,14 +224,4 @@ test('the API explorer sends a delivery request as a site would', async () => {
 
   await responsePanel.getByRole('link', { name: 'Edit Hello explorer' }).click();
   await expect(page).toHaveURL(new RegExp(`/content/${MODEL_KEY}/[0-9a-f-]{36}`));
-});
-
-test('the GraphQL tab lists the root queries beside GraphiQL', async () => {
-  await page.goto(`${ADMIN_URL}api-explorer?tab=graphql`);
-  const operations = page.getByRole('navigation', { name: 'GraphQL queries' });
-  await operations.getByRole('link', { name: ROUTE_KEY, exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Query' })).toContainText(`${ROUTE_KEY}(pageSize: 10)`);
-  const playground = page.frameLocator('iframe[title="GraphiQL playground"]');
-  await expect(playground.locator('.graphiql-container')).toBeVisible({ timeout: 20_000 });
-  await captureWithFrame(page, 'develop-07-api-explorer-graphql');
 });

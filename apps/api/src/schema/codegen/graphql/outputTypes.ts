@@ -26,6 +26,7 @@ import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
 import { RELATION_LIST_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ValueNode } from './context.js';
+import { describeDefinition } from './descriptions.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 
 /**
@@ -229,7 +230,7 @@ const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: b
     const resolve = config.resolve;
     fields[field.apiKey] = {
       ...config,
-      ...(field.description ? { description: field.description } : {}),
+      description: describeDefinition(field),
       resolve: (node, args, context, info) => {
         if (masked && !Object.hasOwn(node.data, field.apiKey)) {
           if (field.required) {
@@ -251,7 +252,7 @@ export const componentType = (build: SchemaBuild, component: ComponentDefinition
     () =>
       new GraphQLObjectType<ValueNode, GraphqlContext>({
         name: componentTypeName(component),
-        description: component.description ?? component.label,
+        description: describeDefinition(component),
         fields: () => definitionFields(build, component, false),
       }),
   );
@@ -271,7 +272,7 @@ export const entryType = (
       GraphqlContext
     >({
       name: modelTypeName(model),
-      description: model.description ?? model.label,
+      description: describeDefinition(model),
       fields: () => ({
         id: { type: new GraphQLNonNull(GraphQLID), resolve: (node) => node.data.id },
         locale: {

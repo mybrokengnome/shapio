@@ -2,6 +2,7 @@ import { createLazyRoute } from '@tanstack/react-router';
 import { ApiExplorer } from '@/features/Develop/ApiExplorer';
 import { Changes } from '@/features/Develop/Changes';
 import { ChangeSet } from '@/features/Develop/ChangeSet';
+import { Graphql } from '@/features/Develop/Graphql';
 import { Live } from '@/features/Develop/Live';
 import { Schema } from '@/features/Develop/Schema';
 import { Snapshots } from '@/features/Develop/Snapshots';
@@ -16,4 +17,5 @@ export const developLazyRoutes = {
   live: createLazyRoute('/app/live')({ component: Live }),
   schema: createLazyRoute('/app/schema')({ component: Schema }),
   apiExplorer: createLazyRoute('/app/api-explorer')({ component: ApiExplorer }),
+  graphql: createLazyRoute('/app/develop/graphql')({ component: Graphql }),
 };

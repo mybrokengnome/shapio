@@ -96,6 +96,21 @@ copy button. Send it to them yourself (chat, your own email).
 - Links are never stored: Shapio keeps only a hash, so a lost link can't be shown again. Create a new one.
 - Creating a link needs the `users.manage` permission and is recorded in the audit log.
 
+## Develop
+
+The sidebar's **Develop** group is for the people who build on Shapio; each item shows only to roles that can
+use it.
+
+- **Snapshots**: every publication number, to pin a site build to one ([Change sets](change-sets.md)).
+- **Schema as code**: the files `shapio schema pull` writes, edited and checked in the browser
+  ([Schema sync](schema-sync.md)).
+- **Components**: the reusable groups of fields content types are built from ([Modelling](modelling.md)).
+- **API explorer**: every delivery endpoint, sent as a site would send it, with curl and fetch snippets.
+- **GraphQL**: GraphiQL on this site's schema, with the docs for every type and field
+  ([GraphQL](graphql.md#playground)).
+- **Live**: who reads what: which content types and fields your sites and apps request.
+- **API tokens** and **Webhooks**.
+
 ## API tokens
 
 Settings → API tokens creates a token bound to one role. It is shown once; Shapio stores only its hash.

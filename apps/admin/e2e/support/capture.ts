@@ -61,11 +61,19 @@ const captureSchemes = async (page: Page, name: string) => {
   }
 };
 
+type RenderedOptions = {
+  /**
+   * Selectors axe leaves out, e.g. `iframe` for a screen that embeds the vendored GraphiQL (its markup is
+   * third-party and has known issues of its own).
+   */
+  exclude?: readonly string[];
+};
+
 /**
  * Screenshots the screen as it is rendered now (`{name}.png`) and runs axe: no serious or critical
  * violations allowed. `captureScreen` calls it once per colour scheme; the theme suite once per theme.
  */
-export const captureRendered = async (page: Page, name: string) => {
+export const captureRendered = async (page: Page, name: string, { exclude = [] }: RenderedOptions = {}) => {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
   // contrast checks, which would otherwise see half-faded colours.
@@ -75,11 +83,13 @@ export const captureRendered = async (page: Page, name: string) => {
   await page.screenshot({ path, fullPage: true });
   capturedScreenshots.push(path);
   await waitForToastsToClear(page);
-  const results = await new AxeBuilder({ page })
+  let axe = new AxeBuilder({ page })
     // Toasts are transient and coloured by the library; a fading one fails contrast mid-transition.
-    .exclude(TOASTER_SELECTOR)
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze();
+    .exclude(TOASTER_SELECTOR);
+  for (const selector of exclude) {
+    axe = axe.exclude(selector);
+  }
+  const results = await axe.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const blocking = results.violations
     .filter((violation) => BLOCKING_IMPACTS.has(violation.impact ?? ''))
     .map((violation) => ({

@@ -625,6 +625,19 @@ describe('GraphQL schema and runtime', () => {
     expect((await page('/api/graphql/playground?site=Not%20a%20key')).statusCode).toBe(400);
   });
 
+  it("opens the playground on a query in the admin's theme (?query=, ?theme=)", async () => {
+    const session = await login(testApp.app, await createAdmin(database.current.db));
+    const page = (url: string) => testApp.app.inject({ method: 'GET', url, headers: session.headers });
+    const prefilled = await page(
+      '/api/graphql/playground?site=b&query=%7B%20_schemaVersion%20%7D&theme=light',
+    );
+    expect(prefilled.statusCode).toBe(200);
+    expect(prefilled.body).toContain('data-endpoint="/api/graphql?site=b"');
+    expect(prefilled.body).toContain('data-query="{ _schemaVersion }"');
+    expect(prefilled.body).toContain('data-theme="light"');
+    expect((await page('/api/graphql/playground?theme=blue')).statusCode).toBe(400);
+  });
+
   it('documents GraphQL and its type mapping on the docs page', async () => {
     const page = await admin.get('/api/docs');
     expect(page.statusCode).toBe(200);

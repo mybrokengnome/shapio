@@ -8,6 +8,7 @@ import {
 import { isSortable } from '../../../content/compiler/operators.js';
 import { FILTER_OPERATORS, queryInvalid, type FilterOperator } from '../../../content/compiler/types.js';
 import { liveFields } from '../../../content/model.js';
+import { describeDefinition } from './descriptions.js';
 import { operatorFieldName, type FilterTypeName, type FixedTypes } from './fixedTypes.js';
 import { modelTypeName } from './names.js';
 
@@ -60,7 +61,7 @@ export const createFilterInput = (model: ModelDefinition, fixed: FixedTypes): Gr
       for (const field of filterableFields(model)) {
         fields[field.apiKey] = {
           type: fixed.filters[FILTER_TYPE_BY_DATA_TYPE[field.type] as FilterTypeName],
-          ...(field.description ? { description: field.description } : {}),
+          description: describeDefinition(field),
         };
       }
       fields.and = { type: new GraphQLList(new GraphQLNonNull(type)), description: 'All must hold' };

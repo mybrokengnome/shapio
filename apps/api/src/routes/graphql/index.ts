@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
+import { PLAYGROUND_QUERY_MAX_LENGTH, PLAYGROUND_THEMES } from '../../constants/graphql.js';
 import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER } from '../../constants/sites.js';
 import { getGraphql, graphqlErrorHandler, postGraphql } from '../../controllers/graphql.js';
 import { getPlaygroundAsset, getPlaygroundPage } from '../../controllers/graphqlPlayground.js';
@@ -54,7 +55,8 @@ export const graphqlRoutes: FastifyPluginAsyncTypebox = async (app) => {
 export const graphqlPlaygroundRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
-  // GET /playground: the GraphiQL page; `?site=<key>` points it at that site's GraphQL endpoint
+  // GET /playground: the GraphiQL page; `?site=<key>` points it at that site's GraphQL endpoint, `?query=`
+  // prefills the editor, `?theme=light|dark` fixes GraphiQL's theme
   app.get(
     '/playground',
     {
@@ -62,6 +64,8 @@ export const graphqlPlaygroundRoutes: FastifyPluginAsyncTypebox = async (app) =>
       schema: {
         querystring: Type.Object({
           [SITE_QUERY_PARAMETER]: Type.Optional(Type.String({ pattern: SITE_KEY_PATTERN })),
+          query: Type.Optional(Type.String({ maxLength: PLAYGROUND_QUERY_MAX_LENGTH })),
+          theme: Type.Optional(Type.Enum(PLAYGROUND_THEMES)),
         }),
         response: { 200: Type.String() },
       },

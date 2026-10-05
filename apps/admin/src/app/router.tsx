@@ -4,6 +4,7 @@ import { meQueryOptions } from '@/api/auth';
 import { AcceptInvitation } from '@/features/AcceptInvitation';
 import { apiExplorerSearchSchema } from '@/features/Develop/ApiExplorer/searchSchema';
 import { changeSetSearchSchema } from '@/features/Develop/ChangeSet/searchSchema';
+import { graphqlSearchSchema } from '@/features/Develop/Graphql/searchSchema';
 import { schemaSearchSchema } from '@/features/Develop/Schema/searchSchema';
 import { snapshotSearchSchema, snapshotsSearchSchema } from '@/features/Develop/Snapshots/searchSchema';
 import { ForgotPassword } from '@/features/ForgotPassword';
@@ -225,6 +226,7 @@ const profileRoute = settingsChild('profile', 'profile');
 const sessionsRoute = settingsChild('sessions', 'sessions');
 const appearanceRoute = settingsChild('theme', 'theme');
 const localesRoute = settingsChild('locales', 'locales');
+const seoRoute = settingsChild('seo', 'seo');
 const assistRoute = settingsChild('assist', 'assist');
 const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
 
@@ -365,7 +367,7 @@ const webhookRoute = createRoute({
   validateSearch: cursorSearchSchema,
 }).lazy(() => publishingLazy().then((routes) => routes.webhook));
 
-// Develop (plan developer-face): change sets, snapshots, live usage, schema as code, API explorer.
+// Develop (plan developer-face): change sets, snapshots, live usage, schema as code, API explorer, GraphQL.
 const developLazy = () => import('./lazyRoutes/develop').then((module) => module.developLazyRoutes);
 
 type DevelopLazyKey = keyof Awaited<ReturnType<typeof developLazy>>;
@@ -408,6 +410,12 @@ const apiExplorerRoute = createRoute({
   validateSearch: apiExplorerSearchSchema,
 }).lazy(() => developLazy().then((routes) => routes.apiExplorer));
 
+const graphqlRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'develop/graphql',
+  validateSearch: graphqlSearchSchema,
+}).lazy(() => developLazy().then((routes) => routes.graphql));
+
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
@@ -438,6 +446,7 @@ const routeTree = rootRoute.addChildren([
     liveRoute,
     schemaRoute,
     apiExplorerRoute,
+    graphqlRoute,
     publishingRoute.addChildren([
       publishingIndexRoute,
       scheduledRoute,
@@ -453,6 +462,7 @@ const routeTree = rootRoute.addChildren([
       sessionsRoute,
       appearanceRoute,
       localesRoute,
+      seoRoute,
       assistRoute,
       rolesRedirectRoute,
       appRolesRedirectRoute,

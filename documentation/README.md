@@ -27,6 +27,7 @@ model never needs a rebuild, a restart or a deploy.
   snapshot, restoring an older snapshot, field usage from real traffic.
 - [Media](media.md): local disk and S3/R2, uploads, private media, variants, `shapio media migrate`.
 - [Delivery API (REST)](delivery-api.md): filters, sort, populate, fields, locale, snapshots, tokens, caching.
+- [SEO fields](seo.md): the built-in SEO group, per-site defaults (Settings → SEO), `seo=resolved`.
 - [GraphQL](graphql.md)
 - [Snapshots and the changes API](snapshots.md): pinning builds, what changed between two snapshots,
   incremental builds and `revalidatePath`.
@@ -60,4 +61,4 @@ model never needs a rebuild, a restart or a deploy.
 - [REST API](reference/rest-api.md) (generated from Shapio's OpenAPI generator)
 
 Your running instance also documents itself: admins find the OpenAPI document for the current schema at
-`/api/docs`, and the GraphQL playground at `/api/graphql/playground`.
+`/api/docs`, and the GraphQL playground under **Develop → GraphQL** (`/api/graphql/playground`).

@@ -6,6 +6,36 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The GraphQL playground is in the admin.** **Develop → GraphQL** opens GraphiQL on the current site's
+  schema, in the admin's light or dark look; it was only reachable at `/api/graphql/playground` before. The API
+  explorer's GraphQL tab now shows the request built on its REST tab as the same query (filters, sort, search,
+  page, locale, snapshot and fields), to copy or **Open in playground**. GraphiQL's Docs panel describes every
+  content type, component and field with its label and help text. The playground page takes `?query=` and
+  `?theme=light|dark`. See [GraphQL: playground](documentation/graphql.md#playground).
+- **SEO fields with per-site defaults (API).** A built-in, shared `seo` component (title, description, social
+  image, canonical URL, noindex) with fixed stable IDs, created on first use through the change planner by
+  `POST /api/admin/components/builtin/seo/ensure` (a network admin; it is refused with
+  `SEO_COMPONENT_CONFLICT` while another definition holds the API ID `seo`, such as a Strapi import's). Each
+  site has SEO defaults, `sites.seo_defaults` (site name, title template and description per locale; a public
+  default image and the Twitter handle per site), edited with `GET`/`PUT /api/admin/site/seo` under the new site
+  action `site.settings` (granted to every role that holds `publishing.manage`). A change writes a
+  `site.updated` webhook event. Delivery and preview reads take `seo=raw|resolved`: `resolved` returns each SEO
+  field with the defaults filled in, the title through the template (the entry's own title when the SEO title is
+  empty); a pinned `snapshot` uses today's defaults. `GET /api/site` returns the site's key, name and defaults.
+  `@shapio/client` adds `client.site.get()`, the `seo` read option, `SeoFields`, `SeoResolved` and
+  `resolveSeo()` (also in the light `@shapio/schema/seo` entry). GraphQL has a `_site` root field with the same
+  data (the name `_site` and the types `SiteInfo`, `SiteSeoDefaults` and `SiteSeoLocale` are now reserved).
+  See [SEO fields](documentation/seo.md).
+- **The site starters render SEO tags.** Article and Page have an `seo` field (the built-in component, which the
+  seed applies shared with all sites); the seed fills it and sets each site's SEO defaults in English and French.
+  Every page of the Astro, Next.js and SvelteKit starters has its title through the site's title template, the
+  description, Open Graph and Twitter tags, `robots` for hidden entries, and a canonical URL when the new optional
+  `SITE_URL` is set. The Next.js starter no longer applies its own title template, and its revalidation route
+  refreshes every page on `site.updated` (which the seed's webhook now subscribes to). See
+  [Site starters](documentation/starters.md).
+
 ### Changed
 
 - **Admin themes are looks: pick one, nothing follows the OS.** Settings → Appearance and the account menu
