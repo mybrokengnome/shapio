@@ -1,4 +1,4 @@
-import { createClient, ShapioApiError } from '@shapio/client';
+import { createClient, ShapioApiError, type DeliverySite } from '@shapio/client';
 import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config.js';
 import type { Locale } from './site.js';
 import type { Article, DeliveryList, Page, SiteSettings } from './types.js';
@@ -19,8 +19,8 @@ const ARTICLES = 'articles';
  * The fields each listing renders, sent as `fields=`: the response carries only these, and Shapio's field
  * usage shows exactly what the site reads (a whole-model read would count every field as used).
  */
-const PAGE_FIELDS = 'title,slug,description,sections';
-const ARTICLE_FIELDS = 'title,slug,excerpt,body,cover,author,publishedOn';
+const PAGE_FIELDS = 'title,slug,description,sections,seo';
+const ARTICLE_FIELDS = 'title,slug,excerpt,body,cover,author,publishedOn,seo';
 
 /** The `siteSettings` singleton is read by its API ID (singletons have no plural). */
 const SITE_SETTINGS = 'siteSettings';
@@ -58,8 +58,9 @@ const listAll = async <T>(
   const entries: T[] = [];
   for (let page = 1; ; page += 1) {
     const result = await shapio().request<DeliveryList<T>>(
-      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document.
-      `/api/content/${routeKey}?${query({ locale, snapshot, page, pageSize: PAGE_SIZE, richText: 'html', ...extra })}`,
+      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document, and
+      // its SEO fields with the site's defaults filled in (`seo=resolved`).
+      `/api/content/${routeKey}?${query({ locale, snapshot, page, pageSize: PAGE_SIZE, richText: 'html', seo: 'resolved', ...extra })}`,
     );
     entries.push(...result.data);
     if (page >= result.meta.pagination.pageCount) {
@@ -104,3 +105,19 @@ export const getSiteSettings = (locale: Locale): Promise<SiteSettings | null> =>
   }
   return settings;
 };
+
+let site: Promise<DeliverySite | null> | undefined;
+
+/**
+ * The site and its SEO defaults (name and title template per locale, default image, Twitter handle), once per
+ * build. Null when the Shapio predates them: the pages still render, with plain titles.
+ */
+export const getSite = (): Promise<DeliverySite | null> =>
+  (site ??= shapio()
+    .site.get()
+    .catch((error: unknown) => {
+      if (error instanceof ShapioApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }));

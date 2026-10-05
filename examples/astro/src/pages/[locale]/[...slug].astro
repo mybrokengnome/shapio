@@ -23,6 +23,6 @@ type Props = { page: Page; locale: Locale };
 const { page, locale } = Astro.props;
 ---
 
-<Base title={page.title} description={page.description} locale={locale} alternatePath={pagePath(otherLocale(locale), page.slug)}>
+<Base title={page.title} seo={page.seo} locale={locale} alternatePath={pagePath(otherLocale(locale), page.slug)}>
   <div lang={page.locale} set:html={renderPage(page)} />
 </Base>

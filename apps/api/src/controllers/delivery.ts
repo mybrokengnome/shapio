@@ -16,7 +16,7 @@ type EntryParams = ModelParams & { id: string };
  * principal and on the `Shapio-Site` header that selects the site (`?site=` is part of the URL), and `private`
  * caching whenever a principal is authenticated (build plan §4.E6).
  */
-const sendCacheable = (request: FastifyRequest, reply: FastifyReply, payload: unknown) => {
+export const sendCacheable = (request: FastifyRequest, reply: FastifyReply, payload: unknown) => {
   const body = JSON.stringify(payload);
   const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 32)}"`;
   reply.header('etag', etag);

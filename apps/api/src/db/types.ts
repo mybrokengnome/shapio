@@ -734,6 +734,7 @@ export interface Sites {
   is_primary: Generated<boolean>;
   key: string;
   name: string;
+  seo_defaults: Json | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
 }

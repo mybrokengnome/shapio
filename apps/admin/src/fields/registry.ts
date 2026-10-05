@@ -1,5 +1,11 @@
 import type { EditorDefinition } from '@shapio/editor-sdk';
-import { DEFAULT_EDITORS, EDITOR_CATALOGUE, isCustomEditorId, type FieldDefinition } from '@shapio/schema';
+import {
+  DEFAULT_EDITORS,
+  EDITOR_CATALOGUE,
+  isCustomEditorId,
+  SEO_EDITOR_ID,
+  type FieldDefinition,
+} from '@shapio/schema';
 import { lazy } from 'react';
 import { CheckboxGroup } from './CheckboxGroup';
 import { CheckboxInput } from './CheckboxInput';
@@ -15,6 +21,7 @@ import { RadioInput } from './RadioInput';
 import { RelationField } from './RelationField';
 import { Segmented } from './Segmented';
 import { SelectInput } from './SelectInput';
+import { SeoField } from './SeoField';
 import { SlugInput } from './SlugInput';
 import { Textarea } from './Textarea';
 import { TextInput } from './TextInput';
@@ -49,6 +56,7 @@ export const BUILT_IN_EDITORS: Readonly<Record<string, BuiltInEditor>> = {
   relationPicker: { component: RelationField, labelling: 'group' },
   componentEditor: { component: ComponentField, labelling: 'group' },
   dynamicZoneEditor: { component: DynamicZoneField, labelling: 'group' },
+  [SEO_EDITOR_ID]: { component: SeoField, labelling: 'group' },
 };
 
 /** The built-in editor for a field: its chosen one when compatible, otherwise its data type's default. */

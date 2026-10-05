@@ -69,6 +69,7 @@ import { healthRoutes } from './routes/health/index.js';
 import { hooksRoutes } from './routes/hooks/index.js';
 import { mediaFilesRoutes } from './routes/media/index.js';
 import { previewRoutes } from './routes/preview/index.js';
+import { siteRoutes } from './routes/site/index.js';
 import { snapshotsRoutes } from './routes/snapshots/index.js';
 import { createSchemaFieldVisibility } from './schema/fieldVisibility.js';
 import type { SchemaContentPorts } from './schema/planner/contentPorts.js';
@@ -249,6 +250,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   });
   await app.register(adminExtensionsRoutes, { prefix: urls.withBasePath('/api/admin/extensions') });
   await app.register(deliveryRoutes, { prefix: urls.withBasePath('/api/content') });
+  await app.register(siteRoutes, { prefix: urls.withBasePath('/api/site') });
   await app.register(snapshotsRoutes, { prefix: urls.withBasePath('/api/snapshots') });
   await app.register(docsRoutes, { prefix: urls.withBasePath('/api/docs') });
   if (config.graphql.enabled) {

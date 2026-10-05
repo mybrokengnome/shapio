@@ -89,3 +89,30 @@ export const countContents = async (siteId: string, trx: Executor = db) => {
 
 export const deleteById = (id: string, trx: Executor = db) =>
   trx.deleteFrom('sites').where('id', '=', id).executeTakeFirst();
+
+/** A site's SEO defaults (null until first saved) and the version an update must name. */
+export const findSeoDefaults = (id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('sites')
+    .select(['id', 'key', 'name', 'version', 'seo_defaults'])
+    .where('id', '=', id)
+    .executeTakeFirst();
+
+/** Optimistic update of the SEO defaults: applies only at `expectedVersion`; bumps the version. */
+export const updateSeoDefaultsIfVersion = (
+  id: string,
+  expectedVersion: number,
+  seoDefaults: unknown,
+  trx: Executor = db,
+) =>
+  trx
+    .updateTable('sites')
+    .set((eb) => ({
+      seo_defaults: JSON.stringify(seoDefaults),
+      version: eb('version', '+', 1),
+      updated_at: new Date(),
+    }))
+    .where('id', '=', id)
+    .where('version', '=', expectedVersion)
+    .returning(['id', 'key', 'name', 'version', 'seo_defaults'])
+    .executeTakeFirst();

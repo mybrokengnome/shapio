@@ -122,7 +122,7 @@ const afterRead = async (options: DeliveryReadOptions, task: () => Promise<void>
   await task();
 };
 
-const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'snapshot', 'richText']);
+const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'snapshot', 'richText', 'seo']);
 
 /** Reading one entry takes only these query parameters; anything else is refused, not ignored. */
 export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<string>): void => {
@@ -142,7 +142,11 @@ export const listDelivery = async (
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
   const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true, allowRichText: true });
+  const query = parseQueryFor(context, model, policy, rawQuery, {
+    allowSnapshot: true,
+    allowRichText: true,
+    allowSeo: true,
+  });
   const locale = query.locale ?? context.snapshot.defaultLocale;
   const singleton = model.definition.kind === 'singleton';
   const { entries, limit, total, seq } = await readEntryPage(
@@ -177,7 +181,11 @@ export const getDelivery = async (
 ): Promise<DeliveryItem> => {
   assertItemParameters(rawQuery, ITEM_PARAMETERS);
   const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { allowSnapshot: true, allowRichText: true });
+  const query = parseQueryFor(context, model, policy, rawQuery, {
+    allowSnapshot: true,
+    allowRichText: true,
+    allowSeo: true,
+  });
   const { entry, seq } = await readOneEntry(
     { context, source: sourceOf(query, options), model, policy, query, fallback: options.fallback ?? true },
     id,

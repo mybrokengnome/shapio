@@ -140,6 +140,27 @@
       "sortable": true,
       "type": "date",
       "unique": false
+    },
+    {
+      "apiKey": "seo",
+      "deprecated": false,
+      "editor": {
+        "id": "seoEditor",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "a3f1c0de-7b52-4e0a-9d1e-5c2b8e4f6a01",
+      "label": "SEO",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {
+        "component": "f3905a00-d2a3-4c62-899a-c894bfd6cb9b",
+        "repeatable": false
+      },
+      "sortable": false,
+      "type": "component",
+      "unique": false
     }
   ],
   "id": "1679d89c-747f-4dfc-955f-7d47bd5e4f6b",

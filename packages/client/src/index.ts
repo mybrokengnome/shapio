@@ -42,6 +42,20 @@ export type * from './snapshotTypes.js';
 export { DELIVERY_PATH, type DeliveryApi } from './delivery.js';
 export { SITE_QUERY_PARAMETER } from './site.js';
 export type * from './deliveryTypes.js';
+export type * from './seoTypes.js';
+export { DELIVERY_SITE_PATH, type SiteApi } from './siteDelivery.js';
+export {
+  applyTitleTemplate,
+  DEFAULT_SEO_KEYS,
+  resolveSeo,
+  seoDefaultsForLocale,
+  SEO_COMPONENT_ID,
+  SEO_FIELD_IDS,
+  type ResolveSeoContext,
+  type SeoDefaults,
+  type SeoKeys,
+  type SeoLocaleDefaults,
+} from '@shapio/schema/seo';
 export {
   verifyWebhookSignature,
   WEBHOOK_EVENT_HEADER,

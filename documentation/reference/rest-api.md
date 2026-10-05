@@ -15,7 +15,8 @@ for collections and singletons alike.
 Below are the routes generated for the `article` collection (plural API ID `articles`) of the
 [example site](../example-site.md) (`examples/shared/shapio/models/article.json`). Every other model gets
 the same set under its own API IDs.
-Usage, filters and examples are in the [delivery API guide](../delivery-api.md).
+Usage, filters and examples are in the [delivery API guide](../delivery-api.md); `seo=resolved` and
+`GET /api/site` are in [SEO fields](../seo.md).
 
 ## The `Article` entry
 
@@ -35,6 +36,7 @@ What delivery returns for one entry (system attributes first, then every readabl
 | `cover` | MediaAsset or null |  |
 | `author` | string (uuid) or Author or null |  |
 | `publishedOn` | string (date) or null |  |
+| `seo` | Seo or null |  |
 
 ## Routes
 
@@ -54,6 +56,7 @@ List published Article entries.
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
 | `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
+| `seo` | query | `raw`, `resolved` | SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults. |
 
 Responses: 200 OK; 304 Not modified (If-None-Match); 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
 
@@ -69,6 +72,7 @@ Read one published Article entry.
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
 | `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
+| `seo` | query | `raw`, `resolved` | SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults. |
 
 Responses: 200 OK; 304 Not modified; 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
 

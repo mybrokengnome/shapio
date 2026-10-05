@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Sections } from '../../../components/Sections';
+import { pageMetadata } from '../../../lib/metadata';
 import { listPages } from '../../../lib/shapio';
-import { HOME_SLUG, toLocale, type Locale } from '../../../lib/site';
+import { HOME_SLUG, pagePath, toLocale, type Locale } from '../../../lib/site';
 
 /**
  * Pages from the `page` collection; `home` is the locale's front page (`/en/`), the others `/en/<slug>/`.
@@ -25,7 +26,14 @@ const findPage = async (locale: Locale, slug: string[] | undefined) => {
 export const generateMetadata = async ({ params }: PageParams): Promise<Metadata> => {
   const { locale, slug } = await params;
   const page = await findPage(toLocale(locale), slug);
-  return page ? { title: page.title, description: page.description ?? undefined } : {};
+  return page
+    ? pageMetadata({
+        title: page.title,
+        seo: page.seo,
+        locale: toLocale(locale),
+        path: pagePath(locale, page.slug),
+      })
+    : {};
 };
 
 const ContentPage = async ({ params }: PageParams) => {

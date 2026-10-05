@@ -234,7 +234,12 @@ export const parseQueryFor = (
   model: ContentModel,
   policy: Policy,
   rawQuery: string,
-  options: { allowSnapshot: boolean; allowAdminFilters?: boolean; allowRichText?: boolean },
+  options: {
+    allowSnapshot: boolean;
+    allowAdminFilters?: boolean;
+    allowRichText?: boolean;
+    allowSeo?: boolean;
+  },
 ): ContentQuery =>
   parseContentQuery(parseQueryTree(rawQuery), {
     model: model.definition,
@@ -243,6 +248,7 @@ export const parseQueryFor = (
     allowSnapshot: options.allowSnapshot,
     allowAdminFilters: options.allowAdminFilters ?? false,
     allowRichText: options.allowRichText ?? false,
+    allowSeo: options.allowSeo ?? false,
     resolveModel: (modelId) => resolveModelById(context.snapshot, modelId)?.definition,
   });
 

@@ -4,6 +4,7 @@ import {
   KeyRound,
   MonitorSmartphone,
   Palette,
+  Search,
   Sparkles,
   UserRound,
   type LucideIcon,
@@ -14,11 +15,12 @@ type SettingsPath =
   | '/settings/sessions'
   | '/settings/theme'
   | '/settings/locales'
+  | '/settings/seo'
   | '/settings/assist'
   | '/settings/api-tokens';
 
 type SettingsSection = {
-  key: 'profile' | 'sessions' | 'appearance' | 'locales' | 'assist' | 'apiTokens';
+  key: 'profile' | 'sessions' | 'appearance' | 'locales' | 'seo' | 'assist' | 'apiTokens';
   to: SettingsPath;
   icon: LucideIcon;
   /** Hidden unless the admin holds this permission (the server enforces it either way). */
@@ -41,6 +43,7 @@ export const SETTINGS_GROUPS: readonly {
     key: 'workspace',
     sections: [
       { key: 'locales', to: '/settings/locales', icon: Globe },
+      { key: 'seo', to: '/settings/seo', icon: Search, permission: 'site.settings' },
       { key: 'assist', to: '/settings/assist', icon: Sparkles },
     ],
   },

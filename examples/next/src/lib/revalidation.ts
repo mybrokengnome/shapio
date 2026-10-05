@@ -3,7 +3,12 @@ import { revalidatePath } from 'next/cache';
 import { configuredSnapshot, isSnapshotPinned } from './config';
 import { advanceTo, liveSnapshot } from './liveSnapshot';
 import { log } from './log';
-import { revalidationTargets, type ChangedEntry, type RevalidationTarget } from './revalidationTargets';
+import {
+  EVERY_PAGE,
+  revalidationTargets,
+  type ChangedEntry,
+  type RevalidationTarget,
+} from './revalidationTargets';
 import { shapio } from './shapio';
 
 /**
@@ -88,4 +93,18 @@ export const revalidateChanges = (): Promise<RevalidationResult> => {
     );
     return result;
   });
+};
+
+/**
+ * Site-wide changes that publish no snapshot (the site's SEO defaults: `site.updated`): every page is
+ * revalidated at the snapshot the site already shows.
+ */
+export const revalidateEveryPage = (): RevalidationResult => {
+  if (isSnapshotPinned()) {
+    return { skipped: `the build is pinned to snapshot ${configuredSnapshot()} by SHAPIO_SNAPSHOT` };
+  }
+  revalidatePath(EVERY_PAGE.path, EVERY_PAGE.type);
+  const at = liveSnapshot();
+  log(`Site settings changed: revalidated every page at snapshot ${at}`);
+  return { from: at, to: at, changed: 0, revalidated: [EVERY_PAGE] };
 };

@@ -1,4 +1,4 @@
-import type { FieldDefinition } from '@shapio/schema';
+import type { FieldDefinition, SeoDefaults } from '@shapio/schema';
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
@@ -16,6 +16,7 @@ import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
+import { resolveSeoFields, seoFieldsOf } from './seo.js';
 
 /**
  * The read side shared by the admin and delivery APIs: fetching heads under a policy, deciding which
@@ -39,6 +40,8 @@ export type ReadEnvironment = {
   media?: MediaViewDependencies;
   /** Delivery reads: the shape of rich-text values, populated targets included (`?richText=`; the default when absent). */
   richText?: RichTextMode;
+  /** Delivery reads with `?seo=resolved`: the site's SEO defaults, merged into SEO fields. */
+  seo?: SeoDefaults;
 };
 
 /** Evaluated through the read's executor: a read inside a transaction never asks the pool for a second connection. */
@@ -141,8 +144,24 @@ export const needsFollowUpReads = (
   const documents = rows.map((row) => row.data);
   return (
     (env.audience === 'delivery' && targetsByModel(model, documents, fields).size > 0) ||
-    (env.media !== undefined && mediaIdsOf(model, documents, fields).size > 0)
+    (env.media !== undefined &&
+      (mediaIdsOf(model, documents, fields).size > 0 || seoImageIdOf(env, fields) !== undefined))
   );
+};
+
+/** The site's default social image a `?seo=resolved` read needs (when the response carries an SEO field). */
+const seoImageIdOf = (env: ReadEnvironment, fields: readonly FieldDefinition[]): string | undefined =>
+  env.seo?.imageId && seoFieldsOf(fields).length > 0 ? env.seo.imageId : undefined;
+
+/** A default SEO image is shown only while it is a public image (never through a signed URL). */
+export const isPublicImage = (view: Pick<MediaAssetView, 'visibility' | 'mimeType'>): boolean =>
+  view.visibility === 'public' && view.mimeType.startsWith('image/');
+
+type MediaViews = {
+  /** Views by asset ID, in the audience's shape; null leaves IDs as stored. */
+  byId: Map<string, { url: string }> | null;
+  /** The default social image in the delivered shape, only when it is a live public image. */
+  seoImage: unknown;
 };
 
 /**
@@ -155,24 +174,36 @@ const loadMediaViews = async (
   model: ContentModel,
   rows: readonly HeadRow[],
   fields: readonly FieldDefinition[],
-): Promise<Map<string, { url: string }> | null> => {
+): Promise<MediaViews> => {
   if (!env.media) {
-    return null;
+    return { byId: null, seoImage: null };
   }
   const ids = mediaIdsOf(
     model,
     rows.map((row) => row.data),
     fields,
   );
+  const seoImageId = seoImageIdOf(env, fields);
+  if (seoImageId !== undefined) {
+    ids.add(seoImageId);
+  }
   if (ids.size === 0) {
-    return new Map();
+    return { byId: new Map(), seoImage: null };
   }
   const assets = await mediaAssetsRepository.findLiveManyOnSite(env.siteId, [...ids], env.executor);
   const views = await toAssetViews(env.media, assets, env.executor);
-  return new Map(views.map((view) => [view.id, env.audience === 'delivery' ? toDeliveryAsset(view) : view]));
+  const shaped = (view: MediaAssetView) => (env.audience === 'delivery' ? toDeliveryAsset(view) : view);
+  // Re-checked on every read: an image made private (or replaced by a non-image) after it was chosen never
+  // appears, signed or not (rule 7).
+  const seoImage = views.find((view) => view.id === seoImageId && isPublicImage(view));
+  return {
+    byId: new Map(views.map((view) => [view.id, shaped(view)])),
+    seoImage: seoImage ? shaped(seoImage) : null,
+  };
 };
 
-const toDeliveryAsset = (view: MediaAssetView) => ({
+/** An asset as delivery shows it: what a site needs, never storage keys or internal attribution. */
+export const toDeliveryAsset = (view: MediaAssetView) => ({
   id: view.id,
   filename: view.filename,
   mimeType: view.mimeType,
@@ -224,16 +255,29 @@ export const projectRows = async (
     system: systemAttributes,
   };
   const populated = await populateRelations(populateEnv, rows, fields, query.populate);
-  const mediaAssets = await loadMediaViews(env, model, rows, fields);
-  return rows.map((row) => ({
-    row,
-    data: projectData(row.data, {
+  const media = await loadMediaViews(env, model, rows, fields);
+  return rows.map((row) => {
+    const data = projectData(row.data, {
       model,
       fields,
       visibleTargets,
       populated,
       ...(env.audience === 'delivery' ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE } : {}),
-      mediaAssets,
-    }),
-  }));
+      mediaAssets: media.byId,
+    });
+    return {
+      row,
+      data: env.seo
+        ? resolveSeoFields(
+            env,
+            { defaults: env.seo, image: media.seoImage },
+            model,
+            policy,
+            fields,
+            row,
+            data,
+          )
+        : data,
+    };
+  });
 };

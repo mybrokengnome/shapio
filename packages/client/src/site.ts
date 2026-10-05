@@ -1,16 +1,23 @@
 import { SITE_HEADER } from './admin/sites.js';
 import { DELIVERY_PATH } from './delivery.js';
+import { DELIVERY_SITE_PATH } from './siteDelivery.js';
 import { SNAPSHOT_PATHS } from './snapshots.js';
 
 /** Delivery reads name their site with `?site=`; everything else with the `Shapio-Site` header. */
 export const SITE_QUERY_PARAMETER = 'site';
 
-/** Delivery reads (content and snapshots): a GET there carries the site in its URL. */
-const DELIVERY_READ_PREFIXES = [`${DELIVERY_PATH}/`, `${DELIVERY_PATH}?`, '/api/snapshots/'] as const;
+/** Delivery reads (content, snapshots, the site): a GET there carries the site in its URL. */
+const DELIVERY_READ_PREFIXES = [
+  `${DELIVERY_PATH}/`,
+  `${DELIVERY_PATH}?`,
+  '/api/snapshots/',
+  `${DELIVERY_SITE_PATH}?`,
+] as const;
 
 const isDeliveryRead = (method: string, path: string) =>
   method === 'GET' &&
   (path === DELIVERY_PATH ||
+    path === DELIVERY_SITE_PATH ||
     Object.values(SNAPSHOT_PATHS).some((snapshotPath) => path === snapshotPath) ||
     DELIVERY_READ_PREFIXES.some((prefix) => path.startsWith(prefix)));
 

@@ -26,6 +26,11 @@
       "@shapio/source": "./src/html.ts",
       "types": "./dist/html.d.ts",
       "default": "./dist/html.js"
+    },
+    "./seo": {
+      "@shapio/source": "./src/seoResolve.ts",
+      "types": "./dist/seoResolve.d.ts",
+      "default": "./dist/seoResolve.js"
     }
   },
   "files": [

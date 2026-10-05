@@ -24,14 +24,24 @@ const INITIAL_SETTINGS: Partial<Record<DataType, Record<string, JsonValue>>> = {
 /** A new field with Shapio's defaults (public, optional, default editor), normalized like the server does. */
 export const createField = (
   definition: SchemaDefinition,
-  input: { type: DataType; label: string; apiKey: string },
+  input: {
+    type: DataType;
+    label: string;
+    apiKey: string;
+    /** Replaces the type's initial settings (defaults still apply to what's left out). */
+    settings?: Record<string, JsonValue>;
+    editorId?: string;
+    localized?: boolean;
+  },
 ): FieldDefinition => {
   const raw = {
     id: newStableId(),
     apiKey: input.apiKey,
     label: input.label,
     type: input.type,
-    settings: INITIAL_SETTINGS[input.type] ?? {},
+    settings: input.settings ?? INITIAL_SETTINGS[input.type] ?? {},
+    ...(input.editorId === undefined ? {} : { editor: { id: input.editorId } }),
+    ...(input.localized === undefined ? {} : { localized: input.localized }),
   };
   const normalized = renormalizeDefinition({
     ...definition,

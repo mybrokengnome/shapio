@@ -38,6 +38,8 @@ describe('per-site schema migration', () => {
       ),
     ).rejects.toThrow();
 
+    // Later migrations first, so the next step down is the site-scope migration itself.
+    expect((await migrator.migrateTo(SITE_SCOPE)).error).toBeUndefined();
     const refused = await migrator.migrateDown();
     expect(refused.error).toBeDefined();
     expect(String(refused.error)).toContain('definitions belong to a site');

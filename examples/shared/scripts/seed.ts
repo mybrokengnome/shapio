@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import {
   buildUploadForm,
+  SEO_COMPONENT_ID,
   ShapioApiError,
   type MediaAsset,
   type SchemaApplyInput,
@@ -15,6 +16,7 @@ import {
   AUTHOR,
   entries,
   IMAGES,
+  seoDefaults,
   SITE_SETTINGS,
   type EntrySpec,
   type ImageSpec,
@@ -29,8 +31,9 @@ import { createPng } from './lib/png.js';
  * 2. the models and components in shapio/ through the schema apply API (live, no restart; the same planner
  *    as `shapio schema apply` and the admin), as the site's own (SHAPIO_SITE, else the token's site, else the
  *    primary): a starter's schema belongs to the first site it is seeded on;
+ *    The built-in SEO component (components/seo.json) is the exception: it is always shared with every site;
  * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
- *    per locale;
+ *    per locale, and the site's SEO defaults (Settings → SEO);
  * 4. a deployment connection named "Preview" whose preview URL opens this starter's /preview/ page (the
  *    entry document's Preview pane and visual editing; it triggers no builds). The site's URL is SITE_URL, else
  *    the starter's `--site-url` (its local dev server);
@@ -50,6 +53,8 @@ const PREVIEW_PATH = '/preview/?model={modelKey}&id={entryId}&locale={locale}#to
 /** A placeholder build hook: the connection has no triggers, so nothing is ever sent to it. */
 const PREVIEW_BUILD_HOOK = 'https://build.invalid/shapio-starter';
 const REVALIDATE_WEBHOOK_NAME = 'Site revalidation';
+/** The request's site's SEO defaults (`site.settings`). */
+const SEO_DEFAULTS_PATH = '/api/admin/site/seo';
 /** The events that change what a published site shows (the starter's route ignores any others). */
 const REVALIDATE_EVENTS = [
   'entry.published',
@@ -58,6 +63,8 @@ const REVALIDATE_EVENTS = [
   'change_set.shipped',
   'schema.activated',
   'schema.deleted',
+  // The site's SEO defaults changed: every page's head shows them.
+  'site.updated',
 ];
 /** A local site needs Shapio's OUTBOUND_PRIVATE_NETWORK_ALLOWLIST too; the webhook opts in for loopback only. */
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -129,8 +136,11 @@ const applySchema = async (client: ShapioClient) => {
   try {
     response = await client.admin.schema.apply({
       definitions,
-      // Every definition is the site's own (sites/<key>/ in a pulled tree), never shared by default.
-      scopes: definitions.map(() => 'site' as const),
+      // Every definition is the site's own (sites/<key>/ in a pulled tree), never shared by default, except
+      // the built-in SEO component: Shapio knows it by its fixed ID, so one shared copy serves every site.
+      scopes: definitions.map((definition) =>
+        (definition as { id?: unknown }).id === SEO_COMPONENT_ID ? ('network' as const) : ('site' as const),
+      ),
       base: FIRST_APPLY_BASE,
       prune: false,
       dryRun: false,
@@ -143,7 +153,8 @@ const applySchema = async (client: ShapioClient) => {
         "This starter's schema already belongs to another site of this instance: a starter's schema belongs " +
           'to the first site it is seeded on. To reuse it on this site, share it with all sites ' +
           'with a network admin token (`shapio schema scope <apiKey> --shared --site <that site>` for each ' +
-          'component, then author, page, article and siteSettings) and seed again, or seed a separate instance.',
+          'component, then author, page, article and siteSettings) and seed again, or seed a separate instance. ' +
+          'The SEO component is always shared; a site that keeps its own copy of it blocks the others.',
         { cause: error },
       );
     }
@@ -257,6 +268,16 @@ const ensureSiteSettings = async (client: ShapioClient) => {
   });
   await client.admin.content.publish('siteSettings', id, { locales: ['en', 'fr'] });
   log('Published siteSettings (en, fr)');
+};
+
+/** The site's SEO defaults: the texts per locale, the default social image and the Twitter handle. */
+const ensureSeoDefaults = async (client: ShapioClient, media: MediaIds) => {
+  const current = await client.request<{ version: number }>(SEO_DEFAULTS_PATH);
+  await client.request(SEO_DEFAULTS_PATH, {
+    method: 'PUT',
+    body: { expectedVersion: current.version, seo: seoDefaults(media) },
+  });
+  log('Set the SEO defaults (en, fr)');
 };
 
 const upsertEntry = async (client: ShapioClient, spec: EntrySpec) => {
@@ -413,6 +434,7 @@ const main = async () => {
     await applySchema(admin.client);
     const media = await ensureMedia(admin.client);
     await ensureSiteSettings(admin.client);
+    await ensureSeoDefaults(admin.client, media);
     const authorId = await ensureAuthor(admin.client, media.avatar);
     for (const spec of entries(media, authorId)) {
       await upsertEntry(admin.client, spec);

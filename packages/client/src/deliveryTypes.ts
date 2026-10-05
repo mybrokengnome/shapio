@@ -10,16 +10,24 @@ import type { ContentListQuery } from './admin/contentTypes.js';
  */
 export type RichTextMode = 'json' | 'html' | 'both';
 
+/**
+ * How SEO fields come back: `raw` (the default) as stored, `resolved` merged with the site's SEO defaults
+ * (`SeoResolved`). `resolved` needs an SEO field on the model; a pinned snapshot uses today's defaults.
+ */
+export type SeoMode = 'raw' | 'resolved';
+
 export type DeliveryListQuery = Omit<ContentListQuery, 'status' | 'author'> & {
   /** Read the publication snapshot N (`GET /api/snapshots/current` gives the newest) instead of now. */
   snapshot?: number;
   /** The shape of rich-text fields (`json` when absent). */
   richText?: RichTextMode;
+  /** SEO fields as stored or with the site's defaults (`raw` when absent). */
+  seo?: SeoMode;
 };
 
 export type DeliveryGetQuery = Pick<
   DeliveryListQuery,
-  'locale' | 'fields' | 'populate' | 'snapshot' | 'richText'
+  'locale' | 'fields' | 'populate' | 'snapshot' | 'richText' | 'seo'
 >;
 
 export type DeliveryMeta = { locale: string; snapshot: number };

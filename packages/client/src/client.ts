@@ -2,6 +2,7 @@ import { createAdminApi } from './admin/index.js';
 import { createAppAuthApi } from './appAuth/index.js';
 import { createDeliveryApi } from './delivery.js';
 import { createRequest, type FetchCredentials } from './request.js';
+import { createSiteApi } from './siteDelivery.js';
 import { createSnapshotsApi } from './snapshots.js';
 import type { HealthResponse, ReadyResponse, VersionResponse } from './types.js';
 
@@ -48,6 +49,8 @@ export const createClient = ({
     },
     /** Published content (the delivery API), typed by the caller. */
     delivery: createDeliveryApi(request),
+    /** The site as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
+    site: createSiteApi(request),
     admin: createAdminApi(request),
     /** Publication snapshots and the diff between two (incremental builds). */
     snapshots: createSnapshotsApi(request),

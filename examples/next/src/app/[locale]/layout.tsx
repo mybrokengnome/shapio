@@ -27,10 +27,14 @@ export const generateStaticParams = () => LOCALES.map((locale) => ({ locale }));
 
 type LocaleParams = { params: Promise<{ locale: string }> };
 
+/**
+ * The fallback title and the icon. Every page sets its own complete title (`title.absolute`, already through
+ * the site's title template from Shapio's SEO defaults), so this layout applies no template of its own.
+ */
 export const generateMetadata = async ({ params }: LocaleParams): Promise<Metadata> => {
   const locale = toLocale((await params).locale);
   const siteName = (await getSiteSettings(locale))?.siteName ?? stringsFor(locale).siteName;
-  return { title: { template: `%s · ${siteName}`, default: siteName }, icons: '/favicon.svg' };
+  return { title: siteName, icons: '/favicon.svg' };
 };
 
 type LocaleLayoutProps = LocaleParams & { children: ReactNode };

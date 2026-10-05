@@ -18,7 +18,12 @@ Each starter has:
   `/en/colophon/`;
 - English and French, with a language switch;
 - responsive images from the WebP variants Shapio renders;
-- one pinned publication snapshot per build, and the site key for multi-site instances (below).
+- one pinned publication snapshot per build, and the site key for multi-site instances (below);
+- [SEO fields](seo.md) on pages and articles: each page's `<head>` has its title through the site's title
+  template, the description, Open Graph and Twitter tags (the cover or the site's default image), `robots` when
+  the entry hides itself from search engines, and, with `SITE_URL`, the canonical URL. Entries are read with
+  `seo=resolved`; pages without an entry use the site's SEO defaults (`client.site.get()`). The seed sets those
+  defaults (Settings → SEO) in English and French.
 
 All three have draft preview at `/preview/` with [visual editing](visual-editing.md): in the admin's preview
 pane, clicking the title, body or cover focuses that field, and saves re-render the page. The Astro starter also
@@ -70,6 +75,7 @@ Every starter reads its settings from the environment, or from `.env` (`.env.exa
 | `PUBLIC_SHAPIO_URL`      | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
 | `NEXT_PUBLIC_SHAPIO_URL` | Next.js, optional: the same, inlined into the client bundle at build time                    |
 | `SHAPIO_WEBHOOK_SECRET`  | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
+| `SITE_URL`               | optional: the site's public origin; pages then carry a canonical URL and `og:url`            |
 
 ### Pinned snapshots
 

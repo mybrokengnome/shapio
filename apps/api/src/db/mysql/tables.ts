@@ -1091,8 +1091,8 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
   sites: {
     primaryKey: ['id'],
     generated: { id: 'uuid' },
-    columns: ['id', 'key', 'name', 'is_primary', 'version', 'created_at', 'updated_at'],
-    nullable: [],
+    columns: ['id', 'key', 'name', 'is_primary', 'version', 'created_at', 'updated_at', 'seo_defaults'],
+    nullable: ['seo_defaults'],
     timestamps: ['created_at', 'updated_at'],
     uniqueKeys: [
       { name: 'sites_key_key', columns: ['key'] },

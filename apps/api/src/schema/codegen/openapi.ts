@@ -3,6 +3,7 @@ import {
   DECIMAL_PATTERN,
   isComponentDefinition,
   isModelDefinition,
+  isSeoField,
   routeKeyOf,
   TIME_PATTERN,
   toTypeName,
@@ -11,8 +12,14 @@ import {
   type SchemaDefinition,
 } from '@shapio/schema';
 import { operatorsFor } from '../../content/compiler/operators.js';
-import { DEFAULT_RICH_TEXT_MODE, QUERY_LIMITS, RICH_TEXT_MODES } from '../../content/compiler/types.js';
+import {
+  DEFAULT_RICH_TEXT_MODE,
+  QUERY_LIMITS,
+  RICH_TEXT_MODES,
+  SEO_MODES,
+} from '../../content/compiler/types.js';
 import type { SchemaSnapshot } from '../snapshot.js';
+import { sitePaths, SITE_TAG } from './openapiSite.js';
 import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
 
 /**
@@ -259,10 +266,24 @@ const listParameters = (model: ModelDefinition, delivery: boolean) => [
     schema: { type: 'integer', minimum: 1, maximum: QUERY_LIMITS.maxPageSize },
   },
   { name: 'q', in: 'query', schema: { type: 'string' }, description: 'Search the title field' },
-  ...itemParameters(delivery),
+  ...itemParameters(model, delivery),
 ];
 
-const itemParameters = (delivery: boolean) => [
+/** `?seo=` is offered where it works: delivery reads of a model with an SEO field. */
+const seoParameters = (model: ModelDefinition) =>
+  model.fields.some((field) => !field.deprecated && isSeoField(field))
+    ? [
+        {
+          name: 'seo',
+          in: 'query',
+          schema: { type: 'string', enum: [...SEO_MODES], default: 'raw' },
+          description:
+            "SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults.",
+        },
+      ]
+    : [];
+
+const itemParameters = (model: ModelDefinition, delivery: boolean) => [
   {
     name: 'fields',
     in: 'query',
@@ -295,6 +316,7 @@ const itemParameters = (delivery: boolean) => [
           schema: { type: 'string', enum: [...RICH_TEXT_MODES], default: DEFAULT_RICH_TEXT_MODE },
           description: 'Rich-text shape: the JSON document, sanitized HTML rendered from it, or both',
         },
+        ...seoParameters(model),
       ]
     : []),
 ];
@@ -332,7 +354,7 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
         tags: [tag],
         summary: single ? `Read the published ${model.label}` : `List published ${model.label} entries`,
         operationId: `list${name}`,
-        parameters: single ? itemParameters(true) : listParameters(model, true),
+        parameters: single ? itemParameters(model, true) : listParameters(model, true),
         responses: {
           '200': json({
             type: 'object',
@@ -350,7 +372,7 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
         tags: [tag],
         summary: `Read one published ${model.label} entry`,
         operationId: `get${name}`,
-        parameters: [idParameter, ...itemParameters(true)],
+        parameters: [idParameter, ...itemParameters(model, true)],
         responses: {
           '200': json({ type: 'object', properties: { data: ref(name), meta } }),
           '304': { description: 'Not modified' },
@@ -525,8 +547,9 @@ export const generateOpenApi = (
         description: model.description ?? `${model.kind} \`${model.apiKey}\``,
       })),
       SNAPSHOTS_TAG,
+      SITE_TAG,
     ],
-    paths: Object.assign({}, ...models.map(modelPaths), snapshotPaths()),
+    paths: Object.assign({}, ...models.map(modelPaths), snapshotPaths(), sitePaths()),
     components: {
       schemas,
       securitySchemes: {

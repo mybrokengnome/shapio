@@ -5,7 +5,8 @@ import { parseArgs } from 'node:util';
  * `npm run smoke`, after `npm run seed`, `npm run build` and starting the built site (`npm run start` or
  * `npm run preview`): fetches the site's pages over HTTP and checks the seeded content in English and French,
  * the site settings singleton, rich text, media variants and the author, that the draft article is not
- * served, that content carries the visual-editing attributes (@shapio/visual's `shapioAttr`), and that the
+ * served, that content carries the visual-editing attributes (@shapio/visual's `shapioAttr`), that pages carry
+ * their SEO tags (the entry's SEO fields with the site's defaults: title template, Open Graph, Twitter), and that the
  * preview page is served with a `frame-ancestors` policy. The same checks run against every starter, so all
  * three render the same blog.
  *
@@ -28,6 +29,9 @@ const PAGES: readonly PageCheck[] = [
       ['.webp', 'responsive image variants'],
       ['Northwind Studio', 'site name from the siteSettings singleton'],
       ['Built with Shapio', 'footer from the siteSettings singleton'],
+      ['<title>Home · Northwind Studio</title>', 'title through the SEO title template'],
+      ['property="og:image"', 'og:image (the default social image)'],
+      ['name="twitter:site" content="@northwindstudio"', 'twitter:site from the SEO defaults'],
     ],
   },
   {
@@ -36,6 +40,7 @@ const PAGES: readonly PageCheck[] = [
       ['Un contenu qui évolue aussi vite que votre produit', 'hero heading'],
       ['lang="fr"', 'lang="fr"'],
       ['Studio Northwind', 'site name from the siteSettings singleton'],
+      ['<title>Accueil · Studio Northwind</title>', 'title through the French SEO title template'],
     ],
   },
   {
@@ -43,6 +48,7 @@ const PAGES: readonly PageCheck[] = [
     expect: [
       ['Modelling content without a deploy', 'article list'],
       ['Why our builds pin a snapshot', 'second article'],
+      ['<title>Journal · Northwind Studio</title>', 'a page without an entry: title through the template'],
     ],
   },
   {
@@ -55,6 +61,10 @@ const PAGES: readonly PageCheck[] = [
       ['data-shapio-entry="', 'visual-editing entry attribute'],
       ['data-shapio-path="title"', 'visual-editing attribute on the title'],
       ['data-shapio-path="body"', 'visual-editing attribute on the body'],
+      ['<title>Modelling content without a deploy · Northwind Studio</title>', 'SEO title (resolved)'],
+      ['property="og:type" content="article"', 'og:type article'],
+      ['Nothing restarted.', 'SEO description from the entry'],
+      ['name="twitter:card" content="summary_large_image"', 'twitter:card with the cover image'],
     ],
   },
   { path: `/fr/articles/${ARTICLE}/`, expect: [['Modéliser du contenu sans déploiement', 'title']] },

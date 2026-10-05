@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
 import { RichText } from '../../../components/RichText';
+import { pageMetadata } from '../../../lib/metadata';
 import { getSiteSettings } from '../../../lib/shapio';
-import { stringsFor, toLocale } from '../../../lib/site';
+import { colophonPath, stringsFor, toLocale } from '../../../lib/site';
 
 type ColophonParams = { params: Promise<{ locale: string }> };
 
-export const generateMetadata = async ({ params }: ColophonParams): Promise<Metadata> => ({
-  title: stringsFor(toLocale((await params).locale)).colophon,
-});
+export const generateMetadata = async ({ params }: ColophonParams): Promise<Metadata> => {
+  const locale = toLocale((await params).locale);
+  return pageMetadata({ title: stringsFor(locale).colophon, locale, path: colophonPath(locale) });
+};
 
 /** The singleton page: the siteSettings entry's colophon, one per locale. */
 const ColophonPage = async ({ params }: ColophonParams) => {

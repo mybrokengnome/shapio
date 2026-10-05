@@ -55,6 +55,8 @@ export type ContentQuery = {
   snapshot: number | undefined;
   /** Delivery and preview only: how rich-text values are returned (`?richText=`); undefined on admin reads. */
   richText?: RichTextMode;
+  /** Delivery and preview only: SEO fields as stored (`raw`, the default) or with the site's defaults (`?seo=`). */
+  seo?: SeoMode;
   /** Admin list only: entries whose draft in the served locale has this status. */
   status?: EntryListStatus;
   /** Admin list only: entries created by this admin user. */
@@ -71,6 +73,10 @@ export type RichTextMode = (typeof RICH_TEXT_MODES)[number];
 
 /** What a delivery read returns for rich text when the request does not say (`?richText=`). */
 export const DEFAULT_RICH_TEXT_MODE: RichTextMode = 'json';
+
+/** `?seo=`: SEO fields as stored, or merged with the site's SEO defaults (plan seo-fields). */
+export const SEO_MODES = ['raw', 'resolved'] as const;
+export type SeoMode = (typeof SEO_MODES)[number];
 
 export const ENTRY_LIST_STATUSES = ['draft', 'published', 'modified'] as const;
 export type EntryListStatus = (typeof ENTRY_LIST_STATUSES)[number];

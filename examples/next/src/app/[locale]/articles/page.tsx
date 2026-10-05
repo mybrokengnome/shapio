@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
 import { ArticleCard } from '../../../components/ArticleCard';
+import { pageMetadata } from '../../../lib/metadata';
 import { listArticles } from '../../../lib/shapio';
-import { stringsFor, toLocale } from '../../../lib/site';
+import { articlesPath, stringsFor, toLocale } from '../../../lib/site';
 
 type ArticlesParams = { params: Promise<{ locale: string }> };
 
-export const generateMetadata = async ({ params }: ArticlesParams): Promise<Metadata> => ({
-  title: stringsFor(toLocale((await params).locale)).articles,
-});
+export const generateMetadata = async ({ params }: ArticlesParams): Promise<Metadata> => {
+  const locale = toLocale((await params).locale);
+  return pageMetadata({ title: stringsFor(locale).articles, locale, path: articlesPath(locale) });
+};
 
 const ArticlesPage = async ({ params }: ArticlesParams) => {
   const locale = toLocale((await params).locale);

@@ -1,4 +1,6 @@
 import { Type, type TSchema } from 'typebox';
+import { isSeoField } from '../seo/field.js';
+import { SEO_EDITOR_ID } from '../seo/ids.js';
 import type { DataType } from '../types/dataTypes.js';
 import type { FieldDefinition } from '../types/definitions.js';
 
@@ -139,6 +141,13 @@ const entries: EditorCatalogueEntry[] = [
     id: 'componentEditor',
     dataTypes: ['component'],
     optionsSchema: Type.Object({ collapsed: Type.Optional(Type.Boolean()) }, closed),
+  },
+  {
+    // The built-in SEO component's editor: its fields with length counters and a search-result preview.
+    id: SEO_EDITOR_ID,
+    dataTypes: ['component'],
+    optionsSchema: Type.Object({}, closed),
+    supports: isSeoField,
   },
   {
     id: 'dynamicZoneEditor',

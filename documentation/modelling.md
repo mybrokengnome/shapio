@@ -89,6 +89,10 @@ Custom editors from your project can be chosen for any compatible field ([Extens
 Display settings choose the title field (labels in lists and pickers), the list columns, the default sort and
 the sections of the entry form.
 
+**SEO fields** are one click away: **Add field → SEO fields** adds the built-in, shared SEO component (title,
+description, social image, canonical URL, noindex), with per-site defaults and a resolved form in the delivery
+API ([SEO fields](seo.md)).
+
 ## New fields are live, and public by default
 
 A new field appears in the admin form, the REST and GraphQL APIs, the OpenAPI document and the generated

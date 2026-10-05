@@ -1,15 +1,14 @@
 import type { FieldDefinition, ValidationIssue } from '@shapio/schema';
-import { Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { moveItem } from '../../helpers/draft';
 import { fieldPath, issuesUnder } from '../../helpers/issues';
 import { IssueList } from '../controls/IssueList';
-import { ADD_FIELD_BUTTON_ID } from '../hooks/useNewField';
+import type { useAddSeoField } from '../hooks/useAddSeoField';
+import { AddFieldButton } from './AddFieldButton';
 import { handleIdOf } from './handleId';
 import { Row } from './Row';
 
@@ -17,12 +16,14 @@ type FieldListProps = {
   issues: readonly ValidationIssue[];
   disabled: boolean;
   onAdd: () => void;
+  /** "Add field → SEO fields" (models only). */
+  seo?: ReturnType<typeof useAddSeoField>;
 };
 
 const NO_FIELDS: FieldDefinition[] = [];
 
 /** The draft's fields in order: select one to edit it, reorder by drag, arrow keys or chevrons. */
-export const FieldList = ({ issues, disabled, onAdd }: FieldListProps) => {
+export const FieldList = ({ issues, disabled, onAdd, seo }: FieldListProps) => {
   const { t } = useTranslation();
   const fields = useDefinitionDraftStore((state) => state.draft?.fields ?? NO_FIELDS);
   const localized = useDefinitionDraftStore(
@@ -63,10 +64,7 @@ export const FieldList = ({ issues, disabled, onAdd }: FieldListProps) => {
           <Badge variant="secondary" aria-hidden="true">
             {fields.length}
           </Badge>
-          <Button id={ADD_FIELD_BUTTON_ID} type="button" size="sm" onClick={onAdd} disabled={disabled}>
-            <Plus aria-hidden="true" />
-            {t('models.builder.addField')}
-          </Button>
+          <AddFieldButton disabled={disabled} onAdd={onAdd} seo={seo} />
         </>
       }
       bodyClassName="p-2"

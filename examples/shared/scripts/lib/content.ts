@@ -448,15 +448,56 @@ export type EntrySpec = {
   publish: boolean;
 };
 
+/**
+ * The SEO fields of one locale (the built-in `seo` component, per locale): a page describes itself with its
+ * description, an article with its excerpt and its cover (a shared field, so it comes from the English data).
+ * The title stays empty: `?seo=resolved` falls back to the entry's own title, through the site's template.
+ */
+const seoOf = (data: Record<string, unknown>, shared: Record<string, unknown>) => ({
+  description: data.excerpt ?? data.description ?? null,
+  image: shared.cover ?? null,
+});
+
+const withSeo = (content: Localized<Record<string, unknown>>): Localized<Record<string, unknown>> => ({
+  en: { ...content.en, seo: seoOf(content.en, content.en) },
+  fr: { ...content.fr, seo: seoOf(content.fr, content.en) },
+});
+
 export const entries = (media: MediaIds, authorId: string): EntrySpec[] => [
-  { model: 'page', slug: 'home', content: home(media), publish: true },
-  { model: 'page', slug: 'about', content: about(), publish: true },
+  { model: 'page', slug: 'home', content: withSeo(home(media)), publish: true },
+  { model: 'page', slug: 'about', content: withSeo(about()), publish: true },
   {
     model: 'article',
     slug: 'modelling-without-a-deploy',
-    content: modelling(media, authorId),
+    content: withSeo(modelling(media, authorId)),
     publish: true,
   },
-  { model: 'article', slug: 'why-builds-pin-a-snapshot', content: snapshots(media, authorId), publish: true },
-  { model: 'article', slug: 'winter-projects', content: draft(media, authorId), publish: false },
+  {
+    model: 'article',
+    slug: 'why-builds-pin-a-snapshot',
+    content: withSeo(snapshots(media, authorId)),
+    publish: true,
+  },
+  { model: 'article', slug: 'winter-projects', content: withSeo(draft(media, authorId)), publish: false },
 ];
+
+/**
+ * The site's SEO defaults (Settings → SEO; `PUT /api/admin/site/seo`): the name and template match the
+ * siteSettings singleton's site name, the description its tagline; the hero image is the default social image.
+ */
+export const seoDefaults = (media: MediaIds) => ({
+  locales: {
+    en: {
+      siteName: String(SITE_SETTINGS.en.siteName),
+      titleTemplate: `%s · ${String(SITE_SETTINGS.en.siteName)}`,
+      description: String(SITE_SETTINGS.en.tagline),
+    },
+    fr: {
+      siteName: String(SITE_SETTINGS.fr.siteName),
+      titleTemplate: `%s · ${String(SITE_SETTINGS.fr.siteName)}`,
+      description: String(SITE_SETTINGS.fr.tagline),
+    },
+  },
+  imageId: media.hero,
+  twitterHandle: '@northwindstudio',
+});

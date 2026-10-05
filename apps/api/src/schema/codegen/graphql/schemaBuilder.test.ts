@@ -14,6 +14,7 @@ import {
   isSpecifiedScalarType,
   printSchema,
   type GraphQLInputObjectType,
+  type GraphQLObjectType,
 } from 'graphql';
 import { describe, expect, it } from 'vitest';
 import { operatorsFor } from '../../../content/compiler/operators.js';
@@ -64,9 +65,18 @@ const page = define({
   kind: 'collection',
   apiKey: 'page',
   label: 'Page',
+  description: 'A page of the site',
   localized: true,
   fields: [
-    { id: uuid(41), apiKey: 'title', label: 'Title', type: 'string', filterable: true, sortable: true },
+    {
+      id: uuid(41),
+      apiKey: 'title',
+      label: 'Title',
+      description: 'Shown in the browser tab',
+      type: 'string',
+      filterable: true,
+      sortable: true,
+    },
     { id: uuid(42), apiKey: 'body', label: 'Body', type: 'richtext' },
     { id: uuid(43), apiKey: 'views', label: 'Views', type: 'integer', sortable: true },
     { id: uuid(44), apiKey: 'score', label: 'Score', type: 'number' },
@@ -176,6 +186,7 @@ describe('buildGraphqlSchema', () => {
       '_schemaVersion',
       '_changes',
       '_snapshot',
+      '_site',
     ]);
   });
 
@@ -233,6 +244,20 @@ describe('buildGraphqlSchema', () => {
     expect(sdl).toContain('name: String\n');
   });
 
+  it('describes types and fields with their labels and help text (GraphiQL docs)', () => {
+    const pageType = schema.getType('Page') as GraphQLObjectType;
+    expect(pageType.description).toBe('Page\n\nA page of the site');
+    expect(pageType.getFields().title?.description).toBe('Title\n\nShown in the browser tab');
+    expect(pageType.getFields().views?.description).toBe('Views');
+    expect((schema.getType('Hero') as GraphQLObjectType).description).toBe('Hero');
+    expect((schema.getType('Hero') as GraphQLObjectType).getFields().heading?.description).toBe('Heading');
+    const filter = schema.getType('PageFilter') as GraphQLInputObjectType;
+    expect(filter.getFields().title?.description).toBe('Title\n\nShown in the browser tab');
+    expect(printSchema(schema)).toContain(
+      '"""\n  Title\n  \n  Shown in the browser tab\n  """\n  title: String',
+    );
+  });
+
   it('builds an empty schema before the first model exists', () => {
     const empty = buildGraphqlSchema(buildSnapshot(0, [], [])).schema;
     expect(() => assertValidSchema(empty)).not.toThrow();
@@ -240,6 +265,7 @@ describe('buildGraphqlSchema', () => {
       '_schemaVersion',
       '_changes',
       '_snapshot',
+      '_site',
     ]);
     expect(empty.getMutationType()).toBeUndefined();
   });

@@ -20,6 +20,7 @@ describe('the site option', () => {
     await client.delivery.get('articles', 'a1');
     await client.snapshots.current();
     await client.snapshots.changes({ from: 1 });
+    await client.site.get();
     await client.request('/api/content/articles', { method: 'POST', body: { data: {} } });
     await client.request('/api/graphql', { method: 'POST', body: { query: '{ _snapshot { snapshot } }' } });
     await client.admin.sites.list();
@@ -30,14 +31,15 @@ describe('the site option', () => {
       'https://cms.test/cms/api/content/articles/a1?site=marketing',
       'https://cms.test/cms/api/snapshots/current?site=marketing',
       'https://cms.test/cms/api/snapshots/changes?from=1&site=marketing',
+      'https://cms.test/cms/api/site?site=marketing',
       'https://cms.test/cms/api/content/articles',
       'https://cms.test/cms/api/graphql',
       'https://cms.test/cms/api/admin/sites',
     ]);
-    for (const call of calls.slice(0, 4)) {
+    for (const call of calls.slice(0, 5)) {
       expect(call.headers).not.toHaveProperty('shapio-site');
     }
-    for (const call of calls.slice(4)) {
+    for (const call of calls.slice(5)) {
       expect(call.headers).toMatchObject({ 'shapio-site': 'marketing' });
     }
   });

@@ -4,6 +4,7 @@ import {
   SHAPIO_SITE,
   SHAPIO_SNAPSHOT,
   SHAPIO_URL,
+  SITE_URL,
 } from '$app/env/private';
 
 /**
@@ -15,6 +16,8 @@ import {
  *   snapshot when prerendering starts, so every page shows the same moment.
  * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
  * - PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL).
+ * - SITE_URL: optional; this site's public origin, e.g. https://www.example.com. Pages then carry a canonical
+ *   URL (and `og:url`) unless the entry sets its own.
  */
 export const shapioUrl = () => SHAPIO_URL ?? 'http://localhost:4300';
 
@@ -44,3 +47,5 @@ export const configuredSnapshot = (): number | undefined => {
   }
   return snapshot;
 };
+
+export const siteUrl = () => SITE_URL;

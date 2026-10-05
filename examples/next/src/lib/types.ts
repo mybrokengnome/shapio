@@ -1,3 +1,5 @@
+import type { SeoResolved } from '@shapio/client';
+
 /**
  * Content as the Shapio delivery API returns it for the starter's models (shapio/). Delivery
  * entries are flat: system attributes next to the fields, keyed by API key. Media fields are asset views,
@@ -62,6 +64,8 @@ export type Page = EntryBase & {
   slug: string;
   description: string | null;
   sections: Section[];
+  /** The built-in SEO fields, read with `seo=resolved` (the site's defaults filled in). */
+  seo: SeoResolved;
 };
 
 export type Author = EntryBase & { name: string; bio: string | null; avatar: Media | null };
@@ -75,6 +79,8 @@ export type Article = EntryBase & {
   /** Populated (`populate=author`) or just the ID; null when the author is not published. */
   author: Author | string | null;
   publishedOn: string;
+  /** The built-in SEO fields, read with `seo=resolved` (the site's defaults filled in). */
+  seo: SeoResolved;
 };
 
 /** The `siteSettings` singleton: one entry per site, read by its API ID. */

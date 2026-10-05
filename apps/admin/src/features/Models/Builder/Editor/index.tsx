@@ -23,6 +23,7 @@ import { Scope } from '../DefinitionPanel/Scope';
 import { FieldList } from '../FieldList';
 import { FieldPanel } from '../FieldPanel';
 import { Header } from '../Header';
+import { useAddSeoField } from '../hooks/useAddSeoField';
 import { useDraftIssues } from '../hooks/useDraftIssues';
 import { useIsDraftDirty } from '../hooks/useIsDraftDirty';
 import { useNewField } from '../hooks/useNewField';
@@ -58,6 +59,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const { multiSite } = useSchemaScopeAccess();
   const deleteDefinition = useDeleteDefinition();
   const newField = useNewField();
+  const seoField = useAddSeoField();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dismissedChangeId, setDismissedChangeId] = useState<string | undefined>(undefined);
   const [scopeConflict, setScopeConflict] = useState(false);
@@ -164,7 +166,12 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       <div className="grid min-w-0 gap-6 xl:grid-cols-[22.5rem_minmax(0,1fr)] xl:items-start">
         <div className="min-w-0 space-y-6">
           <ModelSettings issues={issues} disabled={editingDisabled} scopeSection={scopeSection} />
-          <FieldList issues={issues} disabled={editingDisabled} onAdd={newField.add} />
+          <FieldList
+            issues={issues}
+            disabled={editingDisabled}
+            onAdd={newField.add}
+            seo={draft.kind === 'component' ? undefined : seoField}
+          />
         </div>
         {field ? (
           <FieldPanel

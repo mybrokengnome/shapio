@@ -118,6 +118,9 @@ curl -X PUT "$SHAPIO_URL/api/admin/models/<model id>/scope?site=blog" -H "Author
   -H 'Content-Type: application/json' -d '{"scope":"network","version":4}'
 ```
 
+The built-in SEO component is always shared with all sites; each site keeps its own SEO defaults
+([SEO fields](seo.md)).
+
 `GET /api/admin/auth/me` reports `siteCount` (how many sites the instance has) and lists `schema.create` in
 `sitePermissions` when a role on the site grants it there; `networkPermissions` lists it only when a role on
 every site does, which is what creating shared types needs. From the command line, `shapio schema scope` does

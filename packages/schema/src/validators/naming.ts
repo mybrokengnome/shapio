@@ -99,6 +99,10 @@ export const RESERVED_TYPE_NAMES: readonly string[] = [
   'SnapshotChangeLocale',
   'SnapshotChangePage',
   'SnapshotInfo',
+  // The site and its SEO defaults (`_site`).
+  'SiteInfo',
+  'SiteSeoDefaults',
+  'SiteSeoLocale',
 ];
 
 /**
@@ -133,7 +137,7 @@ export const RESERVED_FIELD_API_KEYS: readonly string[] = [
  * Root query fields every GraphQL schema has, whatever models exist. Compared case-folded. The first is the
  * schema version field (schemaBuilder.ts reads it by position).
  */
-export const RESERVED_QUERY_NAMES: readonly string[] = ['_schemaVersion', '_changes', '_snapshot'];
+export const RESERVED_QUERY_NAMES: readonly string[] = ['_schemaVersion', '_changes', '_snapshot', '_site'];
 
 export type NameNamespace = 'type' | 'query' | 'mutation';
 

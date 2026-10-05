@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ArticleView } from '../../../../components/ArticleView';
+import { pageMetadata } from '../../../../lib/metadata';
 import { listArticles } from '../../../../lib/shapio';
-import { stringsFor, toLocale, type Locale } from '../../../../lib/site';
+import { articlePath, stringsFor, toLocale, type Locale } from '../../../../lib/site';
 
 /**
  * Published articles only: a draft's URL is a 404. Articles published after the build render on their first
@@ -21,7 +22,15 @@ const findArticle = async (locale: Locale, slug: string) =>
 export const generateMetadata = async ({ params }: ArticleParams): Promise<Metadata> => {
   const { locale, slug } = await params;
   const article = await findArticle(toLocale(locale), slug);
-  return article ? { title: article.title, description: article.excerpt ?? undefined } : {};
+  return article
+    ? pageMetadata({
+        title: article.title,
+        seo: article.seo,
+        type: 'article',
+        locale: toLocale(locale),
+        path: articlePath(locale, article.slug),
+      })
+    : {};
 };
 
 const ArticlePage = async ({ params }: ArticleParams) => {

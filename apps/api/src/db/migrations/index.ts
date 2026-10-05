@@ -22,6 +22,7 @@ import * as widenDeploymentProviders from './20261003150000_widen_deployment_pro
 import * as createAssistRuns from './20261003160000_create_assist_runs.js';
 import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
 import * as modelsSiteScope from './20261004120000_models_site_scope.js';
+import * as siteSeoSettings from './20261004130000_site_seo_settings.js';
 import { MYSQL_MIGRATIONS } from './mysql/index.js';
 import { SQLITE_MIGRATIONS } from './sqlite/index.js';
 
@@ -53,6 +54,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261003160000_create_assist_runs': createAssistRuns,
   '20261003170000_audit_events_seq': auditEventsSeq,
   '20261004120000_models_site_scope': modelsSiteScope,
+  '20261004130000_site_seo_settings': siteSeoSettings,
 };
 
 export const staticMigrationProvider: MigrationProvider = {

@@ -1,3 +1,4 @@
+import { isSeoField, type SeoDefaults } from '@shapio/schema';
 import type { RawBuilder } from 'kysely';
 import {
   compileHeadPage,
@@ -18,6 +19,7 @@ import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import { queryConditions } from './contentReads.js';
+import { loadSeoDefaults } from './siteSeo.js';
 
 /**
  * Delivery-shaped reads (delivery, preview, GraphQL root fields) at one consistent moment (plan
@@ -33,6 +35,7 @@ export const deliveryEnvironment = (
   source: HeadSource,
   locale: string | undefined,
   richText?: RichTextMode,
+  seo?: SeoDefaults,
 ): ReadEnvironment => ({
   executor,
   snapshot: context.snapshot,
@@ -44,6 +47,7 @@ export const deliveryEnvironment = (
   locale,
   ...(context.media ? { media: context.media } : {}),
   ...(richText ? { richText } : {}),
+  ...(seo ? { seo } : {}),
 });
 
 /**
@@ -59,6 +63,8 @@ export type DeliveryRead = {
   query: ContentQuery;
   fallback: boolean;
   conditions?: readonly RawBuilder<unknown>[];
+  /** `?seo=resolved`: the site's SEO defaults (loaded by `withSeoDefaults`). */
+  seo?: SeoDefaults;
 };
 
 /** What a read saw: its environment (for projection), the rows, the page total and the publication sequence. */
@@ -71,14 +77,29 @@ type ConsistentHeads = {
 };
 
 const environmentOf = (read: DeliveryRead, executor: ReadEnvironment['executor']) =>
-  deliveryEnvironment(read.context, executor, read.source, read.query.locale, read.query.richText);
+  deliveryEnvironment(read.context, executor, read.source, read.query.locale, read.query.richText, read.seo);
 
-/** Selected top-level relation or media fields, or populate: the read will need a follow-up statement. */
+/**
+ * Selected top-level relation or media fields, populate, or a default SEO image to show: the read will need a
+ * follow-up statement.
+ */
 const followsUp = (read: DeliveryRead): boolean =>
   read.query.populate.size > 0 ||
   selectFields(read.model, read.policy.readMask, read.query.fields).some(
-    (field) => field.type === 'relation' || field.type === 'media',
+    (field) =>
+      field.type === 'relation' ||
+      field.type === 'media' ||
+      (Boolean(read.seo?.imageId) && isSeoField(field)),
   );
+
+/**
+ * Loads the site's SEO defaults when the query asks for resolved SEO. Read before the heads, outside their
+ * consistent moment: defaults are not part of a snapshot (`?snapshot=N&seo=resolved` uses today's).
+ */
+const withSeoDefaults = async (read: DeliveryRead): Promise<DeliveryRead> =>
+  read.query.seo === 'resolved'
+    ? { ...read, seo: await loadSeoDefaults(read.context.site.id, read.context.db) }
+    : read;
 
 const seqOf = (seq: number | null): number => {
   if (seq === null) {
@@ -138,10 +159,11 @@ export type EntryPage = {
  * One page of entries in the delivery shape, with the total (`total: false` skips counting: a singleton) and
  * the publication sequence it was read at. `check` runs on the sequence before anything is projected.
  */
-export const readEntryPage = (
-  read: DeliveryRead,
+export const readEntryPage = async (
+  unloaded: DeliveryRead,
   options: { total: boolean; check?: (seq: number) => void } = { total: true },
 ): Promise<EntryPage> => {
+  const read = await withSeoDefaults(unloaded);
   const { context, model, policy, query } = read;
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const sort =
@@ -166,11 +188,12 @@ export const readEntryPage = (
 };
 
 /** One entry by ID in the delivery shape (undefined when it is not there for this read), and the sequence. */
-export const readOneEntry = (
-  read: DeliveryRead,
+export const readOneEntry = async (
+  unloaded: DeliveryRead,
   id: string,
   options: { check?: (seq: number) => void } = {},
 ): Promise<{ entry: Record<string, unknown> | undefined; seq: number }> => {
+  const read = await withSeoDefaults(unloaded);
   const { context, model, policy, query } = read;
   const plan: HeadQueryPlan = {
     siteId: context.site.id,

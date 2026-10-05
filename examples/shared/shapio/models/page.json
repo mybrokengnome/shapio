@@ -83,6 +83,27 @@
       "sortable": false,
       "type": "dynamiczone",
       "unique": false
+    },
+    {
+      "apiKey": "seo",
+      "deprecated": false,
+      "editor": {
+        "id": "seoEditor",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "b7e2d1af-3c64-4f1b-8e2a-6d3c9f5a7b02",
+      "label": "SEO",
+      "localized": true,
+      "public": true,
+      "required": false,
+      "settings": {
+        "component": "f3905a00-d2a3-4c62-899a-c894bfd6cb9b",
+        "repeatable": false
+      },
+      "sortable": false,
+      "type": "component",
+      "unique": false
     }
   ],
   "id": "4c09af05-f302-4d8f-ba03-bb838d3afbd2",

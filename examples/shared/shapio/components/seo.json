@@ -1,0 +1,114 @@
+{
+  "apiKey": "seo",
+  "category": "Built-in",
+  "description": "Search and social metadata: title, description, image, canonical URL and indexing.",
+  "display": {
+    "titleFieldId": "3fe294a9-6af9-4019-8b32-43010822e45a"
+  },
+  "fields": [
+    {
+      "apiKey": "title",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "3fe294a9-6af9-4019-8b32-43010822e45a",
+      "label": "Title",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "string",
+      "unique": false
+    },
+    {
+      "apiKey": "description",
+      "deprecated": false,
+      "editor": {
+        "id": "textarea",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "6d1917f3-94a2-4391-ba1f-a98d14577b93",
+      "label": "Description",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "text",
+      "unique": false
+    },
+    {
+      "apiKey": "image",
+      "deprecated": false,
+      "editor": {
+        "id": "mediaPicker",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "d27c9354-4afc-4583-93b4-367214a7714a",
+      "label": "Social image",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "allowedKinds": [
+          "image"
+        ],
+        "multiple": false
+      },
+      "sortable": false,
+      "type": "media",
+      "unique": false
+    },
+    {
+      "apiKey": "canonical",
+      "deprecated": false,
+      "editor": {
+        "id": "textInput",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "17b374b6-cd85-444e-8403-20c7458ed29e",
+      "label": "Canonical URL",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {
+        "protocols": [
+          "https",
+          "http"
+        ]
+      },
+      "sortable": false,
+      "type": "url",
+      "unique": false
+    },
+    {
+      "apiKey": "noindex",
+      "deprecated": false,
+      "editor": {
+        "id": "toggle",
+        "options": {}
+      },
+      "filterable": false,
+      "id": "e8346f99-dc3c-4b5c-906f-4854e03c9a57",
+      "label": "Hide from search engines",
+      "localized": false,
+      "public": true,
+      "required": false,
+      "settings": {},
+      "sortable": false,
+      "type": "boolean",
+      "unique": false
+    }
+  ],
+  "icon": "search",
+  "id": "f3905a00-d2a3-4c62-899a-c894bfd6cb9b",
+  "kind": "component",
+  "label": "SEO"
+}

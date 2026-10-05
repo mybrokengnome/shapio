@@ -20,6 +20,6 @@ const { locale, article } = Astro.props;
 const context = { locale, strings: stringsFor(locale) };
 ---
 
-<Base title={article.title} description={article.excerpt} locale={locale} alternatePath={articlePath(otherLocale(locale), article.slug)}>
+<Base title={article.title} seo={article.seo} type="article" locale={locale} alternatePath={articlePath(otherLocale(locale), article.slug)}>
   <Fragment set:html={renderArticle(article, context)} />
 </Base>

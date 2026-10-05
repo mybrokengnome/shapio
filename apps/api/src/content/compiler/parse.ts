@@ -1,5 +1,6 @@
 import {
   effectiveTitleField,
+  isSeoField,
   isStableId,
   TEXT_TITLE_FIELD_TYPES,
   type FieldDefinition,
@@ -16,6 +17,7 @@ import {
   queryForbidden,
   queryInvalid,
   RICH_TEXT_MODES,
+  SEO_MODES,
   SYSTEM_ATTRIBUTES,
   type ContentQuery,
   type EntryListStatus,
@@ -24,6 +26,7 @@ import {
   type FilterTarget,
   type PopulateTree,
   type RichTextMode,
+  type SeoMode,
   type SortTerm,
   type SystemAttribute,
 } from './types.js';
@@ -46,6 +49,8 @@ export type ParseContext = {
   allowAdminFilters?: boolean;
   /** `?richText=` is a delivery and preview feature (admin reads return the stored document). */
   allowRichText?: boolean;
+  /** `?seo=` is a delivery and preview feature. */
+  allowSeo?: boolean;
   /** Target models of relation fields, for nested populate paths. */
   resolveModel: (modelId: string) => ModelDefinition | undefined;
 };
@@ -60,6 +65,7 @@ const TOP_LEVEL_KEYS = new Set([
   'locale',
   'snapshot',
   'richText',
+  'seo',
   'q',
   'status',
   'author',
@@ -326,6 +332,29 @@ const parseRichText = (tree: QueryTree, context: ParseContext): { richText?: Ric
   return { richText: (value as RichTextMode | undefined) ?? DEFAULT_RICH_TEXT_MODE };
 };
 
+const SEO_MODE_SET: ReadonlySet<string> = new Set(SEO_MODES);
+
+/** `?seo=raw|resolved` on delivery and preview reads; `resolved` needs a readable SEO field on the model. */
+const parseSeo = (tree: QueryTree, context: ParseContext): { seo?: SeoMode } => {
+  const value = single(tree.seo, 'seo');
+  if (value === undefined) {
+    return {};
+  }
+  if (!context.allowSeo) {
+    throw queryInvalid('seo is only available on the delivery and preview APIs');
+  }
+  if (!SEO_MODE_SET.has(value)) {
+    throw queryInvalid(`"seo" must be one of ${SEO_MODES.join(', ')}`);
+  }
+  if (
+    value === 'resolved' &&
+    !context.model.fields.some((field) => !field.deprecated && isSeoField(field) && context.isReadable(field))
+  ) {
+    throw queryInvalid(`"${context.model.apiKey}" has no SEO field to resolve`);
+  }
+  return { seo: value as SeoMode };
+};
+
 export const parseContentQuery = (tree: QueryTree, context: ParseContext): ContentQuery => {
   for (const key of Object.keys(tree)) {
     if (!TOP_LEVEL_KEYS.has(key)) {
@@ -356,6 +385,7 @@ export const parseContentQuery = (tree: QueryTree, context: ParseContext): Conte
     locale,
     snapshot,
     ...parseRichText(tree, context),
+    ...parseSeo(tree, context),
     ...parseAdminFilters(tree, context),
   };
 };

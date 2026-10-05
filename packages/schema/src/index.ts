@@ -30,3 +30,4 @@ export * from './richtext/validate.js';
 export * from './richtext/render.js';
 export * from './themes/tokens.js';
 export * from './themes/contrast.js';
+export * from './seo/index.js';

@@ -24,6 +24,8 @@ export const WEBHOOK_EVENT_CATALOGUE: readonly WebhookEventType[] = [
   ...group('locale', ['locale.added', 'locale.metadata', 'locale.defaultChanged', 'locale.removed']),
   ...group('change_set', Object.values(CHANGE_SET_EVENTS)),
   ...group('deployment', Object.values(DEPLOYMENT_EVENTS)),
+  // A site's own settings changed (its SEO defaults): sites that render them rebuild or revalidate.
+  ...group('site', ['site.updated']),
 ];
 
 /** Sent by "Send test"; never produced by the outbox. */

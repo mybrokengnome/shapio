@@ -22,9 +22,14 @@ export const REVALIDATING_EVENTS: readonly string[] = [
   'change_set.shipped',
   'schema.activated',
   'schema.deleted',
+  // The site's SEO defaults changed (no new snapshot): every page's head shows them.
+  'site.updated',
   // "Send test" in Shapio's webhook screen: runs a real (usually empty) revalidation.
   'webhook.test',
 ];
+
+/** Events that change every page without moving the publication snapshot (nothing to diff). */
+export const SITE_WIDE_EVENTS: readonly string[] = ['site.updated'];
 
 const targetsOf = ({ modelKey, locale, slugs }: ChangedEntry): RevalidationTarget[] => {
   switch (modelKey) {

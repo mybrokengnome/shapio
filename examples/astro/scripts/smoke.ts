@@ -62,6 +62,19 @@ const checkBuild = async () => {
   check(articleEn.includes('<table>') && articleEn.includes('With Shapio'), 'EN article: rich-text table');
   check(articleEn.includes('Ada Moreau'), 'EN article: populated author');
   check(articleFr.includes('Modéliser du contenu sans déploiement'), 'FR article: title');
+  check(
+    articleEn.includes('<title>Modelling content without a deploy · Northwind Studio</title>'),
+    'EN article: SEO title through the site template',
+  );
+  check(
+    articleEn.includes('property="og:image"') &&
+      articleEn.includes('name="twitter:site" content="@northwindstudio"'),
+    'EN article: Open Graph image and Twitter handle from the SEO fields and defaults',
+  );
+  check(
+    articleFr.includes('<title>Modéliser du contenu sans déploiement · Studio Northwind</title>'),
+    'FR article: SEO title through the French template',
+  );
   check((await html('fr/about/index.html')).includes('À propos du studio'), 'FR about page');
   check(
     (await html('en/colophon/index.html')).includes('pinned to one publication snapshot per build'),

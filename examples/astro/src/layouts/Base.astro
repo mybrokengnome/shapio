@@ -1,23 +1,49 @@
 ---
 import '../styles/site.css';
-import { getSiteSettings } from '../lib/shapio.js';
-import { articlesPath, colophonPath, HOME_SLUG, otherLocale, pagePath, stringsFor, type Locale } from '../lib/site.js';
+import type { SeoResolved } from '@shapio/client';
+import { seoHead, type SeoHead } from '../lib/seo.js';
+import { getSite, getSiteSettings } from '../lib/shapio.js';
+import {
+  articlesPath,
+  colophonPath,
+  DEFAULT_LOCALE,
+  HOME_SLUG,
+  otherLocale,
+  pagePath,
+  stringsFor,
+  type Locale,
+} from '../lib/site.js';
 
 type Props = {
+  /** The page's own title; entry pages pass their SEO fields too, which win. */
   title: string;
-  description?: string | null;
+  /** The entry's SEO fields, read with `seo=resolved`. */
+  seo?: SeoResolved | null;
+  type?: SeoHead['type'];
   locale: Locale;
   /** This page in the other locale. */
   alternatePath?: string;
   noindex?: boolean;
 };
 
-const { title, description, locale, alternatePath, noindex = false } = Astro.props;
+const { title, seo, type, locale, alternatePath, noindex = false } = Astro.props;
 const strings = stringsFor(locale);
 const other = otherLocale(locale);
 // The name, tagline and footer come from the siteSettings singleton (the built-in strings until it is published).
 const settings = await getSiteSettings(locale);
 const siteName = settings?.siteName ?? strings.siteName;
+// Title, description, social tags and canonical: the entry's SEO fields over the site's SEO defaults.
+const head = seoHead({
+  seo: seo ?? null,
+  site: await getSite(),
+  locale,
+  localeChain: [locale, DEFAULT_LOCALE],
+  title,
+  path: Astro.url.pathname,
+  siteUrl: Astro.site?.href,
+  ...(type ? { type } : {}),
+});
+const robotsNoindex = noindex || head.noindex;
 ---
 
 <!doctype html>
@@ -25,9 +51,25 @@ const siteName = settings?.siteName ?? strings.siteName;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title} · {siteName}</title>
-    {description ? <meta name="description" content={description} /> : null}
-    {noindex ? <meta name="robots" content="noindex" /> : null}
+    <title>{head.title}</title>
+    {head.description ? <meta name="description" content={head.description} /> : null}
+    {robotsNoindex ? <meta name="robots" content="noindex" /> : null}
+    {head.canonical ? <link rel="canonical" href={head.canonical} /> : null}
+    <meta property="og:type" content={head.type} />
+    <meta property="og:title" content={head.title} />
+    <meta property="og:locale" content={head.locale} />
+    {head.siteName ? <meta property="og:site_name" content={head.siteName} /> : null}
+    {head.description ? <meta property="og:description" content={head.description} /> : null}
+    {head.canonical ? <meta property="og:url" content={head.canonical} /> : null}
+    {head.image ? <meta property="og:image" content={head.image.url} /> : null}
+    {head.image?.width ? <meta property="og:image:width" content={String(head.image.width)} /> : null}
+    {head.image?.height ? <meta property="og:image:height" content={String(head.image.height)} /> : null}
+    {head.image?.alt ? <meta property="og:image:alt" content={head.image.alt} /> : null}
+    <meta name="twitter:card" content={head.image ? 'summary_large_image' : 'summary'} />
+    {head.twitterHandle ? <meta name="twitter:site" content={head.twitterHandle} /> : null}
+    <meta name="twitter:title" content={head.title} />
+    {head.description ? <meta name="twitter:description" content={head.description} /> : null}
+    {head.image ? <meta name="twitter:image" content={head.image.url} /> : null}
     {alternatePath ? <link rel="alternate" hreflang={other} href={alternatePath} /> : null}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>

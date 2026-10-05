@@ -31,7 +31,7 @@ import { resolvePreviewToken } from './previewTokens.js';
  * The read itself is the delivery read (services/contentDelivery.ts) over draft heads.
  */
 const DRAFT: HeadSource = { kind: 'heads', state: 'draft' };
-const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'richText']);
+const ITEM_PARAMETERS = new Set(['fields', 'populate', 'locale', 'richText', 'seo']);
 
 export type PreviewMeta = { locale: string; preview: true; expiresAt: Date };
 
@@ -151,6 +151,7 @@ const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
   const query = parseQueryFor(scope.context, scope.model, scope.policy, rawQuery, {
     allowSnapshot: false,
     allowRichText: true,
+    allowSeo: true,
   });
   if (scope.token.locale && query.locale && query.locale !== scope.token.locale) {
     throw new AppError(403, 'PREVIEW_SCOPE', `This preview token is for locale "${scope.token.locale}"`);

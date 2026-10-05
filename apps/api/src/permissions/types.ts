@@ -126,6 +126,8 @@ export const SITE_ACTIONS = [
   'deployments.trigger',
   'changes.manage',
   'changes.ship',
+  // The site's own settings (plan seo-fields): its SEO defaults.
+  'site.settings',
 ] as const;
 export type SiteAction = (typeof SITE_ACTIONS)[number];
 

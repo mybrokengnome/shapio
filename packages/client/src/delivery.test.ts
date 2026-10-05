@@ -44,4 +44,12 @@ describe('delivery api', () => {
     expect(url(0)).toBe('https://cms.test/api/content/articles/e1?richText=html');
     expect(url(1)).toBe('https://cms.test/api/content/articles?locale=fr&snapshot=4&richText=both');
   });
+
+  it('asks for resolved SEO fields', async () => {
+    const { client, url } = setup();
+    await client.delivery.get('articles', 'e1', { seo: 'resolved' });
+    await client.delivery.list('articles', { richText: 'html', seo: 'resolved' });
+    expect(url(0)).toBe('https://cms.test/api/content/articles/e1?seo=resolved');
+    expect(url(1)).toBe('https://cms.test/api/content/articles?richText=html&seo=resolved');
+  });
 });

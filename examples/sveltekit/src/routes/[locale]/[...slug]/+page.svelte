@@ -1,15 +1,11 @@
 <script lang="ts">
+  import Seo from '#lib/components/Seo.svelte';
   import Sections from '#lib/components/Sections.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
 </script>
 
-<svelte:head>
-  <title>{data.page.title} · {data.settings?.siteName ?? data.strings.siteName}</title>
-  {#if data.page.description}
-    <meta name="description" content={data.page.description} />
-  {/if}
-</svelte:head>
+<Seo title={data.page.title} seo={data.page.seo} site={data.site} locale={data.locale} siteUrl={data.siteUrl} />
 
 <Sections page={data.page} />

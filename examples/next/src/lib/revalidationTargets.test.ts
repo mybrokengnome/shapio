@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { EVERY_PAGE, revalidationTargets } from './revalidationTargets';
+import {
+  EVERY_PAGE,
+  REVALIDATING_EVENTS,
+  revalidationTargets,
+  SITE_WIDE_EVENTS,
+} from './revalidationTargets';
 
 describe('revalidationTargets', () => {
   it('maps a changed article to its page and the locale’s article list', () => {
@@ -63,5 +68,10 @@ describe('revalidationTargets', () => {
         false,
       ),
     ).toEqual([]);
+  });
+
+  it('treats a change to the site (its SEO defaults) as site-wide, without a snapshot diff', () => {
+    expect(REVALIDATING_EVENTS).toContain('site.updated');
+    expect(SITE_WIDE_EVENTS).toEqual(['site.updated']);
   });
 });

@@ -28,6 +28,7 @@ export const ACTION_LABEL_KEYS = {
   'deployments.trigger': 'roles.actions.deploymentsTrigger',
   'changes.manage': 'roles.actions.changesManage',
   'changes.ship': 'roles.actions.changesShip',
+  'site.settings': 'roles.actions.siteSettings',
 } as const satisfies Record<PermissionAction, string>;
 
 export const ROLE_KINDS: readonly RoleKind[] = ['admin', 'delivery'];

@@ -12,6 +12,7 @@ import type { GraphqlContext } from './context.js';
 import { createFixedTypes } from './fixedTypes.js';
 import { mutationFields } from './mutations.js';
 import { queryFields } from './operations.js';
+import { siteQueryFields } from './siteFields.js';
 import { snapshotQueryFields } from './snapshotFields.js';
 import { buildUsageMap, USAGE_MAP_EXTENSION } from './usageSelection.js';
 
@@ -43,7 +44,7 @@ export const buildGraphqlSchema = (snapshot: SchemaSnapshot): BuiltSchema => {
     description: 'The schema version this API reflects; it changes whenever a model changes',
     resolve: () => snapshot.version,
   };
-  Object.assign(query, snapshotQueryFields(snapshot));
+  Object.assign(query, snapshotQueryFields(snapshot), siteQueryFields(snapshot, build.fixed));
   const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: query }),
     ...(models.length > 0 ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) } : {}),

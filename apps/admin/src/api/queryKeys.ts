@@ -29,6 +29,8 @@ export const queryKeys = {
     role: (id: string) => ['appRoles', id] as const,
   },
   tokens: ['tokens'] as const,
+  /** The current site's SEO defaults (Settings → SEO, the SEO field's preview). */
+  siteSeo: ['site', 'seo'] as const,
   /** Sites (network view) and each site's app role bindings. */
   sites: {
     all: ['sites'] as const,

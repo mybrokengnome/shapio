@@ -71,6 +71,7 @@ export const GLOBAL_ACTIONS = [
   'deployments.trigger',
   'changes.manage',
   'changes.ship',
+  'site.settings',
 ] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
 

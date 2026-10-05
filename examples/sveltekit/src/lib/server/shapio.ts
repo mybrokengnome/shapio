@@ -1,4 +1,4 @@
-import { createClient, ShapioApiError, type DeliveryListQuery } from '@shapio/client';
+import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
 import type { Locale } from '../site';
 import type { Article, Page, SiteSettings } from '../types';
 import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config';
@@ -16,8 +16,8 @@ const ARTICLES = 'articles';
 const SITE_SETTINGS = 'siteSettings';
 
 /** The fields each read renders (`fields=`): smaller responses, and accurate field usage in Shapio. */
-const PAGE_FIELDS = ['title', 'slug', 'description', 'sections'];
-const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', 'publishedOn'];
+const PAGE_FIELDS = ['title', 'slug', 'description', 'sections', 'seo'];
+const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', 'publishedOn', 'seo'];
 const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
 const createShapio = () => createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() });
@@ -48,8 +48,10 @@ const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T
   for (let page = 1; ; page += 1) {
     const result = await shapio().delivery.list<T>(routeKey, {
       ...query,
-      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document.
+      // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document, and
+      // its SEO fields with the site's defaults filled in.
       richText: 'html',
+      seo: 'resolved',
       snapshot: await snapshot(),
       page,
       pageSize: PAGE_SIZE,
@@ -94,3 +96,19 @@ const readSiteSettings = async (locale: Locale): Promise<SiteSettings | null> =>
     throw error;
   }
 };
+
+/**
+ * The site and its SEO defaults (name and title template per locale, default image, Twitter handle), once per
+ * build. Null when the Shapio predates them (the pages still render, with plain titles).
+ */
+export const getSite = (): Promise<DeliverySite | null> =>
+  once('site', async () => {
+    try {
+      return await shapio().site.get();
+    } catch (error) {
+      if (error instanceof ShapioApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  });

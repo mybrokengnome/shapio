@@ -13,4 +13,5 @@ export const variables = defineEnvVars({
   SHAPIO_SNAPSHOT: { schema: optional },
   SHAPIO_SITE: { schema: optional },
   PUBLIC_SHAPIO_URL: { schema: optional },
+  SITE_URL: { schema: optional },
 });
