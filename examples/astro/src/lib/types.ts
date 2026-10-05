@@ -91,13 +91,4 @@ export type SiteSettings = EntryBase & {
   colophon: RichText | null;
 };
 
-export type DeliveryList<T> = {
-  data: T[];
-  meta: {
-    locale: string;
-    snapshot: number;
-    pagination: { page: number; pageSize: number; total: number; pageCount: number };
-  };
-};
-
 export type DeliveryItem<T> = { data: T; meta: { locale: string; snapshot: number } };

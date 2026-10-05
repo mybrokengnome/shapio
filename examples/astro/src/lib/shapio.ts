@@ -1,8 +1,8 @@
-import { createClient, ShapioApiError, type DeliverySite } from '@shapio/client';
+import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
 import { configuredSnapshot, deliveryToken, isDev, shapioUrl, siteKey } from './config.js';
 import type { Locale } from './site.js';
 import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver.js';
-import type { Article, DeliveryList, Page, SiteSettings } from './types.js';
+import type { Article, Page, SiteSettings } from './types.js';
 
 /**
  * The site's read side: Shapio's delivery API through `@shapio/client`, pinned to one publication snapshot
@@ -21,8 +21,8 @@ const ARTICLES = 'articles';
  * The fields each listing renders, sent as `fields=`: the response carries only these, and Shapio's field
  * usage shows exactly what the site reads (a whole-model read would count every field as used).
  */
-const PAGE_FIELDS = 'title,slug,description,sections,seo';
-const ARTICLE_FIELDS = 'title,slug,excerpt,body,cover,author,publishedOn,seo';
+const PAGE_FIELDS = ['title', 'slug', 'description', 'sections', 'seo'];
+const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', 'publishedOn', 'seo'];
 
 /** The `siteSettings` singleton is read by its API ID (singletons have no plural). */
 const SITE_SETTINGS = 'siteSettings';
@@ -52,23 +52,21 @@ export const pinnedSnapshot = async (): Promise<number> => {
   return resolver();
 };
 
-const query = (params: Record<string, string | number>) =>
-  new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])).toString();
-
 /** Every published entry of a collection (by plural API ID) in one locale, page by page, at the pinned snapshot. */
-const listAll = async <T>(
-  routeKey: string,
-  locale: Locale,
-  extra: Record<string, string> = {},
-): Promise<T[]> => {
+const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {
   const snapshot = await pinnedSnapshot();
   const entries: T[] = [];
   for (let page = 1; ; page += 1) {
-    const result = await shapio().request<DeliveryList<T>>(
+    const result = await shapio().delivery.list<T>(routeKey, {
+      ...query,
       // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document, and
       // its SEO fields with the site's defaults filled in (`seo=resolved`).
-      `/api/content/${routeKey}?${query({ locale, snapshot, page, pageSize: PAGE_SIZE, richText: 'html', seo: 'resolved', ...extra })}`,
-    );
+      richText: 'html',
+      seo: 'resolved',
+      snapshot,
+      page,
+      pageSize: PAGE_SIZE,
+    });
     entries.push(...result.data);
     if (page >= result.meta.pagination.pageCount) {
       return entries;
@@ -76,13 +74,14 @@ const listAll = async <T>(
   }
 };
 
-export const listPages = (locale: Locale) => listAll<Page>(PAGES, locale, { fields: PAGE_FIELDS });
+export const listPages = (locale: Locale) => listAll<Page>(PAGES, { locale, fields: PAGE_FIELDS });
 
 export const listArticles = (locale: Locale) =>
-  listAll<Article>(ARTICLES, locale, {
+  listAll<Article>(ARTICLES, {
+    locale,
     fields: ARTICLE_FIELDS,
-    populate: 'author',
-    sort: 'publishedOn:desc',
+    populate: ['author'],
+    sort: [{ field: 'publishedOn', direction: 'desc' }],
   });
 
 const readSiteSettings = async (locale: Locale): Promise<SiteSettings | null> => {
