@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-05
+
 ### Added
 
 - **Show any field in the document.** A field's settings have **Show in document**: on, the entry document
@@ -39,6 +41,15 @@ All notable changes to Shapio are listed here. The format follows
   related entries it shows is checked against what is live when it answers, so an entry published a moment
   after `meta.snapshot` may already appear; unpublished entries never do. Reads pinned with `?snapshot=N`,
   previews and `populate` are unchanged.
+
+### Fixed
+
+- **Every field in the entry document shows its heading**, and an empty list shows "Nothing added yet" with an
+  **Add** button (repeatable components and dynamic zones alike); a filled list ends with one. Before, a canvas
+  field hid its heading once filled and an empty list rendered nothing, so a field like a tagline list was
+  invisible on the page.
+- **The SEO group is always a chip in the properties strip**, even while empty, so it can be found and opened
+  without the Settings panel. Before, an empty optional SEO group hid behind "+1 more".
 
 ## [0.4.0] - 2026-10-05
 
