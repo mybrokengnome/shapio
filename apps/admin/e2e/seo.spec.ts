@@ -135,6 +135,10 @@ test('the SEO group on an entry: counter and search-result preview', async () =>
   const doc = entryDocument(page);
   await page.goto(`${ADMIN_URL}content/${MODEL_KEY}/new`);
   await page.getByRole('textbox', { name: 'Title' }).first().fill('Spring launch');
+  // Empty, the SEO group still has its chip under the title (not only behind "+N more").
+  await expect(
+    page.getByRole('group', { name: 'Properties' }).getByRole('button', { name: /^SEO/ }),
+  ).toBeVisible();
   const seo = await doc.property('seo');
   const preview = seo.getByRole('region', { name: 'Search result preview' });
   // The entry's own title through the site's template until the SEO title is set.

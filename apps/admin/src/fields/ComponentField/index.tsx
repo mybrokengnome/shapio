@@ -1,13 +1,16 @@
 import type { ComponentDefinition } from '@shapio/schema';
-import { Plus, Trash2 } from 'lucide-react';
+import { Boxes, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
+import { AddItemButton } from '../AddItemButton';
 import { CanvasItemList } from '../CanvasItemList';
 import { ComponentItemFields } from '../ComponentItemFields';
 import { useFieldsEnvironment } from '../form/context';
 import { newComponentItem } from '../helpers/formValues';
 import { pointerOf } from '../helpers/issues';
+import { emptyListMinimum, hasRoomFor } from '../helpers/listLimits';
 import { summarizeItem } from '../helpers/summary';
 import { isRecord, type ItemValues } from '../helpers/values';
 import { useCollapsedItems } from '../hooks/useCollapsedItems';
@@ -67,23 +70,54 @@ const RepeatableItem = ({
   );
 };
 
-/** The repeatable list as blocks of the entry canvas. */
+/**
+ * The repeatable list as blocks of the entry canvas, with "Add …" at its end while it has room. Empty, it
+ * says so in a row with the same button (and the minimum, when one item would not be enough), so the field
+ * never collapses to a bare heading.
+ */
 const CanvasRepeatable = (props: BuiltInEditorProps & { component: ComponentDefinition }) => {
+  const { t } = useTranslation();
   const { component, value, onChange, path, labelId, inputId, readOnly, disabled, definition, field } = props;
   const list = useListEditor(value, onChange);
-  const max = definition.type === 'component' ? definition.settings.max : undefined;
+  const settings = definition.type === 'component' ? definition.settings : undefined;
+  const editable = !readOnly && !disabled;
+  const room = hasRoomFor(list.items.length, settings?.max);
+  const add = (variant: 'outline' | 'ghost') =>
+    editable && room ? (
+      <AddItemButton
+        item={component.label}
+        variant={variant}
+        onAdd={() => list.add(newComponentItem(component, false))}
+      />
+    ) : null;
+  const empty = list.items.length === 0;
+  const minimum = emptyListMinimum(settings?.min);
+  // The list stays mounted while empty, so the first item added gets focus like any other.
   return (
-    <CanvasItemList
-      list={list}
-      labelId={labelId}
-      inputId={inputId}
-      path={path}
-      editable={!readOnly && !disabled}
-      insertable={max === undefined || list.items.length < max ? [component] : []}
-      componentOf={() => component}
-      newItem={(next) => newComponentItem(next, false)}
-      startCollapsed={field.options.collapsed === true}
-    />
+    <div className="space-y-1">
+      {empty ? (
+        <EmptyState
+          compact
+          icon={Boxes}
+          title={t('content.items.empty')}
+          description={minimum === undefined ? undefined : t('content.issues.tooFew', { count: minimum })}
+          action={add('outline')}
+          className="rounded-xl border border-dashed px-4"
+        />
+      ) : null}
+      <CanvasItemList
+        list={list}
+        labelId={labelId}
+        inputId={inputId}
+        path={path}
+        editable={editable}
+        insertable={room ? [component] : []}
+        componentOf={() => component}
+        newItem={(next) => newComponentItem(next, false)}
+        startCollapsed={field.options.collapsed === true}
+      />
+      {empty ? null : add('ghost')}
+    </div>
   );
 };
 
@@ -123,16 +157,8 @@ const Repeatable = (props: BuiltInEditorProps & { component: ComponentDefinition
       ) : (
         <p className="text-sm text-muted-foreground">{t('content.items.empty')}</p>
       )}
-      {editable && (max === undefined || list.items.length < max) ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => list.add(newComponentItem(component, false))}
-        >
-          <Plus aria-hidden="true" />
-          {t('content.items.add', { item: component.label })}
-        </Button>
+      {editable && hasRoomFor(list.items.length, max) ? (
+        <AddItemButton item={component.label} onAdd={() => list.add(newComponentItem(component, false))} />
       ) : null}
     </div>
   );
@@ -145,15 +171,7 @@ const Single = (props: BuiltInEditorProps & { component: ComponentDefinition }) 
   const onItemChange = useCallback((next: ItemValues) => onChange(next), [onChange]);
   if (!isRecord(value)) {
     return editable ? (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => onChange(newComponentItem(component, false))}
-      >
-        <Plus aria-hidden="true" />
-        {t('content.items.add', { item: component.label })}
-      </Button>
+      <AddItemButton item={component.label} onAdd={() => onChange(newComponentItem(component, false))} />
     ) : (
       <p className="text-sm text-muted-foreground">{t('content.items.empty')}</p>
     );

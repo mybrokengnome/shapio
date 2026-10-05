@@ -497,15 +497,19 @@ choose which fields go where; `effectiveLayout` in `@shapio/schema` supplies the
 source the admin reads.
 
 **Canvas fields own their blocks.** The canvas is a sequence of fields; each one owns its blocks and
-stores them in its own format. A block never moves from one field to another. Between two fields a subtle
-divider shows the next field's label on hover, so people know where Body ends and Sections begin; never a
-form label above a block.
+stores them in its own format. A block never moves from one field to another. Every canvas field opens
+with a heading, always visible: its label in the group-label style (`text-xs font-semibold uppercase
+tracking-wide text-muted-foreground`) and a hairline, so people know where Body ends and Sections begin and
+two lists of the same component tell apart; never a form label above a block.
 
 - Rich text: `font-serif text-canvas`, a floating formatting toolbar on selection, a hover handle for drag
   and the block menu, images by drop or from the library, captions. The drag handle is the canvas's own;
   the admin ships no collaboration dependencies (no Yjs).
 - Zone and list items: one block per item with a compact header (component name, item title; move,
   duplicate, delete on hover), its fields laid out as label and value lines, collapsed when long.
+  A repeatable component list ends with "Add {component}" while it has room; an empty one is a compact
+  `EmptyState` row ("Nothing added yet." and that button, plus "Add at least n items." only when `min` is 2
+  or more).
 - Multiple media: a gallery block.
 - Custom editors render inside the same block chrome with their label.
 

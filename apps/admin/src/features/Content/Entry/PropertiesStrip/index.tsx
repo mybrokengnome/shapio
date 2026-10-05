@@ -1,7 +1,7 @@
-import { stripFieldsOf, type DocumentLayout } from '@shapio/schema';
+import type { DocumentLayout } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { useEntryForm } from '@/fields/form/context';
-import { isEmptyValue } from '@/fields/helpers/values';
+import { stripFieldsFor } from '../helpers/stripFields';
 import { PropertyChip } from '../PropertyChip';
 
 type PropertiesStripProps = {
@@ -12,12 +12,12 @@ type PropertiesStripProps = {
 
 /**
  * Notion-style properties under the title: the configured ones, or the first five that have a value
- * (required ones too, so what blocks publishing is in view). "+N more" opens the drawer with all of them.
+ * (required ones and the SEO group too, see `stripFieldsFor`). "+N more" opens the drawer with all of them.
  */
 export const PropertiesStrip = ({ layout, onMore }: PropertiesStripProps) => {
   const { t } = useTranslation();
   const values = useEntryForm((state) => state.values);
-  const shown = stripFieldsOf(layout, (field) => field.required || !isEmptyValue(values[field.apiKey]));
+  const shown = stripFieldsFor(layout, values);
   const more = layout.properties.length - shown.length;
   if (layout.properties.length === 0) {
     return null;

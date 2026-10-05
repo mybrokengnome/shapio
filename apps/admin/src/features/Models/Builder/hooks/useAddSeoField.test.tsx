@@ -70,6 +70,25 @@ describe('useAddSeoField', () => {
     expect(result.current.availability).toBe('present');
   });
 
+  it('adds the field to a singleton that is not localized when the shared component already exists', () => {
+    mocks.components = [seoComponent];
+    useDefinitionDraftStore
+      .getState()
+      .load(
+        'model',
+        model({ kind: 'singleton', localized: false, fields: [field({ apiKey: 'headline' })] }),
+        3,
+      );
+    const { result } = renderHook(() => useAddSeoField());
+    expect(result.current.availability).toBe('ready');
+    act(() => result.current.add());
+    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(draftFields().map((entry) => [entry.apiKey, entry.localized])).toEqual([
+      ['headline', false],
+      ['seo', false],
+    ]);
+  });
+
   it('is unavailable once the model holds the SEO component, whatever its API ID', () => {
     mocks.components = [seoComponent];
     loadDraft([field({ apiKey: 'meta', type: 'component', settings: { component: SEO_COMPONENT_ID } })]);

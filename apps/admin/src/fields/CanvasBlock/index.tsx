@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/helpers/cn';
 import { FieldEditor } from '../FieldEditor';
 import { FieldMessages } from '../FieldMessages';
-import { isEmptyValue } from '../helpers/values';
 import { useFieldControl } from '../hooks/useFieldControl';
 import { ScopeIcon } from '../ScopeIcon';
 
@@ -20,19 +19,17 @@ type CanvasBlockProps = {
 };
 
 /**
- * One canvas field of the entry document. Never a form label: a hairline with the field's name sits above
- * it and shows on hover or focus (so people know where Body ends and Sections begin); it still names the
- * editor for assistive technology. Built-in editors render in `canvas` appearance; a project's custom
- * editor keeps its contract and shows its label permanently, since its UI doesn't say what it edits.
+ * One canvas field of the entry document. Never a form label: a heading (the field's name in small caps
+ * and a hairline) always sits above it, so people see where Body ends and Sections begin, two lists of the
+ * same component tell apart, and an empty field is still there to fill; it also names the editor for
+ * assistive technology. Built-in editors render in `canvas` appearance; a project's custom editor keeps its
+ * contract inside a card.
  */
 export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScope }: CanvasBlockProps) => {
   const { t } = useTranslation();
   const control = useFieldControl({ field, owner, value, onChange, path, appearance: 'canvas' });
   const custom = control.resolved.kind === 'runtime';
   const LabelElement = control.labelling === 'input' ? Label : 'span';
-  const invalid = control.messages.length > 0;
-  // An empty field keeps its name in view, so people see it is there to fill.
-  const quiet = !custom && !invalid && !isEmptyValue(value);
   return (
     <div
       role="group"
@@ -40,14 +37,11 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
       id={`${control.inputId}-section`}
       data-field-path={path}
       data-canvas-field={field.type}
-      className="group/canvas-field relative min-w-0 scroll-mt-24 space-y-2"
+      className="relative min-w-0 scroll-mt-24 space-y-2"
     >
       <div
-        className={cn(
-          'flex items-center gap-2 text-xs font-semibold text-muted-foreground transition-opacity',
-          quiet &&
-            'opacity-0 group-focus-within/canvas-field:opacity-100 group-hover/canvas-field:opacity-100',
-        )}
+        className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"
+        data-canvas-heading
       >
         <LabelElement
           id={control.labelId}
