@@ -4,7 +4,7 @@ import {
   API_TOKEN_PREFIX,
   LAST_SEEN_WRITE_INTERVAL_MS,
 } from '../constants/auth.js';
-import { db } from '../db/index.js';
+import { db, type Database } from '../db/index.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken } from '../helpers/tokens.js';
@@ -179,19 +179,30 @@ export const revokeApiToken = async (
   });
 };
 
+type ResolveTokenOptions = {
+  /** Records the token's last use (default). In-process delivery reads never write (plan next-in-process). */
+  recordUse?: boolean;
+  executor?: Database;
+};
+
+/** Whether a token with this expiry has expired at `now`. */
+export const isTokenExpired = (expiresAt: Date | null, now: Date): boolean =>
+  expiresAt !== null && expiresAt.getTime() <= now.getTime();
+
 /** The principal for a bearer API token, or undefined when unknown, revoked or expired. */
 export const resolveApiToken = async (
   value: string,
   now = new Date(),
+  { recordUse = true, executor = db }: ResolveTokenOptions = {},
 ): Promise<TokenPrincipal | undefined> => {
-  const row = await apiTokensRepository.findLiveByHash(hashToken(value));
-  if (!row || (row.expires_at !== null && row.expires_at.getTime() <= now.getTime())) {
+  const row = await apiTokensRepository.findLiveByHash(hashToken(value), executor);
+  if (!row || isTokenExpired(row.expires_at, now)) {
     return undefined;
   }
   const staleBefore = new Date(now.getTime() - LAST_SEEN_WRITE_INTERVAL_MS);
   // Skips the statement when the row just read is recent; the WHERE clause still guards concurrent writers.
-  if (row.last_used_at === null || row.last_used_at.getTime() < staleBefore.getTime()) {
-    await apiTokensRepository.touchLastUsed(row.id, now, staleBefore);
+  if (recordUse && (row.last_used_at === null || row.last_used_at.getTime() < staleBefore.getTime())) {
+    await apiTokensRepository.touchLastUsed(row.id, now, staleBefore, executor);
   }
   return {
     kind: 'token',

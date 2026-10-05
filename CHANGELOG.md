@@ -19,6 +19,15 @@ All notable changes to Shapio are listed here. The format follows
   stays fresh on every build, since Next's data cache outlives `next build`); its `/api/revalidate/` route now also expires the
   tags of the models and entries in the snapshot diff (and the site tag on `site.updated` and schema changes)
   with `revalidateTag`, besides revalidating the pages; its answer lists them in `tags`.
+- **In-process delivery runtime (library entry).** The delivery reads (`/api/content/*`, `/api/site`,
+  `/api/snapshots/current` and `/changes`) can run as function calls in the reading process, on PostgreSQL or
+  MySQL, with the server's permissions, shapes and errors. A call costs one state statement plus its read. A
+  model change shows on the next call without a restart. Only delivery tokens or anonymous callers may read
+  this way, and nothing on this path writes. The server now records its release (`system_versions.release`,
+  a new migration) and a non-secret delivery descriptor (public URL, base path, media locations) at every
+  start. A reader of another release is refused with `ShapioVersionSkewError` (503 `VERSION_SKEW`), or reads
+  over HTTP with `onVersionSkew: 'http'`. The entry is workspace-internal for now; the `@shapio/local`
+  package that publishes it comes next.
 
 ### Fixed
 

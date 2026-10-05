@@ -24,6 +24,9 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./delivery": {
+      "@shapio/source": "./src/delivery/index.ts"
+    },
     "./config": {
       "@shapio/source": "./src/extensions/public.ts",
       "types": "./dist/config.d.ts",

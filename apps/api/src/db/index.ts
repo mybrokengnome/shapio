@@ -135,3 +135,13 @@ export let db: Database = undefined as unknown as Database;
 export const setDb = (instance: Database): void => {
   db = instance;
 };
+
+/** Whether this process has its database handle yet (a server in the same process set it first). */
+export const hasDb = (): boolean => (db as Database | undefined) !== undefined;
+
+/** Unsets the process handle if it is `instance` (its owner is closing it); leaves any other handle alone. */
+export const clearDb = (instance: Database): void => {
+  if (db === instance) {
+    db = undefined as unknown as Database;
+  }
+};

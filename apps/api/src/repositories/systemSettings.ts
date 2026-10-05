@@ -17,3 +17,12 @@ export const insertIfAbsent = async (key: string, value: string, trx: Executor =
     .executeTakeFirst();
   return inserted !== undefined;
 };
+
+/** Creates or replaces a setting. */
+export const upsertValue = async (key: string, value: string, trx: Executor = db): Promise<void> => {
+  await trx
+    .insertInto('system_settings')
+    .values({ key, value })
+    .onConflict((oc) => oc.column('key').doUpdateSet({ value, updated_at: new Date() }))
+    .execute();
+};

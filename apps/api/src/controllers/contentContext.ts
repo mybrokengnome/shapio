@@ -1,5 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
+import { withoutSiteParameter } from '../helpers/siteQuery.js';
 import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestNetworkSchema } from '../plugins/schemaSnapshot.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
@@ -25,15 +25,6 @@ export const contentContextFor = async (request: FastifyRequest): Promise<Conten
     ip: request.ip,
   });
 
-const isSiteSegment = (segment: string): boolean => {
-  const key = segment.split('=', 1)[0] ?? '';
-  try {
-    return decodeURIComponent(key.replace(/\+/g, ' ')) === SITE_QUERY_PARAMETER;
-  } catch {
-    return false;
-  }
-};
-
 /**
  * The raw querystring (bracket syntax is parsed by the content compiler, not Fastify's flat parser), without
  * `?site=`: site resolution (plugins/siteResolution.ts) consumed it, and the compiler refuses unknown keys.
@@ -43,9 +34,5 @@ export const rawQueryOf = (request: FastifyRequest): string => {
   if (index === -1) {
     return '';
   }
-  return request.url
-    .slice(index + 1)
-    .split('&')
-    .filter((segment) => !isSiteSegment(segment))
-    .join('&');
+  return withoutSiteParameter(request.url.slice(index + 1));
 };

@@ -1,4 +1,5 @@
 import type { Migration } from 'kysely/migration';
+import * as systemVersionsRelease from '../20261006120000_system_versions_release.js';
 import * as baseline from './0001_baseline.js';
 import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
 import * as modelsSiteScope from './20261004120000_models_site_scope.js';
@@ -19,4 +20,5 @@ export const SQLITE_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261004120000_models_site_scope': modelsSiteScope,
   '20261004130000_site_seo_settings': siteSeoSettings,
   '20261005120000_entry_heads_entry_created_at': entryHeadsEntryCreatedAt,
+  '20261006120000_system_versions_release': systemVersionsRelease,
 };

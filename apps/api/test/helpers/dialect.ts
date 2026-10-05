@@ -30,6 +30,8 @@ const SQLITE_SKIPS: Readonly<Record<string, string>> = {
   'extensionsWorker.int.test.ts': 'WORKER_MODE=dedicated needs PostgreSQL (SQLite runs in one process)',
   'contentIndexes.int.test.ts':
     'PostgreSQL index builds and planner checks (CONCURRENTLY, INVALID indexes, statistics)',
+  'deliveryInProcess.int.test.ts':
+    'in-process delivery refuses SQLite (one process serves it); the refusal is unit-tested in delivery/runtime.test.ts',
   'operations.int.test.ts > database outage':
     'drops PostgreSQL connections through a TCP proxy; SQLite is a local file',
   'schemaChanges.int.test.ts > invalid index':

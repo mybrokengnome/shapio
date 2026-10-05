@@ -1,5 +1,5 @@
 import { sql, type Kysely } from 'kysely';
-import { dialectOfUrl, sqliteLocationOfUrl } from './dialect.js';
+import { describeDatabaseTarget, dialectOfUrl } from './dialect.js';
 import { getPendingMigrations } from './migrator.js';
 import type { DB } from './types.js';
 
@@ -10,21 +10,6 @@ export class StartupCheckError extends Error {
     this.name = 'StartupCheckError';
   }
 }
-
-/** `host:port/database` (PostgreSQL, MySQL) or the file path (SQLite) from DATABASE_URL, never the credentials. */
-export const describeDatabaseTarget = (connectionString: string): string => {
-  if (dialectOfUrl(connectionString) === 'sqlite') {
-    const location = sqliteLocationOfUrl(connectionString);
-    return location.kind === 'memory' ? 'an in-memory database' : location.path;
-  }
-  try {
-    const url = new URL(connectionString);
-    const defaultPort = dialectOfUrl(connectionString) === 'mysql' ? '3306' : '5432';
-    return `${url.hostname}:${url.port || defaultPort}${url.pathname}`;
-  } catch {
-    return 'the configured database';
-  }
-};
 
 const NETWORK_REASONS: Record<string, string> = {
   ECONNREFUSED: 'connection refused',

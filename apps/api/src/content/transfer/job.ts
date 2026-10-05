@@ -9,10 +9,10 @@ import { ALLOW_ALL_POLICY } from '../../permissions/policy.js';
 import type { PermissionEvaluator, Principal } from '../../permissions/types.js';
 import * as transferImportRepository from '../../repositories/transferImport.js';
 import { loadSnapshot } from '../../schema/loadSnapshot.js';
-import type { SchemaSnapshot } from '../../schema/snapshot.js';
+import type { NetworkSchema, SchemaSnapshot } from '../../schema/snapshot.js';
+import { buildContentContext } from '../../services/contentContext.js';
 import { deleteEntry } from '../../services/contentEntries.js';
 import { getSiteRef } from '../../services/sites.js';
-import { createContentHooks } from '../hooks.js';
 import { openStoredBundle, removeStoredBundle, type StoredBundle } from './bundleFile.js';
 import type { AppUserRecord, BundleRecord, EntryRecord, MediaAssetRecord } from './format.js';
 import { importEntry } from './importEntry.js';
@@ -252,7 +252,7 @@ const importContent = async (run: Run, initial: SchemaSnapshot) => {
 };
 
 /** Deletes live target entries of the bundle's models that the bundle does not have. */
-const prune = async (run: Run, snapshot: SchemaSnapshot) => {
+const prune = async (run: Run, network: NetworkSchema) => {
   const keep = new Set<string>();
   const models = new Set<string>();
   for await (const { record } of readBundle(await open(run))) {
@@ -261,14 +261,14 @@ const prune = async (run: Run, snapshot: SchemaSnapshot) => {
       models.add(record.modelId);
     }
   }
-  const context = {
+  const context = buildContentContext({
     db: run.deps.db,
-    snapshot,
+    network,
     permissions: SYSTEM_PERMISSIONS,
     actor: SYSTEM_ACTOR,
     site: await getSiteRef(run.payload.siteId, run.deps.db),
-    hooks: createContentHooks(),
-  };
+  });
+  const { snapshot } = context;
   let failed: ImportError[] = [];
   for (let round = 0; round < PRUNE_ROUNDS; round += 1) {
     failed = [];
@@ -318,7 +318,7 @@ const runPhase = async (run: Run, phase: ImportPhase) => {
     case 'content':
       return importContent(run, await loadSiteSnapshot(run));
     case 'prune':
-      return run.payload.prune ? prune(run, await loadSiteSnapshot(run)) : undefined;
+      return run.payload.prune ? prune(run, await loadSnapshot(run.deps.db)) : undefined;
     case 'cleanup':
       return removeStoredBundle(run.deps.storage, run.payload.bundle).catch((error: unknown) =>
         run.job.log.warn(

@@ -3,9 +3,12 @@ import { once } from 'node:events';
 import { resolve } from 'node:path';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DELIVERY_DESCRIPTOR_SETTING } from '../src/constants/delivery.js';
+import { SHAPIO_VERSION } from '../src/constants/version.js';
 import { createDb } from '../src/db/index.js';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
+import { parseDeliveryDescriptor } from '../src/services/deliveryDescriptor.js';
 import {
   connectionIdsOf,
   dialectSkipReason,
@@ -62,6 +65,22 @@ describe('graceful shutdown', { timeout: 60_000 }, () => {
   });
   afterAll(async () => {
     await server?.stop('SIGKILL');
+  });
+
+  it('records its release and delivery descriptor for in-process readers', async () => {
+    const { db } = database.current;
+    const versions = await db.selectFrom('system_versions').select('release').executeTakeFirstOrThrow();
+    expect(versions.release).toBe(SHAPIO_VERSION);
+    const stored = await db
+      .selectFrom('system_settings')
+      .select('value')
+      .where('key', '=', DELIVERY_DESCRIPTOR_SETTING)
+      .executeTakeFirstOrThrow();
+    expect(parseDeliveryDescriptor(stored.value)).toMatchObject({
+      format: 1,
+      basePath: '',
+      media: { s3: null },
+    });
   });
 
   it('finishes in-flight requests and running jobs, then closes the pool and exits 0', async () => {

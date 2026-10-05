@@ -33,6 +33,7 @@ import { createPublishingJobEnvironment } from './publishing/jobEnvironment.js';
 import { createPublishingJobHandlers, PUBLISHING_OUTBOX_SUBSCRIBERS } from './publishing/jobs.js';
 import { createPublishingRuntime } from './publishing/runtime.js';
 import { createSchemaJobHandlers } from './schema/planner/changeJob.js';
+import { publishServerRelease } from './services/deliveryDescriptor.js';
 import { resolveSigningSecret } from './services/signingSecret.js';
 import { prepareTls, type TlsRuntime } from './tls/index.js';
 
@@ -166,6 +167,8 @@ export const startServer = async (config: AppConfig): Promise<RunningServer> => 
     }
     tls = await prepareTls({ config, urls: createUrlBuilder(config.server), log: logger });
     const signingSecret = await resolveSigningSecret(db, config.sessionSecret, logger);
+    // After migrating: in-process delivery readers compare their release with this one (plan next-in-process).
+    await publishServerRelease(db, SHAPIO_VERSION, config);
     extensions = await startExtensions(config, db, logger, project);
     const app = await buildApp(config, {
       db,

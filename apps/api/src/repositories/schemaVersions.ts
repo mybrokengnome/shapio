@@ -19,3 +19,8 @@ export const bumpSchemaVersion = async (trx: Executor, now: Date): Promise<numbe
     .executeTakeFirstOrThrow();
   return row.schema_version;
 };
+
+/** Records the Shapio release this database is served by (in-process readers compare their own with it). */
+export const setRelease = async (release: string, executor: Executor = db): Promise<void> => {
+  await executor.updateTable('system_versions').set({ release }).execute();
+};

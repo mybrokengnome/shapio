@@ -39,6 +39,21 @@ export const sqliteLocationOfUrl = (url: string): SqliteLocation => {
   return { kind: 'file', path };
 };
 
+/** `host:port/database` (PostgreSQL, MySQL) or the file path (SQLite) from DATABASE_URL, never the credentials. */
+export const describeDatabaseTarget = (connectionString: string): string => {
+  if (dialectOfUrl(connectionString) === 'sqlite') {
+    const location = sqliteLocationOfUrl(connectionString);
+    return location.kind === 'memory' ? 'an in-memory database' : location.path;
+  }
+  try {
+    const url = new URL(connectionString);
+    const defaultPort = dialectOfUrl(connectionString) === 'mysql' ? '3306' : '5432';
+    return `${url.hostname}:${url.port || defaultPort}${url.pathname}`;
+  } catch {
+    return 'the configured database';
+  }
+};
+
 let current: DialectName | undefined;
 
 /** The dialect queries are built for. PostgreSQL until a database handle says otherwise. */
