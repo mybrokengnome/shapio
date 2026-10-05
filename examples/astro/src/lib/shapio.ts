@@ -1,5 +1,5 @@
 import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
-import { configuredSnapshot, deliveryToken, isDev, shapioUrl, siteKey } from './config.js';
+import { configuredSnapshot, deliveryToken, isDev, isDraftsMode, shapioUrl, siteKey } from './config.js';
 import type { Locale } from './site.js';
 import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver.js';
 import type { Article, Page, SiteSettings } from './types.js';
@@ -10,6 +10,7 @@ import type { Article, Page, SiteSettings } from './types.js';
  * sent with every request, so a page built a minute later still shows the same moment: a publish during the
  * build never yields a site that mixes old and new content. Under `astro dev` the snapshot and the site settings
  * are read again once the last read is a second old, so a publish shows on reload (src/lib/snapshotResolver.ts).
+ * Drafts mode (SHAPIO_DRAFTS=true) reads saved drafts, which have no snapshot: no read sends one.
  */
 const PAGE_SIZE = 100;
 
@@ -30,12 +31,23 @@ const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
 let client: ReturnType<typeof createClient> | undefined;
 const shapio = () =>
-  (client ??= createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() }));
+  (client ??= createClient({
+    baseUrl: shapioUrl(),
+    token: deliveryToken(),
+    site: siteKey(),
+    drafts: isDraftsMode(),
+  }));
 
 let resolver: (() => Promise<number>) | undefined;
 
-/** The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s). */
-export const pinnedSnapshot = async (): Promise<number> => {
+/**
+ * The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s); in
+ * drafts mode, none (drafts cannot be pinned).
+ */
+export const pinnedSnapshot = async (): Promise<number | undefined> => {
+  if (isDraftsMode()) {
+    return undefined;
+  }
   const dev = isDev();
   resolver ??= createSnapshotResolver({
     dev,

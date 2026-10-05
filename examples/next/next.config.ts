@@ -7,11 +7,14 @@ import { createShapioClient } from './src/lib/shapioClient';
  * the snapshot is read here, once, before any page renders, and handed to every worker as SHAPIO_SNAPSHOT
  * (inlined into the build). A set SHAPIO_SNAPSHOT wins and pins the site for good; otherwise `next start` moves
  * forward from this snapshot as Shapio's webhook calls /api/revalidate (src/lib/liveSnapshot.ts). `next dev` and
- * `next start` do not read Shapio here.
+ * `next start` do not read Shapio here. Drafts mode (SHAPIO_DRAFTS=true) pins nothing: drafts have no snapshot.
  */
 const pinSnapshot = async (): Promise<string> => {
   if (process.env.SHAPIO_SNAPSHOT) {
     return process.env.SHAPIO_SNAPSHOT;
+  }
+  if (process.env.SHAPIO_DRAFTS === 'true') {
+    return '';
   }
   // Over HTTP or in process, as the pages read (SHAPIO_MODE).
   const client = createShapioClient();

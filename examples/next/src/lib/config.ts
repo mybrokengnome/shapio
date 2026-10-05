@@ -16,6 +16,10 @@
  *   function calls in this server process (@shapio/local), from Shapio's database at DATABASE_URL. Previews
  *   and the browser still use SHAPIO_URL. See documentation/in-process.md.
  * - DATABASE_URL: Shapio's own database (PostgreSQL or MySQL), for SHAPIO_MODE=in-process only.
+ * - SHAPIO_DRAFTS: `true` turns on drafts mode, for your development server: every read shows saved drafts
+ *   instead of published content, fresh on every request (no snapshot, no cache), and pages carry a "Drafts"
+ *   badge. The token must be a delivery token whose role grants Read drafts: SHAPIO_DEV_DELIVERY_TOKEN when
+ *   set (`npm run seed` writes one), else SHAPIO_DELIVERY_TOKEN. Never set it in a production environment.
  */
 const read = (name: string): string | undefined => {
   const value = process.env[name];
@@ -24,8 +28,13 @@ const read = (name: string): string | undefined => {
 
 export const shapioUrl = () => read('SHAPIO_URL') ?? 'http://localhost:4300';
 
+/** Drafts mode (SHAPIO_DRAFTS=true): the site reads saved drafts. Never set in production. */
+export const isDraftsMode = () => read('SHAPIO_DRAFTS') === 'true';
+
 export const deliveryToken = () => {
-  const token = read('SHAPIO_DELIVERY_TOKEN');
+  // Drafts mode reads with the development token (Read drafts) when there is one.
+  const token =
+    (isDraftsMode() ? read('SHAPIO_DEV_DELIVERY_TOKEN') : undefined) ?? read('SHAPIO_DELIVERY_TOKEN');
   if (!token) {
     throw new Error(
       'Set SHAPIO_DELIVERY_TOKEN (a Shapio delivery token) to build the site; `npm run seed` writes one to .env',

@@ -19,6 +19,7 @@
     "prepare": "svelte-kit sync || echo ''",
     "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:5173",
     "smoke": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4173",
+    "smoke:drafts": "node --env-file-if-exists=.env --import tsx ../shared/scripts/smokeDrafts.ts --url http://localhost:5173",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run"
   },

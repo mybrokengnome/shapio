@@ -14,6 +14,7 @@
     "start": "NEXT_TELEMETRY_DISABLED=1 next start",
     "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:3000 --revalidate-path /api/revalidate/",
     "smoke": "node --env-file-if-exists=.env --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:3000",
+    "smoke:drafts": "node --env-file-if-exists=.env --import tsx ../shared/scripts/smokeDrafts.ts --url http://localhost:3000",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },

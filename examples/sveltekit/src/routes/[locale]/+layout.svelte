@@ -28,5 +28,8 @@
 <footer class="site-footer">
   <p>{siteName} · {data.settings?.footer ?? data.strings.footer} · SvelteKit</p>
 </footer>
+{#if data.drafts}
+  <p class="drafts-badge" title={data.strings.draftsNote} data-shapio-drafts="">{data.strings.drafts}</p>
+{/if}
 <!-- Visual editing (@shapio/visual) plugs in here: its script and the data-shapio attributes on content arrive
      with Shapio's visual-editing SDK, together with draft preview. -->

@@ -203,7 +203,7 @@ jobs:
       - run: pnpm smoke:npm
 
   examples:
-    name: Site starters (seed a local Shapio once; build and smoke Astro, Next.js over HTTP and in process, SvelteKit)
+    name: Site starters (seed a local Shapio once; build and smoke Astro, Next.js over HTTP and in process, Next.js drafts mode, SvelteKit)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -282,6 +282,15 @@ jobs:
           # Rendered markup (scripts and build asset links aside), public media URLs included, must not differ.
           diff -r /tmp/next-pages-http /tmp/next-pages-in-process
           pkill -f 'next start'
+      - name: Next.js drafts mode (next dev with SHAPIO_DRAFTS=true and the seed's dev token; a saved draft shows on reload)
+        env:
+          SHAPIO_DRAFTS: 'true'
+          SHAPIO_MODE: http
+        run: |
+          nohup pnpm --filter example-next dev > /tmp/next-drafts.log 2>&1 &
+          for i in $(seq 1 90); do curl -fsS -o /dev/null http://localhost:3000/en/ && break; sleep 1; done
+          pnpm --filter example-next smoke:drafts
+          pkill -f 'next dev'
       - name: SvelteKit (build, vite preview, smoke over HTTP)
         run: |
           pnpm --filter example-sveltekit build
@@ -289,7 +298,7 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4173/en/ && break; sleep 1; done
           pnpm --filter example-sveltekit smoke
       - if: failure()
-        run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/next-in-process.log /tmp/sveltekit.log 2>/dev/null || true
+        run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/next-in-process.log /tmp/next-drafts.log /tmp/sveltekit.log 2>/dev/null || true
 
   admin-e2e:
     name: Admin end to end on ${{ matrix.database }} (Playwright; axe and keyboard checks in light and dark)

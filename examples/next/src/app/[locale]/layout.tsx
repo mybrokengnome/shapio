@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { DraftsBadge } from '../../components/DraftsBadge';
 import { LocaleSwitch } from '../../components/LocaleSwitch';
+import { isDraftsMode } from '../../lib/config';
 import { getSiteSettings } from '../../lib/shapio';
 import {
   articlesPath,
@@ -73,6 +75,7 @@ const LocaleLayout = async ({ children, params }: LocaleLayoutProps) => {
             {settings?.siteName ?? strings.siteName} · {settings?.footer ?? strings.footer} · Next.js
           </p>
         </footer>
+        {isDraftsMode() ? <DraftsBadge strings={strings} /> : null}
       </body>
     </html>
   );

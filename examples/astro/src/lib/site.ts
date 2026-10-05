@@ -22,6 +22,8 @@ const STRINGS = {
     previewLoading: 'Loading the draft…',
     previewFailed: 'The preview could not be loaded',
     skipToContent: 'Skip to content',
+    drafts: 'Drafts',
+    draftsNote: 'Drafts mode: this server shows saved drafts, not the published site.',
   },
   fr: {
     siteName: 'Studio Northwind',
@@ -36,6 +38,8 @@ const STRINGS = {
     previewLoading: 'Chargement du brouillon…',
     previewFailed: "L'aperçu n'a pas pu être chargé",
     skipToContent: 'Aller au contenu',
+    drafts: 'Brouillons',
+    draftsNote: 'Mode brouillons : ce serveur montre les brouillons enregistrés, pas le site publié.',
   },
 } as const satisfies Record<Locale, Record<string, string>>;
 

@@ -4,7 +4,7 @@ import {
   type DeliverySite,
   type ShapioDeliveryClient,
 } from '@shapio/client';
-import { configuredSnapshot, isDevServer } from './config';
+import { configuredSnapshot, isDevServer, isDraftsMode } from './config';
 import { liveSnapshot } from './liveSnapshot';
 import { createShapioClient } from './shapioClient';
 import type { Locale } from './site';
@@ -17,7 +17,9 @@ import type { Article, Page, SiteSettings } from './types';
  * renders pages in several worker processes, so the snapshot is pinned once in next.config.ts (it sets
  * SHAPIO_SNAPSHOT for the whole build) and every request here sends it. Under `next start`, /api/revalidate
  * moves that snapshot forward (src/lib/liveSnapshot.ts). `next dev` pins nothing: it reads the current snapshot
- * again once the last read is a second old, so a publish shows on reload (src/lib/snapshotResolver.ts).
+ * again once the last read is a second old, so a publish shows on reload (src/lib/snapshotResolver.ts). Drafts
+ * mode (SHAPIO_DRAFTS=true) reads saved drafts, which have no snapshot: no read sends one, and every read is
+ * fresh (the client never caches drafts).
  *
  * The client tags every read with the site, model and entry, and /api/revalidate expires the tags of what
  * changed (src/lib/revalidationTags.ts) as well as the pages. No `next: { cache }` option: reads pinned to a
@@ -41,15 +43,20 @@ export const shapio = () => (client ??= createShapioClient());
 
 let devSnapshot: (() => Promise<number>) | undefined;
 
-/** The build's snapshot (moved forward by /api/revalidate); under `next dev`, the current one. */
-const snapshot = async (): Promise<number> =>
-  isDevServer()
-    ? (devSnapshot ??= createSnapshotResolver({
-        dev: true,
-        configured: configuredSnapshot(),
-        current: async () => (await shapio().snapshots.current()).snapshot,
-      }))()
-    : liveSnapshot();
+/**
+ * The build's snapshot (moved forward by /api/revalidate); under `next dev`, the current one; in drafts mode,
+ * none (drafts cannot be pinned).
+ */
+const snapshot = async (): Promise<number | undefined> =>
+  isDraftsMode()
+    ? undefined
+    : isDevServer()
+      ? (devSnapshot ??= createSnapshotResolver({
+          dev: true,
+          configured: configuredSnapshot(),
+          current: async () => (await shapio().snapshots.current()).snapshot,
+        }))()
+      : liveSnapshot();
 
 /** Every published entry of a collection in one locale, page by page, at the pinned snapshot. */
 const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {

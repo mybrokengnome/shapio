@@ -1,6 +1,7 @@
 ---
 import '../styles/site.css';
 import type { SeoResolved } from '@shapio/client';
+import { isDraftsMode } from '../lib/config.js';
 import { seoHead, type SeoHead } from '../lib/seo.js';
 import { getSite, getSiteSettings } from '../lib/shapio.js';
 import {
@@ -90,5 +91,6 @@ const robotsNoindex = noindex || head.noindex;
     <footer class="site-footer">
       <p>{siteName} · {settings?.footer ?? 'Built with Shapio'} · Astro</p>
     </footer>
+    {isDraftsMode() ? <p class="drafts-badge" title={strings.draftsNote} data-shapio-drafts="">{strings.drafts}</p> : null}
   </body>
 </html>

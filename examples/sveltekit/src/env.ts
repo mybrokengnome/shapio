@@ -10,6 +10,8 @@ const optional = (value: string | undefined) => (value === '' ? undefined : valu
 export const variables = defineEnvVars({
   SHAPIO_URL: { schema: optional },
   SHAPIO_DELIVERY_TOKEN: { schema: optional },
+  SHAPIO_DEV_DELIVERY_TOKEN: { schema: optional },
+  SHAPIO_DRAFTS: { schema: optional },
   SHAPIO_SNAPSHOT: { schema: optional },
   SHAPIO_SITE: { schema: optional },
   PUBLIC_SHAPIO_URL: { schema: optional },

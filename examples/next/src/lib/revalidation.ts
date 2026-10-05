@@ -1,6 +1,6 @@
 import { ShapioApiError, type SnapshotChange, type SnapshotChangeKind } from '@shapio/client';
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { configuredSnapshot, isSnapshotPinned, siteKey } from './config';
+import { configuredSnapshot, isDraftsMode, isSnapshotPinned, siteKey } from './config';
 import { advanceTo, liveSnapshot } from './liveSnapshot';
 import { log } from './log';
 import { changeTags, siteTags } from './revalidationTags';
@@ -69,6 +69,9 @@ const changedEntries = async (items: readonly SnapshotChange[], from: number, to
 };
 
 const revalidateNow = async (): Promise<RevalidationResult> => {
+  if (isDraftsMode()) {
+    return { skipped: 'drafts mode (SHAPIO_DRAFTS=true) reads drafts, which are never pinned or cached' };
+  }
   if (isSnapshotPinned()) {
     return { skipped: `the build is pinned to snapshot ${configuredSnapshot()} by SHAPIO_SNAPSHOT` };
   }

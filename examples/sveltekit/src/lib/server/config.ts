@@ -1,6 +1,8 @@
 import {
   PUBLIC_SHAPIO_URL,
   SHAPIO_DELIVERY_TOKEN,
+  SHAPIO_DEV_DELIVERY_TOKEN,
+  SHAPIO_DRAFTS,
   SHAPIO_SITE,
   SHAPIO_SNAPSHOT,
   SHAPIO_URL,
@@ -18,14 +20,22 @@ import {
  * - PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL).
  * - SITE_URL: optional; this site's public origin, e.g. https://www.example.com. Pages then carry a canonical
  *   URL (and `og:url`) unless the entry sets its own.
+ * - SHAPIO_DRAFTS: `true` turns on drafts mode, for your development server: every read shows saved drafts
+ *   instead of published content (no snapshot), and pages carry a "Drafts" badge. The token must be a delivery
+ *   token whose role grants Read drafts: SHAPIO_DEV_DELIVERY_TOKEN when set (`npm run seed` writes one), else
+ *   SHAPIO_DELIVERY_TOKEN. Never set it in a production environment.
  */
 export const shapioUrl = () => SHAPIO_URL ?? 'http://localhost:4300';
 
 /** Handed to the preview page at build time: the URL its browser code reads drafts from. */
 export const publicShapioUrl = () => PUBLIC_SHAPIO_URL ?? shapioUrl();
 
+/** Drafts mode (SHAPIO_DRAFTS=true): the site reads saved drafts. Never set in production. */
+export const isDraftsMode = () => SHAPIO_DRAFTS === 'true';
+
 export const deliveryToken = () => {
-  const token = SHAPIO_DELIVERY_TOKEN;
+  // Drafts mode reads with the development token (Read drafts) when there is one.
+  const token = (isDraftsMode() ? SHAPIO_DEV_DELIVERY_TOKEN : undefined) ?? SHAPIO_DELIVERY_TOKEN;
   if (!token) {
     throw new Error(
       'Set SHAPIO_DELIVERY_TOKEN (a Shapio delivery token) to build the site; `npm run seed` writes one to .env',

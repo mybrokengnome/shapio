@@ -2,7 +2,7 @@ import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite
 import { dev } from '$app/env';
 import type { Locale } from '../site';
 import type { Article, Page, SiteSettings } from '../types';
-import { configuredSnapshot, deliveryToken, shapioUrl, siteKey } from './config';
+import { configuredSnapshot, deliveryToken, isDraftsMode, shapioUrl, siteKey } from './config';
 import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver';
 
 /**
@@ -10,7 +10,8 @@ import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResol
  * for the whole build. The snapshot is read once, when prerendering starts (or taken from SHAPIO_SNAPSHOT),
  * and sent with every request, so a publish during the build never yields a site that mixes old and new.
  * Under `vite dev` the snapshot and every read are reused for a second at most, so a publish shows on reload
- * (src/lib/server/snapshotResolver.ts).
+ * (src/lib/server/snapshotResolver.ts). Drafts mode (SHAPIO_DRAFTS=true) reads saved drafts, which have no
+ * snapshot: no read sends one.
  */
 const PAGE_SIZE = 100;
 
@@ -24,20 +25,26 @@ const PAGE_FIELDS = ['title', 'slug', 'description', 'sections', 'seo'];
 const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', 'publishedOn', 'seo'];
 const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
-const createShapio = () => createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() });
+const createShapio = () =>
+  createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey(), drafts: isDraftsMode() });
 
 let client: ReturnType<typeof createShapio> | undefined;
 const shapio = () => (client ??= createShapio());
 
 let resolver: (() => Promise<number>) | undefined;
 
-/** The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s). */
-const snapshot = (): Promise<number> =>
-  (resolver ??= createSnapshotResolver({
-    dev,
-    configured: configuredSnapshot(),
-    current: async () => (await shapio().snapshots.current()).snapshot,
-  }))();
+/**
+ * The snapshot every request reads: one for the whole build; in dev, the current one (re-read after 1 s); in
+ * drafts mode, none (drafts cannot be pinned).
+ */
+const snapshot = async (): Promise<number | undefined> =>
+  isDraftsMode()
+    ? undefined
+    : (resolver ??= createSnapshotResolver({
+        dev,
+        configured: configuredSnapshot(),
+        current: async () => (await shapio().snapshots.current()).snapshot,
+      }))();
 
 /** Each collection is read once per locale however many pages render from it (in dev, at most 1 s apart). */
 const memo = new Map<string, () => Promise<unknown>>();

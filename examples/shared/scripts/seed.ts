@@ -40,13 +40,16 @@ import { createPng } from './lib/png.js';
  * 5. with `--revalidate-path` (the Next.js starter's /api/revalidate), a webhook named "Site revalidation" that
  *    sends publish, unpublish, delete, change set and schema events to SITE_URL + that path; its signing secret
  *    (rotated on every run, as Shapio shows it only once) is written to .env as SHAPIO_WEBHOOK_SECRET;
- * 6. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory.
+ * 6. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory;
+ * 7. a second delivery role and token for development servers, "<site> dev", that may also read drafts (drafts
+ *    mode: SHAPIO_DRAFTS=true), written to .env as SHAPIO_DEV_DELIVERY_TOKEN. Never put it in production.
  */
 const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
 const SCHEMA_KINDS = ['models', 'components'] as const;
 const SITE_MODELS = ['page', 'article', 'author', 'siteSettings'];
 const DELIVERY_ROLE_KEY = 'starter-delivery';
 const DELIVERY_TOKEN_NAME = 'starter build';
+const DEV_ROLE_KEY = 'starter-dev';
 const PREVIEW_CONNECTION_NAME = 'Preview';
 /** Where Shapio opens a draft: the starter's /preview/ page, the token in the fragment (never sent to a server). */
 const PREVIEW_PATH = '/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}';
@@ -308,35 +311,71 @@ const upsertEntry = async (client: ShapioClient, spec: EntrySpec) => {
   log(`${spec.publish ? 'Published' : 'Saved draft'} ${spec.model} ${spec.slug} (en, fr)`);
 };
 
-/** A delivery role that reads the site's models, and a fresh token bound to it (older ones are revoked). */
-const createDeliveryToken = async (client: ShapioClient) => {
+type DeliveryRoleSpec = {
+  key: string;
+  name: string;
+  description: string;
+  tokenName: string;
+  drafts: boolean;
+};
+
+/**
+ * A delivery role that reads the site's models (and, for development servers, their drafts), and a fresh token
+ * bound to it (older ones of the same name are revoked).
+ */
+const createDeliveryToken = async (client: ShapioClient, spec: DeliveryRoleSpec) => {
   const summary = await client.admin.schema.summary();
   const modelIds = summary.definitions
     .filter((definition) => SITE_MODELS.includes(definition.apiKey))
     .map((definition) => definition.id);
-  const permissions = modelIds.map((modelId) => ({
-    action: 'read' as const,
-    modelId,
-    condition: null,
-    fieldIds: null,
-  }));
+  const grant = { condition: null, fieldIds: null };
+  const permissions = [
+    ...modelIds.map((modelId) => ({ action: 'read' as const, modelId, ...grant })),
+    // Read drafts always covers every model; the role still reads only the models above.
+    ...(spec.drafts ? [{ action: 'readDrafts' as const, modelId: null, ...grant }] : []),
+  ];
   const roles = await client.admin.roles.list();
-  const existing = roles.find((role) => role.key === DELIVERY_ROLE_KEY);
+  const existing = roles.find((role) => role.key === spec.key);
   const role = existing
     ? await client.admin.roles.update(existing.id, { expectedVersion: existing.version, permissions })
     : await client.admin.roles.create({
-        key: DELIVERY_ROLE_KEY,
-        name: 'Starter site (delivery)',
-        description: 'Reads published pages, articles, authors and the site settings for the starter build.',
+        key: spec.key,
+        name: spec.name,
+        description: spec.description,
         kind: 'delivery',
         permissions,
       });
   for (const token of await client.admin.tokens.list()) {
-    if (token.name === DELIVERY_TOKEN_NAME && !token.revokedAt) {
+    if (token.name === spec.tokenName && !token.revokedAt) {
       await client.admin.tokens.revoke(token.id);
     }
   }
-  return (await client.admin.tokens.create({ name: DELIVERY_TOKEN_NAME, roleId: role.id })).token;
+  return (await client.admin.tokens.create({ name: spec.tokenName, roleId: role.id })).token;
+};
+
+const BUILD_ROLE: DeliveryRoleSpec = {
+  key: DELIVERY_ROLE_KEY,
+  name: 'Starter site (delivery)',
+  description: 'Reads published pages, articles, authors and the site settings for the starter build.',
+  tokenName: DELIVERY_TOKEN_NAME,
+  drafts: false,
+};
+
+/** The development token's role: the build role plus Read drafts. Named after the site it reads. */
+const devRole = (siteName: string): DeliveryRoleSpec => ({
+  key: DEV_ROLE_KEY,
+  name: 'Starter site dev (drafts)',
+  description:
+    'Reads the starter models and their drafts, for development servers (drafts mode). Never use its tokens in production.',
+  tokenName: `${siteName} dev`,
+  drafts: true,
+});
+
+/** The name of the site the seed works on: SHAPIO_SITE, else the primary site. */
+const siteNameOf = async (client: ShapioClient, siteKey: string | undefined) => {
+  const sites = await client.admin.sites.list();
+  const site = sites.find((candidate) => (siteKey ? candidate.key === siteKey : candidate.isPrimary));
+  return site?.name ?? siteKey ?? 'site';
 };
 
 /** The "Preview" connection, created once and pointed at this starter's /preview/ page on every run. */
@@ -402,24 +441,30 @@ const tryRevalidateWebhook = async (client: ShapioClient, siteUrl: string, path:
   }
 };
 
-const writeEnv = async (
-  url: string,
-  site: string | undefined,
-  deliveryToken: string,
-  webhookSecret: string | undefined,
-) => {
+type SeededEnv = {
+  url: string;
+  site: string | undefined;
+  deliveryToken: string;
+  devDeliveryToken: string;
+  webhookSecret: string | undefined;
+};
+
+const writeEnv = async ({ url, site, deliveryToken, devDeliveryToken, webhookSecret }: SeededEnv) => {
   const path = resolve('.env');
   const lines = [
-    '# Written by the seed. The delivery token is read-only; keep this file out of git.',
+    '# Written by the seed. The delivery tokens are read-only; keep this file out of git.',
     `SHAPIO_URL=${url}`,
     `SHAPIO_DELIVERY_TOKEN=${deliveryToken}`,
+    '# Development only: drafts mode (SHAPIO_DRAFTS=true) reads with this token, which may read drafts.',
+    '# Never put it in a production environment.',
+    `SHAPIO_DEV_DELIVERY_TOKEN=${devDeliveryToken}`,
     // The site the content was seeded on: the starter reads the same one.
     ...(site ? [`SHAPIO_SITE=${site}`] : []),
     ...(webhookSecret ? [`SHAPIO_WEBHOOK_SECRET=${webhookSecret}`] : []),
   ];
   await writeFile(path, `${lines.join('\n')}\n`, { mode: 0o600 });
   log(
-    `Wrote SHAPIO_URL, ${site ? 'SHAPIO_SITE, ' : ''}SHAPIO_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
+    `Wrote SHAPIO_URL, ${site ? 'SHAPIO_SITE, ' : ''}SHAPIO_DELIVERY_TOKEN, SHAPIO_DEV_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
   );
 };
 
@@ -444,7 +489,15 @@ const main = async () => {
     const webhookSecret = revalidatePath
       ? await tryRevalidateWebhook(admin.client, siteUrl, revalidatePath)
       : undefined;
-    await writeEnv(admin.url, admin.site, await createDeliveryToken(admin.client), webhookSecret);
+    const siteName = await siteNameOf(admin.client, admin.site);
+    await writeEnv({
+      url: admin.url,
+      site: admin.site,
+      deliveryToken: await createDeliveryToken(admin.client, BUILD_ROLE),
+      devDeliveryToken: await createDeliveryToken(admin.client, devRole(siteName)),
+      webhookSecret,
+    });
+    log(`Created the "${siteName} dev" token for drafts mode (SHAPIO_DRAFTS=true); keep it off production.`);
     log('Seeded. Build the site with: npm run build');
   } finally {
     await admin.close();
