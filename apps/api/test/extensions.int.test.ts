@@ -75,7 +75,7 @@ describe('extension points', () => {
       fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
     });
     // The production worker assembly (the same one `shapio start` and `shapio worker` run).
-    worker = createConfiguredWorker(config, db, silentLogger, testApp.app.signingSecret, runtime);
+    worker = await createConfiguredWorker(config, db, silentLogger, testApp.app.signingSecret, runtime);
   });
 
   afterAll(async () => {

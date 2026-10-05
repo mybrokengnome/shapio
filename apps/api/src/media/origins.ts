@@ -1,5 +1,4 @@
 import type { StorageConfig } from '../config/index.js';
-import { createS3Adapter } from './s3Adapter.js';
 
 const SAMPLE_KEY = 'public/00000000-0000-0000-0000-000000000000/sample/origin-probe';
 
@@ -24,6 +23,7 @@ export const resolveMediaOrigins = async (storage: StorageConfig): Promise<strin
     origins.add(base);
   }
   if (storage.s3) {
+    const { createS3Adapter } = await import('./s3Adapter.js');
     const adapter = createS3Adapter({ config: storage.s3, publicBaseUrl: undefined });
     const signed = await adapter.signedGetUrl(SAMPLE_KEY, {
       expiresInSeconds: 60,

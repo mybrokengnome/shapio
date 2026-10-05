@@ -1,9 +1,10 @@
 import type { FastifyRequest } from 'fastify';
 import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { getRequestPermissions } from '../plugins/requestState.js';
-import { getRequestSchema } from '../plugins/schemaSnapshot.js';
+import { getRequestNetworkSchema } from '../plugins/schemaSnapshot.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
+import { buildContentContext } from '../services/contentContext.js';
 
 /**
  * The service context for a content request: the pinned snapshot, the principal and dependencies.
@@ -11,17 +12,18 @@ import type { ContentServiceContext } from '../services/contentAccess.js';
  * memoized per (principal, action, model), so the read, relation visibility, populate and usage recording
  * evaluate each model's policy once.
  */
-export const contentContextFor = async (request: FastifyRequest): Promise<ContentServiceContext> => ({
-  db: request.server.db,
-  snapshot: await getRequestSchema(request),
-  permissions: getRequestPermissions(request),
-  actor: request.principal,
-  site: getRequestSite(request),
-  hooks: request.server.contentHooks,
-  media: { storage: request.server.mediaStorage, urls: request.server.urls },
-  requestId: request.id,
-  ip: request.ip,
-});
+export const contentContextFor = async (request: FastifyRequest): Promise<ContentServiceContext> =>
+  buildContentContext({
+    db: request.server.db,
+    network: await getRequestNetworkSchema(request),
+    permissions: getRequestPermissions(request),
+    actor: request.principal,
+    site: getRequestSite(request),
+    hooks: request.server.contentHooks,
+    media: { storage: request.server.mediaStorage, urls: request.server.urls },
+    requestId: request.id,
+    ip: request.ip,
+  });
 
 const isSiteSegment = (segment: string): boolean => {
   const key = segment.split('=', 1)[0] ?? '';

@@ -50,7 +50,7 @@ const runMigrate = async (parsed: MigrateArgs, io: CliIo): Promise<number> => {
       io.stderr('Database migrations are pending; run `shapio migrate` (or start the server) first.\n');
       return 1;
     }
-    const storage = createMediaStorage(config.storage, { urls: createUrlBuilder(config.server) });
+    const storage = await createMediaStorage(config.storage, { urls: createUrlBuilder(config.server) });
     if (!storage.has('s3')) {
       io.stderr(
         'Set STORAGE_S3_BUCKET (and the other STORAGE_S3_* settings) to migrate media to or from S3.\n',

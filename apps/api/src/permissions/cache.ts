@@ -54,16 +54,25 @@ const groupBindings = (rows: readonly siteAppRolesRepository.SiteAppRoleBinding[
 
 const KNOWN_ACTIONS: ReadonlySet<string> = new Set([...CONTENT_ACTIONS, ...GLOBAL_ACTIONS]);
 
-const toGrant = (row: adminRolesRepository.PermissionGrantRow): Grant | undefined => {
-  // Rows written by a newer Shapio may name actions this build does not know; they grant nothing here.
+const KNOWN_CONDITIONS: ReadonlySet<string> = new Set<NonNullable<Grant['condition']>>(['ownedByPrincipal']);
+
+/**
+ * A stored grant as this build understands it. Rows written by a newer Shapio may name an action or a row
+ * condition this build does not know; they grant nothing here (fail closed). An unknown condition must never
+ * read as "no condition", which would widen the grant to every row.
+ */
+export const toGrant = (row: adminRolesRepository.PermissionGrantRow): Grant | undefined => {
   if (!KNOWN_ACTIONS.has(row.action)) {
+    return undefined;
+  }
+  if (row.condition !== null && !KNOWN_CONDITIONS.has(row.condition)) {
     return undefined;
   }
   return {
     roleId: row.role_id,
     action: row.action as ContentAction | GlobalAction,
     modelId: row.model_id,
-    condition: row.condition === 'ownedByPrincipal' ? 'ownedByPrincipal' : null,
+    condition: row.condition as Grant['condition'],
     fieldIds: row.field_ids,
   };
 };

@@ -34,5 +34,5 @@ if (process.env.HANG_AT !== 'afterCommit') {
       : handler,
   ]);
   const signingSecret = await resolveSigningSecret(db, config.sessionSecret, log);
-  createConfiguredWorker(config, db, log, signingSecret, { ...runtime, jobHandlers }).start();
+  (await createConfiguredWorker(config, db, log, signingSecret, { ...runtime, jobHandlers })).start();
 }

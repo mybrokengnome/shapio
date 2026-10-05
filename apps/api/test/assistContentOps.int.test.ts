@@ -57,7 +57,7 @@ describe('assist content-ops', () => {
   let post: EntryBody;
   let note: EntryBody;
 
-  const workerWith = (assistOn: boolean) => {
+  const workerWith = async (assistOn: boolean) => {
     const runtime = createPublishingRuntime({
       db: database.current.db,
       signingSecret: testApp.app.signingSecret,
@@ -72,7 +72,7 @@ describe('assist content-ops', () => {
         ...createAssistJobHandlers({
           environment: createPublishingJobEnvironment(runtime),
           assist: assistOn ? createAssistRuntime(testApp.config.assist, runtime.resolve) : undefined,
-          storage: createMediaStorage(testApp.config.storage, {
+          storage: await createMediaStorage(testApp.config.storage, {
             urls: createUrlBuilder(testApp.config.server),
           }),
         }),
@@ -117,7 +117,7 @@ describe('assist content-ops', () => {
     });
     const token = await createRoleToken(database.current.db, 'owner');
     owner = schemaClient(testApp.app, token);
-    worker = workerWith(true);
+    worker = await workerWith(true);
     expectStatus(await owner.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
     image = await uploadAsset(
       testApp.app,
@@ -298,7 +298,7 @@ describe('assist content-ops', () => {
   });
 
   it('fails a run queued before assist was switched off, without contacting any provider', async () => {
-    const off = workerWith(false);
+    const off = await workerWith(false);
     try {
       fake.reset();
       const runId = await propose(owner, { rule: 'altMissing' });

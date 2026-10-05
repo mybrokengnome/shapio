@@ -1,7 +1,6 @@
 import type { StorageConfig } from '../config/index.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
 import { createLocalAdapter } from './localAdapter.js';
-import { createS3Adapter } from './s3Adapter.js';
 import type { MediaStorage, StorageAdapter, StorageDriver } from './types.js';
 
 export type MediaStorageDependencies = {
@@ -23,9 +22,13 @@ export class StorageNotConfiguredError extends Error {
 
 /**
  * Every adapter this instance can reach. Local disk is always available; S3 whenever its bucket is set,
- * whatever STORAGE_DRIVER says, so assets keep being served while `shapio media migrate` moves them.
+ * whatever STORAGE_DRIVER says, so assets keep being served while `shapio media migrate` moves them. The S3
+ * adapter (and the AWS SDK) is loaded only then.
  */
-export const createMediaStorage = (config: StorageConfig, deps: MediaStorageDependencies): MediaStorage => {
+export const createMediaStorage = async (
+  config: StorageConfig,
+  deps: MediaStorageDependencies,
+): Promise<MediaStorage> => {
   const adapters = new Map<StorageDriver, StorageAdapter>();
   adapters.set(
     'local',
@@ -37,6 +40,7 @@ export const createMediaStorage = (config: StorageConfig, deps: MediaStorageDepe
     }),
   );
   if (config.s3) {
+    const { createS3Adapter } = await import('./s3Adapter.js');
     adapters.set('s3', createS3Adapter({ config: config.s3, publicBaseUrl: config.publicBaseUrl }));
   }
   const get = (driver: StorageDriver): StorageAdapter => {

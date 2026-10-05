@@ -17,7 +17,7 @@ type MediaStoragePluginOptions = { storage: StorageConfig; urls: UrlBuilder; sig
 /** Exposes the media storage adapters to routes. Registered after the signing secret is resolved. */
 export const mediaStoragePlugin = fp<MediaStoragePluginOptions>(
   async (app: FastifyInstance, { storage, urls, signingSecret }) => {
-    app.decorate('mediaStorage', createMediaStorage(storage, { urls, signingSecret }));
+    app.decorate('mediaStorage', await createMediaStorage(storage, { urls, signingSecret }));
   },
   { name: 'shapio-media-storage' },
 );

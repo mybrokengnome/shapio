@@ -1,4 +1,3 @@
-import type { FastifyRequest } from 'fastify';
 import type { PermissionEvaluator } from '../../../permissions/types.js';
 import type { SiteRef } from '../../../services/actorContext.js';
 import type { ContentServiceContext } from '../../../services/contentAccess.js';
@@ -15,9 +14,8 @@ export type ReadScope = BatchReadOptions;
 /** The source object of every entry and component type: the delivery projection plus its read scope. */
 export type ValueNode = { data: Record<string, unknown>; scope: ReadScope };
 
-/** Per-request state, built by requestContext.ts. */
+/** Per-operation state, built by requestContext.ts. */
 export type GraphqlRequestContext = {
-  request: FastifyRequest;
   /** The request's evaluator, memoized per (model, action): one evaluation per request (ADR 0005). */
   permissions: PermissionEvaluator;
   /** Admin users and admin-scope API tokens: may read drafts (`publicationState: DRAFT`). */

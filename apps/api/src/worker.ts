@@ -43,7 +43,7 @@ export const startDedicatedWorker = async (config: AppConfig) => {
   }
   const signingSecret = await resolveSigningSecret(db, config.sessionSecret, logger);
   const extensions = await startExtensions(config, db, logger, project);
-  const worker = createConfiguredWorker(config, db, logger, signingSecret, extensions);
+  const worker = await createConfiguredWorker(config, db, logger, signingSecret, extensions);
   await ensureRetentionScheduled(db);
   await ensureHealthSweepScheduled(db);
   worker.start();

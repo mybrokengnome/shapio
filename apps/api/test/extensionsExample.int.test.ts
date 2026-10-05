@@ -40,7 +40,7 @@ describe('example extension', () => {
         { apiKey: 'cover', label: 'Cover', type: 'media', settings: { allowedKinds: ['image'] } },
       ],
     });
-    worker = createConfiguredWorker(config, db, silentLogger, testApp.app.signingSecret, runtime);
+    worker = await createConfiguredWorker(config, db, silentLogger, testApp.app.signingSecret, runtime);
   });
 
   afterAll(async () => {

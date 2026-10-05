@@ -6,13 +6,14 @@ import {
   type TransactionSettings,
   type UnknownRow,
 } from 'kysely';
-import mysql, { type Pool, type PoolConnection, type PoolOptions, type ResultSetHeader } from 'mysql2';
+import type { Pool, PoolConnection, PoolOptions, ResultSetHeader } from 'mysql2';
 import { assertNotNested, outsideConnectionScope } from '../connectionScope.js';
 import { publishNotification } from '../notifyHub.js';
 import { DEFAULT_POOL_ACQUIRE_TIMEOUT_MS, PoolAcquireTimeoutError } from '../poolAcquire.js';
 import { encodeParameter, typeCast } from './codec.js';
 import { planOf } from './compiler.js';
 import { annotateMysqlError } from './errors.js';
+import { loadMysql } from './module.js';
 import { NotificationChannel, SequenceValue, sequenceTableOf } from './parameters.js';
 import type { PlanContext } from './plans.js';
 
@@ -263,6 +264,7 @@ export class MysqlDriver implements Driver {
   }
 
   async init(): Promise<void> {
+    const mysql = await loadMysql();
     const pool = mysql.createPool(
       mysqlPoolOptions(this.#options.url, this.#options.poolMax, this.#options.applicationName),
     );

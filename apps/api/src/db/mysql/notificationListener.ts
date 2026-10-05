@@ -1,7 +1,8 @@
 import type { FastifyBaseLogger } from 'fastify';
-import mysql, { type Connection } from 'mysql2';
+import type { Connection } from 'mysql2';
 import { subscribeNotifications } from '../notifyHub.js';
 import { mysqlDatabaseKey, mysqlPoolOptions, SESSION_SETUP } from './driver.js';
+import { loadMysql } from './module.js';
 
 /**
  * Notifications on MySQL (ADR 0001, "MySQL"; ADR 0002): MySQL has no LISTEN/NOTIFY, so `notify()` inserts a
@@ -130,6 +131,17 @@ export const createMysqlNotificationListener = (options: MysqlNotificationListen
   };
 
   const connect = async () => {
+    if (closed) {
+      return;
+    }
+    let mysql: Awaited<ReturnType<typeof loadMysql>>;
+    try {
+      mysql = await loadMysql();
+    } catch (error) {
+      // Only when mysql2 is not installed; the durable version checks keep every reader correct without it.
+      log.error({ err: error }, 'mysql2 could not be loaded; notifications are off');
+      return;
+    }
     if (closed) {
       return;
     }

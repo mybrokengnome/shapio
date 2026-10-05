@@ -3,7 +3,6 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config/index.js';
 import { EXTENSION_JOB_PREFIX, EXTENSION_SYSTEM_COMPONENT } from '../constants/extensions.js';
 import { PRIMARY_SITE_ID } from '../constants/sites.js';
-import { createContentHooks } from '../content/hooks.js';
 import { resolveModel } from '../content/model.js';
 import type { Database } from '../db/index.js';
 import { describeError } from '../helpers/errors.js';
@@ -13,6 +12,7 @@ import * as entriesRepository from '../repositories/entries.js';
 import type { SchemaRegistry } from '../schema/registry.js';
 import type { SiteRef } from '../services/actorContext.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
+import { buildContentContext } from '../services/contentContext.js';
 import { getAdminEntry, listAdminEntries } from '../services/contentReads.js';
 import { listUsagesOnSite } from '../services/mediaReferences.js';
 import { toHookModel } from './hooks.js';
@@ -47,17 +47,15 @@ const contentContext = async (
   environment: ServiceEnvironment,
   site: SiteRef,
   principal: Principal | undefined,
-): Promise<ContentServiceContext> => ({
-  db: environment.db,
-  // The site's view (plan site-schema): shared definitions and the site's own.
-  snapshot: (await environment.registry.getSnapshot()).forSite(site.id),
-  permissions: environment.permissions,
-  actor: principal ?? SYSTEM_PRINCIPAL,
-  // Content is per site (sites plan §H, ADR 0009 note): these services read their own site.
-  site,
-  // Reads never reach a lifecycle hook point.
-  hooks: createContentHooks(),
-});
+): Promise<ContentServiceContext> =>
+  // Content is per site (sites plan §H, ADR 0009 note): these services read their own site's view.
+  buildContentContext({
+    db: environment.db,
+    network: await environment.registry.getSnapshot(),
+    permissions: environment.permissions,
+    actor: principal ?? SYSTEM_PRINCIPAL,
+    site,
+  });
 
 const toReadEntry = (view: { id: string; locale: string; status: string; data: Record<string, unknown> }) =>
   ({ id: view.id, locale: view.locale, status: view.status, data: view.data }) satisfies ContentReadEntry;

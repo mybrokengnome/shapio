@@ -20,6 +20,12 @@ All notable changes to Shapio are listed here. The format follows
   tags of the models and entries in the snapshot diff (and the site tag on `site.updated` and schema changes)
   with `revalidateTag`, besides revalidating the pages; its answer lists them in `tags`.
 
+### Fixed
+
+- **Unknown permission conditions fail closed (security hardening).** A role grant whose row condition this
+  build does not know (written by a newer Shapio on the same database) now grants nothing. It used to read as
+  unconditional, which would have widened the grant to every row.
+
 ## [0.4.1] - 2026-10-05
 
 ### Added

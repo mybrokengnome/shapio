@@ -72,13 +72,13 @@ const logStartupSummary = (config: AppConfig, logger: Logger) => {
   );
 };
 
-export const createConfiguredWorker = (
+export const createConfiguredWorker = async (
   config: AppConfig,
   db: Database,
   logger: Logger,
   signingSecret: string,
   extensions: ExtensionRuntime,
-): Worker => {
+): Promise<Worker> => {
   const publishing = createPublishingJobEnvironment(
     createPublishingRuntime({
       db,
@@ -95,7 +95,7 @@ export const createConfiguredWorker = (
     urls: createUrlBuilder(config.server),
     transport: createEmailTransport(config.email, logger.child({ component: 'email' })),
   };
-  const storage = createMediaStorage(config.storage, { urls: createUrlBuilder(config.server) });
+  const storage = await createMediaStorage(config.storage, { urls: createUrlBuilder(config.server) });
   return createWorker({
     db,
     handlers: createJobHandlers([
@@ -177,7 +177,7 @@ export const startServer = async (config: AppConfig): Promise<RunningServer> => 
     });
     const worker =
       config.worker.mode === 'inline'
-        ? createConfiguredWorker(config, db, logger, signingSecret, extensions)
+        ? await createConfiguredWorker(config, db, logger, signingSecret, extensions)
         : undefined;
 
     const tlsRuntime = tls;
