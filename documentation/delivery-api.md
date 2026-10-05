@@ -167,7 +167,9 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 ```
 
 A static site build should read the current snapshot once at the start and pass it with every request: then
-a publish in the middle of the build cannot produce a site that mixes two moments. The
+a publish in the middle of the build cannot produce a site that mixes two moments. Without `snapshot`, which
+related entries a response shows is checked against what is live when it is answered, so an entry published a
+moment after `meta.snapshot` may already appear; an unpublished one never does. The
 [example site](example-site.md) does exactly this, and Shapio's deployment triggers carry the snapshot to build.
 
 Old snapshots are read through the current schema (a value stored under an earlier field type comes back as

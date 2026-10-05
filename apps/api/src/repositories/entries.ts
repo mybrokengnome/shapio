@@ -211,6 +211,10 @@ export const countLiveByModel = (siteId: string, modelIds: readonly string[], ex
 export const entrySiteOf = (executor: Executor, entryId: string) =>
   executor.selectFrom('entries').select('entries.site_id').where('entries.id', '=', entryId);
 
+/** The entry's creation time, copied onto each head (`entry_heads.entry_created_at`, the default list order). */
+export const entryCreatedAtOf = (executor: Executor, entryId: string) =>
+  executor.selectFrom('entries').select('entries.created_at').where('entries.id', '=', entryId);
+
 /**
  * Live entries of a model on sites other than `siteId`, per site (a definition can only move to one site
  * while no other site holds entries of it: plan site-schema, rule 2). Deleted ones do not count: once the

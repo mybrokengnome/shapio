@@ -90,7 +90,7 @@ describe('content query compiler on SQLite', () => {
     ],
     [
       'filters[createdAt][$gt]=2026-10-01T10:00:00%2B02:00',
-      `("e"."created_at" > ?)`,
+      `("h"."entry_created_at" > ?)`,
       ['2026-10-01T08:00:00.000Z'],
     ],
     [
@@ -124,14 +124,12 @@ describe('content query compiler on SQLite', () => {
       and h2.locale in (select value from json_each(?))
       and (case h2.locale when ? then 0 when ? then 1 end) < (case h.locale when ? then 0 when ? then 1 end))`;
   const chainParameters = ['["fr","en"]', '["fr","en"]', 'fr', 'en', 'fr', 'en'];
-  /** The joined entry's site and model: on the row query of a plain list in `entries` order only. */
-  const entryScope = ` and e.site_id = ? and e.model_id = '${MODEL}'`;
 
   it('ranks the locale chain without arrays and sorts missing values like PostgreSQL', () => {
     const query = compileFixtureQuery('sort=title:asc,rank:desc&page=2', sqlite);
     const where = `${from('entry_heads')} and h.state = ?${fallback('entry_heads', ' and h2.state = h.state')}`;
     expect(compile(query.rows)).toEqual({
-      sql: `${select}${where} order by ${text(F.title)} asc nulls last, ${numeric(F.rank)} desc nulls first, e.id asc limit ? offset ?`,
+      sql: `${select}${where} order by ${text(F.title)} asc nulls last, ${numeric(F.rank)} desc nulls first, h.entry_id asc limit ? offset ?`,
       parameters: [SITE, 'published', ...chainParameters, 25, 25],
     });
     expect(compile(query.count)).toEqual({
@@ -147,24 +145,22 @@ describe('content query compiler on SQLite', () => {
         compileFixtureQuery('sort=createdAt:asc', sqlite, { locales: { kind: 'chain', chain: ['en'] } }).rows,
       ),
     ).toEqual({
-      sql: `${select}${from('entry_heads')} and h.state = ? and h.locale = ?${entryScope} order by "e"."created_at" asc, e.id asc limit ?`,
-      parameters: [SITE, 'published', 'en', SITE, 25],
+      sql: `${select}${from('entry_heads')} and h.state = ? and h.locale = ? order by "h"."entry_created_at" asc, h.entry_id asc limit ?`,
+      parameters: [SITE, 'published', 'en', 25],
     });
     expect(
       compile(compileFixtureQuery('', sqlite, { locales: { kind: 'any' }, state: 'draft' }).rows),
     ).toEqual({
-      sql: `${select}${from('entry_heads')} and h.state = ? order by e.id asc limit ?`,
+      sql: `${select}${from('entry_heads')} and h.state = ? order by h.entry_id asc limit ?`,
       parameters: [SITE, 'draft', 25],
     });
   });
 
-  it('names the entry scope only on an unfiltered list in entries order', () => {
+  it('orders by the entry creation time copied on the head, with the entry ID on the head as tie-breaker', () => {
     const rowsOf = (search: string) =>
       compile(compileFixtureQuery(search, sqlite, { locales: { kind: 'any' } }).rows).sql;
-    expect(rowsOf('sort=createdAt:desc')).toContain(`${entryScope} order by "e"."created_at" desc`);
-    expect(rowsOf('sort=createdAt:desc&filters[title][$eq]=x')).not.toContain('e.site_id');
-    expect(rowsOf('sort=updatedAt:desc')).not.toContain('e.site_id');
-    expect(compile(compileFixtureQuery('sort=createdAt:desc', sqlite).count).sql).not.toContain('e.site_id');
+    expect(rowsOf('sort=createdAt:desc')).toContain('order by "h"."entry_created_at" desc, h.entry_id asc');
+    expect(rowsOf('sort=createdAt:desc')).not.toContain('e.site_id');
   });
 
   it('counts live heads without the entries join unless a condition or a snapshot needs it', () => {
@@ -179,15 +175,17 @@ describe('content query compiler on SQLite', () => {
   it('reads a snapshot from the publication log without casts', () => {
     const cte = `with "content_snapshot" as (
     select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at
+      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
+      en.created_at as entry_created_at
     from publication_log pl
     join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
     where pl.site_id = ? and pl.model_id = '${MODEL}'
       and pl.from_seq <= ?
       and (pl.to_seq is null or pl.to_seq > ?)
   ) `;
     expect(compile(compileFixtureQuery('snapshot=3&filters[title][$eq]=x', sqlite).rows)).toEqual({
-      sql: `${cte}${select}${from('content_snapshot')}${fallback('content_snapshot', '')} and (${text(F.title)} is ?) order by e.id asc limit ?`,
+      sql: `${cte}${select}${from('content_snapshot')}${fallback('content_snapshot', '')} and (${text(F.title)} is ?) order by h.entry_id asc limit ?`,
       parameters: [SITE, 3, 3, SITE, ...chainParameters, 'x', 25],
     });
   });

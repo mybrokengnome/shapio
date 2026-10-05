@@ -28,6 +28,11 @@ export type EqualityTarget = {
   list: boolean;
   /** decimal and biginteger: JSON strings that compare numerically. */
   numericString: boolean;
+  /**
+   * A single-valued scalar field with a B-tree expression index (`hasFieldIndex`): PostgreSQL compares on the
+   * index expression instead of containment, so the index and its statistics serve the filter.
+   */
+  indexed: boolean;
 };
 
 /** A field index, with its parts already built by `expressions.ts`. */

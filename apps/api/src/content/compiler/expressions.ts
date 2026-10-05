@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isStableId, SCALAR_DATA_TYPES, type DataType } from '@shapio/schema';
+import { isStableId, SCALAR_DATA_TYPES, type DataType, type FieldDefinition } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import { contentDialect } from './currentDialect.js';
 import type {
@@ -48,6 +48,15 @@ export const FIELD_INDEX_LAYOUT: FieldIndexLayout = 2;
 const NUMERIC_TYPES: ReadonlySet<DataType> = new Set(['number', 'integer', 'decimal', 'biginteger']);
 /** Numbers stored as JSON strings (exact decimals, big integers). */
 const NUMERIC_STRING_TYPES: ReadonlySet<DataType> = new Set(['decimal', 'biginteger']);
+
+/**
+ * Whether a field has a B-tree expression index: filterable or sortable, and not deprecated. The schema
+ * planner builds an index for exactly these fields (`indexStepsOf`), and PostgreSQL equality compares on
+ * the index expression for them (`EqualityTarget.indexed`).
+ */
+export const hasFieldIndex = (
+  field: Pick<FieldDefinition, 'filterable' | 'sortable' | 'deprecated'>,
+): boolean => (field.filterable || field.sortable) && !field.deprecated;
 
 export const valueCastFor = (type: DataType): ValueCast => {
   if (NUMERIC_TYPES.has(type)) {
@@ -104,8 +113,9 @@ export const fieldTextExpression = (
 };
 
 /**
- * Equality on a top-level field (lists: "contains"). PostgreSQL emits containment, which its GIN index
- * serves; SQLite compares the field's index expression.
+ * Equality on a top-level field (lists: "contains"). PostgreSQL compares the field's index expression when
+ * the field has one (`EqualityTarget.indexed`) and emits containment, which its GIN index serves, otherwise;
+ * SQLite and MySQL compare the field's index expression.
  */
 export const fieldEqualsExpression = (
   target: EqualityTarget,

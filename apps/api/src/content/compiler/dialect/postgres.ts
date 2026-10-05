@@ -4,8 +4,9 @@ import type { ContentSqlDialect, ListElement, TextMatchOperator, ValueCast } fro
 
 /**
  * PostgreSQL content SQL (ADR 0001): JSONB with a GIN `jsonb_path_ops` index serving containment, so
- * scalar equality is emitted as `data @> {...}`; ranges and sorts use per-field B-tree expression indexes
- * built `CONCURRENTLY` with a matching `CREATE STATISTICS` object.
+ * equality on a field without an index is emitted as `data @> {...}`; ranges, sorts and equality on indexed
+ * fields (filterable or sortable) use per-field B-tree expression indexes built `CONCURRENTLY` with a
+ * matching `CREATE STATISTICS` object.
  */
 const DATA = sql.ref(CONTENT_HEADS_COLUMNS.data);
 
@@ -82,6 +83,13 @@ export const postgresContentDialect: ContentSqlDialect = {
       // "12.5" and "12.50" are equal numbers but different JSON strings: compare numerically.
       return sql`(${fieldValue(target.fieldId, target.cast)} = ${castParameter(value, target.cast)})`;
     }
+    if (target.indexed && target.cast) {
+      // The index expression (and its statistics) serve the filter; a GIN containment match must recheck,
+      // and decompress, every candidate row. `is not null` keeps it false, never null, for a missing value,
+      // like containment, so `$ne`/`$nin`/`$not` still include missing values (ADR 0001 amendment).
+      const expression = fieldValue(target.fieldId, target.cast);
+      return sql`(${expression} = ${castParameter(value, target.cast)} and ${expression} is not null)`;
+    }
     return containment({ [target.fieldId]: target.list ? [value] : value });
   },
   fieldMissing: (fieldId) => {
@@ -99,9 +107,11 @@ export const postgresContentDialect: ContentSqlDialect = {
   sortDirection: (direction) => (direction === 'desc' ? sql`desc` : sql`asc`),
   snapshotCte: ({ name, siteId, modelId, seq }) => sql`with ${sql.id(name)} as (
     select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at
+      r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
+      en.created_at as entry_created_at
     from publication_log pl
     join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
     where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelId}
       and pl.from_seq <= ${seq}::bigint
       and (pl.to_seq is null or pl.to_seq > ${seq}::bigint)

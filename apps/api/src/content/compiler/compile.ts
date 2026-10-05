@@ -9,6 +9,7 @@ import {
   fieldEqualsExpression,
   fieldMissingExpression,
   fieldValueExpression,
+  hasFieldIndex,
   modelIdLiteral,
   textMatchExpression,
   valueCastFor,
@@ -48,14 +49,37 @@ const anyOf = (parts: RawBuilder<unknown>[]): RawBuilder<unknown> =>
 
 type FieldTarget = Extract<FilterTarget, { kind: 'field' }>;
 
-const equalityTarget = ({ field }: FieldTarget): EqualityTarget => ({
-  fieldId: field.id,
-  cast: SCALAR_DATA_TYPES.has(field.type) ? valueCastFor(field.type) : null,
-  list: isListValued(field),
-  numericString: NUMERIC_STRING_TYPES.has(field.type),
-});
+const equalityTarget = ({ field }: FieldTarget): EqualityTarget => {
+  const cast = SCALAR_DATA_TYPES.has(field.type) ? valueCastFor(field.type) : null;
+  const list = isListValued(field);
+  return {
+    fieldId: field.id,
+    cast,
+    list,
+    numericString: NUMERIC_STRING_TYPES.has(field.type),
+    indexed: cast !== null && !list && hasFieldIndex(field),
+  };
+};
 
-const SYSTEM_COLUMNS = { id: 'h.entry_id', createdAt: 'e.created_at', updatedAt: 'h.updated_at' } as const;
+/** System filter columns. `createdAt` is the entry's, copied on every head (`h.entry_created_at`). */
+const SYSTEM_COLUMNS = {
+  id: 'h.entry_id',
+  createdAt: 'h.entry_created_at',
+  updatedAt: 'h.updated_at',
+} as const;
+
+/** Whether a filter names a column of `entries` (the head query's `e`), so its COUNT must join entries. */
+export const filterReadsEntries = (node: FilterNode): boolean => {
+  switch (node.kind) {
+    case 'and':
+    case 'or':
+      return node.nodes.some(filterReadsEntries);
+    case 'not':
+      return filterReadsEntries(node.node);
+    case 'condition':
+      return node.target.kind === 'system' && SYSTEM_COLUMNS[node.target.name].startsWith('e.');
+  }
+};
 
 const systemCondition = (
   name: keyof typeof SYSTEM_COLUMNS,
@@ -192,9 +216,12 @@ export type HeadQueryPlan = {
   locales: LocaleScope;
   /** Extra conditions (filters, search, row filter, ID restriction), all ANDed. */
   conditions: readonly RawBuilder<unknown>[];
+  /**
+   * Whether any of `conditions` names an `entries` column (`e`: ownership row filters, the admin author filter,
+   * `createdAt` filters). Unknown when absent: assumed whenever there are conditions.
+   */
+  conditionsReadEntries?: boolean;
   orderBy: readonly RawBuilder<unknown>[];
-  /** Whether `orderBy` starts with an `entries` column (`sort.ts`, `leadsWithEntryColumn`). */
-  orderedByEntry?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -249,22 +276,11 @@ export type HeadRow = {
 };
 
 /**
- * The joined entry's site and model, which always equal the head's. Written out on the row query of a plain
- * list in `entries` order (the default newest-first sort) so the planner can walk `entries_model_idx` in that
- * order and stop at the page limit instead of sorting every head of the model. Not added when there are
- * conditions or the sort is on the head: SQLite then prefers the entries index over a field index that
- * serves the filter or the sort. Left off the COUNT, which reads every match either way.
- */
-const entryScope = (plan: HeadQueryPlan, dialect: ContentSqlDialect): RawBuilder<unknown> =>
-  plan.orderedByEntry === true && plan.conditions.length === 0
-    ? sql` and e.site_id = ${dialect.uuid(plan.siteId)} and e.model_id = ${modelIdLiteral(plan.modelId)}`
-    : sql``;
-
-/**
  * The COUNT's FROM. Live heads exist only for live entries (deleting an entry removes its heads in the same
- * transaction; entries soft-deleted for having no head have none), so a count of heads with no condition
- * (conditions may name `e` columns) needs no join: it is read from `entry_heads_model_locale_state_idx`
- * alone. A snapshot keeps the join: the publication log still lists entries deleted since.
+ * transaction; entries soft-deleted for having no head have none; `headLiveEntry.int.test.ts` pins it), so a
+ * count of heads whose conditions name no `e` column needs no join: it is read from the heads' indexes alone
+ * (the model index, or a field index for an indexed filter). A snapshot keeps the join: the publication log
+ * still lists entries deleted since.
  */
 const countFrom = (
   plan: HeadQueryPlan,
@@ -272,7 +288,9 @@ const countFrom = (
   where: RawBuilder<unknown>,
   joined: RawBuilder<unknown>,
 ): RawBuilder<unknown> =>
-  plan.source.kind === 'heads' && plan.conditions.length === 0 ? sql`from ${table} h where ${where}` : joined;
+  plan.source.kind === 'heads' && !(plan.conditionsReadEntries ?? plan.conditions.length > 0)
+    ? sql`from ${table} h where ${where}`
+    : joined;
 
 const HEAD_COLUMNS = sql`h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
       h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id`;
@@ -287,7 +305,7 @@ const headQueryParts = (plan: HeadQueryPlan, dialect: ContentSqlDialect) => {
   const offset = plan.offset ? sql` offset ${plan.offset}` : sql``;
   return {
     prefix: cte ?? sql``,
-    rows: sql`${from}${entryScope(plan, dialect)}${orderBy}${limit}${offset}`,
+    rows: sql`${from}${orderBy}${limit}${offset}`,
     countFrom: countFrom(plan, table, where, from),
   };
 };

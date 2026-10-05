@@ -622,9 +622,10 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
       'created_at',
       'updated_at',
       'site_id',
+      'entry_created_at',
     ],
-    nullable: ['autosaved_at'],
-    timestamps: ['autosaved_at', 'created_at', 'updated_at'],
+    nullable: ['autosaved_at', 'entry_created_at'],
+    timestamps: ['autosaved_at', 'created_at', 'updated_at', 'entry_created_at'],
     uniqueKeys: [{ name: 'entry_heads_pkey', columns: ['entry_id', 'locale', 'state'] }],
   },
   extension_hook_runs: {

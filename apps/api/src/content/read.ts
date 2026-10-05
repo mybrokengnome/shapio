@@ -144,10 +144,24 @@ export const needsFollowUpReads = (
   const documents = rows.map((row) => row.data);
   return (
     (env.audience === 'delivery' && targetsByModel(model, documents, fields).size > 0) ||
-    (env.media !== undefined &&
-      (mediaIdsOf(model, documents, fields).size > 0 || seoImageIdOf(env, fields) !== undefined))
+    needsMediaReads(env, model, rows, fields)
   );
 };
+
+/** Whether projecting these rows reads asset views (media fields, rich-text images, a default SEO image). */
+export const needsMediaReads = (
+  env: ReadEnvironment,
+  model: ContentModel,
+  rows: readonly HeadRow[],
+  fields: readonly FieldDefinition[],
+): boolean =>
+  env.media !== undefined &&
+  (mediaIdsOf(
+    model,
+    rows.map((row) => row.data),
+    fields,
+  ).size > 0 ||
+    seoImageIdOf(env, fields) !== undefined);
 
 /** The site's default social image a `?seo=resolved` read needs (when the response carries an SEO field). */
 const seoImageIdOf = (env: ReadEnvironment, fields: readonly FieldDefinition[]): string | undefined =>

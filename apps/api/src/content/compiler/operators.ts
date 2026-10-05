@@ -10,9 +10,10 @@ import { queryInvalid, type FilterOperator, type FilterTarget } from './types.js
 
 /**
  * Which operators each data type accepts, and how query text becomes a typed value (ADR 0001):
- * - equality (`$eq $ne $in $nin`) works on every filterable type: it compiles to `data @> …`, which the GIN
- *   index serves, so no per-field index is needed. On list values (multiple enums, `many` relations,
- *   multiple media) `$eq x` means "contains x".
+ * - equality (`$eq $ne $in $nin`) works on every filterable type. On PostgreSQL it compiles to `data @> …`,
+ *   which the GIN index serves, so no per-field index is needed; a field that has its own index (filterable or
+ *   sortable) compares on that index's expression instead, which is far cheaper on unselective values. On
+ *   list values (multiple enums, `many` relations, multiple media) `$eq x` means "contains x".
  * - `$null`/`$notNull` test for a missing value (absent, null, "" or []).
  * - ranges (`$lt $lte $gt $gte`) need an expression index, so only fields marked filterable or sortable
  *   accept them; text matches (`$contains`…) are unindexed scans and need `filterable`.

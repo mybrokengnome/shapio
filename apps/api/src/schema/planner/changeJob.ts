@@ -14,7 +14,7 @@ import type {
   SchemaContentPorts,
   StepOutcome,
 } from './contentPorts.js';
-import { buildFieldIndex, dropFieldIndex } from './indexes.js';
+import { buildEntryOrderIndex, buildFieldIndex, dropFieldIndex, ENTRY_ORDER_INDEX_JOB } from './indexes.js';
 import { createFieldIndexLayoutHandler, FIELD_INDEX_LAYOUT_JOB } from './indexLayout.js';
 import type { ChangePlan } from './plan.js';
 import {
@@ -239,4 +239,5 @@ export const createSchemaJobHandlers = (deps: HandlerDeps): Array<[string, JobHa
   [SCHEMA_CHANGE_JOB, createSchemaChangeHandler(deps)],
   [SCHEMA_FOLLOW_UP_JOB, createFollowUpHandler(deps)],
   [FIELD_INDEX_LAYOUT_JOB, createFieldIndexLayoutHandler(deps.db)],
+  [ENTRY_ORDER_INDEX_JOB, async (context) => ({ outcome: await buildEntryOrderIndex(deps.db, context.log) })],
 ];

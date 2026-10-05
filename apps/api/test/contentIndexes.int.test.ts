@@ -13,8 +13,10 @@ import { compileOrderBy } from '../src/content/compiler/sort.js';
 import { readScopeFor } from '../src/content/locales.js';
 import { resolveModel, type ContentModel } from '../src/content/model.js';
 import { createContentPorts } from '../src/content/ports.js';
+import { ENTRY_ORDER_INDEX } from '../src/db/entryOrderIndex.js';
 import { getIndexState } from '../src/db/indexCatalog.js';
 import { up as enqueueFieldIndexLayout } from '../src/db/migrations/20261003140200_enqueue_field_index_layout.js';
+import * as entryCreatedAtMigration from '../src/db/migrations/20261005120000_entry_heads_entry_created_at.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { createWorker } from '../src/jobs/worker.js';
 import { createSchemaJobHandlers } from '../src/schema/planner/changeJob.js';
@@ -50,7 +52,7 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
       with e as (
         insert into entries (site_id, model_id)
         select ${PRIMARY_SITE_ID}::uuid, ${definition.definition.id}::uuid from generate_series(1, 5000)
-        returning id
+        returning id, created_at
       ), r as (
         insert into content_revisions (entry_id, locale, schema_revision_id, data, reason, author_type)
         select e.id, l.locale, ${active?.revisionId}::uuid,
@@ -59,9 +61,10 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
         from e cross join unnest(${[...locales]}::text[]) as l(locale)
         returning id, entry_id, locale, data
       )
-      insert into entry_heads (entry_id, site_id, model_id, locale, state, revision_id, data)
-      select entry_id, ${PRIMARY_SITE_ID}::uuid, ${definition.definition.id}::uuid, locale, 'published', id, data
-      from r
+      insert into entry_heads (entry_id, site_id, model_id, locale, state, revision_id, data, entry_created_at)
+      select r.entry_id, ${PRIMARY_SITE_ID}::uuid, ${definition.definition.id}::uuid, r.locale, 'published', r.id,
+        r.data, e.created_at
+      from r join e on e.id = r.entry_id
     `.execute(database.current.db);
   };
 
@@ -148,17 +151,37 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
     expect(columns.rows[0]?.indexdef).not.toContain('locale');
   });
 
-  it('equality compiles to containment and uses the GIN index', async () => {
+  it('equality on a field without an index compiles to containment and uses the GIN index', async () => {
     expect(await planOf('listing', 'filters[title][$eq]=abc')).toContain('entry_heads_data_gin');
-    expect(await planOf('listing', 'filters[rank][$in][0]=5&filters[rank][$in][1]=6')).toContain(
-      'entry_heads_data_gin',
-    );
+  });
+
+  it('equality on an indexed field uses the field index, not the GIN index', async () => {
+    for (const [apiKey, localized] of [
+      ['listing', true],
+      ['catalog', false],
+    ] as const) {
+      const definition = apiKey === 'listing' ? listing : catalog;
+      const eq = await planOf(apiKey, 'filters[rank][$eq]=5');
+      expect(eq).toContain(indexOf(definition, localized));
+      expect(eq).not.toContain('entry_heads_data_gin');
+      const oneOf = await planOf(apiKey, 'filters[rank][$in][0]=5&filters[rank][$in][1]=6');
+      expect(oneOf).toContain(indexOf(definition, localized));
+      expect(oneOf).not.toContain('entry_heads_data_gin');
+    }
   });
 
   it('a one-sided range with no sort uses the field index (localized and non-localized models)', async () => {
     expect(await planOf('listing', 'filters[rank][$gt]=99990')).toContain(indexOf(listing, true));
     expect(await planOf('catalog', 'filters[rank][$gt]=99990')).toContain(indexOf(catalog, false));
     expect(await planOf('catalog', 'filters[rank][$lt]=10')).toContain(indexOf(catalog, false));
+  });
+
+  it('the newest-first order reads the entry order index and stops at the page (no sort node)', async () => {
+    for (const apiKey of ['listing', 'catalog']) {
+      const plan = await planOf(apiKey, 'sort=createdAt:desc');
+      expect(plan).toContain(ENTRY_ORDER_INDEX);
+      expect(plan).not.toContain('"Node Type":"Sort"');
+    }
   });
 
   it('ranges with sorts and plain sorts use the field index', async () => {
@@ -292,6 +315,60 @@ describe.skipIf(sqliteSkip)(withSkipReason('field index layout v2 (sites)', sqli
       const statistics = await sql<{ stxname: string }>`select stxname from pg_statistic_ext
         where stxname in (${fieldStatisticsName(current)}, ${fieldStatisticsName(legacy)})`.execute(db);
       expect(statistics.rows.map((row) => row.stxname)).toEqual([fieldStatisticsName(current)]);
+    } finally {
+      await testApp.app.close();
+    }
+  });
+});
+
+describe.skipIf(sqliteSkip)(withSkipReason('entry order index (upgrade with content)', sqliteSkip), () => {
+  const database = useTestDatabase();
+
+  it('backfills each head with its entry creation time, then builds the index concurrently in a job', async () => {
+    const testApp = await createTestApp(database.current, { schemaListen: false });
+    try {
+      const admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
+      await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'memo',
+        label: 'Memo',
+        fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+      });
+      await runContentSchemaJobs(database.current.db);
+      for (const title of ['One', 'Two', 'Three']) {
+        const created = await admin.post('/api/admin/content/memo', { data: { title }, publish: true });
+        expect(created.statusCode).toBe(201);
+      }
+      const { db } = database.current;
+      // An instance upgraded with content: the column and index do not exist yet.
+      await entryCreatedAtMigration.down(db as never);
+      await entryCreatedAtMigration.up(db as never);
+
+      const heads = await db
+        .selectFrom('entry_heads as h')
+        .innerJoin('entries as e', 'e.id', 'h.entry_id')
+        .select(['h.entry_created_at', 'e.created_at'])
+        .execute();
+      expect(heads).toHaveLength(6);
+      expect(heads.every((head) => head.entry_created_at?.getTime() === head.created_at.getTime())).toBe(
+        true,
+      );
+      expect(await getIndexState(db, ENTRY_ORDER_INDEX)).toBe('missing');
+      const queued = await db
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'schema.entryOrderIndex')
+        .execute();
+      expect(queued).toHaveLength(1);
+
+      await runContentSchemaJobs(db);
+      expect(await getIndexState(db, ENTRY_ORDER_INDEX)).toBe('valid');
+      const definition = await sql<{
+        indexdef: string;
+      }>`select indexdef from pg_indexes where indexname = ${ENTRY_ORDER_INDEX}`.execute(db);
+      expect(definition.rows[0]?.indexdef).toContain(
+        '(site_id, model_id, state, entry_created_at DESC, entry_id)',
+      );
     } finally {
       await testApp.app.close();
     }

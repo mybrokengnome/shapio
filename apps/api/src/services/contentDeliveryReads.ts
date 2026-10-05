@@ -10,15 +10,21 @@ import { entryIdIs } from '../content/compiler/conditions.js';
 import { toLimitOffset } from '../content/compiler/paginate.js';
 import { maskAllows } from '../content/compiler/policy.js';
 import { selectFields } from '../content/compiler/select.js';
-import { compileOrderBy, defaultSortTerms, leadsWithEntryColumn } from '../content/compiler/sort.js';
+import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery, RichTextMode } from '../content/compiler/types.js';
 import { readScopeFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
-import { needsFollowUpReads, projectRows, systemAttributes, type ReadEnvironment } from '../content/read.js';
+import {
+  needsFollowUpReads,
+  needsMediaReads,
+  projectRows,
+  systemAttributes,
+  type ReadEnvironment,
+} from '../content/read.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { queryConditions } from './contentReads.js';
+import { queryConditions, queryReadsEntries } from './contentReads.js';
 import { loadSeoDefaults } from './siteSeo.js';
 
 /**
@@ -26,7 +32,8 @@ import { loadSeoDefaults } from './siteSeo.js';
  * delivery-perf). The heads, the page total and the site's publication sequence come from one statement, so
  * a read that needs nothing else (no relation, populate or asset follow-up) runs without a transaction.
  * Anything that needs a follow-up statement runs in one REPEATABLE READ, read-only transaction, so every
- * statement of the response sees the moment `meta.snapshot` names.
+ * statement of the response sees the moment `meta.snapshot` names, except a live published read whose only
+ * follow-up is relation visibility: that runs on the pool (`readConsistently` explains why it is safe).
  */
 
 export const deliveryEnvironment = (
@@ -93,6 +100,16 @@ const followsUp = (read: DeliveryRead): boolean =>
   );
 
 /**
+ * A live read of published heads (no `?snapshot`, not a preview or draft read, no extra conditions) without
+ * populate: its only possible follow-up is relation visibility (asset views are checked on the rows).
+ */
+const isLiveVisibilityRead = (read: DeliveryRead): boolean =>
+  read.source.kind === 'heads' &&
+  read.source.state === 'published' &&
+  read.query.populate.size === 0 &&
+  (read.conditions?.length ?? 0) === 0;
+
+/**
  * Loads the site's SEO defaults when the query asks for resolved SEO. Read before the heads, outside their
  * consistent moment: defaults are not part of a snapshot (`?snapshot=N&seo=resolved` uses today's).
  */
@@ -111,7 +128,8 @@ const seqOf = (seq: number | null): number => {
 /**
  * Runs the plan's statement on the pool when the read cannot need a follow-up, and keeps that result when
  * the rows indeed need none; otherwise reads again inside one REPEATABLE READ transaction. `finish` projects
- * the rows (through the same executor), so its own statements see the same moment.
+ * the rows (through the same executor), so its own statements see the same moment. A live published read
+ * whose only follow-up is relation visibility also stays on the pool (see below).
  */
 const readConsistently = async <T>(
   read: DeliveryRead,
@@ -121,11 +139,23 @@ const readConsistently = async <T>(
 ): Promise<T> => {
   const compiled = compileHeadPage(plan, options);
   const { db } = read.context;
-  if (!followsUp(read)) {
+  const live = isLiveVisibilityRead(read);
+  if (!followsUp(read) || live) {
     const env = environmentOf(read, db);
     const { rows, meta } = await contentQueriesRepository.runHeadPage(compiled.rows, db);
+    const fields = selectFields(read.model, read.policy.readMask, read.query.fields);
     // An empty page carries no meta row; the transaction below reads it consistently.
     if (meta && !needsFollowUpReads(env, read.model, rows, read.query, read.policy)) {
+      return finish({ env, rows, total: meta.total, seq: seqOf(meta.seq) });
+    }
+    // Relation visibility on the pool, without BEGIN … REPEATABLE READ … COMMIT (plan delivery-perf-2, step
+    // 4). The heads and `meta.snapshot` come from the one statement above; the visibility fetch is a second
+    // statement that may see a later moment. That can only move a target to its newer live state: the fetch
+    // itself reads published heads only (and the target's read policy), so a target unpublished or deleted in
+    // between is hidden, and one published in between is shown although the snapshot named predates it. It
+    // never shows an unpublished target (rule 7). Pinned (`?snapshot=N`), preview and draft reads, populate and
+    // asset views keep the transaction, so their responses are exactly the moment they name.
+    if (meta && live && !needsMediaReads(env, read.model, rows, fields)) {
       return finish({ env, rows, total: meta.total, seq: seqOf(meta.seq) });
     }
   }
@@ -176,8 +206,9 @@ export const readEntryPage = async (
     source: read.source,
     locales: localesOf(read),
     conditions: [...queryConditions(context, query, policy), ...(read.conditions ?? [])],
+    // A caller's extra conditions (a preview token's entry scope) are not inspected: they keep the join.
+    conditionsReadEntries: queryReadsEntries(query, policy) || (read.conditions?.length ?? 0) > 0,
     orderBy: compileOrderBy(sort),
-    orderedByEntry: leadsWithEntryColumn(sort),
     limit,
     offset,
   };

@@ -56,6 +56,7 @@ const INSERT_CHUNK_SIZE = 500;
 const rowCompleter = (db: Kysely<DB>) => {
   const ensured = new Set<string>();
   const modelOfEntry = new Map<string, string>();
+  const createdAtOfEntry = new Map<string, unknown>();
   const once = async (key: string, insert: () => Promise<unknown>) => {
     if (!ensured.has(key)) {
       ensured.add(key);
@@ -97,6 +98,16 @@ const rowCompleter = (db: Kysely<DB>) => {
     return rows[0]?.model_id ?? '';
   };
 
+  const createdAtOf = async (entryId: unknown): Promise<unknown> => {
+    if (typeof entryId === 'string' && createdAtOfEntry.has(entryId)) {
+      return createdAtOfEntry.get(entryId);
+    }
+    const { rows } = await sql<{
+      created_at: unknown;
+    }>`select created_at from entries where id = ${entryId}`.execute(db);
+    return rows[0]?.created_at ?? null;
+  };
+
   return async ({ table, row }: RowInsert): Promise<Record<string, unknown>> => {
     const full: Record<string, unknown> = { ...row };
     if (typeof row.site_id === 'string') {
@@ -110,6 +121,13 @@ const rowCompleter = (db: Kysely<DB>) => {
       if (typeof row.id === 'string' && typeof row.model_id === 'string') {
         modelOfEntry.set(row.id, row.model_id);
       }
+      if (typeof row.id === 'string' && row.created_at !== undefined) {
+        createdAtOfEntry.set(row.id, row.created_at);
+      }
+    }
+    if (table === 'entry_heads' && !('entry_created_at' in row)) {
+      // The writers copy the entry's creation time onto each head (the default list order).
+      full.entry_created_at = await createdAtOf(row.entry_id);
     }
     if (table === 'content_revisions') {
       full.schema_revision_id ??= schemaRevisionIdOf(await modelIdOf(row.entry_id));

@@ -400,6 +400,7 @@ export interface EntryHeads {
   change_seq: Generated<Int8>;
   created_at: Generated<Timestamp>;
   data: ContentData;
+  entry_created_at: Timestamp | null;
   entry_id: string;
   locale: string;
   model_id: string;

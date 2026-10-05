@@ -106,9 +106,11 @@ export const sqliteContentDialect: ContentSqlDialect = {
   },
   snapshotCte: ({ name, siteId, modelId, seq }) => sql`with ${sql.id(name)} as (
     select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at
+      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
+      en.created_at as entry_created_at
     from publication_log pl
     join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
     where pl.site_id = ${siteId} and pl.model_id = ${modelId}
       and pl.from_seq <= ${seq}
       and (pl.to_seq is null or pl.to_seq > ${seq})

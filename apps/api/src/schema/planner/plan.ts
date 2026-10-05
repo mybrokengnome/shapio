@@ -11,7 +11,7 @@ import {
   type SchemaDefinition,
   type ValidationIssue,
 } from '@shapio/schema';
-import { fieldIndexName, type FieldIndexSpec } from '../../content/compiler/expressions.js';
+import { fieldIndexName, hasFieldIndex, type FieldIndexSpec } from '../../content/compiler/expressions.js';
 import { maxFieldIndexes } from '../../db/limits.js';
 import { validateScoped, type ScopedDefinition } from '../scopedValidation.js';
 import {
@@ -69,7 +69,7 @@ export type PlanInput = {
 export const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
   definition && definition.kind !== 'component'
     ? definition.fields
-        .filter((field: FieldDefinition) => (field.filterable || field.sortable) && !field.deprecated)
+        .filter((field: FieldDefinition) => hasFieldIndex(field))
         .map((field) => {
           // Toggling `localized` changes the layout, hence the name: the old index is dropped, a new one built.
           const spec = {

@@ -15,7 +15,8 @@ import { parseQueryFor } from './contentReads.js';
 /**
  * The delivery API (build plan §4.E6): published heads only, through the permission evaluator (delivery
  * tokens, app users, anonymous callers). Each response reads one consistent moment (one statement, or a
- * REPEATABLE READ transaction when it needs more: `contentDeliveryReads.ts`) and reports the publication
+ * REPEATABLE READ transaction when it needs more: `contentDeliveryReads.ts`; a live read's relation
+ * visibility is the exception, checked against the live state on the pool) and reports the publication
  * sequence it saw, which a site build can pin with `?snapshot=N`.
  */
 export type DeliveryMeta = {

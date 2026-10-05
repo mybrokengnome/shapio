@@ -15,6 +15,11 @@ import {
 } from '../../content/compiler/expressions.js';
 import { withPolledSessionAdvisoryLock } from '../../db/advisoryLocks.js';
 import { executeIdempotentDdl } from '../../db/ddl.js';
+import {
+  createEntryOrderIndexConcurrently,
+  dropEntryOrderIndexConcurrently,
+  ENTRY_ORDER_INDEX,
+} from '../../db/entryOrderIndex.js';
 import type { Database } from '../../db/index.js';
 import { getIndexState, tableExists } from '../../db/indexCatalog.js';
 import type { IndexStep } from './steps.js';
@@ -105,4 +110,35 @@ export const dropFieldIndex = (db: Database, indexName: string): Promise<void> =
       await dropIndexNow(db, indexName);
       await executeIfAny(db, dropStatisticsStatement(indexName));
     }
+  });
+
+/** The job that builds `entry_heads_entry_order_idx` on an instance upgraded with heads present (PostgreSQL). */
+export const ENTRY_ORDER_INDEX_JOB = 'schema.entryOrderIndex';
+
+/**
+ * Builds the default list order's index `CONCURRENTLY`, under the same lock as field index builds (two
+ * concurrent builds on `entry_heads` deadlock). Idempotent: a valid index is kept, an INVALID one dropped
+ * and rebuilt.
+ */
+export const buildEntryOrderIndex = (db: Database, log: FastifyBaseLogger): Promise<IndexBuildOutcome> =>
+  withIndexBuildLock(db, async () => {
+    const state = await getIndexState(db, ENTRY_ORDER_INDEX);
+    if (state === 'valid') {
+      return 'exists';
+    }
+    if (state === 'invalid') {
+      log.warn({ indexName: ENTRY_ORDER_INDEX }, 'dropping invalid index left by an earlier build');
+      await dropEntryOrderIndexConcurrently(db);
+    }
+    const startedAt = performance.now();
+    await createEntryOrderIndexConcurrently(db);
+    if ((await getIndexState(db, ENTRY_ORDER_INDEX)) !== 'valid') {
+      throw new Error(`Index ${ENTRY_ORDER_INDEX} is not valid after building`);
+    }
+    await analyzeHeadsStatement().execute(db);
+    log.info(
+      { indexName: ENTRY_ORDER_INDEX, durationMs: Math.round(performance.now() - startedAt) },
+      'entry order index built',
+    );
+    return 'built';
   });

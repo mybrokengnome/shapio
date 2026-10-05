@@ -9,6 +9,7 @@ import {
   type FieldIndexSpec,
 } from '../src/content/compiler/expressions.js';
 import { compileRowFilter } from '../src/content/compiler/policy.js';
+import { ENTRY_ORDER_INDEX } from '../src/db/entryOrderIndex.js';
 import type { Principal } from '../src/permissions/types.js';
 import {
   compileFixtureQuery,
@@ -234,6 +235,10 @@ const CASES: ReadonlyArray<readonly [string, FixtureQueryOptions, readonly strin
   ['filters[live][$eq]=true', EN, [e.e1, e.e3]],
   ['filters[live][$eq]=false', EN, [e.e2, e.e5]],
   ['filters[live][$ne]=true', EN, [e.e2, e.e4, e.e5, e.e6]],
+  // Negated equality includes missing values on every database (indexed fields compare on the expression).
+  ['filters[rank][$nin][0]=3', EN, [e.e2, e.e3, e.e4, e.e6]],
+  ['filters[$not][live][$eq]=true', EN, [e.e2, e.e4, e.e5, e.e6]],
+  ['filters[rank][$in][0]=3&filters[rank][$in][1]=7', EN, [e.e1, e.e5, e.e6]],
   ['filters[author][$eq]=' + id(2), EN, [e.e1]],
   // Numbers stored as strings compare numerically ("12.50" = "12.5"); a missing one compares as unknown.
   ['filters[price][$eq]=12.5', EN, [e.e1, e.e2]],
@@ -469,6 +474,12 @@ describe('field indexes serve compiled queries on SQLite', () => {
     // Only the entry-ID tie-breaker is sorted, within equal values.
     expect(plan).not.toMatch(/USE TEMP B-TREE FOR ORDER BY/);
   });
+
+  it('the newest-first order reads the entry order index without sorting', async () => {
+    const plan = (await planOf('sort=createdAt:desc')).join('\n');
+    expect(plan).toContain(`USING INDEX ${ENTRY_ORDER_INDEX} (site_id=? AND model_id=? AND state=?)`);
+    expect(plan).not.toMatch(/USE TEMP B-TREE FOR ORDER BY/);
+  });
 });
 
 const mysqlPlanSkip = isMysqlRun() ? undefined : 'checks MySQL query plans (MySQL runs only)';
@@ -497,6 +508,10 @@ describe.skipIf(mysqlPlanSkip)(
       ['a date range', 'filters[day][$lt]=2026-01-02', INDEXED.day, 'Index range scan'],
     ] as const)('%s uses the field index', async (_what, search, index, access) => {
       expect(await planOf(search)).toContain(`${access} on h using ${fieldIndexName(index)}`);
+    });
+
+    it('the newest-first order reads the entry order index', async () => {
+      expect(await planOf('sort=createdAt:desc')).toContain(`on h using ${ENTRY_ORDER_INDEX}`);
     });
   },
 );

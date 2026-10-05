@@ -51,7 +51,7 @@ no run starts the image with this file.
 
 These differences are deliberate; ADR 0001 ("MySQL") explains each.
 
-- **Filterable and sortable fields: at most 56 per instance.** MySQL allows 64 indexes on a table and has no
+- **Filterable and sortable fields: at most 55 per instance.** MySQL allows 64 indexes on a table and has no
   partial indexes, so every filterable or sortable field of every model is one index on the same content
   table. The cap counts the models of every [site](sites.md) together, shared and site-owned: with several
   sites, one site's filterable fields use up room the others then lack. Shapio refuses a model change that would

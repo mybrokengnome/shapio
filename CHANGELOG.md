@@ -22,6 +22,23 @@ All notable changes to Shapio are listed here. The format follows
   document). Closing it is remembered in that browser; opening the preview closes it without changing that.
 - **Summarize from body** accepts any string or text field but the title, wherever it is placed; the server no
   longer answers "it is not a property of this model" for a field in the document.
+- **Filtering on a filterable or sortable field is faster on PostgreSQL.** Equality (`$eq`, `$in`, and their
+  negations) on such a field now uses the field's own index instead of the JSON containment index, which had to
+  re-read and decompress every candidate entry. A filtered delivery list of 20 out of 200 matching entries takes
+  about half the time. Results are unchanged; fields that are neither filterable nor sortable compare as before.
+- **Paginated lists count matches without joining entries** when no condition reads an entry column (owner row
+  filters, the admin author filter and `createdAt` filters still join), so a filtered total is read from the
+  field's index. Totals are unchanged.
+- **Lists in the default newest-first order read an index in order and stop at the page.** Each entry's
+  creation time is now stored with its content (`entry_heads.entry_created_at`, with an index), so a list no
+  longer joins and sorts every matching entry to return one page. The upgrade backfills existing content; on
+  PostgreSQL an instance with content builds the index in the background without blocking writes. On MySQL the
+  limit of filterable or sortable fields per instance goes from 56 to 55 (the new index counts against the
+  table's 64).
+- **A live delivery list with relation fields no longer opens a transaction** (two fewer round trips). Which
+  related entries it shows is checked against what is live when it answers, so an entry published a moment
+  after `meta.snapshot` may already appear; unpublished entries never do. Reads pinned with `?snapshot=N`,
+  previews and `populate` are unchanged.
 
 ## [0.4.0] - 2026-10-05
 

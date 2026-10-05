@@ -5,7 +5,7 @@ import { db } from '../db/index.js';
 import { asBigint } from '../db/sql/typed.js';
 import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
-import { entrySiteOf } from './entries.js';
+import { entryCreatedAtOf, entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -58,6 +58,8 @@ export const insert = (head: HeadWrite, trx: Executor = db) =>
       entry_id: head.entryId,
       // A copy of the entry's site (the composite foreign key keeps them equal).
       site_id: entrySiteOf(trx, head.entryId),
+      // A copy of the entry's creation time, which never changes (the default list order's index).
+      entry_created_at: entryCreatedAtOf(trx, head.entryId),
       model_id: head.modelId,
       locale: head.locale,
       state: head.state,

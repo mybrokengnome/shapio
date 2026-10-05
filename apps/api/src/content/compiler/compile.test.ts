@@ -3,10 +3,17 @@ import fc from 'fast-check';
 import { Kysely, PostgresDialect } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../helpers/appError.js';
-import { compileFilter, compileHeadPage, compileHeadQuery, compileSearch } from './compile.js';
+import {
+  compileFilter,
+  compileHeadPage,
+  compileHeadQuery,
+  compileSearch,
+  filterReadsEntries,
+} from './compile.js';
 import { parseContentQuery } from './parse.js';
 import { parseQueryTree } from './querystring.js';
 import { compileOrderBy } from './sort.js';
+import type { FilterNode } from './types.js';
 
 // Compiles SQL without a connection.
 const compiler = new Kysely<Record<string, never>>({ dialect: new PostgresDialect({ pool: {} as never }) });
@@ -111,10 +118,23 @@ describe('content query compiler', () => {
     expect(parameters.filter((value) => value === SITE_ID)).toHaveLength(2);
   });
 
-  it('compiles equality to containment with the value as a parameter', () => {
-    const { sql, parameters } = compileQuery('filters[title][$eq]=x');
+  it('compiles equality on a field without an index to containment with the value as a parameter', () => {
+    const { sql, parameters } = compileQuery('filters[live][$eq]=true');
     expect(sql).toContain(`"data" @> $`);
-    expect(parameters).toContain(JSON.stringify({ [ids.title]: 'x' }));
+    expect(parameters).toContain(JSON.stringify({ [ids.live]: true }));
+  });
+
+  it('compiles equality on an indexed field to its index expression, false for a missing value', () => {
+    const { sql, parameters } = compileQuery('filters[title][$eq]=x');
+    const expression = `("data" ->> '${ids.title}')`;
+    expect(sql).toContain(`(${expression} = $`);
+    expect(sql).toContain(`::text and ${expression} is not null)`);
+    expect(sql).not.toContain('@>');
+    expect(parameters).toContain('x');
+    // Sortable only is indexed too; numbers compare as numeric.
+    expect(compileQuery('filters[rank][$eq]=3').sql).toContain(`((("data" ->> '${ids.rank}')::numeric) = $`);
+    // Negation keeps containment's meaning: a missing value matches `$ne`.
+    expect(compileQuery('filters[title][$ne]=x').sql).toContain(`(not (${expression} = $`);
   });
 
   it('compares numbers stored as strings numerically and lists by containment', () => {
@@ -291,5 +311,29 @@ describe('content query compiler', () => {
     expect(compileHeadPage(plan, { total: false }).rows.compile(compiler).sql).toContain(
       'null as page_total',
     );
+  });
+
+  it('counts heads without joining entries unless a condition names an entries column', () => {
+    const countOf = (search: string, conditionsReadEntries?: (filter: FilterNode | null) => boolean) => {
+      const query = parseContentQuery(parseQueryTree(search), context);
+      return compileHeadQuery({
+        siteId: SITE_ID,
+        modelId: MODEL_ID,
+        source: { kind: 'heads', state: 'published' },
+        locales: { kind: 'any' },
+        conditions: query.filter ? [compileFilter(query.filter)] : [],
+        ...(conditionsReadEntries ? { conditionsReadEntries: conditionsReadEntries(query.filter) } : {}),
+        orderBy: [],
+      }).count.compile(compiler).sql;
+    };
+    const derived = (filter: FilterNode | null) => filter !== null && filterReadsEntries(filter);
+    expect(countOf('filters[title][$eq]=x', derived)).not.toContain('join entries');
+    // `createdAt` is the head's copy of the entry's creation time: not an entries column.
+    expect(countOf('filters[createdAt][$gt]=2026-01-01T00:00:00Z', derived)).not.toContain('join entries');
+    // A condition that reads entries (an owner row filter, the admin author filter) keeps the join.
+    expect(countOf('filters[title][$eq]=x', () => true)).toContain('join entries e');
+    // Callers that do not say keep the join whenever there are conditions.
+    expect(countOf('filters[title][$eq]=x')).toContain('join entries e');
+    expect(countOf('')).not.toContain('join entries');
   });
 });

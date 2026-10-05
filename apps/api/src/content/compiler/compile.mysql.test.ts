@@ -72,7 +72,7 @@ describe('content query compiler on MySQL', () => {
     ['filters[id][$in][0]=' + MODEL, '(`h`.`entry_id` in (?))', [MODEL]],
     [
       'filters[createdAt][$gt]=2026-10-01T10:00:00%2B02:00',
-      '(`e`.`created_at` > ?)',
+      '(`h`.`entry_created_at` > ?)',
       ['2026-10-01 08:00:00.000000'],
     ],
   ] as const)('%s', (search, sql, parameters) => {
@@ -90,7 +90,7 @@ describe('content query compiler on MySQL', () => {
   it('sorts missing values like PostgreSQL by sorting on `is null` first', () => {
     const { sql } = compile(compileFixtureQuery('sort=title:asc,rank:desc', mysql).rows);
     expect(sql).toContain(
-      `order by (${text(F.title)} is null) asc, ${text(F.title)} asc, (${numeric(F.rank)} is null) desc, ${numeric(F.rank)} desc, e.id asc`,
+      `order by (${text(F.title)} is null) asc, ${text(F.title)} asc, (${numeric(F.rank)} is null) desc, ${numeric(F.rank)} desc, h.entry_id asc`,
     );
   });
 

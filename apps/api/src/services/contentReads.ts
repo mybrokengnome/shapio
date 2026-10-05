@@ -1,6 +1,7 @@
 import {
   compileAuthorCondition,
   compileFilter,
+  filterReadsEntries,
   compileHeadQuery,
   compileSearch,
   compileStatusCondition,
@@ -10,7 +11,7 @@ import { paginationMeta, toLimitOffset, type Pagination } from '../content/compi
 import { parseContentQuery } from '../content/compiler/parse.js';
 import { compileRowFilter, maskAllows } from '../content/compiler/policy.js';
 import { parseQueryTree } from '../content/compiler/querystring.js';
-import { compileOrderBy, defaultSortTerms, leadsWithEntryColumn } from '../content/compiler/sort.js';
+import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryLocaleNotFound, revisionNotFound } from '../content/errors.js';
 import { outdatedSharedLocales, readScopeFor } from '../content/locales.js';
@@ -218,6 +219,12 @@ export const getAdminEntry = async (
 };
 
 /** Filters, search and row filter of a parsed query as SQL conditions. */
+/** Whether `queryConditions` names an `entries` column (`HeadQueryPlan.conditionsReadEntries`). */
+export const queryReadsEntries = (query: ContentQuery, policy: Policy): boolean =>
+  (query.filter !== null && filterReadsEntries(query.filter)) ||
+  query.author !== undefined ||
+  policy.rowFilter !== null;
+
 export const queryConditions = (context: ContentServiceContext, query: ContentQuery, policy: Policy) => {
   const rowFilter = compileRowFilter(policy.rowFilter, context.actor);
   return [
@@ -287,8 +294,8 @@ export const listAdminEntries = async (
     source: { kind: 'heads', state: 'draft' },
     locales: readScopeFor(context.snapshot, model.definition, query.locale, { fallback: true }),
     conditions: queryConditions(context, query, policy),
+    conditionsReadEntries: queryReadsEntries(query, policy),
     orderBy: compileOrderBy(sort),
-    orderedByEntry: leadsWithEntryColumn(sort),
     limit,
     offset,
   });

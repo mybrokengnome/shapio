@@ -4,7 +4,7 @@ import { db } from '../db/index.js';
 import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB, MediaAssets } from '../db/types.js';
 import { appUserSiteOf } from './appUsers.js';
-import { entrySiteOf } from './entries.js';
+import { entryCreatedAtOf, entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -148,6 +148,7 @@ export const insertHead = (head: ImportedHead, trx: Executor = db) =>
     .values({
       entry_id: head.entryId,
       site_id: entrySiteOf(trx, head.entryId),
+      entry_created_at: entryCreatedAtOf(trx, head.entryId),
       model_id: head.modelId,
       locale: head.locale,
       state: head.state,
