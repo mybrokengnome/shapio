@@ -362,7 +362,10 @@ const parseSeo = (tree: QueryTree, context: ParseContext): { seo?: SeoMode } => 
 
 const PUBLICATION_STATE_SET: ReadonlySet<string> = new Set(PUBLICATION_STATES);
 
-/** `?publicationState=published|draft` on delivery reads; whether the caller may read drafts is the service's check. */
+/**
+ * `?publicationState=published|draft` on delivery reads; whether the caller may read drafts is the service's
+ * check.
+ */
 const parsePublicationState = (
   tree: QueryTree,
   context: ParseContext,

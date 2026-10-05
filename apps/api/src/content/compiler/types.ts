@@ -57,7 +57,7 @@ export type ContentQuery = {
   richText?: RichTextMode;
   /** Delivery and preview only: SEO fields as stored (`raw`, the default) or with the site's defaults (`?seo=`). */
   seo?: SeoMode;
-  /** Delivery only: `?publicationState=draft` reads draft heads (the caller must be allowed; plan drafts-mode). */
+  /** Delivery only: `?publicationState=draft` reads draft heads (if the caller may; plan drafts-mode). */
   publicationState?: PublicationState;
   /** Admin list only: entries whose draft in the served locale has this status. */
   status?: EntryListStatus;

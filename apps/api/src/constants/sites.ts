@@ -18,5 +18,5 @@ export const SITE_QUERY_PARAMETER = 'site';
  */
 export const DELIVERY_VARY = 'Authorization, Cookie, Shapio-Site';
 
-/** `Cache-Control` of delivery responses that carry drafts (REST and GraphQL; plan drafts-mode): never stored. */
+/** `Cache-Control` of delivery responses carrying drafts (REST and GraphQL; plan drafts-mode): never stored. */
 export const DRAFTS_CACHE_CONTROL = 'private, no-store';

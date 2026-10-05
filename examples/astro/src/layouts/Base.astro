@@ -91,6 +91,12 @@ const robotsNoindex = noindex || head.noindex;
     <footer class="site-footer">
       <p>{siteName} · {settings?.footer ?? 'Built with Shapio'} · Astro</p>
     </footer>
-    {isDraftsMode() ? <p class="drafts-badge" title={strings.draftsNote} data-shapio-drafts="">{strings.drafts}</p> : null}
+    {
+      isDraftsMode() ? (
+        <p class="drafts-badge" title={strings.draftsNote} data-shapio-drafts="">
+          {strings.drafts}
+        </p>
+      ) : null
+    }
   </body>
 </html>

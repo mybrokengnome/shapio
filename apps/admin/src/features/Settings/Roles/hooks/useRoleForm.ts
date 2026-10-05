@@ -41,7 +41,10 @@ const toGrant = (action: PermissionAction): RolePermission => ({
   fieldIds: null,
 });
 
-/** Only the actions the role's kind may hold: switching a new role's kind leaves the other kind's ticks behind. */
+/**
+ * Only the actions the role's kind may hold: switching a new role's kind leaves the other kind's ticks
+ * behind.
+ */
 const grantsFor = (kind: RoleValues['kind'], actions: readonly PermissionAction[]): RolePermission[] =>
   actions.filter((action) => EDITABLE_ACTIONS_BY_KIND[kind].includes(action)).map(toGrant);
 

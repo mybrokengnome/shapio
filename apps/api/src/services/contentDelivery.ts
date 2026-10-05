@@ -15,10 +15,11 @@ import { assertMayReadDrafts } from './draftAccess.js';
 
 /**
  * The delivery API (build plan §4.E6): published heads (drafts only for callers allowed them, plan
- * drafts-mode), through the permission evaluator (delivery tokens, app users, anonymous callers). Each response reads one consistent moment (one statement, or a
- * REPEATABLE READ transaction when it needs more: `contentDeliveryReads.ts`; a live read's relation
- * visibility is the exception, checked against the live state on the pool) and reports the publication
- * sequence it saw, which a site build can pin with `?snapshot=N`.
+ * drafts-mode), through the permission evaluator (delivery tokens, app users, anonymous callers). Each
+ * response reads one consistent moment (one statement, or a REPEATABLE READ transaction when it needs more:
+ * `contentDeliveryReads.ts`; a live read's relation visibility is the exception, checked against the live
+ * state on the pool) and reports the publication sequence it saw, which a site build can pin with
+ * `?snapshot=N`.
  */
 export type DeliveryMeta = {
   /** The requested locale (or the default); each entry's own `locale` says which one served it. */
@@ -74,7 +75,10 @@ const readableModel = async (context: ContentServiceContext, modelKey: string) =
 const readsDrafts = (query: ContentQuery, options: DeliveryReadOptions): boolean =>
   options.drafts === true || query.publicationState === 'draft';
 
-/** A draft read must be allowed: `read` was checked already; `readDrafts` (or an admin principal) is checked here. */
+/**
+ * A draft read must be allowed: `read` was checked already; `readDrafts` (or an admin principal) is checked
+ * here.
+ */
 const authorizeDrafts = async (
   context: ContentServiceContext,
   model: ContentModel,
@@ -159,7 +163,7 @@ const DELIVERY_PARSE = {
   allowPublicationState: true,
 } as const;
 
-/** Meta every delivery response carries; draft reads add `publicationState` (published ones stay as they were). */
+/** Meta every delivery response carries; draft reads add `publicationState` (published ones are unchanged). */
 const metaOf = (locale: string, snapshot: number, drafts: boolean): DeliveryMeta =>
   drafts ? { locale, snapshot, publicationState: 'draft' } : { locale, snapshot };
 
