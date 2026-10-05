@@ -8,7 +8,7 @@ import { useCreateRole, useUpdateRole } from '@/api/roles';
 import { i18next } from '@/app/i18n';
 import { settle } from '@/helpers/settle';
 import { requiredText } from '@/helpers/validation';
-import { EDITABLE_ACTIONS, ROLE_KEY_PATTERN } from '../constants';
+import { EDITABLE_ACTIONS, EDITABLE_ACTIONS_BY_KIND, ROLE_KEY_PATTERN } from '../constants';
 
 const roleSchema = z.object({
   key: z.string().trim().regex(ROLE_KEY_PATTERN, 'validation.roleKey'),
@@ -41,6 +41,10 @@ const toGrant = (action: PermissionAction): RolePermission => ({
   fieldIds: null,
 });
 
+/** Only the actions the role's kind may hold: switching a new role's kind leaves the other kind's ticks behind. */
+const grantsFor = (kind: RoleValues['kind'], actions: readonly PermissionAction[]): RolePermission[] =>
+  actions.filter((action) => EDITABLE_ACTIONS_BY_KIND[kind].includes(action)).map(toGrant);
+
 /**
  * Create or edit a role. Editing replaces only the every-model grants shown in the form and keeps any
  * model-, field- or condition-specific grants untouched. Updates send the version the form was opened with
@@ -67,7 +71,7 @@ export const useRoleForm = (open: boolean, role: Role | undefined, onDone: () =>
             expectedVersion: role.version,
             name,
             description,
-            permissions: [...narrower, ...actions.map(toGrant)],
+            permissions: [...narrower, ...grantsFor(kind, actions)],
           },
         }),
       );
@@ -77,7 +81,7 @@ export const useRoleForm = (open: boolean, role: Role | undefined, onDone: () =>
       toast.success(i18next.t('roles.saved'));
     } else {
       const created = await settle(
-        createRole.mutateAsync({ key, name, description, kind, permissions: actions.map(toGrant) }),
+        createRole.mutateAsync({ key, name, description, kind, permissions: grantsFor(kind, actions) }),
       );
       if (!created.ok) {
         return;

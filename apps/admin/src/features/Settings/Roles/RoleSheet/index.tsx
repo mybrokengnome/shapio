@@ -1,4 +1,4 @@
-import type { Role } from '@shapio/client';
+import type { PermissionAction, Role } from '@shapio/client';
 import { useTranslation } from 'react-i18next';
 import { FormCheckboxGroup } from '@/components/FormCheckboxGroup';
 import { FormError } from '@/components/FormError';
@@ -6,7 +6,7 @@ import { FormSelectField } from '@/components/FormSelectField';
 import { FormSheet } from '@/components/FormSheet';
 import { FormTextareaField } from '@/components/FormTextareaField';
 import { FormTextField } from '@/components/FormTextField';
-import { ACTION_LABEL_KEYS, CONTENT_ACTIONS, GLOBAL_ACTIONS, ROLE_KINDS } from '../constants';
+import { ACTION_LABEL_KEYS, CONTENT_ACTIONS_BY_KIND, GLOBAL_ACTIONS, ROLE_KINDS } from '../constants';
 import { useRoleForm } from '../hooks/useRoleForm';
 
 type RoleSheetProps = {
@@ -17,6 +17,11 @@ type RoleSheetProps = {
 };
 
 const KIND_LABEL_KEYS = { admin: 'roles.kindAdmin', delivery: 'roles.kindDelivery' } as const;
+
+/** Content actions with an explanation behind an info icon. */
+const ACTION_HINT_KEYS: Partial<Record<PermissionAction, 'roles.actions.readDraftsHint'>> = {
+  readDrafts: 'roles.actions.readDraftsHint',
+};
 
 export const RoleSheet = ({ open, onOpenChange, role }: RoleSheetProps) => {
   const { t } = useTranslation();
@@ -64,7 +69,14 @@ export const RoleSheet = ({ open, onOpenChange, role }: RoleSheetProps) => {
         control={form.control}
         name="actions"
         legend={t('roles.contentPermissions')}
-        options={CONTENT_ACTIONS.map((action) => ({ value: action, label: t(ACTION_LABEL_KEYS[action]) }))}
+        options={CONTENT_ACTIONS_BY_KIND[kind].map((action) => {
+          const hintKey = ACTION_HINT_KEYS[action];
+          return {
+            value: action,
+            label: t(ACTION_LABEL_KEYS[action]),
+            ...(hintKey ? { hint: t(hintKey) } : {}),
+          };
+        })}
       />
       {kind === 'admin' ? (
         <FormCheckboxGroup

@@ -583,6 +583,8 @@
     "empty": "No roles yet.",
     "actions": {
       "read": "Read entries",
+      "readDrafts": "Read drafts",
+      "readDraftsHint": "Lets this token's site render drafts, for development servers. Never grant it to a production token.",
       "create": "Create entries",
       "update": "Update entries",
       "delete": "Delete entries",
@@ -634,6 +636,7 @@
     "revokeDescription": "Anything using this token will lose access immediately. This can't be undone.",
     "revoked": "Token revoked.",
     "revokedBadge": "Revoked",
+    "draftsChip": "Drafts",
     "empty": "No API tokens yet.",
     "emptyDescription": "Create one to let a site or the CLI talk to Shapio.",
     "scope": "Works on",

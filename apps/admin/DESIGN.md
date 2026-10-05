@@ -302,7 +302,8 @@ dark), so `accent` stays a selection colour.
 **`Form*` fields** (`FormTextField`, `FormTextareaField`, `FormSelectField`, `FormSwitchField`,
 `FormCheckboxGroup`, `FormRadioGroup`): react-hook-form bound, label, inline error, `aria-invalid`/`aria-describedby`
 wired. New on the first four: `hint?: string`, an explanation behind an info icon beside the label
-(its text is also linked to the control with `aria-describedby`). `description` stays for one visible
+(its text is also linked to the control with `aria-describedby`); a `FormCheckboxGroup` option takes
+`hint?` the same way, beside that option's label. `description` stays for one visible
 line that changes what the person does.
 
 `FormRadioGroup` binds a `string` (exactly one choice) and shows each option's `description` under its

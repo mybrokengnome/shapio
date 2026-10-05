@@ -38,6 +38,24 @@ export const useDeleteRole = () => {
   });
 };
 
+/**
+ * IDs of the roles that grant Read drafts (drafts mode): the tokens screen marks their tokens, so a
+ * development token is never mistaken for a production one.
+ */
+export const useDraftRoleIds = () => {
+  const roles = useRoles();
+  const draftRoleIds = useMemo(
+    () =>
+      new Set(
+        (roles.data ?? [])
+          .filter((role) => role.permissions.some((permission) => permission.action === 'readDrafts'))
+          .map((role) => role.id),
+      ),
+    [roles.data],
+  );
+  return { draftRoleIds };
+};
+
 /** Role names by ID, for showing the roles that users, invitations and tokens reference. */
 export const useRoleNames = () => {
   const roles = useRoles();

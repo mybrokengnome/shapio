@@ -18,13 +18,15 @@ import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
 type TableProps = {
   tokens: ApiToken[];
   roleNames: ReadonlyMap<string, string>;
+  /** Roles that grant Read drafts: their tokens get a Drafts chip (development tokens). */
+  draftRoleIds: ReadonlySet<string>;
   /** This site's name: every token not marked "Every site" belongs to it. */
   siteName: string;
   /** Resolves once the token is revoked (the confirmation waits for it). */
   onRevoke: (token: ApiToken) => Promise<unknown>;
 };
 
-export const Table = ({ tokens, roleNames, siteName, onRevoke }: TableProps) => {
+export const Table = ({ tokens, roleNames, draftRoleIds, siteName, onRevoke }: TableProps) => {
   const { t } = useTranslation();
   return (
     <TableCard>
@@ -50,7 +52,14 @@ export const Table = ({ tokens, roleNames, siteName, onRevoke }: TableProps) => 
                 <RowTitle>{token.name}</RowTitle>
               </TableCell>
               <TableCell className="font-mono text-xs">{`${token.tokenPrefix}…`}</TableCell>
-              <TableCell>{roleNames.get(token.roleId) ?? t('common.unknown')}</TableCell>
+              <TableCell>
+                <span className="flex items-center gap-2">
+                  {roleNames.get(token.roleId) ?? t('common.unknown')}
+                  {draftRoleIds.has(token.roleId) ? (
+                    <StatusChip tone="warning" size="sm" label={t('apiTokens.draftsChip')} />
+                  ) : null}
+                </span>
+              </TableCell>
               <TableCell>{token.siteId === null ? t('sites.everySite') : siteName}</TableCell>
               <TableCell>
                 {token.revokedAt ? (

@@ -179,6 +179,8 @@ test('settings → roles: built-ins plus a new custom role', async () => {
   await dialog.getByLabel('Key', { exact: true }).fill('reviewer');
   await dialog.getByLabel('Read entries').check();
   await dialog.getByLabel('Read the audit log').check();
+  // Read drafts belongs to delivery roles only.
+  await expect(dialog.getByRole('checkbox', { name: 'Read drafts' })).toHaveCount(0);
   await captureScreen(page, 'team-10-settings-role-sheet', { viewports: ['desktop'] });
   await dialog.getByRole('button', { name: 'Create' }).click();
   await expect(page.getByText('Role created.')).toBeVisible();
@@ -214,6 +216,44 @@ test('settings → API tokens: created, shown once, listed, revoked', async () =
   await expect(page.getByRole('row', { name: /Marketing site build/ })).toContainText('Revoked');
 });
 
+test('settings → a delivery role may read drafts, and its tokens say so', async () => {
+  await page.goto(`${ADMIN_URL}network/roles`);
+  await page.getByRole('button', { name: 'New role' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create role' });
+  await dialog.getByLabel('Name').fill('Site dev');
+  await dialog.getByLabel('Key', { exact: true }).fill('site-dev');
+  await dialog.getByRole('combobox', { name: 'Kind' }).click();
+  await page.getByRole('option', { name: 'Delivery' }).click();
+  // A delivery role reads, and may read drafts; nothing else is offered.
+  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+  await dialog.getByLabel('Read entries').check();
+  await dialog.getByRole('checkbox', { name: 'Read drafts' }).check();
+  await dialog.getByRole('button', { name: 'More about Read drafts' }).click();
+  const hint = page.locator('[data-slot="popover-content"]');
+  await expect(hint).toContainText('Never grant it to a production token.');
+  await page.keyboard.press('Escape');
+  await expect(hint).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await captureScreen(page, 'team-15-settings-role-sheet-drafts', BOTH);
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByText('Role created.')).toBeVisible();
+
+  await page.goto(`${ADMIN_URL}settings/api-tokens`);
+  await page.getByRole('button', { name: 'New token' }).first().click();
+  const tokenDialog = page.getByRole('dialog', { name: 'Create API token' });
+  await tokenDialog.getByLabel('Name').fill('Local dev server');
+  await tokenDialog.getByRole('combobox', { name: 'Role' }).click();
+  await page.getByRole('option', { name: 'Site dev' }).click();
+  await tokenDialog.getByRole('button', { name: 'Create' }).click();
+  await page
+    .getByRole('region', { name: 'Copy your new token' })
+    .getByRole('button', { name: "I've copied it" })
+    .click();
+  await expect(page.getByRole('row', { name: /Local dev server/ })).toContainText('Drafts');
+  await expect(page.getByRole('row', { name: /Marketing site build/ })).not.toContainText('Drafts');
+  await captureScreen(page, 'team-16-settings-api-tokens-drafts', BOTH);
+});
+
 test('settings → audit log shows the changes just made, filterable', async () => {
   await page.goto(`${ADMIN_URL}network/audit-log`);
   // Actions read as words; the code stays in the cell's title.
@@ -228,5 +268,5 @@ test('settings → audit log shows the changes just made, filterable', async () 
   await page.getByLabel('Filter by action').press('Enter');
   await expect(page).toHaveURL(/action=role.create/);
   await expect(page.getByRole('cell', { name: 'Completed setup', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('cell', { name: 'Created role', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Created role', exact: true })).toHaveCount(2);
 });

@@ -1,13 +1,38 @@
-import { CONTENT_ACTIONS, GLOBAL_ACTIONS, type PermissionAction, type RoleKind } from '@shapio/client';
+import {
+  CONTENT_ACTIONS,
+  DELIVERY_ACTIONS,
+  GLOBAL_ACTIONS,
+  type PermissionAction,
+  type RoleKind,
+} from '@shapio/client';
 
-export { CONTENT_ACTIONS, GLOBAL_ACTIONS };
+export { GLOBAL_ACTIONS };
 
-/** Every action this form edits. Content grants made here apply to every model (`modelId: null`). */
-export const EDITABLE_ACTIONS: readonly PermissionAction[] = [...CONTENT_ACTIONS, ...GLOBAL_ACTIONS];
+/**
+ * The content checkboxes per role kind: admin roles get every content action; delivery roles only read, and
+ * may read drafts (drafts mode). Grants made here apply to every model (`modelId: null`).
+ */
+export const CONTENT_ACTIONS_BY_KIND = {
+  admin: CONTENT_ACTIONS,
+  delivery: DELIVERY_ACTIONS,
+} as const satisfies Record<RoleKind, readonly PermissionAction[]>;
+
+/** Every action this form edits, per role kind (the server refuses the others). */
+export const EDITABLE_ACTIONS_BY_KIND: Record<RoleKind, readonly PermissionAction[]> = {
+  admin: [...CONTENT_ACTIONS, ...GLOBAL_ACTIONS],
+  delivery: DELIVERY_ACTIONS,
+};
+
+/** Every action this form edits, whatever the kind. */
+export const EDITABLE_ACTIONS: readonly PermissionAction[] = [
+  ...EDITABLE_ACTIONS_BY_KIND.admin,
+  ...EDITABLE_ACTIONS_BY_KIND.delivery,
+];
 
 /** Translation keys per action (action names contain dots, which i18next reads as nesting). */
 export const ACTION_LABEL_KEYS = {
   read: 'roles.actions.read',
+  readDrafts: 'roles.actions.readDrafts',
   create: 'roles.actions.create',
   update: 'roles.actions.update',
   delete: 'roles.actions.delete',
