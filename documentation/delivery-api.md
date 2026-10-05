@@ -194,6 +194,42 @@ max-age=0, must-revalidate`; authenticated ones `private`. A CDN that keys its c
 ignores `Vary` must be given the site as `?site=`, not as the header, so that two sites never share a cached
 response.
 
+### Next.js cache tags
+
+Under Next.js (detected by `process.env.NEXT_RUNTIME`), `@shapio/client` tags every delivery read for Next's
+data cache, so a site refreshes exactly what changed with `revalidateTag`:
+
+| Read                         | Tags                                                               |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `delivery.list(routeKey)`    | `shapio:site:<key>`, `shapio:<routeKey>`                           |
+| `delivery.singleton(apiKey)` | `shapio:site:<key>`, `shapio:<apiKey>`                             |
+| `delivery.get(routeKey, id)` | `shapio:site:<key>`, `shapio:<routeKey>`, `shapio:<routeKey>:<id>` |
+| `site.get()`                 | `shapio:site:<key>`                                                |
+
+Models are tagged by their route key (a collection's plural API ID, a singleton's API ID), as the
+[snapshot diff](snapshots.md#what-changed-between-two-snapshots) names them. The site tag is `shapio:site:<key>`
+when the client names a site (`site: 'marketing'`) and `shapio:site` when it leaves the site to the token.
+`shapioTags.site(key)`, `shapioTags.model(routeKey)` and `shapioTags.entry(routeKey, id)` build the same strings:
+
+```ts
+import { createClient, shapioTags } from '@shapio/client';
+import { revalidateTag } from 'next/cache';
+
+const shapio = createClient({ baseUrl, token, site: 'marketing', next: { cache: 'force-cache' } });
+const { data } = await shapio.delivery.get<Article>('articles', id, { locale: 'en' });
+
+// In the webhook route, for each entry in the snapshot diff:
+revalidateTag(shapioTags.entry('articles', id), { expire: 0 });
+```
+
+The cache mode is yours: the client sets `cache` and `next.revalidate` only when you ask, with
+`next: { cache?: 'force-cache' | 'no-store', revalidate?: number | false }` on `createClient` or as the last
+argument of one read (`delivery.list('articles', query, { next: { revalidate: 60 } })`), which overrides the
+client's. A read pinned to a snapshot (`snapshot: N`) never changes, so under Next it is always `force-cache`.
+`next: false` sends no Next options at all. Outside Next, with no `next` option, the client's requests are
+exactly as before. Snapshot, preview, GraphQL and admin requests are never cached or tagged. The
+[Next.js starter](starters.md#incremental-rebuilds) puts it together.
+
 ## Writes
 
 The same routes accept `POST`, `PUT` and `DELETE` from app users whose roles allow it (for example, members

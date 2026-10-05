@@ -1,10 +1,15 @@
 import { ShapioApiError } from './errors.js';
+import type { NextFetchInit } from './nextCache.js';
 import { applySite } from './site.js';
 
 /** Fetch's `credentials` mode (spelled out: the DOM lib type is not available to Node consumers). */
 export type FetchCredentials = 'omit' | 'same-origin' | 'include';
 
-export type RequestOptions = { method?: string; body?: unknown; signal?: AbortSignal };
+export type RequestOptions = {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+} & NextFetchInit;
 
 export type RequestFn = <T>(path: string, options?: RequestOptions) => Promise<T>;
 
@@ -42,7 +47,7 @@ export const createRequest = ({
   const origin = baseUrl.replace(/\/+$/, '');
   return async <T>(
     requestPath: string,
-    { method = 'GET', body, signal }: RequestOptions = {},
+    { method = 'GET', body, signal, cache, next }: RequestOptions = {},
   ): Promise<T> => {
     const { path, headers: siteHeaders } = applySite(site, method, requestPath);
     const requestHeaders: Record<string, string> = {
@@ -56,13 +61,17 @@ export const createRequest = ({
     if (body !== undefined) {
       requestHeaders['content-type'] = 'application/json';
     }
-    const response = await fetch(`${origin}${path}`, {
+    // `next` is Next.js's extension of fetch (cache tags); other runtimes ignore it, and it is only set there.
+    const init: RequestInit & Pick<NextFetchInit, 'next'> = {
       method,
       headers: requestHeaders,
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       ...(signal ? { signal } : {}),
       ...(credentials ? { credentials } : {}),
-    });
+      ...(cache ? { cache } : {}),
+      ...(next ? { next } : {}),
+    };
+    const response = await fetch(`${origin}${path}`, init);
     const parsed = await parseBody(response);
     if (!response.ok) {
       throw new ShapioApiError(response.status, parsed);

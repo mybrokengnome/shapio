@@ -40,6 +40,12 @@ export type * from './admin/sitesTypes.js';
 export type * from './admin/assistTypes.js';
 export type * from './snapshotTypes.js';
 export { DELIVERY_PATH, type DeliveryApi } from './delivery.js';
+export {
+  shapioTags,
+  type DeliveryReadOptions,
+  type NextCacheMode,
+  type NextCacheOptions,
+} from './nextCache.js';
 export { SITE_QUERY_PARAMETER } from './site.js';
 export type * from './deliveryTypes.js';
 export type * from './seoTypes.js';

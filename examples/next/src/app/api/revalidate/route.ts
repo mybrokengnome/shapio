@@ -8,7 +8,9 @@ import { readWebhookEvent } from '../../../lib/webhookEvent';
  * POST /api/revalidate/ (with the slash: `trailingSlash` redirects the other form, and Shapio's webhooks do not
  * follow redirects): the target of the Shapio webhook the seed creates (publish, unpublish, delete,
  * change set shipped, schema change, site settings). A signed delivery refreshes the pages whose content changed since the
- * snapshot the site shows (src/lib/revalidation.ts). A failure answers 500, so Shapio retries the delivery.
+ * snapshot the site shows and expires the cached reads tagged with their models and entries; `site.updated` and
+ * schema changes expire the site tag, which every read carries (src/lib/revalidation.ts). A failure answers 500,
+ * so Shapio retries the delivery.
  */
 export const POST = async (request: Request) => {
   const read = await readWebhookEvent(request, webhookSecret());

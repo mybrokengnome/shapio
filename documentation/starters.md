@@ -96,7 +96,12 @@ output allows, and all three read the [changes API](snapshots.md#what-changed-be
 - **Next.js** (`next start`): on-demand revalidation. The seed's webhook calls `/api/revalidate/` on every
   publish, unpublish, delete, change set ship and schema change; the route verifies the signature, diffs the
   snapshot the site shows against the current one and calls `revalidatePath` for just those pages, which
-  re-render at the new snapshot. New articles and pages render on their first request. A local site needs
+  re-render at the new snapshot. Reads are cached by tag: every read carries the site, model and entry tags
+  ([Next.js cache tags](delivery-api.md#nextjs-cache-tags)), reads pinned to a snapshot are `force-cache`, and
+  the starter sets no cache mode of its own, so `site.get()` stays fresh on every build (Next's data cache
+  outlives `next build`). A publish expires the tags of the models and entries in the diff with `revalidateTag`; site settings
+  (`site.updated`) and schema changes expire the site tag, which every read carries. New articles and pages
+  render on their first request. A local site needs
   Shapio's `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST` to include `127.0.0.1/32,::1/128`, since Shapio never calls
   loopback addresses otherwise. A build pinned with `SHAPIO_SNAPSHOT` stays at that snapshot. Details in the
   starter's README.

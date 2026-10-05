@@ -6,6 +6,20 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Next.js cache tags in `@shapio/client`.** Under Next.js (`process.env.NEXT_RUNTIME`), every delivery read
+  passes `next: { tags }` to `fetch`: lists and singletons `shapio:site:<key>` (or `shapio:site` when the client
+  names no site) and `shapio:<routeKey>`, `delivery.get` also `shapio:<routeKey>:<id>`, `site.get()` the site
+  tag; `shapioTags` builds them for `revalidateTag`. A new `next` option on `createClient` and on each read
+  (`{ cache?: 'force-cache' | 'no-store', revalidate?: number | false }`, or `false` for none) sets the cache
+  mode. There is no cache-mode default: under Next the reads are only tagged unless you ask, except that reads
+  pinned to a snapshot are always `force-cache`. Outside Next, without the option, requests are unchanged.
+  The Next.js starter sets no cache mode (its content reads are pinned, so cached regardless, and `site.get()`
+  stays fresh on every build, since Next's data cache outlives `next build`); its `/api/revalidate/` route now also expires the
+  tags of the models and entries in the snapshot diff (and the site tag on `site.updated` and schema changes)
+  with `revalidateTag`, besides revalidating the pages; its answer lists them in `tags`.
+
 ## [0.4.1] - 2026-10-05
 
 ### Added

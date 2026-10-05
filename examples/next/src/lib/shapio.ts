@@ -9,6 +9,11 @@ import type { Article, Page, SiteSettings } from './types';
  * renders pages in several worker processes, so the snapshot is pinned once in next.config.ts (it sets
  * SHAPIO_SNAPSHOT for the whole build) and every request here sends it. Under `next start`, /api/revalidate
  * moves that snapshot forward (src/lib/liveSnapshot.ts).
+ *
+ * The client tags every read with the site, model and entry, and /api/revalidate expires the tags of what
+ * changed (src/lib/revalidationTags.ts) as well as the pages. No `next: { cache }` option: reads pinned to a
+ * snapshot are `force-cache` regardless, and `site.get()` (no snapshot) stays fresh on every build, since Next's
+ * data cache outlives `next build`.
  */
 const PAGE_SIZE = 100;
 
@@ -23,7 +28,11 @@ const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', '
 const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
 export const createShapio = () =>
-  createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey() });
+  createClient({
+    baseUrl: shapioUrl(),
+    token: deliveryToken(),
+    site: siteKey(),
+  });
 
 let client: ReturnType<typeof createShapio> | undefined;
 export const shapio = () => (client ??= createShapio());
@@ -80,8 +89,9 @@ export const getSiteSettings = async (locale: Locale): Promise<SiteSettings | nu
 };
 
 /**
- * The site and its SEO defaults (name and title template per locale, default image, Twitter handle). Read on
- * every render: a `site.updated` webhook revalidates every page, which then shows the new defaults. Null when
+ * The site and its SEO defaults (name and title template per locale, default image, Twitter handle). Cached
+ * under the site tag: a `site.updated` webhook expires it and revalidates every page, which then shows the new
+ * defaults. Null when
  * the Shapio predates them (the pages still render, with plain titles).
  */
 export const getSite = async (): Promise<DeliverySite | null> => {

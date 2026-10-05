@@ -1,8 +1,9 @@
 import { ShapioApiError, type SnapshotChange, type SnapshotChangeKind } from '@shapio/client';
-import { revalidatePath } from 'next/cache';
-import { configuredSnapshot, isSnapshotPinned } from './config';
+import { revalidatePath, revalidateTag } from 'next/cache';
+import { configuredSnapshot, isSnapshotPinned, siteKey } from './config';
 import { advanceTo, liveSnapshot } from './liveSnapshot';
 import { log } from './log';
+import { changeTags, siteTags } from './revalidationTags';
 import {
   EVERY_PAGE,
   revalidationTargets,
@@ -13,12 +14,21 @@ import { shapio } from './shapio';
 
 /**
  * On-demand revalidation (`next start`): asks Shapio what changed between the snapshot the site shows and
- * the current one (`/api/snapshots/changes`), revalidates the pages those changes touch and moves the site to
- * the new snapshot. The diff, not the event, is the source of truth: one call covers a change set's many
- * entries, retried or missed deliveries, and both locales of a publish.
+ * the current one (`/api/snapshots/changes`), revalidates the pages those changes touch and the cached reads
+ * tagged with their models and entries, and moves the site to the new snapshot. The diff, not the event, is the
+ * source of truth: one call covers a change set's many entries, retried or missed deliveries, and both locales
+ * of a publish.
  */
 export type RevalidationResult =
-  { from: number; to: number; changed: number; revalidated: RevalidationTarget[] } | { skipped: string };
+  | { from: number; to: number; changed: number; revalidated: RevalidationTarget[]; tags: string[] }
+  | { skipped: string };
+
+/** Expires the cached reads at once (not stale-while-revalidate): the next render reads the new content. */
+const expireTags = (tags: readonly string[]) => {
+  for (const tag of tags) {
+    revalidateTag(tag, { expire: 0 });
+  }
+};
 
 /** Models whose pages are addressed by slug. */
 const SLUGGED_MODELS: ReadonlySet<string> = new Set(['page', 'article']);
@@ -65,18 +75,20 @@ const revalidateNow = async (): Promise<RevalidationResult> => {
   const from = liveSnapshot();
   const { snapshot: to } = await shapio().snapshots.current();
   if (to <= from) {
-    return { from, to: from, changed: 0, revalidated: [] };
+    return { from, to: from, changed: 0, revalidated: [], tags: [] };
   }
   const diff = await shapio().snapshots.allChanges({ from, to });
   const { schemaVersions } = diff;
   const schemaChanged = schemaVersions.from === null || schemaVersions.from !== schemaVersions.to;
   const targets = revalidationTargets(await changedEntries(diff.items, from, to), schemaChanged);
+  const tags = changeTags(diff.items, schemaChanged, siteKey());
   await advanceTo(to, () => {
+    expireTags(tags);
     for (const target of targets) {
       revalidatePath(target.path, target.type);
     }
   });
-  return { from, to, changed: diff.items.length, revalidated: targets };
+  return { from, to, changed: diff.items.length, revalidated: targets, tags };
 };
 
 /** One run at a time: deliveries that arrive together diff from the snapshot the previous run reached. */
@@ -89,22 +101,25 @@ export const revalidateChanges = (): Promise<RevalidationResult> => {
     log(
       'skipped' in result
         ? `Revalidation skipped: ${result.skipped}`
-        : `Snapshots ${result.from} → ${result.to}: revalidated ${result.revalidated.length} path(s)`,
+        : `Snapshots ${result.from} → ${result.to}: revalidated ${result.revalidated.length} path(s), ${result.tags.length} tag(s)`,
     );
     return result;
   });
 };
 
 /**
- * Site-wide changes that publish no snapshot (the site's SEO defaults: `site.updated`): every page is
- * revalidated at the snapshot the site already shows.
+ * Site-wide changes that publish no snapshot (the site's SEO defaults: `site.updated`): the site tag expires
+ * every cached read (`site.get()` among them) and every page is revalidated at the snapshot the site already
+ * shows.
  */
 export const revalidateEveryPage = (): RevalidationResult => {
   if (isSnapshotPinned()) {
     return { skipped: `the build is pinned to snapshot ${configuredSnapshot()} by SHAPIO_SNAPSHOT` };
   }
+  const tags = siteTags(siteKey());
+  expireTags(tags);
   revalidatePath(EVERY_PAGE.path, EVERY_PAGE.type);
   const at = liveSnapshot();
   log(`Site settings changed: revalidated every page at snapshot ${at}`);
-  return { from: at, to: at, changed: 0, revalidated: [EVERY_PAGE] };
+  return { from: at, to: at, changed: 0, revalidated: [EVERY_PAGE], tags };
 };

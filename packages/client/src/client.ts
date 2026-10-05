@@ -1,6 +1,7 @@
 import { createAdminApi } from './admin/index.js';
 import { createAppAuthApi } from './appAuth/index.js';
 import { createDeliveryApi } from './delivery.js';
+import type { NextCacheOptions } from './nextCache.js';
 import { createRequest, type FetchCredentials } from './request.js';
 import { createSiteApi } from './siteDelivery.js';
 import { createSnapshotsApi } from './snapshots.js';
@@ -23,6 +24,13 @@ export type ShapioClientOptions = {
    * ever reads its own site: naming another one is refused (403 `SITE_MISMATCH`).
    */
   site?: string;
+  /**
+   * Next.js data-cache options for delivery reads (`delivery.*`, `site.get`), e.g. `{ cache: 'force-cache' }`.
+   * Under Next the reads are tagged for `revalidateTag` whether or not this is set; the cache mode is only
+   * passed when asked for, and reads pinned to a snapshot are always `force-cache`. Set it outside Next to send
+   * the same fetch options; `false` sends none. A read's own `next` option overrides this one.
+   */
+  next?: NextCacheOptions | false;
 };
 
 export const createClient = ({
@@ -32,8 +40,10 @@ export const createClient = ({
   credentials,
   headers,
   site,
+  next,
 }: ShapioClientOptions) => {
   const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
+  const cacheContext = { site, next };
 
   return {
     /**
@@ -48,9 +58,9 @@ export const createClient = ({
       version: (signal?: AbortSignal) => request<VersionResponse>('/api/version', signal ? { signal } : {}),
     },
     /** Published content (the delivery API), typed by the caller. */
-    delivery: createDeliveryApi(request),
+    delivery: createDeliveryApi(request, cacheContext),
     /** The site as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
-    site: createSiteApi(request),
+    site: createSiteApi(request, cacheContext),
     admin: createAdminApi(request),
     /** Publication snapshots and the diff between two (incremental builds). */
     snapshots: createSnapshotsApi(request),

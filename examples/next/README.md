@@ -30,7 +30,7 @@ instance. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in the npm scrip
 | `src/components/…`           | sections, articles and responsive images                            |
 | `src/app/preview/`           | draft preview with visual editing (`@shapio/visual`)                |
 | `src/app/api/revalidate/`    | the webhook target: on-demand revalidation of changed pages         |
-| `src/lib/revalidation*.ts`   | the snapshot diff and which pages a change touches                  |
+| `src/lib/revalidation*.ts`   | the snapshot diff, and which pages and cache tags a change touches  |
 | `shapio/`, `scripts/seed.ts` | the models and the seed                                             |
 
 Preview: the seed creates a deployment connection named **Preview** that opens drafts at
@@ -55,7 +55,11 @@ With `npm run start`, a publish refreshes only the pages it changed, without a r
    changed between the snapshot the site shows and the current one (`/api/snapshots/changes`), and calls
    `revalidatePath` for those pages: an article's page and its locale's list, a page by its slug (`home` is
    `/en/`), the list and every article page for an author, every page for the `siteSettings` singleton or a
-   schema change. A changed slug refreshes the old and the new address.
+   schema change. A changed slug refreshes the old and the new address. Reads are tagged by `@shapio/client` with
+   the site, the model and the entry, so the route also calls `revalidateTag` for each changed model and entry;
+   `site.updated` and a schema change expire the site tag, which every read carries. Content reads are pinned to
+   a snapshot, so they sit in Next's data cache (`force-cache`) regardless; the client sets no cache mode, so
+   `site.get()` stays fresh on every build (the data cache outlives `next build`).
 3. The site moves to the new snapshot: revalidated pages re-render at it, and the snapshot is kept in
    `.next/shapio-revalidate.json` so a restart carries on from it. `next build` empties `.next/`, so a new build
    starts again from its own snapshot.
