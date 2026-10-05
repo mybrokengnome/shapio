@@ -186,9 +186,10 @@ test('an empty zone says so, names its minimum, and adds a section from its menu
   await expect(sections.getByText('Nothing added yet.')).toBeVisible();
   // A min of 2 changes what the person does: one section is not enough.
   await expect(sections.getByText('Add at least 2 items.')).toBeVisible();
+  await captureScreen(page, 'entry-empty-05-zone', { viewports: ['desktop'] });
+  // No capture with the menu open: Radix hides the rest of the page from assistive technology meanwhile.
   await sections.getByRole('button', { name: 'Add section' }).click();
   await expect(page.getByRole('menuitem', { name: 'Fact', exact: true })).toBeVisible();
-  await captureScreen(page, 'entry-empty-05-zone-menu', { viewports: ['desktop'] });
   await page.getByRole('menuitem', { name: 'Fact', exact: true }).click();
   await expect(sections.getByRole('button', { name: /^Fact/, expanded: true })).toBeFocused();
   await expect(sections.getByText('Nothing added yet.')).toHaveCount(0);
