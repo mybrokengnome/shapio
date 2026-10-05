@@ -321,14 +321,26 @@ describe('validateDefinition', () => {
       ).toEqual([]);
     });
 
-    it('rejects unknown, repeated and ineligible canvas fields', () => {
-      expect(layoutCodes({ canvasFieldIds: [id(2), id(99), id(2), id(1), id(3), id(5)] })).toEqual([
+    it('accepts any field but the title in the canvas: a single image, the SEO group, a document', () => {
+      expect(layoutCodes({ canvasFieldIds: [id(3), id(5), id(7), id(2)] })).toEqual([]);
+    });
+
+    it('rejects unknown and repeated canvas fields, and the title', () => {
+      expect(layoutCodes({ canvasFieldIds: [id(2), id(99), id(2), id(1)] })).toEqual([
         '/display/canvasFieldIds/1 UNKNOWN_FIELD_REFERENCE',
         '/display/canvasFieldIds/2 INVALID_FIELD_REFERENCE',
         '/display/canvasFieldIds/3 INVALID_FIELD_REFERENCE',
-        '/display/canvasFieldIds/4 INVALID_FIELD_REFERENCE',
-        '/display/canvasFieldIds/5 INVALID_FIELD_REFERENCE',
       ]);
+    });
+
+    it('rejects the configured title in the canvas, whatever its type, and allows the automatic one then', () => {
+      const fields = [...layoutFields, field({ id: id(9), apiKey: 'handle', type: 'slug' })];
+      const codes = (display: ModelDefinition['display']) =>
+        validateDefinition(model({ fields, display })).map((found) => `${found.path} ${found.code}`);
+      expect(codes({ titleFieldId: id(9), canvasFieldIds: [id(9)] })).toEqual([
+        '/display/canvasFieldIds/0 INVALID_FIELD_REFERENCE',
+      ]);
+      expect(codes({ titleFieldId: id(9), canvasFieldIds: [id(1)] })).toEqual([]);
     });
 
     it('rejects a cover that is unknown, not a single image field, or in the canvas', () => {

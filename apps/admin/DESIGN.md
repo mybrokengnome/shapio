@@ -490,11 +490,14 @@ An entry opens as a document, not a form. Top to bottom:
    badge.
 5. **Canvas**: the canvas fields in order, as one writing surface (see below).
 
-**Block or property.** Rich text, dynamic zones, repeatable components and multiple media are canvas
-fields; they render as blocks. Everything else (strings, numbers, dates, choices, relations, a single
-component, booleans) is a property: a chip in the strip, a row in the drawer. The model's Display settings
-choose which fields go where; `effectiveLayout` in `@shapio/schema` supplies the defaults and is the only
-source the admin reads.
+**Block or property.** By default rich text, dynamic zones, repeatable components and multiple media are
+canvas fields; they render as blocks. Everything else (strings, numbers, dates, choices, relations, a single
+component, booleans) is a property: a chip in the strip, a row in the drawer. Any field but the title can be
+placed in the document instead ("Show in document" in the field's settings, a view over
+`display.canvasFieldIds`): it renders in the canvas under its heading with its normal editor, among the
+blocks, and leaves the strip and drawer; a block field can be sent to the drawer the same way. A document
+without block fields keeps the property grid under its fields, and no strip. `effectiveLayout` in
+`@shapio/schema` supplies the defaults and is the only source the admin reads.
 
 **Canvas fields own their blocks.** The canvas is a sequence of fields; each one owns its blocks and
 stores them in its own format. A block never moves from one field to another. Every canvas field opens
@@ -517,7 +520,10 @@ two lists of the same component tell apart; never a form label above a block.
 types inside a rich-text field; the field's allowed components between zone or list items and at the
 field's end; both at a boundary between the two. Nothing is offered that the save would reject.
 
-**Settings drawer** (right, 360px, non-blocking: the document stays interactive): Status (current state,
+**Settings drawer** (right, 360px, non-blocking: the document stays interactive; open by default from `xl`,
+where it sits beside the document, and every open or close there is remembered per browser; below `xl` it
+starts closed; opening the preview closes it without changing that choice; the default open never takes
+focus): Status (current state,
 live since, locales with "Start French"), Properties (all non-canvas fields as compact rows that expand to
 their editor), Cover (alt text, focal point), History, Danger (unpublish, delete via `InlineConfirm`).
 Esc closes it.

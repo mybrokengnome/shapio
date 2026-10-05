@@ -2,7 +2,7 @@ import { SORT_DIRECTIONS, type SchemaDefinition, type ValidationIssue } from '@s
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { titleFieldCandidates } from '../../../helpers/display';
-import { withKey } from '../../../helpers/draft';
+import { pruneLayout, withKey } from '../../../helpers/draft';
 import { issuesUnder } from '../../../helpers/issues';
 import { ChoicesControl } from '../../controls/ChoicesControl';
 import { SelectControl } from '../../controls/SelectControl';
@@ -20,7 +20,7 @@ export const Display = ({ definition, issues, disabled }: DisplayProps) => {
   const { t } = useTranslation();
   const update = useDefinitionDraftStore((state) => state.update);
   const setDisplay = (key: string, value: unknown) =>
-    update((draft) => ({ ...draft, display: withKey(draft.display, key, value) }));
+    update((draft) => pruneLayout({ ...draft, display: withKey(draft.display, key, value) }));
   const at = (key: string) => issuesUnder(issues, `/display/${key}`);
   const option = (field: { id: string; label: string }) => ({ value: field.id, label: field.label });
   const { display } = definition;

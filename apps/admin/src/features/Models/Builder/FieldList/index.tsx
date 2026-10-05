@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Badge } from '@/components/ui/badge';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
-import { moveItem } from '../../helpers/draft';
+import { moveItem, pruneLayout } from '../../helpers/draft';
 import { fieldPath, issuesUnder } from '../../helpers/issues';
 import { IssueList } from '../controls/IssueList';
 import type { useAddSeoField } from '../hooks/useAddSeoField';
@@ -41,7 +41,8 @@ export const FieldList = ({ issues, disabled, onAdd, seo }: FieldListProps) => {
     if (!moved || from === to) {
       return;
     }
-    update((draft) => ({ ...draft, fields: moveItem(draft.fields, from, to) }));
+    // A move can change the automatic title field, which then leaves the document (`pruneLayout`).
+    update((draft) => pruneLayout({ ...draft, fields: moveItem(draft.fields, from, to) }));
     setAnnouncement(
       t('models.builder.moved', { label: moved.label, position: to + 1, total: fields.length }),
     );

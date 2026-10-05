@@ -1,5 +1,5 @@
-import { isCanvasEligible, isCoverEligible } from '../display/layout.js';
-import { TITLE_FIELD_TYPES } from '../display/titleField.js';
+import { isCoverEligible, isDocumentPlaceable } from '../display/layout.js';
+import { effectiveTitleField, TITLE_FIELD_TYPES } from '../display/titleField.js';
 import { EDITOR_CATALOGUE, isCustomEditorId } from '../editors/catalogue.js';
 import { isStableId } from '../ids.js';
 import { SCALAR_DATA_TYPES, UNIQUE_CAPABLE_DATA_TYPES } from '../types/dataTypes.js';
@@ -320,9 +320,9 @@ const checkFieldList = (
 };
 
 /**
- * The entry document's layout (`effectiveLayout`): canvas blocks, cover and strip. Title, cover and canvas
- * are disjoint (title types are never canvas or cover types, so eligibility covers the title); strip
- * entries are properties, so never the cover or a canvas block.
+ * The entry document's layout (`effectiveLayout`): document fields, cover and strip. Title, cover and
+ * canvas are disjoint: any field but the title (configured or automatic) may be in the canvas, the
+ * configured cover may not; strip entries are properties, so never the cover or a document field.
  */
 const checkDocumentLayout = (
   model: ModelDefinition,
@@ -330,10 +330,14 @@ const checkDocumentLayout = (
 ): ValidationIssue[] => {
   const { canvasFieldIds, coverFieldId, stripFieldIds } = model.display;
   const canvas = new Set(canvasFieldIds ?? []);
+  const title = effectiveTitleField(model);
   const issues = checkFieldList(canvasFieldIds, {
     path: '/display/canvasFieldIds',
     fields,
-    reject: (field) => (isCanvasEligible(field) ? undefined : canvasRejection(field)),
+    reject: (field) =>
+      isDocumentPlaceable(field, title)
+        ? undefined
+        : 'the title is the heading of the document, not a field in it',
   });
   if (coverFieldId !== undefined) {
     issues.push(
@@ -360,16 +364,6 @@ const checkDocumentLayout = (
     }),
   );
   return issues;
-};
-
-const canvasRejection = (field: FieldDefinition): string => {
-  if (field.type === 'component') {
-    return 'only a repeatable component can be in the canvas';
-  }
-  if (field.type === 'media') {
-    return 'only a media field with several files can be in the canvas';
-  }
-  return `a ${field.type} field cannot be in the canvas`;
 };
 
 const checkDisplay = (definition: SchemaDefinition): ValidationIssue[] => {

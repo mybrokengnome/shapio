@@ -13,6 +13,8 @@ export type DrawerFocus = { section: 'status' | 'properties' | 'cover'; property
 
 type SettingsDrawerProps = {
   open: boolean;
+  /** Open only because wide screens show it by default: focus and scroll stay in the document. */
+  automatic: boolean;
   onOpenChange: (open: boolean) => void;
   focus: DrawerFocus;
   layout: DocumentLayout;
@@ -39,6 +41,7 @@ const focusTargetOf = (focus: DrawerFocus) =>
  */
 export const SettingsDrawer = ({
   open,
+  automatic,
   onOpenChange,
   focus,
   layout,
@@ -52,12 +55,12 @@ export const SettingsDrawer = ({
   const { t } = useTranslation();
   const mobile = useIsMobile();
   useEffect(() => {
-    if (open) {
+    if (open && !automatic) {
       document
         .querySelector(`[data-drawer-section="entry-settings-${focus.section}"]`)
         ?.scrollIntoView({ block: 'start' });
     }
-  }, [open, focus]);
+  }, [open, automatic, focus]);
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
@@ -67,6 +70,10 @@ export const SettingsDrawer = ({
         size="xs"
         // Focus goes to what the drawer was opened for: a property's row, a section, or its first control.
         onOpenAutoFocus={(event) => {
+          if (automatic) {
+            event.preventDefault();
+            return;
+          }
           const target = focusTargetOf(focus);
           if (target) {
             event.preventDefault();

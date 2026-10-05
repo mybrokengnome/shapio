@@ -259,4 +259,40 @@ describe('shapio schema pull | diff | apply', () => {
     expect(result.stderr).toMatch(/models\/broken\.json \/fields\/0\/apiKey/);
     await unlink(filePath('broken'));
   });
+  it('round-trips a scalar placed in the document (display.canvasFieldIds) through pull and apply', async () => {
+    const created = await admin.post('/api/admin/models', {
+      definition: pageDefinition({
+        apiKey: 'note',
+        label: 'Note',
+        fields: [
+          { apiKey: 'title', label: 'Title', type: 'string', required: true },
+          { apiKey: 'summary', label: 'Summary', type: 'text' },
+        ],
+      }),
+      scope: 'network',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const noteId = created.json<{ definitionId: string }>().definitionId;
+    const current = await remote(noteId);
+    const summaryId = current.definition.fields.find((candidate) => candidate.apiKey === 'summary')?.id;
+    const placed = await admin.put(`/api/admin/models/${noteId}`, {
+      definition: { ...current.definition, display: { canvasFieldIds: [summaryId] } },
+      expectedVersion: current.version,
+    });
+    expect(placed.statusCode, placed.body).toBe(200);
+
+    const pulled = await cli('pull');
+    expect(pulled.code, pulled.stderr).toBe(0);
+    const file = await readDefinitionFile('note');
+    expect(file.display).toEqual({ canvasFieldIds: [summaryId] });
+    const unchanged = await cli('apply');
+    expect(unchanged.code, unchanged.stderr).toBe(0);
+    expect(unchanged.stdout).toContain('Applied 0 definition(s)');
+
+    // A file without the key (written before placement) applies as the automatic layout.
+    await writeDefinitionFile('note', { ...file, display: {} });
+    const applied = await cli('apply');
+    expect(applied.code, applied.stderr).toBe(0);
+    expect((await remote(noteId)).definition.display).toEqual({});
+  });
 });

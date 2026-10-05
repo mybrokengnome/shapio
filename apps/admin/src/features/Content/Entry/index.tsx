@@ -1,4 +1,4 @@
-import { effectiveLayout, type ModelDefinition } from '@shapio/schema';
+import { effectiveLayout, isCanvasEligible, type ModelDefinition } from '@shapio/schema';
 import { useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -59,8 +59,9 @@ type EntryDocumentProps = {
 /**
  * An entry as a document you write, not a form you fill (plan editor-experience §3): a thin top bar, the
  * cover, the title typed into the page, a strip of properties, and the canvas of blocks; everything else
- * in a settings drawer beside it, and publishing through a pre-flight. A model without canvas fields shows
- * its properties as a grid under the title. Autosave keeps drafts safe; ⌘S records a version.
+ * in a settings drawer beside it, and publishing through a pre-flight. A model without block fields shows
+ * its properties as a grid under the title and any field placed in the document. Autosave keeps drafts
+ * safe; ⌘S records a version.
  */
 export const EntryDocument = ({
   schema,
@@ -169,6 +170,8 @@ export const EntryDocument = ({
   // With Publish as the primary action, Save (a validated version) shows while there is something to record.
   const showSave = primary.kind === 'publish' && entryDocument.editable && (dirty || autosaved);
   const live = entry !== null && entry.status !== 'draft';
+  // Rich text, zones, lists or galleries: the page is a document with a strip; otherwise the grid stays.
+  const hasBlocks = layout.canvas.some(isCanvasEligible);
   const hasFields =
     layout.title !== undefined ||
     layout.cover !== undefined ||
@@ -213,7 +216,13 @@ export const EntryDocument = ({
                   <PreviewButton
                     available={preview.available}
                     pressed={preview.open && !preview.documentShown}
-                    onToggle={preview.toggle}
+                    onToggle={() => {
+                      // The preview takes the right half: the drawer makes room, its remembered choice kept.
+                      if (!preview.open) {
+                        drawer.hideForPreview();
+                      }
+                      preview.toggle();
+                    }}
                   />
                 ) : null
               }
@@ -266,15 +275,12 @@ export const EntryDocument = ({
                   <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
                 ) : null}
                 <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
-                {layout.canvas.length > 0 ? (
-                  <>
-                    <PropertiesStrip
-                      layout={layout}
-                      onMore={() => drawer.openAt({ section: 'properties' })}
-                    />
-                    <Canvas fields={layout.canvas} />
-                  </>
-                ) : (
+                {hasBlocks ? (
+                  <PropertiesStrip layout={layout} onMore={() => drawer.openAt({ section: 'properties' })} />
+                ) : null}
+                {layout.canvas.length > 0 ? <Canvas fields={layout.canvas} /> : null}
+                {/* Without blocks the document is a form: the properties stay on the page, under its fields. */}
+                {hasBlocks || layout.properties.length === 0 ? null : (
                   <PropertyGrid groups={layout.propertyGroups} />
                 )}
               </article>
@@ -283,6 +289,7 @@ export const EntryDocument = ({
           <PreviewPane preview={preview} title={heading} />
           <SettingsDrawer
             open={drawer.open}
+            automatic={drawer.automatic}
             onOpenChange={drawer.setOpen}
             focus={drawer.focus}
             layout={layout}

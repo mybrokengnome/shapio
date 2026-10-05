@@ -71,6 +71,25 @@ describe('effectiveLayout', () => {
     expect(layout.properties.some((f) => f.apiKey === 'notes')).toBe(false);
   });
 
+  it('places any configured field but the title in the document, in the configured order', () => {
+    const layout = effectiveLayout(article({ canvasFieldIds: [id(2), id(4), id(5), id(1)] }));
+    expect(keys(layout.canvas)).toEqual(['slug', 'body', 'seo']);
+    expect(keys(layout.properties)).toEqual(['sections', 'gallery', 'faqs', 'thumb']);
+    expect(layout.cover?.apiKey).toBe('cover');
+  });
+
+  it('moves the automatic cover to the next single image when the first one is in the document', () => {
+    const layout = effectiveLayout(article({ canvasFieldIds: [id(4), id(3)] }));
+    expect(keys(layout.canvas)).toEqual(['body', 'cover']);
+    expect(layout.cover?.apiKey).toBe('thumb');
+  });
+
+  it('keeps the automatic title out of the document when it is listed', () => {
+    const layout = effectiveLayout(article({ canvasFieldIds: [id(1), id(4)] }));
+    expect(layout.title?.apiKey).toBe('title');
+    expect(keys(layout.canvas)).toEqual(['body']);
+  });
+
   it('keeps a non-text title as a read-only property', () => {
     const definition = model({
       fields: [

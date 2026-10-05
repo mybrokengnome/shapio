@@ -6,6 +6,23 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Show any field in the document.** A field's settings have **Show in document**: on, the entry document
+  shows the field under its name among the blocks (an excerpt, a date, the SEO fields) and the strip and
+  Settings panel no longer list it; off on a rich text, zone or list, it moves to the Settings panel. It edits
+  the model's `display.canvasFieldIds`, which now accepts any field but the title (it took block fields only),
+  so it is pulled and applied like any display setting; files without it behave as before. A new block field
+  joins a configured list. A document without block fields keeps its property grid under the fields placed in
+  it.
+
+### Changed
+
+- **The entry's Settings panel is open by default on wide screens** (80rem and up, where it sits beside the
+  document). Closing it is remembered in that browser; opening the preview closes it without changing that.
+- **Summarize from body** accepts any string or text field but the title, wherever it is placed; the server no
+  longer answers "it is not a property of this model" for a field in the document.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added

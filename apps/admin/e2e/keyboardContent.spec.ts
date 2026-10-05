@@ -123,6 +123,13 @@ test('entry document: every stop has a visible focus ring in light and dark, and
   await page.goto(`${server.adminUrl}content/article/new`);
   await expect(page.getByRole('heading', { level: 1, name: 'New Article' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Body' })).toBeVisible();
+  // Wide screens open the settings drawer by default; this cycle covers the document. Closing it is
+  // remembered, so the next tests start from the document alone too.
+  const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  if ((await settings.getAttribute('aria-expanded')) === 'true') {
+    await settings.click();
+    await expect(page.locator('#entry-settings')).toBeHidden();
+  }
   await inBothSchemes(page, () => expectFullTabCycle(page));
 });
 
@@ -132,10 +139,15 @@ test('entry document: every field type is filled, picked and saved with the keyb
   await tabTo(page, title, { max: 40 });
   await page.keyboard.type('Keyboard only');
 
-  // ⌘/ opens the settings drawer beside the document with focus in it; each property row opens with Enter
-  // and its editor is the next stop.
-  await page.keyboard.press('ControlOrMeta+/');
+  // Wide screens open the settings drawer by default without taking focus; ⌘/ closes it and opens it again
+  // with focus in it; each property row opens with Enter and its editor is the next stop.
   const drawer = page.locator('#entry-settings');
+  await expect(title).toBeFocused();
+  if (await drawer.isVisible()) {
+    await page.keyboard.press('ControlOrMeta+/');
+    await expect(drawer).toBeHidden();
+  }
+  await page.keyboard.press('ControlOrMeta+/');
   await expect(drawer).toBeVisible();
   await waitForAnimations(page);
   const openRow = async (apiKey: string) => {
@@ -273,6 +285,11 @@ test('entry document: every field type is filled, picked and saved with the keyb
   await expect(page.getByRole('heading', { level: 1, name: 'Keyboard only' })).toBeVisible();
   // History from the drawer: a modal sheet over it; Escape closes it and focus goes back to its button.
   const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  // The drawer was left open, which wide screens remember: close it so the button opens it.
+  if ((await settings.getAttribute('aria-expanded')) === 'true') {
+    await page.keyboard.press('ControlOrMeta+/');
+    await expect(drawer).toBeHidden();
+  }
   await resetFocusToTop(page);
   await tabTo(page, settings, { max: 40 });
   await page.keyboard.press('Enter');

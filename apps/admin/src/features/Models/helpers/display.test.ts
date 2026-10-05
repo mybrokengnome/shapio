@@ -1,6 +1,12 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
-import { documentLayoutChoices, titleFieldCandidates, withAddedField } from './display';
+import {
+  documentLayoutChoices,
+  documentPlacementOf,
+  titleFieldCandidates,
+  withAddedField,
+  withDocumentPlacement,
+} from './display';
 import { createField, withSetting } from './draft';
 
 describe('titleFieldCandidates', () => {
@@ -92,5 +98,66 @@ describe('documentLayoutChoices', () => {
     const choices = documentLayoutChoices({ ...model, display: { canvasFieldIds: [gallery.id, body.id] } });
     expect(choices.canvasOptions.map((field) => field.apiKey)).toEqual(['gallery', 'body', 'notes']);
     expect(choices.stripOptions.map((field) => field.apiKey)).toEqual(['notes']);
+  });
+});
+
+describe('document placement', () => {
+  const base: ModelDefinition = {
+    id: '00000000-0000-4000-8000-000000000003',
+    kind: 'collection',
+    apiKey: 'post',
+    label: 'Post',
+    localized: false,
+    draftAndPublish: true,
+    fields: [],
+    display: {},
+  };
+  const title = createField(base, { type: 'string', label: 'Title', apiKey: 'title' });
+  const excerpt = createField(base, { type: 'text', label: 'Excerpt', apiKey: 'excerpt' });
+  const cover = createField(base, { type: 'media', label: 'Cover', apiKey: 'cover' });
+  const body = createField(base, { type: 'richtext', label: 'Body', apiKey: 'body' });
+  const seo = withSetting(
+    createField(base, { type: 'component', label: 'SEO', apiKey: 'seo' }),
+    'component',
+    '00000000-0000-4000-8000-0000000005e0',
+  );
+  const model = { ...base, fields: [title, excerpt, cover, body, seo] };
+  const ids = (definition: ModelDefinition) => definition.display.canvasFieldIds;
+  const placement = (definition: ModelDefinition, field: FieldDefinition) =>
+    documentPlacementOf(definition, field);
+
+  it('reads the automatic layout and locks the title and the last document field', () => {
+    expect(placement(model, body)).toEqual({ inDocument: true, lock: 'last' });
+    expect(placement(model, excerpt)).toEqual({ inDocument: false, lock: undefined });
+    expect(placement(model, title)).toEqual({ inDocument: false, lock: 'title' });
+    expect(placement(model, cover)).toEqual({ inDocument: false, lock: undefined });
+    expect(placement({ ...model, display: { coverFieldId: cover.id } }, cover).lock).toBe('cover');
+  });
+
+  it('turns the automatic layout into a list and inserts by field order', () => {
+    const withExcerpt = withDocumentPlacement(model, excerpt.id, true);
+    expect(ids(withExcerpt)).toEqual([excerpt.id, body.id]);
+    const withSeo = withDocumentPlacement(withExcerpt, seo.id, true);
+    expect(ids(withSeo)).toEqual([excerpt.id, body.id, seo.id]);
+    expect(placement(withSeo, body)).toEqual({ inDocument: true, lock: undefined });
+    expect(ids(withDocumentPlacement(withSeo, body.id, false))).toEqual([excerpt.id, seo.id]);
+  });
+
+  it('takes a field out of the strip when it goes in the document', () => {
+    const stripped = { ...model, display: { stripFieldIds: [excerpt.id, cover.id] } };
+    expect(withDocumentPlacement(stripped, excerpt.id, true).display.stripFieldIds).toEqual([cover.id]);
+  });
+
+  it('adds a new block field to a configured list only', () => {
+    const notes = createField(model, { type: 'richtext', label: 'Notes', apiKey: 'notes' });
+    const flag = createField(model, { type: 'boolean', label: 'Featured', apiKey: 'featured' });
+    expect(ids(withAddedField(model, notes) as ModelDefinition)).toBeUndefined();
+    const configured = withDocumentPlacement(model, excerpt.id, true);
+    expect(ids(withAddedField(configured, notes) as ModelDefinition)).toEqual([
+      excerpt.id,
+      body.id,
+      notes.id,
+    ]);
+    expect(ids(withAddedField(configured, flag) as ModelDefinition)).toEqual([excerpt.id, body.id]);
   });
 });

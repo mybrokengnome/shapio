@@ -3,8 +3,9 @@ import type { FieldDefinition, ModelDefinition } from '../types/definitions.js';
 import { effectiveTitleField } from './titleField.js';
 
 /**
- * Data types that can be blocks in the entry document's canvas. Components must also be repeatable and
- * media must hold several files (`isCanvasEligible`); a single component or file is a property.
+ * Data types that are blocks of the entry document's canvas by default. Components must also be repeatable
+ * and media must hold several files (`isCanvasEligible`); a single component or file is a property unless
+ * `display.canvasFieldIds` places it in the document.
  */
 export const CANVAS_ELIGIBLE: ReadonlySet<DataType> = new Set<DataType>([
   'richtext',
@@ -19,6 +20,11 @@ export const INLINE_TITLE_TYPES: ReadonlySet<DataType> = new Set<DataType>(['str
 /** How many properties the strip shows when `display.stripFieldIds` is not set. */
 export const STRIP_DEFAULT_COUNT = 5;
 
+/**
+ * The automatic rule: the fields written in the document while `display.canvasFieldIds` is unset (rich
+ * text, dynamic zones, repeatable components, media with several files). Also what a canvas field can take
+ * between blocks: only these hold blocks.
+ */
 export const isCanvasEligible = (field: FieldDefinition): boolean => {
   switch (field.type) {
     case 'richtext':
@@ -32,6 +38,14 @@ export const isCanvasEligible = (field: FieldDefinition): boolean => {
       return false;
   }
 };
+
+/**
+ * Whether `display.canvasFieldIds` may list the field: any field but the entry's title (`effectiveTitleField`),
+ * which the document shows as its heading. A configured cover is refused by the validator; an automatically
+ * chosen one placed in the document simply stops being the cover.
+ */
+export const isDocumentPlaceable = (field: FieldDefinition, title: FieldDefinition | undefined): boolean =>
+  field.id !== title?.id;
 
 /** A single `media` field that may hold an image. */
 export const isCoverEligible = (field: FieldDefinition): boolean =>
@@ -48,7 +62,10 @@ export type DocumentLayout = {
   /** The title is edited inline as the H1 (string/text); otherwise it is shown read-only and is a property. */
   titleInline: boolean;
   cover: FieldDefinition | undefined;
-  /** Canvas blocks, in order. */
+  /**
+   * The fields written in the document, in order: block fields (`isCanvasEligible`) and any other field
+   * that `display.canvasFieldIds` places there, each under its heading.
+   */
   canvas: FieldDefinition[];
   /** Every other live field, ordered by `display.groups`, then field order. */
   properties: FieldDefinition[];
@@ -86,16 +103,18 @@ const coverOf = (model: ModelDefinition, live: readonly FieldDefinition[], canva
 };
 
 /**
- * The entry document's layout: title, cover, canvas blocks and properties. Configured `display` ids win
- * when they point at live, eligible fields; anything else falls back to the defaults (canvas: every
- * eligible field in field order; cover: the first single image field). Deprecated and ineligible ids are
- * skipped, so a stale definition never breaks the editor. Pure: no values, no I/O.
+ * The entry document's layout: title, cover, document fields and properties. Configured `display` ids win
+ * when they point at live, eligible fields; anything else falls back to the defaults (canvas: every block
+ * field in field order; cover: the first single image field not in the canvas). Deprecated, unknown ids and
+ * the title are skipped, so a stale definition never breaks the editor. Pure: no values, no I/O.
  */
 export const effectiveLayout = (model: ModelDefinition): DocumentLayout => {
   const live = model.fields.filter((field) => !field.deprecated);
   const title = effectiveTitleField(model);
   const titleInline = title !== undefined && INLINE_TITLE_TYPES.has(title.type);
-  const configuredCanvas = unique(byIds(live, model.display.canvasFieldIds).filter(isCanvasEligible));
+  const configuredCanvas = unique(
+    byIds(live, model.display.canvasFieldIds).filter((field) => isDocumentPlaceable(field, title)),
+  );
   const canvasCandidates =
     model.display.canvasFieldIds === undefined ? live.filter(isCanvasEligible) : configuredCanvas;
   const cover = coverOf(model, live, new Set(configuredCanvas.map((field) => field.id)));

@@ -1,4 +1,4 @@
-import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import { isCanvasEligible, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { useCallback } from 'react';
 import { useCanvasHandles } from '@/fields/form/canvasHandles';
 import { useEntryFormStore, useFieldsEnvironment } from '@/fields/form/context';
@@ -36,7 +36,8 @@ export const useCanvasInsertions = () => {
 
   const insertionsOf = useCallback(
     (field: FieldDefinition): FieldInsertions => {
-      if (readOnly || disabled) {
+      // Only block fields take blocks: a single component or file placed in the document holds one value.
+      if (readOnly || disabled || !isCanvasEligible(field)) {
         return { kind: 'none', field };
       }
       const count = toList(store.getState().values[field.apiKey]).length;

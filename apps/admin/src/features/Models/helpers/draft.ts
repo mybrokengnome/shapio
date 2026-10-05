@@ -1,8 +1,9 @@
 import {
   canonicalJson,
   DEFAULT_EDITORS,
-  isCanvasEligible,
+  effectiveTitleField,
   isCoverEligible,
+  isDocumentPlaceable,
   isCustomEditorId,
   listCompatibleEditors,
   renormalizeDefinition,
@@ -109,8 +110,9 @@ export const removeField = (definition: SchemaDefinition, fieldId: string): Sche
 
 /**
  * Drops document-layout references (`canvasFieldIds`, `coverFieldId`, `stripFieldIds`) that no longer
- * point at an eligible field, after a field is removed or its type or settings change (a media field that
- * stops holding several files leaves the canvas). Keeps the draft valid without a trip to Display.
+ * point at an eligible field, after a field is removed, changes type or settings, moves, or becomes the
+ * title (the title is the document's heading, never a field in it). Keeps the draft valid without a trip to
+ * Display.
  */
 export const pruneLayout = (definition: SchemaDefinition): SchemaDefinition => {
   if (definition.kind === 'component') {
@@ -125,7 +127,8 @@ export const pruneLayout = (definition: SchemaDefinition): SchemaDefinition => {
     const field = fields.get(id);
     return field !== undefined && test(field);
   };
-  const canvas = canvasFieldIds?.filter((id) => eligible(id, isCanvasEligible));
+  const title = effectiveTitleField(definition);
+  const canvas = canvasFieldIds?.filter((id) => eligible(id, (field) => isDocumentPlaceable(field, title)));
   const cover =
     coverFieldId !== undefined && eligible(coverFieldId, isCoverEligible) && !canvas?.includes(coverFieldId)
       ? coverFieldId

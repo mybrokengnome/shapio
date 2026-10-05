@@ -36,16 +36,20 @@ const notSummarizable = (fieldApiKey: string, reason: string) =>
   );
 
 /**
- * The target must be a string or text property (not the title) of a model whose document has a rich-text
- * canvas field: the summary is made from that canvas (plan §I).
+ * The target must be a live string or text field (not the title) of a model whose document has a rich-text
+ * canvas field, wherever the field is placed (a property or in the document): the summary is made from
+ * that canvas (plan §I).
  */
 const summaryTarget = (definition: ModelDefinition, fieldApiKey: string) => {
   const layout = effectiveLayout(definition);
-  const field = layout.properties.find((candidate) => candidate.apiKey === fieldApiKey);
+  if (layout.title?.apiKey === fieldApiKey) {
+    throw notSummarizable(fieldApiKey, 'it is the title');
+  }
+  const field = definition.fields.find(
+    (candidate) => candidate.apiKey === fieldApiKey && !candidate.deprecated,
+  );
   if (!field) {
-    throw layout.title?.apiKey === fieldApiKey
-      ? notSummarizable(fieldApiKey, 'it is the title')
-      : notSummarizable(fieldApiKey, 'it is not a property of this model');
+    throw notSummarizable(fieldApiKey, 'it is not a field of this model');
   }
   if (field.type !== 'string' && field.type !== 'text') {
     throw notSummarizable(fieldApiKey, 'only string and text fields hold summaries');

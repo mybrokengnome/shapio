@@ -123,14 +123,26 @@ describe('pruneLayout', () => {
     expect(pruneLayout(definition)).toEqual(definition);
   });
 
-  it('drops a field from the canvas when it stops being eligible', () => {
+  it('keeps a field in the document when it stops being a block field', () => {
     const changed = {
       ...definition,
       fields: definition.fields.map((field) =>
         field.id === gallery.id ? withSetting(field, 'multiple', false) : field,
       ),
     };
-    expect((pruneLayout(changed) as ModelDefinition).display.canvasFieldIds).toEqual([body.id]);
+    expect((pruneLayout(changed) as ModelDefinition).display.canvasFieldIds).toEqual([body.id, gallery.id]);
+  });
+
+  it('drops the title from the document, configured or automatic', () => {
+    const placed = { ...definition, display: { canvasFieldIds: [body.id, title.id] } };
+    expect((pruneLayout(placed) as ModelDefinition).display.canvasFieldIds).toEqual([body.id]);
+    const subtitle = createField(model, { type: 'string', label: 'Subtitle', apiKey: 'subtitle' });
+    const configured = {
+      ...definition,
+      fields: [...definition.fields, subtitle],
+      display: { titleFieldId: subtitle.id, canvasFieldIds: [subtitle.id, title.id] },
+    };
+    expect((pruneLayout(configured) as ModelDefinition).display.canvasFieldIds).toEqual([title.id]);
   });
 
   it('drops a cover that changed type', () => {

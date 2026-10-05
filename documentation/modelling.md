@@ -89,6 +89,14 @@ Custom editors from your project can be chosen for any compatible field ([Extens
 Display settings choose the title field (labels in lists and pickers), the list columns, the default sort and
 the sections of the entry form.
 
+**Document or property.** An entry opens as a document: the title, then its blocks (rich text, sections,
+repeatable components, galleries), with every other field as a property in the strip under the title and the
+Settings panel. Turn on **Show in document** in a field's settings to write any field but the title in the
+document instead, under its name among the blocks: an excerpt, a date, the SEO fields. Turn it off on a block
+field to move it to the Settings panel. In schema files this is the model's `display.canvasFieldIds`, the
+document's fields in order; without it the automatic rule above applies. Changing it is live, like any display
+setting.
+
 **SEO fields** are one click away: **Add field → SEO fields** adds the built-in, shared SEO component (title,
 description, social image, canonical URL, noindex), with per-site defaults and a resolved form in the delivery
 API ([SEO fields](seo.md)).

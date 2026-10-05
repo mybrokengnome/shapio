@@ -5,14 +5,19 @@ import { quickEditFieldsOf } from './quickEditFields';
 const TITLE = id(1);
 const SLUG = id(2);
 const AUTHOR = id(3);
+const BODY = id(4);
 
-const article = (stripFieldIds?: string[]) =>
+const article = (stripFieldIds?: string[], canvasFieldIds?: string[]) =>
   model({
-    display: { titleFieldId: TITLE, ...(stripFieldIds ? { stripFieldIds } : {}) },
+    display: {
+      titleFieldId: TITLE,
+      ...(stripFieldIds ? { stripFieldIds } : {}),
+      ...(canvasFieldIds ? { canvasFieldIds } : {}),
+    },
     fields: [
       field({ id: TITLE, apiKey: 'title', type: 'string' }),
       field({ id: SLUG, apiKey: 'slug', type: 'slug', settings: { sourceFieldId: TITLE } }),
-      field({ apiKey: 'body', type: 'richtext' }),
+      field({ id: BODY, apiKey: 'body', type: 'richtext' }),
       field({ apiKey: 'cover', type: 'media', settings: { allowedKinds: ['image'] } }),
       field({ apiKey: 'meta', type: 'json' }),
       field({
@@ -31,5 +36,13 @@ describe('quickEditFieldsOf', () => {
 
   it('follows a configured properties strip', () => {
     expect(quickEditFieldsOf(article([AUTHOR])).map((item) => item.apiKey)).toEqual(['title', 'author']);
+  });
+
+  it('keeps a non-block field placed in the document', () => {
+    expect(quickEditFieldsOf(article(undefined, [BODY, SLUG])).map((item) => item.apiKey)).toEqual([
+      'title',
+      'author',
+      'slug',
+    ]);
   });
 });

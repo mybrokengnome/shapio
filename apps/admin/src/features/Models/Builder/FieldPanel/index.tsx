@@ -22,6 +22,7 @@ import { DefaultValue } from './DefaultValue';
 import { EditorPicker } from './EditorPicker';
 import { Flags } from './Flags';
 import { useTypeChoices } from './hooks/useTypeChoices';
+import { Placement } from './Placement';
 import { TypeSettings } from './TypeSettings';
 
 type FieldPanelProps = {
@@ -165,6 +166,9 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
               emptyAsUndefined
               multiline
             />
+            {draft.kind !== 'component' && !field.deprecated ? (
+              <Placement model={draft} field={field} issues={issues} disabled={disabled} />
+            ) : null}
           </PanelSection>
 
           <PanelSection title={t('models.builder.options')}>

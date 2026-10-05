@@ -43,4 +43,11 @@ describe('isSummarizable', () => {
     });
     expect(isSummarizable(effectiveLayout(author), fieldOf(author, 'bio'))).toBe(false);
   });
+
+  it('accepts a string or text field placed in the document', () => {
+    const excerpt = fieldOf(article, 'excerpt');
+    const body = fieldOf(article, 'body');
+    const placed = effectiveLayout({ ...article, display: { canvasFieldIds: [excerpt.id, body.id] } });
+    expect(isSummarizable(placed, excerpt)).toBe(true);
+  });
 });

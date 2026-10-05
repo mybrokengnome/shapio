@@ -8,6 +8,14 @@ publishing. Three things are kept apart on purpose:
 3. **Deploying a site** that reads published content: its build may succeed or fail on its own
    ([Webhooks, deployments and preview](publishing.md)).
 
+## The entry document
+
+An entry opens as a document: the cover, the title, a strip of properties, then its blocks and any field the
+model places in the document ([Document or property](modelling.md#field-types)). The **Settings** panel
+beside it holds the status and locales, every property, history and the danger zone. On a wide screen it is open
+when an entry opens; close it and it stays closed in that browser until you open it again. Opening the preview
+makes room by closing it.
+
 ## Drafts, autosave and Save
 
 - **Autosave** keeps your edits a moment after you stop typing. It does not create a history entry, and it lets
