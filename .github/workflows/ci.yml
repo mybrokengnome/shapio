@@ -203,7 +203,7 @@ jobs:
       - run: pnpm smoke:npm
 
   examples:
-    name: Site starters (seed a local Shapio once; build and smoke Astro, Next.js, SvelteKit)
+    name: Site starters (seed a local Shapio once; build and smoke Astro, Next.js over HTTP and in process, SvelteKit)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -231,8 +231,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build @shapio/client and @shapio/visual (the starters use their builds, as a project installed from npm does)
-        run: pnpm --filter "@shapio/client..." --filter "@shapio/visual" build
+      - name: Build @shapio/client, @shapio/visual and @shapio/local (the starters use their builds, as a project installed from npm does)
+        run: pnpm --filter "@shapio/client..." --filter "@shapio/visual" --filter "@shapio/local" build
       - name: Start Shapio from source
         working-directory: apps/api
         # Only Shapio runs in development mode; the starters build for production.
@@ -258,15 +258,30 @@ jobs:
           nohup pnpm --filter example-astro preview > /tmp/astro.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4321/en/ && break; sleep 1; done
           pnpm --filter example-astro smoke:http
-      - name: Next.js (build, next start, smoke over HTTP and the signed revalidation route)
+      - name: Next.js reading over HTTP (build, next start, smoke and the signed revalidation route)
         env:
           # The site and the smoke share it; the smoke signs a test event like Shapio's webhook does.
           SHAPIO_WEBHOOK_SECRET: ci-revalidate-secret
+          SHAPIO_MODE: http
         run: |
           pnpm --filter example-next build
           nohup pnpm --filter example-next start > /tmp/next.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/en/ && break; sleep 1; done
-          pnpm --filter example-next smoke --revalidate
+          pnpm --filter example-next smoke --revalidate --save /tmp/next-pages-http
+          pkill -f 'next start'
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3000/en/ || break; sleep 1; done
+      - name: Next.js reading in process (@shapio/local on DATABASE_URL; the same smoke, then the same pages)
+        env:
+          SHAPIO_WEBHOOK_SECRET: ci-revalidate-secret
+          SHAPIO_MODE: in-process
+        run: |
+          pnpm --filter example-next build
+          nohup pnpm --filter example-next start > /tmp/next-in-process.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/en/ && break; sleep 1; done
+          pnpm --filter example-next smoke --revalidate --save /tmp/next-pages-in-process
+          # Rendered markup (scripts and build asset links aside), public media URLs included, must not differ.
+          diff -r /tmp/next-pages-http /tmp/next-pages-in-process
+          pkill -f 'next start'
       - name: SvelteKit (build, vite preview, smoke over HTTP)
         run: |
           pnpm --filter example-sveltekit build
@@ -274,7 +289,7 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4173/en/ && break; sleep 1; done
           pnpm --filter example-sveltekit smoke
       - if: failure()
-        run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/sveltekit.log 2>/dev/null || true
+        run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/next-in-process.log /tmp/sveltekit.log 2>/dev/null || true
 
   admin-e2e:
     name: Admin end to end on ${{ matrix.database }} (Playwright; axe and keyboard checks in light and dark)

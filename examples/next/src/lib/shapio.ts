@@ -1,11 +1,17 @@
-import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
-import { deliveryToken, shapioUrl, siteKey } from './config';
+import {
+  ShapioApiError,
+  type DeliveryListQuery,
+  type DeliverySite,
+  type ShapioDeliveryClient,
+} from '@shapio/client';
 import { liveSnapshot } from './liveSnapshot';
+import { createShapioClient } from './shapioClient';
 import type { Locale } from './site';
 import type { Article, Page, SiteSettings } from './types';
 
 /**
- * The site's read side: Shapio's delivery API through `@shapio/client`, at one publication snapshot. Next
+ * The site's read side: Shapio's delivery API (over HTTP, or in this process with SHAPIO_MODE=in-process:
+ * src/lib/shapioClient.ts), at one publication snapshot. Next
  * renders pages in several worker processes, so the snapshot is pinned once in next.config.ts (it sets
  * SHAPIO_SNAPSHOT for the whole build) and every request here sends it. Under `next start`, /api/revalidate
  * moves that snapshot forward (src/lib/liveSnapshot.ts).
@@ -27,15 +33,8 @@ const PAGE_FIELDS = ['title', 'slug', 'description', 'sections', 'seo'];
 const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', 'publishedOn', 'seo'];
 const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
-export const createShapio = () =>
-  createClient({
-    baseUrl: shapioUrl(),
-    token: deliveryToken(),
-    site: siteKey(),
-  });
-
-let client: ReturnType<typeof createShapio> | undefined;
-export const shapio = () => (client ??= createShapio());
+let client: ShapioDeliveryClient | undefined;
+export const shapio = () => (client ??= createShapioClient());
 
 const snapshot = liveSnapshot;
 

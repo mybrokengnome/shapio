@@ -904,6 +904,9 @@ importers:
       '@shapio/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@shapio/local':
+        specifier: workspace:*
+        version: link:../../packages/local
       '@shapio/visual':
         specifier: workspace:*
         version: link:../../packages/visual

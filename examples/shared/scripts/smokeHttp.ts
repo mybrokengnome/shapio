@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 /**
@@ -13,6 +15,10 @@ import { parseArgs } from 'node:util';
  * `--url` is the running site's origin (default: SMOKE_URL, then http://localhost:4321). `--revalidate` (the
  * Next.js starter) also checks its on-demand revalidation route: an unsigned POST to /api/revalidate is refused,
  * and an event signed with SHAPIO_WEBHOOK_SECRET is answered 200 with the paths it revalidated.
+ *
+ * `--save <dir>` also writes each checked page's rendered markup to `<dir>` (scripts and the framework's own
+ * asset links removed: they name build-specific chunks), so two builds of a site can be compared with
+ * `diff -r`, e.g. the Next.js starter reading over HTTP and in process.
  */
 const DRAFT_TITLE = 'Coming soon: our winter projects';
 const ARTICLE = 'modelling-without-a-deploy';
@@ -85,6 +91,18 @@ const fetchPage = async (origin: string, path: string) => {
   return { status: response.status, html: await response.text() };
 };
 
+/** The page as rendered: without scripts and framework asset links, which differ from build to build. */
+const renderedMarkup = (html: string) =>
+  html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '')
+    .replace(/<link\b[^>]*\/_next\/[^>]*>/g, '')
+    .replace(/<meta\b[^>]*name="next-size-adjust"[^>]*>/g, '');
+
+const savePage = async (directory: string, path: string, html: string) => {
+  const name = path.replace(/^\/|\/$/g, '').replace(/\//g, '__') || 'index';
+  await writeFile(join(directory, `${name}.html`), `${renderedMarkup(html)}\n`);
+};
+
 const REVALIDATE_PATH = '/api/revalidate/';
 
 const postEvent = (origin: string, body: string, headers: Record<string, string>) =>
@@ -137,12 +155,22 @@ const checkRevalidation = async (origin: string) => {
 
 const main = async () => {
   const { values } = parseArgs({
-    options: { url: { type: 'string' }, revalidate: { type: 'boolean', default: false } },
+    options: {
+      url: { type: 'string' },
+      revalidate: { type: 'boolean', default: false },
+      save: { type: 'string' },
+    },
   });
   const origin = values.url ?? process.env.SMOKE_URL ?? 'http://localhost:4321';
+  if (values.save) {
+    await mkdir(values.save, { recursive: true });
+  }
   for (const page of PAGES) {
     const { status, html } = await fetchPage(origin, page.path);
     check(status === 200, `${page.path}: HTTP ${status}`);
+    if (values.save) {
+      await savePage(values.save, page.path, html);
+    }
     for (const [needle, label] of page.expect) {
       check(html.includes(needle), `${page.path}: ${label}`);
     }

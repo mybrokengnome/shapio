@@ -8,7 +8,7 @@ import {
 } from './rewrite.js';
 
 const VERSIONS = {
-  workspace: { '@shapio/client': '0.4.2' },
+  workspace: { '@shapio/client': '0.4.2', '@shapio/local': '0.4.2' },
   catalog: { next: '16.3.8', typescript: '6.0.3' },
 };
 
@@ -22,7 +22,12 @@ describe('rewritePackageJson', () => {
           seed: 'node --import tsx ../shared/scripts/seed.ts',
           build: 'next build',
         },
-        dependencies: { '@shapio/client': 'workspace:*', next: 'catalog:', zod: '^4.0.0' },
+        dependencies: {
+          '@shapio/client': 'workspace:*',
+          '@shapio/local': 'workspace:*',
+          next: 'catalog:',
+          zod: '^4.0.0',
+        },
         devDependencies: { typescript: 'catalog:' },
       },
       VERSIONS,
@@ -30,7 +35,8 @@ describe('rewritePackageJson', () => {
     expect(rewritten).toEqual({
       name: 'example-next',
       scripts: { seed: 'node --import tsx scripts/seed.ts', build: 'next build' },
-      dependencies: { '@shapio/client': '^0.4.2', next: '16.3.8', zod: '^4.0.0' },
+      // @shapio/local must run the server's exact release.
+      dependencies: { '@shapio/client': '^0.4.2', '@shapio/local': '0.4.2', next: '16.3.8', zod: '^4.0.0' },
       devDependencies: { typescript: '6.0.3' },
     });
     expect(findRepositoryMarkers(JSON.stringify(rewritten))).toEqual([]);

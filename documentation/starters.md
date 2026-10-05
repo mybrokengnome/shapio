@@ -76,6 +76,8 @@ Every starter reads its settings from the environment, or from `.env` (`.env.exa
 | `NEXT_PUBLIC_SHAPIO_URL` | Next.js, optional: the same, inlined into the client bundle at build time                    |
 | `SHAPIO_WEBHOOK_SECRET`  | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
 | `SITE_URL`               | optional: the site's public origin; pages then carry a canonical URL and `og:url`            |
+| `SHAPIO_MODE`            | Next.js, optional: `in-process` reads the delivery API in the server process (below)         |
+| `DATABASE_URL`           | Next.js with `SHAPIO_MODE=in-process`: Shapio's own database (PostgreSQL or MySQL)           |
 
 ### Pinned snapshots
 
@@ -107,6 +109,17 @@ output allows, and all three read the [changes API](snapshots.md#what-changed-be
   starter's README.
 - **SvelteKit** (adapter-static): a full rebuild, started by a [deployment connection](publishing.md#deployment-connections)
   that Shapio triggers on publish.
+
+### Reading in process (Next.js)
+
+With `SHAPIO_MODE=in-process` and `DATABASE_URL`, the Next.js starter reads Shapio's delivery API as function
+calls in its own server process ([`@shapio/local`](in-process.md)) instead of over HTTP: no HTTP hop, and the
+same delivery token, answers and pages. The switch is one factory, `src/lib/shapioClient.ts`; `next.config.ts`
+lists `@shapio/local` in `serverExternalPackages` and pins the build's snapshot the same way in both modes.
+Previews, the browser and media files still use `SHAPIO_URL`, and the Shapio server keeps running. A read-only
+database role is enough. The scaffolded project pins `@shapio/local` to the exact release, because it refuses a
+server of another one ([Upgrades](in-process.md#upgrades)). In-process reads do not go through `fetch`, so cache
+tags do not apply to them; on-demand revalidation still refreshes the pages with `revalidatePath`.
 
 ### Site key
 
@@ -145,7 +158,7 @@ the HTTP smoke check they share live in `examples/shared`. `create-shapio`'s bui
 templates: workspace and catalog versions become the published versions, and the shared files are copied into
 each project.
 
-The starters use the builds of `@shapio/client` and `@shapio/visual`, as an installed project does, so build the packages first:
+The starters use the builds of `@shapio/client`, `@shapio/visual` and `@shapio/local`, as an installed project does, so build the packages first:
 
 ```sh
 pnpm install && pnpm build
@@ -155,4 +168,6 @@ pnpm --filter example-next build && pnpm --filter example-next start   # then, i
 pnpm --filter example-next smoke --revalidate   # with SHAPIO_WEBHOOK_SECRET set for both
 ```
 
-CI seeds a local Shapio once, then builds and smoke-tests all three.
+CI seeds a local Shapio once, then builds and smoke-tests all three, the Next.js starter twice: over HTTP, then
+in process (`SHAPIO_MODE=in-process`). The smoke's `--save <dir>` writes each page's rendered markup, and CI
+requires the two modes' pages to be identical.

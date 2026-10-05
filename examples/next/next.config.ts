@@ -1,6 +1,6 @@
-import { createClient } from '@shapio/client';
 import type { NextConfig } from 'next';
 import { PHASE_PRODUCTION_BUILD } from 'next/constants.js';
+import { createShapioClient } from './src/lib/shapioClient';
 
 /**
  * Pins one publication snapshot for the whole `next build`: Next renders pages in several worker processes, so
@@ -13,17 +13,15 @@ const pinSnapshot = async (): Promise<string> => {
   if (process.env.SHAPIO_SNAPSHOT) {
     return process.env.SHAPIO_SNAPSHOT;
   }
-  const token = process.env.SHAPIO_DELIVERY_TOKEN;
-  if (!token) {
-    throw new Error('Set SHAPIO_DELIVERY_TOKEN to build the site; `npm run seed` writes one to .env');
+  // Over HTTP or in process, as the pages read (SHAPIO_MODE).
+  const client = createShapioClient();
+  try {
+    const { snapshot } = await client.snapshots.current();
+    return String(snapshot);
+  } finally {
+    // An in-process client holds database connections; this process has no further use for them.
+    await client.close?.();
   }
-  const client = createClient({
-    baseUrl: process.env.SHAPIO_URL || 'http://localhost:4300',
-    token,
-    site: process.env.SHAPIO_SITE || undefined,
-  });
-  const { snapshot } = await client.snapshots.current();
-  return String(snapshot);
 };
 
 const originOf = (url: string) => {
@@ -47,6 +45,9 @@ const frameAncestors = () => {
 
 const nextConfig = async (phase: string): Promise<NextConfig> => ({
   trailingSlash: true,
+  // SHAPIO_MODE=in-process: loaded from node_modules once per server process (one database pool), not
+  // bundled into every route.
+  serverExternalPackages: ['@shapio/local'],
   headers: async () => [
     { source: '/:path*', headers: [{ key: 'Content-Security-Policy', value: frameAncestors() }] },
   ],

@@ -6,8 +6,9 @@
 //      `npx shapio extensions check`, run `npm run start` until /api/ready is 200, and probe the custom route;
 //   4. scaffold each site starter (`create-shapio --site`) and check it is a standalone project: no workspace,
 //      catalog or source-condition references left, and a .gitignore;
-//   5. install the scaffolded Next.js starter with the packed `@shapio/schema`, `@shapio/client` and
-//      `@shapio/visual`, seed it against the project from step 3 (started again) and run its `npm run build`.
+//   5. install the scaffolded Next.js starter with the packed `@shapio/schema`, `@shapio/client`,
+//      `@shapio/visual` and `@shapio/local`, seed it against the project from step 3 (started again) and run
+//      its `npm run build`.
 // Each run gets its own database, created and dropped on the server named by TEST_DATABASE_URL.
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -164,7 +165,7 @@ const checkSiteStarter = (createTgz, work, starter) => {
 const SITE_ADMIN_EMAIL = 'site-smoke@example.com';
 const SITE_ADMIN_PASSWORD = 'npm-smoke-site-starter-password';
 /** The workspace packages a scaffolded starter installs from npm; the smoke packs them instead. */
-const SITE_PACKAGES = ['@shapio/schema', '@shapio/client', '@shapio/visual'];
+const SITE_PACKAGES = ['@shapio/schema', '@shapio/client', '@shapio/visual', '@shapio/local'];
 
 /**
  * The scaffolded Next.js starter as a user runs it: `npm install` (with the packed workspace packages, which

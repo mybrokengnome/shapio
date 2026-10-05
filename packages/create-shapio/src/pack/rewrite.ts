@@ -9,7 +9,7 @@ export type PackageJson = Record<string, unknown> & {
 };
 
 export type VersionSources = {
-  /** Versions of the repository's own packages, by name (`workspace:*` → `^<version>`). */
+  /** Versions of the repository's own packages, by name (`workspace:*` → `^<version>`, exact for some). */
   workspace: Readonly<Record<string, string>>;
   /** pnpm-workspace.yaml's catalog (`catalog:` → the exact version). */
   catalog: Readonly<Record<string, string>>;
@@ -26,13 +26,20 @@ export class TemplateError extends Error {
 const SHARED_SCRIPTS_FROM_PACKAGE = '../shared/scripts/';
 const SHARED_SCRIPTS_FROM_SCRIPTS = '../../shared/scripts/';
 
+/**
+ * Workspace packages a project must pin to the exact release: `@shapio/local` reads the database in process
+ * and refuses a server of another release (plan next-in-process §2), so a caret range would let `npm install`
+ * pick a release the server does not run.
+ */
+const EXACT_RELEASE_PACKAGES: ReadonlySet<string> = new Set(['@shapio/local']);
+
 const resolveSpec = (name: string, spec: string, versions: VersionSources): string => {
   if (spec.startsWith('workspace:')) {
     const version = versions.workspace[name];
     if (!version) {
       throw new TemplateError(`${name} is a workspace dependency, but no workspace package has that name`);
     }
-    return `^${version}`;
+    return EXACT_RELEASE_PACKAGES.has(name) ? version : `^${version}`;
   }
   if (spec === 'catalog:' || spec === 'catalog:default') {
     const version = versions.catalog[name];

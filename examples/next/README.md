@@ -22,22 +22,35 @@ npm test            # unit tests (path mapping, signature check)
 `next.config.ts` pins the latest one when the build starts); `SHAPIO_SITE` picks the site on a multi-site
 instance. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in the npm scripts and `.env.example`.
 
-| File                         | Role                                                                |
-| ---------------------------- | ------------------------------------------------------------------- |
-| `next.config.ts`             | pins the snapshot; `/` redirects to `/en/`; `frame-ancestors`       |
-| `src/lib/shapio.ts`          | reads the delivery API with `@shapio/client` at the pinned snapshot |
-| `src/app/[locale]/…`         | the layout (site settings), pages, articles and the colophon        |
-| `src/components/…`           | sections, articles and responsive images                            |
-| `src/app/preview/`           | draft preview with visual editing (`@shapio/visual`)                |
-| `src/app/api/revalidate/`    | the webhook target: on-demand revalidation of changed pages         |
-| `src/lib/revalidation*.ts`   | the snapshot diff, and which pages and cache tags a change touches  |
-| `shapio/`, `scripts/seed.ts` | the models and the seed                                             |
+| File                         | Role                                                               |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `next.config.ts`             | pins the snapshot; `/` redirects to `/en/`; `frame-ancestors`      |
+| `src/lib/shapio.ts`          | reads the delivery API at the pinned snapshot                      |
+| `src/lib/shapioClient.ts`    | over HTTP (`@shapio/client`) or in process (`@shapio/local`)       |
+| `src/app/[locale]/…`         | the layout (site settings), pages, articles and the colophon       |
+| `src/components/…`           | sections, articles and responsive images                           |
+| `src/app/preview/`           | draft preview with visual editing (`@shapio/visual`)               |
+| `src/app/api/revalidate/`    | the webhook target: on-demand revalidation of changed pages        |
+| `src/lib/revalidation*.ts`   | the snapshot diff, and which pages and cache tags a change touches |
+| `shapio/`, `scripts/seed.ts` | the models and the seed                                            |
 
 Preview: the seed creates a deployment connection named **Preview** that opens drafts at
 `http://localhost:3000/preview/` (set `SITE_URL` when seeding for another address). Add that origin to Shapio's
 `CORS_ORIGINS`. In Shapio's preview pane, clicking the title, body or cover focuses that field and saves
 re-render the draft ([visual editing](https://github.com/mybrokengnome/shapio/blob/main/documentation/visual-editing.md)). `NEXT_PUBLIC_SHAPIO_URL` sets the Shapio URL the browser
 calls, when it differs from `SHAPIO_URL`.
+
+## Reading in process
+
+By default the site reads Shapio's delivery API over HTTP. With `SHAPIO_MODE=in-process` and `DATABASE_URL` set
+to Shapio's own database (PostgreSQL or MySQL), it reads the same API as function calls in the Next.js server
+process (`@shapio/local`), with no HTTP hop: the same delivery token, the same answers, the same pages.
+`next.config.ts` lists `@shapio/local` in `serverExternalPackages`, so each server process opens one database
+pool. Previews and the browser still use `SHAPIO_URL`, and the Shapio server keeps running (it applies schema
+changes and sends the revalidation webhook). Install the same `@shapio/local` version as the server's release;
+the scaffolded `package.json` pins it. Reads in process do not go through `fetch`, so the cache tags below do
+not apply to them; `revalidatePath` still refreshes the pages. Guide:
+[in-process delivery](https://github.com/mybrokengnome/shapio/blob/main/documentation/in-process.md).
 
 ## Incremental rebuilds (on-demand revalidation)
 

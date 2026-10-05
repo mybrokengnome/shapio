@@ -12,6 +12,10 @@
  *   URL (and `og:url`) unless the entry sets its own.
  * - NEXT_PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL; inlined into
  *   the client bundle at build time).
+ * - SHAPIO_MODE: `http` (default) reads Shapio's delivery API over HTTP; `in-process` reads the same API as
+ *   function calls in this server process (@shapio/local), from Shapio's database at DATABASE_URL. Previews
+ *   and the browser still use SHAPIO_URL. See documentation/in-process.md.
+ * - DATABASE_URL: Shapio's own database (PostgreSQL or MySQL), for SHAPIO_MODE=in-process only.
  */
 const read = (name: string): string | undefined => {
   const value = process.env[name];
@@ -31,6 +35,24 @@ export const deliveryToken = () => {
 };
 
 export const siteKey = () => read('SHAPIO_SITE');
+
+export type ShapioMode = 'http' | 'in-process';
+
+export const shapioMode = (): ShapioMode => {
+  const mode = read('SHAPIO_MODE') ?? 'http';
+  if (mode !== 'http' && mode !== 'in-process') {
+    throw new Error(`SHAPIO_MODE must be "http" or "in-process", got "${mode}"`);
+  }
+  return mode;
+};
+
+export const databaseUrl = () => {
+  const url = read('DATABASE_URL');
+  if (!url) {
+    throw new Error("SHAPIO_MODE=in-process reads Shapio's database: set DATABASE_URL to it");
+  }
+  return url;
+};
 
 export const siteUrl = () => read('SITE_URL');
 

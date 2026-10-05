@@ -27,6 +27,8 @@ model never needs a rebuild, a restart or a deploy.
   snapshot, restoring an older snapshot, field usage from real traffic.
 - [Media](media.md): local disk and S3/R2, uploads, private media, variants, `shapio media migrate`.
 - [Delivery API (REST)](delivery-api.md): filters, sort, populate, fields, locale, snapshots, tokens, caching.
+- [In-process delivery](in-process.md): `@shapio/local`, the delivery API as function calls in a site's server
+  process (Next.js and others), on PostgreSQL or MySQL.
 - [SEO fields](seo.md): the built-in SEO group, per-site defaults (Settings → SEO), `seo=resolved`.
 - [GraphQL](graphql.md)
 - [Snapshots and the changes API](snapshots.md): pinning builds, what changed between two snapshots,

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@shapio/client": "workspace:*",
+    "@shapio/local": "workspace:*",
     "@shapio/visual": "workspace:*",
     "next": "catalog:",
     "react": "catalog:",

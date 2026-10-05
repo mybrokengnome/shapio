@@ -34,6 +34,13 @@ All notable changes to Shapio are listed here. The format follows
   the runtime and re-exports `shapioTags` for a documented `"use cache"` + `cacheTag` recipe: Next.js 16 only
   allows `cacheTag()` inside a `"use cache"` function with `cacheComponents` on, so the package cannot tag
   in-process reads for you.
+- **The Next.js starter reads in process with `SHAPIO_MODE=in-process`** and `DATABASE_URL` (Shapio's database):
+  one factory (`src/lib/shapioClient.ts`) picks `@shapio/client` over HTTP or `@shapio/local`, and
+  `next.config.ts` lists `@shapio/local` in `serverExternalPackages`. CI builds and smoke-tests the starter in
+  both modes and requires their rendered pages (public media URLs included) to be identical; the shared smoke
+  gained `--save <dir>` for that. `create-shapio` pins `@shapio/local` to the exact release in scaffolded
+  projects. Guide: `documentation/in-process.md` (trust boundary and a read-only database role, private media
+  secrets, upgrade order, connection pools for serverless and `next build`, caching).
 - **`createDeliveryClient(request)` in `@shapio/client`**: the client's read groups over any transport (a
   `RequestFn`); `createClient` builds on it.
 
