@@ -151,7 +151,7 @@ describe.skipIf(skipReason !== undefined)(withSkipReason('in-process delivery', 
 
     // What `shapio start` does after migrating.
     await publishServerRelease(database.current.db, SHAPIO_VERSION, testApp.config);
-    runtime = await createDeliveryRuntime({ databaseUrl: database.current.url, poolMax: 2 });
+    runtime = createDeliveryRuntime({ databaseUrl: database.current.url, poolMax: 2 });
     local = createInProcessRequest(runtime, { token });
     anonymous = createInProcessRequest(runtime, {});
   });
@@ -334,7 +334,7 @@ describe.skipIf(skipReason !== undefined)(withSkipReason('in-process delivery', 
   it("reads over HTTP during a release mismatch with onVersionSkew: 'http'", async () => {
     await runtime.close();
     const address = await testApp.app.listen({ port: 0, host: '127.0.0.1' });
-    runtime = await createDeliveryRuntime({
+    runtime = createDeliveryRuntime({
       databaseUrl: database.current.url,
       poolMax: 2,
       onVersionSkew: 'http',

@@ -19,6 +19,7 @@ COPY packages/client/package.json packages/client/
 COPY packages/cli/package.json packages/cli/
 COPY packages/create-shapio/package.json packages/create-shapio/
 COPY packages/editor-sdk/package.json packages/editor-sdk/
+COPY packages/local/package.json packages/local/
 COPY packages/mcp/package.json packages/mcp/
 COPY packages/visual/package.json packages/visual/
 RUN pnpm install --frozen-lockfile

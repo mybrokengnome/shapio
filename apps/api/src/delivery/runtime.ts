@@ -64,7 +64,12 @@ export type DeliveryRuntime = {
   readonly tokens: Map<string, TokenPrincipal>;
   /** Media storage and URLs for the stored descriptor text. */
   mediaFor: (descriptor: string) => Promise<MediaDependencies>;
-  /** Closes the pool. The runtime cannot be used afterwards; a new one may be created. */
+  /**
+   * Registers one more user of this shared runtime (a local client); the returned function releases it, and
+   * the last release closes the runtime.
+   */
+  retain: () => () => Promise<void>;
+  /** Closes the pool now, whoever else uses it. The runtime cannot be used afterwards; a new one may be created. */
   close: () => Promise<void>;
 };
 
@@ -72,8 +77,8 @@ export type DeliveryRuntime = {
  * bundler's second copy) never opens a second pool. */
 const RUNTIMES = Symbol.for('shapio.delivery');
 
-const runtimes = (): Map<string, Promise<DeliveryRuntime>> => {
-  const holder = globalThis as typeof globalThis & { [RUNTIMES]?: Map<string, Promise<DeliveryRuntime>> };
+const runtimes = (): Map<string, DeliveryRuntime> => {
+  const holder = globalThis as typeof globalThis & { [RUNTIMES]?: Map<string, DeliveryRuntime> };
   holder[RUNTIMES] ??= new Map();
   return holder[RUNTIMES];
 };
@@ -147,6 +152,8 @@ const openRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
   });
 
   let media: { descriptor: string; dependencies: Promise<MediaDependencies> } | undefined;
+  let users = 0;
+  let closing: Promise<void> | undefined;
   const buildMedia = async (stored: string): Promise<MediaDependencies> => {
     const descriptor = parseDeliveryDescriptor(stored);
     const urls = createUrlBuilder(descriptor);
@@ -181,13 +188,32 @@ const openRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
       }
       return media.dependencies;
     },
-    close: async () => {
-      runtimes().delete(options.databaseUrl);
-      await registry.close();
-      await db.destroy();
-      if (ownsProcessHandle) {
-        clearDb(db);
-      }
+    retain: () => {
+      users += 1;
+      let released = false;
+      return async () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        users -= 1;
+        if (users === 0) {
+          await runtime.close();
+        }
+      };
+    },
+    close: () => {
+      closing ??= (async () => {
+        if (runtimes().get(options.databaseUrl) === runtime) {
+          runtimes().delete(options.databaseUrl);
+        }
+        await registry.close();
+        await db.destroy();
+        if (ownsProcessHandle) {
+          clearDb(db);
+        }
+      })();
+      return closing;
     },
   };
   return runtime;
@@ -198,7 +224,7 @@ const openRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
  * the same runtime; the first caller's options apply). A process reads one Shapio database: another URL is
  * refused. Nothing is read until the first call, so creating it never fails on a database that is down.
  */
-export const createDeliveryRuntime = async (options: DeliveryRuntimeOptions): Promise<DeliveryRuntime> => {
+export const createDeliveryRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
   assertSupported(options);
   const all = runtimes();
   const existing = all.get(options.databaseUrl);
@@ -211,8 +237,7 @@ export const createDeliveryRuntime = async (options: DeliveryRuntimeOptions): Pr
       `This process already reads ${describeDatabaseTarget(other)} in process; one Shapio database per process`,
     );
   }
-  const created = Promise.resolve().then(() => openRuntime(options));
+  const created = openRuntime(options);
   all.set(options.databaseUrl, created);
-  created.catch(() => all.delete(options.databaseUrl));
   return created;
 };

@@ -1,10 +1,8 @@
 import { createAdminApi } from './admin/index.js';
 import { createAppAuthApi } from './appAuth/index.js';
-import { createDeliveryApi } from './delivery.js';
+import { createDeliveryClient } from './deliveryClient.js';
 import type { NextCacheOptions } from './nextCache.js';
 import { createRequest, type FetchCredentials } from './request.js';
-import { createSiteApi } from './siteDelivery.js';
-import { createSnapshotsApi } from './snapshots.js';
 import type { HealthResponse, ReadyResponse, VersionResponse } from './types.js';
 
 export type ShapioClientOptions = {
@@ -43,7 +41,7 @@ export const createClient = ({
   next,
 }: ShapioClientOptions) => {
   const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
-  const cacheContext = { site, next };
+  const reads = createDeliveryClient(request, { site, next });
 
   return {
     /**
@@ -58,12 +56,12 @@ export const createClient = ({
       version: (signal?: AbortSignal) => request<VersionResponse>('/api/version', signal ? { signal } : {}),
     },
     /** Published content (the delivery API), typed by the caller. */
-    delivery: createDeliveryApi(request, cacheContext),
+    delivery: reads.delivery,
     /** The site as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
-    site: createSiteApi(request, cacheContext),
+    site: reads.site,
     admin: createAdminApi(request),
     /** Publication snapshots and the diff between two (incremental builds). */
-    snapshots: createSnapshotsApi(request),
+    snapshots: reads.snapshots,
     /** End users of your sites and apps: sign-up, sign-in, tokens, OAuth. */
     appAuth: createAppAuthApi(request, baseUrl),
   };

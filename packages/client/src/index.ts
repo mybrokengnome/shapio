@@ -41,6 +41,11 @@ export type * from './admin/assistTypes.js';
 export type * from './snapshotTypes.js';
 export { DELIVERY_PATH, type DeliveryApi } from './delivery.js';
 export {
+  createDeliveryClient,
+  type DeliveryClientOptions,
+  type ShapioDeliveryClient,
+} from './deliveryClient.js';
+export {
   shapioTags,
   type DeliveryReadOptions,
   type NextCacheMode,

@@ -26,8 +26,16 @@ All notable changes to Shapio are listed here. The format follows
   this way, and nothing on this path writes. The server now records its release (`system_versions.release`,
   a new migration) and a non-secret delivery descriptor (public URL, base path, media locations) at every
   start. A reader of another release is refused with `ShapioVersionSkewError` (503 `VERSION_SKEW`), or reads
-  over HTTP with `onVersionSkew: 'http'`. The entry is workspace-internal for now; the `@shapio/local`
-  package that publishes it comes next.
+  over HTTP with `onVersionSkew: 'http'`. It ships as `@shapio/local` (below).
+- **`@shapio/local`**, a new package: `createLocalClient({ databaseUrl, token?, site? })` returns the
+  `delivery`, `site` and `snapshots` groups of `@shapio/client`, answered in process, plus `close()`. It
+  bundles the read path only (no Fastify, argon2, sharp or email); `mysql2` and the AWS SDK are optional peers,
+  loaded only for MySQL or private S3 media. It refuses SQLite and the Edge runtime. `@shapio/local/next` checks
+  the runtime and re-exports `shapioTags` for a documented `"use cache"` + `cacheTag` recipe: Next.js 16 only
+  allows `cacheTag()` inside a `"use cache"` function with `cacheComponents` on, so the package cannot tag
+  in-process reads for you.
+- **`createDeliveryClient(request)` in `@shapio/client`**: the client's read groups over any transport (a
+  `RequestFn`); `createClient` builds on it.
 
 ### Fixed
 

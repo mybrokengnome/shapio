@@ -32,6 +32,7 @@ const SQLITE_SKIPS: Readonly<Record<string, string>> = {
     'PostgreSQL index builds and planner checks (CONCURRENTLY, INVALID indexes, statistics)',
   'deliveryInProcess.int.test.ts':
     'in-process delivery refuses SQLite (one process serves it); the refusal is unit-tested in delivery/runtime.test.ts',
+  'localClient.int.test.ts': '@shapio/local refuses SQLite (one process serves it)',
   'operations.int.test.ts > database outage':
     'drops PostgreSQL connections through a TCP proxy; SQLite is a local file',
   'schemaChanges.int.test.ts > invalid index':

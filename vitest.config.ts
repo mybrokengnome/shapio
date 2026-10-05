@@ -47,7 +47,7 @@ export default defineConfig({
         test: {
           name: 'integration',
           environment: 'node',
-          include: ['apps/api/test/**/*.int.test.ts'],
+          include: ['apps/api/test/**/*.int.test.ts', 'packages/local/test/**/*.int.test.ts'],
           globalSetup: ['apps/api/test/globalSetup.ts'],
           testTimeout: 30_000,
           hookTimeout: 60_000,
