@@ -1,18 +1,14 @@
 import type { ComponentDefinition } from '@shapio/schema';
-import { ChevronsDownUp, ChevronsUpDown, Plus } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { CanvasItemList } from '../CanvasItemList';
 import { ComponentItemFields } from '../ComponentItemFields';
+import { EmptyListRow } from '../EmptyListRow';
 import { newComponentItem } from '../helpers/formValues';
 import { pointerOf } from '../helpers/issues';
+import { hasRoomFor } from '../helpers/listLimits';
 import { summarizeItem } from '../helpers/summary';
 import { COMPONENT_KEY, type ItemValues } from '../helpers/values';
 import { useAllowedComponents } from '../hooks/useAllowedComponents';
@@ -22,6 +18,7 @@ import { useItemIssueCount } from '../hooks/useItemIssueCount';
 import { useListEditor } from '../hooks/useListEditor';
 import { ItemCard } from '../ItemCard';
 import type { BuiltInEditorProps } from '../types';
+import { AddSectionMenu } from './AddSectionMenu';
 
 type ZoneItemProps = {
   allowed: readonly ComponentDefinition[];
@@ -79,24 +76,44 @@ const ZoneItem = ({
   );
 };
 
-/** The zone as blocks of the entry canvas. */
+/**
+ * The zone as blocks of the entry canvas. Empty, it says so in a row with "Add section" (and the minimum,
+ * when one section would not be enough); the list stays mounted so the first section added gets focus.
+ */
 const CanvasZone = (props: BuiltInEditorProps) => {
   const { value, onChange, path, labelId, inputId, readOnly, disabled, definition, field } = props;
   const list = useListEditor(value, onChange);
   const allowed = useAllowedComponents(definition);
-  const max = definition.type === 'dynamiczone' ? definition.settings.max : undefined;
+  const settings = definition.type === 'dynamiczone' ? definition.settings : undefined;
+  const editable = !readOnly && !disabled;
+  const room = hasRoomFor(list.items.length, settings?.max);
   return (
-    <CanvasItemList
-      list={list}
-      labelId={labelId}
-      inputId={inputId}
-      path={path}
-      editable={!readOnly && !disabled}
-      insertable={max === undefined || list.items.length < max ? allowed : []}
-      componentOf={(item) => allowed.find((candidate) => candidate.apiKey === item[COMPONENT_KEY])}
-      newItem={(component) => newComponentItem(component, true)}
-      startCollapsed={field.options.collapsed === true}
-    />
+    <div>
+      {list.items.length === 0 ? (
+        <EmptyListRow
+          min={settings?.min}
+          action={
+            editable && room && allowed.length > 0 ? (
+              <AddSectionMenu
+                allowed={allowed}
+                onAdd={(component) => list.add(newComponentItem(component, true))}
+              />
+            ) : null
+          }
+        />
+      ) : null}
+      <CanvasItemList
+        list={list}
+        labelId={labelId}
+        inputId={inputId}
+        path={path}
+        editable={editable}
+        insertable={room ? allowed : []}
+        componentOf={(item) => allowed.find((candidate) => candidate.apiKey === item[COMPONENT_KEY])}
+        newItem={(component) => newComponentItem(component, true)}
+        startCollapsed={field.options.collapsed === true}
+      />
+    </div>
   );
 };
 
@@ -154,25 +171,11 @@ const FormZone = (props: BuiltInEditorProps) => {
       ) : (
         <p className="text-sm text-muted-foreground">{t('content.items.emptyZone')}</p>
       )}
-      {editable && (max === undefined || list.items.length < max) ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" size="sm">
-              <Plus aria-hidden="true" />
-              {t('content.items.addSection')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {allowed.map((component) => (
-              <DropdownMenuItem
-                key={component.id}
-                onSelect={() => list.add(newComponentItem(component, true))}
-              >
-                {component.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {editable && hasRoomFor(list.items.length, max) ? (
+        <AddSectionMenu
+          allowed={allowed}
+          onAdd={(component) => list.add(newComponentItem(component, true))}
+        />
       ) : null}
     </div>
   );

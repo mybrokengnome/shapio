@@ -1,16 +1,16 @@
 import type { ComponentDefinition } from '@shapio/schema';
-import { Boxes, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { AddItemButton } from '../AddItemButton';
 import { CanvasItemList } from '../CanvasItemList';
 import { ComponentItemFields } from '../ComponentItemFields';
+import { EmptyListRow } from '../EmptyListRow';
 import { useFieldsEnvironment } from '../form/context';
 import { newComponentItem } from '../helpers/formValues';
 import { pointerOf } from '../helpers/issues';
-import { emptyListMinimum, hasRoomFor } from '../helpers/listLimits';
+import { hasRoomFor } from '../helpers/listLimits';
 import { summarizeItem } from '../helpers/summary';
 import { isRecord, type ItemValues } from '../helpers/values';
 import { useCollapsedItems } from '../hooks/useCollapsedItems';
@@ -85,26 +85,16 @@ const CanvasRepeatable = (props: BuiltInEditorProps & { component: ComponentDefi
   const add = (variant: 'outline' | 'ghost') =>
     editable && room ? (
       <AddItemButton
-        item={component.label}
+        label={t('content.items.add', { item: component.label })}
         variant={variant}
-        onAdd={() => list.add(newComponentItem(component, false))}
+        onClick={() => list.add(newComponentItem(component, false))}
       />
     ) : null;
   const empty = list.items.length === 0;
-  const minimum = emptyListMinimum(settings?.min);
   // The list stays mounted while empty, so the first item added gets focus like any other.
   return (
     <div className="space-y-1">
-      {empty ? (
-        <EmptyState
-          compact
-          icon={Boxes}
-          title={t('content.items.empty')}
-          description={minimum === undefined ? undefined : t('content.issues.tooFew', { count: minimum })}
-          action={add('outline')}
-          className="rounded-xl border border-dashed px-4"
-        />
-      ) : null}
+      {empty ? <EmptyListRow min={settings?.min} action={add('outline')} /> : null}
       <CanvasItemList
         list={list}
         labelId={labelId}
@@ -158,7 +148,10 @@ const Repeatable = (props: BuiltInEditorProps & { component: ComponentDefinition
         <p className="text-sm text-muted-foreground">{t('content.items.empty')}</p>
       )}
       {editable && hasRoomFor(list.items.length, max) ? (
-        <AddItemButton item={component.label} onAdd={() => list.add(newComponentItem(component, false))} />
+        <AddItemButton
+          label={t('content.items.add', { item: component.label })}
+          onClick={() => list.add(newComponentItem(component, false))}
+        />
       ) : null}
     </div>
   );
@@ -171,7 +164,10 @@ const Single = (props: BuiltInEditorProps & { component: ComponentDefinition }) 
   const onItemChange = useCallback((next: ItemValues) => onChange(next), [onChange]);
   if (!isRecord(value)) {
     return editable ? (
-      <AddItemButton item={component.label} onAdd={() => onChange(newComponentItem(component, false))} />
+      <AddItemButton
+        label={t('content.items.add', { item: component.label })}
+        onClick={() => onChange(newComponentItem(component, false))}
+      />
     ) : (
       <p className="text-sm text-muted-foreground">{t('content.items.empty')}</p>
     );

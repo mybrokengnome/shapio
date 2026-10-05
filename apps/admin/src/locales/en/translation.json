@@ -1070,7 +1070,14 @@
       "coverField": "Cover",
       "coverFieldHint": "The image shown above the title when an entry opens. Automatic uses the first single image field.",
       "canvasFields": "Written in the document",
-      "canvasFieldsHint": "Rich text, sections, repeatable components and galleries shown as blocks under the title. Everything else is a property. Unset, every such field is included.",
+      "canvasFieldsHint": "The fields written in the document under the title, in this order. Unset, rich text, sections, repeatable components and galleries are; everything else is a property. Any other field joins with Show in document in its settings.",
+      "placement": {
+        "label": "Show in document",
+        "hint": "On, entries show this field in the document under its name, among the blocks. Off, it is a property, in the strip under the title and the Settings panel. Automatically, rich text, sections, repeatable components and galleries are in the document and everything else is a property.",
+        "lockedTitle": "The title is the document's heading.",
+        "lockedCover": "This is the cover, chosen in Display.",
+        "lockedLast": "The document keeps at least one field."
+      },
       "stripFields": "Properties under the title",
       "stripFieldsHint": "Shown as chips under the title. With none chosen, the first five filled-in properties are shown."
     },

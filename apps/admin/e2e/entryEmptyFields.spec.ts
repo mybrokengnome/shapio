@@ -82,6 +82,13 @@ test.beforeAll(async ({ browser }) => {
           type: 'component',
           settings: { component: ids.promo },
         },
+        {
+          id: id(),
+          apiKey: 'sections',
+          label: 'Sections',
+          type: 'dynamiczone',
+          settings: { components: [ids.textItem, ids.fact], min: 2 },
+        },
       ],
     },
   });
@@ -169,6 +176,23 @@ test('every list in the document is headed, and an empty one offers "Add …"', 
   await expect(footer.getByRole('button', { name: 'Add Text item' })).toBeVisible();
   await expect(doc.field('/aboutFacts').getByRole('button', { name: 'Add Fact' })).toBeVisible();
   await captureScreen(page, 'entry-empty-02-filled', { viewports: ['desktop'] });
+});
+
+test('an empty zone says so, names its minimum, and adds a section from its menu', async () => {
+  const doc = entryDocument(page);
+  await page.goto(entryUrl);
+  const sections = doc.field('/sections');
+  await expect(headingOf(sections, 'Sections')).toHaveCSS('opacity', '1');
+  await expect(sections.getByText('Nothing added yet.')).toBeVisible();
+  // A min of 2 changes what the person does: one section is not enough.
+  await expect(sections.getByText('Add at least 2 items.')).toBeVisible();
+  await sections.getByRole('button', { name: 'Add section' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Fact', exact: true })).toBeVisible();
+  await captureScreen(page, 'entry-empty-05-zone-menu', { viewports: ['desktop'] });
+  await page.getByRole('menuitem', { name: 'Fact', exact: true }).click();
+  await expect(sections.getByRole('button', { name: /^Fact/, expanded: true })).toBeFocused();
+  await expect(sections.getByText('Nothing added yet.')).toHaveCount(0);
+  await expect(sections.locator('[data-field-path="/sections/0/label"]').getByRole('textbox')).toBeVisible();
 });
 
 test('a single component property opens on click and offers "Add …" when empty', async () => {
