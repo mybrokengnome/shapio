@@ -11,8 +11,9 @@ query returns exactly what the equivalent REST request returns.
 
 In the admin, **Develop → GraphQL** opens GraphiQL on the site you are working in: write a query, run it with
 your admin session, and browse every type and field in its **Docs** panel, which shows each content type's and
-field's label and help text. Your session can ask for drafts (`publicationState: DRAFT`); delivery tokens and
-anonymous callers only ever get published content. GraphiQL follows the admin's light or dark look.
+field's label and help text. Your session can ask for drafts (`publicationState: DRAFT`); anonymous callers and
+app users only ever get published content, and delivery tokens too unless their role grants Read drafts
+([below](#reading-drafts)). GraphiQL follows the admin's light or dark look.
 
 The **API explorer**'s GraphQL tab turns the request you built on its REST tab into the same query (filters,
 sort, search, page, locale, snapshot and fields; `populate` has no GraphQL argument, since a query expands a
@@ -60,7 +61,12 @@ A single type `home` is `home(locale, …)`. Field types: rich text is `RichText
 it), a component is its own type, and a dynamic zone is a list of a union of its components (ask for
 `__typename`). Every entry also has `localizations` (its versions in the other locales).
 
-`publicationState: DRAFT` reads drafts; only admin users and admin API tokens may ask for it.
+### Reading drafts
+
+`publicationState: DRAFT` reads drafts. Admin users and admin API tokens may ask for it, and so may a delivery
+token whose role grants **Read drafts** ([drafts mode](delivery-api.md#drafts-in-development), for a site's
+development server). Anyone else gets `DRAFTS_FORBIDDEN`. An operation that reads drafts is answered with
+`Cache-Control: private, no-store`, and its connections report `snapshot: null` (drafts cannot be pinned).
 
 SEO fields come back as stored. `_site { key name seo { … } }` returns the request's site and its SEO
 defaults; merge them with `resolveSeo()` from `@shapio/client` ([SEO fields](seo.md#graphql)).

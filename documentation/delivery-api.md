@@ -15,7 +15,8 @@ is a 404. Both IDs are set on the model ([Modelling](modelling.md#kinds-of-defin
 
 There is no generated code per model: a model created a minute ago is served by the same routes at once.
 Delivery returns **published** content only; drafts, unpublished entries, private media and fields your token
-may not read never appear. The [REST reference](reference/rest-api.md) lists every read parameter (app-user
+may not read never appear. The one exception is [drafts mode](#drafts-in-development), for a site's
+development server, with a token granted Read drafts. The [REST reference](reference/rest-api.md) lists every read parameter (app-user
 writes are described in [End users](end-users.md)); your instance's own OpenAPI document, for its current
 schema, is at `/api/docs` (admins).
 
@@ -132,6 +133,7 @@ unknown model or entry.
 | `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one) |
 | `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                         |
 | `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                |
+| `publicationState` | `publicationState=draft`              | `published` (default) or `draft`: [drafts mode](#drafts-in-development)           |
 
 ### Filters
 
@@ -227,8 +229,47 @@ The cache mode is yours: the client sets `cache` and `next.revalidate` only when
 argument of one read (`delivery.list('articles', query, { next: { revalidate: 60 } })`), which overrides the
 client's. A read pinned to a snapshot (`snapshot: N`) never changes, so under Next it is always `force-cache`.
 `next: false` sends no Next options at all. Outside Next, with no `next` option, the client's requests are
-exactly as before. Snapshot, preview, GraphQL and admin requests are never cached or tagged. The
+exactly as before. Snapshot, preview, GraphQL and admin requests are never cached or tagged, and neither are
+[drafts mode](#drafts-in-development) reads (`drafts: true`), which under Next are `no-store` whatever the
+`next` options say. The
 [Next.js starter](starters.md#incremental-rebuilds) puts it together.
+
+## Drafts in development
+
+Publishing rebuilds your live site, so it is not how you check a change. **Drafts mode** lets a site's
+development server render saved drafts: save in the admin, reload the page on your machine, and the change is
+there. Publish still rebuilds your site; drafts mode is for your machine.
+
+1. Create a second delivery role for development (or let the starters' `npm run seed` create `<site> dev`)
+   with `read` on the site's models and **Read drafts**. Read drafts always covers every model the role
+   reads; it adds no model of its own.
+2. Create a token for that role. The tokens list marks it with a **Drafts** chip. Never put it in a production
+   environment.
+3. Ask for drafts: `publicationState=draft` on `GET /api/content/...` (both routes), `publicationState: DRAFT` in
+   [GraphQL](graphql.md#reading-drafts), or `drafts: true` on `@shapio/client`'s `createClient` and
+   `@shapio/local`'s `createLocalClient`. The [starters](starters.md#drafts-mode) turn it on with
+   `SHAPIO_DRAFTS=true`.
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DEV_DELIVERY_TOKEN" \
+  "$SHAPIO_URL/api/content/articles?publicationState=draft&populate=author"
+```
+
+A draft read serves each entry's saved draft in the delivery shape, entries never published included, and
+`meta.publicationState: "draft"`. Relation targets and `populate` follow their drafts too, still only for
+models the role may read. Responses are `Cache-Control: private, no-store`, so no cache keeps them, and field
+usage does not count them. A draft cannot be pinned: `publicationState=draft` with `snapshot` is a 400.
+Published reads are unchanged, byte for byte.
+
+Two safeguards keep drafts off your live site. The server only serves drafts to a token whose role grants Read
+drafts (403 `DRAFTS_FORBIDDEN` otherwise, with a message naming the grant), and the site must ask for them. A
+production token never carries the grant, so a flag left on by mistake fails loudly instead of showing drafts.
+Anonymous callers and app users can never read drafts, whatever their roles say. Admin users and admin API
+tokens can, as they always could in GraphQL.
+
+A draft is whatever the admin has saved, autosaves included, and it may not pass validation yet (a required
+field can be empty): render drafts defensively. For one entry in the admin's Preview pane, editors use
+[preview](visual-editing.md) instead; drafts mode is the whole site, for developers.
 
 ## Writes
 

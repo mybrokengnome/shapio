@@ -56,6 +56,7 @@ List published Article entries.
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
 | `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
+| `publicationState` | query | `published`, `draft` | Drafts mode: `draft` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with `snapshot`. |
 | `seo` | query | `raw`, `resolved` | SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults. |
 
 Responses: 200 OK; 304 Not modified (If-None-Match); 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
@@ -72,6 +73,7 @@ Read one published Article entry.
 | `locale` | query | string | Locale to serve; falls back along the locale chain |
 | `snapshot` | query | integer | Read content as of this publication sequence number (`meta.snapshot`) |
 | `richText` | query | `json`, `html`, `both` | Rich-text shape: the JSON document, sanitized HTML rendered from it, or both |
+| `publicationState` | query | `published`, `draft` | Drafts mode: `draft` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with `snapshot`. |
 | `seo` | query | `raw`, `resolved` | SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults. |
 
 Responses: 200 OK; 304 Not modified; 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.

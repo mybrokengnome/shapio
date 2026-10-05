@@ -6,6 +6,28 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Drafts mode: a site's development server renders saved drafts.** Drafts reach a site only when both
+  safeguards agree: the server serves them only to a delivery token whose role grants the new **Read drafts**
+  permission, and the site must ask for them (`?publicationState=draft`, GraphQL `publicationState: DRAFT`, or
+  `drafts: true` on `@shapio/client` and `@shapio/local`), so a production token can never show a draft. Read
+  drafts is a delivery-role permission that always covers every model the role reads; the admin's role sheet
+  offers a delivery role only Read and Read drafts, and the tokens list marks such tokens with a **Drafts**
+  chip. Draft responses carry `meta.publicationState: "draft"` and `Cache-Control: private, no-store`; a token
+  without the grant gets 403 `DRAFTS_FORBIDDEN`, and anonymous callers and app users never read drafts.
+  Published responses are unchanged. Under Next.js the client never caches or tags draft reads, and it refuses
+  a pinned `snapshot` in drafts mode. The three starters turn it on with `SHAPIO_DRAFTS=true` (no snapshot,
+  fresh reads, a **Drafts** badge on every page), and their seed creates a `<site> dev` role and token
+  (`SHAPIO_DEV_DELIVERY_TOKEN`) for it. Publishing still rebuilds the live site; drafts mode is for your
+  machine. ([Delivery API](documentation/delivery-api.md#drafts-in-development))
+
+### Changed
+
+- **GraphQL `publicationState: DRAFT` refusals** now use the code `DRAFTS_FORBIDDEN` (was `FORBIDDEN`), and are
+  checked after the model's read permission, so a caller that may not read the model at all gets the usual
+  401 or 403 first.
+
 ### Fixed
 
 - **The site starters follow publishes in dev.** `astro dev`, `next dev` and `vite dev` showed the content of

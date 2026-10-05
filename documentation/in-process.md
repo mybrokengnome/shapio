@@ -161,15 +161,16 @@ back is automatic. Pages rendered at build time are unaffected; only reads made 
 
 ## Options
 
-| Option             | Default                        | Meaning                                                            |
-| ------------------ | ------------------------------ | ------------------------------------------------------------------ |
-| `databaseUrl`      | required                       | Shapio's database (`postgres://…` or `mysql://…`)                  |
-| `token`            | none (anonymous)               | a delivery API token                                               |
-| `site`             | the token's site, else primary | the site key                                                       |
-| `poolMax`          | 4                              | connections in the process's pool                                  |
-| `acquireTimeoutMs` | 10000                          | wait for a pooled connection before a 503                          |
-| `signingSecret`    | the server's stored secret     | private local media; the server's `SESSION_SECRET` when it sets it |
-| `s3Credentials`    | the AWS SDK's credential chain | private S3 media                                                   |
-| `onVersionSkew`    | `'throw'`                      | `'http'` reads over HTTP from `fallbackUrl` during a release skew  |
-| `fallbackUrl`      | none                           | the Shapio server's URL, with `BASE_PATH`                          |
-| `logger`           | pino, warnings and errors only | a pino logger for failures                                         |
+| Option             | Default                        | Meaning                                                                                                     |
+| ------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `databaseUrl`      | required                       | Shapio's database (`postgres://…` or `mysql://…`)                                                           |
+| `token`            | none (anonymous)               | a delivery API token                                                                                        |
+| `site`             | the token's site, else primary | the site key                                                                                                |
+| `poolMax`          | 4                              | connections in the process's pool                                                                           |
+| `acquireTimeoutMs` | 10000                          | wait for a pooled connection before a 503                                                                   |
+| `signingSecret`    | the server's stored secret     | private local media; the server's `SESSION_SECRET` when it sets it                                          |
+| `s3Credentials`    | the AWS SDK's credential chain | private S3 media                                                                                            |
+| `onVersionSkew`    | `'throw'`                      | `'http'` reads over HTTP from `fallbackUrl` during a release skew                                           |
+| `fallbackUrl`      | none                           | the Shapio server's URL, with `BASE_PATH`                                                                   |
+| `logger`           | pino, warnings and errors only | a pino logger for failures                                                                                  |
+| `drafts`           | `false`                        | [drafts mode](delivery-api.md#drafts-in-development): read saved drafts; the token's role needs Read drafts |

@@ -57,7 +57,9 @@ applies the models through the schema apply API (the same change planner as the 
 locales (one article stays a draft), creates a deployment connection named **Preview** whose preview URL is the
 starter's `/preview/` page (it triggers no builds; `SITE_URL` overrides the local address it points at), for
 the Next.js starter a webhook named **Site revalidation** to its `/api/revalidate/` route (the signing secret goes
-to `.env`), and creates a delivery role and token that read only the four models.
+to `.env`), and creates a delivery role and token that read only the four models, plus a second one, `<site> dev`,
+that may also read drafts ([drafts mode](#drafts-mode)), written to `.env` as `SHAPIO_DEV_DELIVERY_TOKEN`. Never put
+that token in a production environment.
 
 You need a running Shapio with an owner account ([npm](install-npm.md), [Docker](install-docker.md)).
 Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
@@ -66,18 +68,20 @@ Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
 
 Every starter reads its settings from the environment, or from `.env` (`.env.example` lists them):
 
-| Variable                 | Meaning                                                                                      |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| `SHAPIO_URL`             | Shapio's origin, with its `BASE_PATH` if any (default `http://localhost:4300`)               |
-| `SHAPIO_DELIVERY_TOKEN`  | a read-only delivery token (Settings → API tokens, a delivery role); the seed writes one     |
-| `SHAPIO_SNAPSHOT`        | optional: build this publication snapshot instead of the latest                              |
-| `SHAPIO_SITE`            | optional: the site key on a multi-site instance                                              |
-| `PUBLIC_SHAPIO_URL`      | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
-| `NEXT_PUBLIC_SHAPIO_URL` | Next.js, optional: the same, inlined into the client bundle at build time                    |
-| `SHAPIO_WEBHOOK_SECRET`  | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
-| `SITE_URL`               | optional: the site's public origin; pages then carry a canonical URL and `og:url`            |
-| `SHAPIO_MODE`            | Next.js, optional: `in-process` reads the delivery API in the server process (below)         |
-| `DATABASE_URL`           | Next.js with `SHAPIO_MODE=in-process`: Shapio's own database (PostgreSQL or MySQL)           |
+| Variable                    | Meaning                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `SHAPIO_URL`                | Shapio's origin, with its `BASE_PATH` if any (default `http://localhost:4300`)               |
+| `SHAPIO_DELIVERY_TOKEN`     | a read-only delivery token (Settings → API tokens, a delivery role); the seed writes one     |
+| `SHAPIO_SNAPSHOT`           | optional: build this publication snapshot instead of the latest                              |
+| `SHAPIO_SITE`               | optional: the site key on a multi-site instance                                              |
+| `PUBLIC_SHAPIO_URL`         | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
+| `NEXT_PUBLIC_SHAPIO_URL`    | Next.js, optional: the same, inlined into the client bundle at build time                    |
+| `SHAPIO_WEBHOOK_SECRET`     | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
+| `SITE_URL`                  | optional: the site's public origin; pages then carry a canonical URL and `og:url`            |
+| `SHAPIO_MODE`               | Next.js, optional: `in-process` reads the delivery API in the server process (below)         |
+| `DATABASE_URL`              | Next.js with `SHAPIO_MODE=in-process`: Shapio's own database (PostgreSQL or MySQL)           |
+| `SHAPIO_DRAFTS`             | development only: `true` turns on [drafts mode](#drafts-mode)                                |
+| `SHAPIO_DEV_DELIVERY_TOKEN` | development only: the token drafts mode reads with (Read drafts); the seed writes one        |
 
 ### Pinned snapshots
 
@@ -89,6 +93,21 @@ starter pins the snapshot in `next.config.ts` before any page renders and hands 
 servers (`npm run dev`) pin nothing: in dev, a publish shows on reload (unless `SHAPIO_SNAPSHOT` is set). One
 exception in Astro: a page published for the first time after the dev server started needs a restart, because
 Astro caches each route's list of pages in dev.
+
+### Drafts mode
+
+Publishing rebuilds your live site, so it is not how you check a change. With `SHAPIO_DRAFTS=true` in your
+local `.env`, the dev server (and a local build) reads **saved drafts** instead of published content: save in
+the admin, reload, and the change is there. It pins no snapshot, every read is fresh (under Next.js never
+cached or tagged), `/api/revalidate` does nothing, and every page carries a **Drafts** badge in its corner, so a
+drafts build is never mistaken for the real one. `/preview/` is unchanged.
+
+Drafts mode reads with `SHAPIO_DEV_DELIVERY_TOKEN` when it is set, else `SHAPIO_DELIVERY_TOKEN`. The token's
+delivery role must grant **Read drafts**: the seed creates one, `<site> dev`, and writes its token to `.env`.
+With a token that lacks the grant, the first read fails with Shapio's `DRAFTS_FORBIDDEN` message (a build stops,
+a dev server shows it on the error page); it never falls back to published content. Never set `SHAPIO_DRAFTS`
+or put the dev token in a production environment (Cloudflare, Vercel, Netlify): the two safeguards are the
+grant on the server and the flag on the site ([Delivery API](delivery-api.md#drafts-in-development)).
 
 ### Incremental rebuilds
 

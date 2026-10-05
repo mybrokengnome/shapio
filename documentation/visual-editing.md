@@ -4,6 +4,10 @@ Editors see the draft on the real site beside the document they are writing, and
 takes them to the field it shows. Saves re-render the page. The three [site starters](starters.md) come with
 it set up; any other site needs a preview page, a few attributes and one script.
 
+Preview is one entry, for editors, in the admin. To see saved drafts across the whole site on your own
+development server, use [drafts mode](delivery-api.md#drafts-in-development) instead: a development token
+granted Read drafts and `SHAPIO_DRAFTS=true` in the [starters](starters.md#drafts-mode).
+
 How it fits together:
 
 1. A deployment connection has a **preview URL template** ([Preview](publishing.md#preview)).
