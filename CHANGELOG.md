@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-05
+
 ### Added
 
 - **Drafts mode: a site's development server renders saved drafts.** Drafts reach a site only when both
