@@ -27,6 +27,13 @@ export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish',
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
 
 /**
+ * What a delivery role grants: `read`, and `readDrafts` (drafts mode: the token's site may read drafts with
+ * `publicationState=draft`). `readDrafts` always covers every model and is never granted to admin roles.
+ */
+export const DELIVERY_ACTIONS = ['read', 'readDrafts'] as const;
+export type DeliveryAction = (typeof DELIVERY_ACTIONS)[number];
+
+/**
  * Network actions: about the whole instance. Only roles assigned on every site grant them, so a role held
  * on one site never reaches the network.
  */
@@ -75,7 +82,7 @@ export const GLOBAL_ACTIONS = [
 ] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
 
-export type PermissionAction = ContentAction | GlobalAction;
+export type PermissionAction = ContentAction | DeliveryAction | GlobalAction;
 
 export type RoleSummary = { id: string; key: string; name: string };
 

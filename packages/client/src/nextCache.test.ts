@@ -132,3 +132,29 @@ describe('Next.js fetch options on delivery reads', () => {
     expect(cacheInit()).toEqual([{}, {}, {}]);
   });
 });
+
+describe('drafts mode caching', () => {
+  it('never caches or tags draft reads under Next, whatever the next options say', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    const { client, cacheInit } = setup({ drafts: true, next: { cache: 'force-cache', revalidate: 60 } });
+    await client.delivery.list('articles');
+    await client.delivery.get('articles', 'e1', {}, { next: { cache: 'force-cache' } });
+    await client.delivery.singleton('home', {}, { next: false });
+    await client.site.get();
+    expect(cacheInit()).toEqual([
+      { cache: 'no-store' },
+      { cache: 'no-store' },
+      { cache: 'no-store' },
+      { cache: 'no-store' },
+    ]);
+  });
+
+  it('adds nothing outside Next unless a next option is set', async () => {
+    const plain = setup({ drafts: true });
+    await plain.client.delivery.list('articles');
+    expect(plain.cacheInit()).toEqual([{}]);
+    const configured = setup({ drafts: true, next: { revalidate: 10 } });
+    await configured.client.delivery.list('articles');
+    expect(configured.cacheInit()).toEqual([{ cache: 'no-store' }]);
+  });
+});

@@ -2,7 +2,8 @@
  * Next.js data-cache support for delivery reads. Under Next (`process.env.NEXT_RUNTIME` is set) or when the
  * client is given a `next` option, every delivery read passes `next: { tags }` to `fetch`, so a site can
  * refresh exactly what changed with `revalidateTag`. The cache mode is only set when asked for, except that a
- * read pinned to a publication snapshot is immutable and always `force-cache`. Elsewhere nothing is added.
+ * read pinned to a publication snapshot is immutable and always `force-cache`, and a drafts-mode read is never
+ * cached or tagged (`no-store`). Elsewhere nothing is added.
  */
 
 /** Next's `fetch` cache modes the client passes through. */
@@ -49,10 +50,12 @@ const isNextRuntime = (): boolean => {
   }
 };
 
-/** What every delivery read needs to tag itself: the client's site and `next` option. */
+/** What every delivery read needs to tag itself: the client's site, `next` option and drafts mode. */
 export type DeliveryCacheContext = {
   site: string | undefined;
   next: NextCacheOptions | false | undefined;
+  /** Drafts mode (`drafts: true`): reads ask for drafts, which are never cached. */
+  drafts: boolean;
 };
 
 export type NextReadInput = {
@@ -63,10 +66,23 @@ export type NextReadInput = {
   tags: string[];
   /** The read names a publication snapshot (immutable). */
   pinned: boolean;
+  /** Drafts mode: under Next (or with any `next` option) the read is `no-store` and untagged. */
+  drafts?: boolean;
 };
 
 /** The `cache` and `next` fetch options of one delivery read; empty outside Next unless asked for. */
-export const nextFetchInit = ({ client, read, tags, pinned }: NextReadInput): NextFetchInit => {
+export const nextFetchInit = ({
+  client,
+  read,
+  tags,
+  pinned,
+  drafts = false,
+}: NextReadInput): NextFetchInit => {
+  if (drafts) {
+    // Drafts change on every save: never in Next's data cache, never tagged, whatever the `next` options say.
+    const asked = (client !== undefined && client !== false) || (read !== undefined && read !== false);
+    return asked || isNextRuntime() ? { cache: 'no-store' } : {};
+  }
   if (read === false || (read === undefined && client === false)) {
     return {};
   }

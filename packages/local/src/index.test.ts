@@ -30,6 +30,12 @@ describe('createLocalClient', () => {
     await second.close();
   });
 
+  it('in drafts mode, refuses a pinned snapshot before touching the database', async () => {
+    const client = createLocalClient({ databaseUrl: 'postgres://localhost/local-unit', drafts: true });
+    await expect(client.delivery.list('articles', { snapshot: 2 })).rejects.toThrow(/snapshot/);
+    await client.close();
+  });
+
   it('reads the release it is published as (the server must run the same one)', () => {
     expect(SHAPIO_VERSION).toBe(packageJson.version);
   });

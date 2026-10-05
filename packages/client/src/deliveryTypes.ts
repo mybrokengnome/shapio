@@ -30,7 +30,12 @@ export type DeliveryGetQuery = Pick<
   'locale' | 'fields' | 'populate' | 'snapshot' | 'richText' | 'seo'
 >;
 
-export type DeliveryMeta = { locale: string; snapshot: number };
+export type DeliveryMeta = {
+  locale: string;
+  snapshot: number;
+  /** Drafts mode reads only (`publicationState=draft`); published responses carry no such member. */
+  publicationState?: 'draft';
+};
 
 export type DeliveryPagination = { page: number; pageSize: number; total: number; pageCount: number };
 

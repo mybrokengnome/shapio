@@ -38,12 +38,18 @@ export type LocalClient = ShapioDeliveryClient & {
  * Shapio's delivery API as function calls in this process: the `delivery`, `site` and `snapshots` groups of
  * `@shapio/client`, with the same paths, permissions, response shapes and `ShapioApiError`s, answered from the
  * database without an HTTP hop. Reads as `token` (a delivery API token) or, without one, as an anonymous
- * caller (the site's `public` role). Model changes made in the admin show on the next call.
+ * caller (the site's `public` role). Model changes made in the admin show on the next call. `drafts: true`
+ * reads drafts instead (drafts mode), when the token's role grants Read drafts.
  *
  * Needs PostgreSQL or MySQL, the Node.js runtime, and the same Shapio release as the server (`SHAPIO_VERSION`);
  * see `onVersionSkew`. Nothing is read until the first call.
  */
-export const createLocalClient = ({ token, site, ...runtimeOptions }: LocalClientOptions): LocalClient => {
+export const createLocalClient = ({
+  token,
+  site,
+  drafts,
+  ...runtimeOptions
+}: LocalClientOptions): LocalClient => {
   assertNodeRuntime();
   const runtime = delivery.createDeliveryRuntime(runtimeOptions);
   const release = runtime.retain();
@@ -51,5 +57,11 @@ export const createLocalClient = ({ token, site, ...runtimeOptions }: LocalClien
     ...(token !== undefined ? { token } : {}),
     ...(site !== undefined ? { site } : {}),
   });
-  return { ...createDeliveryClient(request, site !== undefined ? { site } : {}), close: release };
+  return {
+    ...createDeliveryClient(request, {
+      ...(site !== undefined ? { site } : {}),
+      ...(drafts !== undefined ? { drafts } : {}),
+    }),
+    close: release,
+  };
 };

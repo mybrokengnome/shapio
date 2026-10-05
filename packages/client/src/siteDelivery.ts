@@ -11,7 +11,8 @@ export const DELIVERY_SITE_PATH = '/api/site';
 
 /**
  * The request's site as delivery sees it (key, name, SEO defaults), with the client's token and site. Under
- * Next.js the read carries the site tag (nextCache.ts).
+ * Next.js the read carries the site tag (nextCache.ts); in drafts mode it is `no-store` and untagged instead
+ * (the site has no draft state, so no `publicationState` is sent).
  */
 export const createSiteApi = (request: RequestFn, cacheContext: DeliveryCacheContext) => ({
   get: ({ next }: DeliveryReadOptions = {}) =>
@@ -22,6 +23,7 @@ export const createSiteApi = (request: RequestFn, cacheContext: DeliveryCacheCon
         read: next,
         tags: [shapioTags.site(cacheContext.site)],
         pinned: false,
+        drafts: cacheContext.drafts,
       }),
     ),
 });

@@ -33,6 +33,12 @@ export type LocalClientOptions = {
   fallbackUrl?: string;
   /** Where failures are logged (pino). Default: warnings and errors to stdout. */
   logger?: Logger;
+  /**
+   * Drafts mode, for a site's development server: every delivery read asks for drafts instead of published
+   * content (as `@shapio/client`'s `drafts`). Needs a delivery token whose role grants Read drafts; never set
+   * it on a production build.
+   */
+  drafts?: boolean;
 };
 
 /** The server runs another Shapio release (503 `VERSION_SKEW`); null when the database predates this one. */

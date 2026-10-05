@@ -9,6 +9,8 @@ export type DeliveryClientOptions = {
   site?: string;
   /** Next.js data-cache options, as `createClient`'s `next` option. */
   next?: NextCacheOptions | false;
+  /** Drafts mode, as `createClient`'s `drafts` option. */
+  drafts?: boolean;
 };
 
 /**
@@ -16,10 +18,13 @@ export type DeliveryClientOptions = {
  * publication snapshots (`snapshots`). `createClient` builds it over HTTP; `@shapio/local` over the delivery
  * API running in the same process. The transport receives exactly the paths the HTTP client sends.
  */
-export const createDeliveryClient = (request: RequestFn, { site, next }: DeliveryClientOptions = {}) => {
-  const cacheContext = { site, next };
+export const createDeliveryClient = (
+  request: RequestFn,
+  { site, next, drafts = false }: DeliveryClientOptions = {},
+) => {
+  const cacheContext = { site, next, drafts };
   return {
-    /** Published content (the delivery API), typed by the caller. */
+    /** Published content (the delivery API; drafts in drafts mode), typed by the caller. */
     delivery: createDeliveryApi(request, cacheContext),
     /** The site as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
     site: createSiteApi(request, cacheContext),

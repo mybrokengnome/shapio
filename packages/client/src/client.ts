@@ -29,6 +29,13 @@ export type ShapioClientOptions = {
    * the same fetch options; `false` sends none. A read's own `next` option overrides this one.
    */
   next?: NextCacheOptions | false;
+  /**
+   * Drafts mode, for a site's development server: every delivery read asks for drafts
+   * (`publicationState=draft`) instead of published content, and under Next is never cached or tagged. Needs
+   * a delivery token whose role grants Read drafts (the server refuses others with 403 `DRAFTS_FORBIDDEN`);
+   * never set it on a production build. Reads pinned to a `snapshot` are refused. `snapshots` is unaffected.
+   */
+  drafts?: boolean;
 };
 
 export const createClient = ({
@@ -39,9 +46,10 @@ export const createClient = ({
   headers,
   site,
   next,
+  drafts,
 }: ShapioClientOptions) => {
   const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
-  const reads = createDeliveryClient(request, { site, next });
+  const reads = createDeliveryClient(request, { site, next, ...(drafts !== undefined ? { drafts } : {}) });
 
   return {
     /**
