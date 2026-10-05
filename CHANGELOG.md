@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-05
+
 ### Added
 
 - **The GraphQL playground is in the admin.** **Develop → GraphQL** opens GraphiQL on the current site's
