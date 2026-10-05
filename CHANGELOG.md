@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-05
+
 ### Added
 
 - **Next.js cache tags in `@shapio/client`.** Under Next.js (`process.env.NEXT_RUNTIME`), every delivery read
