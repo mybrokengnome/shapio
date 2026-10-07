@@ -11,17 +11,24 @@ import { GLOBAL_ACTIONS, type ContentAction, type PermissionEvaluator } from '..
 import type { PublishingRuntime } from '../../publishing/runtime.js';
 import * as jobsRepository from '../../repositories/jobs.js';
 import * as mediaAssetsRepository from '../../repositories/mediaAssets.js';
+import * as transferImportRepository from '../../repositories/transferImport.js';
 import type { SiteActorContext } from '../../services/actorContext.js';
 import { recordAudit } from '../../services/audit.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
 import { applyConfig } from './applyConfig.js';
-import { removeStoredBundle, stageBundle, storeBundle } from './bundleFile.js';
+import { removeStoredBundle, stageBundle, storeBundle, type StagedBundle } from './bundleFile.js';
 import { createExportStream } from './export.js';
 import type { ExportOptions } from './format.js';
 import { isAssetKey } from './importMedia.js';
 import { TRANSFER_IMPORT_JOB, TRANSFER_IMPORT_MAX_ATTEMPTS, type ImportPayload } from './job.js';
 import { StreamClosedError } from './ndjson.js';
-import { planImport, type ImportDiff, type ImportOptions, type ImportPlan } from './plan.js';
+import {
+  planImport,
+  type ImportDiff,
+  type ImportOptions,
+  type ImportPlan,
+  type MediaFileNeed,
+} from './plan.js';
 
 /**
  * Content export and import (package L): `GET /api/admin/transfer/export`, `POST …/import`, the import's
@@ -138,10 +145,60 @@ const applyAndQueue = async (
   return { applied, job };
 };
 
+/** Deletes a stored object the failed import no longer needs; a failure to delete is logged, not thrown. */
+const removeQuietly = (context: TransferContext, key: string, remove: () => Promise<unknown>) =>
+  remove().catch((error: unknown) =>
+    context.log.warn({ err: describeError(error), key }, 'could not remove a file of a failed import'),
+  );
+
+const CLEANUP_BATCH = 500;
+
+/**
+ * The CLI uploads an import's media files after the dry run, before the real import. When the import fails
+ * before its job is queued, no asset will ever point at them: delete each one whose asset does not exist.
+ */
+const removeUnclaimedFiles = async (context: TransferContext, files: readonly MediaFileNeed[]) => {
+  for (let start = 0; start < files.length; start += CLEANUP_BATCH) {
+    const batch = files.slice(start, start + CLEANUP_BATCH);
+    const claimed = new Set(
+      (await transferImportRepository.findAssets(batch.map((file) => file.assetId))).map((row) => row.id),
+    );
+    for (const file of batch.filter((candidate) => !claimed.has(candidate.assetId))) {
+      await removeQuietly(context, file.storageKey, () => context.storage.active.delete(file.storageKey));
+    }
+  }
+};
+
+/** Refuses a conflicting plan, else stores the bundle and queues its job (removing the bundle on failure). */
+const queueImport = async (
+  context: TransferContext,
+  staged: StagedBundle,
+  plan: ImportPlan,
+  options: ImportOptions,
+) => {
+  if (plan.diff.conflicts > 0) {
+    throw conflictError(plan.diff);
+  }
+  const importId = randomUUID();
+  const bundle = await storeBundle(context.storage, staged, importId);
+  const queued = await applyAndQueue(context, plan, {
+    importId,
+    siteId: context.site.id,
+    bundle,
+    prune: options.prune,
+  }).catch(async (error: unknown) => {
+    await removeQuietly(context, bundle.key, () => removeStoredBundle(context.storage, bundle));
+    throw error;
+  });
+  return { importId, ...queued };
+};
+
 /**
  * Plans an import and, unless `dryRun`, applies the instance-wide part (locales, schema, roles, publishing
  * config, folders) and queues the `transfer.import` job for users, media and entries. Conflicts refuse the
  * whole import before anything is written.
+ * A real import that fails before its job is queued removes what it left in media storage: the stored
+ * bundle and the media files uploaded for it.
  */
 export const importBundle = async (
   context: TransferContext,
@@ -155,26 +212,12 @@ export const importBundle = async (
     if (options.dryRun) {
       return { dryRun: true, diff: plan.diff };
     }
-    if (plan.diff.conflicts > 0) {
-      throw conflictError(plan.diff);
-    }
-    const importId = randomUUID();
-    const bundle = await storeBundle(context.storage, staged, importId);
-    const { applied, job } = await applyAndQueue(context, plan, {
-      importId,
-      siteId: context.site.id,
-      bundle,
-      prune: options.prune,
-    }).catch(async (error: unknown) => {
-      // No job will ever read the stored bundle: remove it, as the job would have.
-      await removeStoredBundle(context.storage, bundle).catch((cleanupError: unknown) =>
-        context.log.warn(
-          { err: describeError(cleanupError), key: bundle.key },
-          'could not remove the bundle of a failed import',
-        ),
-      );
-      throw error;
-    });
+    const { importId, applied, job } = await queueImport(context, staged, plan, options).catch(
+      async (error: unknown) => {
+        await removeUnclaimedFiles(context, plan.diff.media.files);
+        throw error;
+      },
+    );
     await audit(context, 'transfer.import', { importId, jobId: job.id, prune: options.prune }, job.id);
     return { dryRun: false, importId: job.id, diff: plan.diff, webhookSecrets: applied.webhookSecrets };
   } finally {

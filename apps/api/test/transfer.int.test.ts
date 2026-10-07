@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CliIo } from '@shapio/cli';
 import { REMOTE_COMMANDS } from '@shapio/cli';
+import { create, extract } from 'tar';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SITE_HEADER } from '../src/constants/sites.js';
 import { createContentPorts } from '../src/content/ports.js';
@@ -538,8 +539,9 @@ describe('content export and import (shapio export / shapio import)', () => {
   });
 });
 
-describe('an import that fails after its bundle was stored', () => {
-  let instance: Instance | undefined;
+describe('an import that fails before its job is queued', () => {
+  let source: Instance | undefined;
+  let target: Instance | undefined;
   let workdir: string;
 
   beforeAll(async () => {
@@ -547,21 +549,50 @@ describe('an import that fails after its bundle was stored', () => {
   });
 
   afterAll(async () => {
-    await stopInstance(instance);
+    await stopInstance(source);
+    await stopInstance(target);
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it('removes the stored bundle instead of leaving it in media storage', async () => {
-    instance = await startInstance(await createTestDatabase());
-    const args = ['--url', instance.url, '--token', instance.adminToken, '--site', 'default'];
-    const bundle = join(workdir, 'bundle.ndjson');
-    expect(await runCli('export', [...args, bundle])).toMatchObject({ code: 0 });
-    const lines = (await readFile(bundle, 'utf8'))
+  const filesUnder = async (root: string): Promise<string[]> =>
+    (await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name));
+
+  it('removes the stored bundle and the media files uploaded for it', async () => {
+    source = await startInstance(await createTestDatabase());
+    await uploadAsset(
+      source.testApp.app,
+      { authorization: `Bearer ${source.adminToken}` },
+      { file: await createPng(64, 64), filename: 'cover.png', mimeType: 'image/png' },
+    );
+    await runMediaJobs(source.testApp.app, source.database.db);
+    const archive = join(workdir, 'bundle.tar');
+    const exported = await runCli('export', [
+      '--url',
+      source.url,
+      '--token',
+      source.adminToken,
+      '--site',
+      'default',
+      '--with-media',
+      archive,
+    ]);
+    expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    await stopInstance(source);
+    source = undefined;
+
+    // A role the plan accepts and creating it refuses (a field list only applies to read, create and update):
+    // the import fails after the CLI uploaded the media and the server stored the bundle.
+    const unpacked = join(workdir, 'unpacked');
+    await mkdir(unpacked);
+    await extract({ file: archive, cwd: unpacked });
+    const bundlePath = join(unpacked, 'bundle.ndjson');
+    const lines = (await readFile(bundlePath, 'utf8'))
       .split('\n')
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { type: string; counts?: Record<string, number> });
     const end = lines.at(-1) as { type: 'end'; counts: Record<string, number> };
-    // The plan accepts this role; creating it is refused (a field list only applies to read, create, update).
     const invalid = {
       type: 'deliveryRole',
       id: randomUUID(),
@@ -571,18 +602,28 @@ describe('an import that fails after its bundle was stored', () => {
       permissions: [{ action: 'delete', modelId: null, condition: null, fieldIds: [randomUUID()] }],
     };
     const counts = { ...end.counts, deliveryRole: (end.counts.deliveryRole ?? 0) + 1 };
-    const failing = join(workdir, 'failing.ndjson');
     await writeFile(
-      failing,
+      bundlePath,
       [...lines.slice(0, -1), invalid, { ...end, counts }].map((line) => JSON.stringify(line)).join('\n') +
         '\n',
     );
+    const failing = join(workdir, 'failing.tar');
+    await create({ file: failing, cwd: unpacked }, await readdir(unpacked));
 
-    const imported = await runCli('import', [...args, failing]);
+    target = await startInstance(await createTestDatabase());
+    const imported = await runCli('import', [
+      '--url',
+      target.url,
+      '--token',
+      target.adminToken,
+      '--site',
+      'default',
+      failing,
+    ]);
     expect(imported.code, imported.stdout).not.toBe(0);
+    expect(imported.stdout).toContain('Uploaded 1 media file(s).');
     expect(imported.stderr).toContain('INVALID_PERMISSIONS');
-    const stored = await readdir(join(instance.mediaPath, 'private', 'transfer')).catch(() => []);
-    expect(stored).toEqual([]);
+    expect(await filesUnder(target.mediaPath)).toEqual([]);
   });
 });
 
