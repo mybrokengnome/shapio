@@ -57,3 +57,20 @@ export const keepKnownGrants = <Role extends { key: string; permissions: readonl
     dropped: { role: role.key, modelIds },
   };
 };
+
+/**
+ * The grants an import gives a role the target already has: the bundle decides the grants on its own models
+ * and on all models (`modelId` null); the target keeps its grants on every other model. A bundle holds one
+ * site's models, so importing it never changes what a role may do on another site.
+ */
+export const mergeWithTargetGrants = <Role extends { permissions: readonly Grant[] }>(
+  role: Role,
+  targetGrants: readonly Grant[],
+  bundleModelIds: ReadonlySet<string>,
+): Role => {
+  const inBundle = (grant: Grant) => grant.modelId === null || bundleModelIds.has(grant.modelId);
+  return {
+    ...role,
+    permissions: [...role.permissions.filter(inBundle), ...targetGrants.filter((grant) => !inBundle(grant))],
+  };
+};

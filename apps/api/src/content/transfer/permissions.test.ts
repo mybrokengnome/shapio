@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keepKnownGrants } from './permissions.js';
+import { keepKnownGrants, mergeWithTargetGrants } from './permissions.js';
 
 const grant = (modelId: string | null) => ({ action: 'read', modelId, condition: null, fieldIds: null });
 const known = new Set(['story']);
@@ -29,5 +29,22 @@ describe('keepKnownGrants', () => {
   it('keeps a role with no grants at all', () => {
     const role = { key: 'empty', permissions: [] };
     expect(keepKnownGrants(role, known)).toEqual({ role, dropped: undefined });
+  });
+});
+
+describe('mergeWithTargetGrants', () => {
+  it('takes the bundle’s grants on its models and the target’s on every other model', () => {
+    const fromBundle = { key: 'site', permissions: [grant('story'), grant(null)] };
+    const onTarget = [grant('story'), grant('secret'), grant(null)];
+    expect(mergeWithTargetGrants(fromBundle, onTarget, known).permissions).toEqual([
+      grant('story'),
+      grant(null),
+      grant('secret'),
+    ]);
+  });
+
+  it('drops the bundle’s grants on models outside it in favour of the target’s', () => {
+    const fromBundle = { key: 'site', permissions: [grant('story'), grant('secret')] };
+    expect(mergeWithTargetGrants(fromBundle, [], known).permissions).toEqual([grant('story')]);
   });
 });

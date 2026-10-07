@@ -147,7 +147,9 @@ Everything is matched by stable ID:
   knows (in its history, without newer autosaved edits) is _updated_ to the bundle's state. One the target has
   edited since, that belongs to another model, or that was deleted on the target is a **conflict**.
 - **Delivery roles**: matched by key; missing ones are created and changed ones updated to the bundle's
-  grants. A key the target uses for an admin role is a conflict. A grant on a model that neither the bundle
+  grants on the bundle's models. A role's grants on the target's other models stay as they are, so importing
+  one site never changes what a role may read on another. A key the target uses for an admin role is a
+  conflict. A grant on a model that neither the bundle
   nor the target has is left out, and the plan lists it; a role left with no grants is not created.
 - **Media**: missing assets are added after their file is checked against the manifest's checksum and size; an
   asset the target replaced or deleted is a conflict.

@@ -734,6 +734,28 @@ describe('roles in one site’s bundle (roles are instance-wide, models belong t
       bundle,
     ]);
     expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    // Importing the bundle back leaves the role's grant on the other site's model alone.
+    const sourceWorker = startWorker(source);
+    const reimported = await runCli('import', [
+      '--url',
+      source.url,
+      '--token',
+      source.adminToken,
+      '--site',
+      'default',
+      bundle,
+    ]);
+    await sourceWorker.stop(5000);
+    expect(reimported, `${reimported.stdout}\n${reimported.stderr}`).toMatchObject({ code: 0 });
+    const mixedGrants = await source.database.db
+      .selectFrom('admin_role_permissions as grant')
+      .innerJoin('admin_roles as role', 'role.id', 'grant.role_id')
+      .select('grant.model_id')
+      .where('role.key', '=', 'mixed')
+      .execute();
+    expect(mixedGrants.map((grant) => grant.model_id).sort()).toEqual(
+      [story.definition.id, secret.definition.id].sort(),
+    );
     await stopInstance(source);
     source = undefined;
 

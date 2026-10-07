@@ -24,7 +24,13 @@ import type {
   WebhookRecord,
 } from './format.js';
 import { readBundle } from './ndjson.js';
-import { keepKnownGrants, samePermissions, type DroppedGrants } from './permissions.js';
+import {
+  keepKnownGrants,
+  mergeWithTargetGrants,
+  samePermissions,
+  toGrant,
+  type DroppedGrants,
+} from './permissions.js';
 
 /**
  * The import plan (package L): a dry run that reads the whole bundle once and compares it with the target
@@ -507,6 +513,34 @@ const withKnownGrants = <Role extends AppRoleRecord | DeliveryRoleRecord>(
   return { kept, dropped };
 };
 
+type TargetRoles = {
+  roles: ReadonlyArray<{ id: string; key: string }>;
+  grants: ReadonlyArray<Parameters<typeof toGrant>[0] & { role_id: string }>;
+};
+
+/** Roles the target already has keep their grants on models outside the bundle (`mergeWithTargetGrants`). */
+const withTargetGrants = <Role extends AppRoleRecord | DeliveryRoleRecord>(
+  roles: readonly Role[],
+  target: TargetRoles,
+  bundleModelIds: ReadonlySet<string>,
+): Role[] =>
+  roles.map((role) => {
+    const existing = target.roles.find((candidate) => candidate.key === role.key);
+    if (!existing) {
+      return role;
+    }
+    const grants = target.grants.filter((grant) => grant.role_id === existing.id).map(toGrant);
+    return mergeWithTargetGrants(role, grants, bundleModelIds);
+  });
+
+const loadTargetRoles = async (repository: {
+  listRoles: () => Promise<TargetRoles['roles']>;
+  listPermissionsForRoles: (ids: string[]) => Promise<TargetRoles['grants']>;
+}): Promise<TargetRoles> => {
+  const roles = await repository.listRoles();
+  return { roles, grants: await repository.listPermissionsForRoles(roles.map((role) => role.id)) };
+};
+
 const planPublishing = async (
   config: Pick<BundleConfig, 'webhooks' | 'connections'>,
 ): Promise<Pick<ImportDiff, 'webhooks' | 'deploymentConnections'>> => {
@@ -576,13 +610,18 @@ export const planImport = async (
   for (const record of acc.config.definitions) {
     knownModelIds.add(String(record.definition.id));
   }
+  const bundleModelIds = new Set(acc.config.definitions.map((record) => String(record.definition.id)));
   const appRoles = withKnownGrants(acc.config.appRoles, knownModelIds);
   const deliveryRoles = withKnownGrants(acc.config.deliveryRoles, knownModelIds);
   const config: BundleConfig = {
     ...acc.config,
     header,
-    appRoles: appRoles.kept,
-    deliveryRoles: deliveryRoles.kept,
+    appRoles: withTargetGrants(appRoles.kept, await loadTargetRoles(appRolesRepository), bundleModelIds),
+    deliveryRoles: withTargetGrants(
+      deliveryRoles.kept,
+      await loadTargetRoles(adminRolesRepository),
+      bundleModelIds,
+    ),
   };
   const existingFolders = await transferImportRepository.findFolderIds(
     config.folders.map((folder) => folder.id),
