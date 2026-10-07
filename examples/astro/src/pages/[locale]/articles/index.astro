@@ -7,6 +7,7 @@ import { listArticles } from '../../../lib/shapio.js';
 import { articlesPath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
 import type { Article } from '../../../lib/types.js';
 
+// No cacheKey: the listing renders on every build (it shows every article, so most publishes change it).
 export const getStaticPaths = async () =>
   Promise.all(
     LOCALES.map(async (locale) => ({ params: { locale }, props: { locale, articles: await listArticles(locale) } })),

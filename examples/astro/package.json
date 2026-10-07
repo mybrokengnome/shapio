@@ -18,6 +18,7 @@
     "smoke:http": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4321",
     "report-status": "node --env-file-if-exists=.env --import tsx scripts/reportStatus.ts",
     "build:incremental": "node --env-file-if-exists=.env --import tsx scripts/incrementalBuild.ts",
+    "check:incremental": "node --env-file-if-exists=.env --import tsx scripts/incrementalCheck.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

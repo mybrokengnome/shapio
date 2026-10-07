@@ -6,6 +6,16 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The Astro starter re-renders only the pages a publish changed.** Builds use Astro's
+  `experimental.incrementalBuild`: every page and article carries a `cacheKey`, a digest of what it renders (its
+  props, the site settings and SEO defaults its layout reads, drafts mode and the year), and Astro restores a page
+  from the previous build while its key and its code are unchanged. The cache is `node_modules/.astro`; on
+  Cloudflare Pages, turn on build caching so it survives between builds. `npm run check:incremental` checks it
+  against a running Shapio, and runs in CI. `build:incremental` is documented as the local and CI tool it is, and
+  never skips a build without a `dist/` to keep. ([Site starters](documentation/starters.md#incremental-rebuilds))
+
 ## [0.5.1] - 2026-10-05
 
 ### Added

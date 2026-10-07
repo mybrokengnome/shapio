@@ -10,10 +10,13 @@
  *   instead of published content (no snapshot), and pages carry a "Drafts" badge. The token must be a delivery
  *   token whose role grants Read drafts: SHAPIO_DEV_DELIVERY_TOKEN when set (`npm run seed` writes one), else
  *   SHAPIO_DELIVERY_TOKEN. Never set it in a production environment.
+ *
+ * Settings come from `process.env` only (astro.config.mjs loads `.env` into it). Reading Vite's env object as a
+ * whole instead would make Vite write every variable named in this file into the compiled code, so a changed
+ * SHAPIO_SNAPSHOT would change the code Astro hashes and re-render every page (see src/lib/cacheKey.ts).
  */
 const read = (name: string): string | undefined => {
-  const fromVite = (import.meta as { env?: Record<string, string | undefined> }).env?.[name];
-  const value = fromVite ?? process.env[name];
+  const value = process.env[name];
   return value === undefined || value === '' ? undefined : value;
 };
 
@@ -50,5 +53,20 @@ export const publicShapioUrl = () => read('PUBLIC_SHAPIO_URL') ?? shapioUrl();
 
 export const siteKey = () => read('SHAPIO_SITE');
 
-/** True under `astro dev` (Vite's import.meta.env.DEV); false in builds and in the scripts. */
-export const isDev = () => (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+type ViteImportMeta = ImportMeta & { env: { DEV?: boolean } };
+
+/**
+ * True under `astro dev`; false in builds and in the scripts. Written out in full (`import.meta.env.DEV`) so Vite
+ * replaces it with a constant; outside Vite (the scripts, run by Node) there is no env object, which is the
+ * TypeError caught here, and that is not dev.
+ */
+export const isDev = (): boolean => {
+  try {
+    return (import.meta as ViteImportMeta).env.DEV === true;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return false;
+    }
+    throw error;
+  }
+};

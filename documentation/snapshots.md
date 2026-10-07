@@ -133,8 +133,11 @@ const { items, schemaVersions } = await shapio.snapshots.allChanges({
 
 ## Skipping builds that change nothing
 
-The [Astro starter](example-site.md)'s `build:incremental` script reads the snapshot of the last build from `dist/build.json`
-(or `SHAPIO_FROM_SNAPSHOT`), asks for the changes up to the current snapshot, prints the routes they touch, and
+Inside a build, the [Astro starter](example-site.md) already does per-page work: Astro restores every page
+whose data and code are unchanged from the previous build and renders only the rest
+([Incremental rebuilds](starters.md#incremental-rebuilds)). The starter's `build:incremental` script decides
+whether to build at all. It reads the snapshot of the last build from `dist/build.json` (or
+`SHAPIO_FROM_SNAPSHOT`), asks for the changes up to the current snapshot, prints the routes they touch, and
 runs the build pinned to the new snapshot, or skips it when nothing this site reads changed:
 
 ```sh
@@ -143,12 +146,16 @@ pnpm --filter example-astro build:incremental --dry-run  # just print the routes
 ```
 
 ```text
-Snapshots 38 → 42: 2 changed entries; routes to refresh:
+Snapshots 38 → 42: 2 changed entries; the routes they touch (the build re-renders only pages whose data changed):
   /en/articles/
   /en/articles/why-builds-pin-a-snapshot/
   /fr/articles/
   /fr/articles/why-builds-pin-a-snapshot/
 ```
+
+It is a local and CI tool, for machines where `dist/` survives between builds. It never skips without a
+`dist/` to keep, so on a host that starts each build from a fresh checkout (Cloudflare Pages, Netlify) it
+always builds: a skipped build there would leave nothing to deploy.
 
 ## Refreshing only what changed (`revalidatePath`)
 

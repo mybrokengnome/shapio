@@ -1,17 +1,26 @@
 ---
 import Base from '../../../layouts/Base.astro';
+import { cacheKeyOf } from '../../../lib/cacheKey.js';
 import { isDev } from '../../../lib/config.js';
+import { layoutInputs } from '../../../lib/layoutInputs.js';
 import { renderArticle } from '../../../lib/render.js';
 import { findBySlug, renderTimeEntry } from '../../../lib/renderTime.js';
 import { listArticles } from '../../../lib/shapio.js';
 import { articlePath, LOCALES, otherLocale, stringsFor, type Locale } from '../../../lib/site.js';
 import type { Article } from '../../../lib/types.js';
 
+/**
+ * Every published article in every locale. The page renders only its props (the author arrives populated inside
+ * the article; the strings are in the code) and what the layout reads, so those are its cacheKey: a build
+ * restores it from the previous build while they are unchanged (src/lib/cacheKey.ts).
+ */
 export const getStaticPaths = async () => {
   const paths = [];
   for (const locale of LOCALES) {
+    const layout = await layoutInputs(locale);
     for (const article of await listArticles(locale)) {
-      paths.push({ params: { locale, slug: article.slug }, props: { locale, article } });
+      const props = { locale, article };
+      paths.push({ params: { locale, slug: article.slug }, props, cacheKey: cacheKeyOf(props, layout) });
     }
   }
   return paths;

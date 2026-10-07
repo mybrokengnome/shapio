@@ -1,16 +1,23 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createClient, ShapioApiError, type SnapshotChange } from '@shapio/client';
 
 /**
- * `npm run build:incremental [--dry-run]`: builds only when content changed.
+ * `npm run build:incremental [--dry-run]`: skips a build that would change nothing. A local and CI tool, for
+ * machines where `dist/` survives between builds.
  *
  * It asks Shapio what changed between the snapshot the last build showed (`dist/build.json`, or
  * SHAPIO_FROM_SNAPSHOT) and the current one (`/api/snapshots/changes`), prints the routes those changes
  * touch, and runs `astro build` pinned to the new snapshot, or skips the build when nothing changed. A
  * schema change between the two snapshots, or no previous build, means a full rebuild. The printed routes
  * are what a server-rendered site would revalidate (documentation/snapshots.md shows `revalidatePath`).
+ *
+ * The per-page work is Astro's: the build itself restores every page whose data and code are unchanged
+ * (`experimental.incrementalBuild`, src/lib/cacheKey.ts). This script only decides whether to build at all, and
+ * it never skips without a `dist/` to keep: on a host that starts every build from a fresh checkout (Cloudflare
+ * Pages, Netlify), a skipped build would leave nothing to deploy, so there it always builds.
  *
  * Settings: SHAPIO_URL and SHAPIO_DELIVERY_TOKEN (as for `npm run build`), SHAPIO_FROM_SNAPSHOT (optional).
  */
@@ -108,7 +115,10 @@ const main = async () => {
   const say = (line: string) => process.stdout.write(`${line}\n`);
 
   if (from === undefined) {
-    say(`No previous build: building everything at snapshot ${to}.`);
+    say(`No previous build: building at snapshot ${to}.`);
+  } else if (!existsSync(DIST_BUILD_INFO)) {
+    // SHAPIO_FROM_SNAPSHOT without the build it names: skipping would leave no dist/ to deploy.
+    say(`No dist/ from snapshot ${from} here: building at snapshot ${to}.`);
   } else if (from === to) {
     say(`Nothing published since snapshot ${from}: skipping the build.`);
     return;
@@ -125,7 +135,9 @@ const main = async () => {
       for (const change of diff.items) {
         (await routesOf(change, from, to)).forEach((route) => routes.add(route));
       }
-      say(`Snapshots ${from} → ${to}: ${diff.items.length} changed entries; routes to refresh:`);
+      say(
+        `Snapshots ${from} → ${to}: ${diff.items.length} changed entries; the routes they touch (the build re-renders only pages whose data changed):`,
+      );
       [...routes].sort().forEach((route) => say(`  ${route}`));
     }
   }

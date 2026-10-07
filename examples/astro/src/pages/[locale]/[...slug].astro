@@ -1,20 +1,29 @@
 ---
 import Base from '../../layouts/Base.astro';
+import { cacheKeyOf } from '../../lib/cacheKey.js';
 import { isDev } from '../../lib/config.js';
+import { layoutInputs } from '../../lib/layoutInputs.js';
 import { renderPage } from '../../lib/render.js';
 import { findBySlug, renderTimeEntry } from '../../lib/renderTime.js';
 import { listPages } from '../../lib/shapio.js';
 import { HOME_SLUG, LOCALES, otherLocale, pagePath, type Locale } from '../../lib/site.js';
 import type { Page } from '../../lib/types.js';
 
-/** Every published page in every locale; `home` is the locale's front page (`/en/`, `/fr/`). */
+/**
+ * Every published page in every locale; `home` is the locale's front page (`/en/`, `/fr/`). The page renders
+ * only its props and what the layout reads, so those are its cacheKey: a build restores it from the previous
+ * build while they are unchanged (src/lib/cacheKey.ts).
+ */
 export const getStaticPaths = async () => {
   const paths = [];
   for (const locale of LOCALES) {
+    const layout = await layoutInputs(locale);
     for (const page of await listPages(locale)) {
+      const props = { page, locale };
       paths.push({
         params: { locale, slug: page.slug === HOME_SLUG ? undefined : page.slug },
-        props: { page, locale },
+        props,
+        cacheKey: cacheKeyOf(props, layout),
       });
     }
   }

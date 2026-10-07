@@ -114,9 +114,19 @@ grant on the server and the flag on the site ([Delivery API](delivery-api.md#dra
 A publish should reach the site without rebuilding pages that did not change. Each starter does it the way its
 output allows, and all three read the [changes API](snapshots.md#what-changed-between-two-snapshots):
 
-- **Astro** (static): `npm run build:incremental` asks what changed since the last build's snapshot, prints the
-  routes it touches, and builds pinned to the new snapshot, or skips the build when nothing the site reads
-  changed ([Snapshots](snapshots.md#skipping-builds-that-change-nothing)).
+- **Astro** (static): every build re-renders only the pages whose data or code changed and restores the others
+  from the previous build, with Astro's `experimental.incrementalBuild`. Each page's `getStaticPaths()` entry
+  carries a `cacheKey`: a digest (`src/lib/cacheKey.ts`) of its props, what the layout reads (site settings and
+  SEO defaults, `src/lib/layoutInputs.ts`) and the build environment (drafts mode, the year). Astro restores a
+  page when its key and its code (the hash of its import graph) are both unchanged; publishing one article
+  re-renders that article's page, while the listings, which render on every build, show it too. The cache lives
+  in `node_modules/.astro`: on Cloudflare Pages turn on build caching (Settings → Builds → Build cache) so it
+  survives, and do not set `cacheDir`; without the cache a build is a full one. A page keeps that guarantee only
+  if it renders nothing outside its key, so a new read goes through `getStaticPaths()` props or `layoutInputs`.
+  `npm run check:incremental` proves it against a running Shapio. On top of that, `npm run build:incremental`
+  skips the whole build when nothing the site reads changed since the `dist/` on disk; it is a local and CI
+  tool and always builds where `dist/` does not survive, such as Cloudflare Pages
+  ([Snapshots](snapshots.md#skipping-builds-that-change-nothing)).
 - **Next.js** (`next start`): on-demand revalidation. The seed's webhook calls `/api/revalidate/` on every
   publish, unpublish, delete, change set ship and schema change; the route verifies the signature, diffs the
   snapshot the site shows against the current one and calls `revalidatePath` for just those pages, which

@@ -297,6 +297,8 @@ jobs:
           nohup pnpm --filter example-sveltekit preview > /tmp/sveltekit.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4173/en/ && break; sleep 1; done
           pnpm --filter example-sveltekit smoke
+      - name: Astro incremental build (restores unchanged pages; one published edit re-renders one page; last, as it publishes)
+        run: pnpm --filter example-astro check:incremental
       - if: failure()
         run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/next-in-process.log /tmp/next-drafts.log /tmp/sveltekit.log 2>/dev/null || true
 

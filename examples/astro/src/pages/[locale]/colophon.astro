@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import { getSiteSettings } from '../../lib/shapio.js';
 import { colophonPath, LOCALES, otherLocale, stringsFor, type Locale } from '../../lib/site.js';
 
-/** The singleton page: the siteSettings entry's colophon, one per locale. */
+/** The singleton page: the siteSettings entry's colophon, one per locale. No cacheKey: it renders on every build. */
 export const getStaticPaths = () => LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
 
 type Props = { locale: Locale };

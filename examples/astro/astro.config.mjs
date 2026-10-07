@@ -47,4 +47,11 @@ export default defineConfig({
   build: { format: 'directory' },
   server: { headers: { 'Content-Security-Policy': FRAME_ANCESTORS } },
   integrations: [frameAncestorsHeaders],
+  /**
+   * Incremental builds: a page whose `cacheKey` (src/lib/cacheKey.ts) and code are unchanged is restored from
+   * the previous build instead of rendered. The cache lives in Astro's cacheDir, `node_modules/.astro`, which
+   * Cloudflare Pages build caching (Settings → Builds → Build cache) restores between builds. Do not set
+   * `cacheDir`: the cache would silently stop surviving there, and every build would render every page.
+   */
+  experimental: { incrementalBuild: true },
 });

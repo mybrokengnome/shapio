@@ -1,9 +1,8 @@
 ---
 import '../styles/site.css';
 import type { SeoResolved } from '@shapio/client';
-import { isDraftsMode } from '../lib/config.js';
+import { layoutInputs } from '../lib/layoutInputs.js';
 import { seoHead, type SeoHead } from '../lib/seo.js';
-import { getSite, getSiteSettings } from '../lib/shapio.js';
 import {
   articlesPath,
   colophonPath,
@@ -31,12 +30,13 @@ const { title, seo, type, locale, alternatePath, noindex = false } = Astro.props
 const strings = stringsFor(locale);
 const other = otherLocale(locale);
 // The name, tagline and footer come from the siteSettings singleton (the built-in strings until it is published).
-const settings = await getSiteSettings(locale);
+// Read through layoutInputs, which keyed pages fold into their cacheKey (src/lib/cacheKey.ts).
+const { settings, site, env } = await layoutInputs(locale);
 const siteName = settings?.siteName ?? strings.siteName;
 // Title, description, social tags and canonical: the entry's SEO fields over the site's SEO defaults.
 const head = seoHead({
   seo: seo ?? null,
-  site: await getSite(),
+  site,
   locale,
   localeChain: [locale, DEFAULT_LOCALE],
   title,
@@ -92,7 +92,7 @@ const robotsNoindex = noindex || head.noindex;
       <p>{siteName} · {settings?.footer ?? 'Built with Shapio'} · Astro</p>
     </footer>
     {
-      isDraftsMode() ? (
+      env.drafts ? (
         <p class="drafts-badge" title={strings.draftsNote} data-shapio-drafts="">
           {strings.drafts}
         </p>

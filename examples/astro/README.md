@@ -17,7 +17,8 @@ npm run smoke:http  # checks the served pages over HTTP (in another terminal, wh
 
 `npm run seed` applies the models in `shapio/` to Shapio live, creates the content and writes `SHAPIO_URL` and
 `SHAPIO_DELIVERY_TOKEN` to `.env`. Other settings (`SHAPIO_SNAPSHOT`, `SHAPIO_SITE`, `PUBLIC_SHAPIO_URL`) are
-in `.env.example`. Astro's telemetry is turned off in the npm scripts.
+in `.env.example`. Settings are read from the environment and `.env` only (not `.env.local` or
+`.env.production`). Astro's telemetry is turned off in the npm scripts.
 
 Drafts mode, for your development server: set `SHAPIO_DRAFTS=true` in `.env` and `npm run dev` shows saved
 drafts instead of published content, fresh on every reload, with a **Drafts** badge on every page. Save in
@@ -27,6 +28,14 @@ without it fails with `DRAFTS_FORBIDDEN`). Never put that token or the flag in a
 `npm run smoke:drafts` checks a running drafts-mode dev server
 (http://localhost:4321; needs `SHAPIO_ADMIN_EMAIL`/`PASSWORD` to save a test change, which it puts back). Guide:
 [drafts mode](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md#drafts-mode).
+
+Incremental builds: `npm run build` re-renders only the pages whose data or code changed and restores the rest
+from the previous build (Astro's `experimental.incrementalBuild`; each page's `cacheKey` is a digest of what it
+renders, `src/lib/cacheKey.ts`). The cache is `node_modules/.astro`: on Cloudflare Pages, turn on build caching
+(Settings → Builds → Build cache) so it survives between builds; without it every build is a full one.
+`npm run check:incremental` checks this against the seeded Shapio (it publishes one edit and puts it back).
+`npm run build:incremental` is a local and CI tool on top: it skips the build entirely when nothing the site
+reads changed since the `dist/` on disk, and always builds where there is none.
 
 Preview: the seed creates a deployment connection named **Preview** that opens drafts at
 `http://localhost:4321/preview/` (set `SITE_URL` when seeding for another address). Add that origin to Shapio's
