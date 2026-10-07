@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-07
+
 ### Added
 
 - **The Astro starter re-renders only the pages a publish changed.** Builds use Astro's
@@ -15,6 +17,20 @@ All notable changes to Shapio are listed here. The format follows
   Cloudflare Pages, turn on build caching so it survives between builds. `npm run check:incremental` checks it
   against a running Shapio, and runs in CI. `build:incremental` is documented as the local and CI tool it is, and
   never skips a build without a `dist/` to keep. ([Site starters](documentation/starters.md#incremental-rebuilds))
+
+### Changed
+
+- **Importers plan for the primary site by default.** `shapio import strapi|wordpress --plan` without `--site`
+  used to plan models shared with all sites, which only a network admin token may create, so applying the plan
+  with the ordinary site token the admin's token dialog makes failed with `FORBIDDEN_SCOPE`. `--plan` now takes
+  `--site`, then `SHAPIO_SITE`, then the primary site; `--shared` plans shared models as before.
+  ([Importers](documentation/importers.md))
+
+### Fixed
+
+- **Strapi importer: renamed content types and components are listed.** Definitions whose API ID changes on
+  import (Strapi's `shared.media` becomes `mediaItem`) now appear in `--plan` alongside renamed fields.
+- **Strapi importer: uploads keep their file extension** when the Strapi file name has none.
 
 ## [0.5.1] - 2026-10-05
 
