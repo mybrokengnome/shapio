@@ -13,7 +13,8 @@ import { BUNDLE_CONTENT_TYPE } from './format.js';
  * Where an uploaded bundle lives while it is planned and imported. The request stages it in a temporary
  * file (the plan reads it more than once); a real import then stores it in media storage under
  * `private/transfer/<import id>/bundle.ndjson`, so a dedicated worker on another host can read it, and the
- * import job removes it when done. `private/` objects are never served without a signature.
+ * import job removes it when done (the request does, when the import fails before its job is queued).
+ * `private/` objects are never served without a signature.
  */
 export const MAX_BUNDLE_BYTES = 20 * 1024 * 1024 * 1024;
 

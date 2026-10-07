@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -535,6 +535,54 @@ describe('content export and import (shapio export / shapio import)', () => {
     expect(response.statusCode).toBe(403);
     const anonymous = await instance.testApp.app.inject({ method: 'GET', url: '/api/admin/transfer/export' });
     expect(anonymous.statusCode).toBe(401);
+  });
+});
+
+describe('an import that fails after its bundle was stored', () => {
+  let instance: Instance | undefined;
+  let workdir: string;
+
+  beforeAll(async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'shapio-transfer-failed-'));
+  });
+
+  afterAll(async () => {
+    await stopInstance(instance);
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it('removes the stored bundle instead of leaving it in media storage', async () => {
+    instance = await startInstance(await createTestDatabase());
+    const args = ['--url', instance.url, '--token', instance.adminToken, '--site', 'default'];
+    const bundle = join(workdir, 'bundle.ndjson');
+    expect(await runCli('export', [...args, bundle])).toMatchObject({ code: 0 });
+    const lines = (await readFile(bundle, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; counts?: Record<string, number> });
+    const end = lines.at(-1) as { type: 'end'; counts: Record<string, number> };
+    // The plan accepts this role; creating it is refused (a field list only applies to read, create, update).
+    const invalid = {
+      type: 'deliveryRole',
+      id: randomUUID(),
+      key: 'invalid',
+      name: 'Invalid',
+      description: '',
+      permissions: [{ action: 'delete', modelId: null, condition: null, fieldIds: [randomUUID()] }],
+    };
+    const counts = { ...end.counts, deliveryRole: (end.counts.deliveryRole ?? 0) + 1 };
+    const failing = join(workdir, 'failing.ndjson');
+    await writeFile(
+      failing,
+      [...lines.slice(0, -1), invalid, { ...end, counts }].map((line) => JSON.stringify(line)).join('\n') +
+        '\n',
+    );
+
+    const imported = await runCli('import', [...args, failing]);
+    expect(imported.code, imported.stdout).not.toBe(0);
+    expect(imported.stderr).toContain('INVALID_PERMISSIONS');
+    const stored = await readdir(join(instance.mediaPath, 'private', 'transfer')).catch(() => []);
+    expect(stored).toEqual([]);
   });
 });
 

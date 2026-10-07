@@ -3,6 +3,7 @@ import { pipeline, Transform, type Readable } from 'node:stream';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../../db/index.js';
 import { AppError } from '../../helpers/appError.js';
+import { describeError } from '../../helpers/errors.js';
 import { enqueueJob } from '../../jobs/queue.js';
 import type { MediaStorage, StorageDriver } from '../../media/types.js';
 import type { FieldVisibilityLookup } from '../../permissions/policy.js';
@@ -14,13 +15,13 @@ import type { SiteActorContext } from '../../services/actorContext.js';
 import { recordAudit } from '../../services/audit.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
 import { applyConfig } from './applyConfig.js';
-import { stageBundle, storeBundle } from './bundleFile.js';
+import { removeStoredBundle, stageBundle, storeBundle } from './bundleFile.js';
 import { createExportStream } from './export.js';
 import type { ExportOptions } from './format.js';
 import { isAssetKey } from './importMedia.js';
 import { TRANSFER_IMPORT_JOB, TRANSFER_IMPORT_MAX_ATTEMPTS, type ImportPayload } from './job.js';
 import { StreamClosedError } from './ndjson.js';
-import { planImport, type ImportDiff, type ImportOptions } from './plan.js';
+import { planImport, type ImportDiff, type ImportOptions, type ImportPlan } from './plan.js';
 
 /**
  * Content export and import (package L): `GET /api/admin/transfer/export`, `POST …/import`, the import's
@@ -113,6 +114,30 @@ const conflictError = (diff: ImportDiff) =>
     { diff },
   );
 
+/** Applies the instance-wide part of a planned import and queues the job that reads the stored bundle. */
+const applyAndQueue = async (
+  context: TransferContext,
+  plan: ImportPlan,
+  payload: Omit<ImportPayload, 'pendingChangeIds'>,
+) => {
+  const applied = await applyConfig(
+    {
+      schemaContext: context.schemaContext,
+      actor: context,
+      publishing: context.publishing,
+      fieldVisibility: context.fieldVisibility,
+    },
+    plan,
+  );
+  const { job } = await enqueueJob({
+    type: TRANSFER_IMPORT_JOB,
+    payload: { ...payload, pendingChangeIds: applied.pendingChangeIds } satisfies ImportPayload,
+    idempotencyKey: `${TRANSFER_IMPORT_JOB}:${payload.importId}`,
+    maxAttempts: TRANSFER_IMPORT_MAX_ATTEMPTS,
+  });
+  return { applied, job };
+};
+
 /**
  * Plans an import and, unless `dryRun`, applies the instance-wide part (locales, schema, roles, publishing
  * config, folders) and queues the `transfer.import` job for users, media and entries. Conflicts refuse the
@@ -135,27 +160,20 @@ export const importBundle = async (
     }
     const importId = randomUUID();
     const bundle = await storeBundle(context.storage, staged, importId);
-    const applied = await applyConfig(
-      {
-        schemaContext: context.schemaContext,
-        actor: context,
-        publishing: context.publishing,
-        fieldVisibility: context.fieldVisibility,
-      },
-      plan,
-    );
-    const payload: ImportPayload = {
+    const { applied, job } = await applyAndQueue(context, plan, {
       importId,
       siteId: context.site.id,
       bundle,
       prune: options.prune,
-      pendingChangeIds: applied.pendingChangeIds,
-    };
-    const { job } = await enqueueJob({
-      type: TRANSFER_IMPORT_JOB,
-      payload,
-      idempotencyKey: `${TRANSFER_IMPORT_JOB}:${importId}`,
-      maxAttempts: TRANSFER_IMPORT_MAX_ATTEMPTS,
+    }).catch(async (error: unknown) => {
+      // No job will ever read the stored bundle: remove it, as the job would have.
+      await removeStoredBundle(context.storage, bundle).catch((cleanupError: unknown) =>
+        context.log.warn(
+          { err: describeError(cleanupError), key: bundle.key },
+          'could not remove the bundle of a failed import',
+        ),
+      );
+      throw error;
     });
     await audit(context, 'transfer.import', { importId, jobId: job.id, prune: options.prune }, job.id);
     return { dryRun: false, importId: job.id, diff: plan.diff, webhookSecrets: applied.webhookSecrets };
