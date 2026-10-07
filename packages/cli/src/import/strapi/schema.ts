@@ -280,16 +280,21 @@ export const planStrapiSchema = (schemas: readonly StrapiSchema[]): SchemaPlan =
   };
   const taken = new Set<string>();
   const plans = new Map<string, DefinitionPlan>();
+  /** The API ID for `name`; a reserved or repeated name gets a suffix, which the plan lists. */
+  const claimApiKey = (schema: StrapiSchema, name: string) => {
+    const apiKey = definitionApiKey(name, taken);
+    if (apiKey !== toCamelCase(name)) {
+      context.notes.push(`${schema.uid} is named ${apiKey} (the name is reserved or already taken).`);
+    }
+    return apiKey;
+  };
   for (const schema of contentTypes) {
-    const apiKey = definitionApiKey(
-      schema.info?.singularName ?? schema.uid.split('.').at(-1) ?? 'model',
-      taken,
-    );
-    plans.set(schema.uid, planDefinition(schema, apiKey, context));
+    const name = schema.info?.singularName ?? schema.uid.split('.').at(-1) ?? 'model';
+    plans.set(schema.uid, planDefinition(schema, claimApiKey(schema, name), context));
   }
   const baseName = componentBaseNames(components);
   for (const schema of components) {
-    plans.set(schema.uid, planDefinition(schema, definitionApiKey(baseName(schema), taken), context));
+    plans.set(schema.uid, planDefinition(schema, claimApiKey(schema, baseName(schema)), context));
   }
   if (contentTypes.some((schema) => schema.options?.draftAndPublish === false)) {
     context.notes.push(

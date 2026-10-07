@@ -307,7 +307,7 @@ describe('shapio import strapi', () => {
         { __component: 'seo', metaTitle: 'Z' },
       ],
     });
-    expect((en.data.cover as { id: string }).id).toBe(cover);
+    expect(en.data.cover).toMatchObject({ id: cover, filename: 'cover.png', alt: 'A cover' });
     expect(JSON.stringify(en.data.seo)).toContain(cover);
     expect(JSON.stringify(en.data.body)).toContain(cover);
     expect((await instance.entry('article', articleId, 'fr')).data.title).toBe('Bonjour');

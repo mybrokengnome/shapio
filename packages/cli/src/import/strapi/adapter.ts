@@ -76,6 +76,10 @@ const textOf = (value: unknown) =>
       ? String(value)
       : undefined;
 
+/** Strapi's `name` may lack the extension (its example project's names do); `ext` always has it. */
+const withExtension = (name: string, ext: string) =>
+  name.toLowerCase().endsWith(ext.toLowerCase()) ? name : `${name}${ext}`;
+
 const fileMedia = (data: Record<string, unknown>, root: string): ImportMedia | undefined => {
   const hash = stringOf(data.hash);
   const ext = stringOf(data.ext) ?? '';
@@ -86,9 +90,10 @@ const fileMedia = (data: Record<string, unknown>, root: string): ImportMedia | u
   const alt = stringOf(data.alternativeText);
   const caption = stringOf(data.caption);
   const mimeType = stringOf(data.mime);
+  const name = stringOf(data.name);
   return {
     sourceId: `file:${id}`,
-    filename: stringOf(data.name) ?? `${hash}${ext}`,
+    filename: name ? withExtension(name, ext) : `${hash}${ext}`,
     path: join(root, 'assets', 'uploads', `${hash}${ext}`),
     ...(mimeType ? { mimeType } : {}),
     ...(alt ? { alt } : {}),

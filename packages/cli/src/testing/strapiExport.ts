@@ -189,7 +189,8 @@ export const STRAPI_ENTITIES = [
     id: 20,
     data: {
       documentId: 'f1',
-      name: 'cover.png',
+      // Without its extension, as in Strapi's own example project (`ext` holds it).
+      name: 'cover',
       alternativeText: 'A cover',
       caption: 'The cover',
       hash: 'cover_abc',
