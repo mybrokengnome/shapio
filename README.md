@@ -1,92 +1,113 @@
-# Shapio
+<p align="center">
+  <img src="brand/shapio-logo.svg" alt="Shapio" width="320">
+</p>
 
-Shapio is an open-source, self-hosted headless CMS and API platform. You model content (pages, articles,
-products, anything) in its admin **while it runs in production**: models are versioned data, not code, so adding
-a field or a model never needs a rebuild, a restart or a deploy. Editors get finished field controls, rich text,
-media, localization, revisions and scheduling; your sites and apps read published content over REST and
-GraphQL, and your own users can sign up and write content under the permissions you set.
+<p align="center">
+  <strong>The headless CMS you can change while it's live.</strong><br>
+  Add a field in production. No rebuild, no restart, no deploy.
+</p>
 
-Models also live in git when you want them to: `shapio schema pull` and `apply` sync them with JSON files,
-live, with a per-model version guard instead of a lock.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@shapio/cms"><img src="https://img.shields.io/npm/v/@shapio/cms?color=E9F26E&labelColor=231527" alt="npm"></a>
+  <a href="https://github.com/mybrokengnome/shapio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/mybrokengnome/shapio/ci.yml?branch=main&label=CI&labelColor=231527" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-E9F26E?labelColor=231527" alt="Apache 2.0"></a>
+</p>
 
-**Version control for content.** Every publish is a numbered snapshot that stays readable, so a site build pins
-one moment and asks what changed since its last build. Schema edits and entry drafts go into **change sets**,
-reviewed like a pull request (field-level diffs, the planner's checks, and which API tokens actually read the
-fields a breaking change touches) and shipped as one snapshot, with an optional deploy after. Restoring an older
-snapshot is a change set too: reviewed, shipped as a new snapshot, nothing deleted.
+<p align="center">
+  <a href="https://shapio.dev">Website</a> ·
+  <a href="documentation/README.md">Docs</a> ·
+  <a href="https://shapio.dev/blog/">Blog</a> ·
+  <a href="https://shapio.dev/roadmap/">Roadmap</a>
+</p>
 
-**Many sites, one instance.** One Shapio can run a fleet of sites with one login: each site has its own content
-types (and can share any of them with every site), content, media, snapshots, tokens and end users, and a role
-can be granted on one site or on all of them.
+<br>
 
-**Visual editing.** Editors see the site beside the document while they write: clicking a part of the page
-focuses its field, and every save re-renders the preview.
+![The Shapio admin, editing a blog post](.github/readme/hero.png)
 
-**Assist, if you want it.** Connect your own model provider, hosted or running on your own machine, for alt
-text, summaries, translations, rewrites and content-type drafts. It is off by default and only ever proposes or
-writes drafts into a change set; it never publishes.
+Shapio is an open-source, self-hosted headless CMS. Your content models are data, not code, so you change them in
+the admin while the site is running. Your sites and apps read the content over REST or GraphQL.
 
-Publishing connects to your site's builds with signed webhooks and Cloudflare Pages, Vercel and Netlify
-adapters that report real build status. It runs as one Node.js process with PostgreSQL or SQLite, from npm or
-Docker, with HTTPS built in and no reverse proxy, and sends nothing anywhere unless you configure it.
-
-## Quick start
-
-With npm (Node.js 24+ and a PostgreSQL 16+ database, or `--database-url sqlite:./shapio.db` for a single-process
-install on SQLite):
+## Try it
 
 ```sh
-npx create-shapio@latest my-cms --database-url postgres://user:password@localhost:5432/shapio
+npx create-shapio@latest my-cms --database-url sqlite:./shapio.db
 cd my-cms
 npm run start
 ```
 
-With Docker:
+Open `http://localhost:4300/admin/` and create your account. That's it.
 
-```sh
-git clone https://github.com/mybrokengnome/shapio.git && cd shapio
-docker compose up -d
-docker compose logs shapio
-```
+Needs Node.js 24 or newer. SQLite is fine for a small site. For more traffic or more than one process, use
+PostgreSQL 16+ or MySQL 8.4, or run the [Docker image](documentation/install-docker.md).
 
-Either way, open the address in the log (`http://localhost:4300/admin/`) and create the owner account: the
-first person to complete Setup becomes the owner. For an install reachable by others before setup, set
-`SETUP_REQUIRE_TOKEN=true` (Setup then needs a one-time token from the log) or run `shapio admin create`
-first ([First admin](documentation/first-admin.md)).
+## What you get
 
-To work on Shapio itself, [develop it from a clone](#develop-shapio).
+### Change the model without a deploy
 
-## Documentation
+Add a field, rename one, add a whole content type. It goes live the moment you ship it. Nothing gets generated, no
+table gets locked, nothing restarts.
 
-- [Documentation index](documentation/README.md)
-- Install: [npm, PM2, systemd](documentation/install-npm.md) · [Docker](documentation/install-docker.md) ·
-  [networking and HTTPS](documentation/networking.md)
-- Use: [modelling](documentation/modelling.md) · [schema sync](documentation/schema-sync.md) ·
-  [delivery API](documentation/delivery-api.md) · [GraphQL](documentation/graphql.md) ·
-  [change sets, snapshots and restore](documentation/change-sets.md) ·
-  [publishing and deployments](documentation/publishing.md) · [sites](documentation/sites.md) · [site starters](documentation/starters.md) ·
-  [example site](documentation/example-site.md)
-- Run: [backup and restore](documentation/backup-restore.md) · [upgrades](documentation/upgrades.md) ·
-  [security](documentation/security.md)
-- Reference: [environment variables](documentation/reference/environment.md) ·
-  [CLI](documentation/reference/cli.md) · [REST API](documentation/reference/rest-api.md)
+### Review changes like a pull request
 
-## Develop Shapio
+![A change set: a new field and an edited post, shipped together](.github/readme/changes.png)
 
-```sh
-corepack enable             # provides the pinned pnpm version
-cp .env.example .env        # set DATABASE_URL and TEST_DATABASE_URL
-createdb shapio_dev         # the database DATABASE_URL names must exist
-pnpm install
-pnpm db:migrate
-pnpm dev                    # API on http://localhost:4300, admin dev server on http://localhost:5173/admin/
-```
+Model changes and content edits go into a change set. You see every field before and after, the checks tell you if
+anything breaks, and it all ships together as one snapshot. Every snapshot stays readable, and restoring an old one
+is just another change set.
 
-In development, open the admin (and the setup link from the log) on the dev server, `http://localhost:5173/admin/`.
+### Keep your models in git
 
-See [local development](documentation/local-development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-Security issues: [SECURITY.md](SECURITY.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+![Schema as code: the model files and a live preview of the form they make](.github/readme/schema.png)
+
+`shapio schema pull` writes your models to JSON files. Commit them, review them, and `shapio schema apply` puts them
+back on any instance, live. If someone changed production since your last pull, apply refuses and shows the diff,
+just like a rejected push.
+
+### Many sites, one install
+
+![The sites on one Shapio install](.github/readme/sites.png)
+
+One Shapio runs as many sites as you want, with one login. Each site has its own content types, content, media,
+tokens and end users. Share a content type across all of them when you want to.
+
+### A media library you'll actually use
+
+![The media library](.github/readme/media.png)
+
+Alt text, captions, focal points and folders. Store files on disk or in S3.
+
+### And the rest
+
+- **Drafts on your dev server.** Save in the admin and see it on `localhost` before anyone else does.
+- **Visual editing.** Your site sits next to the editor. Click part of the page and you land on its field.
+- **Localization**, **revisions**, **scheduled publishing**, **custom roles** and an **audit log**.
+- **End users.** People can sign up on your site and write content under the permissions you set.
+- **Publishing hooks** for Cloudflare Pages, Vercel and Netlify, with real build status.
+- **Starters** for Astro, Next.js and SvelteKit.
+- **Importers** for WordPress and Strapi 5.
+- **Nothing phones home.** Shapio sends no data anywhere unless you set it up to.
+
+## Coming from somewhere else?
+
+See how Shapio compares to [Strapi](https://shapio.dev/compare/strapi/),
+[Payload](https://shapio.dev/compare/payload/) and [WordPress](https://shapio.dev/compare/wordpress/), or
+[move a Strapi 5 project over](https://shapio.dev/blog/move-a-strapi-5-project-to-shapio/).
+
+## Docs
+
+Start with the [documentation index](documentation/README.md). The most useful pages:
+
+- [Install with npm](documentation/install-npm.md) or [Docker](documentation/install-docker.md)
+- [Modelling content](documentation/modelling.md)
+- [Delivery API](documentation/delivery-api.md) and [GraphQL](documentation/graphql.md)
+- [Change sets and snapshots](documentation/change-sets.md)
+- [Site starters](documentation/starters.md)
+
+## Contributing
+
+Bug reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers running Shapio from a clone.
+Security issues go to [SECURITY.md](SECURITY.md). What changed in each release is in the [changelog](CHANGELOG.md).
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache 2.0](LICENSE)
