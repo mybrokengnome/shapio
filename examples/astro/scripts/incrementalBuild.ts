@@ -73,12 +73,22 @@ const slugAt = async (change: SnapshotChange, locale: string, snapshot: number):
   }
 };
 
+/**
+ * The models whose entries have a route of their own, found by slug. Any other model (a redirect type a user
+ * adds, say) maps to no route here: it may have no `slug` field, and Astro's incremental build still decides
+ * page by page what to rebuild.
+ */
+const SLUG_ROUTED_MODELS = new Set(['page', 'article']);
+
 /** Site routes (src/pages) an entry change touches. */
 const routesOf = async (change: SnapshotChange, from: number, to: number): Promise<string[]> => {
   const routes: string[] = [];
   for (const { locale, change: kind } of change.locales) {
     if (change.modelKey === 'author') {
       routes.push(`/${locale}/articles/`);
+      continue;
+    }
+    if (!SLUG_ROUTED_MODELS.has(change.modelKey)) {
       continue;
     }
     // An unpublished entry's route is where it was; the others are where they are now.

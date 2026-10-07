@@ -64,17 +64,22 @@ export const pinnedSnapshot = async (): Promise<number | undefined> => {
   return resolver();
 };
 
-/** Every published entry of a collection (by plural API ID) in one locale, page by page, at the pinned snapshot. */
-const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {
+/**
+ * Every published entry of a collection (by plural API ID) in one locale, page by page, at the pinned snapshot.
+ * The defaults (server-rendered HTML, SEO fields resolved) apply unless the query overrides them: a collection
+ * without SEO fields (a redirect type, say) is read with `{ seo: 'raw' }`, since Shapio refuses `seo=resolved`
+ * for a model that has none.
+ */
+export const listAll = async <T>(routeKey: string, query: DeliveryListQuery): Promise<T[]> => {
   const snapshot = await pinnedSnapshot();
   const entries: T[] = [];
   for (let page = 1; ; page += 1) {
     const result = await shapio().delivery.list<T>(routeKey, {
-      ...query,
       // The site renders the server's sanitized HTML, so it asks for that instead of the JSON document, and
       // its SEO fields with the site's defaults filled in (`seo=resolved`).
       richText: 'html',
       seo: 'resolved',
+      ...query,
       snapshot,
       page,
       pageSize: PAGE_SIZE,
