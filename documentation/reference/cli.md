@@ -190,21 +190,23 @@ shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run
   files (git diff), `shapio schema apply`, then import again.
   --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.
 
-shapio import wordpress <export.xml> --plan <dir> [--site <key>] [--force]
+shapio import wordpress <export.xml> --plan <dir> [--site <key> | --shared] [--force]
        shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--site <key>] [--media-dir <uploads dir>]
   --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json; it sends nothing.
-  With --site (or SHAPIO_SITE) the models belong to that site (<dir>/schema/sites/<key>/); without, they are shared;
-  --map without --site then imports into the planned site.
+  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site
+  ("default"); --shared shares them with all sites (applying them needs a network admin token).
+  --map without --site imports into the planned site.
   Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
   it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),
   creates every post and page as a draft, and opens change sets with the published ones. Re-run --map to resume.
 
-shapio import strapi <export.tar.gz[.enc]> --plan <dir> [--key <encryption key>] [--site <key>] [--force]
+shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--force]
        shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]
   --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models
-  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. With --site (or SHAPIO_SITE)
-  they belong to that site (<dir>/schema/sites/<key>/); without, they are shared (--map
-  without --site imports into the planned site). Apply the schema with
+  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. They belong to one site
+  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site ("default"); --shared shares
+  them with all sites (applying them needs a network admin token). --map without --site imports into the
+  planned site. Apply the schema with
   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
   it uploads the media, creates every document as a draft and opens change sets with the published ones.
   Strapi 5 only.

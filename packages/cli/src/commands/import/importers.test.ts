@@ -23,6 +23,15 @@ describe('shapio import wordpress | strapi arguments', () => {
     expect((await run(['strapi', 'x.tar.gz', '--map', 'out'])).stderr).toContain('leave the file out');
   });
 
+  it('takes --shared on --plan only, and not with --site', async () => {
+    expect((await run(['strapi', 'x.tar', '--plan', 'out', '--shared', '--site', 'blog'])).stderr).toContain(
+      'Pass either --site <key> or --shared, not both',
+    );
+    expect((await run(['strapi', '--map', 'out', '--shared'])).stderr).toContain(
+      '--shared is a --plan option',
+    );
+  });
+
   it('needs a token to map', async () => {
     const result = await run(['wordpress', '--map', 'out']);
     expect(result.code).toBe(1);

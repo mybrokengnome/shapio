@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { sha256File, type ImportMap } from '../../import/importMap.js';
 import { runMap } from '../../import/mapper.js';
 import { checkPlanDirectory, writePlan } from '../../import/planner.js';
+import { resolvePlanSite } from '../../import/planSite.js';
 import { formatPlanSummary } from '../../import/summary.js';
 import type { ImportSource } from '../../import/types.js';
 import type { CliCommand, CliIo } from '../../types.js';
@@ -39,6 +40,7 @@ const parse = (args: readonly string[], spec: ImporterSpec): Parsed => {
       plan: { type: 'string' },
       map: { type: 'string' },
       force: { type: 'boolean', default: false },
+      shared: { type: 'boolean', default: false },
       url: { type: 'string' },
       token: { type: 'string' },
       site: { type: 'string' },
@@ -58,10 +60,16 @@ const parse = (args: readonly string[], spec: ImporterSpec): Parsed => {
   if (values.map !== undefined && positionals[0]) {
     throw new UsageError('--map reads the export recorded in the plan: leave the file out');
   }
+  if (values.map !== undefined && values.shared) {
+    throw new UsageError('--shared is a --plan option: --map imports where the plan put the models');
+  }
+  if (values.shared && values.site !== undefined) {
+    throw new UsageError('Pass either --site <key> or --shared, not both');
+  }
   return { values, file: positionals[0] };
 };
 
-/** `--site`, else SHAPIO_SITE: the site the plan's schema belongs to and the map step writes to. */
+/** `--site`, else SHAPIO_SITE: the site `--map` writes to (else the site the plan recorded). */
 const siteOf = (values: ImporterValues, io: CliIo) =>
   ((values.site as string | undefined) ?? io.env.SHAPIO_SITE)?.trim() || undefined;
 
@@ -69,15 +77,18 @@ const runPlan = async (spec: ImporterSpec, file: string, values: ImporterValues,
   const dir = resolve(String(values.plan));
   const path = resolve(file);
   await checkPlanDirectory(dir, values.force === true);
+  const planSite = resolvePlanSite(
+    { site: values.site as string | undefined, shared: values.shared === true },
+    io.env,
+  );
   const source = await spec.plan(path, dir, values);
-  const site = siteOf(values, io);
   const { definitions } = await writePlan(
     dir,
     source,
     { kind: source.kind, path, sha256: await sha256File(path) },
-    { force: values.force === true, site },
+    { force: values.force === true, site: planSite.site },
   );
-  io.stdout(formatPlanSummary(source, definitions, dir, spec.name, site));
+  io.stdout(formatPlanSummary(source, definitions, dir, spec.name, planSite));
   return 0;
 };
 

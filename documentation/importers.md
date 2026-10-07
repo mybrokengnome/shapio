@@ -8,8 +8,9 @@ collected into a [change set](change-sets.md) that you review and ship.
 An import has two steps, with a schema apply between them:
 
 1. **Plan** (`--plan <dir>`) reads the export and writes the models it proposes as ordinary
-   [schema files](schema-sync.md) into `<dir>/schema`, plus `<dir>/import-map.json`. It runs offline: it needs
-   no URL or token and sends nothing anywhere.
+   [schema files](schema-sync.md) into `<dir>/schema` (the primary site's folder, `sites/default/`, unless you
+   say otherwise: see below), plus `<dir>/import-map.json`. It runs offline: it needs no URL or token and sends
+   nothing anywhere.
 2. **Review and apply** the files, like any schema change:
    `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`. You can rename API IDs, labels and
    descriptions, or delete fields you don't want, before applying. Or copy the files into your project's
@@ -23,21 +24,21 @@ npx shapio schema apply --dir ./import/schema --lock ./import/schema-lock.json
 npx shapio import wordpress --map ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
 ```
 
-`--map` takes the usual remote-command options: `--url` (or `SHAPIO_URL`), `--token` (or `SHAPIO_TOKEN`, an
-admin API token that may create models' entries, upload media and manage change sets), and `--site <key>` (or
-`SHAPIO_SITE`) to import into one [site](sites.md) of a multi-site instance.
+`schema apply` and `--map` take the usual remote-command options: `--url` (or `SHAPIO_URL`), `--token` (or
+`SHAPIO_TOKEN`), and `--site <key>` (or `SHAPIO_SITE`). The token is an admin API token (Settings → API tokens)
+with the admin or owner role: it creates the models, entries and media and manages change sets.
 
-**Which token applies the schema.** Without `--site`, the plan's models are shared with all sites, and creating
-shared models needs a **network** admin token: in Settings → API tokens, set _Works on_ to _Every site (network
-token)_. An admin token of one site (the default choice, even on an instance with a single site) is refused with
-`FORBIDDEN_SCOPE` and nothing is applied. With a token of one site, plan for that site instead:
-`--plan ./import --site default` (`default` is the primary site's key), then apply and map with `--site default`
-as `--plan` prints.
+**Which site the models belong to.** The planned models belong to one [site](sites.md): the one `--site <key>`
+(or `SHAPIO_SITE`) names, else the primary site (key `default`). On an instance with one site, that is the only
+site, so the commands above need no `--site` and work with an ordinary admin token. The plan records the site,
+so `--map` without `--site` imports into it, and a `--map --site` that names another site is refused.
 
-On a multi-site instance, plan with `--site <key>` (or `SHAPIO_SITE`) too: the planned models then belong to
-that site (`<dir>/schema/sites/<key>/`, applied with `shapio schema apply … --site <key>`), and the plan records
-the site, so `--map` without `--site` imports into it. A `--map --site` that names another site is refused.
-Without `--site`, the plan's models are shared with all sites.
+- **Another site of a multi-site instance:** plan with `--site <key>`. The files go in
+  `<dir>/schema/sites/<key>/` and `--plan` prints the apply and map commands with `--site <key>`.
+- **Models shared with all sites:** plan with `--shared`. The files go in the shared folders
+  (`<dir>/schema/models/` and `components/`), and applying them needs a **network** admin token (Settings → API
+  tokens, _Works on_: _Every site (network token)_); a token of one site is refused with `FORBIDDEN_SCOPE` and
+  nothing is applied.
 
 ## What happens to your edits and re-runs
 

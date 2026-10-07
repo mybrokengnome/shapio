@@ -1,6 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 import type { SchemaDefinition } from '@shapio/schema';
 import { PLAN_LOCK_FILE, PLAN_SCHEMA_DIR } from './planner.js';
+import type { PlanSite } from './planSite.js';
 import type { ImportSource } from './types.js';
 
 /** Relative to the working directory when inside it, else absolute (what to paste into the next command). */
@@ -15,7 +16,7 @@ export const formatPlanSummary = (
   definitions: readonly SchemaDefinition[],
   dir: string,
   command: string,
-  site?: string,
+  { site, explicit }: PlanSite,
 ): string => {
   const keyOf = new Map(source.definitions.map((definition) => [definition.apiKey, definition.key]));
   const lines = [`Planned ${definitions.length} definition(s) in ${display(`${dir}/${PLAN_SCHEMA_DIR}`)}:`];
@@ -35,11 +36,14 @@ export const formatPlanSummary = (
   );
   lines.push(...source.notes);
   lines.push(
-    site
-      ? `The models and components will belong to site "${site}".`
-      : 'No --site given: the models and components will be shared with all sites. Plan again with --site <key> to keep them on one site.',
+    !site
+      ? 'The models and components will be shared with all sites (--shared): applying them needs a network admin token.'
+      : explicit
+        ? `The models and components will belong to site "${site}".`
+        : `The models and components will belong to the primary site ("${site}"). Plan with --site <key> for another site, or --shared to share them with all sites.`,
   );
-  const siteFlag = site ? ` --site ${site}` : '';
+  // The primary site by default: apply and map find it without --site (the token's site, or the plan's).
+  const siteFlag = site && explicit ? ` --site ${site}` : '';
   lines.push(
     'Next:',
     '  1. Review the files: rename API IDs or delete fields you do not want (entries follow the stable IDs).',

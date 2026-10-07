@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { REMOTE_COMMANDS, type CliIo } from '@shapio/cli';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildStrapiExport } from '../../../packages/cli/src/testing/strapiExport.js';
-import { SITE_HEADER } from '../src/constants/sites.js';
+import { PRIMARY_SITE_ID, SITE_HEADER } from '../src/constants/sites.js';
 import { expectStatus, runContentSchemaJobs } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { API_ROOT } from './helpers/env.js';
@@ -70,8 +70,14 @@ type Instance = {
   applyPlan: (dir: string, extra?: string[]) => Promise<void>;
 };
 
-/** A listening instance on its own database (each importer plans models with the same API IDs). */
-const useImportInstance = (): Instance => {
+/**
+ * A listening instance on its own database (each importer plans models with the same API IDs). `admin` is the
+ * owner (what a person does in the admin, such as adding a locale). The CLI runs with `cliToken`: by default
+ * an ordinary admin token of the primary site, the kind Settings → API tokens makes unless told otherwise.
+ */
+const useImportInstance = ({
+  cliToken = 'primarySiteAdmin',
+}: { cliToken?: 'primarySiteAdmin' | 'networkOwner' } = {}): Instance => {
   const database = useTestDatabase();
   const instance = {} as Instance;
   let testApp: TestApp | undefined;
@@ -82,11 +88,14 @@ const useImportInstance = (): Instance => {
       env: { MEDIA_PATH: join(instance.workdir, 'storage') },
     });
     await testApp.app.listen({ host: '127.0.0.1', port: 0 });
-    const token = await createRoleToken(database.current.db, 'owner');
-    const admin = schemaClient(testApp.app, token);
+    const ownerToken = await createRoleToken(database.current.db, 'owner');
+    const admin = schemaClient(testApp.app, ownerToken);
     const env = {
       SHAPIO_URL: `http://127.0.0.1:${(testApp.app.server.address() as AddressInfo).port}`,
-      SHAPIO_TOKEN: token,
+      SHAPIO_TOKEN:
+        cliToken === 'networkOwner'
+          ? ownerToken
+          : await createRoleToken(database.current.db, 'admin', PRIMARY_SITE_ID),
     };
     Object.assign(instance, {
       admin,
@@ -155,7 +164,7 @@ describe('shapio import wordpress', () => {
     const mapped = await runCli('import', ['wordpress', '--map', dir], instance.env);
     expect(mapped.code, mapped.stderr).toBe(0);
     expect(mapped.stdout).toMatch(
-      /Change set "Import from WordPress": http:\/\/127\.0\.0\.1:\d+\/admin\/changes\//,
+      /Change set "Import from WordPress": http:\/\/127\.0\.0\.1:\d+\/admin\/s\/default\/changes\//,
     );
     expect(mapped.stdout).toContain('1 WordPress shortcodes kept as text');
 
@@ -217,7 +226,7 @@ describe('shapio import wordpress', () => {
 });
 
 describe('shapio import onto one site of several', () => {
-  const instance = useImportInstance();
+  const instance = useImportInstance({ cliToken: 'networkOwner' });
 
   it("plans with --site into the site's folder; the models and entries belong to that site only", async () => {
     expectStatus(await instance.admin.post('/api/admin/sites', { key: 'blog', name: 'Blog' }), 201);
@@ -279,6 +288,12 @@ describe('shapio import strapi', () => {
     const planned = await runCli('import', ['strapi', archive, '--plan', dir, '--key', 'k3y'], instance.env);
     expect(planned.code, planned.stderr).toBe(0);
     expect(planned.stdout).toContain('Draft and publish is turned on for author');
+    // No --site on a single-site instance: the primary site's models, which an ordinary admin token applies.
+    expect(planned.stdout).toContain('will belong to the primary site ("default")');
+    expect(planned.stdout).toContain(`schema-lock.json\n  3. shapio import strapi --map ${dir}\n`);
+    expect(
+      await readFile(join(dir, 'schema', 'sites', 'default', 'models', 'article.json'), 'utf8'),
+    ).toContain('"apiKey": "article"');
     await instance.applyPlan(dir);
     const mapped = await runCli('import', ['strapi', '--map', dir], instance.env);
     expect(mapped.code, `${mapped.stdout}\n${mapped.stderr}`).toBe(0);
@@ -324,5 +339,23 @@ describe('shapio import strapi', () => {
       'author/en',
       'homepage/en',
     ]);
+  });
+
+  it('plans shared models with --shared, which an admin token of one site may not apply', async () => {
+    const archive = await buildStrapiExport(join(instance.workdir, 'strapi-shared-source'));
+    const dir = join(instance.workdir, 'strapi-shared');
+    const planned = await runCli('import', ['strapi', archive, '--plan', dir, '--shared'], instance.env);
+    expect(planned.code, planned.stderr).toBe(0);
+    expect(planned.stdout).toContain('shared with all sites (--shared)');
+    expect(await readFile(join(dir, 'schema', 'models', 'article.json'), 'utf8')).toContain(
+      '"apiKey": "article"',
+    );
+    const applied = await runCli(
+      'schema',
+      ['apply', '--dir', join(dir, 'schema'), '--lock', join(dir, 'schema-lock.json'), '--no-wait'],
+      instance.env,
+    );
+    expect(applied.code).toBe(1);
+    expect(applied.stderr).toContain('apply with a network token');
   });
 });

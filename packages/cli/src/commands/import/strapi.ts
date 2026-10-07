@@ -13,12 +13,13 @@ export const importStrapiCommand = createImporterCommand({
   label: 'Strapi',
   summary: 'Import a Strapi 5 export: --plan writes schema files, --map creates drafts and change sets',
   usage:
-    'shapio import strapi <export.tar.gz[.enc]> --plan <dir> [--key <encryption key>] [--site <key>] [--force]\n' +
+    'shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--force]\n' +
     '       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]\n' +
     '  --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models\n' +
-    '  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. With --site (or SHAPIO_SITE)\n' +
-    '  they belong to that site (<dir>/schema/sites/<key>/); without, they are shared (--map\n' +
-    '  without --site imports into the planned site). Apply the schema with\n' +
+    '  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. They belong to one site\n' +
+    '  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site ("default"); --shared shares\n' +
+    '  them with all sites (applying them needs a network admin token). --map without --site imports into the\n' +
+    '  planned site. Apply the schema with\n' +
     '  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:\n' +
     '  it uploads the media, creates every document as a draft and opens change sets with the published ones.\n' +
     '  Strapi 5 only.',
