@@ -6,6 +6,20 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-07
+
+### Fixed
+
+- **Starters: `listAll` takes the caller's `seo` and `richText`.** The starters' list helper spread the caller's
+  query before its defaults, so `seo=resolved` always won and a collection without SEO fields (a redirect type)
+  was refused. The defaults now come first and `listAll` is exported, so such a collection is read with
+  `{ seo: 'raw' }`.
+- **Astro starter: `build:incremental` no longer crashes on models without a `slug` field.** It looks up slugs
+  only for pages and articles.
+- **Docs: `npx @shapio/cms` outside a Shapio project.** npm does not allow the unscoped name `shapio`, so a bare
+  `npx shapio` only works where `@shapio/cms` is installed. Schema sync, importers, MCP setup and site export
+  now show `npx @shapio/cms`.
+
 ## [0.5.2] - 2026-10-07
 
 ### Added

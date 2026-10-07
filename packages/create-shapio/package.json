@@ -1,6 +1,6 @@
 {
   "name": "create-shapio",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Scaffold a new Shapio project (npx create-shapio my-cms) or a site starter (--site astro|next|sveltekit)",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",

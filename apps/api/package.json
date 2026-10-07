@@ -1,6 +1,6 @@
 {
   "name": "@shapio/cms",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Self-hosted headless CMS: model content live, deliver it over REST and GraphQL.",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",

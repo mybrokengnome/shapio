@@ -1,6 +1,6 @@
 {
   "name": "@shapio/schema",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Shapio model definition types, validators, diff and schema file format.",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",

@@ -1,6 +1,6 @@
 {
   "name": "@shapio/editor-sdk",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Contract and helpers for custom Shapio field editors loaded at runtime.",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",
