@@ -223,7 +223,7 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
       // A code field's language is a label for readers; the stored string is the same.
       return result('metadata');
     case 'validate':
-      return to === true ? validation(true) : result('metadata');
+      return validation(to === true);
     case 'multiple':
     case 'repeatable':
     case 'cardinality': {

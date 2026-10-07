@@ -653,12 +653,12 @@ describe('classifyChange: code fields', () => {
     expectClass(setting({ language: 'html' }, { language: 'css' }), { category: 'metadata' });
   });
 
-  it('turning JSON validation on validates existing values; turning it off is metadata', () => {
+  it('turning JSON validation on validates existing values; turning it off is additive', () => {
     expectClass(setting({ language: 'json' }, { validate: true }), {
       category: 'validation',
       prerequisites: ['validateValues'],
     });
-    expectClass(setting({ language: 'json', validate: true }, { validate: false }), { category: 'metadata' });
+    expectClass(setting({ language: 'json', validate: true }, { validate: false }), { category: 'additive' });
   });
 });
 
