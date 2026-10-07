@@ -77,6 +77,7 @@ const hasIndex = (field: FieldDefinition | undefined): boolean =>
 const API_SCALAR: Readonly<Record<DataType, string>> = {
   string: 'String',
   text: 'String',
+  code: 'String',
   slug: 'String',
   email: 'String',
   url: 'String',
@@ -99,12 +100,17 @@ const API_SCALAR: Readonly<Record<DataType, string>> = {
 };
 
 const PLAIN_TEXT_TYPES: ReadonlySet<DataType> = new Set(['string', 'text']);
+/** Types any string value is valid for, so a same-family change to one without constraints only widens. */
+const TEXT_TARGETS: ReadonlySet<DataType> = new Set(['string', 'text', 'code']);
 const SCALAR_FAMILIES = new Set(['jsonString', 'jsonNumber', 'numericString', 'boolean']);
 
 const hasTextConstraints = (field: FieldDefinition | undefined) => {
   const settings = (field?.settings ?? {}) as Record<string, unknown>;
   return (
-    settings.minLength !== undefined || settings.maxLength !== undefined || settings.pattern !== undefined
+    settings.minLength !== undefined ||
+    settings.maxLength !== undefined ||
+    settings.pattern !== undefined ||
+    settings.validate === true
   );
 };
 
@@ -117,12 +123,13 @@ const classifyTypeChange = (
   to: DataType,
   after: FieldDefinition | undefined,
 ): Classification => {
-  const breaking = API_SCALAR[from] !== API_SCALAR[to];
+  // A code field has no filters (REST operators, GraphQL `XFilter` key), so becoming one is breaking.
+  const breaking = API_SCALAR[from] !== API_SCALAR[to] || (to === 'code' && from !== 'code');
   const fromFamily = STORAGE_FAMILY[from];
   const toFamily = STORAGE_FAMILY[to];
   if (fromFamily === toFamily) {
     const widening =
-      (fromFamily === 'jsonString' && PLAIN_TEXT_TYPES.has(to) && !hasTextConstraints(after)) ||
+      (fromFamily === 'jsonString' && TEXT_TARGETS.has(to) && !hasTextConstraints(after)) ||
       (from === 'integer' && to === 'number') ||
       (from === 'biginteger' &&
         to === 'decimal' &&
@@ -136,7 +143,7 @@ const classifyTypeChange = (
     (fromFamily === 'jsonNumber' && toFamily === 'numericString') ||
     (fromFamily === 'numericString' && toFamily === 'jsonNumber');
   const toText = SCALAR_FAMILIES.has(fromFamily) && PLAIN_TEXT_TYPES.has(to);
-  const textToRichtext = fromFamily === 'jsonString' && to === 'richtext';
+  const textToRichtext = fromFamily === 'jsonString' && from !== 'code' && to === 'richtext';
   const richtextToText = from === 'richtext' && PLAIN_TEXT_TYPES.has(to);
   const supported = numericPair || toText || textToRichtext || richtextToText;
   return result('conversion', {
@@ -212,7 +219,11 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
       // Narrowing the allowed set re-validates; an absent allowedKinds/protocols list means "any".
       return validation(to !== undefined && (from === undefined || removesAny(from, to)));
     case 'sourceFieldId':
+    case 'language':
+      // A code field's language is a label for readers; the stored string is the same.
       return result('metadata');
+    case 'validate':
+      return to === true ? validation(true) : result('metadata');
     case 'multiple':
     case 'repeatable':
     case 'cardinality': {

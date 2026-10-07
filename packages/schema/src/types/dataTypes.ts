@@ -2,6 +2,7 @@
 export const DATA_TYPES = [
   'string',
   'text',
+  'code',
   'richtext',
   'number',
   'integer',
@@ -92,6 +93,7 @@ export type StorageFamily =
 export const STORAGE_FAMILY: Readonly<Record<DataType, StorageFamily>> = {
   string: 'jsonString',
   text: 'jsonString',
+  code: 'jsonString',
   slug: 'jsonString',
   email: 'jsonString',
   url: 'jsonString',

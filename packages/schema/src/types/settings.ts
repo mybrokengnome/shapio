@@ -29,6 +29,10 @@ const countRules = {
 export const MEDIA_KINDS = ['image', 'video', 'audio', 'document', 'other'] as const;
 export const RELATION_CARDINALITIES = ['one', 'many'] as const;
 
+/** Languages a `code` field can hold. The language reaches the API (OpenAPI, GraphQL, generated types). */
+export const CODE_LANGUAGES = ['plain', 'html', 'css', 'javascript', 'json', 'yaml', 'markdown'] as const;
+export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
+
 export const EnumValueSchema = Type.Object(
   {
     value: Type.String({ minLength: 1, maxLength: 64 }),
@@ -43,6 +47,15 @@ export const SETTINGS_SCHEMAS = {
     closed,
   ),
   text: Type.Object(lengthRules, closed),
+  code: Type.Object(
+    {
+      language: Type.Optional(Type.Enum(CODE_LANGUAGES)),
+      ...lengthRules,
+      /** JSON only: a value that does not parse is refused. */
+      validate: Type.Optional(Type.Boolean()),
+    },
+    closed,
+  ),
   richtext: Type.Object(
     {
       formatVersion: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -121,7 +134,11 @@ type SettingsSchemas = typeof SETTINGS_SCHEMAS;
 export type DataTypeSettingsInput = { [T in DataType]: Static<SettingsSchemas[T]> };
 
 /** Settings after normalization: the defaulted keys are always present. */
-export type DataTypeSettings = Omit<DataTypeSettingsInput, 'richtext' | 'enum' | 'media' | 'component'> & {
+export type DataTypeSettings = Omit<
+  DataTypeSettingsInput,
+  'code' | 'richtext' | 'enum' | 'media' | 'component'
+> & {
+  code: DataTypeSettingsInput['code'] & { language: CodeLanguage };
   richtext: DataTypeSettingsInput['richtext'] & { formatVersion: number };
   enum: DataTypeSettingsInput['enum'] & { multiple: boolean };
   media: DataTypeSettingsInput['media'] & { multiple: boolean };

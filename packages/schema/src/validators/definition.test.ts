@@ -23,6 +23,7 @@ describe('validateDefinition', () => {
           sortable: true,
         }),
         field({ apiKey: 'body', type: 'text' }),
+        field({ apiKey: 'snippet', type: 'code' }),
         field({ apiKey: 'content', type: 'richtext' }),
         field({ apiKey: 'rating', type: 'number', settings: settings({ min: 0, max: 5 }) }),
         field({ apiKey: 'count', type: 'integer' }),
@@ -177,6 +178,39 @@ describe('validateDefinition', () => {
   it('rejects an unsupported rich-text format version', () => {
     expect(codesFor({ apiKey: 'r', type: 'richtext', settings: settings({ formatVersion: 2 }) })).toEqual([
       '/fields/0/settings/formatVersion INVALID_SETTINGS',
+    ]);
+  });
+
+  it('accepts code settings and only validates JSON code', () => {
+    expect(
+      codesFor(
+        { apiKey: 'a', type: 'code', settings: settings({ language: 'html', minLength: 1, maxLength: 500 }) },
+        { apiKey: 'b', type: 'code', settings: settings({ language: 'json', validate: true }) },
+        { apiKey: 'c', type: 'code', defaultValue: '<p></p>', settings: settings({ language: 'html' }) },
+      ),
+    ).toEqual([]);
+    expect(
+      codesFor(
+        { apiKey: 'a', type: 'code', settings: settings({ language: 'yaml', validate: true }) },
+        { apiKey: 'b', type: 'code', settings: settings({ validate: true }) },
+      ),
+    ).toEqual([
+      '/fields/0/settings/validate INVALID_SETTINGS',
+      '/fields/1/settings/validate INVALID_SETTINGS',
+    ]);
+    expect(codesFor({ apiKey: 'c', type: 'code', defaultValue: 3 })).toEqual([
+      '/fields/0/defaultValue INVALID_DEFAULT_VALUE',
+    ]);
+  });
+
+  it('refuses unique, filterable, sortable and a non-code editor on code fields', () => {
+    expect(codesFor({ apiKey: 'c', type: 'code', unique: true, filterable: true, sortable: true })).toEqual([
+      '/fields/0/unique UNSUPPORTED_FLAG',
+      '/fields/0/filterable UNSUPPORTED_FLAG',
+      '/fields/0/sortable UNSUPPORTED_FLAG',
+    ]);
+    expect(codesFor({ apiKey: 'c', type: 'code', editor: { id: 'textarea' } })).toEqual([
+      '/fields/0/editor/id INCOMPATIBLE_EDITOR',
     ]);
   });
 

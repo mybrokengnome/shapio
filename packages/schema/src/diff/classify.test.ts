@@ -566,6 +566,102 @@ describe('classifyChange: validation settings', () => {
   });
 });
 
+describe('classifyChange: code fields', () => {
+  const EDITORS: Partial<Record<FieldInput['type'], string>> = {
+    code: 'codeEditor',
+    text: 'textarea',
+    string: 'textInput',
+    richtext: 'richText',
+    number: 'numberInput',
+  };
+  /** The type change alone (a type change also swaps the editor, which is a separate editorSwap). */
+  const retype = (
+    from: FieldInput['type'],
+    to: FieldInput['type'],
+    fromSettings: Record<string, unknown> = {},
+    toSettings: Record<string, unknown> = {},
+  ) => {
+    const before = base({ type: from, settings: settings(fromSettings) });
+    const after = editField(
+      before,
+      (f) =>
+        ({
+          ...f,
+          type: to,
+          settings: toSettings,
+          editor: { id: EDITORS[to] ?? f.editor.id, options: {} },
+        }) as FieldDefinition,
+    );
+    const change = classify(before, after).find((found) => found.kind === 'field.type');
+    expect(change).toBeDefined();
+    return change as ClassifiedChange;
+  };
+
+  it('text or string to code keeps the stored string but is breaking: code fields have no filters', () => {
+    expectClass(retype('text', 'code', {}, { language: 'html' }), { category: 'additive', breaking: true });
+    expectClass(retype('string', 'code', { pattern: '^a' }, { language: 'plain' }), {
+      category: 'additive',
+      breaking: true,
+    });
+  });
+
+  it('code to text or string is not breaking', () => {
+    expectClass(retype('code', 'text', { language: 'html' }), { category: 'additive' });
+    expectClass(retype('code', 'string', { language: 'json', validate: true }), { category: 'additive' });
+  });
+
+  it('constraints on the target re-validate existing values instead of widening', () => {
+    const validates = { category: 'validation' as const, prerequisites: ['validateValues' as const] };
+    expectClass(retype('text', 'code', {}, { language: 'plain', maxLength: 100 }), {
+      ...validates,
+      breaking: true,
+    });
+    expectClass(retype('text', 'code', {}, { language: 'json', validate: true }), {
+      ...validates,
+      breaking: true,
+    });
+    expectClass(retype('code', 'text', { language: 'html' }, { minLength: 3 }), validates);
+  });
+
+  it('rich text and code do not convert into each other; neither does a number into code', () => {
+    expectClass(retype('code', 'richtext', { language: 'html' }, { formatVersion: 1 }), {
+      category: 'conversion',
+      breaking: true,
+      supported: false,
+    });
+    expectClass(retype('richtext', 'code', { formatVersion: 1 }, { language: 'html' }), {
+      category: 'conversion',
+      breaking: true,
+      supported: false,
+    });
+    expectClass(retype('number', 'code', {}, { language: 'plain' }), {
+      category: 'conversion',
+      breaking: true,
+      supported: false,
+    });
+  });
+
+  const setting = (from: Record<string, unknown>, to: Record<string, unknown>) => {
+    const before = base({ type: 'code', settings: settings(from) });
+    return only(
+      before,
+      editField(before, (f) => ({ ...f, settings: { ...f.settings, ...to } }) as FieldDefinition),
+    );
+  };
+
+  it('a language change is metadata', () => {
+    expectClass(setting({ language: 'html' }, { language: 'css' }), { category: 'metadata' });
+  });
+
+  it('turning JSON validation on validates existing values; turning it off is metadata', () => {
+    expectClass(setting({ language: 'json' }, { validate: true }), {
+      category: 'validation',
+      prerequisites: ['validateValues'],
+    });
+    expectClass(setting({ language: 'json', validate: true }, { validate: false }), { category: 'metadata' });
+  });
+});
+
 describe('summarizeChanges', () => {
   it('orders prerequisites and reports breaking/destructive/metadata-only', () => {
     const before = base();

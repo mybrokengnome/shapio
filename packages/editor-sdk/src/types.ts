@@ -35,6 +35,7 @@ export type DynamicZoneItem = ComponentValue & { __component: string };
 export type EditorValueMap = {
   string: string;
   text: string;
+  code: string;
   richtext: RichTextValue;
   number: number;
   integer: number;

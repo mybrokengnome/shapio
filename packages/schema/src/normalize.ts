@@ -22,6 +22,7 @@ export type DefinitionInputWithIds =
   | (WithIds<ComponentDefinitionInput> & { fields: FieldInputWithId[] });
 
 const SETTINGS_DEFAULTS: Partial<Record<FieldDefinition['type'], Record<string, unknown>>> = {
+  code: { language: 'plain' },
   richtext: { formatVersion: RICHTEXT_FORMAT_VERSION },
   enum: { multiple: false },
   media: { multiple: false },
