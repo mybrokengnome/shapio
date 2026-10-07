@@ -121,11 +121,11 @@ webhooks (`X-Shapio-Event: deployment.trigger`, `X-Shapio-Delivery: <run id>`):
 Your receiver verifies the signature, then builds with `SHAPIO_SNAPSHOT=<snapshot>` so the site shows exactly
 that moment, and reports progress to `callbackUrl`: a `POST` of `{ "runId", "status": "building" | "deployed"
 | "failed", "siteUrl"?, "logUrl"?, "message"? }`, signed with the connection's secret in the same headers.
-The [example site](example-site.md) includes the sender:
+The [Astro starter](starters.md) includes the sender:
 
 ```sh
 SHAPIO_CALLBACK_URL=… SHAPIO_RUN_ID=… SHAPIO_CALLBACK_SECRET=whsec_… \
-  pnpm --filter example-astro report-status deployed "Built snapshot 42"
+  npm run report-status -- deployed "Built snapshot 42"
 ```
 
 Without callbacks a generic run stays at _triggered_: Shapio knows the trigger was accepted, not how the build

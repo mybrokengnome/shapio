@@ -141,8 +141,8 @@ whether to build at all. It reads the snapshot of the last build from `dist/buil
 runs the build pinned to the new snapshot, or skips it when nothing this site reads changed:
 
 ```sh
-pnpm --filter example-astro build:incremental            # build only if needed
-pnpm --filter example-astro build:incremental --dry-run  # just print the routes
+npm run build:incremental             # build only if needed
+npm run build:incremental -- --dry-run  # just print the routes
 ```
 
 ```text
