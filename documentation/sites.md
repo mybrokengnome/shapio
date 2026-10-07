@@ -316,8 +316,8 @@ A bundle holds one site's content, media, app users, webhooks and deployment con
 schema (the site's own content types and the shared ones, each marked with its scope), locales and roles:
 
 ```sh
-npx shapio export --url https://cms.example.com --token shp_… --site marketing marketing.ndjson
-npx shapio import --url https://cms.example.com --token shp_… --site docs marketing.ndjson
+npx @shapio/cms export --url https://cms.example.com --token shp_… --site marketing marketing.ndjson
+npx @shapio/cms import --url https://cms.example.com --token shp_… --site docs marketing.ndjson
 ```
 
 Without `--site` (or `SHAPIO_SITE`) the token's site is used, else the primary site. On import, the exported

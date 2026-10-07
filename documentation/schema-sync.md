@@ -6,13 +6,15 @@ files the way git syncs commits: **pull**, edit, **apply**, and a rejected apply
 you. Nothing is ever locked by default.
 
 All the `shapio schema` commands talk to an instance over HTTP with an admin API token (Settings → API tokens), never to its
-database. Give them `--url` and `--token`, or set `SHAPIO_URL` and `SHAPIO_TOKEN`.
+database. Give them `--url` and `--token`, or set `SHAPIO_URL` and `SHAPIO_TOKEN`. These commands run from
+anywhere, usually your website repo or a laptop, so the examples use `npx @shapio/cms`; inside a project made by
+`create-shapio`, `npx shapio` is the same command.
 
 ## Pull
 
 ```sh
 export SHAPIO_URL=https://cms.example.com SHAPIO_TOKEN=shp_…
-npx shapio schema pull
+npx @shapio/cms schema pull
 ```
 
 ```text
@@ -36,8 +38,8 @@ instance assigns them on apply and rewrites the file in canonical form.
 ## Diff and apply
 
 ```sh
-npx shapio schema diff     # what apply would do; changes nothing
-npx shapio schema apply
+npx @shapio/cms schema diff     # what apply would do; changes nothing
+npx @shapio/cms schema apply
 ```
 
 ```text
@@ -125,8 +127,8 @@ To share a site's content type with all sites, or keep a shared one on one site,
 then pull to move its file:
 
 ```sh
-npx shapio schema scope post --shared --site blog   # share blog's post with all sites
-npx shapio schema scope post --site blog            # keep the shared post on blog only
+npx @shapio/cms schema scope post --shared --site blog   # share blog's post with all sites
+npx @shapio/cms schema scope post --site blog            # keep the shared post on blog only
 ```
 
 Keeping a shared type on one site is refused while other sites have entries of it (`SCOPE_IN_USE`, with the

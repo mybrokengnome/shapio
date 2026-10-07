@@ -584,7 +584,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
   `--allow-ship`), `snapshots_list`, `snapshots_changes`, `snapshots_restore`. Resources
   ([`resources.ts`](../packages/mcp/src/resources.ts)): `shapio://schema/{apiKey}`, `shapio://docs/delivery-api`.
   Prompts ([`prompts.ts`](../packages/mcp/src/prompts.ts)): `model_content_type`, `review_change_set`.
-- **Example:** `npx shapio mcp --client cursor` prints a ready configuration for your instance.
+- **Example:** `npx @shapio/cms mcp --client cursor` prints a ready configuration for your instance.
 - **Versioning:** tool names are stable; the package follows semver.
 - **Limits:** the server enforces everything as for the admin (role, field permissions, validation, version
   guards, change set review). Give the agent's role no `changes.ship`, so it cannot ship even if told to.

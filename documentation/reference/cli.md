@@ -6,6 +6,9 @@ One command, `shapio`, ships with the `@shapio/cms` npm package (and the Docker 
 in a project made by `create-shapio`, or `docker compose exec shapio node node_modules/@shapio/cms/dist/cli.js` in
 the container. `shapio help` lists the commands.
 
+Anywhere else (a website repo, a folder holding an export, CI), run it as `npx @shapio/cms`: the package is
+scoped, so a bare `npx shapio` finds nothing outside a project that installs it. The arguments are the same.
+
 - **Server commands** run on the machine that runs Shapio: they read its environment variables (and a `.env`
   in the working directory) and talk to its database directly.
 - **Remote commands** talk to a running instance over HTTP, never to its database. They take `--url` (default

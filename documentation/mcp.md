@@ -32,10 +32,10 @@ Give the agent its own role, so its token can do only what you want it to.
 `SHAPIO_URL`, else `PUBLIC_URL` + `BASE_PATH`):
 
 ```sh
-npx shapio mcp                      # every client
-npx shapio mcp --client claude-code
-npx shapio mcp --client generic     # the stdio server definition, for any other MCP client
-npx shapio mcp --site marketing     # a multi-site instance: work on the marketing site
+npx @shapio/cms mcp                      # every client
+npx @shapio/cms mcp --client claude-code
+npx @shapio/cms mcp --client generic     # the stdio server definition, for any other MCP client
+npx @shapio/cms mcp --site marketing     # a multi-site instance: work on the marketing site
 ```
 
 Replace `<admin API token>` with the token from step 1.
@@ -61,7 +61,7 @@ claude mcp add shapio --env SHAPIO_URL=https://cms.example.com --env "SHAPIO_TOK
 ```
 
 **Any MCP client (stdio)**: `@shapio/mcp` is a stdio MCP server, so any client that can start one works. Give
-it this command and environment (`npx shapio mcp --client generic` prints it as JSON):
+it this command and environment (`npx @shapio/cms mcp --client generic` prints it as JSON):
 
 | Setting        | Value                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------- |

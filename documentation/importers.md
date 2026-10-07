@@ -19,14 +19,16 @@ An import has two steps, with a schema apply between them:
    (referenced entries first), then opens the change set(s) and prints their links.
 
 ```sh
-npx shapio import wordpress export.xml --plan ./import
-npx shapio schema apply --dir ./import/schema --lock ./import/schema-lock.json
-npx shapio import wordpress --map ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
+npx @shapio/cms import wordpress export.xml --plan ./import
+npx @shapio/cms schema apply --dir ./import/schema --lock ./import/schema-lock.json
+npx @shapio/cms import wordpress --map ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
 ```
 
 `schema apply` and `--map` take the usual remote-command options: `--url` (or `SHAPIO_URL`), `--token` (or
 `SHAPIO_TOKEN`), and `--site <key>` (or `SHAPIO_SITE`). The token is an admin API token (Settings → API tokens)
-with the admin or owner role: it creates the models, entries and media and manages change sets.
+with the admin or owner role: it creates the models, entries and media and manages change sets. Run the commands
+from the folder that holds the export: `npx @shapio/cms` works anywhere (inside a project made by `create-shapio`,
+`npx shapio` is the same command).
 
 **Which site the models belong to.** The planned models belong to one [site](sites.md): the one `--site <key>`
 (or `SHAPIO_SITE`) names, else the primary site (key `default`). On an instance with one site, that is the only
@@ -73,8 +75,8 @@ reviewable (`--plan` says which models this changes).
 Export from **Tools → Export → All content** in WordPress (a WXR `.xml` file).
 
 ```sh
-npx shapio import wordpress export.xml --plan ./import
-npx shapio import wordpress --map ./import [--media-dir ./wp-content/uploads]
+npx @shapio/cms import wordpress export.xml --plan ./import
+npx @shapio/cms import wordpress --map ./import [--media-dir ./wp-content/uploads]
 ```
 
 | WordPress             | Shapio                                                                                                           |
@@ -113,8 +115,8 @@ Export with `strapi export` in the Strapi project. An encrypted export needs the
 
 ```sh
 npx strapi export --file my-export            # encrypted: prompts for a key
-npx shapio import strapi my-export.tar.gz.enc --plan ./import --key "<the key>"
-npx shapio import strapi --map ./import
+npx @shapio/cms import strapi my-export.tar.gz.enc --plan ./import --key "<the key>"
+npx @shapio/cms import strapi --map ./import
 ```
 
 Exports made with `--no-encrypt` (and `--no-compress`) need no key. `strapi export` adds the extensions itself:
