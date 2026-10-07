@@ -31,3 +31,46 @@ export const samePermissions = (stored: readonly GrantRow[], bundle: readonly Gr
   const right = bundle.map(grantKey).sort();
   return left.length === right.length && left.every((key, index) => key === right[index]);
 };
+
+/** A role whose grants on unknown models were left out, and which models those were. */
+export type DroppedGrants = { role: string; modelIds: string[] };
+
+/**
+ * Keeps the grants on all models (`modelId` null) or on a model in `knownModelIds`. A role that had grants
+ * and keeps none is left out (`role` undefined): every grant it had was about models the other side lacks.
+ * Roles are instance-wide, so one site's bundle would otherwise carry other sites' grants.
+ */
+export const keepKnownGrants = <Role extends { key: string; permissions: readonly Grant[] }>(
+  role: Role,
+  knownModelIds: ReadonlySet<string>,
+): { role: Role | undefined; dropped: DroppedGrants | undefined } => {
+  const known = (grant: Grant) => grant.modelId === null || knownModelIds.has(grant.modelId);
+  const kept = role.permissions.filter(known);
+  if (kept.length === role.permissions.length) {
+    return { role, dropped: undefined };
+  }
+  const modelIds = [
+    ...new Set(role.permissions.filter((grant) => !known(grant)).map((grant) => grant.modelId as string)),
+  ];
+  return {
+    role: kept.length === 0 ? undefined : { ...role, permissions: kept },
+    dropped: { role: role.key, modelIds },
+  };
+};
+
+/**
+ * The grants an import gives a role the target already has: the bundle decides the grants on its own models
+ * and on all models (`modelId` null); the target keeps its grants on every other model. A bundle holds one
+ * site's models, so importing it never changes what a role may do on another site.
+ */
+export const mergeWithTargetGrants = <Role extends { permissions: readonly Grant[] }>(
+  role: Role,
+  targetGrants: readonly Grant[],
+  bundleModelIds: ReadonlySet<string>,
+): Role => {
+  const inBundle = (grant: Grant) => grant.modelId === null || bundleModelIds.has(grant.modelId);
+  return {
+    ...role,
+    permissions: [...role.permissions.filter(inBundle), ...targetGrants.filter((grant) => !inBundle(grant))],
+  };
+};

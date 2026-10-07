@@ -19,8 +19,15 @@ export type ImportDiff = {
     defaultLocale: { from: string; to: string; blocked: boolean } | null;
   };
   schema: { added: SchemaItem[]; unchanged: SchemaItem[]; conflicts: SchemaItem[] };
-  appRoles: { added: string[]; updated: string[]; unchanged: string[] };
-  deliveryRoles: { added: string[]; updated: string[]; unchanged: string[]; conflicts: string[] };
+  /** `droppedGrants`: absent from servers before this field existed. */
+  appRoles: { added: string[]; updated: string[]; unchanged: string[]; droppedGrants?: DroppedGrants[] };
+  deliveryRoles: {
+    added: string[];
+    updated: string[];
+    unchanged: string[];
+    conflicts: string[];
+    droppedGrants?: DroppedGrants[];
+  };
   appUsers: { added: number; unchanged: number; conflicts: Conflict[]; conflictCount: number };
   webhooks: { added: string[]; unchanged: string[] };
   deploymentConnections: { added: string[]; unchanged: string[]; needSecrets: string[] };
@@ -47,6 +54,11 @@ const SCHEMA_REASONS: Readonly<Record<string, string>> = {
   existsOnTarget: 'the target has it in another form',
 };
 
+type DroppedGrants = { role: string; modelIds: string[] };
+
+const droppedLine = ({ role, modelIds }: DroppedGrants) =>
+  `  - role ${role}: left out its grants on ${modelIds.length} model(s) neither the bundle nor this instance has`;
+
 const conflictLine = (kind: string, conflict: Conflict) =>
   `  ! ${kind} ${conflict.id}${conflict.model ? ` (${conflict.model})` : ''}: ${conflict.reason}${conflict.detail ? `: ${conflict.detail}` : ''}`;
 
@@ -65,10 +77,12 @@ export const formatPlan = (diff: ImportDiff): string => {
         `  ! ${item.kind} ${item.apiKey}: ${SCHEMA_REASONS[item.reason ?? ''] ?? item.reason ?? 'differs'} (reconcile the schemas first: shapio schema pull/apply)`,
     ),
     `App roles: ${diff.appRoles.added.length} added, ${diff.appRoles.updated.length} updated, ${diff.appRoles.unchanged.length} unchanged`,
+    ...(diff.appRoles.droppedGrants ?? []).map(droppedLine),
     `Delivery roles: ${diff.deliveryRoles.added.length} added, ${diff.deliveryRoles.updated.length} updated, ${diff.deliveryRoles.unchanged.length} unchanged, ${diff.deliveryRoles.conflicts.length} conflicting (tokens are never imported: create new ones)`,
     ...diff.deliveryRoles.conflicts.map(
       (key) => `  ! role ${key}: the target uses this key for an admin role`,
     ),
+    ...(diff.deliveryRoles.droppedGrants ?? []).map(droppedLine),
     `App users: ${diff.appUsers.added} added, ${diff.appUsers.unchanged} unchanged, ${diff.appUsers.conflictCount} conflicting`,
     ...diff.appUsers.conflicts.map((conflict) => conflictLine('user', conflict)),
     `Webhooks: ${diff.webhooks.added.length} added (disabled, new secrets), ${diff.webhooks.unchanged.length} unchanged`,
