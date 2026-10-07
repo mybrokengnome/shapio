@@ -42,6 +42,7 @@ const GRAPHQL_TYPES: ReadonlyArray<[string, string]> = [
   ['date, datetime, time', 'String (ISO 8601; datetimes in UTC)'],
   ['boolean', 'Boolean'],
   ['enum', 'a per-field enum (a list when multiple)'],
+  ['code', 'String (the language is in the field description, e.g. Code: html)'],
   ['json', 'JSON'],
   ['richtext', 'RichText { json html }'],
   ['media', 'Media (with MediaVariant and FocalPoint)'],

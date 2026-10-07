@@ -12,7 +12,7 @@ import type { ContentData } from '../../db/contentData.js';
 import type { SchemaById } from '../../schema/snapshot.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
 import { pointer, type ContentIssue } from './issues.js';
-import { checkScalar, isReferenceId } from './scalars.js';
+import { checkLength, checkScalar, isReferenceId } from './scalars.js';
 
 /**
  * The content validator (build plan §4.E2). Built from the active model and the components it embeds,
@@ -141,6 +141,30 @@ const checkComponentObject = (
     ? validateFields(component, value, path, walk, components)
     : issue(walk, path, 'INVALID_TYPE', 'must be an object');
 
+const isJson = (text: string) => {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** A code value is stored exactly as written: never trimmed, parsed into storage or rewritten. */
+const checkCode = (field: FieldDefinition<'code'>, value: unknown, path: string, walk: Walk) => {
+  if (typeof value !== 'string') {
+    return issue(walk, path, 'INVALID_TYPE', 'must be a string');
+  }
+  const length = checkLength(value, field.settings);
+  if (!length.ok) {
+    return issue(walk, path, length.code, length.message);
+  }
+  if (field.settings.validate && field.settings.language === 'json' && !isJson(value)) {
+    return issue(walk, path, 'INVALID_FORMAT', 'must be valid JSON');
+  }
+  return value;
+};
+
 const checkStructured = (
   field: FieldDefinition,
   value: unknown,
@@ -240,6 +264,8 @@ const checkStructured = (
     }
     case 'json':
       return value;
+    case 'code':
+      return checkCode(field, value, path, walk);
     default:
       return issue(walk, path, 'INVALID_TYPE', `unsupported type ${field.type}`);
   }

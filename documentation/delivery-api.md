@@ -114,6 +114,9 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
   may not read, is left out (never its ID).
 - **Components** are objects; **dynamic zones** are arrays of objects with `__component` (the component's
   API ID).
+- **Code** fields are strings, exactly as saved. Their language (`html`, `css`, `json`, …) is in the OpenAPI
+  document as `x-shapio-language` (with `contentMediaType`), in the GraphQL field description (`Code: html`)
+  and in the comment of the field in generated types (`shapio types generate`).
 - A single type answers `/api/content/<API ID>` with `{ data: {…}, meta }`.
 
 Errors always look like `{ "error": { "code": "…", "message": "…", "details": … } }`: 400 for an invalid query,

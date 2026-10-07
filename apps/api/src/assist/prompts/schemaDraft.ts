@@ -1,4 +1,4 @@
-import { DATA_TYPES, MEDIA_KINDS } from '@shapio/schema';
+import { CODE_LANGUAGES, DATA_TYPES, MEDIA_KINDS } from '@shapio/schema';
 import { Type } from 'typebox';
 
 const closed = { additionalProperties: false } as const;
@@ -16,6 +16,7 @@ export const DraftFieldSchema = Type.Object(
     required: Type.Optional(Type.Boolean()),
     localized: Type.Optional(Type.Boolean()),
     maxLength: Type.Optional(Type.Integer({ minimum: 1 })),
+    language: Type.Optional(Type.Enum(CODE_LANGUAGES)),
     values: Type.Optional(Type.Array(Type.Object({ value: Type.String(), label: Type.String() }, closed))),
     multiple: Type.Optional(Type.Boolean()),
     allowedKinds: Type.Optional(Type.Array(Type.Enum(MEDIA_KINDS))),
@@ -58,13 +59,14 @@ export const schemaDraftPrompt = (input: {
     `Field types: ${DATA_TYPES.join(', ')}.`,
     'API IDs (apiKey) are camelCase names matching ^[A-Za-z][A-Za-z0-9]*$, singular for models (article, not',
     'articles), unique across all definitions including the existing ones. Labels are short and human.',
-    'Field settings are flat: maxLength (string, text, richtext); values [{value, label}] for enum, where value',
+    'Field settings are flat: maxLength (string, text, richtext, code); values [{value, label}] for enum, where value',
     'is a name like draftPost (letters, digits, _); multiple and allowedKinds (image, video, audio, document,',
     'other) for media; target (a collection apiKey) and cardinality (one or many) for relation; component',
     '(a component apiKey) and repeatable for component; components (component apiKeys) for dynamiczone.',
     'Relations must target collections; reference new definitions or existing ones by apiKey. New models must',
     'not reference each other in a cycle. Use richtext for long formatted bodies, text for plain paragraphs,',
     'slug for URL slugs, media for images and files. Mark a field localized only when its model is localized.',
+    `code: raw snippets, embed codes, JSON configs; set language (${CODE_LANGUAGES.join(', ')}).`,
     input.existing.length > 0
       ? `Existing definitions (reuse or reference them, never redefine): ${JSON.stringify(input.existing)}`
       : 'There are no existing definitions.',

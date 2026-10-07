@@ -60,6 +60,8 @@ A single type `home` is `home(locale, …)`. Field types: rich text is `RichText
 `Media { id url width height alt variants { name width url } … }`, a relation is the target type (or a list of
 it), a component is its own type, and a dynamic zone is a list of a union of its components (ask for
 `__typename`). Every entry also has `localizations` (its versions in the other locales).
+A code field is a `String`, exactly as saved; its description ends with its language (`Code: html`), so
+introspection tells a site how to treat it.
 
 ### Reading drafts
 
