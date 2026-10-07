@@ -27,6 +27,13 @@ npx shapio import wordpress --map ./import --url https://cms.example.com --token
 admin API token that may create models' entries, upload media and manage change sets), and `--site <key>` (or
 `SHAPIO_SITE`) to import into one [site](sites.md) of a multi-site instance.
 
+**Which token applies the schema.** Without `--site`, the plan's models are shared with all sites, and creating
+shared models needs a **network** admin token: in Settings → API tokens, set _Works on_ to _Every site (network
+token)_. An admin token of one site (the default choice, even on an instance with a single site) is refused with
+`FORBIDDEN_SCOPE` and nothing is applied. With a token of one site, plan for that site instead:
+`--plan ./import --site default` (`default` is the primary site's key), then apply and map with `--site default`
+as `--plan` prints.
+
 On a multi-site instance, plan with `--site <key>` (or `SHAPIO_SITE`) too: the planned models then belong to
 that site (`<dir>/schema/sites/<key>/`, applied with `shapio schema apply … --site <key>`), and the plan records
 the site, so `--map` without `--site` imports into it. A `--map --site` that names another site is refused.
@@ -109,8 +116,11 @@ npx shapio import strapi my-export.tar.gz.enc --plan ./import --key "<the key>"
 npx shapio import strapi --map ./import
 ```
 
-Exports made with `--no-encrypt` (and `--no-compress`) need no key. `--plan` unpacks the export into
-`<dir>/source`, which `--map` reads, so the key is only needed once.
+Exports made with `--no-encrypt` (and `--no-compress`) need no key. `strapi export` adds the extensions itself:
+`my-export.tar.gz.enc` by default, `my-export.tar.gz` with `--no-encrypt`, `my-export.tar` with both flags.
+`--plan` unpacks the export into `<dir>/source`, which `--map` reads, so the key is only needed once. Keep the
+export file where it was until the import is done: `--map` checks that it has not changed, and refuses if it
+cannot read it.
 
 Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade the project first
 (`npx @strapi/upgrade major`), then export again.
@@ -143,7 +153,8 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
   author's best article that points back at the author) are written in a second pass. Polymorphic relations
   and relations to Strapi's users or admin users are skipped.
 - **Names:** an attribute whose name is reserved in Shapio (`status`, `version`, …) gets a suffix
-  (`statusField`), and `--plan` lists every rename.
+  (`statusField`), and so does a content type or component (`shared.media` and `shared.rich-text` in Strapi's
+  example project become `mediaItem` and `richTextItem`). `--plan` lists every rename.
 - **Validation** (required, min/max length and value, regex) is not carried over, because Strapi 5 drafts may
   not satisfy it. Add the rules you want to the schema files before or after applying.
 - **Markdown** is converted through HTML. Constructs with no rich-text equivalent degrade to text: strike-through
@@ -154,8 +165,9 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
   caption. Generated formats (thumbnails) are not imported: Shapio makes its own variants.
 - Not imported: passwords, users and roles (users-permissions or admin), API tokens, plugin content types,
   configuration, and review workflows.
-- Strapi support was built and tested against a synthetic export that follows Strapi's documented export
-  format, not a real project's. If an export of yours does not import correctly, please open an issue with the
+- Strapi support is tested against real Strapi 5.56 exports: Strapi's blog example (components, dynamic
+  zones, uploads) extended with two locales, blocks, Markdown, enumerations and a many-to-many relation, and a
+  project of 1,050 documents. If an export of yours does not import correctly, please open an issue with the
   output of `--plan` (and, if you can, a small export that shows the problem).
 
 ## Limits
@@ -166,4 +178,6 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
 - An existing model with the same API ID as a planned one (say your instance already has `author`) makes
   `schema apply` refuse. Rename the planned model's API ID in its file, then apply.
 - A large import takes a while: every entry is one request, and the instance's rate limit is waited out
-  automatically.
+  automatically (about 1,000 entries in three minutes at the default `RATE_LIMIT_MAX` of 600 a minute). The
+  limit counts per client address, so while `--map` runs, the admin opened from the same address can answer
+  `RATE_LIMITED` for up to a minute. Wait for the import to finish, or raise `RATE_LIMIT_MAX` for its duration.
