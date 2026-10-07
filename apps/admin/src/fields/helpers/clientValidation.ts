@@ -51,6 +51,21 @@ const checkCount = (count: number, settings: { min?: number; max?: number }) => 
   ...(settings.max !== undefined && count > settings.max ? [issue('TOO_MANY')] : []),
 ];
 
+const parsesAsJson = (text: string) => {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Code is never changed or trimmed; with `validate` on (JSON only) it must parse. */
+const checkCode = (text: string, settings: { language: string; validate?: boolean | undefined }) =>
+  settings.validate === true && settings.language === 'json' && !parsesAsJson(text)
+    ? [issue('INVALID_FORMAT')]
+    : [];
+
 const checkText = (field: FieldDefinition, text: string): ClientIssue[] => {
   const pattern = PATTERNS[field.type];
   if (pattern && !pattern.test(text)) {
@@ -62,6 +77,8 @@ const checkText = (field: FieldDefinition, text: string): ClientIssue[] => {
     case 'slug':
     case 'uid':
       return checkLength(text, field.settings);
+    case 'code':
+      return [...checkCode(text, field.settings), ...checkLength(text, field.settings)];
     case 'decimal':
     case 'biginteger':
       return checkRange(Number(text), field.settings);

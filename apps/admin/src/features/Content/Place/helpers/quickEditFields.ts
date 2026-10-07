@@ -6,7 +6,13 @@ import {
 } from '@shapio/schema';
 
 /** Values too large for a row's quick edit; they are edited in the document. */
-const DOCUMENT_ONLY_TYPES: ReadonlySet<string> = new Set(['richtext', 'component', 'dynamiczone', 'json']);
+const DOCUMENT_ONLY_TYPES: ReadonlySet<string> = new Set([
+  'richtext',
+  'component',
+  'dynamiczone',
+  'json',
+  'code',
+]);
 
 /**
  * What a row's quick edit offers: the inline title, then the properties strip (the configured one, else every

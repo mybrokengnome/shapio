@@ -34,6 +34,9 @@ const RichTextField = lazy(() =>
   import('./RichTextField').then((module) => ({ default: module.RichTextField })),
 );
 
+/** CodeMirror and its language packs: loaded only when a form has a code field. */
+const CodeEditor = lazy(() => import('./CodeEditor').then((module) => ({ default: module.CodeEditor })));
+
 /** Built-in editors by catalogue ID (`EDITOR_CATALOGUE` in @shapio/schema). */
 export const BUILT_IN_EDITORS: Readonly<Record<string, BuiltInEditor>> = {
   textInput: { component: TextInput, labelling: 'input' },
@@ -52,6 +55,7 @@ export const BUILT_IN_EDITORS: Readonly<Record<string, BuiltInEditor>> = {
   timePicker: { component: TimeInput, labelling: 'input' },
   slugInput: { component: SlugInput, labelling: 'input' },
   jsonEditor: { component: JsonEditor, labelling: 'input' },
+  codeEditor: { component: CodeEditor, labelling: 'group' },
   mediaPicker: { component: MediaField, labelling: 'group' },
   relationPicker: { component: RelationField, labelling: 'group' },
   componentEditor: { component: ComponentField, labelling: 'group' },

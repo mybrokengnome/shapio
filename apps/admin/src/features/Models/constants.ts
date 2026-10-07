@@ -8,6 +8,7 @@ import {
   Calendar,
   CalendarClock,
   Clock,
+  Code,
   Component,
   FileText,
   Fingerprint,
@@ -62,6 +63,7 @@ export const KIND_ICONS: Readonly<Record<DefinitionKind, LucideIcon>> = {
 export const DATA_TYPE_ICONS: Readonly<Record<DataType, LucideIcon>> = {
   string: Type,
   text: AlignLeft,
+  code: Code,
   richtext: TextCursorInput,
   number: Sigma,
   integer: Hash,
@@ -88,7 +90,7 @@ export const DATA_TYPE_GROUPS: readonly {
   key: 'text' | 'number' | 'choice' | 'time' | 'structure';
   types: readonly DataType[];
 }[] = [
-  { key: 'text', types: ['string', 'text', 'richtext', 'slug', 'email', 'url', 'uid'] },
+  { key: 'text', types: ['string', 'text', 'richtext', 'code', 'slug', 'email', 'url', 'uid'] },
   { key: 'number', types: ['number', 'integer', 'decimal', 'biginteger'] },
   { key: 'choice', types: ['boolean', 'enum', 'json'] },
   { key: 'time', types: ['date', 'datetime', 'time'] },

@@ -32,3 +32,26 @@ describe('clientIssuesOf', () => {
     expect(codes(gallery, ['a', 'b', 'c'])).toEqual(['TOO_MANY']);
   });
 });
+
+describe('clientIssuesOf for code', () => {
+  const [config, snippet, plainJson] = model({
+    fields: [
+      field({ apiKey: 'config', type: 'code', settings: { language: 'json', validate: true } }),
+      field({ apiKey: 'snippet', type: 'code', settings: { language: 'html', maxLength: 10 } }),
+      field({ apiKey: 'plainJson', type: 'code', settings: { language: 'json' } }),
+    ],
+  }).fields;
+
+  it('refuses text that does not parse when `validate` is on, and accepts any JSON value', () => {
+    expect(codes(config, '{bad')).toEqual(['INVALID_FORMAT']);
+    expect(codes(config, '{"ok":true}')).toEqual([]);
+    expect(codes(config, '  [1, 2]\n')).toEqual([]);
+    expect(codes(config, null)).toEqual([]);
+  });
+
+  it('never parses without `validate`, and checks lengths on the text as typed', () => {
+    expect(codes(plainJson, '{bad')).toEqual([]);
+    expect(codes(snippet, '<p>too long</p>')).toEqual(['TOO_LONG']);
+    expect(codes(snippet, '<br>')).toEqual([]);
+  });
+});
