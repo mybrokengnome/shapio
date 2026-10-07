@@ -4,6 +4,7 @@ import { AppError } from '../../helpers/appError.js';
 import * as adminRolesRepository from '../../repositories/adminRoles.js';
 import * as appRolesRepository from '../../repositories/appRoles.js';
 import * as deploymentConnectionsRepository from '../../repositories/deploymentConnections.js';
+import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import * as transferImportRepository from '../../repositories/transferImport.js';
 import * as webhooksRepository from '../../repositories/webhooks.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
@@ -23,7 +24,7 @@ import type {
   WebhookRecord,
 } from './format.js';
 import { readBundle } from './ndjson.js';
-import { samePermissions } from './permissions.js';
+import { keepKnownGrants, samePermissions, type DroppedGrants } from './permissions.js';
 
 /**
  * The import plan (package L): a dry run that reads the whole bundle once and compares it with the target
@@ -72,9 +73,19 @@ export type ImportDiff = {
     defaultLocale: { from: string; to: string; blocked: boolean } | null;
   };
   schema: { added: SchemaItem[]; unchanged: SchemaItem[]; conflicts: SchemaItem[] };
-  appRoles: { added: string[]; updated: string[]; unchanged: string[] };
-  /** Custom delivery roles by key (tokens never travel: create new ones on the target). */
-  deliveryRoles: { added: string[]; updated: string[]; unchanged: string[]; conflicts: string[] };
+  appRoles: { added: string[]; updated: string[]; unchanged: string[]; droppedGrants: DroppedGrants[] };
+  /**
+   * Custom delivery roles by key (tokens never travel: create new ones on the target). `droppedGrants`, here
+   * and on app roles: grants on models neither the bundle nor the target has (older bundles carried every
+   * site's roles); they are left out, and a role left with no grants is not imported.
+   */
+  deliveryRoles: {
+    added: string[];
+    updated: string[];
+    unchanged: string[];
+    conflicts: string[];
+    droppedGrants: DroppedGrants[];
+  };
   appUsers: { added: number; unchanged: number; conflicts: Conflict[]; conflictCount: number };
   webhooks: { added: string[]; unchanged: string[] };
   deploymentConnections: { added: string[]; unchanged: string[]; needSecrets: string[] };
@@ -419,10 +430,13 @@ const planSchema = async (
   return diff;
 };
 
-const planRoles = async (roles: readonly AppRoleRecord[]): Promise<ImportDiff['appRoles']> => {
+const planRoles = async (
+  roles: readonly AppRoleRecord[],
+  droppedGrants: DroppedGrants[],
+): Promise<ImportDiff['appRoles']> => {
   const existing = await appRolesRepository.listRoles();
   const grants = await appRolesRepository.listPermissionsForRoles(existing.map((role) => role.id));
-  const diff: ImportDiff['appRoles'] = { added: [], updated: [], unchanged: [] };
+  const diff: ImportDiff['appRoles'] = { added: [], updated: [], unchanged: [], droppedGrants };
   for (const role of roles) {
     const target = existing.find((candidate) => candidate.key === role.key);
     if (!target) {
@@ -443,10 +457,17 @@ const planRoles = async (roles: readonly AppRoleRecord[]): Promise<ImportDiff['a
 /** Delivery roles by key; a key the target uses for an admin role is a conflict. */
 const planDeliveryRoles = async (
   roles: readonly DeliveryRoleRecord[],
+  droppedGrants: DroppedGrants[],
 ): Promise<ImportDiff['deliveryRoles']> => {
   const existing = await adminRolesRepository.listRoles();
   const grants = await adminRolesRepository.listPermissionsForRoles(existing.map((role) => role.id));
-  const diff: ImportDiff['deliveryRoles'] = { added: [], updated: [], unchanged: [], conflicts: [] };
+  const diff: ImportDiff['deliveryRoles'] = {
+    added: [],
+    updated: [],
+    unchanged: [],
+    conflicts: [],
+    droppedGrants,
+  };
   for (const role of roles) {
     const target = existing.find((candidate) => candidate.key === role.key);
     if (!target) {
@@ -465,6 +486,25 @@ const planDeliveryRoles = async (
     }
   }
   return diff;
+};
+
+/** Leaves out role grants on models neither the bundle nor the target has (see `keepKnownGrants`). */
+const withKnownGrants = <Role extends AppRoleRecord | DeliveryRoleRecord>(
+  roles: readonly Role[],
+  knownModelIds: ReadonlySet<string>,
+) => {
+  const kept: Role[] = [];
+  const dropped: DroppedGrants[] = [];
+  for (const role of roles) {
+    const result = keepKnownGrants(role, knownModelIds);
+    if (result.role) {
+      kept.push(result.role);
+    }
+    if (result.dropped) {
+      dropped.push(result.dropped);
+    }
+  }
+  return { kept, dropped };
 };
 
 const planPublishing = async (
@@ -532,7 +572,18 @@ export const planImport = async (
   const acc = newAccumulator();
   await scanBundle(context, input, acc);
   const header = acc.config.header as HeaderRecord;
-  const config: BundleConfig = { ...acc.config, header };
+  const knownModelIds = await schemaModelsRepository.findActiveModelIds();
+  for (const record of acc.config.definitions) {
+    knownModelIds.add(String(record.definition.id));
+  }
+  const appRoles = withKnownGrants(acc.config.appRoles, knownModelIds);
+  const deliveryRoles = withKnownGrants(acc.config.deliveryRoles, knownModelIds);
+  const config: BundleConfig = {
+    ...acc.config,
+    header,
+    appRoles: appRoles.kept,
+    deliveryRoles: deliveryRoles.kept,
+  };
   const existingFolders = await transferImportRepository.findFolderIds(
     config.folders.map((folder) => folder.id),
   );
@@ -550,8 +601,8 @@ export const planImport = async (
     },
     locales: await planLocales(context, config.locales),
     schema: await planSchema(context, config.definitions),
-    appRoles: await planRoles(config.appRoles),
-    deliveryRoles: await planDeliveryRoles(config.deliveryRoles),
+    appRoles: await planRoles(config.appRoles, appRoles.dropped),
+    deliveryRoles: await planDeliveryRoles(config.deliveryRoles, deliveryRoles.dropped),
     ...acc.diff,
     ...(await planPublishing(config)),
     prune: options.prune ? await planPrune(acc, siteOf(context)) : null,

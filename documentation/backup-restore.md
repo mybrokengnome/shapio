@@ -88,7 +88,8 @@ npx shapio import --url https://new.example.com --token shp_… content.tar
 ### What a bundle holds
 
 An NDJSON file (one JSON record per line): the schema (every model and component, as `schema pull` writes them,
-plus a lock), locales, app roles and custom delivery roles with their grants, media folders and media metadata with each file's key, size
+plus a lock), locales, app roles and custom delivery roles with their grants on the bundle's models (roles are
+shared by every site, so their grants on another site's models stay behind), media folders and media metadata with each file's key, size
 and SHA-256, and every entry with its full revision history and its draft and published versions in every
 locale. IDs and timestamps are kept, so an import into an empty instance answers the delivery API (REST and
 GraphQL) exactly like the source.
@@ -146,7 +147,8 @@ Everything is matched by stable ID:
   knows (in its history, without newer autosaved edits) is _updated_ to the bundle's state. One the target has
   edited since, that belongs to another model, or that was deleted on the target is a **conflict**.
 - **Delivery roles**: matched by key; missing ones are created and changed ones updated to the bundle's
-  grants. A key the target uses for an admin role is a conflict.
+  grants. A key the target uses for an admin role is a conflict. A grant on a model that neither the bundle
+  nor the target has is left out, and the plan lists it; a role left with no grants is not created.
 - **Media**: missing assets are added after their file is checked against the manifest's checksum and size; an
   asset the target replaced or deleted is a conflict.
 - **App users** (with `--include-users`): missing accounts are added; an email another account already uses is

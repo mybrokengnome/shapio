@@ -21,7 +21,7 @@ import {
   type RevisionRecord,
 } from './format.js';
 import { writeRecord } from './ndjson.js';
-import { toGrant } from './permissions.js';
+import { keepKnownGrants, toGrant } from './permissions.js';
 
 type Executor = Transaction<DB>;
 
@@ -71,12 +71,15 @@ const toHead = (head: ExportHeadRow): EntryRecord['heads'][number] => ({
 });
 
 /** The site's view: the shared definitions and the site's own (another site's never leave with a bundle). */
+const siteDefinitions = async (trx: Executor, siteId: string) =>
+  // Through the stored-definition reader, so collections saved before plural API IDs carry the derived one.
+  (await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(trx))).filter(
+    (active) => active.siteId === null || active.siteId === siteId,
+  );
+
 async function* schemaRecords(trx: Executor, siteId: string): AsyncGenerator<BundleRecord> {
   const schemaVersion = await schemaVersionsRepository.getSchemaVersion(trx);
-  // Through the stored-definition reader, so collections saved before plural API IDs carry the derived one.
-  const definitions = (
-    await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(trx))
-  ).filter((active) => active.siteId === null || active.siteId === siteId);
+  const definitions = await siteDefinitions(trx, siteId);
   const lock: LockFile = { formatVersion: 1, schemaVersion, definitions: {} };
   for (const { definition, version, hash } of definitions) {
     lock.definitions[definition.id] = { kind: definition.kind, apiKey: definition.apiKey, version, hash };
@@ -98,21 +101,29 @@ async function* roleAndUserRecords(
   siteId: string,
   options: ExportOptions,
 ): AsyncGenerator<BundleRecord> {
+  // Roles are instance-wide: each one leaves with its grants on this bundle's models only.
+  const bundleModelIds = new Set((await siteDefinitions(trx, siteId)).map((active) => active.definition.id));
   const roles = await appRolesRepository.listRoles(trx);
   const grants = await appRolesRepository.listPermissionsForRoles(
     roles.map((role) => role.id),
     trx,
   );
   for (const role of roles) {
-    yield {
-      type: 'appRole',
-      id: role.id,
-      key: role.key,
-      name: role.name,
-      description: role.description,
-      isSystem: role.is_system,
-      permissions: grants.filter((grant) => grant.role_id === role.id).map(toGrant),
-    };
+    const { role: kept } = keepKnownGrants(
+      {
+        type: 'appRole' as const,
+        id: role.id,
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        isSystem: role.is_system,
+        permissions: grants.filter((grant) => grant.role_id === role.id).map(toGrant),
+      },
+      bundleModelIds,
+    );
+    if (kept) {
+      yield kept;
+    }
   }
   const deliveryRoles = (await adminRolesRepository.listRoles(trx)).filter(
     (role) => role.kind === 'delivery' && !role.is_system,
@@ -122,14 +133,20 @@ async function* roleAndUserRecords(
     trx,
   );
   for (const role of deliveryRoles) {
-    yield {
-      type: 'deliveryRole',
-      id: role.id,
-      key: role.key,
-      name: role.name,
-      description: role.description,
-      permissions: deliveryGrants.filter((grant) => grant.role_id === role.id).map(toGrant),
-    };
+    const { role: kept } = keepKnownGrants(
+      {
+        type: 'deliveryRole' as const,
+        id: role.id,
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        permissions: deliveryGrants.filter((grant) => grant.role_id === role.id).map(toGrant),
+      },
+      bundleModelIds,
+    );
+    if (kept) {
+      yield kept;
+    }
   }
   if (!options.includeUsers) {
     return;

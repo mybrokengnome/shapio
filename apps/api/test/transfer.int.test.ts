@@ -23,7 +23,7 @@ import {
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { dataOf, graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createPng, runMediaJobs, uploadAsset, type MediaAssetBody } from './helpers/media.js';
-import { createRoleToken, schemaClient } from './helpers/schemaAdmin.js';
+import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { silentLogger } from './helpers/silentLogger.js';
 import { createTestDatabase, type TestDatabase } from './helpers/testDatabase.js';
 
@@ -651,5 +651,131 @@ describe('export and import of one site’s schema (plan site-schema)', () => {
       .where('id', '=', kept.id)
       .executeTakeFirstOrThrow();
     expect(live.deleted_at).toBeNull();
+  });
+});
+
+describe('roles in one site’s bundle (roles are instance-wide, models belong to sites)', () => {
+  let source: Instance | undefined;
+  let target: Instance | undefined;
+  let worker: Worker | undefined;
+  let workdir: string;
+
+  type BundleLine = { type: string; key?: string; permissions?: Array<{ modelId: string | null }> };
+  const deliveryRoleModels = (lines: BundleLine[]): Record<string, Array<string | null>> =>
+    Object.fromEntries(
+      lines
+        .filter((line) => line.type === 'deliveryRole')
+        .map((line): [string, Array<string | null>] => [
+          line.key ?? '',
+          (line.permissions ?? []).map((grant) => grant.modelId),
+        ]),
+    );
+
+  beforeAll(async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'shapio-transfer-roles-'));
+  });
+
+  afterAll(async () => {
+    await worker?.stop(5000);
+    await stopInstance(source);
+    await stopInstance(target);
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it('exports each role with its grants on the bundle’s models only; an older bundle still imports', async () => {
+    const bundle = join(workdir, 'default.ndjson');
+    source = await startInstance(await createTestDatabase());
+    const admin = schemaClient(source.testApp.app, source.adminToken);
+    const story = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'story',
+      label: 'Story',
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    });
+    expectStatus(await admin.post('/api/admin/sites', { key: 'other', name: 'Other' }), 201);
+    const onOther: SchemaClient = {
+      ...admin,
+      get: (url) => admin.request({ method: 'GET', url, headers: { [SITE_HEADER]: 'other' } }),
+      post: (url, payload) =>
+        admin.request({
+          method: 'POST',
+          url,
+          payload: payload as object,
+          headers: { [SITE_HEADER]: 'other' },
+        }),
+    };
+    const secret = await createDefinition(onOther, {
+      kind: 'collection',
+      apiKey: 'secret',
+      label: 'Secret',
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    });
+    const readGrants = (modelIds: string[]) =>
+      modelIds.map((modelId) => ({ action: 'read', modelId, condition: null, fieldIds: null }));
+    for (const [key, modelIds] of [
+      ['mixed', [story.definition.id, secret.definition.id]],
+      ['other-only', [secret.definition.id]],
+    ] as const) {
+      const created = await admin.post('/api/admin/roles', {
+        key,
+        name: key,
+        kind: 'delivery',
+        permissions: readGrants([...modelIds]),
+      });
+      expectStatus(created, 201);
+    }
+    const exported = await runCli('export', [
+      '--url',
+      source.url,
+      '--token',
+      source.adminToken,
+      '--site',
+      'default',
+      bundle,
+    ]);
+    expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    await stopInstance(source);
+    source = undefined;
+
+    const lines = (await readFile(bundle, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as BundleLine);
+    // The other site's model never leaves, so neither does a grant on it, nor a role that only had those.
+    expect(deliveryRoleModels(lines)).toEqual({ mixed: [story.definition.id] });
+
+    // A bundle written before that fix: it carries a role whose grants name a model the target lacks.
+    const older = join(workdir, 'older.ndjson');
+    const end = lines.at(-1) as BundleLine & { counts: Record<string, number> };
+    const stale = {
+      type: 'deliveryRole',
+      id: randomUUID(),
+      key: 'other-only',
+      name: 'other-only',
+      description: '',
+      permissions: readGrants([secret.definition.id]),
+    };
+    const counts = { ...end.counts, deliveryRole: (end.counts.deliveryRole ?? 0) + 1 };
+    await writeFile(
+      older,
+      [...lines.slice(0, -1), stale, { ...end, counts }].map((line) => JSON.stringify(line)).join('\n') +
+        '\n',
+    );
+
+    target = await startInstance(await createTestDatabase());
+    worker = startWorker(target);
+    const args = ['--url', target.url, '--token', target.adminToken, '--site', 'default'];
+    const planned = await runCli('import', [...args, '--dry-run', older]);
+    expect(planned, planned.stderr).toMatchObject({ code: 0 });
+    expect(planned.stdout).toContain('role other-only: left out its grants on 1 model(s)');
+    const imported = await runCli('import', [...args, older]);
+    expect(imported, `${imported.stdout}\n${imported.stderr}`).toMatchObject({ code: 0 });
+    const roles = await target.database.db
+      .selectFrom('admin_roles')
+      .select('key')
+      .where('kind', '=', 'delivery')
+      .where('is_system', '=', false)
+      .execute();
+    expect(roles.map((role) => role.key)).toEqual(['mixed']);
   });
 });

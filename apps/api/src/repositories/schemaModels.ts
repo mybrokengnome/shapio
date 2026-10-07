@@ -29,6 +29,19 @@ export const findActiveDefinitions = (executor: Executor = db) =>
 
 export type ActiveDefinitionRow = Awaited<ReturnType<typeof findActiveDefinitions>>[number];
 
+/** IDs of every live model and component on the instance, any site. */
+export const findActiveModelIds = async (executor: Executor = db): Promise<Set<string>> =>
+  new Set(
+    (
+      await executor
+        .selectFrom('model_active_versions as active')
+        .innerJoin('models', 'models.id', 'active.model_id')
+        .where('models.deleted_at', 'is', null)
+        .select('active.model_id')
+        .execute()
+    ).map((row) => row.model_id),
+  );
+
 export const findModelById = (id: string, executor: Executor = db) =>
   executor.selectFrom('models').selectAll().where('id', '=', id).executeTakeFirst();
 
