@@ -1,7 +1,24 @@
-# shapio
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mybrokengnome/shapio/main/brand/shapio-logo.svg" alt="Shapio" width="280">
+</p>
 
-Self-hosted headless CMS: model content live, deliver it over REST and GraphQL. Start a project with
-`npx create-shapio my-cms`; the full docs are in the repository's
+<p align="center">
+  <strong>The headless CMS you can change while it's live.</strong><br>
+  Add a field in production. No rebuild, no restart, no deploy.
+</p>
+
+![The Shapio admin, editing a blog post](https://raw.githubusercontent.com/mybrokengnome/shapio/main/.github/readme/hero.png)
+
+`@shapio/cms` is the Shapio server and its `shapio` CLI. Start a project with:
+
+```sh
+npx create-shapio@latest my-cms --database-url sqlite:./shapio.db
+cd my-cms
+npm run start
+```
+
+Then open `http://localhost:4300/admin/` and create your account. The
+[repository](https://github.com/mybrokengnome/shapio) has the full tour and the
 [documentation](https://github.com/mybrokengnome/shapio/tree/main/documentation).
 
 ## Extensions

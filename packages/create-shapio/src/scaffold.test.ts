@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { main } from './main.js';
 import { scaffoldProject, ScaffoldError, toPackageName } from './scaffold.js';
 
 const temporaryDirectories: string[] = [];
@@ -58,5 +59,26 @@ describe('toPackageName', () => {
     ['ok_name', 'ok_name'],
   ])('%s -> %s', (input, expected) => {
     expect(toPackageName(input)).toBe(expected);
+  });
+});
+
+describe('create-shapio next steps', () => {
+  const run = (argv: string[]) => {
+    let out = '';
+    const code = main(argv, { out: (text) => (out += text), err: () => undefined });
+    return { code, out };
+  };
+
+  it('asks for DATABASE_URL when --database-url was not given', () => {
+    const result = run([join(makeTemp(), 'cms'), '--no-install']);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('edit .env (DATABASE_URL)');
+  });
+
+  it('skips the DATABASE_URL step when --database-url set it', () => {
+    const result = run([join(makeTemp(), 'cms'), '--database-url', 'sqlite:./shapio.db', '--no-install']);
+    expect(result.code).toBe(0);
+    expect(result.out).not.toContain('DATABASE_URL');
+    expect(result.out).toContain('npm run start');
   });
 });

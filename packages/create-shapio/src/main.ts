@@ -85,9 +85,7 @@ export const main = (argv: readonly string[], { out, err }: Output): number => {
     }
   }
   out(
-    site
-      ? siteNextSteps(directory, site)
-      : `\nNext:\n  cd ${directory}\n  edit .env (DATABASE_URL)\n  npm run start\n`,
+    site ? siteNextSteps(directory, site) : projectNextSteps(directory, values['database-url'] !== undefined),
   );
   return 0;
 };
@@ -97,6 +95,17 @@ const SERVE_COMMAND: Record<SiteStarter, string> = {
   next: 'npm run start',
   sveltekit: 'npm run preview',
 };
+
+/** Points at DATABASE_URL only when --database-url did not already set it. */
+const projectNextSteps = (directory: string, databaseUrlGiven: boolean) =>
+  [
+    '',
+    'Next:',
+    `  cd ${directory}`,
+    ...(databaseUrlGiven ? [] : ['  edit .env (DATABASE_URL)']),
+    '  npm run start',
+    '',
+  ].join('\n');
 
 const siteNextSteps = (directory: string, site: SiteStarter) =>
   [
