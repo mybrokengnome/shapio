@@ -63,7 +63,8 @@ const InlineTitle = ({ field, heading }: InlineTitleProps) => {
         onBlur={control.builtInProps.onBlur}
         className={cn(
           'field-sizing-content w-full min-w-0 resize-none bg-transparent text-display outline-none placeholder:text-muted-foreground/60',
-          '-mx-2 rounded-lg px-2 focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          // A textarea clips what leaves its box; at the display line height, descenders (g, j, p, q, y) would.
+          '-mx-2 rounded-lg px-2 pb-[0.2em] focus-visible:ring-[3px] focus-visible:ring-ring/50',
           invalid && 'underline decoration-destructive decoration-2 underline-offset-8',
         )}
       />
