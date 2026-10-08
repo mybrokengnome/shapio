@@ -30,7 +30,8 @@ export type SourceInfo = ImportMap['source'];
 
 type Ids = Record<string, PlannedDefinitionIds>;
 
-const assignIds = (definitions: readonly PlannedDefinition[]): Ids =>
+/** Fresh stable IDs for every planned definition and field (a new plan, or a throwaway build). */
+export const assignIds = (definitions: readonly PlannedDefinition[]): Ids =>
   Object.fromEntries(
     definitions.map((definition) => [
       definition.key,

@@ -38,6 +38,15 @@ describe('shapio import wordpress | strapi arguments', () => {
     expect(result.stderr).toContain('An admin API token is required');
   });
 
+  it('needs a token when --plan is given --url (SHAPIO_URL alone keeps the plan offline)', async () => {
+    const dir = `/nonexistent-shapio-plan-${Date.now()}`;
+    const result = await run(['strapi', 'x.tar', '--plan', dir, '--url', 'http://127.0.0.1:1']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      '--plan --url checks names on that instance and needs an admin API token',
+    );
+  });
+
   it('still treats any other first argument as a bundle file', async () => {
     const result = await run(['bundle.ndjson']);
     expect(result.stderr).toContain('An admin API token is required');

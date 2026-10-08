@@ -412,3 +412,53 @@ describe('shapio import strapi with a field overridden to code', () => {
     ]);
   });
 });
+
+describe('shapio import strapi --plan against an instance that already has a shared seo component', () => {
+  const instance = useImportInstance();
+
+  it('names the planned component seoItem with --url, then applies and maps it', async () => {
+    expectStatus(await instance.admin.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
+    expectStatus(await instance.admin.post('/api/admin/components/builtin/seo/ensure', {}), 201);
+    const archive = await buildStrapiExport(join(instance.workdir, 'strapi-seo-source'), { key: 'k3y' });
+
+    // Offline (no --url, even with SHAPIO_URL set): the names are not checked, and the plan says so.
+    const offline = await runCli(
+      'import',
+      ['strapi', archive, '--plan', join(instance.workdir, 'strapi-seo-offline'), '--key', 'k3y'],
+      instance.env,
+    );
+    expect(offline.code, offline.stderr).toBe(0);
+    expect(offline.stdout).toContain('Names were not checked against a target: pass --url and --token');
+
+    const dir = join(instance.workdir, 'strapi-seo');
+    const planned = await runCli(
+      'import',
+      ['strapi', archive, '--plan', dir, '--key', 'k3y', '--url', instance.env.SHAPIO_URL!],
+      instance.env,
+    );
+    expect(planned.code, planned.stderr).toBe(0);
+    expect(planned.stdout).toContain('Component seo is named seoItem (the target already has seo).');
+    expect(planned.stdout).not.toContain('Names were not checked');
+    expect(
+      await readFile(join(dir, 'schema', 'sites', 'default', 'components', 'seoItem.json'), 'utf8'),
+    ).toContain('"apiKey": "seoItem"');
+
+    await instance.applyPlan(dir);
+    const mapped = await runCli('import', ['strapi', '--map', dir], instance.env);
+    expect(mapped.code, `${mapped.stdout}\n${mapped.stderr}`).toBe(0);
+    const map = await instance.readMap(dir);
+    expect(map.state.failed).toEqual({});
+    const article = await instance.entry(
+      'article',
+      map.state.entries['strapi:api::article.article:a1']!.entryId,
+      'en',
+    );
+    expect(article.data.seo).toMatchObject({ metaTitle: 'Hello (SEO)' });
+
+    type Listed = { items: Array<{ definition: { apiKey: string }; scope: string }> };
+    const components = expectStatus(await instance.admin.get('/api/admin/components'), 200)
+      .json<Listed>()
+      .items.map((item) => `${item.definition.apiKey}:${item.scope}`);
+    expect(components).toEqual(expect.arrayContaining(['seo:network', 'seoItem:site']));
+  });
+});

@@ -29,7 +29,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | Variable | Default | Values | Description |
 | --- | --- | --- | --- |
 | `CORS_ORIGINS` | (empty) | text | Comma-separated origins of your own sites and apps that call the API from a browser (previews included). The admin needs none. Empty disables CORS. |
-| `RATE_LIMIT_MAX` | `600` | integer ≥ 1 | Requests per window and client IP, for every route without a stricter limit of its own. |
+| `RATE_LIMIT_MAX` | `600` | integer ≥ 1 | Requests per window and client IP, for every route without a stricter limit of its own. Requests for the admin's own files under the admin prefix (scripts, styles, `theme-init.js`, fonts, and favicons) are not counted; the admin page itself and every API route are. |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | integer ≥ 1000 | The rate-limit window, in milliseconds. |
 | `MEDIA_RATE_LIMIT_MAX` | `6000` | integer ≥ 1 | Requests per window and IP for public media files (`/api/media/f/*` without a signature). |
 

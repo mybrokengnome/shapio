@@ -85,7 +85,9 @@ out after `OUTBOUND_TIMEOUT_MS`.
 - Security headers (helmet) on every response; a strict Content Security Policy on the admin (no inline
   scripts); HSTS when `PUBLIC_URL` is https.
 - CORS is off unless you list your own origins in `CORS_ORIGINS`.
-- A global rate limit per client IP (`RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_MS`). Behind a proxy set
+- A global rate limit per client IP (`RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_MS`). Requests for the admin's own
+  files under the admin prefix (its scripts and styles, `theme-init.js`, fonts, and favicons) are not counted, so
+  reloading the admin cannot lock it out; the admin page itself and every API route are. Behind a proxy set
   `TRUST_PROXY` so the client IP is right ([Networking](networking.md#behind-cloudflare-a-load-balancer-or-a-proxy)).
 
 ## Audit log
