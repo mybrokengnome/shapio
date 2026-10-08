@@ -65,6 +65,14 @@ const ConnectionSchema = Type.Object({
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
   version: Type.Integer(),
+  /** The stored secrets cannot be decrypted (SESSION_SECRET changed): enter them again. */
+  secretsUnreadable: Type.Boolean(),
+});
+
+/** An update may mint a replacement for an unreadable generated secret: shown once. */
+const UpdatedConnectionSchema = Type.Object({
+  ...ConnectionSchema.properties,
+  generatedSecrets: Type.Optional(Type.Record(Type.String(), Type.String())),
 });
 
 const errors = { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema };
@@ -119,7 +127,7 @@ export type UpdateConnectionBody = Static<typeof UpdateConnectionBodySchema>;
 export const updateConnectionSchema = {
   params: IdParamsSchema,
   body: UpdateConnectionBodySchema,
-  response: { 200: ConnectionSchema, ...errors },
+  response: { 200: UpdatedConnectionSchema, ...errors },
 };
 
 export const deleteConnectionSchema = { params: IdParamsSchema, response: { 204: Type.Null(), ...errors } };

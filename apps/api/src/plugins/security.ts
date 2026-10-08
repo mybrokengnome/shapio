@@ -5,6 +5,7 @@ import sensible from '@fastify/sensible';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config/index.js';
+import { isAdminFileRequest } from './staticAdmin.js';
 
 const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -13,6 +14,8 @@ type SecurityPluginOptions = {
   httpsPublicUrl: boolean;
   /** Media storage origins (S3 bucket, CDN) the admin shows images from and uploads to (media/origins.ts). */
   mediaOrigins?: readonly string[];
+  /** The admin's prefix (`${BASE_PATH}/admin/`): its files are not rate limited, the page and the API are. */
+  adminPrefix: string;
 };
 
 /**
@@ -23,7 +26,7 @@ type SecurityPluginOptions = {
  * shared limiter in front for strict limits; ADR 0008).
  */
 export const securityPlugin = fp<SecurityPluginOptions>(
-  async (app: FastifyInstance, { http, httpsPublicUrl, mediaOrigins = [] }) => {
+  async (app: FastifyInstance, { http, httpsPublicUrl, mediaOrigins = [], adminPrefix }) => {
     await app.register(sensible);
     // HSTS and upgrade-insecure-requests only make sense when Shapio is reached over HTTPS; on a plain-HTTP
     // install (LAN, local) they would break the admin.
@@ -52,6 +55,8 @@ export const securityPlugin = fp<SecurityPluginOptions>(
       global: true,
       max: http.rateLimitMax,
       timeWindow: http.rateLimitWindowMs,
+      // A few quick admin reloads would otherwise use up the limit on the bundle and leave the admin blank.
+      allowList: (request) => isAdminFileRequest(request.url, adminPrefix),
     });
   },
   { name: 'shapio-security' },

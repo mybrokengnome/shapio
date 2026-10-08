@@ -87,3 +87,25 @@ export const pruneStalePresence = async (before: Date, limit: number, trx: Execu
       )
       .executeTakeFirstOrThrow(),
   );
+
+/**
+ * Dead jobs of one type that finished before a cutoff, with their payload, in id order after `afterId`
+ * (keyset paging). Read only: dead jobs stay for an operator.
+ */
+export const listDeadJobs = (
+  type: string,
+  before: Date,
+  afterId: string | null,
+  limit: number,
+  trx: Executor = db,
+) =>
+  trx
+    .selectFrom('jobs')
+    .select(['id', 'payload'])
+    .where('type', '=', type)
+    .where('status', '=', 'dead')
+    .where('finished_at', '<', before)
+    .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
+    .orderBy('id')
+    .limit(limit)
+    .execute();

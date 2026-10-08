@@ -17,10 +17,16 @@ type ProviderFieldsProps = {
   control: Control<ConnectionFormValues>;
   /** Which secrets the server holds (edit); undefined when creating. */
   storedSecrets: DeploymentSecretState | undefined;
+  /** The server can't read the stored secrets: a secret Shapio can generate says how to fill it. */
+  secretsUnreadable?: boolean;
 };
 
 /** The chosen provider's settings and secrets. */
-export const ProviderFields = ({ control, storedSecrets }: ProviderFieldsProps) => {
+export const ProviderFields = ({
+  control,
+  storedSecrets,
+  secretsUnreadable = false,
+}: ProviderFieldsProps) => {
   const { t } = useTranslation();
   const provider = useWatch({ control, name: 'provider' });
   const fields = PROVIDER_FIELDS[provider];
@@ -55,6 +61,11 @@ export const ProviderFields = ({ control, storedSecrets }: ProviderFieldsProps) 
           hint={t(secretHintFor(provider, secret.name))}
           stored={storedSecrets?.[secret.name]?.set ?? false}
           envVar={storedSecrets?.[secret.name]?.envVar ?? null}
+          helper={
+            secretsUnreadable && !secret.requiredOnCreate
+              ? t('publishing.deployments.secretUnreadableHelper')
+              : undefined
+          }
         />
       ))}
     </>

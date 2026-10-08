@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { defineConfig } from 'astro/config';
+import { devStaticPaths } from './src/integrations/devStaticPaths.ts';
 
 // `.env` (written by `npm run seed`) for the settings this file reads; the environment wins.
 try {
@@ -46,7 +47,8 @@ export default defineConfig({
   trailingSlash: 'always',
   build: { format: 'directory' },
   server: { headers: { 'Content-Security-Policy': FRAME_ANCESTORS } },
-  integrations: [frameAncestorsHeaders],
+  // devStaticPaths: in `astro dev`, an article created after the server started gets its page without a restart.
+  integrations: [frameAncestorsHeaders, devStaticPaths()],
   /**
    * Incremental builds: a page whose `cacheKey` (src/lib/cacheKey.ts) and code are unchanged is restored from
    * the previous build instead of rendered. The cache lives in Astro's cacheDir, `node_modules/.astro`, which

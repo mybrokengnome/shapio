@@ -91,8 +91,13 @@ export const EntryDiffCard = ({ item, onRemove }: EntryDiffCardProps) => {
                   <span className="block font-semibold">{field.label}</span>
                   <span className="block font-mono text-meta text-muted-foreground">{field.apiKey}</span>
                 </TableCell>
-                <ValueCell value={field.before} side="before" />
-                <ValueCell value={field.after} side="after" />
+                <ValueCell
+                  value={field.before}
+                  summary={field.summary.before}
+                  type={field.type}
+                  side="before"
+                />
+                <ValueCell value={field.after} summary={field.summary.after} type={field.type} side="after" />
               </TableRow>
             ))}
           </TableBody>

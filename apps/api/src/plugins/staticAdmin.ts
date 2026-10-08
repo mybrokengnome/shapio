@@ -15,6 +15,16 @@ type StaticAdminOptions = {
 
 export const ADMIN_PATH = '/admin/';
 
+/** Where the admin is served: `${BASE_PATH}/admin/`. */
+export const adminPrefixFor = (urls: UrlBuilder): string => urls.withBasePath(ADMIN_PATH);
+
+/**
+ * A request for one of the admin's own files (`assets/*.js`, fonts, favicons, `theme-init.js`), not the page
+ * itself: public, cacheable and loaded many at a time on every reload, so the global rate limit skips them.
+ */
+export const isAdminFileRequest = (url: string, adminPrefix: string): boolean =>
+  url.startsWith(adminPrefix) && looksLikeFile(url);
+
 /**
  * Injects `<base href>` so the admin, built with relative asset URLs (Vite `base: './'`), works under
  * any BASE_PATH without a rebuild. The SPA router reads its basename from `document.baseURI`.
@@ -84,7 +94,7 @@ export const staticAdminPlugin = fp<StaticAdminOptions>(
       app.log.info('admin bundle not found; the admin UI is not served (run the Vite dev server instead)');
       return;
     }
-    const adminPrefix = urls.withBasePath(ADMIN_PATH);
+    const adminPrefix = adminPrefixFor(urls);
     const indexHtml = injectBaseHref(readFileSync(indexFile, 'utf8'), adminPrefix);
     const scriptHashes = importMapHashes(indexHtml);
     const sendIndex = async (_request: FastifyRequest, reply: FastifyReply) => {

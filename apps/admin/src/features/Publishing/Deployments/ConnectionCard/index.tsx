@@ -8,12 +8,17 @@ import { PROVIDER_LABELS } from '../../constants';
 import { DetailList } from '../../DetailList';
 import { EnabledChip } from '../../EnabledChip';
 import { usePublishingPermissions } from '../../hooks/usePublishingPermissions';
+import { canDeployConnection } from '../helpers/connectionState';
 import { useConnectionActions } from '../hooks/useConnectionActions';
 import { RunStatus } from '../RunStatus';
+import { SecretsUnreadableChip } from '../SecretsUnreadableChip';
 
 type ConnectionCardProps = { connection: DeploymentConnection };
 
-/** One deployment connection: provider, state, latest run and live snapshot, with Open and Deploy now. */
+/**
+ * One deployment connection: provider, state, latest run and live snapshot, with Open and Deploy now. A
+ * connection whose secret can't be read says so and can't deploy until the secret is entered again.
+ */
 export const ConnectionCard = ({ connection }: ConnectionCardProps) => {
   const { t } = useTranslation();
   const { canTriggerDeployments } = usePublishingPermissions();
@@ -26,6 +31,7 @@ export const ConnectionCard = ({ connection }: ConnectionCardProps) => {
       actions={<EnabledChip enabled={connection.enabled} />}
       bodyClassName="space-y-4"
     >
+      <SecretsUnreadableChip unreadable={connection.secretsUnreadable} />
       <DetailList
         items={[
           {
@@ -49,7 +55,11 @@ export const ConnectionCard = ({ connection }: ConnectionCardProps) => {
           </Link>
         </Button>
         {canTriggerDeployments ? (
-          <Button size="sm" disabled={actions.triggering || !connection.enabled} onClick={actions.triggerRun}>
+          <Button
+            size="sm"
+            disabled={actions.triggering || !canDeployConnection(connection)}
+            onClick={actions.triggerRun}
+          >
             <Rocket aria-hidden="true" />
             {t('publishing.deployments.triggerRun')}
           </Button>

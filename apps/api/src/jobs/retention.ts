@@ -1,6 +1,8 @@
 import type { Kysely } from 'kysely';
 import { JOB_PRIORITY } from '../constants/jobPriorities.js';
+import { removeDeadImportBundles } from '../content/transfer/deadBundles.js';
 import type { DB } from '../db/types.js';
+import type { MediaStorage } from '../media/types.js';
 import * as assistRunsRepository from '../repositories/assistRuns.js';
 import * as retentionRepository from '../repositories/retention.js';
 import * as usageRepository from '../repositories/usage.js';
@@ -11,7 +13,8 @@ import type { JobHandler } from './types.js';
 /**
  * `system.retention`: once a day, delete finished bookkeeping older than RETENTION_DAYS (succeeded jobs,
  * dispatched outbox events, after-hook run records, resolved health findings) and stale presence rows; usage
- * counters and assist runs older than USAGE_RETENTION_DAYS. Dead jobs and undispatched events stay for an operator.
+ * counters and assist runs older than USAGE_RETENTION_DAYS. Dead jobs and undispatched events stay for an operator;
+ * the stored bundles of imports that died before the cutoff are removed (with `storage`).
  * One job per UTC day (idempotency key `system.retention:<date>`); each run schedules the next day's, and
  * every worker start makes sure today's exists, so instances starting together still create one.
  */
@@ -52,7 +55,15 @@ export const createRetentionJobHandlers = (
     days,
     usageDays = days,
     now = () => new Date(),
-  }: { days: number; /** USAGE_RETENTION_DAYS (defaults to `days`). */ usageDays?: number; now?: () => Date },
+    storage,
+  }: {
+    days: number;
+    /** USAGE_RETENTION_DAYS (defaults to `days`). */
+    usageDays?: number;
+    now?: () => Date;
+    /** Media storage, for the bundles of dead imports; without it they are left alone. */
+    storage?: MediaStorage;
+  },
 ): Array<[string, JobHandler]> => [
   [
     RETENTION_JOB,
@@ -87,6 +98,9 @@ export const createRetentionJobHandlers = (
           new Date(at.getTime() - PRESENCE_RETENTION_MS),
           job.signal,
         ),
+        transferBundles: storage
+          ? await removeDeadImportBundles(db, storage, before, { signal: job.signal, log: job.log })
+          : 0,
       };
       const next = new Date(at.getTime() + DAY_MS);
       await enqueueJob(

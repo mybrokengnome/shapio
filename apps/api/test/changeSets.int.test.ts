@@ -3,6 +3,7 @@ import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import type { Worker } from '../src/jobs/worker.js';
 import { createDefinition, createDeliveryToken, expectStatus, type EntryBody } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
+import { createPng, uploadAsset } from './helpers/media.js';
 import {
   createPublishingTestApp,
   createPublishingWorker,
@@ -244,7 +245,12 @@ describe('change sets (content)', () => {
       }>;
     }>();
     expect(review.entries[0]?.fields).toEqual([
-      expect.objectContaining({ apiKey: 'title', after: 'Reviewed' }),
+      expect.objectContaining({
+        apiKey: 'title',
+        type: 'string',
+        after: 'Reviewed',
+        summary: { before: null, after: 'Reviewed' },
+      }),
     ]);
     const itemVersions = review.entries.map((item) => ({
       itemId: item.itemId,
@@ -388,6 +394,132 @@ describe('change sets (content)', () => {
       200,
     ).json<ChangeSet>();
     expect(back.status).toBe('open');
+  });
+
+  it('summarises rich text, media, relations and components in the review, within what the reviewer may read', async () => {
+    const headers = { authorization: `Bearer ${await createRoleToken(database.current.db)}` };
+    const hero = await uploadAsset(testApp.app, headers, {
+      file: await createPng(8, 8),
+      filename: 'hero.png',
+      mimeType: 'image/png',
+    });
+    const person = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'person',
+      label: 'Person',
+      fields: [{ apiKey: 'name', label: 'Name', type: 'string', required: true }],
+    });
+    const link = await createDefinition(
+      admin,
+      {
+        kind: 'component',
+        apiKey: 'link',
+        label: 'Link',
+        fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+      },
+      'components',
+    );
+    const story = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'story',
+      label: 'Story',
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string', required: true },
+        { apiKey: 'body', label: 'Body', type: 'richtext' },
+        { apiKey: 'cover', label: 'Cover', type: 'media' },
+        {
+          apiKey: 'author',
+          label: 'Author',
+          type: 'relation',
+          settings: { target: person.definition.id, cardinality: 'one' },
+        },
+        {
+          apiKey: 'links',
+          label: 'Links',
+          type: 'component',
+          settings: { component: link.definition.id, repeatable: true },
+        },
+      ],
+    });
+    const ada = expectStatus(
+      await admin.post('/api/admin/content/person', { data: { name: 'Ada' } }),
+      201,
+    ).json<EntryBody>();
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/story', {
+        data: {
+          title: 'Launch',
+          body: {
+            format: 'shapio-richtext',
+            version: 1,
+            doc: {
+              type: 'doc',
+              content: [
+                { type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] },
+                { type: 'paragraph', content: [{ type: 'text', text: 'world' }] },
+              ],
+            },
+          },
+          cover: hero.id,
+          author: ada.id,
+          links: [{ text: 'Home' }, { text: 'About' }],
+        },
+      }),
+      201,
+    ).json<EntryBody>();
+    const set = await createSet('Summaries');
+    expectStatus(
+      await admin.post(`/api/admin/change-sets/${set.id}/items`, {
+        modelKey: 'story',
+        entryId: entry.id,
+        action: 'publish',
+      }),
+      200,
+    );
+    type Review = {
+      entries: Array<{
+        fields: Array<{ apiKey: string; type: string; summary: { before: unknown; after: unknown } }>;
+      }>;
+    };
+    const summariesOf = (review: Review) =>
+      Object.fromEntries(
+        (review.entries[0]?.fields ?? []).map((field) => [field.apiKey, [field.type, field.summary.after]]),
+      );
+    const review = expectStatus(
+      await admin.get(`/api/admin/change-sets/${set.id}/review`),
+      200,
+    ).json<Review>();
+    expect(summariesOf(review)).toEqual({
+      title: ['string', 'Launch'],
+      body: ['richtext', 'Hello world'],
+      cover: ['media', 'hero.png'],
+      author: ['relation', 'Ada'],
+      links: ['component', '2 items (Link): Home, About'],
+    });
+    expect(review.entries[0]?.fields.every((field) => field.summary.before === null)).toBe(true);
+
+    // A reviewer who may read stories but not people, nor browse media, sees IDs instead.
+    const grant = (action: string, modelId: string | null = null) => ({
+      action,
+      modelId,
+      condition: null,
+      fieldIds: null,
+    });
+    expectStatus(
+      await admin.post('/api/admin/roles', {
+        key: 'story-reviewer',
+        name: 'Story reviewer',
+        kind: 'admin',
+        permissions: [grant('read', story.definition.id), grant('changes.manage')],
+      }),
+      201,
+    );
+    const reviewer = schemaClient(testApp.app, await createRoleToken(database.current.db, 'story-reviewer'));
+    const limited = summariesOf(
+      expectStatus(await reviewer.get(`/api/admin/change-sets/${set.id}/review`), 200).json<Review>(),
+    );
+    expect(limited.author).toEqual(['relation', ada.id]);
+    expect(limited.cover).toEqual(['media', hero.id]);
   });
 
   it('needs changes.manage', async () => {

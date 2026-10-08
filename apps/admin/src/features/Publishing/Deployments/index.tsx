@@ -7,13 +7,13 @@ import { EmptyState } from '@/components/EmptyState';
 import { Page } from '@/components/Page';
 import { Panel } from '@/components/Panel';
 import { QueryView } from '@/components/QueryView';
-import { SecretReveal } from '@/components/SecretReveal';
 import { Button } from '@/components/ui/button';
 import { Header } from '../Header';
 import { usePublishingPermissions } from '../hooks/usePublishingPermissions';
 import { useSecretReveal } from '../hooks/useSecretReveal';
 import { ConnectionCard } from './ConnectionCard';
 import { CreateSheet } from './CreateSheet';
+import { GeneratedSecretReveal } from './GeneratedSecretReveal';
 import { RunsList } from './RunsList';
 
 /** Deployment connections as cards (managers) and the latest runs across all of them (everyone). */
@@ -41,14 +41,7 @@ export const Deployments = () => {
         }
       />
       {secret.revealed ? (
-        <SecretReveal
-          title={t('publishing.deployments.generatedSecretTitle')}
-          description={t('publishing.deployments.generatedSecretDescription')}
-          label={t('publishing.deployments.secretLabels.signingSecret')}
-          secret={secret.revealed.secret}
-          dismissLabel={t('publishing.secretDone')}
-          onDismiss={secret.dismiss}
-        />
+        <GeneratedSecretReveal secret={secret.revealed.secret} onDismiss={secret.dismiss} />
       ) : null}
       {canManageDeployments ? (
         <section aria-labelledby="deployment-connections" className="space-y-3">

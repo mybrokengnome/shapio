@@ -13,10 +13,11 @@ export const importStrapiCommand = createImporterCommand({
   label: 'Strapi',
   summary: 'Import a Strapi 5 export: --plan writes schema files, --map creates drafts and change sets',
   usage:
-    'shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--force]\n' +
+    'shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--url <origin> --token <admin token>] [--force]\n' +
     '       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]\n' +
     '  --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models\n' +
-    '  and components (<dir>/schema) and <dir>/import-map.json; it sends nothing. They belong to one site\n' +
+    '  and components (<dir>/schema) and <dir>/import-map.json. With --url it checks the planned API IDs against\n' +
+    '  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one site\n' +
     '  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site ("default"); --shared shares\n' +
     '  them with all sites (applying them needs a network admin token). --map without --site imports into the\n' +
     '  planned site. Apply the schema with\n' +

@@ -43,7 +43,7 @@ import { schemaSnapshotPlugin } from './plugins/schemaSnapshot.js';
 import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
 import { siteResolutionPlugin } from './plugins/siteResolution.js';
-import { staticAdminPlugin } from './plugins/staticAdmin.js';
+import { adminPrefixFor, staticAdminPlugin } from './plugins/staticAdmin.js';
 import { themeCataloguePlugin } from './plugins/themeCatalogue.js';
 import { usagePlugin } from './plugins/usage.js';
 import type { HostResolver } from './publishing/outbound/ssrf.js';
@@ -180,6 +180,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     http: config.http,
     httpsPublicUrl: urls.publicUrl.startsWith('https:'),
     mediaOrigins: await resolveMediaOrigins(config.storage),
+    adminPrefix: adminPrefixFor(urls),
   });
 
   app.decorate('schemaLookup', schemaLookup);

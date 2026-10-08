@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   connectionSchema,
   EMPTY_CONNECTION,
+  regenerableSecrets,
   toCreateConnectionInput,
   toUpdateConnectionInput,
   type ConnectionFormValues,
@@ -51,6 +52,40 @@ describe('connection form', () => {
       expectedVersion: 4,
     });
     expect(toUpdateConnectionInput(github, 4)).not.toHaveProperty('provider');
+  });
+
+  it('asks for a new generated secret when an unreadable one is left empty', () => {
+    const generic = {
+      ...EMPTY_CONNECTION,
+      name: 'Site',
+      settings: { ...EMPTY_CONNECTION.settings, url: 'https://x.dev' },
+    };
+    const unset = { signingSecret: { set: false, envVar: null } };
+    expect(
+      regenerableSecrets({ provider: 'generic_webhook', secrets: unset, secretsUnreadable: true }),
+    ).toEqual(['signingSecret']);
+    expect(
+      regenerableSecrets({ provider: 'generic_webhook', secrets: unset, secretsUnreadable: false }),
+    ).toEqual([]);
+    // A secret read from the environment is still readable: never replaced by a generated one.
+    expect(
+      regenerableSecrets({
+        provider: 'generic_webhook',
+        secrets: { signingSecret: { set: true, envVar: 'SIGNING' } },
+        secretsUnreadable: true,
+      }),
+    ).toEqual([]);
+    // Required secrets are never generated.
+    expect(regenerableSecrets({ provider: 'github', secrets: {}, secretsUnreadable: true })).toEqual([]);
+
+    expect(toUpdateConnectionInput(generic, 2, ['signingSecret'])).toMatchObject({
+      secrets: { signingSecret: '' },
+    });
+    const typed = { ...generic, secrets: { ...generic.secrets, signingSecret: 'mine' } };
+    expect(toUpdateConnectionInput(typed, 2, ['signingSecret'])).toMatchObject({
+      secrets: { signingSecret: 'mine' },
+    });
+    expect(toUpdateConnectionInput(generic, 2)).not.toHaveProperty('secrets');
   });
 
   it('requires the provider’s settings, and its secrets only when creating', () => {

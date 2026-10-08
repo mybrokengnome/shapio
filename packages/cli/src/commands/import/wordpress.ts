@@ -13,9 +13,11 @@ export const importWordPressCommand = createImporterCommand({
   summary:
     'Import a WordPress export (WXR): --plan writes schema files, --map creates drafts and change sets',
   usage:
-    'shapio import wordpress <export.xml> --plan <dir> [--site <key> | --shared] [--force]\n' +
+    'shapio import wordpress <export.xml> --plan <dir> [--site <key> | --shared] [--url <origin> --token <admin token>] [--force]\n' +
     '       shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--site <key>] [--media-dir <uploads dir>]\n' +
-    '  --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json; it sends nothing.\n' +
+    '  --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json.\n' +
+    '  With --url it checks the planned API IDs against that instance and renames clashes (tag → tagItem);\n' +
+    '  without it, it sends nothing.\n' +
     '  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site\n' +
     '  ("default"); --shared shares them with all sites (applying them needs a network admin token).\n' +
     '  --map without --site imports into the planned site.\n' +

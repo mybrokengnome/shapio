@@ -23,7 +23,8 @@ export const NOTES: Readonly<Record<string, string>> = {
   LOG_PRETTY: 'Human-readable logs; needs the `pino-pretty` dev dependency. Leave off in production.',
   CORS_ORIGINS:
     'Comma-separated origins of your own sites and apps that call the API from a browser (previews included). The admin needs none. Empty disables CORS.',
-  RATE_LIMIT_MAX: 'Requests per window and client IP, for every route without a stricter limit of its own.',
+  RATE_LIMIT_MAX:
+    "Requests per window and client IP, for every route without a stricter limit of its own. Requests for the admin's own files under the admin prefix (scripts, styles, `theme-init.js`, fonts, and favicons) are not counted; the admin page itself and every API route are.",
   RATE_LIMIT_WINDOW_MS: 'The rate-limit window, in milliseconds.',
   TLS_KEY_FILE: 'Private key for TLS_CERT_FILE (PEM).',
   DATABASE_URL:

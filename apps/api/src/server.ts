@@ -110,6 +110,7 @@ export const createConfiguredWorker = async (
       ...createRetentionJobHandlers(db, {
         days: config.retention.days,
         usageDays: config.usage.retentionDays,
+        storage,
       }),
       ...createContentHealthJobHandlers({
         db,

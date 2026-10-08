@@ -321,7 +321,12 @@ describe('change sets (schema + content)', () => {
     expect(review.schema[0]?.stale).toBe(false);
     expect(review.schema[0]?.plan.prerequisites.map((step) => step.kind)).toContain('convert');
     expect(review.entries.find((item) => item.entryId === one.id)?.fields).toEqual([
-      expect.objectContaining({ apiKey: 'title', before: 'One', after: 'One (edited)' }),
+      expect.objectContaining({
+        apiKey: 'title',
+        before: 'One',
+        after: 'One (edited)',
+        summary: { before: 'One', after: 'One (edited)' },
+      }),
     ]);
     expect(review.consumers).toEqual([
       expect.objectContaining({
@@ -565,7 +570,12 @@ describe('change sets (schema + content)', () => {
       expect.objectContaining({ entryId: doomed.id, reason: 'entry_deleted' }),
     ]);
     expect(review.entries.find((item) => item.entryId === kept.id)?.fields).toEqual([
-      expect.objectContaining({ apiKey: 'title', before: 'Kept v2', after: 'Kept v1' }),
+      expect.objectContaining({
+        apiKey: 'title',
+        before: 'Kept v2',
+        after: 'Kept v1',
+        summary: { before: 'Kept v2', after: 'Kept v1' },
+      }),
     ]);
 
     const shipped = expectStatus(await ship(set.id), 200).json<ChangeSet>();

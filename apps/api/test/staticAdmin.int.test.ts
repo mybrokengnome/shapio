@@ -42,3 +42,31 @@ describe('admin SPA serving (import map, fallback)', () => {
     expect((await get('/cms/admin/assets/app-abc123.js')).statusCode).toBe(200);
   });
 });
+
+describe('admin files and the global rate limit', () => {
+  const database = useTestDatabase();
+  let testApp: TestApp;
+
+  beforeAll(async () => {
+    testApp = await createTestApp(database.current, {
+      env: { BASE_PATH: '/cms', PUBLIC_URL: 'https://example.com', RATE_LIMIT_MAX: '3' },
+      adminDistPath: ADMIN_FIXTURE,
+    });
+  });
+  afterAll(() => testApp.app.close());
+
+  const get = (url: string) => testApp.app.inject({ method: 'GET', url, remoteAddress: '203.0.113.9' });
+
+  it("never limits the admin's own files; the admin page and the API keep the limit", async () => {
+    for (let n = 0; n < 10; n += 1) {
+      expect((await get('/cms/admin/assets/app-abc123.js')).statusCode).toBe(200);
+    }
+    for (let n = 0; n < 3; n += 1) {
+      expect((await get('/cms/admin/settings')).statusCode).toBe(200);
+    }
+    expect((await get('/cms/admin/settings')).statusCode).toBe(429);
+    expect((await get('/cms/api/admin/auth/me')).statusCode).toBe(429);
+    expect((await get('/cms/admin/assets/app-abc123.js')).statusCode).toBe(200);
+    expect((await get('/cms/admin/assets/missing-abc123.js')).statusCode).toBe(404);
+  });
+});

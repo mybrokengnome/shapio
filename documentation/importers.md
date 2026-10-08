@@ -10,7 +10,7 @@ An import has two steps, with a schema apply between them:
 1. **Plan** (`--plan <dir>`) reads the export and writes the models it proposes as ordinary
    [schema files](schema-sync.md) into `<dir>/schema` (the primary site's folder, `sites/default/`, unless you
    say otherwise: see below), plus `<dir>/import-map.json`. It runs offline: it needs no URL or token and sends
-   nothing anywhere.
+   nothing anywhere, unless you pass `--url` to check the planned names against your instance (see below).
 2. **Review and apply** the files, like any schema change:
    `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`. You can rename API IDs, labels and
    descriptions, or delete fields you don't want, before applying. Or copy the files into your project's
@@ -29,6 +29,20 @@ npx @shapio/cms import wordpress --map ./import --url https://cms.example.com --
 with the admin or owner role: it creates the models, entries and media and manages change sets. Run the commands
 from the folder that holds the export: `npx @shapio/cms` works anywhere (inside a project made by `create-shapio`,
 `npx shapio` is the same command).
+
+**Names already on the instance.** With `--url` (and `--token`, or `SHAPIO_TOKEN`), `--plan` reads the models
+and components the planned site can already see (the shared ones and the site's own) and checks every planned
+API ID, plural API ID, and GraphQL name against them. A planned model or component that would clash gets the
+`Item` suffix, numbered if that is taken too (`seoItem`, `seoItem2`), and `--plan` prints one line for each
+rename, such as "Component seo is named seoItem (the target already has seo)." A renamed collection's plural API
+ID is derived from its new API ID. Only `--url` turns the check on: `SHAPIO_URL` alone keeps the plan offline.
+For a `--shared` plan, the names are checked against the primary site's view, and `--plan` notes that other
+sites' own models and components were not checked. Without `--url`, `--plan` prints "Names were not checked
+against a target: pass --url and --token to --plan, or rename clashes in the schema files before applying."
+
+```sh
+npx @shapio/cms import strapi my-export.tar.gz --plan ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
+```
 
 **Which site the models belong to.** The planned models belong to one [site](sites.md): the one `--site <key>`
 (or `SHAPIO_SITE`) names, else the primary site (key `default`). On an instance with one site, that is the only
@@ -182,8 +196,10 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
 - The summary of `--map` lists everything that was not imported or was changed on the way: images that could
   not be fetched, embeds and shortcodes, references to skipped entries, and failures with their error. The exit
   code is non-zero while anything failed.
-- An existing model with the same API ID as a planned one (say your instance already has `author`) makes
-  `schema apply` refuse. Rename the planned model's API ID in its file, then apply.
+- A plan made without `--url` does not know the instance's names: an existing model or component with the same
+  API ID as a planned one (say your instance already has `author`, or the shared `seo` component) makes
+  `schema apply` refuse. Plan again with `--url` and `--token`, or rename the planned API ID in its file, then
+  apply. A plan made with `--url` can still clash if someone adds a model with a planned name before you apply.
 - A large import takes a while: every entry is one request, and the instance's rate limit is waited out
   automatically (about 1,000 entries in three minutes at the default `RATE_LIMIT_MAX` of 600 a minute). The
   limit counts per client address, so while `--map` runs, the admin opened from the same address can answer

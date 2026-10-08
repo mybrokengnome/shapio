@@ -26,3 +26,21 @@ describe('summarizeValue for code', () => {
     expect(summarizeItem(block, { embed: '<script>x()</script>', caption: 'Map' })).toBe('Map');
   });
 });
+
+describe('summarizeValue for rich text', () => {
+  const [body] = component({ fields: [field({ apiKey: 'body', type: 'richtext' })] }).fields;
+  const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+
+  it('reads the document as plain text, blocks separated by a space', () => {
+    const value = {
+      format: 'shapio-richtext',
+      version: 1,
+      doc: { type: 'doc', content: [paragraph('Hello'), paragraph('world')] },
+    };
+    expect(summarizeValue(body!, value)).toBe('Hello world');
+  });
+
+  it('reads a value that is not a document as empty', () => {
+    expect(summarizeValue(body!, 'not a document')).toBe('');
+  });
+});

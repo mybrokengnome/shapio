@@ -39,3 +39,15 @@ export const seedMediaReference = async (assetId: string) => {
   }
   return { entryId, modelId };
 };
+
+/**
+ * Makes a deployment connection's stored secrets undecryptable, as if the server's SESSION_SECRET had
+ * changed since they were saved: a well-formed sealed value whose authentication tag can never match.
+ */
+export const makeConnectionSecretsUnreadable = async (connectionName: string) => {
+  const sealed = ['v1', 'AAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAA'].join(':');
+  await queryServerDatabase(`update deployment_connections set secrets_encrypted = ? where name = ?`, [
+    sealed,
+    connectionName,
+  ]);
+};

@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { bundleKeyFor } from '../src/content/transfer/bundleFile.js';
+import { TRANSFER_IMPORT_JOB } from '../src/content/transfer/job.js';
+import { createUrlBuilder } from '../src/helpers/publicUrl.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import {
   createRetentionJobHandlers,
@@ -7,6 +13,9 @@ import {
   RETENTION_JOB,
 } from '../src/jobs/retention.js';
 import { createWorker, type Worker } from '../src/jobs/worker.js';
+import { createMediaStorage } from '../src/media/storage.js';
+import type { MediaStorage } from '../src/media/types.js';
+import { testConfig } from './helpers/createTestApp.js';
 import { silentLogger } from './helpers/silentLogger.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 import { waitFor } from './helpers/waitFor.js';
@@ -117,5 +126,77 @@ describe('retention job', () => {
       .execute();
     expect(jobs.map((row) => row.status)).toEqual(['succeeded', 'pending']);
     expect(jobs[1]?.run_at.getTime()).toBeGreaterThan(Date.now() + DAY_MS - 60_000);
+  });
+});
+
+/** Dead imports keep their bundle for the retention period (an operator may retry them), then it goes. */
+describe('retention job: bundles of dead imports', () => {
+  const database = useTestDatabase();
+  const mediaPath = mkdtempSync(join(tmpdir(), 'shapio-retention-'));
+  let storage: MediaStorage;
+
+  const deadImport = async (importId: string, finishedAt: Date) => {
+    const bundle = { driver: storage.active.driver, key: bundleKeyFor(importId) };
+    await storage.active.put(bundle.key, Buffer.from('{}\n'), {
+      contentType: 'application/x-ndjson',
+      contentLength: 3,
+    });
+    await database.current.db
+      .insertInto('jobs')
+      .values({
+        type: TRANSFER_IMPORT_JOB,
+        status: 'dead',
+        finished_at: finishedAt,
+        payload: JSON.stringify({ importId, bundle }),
+      })
+      .execute();
+    return bundle.key;
+  };
+
+  beforeAll(async () => {
+    const config = testConfig(database.current, { MEDIA_PATH: mediaPath });
+    storage = await createMediaStorage(config.storage, { urls: createUrlBuilder(config.server) });
+  });
+  afterAll(() => rmSync(mediaPath, { recursive: true, force: true }));
+
+  it('removes the bundles of imports dead for longer than the retention period, keeps the job rows', async () => {
+    const old = await deadImport(randomUUID(), daysAgo(31));
+    const gone = bundleKeyFor(randomUUID());
+    await database.current.db
+      .insertInto('jobs')
+      .values({
+        type: TRANSFER_IMPORT_JOB,
+        status: 'dead',
+        finished_at: daysAgo(40),
+        payload: JSON.stringify({ importId: 'x', bundle: { driver: storage.active.driver, key: gone } }),
+      })
+      .execute();
+    const recent = await deadImport(randomUUID(), daysAgo(2));
+    const handlers = new Map(createRetentionJobHandlers(database.current.db, { days: 30, storage }));
+    const run = handlers.get(RETENTION_JOB);
+    const result = (await run?.({
+      id: randomUUID(),
+      type: RETENTION_JOB,
+      payload: {},
+      attempt: 1,
+      maxAttempts: 1,
+      idempotencyKey: null,
+      checkpoint: null,
+      saveCheckpoint: async () => true,
+      signal: new AbortController().signal,
+      log: silentLogger,
+    })) as { removed: { transferBundles: number } };
+
+    // The already-missing bundle counts too: deleting a missing object succeeds.
+    expect(result.removed.transferBundles).toBe(2);
+    expect(await storage.active.exists(old)).toBe(false);
+    expect(await storage.active.exists(recent)).toBe(true);
+    const dead = await database.current.db
+      .selectFrom('jobs')
+      .select('id')
+      .where('type', '=', TRANSFER_IMPORT_JOB)
+      .where('status', '=', 'dead')
+      .execute();
+    expect(dead).toHaveLength(3);
   });
 });

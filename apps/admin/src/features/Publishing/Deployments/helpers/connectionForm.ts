@@ -204,11 +204,32 @@ export const toCreateConnectionInput = (values: ConnectionFormValues): CreateDep
   provider: values.provider,
 });
 
-/** Only secrets typed in are sent: an omitted secret keeps its stored value. */
+/**
+ * Secrets Shapio generates when left empty (the generic signing secret) that the server can no longer read
+ * and that don't come from the environment: saving one empty asks for a new one.
+ */
+export const regenerableSecrets = (
+  connection: Pick<DeploymentConnection, 'provider' | 'secrets' | 'secretsUnreadable'>,
+): SecretName[] =>
+  connection.secretsUnreadable
+    ? PROVIDER_FIELDS[connection.provider].secrets
+        .filter(({ name, requiredOnCreate }) => !requiredOnCreate && !connection.secrets[name]?.set)
+        .map(({ name }) => name)
+    : [];
+
+/**
+ * Only secrets typed in are sent: an omitted secret keeps its stored value. A `regenerable` secret left
+ * empty is sent as '' so the server generates a new one (and returns it once).
+ */
 export const toUpdateConnectionInput = (
   values: ConnectionFormValues,
   expectedVersion: number,
+  regenerable: readonly SecretName[] = [],
 ): UpdateDeploymentConnectionInput => {
-  const { secrets, ...rest } = commonInput(values);
+  const { secrets: typed, ...rest } = commonInput(values);
+  const secrets = {
+    ...Object.fromEntries(regenerable.filter((name) => !(name in typed)).map((name) => [name, ''])),
+    ...typed,
+  };
   return { ...rest, ...(Object.keys(secrets).length > 0 ? { secrets } : {}), expectedVersion };
 };

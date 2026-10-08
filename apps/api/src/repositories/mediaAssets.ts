@@ -41,6 +41,16 @@ export const findLiveManyOnSite = (siteId: string, ids: readonly string[], trx: 
     ? Promise.resolve([])
     : live(trx).selectAll().where('site_id', '=', siteId).where('id', 'in', ids).execute();
 
+/** The original file names of one site's live assets among `ids` (review summaries). */
+export const findNamesOnSite = (siteId: string, ids: readonly string[], trx: Executor = db) =>
+  ids.length === 0
+    ? Promise.resolve([])
+    : live(trx)
+        .select(['id', 'original_filename'])
+        .where('site_id', '=', siteId)
+        .where('id', 'in', ids)
+        .execute();
+
 /** Locks the row for the rest of the transaction (deleted rows too, so callers can report them). Jobs only. */
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('media_assets').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();

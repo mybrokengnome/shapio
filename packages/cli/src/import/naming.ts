@@ -21,7 +21,8 @@ export const toCamelCase = (value: string): string => {
   return (key || 'item').slice(0, MAX_API_KEY_LENGTH);
 };
 
-const withSuffix = (key: string, suffix: string) =>
+/** `key` with `suffix`, shortened so the result stays within the API ID length limit. */
+export const withSuffix = (key: string, suffix: string) =>
   `${key.slice(0, MAX_API_KEY_LENGTH - suffix.length)}${suffix}`;
 
 /** Makes `candidate` unique within `taken` (case-folded), numbering repeats; records the result in `taken`. */

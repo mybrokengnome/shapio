@@ -1,13 +1,15 @@
 import { expect, request, test, type Browser, type Page } from '@playwright/test';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
+import { makeConnectionSecretsUnreadable } from './support/database';
 import { signBody, startReceiver } from './support/receiver';
 import { signInAsOwner } from './support/session';
 
 /**
  * Publishing against the real API: the section and its sub-navigation, a webhook delivering a signed test to a local receiver (its signing secret shown once at
  * the top of the page, on create and on rotate), and a generic build-hook deployment whose run only reads
- * "Deployed" once the site's signed callback says so. Captured in light and dark with axe.
+ * "Deployed" once the site's signed callback says so. A connection whose secret can no longer be read is
+ * flagged, can't deploy, and is repaired by entering the secret again. Captured in light and dark with axe.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -174,4 +176,51 @@ test('a build hook run shows "Deployed" only after the signed callback', async (
   await expect(card.getByText('Deployed')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Recent runs' }).getByText('Deployed')).toBeVisible();
   await captureScreen(page, 'publishing-15-deployments', DESKTOP);
+});
+
+test('a connection whose secret cannot be read is flagged and repaired by entering it again or generating a new one', async () => {
+  const WARNING = "Secret can't be read. Enter it again.";
+  await makeConnectionSecretsUnreadable('Marketing site');
+  await page.reload();
+  // The other connections (and this one) still list; only this card warns and can't deploy.
+  const card = page.getByRole('region', { name: 'Marketing site' });
+  await expect(card.getByText(WARNING)).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Deploy now' })).toBeDisabled();
+  await captureScreen(page, 'publishing-16-secret-unreadable', DESKTOP);
+
+  await card.getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Marketing site' })).toBeVisible();
+  await expect(page.locator('header').getByText(WARNING)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Deploy now' })).toBeDisabled();
+  // The secret reads as not set: its field is empty and ready to fill, not "Stored".
+  const field = page.getByLabel('Signing secret', { exact: true });
+  await expect(field).toHaveValue('');
+  await field.fill('a-new-signing-secret-for-the-site');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(toast('Connection saved')).toBeVisible();
+  await expect(page.locator('header').getByText(WARNING)).toBeHidden();
+
+  await expect(page.getByRole('button', { name: 'Deploy now' })).toBeEnabled();
+
+  // Unreadable again: left empty, a new signing secret is generated and shown once.
+  await makeConnectionSecretsUnreadable('Marketing site');
+  await page.reload();
+  await expect(page.locator('header').getByText(WARNING)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Deploy now' })).toBeDisabled();
+  await expect(
+    page.getByText(
+      'Paste the secret your build uses, or leave it empty to generate a new one and update the build.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByLabel('Signing secret', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  const reveal = page.getByRole('region', { name: 'Copy the signing secret' });
+  await expect(reveal.getByLabel('Signing secret')).not.toHaveValue('');
+  await expect(page.locator('header').getByText(WARNING)).toBeHidden();
+  await reveal.getByRole('button', { name: "I've copied it" }).click();
+  await expect(reveal).toBeHidden();
+
+  await crumb('Deployments').click();
+  await expect(card.getByText(WARNING)).toBeHidden();
+  await expect(card.getByRole('button', { name: 'Deploy now' })).toBeEnabled();
 });
