@@ -1,4 +1,4 @@
-import type { FieldDefinition } from '@shapio/schema';
+import type { DataType, FieldDefinition } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
 import { maskAllows } from '../content/compiler/policy.js';
 import { resolveModelById } from '../content/model.js';
@@ -22,6 +22,12 @@ import {
   type SchemaOperation,
 } from './changeSetViews.js';
 import { seesEverySite } from './networkScope.js';
+import {
+  loadSummaryLookups,
+  summarizeValue,
+  type FieldSummary,
+  type SummaryLookups,
+} from './reviewSummary.js';
 import type { NotRestorable } from './snapshotRestore.js';
 import { consumersOf } from './usage.js';
 
@@ -44,7 +50,16 @@ export type ReviewEntryItem = {
   sourceRevisionId: string | null;
   draftVersion: number | null;
   liveState: 'unpublished' | 'published' | 'modified' | 'missing';
-  fields: Array<{ fieldId: string; apiKey: string; label: string; before: unknown; after: unknown }>;
+  /** Each changed field with its stored values and a readable summary of each (null when empty). */
+  fields: Array<{
+    fieldId: string;
+    apiKey: string;
+    label: string;
+    type: DataType;
+    before: unknown;
+    after: unknown;
+    summary: FieldSummary;
+  }>;
   issues: Issue[];
 };
 
@@ -161,10 +176,24 @@ const fieldDiff = (
   fields.flatMap((field) => {
     const old = before?.[field.id] ?? null;
     const next = after?.[field.id] ?? null;
-    return sameValue(old, next)
-      ? []
-      : [{ fieldId: field.id, apiKey: field.apiKey, label: field.label, before: old, after: next }];
+    return sameValue(old, next) ? [] : [{ field, before: old, after: next }];
   });
+
+type RawFieldDiff = ReturnType<typeof fieldDiff>[number];
+type RawEntryReview = Omit<ReviewEntryItem, 'fields'> & { fields: RawFieldDiff[] };
+
+const withSummaries = (entry: RawEntryReview, lookups: SummaryLookups): ReviewEntryItem => ({
+  ...entry,
+  fields: entry.fields.map(({ field, before, after }) => ({
+    fieldId: field.id,
+    apiKey: field.apiKey,
+    label: field.label,
+    type: field.type,
+    before,
+    after,
+    summary: { before: summarizeValue(field, before, lookups), after: summarizeValue(field, after, lookups) },
+  })),
+});
 
 type EntryReviewContext = {
   context: ChangeSetServiceContext;
@@ -189,7 +218,7 @@ const afterOf = async (
   return draft?.data ?? null;
 };
 
-const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): Promise<ReviewEntryItem> => {
+const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): Promise<RawEntryReview> => {
   const { context, proposed, converted } = review;
   const modelId = item.model_id ?? '';
   const heads = review.heads.filter((head) => head.entry_id === item.entry_id);
@@ -373,10 +402,18 @@ export const getChangeSetReview = async (
       context.db,
     ),
   };
-  const entries: ReviewEntryItem[] = [];
+  const raw: RawEntryReview[] = [];
   for (const item of entryItems) {
-    entries.push(await reviewEntry(review, item));
+    raw.push(await reviewEntry(review, item));
   }
+  const lookupsFor = await loadSummaryLookups(
+    context,
+    [review.proposed, context.snapshot],
+    raw.flatMap((entry) =>
+      entry.fields.map(({ field, before, after }) => ({ field, values: [before, after] })),
+    ),
+  );
+  const entries = raw.map((entry) => withSummaries(entry, lookupsFor(entry.locale)));
   const schema = await reviewSchema(context, id, plans, items);
   const notices = [
     ...(plans.length > 0 && entryItems.length > 0 ? [NOTICE_NEW_FIELDS_AFTER_SHIP] : []),

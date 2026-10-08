@@ -1,3 +1,4 @@
+import { DATA_TYPES } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
 import {
   DateTimeInputSchema,
@@ -283,8 +284,11 @@ export const FieldDiffSchema = Type.Object({
   fieldId: Type.String(),
   apiKey: Type.String(),
   label: Type.String(),
+  type: Type.Enum(DATA_TYPES),
   before: Type.Unknown(),
   after: Type.Unknown(),
+  /** Readable one-line summaries of `before` and `after` (null when empty). */
+  summary: Type.Object({ before: NullableString, after: NullableString }),
 });
 
 export const ReviewIssueSchema = Type.Object({

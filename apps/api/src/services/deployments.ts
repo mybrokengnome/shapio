@@ -79,7 +79,15 @@ export type ConnectionView = {
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  /**
+   * The stored secrets cannot be decrypted (SESSION_SECRET changed): every literal secret reads as unset
+   * until it is entered again; env references are unaffected.
+   */
+  secretsUnreadable: boolean;
 };
+
+/** An update's result: `generatedSecrets` holds a secret Shapio minted to replace an unreadable one, shown once. */
+export type UpdatedConnection = ConnectionView & { generatedSecrets?: Record<string, string> };
 
 type RunRow = NonNullable<Awaited<ReturnType<typeof deploymentRunsRepository.findViewById>>>;
 
@@ -113,13 +121,34 @@ export const toRunView = (row: RunRow): RunView => {
 const connectionNotFound = (id: string) =>
   new AppError(404, 'CONNECTION_NOT_FOUND', `No deployment connection ${id}`, { id });
 
+const isSecretUnreadable = (error: unknown) =>
+  error instanceof AppError && error.code === 'SECRET_UNREADABLE';
+
+/**
+ * The connection's literal secrets, or none with `unreadable` when they cannot be decrypted: one connection
+ * whose secrets were sealed under another key must not break the list, and is repaired by entering them again.
+ */
+const readStoredSecrets = (
+  runtime: PublishingRuntime,
+  row: DeploymentConnectionRow,
+): { literal: Record<string, string>; unreadable: boolean } => {
+  try {
+    return { literal: runtime.secrets.decryptJson(row.secrets_encrypted), unreadable: false };
+  } catch (error) {
+    if (!isSecretUnreadable(error)) {
+      throw error;
+    }
+    return { literal: {}, unreadable: true };
+  }
+};
+
 const toConnectionView = (
   runtime: PublishingRuntime,
   row: DeploymentConnectionRow,
   runs: { latest?: RunRow | undefined; current?: RunRow | undefined },
 ): ConnectionView => {
   const provider = providerFor(row.provider);
-  const stored = runtime.secrets.decryptJson(row.secrets_encrypted);
+  const { literal: stored, unreadable } = readStoredSecrets(runtime, row);
   const refs = envRefsOf(row.secret_env_refs);
   return {
     id: row.id,
@@ -145,6 +174,7 @@ const toConnectionView = (
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     version: row.version,
+    secretsUnreadable: unreadable,
   };
 };
 
@@ -382,24 +412,34 @@ export const updateConnection = async (
   context: SiteActorContext,
   id: string,
   input: Partial<Omit<ConnectionInput, 'provider'>> & { expectedVersion: number },
-): Promise<ConnectionView> => {
+): Promise<UpdatedConnection> => {
   const current = await findConnection(runtime, context.site, id);
   const provider = providerFor(current.provider);
   const settings = input.settings ? validateSettings(provider, input.settings) : settingsOf(current);
-  const { literal, refs } = mergeSecrets(
-    provider,
-    {
-      literal: runtime.secrets.decryptJson(current.secrets_encrypted),
-      refs: envRefsOf(current.secret_env_refs),
-    },
-    input.secrets,
-    runtime.config.secretEnvAllowlist,
-  );
+  const stored = readStoredSecrets(runtime, current);
+  const secretsGiven = Object.values(input.secrets ?? {}).some((value) => value.trim() !== '');
+  // Unreadable secrets: an empty value for a generated secret asks for a new one (minted and returned once).
+  const regenerate =
+    stored.unreadable &&
+    provider.secrets.some((spec) => spec.generated && input.secrets?.[spec.name]?.trim() === '');
+  // Unreadable secrets and none given: keep the stored ones as they are, so the connection can still be
+  // renamed or disabled; giving any secret starts from nothing (the required check then applies).
+  const keepSealed = stored.unreadable && !secretsGiven && !regenerate;
+  const refs = envRefsOf(current.secret_env_refs);
+  const merged = keepSealed
+    ? { literal: {}, refs, generated: {} }
+    : mergeSecrets(
+        provider,
+        { literal: stored.literal, refs },
+        input.secrets,
+        runtime.config.secretEnvAllowlist,
+      );
+  const { literal } = merged;
   const allowPrivateNetwork = input.allowPrivateNetwork ?? current.allow_private_network;
   await assertDestinations(
     runtime,
     provider,
-    { settings, secrets: knownSecrets(runtime, { literal, refs }) },
+    { settings, secrets: knownSecrets(runtime, { literal, refs: merged.refs }) },
     allowPrivateNetwork,
   );
   const deliveryRoleId =
@@ -412,8 +452,8 @@ export const updateConnection = async (
       {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         settings: JSON.stringify(settings),
-        secrets_encrypted: runtime.secrets.encryptJson(literal),
-        secret_env_refs: JSON.stringify(refs),
+        ...(keepSealed ? {} : { secrets_encrypted: runtime.secrets.encryptJson(literal) }),
+        secret_env_refs: JSON.stringify(merged.refs),
         ...(deliveryRoleId !== undefined ? { delivery_role_id: deliveryRoleId } : {}),
         ...(input.previewUrlTemplate !== undefined
           ? { preview_url_template: validatePreviewTemplate(runtime, input.previewUrlTemplate) }
@@ -443,10 +483,16 @@ export const updateConnection = async (
       metadata: {
         changes: Object.keys(input).filter((key) => key !== 'expectedVersion' && key !== 'secrets'),
         secretsReplaced: Object.keys(input.secrets ?? {}).filter((key) => input.secrets?.[key]),
+        ...(Object.keys(merged.generated).length > 0
+          ? { secretsGenerated: Object.keys(merged.generated) }
+          : {}),
       },
     });
   });
-  return getConnection(runtime, context.site, id);
+  const connection = await getConnection(runtime, context.site, id);
+  return Object.keys(merged.generated).length > 0
+    ? { ...connection, generatedSecrets: merged.generated }
+    : connection;
 };
 
 export const deleteConnection = async (runtime: PublishingRuntime, context: SiteActorContext, id: string) => {

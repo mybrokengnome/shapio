@@ -51,6 +51,23 @@ export type HeadWrite = {
   now: Date;
 };
 
+/** The heads of one site's entries among `entryIds` that belong to `modelIds` (titles of related entries). */
+export const findForEntriesOnSite = (
+  siteId: string,
+  modelIds: readonly string[],
+  entryIds: readonly string[],
+  executor: Executor = db,
+) =>
+  entryIds.length === 0 || modelIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('entry_heads')
+        .select(['entry_id', 'model_id', 'locale', 'state', 'revision_id', 'data', 'version', 'autosaved_at'])
+        .where('site_id', '=', siteId)
+        .where('model_id', 'in', modelIds)
+        .where('entry_id', 'in', entryIds)
+        .execute();
+
 export const insert = (head: HeadWrite, trx: Executor = db) =>
   trx
     .insertInto('entry_heads')

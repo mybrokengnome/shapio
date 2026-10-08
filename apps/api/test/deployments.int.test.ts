@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import type { Worker } from '../src/jobs/worker.js';
+import { createSecretBox } from '../src/publishing/secretBox.js';
 import { startFakeCloudflare, type FakeCloudflare } from './fixtures/cloudflareApi.js';
 import { startFakeGitHub, type FakeGitHub } from './fixtures/githubApi.js';
 import { createDefinition, createSharedDefinition, expectStatus, type EntryBody } from './helpers/content.js';
@@ -537,6 +538,143 @@ describe('deployments', () => {
       } finally {
         delete process.env.SHAPIO_SECRET_TEST_HOOK;
       }
+    });
+  });
+
+  describe('a connection whose stored secrets cannot be decrypted', () => {
+    /** Seals the row's secrets under another key, as after a SESSION_SECRET change. */
+    const sealUnderAnotherKey = async (id: string) => {
+      const other = createSecretBox('another-signing-secret-that-is-at-least-32-chars');
+      await database.current.db
+        .updateTable('deployment_connections')
+        .set({ secrets_encrypted: other.encryptJson({ signingSecret: 'whsec_lost' }) })
+        .where('id', '=', id)
+        .execute();
+    };
+    const patch = (id: string, payload: Record<string, unknown>) =>
+      admin.request({ method: 'PATCH', url: `/api/admin/deployments/connections/${id}`, payload });
+    const listed = async () =>
+      expectStatus(await admin.get('/api/admin/deployments/connections'), 200).json<
+        Array<Connection & { name: string; secretsUnreadable: boolean }>
+      >();
+
+    it('is listed with secretsUnreadable beside the others, and a PATCH with the secret repairs it', async () => {
+      const { connection: broken } = await genericConnection({ name: 'Broken' });
+      const { connection: healthy } = await genericConnection({ name: 'Healthy' });
+      await sealUnderAnotherKey(broken.id);
+
+      const connections = await listed();
+      expect(connections.find((item) => item.id === healthy.id)).toMatchObject({
+        secretsUnreadable: false,
+        secrets: { signingSecret: { set: true, envVar: null } },
+      });
+      expect(connections.find((item) => item.id === broken.id)).toMatchObject({
+        secretsUnreadable: true,
+        secrets: { signingSecret: { set: false, envVar: null } },
+      });
+      expect(
+        expectStatus(await admin.get(`/api/admin/deployments/connections/${broken.id}`), 200).json(),
+      ).toMatchObject({ secretsUnreadable: true });
+
+      // Rename and disable without the secret: the stored (unreadable) secrets are kept as they are.
+      const renamed = expectStatus(
+        await patch(broken.id, { name: 'Renamed', enabled: false, expectedVersion: broken.version }),
+        200,
+      ).json<Connection & { name: string; secretsUnreadable: boolean; generatedSecrets?: unknown }>();
+      expect(renamed).toMatchObject({ name: 'Renamed', secretsUnreadable: true });
+      expect(renamed.generatedSecrets).toBeUndefined();
+
+      const repaired = expectStatus(
+        await patch(broken.id, {
+          secrets: { signingSecret: 'whsec_entered_again' },
+          enabled: true,
+          expectedVersion: renamed.version,
+        }),
+        200,
+      ).json<Connection & { secretsUnreadable: boolean; generatedSecrets?: unknown }>();
+      expect(repaired).toMatchObject({
+        secretsUnreadable: false,
+        secrets: { signingSecret: { set: true, envVar: null } },
+      });
+      expect(repaired.generatedSecrets).toBeUndefined();
+
+      const run = expectStatus(
+        await admin.post(`/api/admin/deployments/connections/${broken.id}/runs`, {}),
+        201,
+      ).json<Run>();
+      await drain(worker());
+      const trigger = site.requests.at(-1);
+      const expected = createHmac('sha256', 'whsec_entered_again')
+        .update(`${String(trigger?.headers['x-shapio-timestamp'])}.${trigger?.body ?? ''}`)
+        .digest('hex');
+      expect(trigger?.headers['x-shapio-signature']).toBe(`v1=${expected}`);
+      expect((await getRun(run.id)).status).toBe('triggered');
+    });
+
+    it('regenerates a generated secret on an empty value, returned once; a readable one is kept', async () => {
+      const { connection, generatedSecrets } = await genericConnection();
+      const original = generatedSecrets.signingSecret ?? '';
+      const kept = expectStatus(
+        await patch(connection.id, { secrets: { signingSecret: '' }, expectedVersion: connection.version }),
+        200,
+      ).json<Connection & { generatedSecrets?: unknown }>();
+      expect(kept.generatedSecrets).toBeUndefined();
+      const storedSecret = async () =>
+        testApp.app.publishing.secrets.decryptJson(
+          (
+            await database.current.db
+              .selectFrom('deployment_connections')
+              .select('secrets_encrypted')
+              .where('id', '=', connection.id)
+              .executeTakeFirstOrThrow()
+          ).secrets_encrypted,
+        ).signingSecret;
+      expect(await storedSecret()).toBe(original);
+
+      await sealUnderAnotherKey(connection.id);
+      const regenerated = expectStatus(
+        await patch(connection.id, { secrets: { signingSecret: '' }, expectedVersion: kept.version }),
+        200,
+      ).json<Connection & { secretsUnreadable: boolean; generatedSecrets?: Record<string, string> }>();
+      const fresh = regenerated.generatedSecrets?.signingSecret ?? '';
+      expect(fresh).toMatch(/^whsec_/);
+      expect(fresh).not.toBe(original);
+      expect(regenerated.secretsUnreadable).toBe(false);
+      expect(await storedSecret()).toBe(fresh);
+      const listedAgain = await listed();
+      expect(listedAgain.find((item) => item.id === connection.id)).not.toHaveProperty('generatedSecrets');
+    });
+
+    it('refuses a PATCH that gives some secrets but not a required one (400, not 500)', async () => {
+      const { connection } = await createConnection({
+        name: 'Pages',
+        provider: 'cloudflare_pages',
+        settings: { accountId: 'a'.repeat(32), projectName: 'site' },
+        secrets: { apiToken: 'cf-token', deployHookUrl: `${cloudflare.apiUrl}/hook` },
+        triggerPolicy: ['manual'],
+        allowPrivateNetwork: true,
+      });
+      await sealUnderAnotherKey(connection.id);
+      const refused = await patch(connection.id, {
+        secrets: { apiToken: 'cf-token-again' },
+        expectedVersion: connection.version,
+      });
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json()).toMatchObject({ error: { code: 'INVALID_CONNECTION' } });
+    });
+
+    it('fails a run with "Enter the secret again" on its timeline', async () => {
+      const { connection } = await genericConnection();
+      await sealUnderAnotherKey(connection.id);
+      const run = expectStatus(
+        await admin.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}),
+        201,
+      ).json<Run>();
+      await drain(worker());
+      const failed = await getRun(run.id);
+      expect(failed.status).toBe('failed');
+      expect(failed.error).toMatch(/Enter the secret again/);
+      expect(failed.timeline.at(-1)?.message).toMatch(/Enter the secret again/);
     });
   });
 
