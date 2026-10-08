@@ -6,6 +6,34 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-07
+
+### Added
+
+- **Code fields.** A new `code` field type for content that is code: a script, an embed, a config file, a game's
+  dialogue script. The value is a string Shapio never trims or rewrites. Each field has a language (plain, HTML,
+  CSS, JavaScript, JSON, YAML or Markdown) that the API reports: OpenAPI marks the property with
+  `x-shapio-language` and `contentMediaType`, GraphQL descriptions end with `Code: <language>`, and generated
+  TypeScript types carry it in the field's comment. The admin edits it in a CodeMirror editor with line numbers
+  and highlighting for the field's language; Tab moves on, Cmd/Ctrl-] and -[ indent. A JSON field can require
+  valid JSON, checked in the admin before saving and refused by the server. Code fields cannot be unique,
+  filterable or sortable, so changing a long text field to code is a breaking change (its filters go away);
+  changing back is not. Values survive both ways.
+
+### Fixed
+
+- **Exporting one site from an instance with several sites.** Roles are shared by every site, so a site's
+  bundle carried every role with grants on other sites' models, and importing it failed partway with
+  `UNKNOWN_MODEL`. An export now keeps only each role's grants on the bundle's models. An import leaves out
+  grants on models neither the bundle nor the target has (listed in the plan), so older bundles import too, and
+  updating an existing role changes only its grants on the bundle's models: importing one site never changes
+  what a role may read on another.
+- **A failed import left files behind.** When an import failed before its job was queued, the stored bundle and
+  the media files uploaded for it stayed in media storage. Both are now removed.
+- **Admin: an entry's editable title no longer clips descenders** (g, j, p, q, y).
+- **create-shapio** no longer says to edit `DATABASE_URL` when `--database-url` already set it.
+- **README** rewritten, with screenshots and a three-line quick start; the npm package page matches it.
+
 ## [0.5.3] - 2026-10-07
 
 ### Fixed
