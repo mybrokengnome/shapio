@@ -7,6 +7,7 @@ import {
   routeKeyOf,
   TIME_PATTERN,
   toTypeName,
+  type CodeLanguage,
   type FieldDefinition,
   type ModelDefinition,
   type SchemaDefinition,
@@ -40,6 +41,17 @@ const describe = (field: FieldDefinition, schema: JsonSchema): JsonSchema => ({
   ...schema,
   ...(field.description || field.label ? { description: field.description ?? field.label } : {}),
 });
+
+/** The media type of a code field's language (OpenAPI 3.1 `contentMediaType`); plain text has none. */
+const CODE_MEDIA_TYPES: Record<CodeLanguage, string | undefined> = {
+  plain: undefined,
+  html: 'text/html',
+  css: 'text/css',
+  javascript: 'text/javascript',
+  json: 'application/json',
+  yaml: 'application/yaml',
+  markdown: 'text/markdown',
+};
 
 const scalarSchema = (field: FieldDefinition): JsonSchema => {
   switch (field.type) {
@@ -76,6 +88,16 @@ const scalarSchema = (field: FieldDefinition): JsonSchema => {
       return { type: 'string', format: 'date-time' };
     case 'time':
       return { type: 'string', pattern: TIME_PATTERN.source };
+    case 'code':
+      return {
+        type: 'string',
+        ...(field.settings.minLength !== undefined ? { minLength: field.settings.minLength } : {}),
+        ...(field.settings.maxLength !== undefined ? { maxLength: field.settings.maxLength } : {}),
+        'x-shapio-language': field.settings.language,
+        ...(CODE_MEDIA_TYPES[field.settings.language]
+          ? { contentMediaType: CODE_MEDIA_TYPES[field.settings.language] }
+          : {}),
+      };
     case 'enum': {
       const values = { type: 'string', enum: field.settings.values.map((entry) => entry.value) };
       return field.settings.multiple ? { type: 'array', items: values, uniqueItems: true } : values;

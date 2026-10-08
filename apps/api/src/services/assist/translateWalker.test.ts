@@ -113,4 +113,15 @@ describe('translate walker', () => {
     const body = translated.body as typeof data.body;
     expect(body.doc.content[0]?.content).toEqual([{ type: 'text', text: 'Lisez ceci maintenant' }]);
   });
+
+  it('never offers a code field for translation, and copies its value untouched', () => {
+    const snippet = '<script async src="https://embed.test/widget.js"></script>\n<p>Hello</p>';
+    const codeFields = [field('title', 'string'), field('embed', 'code', { language: 'html' })];
+    const source = { title: 'Hello', embed: snippet };
+    expect(collectTextLeaves(model, codeFields, source)).toEqual([
+      { path: '/title', text: 'Hello', kind: 'plain' },
+    ]);
+    const { data: translated } = applyTranslations(model, codeFields, source, ['Bonjour']);
+    expect(translated).toEqual({ title: 'Bonjour', embed: snippet });
+  });
 });

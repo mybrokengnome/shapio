@@ -55,6 +55,11 @@ const settingsOf = (
     case 'slug':
     case 'uid':
       return field.maxLength ? { maxLength: field.maxLength } : {};
+    case 'code':
+      return {
+        language: field.language ?? 'plain',
+        ...(field.maxLength ? { maxLength: field.maxLength } : {}),
+      };
     case 'enum':
       return { values: field.values ?? [], ...(field.multiple ? { multiple: true } : {}) };
     case 'media':

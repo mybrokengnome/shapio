@@ -26,7 +26,7 @@ import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
 import { RELATION_LIST_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ValueNode } from './context.js';
-import { describeDefinition } from './descriptions.js';
+import { describeDefinition, describeField } from './descriptions.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 
 /**
@@ -230,7 +230,7 @@ const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: b
     const resolve = config.resolve;
     fields[field.apiKey] = {
       ...config,
-      description: describeDefinition(field),
+      description: describeField(field),
       resolve: (node, args, context, info) => {
         if (masked && !Object.hasOwn(node.data, field.apiKey)) {
           if (field.required) {

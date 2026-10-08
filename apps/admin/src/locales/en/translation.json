@@ -892,6 +892,10 @@
         "name": "Rich text",
         "description": "Formatted text with headings, links, lists, tables and images."
       },
+      "code": {
+        "name": "Code",
+        "description": "A snippet, embed code or config in one language, edited with line numbers and highlighting."
+      },
       "number": {
         "name": "Number",
         "description": "Any number, with or without decimals."
@@ -1193,6 +1197,8 @@
       "minLength": "Minimum length",
       "maxLength": "Maximum length",
       "pattern": "Pattern",
+      "language": "Language",
+      "validate": "Require valid JSON",
       "min": "Minimum",
       "max": "Maximum",
       "precision": "Precision (digits)",
@@ -1239,7 +1245,14 @@
       "vertical": "Vertical",
       "horizontal": "Horizontal",
       "local": "Local time",
-      "utc": "UTC"
+      "utc": "UTC",
+      "plain": "Plain text",
+      "html": "HTML",
+      "css": "CSS",
+      "javascript": "JavaScript",
+      "json": "JSON",
+      "yaml": "YAML",
+      "markdown": "Markdown"
     },
     "editors": {
       "textInput": "Text input",
@@ -1258,6 +1271,7 @@
       "timePicker": "Time picker",
       "slugInput": "Slug input",
       "jsonEditor": "JSON editor",
+      "codeEditor": "Code editor",
       "mediaPicker": "Media picker",
       "relationPicker": "Relation picker",
       "componentEditor": "Component editor",
@@ -1802,6 +1816,11 @@
         "invalid": "Not valid JSON: {{reason}}",
         "format": "Format"
       },
+      "code": {
+        "keys": "Tab moves to the next field. Indent with {{indent}}, outdent with {{outdent}}.",
+        "summary_one": "{{language}}, {{count}} line",
+        "summary_other": "{{language}}, {{count}} lines"
+      },
       "color": {
         "picker": "Pick a colour for {{field}}",
         "presets": "Preset colours"
@@ -1820,7 +1839,8 @@
         "datetime": "Enter a date and time.",
         "time": "Enter a time like 14:30.",
         "decimal": "Enter a decimal number, like 12.50.",
-        "biginteger": "Enter a whole number."
+        "biginteger": "Enter a whole number.",
+        "code": "Must be valid JSON."
       },
       "tooShort_one": "Use at least {{count}} character.",
       "tooShort_other": "Use at least {{count}} characters.",

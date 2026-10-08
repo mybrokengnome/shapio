@@ -33,6 +33,26 @@ describe('parseDefinition', () => {
     });
   });
 
+  it('defaults a code field to plain and refuses an unknown language', () => {
+    const parse = (codeSettings: Record<string, unknown>) =>
+      parseDefinition({
+        kind: 'collection',
+        apiKey: 'page',
+        label: 'Page',
+        fields: [{ apiKey: 'snippet', label: 'Snippet', type: 'code', settings: codeSettings }],
+      });
+    const parsed = parse({});
+    expect(parsed.ok && parsed.definition.fields[0]).toMatchObject({
+      type: 'code',
+      settings: { language: 'plain' },
+      editor: { id: 'codeEditor' },
+    });
+    expect(parse({ language: 'php' })).toMatchObject({
+      ok: false,
+      issues: [{ path: '/fields/0/settings/language', code: 'INVALID_SETTINGS' }],
+    });
+  });
+
   it('assigns IDs and applies defaults', () => {
     const result = parseDefinition(
       {

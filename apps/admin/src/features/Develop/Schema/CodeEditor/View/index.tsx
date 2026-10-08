@@ -1,8 +1,6 @@
-import { forceLinting } from '@codemirror/lint';
-import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
 import type { ValidationIssue } from '@shapio/schema';
-import { useEffect, useRef } from 'react';
+import { useMemo } from 'react';
+import { CodeMirror } from '@/components/CodeMirror';
 import type { JSONSchema7 } from '../helpers/editorSchema';
 import { editorExtensions } from '../helpers/extensions';
 
@@ -20,9 +18,8 @@ export type CodeMirrorViewProps = {
 };
 
 /**
- * The CodeMirror instance (its own lazy chunk). Created once per mount; the parent remounts it per file
- * with a `key`. Outside changes to `value` (a reload) replace the document; the editor's own edits flow out
- * through `onChange` and come back equal, so they are a no-op.
+ * The schema file editor (its own lazy chunk); the parent remounts it per file with a `key`. A change to any
+ * setting (a new lint function included) reconfigures the running editor, which lints again.
  */
 export const View = ({
   value,
@@ -33,50 +30,9 @@ export const View = ({
   schema,
   lint,
 }: CodeMirrorViewProps) => {
-  const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  const latest = useRef({ onChange, lint });
-
-  useEffect(() => {
-    latest.current = { onChange, lint };
-    if (view.current) {
-      forceLinting(view.current);
-    }
-  }, [onChange, lint]);
-
-  useEffect(() => {
-    if (!host.current) {
-      return undefined;
-    }
-    const created = new EditorView({
-      parent: host.current,
-      state: EditorState.create({
-        doc: value,
-        extensions: editorExtensions({
-          label,
-          describedBy,
-          readOnly,
-          schema,
-          lint: () => latest.current.lint,
-          onChange: (text) => latest.current.onChange(text),
-        }),
-      }),
-    });
-    view.current = created;
-    return () => {
-      created.destroy();
-      view.current = null;
-    };
-    // The document is seeded once; later `value` changes go through the effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, describedBy, readOnly, schema]);
-
-  useEffect(() => {
-    const current = view.current;
-    if (current && current.state.doc.toString() !== value) {
-      current.dispatch({ changes: { from: 0, to: current.state.doc.length, insert: value } });
-    }
-  }, [value]);
-
-  return <div ref={host} className="h-full min-h-0" />;
+  const extensions = useMemo(
+    () => editorExtensions({ label, describedBy, readOnly, schema, lint }),
+    [label, describedBy, readOnly, schema, lint],
+  );
+  return <CodeMirror value={value} onChange={onChange} extensions={extensions} />;
 };

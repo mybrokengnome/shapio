@@ -63,6 +63,12 @@ export type EntrySystemFields = {
 const quote = (text: string) => JSON.stringify(text);
 const comment = (text: string | undefined) => (text ? `  /** ${text.replace(/\*\//g, '*\\/')} */\n` : '');
 
+/** A field's one-line doc comment: its help text or label, plus a code field's language. */
+const fieldComment = (field: FieldDefinition) => {
+  const text = field.description ?? field.label;
+  return comment(field.type === 'code' ? `${text} (Code: ${field.settings.language})` : text);
+};
+
 const scalarType = (field: FieldDefinition): string => {
   switch (field.type) {
     case 'number':
@@ -77,7 +83,7 @@ const scalarType = (field: FieldDefinition): string => {
     case 'json':
       return 'unknown';
     default:
-      // Strings, including decimal/biginteger (exact) and canonical ISO date/time text.
+      // Strings, including code, decimal/biginteger (exact) and canonical ISO date/time text.
       return 'string';
   }
 };
@@ -121,8 +127,8 @@ const declaration = (definition: SchemaDefinition, snapshot: SchemaSnapshot, mod
       const type = fieldType(field, snapshot, mode);
       // Output: every field is present (null when empty). Input: send only what changes; null clears.
       return mode === 'output'
-        ? `${comment(field.description ?? field.label)}  ${field.apiKey}: ${type} | null;`
-        : `${comment(field.description ?? field.label)}  ${field.apiKey}?: ${type} | null;`;
+        ? `${fieldComment(field)}  ${field.apiKey}: ${type} | null;`
+        : `${fieldComment(field)}  ${field.apiKey}?: ${type} | null;`;
     });
   const base = mode === 'output' && isModelDefinition(definition) ? 'EntrySystemFields & ' : '';
   const ids =

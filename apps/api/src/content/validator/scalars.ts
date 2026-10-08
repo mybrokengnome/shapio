@@ -91,7 +91,10 @@ export const canonicalBigInteger = (value: unknown): string | undefined => {
 
 const textLength = (text: string) => Array.from(text).length;
 
-const checkLength = (text: string, settings: { minLength?: number; maxLength?: number }): ScalarOutcome => {
+export const checkLength = (
+  text: string,
+  settings: { minLength?: number; maxLength?: number },
+): ScalarOutcome => {
   const length = textLength(text);
   if (settings.minLength !== undefined && length < settings.minLength) {
     return problem('TOO_SHORT', `must be at least ${settings.minLength} characters`);

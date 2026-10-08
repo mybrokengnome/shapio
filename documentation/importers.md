@@ -158,6 +158,10 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
 - **Names:** an attribute whose name is reserved in Shapio (`status`, `version`, …) gets a suffix
   (`statusField`), and so does a content type or component (`shared.media` and `shared.rich-text` in Strapi's
   example project become `mediaItem` and `richTextItem`). `--plan` lists every rename.
+- **Code:** Strapi has no code type. A long text field that holds a snippet or an embed code can become a
+  `code` field: in its planned schema file, set `"type": "code"`, `"settings": { "language": "html" }` (or the
+  language it holds) and `"editor": { "id": "codeEditor", "options": {} }`, and clear `filterable` and
+  `sortable` if set, before applying. Its values import unchanged.
 - **Validation** (required, min/max length and value, regex) is not carried over, because Strapi 5 drafts may
   not satisfy it. Add the rules you want to the schema files before or after applying.
 - **Markdown** is converted through HTML. Constructs with no rich-text equivalent degrade to text: strike-through

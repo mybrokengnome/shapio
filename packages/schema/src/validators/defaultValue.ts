@@ -24,6 +24,7 @@ export const checkDefaultValue = (field: FieldDefinition): string | null => {
   switch (field.type) {
     case 'string':
     case 'text':
+    case 'code':
     case 'email':
     case 'url':
       return isString ? null : 'must be a string';

@@ -1,4 +1,6 @@
 import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import { i18next } from '@/app/i18n';
+import { valueLabel } from '@/features/Models/helpers/labels';
 import { isEmptyValue, isRecord, toList } from './values';
 
 /**
@@ -35,6 +37,12 @@ export const summarizeValue = (field: FieldDefinition, value: unknown): string =
         .join(', ');
     case 'json':
       return truncate(JSON.stringify(value));
+    case 'code':
+      // A snippet reads badly as a label: its language and size instead ("HTML, 14 lines").
+      return i18next.t('content.fields.code.summary', {
+        language: valueLabel(field.settings.language),
+        count: String(value).split('\n').length,
+      });
     case 'media':
     case 'relation':
     case 'component':

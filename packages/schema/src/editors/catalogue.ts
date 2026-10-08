@@ -128,6 +128,11 @@ const entries: EditorCatalogueEntry[] = [
     optionsSchema: Type.Object({ rows: Type.Optional(Type.Integer({ minimum: 3, maximum: 80 })) }, closed),
   },
   {
+    id: 'codeEditor',
+    dataTypes: ['code'],
+    optionsSchema: Type.Object({ rows: Type.Optional(Type.Integer({ minimum: 3, maximum: 80 })) }, closed),
+  },
+  {
     id: 'mediaPicker',
     dataTypes: ['media'],
     optionsSchema: Type.Object({}, closed),
@@ -164,6 +169,7 @@ export const EDITOR_CATALOGUE: ReadonlyMap<string, EditorCatalogueEntry> = new M
 export const DEFAULT_EDITORS: Readonly<Record<DataType, string>> = {
   string: 'textInput',
   text: 'textarea',
+  code: 'codeEditor',
   richtext: 'richText',
   number: 'numberInput',
   integer: 'numberInput',

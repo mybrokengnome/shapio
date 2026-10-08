@@ -132,6 +132,11 @@ const checkSettings = (
       );
     }
   }
+  if (field.type === 'code' && field.settings.validate && field.settings.language !== 'json') {
+    issues.push(
+      issue(`${path}/settings/validate`, 'INVALID_SETTINGS', 'only a json code field can be validated'),
+    );
+  }
   if (field.type === 'richtext' && field.settings.formatVersion !== 1) {
     issues.push(
       issue(`${path}/settings/formatVersion`, 'INVALID_SETTINGS', 'unsupported rich-text format version'),

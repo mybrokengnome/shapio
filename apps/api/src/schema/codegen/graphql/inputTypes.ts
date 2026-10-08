@@ -19,7 +19,7 @@ import { liveFields } from '../../../content/model.js';
 import { COMPONENT_KEY } from '../../../content/validator/index.js';
 import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
-import { describeDefinition } from './descriptions.js';
+import { describeField } from './descriptions.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 import { enumType } from './outputTypes.js';
 
@@ -81,7 +81,7 @@ const inputFields = (build: SchemaBuild, owner: SchemaDefinition): GraphQLInputF
   for (const field of liveFields(owner.fields)) {
     const type = fieldInputType(build, owner, field);
     if (type) {
-      fields[field.apiKey] = { type, description: describeDefinition(field) };
+      fields[field.apiKey] = { type, description: describeField(field) };
     }
   }
   return fields;

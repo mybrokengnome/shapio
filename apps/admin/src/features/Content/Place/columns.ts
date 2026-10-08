@@ -20,7 +20,13 @@ const LISTABLE_TYPES: ReadonlySet<string> = new Set([
   'enum',
 ]);
 /** Values too large or nested to read in a table cell. */
-const UNLISTABLE_TYPES: ReadonlySet<string> = new Set(['richtext', 'json', 'component', 'dynamiczone']);
+const UNLISTABLE_TYPES: ReadonlySet<string> = new Set([
+  'richtext',
+  'json',
+  'code',
+  'component',
+  'dynamiczone',
+]);
 
 /** Fields the column chooser offers: the title first, then every field with a readable cell. */
 export const columnChoicesFor = (model: ModelDefinition): FieldDefinition[] => {

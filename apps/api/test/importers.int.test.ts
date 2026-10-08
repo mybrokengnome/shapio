@@ -359,3 +359,56 @@ describe('shapio import strapi', () => {
     expect(applied.stderr).toContain('apply with a network token');
   });
 });
+
+describe('shapio import strapi with a field overridden to code', () => {
+  const instance = useImportInstance();
+
+  it('imports the values of a planned text field changed to code in the schema file, unchanged', async () => {
+    expectStatus(await instance.admin.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
+    const archive = await buildStrapiExport(join(instance.workdir, 'strapi-code-source'), { key: 'k3y' });
+    const dir = join(instance.workdir, 'strapi-code');
+    const planned = await runCli('import', ['strapi', archive, '--plan', dir, '--key', 'k3y'], instance.env);
+    expect(planned.code, planned.stderr).toBe(0);
+
+    // The guide's per-field override: the Strapi `text` field shared.quote.text becomes an HTML code field.
+    const quoteFile = join(dir, 'schema', 'sites', 'default', 'components', 'quote.json');
+    type PlannedField = {
+      apiKey: string;
+      type: string;
+      settings: Record<string, unknown>;
+      editor: { id: string };
+    };
+    const quote = JSON.parse(await readFile(quoteFile, 'utf8')) as { fields: PlannedField[] };
+    const text = quote.fields.find((field) => field.apiKey === 'text');
+    expect(text).toMatchObject({ type: 'text' });
+    Object.assign(text!, {
+      type: 'code',
+      settings: { language: 'html' },
+      editor: { id: 'codeEditor', options: {} },
+    });
+    await writeFile(quoteFile, `${JSON.stringify(quote, null, 2)}\n`);
+
+    await instance.applyPlan(dir);
+    const mapped = await runCli('import', ['strapi', '--map', dir], instance.env);
+    expect(mapped.code, `${mapped.stdout}\n${mapped.stderr}`).toBe(0);
+    const map = await instance.readMap(dir);
+    expect(map.state.failed).toEqual({});
+
+    const component = expectStatus(await instance.admin.get('/api/admin/components'), 200)
+      .json<{ items: Array<{ definition: { apiKey: string; fields: PlannedField[] } }> }>()
+      .items.find((item) => item.definition.apiKey === 'quote');
+    expect(component?.definition.fields.find((field) => field.apiKey === 'text')).toMatchObject({
+      type: 'code',
+      settings: { language: 'html' },
+    });
+    const article = await instance.entry(
+      'article',
+      map.state.entries['strapi:api::article.article:a1']!.entryId,
+      'en',
+    );
+    expect(article.data.sections).toEqual([
+      expect.objectContaining({ __component: 'quote', text: 'Q' }),
+      expect.objectContaining({ __component: 'seo', metaTitle: 'Z' }),
+    ]);
+  });
+});

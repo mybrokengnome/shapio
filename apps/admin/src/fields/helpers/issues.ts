@@ -41,6 +41,7 @@ const FORMAT_KEYS = {
   time: 'content.issues.format.time',
   decimal: 'content.issues.format.decimal',
   biginteger: 'content.issues.format.biginteger',
+  code: 'content.issues.format.code',
 } as const;
 
 type CountKey =

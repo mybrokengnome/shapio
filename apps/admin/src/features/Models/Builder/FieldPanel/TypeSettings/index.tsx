@@ -37,6 +37,9 @@ const FORMAT_HINT_KEYS = {
 
 const SOURCE_FIELD_TYPES: ReadonlySet<string> = new Set(['string', 'text']);
 
+/** `validate` on a code field only means something for JSON. */
+const VALIDATING_LANGUAGE = 'json';
+
 /**
  * The data type's settings, rendered from `SETTINGS_SCHEMAS[type]` (the schema the server validates), with
  * pickers for the settings that reference other definitions or fields.
@@ -128,6 +131,12 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
         />
       );
     }
+    if (field.type === 'code' && key === 'validate') {
+      // Shown for JSON only, and while an invalid `validate` is still set, so it can be switched off.
+      if (settings.language !== VALIDATING_LANGUAGE && settings.validate !== true) {
+        return null;
+      }
+    }
     const formatKey =
       property.control.kind === 'text' && field.type in FORMAT_HINT_KEYS
         ? FORMAT_HINT_KEYS[field.type as keyof typeof FORMAT_HINT_KEYS]
@@ -136,9 +145,16 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
       <PropertyControl
         key={key}
         idPrefix={idPrefix}
-        property={property}
+        // A code field always has a language (it defaults to plain), so there is no "Not set" choice.
+        property={field.type === 'code' && key === 'language' ? { ...property, required: true } : property}
         value={settings[key]}
-        onChange={(value) => onChange(key, value)}
+        onChange={(value) => {
+          onChange(key, value);
+          if (field.type === 'code' && key === 'language' && value !== VALIDATING_LANGUAGE) {
+            // No hidden setting left behind: `validate` needs JSON.
+            onChange('validate', undefined);
+          }
+        }}
         issues={common.issues}
         disabled={disabled}
         description={formatKey === undefined ? undefined : t(formatKey)}
