@@ -18,10 +18,17 @@ type ConnectionFormProps = {
   control: Control<ConnectionFormValues>;
   mode: ConnectionFormMode;
   storedSecrets?: DeploymentSecretState;
+  /** The server can't read the stored secrets: they are entered again (or generated). */
+  secretsUnreadable?: boolean;
 };
 
 /** A deployment connection's fields: provider (fixed once created), its settings and secrets, and policy. */
-export const ConnectionForm = ({ control, mode, storedSecrets }: ConnectionFormProps) => {
+export const ConnectionForm = ({
+  control,
+  mode,
+  storedSecrets,
+  secretsUnreadable = false,
+}: ConnectionFormProps) => {
   const { t } = useTranslation();
   const provider = useWatch({ control, name: 'provider' });
   const deliveryRoleOptions = useDeliveryRoleOptions();
@@ -41,7 +48,7 @@ export const ConnectionForm = ({ control, mode, storedSecrets }: ConnectionFormP
           options={DEPLOYMENT_PROVIDERS.map((value) => ({ value, label: t(PROVIDER_LABELS[value]) }))}
         />
       ) : null}
-      <ProviderFields control={control} storedSecrets={storedSecrets} />
+      <ProviderFields control={control} storedSecrets={storedSecrets} secretsUnreadable={secretsUnreadable} />
       <FormTextField
         control={control}
         name="previewUrlTemplate"

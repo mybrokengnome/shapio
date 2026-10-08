@@ -5,7 +5,7 @@ import { FormFieldError } from '@/components/FormFieldError';
 import { HintedLabel } from '@/components/HintedLabel';
 import { StatusChip } from '@/components/StatusChip';
 import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
+import { Field, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { describedBy } from '@/helpers/describedBy';
 import type { ConnectionFormValues, SecretName } from '../helpers/connectionForm';
@@ -20,16 +20,19 @@ type SecretFieldProps = {
   stored: boolean;
   /** The secret is read from this server environment variable (`${ENV:NAME}`). */
   envVar: string | null;
+  /** One visible line under the input when it changes what the person does (an unreadable secret). */
+  helper?: string | undefined;
 };
 
 /** A write-only secret: never prefilled; an empty value keeps the stored one. */
-export const SecretField = ({ control, name, label, hint, stored, envVar }: SecretFieldProps) => {
+export const SecretField = ({ control, name, label, hint, stored, envVar, helper }: SecretFieldProps) => {
   const { t } = useTranslation();
   const { field, fieldState } = useController({ control, name: `secrets.${name}` });
   const [replacing, setReplacing] = useState(false);
   const id = `field-secrets-${name}`;
   const hintId = `${id}-hint`;
   const errorId = fieldState.error ? `${id}-error` : undefined;
+  const helperId = helper ? `${id}-helper` : undefined;
   const fullHint = `${hint} ${t('publishing.deployments.secretEnvHint')}`;
   if (stored && !replacing) {
     return (
@@ -70,7 +73,7 @@ export const SecretField = ({ control, name, label, hint, stored, envVar }: Secr
           spellCheck={false}
           autoFocus={replacing}
           aria-invalid={fieldState.invalid || undefined}
-          aria-describedby={describedBy(hintId, errorId)}
+          aria-describedby={describedBy(hintId, helperId, errorId)}
           className="font-mono text-sm"
         />
         {stored ? (
@@ -86,6 +89,7 @@ export const SecretField = ({ control, name, label, hint, stored, envVar }: Secr
           </Button>
         ) : null}
       </div>
+      {helper ? <FieldDescription id={helperId}>{helper}</FieldDescription> : null}
       <FormFieldError id={errorId} message={fieldState.error?.message} />
     </Field>
   );

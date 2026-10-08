@@ -1,6 +1,6 @@
 import type {
   CreateDeploymentConnectionInput,
-  DeploymentConnection,
+  DeploymentConnectionUpdated,
   DeploymentRunQuery,
   UpdateDeploymentConnectionInput,
 } from '@shapio/client';
@@ -75,7 +75,10 @@ export const useCreateDeploymentConnection = () => {
   });
 };
 
-/** 409 when `expectedVersion` is stale: the caller reloads and tells the user. */
+/**
+ * 409 when `expectedVersion` is stale: the caller reloads and tells the user. A secret Shapio generated
+ * (`generatedSecrets`) is returned to the caller to show once and never kept in the query cache.
+ */
 export const useUpdateDeploymentConnection = () => {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateDeployments();
@@ -84,7 +87,7 @@ export const useUpdateDeploymentConnection = () => {
     meta: silent,
     mutationFn: ({ id, input }: { id: string; input: UpdateDeploymentConnectionInput }) =>
       withCsrf(() => adminApi.deployments.connections.update(id, input)),
-    onSuccess: (connection: DeploymentConnection) => {
+    onSuccess: ({ generatedSecrets: _shownOnce, ...connection }: DeploymentConnectionUpdated) => {
       queryClient.setQueryData(queryKeys.publishing.deployments.connection(connection.id), connection);
       return invalidate();
     },

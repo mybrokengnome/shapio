@@ -13,15 +13,26 @@ import { PROVIDER_LABELS } from '../../../constants';
 import { EnabledChip } from '../../../EnabledChip';
 import { useConflictReload } from '../../../hooks/useConflictReload';
 import { usePublishingPermissions } from '../../../hooks/usePublishingPermissions';
+import { useSecretReveal } from '../../../hooks/useSecretReveal';
 import { CallbackHelp } from '../../CallbackHelp';
+import { GeneratedSecretReveal } from '../../GeneratedSecretReveal';
+import { canDeployConnection } from '../../helpers/connectionState';
 import { useConnectionActions } from '../../hooks/useConnectionActions';
 import { RunsList } from '../../RunsList';
+import { SecretsUnreadableChip } from '../../SecretsUnreadableChip';
 import { EditForm } from '../EditForm';
 import { TestResult } from '../TestResult';
 
 type ViewProps = { connection: DeploymentConnection };
 
-/** A loaded connection: test, trigger, its runs, the callback contract (generic) and its settings. */
+/** Nothing to open after the reveal: the connection is already on screen. */
+const stayOnPage = () => undefined;
+
+/**
+ * A loaded connection: test, trigger, its runs, the callback contract (generic) and its settings. A secret
+ * the server can't read is flagged in the header (its field is empty, ready to fill); a secret the server
+ * generated on save is shown once at the top.
+ */
 export const View = ({ connection }: ViewProps) => {
   const { t } = useTranslation();
   const { cursor } = useSearch({ from: '/app/publishing/deployments/$connectionId' });
@@ -29,6 +40,14 @@ export const View = ({ connection }: ViewProps) => {
   const conflict = useConflictReload(queryKeys.publishing.deployments.connection(connection.id));
   const actions = useConnectionActions(connection);
   const { canTriggerDeployments } = usePublishingPermissions();
+  const secret = useSecretReveal(stayOnPage);
+  const onSaved = (generatedSecrets: Record<string, string> | undefined) => {
+    conflict.clearConflict();
+    const generated = generatedSecrets?.signingSecret;
+    if (generated) {
+      secret.reveal({ id: connection.id, secret: generated });
+    }
+  };
   const busy = actions.testing || actions.triggering || actions.deleting;
   const snapshot = connection.currentRun?.snapshot;
   const meta = [
@@ -47,7 +66,12 @@ export const View = ({ connection }: ViewProps) => {
           { label: t('publishing.nav.deployments'), link: linkOptions({ to: '/publishing/deployments' }) },
         ]}
         title={connection.name}
-        badge={<EnabledChip enabled={connection.enabled} />}
+        badge={
+          <>
+            <EnabledChip enabled={connection.enabled} />
+            <SecretsUnreadableChip unreadable={connection.secretsUnreadable} />
+          </>
+        }
         meta={meta}
         actions={
           <>
@@ -73,7 +97,7 @@ export const View = ({ connection }: ViewProps) => {
               {t('publishing.deployments.test')}
             </Button>
             {canTriggerDeployments ? (
-              <Button disabled={busy || !connection.enabled} onClick={actions.triggerRun}>
+              <Button disabled={busy || !canDeployConnection(connection)} onClick={actions.triggerRun}>
                 <Rocket aria-hidden="true" />
                 {t('publishing.deployments.triggerRun')}
               </Button>
@@ -81,6 +105,9 @@ export const View = ({ connection }: ViewProps) => {
           </>
         }
       />
+      {secret.revealed ? (
+        <GeneratedSecretReveal secret={secret.revealed.secret} onDismiss={secret.dismiss} />
+      ) : null}
       {actions.testResult ? <TestResult result={actions.testResult} /> : null}
       <Panel title={t('publishing.deployments.runs')} flush>
         <RunsList
@@ -106,7 +133,7 @@ export const View = ({ connection }: ViewProps) => {
         <EditForm
           key={connection.version}
           connection={connection}
-          onSaved={conflict.clearConflict}
+          onSaved={onSaved}
           onConflict={conflict.onSaveError}
         />
       </Panel>

@@ -1,4 +1,4 @@
-import type { SchemaDefinition } from '@shapio/schema';
+import type { DataType, SchemaDefinition } from '@shapio/schema';
 import type { DeploymentRunStatus, Page, PublicationAction } from './publishingTypes.js';
 import type { ChangePlan, DefinitionCategory, DefinitionPayload, PlanImpact } from './schemaTypes.js';
 import type { SiteRef } from './sitesTypes.js';
@@ -145,7 +145,19 @@ export type PutSchemaDraftInput = {
   expectedDraftVersion?: number;
 };
 
-export type FieldDiff = { fieldId: string; apiKey: string; label: string; before: unknown; after: unknown };
+/**
+ * One changed field. `summary` is the server's readable form of each side (rich text as its text, media as
+ * filenames, relations as titles, components as labelled items); null when that side is empty.
+ */
+export type FieldDiff = {
+  fieldId: string;
+  apiKey: string;
+  label: string;
+  type: DataType;
+  before: unknown;
+  after: unknown;
+  summary: { before: string | null; after: string | null };
+};
 export type ReviewIssue = { path: string; code: string; message: string };
 
 export type ReviewEntryItem = {

@@ -247,6 +247,11 @@ export type DeploymentConnection = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  /**
+   * The stored secrets cannot be decrypted (the server's SESSION_SECRET changed): every literal secret reads
+   * as not set until it is entered again; secrets read from the environment are unaffected.
+   */
+  secretsUnreadable: boolean;
 };
 
 export type CreateDeploymentConnectionInput = {
@@ -270,6 +275,11 @@ export type UpdateDeploymentConnectionInput = Partial<Omit<CreateDeploymentConne
 export type DeploymentConnectionCreated = {
   connection: DeploymentConnection;
   generatedSecrets: Record<string, string>;
+};
+
+/** An update's result: `generatedSecrets` holds a secret Shapio minted to replace an unreadable one, shown once. */
+export type DeploymentConnectionUpdated = DeploymentConnection & {
+  generatedSecrets?: Record<string, string>;
 };
 
 export type ConnectionTestResult = {

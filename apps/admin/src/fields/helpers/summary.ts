@@ -1,4 +1,4 @@
-import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import { richTextPlainText, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import { valueLabel } from '@/features/Models/helpers/labels';
 import { isEmptyValue, isRecord, toList } from './values';
@@ -11,24 +11,13 @@ const MAX_SUMMARY = 80;
 
 const truncate = (text: string) => (text.length > MAX_SUMMARY ? `${text.slice(0, MAX_SUMMARY - 1)}…` : text);
 
-const richTextPlain = (node: unknown): string => {
-  if (!isRecord(node)) {
-    return '';
-  }
-  if (typeof node.text === 'string') {
-    return node.text;
-  }
-  const children = Array.isArray(node.content) ? node.content : [];
-  return children.map(richTextPlain).join(node.type === 'doc' ? ' ' : '');
-};
-
 export const summarizeValue = (field: FieldDefinition, value: unknown): string => {
   if (isEmptyValue(value)) {
     return '';
   }
   switch (field.type) {
     case 'richtext':
-      return truncate(isRecord(value) ? richTextPlain(value.doc).trim() : '');
+      return truncate(richTextPlainText(value));
     case 'boolean':
       return value === true ? '✓' : '✗';
     case 'enum':

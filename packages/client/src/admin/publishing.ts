@@ -8,6 +8,7 @@ import type {
   CreateWebhookInput,
   DeploymentConnection,
   DeploymentConnectionCreated,
+  DeploymentConnectionUpdated,
   DeploymentRun,
   DeploymentRunQuery,
   Job,
@@ -77,7 +78,7 @@ export const createPublishingApi = (request: RequestFn) => ({
       create: (body: CreateDeploymentConnectionInput) =>
         request<DeploymentConnectionCreated>(ADMIN_PATHS.deploymentConnections, { method: 'POST', body }),
       update: (id: string, body: UpdateDeploymentConnectionInput) =>
-        request<DeploymentConnection>(withId(ADMIN_PATHS.deploymentConnections, id), {
+        request<DeploymentConnectionUpdated>(withId(ADMIN_PATHS.deploymentConnections, id), {
           method: 'PATCH',
           body,
         }),

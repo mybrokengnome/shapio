@@ -9,7 +9,8 @@ import { useEditConnectionForm } from '../../hooks/useEditConnectionForm';
 
 type EditFormProps = {
   connection: DeploymentConnection;
-  onSaved: () => void;
+  /** Receives any secret the server generated on this save, to show once. */
+  onSaved: (generatedSecrets: Record<string, string> | undefined) => void;
   onConflict: (error: unknown) => void;
 };
 
@@ -20,7 +21,12 @@ export const EditForm = ({ connection, onSaved, onConflict }: EditFormProps) => 
     <form noValidate onSubmit={(event) => void onSubmit(event)}>
       <UnsavedChangesGuard when={form.formState.isDirty && !update.isPending} />
       <FieldGroup>
-        <ConnectionForm control={form.control} mode="edit" storedSecrets={connection.secrets} />
+        <ConnectionForm
+          control={form.control}
+          mode="edit"
+          storedSecrets={connection.secrets}
+          secretsUnreadable={connection.secretsUnreadable}
+        />
         <FormError error={error} />
         <div>
           <SubmitButton pending={update.isPending} pendingLabel={t('common.saving')}>
