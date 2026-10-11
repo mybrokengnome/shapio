@@ -54,12 +54,20 @@ test.afterAll(async () => {
   // Later specs expect an empty model list and no shared components.
   if (modelId) {
     const { version } = await getJson<{ version: number }>(`/models/${modelId}`);
-    await adminRequest(page.request, 'DELETE', `/models/${modelId}?expectedVersion=${version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
   }
   const component = await page.request.get(`${ADMIN_API}/components/${SEO_COMPONENT_ID}`);
   if (component.ok()) {
     const { version } = (await component.json()) as { version: number };
-    await adminRequest(page.request, 'DELETE', `/components/${SEO_COMPONENT_ID}?expectedVersion=${version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/components/${SEO_COMPONENT_ID}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });

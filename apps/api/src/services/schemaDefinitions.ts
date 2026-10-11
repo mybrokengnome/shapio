@@ -293,7 +293,7 @@ export const applyChange = async (
 /** Soft-deletes a definition. Entries are kept; applying the definition again restores them. */
 export const deleteDefinition = async (
   context: SchemaServiceContext,
-  input: { category: DefinitionCategory; id: string; expectedVersion: number },
+  input: { category: DefinitionCategory; id: string; expectedVersion: number } & Acknowledgement,
 ): Promise<ChangeOutcome> => {
   await assertCanManage(context, input.id);
   await assertWritable(context);
@@ -312,6 +312,8 @@ export const deleteDefinition = async (
   if (plan.issues.length > 0) {
     throw schemaInvalid(plan.issues);
   }
+  // Every removal is breaking (its routes and GraphQL types go), as `schema apply --prune` enforces.
+  assertAcknowledged([plan], input);
   return executePreparedChange(context, {
     plan,
     before: active.definition,

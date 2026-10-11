@@ -568,7 +568,7 @@ test('with a second site, a new content type asks where it is available: "All si
   } finally {
     if (brandId) {
       const { version } = await api.get<{ version: number }>(`/models/${brandId}`);
-      await api.send('DELETE', `/models/${brandId}?expectedVersion=${version}`);
+      await api.send('DELETE', `/models/${brandId}?expectedVersion=${version}&acknowledgeBreaking=true`);
     }
     await api.send('DELETE', `/sites/${shop.id}`);
   }

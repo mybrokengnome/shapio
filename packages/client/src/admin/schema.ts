@@ -56,11 +56,15 @@ export const createDefinitionApi = (request: RequestFn, category: DefinitionCate
       request<ChangeOutcome>(withId(base, id), { method: 'PUT', body }),
     planUpdate: (id: string, body: PlanUpdateInput) =>
       request<PlanPreview>(`${withId(base, id)}/plan`, { method: 'POST', body }),
-    /** Soft delete: entries are kept and reappear if the definition is applied again. */
-    remove: (id: string, expectedVersion: number) =>
-      request<ChangeOutcome>(`${withId(base, id)}${toQueryString({ expectedVersion })}`, {
-        method: 'DELETE',
-      }),
+    /**
+     * Soft delete: entries are kept and reappear if the definition is applied again. Removing the API is a
+     * breaking change: without `acknowledgeBreaking` the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED.
+     */
+    remove: (id: string, expectedVersion: number, options: { acknowledgeBreaking?: boolean } = {}) =>
+      request<ChangeOutcome>(
+        `${withId(base, id)}${toQueryString({ expectedVersion, acknowledgeBreaking: options.acknowledgeBreaking || undefined })}`,
+        { method: 'DELETE' },
+      ),
     revisions: async (id: string) =>
       (await request<{ items: DefinitionRevision[] }>(`${withId(base, id)}/revisions`)).items,
     changes: async (id: string) =>

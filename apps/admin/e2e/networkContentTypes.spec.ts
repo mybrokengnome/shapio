@@ -35,7 +35,7 @@ test.afterEach(() => {
 test.afterAll(async () => {
   if (promoId) {
     const { version } = await owner().get<{ version: number }>(`/models/${promoId}`);
-    await owner().send('DELETE', `/models/${promoId}?expectedVersion=${version}`);
+    await owner().send('DELETE', `/models/${promoId}?expectedVersion=${version}&acknowledgeBreaking=true`);
   }
   await page.context().close();
 });

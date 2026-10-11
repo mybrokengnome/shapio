@@ -459,7 +459,9 @@ describe('per-site schema', () => {
         details: { definitions: 1 },
       });
       expectStatus(
-        await onGone.delete(`/api/admin/models/${own.definition.id}?expectedVersion=${own.version}`),
+        await onGone.delete(
+          `/api/admin/models/${own.definition.id}?expectedVersion=${own.version}&acknowledgeBreaking=true`,
+        ),
         200,
       );
       expectStatus(await onA.delete(`/api/admin/sites/${site.id}`), 204);

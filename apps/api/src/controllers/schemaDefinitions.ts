@@ -22,7 +22,10 @@ type ScopeRequest = FastifyRequest<{
   Params: IdParams;
   Body: { scope: Scope; siteId?: string; version: number };
 }>;
-type DeleteRequest = FastifyRequest<{ Params: IdParams; Querystring: { expectedVersion: number } }>;
+type DeleteRequest = FastifyRequest<{
+  Params: IdParams;
+  Querystring: { expectedVersion: number; acknowledgeBreaking?: boolean };
+}>;
 type ByIdRequest = FastifyRequest<{ Params: IdParams }>;
 type RevisionRequest = FastifyRequest<{ Params: IdParams & { revisionId: string } }>;
 
@@ -111,6 +114,7 @@ export const createDefinitionControllers = (category: DefinitionCategory) => ({
       category,
       id: request.params.id,
       expectedVersion: request.query.expectedVersion,
+      acknowledgeBreaking: request.query.acknowledgeBreaking,
     });
     return reply.code(statusCodeFor(outcome)).send(outcome);
   },
