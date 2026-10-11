@@ -33,7 +33,8 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 
 - Delivery tokens can only ever read, whatever their role says.
 - A role's grant covers every field marked `public` (the default); `public: false` fields are hidden unless the
-  grant names them.
+  grant names them. In [GraphQL](graphql.md#what-each-caller-sees) hidden fields are not even in the token's
+  schema.
 - Without a token, a request is _anonymous_: it gets what the built-in **public** app role grants, which is
   nothing until you allow it (Network → Roles → App roles). Use that for content anyone may read from the
   browser. App users' own tokens are covered in [End users](end-users.md).

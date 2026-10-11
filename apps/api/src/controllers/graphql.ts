@@ -3,12 +3,14 @@ import { OperationTypeNode } from 'graphql';
 import { DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
+import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
 import {
   formatGraphqlRequestError,
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
+import { resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import {
   executeOperation,
   prepareOperation,
@@ -54,7 +56,10 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
 const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: GraphqlOperationInput) => {
   const runtime = request.server.graphqlRuntime;
   const mayIntrospect = runtime.mayIntrospect(request.principal);
-  const { schema } = await runtime.schemas.get(await getRequestSchema(request));
+  const view = await getRequestSchema(request);
+  // The schema as this caller may see it: a delivery caller's never names a field or model it cannot read.
+  const visibility = await resolveSchemaVisibility(view, getRequestPermissions(request), request.principal);
+  const { schema } = await runtime.schemas.get(view, visibility);
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
     return send(

@@ -124,7 +124,8 @@ API ([SEO fields](seo.md)).
 A new field appears in the admin form, the REST and GraphQL APIs, the OpenAPI document and the generated
 TypeScript types as soon as you save. Because `public` defaults to on, a site's delivery token sees it at once.
 Turn `public` off for fields only editors should see (internal notes, prices before launch); a delivery role
-can still be granted those fields explicitly (Network → Roles). On a component's field, off always hides it
+can still be granted those fields explicitly (Network → Roles). A hidden field is also left out of the GraphQL
+schema delivery callers see. On a component's field, off always hides it
 from delivery tokens, app users, anonymous callers, and previews, because roles grant a model's fields, never a
 component's.
 

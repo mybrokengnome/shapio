@@ -114,8 +114,10 @@ const collectionQuery = (build: SchemaBuild, model: ModelDefinition): RootField 
     description: `A page of ${model.label} entries`,
     extensions: { cost: { pageSizeArgument: PAGE_SIZE_ARGUMENT, weight: 'pageSize' } },
     args: {
-      filter: { type: createFilterInput(model, build.fixed) },
-      sort: { type: new GraphQLList(new GraphQLNonNull(createSortInput(model, build.fixed))) },
+      filter: { type: createFilterInput(model, build.visibility, build.fixed) },
+      sort: {
+        type: new GraphQLList(new GraphQLNonNull(createSortInput(model, build.visibility, build.fixed))),
+      },
       search: { type: GraphQLString, description: "Case-insensitive search of the model's title field" },
       page: { type: GraphQLInt },
       [PAGE_SIZE_ARGUMENT]: { type: GraphQLInt },

@@ -12,8 +12,15 @@ All notable changes to Shapio are listed here. The format follows
   `No such built-in module: node:sqlite` on older Node.
 - **Public off on a component's field now hides it from delivery.** REST, GraphQL, in-process delivery, and
   previews returned a component's `public: false` fields to delivery tokens, app users, and anonymous callers,
-  in single, repeatable, and dynamic-zone components. They are now left out at any depth (GraphQL returns
-  `null`); admin reads still show them.
+  in single, repeatable, and dynamic-zone components. They are now left out at any depth; admin reads still
+  show them.
+- **A delivery caller's GraphQL schema no longer names what it can't read.** Introspection with a delivery token
+  listed every `public: false` field (in components too) and every model of the site. The schema a delivery
+  token, app user, or anonymous caller sees now holds only the models, fields, filters, and inputs its role
+  allows, and leaves out relations to models it can't read. This changes what delivery callers get: a query
+  naming a hidden field or model now fails validation (`400`, `Cannot query field …`) instead of returning
+  `null`, `FORBIDDEN`, or `UNAUTHENTICATED`. Admin sessions and admin tokens, the playground included, still see
+  the full schema.
 
 ## [0.5.6] - 2026-10-11
 

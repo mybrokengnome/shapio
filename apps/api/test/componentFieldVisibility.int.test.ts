@@ -31,13 +31,13 @@ const ADDRESS = { city: 'Paris', hidden: 'h1', inner: { open: 'o', secret: 's3cr
 const SHOWN = { city: 'Paris', inner: { open: 'o' } };
 const HIDDEN_VALUES = ['h1', 's3cret'];
 
-const ZONE_SELECTION = '__typename ... on Address { city hidden inner { open } }';
+const ZONE_SELECTION = '__typename ... on Address { city inner { open } }';
 const GRAPHQL_ENTRY = `query ($id: ID!) { thing(id: $id) {
-  addr { city hidden inner { open } }
-  addrs { city hidden inner { open } }
+  addr { city inner { open } }
+  addrs { city inner { open } }
   zone { ${ZONE_SELECTION} }
 } }`;
-const GRAPHQL_SHOWN = { city: 'Paris', hidden: null, inner: { open: 'o' } };
+const GRAPHQL_SHOWN = { city: 'Paris', inner: { open: 'o' } };
 
 /**
  * A component's `public: false` fields (issue #9): delivery audiences (delivery tokens, app users, anonymous
@@ -186,7 +186,7 @@ describe('component fields with public: false', () => {
     }
   });
 
-  it('GraphQL resolves them to null (FORBIDDEN_FIELD when required)', async () => {
+  it("GraphQL leaves them out of a delivery caller's schema", async () => {
     const result = await graphql(testApp.app, GRAPHQL_ENTRY, {
       variables: { id: entry.id },
       headers: bearer(token),
@@ -198,16 +198,30 @@ describe('component fields with public: false', () => {
         zone: [{ __typename: 'Address', ...GRAPHQL_SHOWN }],
       },
     });
-    const required = await graphql(
-      testApp.app,
+    for (const query of [
+      'query ($id: ID!) { thing(id: $id) { addr { hidden } } }',
       'query ($id: ID!) { thing(id: $id) { addr { inner { secret } } } }',
-      {
+      'query ($id: ID!) { thing(id: $id) { zone { ... on Address { hidden } } } }',
+    ]) {
+      const refused = await graphql(testApp.app, query, {
         variables: { id: entry.id },
         headers: bearer(token),
-      },
+      });
+      expect(refused.statusCode, query).toBe(400);
+      expect(errorCodes(refused), query).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+      expect(JSON.stringify(refused.body)).not.toMatch(new RegExp(HIDDEN_VALUES.join('|')));
+    }
+    const types = dataOf<Record<'address' | 'box' | 'input', { fields?: Array<{ name: string }> } | null>>(
+      await graphql(
+        testApp.app,
+        '{ address: __type(name: "Address") { fields { name } } box: __type(name: "Box") { fields { name } } input: __type(name: "AddressInput") { name } }',
+        { headers: bearer(token) },
+      ),
     );
-    expect(errorCodes(required)).toEqual(['FORBIDDEN_FIELD']);
-    expect(JSON.stringify(required.body)).not.toContain('s3cret');
+    expect(types.address?.fields?.map((field) => field.name)).toEqual(['city', 'inner']);
+    expect(types.box?.fields?.map((field) => field.name)).toEqual(['open']);
+    // A delivery token writes nothing, so its schema has no inputs to name them either.
+    expect(types.input).toBeNull();
   });
 
   it('admin audiences still see every component field (REST delivery, admin API and GraphQL)', async () => {

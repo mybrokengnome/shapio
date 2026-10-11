@@ -84,12 +84,17 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
   it('anonymous callers get nothing until `public` grants it', async () => {
     expect((await deliver('/api/content/posts')).statusCode).toBe(401);
-    expect(errorCodes(await gql(LIST))).toEqual(['UNAUTHENTICATED']);
+    // A model no grant allows is not in the caller's schema, so naming it fails validation.
+    const list = await gql(LIST);
+    expect(list.statusCode).toBe(400);
+    expect(list.body.errors?.[0]?.message).toBe('Cannot query field "posts" on type "Query".');
     expect(
       (await deliver('/api/content/posts', undefined, { method: 'POST', payload: { data: { title: 'x' } } }))
         .statusCode,
     ).toBe(403);
-    expect(errorCodes(await gql(CREATE, { data: { title: 'x' } }))).toEqual(['FORBIDDEN']);
+    expect(errorCodes(await gql(CREATE, { data: { title: 'x' } }))).toEqual(
+      expect.arrayContaining(['GRAPHQL_VALIDATION_FAILED']),
+    );
   });
 
   it('`public` cannot read unpublished content and sees only public fields it is granted', async () => {
@@ -98,14 +103,16 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
     const viaGraphql = dataOf(await gql(LIST)) as { posts: { nodes: unknown[] } };
     expectSameEntries(viaGraphql.posts.nodes, rest.data);
     expect(JSON.stringify(viaGraphql)).not.toContain('Draft only');
-    expect(dataOf(await one(published.id, undefined, 'title notes'))).toEqual({
-      post: { title: 'Live', notes: null },
-    });
+    // `notes` is not in the anonymous schema: reading or filtering on it fails validation.
+    expect(errorCodes(await one(published.id, undefined, 'title notes'))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+    expect(dataOf(await one(published.id, undefined, 'title'))).toEqual({ post: { title: 'Live' } });
     expect(dataOf(await one(draftOnly.id))).toEqual({ post: null });
     expect((await deliver('/api/content/posts?filters[notes][$eq]=internal note')).statusCode).toBe(403);
     expect(
       errorCodes(await gql('{ posts(filter: { notes: { eq: "internal note" } }) { totalCount } }')),
-    ).toEqual(['FORBIDDEN_FIELD']);
+    ).toEqual(['GRAPHQL_VALIDATION_FAILED']);
 
     await setPublicGrants(database.current.db, [
       { action: 'read', modelId: post.definition.id, fieldIds: [fieldIdOf(post, 'title')] },
@@ -118,9 +125,9 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
   it('a `public: false` field is invisible to app users unless a role grants it by ID', async () => {
     const session = await signUp(testApp.app);
-    expect(dataOf(await one(published.id, session.accessToken, 'title notes'))).toEqual({
-      post: { title: 'Live', notes: null },
-    });
+    expect(errorCodes(await one(published.id, session.accessToken, 'title notes'))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
     expect(
       errorCodes(
         await gql(
@@ -129,7 +136,7 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
           session.accessToken,
         ),
       ),
-    ).toEqual(['FORBIDDEN_FIELD']);
+    ).toEqual(['GRAPHQL_VALIDATION_FAILED']);
     expect(dataOf(await one(draftOnly.id, session.accessToken))).toEqual({ post: null });
 
     const reader = await createAppRole(database.current.db, [
@@ -156,6 +163,25 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
     expect(rest.data).toMatchObject({ notes: 'internal note' });
   });
 
+  it('a model `public` may only create has its create mutation and no read queries', async () => {
+    const submission = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'submission',
+      label: 'Submission',
+      fields: [
+        { apiKey: 'email', label: 'Email', type: 'string' },
+        { apiKey: 'triage', label: 'Triage', type: 'string', public: false },
+      ],
+    });
+    await setPublicGrants(database.current.db, [{ action: 'create', modelId: submission.definition.id }]);
+    const created = await gql('mutation { createSubmission(data: { email: "a@b.c" }) { status } }');
+    expect(dataOf(created)).toEqual({ createSubmission: { status: 'draft' } });
+    const read = await gql('{ submissions { totalCount } }');
+    expect(read.body.errors?.[0]?.message).toBe('Cannot query field "submissions" on type "Query".');
+    const hidden = await gql('mutation { createSubmission(data: { triage: "x" }) { status } }');
+    expect(hidden.body.errors?.[0]?.message).toBe('Field "triage" is not defined by type "SubmissionInput".');
+  });
+
   describe('owner-only writes', () => {
     let alice: AppSessionBody;
     let bob: AppSessionBody;
@@ -174,14 +200,17 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
     it('needs a grant to create, and never writes masked fields', async () => {
       const outsider = await signUp(testApp.app);
-      expect(errorCodes(await gql(CREATE, { data: { title: 'no' } }, outsider.accessToken))).toEqual([
-        'FORBIDDEN',
-      ]);
+      // The outsider may write no field, so its schema has no `PostInput`; without data it is refused.
+      const noInput = await gql(CREATE, { data: { title: 'no' } }, outsider.accessToken);
+      expect(noInput.statusCode).toBe(400);
+      expect(noInput.body.errors?.[0]?.message).toBe('Unknown type "PostInput".');
+      expect(
+        errorCodes(await gql('mutation { createPost { id } }', undefined, outsider.accessToken)),
+      ).toEqual(['FORBIDDEN']);
+      // Alice's `PostInput` holds only the fields she may write.
       const masked = await gql(CREATE, { data: { title: 't', notes: 'n' } }, alice.accessToken);
-      expect(masked.body.errors?.[0]?.extensions).toMatchObject({
-        code: 'FORBIDDEN_FIELD',
-        details: { fields: ['notes'] },
-      });
+      expect(masked.statusCode).toBe(400);
+      expect(masked.body.errors?.[0]?.message).toContain('Field "notes" is not defined by type "PostInput".');
       expect(
         errorCodes(await gql(CREATE, { data: { title: 't' }, publish: true }, alice.accessToken)),
       ).toEqual(['FORBIDDEN']);
