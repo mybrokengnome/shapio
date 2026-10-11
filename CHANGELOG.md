@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **`$not` is now the exact complement of the filter it wraps.** Over a range or text match (`$gte`,
+  `$contains`, …), it used to leave out entries whose field is empty, so they appeared in neither result; it now
+  includes them, like `$ne`, `$nin`, and `$notContains` (REST, GraphQL, and the admin list).
 
 ## [0.5.6] - 2026-10-11
 
