@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Relation and media filters no longer match what the response hides.** A delivery filter naming an
+  unpublished entry, an entry the token may not read, or a force-deleted asset now matches as if the link were
+  not there, so `$eq`, `$ne`, `$in`, and `$nin` agree with the returned data. A filter on a relation into a
+  model the token may not read is refused with 403, like a hidden field.
 
 ## [0.5.6] - 2026-10-11
 

@@ -17,6 +17,7 @@ import { entryLocaleNotFound, revisionNotFound } from '../content/errors.js';
 import { outdatedSharedLocales, readScopeFor } from '../content/locales.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
 import { projectRows, type ReadEnvironment } from '../content/read.js';
+import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
@@ -281,10 +282,14 @@ export const listAdminEntries = async (
   rawQuery: string,
 ): Promise<{ items: AdminListItem[]; pagination: Pagination; locale: string }> => {
   const { model, policy } = await modelWithPolicy(context, modelKey, 'read');
-  const query = parseQueryFor(context, model, policy, rawQuery, {
+  const parsed = parseQueryFor(context, model, policy, rawQuery, {
     allowSnapshot: false,
     allowAdminFilters: true,
   });
+  const query = {
+    ...parsed,
+    filter: await visibleReferenceFilter(adminEnvironment(context, parsed.locale), parsed.filter),
+  };
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const sort =
     query.sort.length > 0

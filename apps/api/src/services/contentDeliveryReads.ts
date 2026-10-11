@@ -21,6 +21,7 @@ import {
   systemAttributes,
   type ReadEnvironment,
 } from '../content/read.js';
+import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
@@ -194,7 +195,11 @@ export const readEntryPage = async (
   options: { total: boolean; check?: (seq: number) => void } = { total: true },
 ): Promise<EntryPage> => {
   const read = await withSeoDefaults(unloaded);
-  const { context, model, policy, query } = read;
+  const { context, model, policy } = read;
+  const query = {
+    ...read.query,
+    filter: await visibleReferenceFilter(environmentOf(read, context.db), read.query.filter),
+  };
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const sort =
     query.sort.length > 0
