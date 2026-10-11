@@ -10,6 +10,7 @@ import {
   type JsonValue,
   type SchemaDefinition,
   type ValidationIssue,
+  uniqueFieldsChangingLocalization,
 } from '@shapio/schema';
 import { fieldIndexName, hasFieldIndex, type FieldIndexSpec } from '../../content/compiler/expressions.js';
 import { maxFieldIndexes } from '../../db/limits.js';
@@ -102,6 +103,7 @@ const field = (definition: SchemaDefinition | null, fieldId: string | undefined)
 
 const contentStepsFor = (
   change: ClassifiedChange,
+  before: SchemaDefinition | null,
   after: SchemaDefinition,
   proposed: readonly SchemaDefinition[],
 ): ContentStep[] => {
@@ -127,7 +129,18 @@ const contentStepsFor = (
       case 'validateValues':
         return [{ kind, ownerId, ...(target ? { fieldId: target.id } : {}), locations: locations() }];
       case 'checkUnique':
-        return target && after.kind !== 'component' ? [{ kind, modelId: after.id, fieldId: target.id }] : [];
+        if (after.kind === 'component') {
+          return [];
+        }
+        if (change.kind === 'model.localized') {
+          // One check per unique field whose values move between per-locale and shared storage.
+          return uniqueFieldsChangingLocalization(before, after).map((unique) => ({
+            kind,
+            modelId: after.id,
+            fieldId: unique.id,
+          }));
+        }
+        return target ? [{ kind, modelId: after.id, fieldId: target.id }] : [];
       case 'convert':
         return [{ kind, ownerId, change, locations: locations() }];
       default:
@@ -281,7 +294,7 @@ export const buildChangePlan = ({
   // activation instead of gating it.
   const contentSteps =
     after && hasContent
-      ? byPhase(changes.flatMap((change) => contentStepsFor(change, after, proposed))).map((step) =>
+      ? byPhase(changes.flatMap((change) => contentStepsFor(change, before, after, proposed))).map((step) =>
           markRebuild(step, before),
         )
       : [];

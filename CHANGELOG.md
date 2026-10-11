@@ -11,6 +11,12 @@ All notable changes to Shapio are listed here. The format follows
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 
+- **Unique fields stay unique when they stop being per-locale.** Making a unique field shared, or its model
+  non-localized, now checks for entries that hold the same value in different locales and refuses the change
+  if any do, as making a field unique does. The registry of taken values moves to the shared key, so a later
+  duplicate is refused in every locale. The reverse change, making a unique field per-locale, now lets
+  locales share a value while still refusing duplicates within a locale.
+
 ## [0.5.6] - 2026-10-11
 
 ### Changed
