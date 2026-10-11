@@ -236,6 +236,9 @@ All notable changes to Shapio are listed here. The format follows
 - **`$null` and `$notNull` on relation and media fields agree with the response.** An entry whose links all
   point at unpublished entries, entries outside the read's locales or the token's row filter, or force-deleted
   assets now counts as null, as it reads, in REST and GraphQL, on live and pinned snapshot reads.
+- The starters' seed reads model files under `shapio/sites/<site>/` as well as `shapio/models/` and
+  `shapio/components/`, so a project whose schema was pulled with `shapio schema pull` seeds a fresh instance
+  again.
 
 ## [0.5.6] - 2026-10-11
 
