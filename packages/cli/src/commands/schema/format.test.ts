@@ -18,6 +18,15 @@ describe('formatChange', () => {
     );
   });
 
+  it("follows the server's classification: a multi-value enum to text drops its values", () => {
+    expect(formatChange({ ...typeChange('enum', 'string'), dropsValues: true }, names)).toBe(
+      '~ field price type: "enum" → "string" (values dropped)',
+    );
+    expect(formatChange({ ...typeChange('media', 'number'), dropsValues: false }, names)).toBe(
+      '~ field price type: "media" → "number"',
+    );
+  });
+
   it('prints a type change Shapio converts as before', () => {
     expect(formatChange(typeChange('text', 'richtext'), names)).toBe(
       '~ field price type: "text" → "richtext"',

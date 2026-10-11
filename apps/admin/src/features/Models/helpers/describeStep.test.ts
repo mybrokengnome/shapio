@@ -16,7 +16,13 @@ const typeChange = {
   from: 'media',
   to: 'number',
 } as const;
-const convert: PlanStep = { kind: 'convert', ownerId: before.id, change: typeChange, locations: [] };
+/** The plan step carries the classified change, with `dropsValues` decided by the planner. */
+const convert: PlanStep = {
+  kind: 'convert',
+  ownerId: before.id,
+  change: classifyChange(typeChange, { before, after }),
+  locations: [],
+};
 const key = `convert:${before.id}:field.type:${price.id}:`;
 
 beforeAll(async () => {
@@ -41,6 +47,37 @@ describe('a type change Shapio cannot convert', () => {
     expect(describeStep(convert, before, after, uncounted)).toBe(
       'Price: Media → Number, 1 entry loses its value',
     );
+  });
+
+  it('a multi-value enum to text drops its values (the planner sees the settings, not just the types)', () => {
+    const tagsBefore = model({
+      fields: [
+        field({
+          apiKey: 'tags',
+          label: 'Tags',
+          type: 'enum',
+          settings: { multiple: true, values: [{ value: 'a', label: 'A' }] },
+        }),
+      ],
+    });
+    const tags = tagsBefore.fields[0]!;
+    const tagsAfter = {
+      ...tagsBefore,
+      fields: [{ ...tags, type: 'string', settings: {} }],
+    } as SchemaDefinition;
+    const change = classifyChange(
+      { kind: 'field.type', definitionId: tagsBefore.id, fieldId: tags.id, from: 'enum', to: 'string' },
+      { before: tagsBefore, after: tagsAfter },
+    );
+    const step: PlanStep = { kind: 'convert', ownerId: tagsBefore.id, change, locations: [] };
+    expect(
+      describeStep(step, tagsBefore, tagsAfter, {
+        key,
+        kind: 'convert',
+        affectedHeads: 3,
+        droppedEntries: 3,
+      }),
+    ).toBe('Tags: Choice → Short text, 3 entries lose their value');
   });
 
   it('keeps the plain wording for a conversion Shapio performs', () => {

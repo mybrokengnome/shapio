@@ -1,4 +1,4 @@
-import { STORAGE_FAMILY, type DataType } from '../types/dataTypes.js';
+import { storageFamilyOf, type DataType, type StoredFieldShape } from '../types/dataTypes.js';
 import type { FieldDefinition, SchemaDefinition } from '../types/definitions.js';
 import type { SchemaChange } from './types.js';
 
@@ -120,26 +120,40 @@ const hasTextConstraints = (field: FieldDefinition | undefined) => {
 
 /**
  * Whether Shapio converts a cross-family type change value by value (the pairs it knows); within one storage
- * family the stored JSON stays as it is.
+ * family the stored JSON stays as it is. Families come from type and settings, so a multi-value enum's
+ * arrays are never taken for text.
  */
-const convertsAcrossFamilies = (from: DataType, to: DataType): boolean => {
-  const fromFamily = STORAGE_FAMILY[from];
-  const toFamily = STORAGE_FAMILY[to];
+const convertsAcrossFamilies = (from: StoredFieldShape, to: StoredFieldShape): boolean => {
+  const fromFamily = storageFamilyOf(from);
+  const toFamily = storageFamilyOf(to);
   const numericPair =
     (fromFamily === 'jsonNumber' && toFamily === 'numericString') ||
     (fromFamily === 'numericString' && toFamily === 'jsonNumber');
-  const toText = SCALAR_FAMILIES.has(fromFamily) && PLAIN_TEXT_TYPES.has(to);
-  const textToRichtext = fromFamily === 'jsonString' && from !== 'code' && to === 'richtext';
-  const richtextToText = from === 'richtext' && PLAIN_TEXT_TYPES.has(to);
-  return numericPair || toText || textToRichtext || richtextToText;
+  const toText = SCALAR_FAMILIES.has(fromFamily) && PLAIN_TEXT_TYPES.has(to.type);
+  const textToRichtext = fromFamily === 'jsonString' && from.type !== 'code' && to.type === 'richtext';
+  const richtextToText = from.type === 'richtext' && PLAIN_TEXT_TYPES.has(to.type);
+  // Each string becomes a one-value list, then is checked against the enum's values (as enum → multiple).
+  const textToList = fromFamily === 'jsonString' && toFamily === 'jsonStringArray';
+  return numericPair || toText || textToRichtext || richtextToText || textToList;
 };
 
 /**
  * A type change Shapio cannot convert: the field keeps its stable ID and API ID, and every stored value is
- * dropped. The planner (`classifyChange`) and the content conversion share this one rule.
+ * dropped. The planner (`classifyChange`) decides it from both sides' type and settings and records it as
+ * `dropsValues` on the classified change; everything downstream (conversion job, impact, review, CLI) reads
+ * that flag rather than deciding again from the type names.
  */
-export const typeChangeDropsValues = (from: DataType, to: DataType): boolean =>
-  STORAGE_FAMILY[from] !== STORAGE_FAMILY[to] && !convertsAcrossFamilies(from, to);
+export const typeChangeDropsValues = (from: StoredFieldShape, to: StoredFieldShape): boolean =>
+  storageFamilyOf(from) !== storageFamilyOf(to) && !convertsAcrossFamilies(from, to);
+
+/**
+ * A change as a stored plan step carries it: classified since 0.5.6, plain before (no drops existed then).
+ */
+export type PlannedChange = SchemaChange & { dropsValues?: boolean };
+
+/** Whether a (classified) change drops every stored value of its field; false for plans without the flag. */
+export const changeDropsValues = (change: PlannedChange): boolean =>
+  change.kind === 'field.type' && change.dropsValues === true;
 
 /** A required field whose values are dropped is backfilled from its default, else checked (no silent nulls). */
 const requiredStep = (field: FieldDefinition | undefined): PrerequisiteKind[] => {
@@ -157,12 +171,15 @@ const requiredStep = (field: FieldDefinition | undefined): PrerequisiteKind[] =>
 const classifyTypeChange = (
   from: DataType,
   to: DataType,
+  previous: FieldDefinition | undefined,
   after: FieldDefinition | undefined,
 ): Classification => {
   // A code field has no filters (REST operators, GraphQL `XFilter` key), so becoming one is breaking.
   const breaking = API_SCALAR[from] !== API_SCALAR[to] || (to === 'code' && from !== 'code');
-  const fromFamily = STORAGE_FAMILY[from];
-  if (fromFamily === STORAGE_FAMILY[to]) {
+  const fromShape: StoredFieldShape = { type: from, ...(previous ? { settings: previous.settings } : {}) };
+  const toShape: StoredFieldShape = { type: to, ...(after ? { settings: after.settings } : {}) };
+  const fromFamily = storageFamilyOf(fromShape);
+  if (fromFamily === storageFamilyOf(toShape)) {
     const widening =
       (fromFamily === 'jsonString' && TEXT_TARGETS.has(to) && !hasTextConstraints(after)) ||
       (from === 'integer' && to === 'number') ||
@@ -174,7 +191,7 @@ const classifyTypeChange = (
       ? result('additive', { breaking })
       : result('validation', { breaking, prerequisites: ['validateValues'] });
   }
-  if (typeChangeDropsValues(from, to)) {
+  if (typeChangeDropsValues(fromShape, toShape)) {
     return result('conversion', {
       breaking,
       destructive: true,
@@ -315,7 +332,12 @@ const classifyFieldChange = (change: SchemaChange, { before, after }: ClassifyCo
     case 'field.apiKey':
       return result('contract', { breaking: true });
     case 'field.type': {
-      const classification = classifyTypeChange(change.from as DataType, change.to as DataType, field);
+      const classification = classifyTypeChange(
+        change.from as DataType,
+        change.to as DataType,
+        previous,
+        field,
+      );
       // A unique field's values may normalize differently under the new type (e.g. string → email ignores
       // case): check them for duplicates before activation.
       return field?.unique && previous?.unique && !classification.prerequisites.includes('checkUnique')

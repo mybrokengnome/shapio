@@ -43,4 +43,18 @@ describe('useTypeChoices', () => {
   it('keeps the ordinary notes for a change it converts', () => {
     expect(choicesFor('richtext').dropsValues).toBe(false);
   });
+
+  it('says a multi-value choice that becomes short text loses every stored value', () => {
+    const tagged = model({
+      fields: [
+        field({
+          apiKey: 'tags',
+          type: 'enum',
+          settings: { multiple: true, values: [{ value: 'a', label: 'A' }] },
+        }),
+      ],
+    });
+    const choices = renderHook(() => useTypeChoices(tagged, tagged.fields[0], 'string')).result.current;
+    expect(choices.dropsValues).toBe(true);
+  });
 });

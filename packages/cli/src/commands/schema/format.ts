@@ -1,5 +1,5 @@
 import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
-import { isDataType, typeChangeDropsValues, type SchemaChange } from '@shapio/schema';
+import { isDataType, typeChangeDropsValues, type PlannedChange, type SchemaChange } from '@shapio/schema';
 
 /** Human-readable output for schema sync: decisions, per-definition diffs and server refusals. */
 
@@ -22,15 +22,27 @@ const fieldName = (change: SchemaChange, names: ReadonlyMap<string, string>) => 
   );
 };
 
-/** A type change Shapio can't convert: every stored value of the field is dropped. */
-const dropsValues = (change: SchemaChange) =>
-  change.kind === 'field.type' &&
-  isDataType(change.from) &&
-  isDataType(change.to) &&
-  typeChangeDropsValues(change.from, change.to);
+/**
+ * A type change Shapio can't convert: every stored value of the field is dropped. The server classifies each
+ * change from both sides' type and settings (`dropsValues`); an older server sends no flag, so the CLI falls
+ * back to the type names, which can't see a multi-value enum.
+ */
+const dropsValues = (change: PlannedChange) => {
+  if (change.kind !== 'field.type') {
+    return false;
+  }
+  if (change.dropsValues !== undefined) {
+    return change.dropsValues;
+  }
+  return (
+    isDataType(change.from) &&
+    isDataType(change.to) &&
+    typeChangeDropsValues({ type: change.from }, { type: change.to })
+  );
+};
 
 /** One line per change, `+` added, `-` removed, `~` changed; a type change that drops values says so. */
-export const formatChange = (change: SchemaChange, names: ReadonlyMap<string, string>): string => {
+export const formatChange = (change: PlannedChange, names: ReadonlyMap<string, string>): string => {
   const field = change.fieldId ? fieldName(change, names) : '';
   switch (change.kind) {
     case 'definition.added':

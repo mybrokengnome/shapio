@@ -1,4 +1,4 @@
-import type { SchemaChange } from '@shapio/schema';
+import type { PlannedChange, SchemaChange } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import type { ScannedHead } from '../../repositories/entryHeads.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
@@ -17,6 +17,9 @@ const retype = (from: string, to: string): SchemaChange => ({
   to,
 });
 
+/** A type change the planner classified as dropping values (the flag the plan step carries). */
+const drop = (from: string, to: string): PlannedChange => ({ ...retype(from, to), dropsValues: true });
+
 const head = (state: 'draft' | 'published', data: ScannedHead['data']): ScannedHead => ({
   entry_id: 'entry-1',
   site_id: 'site-1',
@@ -29,7 +32,7 @@ const head = (state: 'draft' | 'published', data: ScannedHead['data']): ScannedH
   change_seq: '1',
 });
 
-const convertStep = (change: SchemaChange): Extract<ContentStep, { kind: 'convert' }> => ({
+const convertStep = (change: PlannedChange): Extract<ContentStep, { kind: 'convert' }> => ({
   kind: 'convert',
   ownerId: MODEL,
   change,
@@ -38,11 +41,23 @@ const convertStep = (change: SchemaChange): Extract<ContentStep, { kind: 'conver
 
 describe('convertValue: type changes', () => {
   it('clears every value of a pair Shapio cannot convert', () => {
-    expect(convertValue(retype('media', 'number'), ['asset-1', 'asset-2'])).toEqual({ kind: 'clear' });
-    expect(convertValue(retype('relation', 'boolean'), 'entry-2')).toEqual({ kind: 'clear' });
-    expect(convertValue(retype('date', 'media'), '2026-10-10')).toEqual({ kind: 'clear' });
+    expect(convertValue(drop('media', 'number'), ['asset-1', 'asset-2'])).toEqual({ kind: 'clear' });
+    expect(convertValue(drop('relation', 'boolean'), 'entry-2')).toEqual({ kind: 'clear' });
+    expect(convertValue(drop('date', 'media'), '2026-10-10')).toEqual({ kind: 'clear' });
     // Even a value that happens to fit the new type: the rule is per pair, never per value.
-    expect(convertValue(retype('json', 'boolean'), true)).toEqual({ kind: 'clear' });
+    expect(convertValue(drop('json', 'boolean'), true)).toEqual({ kind: 'clear' });
+  });
+
+  it("decides by the plan's flag, not the type names: a multi-value enum to text is dropped", () => {
+    expect(convertValue(drop('enum', 'string'), ['a', 'b'])).toEqual({ kind: 'clear' });
+    expect(convertValue(drop('enum', 'richtext'), ['a'])).toEqual({ kind: 'clear' });
+    // A plan stored before the flag existed never dropped values.
+    expect(convertValue(retype('date', 'media'), '2026-10-10')).toEqual({ kind: 'keep' });
+  });
+
+  it('turns text into a one-value list for a multi-value enum, idempotently', () => {
+    expect(convertValue(retype('string', 'enum'), 'a')).toEqual({ kind: 'set', value: ['a'] });
+    expect(convertValue(retype('text', 'enum'), ['a'])).toEqual({ kind: 'keep' });
   });
 
   it('leaves the known conversions as they were', () => {
@@ -59,7 +74,7 @@ describe('proposeEntry: a dropped field', () => {
       head('draft', { [FIELD]: ['asset-1'], [OTHER]: 'kept' }),
       head('published', { [FIELD]: ['asset-1'], [OTHER]: 'kept' }),
     ];
-    const proposal = proposeEntry(stored, [convertStep(retype('media', 'number'))], 'en');
+    const proposal = proposeEntry(stored, [convertStep(drop('media', 'number'))], 'en');
     expect(proposal.heads.map((proposed) => proposed.data)).toEqual([
       { [OTHER]: 'kept' },
       { [OTHER]: 'kept' },
@@ -71,7 +86,7 @@ describe('proposeEntry: a dropped field', () => {
   it('is idempotent: heads already without the value are unchanged', () => {
     const proposal = proposeEntry(
       [head('draft', { [OTHER]: 'kept' })],
-      [convertStep(retype('media', 'number'))],
+      [convertStep(drop('media', 'number'))],
       'en',
     );
     expect(proposal.heads[0]?.changed).toBe(false);
