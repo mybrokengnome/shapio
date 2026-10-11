@@ -89,6 +89,8 @@ export const useEntryDocument = ({
     entryId,
     autosaved: entry?.autosaved ?? false,
     locale,
+    versionRef,
+    entryLocales: entry?.locales ?? [],
     store,
     save: saver.save,
     exclusive: saver.exclusive,
@@ -96,6 +98,7 @@ export const useEntryDocument = ({
       setEntry(next);
       versionRef.current = next.version;
     },
+    onConflict: (error) => setConflict(error.code),
   });
   const editable = !setup.environment.readOnly;
   useFollowingSlugs(store, model, editable && mode.kind !== 'newLocale');

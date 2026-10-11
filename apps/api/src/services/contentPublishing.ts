@@ -1,4 +1,9 @@
-import { entryLocaleNotFound, publishingDisabled } from '../content/errors.js';
+import {
+  contentVersionConflict,
+  entryLocaleNotFound,
+  invalidExpectedVersion,
+  publishingDisabled,
+} from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
 import { writeLocaleFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
@@ -173,11 +178,55 @@ export const targetLocales = (
 
 type LocalesInput = { locales?: string[] };
 
+/** A publish request: the locales, and optionally the draft version(s) the caller saw. */
+export type PublishInput = LocalesInput & {
+  expectedVersion?: number;
+  expectedVersions?: Record<string, number>;
+};
+
+/** Each published locale's draft version, from either form of the request; empty when it names none. */
+const expectedVersionsOf = (input: PublishInput, locales: readonly string[]): Map<string, number> => {
+  if (input.expectedVersion !== undefined && input.expectedVersions !== undefined) {
+    throw invalidExpectedVersion('Send expectedVersion or expectedVersions, not both', {});
+  }
+  if (input.expectedVersion !== undefined) {
+    if (locales.length !== 1) {
+      throw invalidExpectedVersion(
+        'expectedVersion is for a publish of one locale; send expectedVersions for several',
+        { locales },
+      );
+    }
+    return new Map([[locales[0] as string, input.expectedVersion]]);
+  }
+  const entries = Object.entries(input.expectedVersions ?? {});
+  const unknown = entries.filter(([locale]) => !locales.includes(locale)).map(([locale]) => locale);
+  if (unknown.length > 0) {
+    throw invalidExpectedVersion('expectedVersions names locales this request does not publish', {
+      locales: unknown,
+    });
+  }
+  return new Map(entries);
+};
+
+/** Refuses a publish whose caller saw an older draft than the one that would go live (optimistic concurrency). */
+const assertExpectedVersions = (
+  input: PublishInput,
+  locales: readonly string[],
+  heads: readonly HeadRecord[],
+) => {
+  for (const [locale, expected] of expectedVersionsOf(input, locales)) {
+    const draft = heads.find((head) => head.state === 'draft' && head.locale === locale);
+    if (draft && draft.version !== expected) {
+      throw contentVersionConflict(expected, draft.version);
+    }
+  }
+};
+
 const changePublication = async (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
-  input: LocalesInput,
+  input: PublishInput,
   operation: 'publish' | 'unpublish',
 ): Promise<AdminEntryView> => {
   const { model, policy } = await modelWithPolicy(context, modelKey, 'publish');
@@ -207,6 +256,7 @@ const changePublication = async (
       actor: actorColumns(context.actor),
     });
     if (operation === 'publish') {
+      assertExpectedVersions(input, locales, heads);
       const published = await publishLocalesInTransaction(
         { write, site: context.site, snapshot: context.snapshot, hooks: context.hooks, seq: seqs },
         id,
@@ -244,7 +294,7 @@ export const publishEntry = (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
-  input: LocalesInput,
+  input: PublishInput,
 ) => changePublication(context, modelKey, id, input, 'publish');
 
 export const unpublishEntry = (

@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useDeleteEntry, useDuplicateEntry, usePublishEntry, useUnpublishEntry } from '@/api/content';
 import { queryKeys } from '@/api/queryKeys';
+import { expectedVersionOf, type VersionedRow } from '../helpers/expectedVersion';
 
 /**
  * A list row's quick actions on one entry, in the list's locale. Each returns the request's promise, so an
  * `InlineConfirm` keeps its spinner until it settles and shows the reason when it fails (an invalid entry,
- * one still linked from others). Successes are announced with a toast.
+ * one still linked from others, a draft saved since the list loaded). Successes are announced with a toast.
  */
 export const useRowActions = (modelKey: string, locale: string | null) => {
   const { t } = useTranslation();
@@ -21,8 +22,13 @@ export const useRowActions = (modelKey: string, locale: string | null) => {
   const locales = locale ? [locale] : undefined;
   const refreshCounts = () => queryClient.invalidateQueries({ queryKey: queryKeys.contentCounts });
 
-  const publish = async (id: string, label: string) => {
-    await publishEntry.mutateAsync({ id, locales });
+  const publish = async (row: VersionedRow, label: string) => {
+    const expectedVersion = expectedVersionOf(row, locale);
+    await publishEntry.mutateAsync({
+      id: row.id,
+      locales,
+      ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+    });
     toast.success(t('place.actions.publishedToast', { entry: label }));
   };
   const unpublish = async (id: string, label: string) => {

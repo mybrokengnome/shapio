@@ -511,7 +511,7 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
     [`/api/admin/content/${model.apiKey}/{id}/publish`]: {
       post: {
         tags: [tag],
-        summary: `Publish locales of a ${model.label} entry (admin)`,
+        summary: `Publish locales of a ${model.label} entry (admin; 409 when the expected version is stale)`,
         operationId: `publish${name}`,
         parameters: [idParameter],
         requestBody: {
@@ -519,12 +519,21 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
             'application/json': {
               schema: {
                 type: 'object',
-                properties: { locales: { type: 'array', items: { type: 'string' } } },
+                properties: {
+                  locales: { type: 'array', items: { type: 'string' } },
+                  expectedVersion: { type: 'integer' },
+                  expectedVersions: { type: 'object', additionalProperties: { type: 'integer' } },
+                },
+                additionalProperties: false,
               },
             },
           },
         },
-        responses: { '200': json(adminEntry), ...errorResponses },
+        responses: {
+          '200': json(adminEntry),
+          '409': json(ref('Error'), 'Stale version'),
+          ...errorResponses,
+        },
       },
     },
     [`/api/admin/content/${model.apiKey}/{id}/unpublish`]: {

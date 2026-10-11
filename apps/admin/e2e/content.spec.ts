@@ -17,7 +17,14 @@ import { entryDocument } from './support/entryDocument';
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120_000);
 
-type Entry = { id: string; version: number; status: string; locale: string; data: Record<string, unknown> };
+type Entry = {
+  id: string;
+  version: number;
+  status: string;
+  locale: string;
+  publishedAt: string | null;
+  data: Record<string, unknown>;
+};
 
 let server: ProjectServer;
 let page: Page;
@@ -396,6 +403,41 @@ test('a save from another session shows the conflict banner; reloading keeps my 
   expect((await getEntry('en')).data).toMatchObject({
     title: 'Changed elsewhere',
     hero: { subheading: 'Mine, typed meanwhile' },
+  });
+});
+
+test("publishing from a tab that missed another session's save shows the conflict banner, not a publish", async ({
+  browser,
+}) => {
+  const before = await getEntry('en');
+  const other = await openSignedIn(browser);
+  await adminApiFor(other.request, server.adminApi).send('PUT', `/content/page/${entryId}`, {
+    locale: 'en',
+    expectedVersion: before.version,
+    data: { title: 'Saved in the other tab' },
+  });
+  await other.context().close();
+
+  // This tab still shows the old title and "saved"; publishing it must not put the other tab's draft live.
+  await expect(field('/title').getByRole('textbox')).not.toHaveValue('Saved in the other tab');
+  const sheet = await doc().openPreflight();
+  const publishing = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && response.url().endsWith('/publish'),
+  );
+  await sheet.getByRole('button', { name: 'Publish now' }).click();
+  expect((await publishing).status()).toBe(409);
+  await expect(sheet).toBeHidden();
+  const banner = page.getByRole('alert').filter({ hasText: 'Someone else saved this entry' });
+  await expect(banner).toBeVisible();
+  expect(await getEntry('en')).toMatchObject({ status: 'modified', publishedAt: before.publishedAt });
+
+  // After reloading, the tab shows the other draft and publishes it knowingly.
+  await banner.getByRole('button', { name: 'Reload and keep my changes' }).click();
+  await expect(field('/title').getByRole('textbox')).toHaveValue('Saved in the other tab');
+  await doc().publish();
+  expect(await getEntry('en')).toMatchObject({
+    status: 'published',
+    data: { title: 'Saved in the other tab' },
   });
 });
 

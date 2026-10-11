@@ -347,9 +347,17 @@ describe('GraphQL schema and runtime', () => {
       ),
     ).toEqual(['DRAFTS_FORBIDDEN']);
 
+    // A publish guarded by a version the draft has moved past is refused, like REST.
+    const stale = await gql(
+      'mutation ($id: ID!) { publishNote(id: $id, expectedVersion: 1) { status } }',
+      { id: created.id },
+      adminToken,
+    );
+    expect(errorCodes(stale)).toEqual(['CONTENT_VERSION_CONFLICT']);
+    expect(await restList()).toEqual([]);
     const published = dataOf(
       await gql<{ publishNote: { status: string } }>(
-        'mutation ($id: ID!) { publishNote(id: $id) { status publishedAt } }',
+        'mutation ($id: ID!) { publishNote(id: $id, expectedVersion: 2) { status publishedAt } }',
         { id: created.id },
         adminToken,
       ),

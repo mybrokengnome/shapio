@@ -112,8 +112,16 @@ export const mutationFields = (
   for (const operation of ['publish', 'unpublish'] as const) {
     fields[mutationName(operation, model)] = {
       type: entry,
-      description: `${operation === 'publish' ? 'Publishes' : 'Unpublishes'} the given locales (default: the default locale)`,
-      args: { ...id, ...locales },
+      description:
+        operation === 'publish'
+          ? 'Publishes the given locales (default: the default locale); with `expectedVersion`, only if that ' +
+            "one locale's draft is still at it"
+          : 'Unpublishes the given locales (default: the default locale)',
+      args: {
+        ...id,
+        ...locales,
+        ...(operation === 'publish' ? { expectedVersion: { type: GraphQLInt } } : {}),
+      },
       resolve: async (_root, args, context) => {
         const service = await context.content(build.snapshot);
         const change =
@@ -122,6 +130,7 @@ export const mutationFields = (
             : contentPublishingService.unpublishEntry;
         const view = await change(service, model.apiKey, assertId(args.id), {
           ...(args.locales ? { locales: args.locales as string[] } : {}),
+          ...(typeof args.expectedVersion === 'number' ? { expectedVersion: args.expectedVersion } : {}),
         });
         return fromAdminView(view);
       },

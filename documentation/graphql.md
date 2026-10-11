@@ -56,6 +56,9 @@ For a collection `article` (plural API ID `articles`) Shapio generates:
 The list query takes the collection's plural API ID; everything else is named after the singular API ID
 ([Modelling](modelling.md#kinds-of-definitions)).
 
+`updateArticle` takes the `expectedVersion` you read; `publishArticle` takes it optionally, for a publish of one
+locale, and refuses with `CONTENT_VERSION_CONFLICT` when the draft has moved since, as REST does.
+
 A single type `home` is `home(locale, …)`. Field types: rich text is `RichText { json html }` (`html` is rendered only when selected), media is
 `Media { id url width height alt variants { name width url } … }`, a relation is the target type (or a list of
 it), a component is its own type, and a dynamic zone is a list of a union of its components (ask for

@@ -42,7 +42,8 @@ export const adminContentRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { ...admin, schema: schemas.duplicateEntrySchema, config: { audit: SAVE } },
     handlers.duplicateEntry,
   );
-  // POST /:modelKey/:id/publish { locales }: publish one or more locales atomically
+  // POST /:modelKey/:id/publish { locales, expectedVersion | expectedVersions }: publish one or more locales
+  // atomically (409 when a draft moved past the version the caller saw)
   app.post(
     '/:modelKey/:id/publish',
     { ...admin, schema: schemas.publishEntrySchema, config: { audit: { action: 'content.publish' } } },
@@ -51,7 +52,7 @@ export const adminContentRoutes: FastifyPluginAsyncTypebox = async (app) => {
   // POST /:modelKey/:id/unpublish { locales }
   app.post(
     '/:modelKey/:id/unpublish',
-    { ...admin, schema: schemas.publishEntrySchema, config: { audit: { action: 'content.unpublish' } } },
+    { ...admin, schema: schemas.unpublishEntrySchema, config: { audit: { action: 'content.unpublish' } } },
     handlers.unpublishEntry,
   );
   // GET /:modelKey/:id/revisions?locale=

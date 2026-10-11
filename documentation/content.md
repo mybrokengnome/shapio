@@ -38,6 +38,12 @@ uniqueness, rich-text structure, and that relations and media point at entries a
 a locale offline. Publishing one locale never changes another ([Localization](localization.md)). When other
 published locales still serve older values of shared fields, the publish dialog offers to publish them too.
 
+Publishing is guarded like saving: if someone else saved the draft since you opened it, Publish is refused
+and the form shows the same reload-or-discard banner, so you never put live a draft you haven't seen. API
+callers get the same guard by sending the draft version they read: `expectedVersion` for one locale, or
+`expectedVersions` (`{ "en": 4, "fr": 2 }`) when publishing several; a stale one answers 409
+`CONTENT_VERSION_CONFLICT` and nothing goes live. Without either, publish takes the current draft as it is.
+
 A model without drafts (drafts turned off on the model) publishes every save at once.
 
 List views publish, unpublish and delete several entries at once.
@@ -56,7 +62,8 @@ entries still point at cannot be deleted until those references are removed; the
 ## Scheduling
 
 Publishing → Scheduled publishes or unpublishes one entry (one locale) at a set time. The job queue runs it
-exactly once, even across restarts, and the list shows how each run went.
+exactly once, even across restarts, and the list shows how each run went. It publishes the draft as it is at
+run time, including edits saved after it was scheduled.
 
 ## Change sets
 

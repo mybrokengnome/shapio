@@ -59,7 +59,19 @@ export const updateEntrySchema = {
 
 export const deleteEntrySchema = { params: EntryParamsSchema };
 export const duplicateEntrySchema = { params: EntryParamsSchema, response: { 201: AdminEntrySchema } };
-export const publishEntrySchema = { params: EntryParamsSchema, body: LocalesBody, response: entry };
+const Version = Type.Integer({ minimum: 1 });
+const PublishBody = Type.Object(
+  {
+    locales: LocalesBody.properties.locales,
+    /** The draft version the editor saw, when the request publishes one locale (409 when it moved). */
+    expectedVersion: Type.Optional(Version),
+    /** The draft version per published locale, for a publish of several locales (409 when one moved). */
+    expectedVersions: Type.Optional(Type.Record(LocaleCodeSchema, Version)),
+  },
+  closed,
+);
+export const publishEntrySchema = { params: EntryParamsSchema, body: PublishBody, response: entry };
+export const unpublishEntrySchema = { params: EntryParamsSchema, body: LocalesBody, response: entry };
 
 export const listRevisionsSchema = {
   params: EntryParamsSchema,

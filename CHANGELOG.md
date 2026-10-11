@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Publish no longer puts live a draft the editor never saw.** Publishing from a tab that missed another
+  session's save now shows the "Someone else saved this entry" banner instead of publishing. The publish API
+  takes the draft version you read (`expectedVersion`, or `expectedVersions` per locale) and answers 409
+  `CONTENT_VERSION_CONFLICT` when it moved. The editor, list, and bulk Publish send it; `@shapio/client` and
+  the GraphQL `publish…` mutations accept it.
 
 ## [0.5.6] - 2026-10-11
 
