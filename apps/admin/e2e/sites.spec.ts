@@ -42,7 +42,7 @@ const onBlog = () => siteApi(page.request, SITE.key);
 /** Deletes a definition at its active version, through the site whose view has it. */
 const deleteDefinition = async (api: ReturnType<typeof siteApi>, path: string) => {
   const { version } = await api.get<{ version: number }>(path);
-  await api.send('DELETE', `${path}?expectedVersion=${version}`);
+  await api.send('DELETE', `${path}?expectedVersion=${version}&acknowledgeBreaking=true`);
 };
 
 const switcher = (on: Page) => on.getByRole('button', { name: /^Switch site/ });
