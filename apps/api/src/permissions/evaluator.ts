@@ -40,11 +40,12 @@ const DELIVERY_TOKEN_ACTIONS: ReadonlySet<ModelAction> = new Set(DELIVERY_ACTION
 const APP_ACTIONS: ReadonlySet<ModelAction> = new Set(APP_CONTENT_ACTIONS);
 
 /**
- * Which roles a principal holds and how its masks are computed. App users hold the custom app roles assigned
- * to them plus the roles their site binds to `authenticated`; anonymous callers hold the roles the request's
- * site binds to `public` (`site_app_roles`: a site that binds nothing grants nothing, and an anonymous caller
- * outside a site holds no role). Both are delivery audiences: they see `public: false` fields only where a
- * grant names them.
+ * Which roles a principal holds and how its masks are computed. Anonymous callers hold the roles the
+ * request's site binds to `public` (`site_app_roles`: a site that binds nothing grants nothing, and an
+ * anonymous caller outside a site holds no role). `public` is a floor: app users hold those roles too, plus
+ * the roles their site binds to `authenticated` and the custom app roles assigned to them, so signing in never
+ * takes anything away. Both are delivery audiences: they see `public: false` fields only where a grant names
+ * them.
  */
 const rolesOf = async (
   principal: Principal,
@@ -80,8 +81,11 @@ const rolesOf = async (
     case 'appUser':
       return {
         roleIds: [
-          ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated', executor, versions)),
-          ...principal.roleIds,
+          ...new Set([
+            ...(await grants.getSiteAppRoleIds(principal.siteId, 'public', executor, versions)),
+            ...(await grants.getSiteAppRoleIds(principal.siteId, 'authenticated', executor, versions)),
+            ...principal.roleIds,
+          ]),
         ],
         networkRoleIds: [],
         audience: 'delivery',

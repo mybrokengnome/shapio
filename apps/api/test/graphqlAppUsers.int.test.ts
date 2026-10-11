@@ -256,4 +256,66 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
       expect(errorCodes(result)).toEqual(['DRAFTS_FORBIDDEN']);
     });
   });
+
+  describe('`public` is a floor for signed-in app users (issue #56)', () => {
+    type Nodes = { posts: { nodes: Array<{ title: string; notes: string | null }> } };
+    const NOTES = '{ posts { nodes { title notes } } }';
+
+    it('keeps what `public` reads when `authenticated` grants nothing', async () => {
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, []);
+      const session = await signUp(testApp.app);
+      const anonymous = dataOf(await gql(LIST)) as { posts: { nodes: unknown[] } };
+      const signedIn = dataOf(await gql(LIST, undefined, session.accessToken)) as {
+        posts: { nodes: unknown[] };
+      };
+      expect(signedIn).toEqual(anonymous);
+      expect(signedIn.posts.nodes).toHaveLength(1);
+    });
+
+    it('adds `authenticated` on own entries: the hidden field shows only on its own entry', async () => {
+      const fieldIds = [fieldIdOf(post, 'title'), fieldIdOf(post, 'notes')];
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, [
+        { action: 'read', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+        { action: 'update', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+      ]);
+      const author = await createAppRole(database.current.db, [
+        { action: 'create', modelId: post.definition.id, fieldIds },
+        { action: 'publish', modelId: post.definition.id, condition: 'ownedByPrincipal' },
+      ]);
+      const session = await signUp(testApp.app);
+      await assignRoles(session.user.id, [author]);
+      const created = dataOf(
+        await gql(
+          CREATE,
+          { data: { title: 'Mine', notes: 'my own note' }, publish: true },
+          session.accessToken,
+        ),
+      ) as { createPost: EntryResult };
+
+      const nodes = (dataOf(await gql(NOTES, undefined, session.accessToken)) as Nodes).posts.nodes;
+      expect(nodes).toEqual(
+        expect.arrayContaining([
+          { title: 'Live', notes: null },
+          { title: 'Mine', notes: 'my own note' },
+        ]),
+      );
+      expect(nodes).toHaveLength(2);
+      expect(
+        dataOf(
+          await gql(
+            UPDATE,
+            { id: created.createPost.id, data: { title: 'Mine, edited' }, v: 1 },
+            session.accessToken,
+          ),
+        ),
+      ).toMatchObject({ updatePost: { id: created.createPost.id } });
+      expect(
+        errorCodes(await gql(UPDATE, { id: published.id, data: { title: 'x' }, v: 1 }, session.accessToken)),
+      ).toEqual(['ENTRY_NOT_FOUND']);
+      // Anonymous callers keep only `public`.
+      expect(JSON.stringify(dataOf(await gql(NOTES)))).not.toContain('my own note');
+    });
+  });
 });

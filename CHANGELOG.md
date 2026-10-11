@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Signing in no longer takes away what visitors can read.** A signed-in app user now holds the roles the site
+  gives to everyone (`public`) as well as the `authenticated` roles and their own, so content `public` can read
+  no longer returns 403 once someone signs in. Anonymous callers still hold only the `public` roles.
 - **Fields granted only on your own entries stay off everyone else's.** When one role could read every entry
   and another could read your own entries with more fields (an email, say), those extra fields showed on every
   entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,

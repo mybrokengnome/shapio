@@ -119,7 +119,9 @@ test('App roles: the built-in roles and a new custom role', async () => {
   await page.goto(`${ADMIN_URL}settings/roles`);
   await page.getByRole('navigation', { name: 'Role types' }).getByRole('link', { name: 'App roles' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'App roles' })).toBeVisible();
-  await expect(page.getByRole('row').filter({ hasText: 'Everyone without a token' })).toContainText('Public');
+  await expect(page.getByRole('row').filter({ hasText: 'Everyone, signed in or not' })).toContainText(
+    'Public',
+  );
   await expect(page.getByRole('row').filter({ hasText: 'Every signed-in app user' })).toContainText(
     'Authenticated',
   );
