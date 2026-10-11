@@ -5,8 +5,11 @@ import { logError, reportError } from '@/helpers/reportError';
 
 declare module '@tanstack/react-query' {
   interface Register {
-    /** `silent`: logged but no toast, because the caller shows the error itself (inline form error, state view). */
-    queryMeta: { silent?: boolean };
+    /**
+     * `silent`: logged but no toast, because the caller shows the error itself (inline form error, state view).
+     * `silentNotFound`: the same for 404 only, where callers show a "no longer exists" state.
+     */
+    queryMeta: { silent?: boolean; silentNotFound?: boolean };
     mutationMeta: { silent?: boolean };
   }
 }
@@ -51,7 +54,9 @@ export const createQueryClient = () => {
       onError: (error, query) => {
         const context = `query ${JSON.stringify(query.queryKey)}`;
         const isMeQuery = query.queryKey[0] === queryKeys.me[0];
-        (query.meta?.silent || isSiteAccessError(error) ? logError : reportError)(error, context);
+        const quiet =
+          query.meta?.silent || (query.meta?.silentNotFound && isNotFound(error)) || isSiteAccessError(error);
+        (quiet ? logError : reportError)(error, context);
         handleSessionEnded(error, isMeQuery);
         handleSiteAccessLost(error, isMeQuery);
       },

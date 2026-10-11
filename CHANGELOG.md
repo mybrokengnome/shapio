@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Entries using a force-deleted file can be saved again.** After an owner force-deleted a file that content
+  used, saving or publishing those entries failed with `MEDIA_MISSING`. Saves now check only the files they add,
+  the admin shows the missing file so you can remove it, and the Inbox lists the entries under "Files deleted
+  from the library".
 
 ## [0.5.6] - 2026-10-11
 

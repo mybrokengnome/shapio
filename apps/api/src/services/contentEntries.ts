@@ -14,7 +14,7 @@ import { uniqueFields } from '../content/unique.js';
 import { buildValidator, type ModelValidator, type ValidationOutcome } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from '../content/write/heads.js';
-import { assertTargets } from '../content/write/references.js';
+import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
@@ -327,7 +327,7 @@ export const updateEntry = async (
     }
     const before = previous?.data ?? newLocaleBase(model, heads);
     const outcome = validated(validator, applyPatch(before, patch), autosave);
-    await assertTargets(trx, outcome, context.site.id);
+    await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]));
     const hook = {
       trx,
       site: context.site,
@@ -402,7 +402,7 @@ export const restoreRevision = async (
       model.definition.fields,
       changedSharedFieldIds(model.definition, previous.data, outcome.data),
     );
-    await assertTargets(trx, outcome, context.site.id);
+    await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [previous.data]));
     const changes = draftChanges(model, heads, {
       locale: revision.locale,
       previous,
@@ -512,7 +512,7 @@ export const duplicateEntry = async (
       const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
       assertWritable(policy.writeMask, model.definition.fields, Object.keys(copy));
       const outcome = validated(validator, copy, true);
-      await assertTargets(trx, outcome, context.site.id);
+      await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [draft.data]));
       await writeDraft(write, {
         entryId: entry.id,
         locale: draft.locale,

@@ -73,25 +73,26 @@ refuses content that fails validation (an empty required field, a taken unique v
 by itself once the content is fixed, so there is nothing to dismiss. On an instance with several
 sites, each site sees the findings for its own entries ([Sites](sites.md)).
 
-| Rule                  | Inbox group                  | What it detects                                                                                                                                   | Models      | Propose fixes |
-| --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------- |
-| `requiredEmpty`       | Required fields left empty   | A required field that is empty in a locale's draft (autosave lets you leave one empty while you work).                                            | all         | no            |
-| `relationMissing`     | Links to deleted entries     | A relation in a draft that points at an entry that no longer exists.                                                                              | all         | no            |
-| `uniqueConflict`      | Values already taken         | A unique field whose draft value is already used by another entry's published version, so publishing it would fail.                               | with drafts | no            |
-| `altMissing`          | Images without alt text      | An image (in a media field or a rich-text body) with no alt text of its own and none in the media library. Files that aren't images are skipped.  | all         | yes           |
-| `relationUnpublished` | Links to unpublished entries | A relation in a draft whose target has no published version in that locale (any locale, for a target that isn't localized), so delivery drops it. | with drafts | no            |
-| `localeMissing`       | Translations not started     | A configured locale in which the entry has no version yet.                                                                                        | localized   | yes           |
-| `unpublishedChanges`  | Changes not published        | A published locale with unpublished draft changes, last saved or autosaved more than `HEALTH_STALE_DAYS` (default 14) ago.                        | with drafts | no            |
-| `staleDraft`          | Drafts going stale           | A locale that was never published, its draft last saved or autosaved more than `HEALTH_STALE_DAYS` ago.                                           | with drafts | no            |
+| Rule                  | Inbox group                    | What it detects                                                                                                                                   | Models      | Propose fixes |
+| --------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------- |
+| `requiredEmpty`       | Required fields left empty     | A required field that is empty in a locale's draft (autosave lets you leave one empty while you work).                                            | all         | no            |
+| `relationMissing`     | Links to deleted entries       | A relation in a draft that points at an entry that no longer exists.                                                                              | all         | no            |
+| `mediaMissing`        | Files deleted from the library | A media field or rich-text image in a draft whose file an owner force-deleted from the media library. Delivery leaves it out.                     | all         | no            |
+| `uniqueConflict`      | Values already taken           | A unique field whose draft value is already used by another entry's published version, so publishing it would fail.                               | with drafts | no            |
+| `altMissing`          | Images without alt text        | An image (in a media field or a rich-text body) with no alt text of its own and none in the media library. Files that aren't images are skipped.  | all         | yes           |
+| `relationUnpublished` | Links to unpublished entries   | A relation in a draft whose target has no published version in that locale (any locale, for a target that isn't localized), so delivery drops it. | with drafts | no            |
+| `localeMissing`       | Translations not started       | A configured locale in which the entry has no version yet.                                                                                        | localized   | yes           |
+| `unpublishedChanges`  | Changes not published          | A published locale with unpublished draft changes, last saved or autosaved more than `HEALTH_STALE_DAYS` (default 14) ago.                        | with drafts | no            |
+| `staleDraft`          | Drafts going stale             | A locale that was never published, its draft last saved or autosaved more than `HEALTH_STALE_DAYS` ago.                                           | with drafts | no            |
 
 "With drafts" means models with drafts turned on. The table follows the order of the groups in the Inbox.
 
 **When the rules run.** An entry is checked again whenever it is saved, published, unpublished or deleted, and
-whenever the media library details of an image it uses change (its alt text, for example). Autosaves don't
+whenever the media library details of an image it uses change (its alt text, for example) or an owner force-deletes a file it uses. Autosaves don't
 trigger a check. Entries are also checked again after a schema change goes live (a model change re-checks
 only that model's entries), after the locales change, and once a day, which is how the two time-based rules
 (`staleDraft` and `unpublishedChanges`) come up. Opening the publish pre-flight checks the entry at once, and
-the pre-flight repeats `altMissing` and `relationUnpublished` as warnings for the locales you publish.
+the pre-flight repeats `altMissing`, `mediaMissing`, and `relationUnpublished` as warnings for the locales you publish.
 
 **Propose fixes.** With [assist](assist.md) turned on, the "Images without alt text" and "Translations not
 started" groups have a **Propose fixes** button. It proposes alt text for you to review, or creates the

@@ -51,6 +51,8 @@ export const useMediaAsset = (id: string | undefined) =>
     queryKey: queryKeys.media.asset(id ?? ''),
     queryFn: () => adminApi.media.assets.get(id ?? ''),
     enabled: id !== undefined,
+    // Content can point at a force-deleted file; every view of an asset shows that state itself.
+    meta: { silentNotFound: true },
     refetchInterval: (state) =>
       state.state.data && isProcessing(state.state.data) ? PROCESSING_POLL_MS : false,
   });

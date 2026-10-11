@@ -276,7 +276,9 @@ export const projectRows = async (
       fields,
       visibleTargets,
       populated,
-      ...(env.audience === 'delivery' ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE } : {}),
+      ...(env.audience === 'delivery'
+        ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE }
+        : { keepUnresolvedMedia: true }),
       mediaAssets: media.byId,
     });
     return {
