@@ -1,9 +1,12 @@
 import type { FieldDefinition } from '@shapio/schema';
 import type { ReactNode } from 'react';
+import { WIDTH_GRID_CLASSES, widthClassOf, type FieldGridMode } from '../helpers/widthClasses';
 
 type FieldGridProps = {
   fields: readonly FieldDefinition[];
   renderField: (field: FieldDefinition, className: string) => ReactNode;
+  /** `compact` (default) or `widths`; see `FieldGridMode`. */
+  mode?: FieldGridMode;
 };
 
 /**
@@ -30,10 +33,16 @@ const COMPACT_TYPES: ReadonlySet<string> = new Set([
 const isCompact = (field: FieldDefinition) =>
   COMPACT_TYPES.has(field.type) || (field.type === 'enum' && field.editor.id === 'select');
 
-export const FieldGrid = ({ fields, renderField }: FieldGridProps) => (
+export const FieldGrid = ({ fields, renderField, mode = 'compact' }: FieldGridProps) => (
   <div className="@container">
-    <div className="grid gap-5 @2xl:grid-cols-2">
-      {fields.map((field) => renderField(field, isCompact(field) ? '@2xl:col-span-1' : '@2xl:col-span-2'))}
-    </div>
+    {mode === 'widths' ? (
+      <div className={WIDTH_GRID_CLASSES}>
+        {fields.map((field) => renderField(field, widthClassOf(field.width)))}
+      </div>
+    ) : (
+      <div className="grid gap-5 @2xl:grid-cols-2">
+        {fields.map((field) => renderField(field, isCompact(field) ? '@2xl:col-span-1' : '@2xl:col-span-2'))}
+      </div>
+    )}
   </div>
 );

@@ -1,14 +1,17 @@
 import {
+  effectiveFormLayout,
   effectiveLayout,
+  entryLayoutOf,
   type ComponentDefinition,
   type FieldDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
 
 /**
- * The form preview's sections: the entry document (inline title, cover, canvas blocks), then the
- * properties by group, as the entry editor lays them out (`effectiveLayout`). `label` undefined: the
- * document, or properties outside any group.
+ * The form preview's sections, as the entry editor lays them out. A document (`effectiveLayout`): the entry
+ * document (inline title, cover, canvas blocks), then the properties by group. A form
+ * (`effectiveFormLayout`): one properties section per form section, no document section. `label`
+ * undefined: the document, or fields outside any group.
  */
 export type PreviewSection = {
   id: string;
@@ -18,6 +21,14 @@ export type PreviewSection = {
 };
 
 export const previewSections = (model: ModelDefinition): PreviewSection[] => {
+  if (entryLayoutOf(model) === 'form') {
+    return effectiveFormLayout(model).sections.map((section) => ({
+      id: `group-${section.id}`,
+      kind: 'properties' as const,
+      label: section.label,
+      fields: section.fields,
+    }));
+  }
   const layout = effectiveLayout(model);
   const document = [layout.titleInline ? layout.title : undefined, layout.cover, ...layout.canvas].filter(
     (field): field is FieldDefinition => field !== undefined,

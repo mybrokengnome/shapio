@@ -41,6 +41,16 @@ describe('plan buckets', () => {
     expect(bucketOfPlan(summary)).toBe('metadata');
   });
 
+  it('a field width and the entry layout are metadata only', () => {
+    const { changes, summary } = plan({
+      ...model,
+      display: { layout: 'form' },
+      fields: [{ ...field, width: 'half' }],
+    });
+    expect(changes.map(bucketOfChange)).toEqual(['metadata', 'metadata']);
+    expect(bucketOfPlan(summary)).toBe('metadata');
+  });
+
   it('an optional field is live', () => {
     const extra = { ...field, id: '00000000-0000-4000-8000-000000000004', apiKey: 'subtitle' };
     const { summary } = plan({ ...model, fields: [field, extra] });

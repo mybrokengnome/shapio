@@ -6,6 +6,22 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Document or form.** Each content type now chooses how its entries open, under **Display → Layout** in the
+  model builder. **Document** is the default and works as before. **Form** puts every field on the page, the
+  title included, with the title's value as the heading: the right fit for records such as a product, a
+  redirect, or a job listing. A form's fields each take a width (**Full**, **Two thirds**, **Half**, or
+  **Third**), fill rows in field order, and stack in a narrow window; a wireframe in the builder shows the rows
+  as you change widths and order. Fields can be put in named **groups** from their settings, shown as sections
+  of the form, and groups can be renamed or removed in Display. The settings drawer of a form keeps status,
+  locales, history, and the danger zone. Schema managers can also switch the layout from any entry, under
+  **Settings → Layout**, at once and with Undo. All of it is schema data (`display.layout`, a field's `width`,
+  `display.groups`): live on save, carried by `schema pull` and `schema apply`, and shown as metadata changes in
+  change sets. Switching back to Document restores the document's own settings.
+- The **Entries · Structure · API** tabs now sit above each entry of a collection too, as they already did
+  above a single type's document, for admins who see the type's structure. Entries goes back to the list.
+
 ## [0.5.4] - 2026-10-07
 
 ### Added

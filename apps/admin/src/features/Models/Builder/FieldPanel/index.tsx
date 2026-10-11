@@ -1,4 +1,4 @@
-import { type FieldDefinition, type ValidationIssue } from '@shapio/schema';
+import { entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
 import { Trash2 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,9 +21,11 @@ import { DataType } from './DataType';
 import { DefaultValue } from './DefaultValue';
 import { EditorPicker } from './EditorPicker';
 import { Flags } from './Flags';
+import { Group } from './Group';
 import { useTypeChoices } from './hooks/useTypeChoices';
 import { Placement } from './Placement';
 import { TypeSettings } from './TypeSettings';
+import { Width } from './Width';
 
 type FieldPanelProps = {
   field: FieldDefinition;
@@ -50,6 +52,7 @@ const CONTROLLED = new Set([
   'defaultValue',
   'editor',
   'settings',
+  'width',
 ]);
 
 /**
@@ -71,9 +74,15 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
   }
   const path = fieldPath(index);
   const at = (property: string) => issuesUnder(issues, `${path}/${property}`);
-  const otherIssues = issuesUnder(issues, path).filter(
-    (found) => !CONTROLLED.has(found.path.slice(path.length + 1).split('/')[0] ?? ''),
-  );
+  const model = draft.kind === 'component' ? undefined : draft;
+  const isForm = model !== undefined && entryLayoutOf(model) === 'form';
+  // Width has a control on a form's live fields (and on any model field with a width problem); anywhere
+  // else, such as a component's field, which may not have one, its issue is listed at the top.
+  const showsWidth = model !== undefined && !field.deprecated && (isForm || at('width').length > 0);
+  const otherIssues = issuesUnder(issues, path).filter((found) => {
+    const property = found.path.slice(path.length + 1).split('/')[0] ?? '';
+    return !CONTROLLED.has(property) || (property === 'width' && !showsWidth);
+  });
   const set = (patch: Partial<FieldDefinition>) =>
     updateField(field.id, (current) => ({ ...current, ...patch }) as FieldDefinition);
   const id = (name: string) => `field-${field.id}-${name}`;
@@ -166,8 +175,14 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
               emptyAsUndefined
               multiline
             />
-            {draft.kind !== 'component' && !field.deprecated ? (
-              <Placement model={draft} field={field} issues={issues} disabled={disabled} />
+            {model && !field.deprecated && !isForm ? (
+              <Placement model={model} field={field} issues={issues} disabled={disabled} />
+            ) : null}
+            {model && !field.deprecated ? (
+              <div className="grid items-start gap-5 @lg/field-group:grid-cols-2">
+                <Group model={model} field={field} disabled={disabled} />
+                {showsWidth ? <Width field={field} issues={at('width')} disabled={disabled} /> : null}
+              </div>
             ) : null}
           </PanelSection>
 

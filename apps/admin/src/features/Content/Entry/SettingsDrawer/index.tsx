@@ -1,4 +1,4 @@
-import type { DocumentLayout } from '@shapio/schema';
+import type { PropertyGroup } from '@shapio/schema';
 import { History } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,10 +17,13 @@ type SettingsDrawerProps = {
   automatic: boolean;
   onOpenChange: (open: boolean) => void;
   focus: DrawerFocus;
-  layout: DocumentLayout;
+  /** The document's properties by group; none for a form, whose fields are all on the page. */
+  properties?: readonly PropertyGroup[];
   /** Properties whose rows are expanded (by API key). */
   expanded: ReadonlySet<string>;
   onToggleProperty: (apiKey: string) => void;
+  /** How the type's entries open (Document or Form), for whoever manages its schema; first, before Status. */
+  layout?: ReactNode;
   status: ReactNode;
   cover: ReactNode;
   onOpenHistory?: () => void;
@@ -35,18 +38,20 @@ const focusTargetOf = (focus: DrawerFocus) =>
   );
 
 /**
- * The entry's settings beside the document (360px on the right, a bottom sheet on phones): status and
- * locales, every property as a compact row, the cover's alt text and focal point, history, and the danger
- * zone. Non-modal: the document stays editable while it is open; Escape or ⌘/ closes it.
+ * The entry's settings beside the document (360px on the right, a bottom sheet on phones): the type's
+ * layout (schema managers), status and locales, every property as a compact row, the cover's alt text and focal point, history, and the danger
+ * zone. A form has no properties or cover here: its fields are all on the page. Non-modal: the document
+ * stays editable while it is open; Escape or ⌘/ closes it.
  */
 export const SettingsDrawer = ({
   open,
   automatic,
   onOpenChange,
   focus,
-  layout,
+  properties = [],
   expanded,
   onToggleProperty,
+  layout,
   status,
   cover,
   onOpenHistory,
@@ -84,11 +89,13 @@ export const SettingsDrawer = ({
         <SheetHeader className="pb-2">
           <SheetTitle className="text-base">{t('entry.settings.title')}</SheetTitle>
         </SheetHeader>
-        <SheetBody className="space-y-7">
+        {/* pt-5: the first section sits as far under the title as the sections sit apart. */}
+        <SheetBody className="space-y-7 pt-5">
+          {layout}
           {status}
-          {layout.properties.length > 0 ? (
+          {properties.length > 0 ? (
             <DrawerSection id="entry-settings-properties" title={t('entry.properties.title')}>
-              {layout.propertyGroups.map((group) => (
+              {properties.map((group) => (
                 <div key={group.id} className="space-y-1">
                   {group.label ? <h4 className="pt-2 text-sm font-semibold">{group.label}</h4> : null}
                   {group.fields.map((field) => (

@@ -14,6 +14,7 @@ import { FieldsProvider } from '../../form/FieldsProvider';
 import { createEntryFormStore, selectDirtyKeys } from '../../form/store';
 import { contentIssuesOf } from '../../helpers/apiErrors';
 import { buildCreateData, defaultFormValues, liveFields } from '../../helpers/formValues';
+import { fieldGridModeOf } from '../../helpers/widthClasses';
 
 type InlineCreateSheetProps = {
   target: ModelDefinition;
@@ -80,7 +81,7 @@ export const InlineCreateSheet = ({ target, onClose, onCreated }: InlineCreateSh
           >
             <SheetBody className="space-y-5">
               <FieldsProvider environment={environment} store={store}>
-                <EntryFields fields={liveFields(target.fields)} />
+                <EntryFields fields={liveFields(target.fields)} mode={fieldGridModeOf(target)} />
               </FieldsProvider>
               {create.isError && issues.length === 0 ? <FormError error={create.error} /> : null}
               {issues.length > 0 ? (

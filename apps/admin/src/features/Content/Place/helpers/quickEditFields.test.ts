@@ -45,4 +45,38 @@ describe('quickEditFieldsOf', () => {
       'slug',
     ]);
   });
+
+  it('offers every live field of a form in form order, without document-only values', () => {
+    const MEDIA = id(5);
+    const form = model({
+      display: {
+        layout: 'form',
+        titleFieldId: TITLE,
+        groups: [{ id: 'people', label: 'People', fieldIds: [AUTHOR] }],
+        stripFieldIds: [SLUG],
+      },
+      fields: [
+        field({ id: TITLE, apiKey: 'title', type: 'string' }),
+        field({
+          id: AUTHOR,
+          apiKey: 'author',
+          type: 'relation',
+          settings: { target: id(9), cardinality: 'one' },
+        }),
+        field({ id: SLUG, apiKey: 'slug', type: 'slug', settings: { sourceFieldId: TITLE } }),
+        field({ id: BODY, apiKey: 'body', type: 'richtext' }),
+        field({ id: MEDIA, apiKey: 'gallery', type: 'media', settings: { multiple: true } }),
+        field({ apiKey: 'cover', type: 'media', settings: { allowedKinds: ['image'] } }),
+        field({ apiKey: 'meta', type: 'json' }),
+        field({ apiKey: 'old', type: 'string', deprecated: true }),
+      ],
+    });
+    expect(quickEditFieldsOf(form).map((item) => item.apiKey)).toEqual([
+      'title',
+      'author',
+      'slug',
+      'gallery',
+      'cover',
+    ]);
+  });
 });

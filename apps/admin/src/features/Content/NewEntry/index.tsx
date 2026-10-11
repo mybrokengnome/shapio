@@ -2,6 +2,7 @@ import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { EntryDocument } from '../Entry';
+import { EntryFrame } from '../EntryFrame';
 import { useContentLocales } from '../hooks/useContentLocales';
 import { useModelRoute } from '../hooks/useModelRoute';
 import { ModelMissing } from '../ModelMissing';
@@ -25,14 +26,16 @@ export const NewEntry = () => {
     return <ModelMissing modelKey={modelKey} />;
   }
   return (
-    <EntryDocument
-      key={locales.current ?? ''}
-      schema={schema}
-      model={model}
-      mode={CREATE}
-      locale={locales.current}
-      onReload={() => undefined}
-      onLocaleChange={(locale) => void navigate({ search: { locale } })}
-    />
+    <EntryFrame model={model} modelKey={modelKey}>
+      <EntryDocument
+        key={locales.current ?? ''}
+        schema={schema}
+        model={model}
+        mode={CREATE}
+        locale={locales.current}
+        onReload={() => undefined}
+        onLocaleChange={(locale) => void navigate({ search: { locale } })}
+      />
+    </EntryFrame>
   );
 };

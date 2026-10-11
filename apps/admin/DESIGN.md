@@ -97,7 +97,7 @@ control-contrast pairs.
 | `link`                                                  | text links, and the dark blockquote rule in rich text                                       |
 | `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds                                                |
 | `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                                |
-| `sidebar*`                                              | the sidebar column, active pill, active bar (`sidebar-primary`)                             |
+| `sidebar*`                                              | the sidebar column; the active item's fill (`sidebar-accent`) and icon (`sidebar-primary`)  |
 | `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): the yellow tile and plum S; never UI                                |
 | `brand-letters`                                         | the wordmark letters (`Wordmark`)                                                           |
 | `brand-panel-from`, `-to`, `-foreground`, `-mark`       | the signed-out brand panel (`AuthLayout/BrandPanel`): gradient, its text, the panel's mark  |
@@ -131,7 +131,7 @@ outside the canvas. The document title stays Manrope (`text-display`).
 | ------------------------------------------------------ | --------------------------------------------------------------------- |
 | Document title (44/700, tight, 1.1)                    | `text-display` (only the entry document's title uses it)              |
 | Canvas body (19/1.65, serif)                           | `font-serif text-canvas` (only rich text in the document canvas)      |
-| Page title (28/700, tight)                             | `text-title` (only `PageHeader` uses it)                              |
+| Page title (28/700, tight)                             | `text-title` (`PageHeader` and a form entry's heading only)           |
 | Section / panel / card title                           | `text-base font-semibold`                                             |
 | Label                                                  | `text-sm font-semibold` (the `Label` primitive)                       |
 | Body, control text                                     | `text-sm`                                                             |
@@ -276,6 +276,11 @@ icon buttons.
 **`CursorPager`** `{ onFirst; onPrevious; onNext; className? }`
 For cursor lists without a total (audit, media, app users): Newest / Previous / Next as 32px icon
 buttons (named by `aria-label`).
+
+**`SegmentedToggle`** `{ value; options: { value; label; icon? }[]; onChange; 'aria-label'?; 'aria-labelledby'?; iconOnly?; disabled?; className? }`
+A switch between a few options as one `border-input` pill, 36px tall: the chosen one a `secondary` button,
+the others `ghost`, with `aria-pressed`; pressing the chosen one does nothing. The place's table/cards view
+(icons only). A yes/no setting is a `Switch`, not this.
 
 **`StatusChip`** `{ tone: StatusTone; label; live?; size?: 'default' | 'sm'; className? }`
 `StatusTone = 'neutral' | 'progress' | 'scheduled' | 'success' | 'warning' | 'danger' | 'muted'`.
@@ -423,7 +428,8 @@ message.
 - `Badge` variants: `secondary` (default) and `outline`, for neutral labels only (Default, Built-in,
   You, roles, kinds, counts). State is a `StatusChip`.
 - Sidebar `SidebarMenuButton` gained `variant="nav"` / `size="nav"` (the main navigation's 40px rows);
-  only the Shell uses them.
+  only the Shell uses them. Active is one signal: the `sidebar-accent` fill, the label at its normal weight
+  and colour, only the icon in `sidebar-primary`; no bar, no shadow. The collapsed sidebar shows the same.
 - Overlays, menus, popovers, tooltips and toasts are on the tokens; toasts sit above the status bar.
 
 ### Brand
@@ -477,7 +483,8 @@ keep it consistent; components are listed in the catalogue once they exist.
 
 ### Document
 
-An entry opens as a document, not a form. Top to bottom:
+An entry of a document type (`display.layout` unset or `document`, the default) opens as a document, not a
+form. Top to bottom:
 
 1. **Top bar** (thin, sticky): breadcrumb (place / title), `StatusChip`, save state, presence avatars,
    Preview, Settings, Publish (primary, last). No side panel.
@@ -524,7 +531,8 @@ field's end; both at a boundary between the two. Nothing is offered that the sav
 **Settings drawer** (right, 360px, non-blocking: the document stays interactive; open by default from `xl`,
 where it sits beside the document, and every open or close there is remembered per browser; below `xl` it
 starts closed; opening the preview closes it without changing that choice; the default open never takes
-focus): Status (current state,
+focus): Layout (a `Switch` between the words Document and Form, on for Form, either word picks its
+side; the whole type, for schema managers only; ships at once, the toast offers Undo), Status (current state,
 live since, locales with "Start French"), Properties (all non-canvas fields as compact rows that expand to
 their editor), Cover (alt text, focal point), History, Danger (unpublish, delete via `InlineConfirm`).
 Esc closes it.
@@ -536,17 +544,50 @@ information. Actions: Schedule…, Not yet, Publish now. Sentences come from tra
 from the check's rule and params.
 
 **Property-only models** (no canvas fields, e.g. Author): cover, title, then a two-column grid of compact
-editors. Still a document: no labels stacked above inputs.
+editors. Still a document: no labels stacked above inputs (that rule is the document's; a form stacks them).
 
 Keyboard: Mod+S save, Mod+Shift+P publish, Mod+/ drawer, Mod+Shift+L next locale, Mod+K palette (the
 rich-text link shortcut is Mod+Shift+K), `/` block menu, Alt+↑/↓ move a block, Esc closes the drawer.
+
+### Form
+
+A type set to **Form** (`display.layout: 'form'`, chosen in the builder's Display panel) opens every entry
+as a form: records such as a product, a redirect, or a job listing, where every field is on the page.
+`effectiveFormLayout` in `@shapio/schema` is the only source the admin reads (`Entry/Form`, `FormBody`).
+
+1. **Top bar**: the same as the document's.
+2. **Column**: `max-w-4xl` (a document's is `max-w-3xl`).
+3. **Heading**: the title field's value as read-only text, `Title variant="form"` (`text-title`), in an `h1`.
+   No cover, no inline title editor, no properties strip, no canvas.
+4. **Groups as sections**: the model's `display.groups` (named "Groups" in the builder), each a section
+   opening with its label in the group-label style (`text-xs font-semibold uppercase tracking-wide
+text-muted-foreground`) and a hairline. A group sits where its first field is, and each run of consecutive
+   ungrouped fields is its own unlabelled section at its position. An unlabelled section after a group gets
+   extra space above it (`pt-8`, a heading row and its gap) and no hairline, so its fields don't read as part
+   of the group; the first section never gets it. Field order decides everything; the builder has no group ordering.
+5. **Fields**: every live field, the title included, through `EntryFields` in `widths` mode: `TopLevelField`
+   with `layout="stacked"`, its label above the control. Rich text, dynamic zones, components, and media
+   render with their normal editors, without the canvas chrome (no block handles, no `+` insertions).
+
+**The width grid.** Each section is `FieldGrid` in `widths` mode: an `@container` around
+`WIDTH_GRID_CLASSES` (`@lg:grid-cols-6`), each field spanning `widthClassOf(width)` from
+`fields/helpers/widthClasses.ts` (full 6, two thirds 4, half 3, third 2). It is a container query on the form
+column, never a viewport breakpoint: below `@lg` (32rem) every field takes the whole row, so the row holds with
+the settings drawer open on a 1440px screen. Rows fill in field order and wrap; there is no free placement. The
+builder's `FormWireframe` pictures the same grid at full size.
+
+**Settings drawer** (reduced): Layout (schema managers), Status and locales, History, Danger. No Properties section (every field is on
+the page) and no Cover section. Reveal and pre-flight "Fix" links scroll to the field on the page; the drawer
+opens at Status only as a fallback, when the field can't be found on the page.
 
 ### Place
 
 A content type is a place (Articles, Authors). The word "Models" never appears to editors.
 
 - **Header**: `PageHeader` with the place name, count in `meta`, locale, New (primary). Tabs: Entries, and
-  Structure / API with the schema permission. Display settings are a section inside Structure.
+  Structure / API with the schema permission. The same tabs sit above each entry of a collection, as they do
+  above a single type's document; there Entries goes back to the list. Display settings are a section inside
+  Structure.
 - **List**: title (bold link), author avatar, `StatusChip`, updated (relative, full date in `title`),
   locale flags for localized models, presence avatars for entries open right now. Hover (and focus)
   reveals quick actions: Edit, Preview, Publish/Unpublish, Duplicate, Delete (`InlineConfirm`). Filters
