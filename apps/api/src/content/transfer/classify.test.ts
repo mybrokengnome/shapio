@@ -108,7 +108,7 @@ describe('orderParentsFirst', () => {
     reason: 'save',
     data: {},
     author_type: 'admin',
-    created_at: new Date(at),
+    created_at: at,
   });
 
   it('puts parents before children even when timestamps tie, and drops links to missing parents', () => {

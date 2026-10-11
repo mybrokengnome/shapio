@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Export and import keep timestamps to the microsecond.** Entries created within one millisecond on PostgreSQL
+  no longer swap places in lists after an import. Bundles are now format 2 (six fractional digits); format 1
+  bundles still import, and older Shapio releases refuse a format 2 bundle instead of misreading it.
 
 ## [0.5.6] - 2026-10-11
 

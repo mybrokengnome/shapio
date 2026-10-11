@@ -13,7 +13,11 @@ import { AppError } from '../../helpers/appError.js';
  * Every record is validated on import (the bundle is untrusted input); unknown record types are rejected.
  */
 export const BUNDLE_FORMAT = 'shapio-export';
-export const BUNDLE_FORMAT_VERSION = 1;
+/**
+ * 2: timestamps carry six fractional digits (microseconds). 1 (milliseconds) still imports; a release that
+ * only knows 1 refuses a version 2 bundle instead of storing text it cannot order.
+ */
+export const BUNDLE_FORMAT_VERSION = 2;
 export const BUNDLE_CONTENT_TYPE = 'application/x-ndjson';
 
 const Uuid = Type.String({ format: 'uuid' });
@@ -21,6 +25,18 @@ const NullableUuid = Type.Union([Uuid, Type.Null()]);
 const DateTime = Type.String({ minLength: 1, maxLength: 64 });
 const NullableDateTime = Type.Union([DateTime, Type.Null()]);
 const JsonObject = Type.Record(Type.String(), Type.Unknown());
+
+/**
+ * A stored timestamp's UTC ISO text (`timestampCursorText`) as the bundle writes it: always six fractional
+ * digits, so bundles look the same whatever database made them (SQLite stores milliseconds).
+ */
+export const bundleTimestamp = (text: string): string =>
+  text.replace(
+    /(?:\.(\d{1,6}))?Z$/,
+    (_match, digits: string | undefined) => `.${(digits ?? '').padEnd(6, '0')}Z`,
+  );
+export const nullableBundleTimestamp = (text: string | null): string | null =>
+  text === null ? null : bundleTimestamp(text);
 
 export const ExportOptionsSchema = Type.Object(
   { headsOnly: Type.Boolean(), includeUsers: Type.Boolean() },
@@ -32,7 +48,7 @@ const HeaderSchema = Type.Object(
   {
     type: Type.Literal('header'),
     format: Type.Literal(BUNDLE_FORMAT),
-    formatVersion: Type.Literal(BUNDLE_FORMAT_VERSION),
+    formatVersion: Type.Union([Type.Literal(1), Type.Literal(BUNDLE_FORMAT_VERSION)]),
     shapioVersion: Type.String(),
     exportedAt: DateTime,
     schemaVersion: Type.Integer({ minimum: 0 }),
