@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Per-account sign-in and reset limits hold under parallel requests.** Sending many requests at once used to
+  check up to 20 passwords a minute against one account and send 20 reset emails to one address; now each
+  request takes its slot before it runs, so admin and app-user sign-ins, password resets, sign-ups, and
+  confirmation resends stay at 5 per 15 minutes. Successful sign-ins still never count.
 
 ## [0.5.6] - 2026-10-11
 

@@ -8,9 +8,9 @@ import { createJobHandlers } from '../../src/jobs/handlers/index.js';
 import { createWorker } from '../../src/jobs/worker.js';
 import * as adminRolesRepository from '../../src/repositories/adminRoles.js';
 import { insertAdminUser } from '../../src/services/adminUsers.js';
+import { drainWorker } from './drainWorker.js';
 import type { MemoryEmailTransport } from './memoryEmailTransport.js';
 import { silentLogger } from './silentLogger.js';
-import { waitFor } from './waitFor.js';
 
 export const TEST_PASSWORD = 'correct horse battery staple';
 
@@ -85,8 +85,7 @@ export const runEmailJobs = async (app: FastifyInstance, db: Database, transport
     leaseMs: 10_000,
     log: silentLogger,
   });
-  await worker.tick();
-  await waitFor(async () => worker.runningJobIds.size === 0);
+  await drainWorker(worker);
   const unfinished = await db
     .selectFrom('jobs')
     .select(['type', 'status', 'last_error'])

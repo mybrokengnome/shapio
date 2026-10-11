@@ -6,6 +6,7 @@ import type {
 } from 'fastify';
 import { CREDENTIAL_RATE_LIMIT_PER_EMAIL, CREDENTIAL_RATE_LIMIT_PER_IP } from '../../constants/auth.js';
 import { AppError } from '../../helpers/appError.js';
+import { createWindowCounter, type WindowReservation } from '../../helpers/windowCounter.js';
 import { normalizeEmail } from '../../services/adminUsers.js';
 
 /**
@@ -32,34 +33,32 @@ type PerEmailRateLimitOptions = {
 
 /**
  * A second limit keyed by the email in the body (and, for logins, the client IP), on top of the per-IP one.
- * The check runs after body validation without counting; the response is counted afterwards, so a login
- * can count only failures and an owner signing in on several devices is never locked out.
- * Uses the rate-limit plugin's in-memory store (per process, ADR 0008).
+ * Each request takes a slot before the handler runs (after body validation), so parallel requests can never
+ * all pass the check before any is counted. A response that does not count (a successful sign-in) gives its
+ * slot back afterwards, so an owner signing in on several devices is never locked out. A request whose
+ * response never finishes keeps its slot. In-memory, per process (ADR 0008).
  */
 export const createPerEmailRateLimit = (
-  app: FastifyInstance,
   scope: string,
   { counts = () => true, perClient = false }: PerEmailRateLimitOptions = {},
 ): { preHandler: preHandlerAsyncHookHandler; onResponse: onResponseAsyncHookHandler } => {
-  const limiter = app.createRateLimit({
-    ...CREDENTIAL_RATE_LIMIT_PER_EMAIL,
-    keyGenerator: (request) =>
-      perClient
-        ? `${scope}:email:${emailOf(request)}:ip:${request.ip}`
-        : `${scope}:email:${emailOf(request)}`,
-  });
+  const counter = createWindowCounter(CREDENTIAL_RATE_LIMIT_PER_EMAIL);
+  const reservations = new WeakMap<FastifyRequest, WindowReservation>();
+  const keyOf = (request: FastifyRequest) =>
+    perClient ? `${scope}:email:${emailOf(request)}:ip:${request.ip}` : `${scope}:email:${emailOf(request)}`;
   return {
     preHandler: async (request, reply) => {
-      const result = await limiter(request, { increment: false });
-      // `read` reports the current count; the limit is reached once it equals `max`.
-      if (!result.isAllowed && result.remaining <= 0) {
-        void reply.header('retry-after', String(Math.max(1, result.ttlInSeconds)));
+      const result = counter.reserve(keyOf(request));
+      if (!result.ok) {
+        void reply.header('retry-after', String(result.retryAfterSeconds));
         throw new AppError(429, 'RATE_LIMITED', 'Too many attempts for this account; try again later');
       }
+      reservations.set(request, result.reservation);
     },
     onResponse: async (request, reply) => {
-      if (request.body !== undefined && counts(reply.statusCode)) {
-        await limiter(request);
+      const reservation = reservations.get(request);
+      if (reservation && !counts(reply.statusCode)) {
+        counter.release(reservation);
       }
     },
   };

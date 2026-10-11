@@ -38,7 +38,7 @@ export const adminAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: loginSchema,
       config: { audit: { action: 'auth.login' }, ...CREDENTIAL_ROUTE_CONFIG },
-      ...createPerEmailRateLimit(app, 'login', {
+      ...createPerEmailRateLimit('login', {
         counts: (statusCode) => statusCode === 401,
         perClient: true,
       }),
@@ -91,7 +91,7 @@ export const adminAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: requestResetSchema,
       config: { audit: { action: 'auth.password_reset_request' }, ...CREDENTIAL_ROUTE_CONFIG },
-      ...createPerEmailRateLimit(app, 'password-reset'),
+      ...createPerEmailRateLimit('password-reset'),
     },
     requestPasswordReset,
   );
