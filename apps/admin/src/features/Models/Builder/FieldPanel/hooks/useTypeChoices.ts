@@ -1,17 +1,9 @@
-import {
-  DATA_TYPES,
-  type ClassifiedChange,
-  type DataType,
-  type FieldDefinition,
-  type SchemaDefinition,
-} from '@shapio/schema';
+import type { ClassifiedChange, DataType, FieldDefinition, SchemaDefinition } from '@shapio/schema';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { classifyFieldTypeChange } from '../../../helpers/typeChange';
 
-const NO_TYPES: ReadonlySet<DataType> = new Set();
-
-/** What saving does to stored values, by change category; any other supported change keeps them. */
+/** What saving does to stored values, by change category; any other change keeps them. */
 const VALUE_NOTE_KEYS = {
   conversion: 'models.builder.typeConverted',
   validation: 'models.builder.typeChecked',
@@ -23,9 +15,9 @@ const valueNoteKey = (category: ClassifiedChange['category']) =>
     : 'models.builder.typeKept';
 
 /**
- * The data types a field may take and what changing it means. A new field may take any type. A saved field
- * may take the types the planner can convert it to (its own included), the others are `unavailable`;
- * `notes` says whether the chosen type can be saved, then what saving it does to existing values and the API.
+ * What changing a field's data type means. A new field may take any type, and so may a saved one: `notes`
+ * says what saving the chosen type does to existing values and the API. When Shapio can't convert the saved
+ * type to the chosen one, `dropsValues` is true and the one note says every stored value will be dropped.
  */
 export const useTypeChoices = (
   base: SchemaDefinition | null,
@@ -33,33 +25,27 @@ export const useTypeChoices = (
   type: DataType,
 ) => {
   const { t } = useTranslation();
-  const unavailable = useMemo(
-    () =>
-      base && saved
-        ? new Set(DATA_TYPES.filter((to) => classifyFieldTypeChange(base, saved, to)?.supported === false))
-        : NO_TYPES,
-    [base, saved],
-  );
   const change = useMemo(
     () => (base && saved ? classifyFieldTypeChange(base, saved, type) : null),
     [base, saved, type],
   );
-  const notes: string[] = [];
-  // A supported change leads with the answer, then what happens to stored values, then the API impact.
-  if (change && change.supported !== false) {
-    notes.push(t('models.builder.typeAllowed'));
-    notes.push(t(valueNoteKey(change.category)));
-    if (change.breaking) {
-      notes.push(t('models.builder.typeBreaking'));
-    }
-    if (change.destructive) {
-      notes.push(t('models.builder.typeDestructive'));
-    }
+  if (!change || !saved) {
+    return { notes: [], dropsValues: false };
   }
-  const from = saved ? t(`models.dataTypes.${saved.type}.name`) : '';
-  const limitedNote = unavailable.size > 0 ? t('models.builder.typeLimited', { type: from }) : undefined;
-  /** Why a type is unavailable, announced with its tile. */
-  const unavailableReason = (to: DataType) =>
-    t('models.builder.typeUnsupported', { from, to: t(`models.dataTypes.${to}.name`) });
-  return { unavailable, unavailableReason, notes, limitedNote };
+  if (change.dropsValues) {
+    const note = t('models.builder.typeDropsValues', {
+      from: t(`models.dataTypes.${saved.type}.name`),
+      to: t(`models.dataTypes.${type}.name`),
+    });
+    return { notes: [note], dropsValues: true };
+  }
+  // Leads with the answer, then what happens to stored values, then the API impact.
+  const notes = [t('models.builder.typeAllowed'), t(valueNoteKey(change.category))];
+  if (change.breaking) {
+    notes.push(t('models.builder.typeBreaking'));
+  }
+  if (change.destructive) {
+    notes.push(t('models.builder.typeDestructive'));
+  }
+  return { notes, dropsValues: false };
 };

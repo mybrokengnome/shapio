@@ -1,5 +1,5 @@
 import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
-import type { SchemaChange } from '@shapio/schema';
+import { isDataType, typeChangeDropsValues, type SchemaChange } from '@shapio/schema';
 
 /** Human-readable output for schema sync: decisions, per-definition diffs and server refusals. */
 
@@ -22,7 +22,14 @@ const fieldName = (change: SchemaChange, names: ReadonlyMap<string, string>) => 
   );
 };
 
-/** One line per change, `+` added, `-` removed, `~` changed. */
+/** A type change Shapio can't convert: every stored value of the field is dropped. */
+const dropsValues = (change: SchemaChange) =>
+  change.kind === 'field.type' &&
+  isDataType(change.from) &&
+  isDataType(change.to) &&
+  typeChangeDropsValues(change.from, change.to);
+
+/** One line per change, `+` added, `-` removed, `~` changed; a type change that drops values says so. */
 export const formatChange = (change: SchemaChange, names: ReadonlyMap<string, string>): string => {
   const field = change.fieldId ? fieldName(change, names) : '';
   switch (change.kind) {
@@ -39,7 +46,8 @@ export const formatChange = (change: SchemaChange, names: ReadonlyMap<string, st
     default: {
       const subject = change.kind.startsWith('field.') ? `field ${field} ` : '';
       const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
-      return `~ ${subject}${property}: ${show(change.from)} → ${show(change.to)}`;
+      const dropped = dropsValues(change) ? ' (values dropped)' : '';
+      return `~ ${subject}${property}: ${show(change.from)} → ${show(change.to)}${dropped}`;
     }
   }
 };

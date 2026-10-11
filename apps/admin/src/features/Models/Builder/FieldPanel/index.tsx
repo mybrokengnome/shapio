@@ -57,8 +57,8 @@ const CONTROLLED = new Set([
 
 /**
  * Everything about one field: data type, naming, options, type settings and editor. A field that isn't
- * saved yet can take any type and its API ID follows its label until edited; a saved one can change to the
- * types Shapio can convert it to.
+ * saved yet takes any type and its API ID follows its label until edited. A saved one can change to any
+ * type too; one Shapio can't convert drops the field's stored values.
  */
 export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscard }: FieldPanelProps) => {
   const { t } = useTranslation();

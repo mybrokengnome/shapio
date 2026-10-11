@@ -32,10 +32,15 @@ describe('useTypeChoices', () => {
     expect(choicesFor('date').notes).toEqual([]);
   });
 
-  it('marks a type it cannot convert to as unavailable, with the reason', () => {
-    const choices = choicesFor('date');
-    expect(choices.unavailable.has('media')).toBe(true);
-    expect(choices.unavailableReason('media')).toBe("Shapio can't convert Date to Media.");
-    expect(choices.limitedNote).toBe("Greyed-out types: Shapio can't convert Date to them.");
+  it('says a date that becomes media loses every stored value', () => {
+    const choices = choicesFor('media');
+    expect(choices.dropsValues).toBe(true);
+    expect(choices.notes).toEqual([
+      "Shapio can't convert Date to Media. Every stored value in this field will be dropped, and old API clients will see it empty.",
+    ]);
+  });
+
+  it('keeps the ordinary notes for a change it converts', () => {
+    expect(choicesFor('richtext').dropsValues).toBe(false);
   });
 });
