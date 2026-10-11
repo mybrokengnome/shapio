@@ -12,7 +12,8 @@ import type { JobHandler } from './types.js';
 
 /**
  * `system.retention`: once a day, delete finished bookkeeping older than RETENTION_DAYS (succeeded jobs,
- * dispatched outbox events, after-hook run records, resolved health findings) and stale presence rows; usage
+ * dispatched outbox events, after-hook run records, resolved health findings, finished webhook deliveries and
+ * deployment runs, credentials that expired or setup tokens spent before then) and stale presence rows; usage
  * counters and assist runs older than USAGE_RETENTION_DAYS. Dead jobs and undispatched events stay for an operator;
  * the stored bundles of imports that died before the cutoff are removed (with `storage`).
  * One job per UTC day (idempotency key `system.retention:<date>`); each run schedules the next day's, and
@@ -47,6 +48,15 @@ const pruneAll = async <T>(
       return total;
     }
   }
+};
+
+/** Every expiring credential table, pruned in turn; the result counts rows per table. */
+const pruneExpiredCredentials = async (db: Kysely<DB>, before: Date, signal: AbortSignal) => {
+  const removed: Partial<Record<retentionRepository.ExpiringCredentialTable, number>> = {};
+  for (const table of retentionRepository.EXPIRING_CREDENTIAL_TABLES) {
+    removed[table] = await pruneAll(retentionRepository.pruneExpiredCredentials(table), db, before, signal);
+  }
+  return removed;
 };
 
 export const createRetentionJobHandlers = (
@@ -98,6 +108,22 @@ export const createRetentionJobHandlers = (
           new Date(at.getTime() - PRESENCE_RETENTION_MS),
           job.signal,
         ),
+        // Logs of finished work: each webhook's newest delivery and each connection's newest and live runs stay.
+        webhookDeliveries: await pruneAll(
+          retentionRepository.pruneFinishedWebhookDeliveries,
+          db,
+          before,
+          job.signal,
+        ),
+        deploymentRuns: await pruneAll(
+          retentionRepository.pruneFinishedDeploymentRuns,
+          db,
+          before,
+          job.signal,
+        ),
+        // Credentials that expired (or setup tokens spent) before the cutoff.
+        expiredCredentials: await pruneExpiredCredentials(db, before, job.signal),
+        setupTokens: await pruneAll(retentionRepository.pruneSpentSetupTokens, db, before, job.signal),
         transferBundles: storage
           ? await removeDeadImportBundles(db, storage, before, { signal: job.signal, log: job.log })
           : 0,

@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Expired credentials and old delivery logs are now pruned.** The daily retention job deletes credentials
+  that expired more than `RETENTION_DAYS` ago (admin sessions, invitations, password resets, app-user refresh
+  tokens, login codes, email confirmations, and preview tokens), spent setup tokens, and finished webhook
+  deliveries and deployment runs older than that. Each webhook keeps its newest delivery, and each deployment
+  connection keeps its newest and live run.
 
 ## [0.5.6] - 2026-10-11
 
