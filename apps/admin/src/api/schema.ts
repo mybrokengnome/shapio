@@ -74,6 +74,14 @@ export const definitionQueryOptions = (category: DefinitionCategory, id: string)
     meta: silent,
   });
 
+/**
+ * The definition's newest schema change, in whatever state it is now (running, activated or failed). Right
+ * after a ship that runs in the background it is that ship's change: the version guard lets no other change
+ * of the definition start until it ends.
+ */
+export const fetchLatestDefinitionChange = async (category: DefinitionCategory, id: string) =>
+  (await definitionApi(category).changes(id))[0];
+
 export const useDefinition = (category: DefinitionCategory, id: string) =>
   useQuery(definitionQueryOptions(category, id));
 

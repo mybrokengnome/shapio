@@ -1,11 +1,11 @@
 import type { Acknowledgement, DefinitionCategory, PlanPreview } from '@shapio/client';
-import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useShipDraftNow } from '@/api/changeSets';
 import { hasErrorCode } from '@/api/errors';
-import { definitionQueryOptions, usePlanChange } from '@/api/schema';
+import { fetchLatestDefinitionChange, usePlanChange } from '@/api/schema';
+import { FINAL_CHANGE_STATUSES } from '@/constants/schema';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
@@ -22,15 +22,14 @@ const isVersionConflict = (error: unknown) => hasErrorCode(error, 'SCHEMA_VERSIO
  * Saving a model (brief §5, plan developer-face §5): plan the draft against the version it was based on,
  * show the impact, then ship it as a one-item change set with the acknowledgements the plan needs (or put
  * it in a change set from the review sheet). A stale version at either step shows the conflict banner;
- * changes with prerequisites ship in the background and show as the definition's pending change.
+ * changes with prerequisites ship in the background and the builder follows the change until it ends.
  */
 export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraft: ReloadDraft) => {
   const { t } = useTranslation();
   const plan = usePlanChange();
-  const queryClient = useQueryClient();
   const apply = useShipDraftNow();
   const [state, setState] = useState<SaveFlowState>({ step: 'idle' });
-  /** A change this session started that is still running its prerequisites. */
+  /** The background change this session shipped, followed until it ends (it may have ended already). */
   const [runningChangeId, setRunningChangeId] = useState<string | undefined>(undefined);
 
   const notifyFailure = (error: unknown) => {
@@ -48,6 +47,23 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
       await reloadDraft('rebase');
     } catch (error) {
       logError(error, 'reloading the definition after a schema change');
+      toast.error(describeError(error));
+    }
+  };
+
+  /**
+   * Prerequisites run first; ChangeProgress follows the change. It may have ended already (a quick job), so
+   * it is followed in any state: a finished one reports its outcome on its first poll.
+   */
+  const followShippedChange = async () => {
+    try {
+      const change = await fetchLatestDefinitionChange(category, id);
+      setRunningChangeId(change?.id);
+      if (change && !FINAL_CHANGE_STATUSES.has(change.status)) {
+        toast.info(t('models.builder.changeStarted'));
+      }
+    } catch (error) {
+      logError(error, 'looking up the schema change the builder shipped');
       toast.error(describeError(error));
     }
   };
@@ -85,10 +101,7 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
       });
       setState({ step: 'idle' });
       if (set.status === 'shipping') {
-        // Prerequisites run first; the definition's pending change tracks them (ChangeProgress).
-        const detail = await queryClient.fetchQuery(definitionQueryOptions(category, id));
-        setRunningChangeId(detail.pendingChange?.id);
-        toast.info(t('models.builder.changeStarted'));
+        await followShippedChange();
       } else {
         await finishSuccessfully();
       }
