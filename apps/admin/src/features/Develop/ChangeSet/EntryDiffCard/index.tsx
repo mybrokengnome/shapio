@@ -18,14 +18,26 @@ const LIVE_STATE_DISPLAY = {
   missing: { labelKey: 'changes.review.liveStates.missing', tone: 'danger' },
 } as const;
 
+/** Today's live value against what ships, what a shipped set changed, or nothing (not recorded). */
+export type EntryDiff = 'live' | 'shipped' | 'none';
+
+const COLUMN_KEYS = {
+  live: { before: 'changes.review.before', after: 'changes.review.after' },
+  shipped: { before: 'changes.review.beforeShip', after: 'changes.review.shippedValue' },
+} as const;
+
 type EntryDiffCardProps = {
   item: ReviewEntryItem;
+  diff: EntryDiff;
   /** Removes the item after an inline confirmation; undefined when the set can't change. */
   onRemove: (() => Promise<unknown>) | undefined;
 };
 
-/** An entry item as field-level before (live) and after (what ships) rows, for one locale. */
-export const EntryDiffCard = ({ item, onRemove }: EntryDiffCardProps) => {
+/**
+ * An entry item as field-level before (live) and after (what ships) rows, for one locale; for a shipped set,
+ * what it was before the ship and what shipped (no live-state chip: the action badge says what happened).
+ */
+export const EntryDiffCard = ({ item, diff, onRemove }: EntryDiffCardProps) => {
   const { t } = useTranslation();
   const title = item.title ?? item.entryId;
   const live = LIVE_STATE_DISPLAY[item.liveState];
@@ -40,7 +52,7 @@ export const EntryDiffCard = ({ item, onRemove }: EntryDiffCardProps) => {
             {item.locale}
           </Badge>
           <Badge variant="secondary">{t(PUBLICATION_ACTION_LABELS[item.action])}</Badge>
-          <StatusChip tone={live.tone} label={t(live.labelKey)} size="sm" />
+          {diff === 'live' ? <StatusChip tone={live.tone} label={t(live.labelKey)} size="sm" /> : null}
           {item.modelKey ? (
             <Button variant="ghost" size="sm" asChild>
               <Link
@@ -73,15 +85,15 @@ export const EntryDiffCard = ({ item, onRemove }: EntryDiffCardProps) => {
         </div>
       }
     >
-      {item.fields.length === 0 ? (
+      {diff === 'none' ? null : item.fields.length === 0 ? (
         <p className="px-5 py-4 text-meta text-muted-foreground">{t('changes.review.noFieldChanges')}</p>
       ) : (
         <Table aria-label={t('changes.review.fieldChangesOf', { title })}>
           <TableHeader>
             <TableRow>
               <TableHead>{t('changes.review.field')}</TableHead>
-              <TableHead>{t('changes.review.before')}</TableHead>
-              <TableHead>{t('changes.review.after')}</TableHead>
+              <TableHead>{t(COLUMN_KEYS[diff].before)}</TableHead>
+              <TableHead>{t(COLUMN_KEYS[diff].after)}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

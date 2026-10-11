@@ -150,6 +150,9 @@ export type DefinitionRevision = {
   createdAt: string;
 };
 
+/** One revision of a definition with its body. */
+export type DefinitionRevisionDetail = DefinitionRevision & { definition: SchemaDefinition };
+
 export type SchemaSummaryItem = {
   id: string;
   kind: SchemaDefinition['kind'];

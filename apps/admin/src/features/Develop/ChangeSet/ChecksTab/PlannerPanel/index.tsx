@@ -19,7 +19,10 @@ export const PlannerPanel = ({ changeSetId, item }: PlannerPanelProps) => {
     <Panel
       title={t('changes.review.plannerTitle', { name: after?.label ?? before?.label ?? item.apiKey })}
       titleAs="h3"
-      description={t('changes.review.affected', { count: item.impact?.affectedHeads ?? 0 })}
+      // A shipped set's impact counts are not rebuilt (they would be today's, not those it shipped with).
+      description={
+        item.impact ? t('changes.review.affected', { count: item.impact.affectedHeads }) : undefined
+      }
     >
       <div className="space-y-4">
         {item.issues.length > 0 ? (

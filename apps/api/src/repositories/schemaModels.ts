@@ -212,3 +212,12 @@ export const findLatestRevision = (modelId: string, executor: Executor = db) =>
     .orderBy('version', 'desc')
     .limit(1)
     .executeTakeFirst();
+
+/** One version of a definition (a shipped change set's schema item reads the version its draft was based on). */
+export const findRevisionByVersion = (modelId: string, version: number, executor: Executor = db) =>
+  executor
+    .selectFrom('schema_revisions')
+    .selectAll()
+    .where('model_id', '=', modelId)
+    .where('version', '=', version)
+    .executeTakeFirst();

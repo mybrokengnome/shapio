@@ -14,6 +14,7 @@ import type {
   DefinitionScope,
   DefinitionListItem,
   DefinitionRevision,
+  DefinitionRevisionDetail,
   DeleteLocaleResult,
   Locale,
   PlanPreview,
@@ -63,6 +64,8 @@ export const createDefinitionApi = (request: RequestFn, category: DefinitionCate
       }),
     revisions: async (id: string) =>
       (await request<{ items: DefinitionRevision[] }>(`${withId(base, id)}/revisions`)).items,
+    revision: (id: string, revisionId: string) =>
+      request<DefinitionRevisionDetail>(withId(`${withId(base, id)}/revisions`, revisionId)),
     changes: async (id: string) =>
       (await request<{ items: SchemaChangeJob[] }>(`${withId(base, id)}/changes`)).items,
   };

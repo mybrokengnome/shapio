@@ -46,9 +46,13 @@ export const Panel = ({
       {hasHeader ? (
         <div
           data-slot="panel-header"
-          className={cn('flex items-start justify-between gap-3 px-5 pt-4', flush ? 'border-b pb-4' : 'pb-3')}
+          className={cn(
+            'flex flex-wrap items-start justify-between gap-3 px-5 pt-4',
+            flush ? 'border-b pb-4' : 'pb-3',
+          )}
         >
-          <div className="min-w-0 space-y-0.5">
+          {/* Actions too wide to sit beside the title wrap under it instead of squeezing it (390 px). */}
+          <div className="min-w-0 grow basis-24 space-y-0.5">
             {title ? (
               <Heading id={titleId} className="text-base leading-6 font-semibold">
                 {title}

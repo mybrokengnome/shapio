@@ -127,7 +127,12 @@ const summaryFields = {
 };
 
 export const ChangeSetSummarySchema = Type.Object(summaryFields);
-export const ChangeSetSchema = Type.Object({ ...summaryFields, items: Type.Array(ChangeSetItemSchema) });
+export const ChangeSetSchema = Type.Object({
+  ...summaryFields,
+  items: Type.Array(ChangeSetItemSchema),
+  /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
+  shippedBy: Nullable(ActorSchema),
+});
 
 const errors = {
   400: ErrorResponseSchema,
@@ -339,6 +344,8 @@ export const ReviewSchemaItemSchema = Type.Object({
   issues: Type.Array(ReviewIssueSchema),
   /** Other open sets with a draft of the same definition. */
   alsoChangedIn: Type.Array(Type.Object({ id: UuidSchema, title: Type.String() })),
+  /** A shipped set: the revision the draft replaced (null for a new definition, and for unshipped sets). */
+  beforeRevisionId: Nullable(UuidSchema),
 });
 
 export const NOT_RESTORABLE_REASONS = [

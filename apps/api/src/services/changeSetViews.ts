@@ -5,6 +5,7 @@ import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
+import * as publicationSnapshotsRepository from '../repositories/publicationSnapshots.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
@@ -77,7 +78,11 @@ export type ChangeSetSummaryView = {
   version: number;
 };
 
-export type ChangeSetView = ChangeSetSummaryView & { items: Array<EntryItemView | SchemaItemView> };
+export type ChangeSetView = ChangeSetSummaryView & {
+  items: Array<EntryItemView | SchemaItemView>;
+  /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
+  shippedBy: ChangeSetActorView | null;
+};
 
 export const changeSetNotFound = (id: string) =>
   new AppError(404, 'CHANGE_SET_NOT_FOUND', `No change set ${id}`, { id });
@@ -175,7 +180,7 @@ export const actorNamesFor = (
 export const titleOf = (
   snapshot: SchemaSnapshot,
   modelId: string,
-  heads: readonly EntryHeadRow[],
+  heads: ReadonlyArray<Pick<EntryHeadRow, 'locale' | 'state' | 'data'>>,
   locale: string,
 ): string | null => {
   const definition = snapshot.byId.get(modelId)?.definition;
@@ -184,7 +189,8 @@ export const titleOf = (
     return null;
   }
   // This locale's draft, its published head, then other locales.
-  const rank = (head: EntryHeadRow) => (head.locale === locale ? 0 : 2) + (head.state === 'draft' ? 0 : 1);
+  const rank = (head: Pick<EntryHeadRow, 'locale' | 'state'>) =>
+    (head.locale === locale ? 0 : 2) + (head.state === 'draft' ? 0 : 1);
   const ordered = [...heads].sort((a, b) => rank(a) - rank(b));
   for (const head of ordered) {
     const value = (head.data as Record<string, unknown>)[field.id];
@@ -275,5 +281,30 @@ export const loadChangeSetView = async (
     entries: views.filter((view) => view.kind === 'entry').length,
     schema: views.filter((view) => view.kind === 'schema').length,
   };
-  return { ...toSummary(row, counts, await actorNamesFor(database, [row])), items: views };
+  const shipper = await shipperOf(context, row);
+  const names = await actorNamesFor(database, shipper ? [row, shipper] : [row]);
+  return {
+    ...toSummary(row, counts, names),
+    items: views,
+    shippedBy: shipper ? actorOf(shipper, names) : null,
+  };
+};
+
+/** The actor of the snapshot a shipped set went live in, in the set's actor columns. */
+const shipperOf = async (
+  context: ChangeSetReadContext,
+  row: ChangeSetRow,
+): Promise<Pick<ChangeSetRow, 'created_by' | 'created_by_token'> | null> => {
+  if (row.status !== 'shipped' || row.shipped_seq === null) {
+    return null;
+  }
+  const ledger = await publicationSnapshotsRepository.findActor(
+    row.site_id,
+    Number(row.shipped_seq),
+    context.db,
+  );
+  return {
+    created_by: ledger?.actor_type === 'admin' ? ledger.actor_id : null,
+    created_by_token: ledger?.actor_type === 'token' ? ledger.actor_id : null,
+  };
 };

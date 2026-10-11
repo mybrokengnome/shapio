@@ -130,3 +130,36 @@ export const planDraft = async (
 
 export const planDrafts = (context: SchemaServiceContext, drafts: readonly SchemaDraftRow[]) =>
   Promise.all(drafts.map((draft) => planDraft(context, draft, drafts)));
+
+/**
+ * A shipped draft's plan, rebuilt from what it replaced: the definition at the version the draft was based
+ * on (the ship guard made that the active version when it shipped) against the draft, which is locked once
+ * shipped. Checked in today's schema, so its issues are not reported; impact counts are not rebuilt.
+ */
+export const planShippedDraft = async (
+  context: SchemaServiceContext,
+  draft: SchemaDraftRow,
+  before: SchemaDefinition | null,
+): Promise<Pick<DraftPlan, 'after' | 'plan'>> => {
+  let after: SchemaDefinition | null = null;
+  if (draft.definition !== null) {
+    const parsed = parseDefinition(draft.definition, before ? { previous: before } : {});
+    if (!parsed.ok) {
+      return { after: null, plan: null };
+    }
+    after = parsed.definition;
+  } else if (!before) {
+    return { after: null, plan: null };
+  }
+  const { siteKeys } = await plannerInputOf(context);
+  const plan = buildChangePlan({
+    before,
+    after,
+    fromVersion: draft.base_version,
+    active: scopedDefinitionsOf(context.snapshot.network.definitions),
+    siteId: draftScopeOf(context, draft),
+    hasContent: before !== null,
+    siteKeys,
+  });
+  return { after, plan };
+};

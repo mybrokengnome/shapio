@@ -35,7 +35,7 @@ export const View = ({ set }: ViewProps) => {
   const actorLabel = useActorLabel();
   const tab = useSearch({ from: '/app/changes/$changeSetId' }).tab ?? 'changes';
   const navigate = useNavigate({ from: '/changes/$changeSetId' });
-  const review = useChangeSetReview(set.id);
+  const review = useChangeSetReview(set);
   const flow = useShipFlow(set, review);
   const status = CHANGE_SET_STATUS_DISPLAY[set.status];
   const editable = EDITABLE_STATUSES.has(set.status);

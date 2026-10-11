@@ -4,6 +4,8 @@ import { AlertTriangle, CheckCircle2, Info, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { formatRelativeTime } from '@/helpers/formatDate';
+import { useActorLabel } from '../../Changes/hooks/useActorLabel';
 import type { ShipFlow } from '../hooks/useShipFlow';
 
 const NOTICE_KEYS = {
@@ -25,6 +27,7 @@ type BannersProps = {
 /** In-place notices above the tabs: shipped (→ snapshot), failed, changed since you looked, and the rest. */
 export const Banners = ({ set, flow, notices, showAcknowledgementHint }: BannersProps) => {
   const { t } = useTranslation();
+  const actorLabel = useActorLabel();
   return (
     <>
       {set.status === 'shipped' && set.shippedSnapshot !== null ? (
@@ -32,14 +35,18 @@ export const Banners = ({ set, flow, notices, showAcknowledgementHint }: Banners
           <CheckCircle2 aria-hidden="true" />
           <AlertDescription>
             <p>
-              {t('changes.review.shippedIn')}{' '}
+              {t('changes.review.shippedAs')}{' '}
               <Link
                 to="/snapshots/$seq"
                 params={{ seq: String(set.shippedSnapshot) }}
                 className={LINK_CLASSES}
               >
                 {t('snapshots.version', { seq: set.shippedSnapshot })}
-              </Link>
+              </Link>{' '}
+              {t('changes.review.shippedByAt', {
+                name: actorLabel(set.shippedBy),
+                at: set.shippedAt ? formatRelativeTime(set.shippedAt) : '',
+              })}
             </p>
           </AlertDescription>
         </Alert>
