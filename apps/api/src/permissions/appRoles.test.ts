@@ -52,8 +52,8 @@ describe('app-user and anonymous principals', () => {
     expect(await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: null,
-      readMask: { mode: 'only', fieldIds: ['f-title'] },
-      writeMask: { mode: 'only', fieldIds: [] },
+      readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'public' },
+      writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
     });
     expect((await evaluator.evaluate(anonymous, { action: 'create', modelId: MODEL })).allowed).toBe(false);
   });
@@ -71,8 +71,8 @@ describe('app-user and anonymous principals', () => {
     expect(await evaluator.evaluate(appUser(['writer']), { action: 'update', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
-      readMask: { mode: 'only', fieldIds: ['f-title'] },
-      writeMask: { mode: 'only', fieldIds: ['f-notes'] },
+      readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'public' },
+      writeMask: { mode: 'only', fieldIds: ['f-notes'], componentFields: 'public' },
     });
     // The anonymous `public` role is not an app user's role.
     expect((await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).allowed).toBe(false);

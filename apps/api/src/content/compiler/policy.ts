@@ -74,6 +74,10 @@ export const matchesRowFilter = (
 export const maskAllows = (mask: FieldMask, field: FieldDefinition): boolean =>
   mask.mode === 'all' ? !field.deprecated : mask.fieldIds.includes(field.id);
 
+/** Whether a mask hides a component's `public: false` fields (delivery audiences, at any depth). */
+export const hidesPrivateComponentFields = (mask: FieldMask): boolean =>
+  mask.mode === 'only' && mask.componentFields === 'public';
+
 export const forbidden = (message: string, details?: Record<string, unknown>) =>
   new AppError(403, 'FORBIDDEN', message, details);
 

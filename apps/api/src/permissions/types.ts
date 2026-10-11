@@ -147,8 +147,19 @@ export type SiteAction = (typeof SITE_ACTIONS)[number];
 export const GLOBAL_ACTIONS = [...NETWORK_ACTIONS, ...SITE_ACTIONS] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
 
-/** Field visibility by stable field ID. `all` means every field the schema exposes to this principal kind. */
-export type FieldMask = { mode: 'all' } | { mode: 'only'; fieldIds: readonly string[] };
+/**
+ * Which fields of a component (at any depth) a principal sees: `all`, or only those with `public: true`. Grants
+ * name model field IDs only, never a component's fields, so delivery audiences see a component's
+ * `public: false` fields under no grant.
+ */
+export type ComponentFieldVisibility = 'all' | 'public';
+
+/**
+ * Field visibility by stable field ID. `all` means every field the schema exposes to this principal kind,
+ * a component's fields included. `only`: these top-level fields, and `componentFields` inside components.
+ */
+export type FieldMask =
+  { mode: 'all' } | { mode: 'only'; fieldIds: readonly string[]; componentFields: ComponentFieldVisibility };
 
 /** Enumerated row conditions; compiled to SQL only by content/compiler. Never free-form expressions. */
 export type RowCondition = { kind: 'ownedByPrincipal' };
@@ -207,7 +218,7 @@ export type PermissionEvaluator = {
   atVersions?: (versions: KnownVersions) => PermissionEvaluator;
 };
 
-const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };
+const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [], componentFields: 'public' };
 
 export const DENIED_POLICY: Policy = Object.freeze({
   allowed: false,

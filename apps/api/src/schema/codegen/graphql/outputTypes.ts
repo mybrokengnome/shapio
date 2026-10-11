@@ -217,8 +217,8 @@ const valueField = (
 };
 
 /**
- * Fields of a model or component. On entries (`masked`), a field missing from the projection is outside the
- * caller's read mask.
+ * Fields of a model or component. When `masked`, a field missing from the projection is outside the caller's
+ * read mask (the projection always emits every visible field, null when empty).
  */
 const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: boolean) => {
   const fields: GraphQLFieldConfigMap<ValueNode, GraphqlContext> = {};
@@ -253,7 +253,8 @@ export const componentType = (build: SchemaBuild, component: ComponentDefinition
       new GraphQLObjectType<ValueNode, GraphqlContext>({
         name: componentTypeName(component),
         description: describeDefinition(component),
-        fields: () => definitionFields(build, component, false),
+        // Masked like entries: a delivery read leaves out a component's non-public fields (read mask).
+        fields: () => definitionFields(build, component, true),
       }),
   );
 

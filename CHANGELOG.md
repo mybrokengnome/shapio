@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Public off on a component's field now hides it from delivery.** REST, GraphQL, in-process delivery, and
+  previews returned a component's `public: false` fields to delivery tokens, app users, and anonymous callers,
+  in single, repeatable, and dynamic-zone components. They are now left out at any depth (GraphQL returns
+  `null`); admin reads still show them.
 
 ## [0.5.6] - 2026-10-11
 

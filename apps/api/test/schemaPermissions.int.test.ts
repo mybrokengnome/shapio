@@ -79,7 +79,11 @@ describe('field visibility from the schema registry (public flags)', () => {
         .statusCode,
     ).toBe(200);
     const after = await evaluator.evaluate(delivery, { action: 'read', modelId: definitionId });
-    expect(after.readMask).toEqual({ mode: 'only', fieldIds: [title?.id, notes?.id] });
+    expect(after.readMask).toEqual({
+      mode: 'only',
+      fieldIds: [title?.id, notes?.id],
+      componentFields: 'public',
+    });
   });
 
   it('is the lookup the app wires into its own evaluator, and knows nothing of components or unknown IDs', async () => {
