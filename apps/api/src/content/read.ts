@@ -8,7 +8,7 @@ import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
 import { compileHeadQuery, type HeadRow, type HeadSource, type LocaleScope } from './compiler/compile.js';
 import { entryIdIn } from './compiler/conditions.js';
-import { compileRowFilter } from './compiler/policy.js';
+import { compileRowFilter, maskAllows, rowReadMask } from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
@@ -252,6 +252,23 @@ export const systemAttributes = (env: ReadEnvironment, row: HeadRow): Record<str
   ...(env.audience === 'delivery' ? { publishedAt: row.updated_at.toISOString() } : {}),
 });
 
+/**
+ * The selected fields this row shows: all of them unless the policy's read masks differ by row, then those
+ * the row's own mask allows (a field granted only on the caller's own entries stays off everyone else's).
+ */
+const fieldsOnRow = (
+  env: ReadEnvironment,
+  policy: Policy,
+  fields: readonly FieldDefinition[],
+  row: HeadRow,
+): readonly FieldDefinition[] => {
+  if (!policy.rowReadMasks) {
+    return fields;
+  }
+  const mask = rowReadMask(policy, env.actor, row);
+  return fields.filter((field) => maskAllows(mask, field));
+};
+
 export const projectRows = async (
   env: ReadEnvironment,
   model: ContentModel,
@@ -271,9 +288,10 @@ export const projectRows = async (
   const populated = await populateRelations(populateEnv, rows, fields, query.populate);
   const media = await loadMediaViews(env, model, rows, fields);
   return rows.map((row) => {
+    const rowFields = fieldsOnRow(env, policy, fields, row);
     const data = projectData(row.data, {
       model,
-      fields,
+      fields: rowFields,
       visibleTargets,
       populated,
       ...(env.audience === 'delivery' ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE } : {}),
@@ -287,7 +305,7 @@ export const projectRows = async (
             { defaults: env.seo, image: media.seoImage },
             model,
             policy,
-            fields,
+            rowFields,
             row,
             data,
           )

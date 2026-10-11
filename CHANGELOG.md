@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Fields granted only on your own entries stay off everyone else's.** When one role could read every entry
+  and another could read your own entries with more fields (an email, say), those extra fields showed on every
+  entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,
+  or searching on such a field is refused unless every entry you can read is your own.
 
 ## [0.5.6] - 2026-10-11
 

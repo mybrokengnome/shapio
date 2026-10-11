@@ -6,7 +6,7 @@ import {
   type TranslationSegment,
 } from '../../assist/prompts/translate.js';
 import { ASSIST_TRANSLATE_CHUNK_CHARS } from '../../constants/assist.js';
-import { maskAllows } from '../../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../../content/compiler/policy.js';
 import { projectData } from '../../content/compiler/select.js';
 import { isLocalizedField, type ContentModel } from '../../content/model.js';
 import { buildValidator } from '../../content/validator/index.js';
@@ -122,7 +122,7 @@ export const translatableFields = (model: ContentModel, readPolicy: Policy, upda
     (field) =>
       !field.deprecated &&
       isLocalizedField(model.definition, field) &&
-      maskAllows(readPolicy.readMask, field) &&
+      maskAllows(everyRowReadMask(readPolicy), field) &&
       maskAllows(updatePolicy.writeMask, field),
   );
 

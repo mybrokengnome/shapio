@@ -158,11 +158,27 @@ export type RowFilter =
   | { kind: 'and'; filters: readonly RowFilter[] }
   | { kind: 'or'; filters: readonly RowFilter[] };
 
+/**
+ * Read masks that differ by row: `everyRow` applies to every row the principal may read, and each `when`
+ * entry adds its mask on the rows matching its condition (a grant limited to the principal's own entries
+ * that names more fields than the grants reaching every row).
+ */
+export type RowReadMasks = {
+  everyRow: FieldMask;
+  when: ReadonlyArray<{ condition: RowCondition; mask: FieldMask }>;
+};
+
 export type Policy = {
   allowed: boolean;
   /** Extra restriction on which rows the principal may act on. `null` means no restriction. */
   rowFilter: RowFilter | null;
+  /**
+   * Every field the principal may read on some row (the shape of what it can see, e.g. a GraphQL schema).
+   * Values are shown per row: see `rowReadMasks`.
+   */
   readMask: FieldMask;
+  /** null: `readMask` applies to every row. Otherwise readers apply these per row (never `readMask`). */
+  rowReadMasks: RowReadMasks | null;
   writeMask: FieldMask;
 };
 
@@ -213,5 +229,6 @@ export const DENIED_POLICY: Policy = Object.freeze({
   allowed: false,
   rowFilter: null,
   readMask: EMPTY_MASK,
+  rowReadMasks: null,
   writeMask: EMPTY_MASK,
 });

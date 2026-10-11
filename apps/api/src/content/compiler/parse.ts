@@ -43,8 +43,13 @@ export type ParseContext = {
   model: ModelDefinition;
   /** Locale codes the instance has. */
   locales: readonly string[];
-  /** The read mask, per field. */
+  /** The read mask, per field: what `fields` may select and `populate` may expand. */
   isReadable: (field: FieldDefinition) => boolean;
+  /**
+   * Whether a field may be filtered, sorted or searched on: readable on every row the caller may read, so a
+   * query never reveals a value hidden on some rows.
+   */
+  isQueryable: (field: FieldDefinition) => boolean;
   /** `?snapshot=N` is a delivery feature. */
   allowSnapshot: boolean;
   /** `?status=` and `?author=` are admin list features. */
@@ -103,7 +108,11 @@ const positiveInteger = (value: QueryValue | undefined, name: string, max: numbe
 
 type FilterState = { context: ParseContext; conditions: number };
 
-const resolveTarget = (context: ParseContext, key: string): FilterTarget => {
+const resolveTarget = (
+  context: ParseContext,
+  key: string,
+  use: 'select' | 'query' = 'query',
+): FilterTarget => {
   if ((SYSTEM_ATTRIBUTES as readonly string[]).includes(key)) {
     return { kind: 'system', name: key as SystemAttribute };
   }
@@ -111,7 +120,7 @@ const resolveTarget = (context: ParseContext, key: string): FilterTarget => {
   if (!field) {
     throw queryInvalid(`Unknown field "${key}"`, { field: key });
   }
-  if (!context.isReadable(field)) {
+  if (use === 'select' ? !context.isReadable(field) : !context.isQueryable(field)) {
     throw queryForbidden(`You may not filter, sort or search on "${key}"`, { field: key });
   }
   return { kind: 'field', field };
@@ -228,7 +237,7 @@ const parseFields = (context: ParseContext, value: QueryValue | undefined): Fiel
     if (typeof item !== 'string') {
       throw queryInvalid('fields needs a list of field names');
     }
-    const target = resolveTarget(context, item);
+    const target = resolveTarget(context, item, 'select');
     if (target.kind === 'system') {
       throw queryInvalid(`"${item}" is always returned; list only model fields`);
     }
@@ -292,7 +301,7 @@ const parseSearch = (context: ParseContext, value: QueryValue | undefined): Cont
   if (!field || !TEXT_TITLE_FIELD_TYPES.has(field.type)) {
     throw queryInvalid(`"${context.model.apiKey}" has no text title field to search`);
   }
-  if (!context.isReadable(field)) {
+  if (!context.isQueryable(field)) {
     throw queryForbidden('You may not search this model', { field: field.apiKey });
   }
   return { field, text };

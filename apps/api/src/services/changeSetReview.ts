@@ -1,6 +1,6 @@
 import type { DataType, FieldDefinition } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
-import { maskAllows } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { resolveModelById } from '../content/model.js';
 import { buildValidator } from '../content/validator/index.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
@@ -230,7 +230,7 @@ const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): 
     : undefined;
   const readable =
     model && policy?.allowed
-      ? model.definition.fields.filter((field) => maskAllows(policy.readMask, field))
+      ? model.definition.fields.filter((field) => maskAllows(everyRowReadMask(policy), field))
       : [];
   const after = await afterOf(review, item, draft);
   const before = published?.data ?? null;

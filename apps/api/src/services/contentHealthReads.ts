@@ -1,5 +1,5 @@
 import { effectiveTitleField, isComponentDefinition, type ModelDefinition } from '@shapio/schema';
-import { maskAllows, matchesRowFilter } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows, matchesRowFilter } from '../content/compiler/policy.js';
 import type { HealthRule } from '../content/health/rules.js';
 import { AppError } from '../helpers/appError.js';
 import type { Policy } from '../permissions/types.js';
@@ -86,7 +86,7 @@ const titlesFor = async (
   return (row: OpenFindingRow): string | null => {
     const model = readable.get(row.model_id);
     const field = model ? effectiveTitleField(model.definition) : undefined;
-    if (!model || !field || !maskAllows(model.policy.readMask, field)) {
+    if (!model || !field || !maskAllows(everyRowReadMask(model.policy), field)) {
       return null;
     }
     const ofEntry = drafts.filter((draft) => draft.entry_id === row.entry_id);

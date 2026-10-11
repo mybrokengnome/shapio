@@ -1,6 +1,7 @@
 import type { FieldDefinition } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import { AppError } from '../../helpers/appError.js';
+import { unionMasks } from '../../permissions/policy.js';
 import type { FieldMask, Policy, Principal, RowFilter } from '../../permissions/types.js';
 import { contentDialect } from './currentDialect.js';
 import type { ContentSqlDialect } from './dialect/types.js';
@@ -73,6 +74,30 @@ export const matchesRowFilter = (
  */
 export const maskAllows = (mask: FieldMask, field: FieldDefinition): boolean =>
   mask.mode === 'all' ? !field.deprecated : mask.fieldIds.includes(field.id);
+
+/**
+ * The fields the caller may read on one loaded entry (issue #75): the mask for every row, plus each
+ * row-conditioned mask whose condition holds for the entry. Evaluated with the same rule the row filter
+ * compiles to, on the entry's loaded ownership columns, never re-queried.
+ */
+export const rowReadMask = (policy: Policy, principal: Principal, entry: EntryOwnership): FieldMask => {
+  if (!policy.rowReadMasks) {
+    return policy.readMask;
+  }
+  return policy.rowReadMasks.when.reduce(
+    (mask, extra) =>
+      matchesRowFilter(extra.condition, principal, entry) ? unionMasks(mask, extra.mask) : mask,
+    policy.rowReadMasks.everyRow,
+  );
+};
+
+/**
+ * The fields the caller may read on every row it may read. Filters, sorts and searches use it (a filter on a
+ * field hidden on some rows would reveal those rows' values), and so does any reader that shows values
+ * without the entry's ownership at hand.
+ */
+export const everyRowReadMask = (policy: Policy): FieldMask =>
+  policy.rowReadMasks?.everyRow ?? policy.readMask;
 
 export const forbidden = (message: string, details?: Record<string, unknown>) =>
   new AppError(403, 'FORBIDDEN', message, details);

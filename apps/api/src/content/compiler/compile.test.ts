@@ -65,6 +65,7 @@ const context = {
   model,
   locales: ['en', 'fr'],
   isReadable: (field: { id: string }) => field.id !== ids.secret,
+  isQueryable: (field: { id: string }) => field.id !== ids.secret,
   allowSnapshot: true,
   resolveModel: () => model,
 };

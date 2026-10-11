@@ -24,6 +24,7 @@ const context: ParseContext = {
   model,
   locales: ['en', 'fr'],
   isReadable: () => true,
+  isQueryable: () => true,
   allowSnapshot: true,
   resolveModel: () => undefined,
 };

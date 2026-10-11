@@ -6,7 +6,7 @@ import {
   type ComponentDefinition,
   type FieldDefinition,
 } from '@shapio/schema';
-import { maskAllows } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { COMPONENT_KEY } from '../content/validator/index.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
@@ -212,7 +212,7 @@ const readableTargets = async (
       continue;
     }
     const policy = await context.permissions.evaluate(context.actor, { action: 'read', modelId });
-    if (policy.allowed && maskAllows(policy.readMask, titleField)) {
+    if (policy.allowed && maskAllows(everyRowReadMask(policy), titleField)) {
       readable.push(modelId);
     }
   }

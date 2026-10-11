@@ -157,6 +157,7 @@ describe('permission evaluator', () => {
       allowed: true,
       rowFilter: null,
       readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'] },
+      rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: [] },
     });
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
@@ -226,12 +227,39 @@ describe('permission evaluator', () => {
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
       readMask: { mode: 'only', fieldIds: ['f-title'] },
+      rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'] },
     });
     const both: Principal = adminOn(['a', 'b']);
     expect(await evaluator.evaluate(both, { action: 'update', modelId: MODEL })).toMatchObject({
       rowFilter: null,
       writeMask: { mode: 'only', fieldIds: ['f-body', 'f-title'] },
+    });
+  });
+
+  it('keeps fields granted on own rows only per row when another role reads every row', async () => {
+    const evaluator = createPermissionEvaluator({
+      grants: staticGrants([
+        grant({ roleId: 'everyone', action: 'read', modelId: MODEL }),
+        grant({ roleId: 'self', action: 'read', condition: 'ownedByPrincipal', fieldIds: ['f-notes'] }),
+      ]),
+      fields,
+    });
+    const principal: Principal = {
+      kind: 'appUser',
+      appUserId: 'a',
+      siteId: SITE_A,
+      roleIds: ['everyone', 'self'],
+    };
+    expect(await evaluator.evaluate(principal, { action: 'read', modelId: MODEL })).toEqual({
+      allowed: true,
+      rowFilter: null,
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body', 'f-notes'] },
+      rowReadMasks: {
+        everyRow: { mode: 'only', fieldIds: ['f-title', 'f-body'] },
+        when: [{ condition: { kind: 'ownedByPrincipal' }, mask: { mode: 'only', fieldIds: ['f-notes'] } }],
+      },
+      writeMask: { mode: 'only', fieldIds: [] },
     });
   });
 
