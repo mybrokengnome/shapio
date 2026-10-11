@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-11
+
 ### Changed
 
 - **Any field can change to any type.** A saved field's type tiles are no longer greyed out where Shapio can't
