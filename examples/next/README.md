@@ -91,5 +91,4 @@ slugs are a 404. A build pinned with `SHAPIO_SNAPSHOT` keeps showing that snapsh
 reason and revalidates nothing. The snapshot is held per `next start` process, so run one process per copy of
 the site, each with its own webhook. In Shapio, Publishing → Webhooks shows every delivery and can send a test.
 
-Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md). Inside the
-Shapio repository, run the scripts with `pnpm --filter example-next <script>` after `pnpm build`.
+Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md).

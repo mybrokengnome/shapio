@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The example site walkthrough and the starter READMEs no longer send people to the monorepo and pnpm; everything
+  runs from a `create-shapio` project with npm.
+
 ### Fixed
 
 - **The model builder no longer stays on the old version after a quick change.** When a change's checks or
