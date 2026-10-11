@@ -145,6 +145,17 @@ describe('content validator', () => {
     });
   });
 
+  it('refuses NUL characters and unpaired surrogates, also inside components', () => {
+    const { issues } = validator.validate({
+      [id(2)]: 'a\u0000b',
+      [id(8)]: [{ [COMPONENT_KEY]: hero.id, [id(101)]: 'lone \ud800' }],
+    });
+    expect(issues.filter((found) => found.code === 'INVALID_TEXT').map((found) => found.path)).toEqual([
+      '/title',
+      '/sections/0/heading',
+    ]);
+  });
+
   it('skips required checks for autosaves only', () => {
     expect(validator.validate({}).issues.map((issue) => issue.code)).toEqual(['REQUIRED']);
     expect(validator.validate({}, { skipRequired: true }).issues).toEqual([]);

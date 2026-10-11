@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **A NUL character or an unpaired surrogate in input is a clear 422, not a server error.** Any request
+  carrying one (content saves, delivery filters and search, GraphQL, app-user sign-up, locales, models) is
+  refused with `INVALID_TEXT` and the path of the value, and import bundles and other content writes refuse it
+  too. PostgreSQL failed with an internal error and SQLite stored the text, so both now agree.
 
 ## [0.5.6] - 2026-10-11
 
