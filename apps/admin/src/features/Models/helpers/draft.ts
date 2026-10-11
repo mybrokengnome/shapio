@@ -13,6 +13,7 @@ import {
   type SchemaDefinition,
 } from '@shapio/schema';
 import { newStableId } from '@/helpers/stableId';
+import { withoutGroupField } from './groupFields';
 
 /** Required settings a new field starts with; the user fills them in (inline errors until then). */
 const INITIAL_SETTINGS: Partial<Record<DataType, Record<string, JsonValue>>> = {
@@ -100,10 +101,12 @@ export const removeField = (definition: SchemaDefinition, fieldId: string): Sche
     delete display.defaultSort;
   }
   if (definition.display.groups) {
-    display.groups = definition.display.groups.map((group) => ({
-      ...group,
-      fieldIds: group.fieldIds.filter((id) => id !== fieldId),
-    }));
+    const groups = withoutGroupField(definition.display.groups, fieldId);
+    if (groups.length > 0) {
+      display.groups = groups;
+    } else {
+      delete display.groups;
+    }
   }
   return pruneLayout({ ...definition, fields, display });
 };

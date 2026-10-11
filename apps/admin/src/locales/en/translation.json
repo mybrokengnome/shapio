@@ -272,6 +272,7 @@
       "roles": "Roles",
       "locales": "Locales",
       "settings": "Settings",
+      "team": "Team",
       "appUsers": "App users",
       "sites": "Sites",
       "auditLog": "Audit log",
@@ -997,9 +998,11 @@
       "addField": "Add field",
       "newField": "New field",
       "dataType": "Data type",
-      "typeConverted": "Existing values will be converted when you review and save.",
-      "typeChecked": "Existing values will be checked when you review and save.",
-      "typeBreaking": "This is a breaking API change.",
+      "typeAllowed": "You can change this.",
+      "typeConverted": "Existing values will be converted when you save.",
+      "typeChecked": "Existing values will be checked when you save; if any fail, the change is refused and nothing changes.",
+      "typeKept": "Stored values stay as they are.",
+      "typeBreaking": "API clients will see a different type for this field.",
       "typeDestructive": "Formatting is lost.",
       "typeLimited": "Greyed-out types: Shapio can't convert {{type}} to them.",
       "typeUnsupported": "Shapio can't convert {{from}} to {{to}}.",
@@ -1086,7 +1089,30 @@
         "lockedLast": "The document keeps at least one field."
       },
       "stripFields": "Properties under the title",
-      "stripFieldsHint": "Shown as chips under the title. With none chosen, the first five filled-in properties are shown."
+      "stripFieldsHint": "Shown as chips under the title. With none chosen, the first five filled-in properties are shown.",
+      "layout": "Layout",
+      "layoutHint": "Document: an entry opens as a page to write in, with the title as its heading, blocks in the body, and the other fields as properties. Form: every field is on the page at its width, with groups as sections.",
+      "layoutDocument": "Document",
+      "layoutForm": "Form",
+      "formWireframe_one": "Form preview: {{count}} field",
+      "formWireframe_other": "Form preview: {{count}} fields",
+      "width": "Width",
+      "widthHint": "How much of a row the field takes in the form. Rows fill in field order, so two halves or three thirds sit side by side.",
+      "widthFull": "Full",
+      "widthTwoThirds": "Two thirds",
+      "widthHalf": "Half",
+      "widthThird": "Third",
+      "summaryForm": "Form",
+      "group": "Group",
+      "groupHint": "Fields in the same group are shown together under its name, as a section of the form. A group sits where its first field is.",
+      "groupNone": "None",
+      "groupNew": "New group…",
+      "groupName": "Group name",
+      "groups": "Groups",
+      "groupsHint": "Rename a group here, or remove it to take its fields out of it. Put a field in a group from the field's settings.",
+      "groupsEmpty": "No groups yet. Choose one in a field's settings.",
+      "groupLabel": "Name of group {{position}}",
+      "groupRemove": "Remove group {{label}}"
     },
     "plan": {
       "title": "Review changes to {{label}}",
@@ -1224,7 +1250,8 @@
       "layout": "Layout",
       "stepMinutes": "Minute step",
       "allowInlineCreate": "Allow creating entries from the picker",
-      "collapsed": "Start collapsed"
+      "collapsed": "Start collapsed",
+      "width": "width"
     },
     "values": {
       "one": "One entry",
@@ -1479,6 +1506,14 @@
   },
   "entry": {
     "shortcutHint": "{{action}} ({{keys}})",
+    "layout": {
+      "setTitle": "Layout of {{model}}",
+      "switchedForm": "{{model}} now opens as a form.",
+      "switchedDocument": "{{model}} now opens as a document.",
+      "undo": "Undo",
+      "switchLabel": "Open as a form",
+      "needsReview": "This change needs a review. Make it in Structure."
+    },
     "title": {
       "placeholder": "{{field}}"
     },
@@ -1697,6 +1732,8 @@
       "unsaved": "Unsaved changes",
       "autosavedAt": "Draft autosaved {{time}}",
       "savedAt": "Saved {{time}}",
+      "autosaved": "Draft autosaved",
+      "saved": "Saved",
       "draftAutosaved": "Draft has autosaved changes",
       "allSaved": "All changes saved"
     },
@@ -2395,7 +2432,8 @@
     "removeDescription": "Their account and personal details are deleted and they are signed out. Entries they created stay. This can't be undone.",
     "removed": "App user deleted.",
     "empty": "No app users yet.",
-    "emptyDescription": "People appear here when they sign up through /api/app-auth, Google or GitHub.",
+    "emptyDescription": "People appear here when they sign up through /api/app-auth, Google, or GitHub.",
+    "teamHint": "Looking for editors and admins? They're under <teamLink>Team</teamLink>.",
     "noMatches": "No app users match this search."
   },
   "appRoles": {

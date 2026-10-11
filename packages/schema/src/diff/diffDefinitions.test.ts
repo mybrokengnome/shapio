@@ -37,6 +37,17 @@ describe('diffDefinitions', () => {
     ]);
   });
 
+  it('reports a width change as field metadata and the layout as display metadata', () => {
+    const after = withField({ ...base(), display: { layout: 'form' } }, id(2), (f) => ({
+      ...f,
+      width: 'half',
+    }));
+    const changes = diffDefinitions(base(), after);
+    expect(kinds(changes)).toEqual(['definition.metadata  display', `field.metadata ${id(2)} width`]);
+    expect(changes[1]).toMatchObject({ to: 'half' });
+    expect(changes[1]?.from).toBeUndefined();
+  });
+
   it('reports renames by stable ID, not as remove + add', () => {
     const after = withField({ ...base(), apiKey: 'landingPage' }, id(2), (f) => ({
       ...f,

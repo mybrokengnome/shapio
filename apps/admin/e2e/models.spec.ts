@@ -391,7 +391,7 @@ test('a saved field changes type through a conversion: Long text to Rich text', 
   await panel.getByRole('radio', { name: /^Rich text/ }).check();
   await expect(
     panel.getByText(
-      'Existing values will be converted when you review and save. This is a breaking API change.',
+      'You can change this. Existing values will be converted when you save. API clients will see a different type for this field.',
     ),
   ).toBeVisible();
   await captureScreen(page, 'models-18-saved-field-type', { viewports: ['desktop', 'phone'] });

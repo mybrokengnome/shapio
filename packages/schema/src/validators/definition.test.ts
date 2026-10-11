@@ -403,6 +403,34 @@ describe('validateDefinition', () => {
       ]);
     });
 
+    it('refuses unknown layouts and widths', () => {
+      const parse = (display: Record<string, unknown>, width: unknown) =>
+        parseDefinition({
+          kind: 'collection',
+          apiKey: 'product',
+          label: 'Product',
+          fields: [{ apiKey: 'name', label: 'Name', type: 'string', width } as FieldInput],
+          display,
+        });
+      expect(parse({ layout: 'form' }, 'two-thirds').ok).toBe(true);
+      const issues = (result: ReturnType<typeof parse>) =>
+        result.ok ? [] : result.issues.map((found) => `${found.path} ${found.code}`);
+      expect(issues(parse({ layout: 'grid' }, undefined))).toEqual(['/display/layout INVALID_STRUCTURE']);
+      expect(issues(parse({}, 'wide'))).toEqual(['/fields/0/width INVALID_STRUCTURE']);
+    });
+
+    it('refuses a width on a component field', () => {
+      const result = parseDefinition({
+        kind: 'component',
+        apiKey: 'hero',
+        label: 'Hero',
+        fields: [{ apiKey: 'heading', label: 'Heading', type: 'string', width: 'half' }],
+      });
+      expect(result.ok ? [] : result.issues.map((found) => `${found.path} ${found.code}`)).toEqual([
+        '/fields/0/width UNSUPPORTED_FLAG',
+      ]);
+    });
+
     it('does not allow layout keys on components', () => {
       const result = parseDefinition({
         kind: 'component',

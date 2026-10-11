@@ -1,4 +1,4 @@
-import { effectiveLayout, type FieldDefinition } from '@shapio/schema';
+import type { FieldDefinition } from '@shapio/schema';
 import { CircleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +28,7 @@ export const PropertyChip = ({ field }: PropertyChipProps) => {
   const path = `/${field.apiKey}`;
   const problems = useEntryForm((state) => countIssuesUnder(issuesByPath(state.issues), path));
   const assistEnabled = useAssistEnabled();
-  const summarizable = useMemo(() => isSummarizable(effectiveLayout(model), field), [model, field]);
+  const summarizable = useMemo(() => isSummarizable(model, field), [model, field]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger

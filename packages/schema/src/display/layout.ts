@@ -1,5 +1,5 @@
 import type { DataType } from '../types/dataTypes.js';
-import type { FieldDefinition, ModelDefinition } from '../types/definitions.js';
+import type { EntryLayout, FieldDefinition, ModelDefinition } from '../types/definitions.js';
 import { effectiveTitleField } from './titleField.js';
 
 /**
@@ -140,3 +140,84 @@ export const stripFieldsOf = (
   hasValue: (field: FieldDefinition) => boolean,
   limit = STRIP_DEFAULT_COUNT,
 ): FieldDefinition[] => layout.strip ?? layout.properties.filter(hasValue).slice(0, limit);
+
+/** How the model's entries open (`display.layout`): `document` unless set to `form`. */
+export const entryLayoutOf = (model: ModelDefinition): EntryLayout => model.display.layout ?? 'document';
+
+/**
+ * One section of a form-layout entry: a `display.groups` group (its `id` and `label`), or a run of
+ * consecutive ungrouped fields (`label` undefined). A run's `id` is `ungrouped-<ID of its first field>`:
+ * stable while that field stays first, and unique because a field starts one run at most. Should a group
+ * be given that very ID, the run's ID gets `~` prefixed until no group has it.
+ */
+export type FieldSection = PropertyGroup;
+
+export type FormLayout = {
+  /** The field that labels the entry (`effectiveTitleField`): the page heading. It is also in `sections`. */
+  title: FieldDefinition | undefined;
+  /** Every live field, in sections. */
+  sections: FieldSection[];
+};
+
+const ungroupedSectionId = (first: FieldDefinition, groupIds: ReadonlySet<string>) => {
+  let candidate = `ungrouped-${first.id}`;
+  while (groupIds.has(candidate)) {
+    candidate = `~${candidate}`;
+  }
+  return candidate;
+};
+
+/**
+ * The entry form's layout (`display.layout: 'form'`): every live field, the title included, in sections.
+ * Field order decides everything: a group's section sits where its first field appears, with its fields in
+ * field order, and every run of consecutive ungrouped fields is an unlabelled section of its own at its
+ * place. So name, price, sku, description with a Pricing group (price, sku) reads [name], Pricing [price,
+ * sku], [description]. Unknown and deprecated ids are skipped. Pure: no values, no I/O.
+ */
+export const effectiveFormLayout = (model: ModelDefinition): FormLayout => {
+  const groups = model.display.groups ?? [];
+  const groupIds = new Set(groups.map((group) => group.id));
+  const groupOf = new Map<string, { id: string; label: string }>();
+  for (const group of groups) {
+    for (const fieldId of group.fieldIds) {
+      if (!groupOf.has(fieldId)) {
+        groupOf.set(fieldId, group);
+      }
+    }
+  }
+  const sections: FieldSection[] = [];
+  const groupSections = new Map<string, FieldSection>();
+  let run: FieldSection | undefined;
+  for (const field of model.fields) {
+    if (field.deprecated) {
+      continue;
+    }
+    const group = groupOf.get(field.id);
+    if (!group) {
+      if (!run) {
+        run = { id: ungroupedSectionId(field, groupIds), label: undefined, fields: [] };
+        sections.push(run);
+      }
+      run.fields.push(field);
+      continue;
+    }
+    run = undefined;
+    let section = groupSections.get(group.id);
+    if (!section) {
+      section = { id: group.id, label: group.label, fields: [] };
+      groupSections.set(group.id, section);
+      sections.push(section);
+    }
+    section.fields.push(field);
+  }
+  return { title: effectiveTitleField(model), sections };
+};
+
+/**
+ * The entry's rich-text body, which "Summarize from body" reads: the document's rich-text canvas fields, or
+ * every live rich-text field of a form (a form has no canvas; its fields are all on the page).
+ */
+export const richTextBodyOf = (model: ModelDefinition): FieldDefinition[] =>
+  entryLayoutOf(model) === 'form'
+    ? model.fields.filter((field) => field.type === 'richtext' && !field.deprecated)
+    : effectiveLayout(model).canvas.filter((field) => field.type === 'richtext');

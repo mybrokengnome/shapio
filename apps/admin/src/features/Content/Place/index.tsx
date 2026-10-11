@@ -26,9 +26,11 @@ type PlaceScreenProps = {
   schema: ContentSchema;
   model: ModelDefinition;
   locales: ReturnType<typeof useContentLocales>;
+  /** The place's key as it appears in the URL. */
+  modelKey: string;
 };
 
-const PlaceScreen = ({ schema, model, locales }: PlaceScreenProps) => {
+const PlaceScreen = ({ schema, model, locales, modelKey }: PlaceScreenProps) => {
   const navigate = useNavigate({ from: '/content/$modelKey' });
   const permissions = usePlacePermissions(model);
   const placeSearch = usePlaceSearch(model, locales.current);
@@ -88,7 +90,7 @@ const PlaceScreen = ({ schema, model, locales }: PlaceScreenProps) => {
     }
   };
   return permissions.canSeeStructure ? (
-    <Tabs tab={tab} placeLabel={model.label} document={tab === 'entries' && !collection}>
+    <Tabs tab={tab} placeLabel={model.label} modelKey={modelKey} document={tab === 'entries' && !collection}>
       {content()}
     </Tabs>
   ) : (
@@ -119,5 +121,5 @@ export const Place = () => {
       </Page>
     );
   }
-  return <PlaceScreen key={model.id} schema={schema} model={model} locales={locales} />;
+  return <PlaceScreen key={model.id} schema={schema} model={model} locales={locales} modelKey={modelKey} />;
 };

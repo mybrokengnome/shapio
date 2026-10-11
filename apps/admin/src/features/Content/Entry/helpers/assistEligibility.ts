@@ -1,11 +1,17 @@
-import type { DocumentLayout, FieldDefinition } from '@shapio/schema';
+import {
+  effectiveTitleField,
+  richTextBodyOf,
+  type FieldDefinition,
+  type ModelDefinition,
+} from '@shapio/schema';
 
 /**
- * A field "Summarize from body" can fill (mirrors the server, services/assist/summarize.ts): a live string or
- * text field, not the title, of a model whose document has a rich-text canvas field, wherever it is placed.
+ * A field "Summarize from body" can fill (the server's rule, services/assist/summarize.ts): a live string or
+ * text field, not the title, of a model with a rich-text body (`richTextBodyOf`: the document's rich-text
+ * canvas fields, or every rich-text field of a form).
  */
-export const isSummarizable = (layout: DocumentLayout, field: FieldDefinition) =>
+export const isSummarizable = (model: ModelDefinition, field: FieldDefinition) =>
   (field.type === 'string' || field.type === 'text') &&
   !field.deprecated &&
-  layout.title?.apiKey !== field.apiKey &&
-  layout.canvas.some((canvasField) => canvasField.type === 'richtext');
+  effectiveTitleField(model)?.apiKey !== field.apiKey &&
+  richTextBodyOf(model).length > 0;

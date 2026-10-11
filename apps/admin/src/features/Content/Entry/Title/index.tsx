@@ -12,16 +12,25 @@ type TitleProps = {
   field: FieldDefinition | undefined;
   /** The entry's heading: its title, "New Article", or "Untitled". */
   heading: string;
+  /** `form`: a smaller read-only heading over a form-layout entry, whose title is a field of the form. */
+  variant?: TitleVariant;
 };
 
+type TitleVariant = 'document' | 'form';
+
+const headingClasses = {
+  document: 'text-display',
+  form: 'text-title',
+} satisfies Record<TitleVariant, string>;
+
 /**
- * The document's H1. A text title is typed straight into the page (one line that wraps, 44px, no border); the
- * heading itself is for assistive technology and the outline. Any other title type is shown read-only
- * and edited as a property.
+ * The entry's H1. In a document, a text title is typed straight into the page (one line that wraps, 44px, no
+ * border); the heading itself is for assistive technology and the outline. Any other title type, and every
+ * form's title, is shown read-only and edited as a field.
  */
-export const Title = ({ field, heading }: TitleProps) => {
+export const Title = ({ field, heading, variant = 'document' }: TitleProps) => {
   if (!field) {
-    return <h1 className="text-display break-words">{heading}</h1>;
+    return <h1 className={cn('break-words', headingClasses[variant])}>{heading}</h1>;
   }
   return <InlineTitle field={field} heading={heading} />;
 };

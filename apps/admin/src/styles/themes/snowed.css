@@ -38,7 +38,8 @@
   --sidebar-foreground: #0f172a;
   --sidebar-primary: #0f172a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffffff;
+  /* The active nav item's only signal (the icon is ink like its label): a step darker than the column. */
+  --sidebar-accent: #dfe6f0;
   --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #e3e8f0;
   --sidebar-ring: #2563eb;

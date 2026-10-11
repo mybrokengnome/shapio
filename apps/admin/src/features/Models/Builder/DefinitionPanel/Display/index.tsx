@@ -1,12 +1,15 @@
-import { SORT_DIRECTIONS, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
+import { entryLayoutOf, SORT_DIRECTIONS, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { titleFieldCandidates } from '../../../helpers/display';
 import { pruneLayout, withKey } from '../../../helpers/draft';
 import { issuesUnder } from '../../../helpers/issues';
 import { ChoicesControl } from '../../controls/ChoicesControl';
+import { IssueList } from '../../controls/IssueList';
 import { SelectControl } from '../../controls/SelectControl';
 import { DocumentLayout } from './DocumentLayout';
+import { Groups } from './Groups';
+import { Layout } from './Layout';
 
 type DisplayProps = { definition: SchemaDefinition; issues: readonly ValidationIssue[]; disabled: boolean };
 
@@ -15,7 +18,13 @@ const DIRECTION_LABEL_KEYS = {
   desc: 'models.builder.sortDescending',
 } as const;
 
-/** How entries are labelled, listed and laid out: title, order, list columns and the entry document. */
+/** The document-only settings: kept valid while a form, so their issues still show (decision 6). */
+const DOCUMENT_ONLY_KEYS = ['coverFieldId', 'canvasFieldIds', 'stripFieldIds'] as const;
+
+/**
+ * How entries are labelled, listed, and laid out: document or form, title, order, list columns, the entry
+ * document, and groups.
+ */
 export const Display = ({ definition, issues, disabled }: DisplayProps) => {
   const { t } = useTranslation();
   const update = useDefinitionDraftStore((state) => state.update);
@@ -42,8 +51,15 @@ export const Display = ({ definition, issues, disabled }: DisplayProps) => {
   }
   const sort = definition.display.defaultSort;
   const sortable = definition.fields.filter((field) => field.sortable);
+  const layout = entryLayoutOf(definition);
   return (
     <>
+      <Layout
+        model={definition}
+        issues={at('layout')}
+        disabled={disabled}
+        onChange={(value) => setDisplay('layout', value)}
+      />
       {titleField}
       <SelectControl
         id="definition-sort-field"
@@ -80,7 +96,12 @@ export const Display = ({ definition, issues, disabled }: DisplayProps) => {
         issues={at('listFieldIds')}
         disabled={disabled}
       />
-      <DocumentLayout model={definition} issues={issues} disabled={disabled} />
+      {layout === 'document' ? (
+        <DocumentLayout model={definition} issues={issues} disabled={disabled} />
+      ) : (
+        <IssueList issues={DOCUMENT_ONLY_KEYS.flatMap((key) => at(key))} />
+      )}
+      <Groups model={definition} issues={at('groups')} disabled={disabled} />
     </>
   );
 };

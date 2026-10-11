@@ -295,4 +295,91 @@ describe('shapio schema pull | diff | apply', () => {
     expect(applied.code, applied.stderr).toBe(0);
     expect((await remote(noteId)).definition.display).toEqual({});
   });
+
+  it('round-trips the form layout and field widths through pull and apply, as metadata', async () => {
+    const created = await admin.post('/api/admin/models', {
+      definition: pageDefinition({
+        apiKey: 'product',
+        label: 'Product',
+        fields: [
+          { apiKey: 'title', label: 'Title', type: 'string', required: true },
+          { apiKey: 'price', label: 'Price', type: 'decimal' },
+          { apiKey: 'sku', label: 'SKU', type: 'string' },
+        ],
+      }),
+      scope: 'network',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const productId = created.json<{ definitionId: string }>().definitionId;
+    const current = await remote(productId);
+    const sized = await admin.put(`/api/admin/models/${productId}`, {
+      definition: {
+        ...current.definition,
+        fields: current.definition.fields.map((field) =>
+          field.apiKey === 'title' ? field : { ...field, width: 'half' },
+        ),
+        display: { layout: 'form' },
+      },
+      expectedVersion: current.version,
+    });
+    expect(sized.statusCode, sized.body).toBe(200);
+
+    expect((await cli('pull')).code).toBe(0);
+    const file = await readDefinitionFile('product');
+    expect(file.display).toEqual({ layout: 'form' });
+    expect(file.fields.map((field) => [field.apiKey, field.width])).toEqual([
+      ['title', undefined],
+      ['price', 'half'],
+      ['sku', 'half'],
+    ]);
+    const unchanged = await cli('apply');
+    expect(unchanged.code, unchanged.stderr).toBe(0);
+    expect(unchanged.stdout).toContain('Applied 0 definition(s)');
+
+    // A width edit is metadata: shown in the diff, applied live, never breaking.
+    const resized = {
+      ...file,
+      fields: file.fields.map((field) => (field.apiKey === 'sku' ? { ...field, width: 'third' } : field)),
+    };
+    await writeDefinitionFile('product', resized);
+    const diff = await cli('diff');
+    expect(diff.stdout).toContain('~ field sku width: "half" → "third"');
+    expect(diff.stdout).not.toContain('BREAKING');
+    const applied = await cli('apply');
+    expect(applied.code, applied.stderr).toBe(0);
+    expect(applied.stdout).not.toContain('BREAKING');
+    const after = await remote(productId);
+    expect(after.definition.fields.find((field) => field.apiKey === 'sku')?.width).toBe('third');
+    const plan = await admin.post(`/api/admin/models/${productId}/plan`, {
+      definition: {
+        ...after.definition,
+        fields: after.definition.fields.map((field) =>
+          field.apiKey === 'price' ? { ...field, width: 'two-thirds' } : field,
+        ),
+        display: {},
+      },
+      expectedVersion: after.version,
+    });
+    expect(plan.statusCode, plan.body).toBe(200);
+    expect(plan.json()).toMatchObject({
+      plan: { summary: { metadataOnly: true, breaking: false, prerequisites: [] } },
+    });
+
+    // Defaults spelled out mean the same definition: nothing to apply (`note`, from the case above, is a
+    // document type).
+    const note = await readDefinitionFile('note');
+    await writeDefinitionFile('note', {
+      ...note,
+      display: { ...(note.display as object), layout: 'document' },
+    });
+    await writeDefinitionFile('product', {
+      ...resized,
+      fields: resized.fields.map((field) => (field.apiKey === 'title' ? { ...field, width: 'full' } : field)),
+    });
+    expect((await cli('diff')).stdout).toContain('Nothing to apply.');
+    const defaults = await cli('apply');
+    expect(defaults.code, defaults.stderr).toBe(0);
+    expect(defaults.stdout).toContain('Applied 0 definition(s)');
+    expect((await remote(productId)).version).toBe(after.version);
+  });
 });

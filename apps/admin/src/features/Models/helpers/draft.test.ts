@@ -88,6 +88,29 @@ describe('removeField', () => {
     expect(next.fields[0]?.settings).toEqual({});
     expect(next.display).toEqual({ listFieldIds: [slug.id] });
   });
+
+  it('takes the field out of its group and drops a group it leaves empty', () => {
+    const name = createField(model, { type: 'string', label: 'Name', apiKey: 'name' });
+    const price = createField(model, { type: 'string', label: 'Price', apiKey: 'price' });
+    const sku = createField(model, { type: 'string', label: 'SKU', apiKey: 'sku' });
+    const definition: ModelDefinition = {
+      ...model,
+      fields: [name, price, sku],
+      display: {
+        groups: [
+          { id: 'pricing', label: 'Pricing', fieldIds: [price.id, sku.id] },
+          { id: 'about', label: 'About', fieldIds: [name.id] },
+        ],
+      },
+    };
+    const withoutName = removeField(definition, name.id);
+    expect(withoutName.display.groups).toEqual([
+      { id: 'pricing', label: 'Pricing', fieldIds: [price.id, sku.id] },
+    ]);
+    const withoutPrice = removeField(withoutName, price.id);
+    expect(withoutPrice.display.groups).toEqual([{ id: 'pricing', label: 'Pricing', fieldIds: [sku.id] }]);
+    expect(removeField(withoutPrice, sku.id).display).toEqual({});
+  });
 });
 
 describe('withCompatibleEditor', () => {

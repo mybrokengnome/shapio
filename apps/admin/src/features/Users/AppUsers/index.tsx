@@ -13,6 +13,7 @@ import { useAppUserActions } from './hooks/useAppUserActions';
 import { useAppUsersSearch } from './hooks/useAppUsersSearch';
 import { Search } from './Search';
 import { Table } from './Table';
+import { TeamHint } from './TeamHint';
 
 /** App users: the end users of this site (they sign up and sign in on the site, not in this admin). */
 export const AppUsers = () => {
@@ -45,6 +46,7 @@ export const AppUsers = () => {
               icon={UsersRound}
               title={search.q ? t('appUsers.noMatches') : t('appUsers.empty')}
               description={search.q ? undefined : t('appUsers.emptyDescription')}
+              action={search.q ? undefined : <TeamHint />}
             />
           }
         >

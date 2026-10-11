@@ -8,7 +8,7 @@ const same = (a: unknown, b: unknown): boolean => canonicalJson(a ?? null) === c
 const asJson = (value: unknown): JsonValue | undefined => value as JsonValue | undefined;
 
 const DEFINITION_METADATA = ['label', 'description', 'category', 'icon', 'display'] as const;
-const FIELD_METADATA = ['label', 'description', 'defaultValue'] as const;
+const FIELD_METADATA = ['label', 'description', 'defaultValue', 'width'] as const;
 const FIELD_FLAGS = [
   ['required', 'field.required'],
   ['localized', 'field.localized'],

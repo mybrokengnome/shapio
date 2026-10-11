@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { hashDefinition } from '../fileFormat/hash.js';
 import { field, id, model } from '../testing/fixtures.js';
 import type { FieldInput, ModelDefinition } from '../types/definitions.js';
-import { effectiveLayout, stripFieldsOf } from './layout.js';
+import {
+  effectiveFormLayout,
+  effectiveLayout,
+  entryLayoutOf,
+  richTextBodyOf,
+  stripFieldsOf,
+} from './layout.js';
 
 const settings = (value: Record<string, unknown>) => value as FieldInput['settings'];
 const keys = (fields: readonly { apiKey: string }[] | null | undefined) => fields?.map((f) => f.apiKey);
@@ -178,5 +184,131 @@ describe('definition hashes', () => {
     expect(await hashDefinition(definition)).toBe(
       'sha256:aff31b3668df6ad84073204b30cafb0165071b346a9987a5e01080d73785b98c',
     );
+  });
+});
+
+describe('entryLayoutOf', () => {
+  it('is document unless the model says form', () => {
+    expect(entryLayoutOf(article())).toBe('document');
+    expect(entryLayoutOf(article({ layout: 'form' }))).toBe('form');
+  });
+});
+
+describe('effectiveFormLayout', () => {
+  const run = (first: number) => `ungrouped-${id(first)}`;
+  const sectionsOf = (definition: ModelDefinition) =>
+    effectiveFormLayout(definition).sections.map((section) => [
+      section.id,
+      section.label,
+      keys(section.fields),
+    ]);
+  const sections = (display: ModelDefinition['display'] = {}) =>
+    sectionsOf(article({ layout: 'form', ...display }));
+
+  it('without groups: one unlabelled section of every live field, the title included, in field order', () => {
+    const layout = effectiveFormLayout(article({ layout: 'form' }));
+    expect(layout.title?.apiKey).toBe('title');
+    expect(sections()).toEqual([
+      [run(1), undefined, ['title', 'slug', 'cover', 'body', 'seo', 'sections', 'gallery', 'faqs', 'thumb']],
+    ]);
+  });
+
+  it('keeps a group between the ungrouped fields around it (a Product with a Pricing group)', () => {
+    const product = model({
+      apiKey: 'product',
+      fields: [
+        field({ id: id(1), apiKey: 'name' }),
+        field({ id: id(2), apiKey: 'price', type: 'decimal' }),
+        field({ id: id(3), apiKey: 'sku' }),
+        field({ id: id(4), apiKey: 'description', type: 'richtext' }),
+        field({ id: id(5), apiKey: 'gallery', type: 'media', settings: settings({ multiple: true }) }),
+      ],
+      display: { layout: 'form', groups: [{ id: 'pricing', label: 'Pricing', fieldIds: [id(3), id(2)] }] },
+    });
+    expect(sectionsOf(product)).toEqual([
+      [run(1), undefined, ['name']],
+      ['pricing', 'Pricing', ['price', 'sku']],
+      [run(4), undefined, ['description', 'gallery']],
+    ]);
+  });
+
+  it('gives each run of ungrouped fields between two groups its own section', () => {
+    expect(
+      sections({
+        groups: [
+          { id: 'meta', label: 'Meta', fieldIds: [id(2)] },
+          { id: 'media', label: 'Media', fieldIds: [id(7), id(9)] },
+        ],
+      }),
+    ).toEqual([
+      [run(1), undefined, ['title']],
+      ['meta', 'Meta', ['slug']],
+      [run(3), undefined, ['cover', 'body', 'seo', 'sections']],
+      ['media', 'Media', ['gallery', 'thumb']],
+      [run(8), undefined, ['faqs']],
+    ]);
+  });
+
+  it('places each group at its first field, with its fields in field order', () => {
+    expect(
+      sections({
+        groups: [
+          // Listed out of field order, and before the ungrouped fields: field order still decides.
+          { id: 'media', label: 'Media', fieldIds: [id(9), id(3), id(7)] },
+          { id: 'seo', label: 'SEO', fieldIds: [id(5), id(2)] },
+        ],
+      }),
+    ).toEqual([
+      [run(1), undefined, ['title']],
+      ['seo', 'SEO', ['slug', 'seo']],
+      ['media', 'Media', ['cover', 'gallery', 'thumb']],
+      [run(4), undefined, ['body']],
+      [run(6), undefined, ['sections']],
+      [run(8), undefined, ['faqs']],
+    ]);
+  });
+
+  it('opens with a group when the first field is grouped', () => {
+    expect(sections({ groups: [{ id: 'main', label: 'Main', fieldIds: [id(1), id(2)] }] })).toEqual([
+      ['main', 'Main', ['title', 'slug']],
+      [run(3), undefined, ['cover', 'body', 'seo', 'sections', 'gallery', 'faqs', 'thumb']],
+    ]);
+  });
+
+  it('skips deprecated and unknown ids and drops groups left empty', () => {
+    expect(
+      sections({
+        groups: [
+          { id: 'old', label: 'Old', fieldIds: [id(10), id(99)] },
+          { id: 'main', label: 'Main', fieldIds: [id(1)] },
+        ],
+      })[0],
+    ).toEqual(['main', 'Main', ['title']]);
+  });
+
+  it('never gives a run the ID of a group', () => {
+    const ids = effectiveFormLayout(
+      article({ layout: 'form', groups: [{ id: run(1), label: 'Odd', fieldIds: [id(2)] }] }),
+    ).sections.map((section) => section.id);
+    expect(ids).toEqual([`~${run(1)}`, run(1), run(3)]);
+  });
+
+  it('ignores the document-only settings', () => {
+    const plain = effectiveFormLayout(article({ layout: 'form' }));
+    const configured = effectiveFormLayout(
+      article({ layout: 'form', canvasFieldIds: [id(2)], coverFieldId: id(9), stripFieldIds: [id(5)] }),
+    );
+    expect(configured).toEqual(plain);
+  });
+});
+
+describe('richTextBodyOf', () => {
+  it("is the document's rich-text canvas fields", () => {
+    expect(keys(richTextBodyOf(article()))).toEqual(['body']);
+    expect(keys(richTextBodyOf(article({ canvasFieldIds: [id(2)] })))).toEqual([]);
+  });
+
+  it('is every live rich-text field of a form, whatever the canvas says', () => {
+    expect(keys(richTextBodyOf(article({ layout: 'form', canvasFieldIds: [id(2)] })))).toEqual(['body']);
   });
 });

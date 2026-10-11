@@ -61,8 +61,10 @@ export const TopBar = ({
       data-slot="entry-top-bar"
       className="sticky top-12 z-20 -mx-4 -mt-7 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b bg-background/95 px-4 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-8 sm:px-8 lg:top-0"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-x-3 gap-y-1 text-meta text-muted-foreground max-sm:flex-wrap">
-        <nav aria-label={t('common.breadcrumb')} className="min-w-0">
+      {/* min-w-72: below that the actions wrap to a row of their own rather than squeeze or overlap it. */}
+      <div className="flex min-w-72 flex-1 items-center gap-x-3 gap-y-1 text-meta text-muted-foreground max-sm:min-w-0 max-sm:flex-wrap">
+        {/* The breadcrumb gives way first, and in it only the title truncates (the place name never shrinks). */}
+        <nav aria-label={t('common.breadcrumb')} className="min-w-0 shrink-10 overflow-hidden">
           <ol className="flex min-w-0 items-center gap-1.5 font-medium">
             <li className="shrink-0">
               {model.kind === 'collection' ? (
@@ -85,7 +87,12 @@ export const TopBar = ({
             </li>
           </ol>
         </nav>
-        {status ? <EntryStatusChip status={status} size="sm" /> : null}
+        {status ? (
+          <div className="shrink-0">
+            <EntryStatusChip status={status} size="sm" />
+          </div>
+        ) : null}
+        {/* Short on a narrow bar (`compact`), so it keeps its width; the title truncates instead. */}
         <div className="shrink-0 whitespace-nowrap">{saveState}</div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">

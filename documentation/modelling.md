@@ -85,18 +85,35 @@ Field options:
 | `filterable`, `sortable` | builds an index so the API can filter by range or sort on the field                                    |
 | `defaultValue`           | used for new entries, and to fill existing ones when the field becomes required                        |
 | `deprecated`             | hidden from editors and the API; stored values are kept until you remove the field                     |
+| `width`                  | in a form, how much of a row the field takes: `full` (default), `two-thirds`, `half`, or `third`       |
 
 Custom editors from your project can be chosen for any compatible field ([Extensions](extensions.md#custom-field-editors)).
-Display settings choose the title field (labels in lists and pickers), the list columns, the default sort and
-the sections of the entry form.
+Display settings choose the layout (document or form, below), the title field (labels in lists and pickers),
+the list columns, the default sort, and the groups shown as sections of the entry form.
 
-**Document or property.** An entry opens as a document: the title, then its blocks (rich text, sections,
-repeatable components, galleries), with every other field as a property in the strip under the title and the
-Settings panel. Turn on **Show in document** in a field's settings to write any field but the title in the
-document instead, under its name among the blocks: an excerpt, a date, the SEO fields. Turn it off on a block
-field to move it to the Settings panel. In schema files this is the model's `display.canvasFieldIds`, the
-document's fields in order; without it the automatic rule above applies. Changing it is live, like any display
-setting.
+**Document or form.** Each content type chooses how its entries open, under **Display → Layout**. A
+**document** (the default) is a page to write in: the title as its heading, the blocks in the body, and the
+other fields as properties. A **form** puts every field on the page, the title included, with the title's
+value as the page heading. Pick a width for each field of a form in its settings (**Full**, **Two thirds**,
+**Half**, or **Third**): rows fill in field order and wrap, so two halves or three thirds sit side by side,
+and in a narrow window every field takes the whole row. Put fields in a **Group** from their settings to show
+them together under its name, as a section of the form; a group sits where its first field is, so field order
+arranges groups too. Rename or remove groups under **Display → Groups**. Rich text, dynamic zones, components,
+and media work in a form like any other field. A form has no Summarize button, which lives on the document's
+property strip. In schema files the layout is the model's `display.layout` (`document` or `form`, unset means
+`document`), a field's width is its `width` (unset means `full`; a component's fields have none), and groups
+are `display.groups`. Changing any of them is live, like any display setting, and switching back to Document
+restores the document's own settings. Whoever manages the type's schema can also switch the layout from any
+entry, under **Settings → Layout**: it changes the type at once, and the message that confirms it offers
+**Undo**.
+
+**Document or property.** In a document type, an entry opens as a document: the title, then its blocks (rich
+text, sections, repeatable components, galleries), with every other field as a property in the strip under the
+title and the Settings panel. Turn on **Show in document** in a field's settings to write any field but the
+title in the document instead, under its name among the blocks: an excerpt, a date, the SEO fields. Turn it
+off on a block field to move it to the Settings panel. In schema files this is the model's
+`display.canvasFieldIds`, the document's fields in order; without it the automatic rule above applies.
+Changing it is live, like any display setting.
 
 **SEO fields** are one click away: **Add field → SEO fields** adds the built-in, shared SEO component (title,
 description, social image, canonical URL, noindex), with per-site defaults and a resolved form in the delivery

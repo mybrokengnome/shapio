@@ -7,6 +7,7 @@ import { EntryFields } from '@/fields/form/EntryFields';
 import { FieldsProvider } from '@/fields/form/FieldsProvider';
 import { createEntryFormStore } from '@/fields/form/store';
 import { defaultFormValues } from '@/fields/helpers/formValues';
+import { fieldGridModeOf } from '@/fields/helpers/widthClasses';
 import { useRuntimeEditors } from '@/fields/runtime/useRuntimeEditors';
 import { previewHostOf, previewSections } from '../../helpers/previewSections';
 
@@ -67,7 +68,7 @@ export const FormPreview = ({ definition, definitions }: FormPreviewProps) => {
                   ? t('develop.schema.preview.document')
                   : t('develop.schema.preview.properties'))}
             </h3>
-            <EntryFields fields={section.fields} />
+            <EntryFields fields={section.fields} mode={fieldGridModeOf(model)} />
           </section>
         ))}
       </div>

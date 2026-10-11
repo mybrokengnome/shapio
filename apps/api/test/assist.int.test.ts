@@ -297,6 +297,53 @@ describe('assist engine', () => {
       }
       expect(fake.calls).toHaveLength(0);
     });
+
+    it('reads every rich-text field of a form, whatever the document layout says', async () => {
+      // The document's canvas holds only the blurb, so as a document the model has no rich-text body.
+      const blurbId = crypto.randomUUID();
+      const product = await createDefinition(owner, {
+        kind: 'collection',
+        apiKey: 'product',
+        label: 'Product',
+        fields: [
+          { apiKey: 'name', label: 'Name', type: 'string' },
+          { id: blurbId, apiKey: 'blurb', label: 'Blurb', type: 'text' },
+          { apiKey: 'tagline', label: 'Tagline', type: 'string' },
+          { apiKey: 'description', label: 'Description', type: 'richtext' },
+        ],
+        display: { canvasFieldIds: [blurbId] },
+      });
+      const item = expectStatus(
+        await owner.post('/api/admin/content/product', {
+          data: { name: 'Lamp', description: richText(paragraph({ type: 'text', text: 'A brass lamp.' })) },
+        }),
+        201,
+      ).json<EntryBody>();
+      const summarize = () =>
+        owner.post('/api/admin/assist/summarize', {
+          modelKey: 'product',
+          entryId: item.id,
+          fieldApiKey: 'tagline',
+        });
+      expect(expectStatus(await summarize(), 400).json<{ error: { code: string } }>().error.code).toBe(
+        'ASSIST_FIELD_NOT_SUMMARIZABLE',
+      );
+
+      expectStatus(
+        await owner.put(`/api/admin/models/${product.definition.id}`, {
+          definition: {
+            ...product.definition,
+            display: { ...(product.definition.display as object), layout: 'form' },
+          },
+          expectedVersion: product.version,
+        }),
+        200,
+      );
+      fake.respondWith(() => ({ text: 'A brass lamp.' }));
+      const result = expectStatus(await summarize(), 200).json<{ text: string }>();
+      expect(result.text).toBe('A brass lamp.');
+      expect(fake.calls[0]?.userText).toContain('A brass lamp.');
+    });
   });
 
   describe('translate', () => {

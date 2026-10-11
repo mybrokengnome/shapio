@@ -1,4 +1,4 @@
-import { routeKeyOf } from '@shapio/schema';
+import { entryLayoutOf, routeKeyOf } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { StatusChip } from '@/components/StatusChip';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { KIND_ICONS, KIND_LABEL_KEYS } from '../../../constants';
 
 type SummaryProps = { hasIssues: boolean };
 
-/** The collapsed Model settings: kind, localization, drafts and the plural API ID, in one row. */
+/** The collapsed Model settings: kind, localization, drafts, a form layout, and the plural API ID, in one row. */
 export const Summary = ({ hasIssues }: SummaryProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
@@ -29,6 +29,9 @@ export const Summary = ({ hasIssues }: SummaryProps) => {
           <Badge variant="outline">
             {t(draft.draftAndPublish ? 'models.builder.summaryDrafts' : 'models.builder.summaryNoDrafts')}
           </Badge>
+          {entryLayoutOf(draft) === 'form' ? (
+            <Badge variant="outline">{t('models.builder.summaryForm')}</Badge>
+          ) : null}
         </>
       )}
       {draft.kind === 'collection' ? (

@@ -1,4 +1,4 @@
-import { effectiveLayout, isCanvasEligible, type ModelDefinition } from '@shapio/schema';
+import { effectiveLayout, entryLayoutOf, type ModelDefinition } from '@shapio/schema';
 import { useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,10 +15,10 @@ import { useSaveShortcut } from '@/hooks/useSaveShortcut';
 import { useContentLocales } from '../hooks/useContentLocales';
 import type { ContentSchema } from '../hooks/useContentSchema';
 import { LocaleSelect } from '../LocaleSelect';
-import { Canvas } from './Canvas';
-import { Cover } from './Cover';
 import { CoverSettings } from './CoverSettings';
 import { DangerZone } from './DangerZone';
+import { DocumentBody } from './Document';
+import { FormBody } from './Form';
 import { HistorySheet } from './HistorySheet';
 import { AssistDocumentContext, useAssistDocument } from './hooks/useAssistTarget';
 import { useDocumentPaletteActions } from './hooks/useDocumentPaletteActions';
@@ -28,6 +28,7 @@ import { useEntryPresence } from './hooks/useEntryPresence';
 import { usePreflightFlow } from './hooks/usePreflightFlow';
 import { useRevealField } from './hooks/useRevealField';
 import { useSettingsDrawer } from './hooks/useSettingsDrawer';
+import { LayoutSection } from './LayoutSection';
 import { NoFields } from './NoFields';
 import { Notices } from './Notices';
 import { PreflightSheet } from './PreflightSheet';
@@ -35,12 +36,9 @@ import { Presence } from './Presence';
 import { PreviewPane } from './Preview';
 import { useEntryPreview } from './Preview/hooks/useEntryPreview';
 import { PreviewButton } from './PreviewButton';
-import { PropertiesStrip } from './PropertiesStrip';
-import { PropertyGrid } from './PropertyGrid';
 import { SaveState } from './SaveState';
 import { SettingsDrawer } from './SettingsDrawer';
 import { StatusSection } from './StatusSection';
-import { Title } from './Title';
 import { TopBar, type PrimaryAction } from './TopBar';
 import { TranslateLocale } from './TranslateLocale';
 import type { EntryMode, ReloadEntry } from './types';
@@ -57,11 +55,11 @@ type EntryDocumentProps = {
 };
 
 /**
- * An entry as a document you write, not a form you fill (plan editor-experience §3): a thin top bar, the
- * cover, the title typed into the page, a strip of properties, and the canvas of blocks; everything else
- * in a settings drawer beside it, and publishing through a pre-flight. A model without block fields shows
- * its properties as a grid under the title and any field placed in the document. Autosave keeps drafts
- * safe; ⌘S records a version.
+ * An entry, opened the way its model says (`display.layout`). A document you write (plan
+ * editor-experience §3, `DocumentBody`): the cover, the title typed into the page, a strip of properties and
+ * the canvas of blocks, everything else in a settings drawer beside it. A form you fill (`FormBody`): every
+ * field on the page at its width, in sections. Around either: a thin top bar, the drawer, publishing through
+ * a pre-flight, the preview, history and presence. Autosave keeps drafts safe; ⌘S records a version.
  */
 export const EntryDocument = ({
   schema,
@@ -78,6 +76,8 @@ export const EntryDocument = ({
   const { setup, saver, lifecycle, publishing, permissions, conflict, dirty } = entryDocument;
   const { store, entry, entryId, environment } = setup;
   const layout = useMemo(() => effectiveLayout(model), [model]);
+  // A form has every field on the page: its drawer holds no properties or cover.
+  const form = entryLayoutOf(model) === 'form';
   const assistDocument = useAssistDocument({ model, mode, store, save: saver.save });
   const drawer = useSettingsDrawer();
   const preflight = usePreflightFlow(saver.save);
@@ -86,7 +86,7 @@ export const EntryDocument = ({
   const [historyOpen, setHistoryOpen] = useState(linkedRevision !== undefined);
   const people = useEntryPresence(model.apiKey, mode.kind === 'edit' ? entryId : null, locale);
   const reveal = useRevealField(environment.idPrefix, (apiKey) =>
-    drawer.openAt({ section: 'properties', property: apiKey }),
+    drawer.openAt(form ? { section: 'status' } : { section: 'properties', property: apiKey }),
   );
   const preview = useEntryPreview({
     model,
@@ -170,8 +170,6 @@ export const EntryDocument = ({
   // With Publish as the primary action, Save (a validated version) shows while there is something to record.
   const showSave = primary.kind === 'publish' && entryDocument.editable && (dirty || autosaved);
   const live = entry !== null && entry.status !== 'draft';
-  // Rich text, zones, lists or galleries: the page is a document with a strip; otherwise the grid stays.
-  const hasBlocks = layout.canvas.some(isCanvasEligible);
   const hasFields =
     layout.title !== undefined ||
     layout.cover !== undefined ||
@@ -195,7 +193,13 @@ export const EntryDocument = ({
               status={entry?.status}
               saveState={
                 mode.kind === 'edit' ? (
-                  <SaveState state={saver.state} dirty={dirty} autosaved={autosaved} />
+                  <SaveState
+                    state={saver.state}
+                    dirty={dirty}
+                    autosaved={autosaved}
+                    // The bar shares the screen with the drawer or the preview: the short form only.
+                    compact={drawer.open || preview.open}
+                  />
                 ) : null
               }
               presence={<Presence people={people} />}
@@ -237,8 +241,12 @@ export const EntryDocument = ({
             <div className={cn(preview.open && 'lg:pr-[calc(50vw-2rem)]')}>
               <article
                 aria-label={heading}
-                className="mx-auto w-full max-w-3xl space-y-6 pt-8 pb-40 lg:px-16"
+                className={cn(
+                  'mx-auto w-full space-y-6 pt-8 pb-40 lg:px-16',
+                  form ? 'max-w-4xl' : 'max-w-3xl',
+                )}
                 data-entry-document
+                data-entry-layout={form ? 'form' : 'document'}
               >
                 <Notices
                   conflict={conflict}
@@ -271,17 +279,10 @@ export const EntryDocument = ({
                   onDismissOthers={publishing.dismissOthers}
                 />
                 {hasFields ? null : <NoFields model={model} canManageSchema={permissions.canManageSchema} />}
-                {layout.cover ? (
-                  <Cover field={layout.cover} onEditDetails={() => drawer.openAt({ section: 'cover' })} />
-                ) : null}
-                <Title field={layout.titleInline ? layout.title : undefined} heading={heading} />
-                {hasBlocks ? (
-                  <PropertiesStrip layout={layout} onMore={() => drawer.openAt({ section: 'properties' })} />
-                ) : null}
-                {layout.canvas.length > 0 ? <Canvas fields={layout.canvas} /> : null}
-                {/* Without blocks the document is a form: the properties stay on the page, under its fields. */}
-                {hasBlocks || layout.properties.length === 0 ? null : (
-                  <PropertyGrid groups={layout.propertyGroups} />
+                {form ? (
+                  <FormBody model={model} heading={heading} />
+                ) : (
+                  <DocumentBody layout={layout} heading={heading} onOpenSettings={drawer.openAt} />
                 )}
               </article>
             </div>
@@ -292,9 +293,10 @@ export const EntryDocument = ({
             automatic={drawer.automatic}
             onOpenChange={drawer.setOpen}
             focus={drawer.focus}
-            layout={layout}
+            properties={form ? undefined : layout.propertyGroups}
             expanded={drawer.expanded}
             onToggleProperty={drawer.toggleProperty}
+            layout={permissions.canManageSchema ? <LayoutSection model={model} /> : null}
             status={
               <StatusSection
                 model={model}
@@ -315,7 +317,7 @@ export const EntryDocument = ({
                 confirmCopy={entryDocument.hasLocalizedValues}
               />
             }
-            cover={layout.cover ? <CoverSettings field={layout.cover} /> : null}
+            cover={layout.cover && !form ? <CoverSettings field={layout.cover} /> : null}
             onOpenHistory={mode.kind === 'edit' ? () => setHistoryOpen(true) : undefined}
             danger={
               mode.kind === 'edit' ? (
