@@ -1,7 +1,8 @@
 import type { DataType, FieldDefinition } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
 import { maskAllows } from '../content/compiler/policy.js';
-import { resolveModelById } from '../content/model.js';
+import { resolveModelById, type ContentModel } from '../content/model.js';
+import { dropForeignTypedValues } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetItems.js';
@@ -202,18 +203,22 @@ type EntryReviewContext = {
   heads: readonly EntryHeadRow[];
 };
 
-/** What an item publishes: its source revision (restore), the draft, or nothing (unpublish). */
+/**
+ * What an item publishes: its source revision (restore; values saved under an earlier field type are left out,
+ * as publishing it leaves them out), the draft, or nothing (unpublish).
+ */
 const afterOf = async (
   review: EntryReviewContext,
   item: ChangeSetItemRow,
   draft: EntryHeadRow | undefined,
+  model: ContentModel | undefined,
 ) => {
   if (item.action === 'unpublish') {
     return null;
   }
   if (item.source_revision_id) {
     const revision = await contentRevisionsRepository.findById(item.source_revision_id, review.context.db);
-    return revision?.data ?? null;
+    return revision && model ? dropForeignTypedValues(model, revision.data).data : (revision?.data ?? null);
   }
   return draft?.data ?? null;
 };
@@ -232,7 +237,7 @@ const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): 
     model && policy?.allowed
       ? model.definition.fields.filter((field) => maskAllows(policy.readMask, field))
       : [];
-  const after = await afterOf(review, item, draft);
+  const after = await afterOf(review, item, draft, model);
   const before = published?.data ?? null;
   const issues: Issue[] = [];
   if (item.action === 'publish' && model && after && !converted.has(modelId)) {

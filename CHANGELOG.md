@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Restoring a revision saved before a field's type changed** brings it back as its history view shows it,
+  with values of the old type empty, instead of failing with `must be a string`. Restoring a snapshot from
+  before the change works the same way, and a required field left empty is refused with a message naming the
+  type change.
 
 ## [0.5.6] - 2026-10-11
 
