@@ -28,7 +28,11 @@ test.afterEach(() => {
 test.afterAll(async () => {
   // Later specs expect an empty model list.
   if (model) {
-    await adminRequest(page.request, 'DELETE', `/models/${model.id}?expectedVersion=${model.version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/models/${model.id}?expectedVersion=${model.version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });

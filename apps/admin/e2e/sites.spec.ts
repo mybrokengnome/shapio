@@ -125,7 +125,7 @@ test.afterAll(async () => {
   }
   if (modelId) {
     const { version } = await owner().get<{ version: number }>(`/models/${modelId}`);
-    await owner().send('DELETE', `/models/${modelId}?expectedVersion=${version}`);
+    await owner().send('DELETE', `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`);
   }
   await page.context().close();
 });
