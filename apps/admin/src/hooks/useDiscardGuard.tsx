@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useRegisterUnsavedEdits } from './useRegisterUnsavedEdits';
 
 type UseDiscardGuardOptions = {
   /** Unsaved edits: closing asks before discarding them. */
@@ -9,6 +10,11 @@ type UseDiscardGuardOptions = {
   pending?: boolean;
   /** The overlay's own open/close handler, called once closing is allowed. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * Whether `dirty` counts as this screen's unsaved edits (default true), so an ended session is resumed in
+   * place. False when `dirty` is itself derived from that count (Sign out asking over other screens' edits).
+   */
+  registersEdits?: boolean;
 };
 
 /**
@@ -20,9 +26,11 @@ export const useDiscardGuard = ({
   dirty,
   pending = false,
   onOpenChange,
+  registersEdits = true,
 }: UseDiscardGuardOptions): { requestOpenChange: (open: boolean) => void; discardPrompt: ReactNode } => {
   const { t } = useTranslation();
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  useRegisterUnsavedEdits(registersEdits && dirty);
   const requestOpenChange = (open: boolean) => {
     if (!open && dirty && !pending) {
       setConfirmingDiscard(true);

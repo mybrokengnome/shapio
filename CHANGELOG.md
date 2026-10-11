@@ -8,6 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **An ended admin session no longer throws away unsaved edits.** When the session expires or is signed out
+  elsewhere while you have unsaved changes, the admin stays on the page and asks for your password in a panel
+  beside it; the save that failed runs again once you sign in. Signing out from the account menu over unsaved
+  changes now asks first, like leaving the page.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

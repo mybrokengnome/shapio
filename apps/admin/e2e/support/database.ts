@@ -51,3 +51,11 @@ export const makeConnectionSecretsUnreadable = async (connectionName: string) =>
     connectionName,
   ]);
 };
+
+/** Ends every session of the admin with `email`, as idle expiry or "sign out everywhere" would. */
+export const endAdminSessions = async (email: string) => {
+  await queryServerDatabase(
+    `delete from admin_sessions where admin_user_id in (select id from admin_users where email = ?)`,
+    [email],
+  );
+};
