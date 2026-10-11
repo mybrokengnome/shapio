@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Publishing a draft that is already live is a no-op.** It no longer makes a new snapshot, writes an
+  `entry.published` event (so webhooks and deployment triggers stay quiet), or adds a publication-log row. This
+  covers bulk Publish, scheduled publishes, and change sets too, and matches how unpublishing twice behaves.
 
 ## [0.5.6] - 2026-10-11
 

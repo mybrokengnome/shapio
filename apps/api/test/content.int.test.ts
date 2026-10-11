@@ -289,4 +289,62 @@ describe('admin content API', () => {
       .execute();
     expect(audit.map((row) => row.action)).toEqual(['content.publish']);
   });
+
+  it('publishing a draft that is already live changes nothing: no snapshot, event or publication', async () => {
+    const entry = expectStatus(
+      await create('author', { name: 'Grace' }, { publish: true }),
+      201,
+    ).json<EntryBody>();
+    const seq = async () =>
+      Number(
+        (
+          await database.current.db
+            .selectFrom('publication_state')
+            .select('last_seq')
+            .executeTakeFirstOrThrow()
+        ).last_seq,
+      );
+    const countOf = async (table: 'outbox_events' | 'publication_log') =>
+      table === 'outbox_events'
+        ? (
+            await database.current.db
+              .selectFrom('outbox_events')
+              .select('id')
+              .where('aggregate_id', '=', entry.id)
+              .where('type', '=', 'entry.published')
+              .execute()
+          ).length
+        : (
+            await database.current.db
+              .selectFrom('publication_log')
+              .select('entry_id')
+              .where('entry_id', '=', entry.id)
+              .execute()
+          ).length;
+    const before = await seq();
+
+    const again = expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200);
+    expect(again.json<EntryBody>()).toMatchObject({ status: 'published', data: { name: 'Grace' } });
+    await Promise.all(
+      Array.from({ length: 5 }, async () =>
+        expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200),
+      ),
+    );
+    expect(await seq()).toBe(before);
+    expect(await countOf('outbox_events')).toBe(1);
+    expect(await countOf('publication_log')).toBe(1);
+
+    // Autosaved work on the same revision is a change: publishing it moves the snapshot.
+    expectStatus(
+      await admin.put(`/api/admin/content/author/${entry.id}`, {
+        expectedVersion: entry.version,
+        autosave: true,
+        data: { name: 'Grace H.' },
+      }),
+      200,
+    );
+    expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200);
+    expect(await seq()).toBe(before + 1);
+    expect(await countOf('outbox_events')).toBe(2);
+  });
 });
