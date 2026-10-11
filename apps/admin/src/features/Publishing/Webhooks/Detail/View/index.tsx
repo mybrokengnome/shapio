@@ -7,6 +7,7 @@ import { InlineConfirm } from '@/components/InlineConfirm';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
+import { StatusChip } from '@/components/StatusChip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { EnabledChip } from '../../../EnabledChip';
@@ -36,6 +37,9 @@ export const View = ({ webhook }: ViewProps) => {
         badge={
           <span className="flex items-center gap-2">
             <EnabledChip enabled={webhook.enabled} />
+            {webhook.secretsUnreadable ? (
+              <StatusChip tone="warning" label={t('publishing.webhooks.secretUnreadable')} />
+            ) : null}
             <SiteBadge webhook={webhook} />
           </span>
         }
@@ -68,7 +72,11 @@ export const View = ({ webhook }: ViewProps) => {
                 }
               }}
               trigger={
-                <Button variant="outline" disabled={actions.pending}>
+                // The repair for an unreadable secret, so it becomes the main action until then.
+                <Button
+                  variant={webhook.secretsUnreadable ? 'default' : 'outline'}
+                  disabled={actions.pending}
+                >
                   <KeyRound aria-hidden="true" />
                   {t('publishing.webhooks.rotateSecret')}
                 </Button>
@@ -78,7 +86,11 @@ export const View = ({ webhook }: ViewProps) => {
               <Power aria-hidden="true" />
               {webhook.enabled ? t('publishing.webhooks.disable') : t('publishing.webhooks.enable')}
             </Button>
-            <Button disabled={actions.testing || !webhook.enabled} onClick={actions.sendTest}>
+            <Button
+              variant={webhook.secretsUnreadable ? 'outline' : 'default'}
+              disabled={actions.testing || !webhook.enabled || webhook.secretsUnreadable}
+              onClick={actions.sendTest}
+            >
               <Send aria-hidden="true" />
               {t('publishing.webhooks.sendTest')}
             </Button>

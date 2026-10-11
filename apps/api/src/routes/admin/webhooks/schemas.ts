@@ -29,6 +29,8 @@ const WebhookSchema = Type.Object({
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
   version: Type.Integer(),
+  /** The stored signing secret cannot be decrypted (SESSION_SECRET changed): rotate it to repair the webhook. */
+  secretsUnreadable: Type.Boolean(),
 });
 
 const WebhookWithSecretSchema = Type.Object({ webhook: WebhookSchema, secret: Type.String() });

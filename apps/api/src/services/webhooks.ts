@@ -6,6 +6,7 @@ import { assertDestinationAllowed } from '../publishing/destination.js';
 import { decodeCursor, pageSize, toPage, type Page } from '../publishing/pagination.js';
 import { adminIdOf } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
+import { decryptIfReadable } from '../publishing/secretBox.js';
 import * as webhooksRepository from '../repositories/webhooks.js';
 import type { WebhookDeliveryRow, WebhookSummaryRow } from '../repositories/webhooks.js';
 import { isValidEventPattern, WEBHOOK_EVENT_CATALOGUE, WEBHOOK_TEST_EVENT } from '../webhooks/catalogue.js';
@@ -40,6 +41,11 @@ export type WebhookView = {
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  /**
+   * The stored signing secret cannot be decrypted (SESSION_SECRET changed): deliveries fail until the secret
+   * is rotated.
+   */
+  secretsUnreadable: boolean;
 };
 
 export type WebhookDeliveryView = {
@@ -61,7 +67,7 @@ export type WebhookDeliveryView = {
 
 const SECRET_PREFIX = 'whsec_';
 
-const toView = (row: WebhookSummaryRow): WebhookView => ({
+const toView = (runtime: PublishingRuntime, row: WebhookSummaryRow): WebhookView => ({
   id: row.id,
   site: row.site_id && row.site_key ? { id: row.site_id, key: row.site_key } : null,
   name: row.name,
@@ -76,6 +82,8 @@ const toView = (row: WebhookSummaryRow): WebhookView => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   version: row.version,
+  // One webhook sealed under another key must not break the list: it is flagged, and rotating repairs it.
+  secretsUnreadable: decryptIfReadable(runtime.secrets, row.secret_encrypted) === undefined,
 });
 
 export const toDeliveryView = (row: WebhookDeliveryRow): WebhookDeliveryView => ({
@@ -107,7 +115,7 @@ const assertEvents = (events: readonly string[]) => {
 export const listEventTypes = () => WEBHOOK_EVENT_CATALOGUE;
 
 export const listWebhooks = async (runtime: PublishingRuntime, site: SiteRef) =>
-  (await webhooksRepository.list(site.id, runtime.db)).map(toView);
+  (await webhooksRepository.list(site.id, runtime.db)).map((row) => toView(runtime, row));
 
 export const getWebhook = async (
   runtime: PublishingRuntime,
@@ -118,7 +126,7 @@ export const getWebhook = async (
   if (!row) {
     throw webhookNotFound(id);
   }
-  return toView(row);
+  return toView(runtime, row);
 };
 
 const networkForbidden = () =>

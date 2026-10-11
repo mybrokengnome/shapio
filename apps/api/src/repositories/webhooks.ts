@@ -24,12 +24,16 @@ const WEBHOOK_COLUMNS = [
   'webhooks.version',
 ] as const;
 
-/** Webhooks without their encrypted secret, with their site's key and the newest delivery's status. */
+/**
+ * Webhooks with their site's key and the newest delivery's status. The encrypted secret is selected only so the
+ * view can tell whether it is still readable; it is never returned.
+ */
 const withLastDelivery = (trx: Executor) =>
   trx
     .selectFrom('webhooks')
     .leftJoin('sites', 'sites.id', 'webhooks.site_id')
     .select(WEBHOOK_COLUMNS)
+    .select('webhooks.secret_encrypted')
     .select('sites.key as site_key')
     .select((eb) => [
       eb

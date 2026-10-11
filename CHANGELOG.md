@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Webhooks survive an unreadable secret.** After `SESSION_SECRET` changes, a webhook's deliveries are recorded
+  as dead with the reason, the webhook list and page show a warning, and Rotate secret repairs it. Before,
+  deliveries stayed pending forever and nothing in the admin said why.
 
 ## [0.5.6] - 2026-10-11
 

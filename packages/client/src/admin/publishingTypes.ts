@@ -96,6 +96,8 @@ export type Webhook = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  /** The stored signing secret cannot be decrypted (SESSION_SECRET changed): rotate it to repair the webhook. */
+  secretsUnreadable: boolean;
 };
 
 export type CreateWebhookInput = {
