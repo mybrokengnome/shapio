@@ -180,4 +180,12 @@ export type UpdateLocaleInput = { label: string; fallbacks?: string[] };
 
 export type SetDefaultLocaleResult = { code: string; changed: boolean };
 
-export type DeleteLocaleResult = { code: string; affectedHeads: number };
+export type DeleteLocaleResult = {
+  code: string;
+  /** Heads of localized models in the locale, purged. */
+  affectedHeads: number;
+  /** Entries that existed only in the locale, deleted. */
+  deletedEntries: number;
+  /** Entries of non-localized models stored in the locale, moved to the default locale. */
+  movedEntries: number;
+};

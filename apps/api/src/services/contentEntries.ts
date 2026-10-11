@@ -376,7 +376,12 @@ export const restoreRevision = async (
     throw revisionNotFound(revisionId);
   }
   const validator = buildValidator(context.snapshot, model);
-  await runEntryWrite(context.db, model, context.site.id, [revision.locale], async (trx) => {
+  // A non-localized entry's revisions may carry a locale its heads have since left (a deleted locale's).
+  const writeLocale = model.definition.localized
+    ? revision.locale
+    : writeLocaleFor(context.snapshot, model.definition, undefined);
+  let targetLocale = revision.locale;
+  await runEntryWrite(context.db, model, context.site.id, [writeLocale], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,
@@ -391,7 +396,10 @@ export const restoreRevision = async (
       id,
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
-    const previous = heads.find((head) => head.state === 'draft' && head.locale === revision.locale);
+    if (!model.definition.localized) {
+      targetLocale = heads.find((head) => head.state === 'draft')?.locale ?? revision.locale;
+    }
+    const previous = heads.find((head) => head.state === 'draft' && head.locale === targetLocale);
     if (!previous || previous.version !== input.expectedVersion) {
       throw contentVersionConflict(input.expectedVersion, previous?.version ?? null);
     }
@@ -404,7 +412,7 @@ export const restoreRevision = async (
     );
     await assertTargets(trx, outcome, context.site.id);
     const changes = draftChanges(model, heads, {
-      locale: revision.locale,
+      locale: targetLocale,
       previous,
       before: previous.data,
       after: outcome.data,
@@ -414,12 +422,12 @@ export const restoreRevision = async (
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
     await writeEntryEvent(trx, context.site.id, model, 'entry.restored', id, {
-      locale: revision.locale,
+      locale: targetLocale,
       fromRevisionId: revisionId,
     });
-    await auditEntry(trx, context, model, 'content.restore', id, { locale: revision.locale, revisionId });
+    await auditEntry(trx, context, model, 'content.restore', id, { locale: targetLocale, revisionId });
   });
-  return viewAfterWrite(context, model, policy, id, revision.locale);
+  return viewAfterWrite(context, model, policy, id, targetLocale);
 };
 
 /** Soft-deletes an entry: heads, edges and registry rows go; revisions stay as history. */

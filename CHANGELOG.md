@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Deleting a locale no longer deletes entries of models that aren't localized.** Such an entry stays in the
+  locale it was created in, so deleting that locale after the default changed used to delete it. It now moves
+  to the default locale, with its history, links, and unique values intact. Entries of localized models that
+  existed only in the deleted locale are deleted like a normal delete: an `entry.deleted` event is sent, and their
+  unique values can be used again. The confirmation now says how many entries will be deleted and how many move.
 
 ## [0.5.6] - 2026-10-11
 

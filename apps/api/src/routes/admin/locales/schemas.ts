@@ -37,5 +37,12 @@ export const deleteLocaleSchema = {
     { acknowledgeDestructive: Type.Optional(Type.Boolean()) },
     { additionalProperties: false },
   ),
-  response: { 200: Type.Object({ code: Type.String(), affectedHeads: Type.Integer() }) },
+  response: {
+    200: Type.Object({
+      code: Type.String(),
+      affectedHeads: Type.Integer(),
+      deletedEntries: Type.Integer(),
+      movedEntries: Type.Integer(),
+    }),
+  },
 };

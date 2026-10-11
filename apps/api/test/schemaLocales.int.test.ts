@@ -17,7 +17,14 @@ describe('locales API', () => {
       schemaListen: false,
       schemaContent: {
         ...NO_CONTENT_PORTS,
-        impact: { ...NO_CONTENT_PORTS.impact, countLocaleHeads: async (code) => headsPerLocale[code] ?? 0 },
+        impact: {
+          ...NO_CONTENT_PORTS.impact,
+          countLocaleRemoval: async (code) => ({
+            affectedHeads: headsPerLocale[code] ?? 0,
+            deletedEntries: 0,
+            movedEntries: 0,
+          }),
+        },
       },
     });
     admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
@@ -80,7 +87,7 @@ describe('locales API', () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({ error: { details: { plan: { impact: { affectedHeads: 3 } } } } });
     const deleted = await admin.delete('/api/admin/locales/en?acknowledgeDestructive=true');
-    expect(deleted.json()).toEqual({ code: 'en', affectedHeads: 3 });
+    expect(deleted.json()).toEqual({ code: 'en', affectedHeads: 3, deletedEntries: 0, movedEntries: 0 });
     expect(await list()).toEqual([{ code: 'fr', label: 'Français', isDefault: true, fallbacks: [] }]);
     const purge = await database.current.db
       .selectFrom('jobs')

@@ -11,7 +11,9 @@ locale an optional **fallback chain** (`fr-CA` → `fr` → `en`). A new instanc
 - Changing the default changes what the API serves when no locale is asked for, so it is a contract change you
   confirm.
 - Deleting a locale removes its content (in a background job), so it is destructive and you confirm it. The
-  default locale cannot be deleted.
+  default locale cannot be deleted. Entries that exist only in that locale are deleted (with the usual
+  `entry.deleted` event), and the confirmation says how many. Entries of a model that is not localized are
+  never deleted with a locale: they move to the default locale.
 
 ## Localized models and fields
 

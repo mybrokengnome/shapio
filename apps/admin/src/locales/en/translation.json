@@ -553,6 +553,8 @@
     "deleteDescription": "It disappears from the API at once, and its content is purged in the background. This can't be undone.",
     "deleteContent_one": "{{count}} entry version has content in {{label}}. Deleting the locale permanently removes it.",
     "deleteContent_other": "{{count}} entry versions have content in {{label}}. Deleting the locale permanently removes them.",
+    "deleteEntries_one": "{{count}} entry exists only in {{label}} and will be deleted.",
+    "deleteEntries_other": "{{count}} entries exist only in {{label}} and will be deleted.",
     "deleteAcknowledge_one": "I understand {{count}} entry version will be permanently deleted.",
     "deleteAcknowledge_other": "I understand {{count}} entry versions will be permanently deleted.",
     "deleting": "Deleting…",
