@@ -72,7 +72,9 @@ Media screen; uploads in the entry form use the same flow.
 - **Private** assets are only reachable through signed URLs that expire after one hour. The APIs return a fresh
   signed URL (`url`, `urlExpiresAt`) to callers allowed to read the entry. Nobody can guess one.
 
-Changing an asset's visibility moves its object between prefixes.
+Changing an asset's visibility moves its object between prefixes in the background. Until the move is done,
+the asset's URLs (on S3 or behind a CDN too) go through Shapio's own file route under the new prefix, so the
+URL the change returns works before and after the move.
 
 ## Image variants
 

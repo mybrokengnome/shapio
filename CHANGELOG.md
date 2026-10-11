@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Changing a file's visibility returns a URL that keeps working.** The URL in the answer used the old prefix
+  and broke once the background move finished. Until the move is done, the file's URLs now go through
+  Shapio's own file route under the new prefix (also on S3 and behind a CDN), and that route serves the file
+  before and after the move.
 
 ## [0.5.6] - 2026-10-11
 
