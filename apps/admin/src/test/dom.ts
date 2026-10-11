@@ -1,4 +1,4 @@
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, beforeAll } from 'vitest';
 import { initI18n } from '@/app/i18n';
 
@@ -12,6 +12,10 @@ class ResizeObserverStub {
   unobserve() {}
   disconnect() {}
 }
+
+// findBy* and waitFor poll until this deadline. The default 1 s is too short on a loaded CI runner for a
+// Radix dialog to mount its content (the command palette flaked there); the checks still poll, never sleep.
+configure({ asyncUtilTimeout: 5_000 });
 
 if (typeof window !== 'undefined') {
   window.ResizeObserver ??= ResizeObserverStub;
