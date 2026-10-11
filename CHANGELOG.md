@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **History compare says the right thing.** Restoring a version that fills an empty field now reads "would be
+  filled in", and one that empties a field reads "would be cleared" (they were swapped). Dates in the compare
+  show in your time, not as raw UTC text.
 
 ## [0.5.6] - 2026-10-11
 

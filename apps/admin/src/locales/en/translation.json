@@ -1809,8 +1809,8 @@
         "localize": "Locale created"
       },
       "changes": {
-        "added": "would be cleared",
-        "removed": "would be filled in",
+        "added": "would be filled in",
+        "removed": "would be cleared",
         "changed": "would change"
       }
     },

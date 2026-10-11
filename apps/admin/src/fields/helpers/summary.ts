@@ -1,6 +1,7 @@
 import { richTextPlainText, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import { valueLabel } from '@/features/Models/helpers/labels';
+import { formatDateTime } from '@/helpers/formatDate';
 import { isEmptyValue, isRecord, toList } from './values';
 
 /**
@@ -24,6 +25,9 @@ export const summarizeValue = (field: FieldDefinition, value: unknown): string =
       return toList<string>(value)
         .map((item) => field.settings.values.find((option) => option.value === item)?.label ?? item)
         .join(', ');
+    case 'datetime':
+      // Canonical UTC text reads badly; show it in the viewer's time, as lists and properties do.
+      return typeof value === 'string' ? formatDateTime(value) || value : String(value);
     case 'json':
       return truncate(JSON.stringify(value));
     case 'code':
