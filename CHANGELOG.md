@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
+  `No such built-in module: node:sqlite` on older Node.
+
 ## [0.5.6] - 2026-10-11
 
 ### Changed
