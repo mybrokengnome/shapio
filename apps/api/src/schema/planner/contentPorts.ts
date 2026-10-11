@@ -72,13 +72,21 @@ export type ContentMigrationPort = {
   runFollowUp: (step: FollowUpStep, log: FastifyBaseLogger) => Promise<void>;
 };
 
-export type StepImpact = { affectedHeads: number; invalidHeads?: number };
+export type StepImpact = {
+  affectedHeads: number;
+  invalidHeads?: number;
+  /** A type change Shapio cannot convert: live entries holding a value it drops (absent inside components). */
+  droppedEntries?: number;
+};
 
 export type ContentImpactSource = {
   /** Heads (every locale and state) of these models. */
   countHeads: (modelIds: readonly string[]) => Promise<number>;
-  /** How many heads a step would touch and, where cheap to know, how many would fail it. */
-  assess: (step: ContentStep) => Promise<StepImpact>;
+  /**
+   * How many heads a step would touch and, where cheap to know, how many would fail it or lose their value.
+   * `steps` are the plan's content steps (a check's outcome can depend on another step, e.g. a dropped value).
+   */
+  assess: (step: ContentStep, steps: readonly ContentStep[]) => Promise<StepImpact>;
   /** Heads stored in one locale (impact of deleting it). */
   countLocaleHeads: (code: string) => Promise<number>;
 };

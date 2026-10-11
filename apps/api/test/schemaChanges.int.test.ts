@@ -174,20 +174,29 @@ describe('planned schema changes (prerequisites)', () => {
     });
   });
 
-  it('rejects conversions Shapio cannot perform', async () => {
+  it('a conversion Shapio cannot perform drops the values, after a destructive acknowledgement', async () => {
     const id = await createModel('gadget', [{ apiKey: 'specs', label: 'Specs', type: 'json' }]);
     const model = await getModel(id);
     const changed = {
       ...model.definition,
       fields: model.definition.fields.map((field) => ({ ...field, type: 'boolean', editor: undefined })),
     };
-    const response = await admin.put(`/api/admin/models/${id}`, {
+    const refused = await admin.put(`/api/admin/models/${id}`, {
       definition: changed,
       expectedVersion: 1,
       acknowledgeBreaking: true,
     });
-    expect(response.statusCode).toBe(422);
-    expect(response.json()).toMatchObject({ error: { code: 'SCHEMA_CHANGE_UNSUPPORTED' } });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      error: { code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED' },
+    });
+    const accepted = await admin.put(`/api/admin/models/${id}`, {
+      definition: changed,
+      expectedVersion: 1,
+      acknowledgeBreaking: true,
+      acknowledgeDestructive: true,
+    });
+    expect([200, 202]).toContain(accepted.statusCode);
   });
 });
 

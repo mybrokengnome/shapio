@@ -9,8 +9,9 @@ import * as uniqueValuesRepository from '../repositories/uniqueValues.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import type { FollowUpStep } from '../schema/planner/steps.js';
 import { applyChange } from './migration/apply.js';
-import { discardStaged, stepModelIds } from './migration/checks.js';
+import { discardStaged } from './migration/checks.js';
 import { dryRun } from './migration/dryRun.js';
+import { assessStep } from './migration/impact.js';
 
 /**
  * Content storage as the schema planner sees it (ADR 0002 "Contracts for later packages"): impact counts,
@@ -54,9 +55,7 @@ export const createContentPorts = (database: Database): SchemaContentPorts => ({
   },
   impact: {
     countHeads: (modelIds) => entryHeadsRepository.countForModels(modelIds, database),
-    assess: async (step) => ({
-      affectedHeads: await entryHeadsRepository.countForModels(stepModelIds(step), database),
-    }),
+    assess: (step, steps) => assessStep(database, step, steps),
     countLocaleHeads: (code) => entryHeadsRepository.countForLocale(code, database),
   },
 });

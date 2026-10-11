@@ -19,6 +19,7 @@ import type { SchemaChange } from './types.js';
  * | (plus) type change of a unique field | as its type change               | + checkUnique                 |
  * | (plus) tightened validation rules    | validation                       | validateValues                |
  * | (plus) localized true→false          | conversion (destructive)         | convert                       |
+ * | (plus) type change Shapio can't convert | conversion (destructive, drops) | convert (+ validate/required) |
  */
 export type ChangeCategory =
   | 'metadata'
@@ -45,8 +46,10 @@ export type ClassifiedChange = SchemaChange & {
   breaking: boolean;
   /** Loses stored information that a schema rollback cannot restore. */
   destructive: boolean;
-  /** False for conversions Shapio cannot perform; the planner refuses them. */
+  /** False for changes Shapio cannot perform; the planner refuses them. None today; kept for future refusals. */
   supported: boolean;
+  /** A type change Shapio cannot convert: every stored value of the field is dropped (destructive). */
+  dropsValues: boolean;
   prerequisites: PrerequisiteKind[];
   cleanup: CleanupKind[];
 };
@@ -60,6 +63,7 @@ const result = (category: ChangeCategory, extra: Partial<Classification> = {}): 
   breaking: false,
   destructive: false,
   supported: true,
+  dropsValues: false,
   prerequisites: [],
   cleanup: [],
   ...extra,
@@ -115,8 +119,40 @@ const hasTextConstraints = (field: FieldDefinition | undefined) => {
 };
 
 /**
+ * Whether Shapio converts a cross-family type change value by value (the pairs it knows); within one storage
+ * family the stored JSON stays as it is.
+ */
+const convertsAcrossFamilies = (from: DataType, to: DataType): boolean => {
+  const fromFamily = STORAGE_FAMILY[from];
+  const toFamily = STORAGE_FAMILY[to];
+  const numericPair =
+    (fromFamily === 'jsonNumber' && toFamily === 'numericString') ||
+    (fromFamily === 'numericString' && toFamily === 'jsonNumber');
+  const toText = SCALAR_FAMILIES.has(fromFamily) && PLAIN_TEXT_TYPES.has(to);
+  const textToRichtext = fromFamily === 'jsonString' && from !== 'code' && to === 'richtext';
+  const richtextToText = from === 'richtext' && PLAIN_TEXT_TYPES.has(to);
+  return numericPair || toText || textToRichtext || richtextToText;
+};
+
+/**
+ * A type change Shapio cannot convert: the field keeps its stable ID and API ID, and every stored value is
+ * dropped. The planner (`classifyChange`) and the content conversion share this one rule.
+ */
+export const typeChangeDropsValues = (from: DataType, to: DataType): boolean =>
+  STORAGE_FAMILY[from] !== STORAGE_FAMILY[to] && !convertsAcrossFamilies(from, to);
+
+/** A required field whose values are dropped is backfilled from its default, else checked (no silent nulls). */
+const requiredStep = (field: FieldDefinition | undefined): PrerequisiteKind[] => {
+  if (!field?.required) {
+    return [];
+  }
+  return [field.defaultValue !== undefined ? 'backfill' : 'validateRequired'];
+};
+
+/**
  * A type change. Within one storage family the stored JSON stays as it is: widening is live, anything else
- * re-validates existing values. Across families Shapio converts values with a job, for the pairs it knows.
+ * re-validates existing values. Across families Shapio converts values with a job, for the pairs it knows;
+ * any other pair drops the values (destructive, acknowledged in the review).
  */
 const classifyTypeChange = (
   from: DataType,
@@ -126,8 +162,7 @@ const classifyTypeChange = (
   // A code field has no filters (REST operators, GraphQL `XFilter` key), so becoming one is breaking.
   const breaking = API_SCALAR[from] !== API_SCALAR[to] || (to === 'code' && from !== 'code');
   const fromFamily = STORAGE_FAMILY[from];
-  const toFamily = STORAGE_FAMILY[to];
-  if (fromFamily === toFamily) {
+  if (fromFamily === STORAGE_FAMILY[to]) {
     const widening =
       (fromFamily === 'jsonString' && TEXT_TARGETS.has(to) && !hasTextConstraints(after)) ||
       (from === 'integer' && to === 'number') ||
@@ -139,18 +174,18 @@ const classifyTypeChange = (
       ? result('additive', { breaking })
       : result('validation', { breaking, prerequisites: ['validateValues'] });
   }
-  const numericPair =
-    (fromFamily === 'jsonNumber' && toFamily === 'numericString') ||
-    (fromFamily === 'numericString' && toFamily === 'jsonNumber');
-  const toText = SCALAR_FAMILIES.has(fromFamily) && PLAIN_TEXT_TYPES.has(to);
-  const textToRichtext = fromFamily === 'jsonString' && from !== 'code' && to === 'richtext';
-  const richtextToText = from === 'richtext' && PLAIN_TEXT_TYPES.has(to);
-  const supported = numericPair || toText || textToRichtext || richtextToText;
+  if (typeChangeDropsValues(from, to)) {
+    return result('conversion', {
+      breaking,
+      destructive: true,
+      dropsValues: true,
+      prerequisites: ['convert', 'validateValues', ...requiredStep(after)],
+    });
+  }
   return result('conversion', {
     breaking,
-    supported,
-    destructive: richtextToText,
-    prerequisites: supported ? ['convert', 'validateValues'] : [],
+    destructive: from === 'richtext' && PLAIN_TEXT_TYPES.has(to),
+    prerequisites: ['convert', 'validateValues'],
   });
 };
 

@@ -77,7 +77,14 @@ export type ChangePlan = {
   issues: ValidationIssue[];
 };
 
-export type PlanStepImpact = { key: string; kind: string; affectedHeads: number; invalidHeads?: number };
+export type PlanStepImpact = {
+  key: string;
+  kind: string;
+  affectedHeads: number;
+  invalidHeads?: number;
+  /** On a `convert` step of a type change Shapio cannot convert: live entries that lose their value. */
+  droppedEntries?: number;
+};
 
 export type PlanImpact = {
   /** Entry heads (every locale and state) of the affected models. */

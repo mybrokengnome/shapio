@@ -5,11 +5,22 @@ import {
   classifyChanges,
   classifyLocaleChange,
   summarizeChanges,
+  typeChangeDropsValues,
   type ClassifiedChange,
 } from './classify.js';
 import { diffDefinitions } from './diffDefinitions.js';
 
 const settings = (value: Record<string, unknown>) => value as FieldInput['settings'];
+/** A type change Shapio cannot convert: values are dropped. */
+const DROPS: Partial<
+  Pick<ClassifiedChange, 'category' | 'breaking' | 'destructive' | 'dropsValues' | 'prerequisites'>
+> = {
+  category: 'conversion',
+  breaking: true,
+  destructive: true,
+  dropsValues: true,
+  prerequisites: ['convert', 'validateValues'],
+};
 const FIELD = id(2);
 
 const base = (overrides: Partial<FieldInput> = {}, modelOverrides: Partial<ModelDefinition> = {}) =>
@@ -37,7 +48,7 @@ const expectClass = (
   expected: Partial<
     Pick<
       ClassifiedChange,
-      'category' | 'breaking' | 'destructive' | 'supported' | 'prerequisites' | 'cleanup'
+      'category' | 'breaking' | 'destructive' | 'supported' | 'dropsValues' | 'prerequisites' | 'cleanup'
     >
   >,
 ) =>
@@ -45,6 +56,7 @@ const expectClass = (
     breaking: false,
     destructive: false,
     supported: true,
+    dropsValues: false,
     prerequisites: [],
     cleanup: [],
     ...expected,
@@ -151,7 +163,7 @@ describe('classifyChange: brief §5 rows', () => {
     );
   });
 
-  it('a cross-family type change is a conversion; unsupported pairs are flagged', () => {
+  it('a cross-family type change is a conversion; pairs Shapio cannot convert drop their values', () => {
     const number = base({ type: 'number' });
     expectClass(
       only(
@@ -195,11 +207,38 @@ describe('classifyChange: brief §5 rows', () => {
         json,
         editField(json, (f) => ({ ...f, type: 'boolean', settings: {} })),
       ),
-      {
-        category: 'conversion',
-        breaking: true,
-        supported: false,
-      },
+      DROPS,
+    );
+  });
+
+  it('a dropping type change of a required field checks or backfills it (no silent nulls)', () => {
+    const required = base({ type: 'media', required: true, settings: settings({ multiple: true }) });
+    expectClass(
+      only(
+        required,
+        editField(required, (f) => ({ ...f, type: 'number', settings: {} })),
+      ),
+      { ...DROPS, prerequisites: ['convert', 'validateValues', 'validateRequired'] },
+    );
+    const withDefault = base({ type: 'media', required: true, settings: settings({ multiple: true }) });
+    const retyped = classify(
+      withDefault,
+      editField(withDefault, (f) => ({ ...f, type: 'number', settings: {}, defaultValue: 0 })),
+    ).find((change) => change.kind === 'field.type');
+    expectClass(retyped as ClassifiedChange, {
+      ...DROPS,
+      prerequisites: ['convert', 'validateValues', 'backfill'],
+    });
+  });
+
+  it('a dropping type change of a unique field still re-checks uniqueness (nothing to claim)', () => {
+    const uniqueString = base({ type: 'string', unique: true });
+    expectClass(
+      only(
+        uniqueString,
+        editField(uniqueString, (f) => ({ ...f, type: 'number', settings: {} })),
+      ),
+      { ...DROPS, prerequisites: ['convert', 'validateValues', 'checkUnique'] },
     );
   });
 
@@ -635,22 +674,10 @@ describe('classifyChange: code fields', () => {
     expectClass(retype('code', 'text', { language: 'html' }, { minLength: 3 }), validates);
   });
 
-  it('rich text and code do not convert into each other; neither does a number into code', () => {
-    expectClass(retype('code', 'richtext', { language: 'html' }, { formatVersion: 1 }), {
-      category: 'conversion',
-      breaking: true,
-      supported: false,
-    });
-    expectClass(retype('richtext', 'code', { formatVersion: 1 }, { language: 'html' }), {
-      category: 'conversion',
-      breaking: true,
-      supported: false,
-    });
-    expectClass(retype('number', 'code', {}, { language: 'plain' }), {
-      category: 'conversion',
-      breaking: true,
-      supported: false,
-    });
+  it('rich text and code do not convert into each other; neither does a number into code (values dropped)', () => {
+    expectClass(retype('code', 'richtext', { language: 'html' }, { formatVersion: 1 }), DROPS);
+    expectClass(retype('richtext', 'code', { formatVersion: 1 }, { language: 'html' }), DROPS);
+    expectClass(retype('number', 'code', {}, { language: 'plain' }), DROPS);
   });
 
   const setting = (from: Record<string, unknown>, to: Record<string, unknown>) => {
@@ -671,6 +698,21 @@ describe('classifyChange: code fields', () => {
       prerequisites: ['validateValues'],
     });
     expectClass(setting({ language: 'json', validate: true }, { validate: false }), { category: 'additive' });
+  });
+});
+
+describe('typeChangeDropsValues', () => {
+  it('drops only across storage families, for pairs Shapio has no converter for', () => {
+    expect(typeChangeDropsValues('media', 'number')).toBe(true);
+    expect(typeChangeDropsValues('date', 'media')).toBe(true);
+    expect(typeChangeDropsValues('relation', 'boolean')).toBe(true);
+    expect(typeChangeDropsValues('string', 'json')).toBe(true);
+    expect(typeChangeDropsValues('string', 'email')).toBe(false);
+    expect(typeChangeDropsValues('number', 'decimal')).toBe(false);
+    expect(typeChangeDropsValues('boolean', 'text')).toBe(false);
+    expect(typeChangeDropsValues('text', 'richtext')).toBe(false);
+    expect(typeChangeDropsValues('richtext', 'string')).toBe(false);
+    expect(typeChangeDropsValues('media', 'media')).toBe(false);
   });
 });
 

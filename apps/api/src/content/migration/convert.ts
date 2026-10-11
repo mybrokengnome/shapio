@@ -2,6 +2,7 @@ import {
   plainTextToRichText,
   RICHTEXT_FORMAT,
   richTextToPlainText,
+  typeChangeDropsValues,
   type DataType,
   type RichTextDocument,
   type SchemaChange,
@@ -15,7 +16,11 @@ import {
 export type Conversion =
   { kind: 'keep' } | { kind: 'set'; value: unknown } | { kind: 'clear' } | { kind: 'fail'; reason: string };
 
+/** Who writes converted heads and revisions (audit, history). */
+export const CONVERSION_ACTOR = { kind: 'system', component: 'schema-convert' } as const;
+
 const KEEP: Conversion = { kind: 'keep' };
+const CLEAR: Conversion = { kind: 'clear' };
 const set = (value: unknown): Conversion => ({ kind: 'set', value });
 
 const isRichText = (value: unknown): value is RichTextDocument =>
@@ -25,7 +30,11 @@ const NUMBER_TYPES: ReadonlySet<DataType> = new Set(['number', 'integer']);
 const NUMERIC_STRING_TYPES: ReadonlySet<DataType> = new Set(['decimal', 'biginteger']);
 const TEXT_TYPES: ReadonlySet<DataType> = new Set(['string', 'text']);
 
-const convertType = (to: DataType, value: unknown): Conversion => {
+const convertType = (from: DataType, to: DataType, value: unknown): Conversion => {
+  // A pair Shapio has no converter for: the value is dropped (a destructive change the person acknowledged).
+  if (typeChangeDropsValues(from, to)) {
+    return CLEAR;
+  }
   if (NUMERIC_STRING_TYPES.has(to)) {
     return typeof value === 'number' ? set(String(value)) : KEEP;
   }
@@ -51,7 +60,7 @@ const convertCardinality = (toSingle: boolean, value: unknown): Conversion => {
     if (!Array.isArray(value)) {
       return KEEP;
     }
-    return value.length > 0 ? set(value[0]) : { kind: 'clear' };
+    return value.length > 0 ? set(value[0]) : CLEAR;
   }
   return Array.isArray(value) ? KEEP : set([value]);
 };
@@ -59,7 +68,7 @@ const convertCardinality = (toSingle: boolean, value: unknown): Conversion => {
 /** The conversion a field change needs for one stored value (present, non-null). */
 export const convertValue = (change: SchemaChange, value: unknown): Conversion => {
   if (change.kind === 'field.type') {
-    return convertType(change.to as DataType, value);
+    return convertType(change.from as DataType, change.to as DataType, value);
   }
   if (change.kind !== 'field.settings') {
     return KEEP;
@@ -72,7 +81,7 @@ export const convertValue = (change: SchemaChange, value: unknown): Conversion =
     case 'target':
     case 'component':
       // Values point at entries (or hold instances) of the old target: they cannot carry over.
-      return { kind: 'clear' };
+      return CLEAR;
     case 'formatVersion':
       return isRichText(value) && value.version !== change.to
         ? {

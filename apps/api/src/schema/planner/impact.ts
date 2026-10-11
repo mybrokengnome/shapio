@@ -1,6 +1,6 @@
 import type { SchemaContentPorts, StepImpact } from './contentPorts.js';
 import type { ChangePlan } from './plan.js';
-import { isIndexStep, stepKey } from './steps.js';
+import { isIndexStep, stepKey, type ContentStep } from './steps.js';
 
 /** What a plan would touch (brief §5 step 5: "show impact"). */
 export type PlanImpact = {
@@ -12,11 +12,12 @@ export type PlanImpact = {
 /** Counts affected heads through the content port (package E; zero until content storage exists). */
 export const computeImpact = async (plan: ChangePlan, ports: SchemaContentPorts): Promise<PlanImpact> => {
   const affectedHeads = await ports.impact.countHeads(plan.affectedModelIds);
+  const contentSteps = plan.prerequisites.filter((step): step is ContentStep => !isIndexStep(step));
   const steps = await Promise.all(
     plan.prerequisites.map(async (step) => ({
       key: stepKey(step),
       kind: step.kind,
-      ...(isIndexStep(step) ? { affectedHeads } : await ports.impact.assess(step)),
+      ...(isIndexStep(step) ? { affectedHeads } : await ports.impact.assess(step, contentSteps)),
     })),
   );
   return { affectedHeads, steps };

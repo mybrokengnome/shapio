@@ -1,4 +1,4 @@
-import type { Kysely, Transaction } from 'kysely';
+import type { Expression, Kysely, SqlBool, Transaction } from 'kysely';
 import type { HeadState } from '../content/model.js';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
@@ -154,6 +154,41 @@ export const countForModels = async (
     .selectFrom('entry_heads')
     .select(({ fn }) => fn.countAll<string>().as('count'))
     .where('model_id', 'in', modelIds)
+    .executeTakeFirstOrThrow();
+  return Number(row.count);
+};
+
+/** Distinct entries of these models with at least one head matching `condition` (a compiled content filter). */
+export const countEntriesMatching = async (
+  modelIds: readonly string[],
+  condition: Expression<SqlBool>,
+  executor: Executor = db,
+): Promise<number> => {
+  if (modelIds.length === 0) {
+    return 0;
+  }
+  const row = await executor
+    .selectFrom('entry_heads')
+    .select(({ fn }) => fn.count<string>('entry_id').distinct().as('count'))
+    .where('model_id', 'in', modelIds)
+    .where(condition)
+    .executeTakeFirstOrThrow();
+  return Number(row.count);
+};
+
+/** Heads of these models that must be complete: published heads, and drafts not saved leniently (autosave). */
+export const countStrictHeads = async (
+  modelIds: readonly string[],
+  executor: Executor = db,
+): Promise<number> => {
+  if (modelIds.length === 0) {
+    return 0;
+  }
+  const row = await executor
+    .selectFrom('entry_heads')
+    .select(({ fn }) => fn.countAll<string>().as('count'))
+    .where('model_id', 'in', modelIds)
+    .where((eb) => eb.or([eb('state', '<>', 'draft'), eb('autosaved_at', 'is', null)]))
     .executeTakeFirstOrThrow();
   return Number(row.count);
 };

@@ -4,14 +4,13 @@ import * as contentRevisionsRepository from '../../repositories/contentRevisions
 import * as entryHeadsRepository from '../../repositories/entryHeads.js';
 import type { ScannedHead } from '../../repositories/entryHeads.js';
 import * as publicationsRepository from '../../repositories/publications.js';
-import * as relationEdgesRepository from '../../repositories/relationEdges.js';
 import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { ActivationContext, StepOutcome } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
 import type { SchemaById } from '../../schema/snapshot.js';
 import { resolveModelById, type HeadState } from '../model.js';
-import { edgesOf } from '../relations.js';
 import { syncUniqueValues, uniqueFields } from '../unique.js';
+import { syncHeadDerivations } from '../write/heads.js';
 import {
   checkEntry,
   outcomeOf,
@@ -22,7 +21,7 @@ import {
   tallyFailures,
   type Tallies,
 } from './checks.js';
-import { isEntryLevelConversion } from './convert.js';
+import { CONVERSION_ACTOR, isEntryLevelConversion } from './convert.js';
 import { contentModelIds } from './dryRun.js';
 import { convertEntry } from './entryConversions.js';
 import { isTransformStep, proposalChangesStorage, proposeEntry, type TransformStep } from './propose.js';
@@ -136,10 +135,11 @@ const rewriteHead = async (
   );
   const model = resolveModelById(context.proposed, head.model_id);
   if (written && model) {
-    await relationEdgesRepository.replaceForHead(
+    // Relation edges and media references follow the converted data (a dropped value releases both).
+    await syncHeadDerivations(
+      { trx: context.trx, siteId: head.site_id, model, actor: CONVERSION_ACTOR, now: new Date() },
       { entryId: head.entry_id, locale: head.locale, state: head.state as HeadState },
-      edgesOf(model, data),
-      context.trx,
+      data,
     );
   }
   if (written && head.state === 'published') {
