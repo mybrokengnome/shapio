@@ -111,9 +111,9 @@ export const findTitles = (ids: readonly string[], executor: Executor = db) =>
         .where('change_sets.id', 'in', ids)
         .execute();
 
-/** Display names of the admins and tokens that created sets (one query each kind). */
+/** Display names of admins, tokens and app users (who created a set, made a revision; one query each kind). */
 export const findActorNames = async (
-  ids: { adminIds: readonly string[]; tokenIds: readonly string[] },
+  ids: { adminIds: readonly string[]; tokenIds: readonly string[]; appUserIds?: readonly string[] },
   executor: Executor = db,
 ): Promise<Map<string, string>> => {
   const names = new Map<string, string>();
@@ -132,6 +132,14 @@ export const findActorNames = async (
       .where('id', 'in', ids.tokenIds)
       .execute();
     rows.forEach((row) => names.set(row.id, row.name));
+  }
+  if (ids.appUserIds && ids.appUserIds.length > 0) {
+    const rows = await executor
+      .selectFrom('app_users')
+      .select(['id', 'name', 'email'])
+      .where('id', 'in', ids.appUserIds)
+      .execute();
+    rows.forEach((row) => names.set(row.id, row.name || row.email));
   }
   return names;
 };

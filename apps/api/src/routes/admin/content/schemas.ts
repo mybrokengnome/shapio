@@ -5,6 +5,7 @@ import {
   ContentDataSchema,
   ContentQuerySchema,
   EntryParamsSchema,
+  EntryPublicationSchema,
   LocaleCodeSchema,
   ModelParamsSchema,
   RevisionParamsSchema,
@@ -64,7 +65,17 @@ export const publishEntrySchema = { params: EntryParamsSchema, body: LocalesBody
 export const listRevisionsSchema = {
   params: EntryParamsSchema,
   querystring: LocaleQuery,
-  response: { 200: Type.Object({ items: Type.Array(RevisionSummarySchema) }) },
+  response: {
+    200: Type.Object({
+      items: Type.Array(
+        Type.Intersect([
+          RevisionSummarySchema,
+          Type.Object({ authorName: Type.Union([Type.String(), Type.Null()]) }),
+        ]),
+      ),
+      publications: Type.Array(EntryPublicationSchema),
+    }),
+  },
 };
 
 export const getRevisionSchema = {

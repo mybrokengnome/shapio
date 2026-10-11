@@ -1,17 +1,17 @@
 import type { ComponentDefinition, ModelDefinition } from '@shapio/schema';
-import { History, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import { RotateCcw } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useRevision, useRevisions } from '@/api/content';
+import { useEntryHistory, useRevision } from '@/api/content';
 import { ErrorState } from '@/components/ErrorState';
 import { InlineConfirm } from '@/components/InlineConfirm';
 import { LoadingState } from '@/components/LoadingState';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useEntryForm } from '@/fields/form/context';
-import { cn } from '@/helpers/cn';
-import { formatDateTime } from '@/helpers/formatDate';
+import { historyTimeline, revisionRowKey, type HistoryRow } from '../helpers/historyTimeline';
 import { diffRevision } from '../helpers/revisionDiff';
+import { Row } from './Row';
 
 type HistorySheetProps = {
   open: boolean;
@@ -29,17 +29,8 @@ type HistorySheetProps = {
   initialRevisionId?: string;
 };
 
-const REASON_KEYS = {
-  create: 'content.history.reasons.create',
-  save: 'content.history.reasons.save',
-  publish: 'content.history.reasons.publish',
-  restore: 'content.history.reasons.restore',
-  duplicate: 'content.history.reasons.duplicate',
-  localize: 'content.history.reasons.localize',
-} as const;
-
-const reasonKey = (reason: string) =>
-  Object.hasOwn(REASON_KEYS, reason) ? REASON_KEYS[reason as keyof typeof REASON_KEYS] : undefined;
+const revisionIdOf = (row: HistoryRow) =>
+  row.kind === 'revision' ? row.revision.id : row.publication.revisionId;
 
 const CHANGE_KEYS = {
   added: 'content.history.changes.added',
@@ -48,8 +39,10 @@ const CHANGE_KEYS = {
 } as const;
 
 /**
- * The entry's revisions in this locale (explicit saves, publishes, restores; autosaves are not history).
- * Choosing one shows which fields differ from the form now; restoring brings it back as a new revision.
+ * The entry's history in this locale: revisions (explicit saves, restores; autosaves are not history) with
+ * who made them, and when it was published or unpublished, by whom. Choosing a revision (or a publication,
+ * which picks the revision it put live) shows which fields differ from the form now; restoring brings it back
+ * as a new revision.
  */
 export const HistorySheet = ({
   open,
@@ -65,8 +58,18 @@ export const HistorySheet = ({
 }: HistorySheetProps) => {
   const { t } = useTranslation();
   const current = useEntryForm((state) => state.values);
-  const revisions = useRevisions(model.apiKey, entryId, locale ?? undefined, open);
-  const [selectedId, setSelectedId] = useState<string | undefined>(initialRevisionId);
+  const history = useEntryHistory(model.apiKey, entryId, locale ?? undefined, open);
+  const rows = useMemo(() => (history.data ? historyTimeline(history.data) : []), [history.data]);
+  const [selectedKey, setSelectedKey] = useState<string | undefined>(
+    initialRevisionId === undefined ? undefined : revisionRowKey(initialRevisionId),
+  );
+  const selectedRow = rows.find((row) => row.key === selectedKey);
+  const selectedId = selectedRow
+    ? revisionIdOf(selectedRow)
+    : selectedKey === undefined
+      ? undefined
+      : initialRevisionId;
+  const newestRevision = rows.find((row) => row.kind === 'revision')?.key;
   const revision = useRevision(model.apiKey, entryId, selectedId);
   const changes = revision.data ? diffRevision(model, components, revision.data.data, current) : [];
   const restoreButton = (
@@ -87,39 +90,24 @@ export const HistorySheet = ({
           <SheetTitle>{t('content.history.title')}</SheetTitle>
         </SheetHeader>
         <SheetBody className="space-y-4">
-          {revisions.isPending ? (
+          {history.isPending ? (
             <LoadingState rows={4} />
-          ) : revisions.isError ? (
-            <ErrorState error={revisions.error} onRetry={() => void revisions.refetch()} />
-          ) : revisions.data.length === 0 ? (
+          ) : history.isError ? (
+            <ErrorState error={history.error} onRetry={() => void history.refetch()} />
+          ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t('content.history.empty')}</p>
           ) : (
             <ol aria-label={t('content.history.list')} className="space-y-1">
-              {revisions.data.map((item, index) => {
-                const key = reasonKey(item.reason);
-                return (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      aria-pressed={item.id === selectedId}
-                      onClick={() => setSelectedId(item.id)}
-                      className={cn(
-                        'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        item.id === selectedId && 'bg-accent text-accent-foreground',
-                      )}
-                    >
-                      <History aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-semibold">{key ? t(key) : item.reason}</span>
-                        <span className="block text-meta text-muted-foreground">
-                          {formatDateTime(item.createdAt)}
-                          {index === 0 ? ` · ${t('content.history.latest')}` : ''}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {rows.map((row) => (
+                <li key={row.key}>
+                  <Row
+                    row={row}
+                    selected={row.key === selectedKey}
+                    current={row.key === newestRevision}
+                    onSelect={() => setSelectedKey(row.key)}
+                  />
+                </li>
+              ))}
             </ol>
           )}
           {selectedId ? (

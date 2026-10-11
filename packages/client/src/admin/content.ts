@@ -6,6 +6,7 @@ import type {
   ContentListQuery,
   CreateEntryInput,
   EditorManifest,
+  EntryHistory,
   EntryLocalesInput,
   ExtensionThemeList,
   RevisionDetail,
@@ -51,6 +52,9 @@ export const createContentApi = (request: RequestFn) => ({
           `${revisionsPath(modelKey, id)}${toQueryString({ locale })}`,
         )
       ).items,
+    /** Revisions with their authors' names, and the entry's publications (who published, when, how). */
+    history: (modelKey: string, id: string, { locale }: { locale?: string } = {}) =>
+      request<EntryHistory>(`${revisionsPath(modelKey, id)}${toQueryString({ locale })}`),
     revision: (modelKey: string, id: string, revisionId: string) =>
       request<RevisionDetail>(withId(revisionsPath(modelKey, id), revisionId)),
     /** Brings an older revision back as the new draft of its locale (a new revision). */

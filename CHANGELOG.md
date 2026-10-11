@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Entry history shows publishes and who did what.** History now names who made each revision, lists every
+  publish and unpublish with who did it ("Published on schedule", "Published with change set Launch"), and marks
+  the version that is live. A save that changes nothing no longer adds an empty "Saved" row: the admin and
+  delivery write APIs answer with the same version, record no revision, and send no `entry.updated` event (a
+  save over autosaved work still records one).
 
 ## [0.5.6] - 2026-10-11
 

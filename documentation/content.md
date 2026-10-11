@@ -44,9 +44,11 @@ List views publish, unpublish and delete several entries at once.
 
 ## History and restore
 
-Each entry's **History** lists its revisions per locale: when, why (save, publish, restore), by whom. Open one
-to see it; **Restore this version** brings it back as the new draft (a new revision; nothing is rewritten). Publish it to
-make it live.
+Each entry's **History** lists its revisions per locale: when, why (save, restore), by whom, with each publish and
+unpublish (by whom, and whether it went live on schedule or with a change set) and a **Live** mark on the version
+the site serves. Open one to see it; **Restore this version** brings it back as the new draft (a new revision;
+nothing is rewritten). Publish it to make it live. A save that changes nothing records no revision: the API answers
+with the same version and sends no `entry.updated` event.
 
 ## Deleting
 

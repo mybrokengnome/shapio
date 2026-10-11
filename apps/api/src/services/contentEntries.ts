@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import { assertWritable } from '../content/compiler/policy.js';
@@ -282,6 +283,13 @@ const saveDraftChanges = async (
   return written;
 };
 
+/**
+ * A save that changes nothing: the draft exists, holds no autosaved work (saving that must still make it a
+ * revision), and the validated data is what it already has.
+ */
+const isUnchangedSave = (previous: HeadRecord | undefined, after: ContentData): previous is HeadRecord =>
+  previous !== undefined && previous.autosaved_at === null && isDeepStrictEqual(previous.data, after);
+
 export const updateEntry = async (
   context: ContentServiceContext,
   modelKey: string,
@@ -327,6 +335,10 @@ export const updateEntry = async (
     }
     const before = previous?.data ?? newLocaleBase(model, heads);
     const outcome = validated(validator, applyPatch(before, patch), autosave);
+    if (isUnchangedSave(previous, outcome.data)) {
+      // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
+      return;
+    }
     await assertTargets(trx, outcome, context.site.id);
     const hook = {
       trx,
