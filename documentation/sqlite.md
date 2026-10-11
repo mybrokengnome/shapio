@@ -49,8 +49,6 @@ Shapio can write the database there, and media go to `/data/media` in the same v
 directory instead, make it writable by uid 1000. Drop the `postgres` service from `docker-compose.yml` when
 you use SQLite.
 
-This Docker setup has not been tested yet: CI builds the image, but no run starts it on SQLite.
-
 ## Limits
 
 - **One process.** Run one Shapio process per database file. `WORKER_MODE=dedicated` is refused: the job
