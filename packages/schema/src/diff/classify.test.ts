@@ -76,6 +76,18 @@ describe('classifyChange: brief §5 rows', () => {
     expectClass(only(before, { ...before, label: 'Pages' }), { category: 'metadata' });
   });
 
+  it('the form layout and a field width are metadata', () => {
+    const before = base();
+    expectClass(
+      only(
+        before,
+        editField(before, (f) => ({ ...f, width: 'half' })),
+      ),
+      { category: 'metadata' },
+    );
+    expectClass(only(before, { ...before, display: { layout: 'form' } }), { category: 'metadata' });
+  });
+
   it('a compatible editor swap is immediate', () => {
     const before = base();
     expectClass(

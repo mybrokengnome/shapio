@@ -1,5 +1,6 @@
 import {
-  effectiveLayout,
+  effectiveTitleField,
+  richTextBodyOf,
   richTextToPlainText,
   type FieldDefinition,
   type ModelDefinition,
@@ -36,13 +37,13 @@ const notSummarizable = (fieldApiKey: string, reason: string) =>
   );
 
 /**
- * The target must be a live string or text field (not the title) of a model whose document has a rich-text
- * canvas field, wherever the field is placed (a property or in the document): the summary is made from
- * that canvas (plan §I).
+ * The target must be a live string or text field (not the title) of a model with a rich-text body
+ * (`richTextBodyOf`: the document's rich-text canvas fields, or every rich-text field of a form), wherever
+ * the field is placed: the summary is made from that body (plan §I).
  */
 const summaryTarget = (definition: ModelDefinition, fieldApiKey: string) => {
-  const layout = effectiveLayout(definition);
-  if (layout.title?.apiKey === fieldApiKey) {
+  const title = effectiveTitleField(definition);
+  if (title?.apiKey === fieldApiKey) {
     throw notSummarizable(fieldApiKey, 'it is the title');
   }
   const field = definition.fields.find(
@@ -54,11 +55,11 @@ const summaryTarget = (definition: ModelDefinition, fieldApiKey: string) => {
   if (field.type !== 'string' && field.type !== 'text') {
     throw notSummarizable(fieldApiKey, 'only string and text fields hold summaries');
   }
-  const canvas = layout.canvas.filter((candidate) => candidate.type === 'richtext');
-  if (canvas.length === 0) {
+  const body = richTextBodyOf(definition);
+  if (body.length === 0) {
     throw notSummarizable(fieldApiKey, 'the model has no rich-text body to summarize');
   }
-  return { field: field as FieldDefinition<'string' | 'text'>, canvas, title: layout.title };
+  return { field: field as FieldDefinition<'string' | 'text'>, body, title };
 };
 
 const plainTextOf = (value: unknown): string =>
@@ -79,7 +80,7 @@ export const summarizeEntry = async (
   }
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const { draft } = await loadEntryDraft(context, model, readPolicy, input.entryId, locale);
-  const body = target.canvas
+  const body = target.body
     .filter((field) => maskAllows(readPolicy.readMask, field))
     .map((field) => plainTextOf(draft.data[field.id]))
     .filter((text) => text.trim() !== '')

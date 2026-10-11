@@ -182,6 +182,10 @@ const checkFlags = (field: FieldDefinition, path: string, isComponent: boolean):
         reject(flag, `fields of a component cannot be ${flag}`);
       }
     }
+    // Widths lay out a form-layout entry; component editors don't use them (yet), so none are stored.
+    if (field.width !== undefined) {
+      reject('width', 'fields of a component have no width');
+    }
   }
   if (field.deprecated && field.required) {
     reject('required', 'a deprecated field cannot be required');

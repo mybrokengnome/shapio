@@ -21,6 +21,21 @@ export type DefinitionKind = (typeof DEFINITION_KINDS)[number];
 export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
 export type SortDirection = (typeof SORT_DIRECTIONS)[number];
 
+/**
+ * How an entry of a model opens: `document` (title typed into the page, blocks in a canvas, properties in
+ * the strip and the settings drawer) or `form` (every field inline at its `width`, sections from
+ * `display.groups`). Unset means `document`; normalizing drops an explicit `document`.
+ */
+export const ENTRY_LAYOUTS = ['document', 'form'] as const;
+export type EntryLayout = (typeof ENTRY_LAYOUTS)[number];
+
+/**
+ * A field's width in a form-layout entry, as a share of the row: rows fill in field order and wrap. Unset
+ * means `full`; normalizing drops an explicit `full`.
+ */
+export const FIELD_WIDTHS = ['full', 'two-thirds', 'half', 'third'] as const;
+export type FieldWidth = (typeof FIELD_WIDTHS)[number];
+
 export const MAX_FIELDS_PER_DEFINITION = 500;
 export const MAX_LABEL_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 2000;
@@ -59,6 +74,11 @@ export const FieldInputSchema = Type.Object(
     /** Type-specific settings, validated against SETTINGS_SCHEMAS[type]. */
     settings: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     editor: Type.Optional(EditorChoiceInputSchema),
+    /**
+     * Width in a form-layout entry (`display.layout: 'form'`). Default `full`. Model fields only: the
+     * validator refuses it on a component's field.
+     */
+    width: Type.Optional(Type.Enum(FIELD_WIDTHS)),
   },
   closed,
 );
@@ -70,6 +90,8 @@ const FieldGroupSchema = Type.Object(
 
 export const ModelDisplayInputSchema = Type.Object(
   {
+    /** How entries open: `document` (default) or `form`. See `ENTRY_LAYOUTS`. */
+    layout: Type.Optional(Type.Enum(ENTRY_LAYOUTS)),
     /** Field whose value labels an entry in lists, pickers and relation summaries. */
     titleFieldId: Type.Optional(Type.String()),
     /** Columns of the content list, in order. */
@@ -156,6 +178,8 @@ type FieldBase = {
   deprecated: boolean;
   defaultValue?: JsonValue;
   editor: EditorChoice;
+  /** Width in a form-layout entry; absent means `full`. */
+  width?: FieldWidth;
 };
 
 /** A normalized field. Narrow on `type` to get typed `settings`. */
@@ -166,6 +190,8 @@ export type FieldDefinition<T extends DataType = DataType> = {
 export type FieldGroup = { id: string; label: string; fieldIds: string[] };
 
 export type ModelDisplay = {
+  /** Absent means `document`. */
+  layout?: EntryLayout;
   titleFieldId?: string;
   listFieldIds?: string[];
   defaultSort?: { fieldId: string; direction: SortDirection };

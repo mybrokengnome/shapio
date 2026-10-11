@@ -79,12 +79,15 @@ const normalizeField = (field: FieldInputWithId): FieldDefinition => {
       id: field.editor?.id ?? DEFAULT_EDITORS[field.type],
       options: (field.editor?.options ?? {}) as Record<string, JsonValue>,
     },
+    // The default width has one spelling: absent (so hashes of existing definitions don't change).
+    width: field.width === 'full' ? undefined : field.width,
   };
   return withoutEmpty(normalized) as FieldDefinition;
 };
 
+// The default layout has one spelling: absent.
 const normalizeModelDisplay = (display: ModelDefinitionInput['display']): ModelDisplay =>
-  withoutEmpty({ ...display });
+  withoutEmpty({ ...display, layout: display?.layout === 'document' ? undefined : display?.layout });
 
 const normalizeComponentDisplay = (display: ComponentDefinitionInput['display']): ComponentDisplay =>
   withoutEmpty({ ...display });
@@ -92,8 +95,9 @@ const normalizeComponentDisplay = (display: ComponentDefinitionInput['display'])
 /**
  * Applies defaults so that two definitions meaning the same thing are byte-identical once serialized
  * canonically: a hand-written file that omits `public` hashes the same as one that says `public: true`.
- * Empty optional strings and arrays are dropped. A collection without a plural API ID gets the suggested
- * one (`suggestPlural`), so files and definitions from before plural API IDs keep working.
+ * Empty optional strings and arrays are dropped, and so are the defaults of keys added after definitions
+ * were first hashed (`width: 'full'`, `display.layout: 'document'`). A collection without a plural API ID
+ * gets the suggested one (`suggestPlural`), so files and definitions from before plural API IDs keep working.
  */
 export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefinition => {
   const fields = input.fields.map(normalizeField);
