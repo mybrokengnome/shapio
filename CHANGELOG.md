@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **`shapio status` no longer reports success for a server that is not Shapio.** A URL that answers 200 with
+  something else (the admin page, a proxy's default page) now exits 1 with "not a Shapio instance", and a ready
+  check that does not say ready exits 1 too.
 
 ## [0.5.6] - 2026-10-11
 
