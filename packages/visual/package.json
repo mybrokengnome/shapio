@@ -1,6 +1,6 @@
 {
   "name": "@shapio/visual",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Visual editing for sites built on Shapio: field attributes and the preview-frame script.",
   "license": "Apache-2.0",
   "homepage": "https://shapio.dev",

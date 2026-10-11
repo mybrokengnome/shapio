@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-10
+
 ### Added
 
 - **Document or form.** Each content type now chooses how its entries open, under **Display → Layout** in the
@@ -21,6 +23,36 @@ All notable changes to Shapio are listed here. The format follows
   change sets. Switching back to Document restores the document's own settings.
 - The **Entries · Structure · API** tabs now sit above each entry of a collection too, as they already did
   above a single type's document, for admins who see the type's structure. Entries goes back to the list.
+- **Team and Network in the sidebar.** The Workspace group now links straight to the admins and editors
+  (**Team**) and to the network view (**Network**) for anyone who can open it, so the site switcher is no longer
+  the only way there. The App users page says where editors and admins live.
+- **Importers check names against the target.** `shapio import strapi --plan` and `wordpress --plan` with
+  `--url` and `--token` compare the planned API IDs with the instance and rename clashes (`seo` becomes
+  `seoItem`), so the apply does not fail on a name the target already uses.
+
+### Changed
+
+- **Sidebar active item** is one quiet pill with the icon in the accent colour; the bar and shadow are gone.
+- **Entry top bar** never overlaps at laptop width with the settings drawer open: the breadcrumb stays readable,
+  the save state drops its date while the drawer or preview is open, and the actions wrap when they must.
+- **Changing a field's type** now reads as an answer: "You can change this.", then what happens to stored
+  values (converted, checked, or kept as they are), then what API clients see.
+- **Change set review** shows readable values: rich text as plain text, media by file name, relations by the
+  entry's title, with the raw value one click away.
+
+### Fixed
+
+- **Deployments survive an unreadable secret.** When `SESSION_SECRET` changes, a deployment connection's stored
+  secrets can no longer be decrypted. The list and the page now load with a warning on the connection, Deploy
+  is disabled until it is repaired, and saving the connection with an empty secret mints a new one and shows it
+  once. Before, the whole Deployments page failed.
+- **Admin files are exempt from the API rate limit.** A busy admin session could hit the limit on its own
+  scripts and stylesheets; file-like paths under the admin prefix are now allowed through, API calls still count.
+- **Retention sweeps dead import bundles.** A `transfer.import` job that died before running left its bundle in
+  media storage for good; the nightly retention job now removes bundles of dead jobs older than the retention
+  period and keeps the job rows.
+- **Astro starter: pages created after `astro dev` started** render without a restart; the dev integration tells
+  Astro that content changed, at most once per window.
 
 ## [0.5.4] - 2026-10-07
 
