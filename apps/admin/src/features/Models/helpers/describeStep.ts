@@ -88,9 +88,18 @@ export const describeStepImpact = (
   if (!impact.invalidHeads) {
     return checked;
   }
+  // A person counts entries; the check counts entry versions (draft and published, per locale): say both.
+  const counts = {
+    count: impact.invalidEntries ?? impact.invalidHeads,
+    versions: i18next.t('models.plan.stepVersions', { count: impact.invalidHeads }),
+  };
   const failing =
     step.kind === 'validateRequired'
-      ? i18next.t('models.plan.stepMissingRequired', { count: impact.invalidHeads })
-      : i18next.t('models.plan.stepInvalid', { count: impact.invalidHeads });
+      ? i18next.t('models.plan.stepMissingRequired', counts)
+      : i18next.t('models.plan.stepInvalid', counts);
   return `${checked} · ${failing}`;
 };
+
+/** The plan already knows a prerequisite check fails (entries that wouldn't fit), so shipping it can't work. */
+export const hasFailingCheck = (impacts: readonly PlanStepImpact[]): boolean =>
+  impacts.some((impact) => (impact.invalidHeads ?? 0) > 0);

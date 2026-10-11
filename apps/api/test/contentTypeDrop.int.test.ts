@@ -23,7 +23,13 @@ type PlanPreview = {
     summary: { destructive: boolean; supported: boolean };
   };
   impact: {
-    steps: Array<{ kind: string; affectedHeads: number; invalidHeads?: number; droppedEntries?: number }>;
+    steps: Array<{
+      kind: string;
+      affectedHeads: number;
+      invalidHeads?: number;
+      invalidEntries?: number;
+      droppedEntries?: number;
+    }>;
   };
 };
 type Delivered = { data: Record<string, unknown>; meta: { snapshot: number } };
@@ -180,7 +186,11 @@ describe('type changes that drop values', () => {
 
     const required = retype(poster, 'cover', { type: 'integer' });
     const { impact } = await preview(poster, required);
-    expect(impact.steps.find((step) => step.kind === 'validateRequired')).toMatchObject({ invalidHeads: 2 });
+    // One entry, published: two versions (draft and published) fail, and the review says both numbers.
+    expect(impact.steps.find((step) => step.kind === 'validateRequired')).toMatchObject({
+      invalidHeads: 2,
+      invalidEntries: 1,
+    });
     expect(await shipped(await change(poster, required))).toMatchObject({
       status: 'failed',
       error: {

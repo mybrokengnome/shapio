@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { initI18n } from '@/app/i18n';
 import { field, model } from '../../../../../../packages/schema/src/testing/fixtures';
 import { describeChange } from './describeChange';
-import { describeStep, describeStepImpact, stepsToShow } from './describeStep';
+import { describeStep, describeStepImpact, hasFailingCheck, stepsToShow } from './describeStep';
 
 const before = model({ fields: [field({ apiKey: 'price', label: 'Price', type: 'media' })] });
 const price = before.fields[0]!;
@@ -54,12 +54,24 @@ describe('a type change Shapio cannot convert', () => {
       describeStepImpact(required, {
         key: 'validateRequired',
         kind: 'validateRequired',
-        affectedHeads: 3,
-        invalidHeads: 2,
+        affectedHeads: 4,
+        invalidHeads: 4,
+        invalidEntries: 3,
       }),
     ).toBe(
-      '3 entry versions to check · 2 entries would be left without a required value; untick Required or set a default',
+      '4 entry versions to check · 3 entries (4 versions) would be left without a required value; untick Required or set a default',
     );
+  });
+
+  it('knows a plan with a failing check can not ship', () => {
+    const impact = (invalidHeads?: number) => ({
+      key: 'k',
+      kind: 'validateRequired',
+      affectedHeads: 2,
+      invalidHeads,
+    });
+    expect(hasFailingCheck([impact(), impact(0)])).toBe(false);
+    expect(hasFailingCheck([impact(), impact(1)])).toBe(true);
   });
 
   it('leaves out the value check on the dropped field, keeping each step with its impact', () => {

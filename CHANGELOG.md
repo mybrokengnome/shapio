@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **A type change review that knows a check fails no longer lets it ship.** When a type change would leave a
+  required field empty, the review says both numbers ("3 entries (4 versions) would be left without a required
+  value"), and Ship now stays disabled with the reason until you untick Required or set a default; Review in a
+  change set still works. After a change fails, Review works again while the "didn't go live" notice is still
+  shown.
 
 ## [0.5.6] - 2026-10-11
 

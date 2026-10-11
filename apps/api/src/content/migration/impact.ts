@@ -9,7 +9,7 @@ import { stepModelIds } from './checks.js';
 /**
  * What a content step would touch, for the plan preview (brief §5 step 5), counted without a dry run. A type
  * change Shapio cannot convert also says how many entries lose their value and, for a required field, how
- * many heads would then fail the required check. Both are exact only for a model's own fields; a field inside
+ * many heads (and entries) would then fail the required check. Both are exact only for a model's own fields; a field inside
  * a component is counted by the dry run alone.
  */
 type ConvertStep = Extract<ContentStep, { kind: 'convert' }>;
@@ -60,7 +60,8 @@ export const assessStep = async (
     };
   }
   if (failsRequiredAfterDrop(step, steps)) {
-    return { affectedHeads, invalidHeads: await entryHeadsRepository.countStrictHeads(modelIds, database) };
+    const strict = await entryHeadsRepository.countStrictHeads(modelIds, database);
+    return { affectedHeads, invalidHeads: strict.heads, invalidEntries: strict.entries };
   }
   return { affectedHeads };
 };

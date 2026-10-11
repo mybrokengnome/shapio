@@ -75,6 +75,8 @@ export type ContentMigrationPort = {
 export type StepImpact = {
   affectedHeads: number;
   invalidHeads?: number;
+  /** The distinct entries those failing heads belong to (a person counts entries; the check counts heads). */
+  invalidEntries?: number;
   /** A type change Shapio cannot convert: live entries holding a value it drops (absent inside components). */
   droppedEntries?: number;
 };
