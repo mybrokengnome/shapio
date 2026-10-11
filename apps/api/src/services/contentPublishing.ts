@@ -1,3 +1,4 @@
+import type { Transaction } from 'kysely';
 import { entryLocaleNotFound, publishingDisabled } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
 import { writeLocaleFor } from '../content/locales.js';
@@ -15,6 +16,7 @@ import {
 import { assertTargets } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
+import type { DB } from '../db/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
@@ -171,6 +173,29 @@ export const targetLocales = (
   ];
 };
 
+/**
+ * Records one `content.publish` audit row for the locales a publish actually put live. Writes nothing when
+ * nothing was published, so a publish that changed nothing leaves no trace.
+ */
+export const auditPublished = async (
+  trx: Transaction<DB>,
+  context: ContentServiceContext,
+  model: ContentModel,
+  entryId: string,
+  published: readonly PublishedLocale[],
+  extra: Record<string, unknown> = {},
+) => {
+  if (published.length === 0) {
+    return;
+  }
+  await auditEntry(trx, context, model, 'content.publish', entryId, {
+    locales: published.map((item) => item.locale),
+    snapshot: published[0]?.snapshot ?? null,
+    revisions: published.map((item) => item.revisionId),
+    ...extra,
+  });
+};
+
 type LocalesInput = { locales?: string[] };
 
 const changePublication = async (
@@ -201,7 +226,6 @@ const changePublication = async (
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
     const locales = targetLocales(context, model, input.locales, heads);
-    let metadata: Record<string, unknown>;
     const seqs = createSeqAllocator(trx, context.site.id, {
       source: operation,
       actor: actorColumns(context.actor),
@@ -213,11 +237,7 @@ const changePublication = async (
         locales,
         heads,
       );
-      metadata = {
-        locales,
-        snapshot: published[0]?.snapshot ?? null,
-        revisions: published.map((item) => item.revisionId),
-      };
+      await auditPublished(trx, context, model, id, published);
     } else {
       const live = locales.filter((locale) =>
         heads.some((head) => head.state === 'published' && head.locale === locale),
@@ -230,11 +250,10 @@ const changePublication = async (
           snapshot: seq,
         });
       }
-      metadata = { locales: live, snapshot: seq };
+      await auditEntry(trx, context, model, 'content.unpublish', id, { locales: live, snapshot: seq });
     }
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
-    await auditEntry(trx, context, model, `content.${operation}`, id, metadata);
   });
   return viewAfterWrite(context, model, policy, id, input.locales?.[0]);
 };

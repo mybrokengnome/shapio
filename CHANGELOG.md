@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Creating an entry that goes live is now in the audit log.** Create and publish (in the admin, the delivery
+  write API, or on a model without drafts) writes one `content.publish` row marked `via: create`, like the
+  Publish button, bulk Publish, schedules, and change sets already did.
 
 ## [0.5.6] - 2026-10-11
 
