@@ -458,8 +458,11 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-        /** A main-navigation destination: 18px icon, a 3px bar on the left when active. */
-        nav: 'gap-3 font-medium before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary before:opacity-0 group-data-[collapsible=icon]:before:hidden hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:shadow-xs data-[active=true]:before:opacity-100 data-[active=true]:hover:bg-sidebar-accent data-[active=true]:hover:text-sidebar-accent-foreground [&>svg]:size-[18px]',
+        /**
+         * A main-navigation destination: 18px icon. Active is one signal: the `sidebar-accent` fill, with the
+         * label at its normal weight and colour and only the icon in the accent (`sidebar-primary`).
+         */
+        nav: 'gap-3 font-medium hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:hover:bg-sidebar-accent data-[active=true]:hover:text-sidebar-foreground [&>svg]:size-[18px] data-[active=true]:[&>svg]:text-sidebar-primary',
         outline:
           'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
       },

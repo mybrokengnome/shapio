@@ -31,6 +31,8 @@ export type NavAccess = {
   networkPermissions: readonly NetworkAction[];
   /** `schema.create`, or `schemaManage` on any model. */
   schema: boolean;
+  /** Any network action, so the network view opens (helpers/sites `canSeeNetwork`). */
+  network: boolean;
 };
 
 export type NavPath =
@@ -49,6 +51,7 @@ export type NavPath =
   | '/users/app'
   | '/settings/locales'
   | '/settings'
+  | '/network'
   | '/network/sites'
   | '/network/content-types'
   | '/network/users'
@@ -59,7 +62,13 @@ export type NavPath =
  * `permission` counts site and network roles; `networkPermission` only roles on every site (for actions a
  * site role can also grant for its own site, such as `schema.create`, where the screen needs every site).
  */
-type NavRequirement = { permission?: GlobalAction; networkPermission?: NetworkAction; schema?: boolean };
+type NavRequirement = {
+  permission?: GlobalAction;
+  networkPermission?: NetworkAction;
+  schema?: boolean;
+  /** Shown only to admins who can open the network view. */
+  network?: boolean;
+};
 
 /** A fixed destination; `exact` items match only their own path (the Inbox at `/`). */
 export type NavItemDefinition = NavRequirement & {
@@ -73,7 +82,8 @@ export type NavItemDefinition = NavRequirement & {
 export const isVisible = (item: NavRequirement, access: NavAccess) =>
   (!item.permission || access.globalPermissions.includes(item.permission)) &&
   (!item.networkPermission || access.networkPermissions.includes(item.networkPermission)) &&
-  (!item.schema || access.schema);
+  (!item.schema || access.schema) &&
+  (!item.network || access.network);
 
 /** Above the places: the Inbox is home for everyone. */
 export const INBOX_ITEM = {
@@ -138,10 +148,24 @@ export const DEVELOP_ITEMS: readonly NavItemDefinition[] = [
 ];
 
 /**
- * The site's own people (app users), the shared locales and settings, each with the permission its screen
- * needs. Admin users and roles are about every site: they are in the network view.
+ * Team: the admin users, who live in the network view (they are about every site). Listed in the site view
+ * too, so people looking for how to add an editor find it; it needs `users.manage` from a role on every
+ * site, since only those roles open the network view.
+ */
+export const TEAM_ITEM = {
+  key: 'team',
+  labelKey: 'shell.nav.team',
+  icon: Users,
+  to: '/network/users',
+  networkPermission: 'users.manage',
+} as const satisfies NavItemDefinition;
+
+/**
+ * The site's people (Team, then app users), the shared locales, settings, and a way into the network view
+ * (also in the site switcher), each with the permission its screen needs.
  */
 export const WORKSPACE_ITEMS: readonly NavItemDefinition[] = [
+  TEAM_ITEM,
   {
     key: 'appUsers',
     labelKey: 'shell.nav.appUsers',
@@ -158,6 +182,8 @@ export const WORKSPACE_ITEMS: readonly NavItemDefinition[] = [
     networkPermission: 'schema.create',
   },
   { key: 'settings', labelKey: 'shell.nav.settings', icon: Settings, to: '/settings' },
+  // The site switcher's "Network" target (useSiteSwitcher `openNetwork`), for admins who can open it.
+  { key: 'network', labelKey: 'sites.network', icon: Globe2, to: '/network', network: true },
 ];
 
 /** The network view (sites plan §H): about the whole instance rather than one site. */
