@@ -612,7 +612,27 @@
     "instancePermissions": "Instance",
     "sections": "Role types",
     "tabAdmin": "Admin and token roles",
-    "tabApp": "App roles"
+    "tabApp": "App roles",
+    "matrix": {
+      "model": "Model",
+      "allModels": "All models",
+      "allModelsHint": "Including models created later",
+      "options": "Options",
+      "everyRow": "{{action}} on every row",
+      "ownOnly": "Only their own entries",
+      "fieldScope": "Fields",
+      "allPublicFields": "All public fields",
+      "selectedFields": "Only selected fields",
+      "notPublic": "Hidden by default",
+      "actions": {
+        "read": "Read",
+        "create": "Create",
+        "update": "Update",
+        "delete": "Delete",
+        "publish": "Publish",
+        "schemaManage": "Change model"
+      }
+    }
   },
   "apiTokens": {
     "title": "API tokens",
@@ -2456,23 +2476,6 @@
     "publicExplained": "Applies to every request without a token. It grants nothing until you add permissions; grant read access to serve content to anyone.",
     "authenticatedExplained": "Every signed-in app user holds this role, in addition to their custom roles. It grants nothing until you add permissions.",
     "permissionsHint": "Reads return published content only. Without a field list, only public fields.",
-    "model": "Model",
-    "allModels": "All models",
-    "allModelsHint": "Including models created later",
-    "options": "Options",
-    "everyRow": "{{action}} on every row",
-    "ownOnly": "Only their own entries",
-    "fieldScope": "Fields",
-    "allPublicFields": "All public fields",
-    "selectedFields": "Only selected fields",
-    "notPublic": "Hidden by default",
-    "actions": {
-      "read": "Read",
-      "create": "Create",
-      "update": "Update",
-      "delete": "Delete",
-      "publish": "Publish"
-    },
     "denyByDefault": "Visitors and app users see nothing until you grant it. Grant read on all models to a built-in role to serve published content.",
     "grantReadAll": "Grant read on all models",
     "readAllGranted": "{{name}} can now read published content in every model."

@@ -1,32 +1,39 @@
-import type { DefinitionListItem } from '@shapio/client';
+import type { ContentAction, DefinitionListItem } from '@shapio/client';
 import { isModelDefinition } from '@shapio/schema';
 import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ACTION_COLUMN_KEYS, ALL_MODELS, APP_CONTENT_ACTIONS } from '../../constants';
+import { ACTION_COLUMN_KEYS, ALL_MODELS } from './constants';
 import {
   columnState,
   hasOptions,
   setColumn,
   setGranted,
   updateGrant,
-  type PermissionMatrix,
-} from '../../helpers/permissionMatrix';
+  type MatrixRules,
+  type PermissionMatrix as Matrix,
+} from './helpers/permissionMatrix';
 import { Options } from './Options';
 import { Row } from './Row';
 
-type MatrixProps = {
-  matrix: PermissionMatrix;
+type PermissionMatrixProps<A extends ContentAction> = {
+  matrix: Matrix<A>;
   models: readonly DefinitionListItem[];
-  onChange: (matrix: PermissionMatrix) => void;
+  rules: MatrixRules<A>;
+  onChange: (matrix: Matrix<A>) => void;
 };
 
 /**
  * Models × actions. The first row grants on every model, including ones created later; each column's header
  * checkbox grants or revokes that action on every row. The model column stays put while the table scrolls.
  */
-export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
+export const PermissionMatrix = <A extends ContentAction>({
+  matrix,
+  models,
+  rules,
+  onChange,
+}: PermissionMatrixProps<A>) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const toggleExpanded = (key: string) =>
@@ -40,8 +47,8 @@ export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
   const rows = [
     {
       key: ALL_MODELS,
-      label: t('appRoles.allModels'),
-      detail: t('appRoles.allModelsHint'),
+      label: t('roles.matrix.allModels'),
+      detail: t('roles.matrix.allModelsHint'),
       fields: undefined,
     },
     ...models
@@ -59,8 +66,8 @@ export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="sticky left-0 z-10 min-w-60 bg-muted">{t('appRoles.model')}</TableHead>
-          {APP_CONTENT_ACTIONS.map((action) => {
+          <TableHead className="sticky left-0 z-10 min-w-60 bg-muted">{t('roles.matrix.model')}</TableHead>
+          {rules.actions.map((action) => {
             const label = t(ACTION_COLUMN_KEYS[action]);
             return (
               <TableHead key={action} className="w-24 bg-muted">
@@ -68,7 +75,7 @@ export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
                   <Checkbox
                     checked={columnState(matrix, keys, action)}
                     onCheckedChange={(checked) => onChange(setColumn(matrix, keys, action, checked === true))}
-                    aria-label={t('appRoles.everyRow', { action: label })}
+                    aria-label={t('roles.matrix.everyRow', { action: label })}
                   />
                   {label}
                 </span>
@@ -76,19 +83,20 @@ export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
             );
           })}
           <TableHead className="bg-muted">
-            <span className="sr-only">{t('appRoles.options')}</span>
+            <span className="sr-only">{t('roles.matrix.options')}</span>
           </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
           const grants = matrix[row.key] ?? {};
-          const canExpand = hasOptions(row.key, grants);
+          const canExpand = hasOptions(row.key, grants, rules);
           const isExpanded = canExpand && expanded.has(row.key);
-          const optionsId = `app-role-options-${row.key === ALL_MODELS ? 'all' : row.key}`;
+          const optionsId = `permission-options-${row.key === ALL_MODELS ? 'all' : row.key}`;
           return (
             <Fragment key={row.key}>
               <Row
+                actions={rules.actions}
                 label={row.label}
                 detail={row.detail}
                 grants={grants}
@@ -100,12 +108,10 @@ export const Matrix = ({ matrix, models, onChange }: MatrixProps) => {
               />
               {isExpanded ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell
-                    colSpan={APP_CONTENT_ACTIONS.length + 2}
-                    className="h-auto p-0 whitespace-normal"
-                  >
+                  <TableCell colSpan={rules.actions.length + 2} className="h-auto p-0 whitespace-normal">
                     <Options
                       id={optionsId}
+                      rules={rules}
                       rowKey={row.key}
                       fields={row.fields}
                       grants={grants}
