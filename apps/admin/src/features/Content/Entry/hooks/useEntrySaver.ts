@@ -2,9 +2,12 @@ import type { AdminEntry, MediaAsset, ShapioApiError } from '@shapio/client';
 import type { ComponentDefinition, ModelDefinition } from '@shapio/schema';
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useSaveEntry } from '@/api/content';
+import { refuseUnparsed } from '@/fields/form/refuseUnparsed';
 import type { EntryFormStore } from '@/fields/form/store';
 import { contentIssuesOf, isEditConflict } from '@/fields/helpers/apiErrors';
 import { buildPatch, dirtyKeysOf, toFormValues } from '@/fields/helpers/formValues';
+import { containsUnparsed } from '@/fields/helpers/unparsed';
+import type { FormValues } from '@/fields/helpers/values';
 import { logError, reportError } from '@/helpers/reportError';
 
 export type SaveKind = 'autosave' | 'save';
@@ -26,6 +29,19 @@ type EntrySaverOptions = {
   onSaved: (entry: AdminEntry, kind: SaveKind) => void;
   onConflict: (error: ShapioApiError) => void;
   onAsset: (asset: MediaAsset) => void;
+};
+
+/**
+ * The changed fields a save sends. Fields still holding text an editor couldn't parse are held back (only
+ * autosave gets this far with them): they are left out of `sent`, so the save's result doesn't overwrite them
+ * and they stay unsaved changes.
+ */
+const sendableChanges = (values: FormValues, baseline: FormValues) => {
+  const held = new Set(Object.keys(values).filter((key) => containsUnparsed(values[key])));
+  return {
+    keys: dirtyKeysOf(values, baseline).filter((key) => !held.has(key)),
+    sent: Object.fromEntries(Object.entries(values).filter(([key]) => !held.has(key))),
+  };
 };
 
 /**
@@ -55,8 +71,11 @@ export const useEntrySaver = ({
 
   const runSave = useCallback(
     async (kind: SaveKind): Promise<SaveOutcome> => {
+      if (kind === 'save' && refuseUnparsed(store)) {
+        return 'invalid';
+      }
       const { values, baseline } = store.getState();
-      const keys = dirtyKeysOf(values, baseline);
+      const { keys, sent } = sendableChanges(values, baseline);
       if (kind === 'autosave' && keys.length === 0) {
         return 'unchanged';
       }
@@ -77,7 +96,7 @@ export const useEntrySaver = ({
         versionRef.current = entry.version;
         store
           .getState()
-          .acceptSaved(values, toFormValues(model.fields, entry.data, components, latest.current.onAsset));
+          .acceptSaved(sent, toFormValues(model.fields, entry.data, components, latest.current.onAsset));
         if (kind === 'save') {
           store.getState().setIssues([]);
         }

@@ -1,6 +1,7 @@
 import { richTextPlainText, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import { valueLabel } from '@/features/Models/helpers/labels';
+import { isUnparsed } from './unparsed';
 import { isEmptyValue, isRecord, toList } from './values';
 
 /**
@@ -14,6 +15,9 @@ const truncate = (text: string) => (text.length > MAX_SUMMARY ? `${text.slice(0,
 export const summarizeValue = (field: FieldDefinition, value: unknown): string => {
   if (isEmptyValue(value)) {
     return '';
+  }
+  if (isUnparsed(value)) {
+    return truncate(value.text);
   }
   switch (field.type) {
     case 'richtext':
