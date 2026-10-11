@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **A link to a content type you can't read no longer claims it was deleted.** A relation field whose target
+  your role can't read now says "You can't read the content type this field links to.", and the entry's
+  properties show "1 linked entry you can't read" instead of "Untitled" and an ID. The links are kept on save,
+  as before.
 
 ## [0.5.6] - 2026-10-11
 
