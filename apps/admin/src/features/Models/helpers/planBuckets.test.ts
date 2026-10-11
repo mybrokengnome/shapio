@@ -62,6 +62,15 @@ describe('plan buckets', () => {
     expect(bucketOfPlan(summary)).toBe('prerequisites');
   });
 
+  it('a type change Shapio cannot convert drops values and is in the breaking group', () => {
+    const { changes, summary } = plan({ ...model, fields: [{ ...field, type: 'boolean' }] });
+    const typeChange = changes.find((change) => change.kind === 'field.type');
+    expect(typeChange).toMatchObject({ dropsValues: true, destructive: true });
+    expect(typeChange && bucketOfChange(typeChange)).toBe('breaking');
+    expect(summary.destructive).toBe(true);
+    expect(bucketOfPlan(summary)).toBe('breaking');
+  });
+
   it('an API key rename is breaking and its group comes first', () => {
     const { changes, summary } = plan({
       ...model,

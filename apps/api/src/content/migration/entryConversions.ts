@@ -10,7 +10,13 @@ import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { SchemaById } from '../../schema/snapshot.js';
 import * as mediaReferencesService from '../../services/mediaReferences.js';
 import { resolveModelById } from '../model.js';
-import { publishDraft, syncEntryUniqueValues, type WriteContext } from '../write/heads.js';
+import {
+  publishDraft,
+  syncEntryUniqueValues,
+  syncHeadDerivations,
+  type WriteContext,
+} from '../write/heads.js';
+import { CONVERSION_ACTOR } from './convert.js';
 import { draftsOf, primaryLocale, unifiedData, unpublishedDrafts } from './propose.js';
 
 /**
@@ -19,11 +25,24 @@ import { draftsOf, primaryLocale, unifiedData, unpublishedDrafts } from './propo
  * Each runs in the activation transaction (ADR 0002 pipeline) with the entry row locked; propose.ts computes
  * the same result in memory for the dry run.
  */
-const SYSTEM_ACTOR = { kind: 'system', component: 'schema-convert' } as const;
 
-/** A field becomes shared: every draft takes the primary locale's value. Published heads stay as published. */
+/** The write context of a conversion on one entry, or undefined when its model is not in the proposed schema. */
+const conversionWrite = (
+  trx: Transaction<DB>,
+  proposed: SchemaById,
+  entry: { siteId: string; modelId: string },
+): WriteContext | undefined => {
+  const model = resolveModelById(proposed, entry.modelId);
+  return model ? { trx, siteId: entry.siteId, model, actor: CONVERSION_ACTOR, now: new Date() } : undefined;
+};
+
+/**
+ * A field becomes shared: every draft takes the primary locale's value (its relation edges and media
+ * references with it). Published heads stay as published.
+ */
 const unifyField = async (
   trx: Transaction<DB>,
+  write: WriteContext | undefined,
   heads: readonly HeadRecord[],
   fieldId: string,
   defaultLocale: string,
@@ -34,11 +53,18 @@ const unifyField = async (
     if (!data) {
       continue;
     }
-    await entryHeadsRepository.rewriteData(
+    const written = await entryHeadsRepository.rewriteData(
       { entryId: draft.entry_id, locale: draft.locale, state: 'draft', changeSeq: draft.change_seq },
       data,
       trx,
     );
+    if (written && write) {
+      await syncHeadDerivations(
+        write,
+        { entryId: draft.entry_id, locale: draft.locale, state: 'draft' },
+        data,
+      );
+    }
   }
 };
 
@@ -79,7 +105,7 @@ const publishAll = async (
   if (!model || pending.length === 0) {
     return;
   }
-  const write: WriteContext = { trx, siteId: entry.siteId, model, actor: SYSTEM_ACTOR, now: new Date() };
+  const write: WriteContext = { trx, siteId: entry.siteId, model, actor: CONVERSION_ACTOR, now: new Date() };
   const seq = await nextSeq.next();
   for (const draft of pending) {
     const published = heads.find((head) => head.state === 'published' && head.locale === draft.locale);
@@ -110,7 +136,13 @@ export const convertEntry = async (
     return;
   }
   if (change.kind === 'field.localized' && change.to === false && change.fieldId) {
-    await unifyField(trx, heads, change.fieldId, proposed.defaultLocale);
+    await unifyField(
+      trx,
+      conversionWrite(trx, proposed, { siteId: entry.site_id, modelId }),
+      heads,
+      change.fieldId,
+      proposed.defaultLocale,
+    );
   } else if (change.kind === 'model.localized' && change.to === false) {
     await keepOneLocale(trx, input.seqFor(entry.site_id), entryId, heads, proposed.defaultLocale);
   } else if (change.kind === 'model.draftAndPublish' && change.to === false) {

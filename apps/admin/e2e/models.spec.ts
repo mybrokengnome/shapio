@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
+import { adminApiFor } from './content/api';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
+import { entryDocument } from './support/entryDocument';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 import { siteApi } from './support/sites';
 
@@ -383,11 +386,8 @@ test('a saved field changes type through a conversion: Long text to Rich text', 
   await apply(await review());
   await fieldRow('Notes').click();
   const panel = properties();
-  // Types Shapio can't convert Long text to are disabled, and say why.
-  const media = panel.getByRole('radio', { name: /^Media/ });
-  await expect(media).toBeDisabled();
-  await expect(media).toHaveAccessibleDescription("Shapio can't convert Long text to Media.");
-  await expect(panel.getByText("Greyed-out types: Shapio can't convert Long text to them.")).toBeVisible();
+  // Every type can be picked, including ones Shapio can't convert Long text to.
+  await expect(panel.getByRole('radio', { name: /^Media/ })).toBeEnabled();
   await panel.getByRole('radio', { name: /^Rich text/ }).check();
   await expect(
     panel.getByText(
@@ -406,6 +406,68 @@ test('a saved field changes type through a conversion: Long text to Rich text', 
   await page.reload();
   await fieldRow('Notes').click();
   await expect(properties().getByRole('radio', { name: /^Rich text/ })).toBeChecked();
+});
+
+test("a saved field changes to a type Shapio can't convert: Media to Number drops its values", async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const offerId = randomUUID();
+  await api.createDefinition('models', {
+    id: offerId,
+    kind: 'collection',
+    apiKey: 'offer',
+    label: 'Offer',
+    fields: [
+      { apiKey: 'name', label: 'Name', type: 'string' },
+      { apiKey: 'price', label: 'Price', type: 'media', settings: { allowedKinds: ['image'] } },
+    ],
+  });
+  await expect
+    .poll(async () => (await page.request.get(`${ADMIN_API}/models/${offerId}`)).status())
+    .toBe(200);
+  const picture = await api.uploadPng('price-tag.png', 40, 30);
+  const offers = [];
+  for (const name of ['Spring sale', 'Summer sale']) {
+    offers.push(
+      await api.send<{ id: string }>('POST', '/content/offer', { data: { name, price: picture.id } }),
+    );
+  }
+
+  await openModel('Offer');
+  await fieldRow('Price').click();
+  const panel = properties();
+  const number = panel.getByRole('radio', { name: /^Number/ });
+  await expect(number).toBeEnabled();
+  await number.check();
+  const note = panel.getByRole('status').filter({
+    hasText:
+      "Shapio can't convert Media to Number. Every stored value in this field will be dropped, and old API clients will see it empty.",
+  });
+  await expect(note).toBeVisible();
+  await expect(note).toHaveClass(/text-destructive/);
+  await captureScreen(page, 'models-18b-saved-field-type-drops-values', { viewports: ['desktop', 'phone'] });
+
+  const plan = await review();
+  await expect(
+    planGroup(plan, 'Breaking')
+      .getByRole('listitem')
+      .filter({ hasText: 'Change the type of Price from Media to Number and drop its stored values' }),
+  ).toBeVisible();
+  await expect(plan.getByText('Price: Media → Number, 2 entries lose their value')).toBeVisible();
+  const ship = plan.getByRole('button', { name: 'Ship now' });
+  await plan.getByLabel('I understand this changes the API contract', { exact: false }).check();
+  await expect(ship).toBeDisabled();
+  await plan.getByLabel('I understand stored data will be converted or removed', { exact: false }).check();
+  await expect(ship).toBeEnabled();
+  await captureScreen(page, 'models-18c-plan-drops-values', { viewports: ['desktop'] });
+  await apply(plan);
+
+  for (const offer of offers) {
+    const stored = await api.get<{ data: Record<string, unknown> }>(`/content/offer/${offer.id}`);
+    expect(stored.data.price ?? null).toBeNull();
+  }
+  await page.goto(`${ADMIN_URL}content/offer/${offers[0]?.id ?? ''}`);
+  const price = await entryDocument(page).property('price');
+  await expect(price.getByRole('textbox')).toHaveValue('');
 });
 
 test('components live under Develop with their own builder', async () => {

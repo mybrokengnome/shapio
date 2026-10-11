@@ -6,6 +6,17 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Any field can change to any type.** A saved field's type tiles are no longer greyed out where Shapio can't
+  convert the stored values (Media to Number, Date to Media, Relation to Boolean). Picking one says, in red,
+  that every stored value in the field will be dropped and old API clients will see it empty. The review counts
+  the entries that lose their value and asks you to confirm a destructive change, then the field keeps its ID
+  and API ID and starts empty, in one live change. A required field without a default can't be left empty:
+  the review shows how many entries would fail, so untick Required or set a default in the same save. Old
+  snapshots keep the old values in storage but show them as `null`. `shapio schema diff` marks the change
+  "(values dropped)", and `schema apply` needs `--allow-destructive` for it.
+
 ## [0.5.5] - 2026-10-10
 
 ### Added

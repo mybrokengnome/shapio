@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isStableId, SCALAR_DATA_TYPES, type DataType, type FieldDefinition } from '@shapio/schema';
-import { sql, type RawBuilder } from 'kysely';
+import { sql, type RawBuilder, type SqlBool } from 'kysely';
 import { contentDialect } from './currentDialect.js';
 import type {
   ContentSqlDialect,
@@ -134,6 +134,12 @@ export const fieldMissingExpression = (
   assertStableId(fieldId, 'a field ID');
   return dialect.fieldMissing(fieldId);
 };
+
+/** The field holds a value (the opposite of `fieldMissingExpression`): for counting heads that hold one. */
+export const fieldPresentExpression = (
+  fieldId: string,
+  dialect: ContentSqlDialect = contentDialect(),
+): RawBuilder<SqlBool> => sql<SqlBool>`(not ${fieldMissingExpression(fieldId, dialect)})`;
 
 /** Case-sensitive text match on a top-level field; `text` is a parameter, never SQL. */
 export const textMatchExpression = (

@@ -9,6 +9,7 @@ const change = (overrides: Partial<ClassifiedChange>): ClassifiedChange => ({
   breaking: false,
   destructive: false,
   supported: true,
+  dropsValues: false,
   prerequisites: [],
   cleanup: [],
   ...overrides,

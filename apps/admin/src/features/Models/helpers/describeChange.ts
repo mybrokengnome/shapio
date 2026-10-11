@@ -76,7 +76,9 @@ export const describeChange = (
   const values = TYPE_CHANGE_KINDS.has(change.kind)
     ? { from: dataTypeName(change.from), to: dataTypeName(change.to), type: dataTypeName(addedType) }
     : { from: scalarText(change.from), to: scalarText(change.to) };
-  return i18next.t(CHANGE_KEYS[change.kind], {
+  // A type change Shapio can't convert says that the field's stored values are dropped.
+  const key = change.dropsValues ? 'models.changes.fieldTypeDropped' : CHANGE_KEYS[change.kind];
+  return i18next.t(key, {
     field,
     name: after?.label ?? before?.label ?? '',
     property: change.property ? propertyLabel(change.property) : '',
