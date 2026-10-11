@@ -46,7 +46,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
   const { t } = useTranslation();
   const { locked, reason } = useSchemaLock();
   const { multiSite, canShare } = useSchemaScopeAccess();
-  const { form, onSubmit, pending, error } = useCreateDefinitionForm(kinds[0], scope);
+  const { form, onSubmit, pending, error, errorMessage } = useCreateDefinitionForm(kinds[0], scope);
   const [kind, apiKey, pluralApiKey] = useWatch({
     control: form.control,
     name: ['kind', 'apiKey', 'pluralApiKey'],
@@ -105,7 +105,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
                 variant="bordered"
               />
             )}
-            <FormError error={error} />
+            <FormError error={error} message={errorMessage} />
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" asChild>
                 <Link {...back}>{t('common.cancel')}</Link>

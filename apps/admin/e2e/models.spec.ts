@@ -161,6 +161,19 @@ test('the plural API ID of a collection follows the API ID until edited, and mus
   await expect(page).toHaveURL(/\/content(\/author)?$/);
 });
 
+test('a name the server reserves is refused with its reason on the first Create', async () => {
+  const form = await createDefinition('Query');
+  await expect(form.getByLabel('API ID', { exact: true })).toHaveValue('query');
+  await form.getByRole('button', { name: 'Create' }).click();
+  // One click: the server's reason sits under the API ID it refused.
+  await expect(form.getByText('This name is reserved. Choose another.')).toBeVisible();
+  await expect(page).toHaveURL(/\/content\/new$/);
+  await captureScreen(page, 'models-02b-new-model-reserved', { viewports: ['desktop'] });
+  await form.getByRole('link', { name: 'Cancel' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Discard and leave' }).click();
+  await expect(page).toHaveURL(/\/content(\/author)?$/);
+});
+
 test('a collection with text, boolean, rich-text and relation fields: live plan, applied, kept on reload', async () => {
   const dialog = await createDefinition('Article');
   await dialog.getByRole('button', { name: 'Create' }).click();

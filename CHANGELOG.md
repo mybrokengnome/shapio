@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **New content types show why a name is refused on the first Create.** A name the server rejects, such as
+  `Query`, `Media`, or one another type's GraphQL names already use, now shows its reason under API ID straight
+  away instead of only "Fix the highlighted settings" with nothing highlighted. A refusal that points at no field
+  shows its own reason above the buttons.
 
 ## [0.5.6] - 2026-10-11
 
