@@ -29,6 +29,10 @@ export const Users = () => {
   const removeUser = useRemoveUser();
   const [inviting, setInviting] = useState(false);
   const invitationLink = useInvitationLinkReveal();
+  const toggleStatus = async (user: AdminUser) => {
+    await setStatus.mutateAsync({ id: user.id, status: user.status === 'active' ? 'disabled' : 'active' });
+    toast.success(t('users.statusChanged'));
+  };
   const remove = async (user: AdminUser) => {
     await removeUser.mutateAsync(user.id);
     toast.success(t('users.removed'));
@@ -55,12 +59,7 @@ export const Users = () => {
             roleNames={roleNames}
             siteNames={siteNames}
             currentUserId={me?.user.id}
-            onToggleStatus={(user) =>
-              setStatus.mutate(
-                { id: user.id, status: user.status === 'active' ? 'disabled' : 'active' },
-                { onSuccess: () => toast.success(t('users.statusChanged')) },
-              )
-            }
+            onToggleStatus={toggleStatus}
             onRemove={remove}
           />
         )}

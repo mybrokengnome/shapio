@@ -29,9 +29,14 @@ export type AdminUserSummary = Pick<
   network_role_ids: string[];
   /** Every assignment, on any site (site null = every site). */
   assignments: RoleAssignment[];
+  /** The usable API tokens this admin created (not revoked, not expired), on any site; oldest first. */
+  api_tokens: AdminUserApiToken[];
 };
 
-const withRoleIds = (trx: Executor) =>
+/** An API token as listed with its creator. */
+export type AdminUserApiToken = { id: string; name: string; siteId: string | null };
+
+const withRoleIds = (trx: Executor, now = new Date()) =>
   trx
     .selectFrom('admin_users')
     .select(USER_COLUMNS)
@@ -62,6 +67,29 @@ const withRoleIds = (trx: Executor) =>
           emptyJsonArray<RoleAssignment>(),
         )
         .as('assignments'),
+    )
+    .select((eb) =>
+      eb.fn
+        .coalesce(
+          eb
+            .selectFrom('api_tokens')
+            .select((sub) =>
+              jsonAgg<AdminUserApiToken>(
+                jsonObject({ id: sub.ref('id'), name: sub.ref('name'), siteId: sub.ref('site_id') }),
+                [{ column: 'created_at' }, { column: 'id' }],
+              ).as('api_tokens'),
+            )
+            .whereRef('api_tokens.created_by', '=', 'admin_users.id')
+            .where('api_tokens.revoked_at', 'is', null)
+            .where((where) =>
+              where.or([
+                where('api_tokens.expires_at', 'is', null),
+                where('api_tokens.expires_at', '>', now),
+              ]),
+            ),
+          emptyJsonArray<AdminUserApiToken>(),
+        )
+        .as('api_tokens'),
     );
 
 export const countAll = async (trx: Executor = db): Promise<number> => {

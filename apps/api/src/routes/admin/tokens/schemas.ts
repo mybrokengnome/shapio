@@ -17,6 +17,8 @@ const ApiTokenSchema = Type.Object({
   /** The token's site; null for a network admin token (its role applies on every site). */
   siteId: Type.Union([UuidSchema, Type.Null()]),
   createdBy: Type.Union([UuidSchema, Type.Null()]),
+  /** The creator's account is disabled: the token is refused until it is enabled again. */
+  creatorDisabled: Type.Boolean(),
   expiresAt: NullableDateTimeSchema,
   lastUsedAt: NullableDateTimeSchema,
   revokedAt: NullableDateTimeSchema,

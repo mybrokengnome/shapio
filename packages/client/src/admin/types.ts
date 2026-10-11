@@ -21,7 +21,12 @@ export type AdminUser = {
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Usable API tokens this admin created: refused while the account is disabled, revoked when it is deleted. */
+  apiTokens: AdminUserApiToken[];
 };
+
+/** An API token listed with the admin who created it. */
+export type AdminUserApiToken = { id: string; name: string; siteId: string | null };
 
 export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish', 'schemaManage'] as const;
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
@@ -232,6 +237,8 @@ export type ApiToken = {
   /** The token's site; null for a network admin token (its role applies on every site). */
   siteId: string | null;
   createdBy: string | null;
+  /** The creator's account is disabled: the token is refused until it is enabled again. */
+  creatorDisabled: boolean;
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;

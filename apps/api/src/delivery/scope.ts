@@ -60,8 +60,8 @@ const readState = (
 
 /**
  * The caller: anonymous, or a delivery token resolved once per runtime (read-only: in-process reads never
- * record a token's use) and checked for liveness on every call by the state read. Admin-scope tokens are
- * refused: in-process reads are delivery reads only (rule 7).
+ * record a token's use) and checked for liveness (revoked, expired, creator disabled) on every call by the
+ * state read. Admin-scope tokens are refused: in-process reads are delivery reads only (rule 7).
  */
 const callerOf = async (
   runtime: DeliveryRuntime,
@@ -124,7 +124,12 @@ export const openCallScope = async (
   }
   if (caller.tokenKey !== undefined) {
     const live = state.token;
-    if (!live || live.revokedAt !== null || isTokenExpired(live.expiresAt, new Date())) {
+    if (
+      !live ||
+      live.revokedAt !== null ||
+      live.creatorDisabled ||
+      isTokenExpired(live.expiresAt, new Date())
+    ) {
       runtime.tokens.delete(caller.tokenKey);
       throw invalidToken();
     }

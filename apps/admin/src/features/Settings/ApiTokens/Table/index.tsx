@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { TokenStatus } from './TokenStatus';
 
 type TableProps = {
   tokens: ApiToken[];
@@ -62,11 +63,7 @@ export const Table = ({ tokens, roleNames, draftRoleIds, siteName, onRevoke }: T
               </TableCell>
               <TableCell>{token.siteId === null ? t('sites.everySite') : siteName}</TableCell>
               <TableCell>
-                {token.revokedAt ? (
-                  <StatusChip tone="muted" label={t('apiTokens.revokedBadge')} />
-                ) : (
-                  <StatusChip tone="success" label={t('apiTokens.active')} />
-                )}
+                <TokenStatus token={token} />
               </TableCell>
               <TableCell title={formatDateTime(token.lastUsedAt) || undefined}>
                 {token.lastUsedAt ? formatRelativeTime(token.lastUsedAt) : t('common.never')}

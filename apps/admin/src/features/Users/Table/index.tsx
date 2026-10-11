@@ -9,7 +9,7 @@ type TableProps = {
   roleNames: ReadonlyMap<string, string>;
   siteNames: ReadonlyMap<string, string>;
   currentUserId: string | undefined;
-  onToggleStatus: (user: AdminUser) => void;
+  onToggleStatus: (user: AdminUser) => Promise<unknown>;
   onRemove: (user: AdminUser) => Promise<unknown>;
 };
 

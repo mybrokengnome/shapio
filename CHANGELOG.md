@@ -8,6 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **API tokens no longer outlive their admin.** While an admin is disabled, the API tokens they created (and
+  tokens made with those tokens) are refused, and deleting the admin revokes them, with the token names and
+  the creator kept in the audit log. Network → Users names those tokens before you disable or remove someone,
+  and Settings → API tokens shows a paused token as "Paused: creator disabled".
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

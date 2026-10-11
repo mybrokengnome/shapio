@@ -10,6 +10,7 @@ import {
 } from '../src/delivery/index.js';
 import { hashToken } from '../src/helpers/tokens.js';
 import { publishServerRelease } from '../src/services/deliveryDescriptor.js';
+import { createAdmin } from './helpers/adminIdentity.js';
 import {
   createDefinition,
   createDeliveryToken,
@@ -311,6 +312,28 @@ describe.skipIf(skipReason !== undefined)(withSkipReason('in-process delivery', 
       status: 401,
       code: 'INVALID_TOKEN',
     });
+  });
+
+  it("refuses a delivery token while its creator's account is disabled, and serves it again once enabled", async () => {
+    const editor = await createAdmin(database.current.db, { roleKeys: ['editor'] });
+    const made = await createDeliveryToken(database.current.db, [{ modelId: article.definition.id }]);
+    await database.current.db
+      .updateTable('api_tokens')
+      .set({ created_by: editor.id })
+      .where('token_hash', '=', hashToken(made))
+      .execute();
+    const setStatus = (status: 'active' | 'disabled') =>
+      database.current.db.updateTable('admin_users').set({ status }).where('id', '=', editor.id).execute();
+    // The first call resolves the token and caches it for this runtime; the state read checks it on every call.
+    const reader = createInProcessRequest(runtime, { token: made });
+    await expect(reader('/api/content/articles')).resolves.toBeDefined();
+    await setStatus('disabled');
+    await expect(reader('/api/content/articles')).rejects.toMatchObject({
+      status: 401,
+      code: 'INVALID_TOKEN',
+    });
+    await setStatus('active');
+    await expect(reader('/api/content/articles')).resolves.toBeDefined();
   });
 
   it('answers nothing but delivery reads', async () => {
