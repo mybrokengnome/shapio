@@ -1,6 +1,7 @@
 import type { ContentAction } from '@shapio/client';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { SharedGlyph } from '@/components/SharedGlyph';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TableCell, TableRow } from '@/components/ui/table';
@@ -14,6 +15,11 @@ type RowProps<A extends ContentAction> = {
   label: string;
   /** API key or a hint beside the label. */
   detail: string;
+  /** Shared with all sites: a globe beside the label. */
+  shared: boolean;
+  /** The site a site's own model belongs to, when there are several sites. */
+  siteName: string | undefined;
+  readOnly: boolean;
   grants: ModelGrants<A>;
   optionsId: string;
   expanded: boolean;
@@ -28,6 +34,9 @@ export const Row = <A extends ContentAction>({
   actions,
   label,
   detail,
+  shared,
+  siteName,
+  readOnly,
   grants,
   optionsId,
   expanded,
@@ -41,13 +50,17 @@ export const Row = <A extends ContentAction>({
       <TableCell className="sticky left-0 z-10 h-9 bg-card py-0">
         <span className="flex items-baseline gap-2">
           <span className="font-semibold">{label}</span>
-          <span className="truncate text-xs text-muted-foreground">{detail}</span>
+          {shared ? <SharedGlyph className="self-center" /> : null}
+          <span className="truncate text-xs text-muted-foreground">
+            {siteName ? `${siteName} · ${detail}` : detail}
+          </span>
         </span>
       </TableCell>
       {actions.map((action) => (
         <TableCell key={action} className="h-9 py-0 text-center">
           <Checkbox
             checked={grants[action] !== undefined}
+            disabled={readOnly}
             onCheckedChange={(checked) => onToggle(action, checked === true)}
             aria-label={`${t(ACTION_COLUMN_KEYS[action])}: ${label}`}
             className="align-middle"

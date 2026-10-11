@@ -43,7 +43,7 @@ export const Actions = ({ role, onDelete }: ActionsProps) => {
         <DropdownMenuItem asChild>
           <Link to="/network/roles/app/$roleId" params={{ roleId: role.id }}>
             <SlidersHorizontal aria-hidden="true" />
-            {t('appRoles.editPermissions')}
+            {t('roles.editPermissions')}
           </Link>
         </DropdownMenuItem>
         {role.isSystem ? null : (

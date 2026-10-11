@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { ALL_MODELS } from '../constants';
 import {
   columnState,
+  fixedOptions,
   hasOptions,
   setColumn,
   setGranted,
   toMatrix,
   toPermissions,
+  unlistedGrants,
   updateGrant,
   type MatrixRules,
 } from './permissionMatrix';
@@ -50,13 +52,37 @@ describe('permission matrix', () => {
     expect(updateGrant(matrix, 'm-other', 'read', { ownOnly: true })).toBe(matrix);
   });
 
-  it('drops options that mean nothing for the action', () => {
-    const matrix = {
-      'm-post': { create: { ownOnly: true, fieldIds: null }, delete: { ownOnly: false, fieldIds: ['x'] } },
-    };
+  it('keeps options it cannot change, as loaded', () => {
+    const loaded: AppRolePermission[] = [
+      { action: 'create', modelId: 'm-post', condition: 'ownedByPrincipal', fieldIds: null },
+      { action: 'read', modelId: null, condition: null, fieldIds: ['f-title'] },
+    ];
+    const matrix = toMatrix(loaded);
     expect(toPermissions(matrix, RULES)).toEqual([
-      { action: 'create', modelId: 'm-post', condition: null, fieldIds: null },
-      { action: 'delete', modelId: 'm-post', condition: null, fieldIds: null },
+      { action: 'read', modelId: null, condition: null, fieldIds: ['f-title'] },
+      { action: 'create', modelId: 'm-post', condition: 'ownedByPrincipal', fieldIds: null },
+    ]);
+    expect(fixedOptions('m-post', 'create', { ownOnly: true, fieldIds: null }, RULES)).toEqual({
+      ownOnly: true,
+      fieldIds: null,
+    });
+    expect(fixedOptions(ALL_MODELS, 'read', { ownOnly: false, fieldIds: ['f-title'] }, RULES)).toEqual({
+      ownOnly: false,
+      fieldIds: ['f-title'],
+    });
+    // A row whose only grant carries a fixed option still opens, to show it.
+    expect(hasOptions(ALL_MODELS, { create: { ownOnly: false, fieldIds: ['f-title'] } }, RULES)).toBe(true);
+  });
+
+  it('lists the grants on models no row shows', () => {
+    const matrix = toMatrix([
+      ...permissions,
+      { action: 'delete', modelId: 'm-gone', condition: null, fieldIds: null },
+      { action: 'read', modelId: 'm-gone', condition: null, fieldIds: ['f-x'] },
+    ]);
+    expect(unlistedGrants(matrix, new Set(['m-post']), RULES)).toEqual([
+      { modelId: 'm-gone', action: 'read', grant: { ownOnly: false, fieldIds: ['f-x'] } },
+      { modelId: 'm-gone', action: 'delete', grant: { ownOnly: false, fieldIds: null } },
     ]);
   });
 

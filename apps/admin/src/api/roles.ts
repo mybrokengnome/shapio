@@ -8,6 +8,9 @@ import { queryKeys } from './queryKeys';
 export const useRoles = () =>
   useQuery({ queryKey: queryKeys.roles, queryFn: () => adminApi.roles.list(), meta: { silent: true } });
 
+export const useRole = (id: string) =>
+  useQuery({ queryKey: queryKeys.role(id), queryFn: () => adminApi.roles.get(id), meta: { silent: true } });
+
 export const useCreateRole = () => {
   const queryClient = useQueryClient();
   return useMutation({

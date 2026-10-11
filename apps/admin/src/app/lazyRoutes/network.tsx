@@ -7,6 +7,7 @@ import { AuditLog } from '@/features/Settings/AuditLog';
 import { Roles } from '@/features/Settings/Roles';
 import { AppRoles } from '@/features/Settings/Roles/AppRoles';
 import { Editor as AppRoleEditor } from '@/features/Settings/Roles/AppRoles/Editor';
+import { Editor as RoleEditor } from '@/features/Settings/Roles/Editor';
 import { Users } from '@/features/Users';
 
 /** The network view's screens (sites plan §H), loaded together on the first visit. */
@@ -17,6 +18,7 @@ export const networkLazyRoutes = {
   newContentType: createLazyRoute('/app/network/content-types/new')({ component: NewContentType }),
   users: createLazyRoute('/app/network/users')({ component: Users }),
   roles: createLazyRoute('/app/network/roles')({ component: Roles }),
+  role: createLazyRoute('/app/network/roles/$roleId')({ component: RoleEditor }),
   appRoles: createLazyRoute('/app/network/roles/app')({ component: AppRoles }),
   appRole: createLazyRoute('/app/network/roles/app/$roleId')({ component: AppRoleEditor }),
   auditLog: createLazyRoute('/app/network/audit-log')({ component: AuditLog }),

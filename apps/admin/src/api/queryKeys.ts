@@ -19,6 +19,8 @@ export const queryKeys = {
   invitationInspect: (token: string) => ['invitations', 'inspect', token] as const,
   invitations: ['invitations'] as const,
   roles: ['roles'] as const,
+  /** One admin or delivery role (under `roles`, so invalidating the list refreshes it too). */
+  role: (id: string) => ['roles', id] as const,
   /** App users (end users of the user's sites) and their roles (package I). */
   appUsers: {
     all: ['appUsers'] as const,
@@ -60,6 +62,8 @@ export const queryKeys = {
       ['schema', 'definitions', category, id] as const,
     /** The models and components shared with all sites (the Network → Content types page). */
     sharedDefinitions: ['schema', 'shared'] as const,
+    /** Every site's models, shared ones once (the network roles pages). */
+    everySiteModels: ['schema', 'everySiteModels'] as const,
     change: (changeId: string) => ['schema', 'changes', changeId] as const,
   },
   /** Entries per model; invalidate `content.model(key)` after any write to that model. */

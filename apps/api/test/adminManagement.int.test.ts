@@ -179,6 +179,39 @@ describe('roles, admin users, API tokens and the audit log', () => {
     expect(allModels.statusCode).toBe(201);
   });
 
+  it('rejects field lists that name fields not on the model, deprecated ones allowed', async () => {
+    const unknown = await api('POST', '/api/admin/roles', ownerSession, {
+      key: 'ghost-fields',
+      name: 'Ghost fields',
+      permissions: [
+        { action: 'read', modelId: 'model-page', condition: null, fieldIds: ['f-title', 'f-ghost'] },
+      ],
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json()).toMatchObject({
+      error: {
+        code: 'UNKNOWN_FIELD',
+        details: { grants: [{ action: 'read', modelId: 'model-page', fieldIds: ['f-ghost'] }] },
+      },
+    });
+    const created = await api('POST', '/api/admin/roles', ownerSession, {
+      key: 'page-fields',
+      name: 'Page fields',
+      permissions: [
+        { action: 'update', modelId: 'model-page', condition: null, fieldIds: ['f-title', 'f-secret'] },
+        // An every-model field list is not checked against one model.
+        { action: 'read', modelId: null, condition: null, fieldIds: ['f-anywhere'] },
+      ],
+    });
+    expect(created.statusCode).toBe(201);
+    const role = created.json<RoleBody>();
+    const patched = await api('PATCH', `/api/admin/roles/${role.id}`, ownerSession, {
+      expectedVersion: role.version,
+      permissions: [{ action: 'update', modelId: 'model-page', condition: null, fieldIds: ['f-gone'] }],
+    });
+    expect(patched.json()).toMatchObject({ error: { code: 'UNKNOWN_FIELD' } });
+  });
+
   it('validates grants on the server', async () => {
     const cases = [
       {

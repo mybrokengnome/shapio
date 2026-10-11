@@ -124,19 +124,51 @@ export const validatePermissions = (kind: RoleKind, permissions: readonly Permis
 };
 
 /**
- * Every model a grant names must exist (the registry decides; package D implements the lookup).
- * `executor`: the caller's open transaction, when there is one.
+ * Every model a grant names must exist (the registry decides; package D implements the lookup), and every
+ * field a grant on one model names must be a field of that model (deprecated fields included). A field list
+ * on an every-model grant is not checked: it may name fields of any model. `executor`: the caller's open
+ * transaction, when there is one.
  */
-export const assertModelsExist = async (
+export const assertGrantTargetsExist = async (
   permissions: readonly PermissionInput[],
   schema: FieldVisibilityLookup,
   executor?: PermissionExecutor,
 ) => {
   const modelIds = [...new Set(permissions.flatMap((p) => (p.modelId === null ? [] : [p.modelId])))];
   const exists = await Promise.all(modelIds.map((modelId) => schema.hasModel(modelId, executor)));
-  const unknown = modelIds.filter((_modelId, index) => !exists[index]);
-  if (unknown.length > 0) {
-    throw new AppError(400, 'UNKNOWN_MODEL', 'Grants name models that do not exist', { modelIds: unknown });
+  const unknownModels = modelIds.filter((_modelId, index) => !exists[index]);
+  if (unknownModels.length > 0) {
+    throw new AppError(400, 'UNKNOWN_MODEL', 'Grants name models that do not exist', {
+      modelIds: unknownModels,
+    });
+  }
+  const scopedModelIds = [
+    ...new Set(permissions.flatMap((p) => (p.modelId !== null && p.fieldIds !== null ? [p.modelId] : []))),
+  ];
+  const fieldsByModel = new Map(
+    await Promise.all(
+      scopedModelIds.map(
+        async (modelId) => [modelId, await schema.getModelFields(modelId, executor)] as const,
+      ),
+    ),
+  );
+  const unknownFields = permissions.flatMap((permission) => {
+    if (permission.modelId === null || permission.fieldIds === null) {
+      return [];
+    }
+    const fields = fieldsByModel.get(permission.modelId);
+    if (fields === undefined) {
+      // A lookup without field definitions (tests, tools) cannot check them.
+      return [];
+    }
+    const known = new Set(fields.map((field) => field.id));
+    const fieldIds = permission.fieldIds.filter((fieldId) => !known.has(fieldId));
+    return fieldIds.length > 0 ? [{ action: permission.action, modelId: permission.modelId, fieldIds }] : [];
+  });
+  if (unknownFields.length > 0) {
+    throw new AppError(400, 'UNKNOWN_FIELD', 'Grants name fields that are not on their model', {
+      grants: unknownFields,
+    });
   }
 };
 
@@ -179,7 +211,7 @@ export const createRole = async (
   schema: FieldVisibilityLookup,
 ): Promise<RoleView> => {
   validatePermissions(input.kind, input.permissions);
-  await assertModelsExist(input.permissions, schema);
+  await assertGrantTargetsExist(input.permissions, schema);
   try {
     return await db.transaction().execute(async (trx) => {
       const role = await adminRolesRepository.insert(
@@ -236,7 +268,7 @@ export const updateRole = async (
     const kind: RoleKind = role.kind === 'delivery' ? 'delivery' : 'admin';
     if (input.permissions) {
       validatePermissions(kind, input.permissions);
-      await assertModelsExist(input.permissions, schema, trx);
+      await assertGrantTargetsExist(input.permissions, schema, trx);
     }
     const updated = await adminRolesRepository.updateIfVersion(
       id,

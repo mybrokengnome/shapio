@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Roles can be limited to some models and fields in the admin.** A role's page (Network → Roles → the role)
+  has a table of models, shared and per site, by action, with field lists per action, and shows every grant
+  the role holds, including grants made through the API and grants on deleted models, which can be removed.
+  Saving a grant whose field list names a field the model doesn't have is refused with `UNKNOWN_FIELD`, for
+  admin, delivery, and app roles.
 
 ## [0.5.6] - 2026-10-11
 

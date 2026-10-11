@@ -1,8 +1,8 @@
-import type { AppRole, DefinitionListItem } from '@shapio/client';
+import type { AppRole } from '@shapio/client';
 import { linkOptions, useParams } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useAppRole } from '@/api/appRoles';
-import { useDefinitions } from '@/api/schema';
+import { useEverySiteModels, type SiteModel } from '@/api/schema';
 import { FormError } from '@/components/FormError';
 import { FormTextareaField } from '@/components/FormTextareaField';
 import { FormTextField } from '@/components/FormTextField';
@@ -18,7 +18,7 @@ import { PermissionMatrix } from '../../PermissionMatrix';
 import { APP_ROLE_MATRIX_RULES } from '../constants';
 import { useAppRoleEditor } from './hooks/useAppRoleEditor';
 
-type FormProps = { role: AppRole; models: readonly DefinitionListItem[] };
+type FormProps = { role: AppRole; models: readonly SiteModel[]; showSites: boolean };
 
 const BUILT_IN_DESCRIPTION_KEYS = {
   public: 'appRoles.publicExplained',
@@ -30,7 +30,7 @@ const builtInDescriptionKey = (key: string) =>
     ? BUILT_IN_DESCRIPTION_KEYS[key as keyof typeof BUILT_IN_DESCRIPTION_KEYS]
     : undefined;
 
-const Form = ({ role, models }: FormProps) => {
+const Form = ({ role, models, showSites }: FormProps) => {
   const { t } = useTranslation();
   const editor = useAppRoleEditor(role);
   const explanation = role.isSystem ? builtInDescriptionKey(role.key) : undefined;
@@ -74,7 +74,9 @@ const Form = ({ role, models }: FormProps) => {
         <PermissionMatrix
           matrix={editor.matrix}
           models={models}
+          showSites={showSites}
           rules={APP_ROLE_MATRIX_RULES}
+          audience="delivery"
           onChange={editor.setMatrix}
         />
       </Panel>
@@ -88,14 +90,19 @@ const Form = ({ role, models }: FormProps) => {
 export const Editor = () => {
   const { roleId } = useParams({ from: '/app/network/roles/app/$roleId' });
   const role = useAppRole(roleId);
-  const models = useDefinitions('model');
+  const models = useEverySiteModels();
   return (
     <Page width="full">
       <QueryView query={role} loadingRows={6}>
         {(loaded) => (
           <QueryView query={models} loadingRows={6}>
-            {(definitions) => (
-              <Form key={`${loaded.id}:${loaded.version}`} role={loaded} models={definitions} />
+            {({ models: siteModels, siteCount }) => (
+              <Form
+                key={`${loaded.id}:${loaded.version}`}
+                role={loaded}
+                models={siteModels}
+                showSites={siteCount > 1}
+              />
             )}
           </QueryView>
         )}
