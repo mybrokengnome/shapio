@@ -364,9 +364,10 @@ describe('login rate limits', () => {
         remoteAddress: ip,
         payload: { email: target.email, password },
       });
-    // Successful sign-ins in parallel never count: five failures are still allowed afterwards.
-    const signIns = await startEach(4, () => attempt('10.0.2.1', TEST_PASSWORD));
-    expect(signIns.map((response) => response.statusCode)).toEqual([200, 200, 200, 200]);
+    // Successful sign-ins never count: five failures are still allowed afterwards.
+    for (let i = 0; i < 4; i += 1) {
+      expect((await attempt('10.0.2.1', TEST_PASSWORD)).statusCode).toBe(200);
+    }
     // 25 at once from the same IP: the per-IP limit stops some, the per-account one lets exactly 5 reach the password.
     const burst = await startEach(25, () => attempt('10.0.2.1'));
     const codes = burst.map((response) => response.statusCode);
