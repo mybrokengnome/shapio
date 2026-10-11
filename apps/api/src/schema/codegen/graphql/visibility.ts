@@ -136,6 +136,10 @@ export const resolveSchemaVisibility = async (
   return { key: visibilityKey(visible), models: visible, componentFields: 'public' };
 };
 
+/** Whether the caller may neither read nor write any model of the view (its schema names no model). */
+export const hasNoContentAccess = (visibility: SchemaVisibility): boolean =>
+  visibility.models !== null && visibility.models.size === 0;
+
 /** Whether a model is in the schema at all (read queries or mutations). */
 export const modelInSchema = (visibility: SchemaVisibility, modelId: string): boolean =>
   visibility.models === null || visibility.models.has(modelId);

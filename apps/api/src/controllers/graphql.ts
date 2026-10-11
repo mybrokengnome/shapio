@@ -1,5 +1,5 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
-import { OperationTypeNode } from 'graphql';
+import { getOperationAST, OperationTypeNode, type DocumentNode } from 'graphql';
 import { DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
@@ -10,7 +10,7 @@ import {
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
-import { resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
+import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import {
   executeOperation,
   prepareOperation,
@@ -26,6 +26,15 @@ const introspectionDisabled = () =>
     'INTROSPECTION_DISABLED',
     'Schema introspection needs an admin session or an API token (or GRAPHQL_PUBLIC_INTROSPECTION=true)',
   );
+
+/**
+ * A caller allowed no model at all gets the answer REST gives (sign-in signal for app clients) rather than a
+ * validation error from its empty schema: anonymous queries 401, anything else 403. Nothing is named either way.
+ */
+const noContentAccess = (anonymous: boolean, document: DocumentNode, operationName?: string | null) =>
+  anonymous && getOperationAST(document, operationName ?? undefined)?.operation !== OperationTypeNode.MUTATION
+    ? new AppError(401, 'UNAUTHENTICATED', 'This content needs a delivery token')
+    : new AppError(403, 'FORBIDDEN', 'Your credentials may not read or write any content here');
 
 const mutationOverGet = () =>
   new AppError(405, 'METHOD_NOT_ALLOWED', 'Only queries may be sent with GET; send mutations with POST');
@@ -62,6 +71,9 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   const { schema } = await runtime.schemas.get(view, visibility);
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
+    if (prepared.document && hasNoContentAccess(visibility)) {
+      throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
+    }
     return send(
       reply,
       formatGraphqlResult({ errors: prepared.errors }, { log: request.log, hideSuggestions: !mayIntrospect }),

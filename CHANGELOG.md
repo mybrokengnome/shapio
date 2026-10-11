@@ -18,9 +18,10 @@ All notable changes to Shapio are listed here. The format follows
   listed every `public: false` field (in components too) and every model of the site. The schema a delivery
   token, app user, or anonymous caller sees now holds only the models, fields, filters, and inputs its role
   allows, and leaves out relations to models it can't read. This changes what delivery callers get: a query
-  naming a hidden field or model now fails validation (`400`, `Cannot query field …`) instead of returning
-  `null`, `FORBIDDEN`, or `UNAUTHENTICATED`. Admin sessions and admin tokens, the playground included, still see
-  the full schema.
+  naming a hidden field, or a model the caller can't read while it may read others, now fails validation
+  (`400`, `Cannot query field …`) instead of returning `null` or `FORBIDDEN`. A caller allowed no model at all
+  still gets `401 UNAUTHENTICATED` (anonymous) or `403 FORBIDDEN`. Admin sessions and admin tokens, the
+  playground included, still see the full schema.
 
 ## [0.5.6] - 2026-10-11
 

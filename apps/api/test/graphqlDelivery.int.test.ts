@@ -434,10 +434,11 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
 
   it('denies anonymous callers and tokens without a grant', async () => {
     expect((await deliver('/api/content/articles', {}, null)).statusCode).toBe(401);
-    // A model the caller cannot read is not in its schema: naming it fails validation (REST: 401 / 403).
+    // Anonymous callers allowed no model get the sign-in signal, as REST.
     const anonymous = await gql('{ articles { totalCount } }', undefined, null);
-    expect(anonymous.statusCode).toBe(400);
-    expect(anonymous.body.errors?.[0]?.message).toBe('Cannot query field "articles" on type "Query".');
+    expect(anonymous.statusCode).toBe(401);
+    expect(errorCodes(anonymous)).toEqual(['UNAUTHENTICATED']);
+    // A token allowed other models: this one is simply not in its schema, so naming it fails validation.
     const other = await createDeliveryToken(database.current.db, [{ modelId: author.definition.id }]);
     expect((await deliver('/api/content/articles', {}, other)).statusCode).toBe(403);
     expect(errorCodes(await gql('{ articles { totalCount } }', undefined, other))).toEqual([

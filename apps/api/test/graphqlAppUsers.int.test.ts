@@ -84,17 +84,36 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
   it('anonymous callers get nothing until `public` grants it', async () => {
     expect((await deliver('/api/content/posts')).statusCode).toBe(401);
-    // A model no grant allows is not in the caller's schema, so naming it fails validation.
+    // Allowed no model at all: the sign-in signal, as REST, and no names either way.
     const list = await gql(LIST);
-    expect(list.statusCode).toBe(400);
-    expect(list.body.errors?.[0]?.message).toBe('Cannot query field "posts" on type "Query".');
+    expect(list.statusCode).toBe(401);
+    expect(errorCodes(list)).toEqual(['UNAUTHENTICATED']);
     expect(
       (await deliver('/api/content/posts', undefined, { method: 'POST', payload: { data: { title: 'x' } } }))
         .statusCode,
     ).toBe(403);
-    expect(errorCodes(await gql(CREATE, { data: { title: 'x' } }))).toEqual(
-      expect.arrayContaining(['GRAPHQL_VALIDATION_FAILED']),
-    );
+    const create = await gql(CREATE, { data: { title: 'x' } });
+    expect(create.statusCode).toBe(403);
+    expect(errorCodes(create)).toEqual(['FORBIDDEN']);
+    // With a grant on another model, a model it may not read is simply not in its schema.
+    const other = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'notice',
+      label: 'Notice',
+      fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    await setPublicGrants(database.current.db, [{ action: 'read', modelId: other.definition.id }]);
+    const unknown = await gql(LIST);
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.body.errors?.[0]?.message).toBe('Cannot query field "posts" on type "Query".');
+  });
+
+  it('an app user whose roles allow no model gets 403 FORBIDDEN', async () => {
+    await setAuthenticatedGrants(database.current.db, []);
+    const session = await signUp(testApp.app);
+    const refused = await gql(LIST, undefined, session.accessToken);
+    expect(refused.statusCode).toBe(403);
+    expect(errorCodes(refused)).toEqual(['FORBIDDEN']);
   });
 
   it('`public` cannot read unpublished content and sees only public fields it is granted', async () => {

@@ -55,7 +55,8 @@ anonymous caller sees only what its role allows:
 - a relation to a content type the caller can't read is left out (REST keeps the key, always `null` or `[]`).
 
 So a query naming a hidden field or content type fails validation (`400`, `Cannot query field "…" on type "…"`),
-exactly like a name that doesn't exist. Introspect with the token your client will use, and generate its types
+exactly like a name that doesn't exist. A caller allowed no content type at all gets what REST answers instead:
+`401 UNAUTHENTICATED` when anonymous (send a token or sign in), `403 FORBIDDEN` otherwise. Introspect with the token your client will use, and generate its types
 from that. Callers whose roles allow the same fields share one schema; each is built on its first request and
 again after a model changes.
 
