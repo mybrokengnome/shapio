@@ -176,6 +176,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   to resend with `acknowledgeBreaking`, which that route refuses; the message now names
   `acknowledgeDestructive` there, `acknowledgeBreaking` for a new default locale, and both only when a
   model change needs both.
+- **Pages your role can't use say so before you fill anything in.** Opening New content type, New component,
+  a New entry of a type you can't create, or Settings → API tokens by URL, bookmark, or an old link now shows
+  "You don't have access to this" instead of a form that fails on submit or a New token button.
 
 ## [0.5.6] - 2026-10-11
 

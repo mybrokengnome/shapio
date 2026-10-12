@@ -4,10 +4,12 @@ import { Link, type LinkOptions } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useHasGlobalPermission } from '@/api/auth';
 import { FormError } from '@/components/FormError';
 import { FormSwitchField } from '@/components/FormSwitchField';
 import { FormTextareaField } from '@/components/FormTextareaField';
 import { FormTextField } from '@/components/FormTextField';
+import { NoAccess } from '@/components/NoAccess';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
@@ -44,6 +46,8 @@ type FormProps = {
  */
 export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps) => {
   const { t } = useTranslation();
+  // Reached by URL or bookmark without the permission: say so before anyone fills in the form.
+  const canCreate = useHasGlobalPermission('schema.create');
   const { locked, reason } = useSchemaLock();
   const { multiSite, canShare } = useSchemaScopeAccess();
   const { form, onSubmit, pending, error, errorMessage } = useCreateDefinitionForm(kinds[0], scope);
@@ -52,6 +56,14 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
     name: ['kind', 'apiKey', 'pluralApiKey'],
   });
   const isCollection = kind === 'collection';
+  if (!canCreate) {
+    return (
+      <Page width="narrow">
+        <PageHeader breadcrumb={[{ label: backLabel, link: back }]} title={title} />
+        <NoAccess />
+      </Page>
+    );
+  }
   return (
     <Page width="narrow">
       <UnsavedChangesGuard when={form.formState.isDirty} />

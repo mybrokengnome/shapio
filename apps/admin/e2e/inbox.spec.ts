@@ -286,6 +286,15 @@ test('an editor gets the Inbox and places only: no Develop, no workspace managem
     await expect(nav.getByRole('list', { name: 'Develop' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: /models/i })).toHaveCount(0);
 
+    // By URL (a bookmark, an old link): the reason, before any form or action.
+    for (const path of ['content/new', 'develop/components/new', 'settings/api-tokens']) {
+      await editor.goto(`${ADMIN_URL}${path}`);
+      await expect(editor.getByText("You don't have access to this")).toBeVisible();
+      await expect(editor.getByRole('textbox')).toHaveCount(0);
+      await expect(editor.getByRole('button', { name: /^(Create|New token)$/ })).toHaveCount(0);
+    }
+    await editor.goto(ADMIN_URL);
+
     await waitForFinding(editor, 'Images without alt text');
     await expect(editor.getByRole('region', { name: 'Scheduled soon' })).toHaveCount(0);
     await expect(editor.getByRole('heading', { name: 'Workspace overview' })).toHaveCount(0);

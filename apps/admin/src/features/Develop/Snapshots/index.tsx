@@ -4,13 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useSnapshots } from '@/api/snapshots';
 import { CursorPager } from '@/components/CursorPager';
 import { EmptyState } from '@/components/EmptyState';
+import { NoAccess } from '@/components/NoAccess';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { TableCard } from '@/components/TableCard';
 import { useCursorPager } from '@/features/Publishing/hooks/useCursorPager';
 import { useDevelopPermissions } from '../Changes/hooks/useDevelopPermissions';
-import { NoAccess } from '../Changes/NoAccess';
 import { usePinnedBy } from './hooks/usePinnedBy';
 import { Table } from './Table';
 

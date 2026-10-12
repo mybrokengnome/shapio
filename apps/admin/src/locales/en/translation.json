@@ -4,6 +4,8 @@
     "skipToContent": "Skip to content"
   },
   "common": {
+    "noAccess": "You don't have access to this",
+    "noAccessDescription": "Ask an owner for a role that includes it.",
     "cancel": "Cancel",
     "close": "Close",
     "saveChanges": "Save changes",
@@ -2798,8 +2800,6 @@
       "unavailable": "GraphiQL is turned off",
       "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
     },
-    "noAccess": "You don't have access to this",
-    "noAccessDescription": "Ask an owner for a role that includes it.",
     "actors": {
       "admin": "An admin",
       "token": "An API token",
