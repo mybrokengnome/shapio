@@ -223,6 +223,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   over the admin, REST, and GraphQL; new entries count as your own.
 - **Restoring a revision checks every field it changes.** On localized content types, a restore could change
   fields of its locale that your role may not edit. Those restores are now refused with `FORBIDDEN_FIELD`.
+- **Duplicating an entry copies only what you may read on it.** A field you could not read on someone else's
+  entry (granted only on your own entries, say) was copied into the duplicate, which you own, so the value
+  showed there. It is now left empty, like unique fields, for you to fill in before saving.
 
 ## [0.5.6] - 2026-10-11
 

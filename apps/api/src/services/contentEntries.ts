@@ -1,7 +1,13 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
-import { assertWritable, ownershipOfNewEntry, rowWriteMask } from '../content/compiler/policy.js';
+import {
+  assertWritable,
+  ownershipOfNewEntry,
+  pickMasked,
+  rowReadMask,
+  rowWriteMask,
+} from '../content/compiler/policy.js';
 import {
   contentVersionConflict,
   entryLocaleNotFound,
@@ -510,7 +516,8 @@ export const deleteEntry = async (
 
 /**
  * Copies every locale's draft into a new entry. Unique fields are left empty (a copy could never satisfy
- * them) and the copy is flagged as not fully validated, so the editor completes it before saving.
+ * them), and so are fields the caller may not read on the source. The copy is flagged as not fully validated,
+ * so the editor completes it before saving.
  */
 export const duplicateEntry = async (
   context: ContentServiceContext,
@@ -533,12 +540,15 @@ export const duplicateEntry = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const source = assertEntryVisible(
       read.policy,
       context.actor,
       await entriesRepository.findLive(id, model.definition.id, context.site.id, trx),
       id,
     );
+    // Only what the caller may read on the source is copied (issue #104); the rest is left empty like unique
+    // fields, for the editor to fill before saving.
+    const readable = rowReadMask(read.policy, context.actor, source);
     const drafts = (await entryHeadsRepository.findForEntry(id, trx)).filter(
       (head) => head.state === 'draft',
     );
@@ -547,7 +557,9 @@ export const duplicateEntry = async (
       trx,
     );
     for (const draft of drafts) {
-      const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
+      const copy = Object.fromEntries(
+        Object.entries(pickMasked(readable, draft.data)).filter(([key]) => !unique.has(key)),
+      );
       assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(copy));
       const outcome = validated(validator, copy, true);
       await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [draft.data]));

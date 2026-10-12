@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Policy, Principal } from '../../permissions/types.js';
-import { everyRowReadMask, ownershipOfNewEntry, rowReadMask, rowWriteMask } from './policy.js';
+import { everyRowReadMask, ownershipOfNewEntry, pickMasked, rowReadMask, rowWriteMask } from './policy.js';
 
 const policy: Policy = {
   allowed: true,
@@ -110,5 +110,22 @@ describe('write masks on one entry (issue #80)', () => {
       fieldIds: ['f-bio'],
       componentFields: 'public',
     });
+  });
+});
+
+describe('values a mask covers', () => {
+  const data = { 'f-name': 'Ada', 'f-email': 'ada@example.com', 'f-old': 'kept' };
+
+  it('keeps only the fields a narrowed mask names', () => {
+    expect(pickMasked({ mode: 'only', fieldIds: ['f-name'], componentFields: 'public' }, data)).toEqual({
+      'f-name': 'Ada',
+    });
+    expect(pickMasked({ mode: 'only', fieldIds: [], componentFields: 'public' }, data)).toEqual({});
+  });
+
+  it('keeps every value under a wildcard mask, deprecated fields included', () => {
+    const picked = pickMasked({ mode: 'all' }, data);
+    expect(picked).toEqual(data);
+    expect(picked).not.toBe(data);
   });
 });
