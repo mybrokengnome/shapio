@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-12
+
 ### Changed
 
 - The example site walkthrough and the starter READMEs no longer send people to the monorepo and pnpm; everything
