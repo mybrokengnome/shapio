@@ -108,11 +108,10 @@ const positiveInteger = (value: QueryValue | undefined, name: string, max: numbe
 
 type FilterState = { context: ParseContext; conditions: number };
 
-const resolveTarget = (
-  context: ParseContext,
-  key: string,
-  use: 'select' | 'query' = 'query',
-): FilterTarget => {
+/** What the key is used for, which the refusal names: a filter, sort or search, or a `fields` selection. */
+type TargetUse = 'query' | 'select';
+
+const resolveTarget = (context: ParseContext, key: string, use: TargetUse = 'query'): FilterTarget => {
   if ((SYSTEM_ATTRIBUTES as readonly string[]).includes(key)) {
     return { kind: 'system', name: key as SystemAttribute };
   }
@@ -121,7 +120,12 @@ const resolveTarget = (
     throw queryInvalid(`Unknown field "${key}"`, { field: key });
   }
   if (use === 'select' ? !context.isReadable(field) : !context.isQueryable(field)) {
-    throw queryForbidden(`You may not filter, sort or search on "${key}"`, { field: key });
+    throw queryForbidden(
+      use === 'select'
+        ? `You may not read the field "${key}"`
+        : `You may not filter, sort or search on "${key}"`,
+      { field: key },
+    );
   }
   return { kind: 'field', field };
 };

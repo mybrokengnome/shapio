@@ -165,6 +165,11 @@ describe('content query compiler', () => {
     expect(status(() => compileQuery('filters[__proto__][x]=1'))).toBe(400);
   });
 
+  it('names what was refused: reading a hidden field, or filtering, sorting or searching on it', () => {
+    expect(() => compileQuery('fields=title,secret')).toThrow('You may not read the field "secret"');
+    expect(() => compileQuery('sort=secret:desc')).toThrow('You may not filter, sort or search on "secret"');
+  });
+
   it('escapes LIKE wildcards in text matches', () => {
     const { parameters } = compileQuery('filters[title][$containsi]=50%_off');
     expect(parameters).toContain('%50\\%\\_off%');
