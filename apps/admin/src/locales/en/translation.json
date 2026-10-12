@@ -350,6 +350,11 @@
         "sentence": "{{field}} links to an entry that no longer exists",
         "fix": "Fix link"
       },
+      "mediaMissing": {
+        "title": "Files deleted from the library",
+        "sentence": "A file in {{field}} is no longer in the media library",
+        "fix": "Replace file"
+      },
       "relationUnpublished": {
         "title": "Links to unpublished entries",
         "sentence": "{{field}} links to an entry that isn’t live, so readers won’t see it",

@@ -1,6 +1,7 @@
 import { MEDIA_EVENTS, MEDIA_JOB_MAX_ATTEMPTS, MEDIA_RELOCATE_JOB } from '../constants/media.js';
 import { db } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
+import { enqueueEntryHealth } from '../jobs/contentHealth.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import { enqueueJob } from '../jobs/queue.js';
 import type { MediaVisibility } from '../media/keys.js';
@@ -186,7 +187,10 @@ export const deleteAsset = async (
     if (usageCount > 0 && !isOwnerActor(context.actor, await getOwnerRoleId(trx))) {
       throw new AppError(403, 'FORBIDDEN', 'Only owners can delete media that content still uses');
     }
+    // The entries keep the asset's ID; re-checking them raises mediaMissing in the Inbox.
+    const usedBy = usageCount > 0 ? await mediaReferencesRepository.listEntryIdsForAsset(id, trx) : [];
     await mediaReferencesRepository.deleteForAsset(id, trx);
+    await enqueueEntryHealth(trx, usedBy, `health:media-delete:${id}`);
     const variantKeys = await mediaVariantsRepository.deleteForAsset(id, trx);
     await mediaAssetsRepository.update(id, { deleted_at: new Date() }, trx);
     const driver = asset.storage_driver as StorageDriver;

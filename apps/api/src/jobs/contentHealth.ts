@@ -1,4 +1,4 @@
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { MEDIA_EVENTS } from '../constants/media.js';
 import type { DB } from '../db/types.js';
@@ -113,6 +113,25 @@ export const createContentHealthJobHandlers = ({
   ];
 };
 
+/** Re-evaluates these entries in the background, enqueued in the caller's transaction. */
+export const enqueueEntryHealth = async (
+  trx: Transaction<DB>,
+  entryIds: readonly string[],
+  idempotencyPrefix: string,
+) => {
+  for (const entryId of entryIds) {
+    await enqueueJob(
+      {
+        type: CONTENT_HEALTH_JOBS.entry,
+        priority: JOB_PRIORITY.background,
+        payload: { entryId },
+        idempotencyKey: `${idempotencyPrefix}:${entryId}`,
+      },
+      trx,
+    );
+  }
+};
+
 /** Turns domain events into health re-evaluations, in the relay's transaction (ADR 0007). */
 export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx) => {
   if (event.aggregate_type === 'entry') {
@@ -129,17 +148,7 @@ export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx
   }
   if (event.type === MEDIA_EVENTS.updated) {
     const entryIds = await mediaReferencesRepository.listEntryIdsForAsset(event.aggregate_id, trx);
-    for (const entryId of entryIds) {
-      await enqueueJob(
-        {
-          type: CONTENT_HEALTH_JOBS.entry,
-          priority: JOB_PRIORITY.background,
-          payload: { entryId },
-          idempotencyKey: `health:${event.event_id}:${entryId}`,
-        },
-        trx,
-      );
-    }
+    await enqueueEntryHealth(trx, entryIds, `health:${event.event_id}`);
     return;
   }
   // A model's activation re-checks its entries; a component's (embedded anywhere) or a locale change, all.

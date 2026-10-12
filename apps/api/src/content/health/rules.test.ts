@@ -157,6 +157,18 @@ describe('evaluateHealth', () => {
     ).toEqual([]);
   });
 
+  it('reports media whose asset is no longer in the library, each use once', () => {
+    const data = {
+      [id(2)]: 'Hi',
+      [id(3)]: 'gone',
+      [id(4)]: body(image('gone', 'Alt'), image('kept', 'Alt')),
+    };
+    const assets = new Map([['kept', { alt: 'Library', mimeType: 'image/png' }]]);
+    const found = evaluateHealth(inputs({ drafts: [head({ data })], locales: ['en'], assets }));
+    expect(rulesOf(found)).toEqual(['en mediaMissing /cover#gone#0', 'en mediaMissing /body#gone#0']);
+    expect(found[0]).toMatchObject({ path: '/cover', params: { assetId: 'gone' } });
+  });
+
   it('reports configured locales the entry has no version in', () => {
     expect(rulesOf(evaluateHealth(inputs({ drafts: [head()] })))).toEqual(['fr localeMissing ']);
   });

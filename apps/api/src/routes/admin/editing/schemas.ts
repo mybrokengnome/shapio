@@ -10,7 +10,7 @@ const ParamsSchema = Type.Record(Type.String(), Type.Union([Type.String(), Type.
 const DateTime = Type.String({ format: 'date-time' });
 
 const PreflightCheckSchema = Type.Object({
-  rule: Type.Union([HealthRuleSchema, Type.Literal('invalid'), Type.Literal('mediaMissing')]),
+  rule: Type.Union([HealthRuleSchema, Type.Literal('invalid')]),
   severity: Type.Enum(['error', 'warning']),
   path: Type.Optional(Type.String()),
   code: Type.Optional(Type.String()),

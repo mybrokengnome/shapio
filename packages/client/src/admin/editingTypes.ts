@@ -10,6 +10,7 @@ export const HEALTH_RULES = [
   'altMissing',
   'localeMissing',
   'relationMissing',
+  'mediaMissing',
   'relationUnpublished',
   'uniqueConflict',
   'staleDraft',
@@ -17,8 +18,8 @@ export const HEALTH_RULES = [
 ] as const;
 export type HealthRule = (typeof HEALTH_RULES)[number];
 
-/** Pre-flight adds the publish checks that are not health rules: validator issues and missing media. */
-export type PreflightRule = HealthRule | 'invalid' | 'mediaMissing';
+/** Pre-flight adds the publish checks that are not health rules: validator issues. */
+export type PreflightRule = HealthRule | 'invalid';
 
 export type CheckSeverity = 'error' | 'warning';
 

@@ -6,8 +6,11 @@ import { hasUnsavedEdits, useSessionStore } from '@/stores/session';
 
 declare module '@tanstack/react-query' {
   interface Register {
-    /** `silent`: logged but no toast, because the caller shows the error itself (inline form error, state view). */
-    queryMeta: { silent?: boolean };
+    /**
+     * `silent`: logged but no toast, because the caller shows the error itself (inline form error, state view).
+     * `silentNotFound`: the same for 404 only, where callers show a "no longer exists" state.
+     */
+    queryMeta: { silent?: boolean; silentNotFound?: boolean };
     mutationMeta: { silent?: boolean };
   }
 }
@@ -63,7 +66,12 @@ export const createQueryClient = () => {
         const isMeQuery = query.queryKey[0] === queryKeys.me[0];
         // `me` answers a 401 with null, except over unsaved edits, where it fails so the session resumes in place.
         const inPlace = handleSessionEnded(error, false);
-        (query.meta?.silent || isSiteAccessError(error) || inPlace ? logError : reportError)(error, context);
+        const quiet =
+          query.meta?.silent ||
+          (query.meta?.silentNotFound && isNotFound(error)) ||
+          isSiteAccessError(error) ||
+          inPlace;
+        (quiet ? logError : reportError)(error, context);
         handleSiteAccessLost(error, isMeQuery);
       },
     }),

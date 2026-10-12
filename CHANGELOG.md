@@ -92,6 +92,10 @@ All notable changes to Shapio are listed here. The format follows
 - **Publishing a draft that is already live is a no-op.** It no longer makes a new snapshot, writes an
   `entry.published` event (so webhooks and deployment triggers stay quiet), or adds a publication-log row. This
   covers bulk Publish, scheduled publishes, and change sets too, and matches how unpublishing twice behaves.
+- **Entries using a force-deleted file can be saved again.** After an owner force-deleted a file that content
+  used, saving or publishing those entries failed with `MEDIA_MISSING`. Saves now check only the files they add,
+  the admin shows the missing file so you can remove it, and the Inbox lists the entries under "Files deleted
+  from the library".
 
 ## [0.5.6] - 2026-10-11
 

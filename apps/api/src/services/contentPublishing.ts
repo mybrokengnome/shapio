@@ -18,7 +18,7 @@ import {
   unpublishLocale,
   type WriteContext,
 } from '../content/write/heads.js';
-import { assertTargets } from '../content/write/references.js';
+import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import * as entriesRepository from '../repositories/entries.js';
@@ -89,7 +89,8 @@ export const publishLocalesInTransaction = async (
         outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
       );
     }
-    await assertTargets(trx, outcome, site.id);
+    // Every asset of a saved draft passed the check when it was saved; one gone since was force-deleted.
+    await assertTargets(trx, outcome, site.id, mediaIdsOf(model, [draft.data]));
     const context = {
       trx,
       site,
@@ -133,7 +134,15 @@ export const publishRevisionInTransaction = async (
       outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
     );
   }
-  await assertTargets(trx, outcome, site.id);
+  await assertTargets(
+    trx,
+    outcome,
+    site.id,
+    mediaIdsOf(
+      model,
+      heads.filter((head) => head.locale === locale).map((head) => head.data),
+    ),
+  );
   const published = heads.find((head) => head.state === 'published' && head.locale === locale);
   const context = {
     trx,

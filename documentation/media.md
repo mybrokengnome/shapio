@@ -122,6 +122,11 @@ Every asset shows which entries use it (in fields, components and rich-text imag
 uses cannot be deleted; owners can force it, leaving the content pointing at a missing file. Deleted assets'
 files are purged by a background job.
 
+Content that points at a force-deleted file stays editable and publishable: saves only check the files they
+add, and the entry shows up in the Inbox under "Files deleted from the library". Delivery leaves the missing
+file out. In the admin API, a media value is an asset view, or the bare asset ID when the library no longer
+resolves it, so the editor can see the missing file and remove it.
+
 ## Moving between local disk and S3
 
 `shapio media migrate` copies every asset and its variants to the other storage, verifies checksums and
