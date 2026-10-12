@@ -42,6 +42,11 @@ export type ProjectionOptions = {
   richText?: RichTextMode;
   /** Asset views by ID (media fields become views, missing assets are dropped); null leaves IDs as stored. */
   mediaAssets: ReadonlyMap<string, { url: string }> | null;
+  /**
+   * Leaves out a component's `public: false` fields at any depth (delivery audiences: the read mask's
+   * `componentFields`). A left-out field is absent from the value, as a masked top-level field is.
+   */
+  publicComponentFieldsOnly: boolean;
 };
 
 /**
@@ -102,7 +107,9 @@ const projectComponent = (
 ): Record<string, unknown> | null =>
   component && isRecord(value)
     ? projectFields(
-        component.fields.filter((field) => !field.deprecated),
+        component.fields.filter(
+          (field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly),
+        ),
         value,
         options,
         false,

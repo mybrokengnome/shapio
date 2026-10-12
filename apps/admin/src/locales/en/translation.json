@@ -1058,6 +1058,7 @@
       "editorHint": "Changing it never changes stored data.",
       "public": "Public",
       "publicHint": "Off: hidden from the delivery API unless a role grants it.",
+      "publicComponentHint": "Off: hidden from the delivery API. Roles can't grant a component's fields.",
       "fieldLocalized": "Localized",
       "fieldLocalizedHint": "Off: one value shared by every locale.",
       "filterable": "Filterable",

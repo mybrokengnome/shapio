@@ -1,4 +1,4 @@
-import { normalizeDefinition, type ModelDefinition } from '@shapio/schema';
+import { normalizeDefinition, type ComponentDefinition, type ModelDefinition } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import type { ContentModel } from '../model.js';
 import { projectData, RICH_TEXT_HTML, selectFields, type DeliveredRichText } from './select.js';
@@ -42,6 +42,7 @@ const project = (data: Record<string, unknown>, richText: RichTextMode | null = 
     populated: new Map(),
     ...(richText ? { richText } : {}),
     mediaAssets: null,
+    publicComponentFieldsOnly: false,
   });
 
 const richDoc = {
@@ -110,6 +111,107 @@ describe('projectData', () => {
     it('leaves the stored value untouched without a mode (admin reads, hooks)', () => {
       const body = project({ [ids.body]: richDoc }, null).body;
       expect(body).toBe(richDoc);
+    });
+  });
+
+  describe('component fields', () => {
+    const c = {
+      box: 'a0a0a0a0-0000-4000-8000-000000000001',
+      open: 'a0a0a0a0-0000-4000-8000-000000000002',
+      secret: 'a0a0a0a0-0000-4000-8000-000000000003',
+      address: 'a0a0a0a0-0000-4000-8000-000000000004',
+      city: 'a0a0a0a0-0000-4000-8000-000000000005',
+      hidden: 'a0a0a0a0-0000-4000-8000-000000000006',
+      inner: 'a0a0a0a0-0000-4000-8000-000000000007',
+      addr: 'a0a0a0a0-0000-4000-8000-000000000008',
+      addrs: 'a0a0a0a0-0000-4000-8000-000000000009',
+      zone: 'a0a0a0a0-0000-4000-8000-00000000000a',
+    };
+    const box = normalizeDefinition({
+      id: c.box,
+      kind: 'component',
+      apiKey: 'box',
+      label: 'Box',
+      fields: [
+        { id: c.open, apiKey: 'open', label: 'Open', type: 'string' },
+        { id: c.secret, apiKey: 'secret', label: 'Secret', type: 'string', public: false },
+      ],
+    }) as ComponentDefinition;
+    const address = normalizeDefinition({
+      id: c.address,
+      kind: 'component',
+      apiKey: 'address',
+      label: 'Address',
+      fields: [
+        { id: c.city, apiKey: 'city', label: 'City', type: 'string' },
+        { id: c.hidden, apiKey: 'hidden', label: 'Hidden', type: 'string', public: false },
+        { id: c.inner, apiKey: 'inner', label: 'Inner', type: 'component', settings: { component: c.box } },
+      ],
+    }) as ComponentDefinition;
+    const thing = normalizeDefinition({
+      id: '0b5d6f3e-2d55-4f6c-9b1a-5d2c8e9f1a02',
+      kind: 'collection',
+      apiKey: 'thing',
+      label: 'Thing',
+      fields: [
+        { id: c.addr, apiKey: 'addr', label: 'Addr', type: 'component', settings: { component: c.address } },
+        {
+          id: c.addrs,
+          apiKey: 'addrs',
+          label: 'Addrs',
+          type: 'component',
+          settings: { component: c.address, repeatable: true },
+        },
+        {
+          id: c.zone,
+          apiKey: 'zone',
+          label: 'Zone',
+          type: 'dynamiczone',
+          settings: { components: [c.address] },
+        },
+      ],
+    }) as ModelDefinition;
+    const thingModel: ContentModel = {
+      definition: thing,
+      version: 1,
+      revisionId: 'r',
+      components: new Map([
+        [c.box, { definition: box, version: 1 }],
+        [c.address, { definition: address, version: 1 }],
+      ]),
+    };
+    const stored = { [c.city]: 'Paris', [c.hidden]: 'h1', [c.inner]: { [c.open]: 'o', [c.secret]: 's' } };
+    const data = {
+      [c.addr]: stored,
+      [c.addrs]: [stored],
+      [c.zone]: [{ __component: c.address, ...stored }],
+    };
+    const projectThing = (publicComponentFieldsOnly: boolean) =>
+      projectData(data, {
+        model: thingModel,
+        fields: selectFields(thingModel, { mode: 'all' }, null),
+        visibleTargets: null,
+        populated: new Map(),
+        mediaAssets: null,
+        publicComponentFieldsOnly,
+      });
+
+    it('leaves out non-public fields of single, repeatable and dynamic-zone components at any depth', () => {
+      const shown = { city: 'Paris', inner: { open: 'o' } };
+      expect(projectThing(true)).toEqual({
+        addr: shown,
+        addrs: [shown],
+        zone: [{ __component: 'address', ...shown }],
+      });
+    });
+
+    it('keeps every field when not limited to public ones (admin reads)', () => {
+      const all = { city: 'Paris', hidden: 'h1', inner: { open: 'o', secret: 's' } };
+      expect(projectThing(false)).toEqual({
+        addr: all,
+        addrs: [all],
+        zone: [{ __component: 'address', ...all }],
+      });
     });
   });
 });

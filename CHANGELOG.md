@@ -21,6 +21,10 @@ All notable changes to Shapio are listed here. The format follows
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
   half-typed JSON now stays in the field with its error, counts as an unsaved change, and blocks Save, Create,
   and Publish; autosave saves the other changes and holds that field back until it is fixed.
+- **Public off on a component's field now hides it from delivery.** REST, GraphQL, in-process delivery, and
+  previews returned a component's `public: false` fields to delivery tokens, app users, and anonymous callers,
+  in single, repeatable, and dynamic-zone components. They are now left out at any depth (GraphQL returns
+  `null`); admin reads still show them.
 
 ## [0.5.6] - 2026-10-11
 

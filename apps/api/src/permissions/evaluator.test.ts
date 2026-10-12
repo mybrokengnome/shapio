@@ -156,8 +156,8 @@ describe('permission evaluator', () => {
     expect(await evaluator.evaluate(principal, { action: 'read', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: null,
-      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'] },
-      writeMask: { mode: 'only', fieldIds: [] },
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'], componentFields: 'public' },
+      writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
     });
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
   });
@@ -225,8 +225,8 @@ describe('permission evaluator', () => {
     expect(await evaluator.evaluate(owned, { action: 'update', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
-      readMask: { mode: 'only', fieldIds: ['f-title'] },
-      writeMask: { mode: 'only', fieldIds: ['f-title'] },
+      readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
+      writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
     });
     const both: Principal = adminOn(['a', 'b']);
     expect(await evaluator.evaluate(both, { action: 'update', modelId: MODEL })).toMatchObject({

@@ -62,7 +62,7 @@ export const NO_FIELD_VISIBILITY: FieldVisibilityLookup = {
   getModelSite: () => Promise.resolve(null),
 };
 
-const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };
+const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [], componentFields: 'public' };
 
 export const ALLOW_ALL_POLICY: Policy = Object.freeze<Policy>({
   allowed: true,
@@ -94,7 +94,8 @@ export const combineRowFilters = (grants: readonly Grant[]): RowFilter | null =>
 /**
  * Fields: the union of what each grant allows. For delivery audiences a wildcard grant expands to the
  * model's public fields, so `public: false` fields stay hidden unless a grant names them. Delivery masks
- * are always explicit lists, so a field added after evaluation is never exposed by accident.
+ * are always explicit lists, so a field added after evaluation is never exposed by accident. Grants name model
+ * fields only, so inside components delivery audiences see the `public` fields alone, whatever they hold.
  */
 export const combineFieldMasks = (
   grants: readonly Grant[],
@@ -112,9 +113,9 @@ export const combineFieldMasks = (
   if (audience === 'delivery') {
     const known = fields ?? [];
     const visible = known.filter((field) => named.has(field.id) || (hasWildcard && field.public));
-    return { mode: 'only', fieldIds: visible.map((field) => field.id) };
+    return { mode: 'only', fieldIds: visible.map((field) => field.id), componentFields: 'public' };
   }
-  return { mode: 'only', fieldIds: [...named].sort() };
+  return { mode: 'only', fieldIds: [...named].sort(), componentFields: 'all' };
 };
 
 /**

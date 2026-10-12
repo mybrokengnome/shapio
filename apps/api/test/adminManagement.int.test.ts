@@ -88,7 +88,7 @@ describe('roles, admin users, API tokens and the audit log', () => {
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
       readMask: { mode: 'all' },
-      writeMask: { mode: 'only', fieldIds: ['f-title'] },
+      writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
     });
     expect(
       (await testApp.app.permissions.evaluate(principal, { action: 'delete', modelId: 'model-page' }))

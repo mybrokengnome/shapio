@@ -8,7 +8,7 @@ import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
 import { compileHeadQuery, type HeadRow, type HeadSource, type LocaleScope } from './compiler/compile.js';
 import { entryIdIn } from './compiler/conditions.js';
-import { compileRowFilter } from './compiler/policy.js';
+import { compileRowFilter, hidesPrivateComponentFields } from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
@@ -278,6 +278,7 @@ export const projectRows = async (
       populated,
       ...(env.audience === 'delivery' ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE } : {}),
       mediaAssets: media.byId,
+      publicComponentFieldsOnly: hidesPrivateComponentFields(policy.readMask),
     });
     return {
       row,

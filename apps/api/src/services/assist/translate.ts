@@ -150,6 +150,7 @@ export const toInputFormat = (
     visibleTargets: null,
     populated: new Map(),
     mediaAssets: null,
+    publicComponentFieldsOnly: false,
   });
 };
 

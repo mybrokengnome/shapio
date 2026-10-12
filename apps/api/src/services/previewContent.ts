@@ -82,7 +82,8 @@ export const createPreviewPermissions = (
       );
       return {
         ...policy,
-        readMask: { mode: 'only', fieldIds: visible.map((field) => field.id) },
+        // What the site sees: a component's non-public fields stay hidden, as for any delivery audience.
+        readMask: { mode: 'only', fieldIds: visible.map((field) => field.id), componentFields: 'public' },
         writeMask: DENIED_POLICY.writeMask,
       };
     },
