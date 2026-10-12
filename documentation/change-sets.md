@@ -61,6 +61,9 @@ Open a set to review it, shaped like a pull request:
 - **Timeline**: created, items added and removed, drafts saved, scheduled, entries changed after review (on a
   scheduled ship), shipped (with a link to the snapshot) and the deployment run.
 
+A shipped set keeps its review, like a merged pull request: each entry's values before and after the ship
+(snapshot N-1 against N) and each schema item as it shipped, with who shipped it and no ship checks.
+
 ## Ship
 
 **Ship** (needs `changes.ship`) puts the whole set live in one step:

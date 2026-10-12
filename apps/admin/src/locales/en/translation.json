@@ -2585,7 +2585,8 @@
       "discardTitle": "Discard “{{title}}”?",
       "discardDescription": "Its schema drafts are deleted. Entry drafts stay as they are.",
       "discarded": "Change set discarded",
-      "shippedIn": "Shipped. Live as",
+      "shippedAs": "Shipped as",
+      "shippedByAt": "by {{name}} {{at}}",
       "failedTitle": "The last ship failed; nothing went live",
       "staleTitle": "Changed since you looked",
       "staleDescription": "Something in this change set moved after this review loaded. Refresh to review the latest before shipping.",
@@ -2604,10 +2605,13 @@
       "field": "Field",
       "before": "Live now",
       "after": "After shipping",
+      "beforeShip": "Before",
+      "shippedValue": "Shipped",
       "empty": "empty",
       "raw": "Raw",
       "fieldChangesOf": "Field changes in {{title}}",
       "noFieldChanges": "No field values change.",
+      "notRecorded": "This set shipped as a release, before change sets kept their diff.",
       "schemaChangesOf": "Schema changes to {{name}}",
       "noSchemaChanges": "No schema changes.",
       "schemaStale": "Based on version {{base}}, but version {{active}} is live now. Rebase the draft before shipping.",
@@ -2644,7 +2648,8 @@
       },
       "healthTitle": "Content health",
       "noHealthFindings": "No open health findings on these entries.",
-      "shared": "Shared, affects every site"
+      "shared": "Shared, affects every site",
+      "checksPassedAtShip": "Every check passed when this set shipped."
     },
     "consumers": {
       "window_one": "Reads from delivery traffic over the last {{count}} day.",

@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { RULE_TITLE_KEYS } from '@/features/Inbox/constants';
+import { EDITABLE_STATUSES } from '../../Changes/constants';
 import { HealthChip } from '../../Changes/HealthChip';
 import { useSetHealthFindings } from '../hooks/useSetHealthFindings';
 import type { ShipFlow } from '../hooks/useShipFlow';
@@ -28,14 +29,22 @@ type ChecksTabProps = { review: ChangeSetReview; flow: ShipFlow };
 /**
  * What must hold before the set ships: blocking problems, the planner's results per schema item, entries
  * that fail validation, entries a restore can't bring back, content-health findings, and the
- * acknowledgement breaking or destructive changes need.
+ * acknowledgement breaking or destructive changes need. A shipped set passed them when it shipped, and says
+ * so; the acknowledgement is asked only while the set can still ship.
  */
 export const ChecksTab = ({ review, flow }: ChecksTabProps) => {
   const { t } = useTranslation();
   const { findings } = useSetHealthFindings(review.entries);
   const invalidEntries = review.entries.filter((entry) => entry.issues.length > 0);
+  const editable = EDITABLE_STATUSES.has(review.changeSet.status);
   return (
     <div className="space-y-4">
+      {review.changeSet.status === 'shipped' ? (
+        <Alert variant="success" role="status">
+          <CheckCircle2 aria-hidden="true" />
+          <AlertDescription>{t('changes.review.checksPassedAtShip')}</AlertDescription>
+        </Alert>
+      ) : null}
       {review.checks.blocking.length > 0 ? (
         <Alert variant="destructive">
           <AlertTriangle aria-hidden="true" />
@@ -125,7 +134,7 @@ export const ChecksTab = ({ review, flow }: ChecksTabProps) => {
           </ul>
         )}
       </Panel>
-      {flow.needsBreaking || flow.needsDestructive ? (
+      {editable && (flow.needsBreaking || flow.needsDestructive) ? (
         <fieldset className="space-y-3 rounded-lg border border-warning/40 bg-warning-muted/40 p-4">
           <legend className="px-1 text-sm font-semibold text-warning">{t('models.plan.acknowledge')}</legend>
           {flow.needsBreaking ? (

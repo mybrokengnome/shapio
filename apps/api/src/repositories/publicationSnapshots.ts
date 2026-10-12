@@ -77,3 +77,12 @@ export const list = (
 
 export const findBySeq = (siteId: string, seq: number, executor: Executor = db) =>
   listQuery(siteId, executor).where('s.seq', '=', String(seq)).executeTakeFirst();
+
+/** Who took the site's snapshot `seq` (audit vocabulary: `admin`, `token`, `system`, ...); undefined without a ledger row. */
+export const findActor = (siteId: string, seq: number, executor: Executor = db) =>
+  executor
+    .selectFrom('publication_snapshots')
+    .select(['actor_type', 'actor_id'])
+    .where('site_id', '=', siteId)
+    .where('seq', '=', String(seq))
+    .executeTakeFirst();

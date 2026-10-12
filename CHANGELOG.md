@@ -58,6 +58,11 @@ All notable changes to Shapio are listed here. The format follows
   takes the draft version you read (`expectedVersion`, or `expectedVersions` per locale) and answers 409
   `CONTENT_VERSION_CONFLICT` when it moved. The editor, list, and bulk Publish send it; `@shapio/client` and
   the GraphQL `publish…` mutations accept it.
+- **A shipped change set keeps showing what it shipped.** Its page used to compare the set with what it had
+  just made live, so it said "No schema changes", asked to rebase the draft, and showed "Shipping is blocked".
+  It now lists the schema changes and each entry's values before and after the ship, says who shipped it as
+  which snapshot, and shows no ship checks. Also, on a phone, a card's buttons and chips no longer cover its
+  title.
 
 ## [0.5.6] - 2026-10-11
 

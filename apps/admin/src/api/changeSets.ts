@@ -42,11 +42,16 @@ export const useChangeSet = (id: string) =>
     meta: silent,
   });
 
-/** The review (diffs, planner results, consumers, checks). Not refetched on focus: a strict ship needs a stable view. */
-export const useChangeSetReview = (id: string) =>
+/**
+ * The review (diffs, planner results, consumers, checks). Not refetched on focus: a strict ship needs a stable
+ * view. Fetched again when the set's status changes (a shipped set's review is what it shipped); the set's
+ * previous review stays on screen meanwhile.
+ */
+export const useChangeSetReview = (set: Pick<ChangeSet, 'id' | 'status'>) =>
   useQuery({
-    queryKey: queryKeys.develop.changeSets.review(id),
-    queryFn: () => changeSetsApi.review(id),
+    queryKey: queryKeys.develop.changeSets.review(set.id, set.status),
+    queryFn: () => changeSetsApi.review(set.id),
+    placeholderData: (previous) => (previous?.changeSet.id === set.id ? previous : undefined),
     refetchOnWindowFocus: false,
     meta: silent,
   });

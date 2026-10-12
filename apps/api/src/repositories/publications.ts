@@ -130,3 +130,28 @@ export const hasOpen = async (entryId: string, executor: Executor = db): Promise
 
 export const removeForLocale = (locale: string, trx: Executor = db) =>
   trx.deleteFrom('publication_log').where('locale', '=', locale).executeTakeFirst();
+
+/**
+ * The revision each (entry, locale) of these entries served at the site's snapshot `seq`, with its data:
+ * the log row whose live period contains `seq` (`from_seq <= seq and (to_seq is null or to_seq > seq)`),
+ * the rule `?snapshot=N` reads with. Pairs not live at `seq` are absent.
+ */
+export const findRevisionsLiveAt = (
+  siteId: string,
+  entryIds: readonly string[],
+  seq: number,
+  executor: Executor = db,
+) => {
+  if (entryIds.length === 0) {
+    return Promise.resolve([]);
+  }
+  return executor
+    .selectFrom('publication_log as pl')
+    .innerJoin('content_revisions as r', 'r.id', 'pl.revision_id')
+    .select(['pl.entry_id', 'pl.locale', 'pl.revision_id', 'r.data'])
+    .where('pl.site_id', '=', siteId)
+    .where('pl.entry_id', 'in', entryIds)
+    .where('pl.from_seq', '<=', String(seq))
+    .where((eb) => eb.or([eb('pl.to_seq', 'is', null), eb('pl.to_seq', '>', String(seq))]))
+    .execute();
+};

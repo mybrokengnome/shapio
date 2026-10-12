@@ -82,6 +82,19 @@ export const definitionQueryOptions = (category: DefinitionCategory, id: string)
 export const fetchLatestDefinitionChange = async (category: DefinitionCategory, id: string) =>
   (await definitionApi(category).changes(id))[0];
 
+/** One revision of a definition with its body (immutable, so cached for good). */
+export const definitionRevisionQueryOptions = (
+  category: DefinitionCategory,
+  id: string,
+  revisionId: string,
+) =>
+  queryOptions({
+    queryKey: queryKeys.schema.revision(category, id, revisionId),
+    queryFn: () => definitionApi(category).revision(id, revisionId),
+    staleTime: Infinity,
+    meta: silent,
+  });
+
 export const useDefinition = (category: DefinitionCategory, id: string) =>
   useQuery(definitionQueryOptions(category, id));
 
