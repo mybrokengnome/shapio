@@ -10,6 +10,8 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Scheduled publish and assist job errors read once.** A scheduled publication or an assist content
+  operation that failed for good logged its reason twice; it now names it once.
 
 ## [0.5.6] - 2026-10-11
 

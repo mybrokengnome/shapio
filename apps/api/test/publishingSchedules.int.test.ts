@@ -13,6 +13,7 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
+import { createLogCapture, deadJobMessages, type LogCapture } from './helpers/logCapture.js';
 import {
   createPublishingTestApp,
   createPublishingWorker,
@@ -70,11 +71,12 @@ describe('scheduled publications', () => {
       headers: { authorization: `Bearer ${deliveryToken}` },
     });
 
-  const worker = (now?: () => Date) => {
+  const worker = (now?: () => Date, log?: LogCapture['logger']) => {
     const created = createPublishingWorker({
       db: database.current.db,
       app: testApp.app,
       ...(now ? { now } : {}),
+      ...(log ? { log } : {}),
     });
     workers.push(created);
     return created;
@@ -174,12 +176,20 @@ describe('scheduled publications', () => {
       .where('id', '=', editor.id)
       .execute();
 
-    await drainJobs(worker(), database.current.db, { types: [PUBLISHING_JOBS.scheduledPublication] });
+    const capture = createLogCapture();
+    await drainJobs(worker(undefined, capture.logger), database.current.db, {
+      types: [PUBLISHING_JOBS.scheduledPublication],
+    });
     const failed = await scheduleRow(scheduled.id);
     expect(failed.status).toBe('failed');
     expect(failed.error).toMatch(/no longer exists or is disabled/);
     expect(await publicationsOf(entry.id)).toHaveLength(0);
-    expect((await jobsRepository.findById(failed.job_id ?? '', database.current.db))?.status).toBe('dead');
+    // The job and the worker's log name the reason once.
+    expect(await jobsRepository.findById(failed.job_id ?? '', database.current.db)).toMatchObject({
+      status: 'dead',
+      last_error: `PermanentJobError: ${failed.error ?? ''}`,
+    });
+    expect(deadJobMessages(capture)).toEqual([failed.error]);
   });
 
   it('refuses times in the past and models without drafts', async () => {
