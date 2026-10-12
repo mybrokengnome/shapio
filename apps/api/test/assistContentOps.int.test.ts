@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import type { Logger } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAssistRuntime } from '../src/assist/runtime.js';
 import { ASSIST_CONTENT_OPS_JOB } from '../src/constants/assist.js';
+import { API_TOKEN_DISPLAY_LENGTH } from '../src/constants/auth.js';
 import { createUrlBuilder } from '../src/helpers/publicUrl.js';
 import { createAssistJobHandlers } from '../src/jobs/assistContentOps.js';
 import {
@@ -14,6 +16,7 @@ import { createWorker, type Worker } from '../src/jobs/worker.js';
 import { createMediaStorage } from '../src/media/storage.js';
 import { createPublishingJobEnvironment } from '../src/publishing/jobEnvironment.js';
 import { createPublishingRuntime } from '../src/publishing/runtime.js';
+import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import { segmentsOf, startFakeLlm, type FakeLlm } from './fixtures/fakeLlm.js';
 import {
   createDefinition,
@@ -23,6 +26,7 @@ import {
   type EntryBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { createLogCapture, deadJobMessages } from './helpers/logCapture.js';
 import { createPng, uploadAsset, type MediaAssetBody } from './helpers/media.js';
 import { drainJobs } from './helpers/publishing.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
@@ -57,7 +61,7 @@ describe('assist content-ops', () => {
   let post: EntryBody;
   let note: EntryBody;
 
-  const workerWith = async (assistOn: boolean) => {
+  const workerWith = async (assistOn: boolean, log: Logger = silentLogger) => {
     const runtime = createPublishingRuntime({
       db: database.current.db,
       signingSecret: testApp.app.signingSecret,
@@ -82,7 +86,7 @@ describe('assist content-ops', () => {
       concurrency: 2,
       pollIntervalMs: 20,
       leaseMs: 10_000,
-      log: silentLogger,
+      log,
     });
   };
 
@@ -308,6 +312,36 @@ describe('assist content-ops', () => {
       expect(fake.calls).toHaveLength(0);
     } finally {
       await off.stop(1000);
+    }
+  });
+
+  it('fails a run whose starter lost the permission, recording and logging the reason once', async () => {
+    const token = await createRoleToken(database.current.db, 'owner');
+    const starter = schemaClient(testApp.app, token);
+    const runId = await propose(starter, { rule: 'localeMissing' });
+    const [readOnly] = await adminRolesRepository.findByKeys(['read-only'], database.current.db);
+    await database.current.db
+      .updateTable('api_tokens')
+      .set({ role_id: readOnly?.id ?? '' })
+      .where('token_prefix', '=', token.slice(0, API_TOKEN_DISPLAY_LENGTH))
+      .execute();
+    const capture = createLogCapture();
+    const logged = await workerWith(true, capture.logger);
+    try {
+      await drainJobs(logged, database.current.db, { types: JOB_TYPES });
+      expect(await runView(owner, runId)).toMatchObject({ status: 'failed', error: { code: 'FORBIDDEN' } });
+      const reason = "The actor's role no longer allows changes.manage";
+      const jobs = await database.current.db
+        .selectFrom('jobs')
+        .select('last_error')
+        .where('type', '=', ASSIST_CONTENT_OPS_JOB)
+        .where('status', '=', 'dead')
+        .where('last_error', 'like', '%no longer allows%')
+        .execute();
+      expect(jobs.map((job) => job.last_error)).toEqual([`PermanentJobError: ${reason}`]);
+      expect(deadJobMessages(capture)).toEqual([reason]);
+    } finally {
+      await logged.stop(1000);
     }
   });
 });

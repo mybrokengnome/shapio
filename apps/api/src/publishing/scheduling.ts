@@ -91,7 +91,8 @@ export const createScheduledPublicationHandler =
           runtime.now(),
           runtime.db,
         );
-        throw new PermanentJobError(describePublicationError(error), { cause: error });
+        // No `cause`: the logger would append its message to this one, which already says it.
+        throw new PermanentJobError(describePublicationError(error));
       }
       throw error;
     }

@@ -187,6 +187,8 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   settings no longer show an empty Status heading. Snapshots name the person or token that took them. A
   choice field says when it has no choices or a choice lacks a value or label. Adding `FR` when `fr` exists
   says the locale already exists. Site and role keys are suggested from the name, as API IDs are.
+- **Scheduled publish and assist job errors read once.** A scheduled publication or an assist content
+  operation that failed for good logged its reason twice; it now names it once.
 
 ## [0.5.6] - 2026-10-11
 
