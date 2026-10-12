@@ -170,14 +170,20 @@ export type RowFilter =
   | { kind: 'or'; filters: readonly RowFilter[] };
 
 /**
- * Read masks that differ by row: `everyRow` applies to every row the principal may read, and each `when`
+ * Field masks that differ by row: `everyRow` applies to every row the principal may act on, and each `when`
  * entry adds its mask on the rows matching its condition (a grant limited to the principal's own entries
  * that names more fields than the grants reaching every row).
  */
-export type RowReadMasks = {
+export type RowFieldMasks = {
   everyRow: FieldMask;
   when: ReadonlyArray<{ condition: RowCondition; mask: FieldMask }>;
 };
+
+/** Read masks per row (issue #75). */
+export type RowReadMasks = RowFieldMasks;
+
+/** Write masks per row (issue #80). */
+export type RowWriteMasks = RowFieldMasks;
 
 export type Policy = {
   allowed: boolean;
@@ -190,7 +196,13 @@ export type Policy = {
   readMask: FieldMask;
   /** null: `readMask` applies to every row. Otherwise readers apply these per row (never `readMask`). */
   rowReadMasks: RowReadMasks | null;
+  /**
+   * Every field the principal may write on some row (the shape of what it can send, e.g. GraphQL inputs).
+   * Writes are checked per row: see `rowWriteMasks`.
+   */
   writeMask: FieldMask;
+  /** null: `writeMask` applies to every row. Otherwise writes check these per row (never `writeMask`). */
+  rowWriteMasks: RowWriteMasks | null;
 };
 
 export type PolicyRequest = {
@@ -242,4 +254,5 @@ export const DENIED_POLICY: Policy = Object.freeze({
   readMask: EMPTY_MASK,
   rowReadMasks: null,
   writeMask: EMPTY_MASK,
+  rowWriteMasks: null,
 });

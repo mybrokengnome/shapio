@@ -130,6 +130,7 @@ const allow = (readIds: string[], writeIds: string[] = []): Policy => ({
   readMask: { mode: 'only', fieldIds: readIds, componentFields: 'public' },
   rowReadMasks: null,
   writeMask: { mode: 'only', fieldIds: writeIds, componentFields: 'public' },
+  rowWriteMasks: null,
 });
 
 /** A fixed evaluator: (action:modelId) → policy; anything else is denied. */

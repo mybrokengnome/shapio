@@ -9,7 +9,7 @@ import {
   type PolicyRequest,
   type RowCondition,
   type RowFilter,
-  type RowReadMasks,
+  type RowFieldMasks,
 } from './types.js';
 
 /** One permission row of a role: an action on one model (or every model when `modelId` is null). */
@@ -71,6 +71,7 @@ export const ALLOW_ALL_POLICY: Policy = Object.freeze<Policy>({
   readMask: { mode: 'all' },
   rowReadMasks: null,
   writeMask: { mode: 'all' },
+  rowWriteMasks: null,
 });
 
 const WRITE_ACTIONS: ReadonlySet<ModelAction> = new Set<ModelAction>(['create', 'update']);
@@ -152,16 +153,17 @@ const covers = (outer: FieldMask, inner: FieldMask): boolean =>
   (inner.mode === 'only' && inner.fieldIds.every((id) => outer.fieldIds.includes(id)));
 
 /**
- * Read masks per row (issue #75). Row access and field access are not independent across grants: a field
- * allowed only by a grant with a row condition is readable only on rows matching that condition. The mask for
- * every row is that of the unconditioned grants; without any, the fields every condition allows (each row the
- * principal reads matches at least one). null when every readable row gets the same fields.
+ * Field masks per row, for reads (issue #75) and writes (issue #80). Row access and field access are not
+ * independent across grants: a field allowed only by a grant with a row condition is allowed only on rows
+ * matching that condition. The mask for every row is that of the unconditioned grants; without any, the fields
+ * every condition allows (each row the principal acts on matches at least one). null when every row the
+ * principal acts on gets the same fields.
  */
-export const combineRowReadMasks = (
+export const combineRowFieldMasks = (
   grants: readonly Grant[],
   audience: Audience,
   fields: readonly ModelField[] | undefined,
-): RowReadMasks | null => {
+): RowFieldMasks | null => {
   const kinds = [...new Set(grants.map((grant) => grant.condition))].filter(
     (kind): kind is RowCondition['kind'] => kind !== null,
   );
@@ -204,12 +206,14 @@ export const buildPolicy = (
     return DENIED_POLICY;
   }
   const readGrants = request.action === 'read' ? matching : grantsFor(grants, 'read', request.modelId);
+  const writes = WRITE_ACTIONS.has(request.action);
   return {
     allowed: true,
     rowFilter: combineRowFilters(matching),
     readMask: combineFieldMasks(readGrants, audience, fields),
-    rowReadMasks: combineRowReadMasks(readGrants, audience, fields),
-    writeMask: WRITE_ACTIONS.has(request.action) ? combineFieldMasks(matching, audience, fields) : EMPTY_MASK,
+    rowReadMasks: combineRowFieldMasks(readGrants, audience, fields),
+    writeMask: writes ? combineFieldMasks(matching, audience, fields) : EMPTY_MASK,
+    rowWriteMasks: writes ? combineRowFieldMasks(matching, audience, fields) : null,
   };
 };
 

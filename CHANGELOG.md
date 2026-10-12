@@ -217,6 +217,12 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   (`400`, `Cannot query field …`) instead of returning `null` or `FORBIDDEN`. A caller allowed no model at all
   still gets `401 UNAUTHENTICATED` (anonymous) or `403 FORBIDDEN`. Admin sessions and admin tokens, the
   playground included, still see the full schema.
+- **Fields you may change only on your own entries stay locked on everyone else's.** When one role could
+  change some fields on every entry and another could change more fields on your own entries, those extra
+  fields could be changed on any entry. They are now refused with `FORBIDDEN_FIELD` on entries you don't own,
+  over the admin, REST, and GraphQL; new entries count as your own.
+- **Restoring a revision checks every field it changes.** On localized content types, a restore could change
+  fields of its locale that your role may not edit. Those restores are now refused with `FORBIDDEN_FIELD`.
 
 ## [0.5.6] - 2026-10-11
 

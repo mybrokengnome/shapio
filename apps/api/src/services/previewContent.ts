@@ -103,6 +103,7 @@ export const createPreviewPermissions = (
         readMask: { mode: 'only', fieldIds: visible.map((field) => field.id), componentFields: 'public' },
         rowReadMasks,
         writeMask: DENIED_POLICY.writeMask,
+        rowWriteMasks: DENIED_POLICY.rowWriteMasks,
       };
     },
     canPerform: () => Promise.resolve(false),

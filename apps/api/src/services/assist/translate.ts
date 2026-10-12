@@ -6,13 +6,13 @@ import {
   type TranslationSegment,
 } from '../../assist/prompts/translate.js';
 import { ASSIST_TRANSLATE_CHUNK_CHARS } from '../../constants/assist.js';
-import { everyRowReadMask, maskAllows } from '../../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows, rowWriteMask } from '../../content/compiler/policy.js';
 import { projectData } from '../../content/compiler/select.js';
 import { isLocalizedField, type ContentModel } from '../../content/model.js';
 import { buildValidator } from '../../content/validator/index.js';
 import type { ContentData } from '../../db/contentData.js';
 import { AppError } from '../../helpers/appError.js';
-import type { Policy } from '../../permissions/types.js';
+import type { FieldMask, Policy } from '../../permissions/types.js';
 import { modelWithPolicy } from '../contentAccess.js';
 import type { AssistServiceContext } from './context.js';
 import { assertLocale, loadEntryDraft } from './entrySource.js';
@@ -116,14 +116,17 @@ export const translateDocument = async (
   return applyTranslations(input.model, input.fields, input.data, translations);
 };
 
-/** Localized, live fields the caller may both read and write: the only ones a translation proposes. */
-export const translatableFields = (model: ContentModel, readPolicy: Policy, updatePolicy: Policy) =>
+/**
+ * Localized, live fields the caller may both read and write: the only ones a translation proposes.
+ * `writeMask`: the caller's write mask on the entry (`rowWriteMask`).
+ */
+export const translatableFields = (model: ContentModel, readPolicy: Policy, writeMask: FieldMask) =>
   model.definition.fields.filter(
     (field) =>
       !field.deprecated &&
       isLocalizedField(model.definition, field) &&
       maskAllows(everyRowReadMask(readPolicy), field) &&
-      maskAllows(updatePolicy.writeMask, field),
+      maskAllows(writeMask, field),
   );
 
 /** The validator's issues for the proposed values merged over the source document (required is skipped). */
@@ -172,8 +175,8 @@ export const translateEntry = async (
   if (input.from === input.to) {
     throw new AppError(400, 'ASSIST_SAME_LOCALE', 'Choose two different locales');
   }
-  const { draft } = await loadEntryDraft(context, model, readPolicy, input.entryId, input.from);
-  const fields = translatableFields(model, readPolicy, updatePolicy);
+  const { entry, draft } = await loadEntryDraft(context, model, readPolicy, input.entryId, input.from);
+  const fields = translatableFields(model, readPolicy, rowWriteMask(updatePolicy, context.actor, entry));
   return runAssist(
     context,
     {

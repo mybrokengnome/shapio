@@ -9,7 +9,7 @@ import {
 import { completeText } from '../../assist/completion.js';
 import { summarizePrompt } from '../../assist/prompts/summarize.js';
 import { ASSIST_SUMMARY_SOURCE_CHARS } from '../../constants/assist.js';
-import { everyRowReadMask, maskAllows } from '../../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows, rowWriteMask } from '../../content/compiler/policy.js';
 import { writeLocaleFor } from '../../content/locales.js';
 import { AppError } from '../../helpers/appError.js';
 import { modelWithPolicy } from '../contentAccess.js';
@@ -75,11 +75,11 @@ export const summarizeEntry = async (
   const { model, policy: readPolicy } = await modelWithPolicy(context, input.modelKey, 'read');
   const { policy: updatePolicy } = await modelWithPolicy(context, input.modelKey, 'update');
   const target = summaryTarget(model.definition, input.fieldApiKey);
-  if (!maskAllows(updatePolicy.writeMask, target.field)) {
+  const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
+  const { entry, draft } = await loadEntryDraft(context, model, readPolicy, input.entryId, locale);
+  if (!maskAllows(rowWriteMask(updatePolicy, context.actor, entry), target.field)) {
     throw new AppError(403, 'FORBIDDEN', `Your role does not allow editing "${input.fieldApiKey}"`);
   }
-  const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
-  const { draft } = await loadEntryDraft(context, model, readPolicy, input.entryId, locale);
   const body = target.body
     .filter((field) => maskAllows(everyRowReadMask(readPolicy), field))
     .map((field) => plainTextOf(draft.data[field.id]))

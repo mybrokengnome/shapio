@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
-import { assertWritable } from '../content/compiler/policy.js';
+import { assertWritable, ownershipOfNewEntry, rowWriteMask } from '../content/compiler/policy.js';
 import {
   contentVersionConflict,
   entryLocaleNotFound,
@@ -9,7 +9,12 @@ import {
   revisionNotFound,
   singletonExists,
 } from '../content/errors.js';
-import { changedSharedFieldIds, withSharedValuesOf, writeLocaleFor } from '../content/locales.js';
+import {
+  changedFieldIds,
+  changedSharedFieldIds,
+  withSharedValuesOf,
+  writeLocaleFor,
+} from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
 import { validateRevisionData } from '../content/revisionData.js';
 import { uniqueFields } from '../content/unique.js';
@@ -20,6 +25,7 @@ import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
+import type { Policy } from '../permissions/types.js';
 import * as contentGuardsRepository from '../repositories/contentGuards.js';
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
 import * as entriesRepository from '../repositories/entries.js';
@@ -76,17 +82,12 @@ const applyPatch = (base: Readonly<ContentData>, patch: Readonly<ContentData>): 
   return output;
 };
 
-const inputPatch = (
-  validator: ModelValidator,
-  model: ContentModel,
-  mask: Parameters<typeof assertWritable>[0],
-  data: unknown,
-) => {
+/** The input as a validated patch. Callers check its fields against the entry's write mask (`rowWriteMask`). */
+const inputPatch = (validator: ModelValidator, data: unknown) => {
   const { patch, issues } = validator.fromInput((data ?? {}) as Record<string, unknown>);
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }
-  assertWritable(mask, model.definition.fields, Object.keys(patch));
   return patch;
 };
 
@@ -102,10 +103,17 @@ const validated = (
   return outcome;
 };
 
-const ownerOf = (context: ContentServiceContext) => ({
-  ownerAppUserId: context.actor.kind === 'appUser' ? context.actor.appUserId : null,
-  createdByAdminId: context.actor.kind === 'admin' ? context.actor.adminUserId : null,
-});
+const ownerOf = (context: ContentServiceContext) => {
+  const ownership = ownershipOfNewEntry(context.actor);
+  return {
+    ownerAppUserId: ownership.owner_app_user_id,
+    createdByAdminId: ownership.created_by_admin_id,
+  };
+};
+
+/** The write mask on the entry a create produces: the caller owns it (issue #80). */
+const newEntryWriteMask = (context: ContentServiceContext, policy: Policy) =>
+  rowWriteMask(policy, context.actor, ownershipOfNewEntry(context.actor));
 
 export type CreateEntryInput = { locale?: string; data?: unknown; publish?: boolean };
 
@@ -121,7 +129,8 @@ export const createEntry = async (
   }
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, model, policy.writeMask, input.data);
+  const patch = inputPatch(validator, input.data);
+  assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(patch));
   const outcome = validated(validator, applyPatch(defaultsOf(model.definition), patch), false);
   const entryId = await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
@@ -302,7 +311,7 @@ export const updateEntry = async (
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const autosave = Boolean(input.autosave) && model.definition.draftAndPublish;
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, model, policy.writeMask, input.data);
+  const patch = inputPatch(validator, input.data);
   let servedLocale = locale;
   await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
@@ -312,12 +321,14 @@ export const updateEntry = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const entry = assertEntryVisible(
       policy,
       context.actor,
       await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
+    // After the row check, so an entry the caller cannot see stays a 404 (issue #80).
+    assertWritable(rowWriteMask(policy, context.actor, entry), model.definition.fields, Object.keys(patch));
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
     // Non-localized entries keep their heads in the locale they were created in.
     const targetLocale = model.definition.localized
@@ -403,7 +414,7 @@ export const restoreRevision = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const entry = assertEntryVisible(
       policy,
       context.actor,
       await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
@@ -423,10 +434,11 @@ export const restoreRevision = async (
     if (outcome.issues.length > 0) {
       throw contentInvalid(outcome.issues);
     }
+    // Every field the restore changes in this locale (shared ones fan out from it), issue #103.
     assertWritable(
-      policy.writeMask,
+      rowWriteMask(policy, context.actor, entry),
       model.definition.fields,
-      changedSharedFieldIds(model.definition, previous.data, outcome.data),
+      changedFieldIds(model.definition.fields, previous.data, outcome.data),
     );
     await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [previous.data]));
     const changes = draftChanges(model, heads, {
@@ -536,7 +548,7 @@ export const duplicateEntry = async (
     );
     for (const draft of drafts) {
       const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
-      assertWritable(policy.writeMask, model.definition.fields, Object.keys(copy));
+      assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(copy));
       const outcome = validated(validator, copy, true);
       await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [draft.data]));
       await writeDraft(write, {

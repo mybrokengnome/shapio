@@ -159,6 +159,7 @@ describe('permission evaluator', () => {
       readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'], componentFields: 'public' },
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
+      rowWriteMasks: null,
     });
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
   });
@@ -209,7 +210,7 @@ describe('permission evaluator', () => {
     );
   });
 
-  it('combines grants: union of fields, any unconditional grant lifts the row filter', async () => {
+  it('combines grants: union of fields, any unconditional grant lifts the row filter, fields per row', async () => {
     const grants = [
       grant({
         roleId: 'a',
@@ -229,11 +230,17 @@ describe('permission evaluator', () => {
       readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
+      rowWriteMasks: null,
     });
     const both: Principal = adminOn(['a', 'b']);
     expect(await evaluator.evaluate(both, { action: 'update', modelId: MODEL })).toMatchObject({
       rowFilter: null,
       writeMask: { mode: 'only', fieldIds: ['f-body', 'f-title'] },
+      // Issue #80: `title` stays writable on own rows only, though `b` reaches every row.
+      rowWriteMasks: {
+        everyRow: { mode: 'only', fieldIds: ['f-body'] },
+        when: [{ condition: { kind: 'ownedByPrincipal' }, mask: { mode: 'only', fieldIds: ['f-title'] } }],
+      },
     });
   });
 
@@ -265,6 +272,7 @@ describe('permission evaluator', () => {
         ],
       },
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
+      rowWriteMasks: null,
     });
   });
 
