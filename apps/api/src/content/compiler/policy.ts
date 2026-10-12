@@ -92,6 +92,16 @@ export const rowReadMask = (policy: Policy, principal: Principal, entry: EntryOw
 };
 
 /**
+ * The values of `data` (keyed by field ID) a mask covers, for copies made from what the caller may read
+ * (issue #104). A wildcard mask keeps every value, deprecated fields included: those are hidden from readers
+ * by deprecation, not by permission.
+ */
+export const pickMasked = <T>(mask: FieldMask, data: Readonly<Record<string, T>>): Record<string, T> =>
+  mask.mode === 'all'
+    ? { ...data }
+    : Object.fromEntries(Object.entries(data).filter(([fieldId]) => mask.fieldIds.includes(fieldId)));
+
+/**
  * The fields the caller may read on every row it may read. Filters, sorts and searches use it (a filter on a
  * field hidden on some rows would reveal those rows' values), and so does any reader that shows values
  * without the entry's ownership at hand.

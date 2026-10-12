@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Policy, Principal } from '../../permissions/types.js';
-import { everyRowReadMask, rowReadMask } from './policy.js';
+import { everyRowReadMask, pickMasked, rowReadMask } from './policy.js';
 
 const policy: Policy = {
   allowed: true,
@@ -33,5 +33,20 @@ describe('read masks on one loaded entry', () => {
     expect(rowReadMask(uniform, appUser, others)).toBe(uniform.readMask);
     expect(everyRowReadMask(uniform)).toBe(uniform.readMask);
     expect(everyRowReadMask(policy)).toEqual({ mode: 'only', fieldIds: ['f-name'] });
+  });
+});
+
+describe('values a mask covers', () => {
+  const data = { 'f-name': 'Ada', 'f-email': 'ada@example.com', 'f-old': 'kept' };
+
+  it('keeps only the fields a narrowed mask names', () => {
+    expect(pickMasked({ mode: 'only', fieldIds: ['f-name'] }, data)).toEqual({ 'f-name': 'Ada' });
+    expect(pickMasked({ mode: 'only', fieldIds: [] }, data)).toEqual({});
+  });
+
+  it('keeps every value under a wildcard mask, deprecated fields included', () => {
+    const picked = pickMasked({ mode: 'all' }, data);
+    expect(picked).toEqual(data);
+    expect(picked).not.toBe(data);
   });
 });
