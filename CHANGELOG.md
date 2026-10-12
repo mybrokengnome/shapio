@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-10-12
+
 ### Fixed
 
 - **The entry top bar fits on one row again with the settings drawer open.** At laptop width the actions
