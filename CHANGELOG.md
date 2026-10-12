@@ -236,6 +236,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   owner, bound to the public audience or held by an API token, let anonymous callers and tokens create, though
   they own nothing. Those creates are now refused with 403 before anything is written; signed-in users and
   admins create as before.
+- **`$null` and `$notNull` on relation and media fields agree with the response.** An entry whose links all
+  point at unpublished entries, entries outside the read's locales or the token's row filter, or force-deleted
+  assets now counts as null, as it reads, in REST and GraphQL, on live and pinned snapshot reads.
 
 ## [0.5.6] - 2026-10-11
 

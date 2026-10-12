@@ -160,7 +160,9 @@ curl -G "$SHAPIO_URL/api/content/articles" -H "Authorization: Bearer $SHAPIO_DEL
 sorted). JSON, rich text, component and dynamic zone fields cannot be filtered. `$in` takes repeated values or `a,b`. Values are read
 like stored values, so `2026-10-01T10:00:00+02:00` matches `2026-10-01T08:00:00.000Z`. Unknown fields,
 operators a type does not support, and filters or sorts on fields your token may not read are refused (400/403)
-rather than ignored, so a filter can never reveal a hidden value.
+rather than ignored, so a filter can never reveal a hidden value. Relation and media filters see what the
+response shows: a link to an entry that is unpublished, outside the read's locales, or one your token may not
+read, and a deleted asset, count as not there, so `$null` matches an entry whose links are all hidden.
 
 ## Snapshots: one consistent moment
 

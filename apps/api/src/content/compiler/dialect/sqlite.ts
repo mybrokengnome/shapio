@@ -1,7 +1,7 @@
 import { sql, type RawBuilder } from 'kysely';
 import { toStoredTimestamp } from '../../../db/sql/time.js';
 import { CONTENT_HEADS_COLUMNS } from '../heads.js';
-import type { ContentSqlDialect, ListElement, ValueCast } from './types.js';
+import type { ContentSqlDialect, ReferenceIds, SnapshotSource, ListElement, ValueCast } from './types.js';
 
 /**
  * SQLite content SQL (ADR 0001, "D2: as built"). `data` is JSON text read with JSON1's `->`/`->>`; there is
@@ -44,6 +44,32 @@ const castParameter = (value: unknown, cast: ValueCast): RawBuilder<unknown> => 
     default:
       return sql`${value}`;
   }
+};
+
+/** Published revisions of a model as of a publication sequence (`snapshotCte`, relation targets). */
+const snapshotRows = ({ siteId, modelId, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
+      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
+      en.created_at as entry_created_at
+    from publication_log pl
+    join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
+    where pl.site_id = ${siteId} and pl.model_id = ${modelId}
+      and pl.from_seq <= ${seq}
+      and (pl.to_seq is null or pl.to_seq > ${seq})`;
+
+/** One row per stored ID: `json_each` for a list, a one-row select for a single ID (UUIDs are text). */
+const referenceIds = (fieldId: string, list: boolean): ReferenceIds => {
+  const json = fieldJson(fieldId);
+  return list
+    ? {
+        from: sql`json_each(case when json_type(${json}) = 'array' then ${json} end) v`,
+        matches: (column) => sql`${column} = v.value`,
+      }
+    : {
+        from: sql`(select case when json_type(${json}) = 'text' then ${fieldText(fieldId)} end as id) v`,
+        matches: (column) => sql`${column} = v.id`,
+      };
 };
 
 export const sqliteContentDialect: ContentSqlDialect = {
@@ -104,17 +130,10 @@ export const sqliteContentDialect: ContentSqlDialect = {
     // PostgreSQL's default: nulls sort as the largest value.
     return direction === 'desc' ? sql`desc nulls first` : sql`asc nulls last`;
   },
-  snapshotCte: ({ name, siteId, modelId, seq }) => sql`with ${sql.id(name)} as (
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
-      en.created_at as entry_created_at
-    from publication_log pl
-    join content_revisions r on r.id = pl.revision_id
-    join entries en on en.id = pl.entry_id
-    where pl.site_id = ${siteId} and pl.model_id = ${modelId}
-      and pl.from_seq <= ${seq}
-      and (pl.to_seq is null or pl.to_seq > ${seq})
+  snapshotCte: (source) => sql`with ${sql.id(source.name)} as (${snapshotRows(source)}
   ) `,
+  snapshotRows,
+  referenceIds,
 
   createFieldIndex: ({ name, table, leading, expression, modelIdColumn, modelId }) =>
     sql`create index if not exists ${sql.id(name)} on ${sql.table(table)} (${leading}, ${expression}) where ${sql.ref(modelIdColumn)} = ${modelId}`,
