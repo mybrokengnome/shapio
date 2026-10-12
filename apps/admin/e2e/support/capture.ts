@@ -2,16 +2,11 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
-import { SCREENSHOT_DIR } from './constants';
+import { SCREENSHOT_DIR, TOAST_SELECTOR, TOAST_SETTLE_TIMEOUT_MS, TOASTER_SELECTOR } from './constants';
 import { renderScheme } from './schemes';
 
 const SCHEMES = ['light', 'dark'] as const;
 const BLOCKING_IMPACTS = new Set(['serious', 'critical']);
-/** Sonner's toast list and each toast in it (see `src/components/ui/sonner.tsx`). */
-const TOASTER_SELECTOR = '[data-sonner-toaster]';
-const TOAST_SELECTOR = '[data-sonner-toast]';
-/** Toasts dismiss after Sonner's 4 s default; allow for that plus the exit transition. */
-const TOAST_SETTLE_TIMEOUT_MS = 5_000;
 
 /** Every screenshot taken in this run, for the report. */
 export const capturedScreenshots: string[] = [];

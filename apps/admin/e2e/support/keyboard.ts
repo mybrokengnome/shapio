@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { TOAST_SELECTOR, TOAST_SETTLE_TIMEOUT_MS } from './constants';
 import { renderScheme } from './schemes';
 
 /**
@@ -200,9 +201,13 @@ export const resetFocusToTop = async (page: Page) => {
 /**
  * Tabs through the whole page from the top, checking every stop's indicator, and proves focus is never
  * trapped: within `max` presses it must leave the last element and come back to the first (or to the
- * document). Revisiting any other element before that means focus is stuck in a widget.
+ * document). Revisiting any other element before that means focus is stuck in a widget. A toast still on
+ * screen is waited out first: its stops sit after the page's last control, and when Tab leaves it Sonner
+ * moves focus back to where it came from, which would read as a trap.
  */
 export const expectFullTabCycle = async (page: Page, { max = 250 }: { max?: number } = {}) => {
+  await expect(page.locator(TOAST_SELECTOR)).toHaveCount(0, { timeout: TOAST_SETTLE_TIMEOUT_MS });
+  await waitForAnimations(page);
   await resetFocusToTop(page);
   const seen: number[] = [];
   const labels: string[] = [];
