@@ -1,4 +1,4 @@
-import type { AppRolePermission } from '@shapio/client';
+import type { AppContentAction, AppRolePermission } from '@shapio/client';
 import { describe, expect, it } from 'vitest';
 import { ALL_MODELS } from '../constants';
 import {
@@ -9,7 +9,15 @@ import {
   toMatrix,
   toPermissions,
   updateGrant,
+  type MatrixRules,
 } from './permissionMatrix';
+
+/** The app-role rules: content actions; own entries and field lists where they mean something. */
+const RULES: MatrixRules<AppContentAction> = {
+  actions: ['read', 'create', 'update', 'delete', 'publish'],
+  ownOnlyActions: new Set(['read', 'update', 'delete', 'publish']),
+  fieldScopedActions: new Set(['read', 'create', 'update']),
+};
 
 const permissions: AppRolePermission[] = [
   { action: 'read', modelId: null, condition: null, fieldIds: null },
@@ -19,7 +27,7 @@ const permissions: AppRolePermission[] = [
 
 describe('permission matrix', () => {
   it('round-trips grants in a stable order', () => {
-    expect(toPermissions(toMatrix(permissions))).toEqual([
+    expect(toPermissions(toMatrix(permissions), RULES)).toEqual([
       { action: 'read', modelId: null, condition: null, fieldIds: null },
       { action: 'create', modelId: 'm-post', condition: null, fieldIds: ['f-title'] },
       { action: 'update', modelId: 'm-post', condition: 'ownedByPrincipal', fieldIds: ['f-body', 'f-title'] },
@@ -30,14 +38,14 @@ describe('permission matrix', () => {
     let matrix = toMatrix(permissions);
     matrix = setGranted(matrix, 'm-post', 'delete', true);
     matrix = updateGrant(matrix, 'm-post', 'delete', { ownOnly: true });
-    expect(toPermissions(matrix)).toContainEqual({
+    expect(toPermissions(matrix, RULES)).toContainEqual({
       action: 'delete',
       modelId: 'm-post',
       condition: 'ownedByPrincipal',
       fieldIds: null,
     });
     matrix = setGranted(matrix, 'm-post', 'update', false);
-    expect(toPermissions(matrix).some((p) => p.action === 'update')).toBe(false);
+    expect(toPermissions(matrix, RULES).some((p) => p.action === 'update')).toBe(false);
     // Updating a cell that is not granted changes nothing.
     expect(updateGrant(matrix, 'm-other', 'read', { ownOnly: true })).toBe(matrix);
   });
@@ -46,17 +54,17 @@ describe('permission matrix', () => {
     const matrix = {
       'm-post': { create: { ownOnly: true, fieldIds: null }, delete: { ownOnly: false, fieldIds: ['x'] } },
     };
-    expect(toPermissions(matrix)).toEqual([
+    expect(toPermissions(matrix, RULES)).toEqual([
       { action: 'create', modelId: 'm-post', condition: null, fieldIds: null },
       { action: 'delete', modelId: 'm-post', condition: null, fieldIds: null },
     ]);
   });
 
   it('offers options only where they apply', () => {
-    expect(hasOptions(ALL_MODELS, { create: { ownOnly: false, fieldIds: null } })).toBe(false);
-    expect(hasOptions(ALL_MODELS, { update: { ownOnly: false, fieldIds: null } })).toBe(true);
-    expect(hasOptions('m-post', { create: { ownOnly: false, fieldIds: null } })).toBe(true);
-    expect(hasOptions('m-post', {})).toBe(false);
+    expect(hasOptions(ALL_MODELS, { create: { ownOnly: false, fieldIds: null } }, RULES)).toBe(false);
+    expect(hasOptions(ALL_MODELS, { update: { ownOnly: false, fieldIds: null } }, RULES)).toBe(true);
+    expect(hasOptions('m-post', { create: { ownOnly: false, fieldIds: null } }, RULES)).toBe(true);
+    expect(hasOptions('m-post', {}, RULES)).toBe(false);
   });
 
   it('grants and revokes a whole column, keeping the options of rows that already had the action', () => {

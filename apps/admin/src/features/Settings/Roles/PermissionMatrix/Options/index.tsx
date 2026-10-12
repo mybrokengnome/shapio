@@ -1,4 +1,4 @@
-import type { AppContentAction } from '@shapio/client';
+import type { ContentAction } from '@shapio/client';
 import type { FieldDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
@@ -6,37 +6,39 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
-import {
-  ACTION_COLUMN_KEYS,
-  ALL_MODELS,
-  APP_CONTENT_ACTIONS,
-  FIELD_SCOPED_ACTIONS,
-  OWN_ONLY_ACTIONS,
-} from '../../../constants';
-import type { ActionGrant, ModelGrants } from '../../../helpers/permissionMatrix';
+import { ACTION_COLUMN_KEYS, ALL_MODELS } from '../constants';
+import type { ActionGrant, MatrixRules, ModelGrants } from '../helpers/permissionMatrix';
 
-type OptionsProps = {
+type OptionsProps<A extends ContentAction> = {
   id: string;
+  rules: MatrixRules<A>;
   rowKey: string;
   /** The model's fields; undefined for the every-model row (no field lists there). */
   fields: readonly FieldDefinition[] | undefined;
-  grants: ModelGrants;
-  onChange: (action: AppContentAction, changes: Partial<ActionGrant>) => void;
+  grants: ModelGrants<A>;
+  onChange: (action: A, changes: Partial<ActionGrant>) => void;
 };
 
 const SCOPE_ALL = 'all';
 const SCOPE_SELECTED = 'selected';
 
 /** Per granted action: "only their own entries" and, on a model, which fields it covers. */
-export const Options = ({ id, rowKey, fields, grants, onChange }: OptionsProps) => {
+export const Options = <A extends ContentAction>({
+  id,
+  rules,
+  rowKey,
+  fields,
+  grants,
+  onChange,
+}: OptionsProps<A>) => {
   const { t } = useTranslation();
   const liveFields = (fields ?? []).filter((field) => !field.deprecated);
   return (
     <div id={id} className="grid gap-6 border-t bg-muted/40 px-5 py-4 md:grid-cols-2">
-      {APP_CONTENT_ACTIONS.map((action) => {
+      {rules.actions.map((action) => {
         const grant = grants[action];
-        const ownOnly = OWN_ONLY_ACTIONS.has(action);
-        const fieldScoped = rowKey !== ALL_MODELS && FIELD_SCOPED_ACTIONS.has(action);
+        const ownOnly = rules.ownOnlyActions.has(action);
+        const fieldScoped = rowKey !== ALL_MODELS && rules.fieldScopedActions.has(action);
         if (!grant || (!ownOnly && !fieldScoped)) {
           return null;
         }
@@ -46,7 +48,7 @@ export const Options = ({ id, rowKey, fields, grants, onChange }: OptionsProps) 
             <FieldLegend variant="label">{t(ACTION_COLUMN_KEYS[action])}</FieldLegend>
             {ownOnly ? (
               <Field orientation="horizontal">
-                <FieldLabel htmlFor={`${base}-own`}>{t('appRoles.ownOnly')}</FieldLabel>
+                <FieldLabel htmlFor={`${base}-own`}>{t('roles.matrix.ownOnly')}</FieldLabel>
                 <Switch
                   id={`${base}-own`}
                   checked={grant.ownOnly}
@@ -57,7 +59,7 @@ export const Options = ({ id, rowKey, fields, grants, onChange }: OptionsProps) 
             {fieldScoped ? (
               <>
                 <RadioGroup
-                  aria-label={t('appRoles.fieldScope')}
+                  aria-label={t('roles.matrix.fieldScope')}
                   value={grant.fieldIds === null ? SCOPE_ALL : SCOPE_SELECTED}
                   onValueChange={(value) =>
                     onChange(action, {
@@ -71,13 +73,13 @@ export const Options = ({ id, rowKey, fields, grants, onChange }: OptionsProps) 
                   <Field orientation="horizontal">
                     <RadioGroupItem id={`${base}-all`} value={SCOPE_ALL} />
                     <FieldLabel htmlFor={`${base}-all`} className="font-normal">
-                      {t('appRoles.allPublicFields')}
+                      {t('roles.matrix.allPublicFields')}
                     </FieldLabel>
                   </Field>
                   <Field orientation="horizontal">
                     <RadioGroupItem id={`${base}-selected`} value={SCOPE_SELECTED} />
                     <FieldLabel htmlFor={`${base}-selected`} className="font-normal">
-                      {t('appRoles.selectedFields')}
+                      {t('roles.matrix.selectedFields')}
                     </FieldLabel>
                   </Field>
                 </RadioGroup>
@@ -103,7 +105,7 @@ export const Options = ({ id, rowKey, fields, grants, onChange }: OptionsProps) 
                           <FieldLabel htmlFor={checkboxId} className="font-normal">
                             {field.label}
                             {field.public ? null : (
-                              <Badge variant="secondary">{t('appRoles.notPublic')}</Badge>
+                              <Badge variant="secondary">{t('roles.matrix.notPublic')}</Badge>
                             )}
                           </FieldLabel>
                         </Field>

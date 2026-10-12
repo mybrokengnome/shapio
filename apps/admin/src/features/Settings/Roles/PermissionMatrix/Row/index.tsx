@@ -1,28 +1,31 @@
-import type { AppContentAction } from '@shapio/client';
+import type { ContentAction } from '@shapio/client';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/helpers/cn';
-import { ACTION_COLUMN_KEYS, APP_CONTENT_ACTIONS } from '../../../constants';
-import type { ModelGrants } from '../../../helpers/permissionMatrix';
+import { ACTION_COLUMN_KEYS } from '../constants';
+import type { ModelGrants } from '../helpers/permissionMatrix';
 
-type RowProps = {
+type RowProps<A extends ContentAction> = {
+  /** The matrix's columns, in order. */
+  actions: readonly A[];
   label: string;
   /** API key or a hint beside the label. */
   detail: string;
-  grants: ModelGrants;
+  grants: ModelGrants<A>;
   optionsId: string;
   expanded: boolean;
   /** False when no granted action on this row has options. */
   canExpand: boolean;
-  onToggle: (action: AppContentAction, granted: boolean) => void;
+  onToggle: (action: A, granted: boolean) => void;
   onToggleExpanded: () => void;
 };
 
 /** One model (or every model): a 36px row with a checkbox per action and the button that shows its options. */
-export const Row = ({
+export const Row = <A extends ContentAction>({
+  actions,
   label,
   detail,
   grants,
@@ -31,7 +34,7 @@ export const Row = ({
   canExpand,
   onToggle,
   onToggleExpanded,
-}: RowProps) => {
+}: RowProps<A>) => {
   const { t } = useTranslation();
   return (
     <TableRow className="hover:bg-transparent has-aria-expanded:bg-transparent">
@@ -41,7 +44,7 @@ export const Row = ({
           <span className="truncate text-xs text-muted-foreground">{detail}</span>
         </span>
       </TableCell>
-      {APP_CONTENT_ACTIONS.map((action) => (
+      {actions.map((action) => (
         <TableCell key={action} className="h-9 py-0 text-center">
           <Checkbox
             checked={grants[action] !== undefined}
@@ -59,10 +62,10 @@ export const Row = ({
           disabled={!canExpand}
           aria-expanded={expanded}
           aria-controls={expanded ? optionsId : undefined}
-          aria-label={`${t('appRoles.options')}: ${label}`}
+          aria-label={`${t('roles.matrix.options')}: ${label}`}
           onClick={onToggleExpanded}
         >
-          {t('appRoles.options')}
+          {t('roles.matrix.options')}
           <ChevronDown aria-hidden="true" className={cn('transition-transform', expanded && 'rotate-180')} />
         </Button>
       </TableCell>

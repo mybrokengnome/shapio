@@ -14,8 +14,9 @@ import { SubmitButton } from '@/components/SubmitButton';
 import { Badge } from '@/components/ui/badge';
 import { FieldGroup } from '@/components/ui/field';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
+import { PermissionMatrix } from '../../PermissionMatrix';
+import { APP_ROLE_MATRIX_RULES } from '../constants';
 import { useAppRoleEditor } from './hooks/useAppRoleEditor';
-import { Matrix } from './Matrix';
 
 type FormProps = { role: AppRole; models: readonly DefinitionListItem[] };
 
@@ -70,7 +71,12 @@ const Form = ({ role, models }: FormProps) => {
         </Panel>
       )}
       <Panel title={t('roles.permissions')} description={t('appRoles.permissionsHint')} flush>
-        <Matrix matrix={editor.matrix} models={models} onChange={editor.setMatrix} />
+        <PermissionMatrix
+          matrix={editor.matrix}
+          models={models}
+          rules={APP_ROLE_MATRIX_RULES}
+          onChange={editor.setMatrix}
+        />
       </Panel>
       <FormError error={editor.error} />
       <UnsavedChangesGuard when={editor.dirty && !editor.pending} />
