@@ -160,6 +160,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
 - **`shapio schema apply` reports the version it activated at.** After waiting for a change's background
   checks, the last line printed the schema version from before the change; it now prints the version the
   lock file records.
+- **Webhook and deployment job errors read once.** A webhook timeout was recorded as
+  `Error: Error: Request timed out after 10000 ms`, and a failed deployment trigger logged its message
+  twice (three times for a secret that cannot be decrypted); each now names the problem once.
 
 ## [0.5.6] - 2026-10-11
 

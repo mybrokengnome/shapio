@@ -64,6 +64,7 @@ export const createWebhookDeliveryHandler =
     let request = { method: 'POST', url: webhook.url, headers: redactHeaders(unsigned) };
     let response: OutboundResponse | undefined;
     let error: string | null = null;
+    let thrown: Error | undefined;
     const secret = decryptIfReadable(runtime.secrets, webhook.secret_encrypted);
     if (secret === undefined) {
       // No retry can help until the secret is rotated: record why, as one attempt, and stop.
@@ -86,6 +87,7 @@ export const createWebhookDeliveryHandler =
         error = describeStatus(response.status);
       }
     } catch (caught) {
+      thrown = caught instanceof Error ? caught : new Error(String(caught));
       error = describeError(caught);
       if (caught instanceof OutboundBlockedError) {
         await record('dead', caught.message);
@@ -96,6 +98,11 @@ export const createWebhookDeliveryHandler =
     const status = error === null ? 'succeeded' : final ? 'dead' : 'retrying';
     await record(status, error);
     if (error !== null) {
+      // The worker describes the failure once: a thrown error goes on as it is (its message alone when it
+      // becomes permanent), never wrapped in a new error whose message already starts with its name.
+      if (thrown) {
+        throw final ? new PermanentJobError(thrown.message) : thrown;
+      }
       throw final ? new PermanentJobError(error) : new Error(error);
     }
     return { status: response?.status ?? null, attempt };
