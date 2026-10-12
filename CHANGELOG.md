@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Admin copy and layout fixes.** File sizes under a kilobyte read "44 bytes", not "44 byte". A time reads
+  "09:15" in the entry settings, not "09:15:00.000". A date fills its column in a form. A new entry's
+  settings no longer show an empty Status heading. Snapshots name the person or token that took them. A
+  choice field says when it has no choices or a choice lacks a value or label. Adding `FR` when `fr` exists
+  says the locale already exists. Site and role keys are suggested from the name, as API IDs are.
 
 ## [0.5.6] - 2026-10-11
 

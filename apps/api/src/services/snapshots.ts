@@ -22,7 +22,7 @@ export type SnapshotView = {
   changeSetId: string | null;
   changeSetTitle: string | null;
   changeSet: SnapshotChangeSetView | null;
-  actor: { type: string; id: string | null };
+  actor: { type: string; id: string | null; name: string | null };
   changedEntries: number;
   deploymentRuns: Array<{ id: string; connectionId: string; status: string }>;
   createdAt: Date;
@@ -39,7 +39,7 @@ const toView = (row: SnapshotRow, changeSets: ChangeSetsById): SnapshotView => {
     changeSetId: row.change_set_id,
     changeSetTitle: changeSet?.title ?? null,
     changeSet,
-    actor: { type: row.actor_type ?? 'system', id: row.actor_id },
+    actor: { type: row.actor_type ?? 'system', id: row.actor_id, name: row.actor_name },
     changedEntries: Number(row.changed_entries),
     deploymentRuns: row.deployment_runs,
     createdAt: row.created_at,

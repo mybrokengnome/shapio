@@ -1,6 +1,7 @@
 import { richTextPlainText, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import { valueLabel } from '@/features/Models/helpers/labels';
+import { formatTimeOfDay } from './dates';
 import { isEmptyValue, isRecord, toList } from './values';
 
 /**
@@ -26,6 +27,8 @@ export const summarizeValue = (field: FieldDefinition, value: unknown): string =
         .join(', ');
     case 'json':
       return truncate(JSON.stringify(value));
+    case 'time':
+      return formatTimeOfDay(String(value));
     case 'code':
       // A snippet reads badly as a label: its language and size instead ("HTML, 14 lines").
       return i18next.t('content.fields.code.summary', {

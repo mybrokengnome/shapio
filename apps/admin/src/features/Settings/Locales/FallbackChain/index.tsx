@@ -9,7 +9,7 @@ import { InfoHint } from '@/components/InfoHint';
 import { Button } from '@/components/ui/button';
 import { FieldLegend, FieldSet } from '@/components/ui/field';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { LocaleValues } from '../hooks/useLocaleForm';
+import type { LocaleValues } from '../helpers/localeSchema';
 
 const LEGEND_ID = 'locale-fallbacks-legend';
 

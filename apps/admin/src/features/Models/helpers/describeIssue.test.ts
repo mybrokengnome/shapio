@@ -28,4 +28,16 @@ describe('describeIssue', () => {
       'This name is reserved. Choose another.',
     );
   });
+
+  it("says which part of a choice field's settings is wrong", () => {
+    const issue = (path: string) => ({ code: 'INVALID_SETTINGS', message: 'must not have fewer…', path });
+    expect(describeIssue(issue('/fields/0/settings/values'))).toBe('Add at least one choice.');
+    expect(describeIssue(issue('/fields/2/settings/values/1/value'))).toBe(
+      'Give every choice a value of up to 64 characters.',
+    );
+    expect(describeIssue(issue('/fields/2/settings/values/0/label'))).toBe(
+      'Give every choice a label of up to 200 characters.',
+    );
+    expect(describeIssue(issue('/fields/0/settings/min'))).toBe("This setting isn't valid.");
+  });
 });

@@ -10,12 +10,25 @@ type SnapshotDeploymentRun = { id: string; connectionId: string; status: string 
 /**
  * The publication snapshot ledger of one site (written by `publications.nextSeq`; numbers are per site,
  * sites plan §H): one row per sequence number, with the number of the site's (entry, locale) publications
- * that started or ended at it and the site's deployment runs pinned to it.
+ * that started or ended at it and the site's deployment runs pinned to it. The admin or token that took it
+ * is named as the audit log names it (`auditLog.listEvents`); a deleted one has no name.
  */
 const listQuery = (siteId: string, executor: Executor) =>
   executor
     .selectFrom('publication_snapshots as s')
+    .leftJoin('admin_users as u', (join) =>
+      join
+        .on('s.actor_type', '=', 'admin')
+        .on((eb) => eb(eb.cast('u.id', 'text'), '=', eb.ref('s.actor_id'))),
+    )
+    .leftJoin('api_tokens as t', (join) =>
+      join
+        .on('s.actor_type', '=', 'token')
+        .on((eb) => eb(eb.cast('t.id', 'text'), '=', eb.ref('s.actor_id'))),
+    )
     .select([
+      (eb) =>
+        eb.fn.coalesce(eb.fn<string | null>('nullif', ['u.name', eb.val('')]), 't.name').as('actor_name'),
       's.seq',
       's.schema_version',
       's.source',
