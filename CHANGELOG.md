@@ -8,6 +8,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **Media "Used in" names entries by title.** Each entry version using a file now shows the entry's title and
+  type and links to it in that locale, instead of a raw entry ID. Entries in types you can't read say so,
+  without a link. `GET /api/admin/media/assets/:id/usage` returns each entry's `title`.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

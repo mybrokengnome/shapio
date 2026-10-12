@@ -1491,7 +1491,7 @@
       "none": "Not used in any content.",
       "count_one": "Used by {{count}} entry version.",
       "count_other": "Used by {{count}} entry versions.",
-      "entry": "Entry {{id}}",
+      "hidden": "An entry you can't open",
       "draft": "Draft",
       "published": "Published"
     },

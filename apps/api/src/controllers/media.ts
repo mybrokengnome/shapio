@@ -14,6 +14,8 @@ import type { IdParams } from '../routes/schemas/adminIdentity.js';
 import * as mediaAssetsService from '../services/mediaAssets.js';
 import * as mediaFoldersService from '../services/mediaFolders.js';
 import * as mediaUploadsService from '../services/mediaUploads.js';
+import * as mediaUsageService from '../services/mediaUsage.js';
+import { contentContextFor } from './contentContext.js';
 import { mediaContextFor } from './mediaContext.js';
 
 const adminIdOf = (request: FastifyRequest) =>
@@ -76,7 +78,7 @@ export const moveAssets = async (request: FastifyRequest<{ Body: MoveAssetsBody 
   mediaAssetsService.moveAssets(getRequestSite(request), request.body.assetIds, request.body.folderId);
 
 export const getAssetUsage = async (request: FastifyRequest<{ Params: IdParams }>) =>
-  mediaAssetsService.listUsagesOnSite(getRequestSite(request), request.params.id);
+  mediaUsageService.listTitledUsages(await contentContextFor(request), request.params.id);
 
 // Uploads
 

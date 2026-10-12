@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { adminApiFor } from './content/api';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { seedMediaReference } from './support/database';
@@ -17,6 +18,7 @@ let page: Page;
 const pageErrors: string[] = [];
 const HERO = 'hero.png';
 const DOC = 'terms.pdf';
+const AVATAR = 'avatar.png';
 
 const openSession = async (browser: Browser) => {
   const context = await browser.newContext({ viewport: { width: 1360, height: 900 } });
@@ -224,6 +226,8 @@ test('deleting a file content uses is blocked; the owner can delete it anyway', 
   await card(HERO).click();
   const sheet = details();
   await expect(sheet.getByText('Used by 2 entry versions.')).toBeVisible();
+  // The seeded references point at no model this admin can read: named, not linked, never by raw ID.
+  await expect(sheet.getByText("An entry you can't open")).toHaveCount(2);
   await sheet.getByRole('button', { name: 'Delete file' }).click();
   const confirm = page.getByRole('alertdialog', { name: `Delete “${HERO}”?` });
   await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
@@ -241,4 +245,44 @@ test('deleting a file content uses is blocked; the owner can delete it anyway', 
   await expect(card(HERO)).toBeHidden();
   const gone = await page.request.get(`${ADMIN_API}/media/assets?search=${HERO}`);
   expect(((await gone.json()) as { items: unknown[] }).items).toEqual([]);
+});
+
+test('"Used in" names each entry by its title and type, and links to it in that locale', async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  await api.createDefinition('models', {
+    kind: 'collection',
+    apiKey: 'mediaAuthor',
+    label: 'Media author',
+    fields: [
+      { apiKey: 'name', label: 'Name', type: 'string' },
+      { apiKey: 'avatar', label: 'Avatar', type: 'media' },
+    ],
+  });
+  const avatar = await api.uploadPng(AVATAR, 40, 40);
+  const entry = await api.send<{ id: string }>('POST', '/content/mediaAuthor', {
+    data: { name: 'Ada Lovelace', avatar: avatar.id },
+  });
+  try {
+    await page.goto(`${ADMIN_URL}media`);
+    await card(AVATAR).click();
+    const sheet = page.getByRole('dialog', { name: AVATAR });
+    await expect(sheet.getByText('Used by 1 entry version.')).toBeVisible();
+    const usedIn = sheet.getByRole('listitem').filter({ hasText: 'Ada Lovelace' });
+    await expect(usedIn).toContainText('Media author');
+    await expect(sheet.getByText(entry.id)).toHaveCount(0);
+    await captureScreen(page, 'media-12-used-in', { viewports: ['desktop'] });
+    await usedIn.getByRole('link', { name: 'Ada Lovelace' }).click();
+    await expect(page).toHaveURL(new RegExp(`/content/mediaAuthor/${entry.id}\\?locale=en$`));
+  } finally {
+    // Leave the shared server as it was: an empty library and no extra model for later specs.
+    await api.send('DELETE', `/content/mediaAuthor/${entry.id}`);
+    await api.send('DELETE', `/media/assets/${avatar.id}?force=true`);
+    const models = await api.get<{
+      items: { version: number; definition: { id: string; apiKey: string } }[];
+    }>('/models');
+    const model = models.items.find(({ definition }) => definition.apiKey === 'mediaAuthor');
+    if (model) {
+      await api.send('DELETE', `/models/${model.definition.id}?expectedVersion=${model.version}`);
+    }
+  }
 });
