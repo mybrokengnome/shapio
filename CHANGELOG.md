@@ -14,6 +14,9 @@ All notable changes to Shapio are listed here. The format follows
   change in any state, so a finished one reloads the new version at once.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
+  half-typed JSON now stays in the field with its error, counts as an unsaved change, and blocks Save, Create,
+  and Publish; autosave saves the other changes and holds that field back until it is fixed.
 
 ## [0.5.6] - 2026-10-11
 

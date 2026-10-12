@@ -9,6 +9,7 @@ import {
   UID_PATTERN,
   type FieldDefinition,
 } from '@shapio/schema';
+import { isUnparsed } from './unparsed';
 import { isEmptyValue, toList } from './values';
 
 /**
@@ -90,7 +91,8 @@ const checkText = (field: FieldDefinition, text: string): ClientIssue[] => {
 };
 
 export const clientIssuesOf = (field: FieldDefinition, value: unknown): ClientIssue[] => {
-  if (isEmptyValue(value)) {
+  // Unparsed text: the editor shows its own message (with the reason) as soon as it is typed.
+  if (isEmptyValue(value) || isUnparsed(value)) {
     return [];
   }
   switch (field.type) {

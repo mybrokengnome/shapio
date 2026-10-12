@@ -669,3 +669,116 @@ test('the entry document works at phone width', async () => {
   await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
   await captureScreen(page, 'content-14-entry', BOTH);
 });
+
+test('text a number or JSON editor cannot read is kept, blocks Save and Create, and leaving asks first', async () => {
+  const statTitle = id();
+  await api.createDefinition('models', {
+    id: id(),
+    kind: 'collection',
+    apiKey: 'stat',
+    label: 'Stat',
+    display: { titleFieldId: statTitle },
+    fields: [
+      { id: statTitle, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: id(), apiKey: 'views', label: 'Views', type: 'integer' },
+      { id: id(), apiKey: 'meta', label: 'Meta', type: 'json' },
+    ],
+  });
+  const writes: { method: string; body: string }[] = [];
+  const recordWrite = (request: {
+    method: () => string;
+    url: () => string;
+    postData: () => string | null;
+  }) => {
+    if (['POST', 'PUT'].includes(request.method()) && /\/content\/stat(\/|$|\?)/.test(request.url())) {
+      writes.push({ method: request.method(), body: request.postData() ?? '' });
+    }
+  };
+  page.on('request', recordWrite);
+  const toastFor = (count: number) =>
+    page.getByText(`${count} field${count === 1 ? ' needs' : 's need'} attention before this can be saved.`);
+
+  await test.step('Create is refused while a value does not parse, and nothing is sent', async () => {
+    await page.goto(`${server.adminUrl}content/stat`);
+    await page.getByRole('link', { name: 'New', exact: true }).first().click();
+    await expect(page.getByRole('heading', { level: 1, name: 'New Stat' })).toBeVisible();
+    await field('/title').getByRole('textbox').fill('Visits');
+    const views = await doc().property('views');
+    await views.getByRole('textbox').fill('3.7');
+    await expect(views).toContainText('Enter a whole number.');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(toastFor(1)).toBeVisible();
+    expect(writes).toEqual([]);
+    await expect(page).toHaveURL(/\/content\/stat\/new/);
+    await views.getByRole('textbox').fill('37');
+    await expect(views).not.toContainText('Enter a whole number.');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByText('Entry created.')).toBeVisible();
+    await expect(page).toHaveURL(/\/content\/stat\/[0-9a-f-]{36}$/);
+  });
+  const statId = /\/content\/stat\/([0-9a-f-]{36})$/.exec(page.url())?.[1] ?? '';
+  const getStat = () => api.get<Entry>(`/content/stat/${statId}`);
+  expect((await getStat()).data.views).toBe(37);
+
+  await test.step('Save (⌘S) is refused with the errors on screen; the typed text stays', async () => {
+    writes.splice(0);
+    const views = await doc().property('views');
+    await views.getByRole('textbox').fill('37x');
+    const meta = await doc().property('meta');
+    await meta.getByRole('textbox').fill('{bad json');
+    await expect(meta).toContainText('Not valid JSON');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(toastFor(2)).toBeVisible();
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await captureScreen(page, 'content-15-unparsed', BOTH);
+    expect(writes.filter((write) => !write.body.includes('"autosave":true'))).toEqual([]);
+    await expect(views.getByRole('textbox')).toHaveValue('37x');
+    await expect(meta.getByRole('textbox')).toHaveValue('{bad json');
+  });
+
+  await test.step('autosave sends the other changes and holds the unreadable ones back', async () => {
+    const autosaved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/stat/${statId}`) &&
+        Boolean(response.request().postData()?.includes('"autosave":true')),
+    );
+    await field('/title').getByRole('textbox').fill('Visits this week');
+    const body = JSON.parse((await autosaved).request().postData() ?? '{}') as { data: object };
+    expect(body.data).toEqual({ title: 'Visits this week' });
+    const saved = await getStat();
+    expect(saved.data).toMatchObject({ title: 'Visits this week', views: 37 });
+    expect(saved.data.meta ?? null).toBeNull();
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await expect((await doc().property('views')).getByRole('textbox')).toHaveValue('37x');
+  });
+
+  await test.step('leaving asks first while the text is unsaved', async () => {
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Page' })
+      .click();
+    const prompt = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(prompt).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/content/stat/${statId}`));
+  });
+
+  await test.step('once fixed, Save sends the values', async () => {
+    await (await doc().property('views')).getByRole('textbox').fill('42');
+    await (await doc().property('meta')).getByRole('textbox').fill('{ "source": "web" }');
+    await expect(page.getByText(/Not valid JSON|Enter a whole number/)).toHaveCount(0);
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/stat/${statId}`) &&
+        !response.request().postData()?.includes('"autosave":true'),
+    );
+    await page.keyboard.press('ControlOrMeta+s');
+    expect((await saved).ok()).toBe(true);
+    await expect(status()).toHaveText(/Saved/);
+    expect((await getStat()).data).toMatchObject({ views: 42, meta: { source: 'web' } });
+  });
+  page.off('request', recordWrite);
+});

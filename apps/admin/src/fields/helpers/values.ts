@@ -1,4 +1,5 @@
 import { newStableId } from '@/helpers/stableId';
+import { isUnparsed } from './unparsed';
 
 /**
  * Field values as the entry form holds them: keyed by API key, like the admin API. List items of
@@ -49,6 +50,9 @@ export const isDeepEqual = (left: unknown, right: unknown): boolean => {
   if (Object.is(left, right)) {
     return true;
   }
+  if (isUnparsed(left) || isUnparsed(right)) {
+    return isUnparsed(left) && isUnparsed(right) && left.text === right.text;
+  }
   if (Array.isArray(left) && Array.isArray(right)) {
     return left.length === right.length && left.every((item, index) => isDeepEqual(item, right[index]));
   }
@@ -64,6 +68,9 @@ export const isDeepEqual = (left: unknown, right: unknown): boolean => {
 
 /** The value without client-only keys, ready to send or compare. */
 export const stripClientKeys = (value: unknown): unknown => {
+  if (isUnparsed(value)) {
+    return value;
+  }
   if (Array.isArray(value)) {
     return value.map(stripClientKeys);
   }

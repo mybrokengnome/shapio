@@ -261,23 +261,27 @@ test('a Product type set to Form opens its entries as a form', async () => {
     const bar = page.locator('[data-slot="entry-top-bar"]');
     await expect(bar.getByRole('link', { name: 'Product', exact: true })).toBeVisible();
     await expect(bar.getByRole('status')).not.toContainText('2026');
-    const boxes = await bar.evaluate((element) => {
-      const rect = (target: Element | null) => target?.getBoundingClientRect() ?? null;
-      const [left, actions] = [...element.children];
-      return {
-        breadcrumb: rect(element.querySelector('nav')),
-        placeName: element.querySelector('nav a')?.scrollWidth ?? 0,
-        placeNameShown: element.querySelector('nav a')?.clientWidth ?? 0,
-        saveState: rect(left?.querySelector('[role="status"]') ?? null),
-        actions: rect(actions ?? null),
-      };
-    });
-    expect(boxes.placeNameShown).toBeGreaterThanOrEqual(boxes.placeName);
-    expect(boxes.breadcrumb && boxes.saveState && boxes.actions).toBeTruthy();
-    if (boxes.breadcrumb && boxes.saveState && boxes.actions) {
-      expect(boxes.breadcrumb.right).toBeLessThanOrEqual(boxes.saveState.left);
-      expect(boxes.saveState.right).toBeLessThanOrEqual(boxes.actions.left);
-    }
+    // Measured once the bar has settled (the autosave's status, the Save button and the drawer can still be
+    // landing): polled until one row with nothing overlapping, so only a lasting overlap fails.
+    // The boxes come along so a failure shows the numbers.
+    const measure = () =>
+      bar.evaluate((element) => {
+        const rect = (target: Element | null) => target?.getBoundingClientRect() ?? null;
+        const [left, actions] = [...element.children];
+        const breadcrumb = rect(element.querySelector('nav'));
+        const saveState = rect(left?.querySelector('[role="status"]') ?? null);
+        const actionsBox = rect(actions ?? null);
+        const placeName = element.querySelector('nav a');
+        return {
+          placeNameFits: (placeName?.clientWidth ?? 0) >= (placeName?.scrollWidth ?? 0),
+          breadcrumbClear: Boolean(breadcrumb && saveState && breadcrumb.right <= saveState.left),
+          saveStateClear: Boolean(saveState && actionsBox && saveState.right <= actionsBox.left),
+          boxes: { breadcrumb, saveState, actions: actionsBox },
+        };
+      });
+    await expect
+      .poll(measure)
+      .toMatchObject({ placeNameFits: true, breadcrumbClear: true, saveStateClear: true });
     await captureScreen(page, 'form-04-layout-switch');
 
     // The switch turns it off; the word Document on its left would do the same.
