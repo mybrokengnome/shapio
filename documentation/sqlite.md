@@ -51,9 +51,12 @@ you use SQLite.
 
 ## Limits
 
-- **One process.** Run one Shapio process per database file. `WORKER_MODE=dedicated` is refused: the job
-  worker runs inside the API process (`WORKER_MODE=inline`, the default). Two processes on one file would not
-  share schema-change notifications, locks or the job queue's coordination. Short `shapio` commands that open
+- **One process.** Run one Shapio process per database file. The job worker runs inside the API process
+  (`WORKER_MODE=inline`, the default): `WORKER_MODE=dedicated` and `shapio worker` are refused. A second
+  `shapio start` on a file another one serves is refused too ("Another Shapio process already serves …"):
+  two processes on one file would not share schema-change notifications, locks or the job queue's
+  coordination. The server holds a lock on `<database>-shapio.lock` beside the file while it runs; the
+  operating system releases it when the process ends, even after a crash. Short `shapio` commands that open
   the file while the server runs (`shapio migrate`, `shapio admin create`, `shapio backup`) are fine.
 - **One writer at a time.** Writes are serialised inside the process, and reads run alongside them. Each SQL
   statement runs synchronously on Node's event loop, so a very large export or import makes other requests

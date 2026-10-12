@@ -10,6 +10,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **On SQLite, a second server or a worker can no longer run on a file another process serves.** `shapio
+worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the same
+  file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
+  `<database>-shapio.lock` that is released when it exits, even after a crash. `shapio migrate`, `backup`, and
+  `admin create` still run beside it.
 
 ## [0.5.6] - 2026-10-11
 

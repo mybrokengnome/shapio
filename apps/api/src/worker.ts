@@ -1,7 +1,9 @@
 import closeWithGrace from 'close-with-grace';
 import type { AppConfig } from './config/index.js';
+import { dialectOfUrl } from './db/dialect.js';
 import { createDb } from './db/index.js';
 import { getPendingMigrations } from './db/migrator.js';
+import { SqliteDedicatedWorkerError } from './db/sqlite/processLock.js';
 import { assertDatabaseReachable } from './db/startupChecks.js';
 import { loadProjectConfig } from './extensions/loader.js';
 import { ensureHealthSweepScheduled } from './jobs/contentHealth.js';
@@ -15,6 +17,9 @@ import { resolveSigningSecret } from './services/signingSecret.js';
  * It never migrates: it refuses to start until the API has brought the schema up to date.
  */
 export const startDedicatedWorker = async (config: AppConfig) => {
+  if (dialectOfUrl(config.database.url) === 'sqlite') {
+    throw new SqliteDedicatedWorkerError();
+  }
   const logger = createLogger(config);
   // Same project config as the API, so hooks and jobs behave identically in a dedicated worker.
   const project = await loadProjectConfig({ configPath: config.extensions.configPath });

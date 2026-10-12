@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA_PROCESS_JOB } from '../src/constants/media.js';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import { concat } from '../src/db/sql/text.js';
-import { jsonField, jsonHasKey } from './helpers/dialect.js';
+import { dialectSkipReason, jsonField, jsonHasKey, withSkipReason } from './helpers/dialect.js';
 import { freePort } from './helpers/freePort.js';
 import { createPng, type MediaAssetBody, type UploadGrantBody } from './helpers/media.js';
 import { createRoleToken } from './helpers/schemaAdmin.js';
@@ -31,7 +31,10 @@ const elapsedSince = (start: number) => performance.now() - start;
  * notifications; instance B does not (SCHEMA_LISTEN=false), so everything B does right relies on the
  * durable version checks alone. Both run the inline worker.
  */
-describe('two instances on one database', { timeout: 120_000 }, () => {
+const sqliteSkip = dialectSkipReason(import.meta.url);
+const title = withSkipReason('two instances on one database', sqliteSkip);
+
+describe.skipIf(sqliteSkip)(title, { timeout: 120_000 }, () => {
   const database = useTestDatabase();
   const mediaPath = mkdtempSync(join(tmpdir(), 'shapio-two-instances-'));
   let a: SpawnedServer;
