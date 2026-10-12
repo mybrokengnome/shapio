@@ -30,3 +30,8 @@ export const SERVER_LOG = join(ARTIFACTS_DIR, 'server.log');
 export const SERVER_STATE = join(ARTIFACTS_DIR, 'server.json');
 /** Screenshots outlive the run (named by screen), unless SHAPIO_E2E_SCREENSHOTS points elsewhere. */
 export const SCREENSHOT_DIR = process.env.SHAPIO_E2E_SCREENSHOTS ?? join(ARTIFACTS_ROOT, 'screenshots');
+/** Sonner's toast list and each toast in it (see `src/components/ui/sonner.tsx`). */
+export const TOASTER_SELECTOR = '[data-sonner-toaster]';
+export const TOAST_SELECTOR = '[data-sonner-toast]';
+/** Toasts dismiss after Sonner's 4 s default; allow for that plus the exit transition. */
+export const TOAST_SETTLE_TIMEOUT_MS = 5_000;
