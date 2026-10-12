@@ -56,8 +56,8 @@ All notable changes to Shapio are listed here. The format follows
   and Publish; autosave saves the other changes and holds that field back until it is fixed.
 - **Public off on a component's field now hides it from delivery.** REST, GraphQL, in-process delivery, and
   previews returned a component's `public: false` fields to delivery tokens, app users, and anonymous callers,
-  in single, repeatable, and dynamic-zone components. They are now left out at any depth (GraphQL returns
-  `null`); admin reads still show them.
+  in single, repeatable, and dynamic-zone components. They are now left out at any depth; admin reads still
+  show them.
 - **Per-account sign-in and reset limits hold under parallel requests.** Sending many requests at once used to
   check up to 20 passwords a minute against one account and send 20 reset emails to one address; now each
   request takes its slot before it runs, so admin and app-user sign-ins, password resets, sign-ups, and
@@ -67,7 +67,6 @@ All notable changes to Shapio are listed here. The format follows
   to the default locale, with its history, links, and unique values intact. Entries of localized models that
   existed only in the deleted locale are deleted like a normal delete: an `entry.deleted` event is sent, and their
   unique values can be used again. The confirmation now says how many entries will be deleted and how many move.
-
 - **Unique fields stay unique when they stop being per-locale.** Making a unique field shared, or its model
   non-localized, now checks for entries that hold the same value in different locales and refuses the change
   if any do, as making a field unique does. The registry of taken values moves to the shared key, so a later
@@ -176,9 +175,9 @@ All notable changes to Shapio are listed here. The format follows
 - **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
   listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
   of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
-- **On SQLite, a second server or a worker can no longer run on a file another process serves.** `shapio
-worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the same
-  file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
+- **On SQLite, a second server or a worker can no longer run on a file another process serves.**
+  `shapio worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the
+  same file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
   `<database>-shapio.lock` that is released when it exits, even after a crash. `shapio migrate`, `backup`, and
   `admin create` still run beside it.
 - **`shapio schema apply` reports the version it activated at.** After waiting for a change's background
@@ -213,8 +212,6 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   the role holds, including grants made through the API and grants on deleted models, which can be removed.
   Saving a grant whose field list names a field the model doesn't have is refused with `UNKNOWN_FIELD`, for
   admin, delivery, and app roles.
-  in single, repeatable, and dynamic-zone components. They are now left out at any depth; admin reads still
-  show them.
 - **A delivery caller's GraphQL schema no longer names what it can't read.** Introspection with a delivery token
   listed every `public: false` field (in components too) and every model of the site. The schema a delivery
   token, app user, or anonymous caller sees now holds only the models, fields, filters, and inputs its role
