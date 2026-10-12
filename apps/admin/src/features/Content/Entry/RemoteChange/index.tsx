@@ -20,11 +20,15 @@ type RemoteChangeProps = {
 export const RemoteChange = ({ change, busy, onReload, compact = false }: RemoteChangeProps) => {
   const { t } = useTranslation();
   const when = changedWhen(change.savedAt, t('entry.remoteChange.momentAgo'));
-  const full = change.savedBy
-    ? change.savedBy.you
-      ? t('entry.remoteChange.byYou', { when })
-      : t('entry.remoteChange.by', { name: change.savedBy.name, when })
-    : t('entry.remoteChange.unknown', { when });
+  const { savedBy } = change;
+  const [full, short] = savedBy
+    ? savedBy.you
+      ? [t('entry.remoteChange.byYou', { when }), t('entry.remoteChange.shortByYou')]
+      : [
+          t('entry.remoteChange.by', { name: savedBy.name, when }),
+          t('entry.remoteChange.shortBy', { name: savedBy.name }),
+        ]
+    : [t('entry.remoteChange.unknown', { when }), t('entry.remoteChange.short')];
   return (
     <div className="flex min-w-0 items-center gap-2">
       <p
@@ -33,7 +37,7 @@ export const RemoteChange = ({ change, busy, onReload, compact = false }: Remote
         title={`${full} (${formatDateTime(change.savedAt)})`}
         className="min-w-0 truncate text-foreground"
       >
-        {compact ? t('entry.remoteChange.short') : full}
+        {compact ? short : full}
       </p>
       <Button type="button" variant="outline" size="xs" disabled={busy} onClick={onReload}>
         <RefreshCw aria-hidden="true" />

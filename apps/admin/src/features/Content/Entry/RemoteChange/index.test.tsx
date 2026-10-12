@@ -22,6 +22,18 @@ describe('RemoteChange', () => {
     expect(onReload).toHaveBeenCalledOnce();
   });
 
+  it('keeps the name in the short text on a narrow bar', () => {
+    render(
+      <RemoteChange
+        change={{ savedAt: secondsAgo(5), savedBy: { name: 'Ana', you: false } }}
+        busy={false}
+        onReload={vi.fn()}
+        compact
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('Changed by Ana');
+  });
+
   it('says "you elsewhere" for the same person, and the time once it is older than a minute', () => {
     render(
       <RemoteChange
