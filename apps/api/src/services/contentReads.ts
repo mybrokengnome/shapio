@@ -19,12 +19,15 @@ import { resolveModelById, type ContentModel } from '../content/model.js';
 import { projectRows, type ReadEnvironment } from '../content/read.js';
 import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
+import * as changeSetsRepository from '../repositories/changeSets.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
 import * as entriesRepository from '../repositories/entries.js';
 import type { EntryRow } from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
+import * as publicationsRepository from '../repositories/publications.js';
+import type { EntryPublicationRow } from '../repositories/publications.js';
 import { assertEntryVisible, modelWithPolicy, type ContentServiceContext } from './contentAccess.js';
 import { listDetailsFor, type ListAuthor, type ListLocaleStatus } from './contentListDetails.js';
 
@@ -355,7 +358,73 @@ export const listRevisions = async (
   locale: string | undefined,
 ) => {
   const { entry } = await visibleEntry(context, modelKey, id);
-  return contentRevisionsRepository.listForEntry(entry.id, locale ?? null, 200, context.db);
+  const [revisions, publications] = await Promise.all([
+    contentRevisionsRepository.listForEntry(entry.id, locale ?? null, HISTORY_LIMIT, context.db),
+    publicationsRepository.listForEntry(entry.id, locale ?? null, HISTORY_LIMIT, context.db),
+  ]);
+  const names = await actorNames(context, [
+    ...revisions.map((row) => ({ type: row.author_type, id: row.author_id })),
+    ...publications.flatMap((row) => [
+      { type: row.actor_type, id: row.actor_id },
+      { type: row.closed_actor_type, id: row.closed_actor_id },
+    ]),
+  ]);
+  const nameOf = (actorId: string | null) => (actorId === null ? null : (names.get(actorId) ?? null));
+  return {
+    revisions: revisions.map((row) => ({ ...row, author_name: nameOf(row.author_id) })),
+    publications: publications.map((row) => publicationView(row, publications, nameOf)),
+  };
+};
+
+const HISTORY_LIMIT = 200;
+
+type ActorRef = { type: string | null; id: string | null };
+
+/** Display names of the admins, tokens and app users among `actors`, by ID (system actors have none). */
+const actorNames = (context: ContentServiceContext, actors: readonly ActorRef[]) => {
+  const idsOf = (type: string) => [
+    ...new Set(actors.flatMap((actor) => (actor.type === type && actor.id ? [actor.id] : []))),
+  ];
+  return changeSetsRepository.findActorNames(
+    { adminIds: idsOf('admin'), tokenIds: idsOf('token'), appUserIds: idsOf('app_user') },
+    context.db,
+  );
+};
+
+export type EntryPublicationView = {
+  revisionId: string;
+  locale: string;
+  publishedAt: Date;
+  publishedBy: string | null;
+  /** Why it went live, when not by a plain Publish: on schedule, or with a change set (named). */
+  via: 'schedule' | 'changeSet' | null;
+  changeSetTitle: string | null;
+  live: boolean;
+  /** Set only when the period ended without another publication of the locale taking over. */
+  unpublishedAt: Date | null;
+  unpublishedBy: string | null;
+};
+
+const publicationView = (
+  row: EntryPublicationRow,
+  all: readonly EntryPublicationRow[],
+  nameOf: (actorId: string | null) => string | null,
+): EntryPublicationView => {
+  // A re-publish closes the previous period at the same sequence number it opens the next one.
+  const replaced =
+    row.to_seq !== null && all.some((other) => other.locale === row.locale && other.from_seq === row.to_seq);
+  const ended = row.to_seq !== null && !replaced;
+  return {
+    revisionId: row.revision_id,
+    locale: row.locale,
+    publishedAt: row.published_at,
+    publishedBy: nameOf(row.actor_id),
+    via: row.change_set_title !== null ? 'changeSet' : row.source === 'schedule' ? 'schedule' : null,
+    changeSetTitle: row.change_set_title,
+    live: row.to_seq === null,
+    unpublishedAt: ended ? (row.closed_at ?? null) : null,
+    unpublishedBy: ended ? nameOf(row.closed_actor_id) : null,
+  };
 };
 
 /** One revision with its data projected through the current schema and the caller's read mask. */

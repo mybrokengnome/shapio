@@ -29,7 +29,9 @@ type RevisionsRequest = FastifyRequest<{ Params: EntryParams; Querystring: Local
 type RevisionRequest = FastifyRequest<{ Params: RevisionParams }>;
 type RestoreRequest = FastifyRequest<{ Params: RevisionParams; Body: { expectedVersion: number } }>;
 
-const revisionSummary = (row: Awaited<ReturnType<typeof contentReadsService.listRevisions>>[number]) => ({
+type RevisionRow = Awaited<ReturnType<typeof contentReadsService.listRevisions>>['revisions'][number];
+
+const revisionSummary = (row: Omit<RevisionRow, 'author_name'>) => ({
   id: row.id,
   locale: row.locale,
   reason: row.reason,
@@ -110,16 +112,22 @@ export const unpublishEntry = async (request: LocalesRequest) =>
     request.body,
   );
 
-export const listRevisions = async (request: RevisionsRequest) => ({
-  items: (
-    await contentReadsService.listRevisions(
-      await contentContextFor(request),
-      request.params.modelKey,
-      request.params.id,
-      request.query.locale,
-    )
-  ).map(revisionSummary),
-});
+export const listRevisions = async (request: RevisionsRequest) => {
+  const { revisions, publications } = await contentReadsService.listRevisions(
+    await contentContextFor(request),
+    request.params.modelKey,
+    request.params.id,
+    request.query.locale,
+  );
+  return {
+    items: revisions.map((row) => ({ ...revisionSummary(row), authorName: row.author_name })),
+    publications: publications.map((publication) => ({
+      ...publication,
+      publishedAt: publication.publishedAt.toISOString(),
+      unpublishedAt: publication.unpublishedAt?.toISOString() ?? null,
+    })),
+  };
+};
 
 export const getRevision = async (request: RevisionRequest) => {
   const { revision, data } = await contentReadsService.getRevision(

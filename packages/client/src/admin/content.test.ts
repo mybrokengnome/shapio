@@ -115,6 +115,16 @@ describe('content api', () => {
     });
   });
 
+  it('reads an entry history with its publications', async () => {
+    const history = {
+      items: [{ id: 'r1', authorName: 'Ada' }],
+      publications: [{ revisionId: 'r1', live: true }],
+    };
+    const { client, call } = setup(200, history);
+    await expect(client.admin.content.history('page', 'e1', { locale: 'en' })).resolves.toEqual(history);
+    expect(call(0)).toMatchObject({ url: `${BASE}/page/e1/revisions?locale=en`, method: 'GET' });
+  });
+
   it('reads the custom editor manifest', async () => {
     const { client, call } = setup(200, { items: [] });
     await expect(client.admin.extensions.editors()).resolves.toEqual({ items: [] });

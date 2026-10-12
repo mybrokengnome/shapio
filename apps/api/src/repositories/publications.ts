@@ -175,3 +175,45 @@ export const findRevisionsLiveAt = (
     .where((eb) => eb.or([eb('pl.to_seq', 'is', null), eb('pl.to_seq', '>', String(seq))]))
     .execute();
 };
+
+/**
+ * An entry's publications (one row per live period of a locale), newest first, with the ledger rows that
+ * opened and closed each: when, why (`source`, the change set) and who, for the entry's history.
+ */
+export const listForEntry = (
+  entryId: string,
+  locale: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
+  executor
+    .selectFrom('publication_log as l')
+    .leftJoin('publication_snapshots as opened', (join) =>
+      join.onRef('opened.site_id', '=', 'l.site_id').onRef('opened.seq', '=', 'l.from_seq'),
+    )
+    .leftJoin('publication_snapshots as closed', (join) =>
+      join.onRef('closed.site_id', '=', 'l.site_id').onRef('closed.seq', '=', 'l.to_seq'),
+    )
+    .leftJoin('change_sets as cs', 'cs.id', 'opened.change_set_id')
+    .select([
+      'l.revision_id',
+      'l.locale',
+      'l.from_seq',
+      'l.to_seq',
+      'l.published_at',
+      'opened.source',
+      'opened.actor_type',
+      'opened.actor_id',
+      'cs.title as change_set_title',
+      'closed.created_at as closed_at',
+      'closed.actor_type as closed_actor_type',
+      'closed.actor_id as closed_actor_id',
+    ])
+    .where('l.entry_id', '=', entryId)
+    .$if(locale !== null, (qb) => qb.where('l.locale', '=', locale ?? ''))
+    .orderBy('l.from_seq', 'desc')
+    .orderBy('l.id', 'desc')
+    .limit(limit)
+    .execute();
+
+export type EntryPublicationRow = Awaited<ReturnType<typeof listForEntry>>[number];

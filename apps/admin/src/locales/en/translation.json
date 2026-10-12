@@ -1847,6 +1847,13 @@
         "duplicate": "Duplicated",
         "localize": "Locale created"
       },
+      "live": "Live",
+      "events": {
+        "published": "Published",
+        "publishedOnSchedule": "Published on schedule",
+        "publishedWithChangeSet": "Published with change set {{title}}",
+        "unpublished": "Unpublished"
+      },
       "changes": {
         "added": "would be filled in",
         "removed": "would be cleared",
