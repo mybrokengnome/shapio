@@ -105,6 +105,9 @@ All notable changes to Shapio are listed here. The format follows
   and broke once the background move finished. Until the move is done, the file's URLs now go through
   Shapio's own file route under the new prefix (also on S3 and behind a CDN), and that route serves the file
   before and after the move.
+- **Creating an entry that goes live is now in the audit log.** Create and publish (in the admin, the delivery
+  write API, or on a model without drafts) writes one `content.publish` row marked `via: create`, like the
+  Publish button, bulk Publish, schedules, and change sets already did.
 
 ## [0.5.6] - 2026-10-11
 

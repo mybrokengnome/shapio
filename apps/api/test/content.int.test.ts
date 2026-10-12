@@ -417,4 +417,68 @@ describe('admin content API', () => {
     expect(await seq()).toBe(before + 1);
     expect(await countOf('outbox_events')).toBe(2);
   });
+
+  const auditOf = async (entryId: string) =>
+    (
+      await database.current.db
+        .selectFrom('audit_events')
+        .select(['action', 'metadata'])
+        .where('target_id', '=', entryId)
+        .orderBy('seq')
+        .execute()
+    ).map((row) => ({
+      action: row.action,
+      metadata: (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) as Record<
+        string,
+        unknown
+      >,
+    }));
+
+  it('create and publish writes one publish audit row, through the admin and the delivery write API', async () => {
+    const viaAdmin = expectStatus(
+      await create('author', { name: 'Barbara' }, { publish: true }),
+      201,
+    ).json<EntryBody>();
+    expect(await auditOf(viaAdmin.id)).toEqual([
+      {
+        action: 'content.publish',
+        metadata: expect.objectContaining({ modelKey: 'author', locales: ['en'], via: 'create' }) as unknown,
+      },
+    ]);
+
+    const viaDelivery = expectStatus(
+      await admin.post('/api/content/authors', { data: { name: 'Frances' }, publish: true }),
+      201,
+    ).json<{ data: { id: string; status: string } }>().data;
+    expect(viaDelivery.status).toBe('published');
+    expect((await auditOf(viaDelivery.id)).map((row) => row.action)).toEqual(['content.publish']);
+
+    // A create without publish on a model with drafts is a save: recorded as a revision, not audited.
+    const draft = expectStatus(await create('author', { name: 'Radia' }), 201).json<EntryBody>();
+    expect(await auditOf(draft.id)).toEqual([]);
+  });
+
+  it('a create on a model without drafts is audited as a publish; later saves are not', async () => {
+    await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'note',
+      label: 'Note',
+      draftAndPublish: false,
+      fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    const note = expectStatus(await create('note', { text: 'first' }), 201).json<EntryBody>();
+    expectStatus(
+      await admin.put(`/api/admin/content/note/${note.id}`, {
+        expectedVersion: note.version,
+        data: { text: 'second' },
+      }),
+      200,
+    );
+    expect(await auditOf(note.id)).toEqual([
+      {
+        action: 'content.publish',
+        metadata: expect.objectContaining({ modelKey: 'note', via: 'create' }) as unknown,
+      },
+    ]);
+  });
 });

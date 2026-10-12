@@ -36,7 +36,7 @@ import {
   writeEntryEvent,
   type ContentServiceContext,
 } from './contentAccess.js';
-import { publishLocalesInTransaction } from './contentPublishing.js';
+import { auditPublished, publishLocalesInTransaction } from './contentPublishing.js';
 import { viewAfterWrite, type AdminEntryView } from './contentReads.js';
 import * as mediaReferencesService from './mediaReferences.js';
 
@@ -165,7 +165,7 @@ export const createEntry = async (
       revisionId: draft.revision_id,
     });
     if (publish) {
-      await publishLocalesInTransaction(
+      const published = await publishLocalesInTransaction(
         {
           write,
           site: context.site,
@@ -177,6 +177,7 @@ export const createEntry = async (
         [locale],
         [draft],
       );
+      await auditPublished(trx, context, model, entry.id, published, { via: 'create' });
     }
     await syncEntryUniqueValues(write, entry.id);
     await context.hooks.run('afterCreate', hook);
