@@ -1,16 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import { useMediaUsage } from '@/api/media';
 import { ErrorState } from '@/components/ErrorState';
-import { StatusChip } from '@/components/StatusChip';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useContentSchema } from '@/features/Content/hooks/useContentSchema';
+import { Row } from './Row';
 
 type UsageProps = { assetId: string };
 
-/** "Used in": the entries whose draft or published version references the asset. */
+/** "Used in": the entries whose draft or published version references the asset, by title and type. */
 export const Usage = ({ assetId }: UsageProps) => {
   const { t } = useTranslation();
   const usage = useMediaUsage(assetId);
+  const { schema } = useContentSchema();
   if (usage.isPending) {
     return <Skeleton className="h-8 w-full" />;
   }
@@ -25,22 +26,11 @@ export const Usage = ({ assetId }: UsageProps) => {
       <p className="text-sm">{t('media.usage.count', { count: usage.data.total })}</p>
       <ul className="divide-y rounded-lg border">
         {usage.data.items.map((item) => (
-          <li
+          <Row
             key={`${item.entryId}:${item.fieldId}:${item.locale}:${item.state}`}
-            className="flex min-w-0 items-center gap-2 px-3 py-2"
-          >
-            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={item.entryId}>
-              {t('media.usage.entry', { id: item.entryId })}
-            </span>
-            <Badge variant="outline" className="font-mono">
-              {item.locale}
-            </Badge>
-            <StatusChip
-              size="sm"
-              tone={item.state === 'published' ? 'success' : 'neutral'}
-              label={item.state === 'published' ? t('media.usage.published') : t('media.usage.draft')}
-            />
-          </li>
+            usage={item}
+            model={schema?.models.get(item.modelId)}
+          />
         ))}
       </ul>
     </div>

@@ -201,6 +201,8 @@ export const assetUsageSchema = {
           locale: Type.String(),
           state: Type.Union([Type.Literal('draft'), Type.Literal('published')]),
           since: DateTimeSchema,
+          /** The entry's title; null when it has none or the caller may not read it (model, row, field). */
+          title: Type.Union([Type.String(), Type.Null()]),
         }),
       ),
       total: Type.Integer(),

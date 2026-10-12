@@ -79,6 +79,8 @@ export type MediaUsage = {
   locale: string;
   state: 'draft' | 'published';
   since: string;
+  /** The entry's title; null when it has none or you may not read it (model, row, or field). */
+  title: string | null;
 };
 
 export type MediaUsagePage = { items: MediaUsage[]; total: number };

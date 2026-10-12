@@ -35,6 +35,9 @@ All notable changes to Shapio are listed here. The format follows
 - **Deleting a media file shows only "Deleted".** The open file sheet read the file again after the delete,
   and the 404 added a red "This no longer exists" toast beside the success one. A file that's gone no longer
   raises a toast; the screens that show files already say when one is missing.
+- **Media "Used in" names entries by title.** Each entry version using a file now shows the entry's title and
+  type and links to it in that locale, instead of a raw entry ID. Entries in types you can't read say so,
+  without a link. `GET /api/admin/media/assets/:id/usage` returns each entry's `title`.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
