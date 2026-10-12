@@ -5,13 +5,17 @@ import { hasErrorCode } from '@/api/errors';
 import { useDeleteLocale } from '@/api/locales';
 import { i18next } from '@/app/i18n';
 
-type WithContent = { locale: Locale; affectedHeads: number };
+type WithContent = { locale: Locale; affectedHeads: number; deletedEntries: number };
 
-/** The content count the server reports when a locale with content is deleted without acknowledgement. */
-const affectedHeadsOf = (error: unknown): number | null => {
-  const details = (error as { details?: { plan?: { impact?: { affectedHeads?: unknown } } } }).details;
-  const count = details?.plan?.impact?.affectedHeads;
-  return typeof count === 'number' ? count : null;
+/**
+ * The content counts the server reports when a locale with content is deleted without acknowledgement:
+ * entry versions purged, and entries that exist only in that locale (deleted outright).
+ */
+const impactOf = (error: unknown): Omit<WithContent, 'locale'> => {
+  const impact = (error as { details?: { plan?: { impact?: Record<string, unknown> } } }).details?.plan
+    ?.impact;
+  const count = (value: unknown) => (typeof value === 'number' ? value : 0);
+  return { affectedHeads: count(impact?.affectedHeads), deletedEntries: count(impact?.deletedEntries) };
 };
 
 const announceDeleted = (locale: Locale) =>
@@ -19,8 +23,8 @@ const announceDeleted = (locale: Locale) =>
 
 /**
  * Deleting a locale purges its content. The first attempt, from the row's inline confirmation, goes without
- * acknowledgement: an empty locale is simply removed. One holding content is refused with its content count,
- * and the question moves to a blocking dialog where the admin acknowledges that count.
+ * acknowledgement: an empty locale is simply removed. One holding content is refused with its content counts,
+ * and the question moves to a blocking dialog where the admin acknowledges them.
  */
 export const useDeleteLocaleFlow = () => {
   const deleteLocale = useDeleteLocale();
@@ -34,7 +38,7 @@ export const useDeleteLocaleFlow = () => {
         throw error;
       }
       deleteLocale.reset();
-      setWithContent({ locale, affectedHeads: affectedHeadsOf(error) ?? 0 });
+      setWithContent({ locale, ...impactOf(error) });
       setOpen(true);
       return;
     }

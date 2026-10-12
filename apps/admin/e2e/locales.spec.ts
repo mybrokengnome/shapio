@@ -103,7 +103,7 @@ test('locales: add, fallback chain, default (acknowledged) and delete', async ()
   await back.getByRole('button', { name: 'Make default' }).click();
   await expect(toast('English is now the default locale.')).toBeVisible();
 
-  // A locale with content: the inline confirmation's first attempt is refused with the content count,
+  // A locale with content: the inline confirmation's first attempt is refused with the content counts,
   // which the admin acknowledges in a blocking dialog.
   await createContentIn('fr-CA');
   await page.getByRole('button', { name: 'Actions: Canadian French' }).click();
@@ -114,6 +114,10 @@ test('locales: add, fallback chain, default (acknowledged) and delete', async ()
   const remove = page.getByRole('alertdialog', { name: 'Delete Canadian French?' });
   await expect(
     remove.getByText('1 entry version has content in Canadian French.', { exact: false }),
+  ).toBeVisible();
+  // The entry exists only in that locale, so the dialog says it will be deleted outright.
+  await expect(
+    remove.getByText('1 entry exists only in Canadian French and will be deleted.', { exact: false }),
   ).toBeVisible();
   const confirmRemove = remove.getByRole('button', { name: 'Delete' });
   await expect(confirmRemove).toBeDisabled();

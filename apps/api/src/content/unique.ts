@@ -89,23 +89,16 @@ export const uniqueKeysOf = (
 const keyString = (key: { field_id: string; locale: string; state: string; value_hash: string }) =>
   `${key.field_id}|${key.locale}|${key.state}|${key.value_hash}`;
 
-/**
- * Makes an entry's registry rows match its current heads for the given fields: releases values it no longer
- * holds, claims new ones, and fails with a 422 `NOT_UNIQUE` issue when another entry holds a value.
- */
-export const syncUniqueValues = async (
-  trx: Transaction<DB>,
-  input: {
-    entryId: string;
-    model: ModelDefinition;
-    fields: readonly FieldDefinition[];
-    heads: readonly HeadValues[];
-  },
-): Promise<void> => {
+type EntryUniqueInput = {
+  entryId: string;
+  model: ModelDefinition;
+  fields: readonly FieldDefinition[];
+  heads: readonly HeadValues[];
+};
+
+/** Releases the registry rows an entry holds for the given fields that none of its heads hold any more. */
+const releaseUnheld = async (trx: Transaction<DB>, input: EntryUniqueInput) => {
   const { entryId, model, fields, heads } = input;
-  if (fields.length === 0) {
-    return;
-  }
   const desired = uniqueKeysOf(model, fields, heads);
   const existing = await uniqueValuesRepository.listForEntry(
     entryId,
@@ -126,6 +119,29 @@ export const syncUniqueValues = async (
       );
     }
   }
+  return { desired, existing };
+};
+
+/**
+ * Release only: drops the registry rows an entry's heads no longer hold, and claims nothing (after heads were
+ * removed, e.g. a deleted locale's).
+ */
+export const releaseUnheldUniqueValues = async (trx: Transaction<DB>, input: EntryUniqueInput) => {
+  if (input.fields.length > 0) {
+    await releaseUnheld(trx, input);
+  }
+};
+
+/**
+ * Makes an entry's registry rows match its current heads for the given fields: releases values it no longer
+ * holds, claims new ones, and fails with a 422 `NOT_UNIQUE` issue when another entry holds a value.
+ */
+export const syncUniqueValues = async (trx: Transaction<DB>, input: EntryUniqueInput): Promise<void> => {
+  const { entryId, model } = input;
+  if (input.fields.length === 0) {
+    return;
+  }
+  const { desired, existing } = await releaseUnheld(trx, input);
   const held = new Set(existing.map(keyString));
   const conflicts = new Set<FieldDefinition>();
   // Claim in a stable order so concurrent writers wait on keys in the same sequence (no deadlock).

@@ -29,6 +29,11 @@ All notable changes to Shapio are listed here. The format follows
   check up to 20 passwords a minute against one account and send 20 reset emails to one address; now each
   request takes its slot before it runs, so admin and app-user sign-ins, password resets, sign-ups, and
   confirmation resends stay at 5 per 15 minutes. Successful sign-ins still never count.
+- **Deleting a locale no longer deletes entries of models that aren't localized.** Such an entry stays in the
+  locale it was created in, so deleting that locale after the default changed used to delete it. It now moves
+  to the default locale, with its history, links, and unique values intact. Entries of localized models that
+  existed only in the deleted locale are deleted like a normal delete: an `entry.deleted` event is sent, and their
+  unique values can be used again. The confirmation now says how many entries will be deleted and how many move.
 
 ## [0.5.6] - 2026-10-11
 

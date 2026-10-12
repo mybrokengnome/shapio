@@ -48,7 +48,10 @@ export type FollowUpStep =
   | IndexStep
   | { kind: 'dropIndex'; indexName: string }
   | { kind: 'releaseUnique'; fieldId: string }
-  /** Deletes a removed locale's heads, revisions and unique-registry rows (content ports). */
+  /**
+   * Deletes a removed locale's heads, revisions and unique-registry rows, and moves non-localized entries stored
+   * in it to the default locale (content ports).
+   */
   | { kind: 'purgeLocale'; code: string };
 
 export const isIndexStep = (step: PrerequisiteStep): step is IndexStep => step.kind === 'buildIndex';

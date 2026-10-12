@@ -92,7 +92,7 @@ export type EntryEvent =
 export const writeEntryEvent = (
   trx: Transaction<DB>,
   siteId: string,
-  model: ContentModel,
+  model: Pick<ContentModel, 'definition'>,
   type: EntryEvent,
   entryId: string,
   payload: Record<string, unknown>,

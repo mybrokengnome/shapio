@@ -99,7 +99,8 @@ export const createSchemaApi = (request: RequestFn) => ({
       }),
     /**
      * Deletes a locale and purges its content. When content exists and `acknowledgeDestructive` is false,
-     * the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED with `details.plan.impact.affectedHeads`.
+     * the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED with `details.plan.impact` (`affectedHeads`,
+     * `deletedEntries`, `movedEntries`).
      */
     remove: (code: string, acknowledgeDestructive: boolean) =>
       request<DeleteLocaleResult>(
