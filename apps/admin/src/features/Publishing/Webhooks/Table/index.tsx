@@ -58,7 +58,12 @@ export const Table = ({ webhooks }: TableProps) => {
                   </span>
                 </TableCell>
                 <TableCell>
-                  <EnabledChip enabled={webhook.enabled} />
+                  <span className="flex flex-wrap items-center gap-2">
+                    <EnabledChip enabled={webhook.enabled} />
+                    {webhook.secretsUnreadable ? (
+                      <StatusChip tone="warning" label={t('publishing.webhooks.secretUnreadable')} />
+                    ) : null}
+                  </span>
                 </TableCell>
                 <TableCell>
                   {webhook.lastDelivery && last ? (

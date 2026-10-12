@@ -1,7 +1,8 @@
 import { createHmac } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
+import { PUBLISHING_JOBS, WEBHOOK_SECRET_UNREADABLE } from '../src/constants/publishing.js';
 import type { Worker } from '../src/jobs/worker.js';
+import { createSecretBox } from '../src/publishing/secretBox.js';
 import { createDefinition, expectStatus, type EntryBody } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
 import {
@@ -263,6 +264,111 @@ describe('webhooks', () => {
     await drainJobs(worker(), database.current.db, { types: JOB_TYPES });
     expect(receiver.requests).toHaveLength(2);
     expect(receiver.requests[1]?.body).toBe(receiver.requests[0]?.body);
+  });
+
+  describe('a signing secret sealed under another SESSION_SECRET', () => {
+    type Listed = Webhook & { name: string; secretsUnreadable: boolean };
+    const jobOf = async (deliveryId: string) =>
+      (
+        await database.current.db
+          .selectFrom('jobs')
+          .select(['status', 'attempts', 'last_error', 'payload'])
+          .where('type', '=', PUBLISHING_JOBS.webhookDeliver)
+          .execute()
+      ).find((job) => (job.payload as { deliveryId?: string }).deliveryId === deliveryId);
+
+    it('records the delivery as dead with the reason, flags the webhook, and rotating repairs it', async () => {
+      const healthy = expectStatus(
+        await createWebhook({
+          name: 'Healthy',
+          url: receiver.url,
+          events: ['entry.*'],
+          allowPrivateNetwork: true,
+        }),
+        201,
+      ).json<{ webhook: Webhook }>();
+      const broken = expectStatus(
+        await createWebhook({
+          name: 'Broken',
+          url: receiver.url,
+          events: ['entry.*'],
+          allowPrivateNetwork: true,
+        }),
+        201,
+      ).json<{ webhook: Webhook }>();
+      const other = createSecretBox('another-signing-secret-that-is-at-least-32-chars');
+      await database.current.db
+        .updateTable('webhooks')
+        .set({ secret_encrypted: other.encrypt('whsec_lost') })
+        .where('id', '=', broken.webhook.id)
+        .execute();
+
+      const listed = expectStatus(await admin.get('/api/admin/webhooks'), 200).json<Listed[]>();
+      expect(listed.find((webhook) => webhook.id === healthy.webhook.id)).toMatchObject({
+        secretsUnreadable: false,
+      });
+      expect(listed.find((webhook) => webhook.id === broken.webhook.id)).toMatchObject({
+        secretsUnreadable: true,
+      });
+      expect(
+        expectStatus(await admin.get(`/api/admin/webhooks/${broken.webhook.id}`), 200).json<Listed>(),
+      ).toMatchObject({ secretsUnreadable: true });
+
+      const test = expectStatus(
+        await admin.post(`/api/admin/webhooks/${broken.webhook.id}/test`, {}),
+        202,
+      ).json<Delivery>();
+      await drainJobs(worker(), database.current.db, { types: JOB_TYPES });
+      expect(receiver.requests).toHaveLength(0);
+      const [dead] = await deliveriesOf(broken.webhook.id);
+      expect(dead).toMatchObject({
+        id: test.id,
+        status: 'dead',
+        attempts: 1,
+        lastResponseStatus: null,
+        lastError: WEBHOOK_SECRET_UNREADABLE,
+      });
+      expect(dead?.attemptLog).toHaveLength(1);
+      expect(dead?.attemptLog[0]).toMatchObject({ response: null, error: WEBHOOK_SECRET_UNREADABLE });
+      // No retry can help: the job is dead after one attempt, with the same reason.
+      expect(await jobOf(test.id)).toMatchObject({ status: 'dead', attempts: 1 });
+      expect((await jobOf(test.id))?.last_error).toContain(WEBHOOK_SECRET_UNREADABLE);
+      expect(
+        expectStatus(await admin.get(`/api/admin/webhooks/${broken.webhook.id}`), 200).json<{
+          lastDelivery: { status: string };
+        }>().lastDelivery.status,
+      ).toBe('dead');
+
+      const rotated = expectStatus(
+        await admin.post(`/api/admin/webhooks/${broken.webhook.id}/rotate-secret`, {}),
+        200,
+      ).json<{ webhook: Listed; secret: string }>();
+      expect(rotated.webhook.secretsUnreadable).toBe(false);
+      expect(
+        expectStatus(await admin.get(`/api/admin/webhooks/${broken.webhook.id}`), 200).json<Listed>(),
+      ).toMatchObject({ secretsUnreadable: false });
+
+      // The missed delivery is sent again, signed with the new secret.
+      expectStatus(
+        await admin.post(`/api/admin/webhooks/${broken.webhook.id}/deliveries/${test.id}/redeliver`, {}),
+        202,
+      );
+      await drainJobs(worker(), database.current.db, { types: JOB_TYPES });
+      expect(receiver.requests).toHaveLength(1);
+      const [request] = receiver.requests;
+      const expected = createHmac('sha256', rotated.secret)
+        .update(`${String(request?.headers['x-shapio-timestamp'])}.${request?.body ?? ''}`)
+        .digest('hex');
+      expect(request?.headers['x-shapio-signature']).toBe(`v1=${expected}`);
+
+      // Later events reach both webhooks again.
+      await publishArticle('After the repair');
+      await drainJobs(worker(), database.current.db, { types: JOB_TYPES });
+      const published = (await deliveriesOf(broken.webhook.id)).find(
+        (delivery) => delivery.eventType === 'entry.published',
+      );
+      expect(published).toMatchObject({ status: 'succeeded', attempts: 1 });
+    });
   });
 
   it('validates events and needs webhooks.manage', async () => {

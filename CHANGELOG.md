@@ -46,6 +46,9 @@ All notable changes to Shapio are listed here. The format follows
   if any do, as making a field unique does. The registry of taken values moves to the shared key, so a later
   duplicate is refused in every locale. The reverse change, making a unique field per-locale, now lets
   locales share a value while still refusing duplicates within a locale.
+- **Webhooks survive an unreadable secret.** After `SESSION_SECRET` changes, a webhook's deliveries are recorded
+  as dead with the reason, the webhook list and page show a warning, and Rotate secret repairs it. Before,
+  deliveries stayed pending forever and nothing in the admin said why.
 
 ## [0.5.6] - 2026-10-11
 

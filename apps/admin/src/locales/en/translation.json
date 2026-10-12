@@ -2226,6 +2226,7 @@
       "enabledToast": "Webhook enabled",
       "disabledToast": "Webhook disabled",
       "rotateSecret": "Rotate secret",
+      "secretUnreadable": "Secret can't be read. Rotate it.",
       "rotateTitle": "Rotate the signing secret?",
       "rotateDescription": "The current secret stops working at once.",
       "deleteTitle": "Delete “{{name}}”?",

@@ -60,6 +60,10 @@ Delivery is at least once. Failures are retried with exponential backoff (up to 
 attempts) and every attempt is in the webhook's delivery log (status, response, timing), where you can also
 redeliver and **send a test** event. Rotating the secret is one click.
 
+If `SESSION_SECRET` changes, Shapio can no longer read the stored signing secrets. Each webhook then shows
+"Secret can't be read. Rotate it.", and its deliveries are recorded as dead with that reason instead of being
+sent. Rotate the secret, give the new one to the receiver, and redeliver anything it missed from the delivery log.
+
 ### Outbound requests and private networks
 
 Webhooks and deployment connections never call private, loopback or link-local addresses (`10.x`, `192.168.x`,

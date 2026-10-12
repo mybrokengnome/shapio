@@ -18,6 +18,7 @@ import { decodeCursor, pageSize, toPage, type Page } from '../publishing/paginat
 import { previewTemplateOrigin, renderPreviewUrl } from '../publishing/previewUrl.js';
 import { adminIdOf } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
+import { isSecretUnreadable } from '../publishing/secretBox.js';
 import {
   envRefsOf,
   isSecretEnvAllowed,
@@ -120,9 +121,6 @@ export const toRunView = (row: RunRow): RunView => {
 
 const connectionNotFound = (id: string) =>
   new AppError(404, 'CONNECTION_NOT_FOUND', `No deployment connection ${id}`, { id });
-
-const isSecretUnreadable = (error: unknown) =>
-  error instanceof AppError && error.code === 'SECRET_UNREADABLE';
 
 /**
  * The connection's literal secrets, or none with `unreadable` when they cannot be decrypted: one connection
