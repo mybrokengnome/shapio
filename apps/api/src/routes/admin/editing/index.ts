@@ -30,7 +30,7 @@ export const adminEditingRoutes: FastifyPluginAsyncTypebox = async (app) => {
   );
   // GET /content-counts: entries per readable model
   app.get('/content-counts', { ...admin, schema: schemas.contentCountsSchema }, handlers.countContent);
-  // PUT /presence/:modelKey/:id { tabId, locale }: heartbeat; returns who else has the entry open
+  // PUT /presence/:modelKey/:id { tabId, locale }: heartbeat; returns who else has the entry open and every locale's draft version
   app.put(
     '/presence/:modelKey/:id',
     { ...admin, schema: schemas.heartbeatSchema, config: { audit: PRESENCE } },

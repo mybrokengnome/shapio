@@ -313,3 +313,17 @@ export const findStatesForEntries = (entryIds: readonly string[], executor: Exec
         .orderBy('entry_id')
         .orderBy('locale')
         .execute();
+
+/**
+ * Every draft head of an entry with the author of its revision: what the presence heartbeat tells an open
+ * document about saves made elsewhere.
+ */
+export const findDraftsWithAuthors = (entryId: string, executor: Executor = db) =>
+  executor
+    .selectFrom('entry_heads as h')
+    .innerJoin('content_revisions as r', 'r.id', 'h.revision_id')
+    .select(['h.locale', 'h.version', 'h.updated_at', 'h.autosaved_at', 'r.author_type', 'r.author_id'])
+    .where('h.entry_id', '=', entryId)
+    .where('h.state', '=', 'draft')
+    .orderBy('h.locale')
+    .execute();

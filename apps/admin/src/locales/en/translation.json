@@ -1647,6 +1647,16 @@
       "label": "Also editing: {{names}}",
       "youElsewhere": "you, in another tab"
     },
+    "remoteChange": {
+      "by": "Changed by {{name}} {{when}}. Reload to see it.",
+      "byYou": "Changed by you elsewhere {{when}}. Reload to see it.",
+      "unknown": "Changed {{when}}. Reload to see it.",
+      "short": "Changed elsewhere",
+      "shortBy": "Changed by {{name}}",
+      "shortByYou": "Changed by you elsewhere",
+      "momentAgo": "a moment ago",
+      "reload": "Reload"
+    },
     "palette": {
       "switchLocale": "Switch to {{locale}}"
     },

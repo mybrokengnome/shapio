@@ -406,6 +406,34 @@ test('a save from another session shows the conflict banner; reloading keeps my 
   });
 });
 
+test('an open entry with no edits says another session saved it, and Reload shows that save', async ({
+  browser,
+}) => {
+  const before = await getEntry('en');
+  const other = await openSignedIn(browser);
+  await adminApiFor(other.request, server.adminApi).send('PUT', `/content/page/${entryId}`, {
+    locale: 'en',
+    expectedVersion: before.version,
+    data: { title: 'Saved while this tab was open' },
+  });
+  await other.context().close();
+
+  // The next heartbeat carries the new draft version (TanStack Query refetches it when the tab is shown).
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange', { bubbles: true })));
+  // The full sentence is the notice's name; the bar may show its short form while the drawer is open.
+  const notice = page.getByRole('status', {
+    name: /^Changed by you elsewhere a moment ago\. Reload to see it\./,
+  });
+  await expect(notice).toBeVisible({ timeout: 20_000 });
+  await expect(field('/title').getByRole('textbox')).not.toHaveValue('Saved while this tab was open');
+  await captureScreen(page, 'content-09-remote-change', BOTH);
+
+  await page.getByRole('button', { name: 'Reload', exact: true }).click();
+  await expect(field('/title').getByRole('textbox')).toHaveValue('Saved while this tab was open');
+  await expect(notice).toBeHidden();
+});
+
 test("publishing from a tab that missed another session's save shows the conflict banner, not a publish", async ({
   browser,
 }) => {

@@ -43,6 +43,9 @@ All notable changes to Shapio are listed here. The format follows
   its docs are underlined.
 - **Asking for a hidden field in `fields=` says so.** The 403 `FORBIDDEN_FIELD` now reads "You may not read the
   field …" instead of "You may not filter, sort or search on …", which the request never did.
+- **An open entry now learns that another tab saved it.** With no edits of its own, the tab says who changed
+  the draft and when, in place of "Saved", with a Reload button; with unsaved edits, it shows the "Someone else
+  saved this entry" banner, which keeps them. The presence heartbeat now carries every locale's draft version.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or

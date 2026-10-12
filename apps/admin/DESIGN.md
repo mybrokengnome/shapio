@@ -648,9 +648,13 @@ unsaved edits stay readable and editable while the person signs in again (see Sh
 | Review before a risky save (schema plan)                        | sheet `lg`, so the thing being changed stays in view                  | `Sheet`                         |
 | Confirm a routine destructive or consequential action           | inline confirm anchored to the trigger (or to the row's menu button)  | `InlineConfirm`                 |
 | Show a one-time secret                                          | inline panel at the top of the page where it was created              | `SecretReveal`                  |
-| Notice after an action (other locales, remote change, conflict) | banner in place (`Alert`) or a toast with an action                   | `Alert`, `toast(…, { action })` |
+| Notice after an action (other locales, remote change, conflict) | banner (`Alert`), toast with an action, or the top bar's save state   | `Alert`, `toast(…, { action })` |
 | Irreversible acknowledgement                                    | blocking dialog, the only kind left                                   | `ConfirmDialog`                 |
 | Go anywhere, run a command                                      | the command palette, the one centred overlay (see Patterns)           | `CommandPalette`                |
+
+A remote change (another tab saved the entry) while the document has no edits of its own replaces the save
+state in the document's top bar ("Changed by … Reload to see it." with a Reload button); with unsaved edits it
+raises the conflict banner instead.
 
 `ConfirmDialog` is kept only for: leaving with unsaved changes (`UnsavedChangesGuard`, `useDiscardGuard`),
 deleting a model, force-deleting a file that content uses, deleting a locale that has content, changing the
