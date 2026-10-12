@@ -86,6 +86,9 @@ export const login = async (input: LoginInput): Promise<AuthenticatedSession> =>
   }
   return db.transaction().execute(async (trx) => {
     const now = new Date();
+    // The admin row first: the update takes its exclusive lock before the session insert's foreign key asks
+    // for a shared one. The other order deadlocks parallel sign-ins of one admin on MySQL (InnoDB).
+    await adminUsersRepository.update(usable.id, { last_login_at: now }, trx);
     if (input.previousSessionToken) {
       const previous = await adminSessionsRepository.findActiveByTokenHash(
         hashToken(input.previousSessionToken),
@@ -96,7 +99,6 @@ export const login = async (input: LoginInput): Promise<AuthenticatedSession> =>
       }
     }
     const session = await createSession(usable.id, { client: input.client, now }, trx);
-    await adminUsersRepository.update(usable.id, { last_login_at: now }, trx);
     await recordAudit(trx, {
       ...audit,
       actor: narrowToSite({ adminUserId: usable.id, sessionId: session.sessionId, assignments: [] }, null),

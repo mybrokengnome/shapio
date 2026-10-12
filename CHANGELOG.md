@@ -26,6 +26,8 @@ All notable changes to Shapio are listed here. The format follows
   elsewhere while you have unsaved changes, the admin stays on the page and asks for your password in a panel
   beside it; the save that failed runs again once you sign in. Signing out from the account menu over unsaved
   changes now asks first, like leaving the page.
+- **Signing in from several places at once works on MySQL.** Parallel correct sign-ins of one admin could
+  deadlock in InnoDB and answer 500; the sign-in now updates the admin before it creates the session.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
