@@ -24,8 +24,8 @@ import { assertMayReadDrafts } from './draftAccess.js';
 export type DeliveryMeta = {
   /** The requested locale (or the default); each entry's own `locale` says which one served it. */
   locale: string;
-  /** Publication sequence number this response reflects. */
-  snapshot: number;
+  /** Publication sequence number this response reflects; null on draft reads, which cannot be pinned. */
+  snapshot: number | null;
   /** Draft reads only (`?publicationState=draft`); published responses carry no such member. */
   publicationState?: 'draft';
 };
@@ -163,9 +163,12 @@ const DELIVERY_PARSE = {
   allowPublicationState: true,
 } as const;
 
-/** Meta every delivery response carries; draft reads add `publicationState` (published ones are unchanged). */
+/**
+ * Meta every delivery response carries. Draft reads report `snapshot: null` (drafts cannot be pinned, as in
+ * GraphQL) and add `publicationState`; published ones are unchanged.
+ */
 const metaOf = (locale: string, snapshot: number, drafts: boolean): DeliveryMeta =>
-  drafts ? { locale, snapshot, publicationState: 'draft' } : { locale, snapshot };
+  drafts ? { locale, snapshot: null, publicationState: 'draft' } : { locale, snapshot };
 
 /** Reading one entry takes only these query parameters; anything else is refused, not ignored. */
 export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<string>): void => {

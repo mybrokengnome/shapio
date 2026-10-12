@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **REST drafts mode reports `meta.snapshot: null`.** A read with `publicationState=draft` (and
+  `@shapio/local` with `drafts: true`) reported a snapshot number as if the drafts could be pinned; it now
+  reports `null`, as GraphQL already did.
 
 ## [0.5.6] - 2026-10-11
 

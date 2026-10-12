@@ -163,9 +163,9 @@ rather than ignored, so a filter can never reveal a hidden value.
 
 ## Snapshots: one consistent moment
 
-Every publish moves a global **publication snapshot** number forward; every delivery response reports the
-one it read in `meta.snapshot`. Pass `snapshot=N` and Shapio answers exactly as it would have at that moment,
-even if more was published since:
+Every publish moves a global **publication snapshot** number forward; every published read reports the
+one it read in `meta.snapshot` (a [draft read](#drafts-in-development) reports `null`). Pass `snapshot=N`
+and Shapio answers exactly as it would have at that moment, even if more was published since:
 
 ```sh
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/pages?snapshot=10&locale=en"
@@ -258,8 +258,8 @@ curl -H "Authorization: Bearer $SHAPIO_DEV_DELIVERY_TOKEN" \
   "$SHAPIO_URL/api/content/articles?publicationState=draft&populate=author"
 ```
 
-A draft read serves each entry's saved draft in the delivery shape, entries never published included, and
-`meta.publicationState: "draft"`. Relation targets and `populate` follow their drafts too, still only for
+A draft read serves each entry's saved draft in the delivery shape, entries never published included, with
+`meta.publicationState: "draft"` and `meta.snapshot: null`. Relation targets and `populate` follow their drafts too, still only for
 models the role may read. Responses are `Cache-Control: private, no-store`, so no cache keeps them, and field
 usage does not count them. A draft cannot be pinned: `publicationState=draft` with `snapshot` is a 400.
 Published reads are unchanged, byte for byte.
