@@ -9,6 +9,7 @@ import {
   type PolicyRequest,
   type RowCondition,
   type RowFilter,
+  type RowReadMasks,
 } from './types.js';
 
 /** One permission row of a role: an action on one model (or every model when `modelId` is null). */
@@ -68,6 +69,7 @@ export const ALLOW_ALL_POLICY: Policy = Object.freeze<Policy>({
   allowed: true,
   rowFilter: null,
   readMask: { mode: 'all' },
+  rowReadMasks: null,
   writeMask: { mode: 'all' },
 });
 
@@ -118,6 +120,71 @@ export const combineFieldMasks = (
   return { mode: 'only', fieldIds: [...named].sort(), componentFields: 'all' };
 };
 
+/** Fields either mask allows. */
+export const unionMasks = (left: FieldMask, right: FieldMask): FieldMask =>
+  left.mode === 'all' || right.mode === 'all'
+    ? { mode: 'all' }
+    : {
+        mode: 'only',
+        fieldIds: [...new Set([...left.fieldIds, ...right.fieldIds])].sort(),
+        componentFields: left.componentFields === 'all' || right.componentFields === 'all' ? 'all' : 'public',
+      };
+
+/** Fields both masks allow. */
+export const intersectMasks = (left: FieldMask, right: FieldMask): FieldMask => {
+  if (left.mode === 'all') {
+    return right;
+  }
+  if (right.mode === 'all') {
+    return left;
+  }
+  const kept = new Set(right.fieldIds);
+  return {
+    mode: 'only',
+    fieldIds: left.fieldIds.filter((id) => kept.has(id)),
+    componentFields: left.componentFields === 'all' && right.componentFields === 'all' ? 'all' : 'public',
+  };
+};
+
+/** Whether `outer` allows every field `inner` allows. */
+const covers = (outer: FieldMask, inner: FieldMask): boolean =>
+  outer.mode === 'all' ||
+  (inner.mode === 'only' && inner.fieldIds.every((id) => outer.fieldIds.includes(id)));
+
+/**
+ * Read masks per row (issue #75). Row access and field access are not independent across grants: a field
+ * allowed only by a grant with a row condition is readable only on rows matching that condition. The mask for
+ * every row is that of the unconditioned grants; without any, the fields every condition allows (each row the
+ * principal reads matches at least one). null when every readable row gets the same fields.
+ */
+export const combineRowReadMasks = (
+  grants: readonly Grant[],
+  audience: Audience,
+  fields: readonly ModelField[] | undefined,
+): RowReadMasks | null => {
+  const kinds = [...new Set(grants.map((grant) => grant.condition))].filter(
+    (kind): kind is RowCondition['kind'] => kind !== null,
+  );
+  if (kinds.length === 0) {
+    return null;
+  }
+  const byCondition = kinds.map((kind) => ({
+    condition: { kind },
+    mask: combineFieldMasks(
+      grants.filter((grant) => grant.condition === kind),
+      audience,
+      fields,
+    ),
+  }));
+  const unconditioned = grants.filter((grant) => grant.condition === null);
+  const everyRow =
+    unconditioned.length > 0
+      ? combineFieldMasks(unconditioned, audience, fields)
+      : byCondition.map((entry) => entry.mask).reduce(intersectMasks);
+  const when = byCondition.filter((entry) => !covers(everyRow, entry.mask));
+  return when.length === 0 ? null : { everyRow, when };
+};
+
 /**
  * The policy for one (action, model) request from a principal's grants. Pure: no I/O, so it is unit- and
  * property-tested directly. Deny by default: no matching grant, no access.
@@ -141,6 +208,7 @@ export const buildPolicy = (
     allowed: true,
     rowFilter: combineRowFilters(matching),
     readMask: combineFieldMasks(readGrants, audience, fields),
+    rowReadMasks: combineRowReadMasks(readGrants, audience, fields),
     writeMask: WRITE_ACTIONS.has(request.action) ? combineFieldMasks(matching, audience, fields) : EMPTY_MASK,
   };
 };

@@ -71,6 +71,10 @@ All notable changes to Shapio are listed here. The format follows
   `Query`, `Media`, or one another type's GraphQL names already use, now shows its reason under API ID straight
   away instead of only "Fix the highlighted settings" with nothing highlighted. A refusal that points at no field
   shows its own reason above the buttons.
+- **Fields granted only on your own entries stay off everyone else's.** When one role could read every entry
+  and another could read your own entries with more fields (an email, say), those extra fields showed on every
+  entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,
+  or searching on such a field is refused unless every entry you can read is your own.
 
 ## [0.5.6] - 2026-10-11
 

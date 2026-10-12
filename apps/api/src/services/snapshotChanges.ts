@@ -6,7 +6,7 @@ import {
   type ModelDefinition,
 } from '@shapio/schema';
 import type { Transaction } from 'kysely';
-import { compileModelRowFilters, maskAllows } from '../content/compiler/policy.js';
+import { compileModelRowFilters, everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { queryInvalid } from '../content/compiler/types.js';
 import { snapshotInvalid } from '../content/errors.js';
 import type { DB } from '../db/types.js';
@@ -72,6 +72,7 @@ export type SnapshotChangesQuery = { from: number; to?: number; after?: string; 
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** `readMask`: the fields readable on every row (titles are shown without the entry's ownership at hand). */
 type ReadableModel = { definition: ModelDefinition; rowFilter: RowFilter | null; readMask: FieldMask };
 
 /**
@@ -90,7 +91,7 @@ const readableModels = async (context: ContentServiceContext): Promise<ReadableM
       modelId: definition.id,
     });
     if (policy.allowed) {
-      readable.push({ definition, rowFilter: policy.rowFilter, readMask: policy.readMask });
+      readable.push({ definition, rowFilter: policy.rowFilter, readMask: everyRowReadMask(policy) });
     }
   }
   if (readable.length === 0 && context.actor.kind === 'anonymous') {

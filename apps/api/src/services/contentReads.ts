@@ -9,7 +9,7 @@ import {
 } from '../content/compiler/compile.js';
 import { paginationMeta, toLimitOffset, type Pagination } from '../content/compiler/paginate.js';
 import { parseContentQuery } from '../content/compiler/parse.js';
-import { compileRowFilter, maskAllows } from '../content/compiler/policy.js';
+import { compileRowFilter, everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { parseQueryTree } from '../content/compiler/querystring.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery } from '../content/compiler/types.js';
@@ -253,6 +253,7 @@ export const parseQueryFor = (
     model: model.definition,
     locales: context.snapshot.locales.map((locale) => locale.code),
     isReadable: (field) => maskAllows(policy.readMask, field),
+    isQueryable: (field) => maskAllows(everyRowReadMask(policy), field),
     allowSnapshot: options.allowSnapshot,
     allowAdminFilters: options.allowAdminFilters ?? false,
     allowRichText: options.allowRichText ?? false,
@@ -289,7 +290,7 @@ export const listAdminEntries = async (
   const sort =
     query.sort.length > 0
       ? query.sort
-      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
+      : defaultSortTerms(model.definition, (field) => maskAllows(everyRowReadMask(policy), field));
   const compiled = compileHeadQuery({
     siteId: context.site.id,
     modelId: model.definition.id,

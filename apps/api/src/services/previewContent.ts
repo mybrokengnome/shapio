@@ -1,13 +1,15 @@
 import type { HeadSource } from '../content/compiler/compile.js';
 import { entryIdIs } from '../content/compiler/conditions.js';
 import { paginationMeta } from '../content/compiler/paginate.js';
+import { everyRowReadMask } from '../content/compiler/policy.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
 import { resolveRouteModel, type ContentModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
-import type { FieldVisibilityLookup } from '../permissions/policy.js';
+import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
 import {
   DENIED_POLICY,
+  type FieldMask,
   type PermissionEvaluator,
   type Policy,
   type Principal,
@@ -75,15 +77,31 @@ export const createPreviewPermissions = (
       if (sitePolicy && !sitePolicy.allowed) {
         return DENIED_POLICY;
       }
+      // The site's view: its delivery token owns no entry, so only the fields its role shows on every row.
+      const siteMask = sitePolicy ? everyRowReadMask(sitePolicy) : undefined;
       const visible = modelFields.filter(
         (field) =>
-          allows(policy.readMask, field.id) &&
-          (sitePolicy ? allows(sitePolicy.readMask, field.id) : field.public),
+          allows(policy.readMask, field.id) && (siteMask ? allows(siteMask, field.id) : field.public),
       );
+      const siteVisible: FieldMask = {
+        mode: 'only',
+        fieldIds: modelFields
+          .filter((field) => (siteMask ? allows(siteMask, field.id) : field.public))
+          .map((field) => field.id),
+        componentFields: 'public',
+      };
+      const rowReadMasks = policy.rowReadMasks && {
+        everyRow: intersectMasks(policy.rowReadMasks.everyRow, siteVisible),
+        when: policy.rowReadMasks.when.map((extra) => ({
+          ...extra,
+          mask: intersectMasks(extra.mask, siteVisible),
+        })),
+      };
       return {
         ...policy,
         // What the site sees: a component's non-public fields stay hidden, as for any delivery audience.
         readMask: { mode: 'only', fieldIds: visible.map((field) => field.id), componentFields: 'public' },
+        rowReadMasks,
         writeMask: DENIED_POLICY.writeMask,
       };
     },

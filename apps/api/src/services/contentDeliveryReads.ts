@@ -8,7 +8,7 @@ import {
 } from '../content/compiler/compile.js';
 import { entryIdIs } from '../content/compiler/conditions.js';
 import { toLimitOffset } from '../content/compiler/paginate.js';
-import { maskAllows } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { selectFields } from '../content/compiler/select.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery, RichTextMode } from '../content/compiler/types.js';
@@ -199,7 +199,7 @@ export const readEntryPage = async (
   const sort =
     query.sort.length > 0
       ? query.sort
-      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
+      : defaultSortTerms(model.definition, (field) => maskAllows(everyRowReadMask(policy), field));
   const plan: HeadQueryPlan = {
     siteId: context.site.id,
     modelId: model.definition.id,

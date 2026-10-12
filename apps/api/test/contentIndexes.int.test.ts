@@ -105,6 +105,7 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
       model: model.definition,
       locales: snapshot.locales.map((locale) => locale.code),
       isReadable: () => true,
+      isQueryable: () => true,
       allowSnapshot: false,
       resolveModel: () => undefined,
     });

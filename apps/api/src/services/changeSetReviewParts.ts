@@ -1,6 +1,6 @@
 import type { DataType, FieldDefinition } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
-import { maskAllows } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import type { ContentModel } from '../content/model.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
 import type { PlanImpact } from '../schema/planner/impact.js';
@@ -135,7 +135,9 @@ export const readableFields = async (
     return [];
   }
   const policy = await context.permissions.evaluate(context.actor, { action: 'read', modelId });
-  return policy.allowed ? model.definition.fields.filter((field) => maskAllows(policy.readMask, field)) : [];
+  return policy.allowed
+    ? model.definition.fields.filter((field) => maskAllows(everyRowReadMask(policy), field))
+    : [];
 };
 
 /** Fields whose breaking changes affect readers, with who read them recently. */

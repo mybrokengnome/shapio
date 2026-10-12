@@ -88,6 +88,7 @@ describe('roles, admin users, API tokens and the audit log', () => {
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
       readMask: { mode: 'all' },
+      rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
     });
     expect(
