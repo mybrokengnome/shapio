@@ -58,6 +58,9 @@ const seedContent = async () => {
     autosave: true,
     data: { summary: null },
   });
+  // Autosaves trigger no health check, and the create's check may already have run on the valid draft;
+  // opening the publish pre-flight checks the entry at once and records its findings.
+  await api.send('POST', `/content/fieldNote/${unfinished.id}/preflight`, {});
   entries.harbour = harbour.id;
   entries.unfinished = unfinished.id;
 };
@@ -86,7 +89,10 @@ test.afterAll(async () => {
 const needsYou = (on: Page) => on.getByRole('region', { name: 'Needs you' });
 const ruleGroup = (on: Page, name: string) => needsYou(on).getByRole('region', { name });
 
-/** The health job runs after each save; reload until its findings are listed. */
+/**
+ * Findings come from the health job after each save (the alt text one) or from the pre-flight (the empty
+ * required field, left by an autosave); reload until they are listed.
+ */
 const waitForFinding = async (on: Page, group: string) => {
   await expect(async () => {
     await on.reload();
