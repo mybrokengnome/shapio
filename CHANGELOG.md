@@ -8,6 +8,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **Asking for a hidden field in `fields=` says so.** The 403 `FORBIDDEN_FIELD` now reads "You may not read the
+  field …" instead of "You may not filter, sort or search on …", which the request never did.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

@@ -131,7 +131,14 @@ describe('field visibility of fields added live', () => {
     ]) {
       const refused = await deliver(url);
       expect(refused.statusCode, url).toBe(403);
-      expect(refused.json(), url).toMatchObject({ error: { code: 'FORBIDDEN_FIELD' } });
+      expect(refused.json(), url).toMatchObject({
+        error: {
+          code: 'FORBIDDEN_FIELD',
+          message: url.includes('fields=')
+            ? 'You may not read the field "internalNotes"'
+            : 'You may not filter, sort or search on "internalNotes"',
+        },
+      });
     }
     const viaGraphql = await deliverGraphql(
       'query ($id: ID!) { article(id: $id) { title teaser internalNotes } }',
