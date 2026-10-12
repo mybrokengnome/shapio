@@ -28,8 +28,9 @@ import { createPng } from './lib/png.js';
  * `npm run seed`: prepares a Shapio instance for this starter, idempotently (run it again to reset the
  * content to the seed):
  * 1. the `fr` locale;
- * 2. the models and components in shapio/ through the schema apply API (live, no restart; the same planner
- *    as `shapio schema apply` and the admin), as the site's own (SHAPIO_SITE, else the token's site, else the
+ * 2. the models and components in shapio/ (models/ and components/, plus sites/<key>/models/ and
+ *    sites/<key>/components/ once `shapio schema pull` has run) through the schema apply API (live, no
+ *    restart; the same planner as `shapio schema apply` and the admin), as the site's own (SHAPIO_SITE, else the token's site, else the
  *    primary): a starter's schema belongs to the first site it is seeded on;
  *    The built-in SEO component (components/seo.json) is the exception: it is always shared with every site;
  * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
@@ -46,6 +47,8 @@ import { createPng } from './lib/png.js';
  */
 const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
 const SCHEMA_KINDS = ['models', 'components'] as const;
+/** A pulled tree keeps each site's own definitions in sites/<siteKey>/models and sites/<siteKey>/components. */
+const SITES_DIR = 'sites';
 const SITE_MODELS = ['page', 'article', 'author', 'siteSettings'];
 const DELIVERY_ROLE_KEY = 'starter-delivery';
 const DELIVERY_TOKEN_NAME = 'starter build';
@@ -92,14 +95,58 @@ const ensureLocale = async (client: ShapioClient) => {
   }
 };
 
-/** The checked-in definition files (`shapio schema pull` format), models first. */
+/** A refusal the seed explains itself: printed without a stack. */
+class SeedRefusedError extends Error {}
+
+/** A folder's entries, or none when it is missing (a fresh starter has no sites/; a pulled one may lack models/). */
+const listFolder = async (path: string): Promise<string[]> => {
+  try {
+    return (await readdir(path)).sort();
+  } catch (error) {
+    // ENOTDIR: a stray file under sites/ (.DS_Store) is not a site folder.
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+/**
+ * The folders that may hold definition files, in apply order: every models folder, then every components
+ * folder; within each kind the shared folder first, then `sites/<key>/` in key order. The site key is ignored
+ * (the seed decides the scope, see applySchema).
+ */
+const definitionFolders = async (): Promise<string[]> => {
+  const siteFolders = (await listFolder(join(SCHEMA_DIR, SITES_DIR))).map((key) =>
+    join(SCHEMA_DIR, SITES_DIR, key),
+  );
+  return SCHEMA_KINDS.flatMap((kind) => [SCHEMA_DIR, ...siteFolders].map((folder) => join(folder, kind)));
+};
+
+/**
+ * The checked-in definition files (`shapio schema pull` format), models first: the shared `models/` and
+ * `components/` plus every `sites/<key>/models/` and `sites/<key>/components/`. A definition whose ID appears
+ * twice is read once (the first wins); files without an ID are kept.
+ */
 const readDefinitions = async (): Promise<unknown[]> => {
   const definitions: unknown[] = [];
-  for (const kind of SCHEMA_KINDS) {
-    const names = (await readdir(join(SCHEMA_DIR, kind))).filter((name) => name.endsWith('.json')).sort();
-    for (const name of names) {
-      definitions.push(JSON.parse(await readFile(join(SCHEMA_DIR, kind, name), 'utf8')));
+  const seenIds = new Set<string>();
+  for (const folder of await definitionFolders()) {
+    for (const name of (await listFolder(folder)).filter((entry) => entry.endsWith('.json'))) {
+      const definition: unknown = JSON.parse(await readFile(join(folder, name), 'utf8'));
+      const id = (definition as { id?: unknown }).id;
+      if (typeof id === 'string') {
+        if (seenIds.has(id)) {
+          continue;
+        }
+        seenIds.add(id);
+      }
+      definitions.push(definition);
     }
+  }
+  if (definitions.length === 0) {
+    throw new SeedRefusedError(`No model or component files found in ${SCHEMA_DIR}.`);
   }
   return definitions;
 };
@@ -121,9 +168,6 @@ const waitForChange = async (client: ShapioClient, item: SchemaSyncResult) => {
     await delay(POLL_INTERVAL_MS);
   }
 };
-
-/** A refusal the seed explains itself: printed without a stack. */
-class SeedRefusedError extends Error {}
 
 /** The schema files' IDs already belong to another site's definitions (the starter was seeded there first). */
 const isSeededElsewhere = (error: unknown) =>
