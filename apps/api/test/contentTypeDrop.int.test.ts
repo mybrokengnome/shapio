@@ -299,30 +299,30 @@ describe('type changes that drop values', () => {
     );
 
   it('a revision saved before a type change restores as its view shows it, values of the old type empty', async () => {
-    const note = await model('note', [
+    const jot = await model('jot', [
       { apiKey: 't', label: 'T', type: 'string' },
       { apiKey: 'int', label: 'Int', type: 'integer' },
       { apiKey: 'm', label: 'M', type: 'media' },
     ]);
-    const created = await create('note', { t: 'v1', int: 7, m: first.id });
-    await publish('note', created.id);
+    const created = await create('jot', { t: 'v1', int: 7, m: first.id });
+    await publish('jot', created.id);
     const at = await lastSnapshot();
-    await save('note', created, { t: 'v2' });
-    await publish('note', created.id);
-    const revisionId = await firstRevisionOf('note', created.id);
+    await save('jot', created, { t: 'v2' });
+    await publish('jot', created.id);
+    const revisionId = await firstRevisionOf('jot', created.id);
 
-    const retyped = retype(note, 'int', { type: 'string' }).map((field) =>
+    const retyped = retype(jot, 'int', { type: 'string' }).map((field) =>
       field.apiKey === 'm' ? { ...field, editor: undefined, settings: {}, type: 'number' } : field,
     );
-    expect(await shipped(await change(note, retyped))).toMatchObject({ status: 'activated' });
-    const view = (await admin.get(`/api/admin/content/note/${created.id}/revisions/${revisionId}`)).json<{
+    expect(await shipped(await change(jot, retyped))).toMatchObject({ status: 'activated' });
+    const view = (await admin.get(`/api/admin/content/jot/${created.id}/revisions/${revisionId}`)).json<{
       data: Record<string, unknown>;
     }>();
     expect(view.data).toEqual({ t: 'v1', int: null, m: null });
 
-    const current = (await admin.get(`/api/admin/content/note/${created.id}`)).json<EntryBody>();
+    const current = (await admin.get(`/api/admin/content/jot/${created.id}`)).json<EntryBody>();
     const restored = expectStatus(
-      await admin.post(`/api/admin/content/note/${created.id}/revisions/${revisionId}/restore`, {
+      await admin.post(`/api/admin/content/jot/${created.id}/revisions/${revisionId}/restore`, {
         expectedVersion: current.version,
       }),
       200,
@@ -358,11 +358,11 @@ describe('type changes that drop values', () => {
       }),
       200,
     );
-    const token = await createDeliveryToken(database.current.db, [{ modelId: note.definition.id }]);
+    const token = await createDeliveryToken(database.current.db, [{ modelId: jot.definition.id }]);
     const delivered = expectStatus(
       await testApp.app.inject({
         method: 'GET',
-        url: `/api/content/notes/${created.id}`,
+        url: `/api/content/jots/${created.id}`,
         headers: { authorization: `Bearer ${token}` },
       }),
       200,

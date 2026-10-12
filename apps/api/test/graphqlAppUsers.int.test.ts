@@ -362,8 +362,10 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
       expect(
         errorCodes(await gql(UPDATE, { id: published.id, data: { title: 'x' }, v: 1 }, session.accessToken)),
       ).toEqual(['ENTRY_NOT_FOUND']);
-      // Anonymous callers keep only `public`.
-      expect(JSON.stringify(dataOf(await gql(NOTES)))).not.toContain('my own note');
+      // Anonymous callers keep only `public`: their schema has no `notes` field, so the query is refused.
+      const anonymous = await gql(NOTES);
+      expect(errorCodes(anonymous)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+      expect(JSON.stringify(anonymous.body)).not.toContain('my own note');
     });
   });
 });
