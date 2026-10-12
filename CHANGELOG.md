@@ -8,6 +8,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **Deleting a media file shows only "Deleted".** The open file sheet read the file again after the delete,
+  and the 404 added a red "This no longer exists" toast beside the success one. A file that's gone no longer
+  raises a toast; the screens that show files already say when one is missing.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 
