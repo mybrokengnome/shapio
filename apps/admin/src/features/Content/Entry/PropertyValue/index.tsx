@@ -18,12 +18,17 @@ const RelationValue = ({ field, value }: PropertyValueProps) => {
   const target = field.type === 'relation' ? models.get(field.settings.target) : undefined;
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
   const labels = useEntryLabels(target, ids, locale);
+  if (!target) {
+    // A target missing from the readable registry is one this role can't read (see RelationField).
+    return (
+      <span className="text-muted-foreground">
+        {t('content.relation.unreadableLinks', { count: ids.length })}
+      </span>
+    );
+  }
   const names = ids.map((id) => {
     const item = labels.byId.get(id);
-    return (
-      (target && item ? entryTitle(target, item.data) : undefined) ??
-      `${t('content.untitled')} · ${shortId(id)}`
-    );
+    return (item ? entryTitle(target, item.data) : undefined) ?? `${t('content.untitled')} · ${shortId(id)}`;
   });
   const shown = names.slice(0, SHOWN_LINKS).join(', ');
   return (
