@@ -120,6 +120,9 @@ All notable changes to Shapio are listed here. The format follows
 - **Export and import keep timestamps to the microsecond.** Entries created within one millisecond on PostgreSQL
   no longer swap places in lists after an import. Bundles are now format 2 (six fractional digits); format 1
   bundles still import, and older Shapio releases refuse a format 2 bundle instead of misreading it.
+- **`shapio status` no longer reports success for a server that is not Shapio.** A URL that answers 200 with
+  something else (the admin page, a proxy's default page) now exits 1 with "not a Shapio instance", and a ready
+  check that does not say ready exits 1 too.
 
 ## [0.5.6] - 2026-10-11
 
