@@ -8,6 +8,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **An open entry now learns that another tab saved it.** With no edits of its own, the tab says who changed
+  the draft and when, in place of "Saved", with a Reload button; with unsaved edits, it shows the "Someone else
+  saved this entry" banner, which keeps them. The presence heartbeat now carries every locale's draft version.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Publish no longer puts live a draft the editor never saw.** Publishing from a tab that missed another

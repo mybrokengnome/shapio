@@ -1,3 +1,4 @@
+import type { DraftState } from '@shapio/client';
 import type { ModelDefinition } from '@shapio/schema';
 import { useState } from 'react';
 import { useStore } from 'zustand';
@@ -12,6 +13,7 @@ import { useEntryPermissions } from './useEntryPermissions';
 import { useEntrySaver } from './useEntrySaver';
 import { useEntrySetup } from './useEntrySetup';
 import { usePublishing } from './usePublishing';
+import { useRemoteDraftChange } from './useRemoteDraftChange';
 
 type EntryDocumentOptions = {
   schema: ContentSchema;
@@ -21,12 +23,14 @@ type EntryDocumentOptions = {
   defaultLocale: string | undefined;
   carry: FormValues | undefined;
   onReload: ReloadEntry;
+  /** Every locale's draft as the presence heartbeat last saw it (saves made elsewhere). */
+  drafts: readonly DraftState[];
 };
 
 /**
  * Everything one open entry document does, composed: its value store and field environment, saving
  * (autosave, Save, the version guard and conflicts), creating, deleting, duplicating, restoring, copying
- * between locales, publishing per locale, and what the admin is allowed to do.
+ * between locales, publishing per locale, noticing saves made elsewhere, and what the admin is allowed to do.
  */
 export const useEntryDocument = ({
   schema,
@@ -36,6 +40,7 @@ export const useEntryDocument = ({
   defaultLocale,
   carry,
   onReload,
+  drafts,
 }: EntryDocumentOptions) => {
   const permissions = useEntryPermissions(model);
   const [conflict, setConflict] = useState<string | undefined>();
@@ -100,6 +105,19 @@ export const useEntryDocument = ({
     },
     onConflict: (error) => setConflict(error.code),
   });
+  const { remoteChange } = useRemoteDraftChange({
+    drafts,
+    locale: entry?.locale,
+    shownVersion: entry?.version,
+    dirty,
+    busy:
+      saver.state.status === 'saving' ||
+      publishing.publishing ||
+      publishing.unpublishing ||
+      lifecycle.restoring,
+    conflict,
+    onConflict: setConflict,
+  });
   const editable = !setup.environment.readOnly;
   useFollowingSlugs(store, model, editable && mode.kind !== 'newLocale');
   useAutosave(
@@ -120,6 +138,7 @@ export const useEntryDocument = ({
     setup,
     permissions,
     conflict,
+    remoteChange,
     reloading,
     dirty,
     hasLocalizedValues,
