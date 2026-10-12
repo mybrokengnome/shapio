@@ -155,6 +155,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
   `<database>-shapio.lock` that is released when it exits, even after a crash. `shapio migrate`, `backup`, and
   `admin create` still run beside it.
+- **`shapio schema apply` reports the version it activated at.** After waiting for a change's background
+  checks, the last line printed the schema version from before the change; it now prints the version the
+  lock file records.
 
 ## [0.5.6] - 2026-10-11
 
