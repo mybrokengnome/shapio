@@ -4,7 +4,9 @@ import type {
   DefinitionCategory,
   DefinitionListItem,
   DefinitionPayload,
+  SiteSummary,
 } from '@shapio/client';
+import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import {
@@ -13,7 +15,7 @@ import {
   SCHEMA_POLL_INTERVAL_MS,
   SCHEMA_VERSION_STALE_MS,
 } from '@/constants/schema';
-import { adminApi } from './client';
+import { adminApi, siteAdminApi } from './client';
 import { withCsrf } from './csrf';
 import { queryKeys } from './queryKeys';
 
@@ -51,6 +53,42 @@ export const useSharedDefinitions = () =>
           KIND_ORDER[a.definition.kind] - KIND_ORDER[b.definition.kind] ||
           a.definition.label.localeCompare(b.definition.label),
       );
+    },
+    meta: silent,
+  });
+
+/** A model on the network roles pages: shared with all sites (`site` null), or one site's own. */
+export type SiteModel = { definition: ModelDefinition; site: SiteSummary | null };
+
+/**
+ * Every site's models, each once: one list per site (shared models and the site's own), shared models
+ * first, then each site's by site name, each by label. `siteCount` says whether naming the site helps.
+ */
+export const useEverySiteModels = () =>
+  useQuery({
+    queryKey: queryKeys.schema.everySiteModels,
+    queryFn: async () => {
+      const sites = await adminApi.sites.list();
+      const lists = await Promise.all(
+        sites.map(async (site) => ({ site, items: await siteAdminApi(site.key).models.list() })),
+      );
+      const byId = new Map<string, SiteModel>();
+      for (const { site, items } of lists) {
+        for (const item of items) {
+          if (isModelDefinition(item.definition) && !byId.has(item.definition.id)) {
+            byId.set(item.definition.id, {
+              definition: item.definition,
+              site: item.siteId === null ? null : site,
+            });
+          }
+        }
+      }
+      const models = [...byId.values()].sort(
+        (a, b) =>
+          (a.site?.name ?? '').localeCompare(b.site?.name ?? '') ||
+          a.definition.label.localeCompare(b.definition.label),
+      );
+      return { models, siteCount: sites.length };
     },
     meta: silent,
   });

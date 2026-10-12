@@ -199,6 +199,11 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   operation that failed for good logged its reason twice; it now names it once.
 - **Time and date-time inputs fill their form column.** In a form they kept their natural width; they now
   fill the column their width setting gives them, as text and date inputs do.
+- **Roles can be limited to some models and fields in the admin.** A role's page (Network → Roles → the role)
+  has a table of models, shared and per site, by action, with field lists per action, and shows every grant
+  the role holds, including grants made through the API and grants on deleted models, which can be removed.
+  Saving a grant whose field list names a field the model doesn't have is refused with `UNKNOWN_FIELD`, for
+  admin, delivery, and app roles.
 
 ## [0.5.6] - 2026-10-11
 

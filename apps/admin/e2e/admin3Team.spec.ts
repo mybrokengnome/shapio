@@ -1,13 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
+import { adminApiFor } from './content/api';
 import { OWNER } from './support/accounts';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { saveInviteLink } from './support/inviteLink';
-import { signInAsOwner } from './support/session';
+import { ADMIN_API, signInAsOwner } from './support/session';
 
 /**
  * Users and every settings screen against the real API: the user list, an invitation link, profile with
- * dirty-state protection, sessions, appearance, locales, roles, API tokens and the audit log.
+ * dirty-state protection, sessions, appearance, locales, roles (with per-model and per-field grants an invited
+ * admin is held to), API tokens and the audit log.
  * The admin*.spec.ts files run in name order (Playwright sorts files): admin1Setup does first-run setup,
  * admin3Team sends the invitation admin4Auth accepts.
  */
@@ -179,14 +181,19 @@ test('settings → roles: built-ins plus a new custom role', async () => {
   const dialog = page.getByRole('dialog', { name: 'Create role' });
   await dialog.getByLabel('Name').fill('Reviewer');
   await dialog.getByLabel('Key', { exact: true }).fill('reviewer');
-  await dialog.getByLabel('Read entries').check();
-  await dialog.getByLabel('Read the audit log').check();
-  // Read drafts belongs to delivery roles only.
-  await expect(dialog.getByRole('checkbox', { name: 'Read drafts' })).toHaveCount(0);
   await captureScreen(page, 'team-10-settings-role-sheet', { viewports: ['desktop'] });
   await dialog.getByRole('button', { name: 'Create' }).click();
   await expect(page.getByText('Role created.')).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Reviewer Custom' })).toBeVisible();
+  // Its permissions are set on its own page.
+  await expect(page.getByRole('heading', { level: 1, name: 'Reviewer' })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Read: All models' }).check();
+  await page.getByLabel('Read the audit log').check();
+  // Read drafts belongs to delivery roles only.
+  await expect(page.getByRole('checkbox', { name: 'Read drafts' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Role saved.')).toBeVisible();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Roles' }).click();
+  await expect(page.getByRole('row', { name: /Reviewer Custom/ })).toContainText('2 permissions');
 });
 
 test('settings → API tokens: created, shown once, listed, revoked', async () => {
@@ -226,19 +233,21 @@ test('settings → a delivery role may read drafts, and its tokens say so', asyn
   await dialog.getByLabel('Key', { exact: true }).fill('site-dev');
   await dialog.getByRole('combobox', { name: 'Kind' }).click();
   await page.getByRole('option', { name: 'Delivery' }).click();
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByText('Role created.')).toBeVisible();
   // A delivery role reads, and may read drafts; nothing else is offered.
-  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
-  await dialog.getByLabel('Read entries').check();
-  await dialog.getByRole('checkbox', { name: 'Read drafts' }).check();
-  await dialog.getByRole('button', { name: 'More about Read drafts' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Site dev' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Update: All models' })).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Read: All models' }).check();
+  await page.getByRole('checkbox', { name: 'Read drafts' }).check();
+  await page.getByRole('button', { name: 'More about Read drafts' }).click();
   const hint = page.locator('[data-slot="popover-content"]');
   await expect(hint).toContainText('Never grant it to a production token.');
   await page.keyboard.press('Escape');
   await expect(hint).toHaveCount(0);
-  await expect(dialog).toBeVisible();
-  await captureScreen(page, 'team-15-settings-role-sheet-drafts', BOTH);
-  await dialog.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByText('Role created.')).toBeVisible();
+  await captureScreen(page, 'team-15-settings-role-drafts', BOTH);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Role saved.')).toBeVisible();
 
   await page.goto(`${ADMIN_URL}settings/api-tokens`);
   await page.getByRole('button', { name: 'New token' }).first().click();
@@ -271,4 +280,84 @@ test('settings → audit log shows the changes just made, filterable', async () 
   await expect(page).toHaveURL(/action=role.create/);
   await expect(page.getByRole('cell', { name: 'Completed setup', exact: true })).toHaveCount(0);
   await expect(page.getByRole('cell', { name: 'Created role', exact: true })).toHaveCount(2);
+});
+
+test('settings → a role limited to one model and some fields holds an invited admin to it', async ({
+  browser,
+}) => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const fields = [
+    { apiKey: 'title', label: 'Title', type: 'string' },
+    { apiKey: 'body', label: 'Body', type: 'text' },
+  ];
+  await api.createDefinition('models', { kind: 'collection', apiKey: 'briefing', label: 'Briefing', fields });
+  await api.createDefinition('models', { kind: 'collection', apiKey: 'memo', label: 'Memo', fields });
+
+  await page.goto(`${ADMIN_URL}network/roles`);
+  await page.getByRole('button', { name: 'New role' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create role' });
+  await dialog.getByLabel('Name').fill('Briefing editor');
+  await dialog.getByLabel('Key', { exact: true }).fill('briefing-editor');
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Briefing editor' })).toBeVisible();
+  const roleId = page.url().split('/').pop() ?? '';
+
+  // Read and update Briefing only; updates limited to its title.
+  await page.getByRole('checkbox', { name: 'Read: Briefing' }).check();
+  await page.getByRole('checkbox', { name: 'Update: Briefing' }).check();
+  await page.getByRole('button', { name: 'Options: Briefing' }).click();
+  const updateOptions = page.getByRole('group', { name: 'Update' });
+  await updateOptions.getByRole('radio', { name: 'Only selected fields' }).check();
+  await updateOptions.getByRole('checkbox', { name: 'Body' }).uncheck();
+  await captureScreen(page, 'team-17-settings-role-per-model', BOTH);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Role saved.')).toBeVisible();
+
+  // Reopened, the role shows exactly what it grants.
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Read: Briefing' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Update: Briefing' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Read: Memo' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Read: All models' })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Options: Briefing' }).click();
+  await expect(updateOptions.getByRole('checkbox', { name: 'Title' })).toBeChecked();
+  await expect(updateOptions.getByRole('checkbox', { name: 'Body' })).not.toBeChecked();
+  await page.goto(`${ADMIN_URL}network/roles`);
+  await expect(page.getByRole('row', { name: /Briefing editor/ })).toContainText('2 permissions');
+
+  // An admin invited with only this role sees Briefing, not Memo, and the server refuses the rest.
+  const invitation = await api.send<{ id: string }>('POST', '/invitations', {
+    email: 'ida@example.com',
+    roleIds: [roleId],
+  });
+  const { acceptUrl } = await api.send<{ acceptUrl: string }>('POST', `/invitations/${invitation.id}/link`);
+  const token = decodeURIComponent(acceptUrl.split('#token=')[1] ?? '');
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  try {
+    const invitee = await context.newPage();
+    invitee.on('pageerror', (error) => pageErrors.push(error.message));
+    const csrf = async () =>
+      ((await (await invitee.request.get(`${ADMIN_API}/auth/csrf`)).json()) as { csrfToken: string })
+        .csrfToken;
+    const accepted = await invitee.request.post(`${ADMIN_API}/invitations/accept`, {
+      headers: { 'x-csrf-token': await csrf() },
+      data: { token, name: 'Ida Wells', password: 'correct horse battery staple 19' },
+    });
+    expect(accepted.ok(), await accepted.text()).toBe(true);
+    await invitee.goto(ADMIN_URL);
+    const nav = invitee.getByRole('navigation', { name: 'Main navigation' });
+    await expect(nav.getByRole('link', { name: 'Briefing', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Memo', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Roles', exact: true })).toHaveCount(0);
+
+    expect((await invitee.request.get(`${ADMIN_API}/content/briefing`)).status()).toBe(200);
+    expect((await invitee.request.get(`${ADMIN_API}/content/memo`)).status()).toBe(403);
+    const created = await invitee.request.post(`${ADMIN_API}/content/briefing`, {
+      headers: { 'x-csrf-token': await csrf() },
+      data: { data: { title: 'Not allowed' } },
+    });
+    expect(created.status()).toBe(403);
+  } finally {
+    await context.close();
+  }
 });

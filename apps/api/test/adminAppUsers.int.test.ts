@@ -145,6 +145,21 @@ describe('admin management of app users and app roles', () => {
       const response = await admin.post('/api/admin/app-roles', { key: 'bad', name: 'Bad', permissions });
       expect(response.statusCode, JSON.stringify(permissions)).toBe(400);
     }
+    // A field list on one model names that model's fields only.
+    const unknownField = await admin.post('/api/admin/app-roles', {
+      key: 'bad',
+      name: 'Bad',
+      permissions: [
+        { action: 'read', modelId: doc.definition.id, condition: null, fieldIds: ['no-such-field'] },
+      ],
+    });
+    expect(unknownField.statusCode).toBe(400);
+    expect(unknownField.json()).toMatchObject({
+      error: {
+        code: 'UNKNOWN_FIELD',
+        details: { grants: [{ action: 'read', modelId: doc.definition.id, fieldIds: ['no-such-field'] }] },
+      },
+    });
 
     const created = expectStatus(
       await admin.post('/api/admin/app-roles', {

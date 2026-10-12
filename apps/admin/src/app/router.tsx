@@ -292,6 +292,7 @@ const sitesRoute = networkChild('sites', 'sites');
 const siteRoute = networkChild('sites/$siteId', 'site');
 const networkUsersRoute = networkChild('users', 'users');
 const networkRolesRoute = networkChild('roles', 'roles');
+const networkRoleRoute = networkChild('roles/$roleId', 'role');
 const networkAppRolesRoute = networkChild('roles/app', 'appRoles');
 const networkAppRoleRoute = networkChild('roles/app/$roleId', 'appRole');
 
@@ -477,6 +478,7 @@ const routeTree = rootRoute.addChildren([
       networkContentTypesRoute.addChildren([networkContentTypesIndexRoute, networkNewContentTypeRoute]),
       networkUsersRoute,
       networkRolesRoute,
+      networkRoleRoute,
       networkAppRolesRoute,
       networkAppRoleRoute,
       networkAuditLogRoute,
