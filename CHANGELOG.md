@@ -192,6 +192,8 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   says the locale already exists. Site and role keys are suggested from the name, as API IDs are.
 - **Scheduled publish and assist job errors read once.** A scheduled publication or an assist content
   operation that failed for good logged its reason twice; it now names it once.
+- **Time and date-time inputs fill their form column.** In a form they kept their natural width; they now
+  fill the column their width setting gives them, as text and date inputs do.
 
 ## [0.5.6] - 2026-10-11
 
