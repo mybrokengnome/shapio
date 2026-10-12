@@ -369,7 +369,7 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
     type: 'object',
     properties: {
       locale: { type: 'string' },
-      snapshot: { type: 'integer' },
+      snapshot: { type: ['integer', 'null'], description: 'null on draft reads, which cannot be pinned' },
       publicationState: { type: 'string', enum: ['draft'], description: 'Present on draft reads only' },
     },
   };

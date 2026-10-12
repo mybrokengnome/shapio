@@ -141,7 +141,7 @@ const collectionQuery = (build: SchemaBuild, model: ModelDefinition): RootField 
         totalCount: result.meta.pagination.total,
         pageInfo: result.meta.pagination,
         locale: result.meta.locale,
-        snapshot: scope.drafts ? null : result.meta.snapshot,
+        snapshot: result.meta.snapshot,
       };
     },
   };

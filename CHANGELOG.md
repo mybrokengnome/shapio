@@ -169,6 +169,9 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
   twice (three times for a secret that cannot be decrypted); each now names the problem once.
 - **The development server reports an invalid setting in one line.** `pnpm dev` printed a raw stack trace
   for a setting that `shapio start` reports as one line; both now print the same message.
+- **REST drafts mode reports `meta.snapshot: null`.** A read with `publicationState=draft` (and
+  `@shapio/local` with `drafts: true`) reported a snapshot number as if the drafts could be pinned; it now
+  reports `null`, as GraphQL already did.
 
 ## [0.5.6] - 2026-10-11
 

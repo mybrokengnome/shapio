@@ -14,7 +14,7 @@ import { dataOf, errorCodes, graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
-type Meta = { locale: string; snapshot: number; publicationState?: string };
+type Meta = { locale: string; snapshot: number | null; publicationState?: string };
 type DeliveryList = { data: Array<Record<string, unknown>>; meta: Meta & { pagination: { total: number } } };
 type DeliveryItem = { data: Record<string, unknown>; meta: Meta };
 
@@ -128,7 +128,8 @@ describe('delivery drafts mode', () => {
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(String(response.headers.vary)).toContain('Authorization');
     const list = response.json<DeliveryList>();
-    expect(list.meta.publicationState).toBe('draft');
+    // Drafts cannot be pinned: no snapshot to report, as GraphQL's connections say.
+    expect(list.meta).toMatchObject({ publicationState: 'draft', snapshot: null });
     expect(list.data.map((entry) => entry.title).sort()).toEqual(
       ['Draft only', 'Saved, not published', 'Switched', 'Unchanged'].sort(),
     );
@@ -139,13 +140,14 @@ describe('delivery drafts mode', () => {
     );
     expect(one.headers['cache-control']).toBe('private, no-store');
     expect(one.json<DeliveryItem>().data.title).toBe('Draft only');
-    expect(one.json<DeliveryItem>().meta.publicationState).toBe('draft');
+    expect(one.json<DeliveryItem>().meta).toMatchObject({ publicationState: 'draft', snapshot: null });
 
     // The same token's published reads are unchanged: no drafts, no publicationState, cacheable.
     const published = expectStatus(await deliver('/api/content/articles', drafts), 200);
     expect(published.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
     const publishedList = published.json<DeliveryList>();
     expect(publishedList.meta).not.toHaveProperty('publicationState');
+    expect(publishedList.meta.snapshot).toEqual(expect.any(Number));
     expect(publishedList.data.map((entry) => entry.title).sort()).toEqual(
       ['Published title', 'Switched', 'Unchanged'].sort(),
     );
