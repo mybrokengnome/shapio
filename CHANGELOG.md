@@ -86,6 +86,9 @@ All notable changes to Shapio are listed here. The format follows
   unpublished entry, an entry the token may not read, or a force-deleted asset now matches as if the link were
   not there, so `$eq`, `$ne`, `$in`, and `$nin` agree with the returned data. A filter on a relation into a
   model the token may not read is refused with 403, like a hidden field.
+- **`$not` is now the exact complement of the filter it wraps.** Over a range or text match (`$gte`,
+  `$contains`, …), it used to leave out entries whose field is empty, so they appeared in neither result; it now
+  includes them, like `$ne`, `$nin`, and `$notContains` (REST, GraphQL, and the admin list).
 
 ## [0.5.6] - 2026-10-11
 

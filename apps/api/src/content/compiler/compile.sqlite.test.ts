@@ -109,7 +109,7 @@ describe('content query compiler on SQLite', () => {
       `((${text(F.title)} is ?) and (${text(F.day)} < ?))`,
       ['x', '2026-01-01'],
     ],
-    ['filters[$not][title][$eq]=x', `(not (${text(F.title)} is ?))`, ['x']],
+    ['filters[$not][title][$eq]=x', `(not coalesce((${text(F.title)} is ?), false))`, ['x']],
   ] as const)('%s', (search, sql, parameters) => {
     expect(filterOf(search)).toEqual({ sql, parameters });
   });

@@ -150,7 +150,9 @@ export const compileFilter = (
     case 'or':
       return sql`(${sql.join(node.nodes.map(compileChild), sql` or `)})`;
     case 'not':
-      return sql`(not ${compileChild(node.node)})`;
+      // Range and text matches are NULL on a missing value, and NOT NULL is NULL: coalescing makes `$not X`
+      // exactly the entries `X` does not match, as `$ne`, `$nin` and `$notContains` already are.
+      return sql`(not coalesce(${compileChild(node.node)}, false))`;
     case 'condition':
       return node.target.kind === 'system'
         ? systemCondition(node.target.name, node.operator, node.value, dialect)

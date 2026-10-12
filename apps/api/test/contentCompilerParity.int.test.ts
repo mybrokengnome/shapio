@@ -288,6 +288,22 @@ const CASES: ReadonlyArray<readonly [string, FixtureQueryOptions, readonly strin
   // Logic.
   ['filters[$or][0][rank][$gt]=7&filters[$or][1][title][$eq]=gamma', EN, [e.e2, e.e5]],
   ['filters[$not][rank][$eq]=3', EN, [e.e2, e.e3, e.e4, e.e6]],
+  // $not is the complement: entries with a missing value, which ranges and text matches never match, are in it.
+  ['filters[$not][rank][$gt]=3', EN, [e.e1, e.e3, e.e4, e.e5]],
+  ['filters[$not][rank][$lt]=3', EN, [e.e1, e.e2, e.e4, e.e5, e.e6]],
+  ['filters[$not][rank][$lte]=3', EN, [e.e2, e.e4, e.e6]],
+  ['filters[$not][day][$gte]=2026-01-15', EN, [e.e3, e.e4, e.e6]],
+  ['filters[$not][price][$gt]=12', EN, [e.e3, e.e4, e.e6]],
+  ['filters[$not][title][$contains]=a', EN, [e.e3, e.e4, e.e6]],
+  ['filters[$not][title][$containsi]=ALPHA', EN, [e.e2, e.e3, e.e4, e.e5, e.e6]],
+  ['filters[$not][title][$startsWith]=be', EN, [e.e1, e.e3, e.e4, e.e5, e.e6]],
+  ['filters[$not][title][$endsWith]=ta', EN, [e.e1, e.e3, e.e4, e.e5, e.e6]],
+  ['filters[$not][$not][rank][$gt]=3', EN, [e.e2, e.e6]],
+  [
+    'filters[$not][$and][0][rank][$gt]=3&filters[$not][$and][1][day][$gte]=2026-01-01',
+    EN,
+    [e.e1, e.e3, e.e4, e.e5, e.e6],
+  ],
   // Sorts: missing values last ascending and first descending; the entry ID breaks ties.
   ['sort=rank:asc', EN, [e.e3, e.e1, e.e5, e.e6, e.e2, e.e4]],
   ['sort=rank:desc', EN, [e.e4, e.e2, e.e6, e.e1, e.e5, e.e3]],
