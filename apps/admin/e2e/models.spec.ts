@@ -17,6 +17,8 @@ test.describe.configure({ mode: 'serial' });
 
 const UPDATED = 'Model updated — no restart needed';
 
+type ModelListItem = { definition: { apiKey: string }; version: number };
+
 let page: Page;
 const pageErrors: string[] = [];
 
@@ -332,7 +334,23 @@ test('the impact counts real content: two entries, then a required field', async
   await expect(plan.getByText('2 entry versions affected (all locales and states)')).toBeVisible();
   await expect(plan.getByText('2 entry versions to check')).toBeVisible();
   await captureScreen(page, 'models-10b-plan-real-impact', { viewports: ['desktop'] });
+  // The checks often end before the builder looks up the change to follow (quick on two entries): hold its
+  // reads of this definition until the server has activated the new version, so it must pick up a finished
+  // change.
+  const activeVersionOnServer = async () =>
+    ((await (await page.request.get(`${ADMIN_API}/models`)).json()) as { items: ModelListItem[] }).items.find(
+      (item) => item.definition.apiKey === 'author',
+    )?.version;
+  const before = await activeVersionOnServer();
+  const definitionReads = /\/api\/admin\/models\/[^/]+(\/changes)?$/;
+  await page.route(definitionReads, async (route) => {
+    if (route.request().method() === 'GET') {
+      await expect.poll(activeVersionOnServer, { timeout: 30_000 }).toBe((before ?? 0) + 1);
+    }
+    await route.continue();
+  });
   await apply(plan);
+  await page.unroute(definitionReads);
   await expect(fieldRow('Name')).toContainText('Required');
   await openModel('Article');
 });

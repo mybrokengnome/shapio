@@ -8,6 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **The model builder no longer stays on the old version after a quick change.** When a change's checks or
+  conversions finished before the builder looked them up, it never reloaded: no "Model updated", the old
+  version under the title, and a "changed in another session" banner for your own change. It now follows the
+  change in any state, so a finished one reloads the new version at once.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 
