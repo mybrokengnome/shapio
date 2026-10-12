@@ -67,13 +67,19 @@ type RenderedOptions = {
    * third-party and has known issues of its own).
    */
   exclude?: readonly string[];
+  /** axe rules not run, each with its reason at the call site (e.g. a third-party widget's false positive). */
+  disableRules?: readonly string[];
 };
 
 /**
  * Screenshots the screen as it is rendered now (`{name}.png`) and runs axe: no serious or critical
  * violations allowed. `captureScreen` calls it once per colour scheme; the theme suite once per theme.
  */
-export const captureRendered = async (page: Page, name: string, { exclude = [] }: RenderedOptions = {}) => {
+export const captureRendered = async (
+  page: Page,
+  name: string,
+  { exclude = [], disableRules = [] }: RenderedOptions = {},
+) => {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
   // contrast checks, which would otherwise see half-faded colours.
@@ -88,6 +94,9 @@ export const captureRendered = async (page: Page, name: string, { exclude = [] }
     .exclude(TOASTER_SELECTOR);
   for (const selector of exclude) {
     axe = axe.exclude(selector);
+  }
+  if (disableRules.length > 0) {
+    axe = axe.disableRules([...disableRules]);
   }
   const results = await axe.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const blocking = results.violations

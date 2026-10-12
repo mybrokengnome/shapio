@@ -8,6 +8,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **The GraphQL playground passes accessibility checks.** GraphiQL's query, variables, headers, and response
+  editors now have names for screen readers, its colours reach WCAG AA contrast in both themes, and links in
+  its docs are underlined.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 
