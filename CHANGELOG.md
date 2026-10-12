@@ -101,6 +101,10 @@ All notable changes to Shapio are listed here. The format follows
   the version that is live. A save that changes nothing no longer adds an empty "Saved" row: the admin and
   delivery write APIs answer with the same version, record no revision, and send no `entry.updated` event (a
   save over autosaved work still records one).
+- **Changing a file's visibility returns a URL that keeps working.** The URL in the answer used the old prefix
+  and broke once the background move finished. Until the move is done, the file's URLs now go through
+  Shapio's own file route under the new prefix (also on S3 and behind a CDN), and that route serves the file
+  before and after the move.
 
 ## [0.5.6] - 2026-10-11
 
