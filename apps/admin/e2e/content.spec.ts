@@ -852,3 +852,101 @@ test('text a number or JSON editor cannot read is kept, blocks Save and Create, 
   });
   page.off('request', recordWrite);
 });
+
+test('a partly typed date or time is kept as a change: Save is refused and the saved value stays', async () => {
+  const meetingTitle = id();
+  await api.createDefinition('models', {
+    id: id(),
+    kind: 'collection',
+    apiKey: 'meeting',
+    label: 'Meeting',
+    display: { titleFieldId: meetingTitle },
+    fields: [
+      { id: meetingTitle, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: id(), apiKey: 'day', label: 'Day', type: 'date' },
+      { id: id(), apiKey: 'at', label: 'At', type: 'time' },
+      { id: id(), apiKey: 'starts', label: 'Starts', type: 'datetime' },
+    ],
+  });
+  const saved = { title: 'Planning', day: '2026-10-11', at: '09:30', starts: '2026-10-11T08:00:00.000Z' };
+  const meeting = await api.send<Entry>('POST', '/content/meeting', { data: saved });
+  const getMeeting = () => api.get<Entry>(`/content/meeting/${meeting.id}`);
+  const writes: string[] = [];
+  const recordWrite = (request: {
+    method: () => string;
+    url: () => string;
+    postData: () => string | null;
+  }) => {
+    if (request.method() === 'PUT' && request.url().includes(`/content/meeting/${meeting.id}`)) {
+      writes.push(request.postData() ?? '');
+    }
+  };
+  page.on('request', recordWrite);
+  await page.goto(`${server.adminUrl}content/meeting/${meeting.id}`);
+
+  await test.step('removing the month leaves a partial date: inline error, Save refused, nothing sent', async () => {
+    const day = await doc().property('day');
+    const input = day.locator('input[type="date"]');
+    await input.click();
+    await input.press('Backspace');
+    await expect(day).toContainText('Enter a complete date.');
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(page.getByText('1 field needs attention before this can be saved.')).toBeVisible();
+    await captureScreen(page, 'content-16-partial-date', BOTH);
+    expect(writes).toEqual([]);
+    expect((await getMeeting()).data).toMatchObject({ day: '2026-10-11' });
+  });
+
+  await test.step('leaving asks first', async () => {
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Page' })
+      .click();
+    const prompt = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(prompt).toBeHidden();
+  });
+
+  await test.step('clearing on purpose still works and saves an empty date', async () => {
+    const day = await doc().property('day');
+    await day.getByRole('button', { name: 'Clear Day' }).click();
+    await expect(day).not.toContainText('Enter a complete date.');
+    await expect(day.locator('input[type="date"]')).toHaveValue('');
+    const put = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/meeting/${meeting.id}`) &&
+        !response.request().postData()?.includes('"autosave":true'),
+    );
+    await page.keyboard.press('ControlOrMeta+s');
+    expect((await put).ok()).toBe(true);
+    expect((await getMeeting()).data.day ?? null).toBeNull();
+  });
+
+  await test.step('a partial time and date-time say so too, and save once complete', async () => {
+    const at = await doc().property('at');
+    const time = at.locator('input[type="time"]');
+    await time.click();
+    await time.press('Backspace');
+    await expect(at).toContainText('Enter a complete time.');
+    await time.fill('10:45');
+    await expect(at).not.toContainText('Enter a complete time.');
+
+    const starts = await doc().property('starts');
+    const moment = starts.locator('input[type="datetime-local"]');
+    await moment.click();
+    await moment.press('Backspace');
+    await expect(starts).toContainText('Enter a complete date and time.');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(page.getByText('1 field needs attention before this can be saved.')).toBeVisible();
+    expect((await getMeeting()).data).toMatchObject({ starts: '2026-10-11T08:00:00.000Z' });
+    await moment.fill('2026-11-02T10:45');
+    await expect(starts).not.toContainText('Enter a complete date and time.');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(async () => (await getMeeting()).data.at).toMatch(/^10:45/);
+    expect(((await getMeeting()).data as { starts: string }).starts).not.toBe('2026-10-11T08:00:00.000Z');
+  });
+  page.off('request', recordWrite);
+});
