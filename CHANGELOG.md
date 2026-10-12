@@ -140,6 +140,10 @@ All notable changes to Shapio are listed here. The format follows
 - **New `.env` files and SQLite databases are readable by their owner only.** `create-shapio` writes `.env`
   (SESSION_SECRET, the database password) with mode 0600, and Shapio creates a new SQLite file, with its WAL
   files, the same way. Existing files keep their permissions.
+- **`shapio schema diff` shows what changed inside a value.** Display changes (a form layout's groups, for
+  example) were cut at 77 characters, with the two sides in different key orders, so the change itself was
+  usually hidden. The diff, `apply`, and conflict output now print one line per part that changed (such as
+  `~ display.groups[1].label: "Main" → "Details"`), in full and with sorted keys.
 
 ## [0.5.6] - 2026-10-11
 

@@ -3,12 +3,46 @@ import { isDataType, typeChangeDropsValues, type PlannedChange, type SchemaChang
 
 /** Human-readable output for schema sync: decisions, per-definition diffs and server refusals. */
 
-const show = (value: unknown): string => {
-  if (value === undefined) {
-    return '(unset)';
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const sortKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(sortKeys);
   }
-  const text = JSON.stringify(value);
-  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, sortKeys(value[key])]),
+    );
+  }
+  return value;
+};
+
+/** A value in full, as one line of JSON with sorted keys, so both sides of a change read in the same order. */
+const show = (value: unknown): string => (value === undefined ? '(unset)' : JSON.stringify(sortKeys(value)));
+
+/** Lists of objects (groups, enum options) are compared item by item; lists of IDs or values are shown whole. */
+const isObjectList = (value: unknown): value is unknown[] => Array.isArray(value) && value.some(isObject);
+
+type Difference = { path: string; from: unknown; to: unknown };
+
+/**
+ * The parts of two values that differ, with paths like `.groups[1].label`: objects key by key and lists of
+ * objects item by item, so a change inside a large value (a form layout) shows only what changed.
+ */
+const differences = (from: unknown, to: unknown, path = ''): Difference[] => {
+  if (isObject(from) && isObject(to)) {
+    const keys = [...new Set([...Object.keys(from), ...Object.keys(to)])].sort();
+    return keys.flatMap((key) => differences(from[key], to[key], `${path}.${key}`));
+  }
+  if (isObjectList(from) && isObjectList(to)) {
+    return Array.from({ length: Math.max(from.length, to.length) }, (_, index) =>
+      differences(from[index], to[index], `${path}[${index}]`),
+    ).flat();
+  }
+  return show(from) === show(to) ? [] : [{ path, from, to }];
 };
 
 const fieldName = (change: SchemaChange, names: ReadonlyMap<string, string>) => {
@@ -41,25 +75,31 @@ const dropsValues = (change: PlannedChange) => {
   );
 };
 
-/** One line per change, `+` added, `-` removed, `~` changed; a type change that drops values says so. */
-export const formatChange = (change: PlannedChange, names: ReadonlyMap<string, string>): string => {
+/**
+ * The lines for one change, `+` added, `-` removed, `~` changed. Values are printed in full; a change inside
+ * an object prints one line per part that changed. A type change that drops values says so.
+ */
+export const formatChange = (change: PlannedChange, names: ReadonlyMap<string, string>): string[] => {
   const field = change.fieldId ? fieldName(change, names) : '';
   switch (change.kind) {
     case 'definition.added':
-      return `+ definition ${show(change.to)}`;
+      return [`+ definition ${show(change.to)}`];
     case 'definition.removed':
-      return `- definition ${show(change.from)}`;
+      return [`- definition ${show(change.from)}`];
     case 'field.added':
-      return `+ field ${field}`;
+      return [`+ field ${field}`];
     case 'field.removed':
-      return `- field ${field}`;
+      return [`- field ${field}`];
     case 'field.order':
-      return '~ field order';
+      return ['~ field order'];
     default: {
       const subject = change.kind.startsWith('field.') ? `field ${field} ` : '';
       const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
       const dropped = dropsValues(change) ? ' (values dropped)' : '';
-      return `~ ${subject}${property}: ${show(change.from)} → ${show(change.to)}${dropped}`;
+      const parts = differences(change.from, change.to);
+      return (parts.length > 0 ? parts : [{ path: '', from: change.from, to: change.to }]).map(
+        (part) => `~ ${subject}${property}${part.path}: ${show(part.from)} → ${show(part.to)}${dropped}`,
+      );
     }
   }
 };
@@ -91,7 +131,7 @@ export const formatItem = (item: SchemaSyncResult, names: ReadonlyMap<string, st
     item.outcome === 'pending' ? `pending change ${item.changeId ?? ''}` : '',
   ].filter(Boolean);
   const header = `${item.kind === 'component' ? 'component' : 'model'} ${item.apiKey}: ${describeDecision(item)}${flags.length ? ` [${flags.join(', ')}]` : ''}`;
-  const lines = item.changes.map((change) => `    ${formatChange(change, names)}`);
+  const lines = item.changes.flatMap((change) => formatChange(change, names).map((line) => `    ${line}`));
   return [header, ...lines].join('\n');
 };
 
