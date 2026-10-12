@@ -8,6 +8,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **Signing in from several places at once works on MySQL.** Parallel correct sign-ins of one admin could
+  deadlock in InnoDB and answer 500; the sign-in now updates the admin before it creates the session.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

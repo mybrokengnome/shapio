@@ -71,6 +71,14 @@ describe('app-user authentication', () => {
     ]);
   });
 
+  it('signs one account in from several places at once', async () => {
+    const { user } = await signUp(testApp.app);
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => loginAppUser(testApp.app, user.email)),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200, 200, 200]);
+  });
+
   it('rejects bad credentials, invalid tokens, and rate-limits one address', async () => {
     const { user } = await signUp(testApp.app);
     expect((await loginAppUser(testApp.app, user.email, 'wrong password')).statusCode).toBe(401);

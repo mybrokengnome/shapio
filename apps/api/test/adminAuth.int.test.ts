@@ -46,6 +46,26 @@ describe('admin sessions, CSRF and rate limits', () => {
     expect(JSON.stringify(stored)).not.toContain(cookie?.value ?? 'missing');
   });
 
+  it('signs one admin in from several places at once', async () => {
+    const admin = await createAdmin(testApp.db, { roleKeys: ['editor'] });
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        testApp.app.inject({
+          method: 'POST',
+          url: '/api/admin/auth/login',
+          payload: { email: admin.email, password: TEST_PASSWORD },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200, 200, 200]);
+    const sessions = await testApp.db
+      .selectFrom('admin_sessions')
+      .select('id')
+      .where('admin_user_id', '=', admin.id)
+      .execute();
+    expect(sessions).toHaveLength(4);
+  });
+
   it('marks the cookie Secure when PUBLIC_URL is https', async () => {
     const secure = await createTestApp(database.current, { env: { PUBLIC_URL: 'https://cms.example.com' } });
     const response = await secure.app.inject({
