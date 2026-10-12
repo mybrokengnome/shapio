@@ -144,6 +144,9 @@ All notable changes to Shapio are listed here. The format follows
   example) were cut at 77 characters, with the two sides in different key orders, so the change itself was
   usually hidden. The diff, `apply`, and conflict output now print one line per part that changed (such as
   `~ display.groups[1].label: "Main" → "Details"`), in full and with sorted keys.
+- **`shapio admin create` applies the same rules as Setup.** It refuses an invalid email, a name over 200
+  characters, and a password outside 12 to 256 characters, instead of creating an admin who could never sign
+  in.
 
 ## [0.5.6] - 2026-10-11
 
