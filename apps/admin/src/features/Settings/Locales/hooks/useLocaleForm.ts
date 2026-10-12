@@ -1,29 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Locale } from '@shapio/client';
-import { LOCALE_CODE_PATTERN } from '@shapio/schema';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { z } from 'zod';
 import { useCreateLocale, useUpdateLocale } from '@/api/locales';
 import { i18next } from '@/app/i18n';
 import { settle } from '@/helpers/settle';
-import { requiredText } from '@/helpers/validation';
-
-const MAX_CODE_LENGTH = 35;
-
-const localeSchema = z.object({
-  code: z
-    .string()
-    .trim()
-    .min(1, 'validation.required')
-    .max(MAX_CODE_LENGTH, 'validation.localeCode')
-    .regex(LOCALE_CODE_PATTERN, 'validation.localeCode'),
-  label: requiredText(),
-  fallbacks: z.array(z.string()),
-});
-
-export type LocaleValues = z.infer<typeof localeSchema>;
+import { localeSchemaFor, type LocaleValues } from '../helpers/localeSchema';
 
 const valuesFor = (locale: Locale | undefined): LocaleValues => ({
   code: locale?.code ?? '',
@@ -32,11 +15,21 @@ const valuesFor = (locale: Locale | undefined): LocaleValues => ({
 });
 
 /** Adds a locale, or edits one's label and fallback chain (the code is its identity and never changes). */
-export const useLocaleForm = (open: boolean, locale: Locale | undefined, onDone: () => void) => {
+export const useLocaleForm = (
+  open: boolean,
+  locale: Locale | undefined,
+  locales: readonly Locale[],
+  onDone: () => void,
+) => {
   const createLocale = useCreateLocale();
   const updateLocale = useUpdateLocale();
+  // Editing keeps the locale's own code, which is not a clash.
+  const existing = useMemo(
+    () => (locale ? [] : locales.map((item) => item.code.toLowerCase())),
+    [locale, locales],
+  );
   const form = useForm<LocaleValues>({
-    resolver: zodResolver(localeSchema),
+    resolver: zodResolver(localeSchemaFor(existing)),
     defaultValues: valuesFor(locale),
   });
   const { reset } = form;

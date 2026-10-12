@@ -49,6 +49,7 @@ export const StatusSection = ({
 }: StatusSectionProps) => {
   const { t } = useTranslation();
   const assistTarget = useAssistTarget();
+  const canCopy = Boolean(onCopyFromDefault && defaultLocale);
   const notStarted = entry
     ? locales.filter((item) => !entry.locales.some((state) => state.locale === item.code))
     : [];
@@ -63,6 +64,10 @@ export const StatusSection = ({
       {t('content.locales.copyFrom', { locale: labelOf(defaultLocale ?? '') })}
     </Button>
   );
+  // A new entry has no status, dates or locales yet: no section rather than an empty heading.
+  if (!entry && !canCopy) {
+    return null;
+  }
   return (
     <DrawerSection id="entry-settings-status" title={t('entry.settings.status')}>
       <dl>

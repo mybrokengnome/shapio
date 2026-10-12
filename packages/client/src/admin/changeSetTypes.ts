@@ -314,7 +314,8 @@ export type Snapshot = {
   source: SnapshotSource;
   changeSetId: string | null;
   changeSetTitle: string | null;
-  actor: { type: string; id: string | null };
+  /** `name`: the admin's or token's name; null for the system, or once the admin or token is deleted. */
+  actor: { type: string; id: string | null; name: string | null };
   changedEntries: number;
   deploymentRuns: Array<{ id: string; connectionId: string; status: DeploymentRunStatus }>;
   createdAt: string;

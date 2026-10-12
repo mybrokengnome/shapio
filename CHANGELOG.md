@@ -182,6 +182,11 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
 - **Pages your role can't use say so before you fill anything in.** Opening New content type, New component,
   a New entry of a type you can't create, or Settings → API tokens by URL, bookmark, or an old link now shows
   "You don't have access to this" instead of a form that fails on submit or a New token button.
+- **Admin copy and layout fixes.** File sizes under a kilobyte read "44 bytes", not "44 byte". A time reads
+  "09:15" in the entry settings, not "09:15:00.000". A date fills its column in a form. A new entry's
+  settings no longer show an empty Status heading. Snapshots name the person or token that took them. A
+  choice field says when it has no choices or a choice lacks a value or label. Adding `FR` when `fr` exists
+  says the locale already exists. Site and role keys are suggested from the name, as API IDs are.
 
 ## [0.5.6] - 2026-10-11
 

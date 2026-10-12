@@ -41,7 +41,7 @@ export const View = ({ snapshot }: ViewProps) => {
   const changes = useSnapshotChanges(from, snapshot.seq, tab === 'diff');
   const meta = [
     formatDateTime(snapshot.createdAt),
-    actorLabel({ type: snapshot.actor.type }),
+    actorLabel(snapshot.actor),
     snapshot.schemaVersion === null ? '' : t('snapshots.schemaVersion', { version: snapshot.schemaVersion }),
   ]
     .filter(Boolean)

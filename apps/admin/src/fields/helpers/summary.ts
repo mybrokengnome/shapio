@@ -2,6 +2,7 @@ import { richTextPlainText, type ComponentDefinition, type FieldDefinition } fro
 import { i18next } from '@/app/i18n';
 import { valueLabel } from '@/features/Models/helpers/labels';
 import { formatDateTime } from '@/helpers/formatDate';
+import { formatTimeOfDay } from './dates';
 import { isUnparsed } from './unparsed';
 import { isEmptyValue, isRecord, toList } from './values';
 
@@ -34,6 +35,8 @@ export const summarizeValue = (field: FieldDefinition, value: unknown): string =
       return typeof value === 'string' ? formatDateTime(value) || value : String(value);
     case 'json':
       return truncate(JSON.stringify(value));
+    case 'time':
+      return formatTimeOfDay(String(value));
     case 'code':
       // A snippet reads badly as a label: its language and size instead ("HTML, 14 lines").
       return i18next.t('content.fields.code.summary', {

@@ -54,6 +54,7 @@
     "apiKeyTaken": "Another one already uses this API ID (IDs are case-insensitive).",
     "pluralApiKeySameAsSingular": "The plural API ID must differ from the API ID.",
     "localeCode": "Use a language code such as en, fr or fr-CA.",
+    "localeExists": "A locale with this code already exists.",
     "tooLong": "This is too long.",
     "selectModel": "Choose a model.",
     "dateTime": "Choose a valid date and time.",
@@ -1382,7 +1383,10 @@
       "COMPONENT_CYCLE": "Components can't contain themselves, directly or through others.",
       "COMPONENT_TOO_DEEP": "Components are nested too deeply.",
       "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first.",
-      "apiKeyTakenOnSite": "Already used on {{site}}."
+      "apiKeyTakenOnSite": "Already used on {{site}}.",
+      "choicesEmpty": "Add at least one choice.",
+      "choiceValue": "Give every choice a value of up to 64 characters.",
+      "choiceLabel": "Give every choice a label of up to 200 characters."
     },
     "scope": {
       "onlyOn": "Only on {{site}}",
