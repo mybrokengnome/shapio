@@ -174,7 +174,7 @@ test('Network → Sites creates a site with a fixed key', async () => {
 test("a site's app role bindings: public and authenticated callers", async () => {
   await page.getByRole('row').filter({ hasText: SITE.name }).getByRole('link', { name: SITE.name }).click();
   const panel = page.getByRole('region', { name: 'App roles' });
-  const anonymous = panel.getByRole('group', { name: 'Anonymous callers (public)' });
+  const anonymous = panel.getByRole('group', { name: 'Everyone, signed in or not (public)' });
   // A new site binds nothing: deny by default.
   await expect(anonymous.getByRole('checkbox', { checked: true })).toHaveCount(0);
   await anonymous.getByRole('checkbox', { name: 'Public' }).check();

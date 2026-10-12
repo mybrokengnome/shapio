@@ -1,5 +1,7 @@
 import type { InjectOptions } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
+import { APP_ROLE_IDS } from '../src/permissions/appRoles.js';
 import {
   bearer,
   createAppRole,
@@ -243,6 +245,106 @@ describe('app users and the delivery API', () => {
         (await write('PUT', url, alice.accessToken, { expectedVersion: 1, data: { title: 'x' } })).statusCode,
       ).toBe(404);
       expect((await write('DELETE', url, alice.accessToken)).statusCode).toBe(404);
+    });
+  });
+
+  describe('`public` is a floor for signed-in app users (issue #56)', () => {
+    const titles = (list: DeliveryList) => list.data.map((entry) => entry.title);
+
+    it('keeps what `public` reads when `authenticated` grants nothing', async () => {
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, []);
+      const anonymous = expectStatus(await deliver('/api/content/posts'), 200).json<DeliveryList>();
+      const session = await signUp(testApp.app);
+      const signedIn = expectStatus(
+        await deliver('/api/content/posts', session.accessToken),
+        200,
+      ).json<DeliveryList>();
+      expect(titles(signedIn)).toEqual(titles(anonymous));
+      expect(titles(signedIn)).toEqual(['Live']);
+      expect(JSON.stringify(signedIn)).not.toContain('internal note');
+    });
+
+    it('adds `authenticated` on own entries: reads every public row, updates only its own', async () => {
+      const fieldIds = [fieldIdOf(post, 'title'), fieldIdOf(post, 'notes')];
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, [
+        { action: 'read', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+        { action: 'update', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+      ]);
+      const author = await createAppRole(database.current.db, [
+        { action: 'create', modelId: post.definition.id, fieldIds },
+        { action: 'publish', modelId: post.definition.id, condition: 'ownedByPrincipal' },
+      ]);
+      const session = await signUp(testApp.app);
+      await assignRoles(session.user.id, [author]);
+      const own = expectStatus(
+        await write('POST', '/api/content/posts', session.accessToken, {
+          data: { title: 'Mine', notes: 'my own note' },
+          publish: true,
+        }),
+        201,
+      ).json<WriteBody>();
+
+      const list = expectStatus(
+        await deliver('/api/content/posts', session.accessToken),
+        200,
+      ).json<DeliveryList>();
+      expect(titles(list).sort()).toEqual(['Live', 'Mine']);
+      // The hidden field shows only on the caller's own entry (issue #75).
+      const byTitle = new Map(list.data.map((entry) => [entry.title, entry]));
+      expect(byTitle.get('Mine')).toMatchObject({ notes: 'my own note' });
+      expect(byTitle.get('Live')).not.toHaveProperty('notes');
+      expect(JSON.stringify(list)).not.toContain('internal note');
+
+      expectStatus(
+        await write('PUT', `/api/content/posts/${own.data.id}`, session.accessToken, {
+          expectedVersion: own.data.version,
+          data: { title: 'Mine, edited' },
+        }),
+        200,
+      );
+      expect(
+        (
+          await write('PUT', `/api/content/posts/${published.id}`, session.accessToken, {
+            expectedVersion: 1,
+            data: { title: 'x' },
+          })
+        ).statusCode,
+      ).toBe(404);
+      // Anonymous callers keep only `public`.
+      const anonymous = expectStatus(await deliver('/api/content/posts'), 200).json<DeliveryList>();
+      expect(JSON.stringify(anonymous)).not.toContain('my own note');
+      expect(
+        (
+          await write('PUT', `/api/content/posts/${own.data.id}`, undefined, {
+            expectedVersion: 2,
+            data: { title: 'anon' },
+          })
+        ).statusCode,
+      ).toBe(403);
+    });
+
+    it('gives nothing extra on a site that binds no `public` role', async () => {
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, []);
+      const bindings = `/api/admin/sites/${PRIMARY_SITE_ID}/app-roles`;
+      expectStatus(
+        await admin.put(bindings, { public: [], authenticated: [APP_ROLE_IDS.authenticated] }),
+        200,
+      );
+      try {
+        const session = await signUp(testApp.app);
+        expect((await deliver('/api/content/posts', session.accessToken)).statusCode).toBe(403);
+      } finally {
+        expectStatus(
+          await admin.put(bindings, {
+            public: [APP_ROLE_IDS.public],
+            authenticated: [APP_ROLE_IDS.authenticated],
+          }),
+          200,
+        );
+      }
     });
   });
 });

@@ -2,8 +2,8 @@ import type { ContentAction } from './types.js';
 
 /**
  * Built-in app roles (package I). Their IDs are fixed (seeded by migration 20261001180000_create_app_users),
- * so the evaluator can apply them without a lookup: `public` to every anonymous caller, `authenticated` to
- * every signed-in app user on top of their custom roles.
+ * so the evaluator can apply them without a lookup: `public` to every caller, anonymous or signed in, and
+ * `authenticated` to every signed-in app user on top of `public` and their custom roles.
  */
 export const APP_ROLE_IDS = {
   public: '00000000-0000-4000-a000-000000000001',

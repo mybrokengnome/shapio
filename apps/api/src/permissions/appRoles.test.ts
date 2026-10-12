@@ -76,8 +76,69 @@ describe('app-user and anonymous principals', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-notes'], componentFields: 'public' },
     });
-    // The anonymous `public` role is not an app user's role.
+    // `authenticated` is never an anonymous caller's role.
     expect((await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).allowed).toBe(false);
+  });
+
+  it('gives every app user the `public` roles as a floor (issue #56)', async () => {
+    const evaluator = createPermissionEvaluator({
+      grants: staticGrants([grant({ roleId: APP_ROLE_IDS.public, action: 'read', modelId: MODEL })]),
+      fields,
+    });
+    const read = { action: 'read', modelId: MODEL } as const;
+    // `authenticated` grants nothing; signing in still keeps what `public` gives.
+    expect(await evaluator.evaluate(appUser(), read)).toEqual(await evaluator.evaluate(anonymous, read));
+    expect((await evaluator.evaluate(appUser(), read)).allowed).toBe(true);
+    // A site that binds no `public` role gives its app users nothing extra.
+    const elsewhere: Principal = { kind: 'appUser', appUserId: 'u3', siteId: 'other-site', roleIds: [] };
+    expect(await evaluator.evaluate(elsewhere, read)).toEqual(DENIED_POLICY);
+  });
+
+  it('unions `public` on every row with `authenticated` on own rows', async () => {
+    const evaluator = createPermissionEvaluator({
+      grants: staticGrants([
+        grant({ roleId: APP_ROLE_IDS.public, action: 'read', modelId: MODEL }),
+        grant({
+          roleId: APP_ROLE_IDS.authenticated,
+          action: 'read',
+          modelId: MODEL,
+          condition: 'ownedByPrincipal',
+          fieldIds: ['f-title', 'f-notes'],
+        }),
+        grant({
+          roleId: APP_ROLE_IDS.authenticated,
+          action: 'update',
+          modelId: MODEL,
+          condition: 'ownedByPrincipal',
+        }),
+      ]),
+      fields,
+    });
+    expect(await evaluator.evaluate(appUser(), { action: 'read', modelId: MODEL })).toEqual({
+      allowed: true,
+      rowFilter: null,
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-notes'] },
+      rowReadMasks: {
+        everyRow: { mode: 'only', fieldIds: ['f-title'] },
+        when: [
+          {
+            condition: { kind: 'ownedByPrincipal' },
+            mask: { mode: 'only', fieldIds: ['f-title', 'f-notes'] },
+          },
+        ],
+      },
+      writeMask: { mode: 'only', fieldIds: [] },
+    });
+    expect(await evaluator.evaluate(appUser(), { action: 'update', modelId: MODEL })).toMatchObject({
+      allowed: true,
+      rowFilter: { kind: 'ownedByPrincipal' },
+    });
+    // Anonymous callers keep only `public`.
+    expect(await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).toMatchObject({
+      readMask: { mode: 'only', fieldIds: ['f-title'] },
+      rowReadMasks: null,
+    });
+    expect((await evaluator.evaluate(anonymous, { action: 'update', modelId: MODEL })).allowed).toBe(false);
   });
 
   it('never lets app roles manage schemas or perform instance actions', async () => {
