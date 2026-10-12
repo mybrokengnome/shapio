@@ -127,6 +127,11 @@ All notable changes to Shapio are listed here. The format follows
   your role can't read now says "You can't read the content type this field links to.", and the entry's
   properties show "1 linked entry you can't read" instead of "Untitled" and an ID. The links are kept on save,
   as before.
+- **Expired credentials and old delivery logs are now pruned.** The daily retention job deletes credentials
+  that expired more than `RETENTION_DAYS` ago (admin sessions, invitations, password resets, app-user refresh
+  tokens, login codes, email confirmations, and preview tokens), spent setup tokens, and finished webhook
+  deliveries and deployment runs older than that. Each webhook keeps its newest delivery, and each deployment
+  connection keeps its newest and live run.
 
 ## [0.5.6] - 2026-10-11
 
