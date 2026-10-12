@@ -6,6 +6,13 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The entry top bar fits on one row again with the settings drawer open.** At laptop width the actions
+  dropped under the save state once the drawer had slid in. While the drawer is open, Settings now shows its
+  icon only, and a change saved elsewhere reads "Changed elsewhere" with an icon-only Reload, so the place
+  name, the save state, and the actions share one row.
+
 ## [0.5.7] - 2026-10-12
 
 ### Changed
