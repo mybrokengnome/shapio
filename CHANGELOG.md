@@ -137,6 +137,9 @@ All notable changes to Shapio are listed here. The format follows
   `shapio schema apply --prune` refuses the same deletion without `--allow-breaking`. It now answers 409
   `SCHEMA_CHANGE_NOT_ACKNOWLEDGED` unless `acknowledgeBreaking=true` is sent; the admin sends it after its
   confirm dialog.
+- **New `.env` files and SQLite databases are readable by their owner only.** `create-shapio` writes `.env`
+  (SESSION_SECRET, the database password) with mode 0600, and Shapio creates a new SQLite file, with its WAL
+  files, the same way. Existing files keep their permissions.
 
 ## [0.5.6] - 2026-10-11
 

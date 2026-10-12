@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql, type Kysely, type Transaction } from 'kysely';
@@ -267,6 +267,28 @@ describe('SQLite in memory', () => {
       await memory.destroy();
     }
   });
+});
+
+describe('SQLite database file', () => {
+  it.skipIf(process.platform === 'win32')(
+    'creates a new database and its WAL files readable by the owner only',
+    async () => {
+      const privatePath = join(directory, 'private.db');
+      const handle = createSqliteDb<Record<string, Row>>({
+        location: { kind: 'file', path: privatePath },
+        readers: 1,
+      });
+      try {
+        await sql`create table notes (body text)`.execute(handle);
+        await handle.insertInto('notes').values({ body: 'one' }).execute();
+        for (const file of [privatePath, `${privatePath}-wal`, `${privatePath}-shm`]) {
+          expect(statSync(file).mode & 0o777, file).toBe(0o600);
+        }
+      } finally {
+        await handle.destroy();
+      }
+    },
+  );
 });
 
 describe('SQLite planner statistics', () => {
