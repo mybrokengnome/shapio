@@ -2,6 +2,7 @@ import type { AdminEntry, MediaAsset, ShapioApiError } from '@shapio/client';
 import type { ComponentDefinition, ModelDefinition } from '@shapio/schema';
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useSaveEntry } from '@/api/content';
+import { isUnauthorized } from '@/api/errors';
 import { refuseUnparsed } from '@/fields/form/refuseUnparsed';
 import type { EntryFormStore } from '@/fields/form/store';
 import { contentIssuesOf, isEditConflict } from '@/fields/helpers/apiErrors';
@@ -9,6 +10,7 @@ import { buildPatch, dirtyKeysOf, toFormValues } from '@/fields/helpers/formValu
 import { containsUnparsed } from '@/fields/helpers/unparsed';
 import type { FormValues } from '@/fields/helpers/values';
 import { logError, reportError } from '@/helpers/reportError';
+import { useSessionStore } from '@/stores/session';
 
 export type SaveKind = 'autosave' | 'save';
 export type SaveOutcome = 'saved' | 'unchanged' | 'invalid' | 'conflict' | 'failed';
@@ -48,7 +50,8 @@ const sendableChanges = (values: FormValues, baseline: FormValues) => {
  * Saving one locale's draft. Saves run one at a time (an explicit save waits for a running autosave), so
  * every request carries the latest version and nothing races. Only changed fields are sent (the API takes
  * a patch). Autosave moves the draft without a revision and skips `required`; Save creates a revision and
- * validates everything. 422 issues land on the fields; 409 conflicts go to the conflict dialog.
+ * validates everything. 422 issues land on the fields; 409 conflicts go to the conflict dialog. A save that
+ * failed because the session ended runs again once it is resumed in place (the edits never left the page).
  */
 export const useEntrySaver = ({
   model,
@@ -64,6 +67,8 @@ export const useEntrySaver = ({
   const { mutateAsync } = useSaveEntry(model.apiKey);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [state, setState] = useState<SaveState>({ status: 'idle', kind: undefined, at: undefined });
+  /** The save that failed with a 401, if any: Save wins over autosave. */
+  const failedSignedOut = useRef<SaveKind | undefined>(undefined);
   const latest = useRef({ onSaved, onConflict, onAsset });
   useEffect(() => {
     latest.current = { onSaved, onConflict, onAsset };
@@ -115,6 +120,12 @@ export const useEntrySaver = ({
           latest.current.onConflict(error);
           return 'conflict';
         }
+        if (isUnauthorized(error)) {
+          // The sign-in panel says what happened; the save runs again after it.
+          failedSignedOut.current = failedSignedOut.current === 'save' ? 'save' : kind;
+          logError(error, 'saving an entry after the session ended');
+          return 'failed';
+        }
         (kind === 'save' ? reportError : logError)(
           error,
           kind === 'save' ? 'saving an entry' : 'autosaving an entry',
@@ -133,6 +144,20 @@ export const useEntrySaver = ({
   }, []);
 
   const save = useCallback((kind: SaveKind) => exclusive(() => runSave(kind)), [exclusive, runSave]);
+
+  const resumed = useSessionStore((session) => session.resumed);
+  const latestSave = useRef(save);
+  useEffect(() => {
+    latestSave.current = save;
+  });
+  useEffect(() => {
+    const kind = failedSignedOut.current;
+    if (kind === undefined) {
+      return;
+    }
+    failedSignedOut.current = undefined;
+    void latestSave.current(kind);
+  }, [resumed]);
 
   return { save, exclusive, state };
 };

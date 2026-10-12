@@ -215,6 +215,11 @@
     "submitting": "Signing in…",
     "forgotPassword": "Forgot password?"
   },
+  "sessionEnded": {
+    "title": "Your session has ended",
+    "description": "Sign in again to keep working. Your unsaved changes are still here.",
+    "account": "Signing in as {{email}}"
+  },
   "forgotPassword": {
     "title": "Reset your password",
     "description": "We'll email you a link to choose a new one.",

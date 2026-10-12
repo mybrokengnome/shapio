@@ -22,6 +22,10 @@ All notable changes to Shapio are listed here. The format follows
   failed. It is now a destructive change that counts the entries losing their value, needs your
   acknowledgement, and shows "(values dropped)" in `shapio schema diff`. Text changed to a multi-value enum
   becomes a one-value list, checked against the choices.
+- **An ended admin session no longer throws away unsaved edits.** When the session expires or is signed out
+  elsewhere while you have unsaved changes, the admin stays on the page and asks for your password in a panel
+  beside it; the save that failed runs again once you sign in. Signing out from the account menu over unsaved
+  changes now asks first, like leaving the page.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or

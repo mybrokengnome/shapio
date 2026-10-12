@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import '@/test/dom';
-import type { AdminEntry } from '@shapio/client';
-import { act, renderHook } from '@testing-library/react';
+import { ShapioApiError, type AdminEntry } from '@shapio/client';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEntryFormStore, selectDirtyKeys } from '@/fields/form/store';
 import { isUnparsed, unparsedText } from '@/fields/helpers/unparsed';
+import { useSessionStore } from '@/stores/session';
 import { field, model } from '../../../../../../../packages/schema/src/testing/fixtures';
 import { useEntrySaver } from './useEntrySaver';
 
-const mutateAsync = vi.fn<(variables: { input: { data: unknown } }) => Promise<AdminEntry>>();
+const mutateAsync = vi.fn<(variables: { id?: string; input: { data: unknown } }) => Promise<AdminEntry>>();
 vi.mock('@/api/content', () => ({ useSaveEntry: () => ({ mutateAsync }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/helpers/reportError', () => ({ logError: vi.fn(), reportError: vi.fn() }));
@@ -88,6 +89,71 @@ describe('useEntrySaver with text an editor could not parse', () => {
       outcome = await saver.current.save('autosave');
     });
     expect(outcome).toBe('unchanged');
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+const titled = model({ fields: [field({ apiKey: 'title' })] });
+
+const savedEntry = (title: string, version: number) =>
+  ({ id: 'e1', version, data: { title }, updatedAt: '2026-10-11T00:00:00.000Z' }) as unknown as AdminEntry;
+
+const setupSession = () => {
+  const store = createEntryFormStore({ title: 'Saved title' });
+  const versionRef = { current: 3 };
+  const onSaved = vi.fn();
+  const { result } = renderHook(() =>
+    useEntrySaver({
+      model: titled,
+      components: new Map(),
+      entryId: 'e1',
+      locale: null,
+      store,
+      versionRef,
+      onSaved,
+      onConflict: vi.fn(),
+      onAsset: vi.fn(),
+    }),
+  );
+  return { store, versionRef, onSaved, result };
+};
+
+describe('useEntrySaver when the session ends', () => {
+  beforeEach(() => {
+    mutateAsync.mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    useSessionStore.setState({ resumed: 0, signInRequired: false });
+  });
+
+  it('keeps the edits, says nothing itself, and saves them once the session is resumed', async () => {
+    const { store, versionRef, onSaved, result } = setupSession();
+    act(() => store.getState().setValue('title', 'Typed while signed out'));
+    mutateAsync.mockRejectedValueOnce(
+      new ShapioApiError(401, { error: { code: 'UNAUTHENTICATED', message: 'Not signed in' } }),
+    );
+    await act(async () => {
+      expect(await result.current.save('save')).toBe('failed');
+    });
+    expect(store.getState().values.title).toBe('Typed while signed out');
+    expect(toast.error).not.toHaveBeenCalled();
+
+    mutateAsync.mockResolvedValueOnce(savedEntry('Typed while signed out', 4));
+    act(() => useSessionStore.getState().resume());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+    expect(mutateAsync.mock.calls[1]?.[0]).toMatchObject({
+      id: 'e1',
+      input: { expectedVersion: 3, data: { title: 'Typed while signed out' } },
+    });
+    expect(versionRef.current).toBe(4);
+    expect(onSaved.mock.calls[0]?.[1]).toBe('save');
+  });
+
+  it('runs nothing on a resume when no save failed', async () => {
+    setupSession();
+    act(() => useSessionStore.getState().resume());
+    await Promise.resolve();
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

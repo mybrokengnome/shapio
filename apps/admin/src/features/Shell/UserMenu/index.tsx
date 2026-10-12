@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { initialsOf } from '@/helpers/initials';
+import { useDiscardGuard } from '@/hooks/useDiscardGuard';
+import { useSessionStore } from '@/stores/session';
 
 type UserMenuProps = {
   /** `sidebar`: name and email in the sidebar footer. `compact`: just the avatar (the phone header). */
@@ -29,6 +31,17 @@ export const UserMenu = ({ variant = 'sidebar' }: UserMenuProps) => {
   const { t } = useTranslation();
   const { data: me } = useMe();
   const logout = useLogout();
+  // Signing out over unsaved edits (any screen's) asks first, like leaving the page does.
+  const unsavedEdits = useSessionStore((state) => state.unsavedEdits > 0);
+  const signOut = useDiscardGuard({
+    dirty: unsavedEdits,
+    registersEdits: false,
+    onOpenChange: (open) => {
+      if (!open) {
+        logout.mutate();
+      }
+    },
+  });
   if (!me) {
     return null;
   }
@@ -68,7 +81,7 @@ export const UserMenu = ({ variant = 'sidebar' }: UserMenuProps) => {
         </DropdownMenuSubContent>
       </DropdownMenuSub>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => logout.mutate()} disabled={logout.isPending}>
+      <DropdownMenuItem onSelect={() => signOut.requestOpenChange(false)} disabled={logout.isPending}>
         <LogOut aria-hidden="true" />
         {t('userMenu.signOut')}
       </DropdownMenuItem>
@@ -83,6 +96,7 @@ export const UserMenu = ({ variant = 'sidebar' }: UserMenuProps) => {
           </Button>
         </DropdownMenuTrigger>
         {content}
+        {signOut.discardPrompt}
       </DropdownMenu>
     );
   }
@@ -102,6 +116,7 @@ export const UserMenu = ({ variant = 'sidebar' }: UserMenuProps) => {
           </DropdownMenuTrigger>
           {content}
         </DropdownMenu>
+        {signOut.discardPrompt}
       </SidebarMenuItem>
     </SidebarMenu>
   );
