@@ -81,7 +81,11 @@ test.afterAll(async () => {
     });
   }
   if (model) {
-    await adminRequest(page.request, 'DELETE', `/models/${model.id}?expectedVersion=${model.version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/models/${model.id}?expectedVersion=${model.version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });

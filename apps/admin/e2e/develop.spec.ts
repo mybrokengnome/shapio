@@ -79,7 +79,11 @@ test.afterAll(async () => {
   }
   if (modelId) {
     const { version } = await readModel();
-    await adminRequest(page.request, 'DELETE', `/models/${modelId}?expectedVersion=${version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });

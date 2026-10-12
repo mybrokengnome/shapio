@@ -132,6 +132,11 @@ All notable changes to Shapio are listed here. The format follows
   tokens, login codes, email confirmations, and preview tokens), spent setup tokens, and finished webhook
   deliveries and deployment runs older than that. Each webhook keeps its newest delivery, and each deployment
   connection keeps its newest and live run.
+- **Deleting a model or component through the API needs the breaking-change acknowledgement.**
+  `DELETE /api/admin/models/:id` (and `/components/:id`) removed the API at once with no acknowledgement, while
+  `shapio schema apply --prune` refuses the same deletion without `--allow-breaking`. It now answers 409
+  `SCHEMA_CHANGE_NOT_ACKNOWLEDGED` unless `acknowledgeBreaking=true` is sent; the admin sends it after its
+  confirm dialog.
 
 ## [0.5.6] - 2026-10-11
 

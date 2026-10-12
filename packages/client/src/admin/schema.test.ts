@@ -59,6 +59,7 @@ describe('schema api: definitions', () => {
     await client.admin.components.planCreate(COMPONENT);
     await client.admin.components.create({ definition: COMPONENT });
     await client.admin.components.remove('c1', 4);
+    await client.admin.components.remove('c1', 4, { acknowledgeBreaking: true });
     expect(call(0).url).toBe('https://cms.test/cms/api/admin/components/plan');
     expect(call(0).body).toEqual({ definition: COMPONENT });
     expect(call(1)).toMatchObject({ url: 'https://cms.test/cms/api/admin/components', method: 'POST' });
@@ -66,6 +67,9 @@ describe('schema api: definitions', () => {
       url: 'https://cms.test/cms/api/admin/components/c1?expectedVersion=4',
       method: 'DELETE',
     });
+    expect(call(3).url).toBe(
+      'https://cms.test/cms/api/admin/components/c1?expectedVersion=4&acknowledgeBreaking=true',
+    );
   });
 
   it('surfaces a stale version as a 409 ShapioApiError with its details', async () => {

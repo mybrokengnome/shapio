@@ -184,7 +184,9 @@ export const useDeleteDefinition = () => {
       category: DefinitionCategory;
       id: string;
       expectedVersion: number;
-    }) => withCsrf(() => definitionApi(category).remove(id, expectedVersion)),
+    }) =>
+      // Only called after the builder's confirm dialog, which is the acknowledgement.
+      withCsrf(() => definitionApi(category).remove(id, expectedVersion, { acknowledgeBreaking: true })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.schema.all }),
   });
 };

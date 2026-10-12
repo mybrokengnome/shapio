@@ -88,7 +88,10 @@ test.afterAll(async () => {
   );
   const model = models.items.find(({ definition }) => definition.apiKey === MODEL.apiKey);
   if (model) {
-    await api.send('DELETE', `/models/${model.definition.id}?expectedVersion=${model.version}`);
+    await api.send(
+      'DELETE',
+      `/models/${model.definition.id}?expectedVersion=${model.version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });
