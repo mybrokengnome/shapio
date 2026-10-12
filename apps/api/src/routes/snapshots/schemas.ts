@@ -8,7 +8,10 @@ const ERRORS = { 400: ErrorResponseSchema, 401: ErrorResponseSchema };
 
 export const SnapshotChangesQuerySchema = Type.Object(
   {
-    from: SeqSchema,
+    /** Exactly one of `from` and `recent`. */
+    from: Type.Optional(SeqSchema),
+    /** Start where the diff covers the last N entries the caller may read that went live or were updated. */
+    recent: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
     /** Defaults to the current snapshot. */
     to: Type.Optional(SeqSchema),
     /** `nextCursor` of the previous page. */

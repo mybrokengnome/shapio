@@ -18,8 +18,7 @@ export const GROUP_PREVIEW = 5;
 /** Schedules read to find the soonest (the API lists newest first), and how many are shown. */
 export const SCHEDULES_SCANNED = 50;
 export const SCHEDULED_SHOWN = 5;
-/** "Recently published" diffs this many snapshots back from the live one, and shows this many entries. */
-export const RECENT_SNAPSHOTS = 5;
+/** "Recently published" shows this many of the latest published or updated entries. */
 export const RECENT_SHOWN = 6;
 
 /** The order groups appear in: what blocks publishing or readers first, housekeeping last. */

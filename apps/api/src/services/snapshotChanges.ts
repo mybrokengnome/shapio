@@ -68,7 +68,18 @@ export type SnapshotChangesPage = {
   nextCursor: string | null;
 };
 
-export type SnapshotChangesQuery = { from: number; to?: number; after?: string; limit?: number };
+/**
+ * Exactly one of `from` and `recent`. `recent: N` starts the diff where it covers the last N entries the
+ * caller may read that went live or were updated (still live at `to`), however many schema-only snapshots
+ * came after them; the page's `from` says where that was.
+ */
+export type SnapshotChangesQuery = {
+  from?: number | undefined;
+  recent?: number | undefined;
+  to?: number | undefined;
+  after?: string | undefined;
+  limit?: number | undefined;
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -155,38 +166,49 @@ export const listSnapshotChanges = async (
   if (query.after !== undefined && !UUID.test(query.after)) {
     throw queryInvalid('"after" must be a cursor returned by a previous page');
   }
+  if ((query.from === undefined) === (query.recent === undefined)) {
+    throw queryInvalid('Pass exactly one of "from" and "recent"');
+  }
   const readable = await readableModels(context);
   const byId = new Map(readable.map((model) => [model.definition.id, model]));
+  const modelIds = [...byId.keys()];
+  const rowFilter = compileModelRowFilters(
+    readable.map((model) => ({ modelId: model.definition.id, rowFilter: model.rowFilter })),
+    context.actor,
+  );
   return contentQueriesRepository.withConsistentRead(async (trx) => {
     const current = await publicationsRepository.currentSeq(context.site.id, trx);
     const to = query.to ?? current;
     if (to > current) {
       throw snapshotInvalid(to, current);
     }
-    if (query.from < 0 || query.from > to) {
+    const from =
+      query.from ??
+      (await snapshotDiffRepository.recentWindowStart(
+        { siteId: context.site.id, to, count: query.recent ?? 0, modelIds, rowFilter },
+        trx,
+      ));
+    if (from < 0 || from > to) {
       throw queryInvalid('"from" must be between 0 and "to"');
     }
     const page = await snapshotDiffRepository.listChanges(
       {
         siteId: context.site.id,
-        from: query.from,
+        from,
         to,
         after: query.after,
         limit: boundedLimit(query.limit),
-        modelIds: [...byId.keys()],
-        rowFilter: compileModelRowFilters(
-          readable.map((model) => ({ modelId: model.definition.id, rowFilter: model.rowFilter })),
-          context.actor,
-        ),
+        modelIds,
+        rowFilter,
       },
       trx,
     );
-    const versions = await snapshotDiffRepository.schemaVersionsAt(context.site.id, [query.from, to], trx);
+    const versions = await snapshotDiffRepository.schemaVersionsAt(context.site.id, [from, to], trx);
     const describe = await describeEntries(page.items, byId, context.snapshot.defaultLocale, trx);
     return {
-      from: query.from,
+      from,
       to,
-      schemaVersions: { from: versions.get(query.from) ?? null, to: versions.get(to) ?? null },
+      schemaVersions: { from: versions.get(from) ?? null, to: versions.get(to) ?? null },
       items: page.items.flatMap((item) => {
         const model = byId.get(item.modelId)?.definition;
         return model

@@ -28,6 +28,10 @@ All notable changes to Shapio are listed here. The format follows
   changes now asks first, like leaving the page.
 - **Signing in from several places at once works on MySQL.** Parallel correct sign-ins of one admin could
   deadlock in InnoDB and answer 500; the sign-in now updates the admin before it creates the session.
+- **Inbox "Recently published" keeps the latest publishes.** It used to look at the last five snapshots only,
+  so a few schema changes, or publishes in types you can't read, emptied it and it said "Nothing published
+  yet". It now lists the latest entries you may read that went live. `GET /api/snapshots/changes` takes
+  `recent=N` in place of `from` for this.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
