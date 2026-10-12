@@ -18,7 +18,8 @@ export const TimeInput = (props: BuiltInEditorProps) => {
         step={(numberOption(props, 'stepMinutes') ?? 1) * SECONDS_PER_MINUTE}
         readOnly={readOnly}
         disabled={disabled}
-        className="w-auto"
+        // Fills its column like a text input (a form's width setting sizes the column, not the control).
+        className="min-w-0 flex-1"
         onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
         onBlur={onBlur}
       />

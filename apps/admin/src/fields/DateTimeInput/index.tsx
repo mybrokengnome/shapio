@@ -21,7 +21,8 @@ export const DateTimeInput = (props: BuiltInEditorProps) => {
           value={toDateTimeInput(value, utc)}
           readOnly={readOnly}
           disabled={disabled}
-          className="w-auto"
+          // Fills its column like a text input (a form's width setting sizes the column, not the control).
+          className="min-w-0 flex-1"
           onChange={(event) => onChange(fromDateTimeInput(event.target.value, utc))}
           onBlur={onBlur}
         />

@@ -10,6 +10,8 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Time and date-time inputs fill their form column.** In a form they kept their natural width; they now
+  fill the column their width setting gives them, as text and date inputs do.
 
 ## [0.5.6] - 2026-10-11
 
