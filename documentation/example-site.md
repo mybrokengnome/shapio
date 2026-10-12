@@ -1,6 +1,6 @@
 # Example site walkthrough
 
-`examples/astro` is a small marketing site built with [Astro](https://astro.build) from Shapio content: pages
+The Astro site starter is a small marketing site built with [Astro](https://astro.build) from Shapio content: pages
 made of sections (hero, feature grid, gallery, call to action), a journal of articles with an author, in
 English and French. It shows the whole loop: model, edit, preview, publish, build, deploy, with status reported
 back to Shapio. The site is static (plain HTML), reads one pinned publication snapshot per build, and previews
@@ -10,23 +10,29 @@ drafts with a preview token.
 
 - A running Shapio with an owner account ([npm](install-npm.md), [Docker](install-docker.md) or
   [a development clone](local-development.md)). Below it is at `http://localhost:4300`.
-- A clone of the Shapio repository with dependencies installed and the packages built (`pnpm install`, then
-  `pnpm build`): the example lives in it and uses `@shapio/client`'s build, as a project from npm would. To
-  start outside the repository instead, `npx create-shapio my-site --site astro` writes the same site as a
-  standalone project ([Site starters](starters.md)).
+- Node.js 24.
+- The site, as a standalone project ([Site starters](starters.md)):
+
+  ```sh
+  npx create-shapio my-site --site astro
+  cd my-site
+  ```
+
+Contributors working in a clone of the repository find the same site in `examples/astro`, with the commands in
+[Site starters](starters.md#in-the-shapio-repository).
 
 ## 1. Seed the instance
 
 ```sh
 SHAPIO_URL=http://localhost:4300 SHAPIO_ADMIN_EMAIL=you@example.com SHAPIO_ADMIN_PASSWORD='your password' \
-  pnpm --filter example-astro seed
+  npm run seed
 ```
 
 The seed signs in, creates a temporary admin API token (revoked at the end; `SHAPIO_TOKEN=<admin token>`
 works instead of email and password), and then, idempotently (run it again to reset the content):
 
 1. adds the `fr` locale;
-2. applies the models and components in `examples/shared/shapio/` through the schema apply API (the same
+2. applies the models and components in the project's `shapio/` folder through the schema apply API (the same
    planner as `shapio schema apply`), live: `page` (title, slug, description, a **sections** dynamic zone),
    `article` (title, slug, excerpt, rich-text body, cover image, author relation, date), `author`, the
    `siteSettings` singleton (site name, tagline, footer, colophon), and the components `hero`, `featureGrid`,
@@ -35,15 +41,15 @@ works instead of email and password), and then, idempotently (run it again to re
 4. creates an author, the site settings, the `home` and `about` pages and three articles in English and
    French, publishes the settings, two articles and both pages in both locales, and leaves _Coming soon: our winter projects_ as a draft;
 5. creates a delivery role that can read those four models, and a delivery token for it, and writes
-   `SHAPIO_URL` and `SHAPIO_DELIVERY_TOKEN` to `examples/astro/.env`.
+   `SHAPIO_URL` and `SHAPIO_DELIVERY_TOKEN` to `.env` in the project.
 
 Open the admin: Content shows the pages and articles, Models shows the models, Media the images.
 
 ## 2. Build and look at it
 
 ```sh
-pnpm --filter example-astro build
-pnpm --filter example-astro preview
+npm run build
+npm run preview
 ```
 
 `preview` serves `dist/` in the foreground and prints its address, <http://localhost:4321/> unless that port is
@@ -56,7 +62,7 @@ Set `SHAPIO_SNAPSHOT=N` to build an exact earlier moment.
 Check the result without a browser:
 
 ```sh
-SHAPIO_ADMIN_EMAIL=you@example.com SHAPIO_ADMIN_PASSWORD='your password' pnpm --filter example-astro smoke
+SHAPIO_ADMIN_EMAIL=you@example.com SHAPIO_ADMIN_PASSWORD='your password' npm run smoke
 ```
 
 It checks the built HTML for the seeded content in both languages, rich text with a table, the author and the
@@ -74,14 +80,16 @@ says the change is live; nothing restarts. At once:
 
 Fill it in for one article in English and French and publish each locale. To show it on the site, render it in
 `src/lib/render.ts` (`renderArticle`) and rebuild: code changes need a build, content and models never do.
-To keep the schema in git, pull the new definition with an admin API token (Settings → API tokens); from a
-clone, run the CLI from source:
+To keep the schema in git, pull the new definition into `shapio/` with an admin API token (Settings → API
+tokens); the first pull also writes `.shapio/schema-lock.json` ([Schema sync](schema-sync.md)):
 
 ```sh
-cd apps/api
-node --conditions=@shapio/source --import tsx src/cli.ts schema pull --url http://localhost:4300 \
-  --token "$SHAPIO_ADMIN_TOKEN" --dir ../../examples/shared/shapio --lock ../../examples/shared/.shapio/schema-lock.json
+npx @shapio/cms schema pull --url http://localhost:4300 --token "$SHAPIO_ADMIN_TOKEN" --dir shapio
 ```
+
+The seed applied the starter's models as this site's own, so the pull moves them from `shapio/models/` and
+`shapio/components/` to `shapio/sites/default/models/` and `shapio/sites/default/components/`; nothing is
+deleted, and the shared SEO component stays in `shapio/components/`.
 
 Pages are built from sections, so new layouts need no code: open the _About_ page, add a **Gallery** section,
 pick images, publish, rebuild.
@@ -104,13 +112,13 @@ pick images, publish, rebuild.
 Cloudflare builds the site from your Git repository; Shapio starts each build with a deploy hook and follows it
 through Cloudflare's API. Your Shapio must be reachable from the internet for the build to read content.
 
-1. Push your copy of the repository to GitHub or GitLab.
+1. Push your site (the `my-site` project) to GitHub or GitLab.
 2. In Cloudflare: **Workers & Pages → Create → Pages → Connect to Git**, pick the repository, then:
-   - Framework preset: **None**
-   - Build command: `pnpm --filter "@shapio/client..." --filter "@shapio/visual" build && pnpm --filter example-astro build`
-   - Build output directory: `examples/astro/dist`
-   - Root directory: (leave empty: the repository root, so the workspace packages are found)
-   - Environment variables (Production): `NODE_VERSION` = `24`, `PNPM_VERSION` = `12.8.1`,
+   - Framework preset: **Astro**
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+   - Root directory: (leave empty)
+   - Environment variables (Production): `NODE_VERSION` = `24`,
      `SHAPIO_URL` = your Shapio's address (e.g. `https://cms.example.com`), `SHAPIO_DELIVERY_TOKEN` = a delivery
      token (as a **secret**; create one in Settings → API tokens with a delivery role that reads `page`,
      `article`, `author` and `siteSettings`, or take it from the seed's `.env`).
@@ -137,10 +145,10 @@ your build. Shapio sends the run ID, the snapshot to build and a callback URL, s
 ([Webhooks, deployments and preview](publishing.md#generic-signed-build-webhook)). Your pipeline then runs:
 
 ```sh
-pnpm --filter example-astro report-status building
-SHAPIO_SNAPSHOT=<snapshot from the trigger> pnpm --filter example-astro build
-npx wrangler pages deploy examples/astro/dist --project-name <project>
-pnpm --filter example-astro report-status deployed
+npm run report-status building
+SHAPIO_SNAPSHOT=<snapshot from the trigger> npm run build
+npx wrangler pages deploy dist --project-name <project>
+npm run report-status deployed
 ```
 
 with `SHAPIO_CALLBACK_URL`, `SHAPIO_RUN_ID` and `SHAPIO_CALLBACK_SECRET` (the connection's signing secret) in
@@ -150,22 +158,21 @@ Pages project created for direct upload (it needs `CLOUDFLARE_API_TOKEN` with _C
 
 ## How the site is made
 
-Paths are relative to `examples/astro`; the model files and the seed are shared by all three
-[starters](starters.md) and live in `examples/shared` (a project made with `create-shapio --site astro` has
-them in its own `shapio/` and `scripts/`).
+Paths are relative to the project; the model files and the seed are the same in all three
+[starters](starters.md).
 
-| File                                                    | Role                                                                                                                        |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `../shared/shapio/models/*.json`, `…/components/*.json` | the content models, as `shapio schema pull` writes them                                                                     |
-| `src/lib/shapio.ts`                                     | reads the delivery API with `@shapio/client`, pinned to one snapshot                                                        |
-| `src/lib/render.ts`                                     | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitised `html`, read with `richText=html`) |
-| `src/layouts/Base.astro`                                | the header and footer, from the `siteSettings` singleton                                                                    |
-| `src/pages/[locale]/…`                                  | one static page per published page and article, per locale, and the colophon (the singleton)                                |
-| `src/pages/preview.astro`, `src/lib/preview.ts`         | the preview page                                                                                                            |
-| `../shared/scripts/seed.ts`                             | the seed                                                                                                                    |
-| `scripts/reportStatus.ts`, `scripts/lib/callback.ts`    | signed build status for generic-webhook deployments                                                                         |
-| `scripts/smoke.ts`, `../shared/scripts/smokeHttp.ts`    | the HTML and preview checks; the HTTP checks every starter runs                                                             |
+| File                                                 | Role                                                                                                                        |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `shapio/models/*.json`, `shapio/components/*.json`   | the content models, as `shapio schema pull` writes them (after a pull, under `shapio/sites/<site>/`)                        |
+| `src/lib/shapio.ts`                                  | reads the delivery API with `@shapio/client`, pinned to one snapshot                                                        |
+| `src/lib/render.ts`                                  | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitised `html`, read with `richText=html`) |
+| `src/layouts/Base.astro`                             | the header and footer, from the `siteSettings` singleton                                                                    |
+| `src/pages/[locale]/…`                               | one static page per published page and article, per locale, and the colophon (the singleton)                                |
+| `src/pages/preview.astro`, `src/lib/preview.ts`      | the preview page                                                                                                            |
+| `scripts/seed.ts`                                    | the seed                                                                                                                    |
+| `scripts/reportStatus.ts`, `scripts/lib/callback.ts` | signed build status for generic-webhook deployments                                                                         |
+| `scripts/smoke.ts`, `scripts/smokeHttp.ts`           | the HTML and preview checks; the HTTP checks every starter runs                                                             |
 
 Images use the variants Shapio renders (`srcset` of WebP widths) with their intrinsic size, lazily below the
 fold; the pages have no client-side JavaScript except the preview page. Astro's telemetry is turned off in
-the package's scripts.
+the project's scripts.

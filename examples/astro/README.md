@@ -45,5 +45,4 @@ Shapio may frame it) and writes it to `dist/_headers`.
 
 Guides: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md) and the
 [walkthrough](https://github.com/mybrokengnome/shapio/blob/main/documentation/example-site.md) (model, preview,
-deploy to Cloudflare Pages, build callbacks). Inside the Shapio repository, run the scripts with
-`pnpm --filter example-astro <script>` after `pnpm build`.
+deploy to Cloudflare Pages, build callbacks).

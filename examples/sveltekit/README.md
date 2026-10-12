@@ -43,5 +43,4 @@ origin to Shapio's `CORS_ORIGINS`. In Shapio's preview pane, clicking the title,
 field and saves re-render the draft ([visual editing](https://github.com/mybrokengnome/shapio/blob/main/documentation/visual-editing.md)). `PUBLIC_SHAPIO_URL` sets the Shapio URL the
 browser calls, when it differs from `SHAPIO_URL`.
 
-Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md). Inside the
-Shapio repository, run the scripts with `pnpm --filter example-sveltekit <script>` after `pnpm build`.
+Guide: [site starters](https://github.com/mybrokengnome/shapio/blob/main/documentation/starters.md).
