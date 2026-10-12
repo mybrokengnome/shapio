@@ -117,17 +117,17 @@ describe('app-user and anonymous principals', () => {
     expect(await evaluator.evaluate(appUser(), { action: 'read', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: null,
-      readMask: { mode: 'only', fieldIds: ['f-title', 'f-notes'] },
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-notes'], componentFields: 'public' },
       rowReadMasks: {
-        everyRow: { mode: 'only', fieldIds: ['f-title'] },
+        everyRow: { mode: 'only', fieldIds: ['f-title'], componentFields: 'public' },
         when: [
           {
             condition: { kind: 'ownedByPrincipal' },
-            mask: { mode: 'only', fieldIds: ['f-title', 'f-notes'] },
+            mask: { mode: 'only', fieldIds: ['f-title', 'f-notes'], componentFields: 'public' },
           },
         ],
       },
-      writeMask: { mode: 'only', fieldIds: [] },
+      writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
     });
     expect(await evaluator.evaluate(appUser(), { action: 'update', modelId: MODEL })).toMatchObject({
       allowed: true,
@@ -135,7 +135,7 @@ describe('app-user and anonymous principals', () => {
     });
     // Anonymous callers keep only `public`.
     expect(await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).toMatchObject({
-      readMask: { mode: 'only', fieldIds: ['f-title'] },
+      readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'public' },
       rowReadMasks: null,
     });
     expect((await evaluator.evaluate(anonymous, { action: 'update', modelId: MODEL })).allowed).toBe(false);
