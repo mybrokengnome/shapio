@@ -14,6 +14,12 @@ All notable changes to Shapio are listed here. The format follows
   and another could read your own entries with more fields (an email, say), those extra fields showed on every
   entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,
   or searching on such a field is refused unless every entry you can read is your own.
+- **Fields you may change only on your own entries stay locked on everyone else's.** When one role could
+  change some fields on every entry and another could change more fields on your own entries, those extra
+  fields could be changed on any entry. They are now refused with `FORBIDDEN_FIELD` on entries you don't own,
+  over the admin, REST, and GraphQL; new entries count as your own.
+- **Restoring a revision checks every field it changes.** On localized content types, a restore could change
+  fields of its locale that your role may not edit. Those restores are now refused with `FORBIDDEN_FIELD`.
 
 ## [0.5.6] - 2026-10-11
 

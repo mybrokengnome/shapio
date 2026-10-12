@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Policy, Principal } from '../../permissions/types.js';
-import { everyRowReadMask, rowReadMask } from './policy.js';
+import { everyRowReadMask, ownershipOfNewEntry, rowReadMask, rowWriteMask } from './policy.js';
 
 const policy: Policy = {
   allowed: true,
@@ -12,7 +12,11 @@ const policy: Policy = {
       { condition: { kind: 'ownedByPrincipal' }, mask: { mode: 'only', fieldIds: ['f-name', 'f-email'] } },
     ],
   },
-  writeMask: { mode: 'only', fieldIds: [] },
+  writeMask: { mode: 'only', fieldIds: ['f-name', 'f-bio'] },
+  rowWriteMasks: {
+    everyRow: { mode: 'only', fieldIds: ['f-bio'] },
+    when: [{ condition: { kind: 'ownedByPrincipal' }, mask: { mode: 'only', fieldIds: ['f-name'] } }],
+  },
 };
 
 const appUser: Principal = { kind: 'appUser', appUserId: 'u-1', siteId: 's', roleIds: [] };
@@ -33,5 +37,40 @@ describe('read masks on one loaded entry', () => {
     expect(rowReadMask(uniform, appUser, others)).toBe(uniform.readMask);
     expect(everyRowReadMask(uniform)).toBe(uniform.readMask);
     expect(everyRowReadMask(policy)).toEqual({ mode: 'only', fieldIds: ['f-name'] });
+  });
+});
+
+describe('write masks on one entry (issue #80)', () => {
+  it('adds a conditioned write mask only on rows matching its condition', () => {
+    expect(rowWriteMask(policy, appUser, own)).toEqual({ mode: 'only', fieldIds: ['f-bio', 'f-name'] });
+    expect(rowWriteMask(policy, appUser, others)).toEqual({ mode: 'only', fieldIds: ['f-bio'] });
+    expect(rowWriteMask(policy, anonymous, own)).toEqual({ mode: 'only', fieldIds: ['f-bio'] });
+  });
+
+  it('uses the write mask when it applies to every row', () => {
+    const uniform: Policy = { ...policy, rowWriteMasks: null };
+    expect(rowWriteMask(uniform, appUser, others)).toBe(uniform.writeMask);
+  });
+
+  it('treats a new entry as owned by the app user or admin creating it', () => {
+    expect(rowWriteMask(policy, appUser, ownershipOfNewEntry(appUser))).toEqual({
+      mode: 'only',
+      fieldIds: ['f-bio', 'f-name'],
+    });
+    const admin: Principal = {
+      kind: 'admin',
+      adminUserId: 'a-1',
+      sessionId: 'x',
+      assignments: [],
+      siteId: 's',
+      roleIds: [],
+      networkRoleIds: [],
+    };
+    expect(ownershipOfNewEntry(admin)).toEqual({ created_by_admin_id: 'a-1', owner_app_user_id: null });
+    // Tokens and anonymous callers own nothing, so only the every-row mask applies.
+    expect(rowWriteMask(policy, anonymous, ownershipOfNewEntry(anonymous))).toEqual({
+      mode: 'only',
+      fieldIds: ['f-bio'],
+    });
   });
 });

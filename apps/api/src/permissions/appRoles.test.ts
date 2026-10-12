@@ -55,6 +55,7 @@ describe('app-user and anonymous principals', () => {
       readMask: { mode: 'only', fieldIds: ['f-title'] },
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: [] },
+      rowWriteMasks: null,
     });
     expect((await evaluator.evaluate(anonymous, { action: 'create', modelId: MODEL })).allowed).toBe(false);
   });
@@ -75,6 +76,7 @@ describe('app-user and anonymous principals', () => {
       readMask: { mode: 'only', fieldIds: ['f-title'] },
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-notes'] },
+      rowWriteMasks: null,
     });
     // The anonymous `public` role is not an app user's role.
     expect((await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).allowed).toBe(false);

@@ -90,6 +90,7 @@ describe('roles, admin users, API tokens and the audit log', () => {
       readMask: { mode: 'all' },
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'] },
+      rowWriteMasks: null,
     });
     expect(
       (await testApp.app.permissions.evaluate(principal, { action: 'delete', modelId: 'model-page' }))
