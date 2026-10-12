@@ -1,6 +1,7 @@
 import { STORAGE_FAMILY, type DataType } from '../types/dataTypes.js';
 import type { FieldDefinition, SchemaDefinition } from '../types/definitions.js';
 import type { SchemaChange } from './types.js';
+import { uniqueFieldsChangingLocalization } from './uniqueLocalization.js';
 
 /**
  * Change classification (brief §5, ADR 0002). Each change gets a category, whether it needs prerequisite
@@ -19,6 +20,7 @@ import type { SchemaChange } from './types.js';
  * | (plus) type change of a unique field | as its type change               | + checkUnique                 |
  * | (plus) tightened validation rules    | validation                       | validateValues                |
  * | (plus) localized true→false          | conversion (destructive)         | convert                       |
+ * | (plus) localized flip of a unique field | as the flip                    | + checkUnique                 |
  * | (plus) type change Shapio can't convert | conversion (destructive, drops) | convert (+ validate/required) |
  */
 export type ChangeCategory =
@@ -334,10 +336,17 @@ const classifyFieldChange = (change: SchemaChange, { before, after }: ClassifyCo
       if (!modelLocalized) {
         return result('metadata');
       }
+      // A unique field's registry rows move between locale keys and `*`; once shared, values that were
+      // unique per locale may collide.
+      const checks: Classification['prerequisites'] = uniqueFieldsChangingLocalization(before, after).some(
+        (candidate) => candidate.id === change.fieldId,
+      )
+        ? ['checkUnique']
+        : [];
       // false→true: every locale's head already holds the shared value (ADR 0004), so nothing to copy.
       return change.to === true
-        ? result('additive')
-        : result('conversion', { destructive: true, prerequisites: ['convert'] });
+        ? result('additive', { prerequisites: checks })
+        : result('conversion', { destructive: true, prerequisites: ['convert', ...checks] });
     }
     case 'field.public':
     case 'field.deprecated': {
@@ -390,12 +399,16 @@ export const classifyChange = (change: SchemaChange, context: ClassifyContext): 
           ? result('validation', { breaking: true, prerequisites: ['validateValues'] })
           : result('contract', { breaking: true });
       break;
-    case 'model.localized':
+    case 'model.localized': {
+      // Every unique field whose values move between per-locale and shared storage is checked and re-keyed.
+      const checks: Classification['prerequisites'] =
+        uniqueFieldsChangingLocalization(context.before, context.after).length > 0 ? ['checkUnique'] : [];
       classification =
         change.to === true
-          ? result('additive')
-          : result('conversion', { destructive: true, prerequisites: ['convert'] });
+          ? result('additive', { prerequisites: checks })
+          : result('conversion', { destructive: true, prerequisites: ['convert', ...checks] });
       break;
+    }
     case 'model.draftAndPublish':
       classification =
         change.to === true

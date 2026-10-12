@@ -465,6 +465,45 @@ describe('classifyChange: localization, publishing and model kind', () => {
     expectClass(only({ ...before, draftAndPublish: false }, before), { category: 'additive' });
   });
 
+  it('a unique field that moves between per-locale and shared values is checked for uniqueness', () => {
+    const shared = base({ unique: true }, { localized: true });
+    const perLocale = base({ unique: true, localized: true }, { localized: true });
+    expectClass(only(perLocale, shared), {
+      category: 'conversion',
+      destructive: true,
+      prerequisites: ['convert', 'checkUnique'],
+    });
+    expectClass(only(shared, perLocale), { category: 'additive', prerequisites: ['checkUnique'] });
+    // A deprecated unique field is not tracked by the registry: nothing to check.
+    const deprecated = base({ unique: true, localized: true, deprecated: true }, { localized: true });
+    expectClass(
+      only(
+        deprecated,
+        editField(deprecated, (f) => ({ ...f, localized: false })),
+      ),
+      { category: 'conversion', destructive: true, prerequisites: ['convert'] },
+    );
+  });
+
+  it('a model localized flip checks uniqueness only when a unique field is per-locale on one side', () => {
+    const plain = base({ unique: true, localized: true });
+    const localized = { ...plain, localized: true };
+    expectClass(only(localized, plain), {
+      category: 'conversion',
+      destructive: true,
+      prerequisites: ['convert', 'checkUnique'],
+    });
+    expectClass(only(plain, localized), { category: 'additive', prerequisites: ['checkUnique'] });
+    // A shared unique field keeps its `*` registry rows either way.
+    const sharedUnique = base({ unique: true });
+    expectClass(only({ ...sharedUnique, localized: true }, sharedUnique), {
+      category: 'conversion',
+      destructive: true,
+      prerequisites: ['convert'],
+    });
+    expectClass(only(sharedUnique, { ...sharedUnique, localized: true }), { category: 'additive' });
+  });
+
   it('collection→singleton validates (at most one entry); singleton→collection is a contract change', () => {
     const before = base();
     expectClass(only(before, { ...before, kind: 'singleton' }), {

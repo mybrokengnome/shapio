@@ -152,6 +152,42 @@ describe('buildChangePlan', () => {
     ]);
   });
 
+  it('a model that stops being localized rebuilds the registry of each per-locale unique field', () => {
+    const before = define({
+      id: id(70),
+      apiKey: 'coupon',
+      localized: true,
+      fields: [
+        { id: id(71), apiKey: 'code', label: 'c', type: 'string', unique: true, localized: true },
+        { id: id(72), apiKey: 'sku', label: 's', type: 'string', unique: true },
+        { id: id(73), apiKey: 'slug', label: 's', type: 'slug', unique: true, localized: true },
+        {
+          id: id(74),
+          apiKey: 'old',
+          label: 'o',
+          type: 'string',
+          unique: true,
+          localized: true,
+          deprecated: true,
+        },
+      ],
+    });
+    const after = define({ ...before, localized: false });
+    const plan = buildChangePlan({
+      before,
+      after,
+      fromVersion: 1,
+      active: shared([...active, before]),
+      siteId: null,
+      hasContent: true,
+    });
+    expect(plan.prerequisites).toEqual([
+      expect.objectContaining({ kind: 'convert' }),
+      { kind: 'checkUnique', modelId: before.id, fieldId: id(71), rebuild: true },
+      { kind: 'checkUnique', modelId: before.id, fieldId: id(73), rebuild: true },
+    ]);
+  });
+
   it('a type change on an indexed field builds the new expression index first and drops the old one after', () => {
     const before = define({
       id: id(50),
