@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Pages your role can't use say so before you fill anything in.** Opening New content type, New component,
+  a New entry of a type you can't create, or Settings → API tokens by URL, bookmark, or an old link now shows
+  "You don't have access to this" instead of a form that fails on submit or a New token button.
 
 ## [0.5.6] - 2026-10-11
 
