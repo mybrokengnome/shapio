@@ -67,6 +67,10 @@ All notable changes to Shapio are listed here. The format follows
   field's type and published entries of that model recorded their old content, converted, as the snapshot, so
   `?snapshot=N`, snapshot diffs, and Restore showed the entries as they were before the set. The snapshot now
   holds what the set published.
+- **New content types show why a name is refused on the first Create.** A name the server rejects, such as
+  `Query`, `Media`, or one another type's GraphQL names already use, now shows its reason under API ID straight
+  away instead of only "Fix the highlighted settings" with nothing highlighted. A refusal that points at no field
+  shows its own reason above the buttons.
 
 ## [0.5.6] - 2026-10-11
 
