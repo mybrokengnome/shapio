@@ -149,6 +149,11 @@ Deleting a field keeps its stored values (they are no longer returned); deleting
 which come back if you restore it. Rolling a model back to an earlier version is a metadata change: it never
 undoes a data conversion that already ran.
 
+A model's history (`GET /api/admin/models/{id}/revisions`, and `/api/admin/components/{id}/revisions`) lists
+every version with `status`, the outcome of the change that wrote it (`activated`, `pending`, `running`,
+`failed` or `cancelled`), and `active`, true for the version in use. A `failed` or `cancelled` version never
+went live, so rolling back to it would repeat a change that already failed its checks.
+
 Checks never touch stored content: they run on the values as they would be, and the conversion or backfill is
 written only when the new version activates, in the same transaction. Writes to the model wait for that rewrite
 (up to about 1.5 seconds for 7,000 entries); reads continue.

@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
+  listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
+  of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
 
 ## [0.5.6] - 2026-10-11
 

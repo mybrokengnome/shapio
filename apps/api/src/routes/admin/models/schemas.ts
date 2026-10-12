@@ -9,6 +9,7 @@ import {
   definitionInputFor,
   IdParamsSchema,
   ImpactSchema,
+  RevisionListItemSchema,
   RevisionSummarySchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
@@ -97,7 +98,7 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
     },
     listRevisions: {
       params: IdParamsSchema,
-      response: { 200: Type.Object({ items: Type.Array(RevisionSummarySchema) }) },
+      response: { 200: Type.Object({ items: Type.Array(RevisionListItemSchema) }) },
     },
     getRevision: {
       params: Type.Object({ id: StableIdSchema, revisionId: StableIdSchema }),

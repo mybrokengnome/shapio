@@ -1,6 +1,7 @@
 import type { Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB, SchemaRevisions } from '../db/types.js';
+import type { SchemaChangeStatus } from './schemaChangeJobs.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
@@ -193,13 +194,34 @@ export const insertRevision = (revision: NewRevision, trx: Executor = db) =>
 export const findRevisionById = (id: string, executor: Executor = db) =>
   executor.selectFrom('schema_revisions').selectAll().where('id', '=', id).executeTakeFirst();
 
-/** History of one model, newest first, without the definitions (fetch one revision for its body). */
+/**
+ * History of one model, newest first, without the definitions (fetch one revision for its body). Each row
+ * carries the status of the change that wrote it (null when no change job did: an activation's own
+ * revision) and the active revision's ID, so callers can tell versions that never went live.
+ */
 export const listRevisions = (modelId: string, limit: number, executor: Executor = db) =>
   executor
-    .selectFrom('schema_revisions')
-    .select(['id', 'version', 'hash', 'parent_revision_id', 'created_by_type', 'created_by_id', 'created_at'])
-    .where('model_id', '=', modelId)
-    .orderBy('version', 'desc')
+    .selectFrom('schema_revisions as revision')
+    .leftJoin('schema_change_jobs as change', (join) =>
+      join
+        .onRef('change.to_revision_id', '=', 'revision.id')
+        .onRef('change.model_id', '=', 'revision.model_id'),
+    )
+    .leftJoin('model_active_versions as active', 'active.model_id', 'revision.model_id')
+    .select([
+      'revision.id',
+      'revision.version',
+      'revision.hash',
+      'revision.parent_revision_id',
+      'revision.created_by_type',
+      'revision.created_by_id',
+      'revision.created_at',
+      'change.status as change_status',
+      'active.revision_id as active_revision_id',
+    ])
+    .$narrowType<{ change_status: SchemaChangeStatus | null }>()
+    .where('revision.model_id', '=', modelId)
+    .orderBy('revision.version', 'desc')
     .limit(limit)
     .execute();
 
