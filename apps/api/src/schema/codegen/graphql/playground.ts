@@ -36,9 +36,23 @@ const BOOTSTRAP = `(() => {
   if (root.dataset.theme) {
     props.forcedTheme = root.dataset.theme;
   }
+  // GraphiQL's CodeMirror editors render bare textareas; name them for screen readers, on every tab.
+  const name = (textarea, label) => {
+    if (textarea && textarea.getAttribute('aria-label') !== label) {
+      textarea.setAttribute('aria-label', label);
+    }
+  };
+  const labelEditors = () => {
+    name(root.querySelector('.graphiql-query-editor textarea'), 'Query');
+    root.querySelectorAll('.graphiql-editor-tool .graphiql-editor').forEach((editor, index) => {
+      name(editor.querySelector('textarea'), index === 0 ? 'Variables' : 'Headers');
+    });
+    name(root.querySelector('.result-window textarea'), 'Response');
+  };
   const start = (csrfToken) => {
     const fetcher = GraphiQL.createFetcher({ url: endpoint, headers: { 'x-csrf-token': csrfToken } });
     ReactDOM.createRoot(root).render(React.createElement(GraphiQL, { ...props, fetcher }));
+    new MutationObserver(labelEditors).observe(root, { childList: true, subtree: true });
   };
   fetch(csrfUrl, { credentials: 'same-origin' })
     .then((response) => {
@@ -54,7 +68,40 @@ const BOOTSTRAP = `(() => {
 })();
 `;
 
-const STYLE = `html, body, #graphiql { height: 100%; margin: 0; }`;
+const THEMED = [
+  '.graphiql-container',
+  '.CodeMirror-info',
+  '.CodeMirror-lint-tooltip',
+  '.graphiql-dialog',
+  '.graphiql-tooltip',
+  '[data-radix-popper-content-wrapper]',
+];
+const themed = (theme: 'light' | 'dark') =>
+  THEMED.map((selector) => `body.graphiql-${theme} ${selector}`).join(',\n');
+
+/**
+ * Page layout, and GraphiQL's palette adjusted to WCAG AA: every text colour (syntax highlighting, links,
+ * secondary text) reaches 4.5:1 on the backgrounds it is drawn on, in both themes (GraphiQL's own light
+ * palette is 2.3–4.3:1 there), and links in the docs are underlined so they don't rely on colour alone.
+ */
+const STYLE = `html, body, #graphiql { height: 100%; margin: 0; }
+${themed('light')} {
+  --alpha-secondary: 0.9;
+  --color-primary: 320, 95%, 38%;
+  --color-secondary: 242, 51%, 56%;
+  --color-tertiary: 188, 100%, 25%;
+  --color-info: 208, 100%, 37%;
+  --color-success: 158, 60%, 27%;
+  --color-warning: 36, 100%, 28%;
+  --color-error: 13, 93%, 38%;
+}
+${themed('dark')} {
+  --alpha-secondary: 0.9;
+  --color-primary: 338, 100%, 77%;
+  --color-secondary: 243, 100%, 83%;
+  --color-error: 13, 100%, 72%;
+}
+.graphiql-doc-explorer a { text-decoration: underline; }`;
 
 export const loadPlaygroundAssets = (): Map<string, PlaygroundAsset> => {
   const assets = new Map<string, PlaygroundAsset>();

@@ -43,7 +43,10 @@ const saveLook = async (theme: string, scheme: 'light' | 'dark') => {
   await page.reload();
 };
 
-/** The page with GraphiQL in each look and at each size, with axe on everything outside the frame. */
+/**
+ * The page with GraphiQL in each look and at each size, with axe on everything outside the frame (the frame's
+ * own page is scanned by itself below).
+ */
 const captureWithPlayground = async (name: string) => {
   for (const viewport of ['desktop', 'phone'] as const) {
     await page.setViewportSize(VIEWPORTS[viewport]);
@@ -121,6 +124,41 @@ test('Develop → GraphQL frames GraphiQL on the current site in the admin’s l
   await expect(page.locator(FRAME)).toHaveAttribute('src', new RegExp(`${PLAYGROUND_PATH}\\?theme=dark$`));
   await expectGraphiql();
   await captureWithPlayground('graphql-01-playground');
+});
+
+test('GraphiQL itself passes axe in both looks, with a result and the docs open', async ({ browser }) => {
+  for (const { scheme } of LOOKS) {
+    // A fresh browser each time: GraphiQL keeps its tabs in local storage, and its tab bar (shown from the
+    // second tab on) is its own markup that nests buttons in tabs; one tab is what a first visit shows.
+    const context = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+    const own = await context.newPage();
+    try {
+      await signInAsOwner(own);
+      const query = encodeURIComponent(`{ ${ROUTE_KEY} { nodes { title summary } } }`);
+      await own.goto(new URL(`${PLAYGROUND_PATH}?theme=${scheme}&query=${query}`, ADMIN_URL).toString());
+      await expect(own.locator('.graphiql-container')).toBeVisible({ timeout: 20_000 });
+      // The CodeMirror editors are named by the bootstrap script.
+      for (const name of ['Query', 'Variables', 'Response']) {
+        await expect(own.getByRole('textbox', { name, exact: true })).toBeAttached();
+      }
+      await own.locator('.graphiql-execute-button').click();
+      await expect(own.locator('.graphiql-response')).toContainText('Hello GraphQL explorer', {
+        timeout: 20_000,
+      });
+      await own
+        .getByRole('button', { name: /Documentation Explorer/ })
+        .first()
+        .click();
+      await expect(own.locator('.graphiql-doc-explorer')).toBeVisible();
+      // CodeMirror scrolls its editors from its own textarea, which sits beside the scroll box, so axe's
+      // scrollable-region-focusable reports them; making the boxes tab stops would only add dead stops.
+      await captureRendered(own, `graphql-03-graphiql-${scheme}`, {
+        disableRules: ['scrollable-region-focusable'],
+      });
+    } finally {
+      await context.close();
+    }
+  }
 });
 
 test('the explorer’s GraphQL tab shows the REST request as a query and opens it in the playground', async () => {
