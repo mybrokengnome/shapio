@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **`shapio schema diff` shows what changed inside a value.** Display changes (a form layout's groups, for
+  example) were cut at 77 characters, with the two sides in different key orders, so the change itself was
+  usually hidden. The diff, `apply`, and conflict output now print one line per part that changed (such as
+  `~ display.groups[1].label: "Main" → "Details"`), in full and with sorted keys.
 
 ## [0.5.6] - 2026-10-11
 
