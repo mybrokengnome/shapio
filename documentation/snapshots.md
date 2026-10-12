@@ -57,12 +57,18 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
 }
 ```
 
-| Parameter | Meaning                                                            |
-| --------- | ------------------------------------------------------------------ |
-| `from`    | the snapshot your last build showed (required)                     |
-| `to`      | the snapshot to compare with; the current one when omitted         |
-| `limit`   | entries per page, 1–500 (default 100)                              |
-| `after`   | `nextCursor` from the previous page; pages are ordered by entry ID |
+| Parameter | Meaning                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `from`    | the snapshot your last build showed                                                                                                              |
+| `recent`  | instead of `from`: start where the diff covers the last N entries (1–100) you may read that went live or were updated and are still live at `to` |
+| `to`      | the snapshot to compare with; the current one when omitted                                                                                       |
+| `limit`   | entries per page, 1–500 (default 100)                                                                                                            |
+| `after`   | `nextCursor` from the previous page; pages are ordered by entry ID                                                                               |
+
+Pass exactly one of `from` and `recent` (both or neither is `400 INVALID_QUERY`). `recent` answers "what went
+live lately" without knowing a snapshot number: snapshots that changed only the schema, or only models you
+can't read, don't count, and the response's `from` says where the window started. It is REST only; GraphQL
+`_changes` takes `from`.
 
 An entry is listed with each locale whose live content differs between the two snapshots:
 

@@ -204,6 +204,36 @@ test('the Inbox is home: findings grouped by rule, one sentence each, with a fix
   await expect(owner).toHaveURL(new RegExp(`/content/fieldNote/${entries.harbour}(\\?[^#]*)?#cover$`));
 });
 
+test('snapshots that change only the schema never push publishes out of Recently published', async () => {
+  const models = await api.get<{ items: { definition: { id: string; apiKey: string } }[] }>('/models');
+  const modelId = models.items.find((model) => model.definition.apiKey === 'fieldNote')?.definition.id ?? '';
+  // Six shipped change sets that only relabel the type (back to its name at the end): six snapshots, no entries.
+  for (const label of [
+    'Field notes',
+    'Field note',
+    'Field notes',
+    'Field note',
+    'Field notes',
+    'Field note',
+  ]) {
+    const created = await api.send<{ id: string }>('POST', '/change-sets', { title: `Relabel: ${label}` });
+    const active = await api.get<{ definition: Record<string, unknown>; version: number }>(
+      `/models/${modelId}`,
+    );
+    await api.send('PUT', `/change-sets/${created.id}/schema/${modelId}`, {
+      category: 'model',
+      baseVersion: active.version,
+      definition: { ...active.definition, label },
+    });
+    const set = await api.get<{ version: number }>(`/change-sets/${created.id}`);
+    await api.send('POST', `/change-sets/${created.id}/ship`, { expectedVersion: set.version });
+  }
+  await owner.goto(ADMIN_URL);
+  const published = owner.getByRole('region', { name: 'Recently published' });
+  await expect(row(published, 'Harbour lights')).toContainText('Field note · went live');
+  await expect(published.getByText('Nothing published yet')).toHaveCount(0);
+});
+
 test('the palette finds entries by title and opens them', async () => {
   await owner.goto(ADMIN_URL);
   await expect(owner.getByRole('heading', { level: 1, name: `Welcome, ${OWNER.name}` })).toBeVisible();

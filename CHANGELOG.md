@@ -8,6 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **Inbox "Recently published" keeps the latest publishes.** It used to look at the last five snapshots only,
+  so a few schema changes, or publishes in types you can't read, emptied it and it said "Nothing published
+  yet". It now lists the latest entries you may read that went live. `GET /api/snapshots/changes` takes
+  `recent=N` in place of `from` for this.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 

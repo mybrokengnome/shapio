@@ -91,6 +91,7 @@ export const queryKeys = {
       list: (cursor: string | undefined) => ['develop', 'snapshots', 'list', cursor ?? null] as const,
       snapshot: (seq: number) => ['develop', 'snapshots', 'snapshot', seq] as const,
       changes: (from: number, to: number) => ['develop', 'snapshots', 'changes', from, to] as const,
+      recentChanges: (recent: number, to: number) => ['develop', 'snapshots', 'recent', recent, to] as const,
       ledger: ['develop', 'snapshots', 'ledger'] as const,
       /** One place read through delivery as it was at `seq`, in one locale. */
       place: (seq: number, routeKey: string, locale: string) =>

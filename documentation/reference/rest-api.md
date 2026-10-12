@@ -172,7 +172,8 @@ Entries whose live content changed between two snapshots, by locale.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
-| `from` (required) | query | integer |  |
+| `from` | query | integer |  |
+| `recent` | query | integer |  |
 | `to` | query | integer |  |
 | `after` | query | string (uuid) |  |
 | `limit` | query | integer |  |

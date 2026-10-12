@@ -1,8 +1,15 @@
 /** Publication snapshots for delivery callers (`/api/snapshots`, apps/api/src/routes/snapshots). */
 export type SnapshotChangeKind = 'published' | 'updated' | 'unpublished';
 
+/** Pass exactly one of `from` and `recent`. */
 export type SnapshotChangesQuery = {
-  from: number;
+  /** The snapshot to compare from (your last build's). */
+  from?: number;
+  /**
+   * Instead of `from`: start where the diff covers the last N entries (1–100) you may read that went live or
+   * were updated and are still live; the page's `from` says where that was.
+   */
+  recent?: number;
   /** Defaults to the current snapshot. */
   to?: number;
   /** `nextCursor` of the previous page. */

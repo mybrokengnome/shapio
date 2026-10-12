@@ -38,6 +38,19 @@ export const useSnapshotChanges = (from: number, to: number, enabled = true) =>
     meta: silent,
   });
 
+/**
+ * The diff up to `to` that covers the last `recent` entries the session may read that went live or were
+ * updated, however many schema-only snapshots came after them (the server finds where it starts).
+ */
+export const useRecentSnapshotChanges = (recent: number, to: number, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.develop.snapshots.recentChanges(recent, to),
+    queryFn: () => apiClient.snapshots.changes({ recent, to, limit: SNAPSHOT_DIFF_LIMIT }),
+    enabled: enabled && to > 0,
+    placeholderData: keepPreviousData,
+    meta: silent,
+  });
+
 /** Creates an open restore change set (nothing goes live until it ships). */
 export const useRestoreSnapshot = () => {
   const queryClient = useQueryClient();
