@@ -25,6 +25,8 @@ export type ApiTokenView = {
   /** The token's site; null for a network admin token (its role applies on every site). */
   siteId: string | null;
   createdBy: string | null;
+  /** The creator's account is disabled: the token is refused until the account is enabled again. */
+  creatorDisabled: boolean;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
@@ -43,6 +45,7 @@ const toApiTokenView = (row: ApiTokenListRow): ApiTokenView => ({
   scope: scopeOf(row.role_kind),
   siteId: row.site_id,
   createdBy: row.created_by,
+  creatorDisabled: row.creator_status === 'disabled',
   expiresAt: row.expires_at,
   lastUsedAt: row.last_used_at,
   revokedAt: row.revoked_at,
@@ -111,6 +114,21 @@ const isNetworkToken = async (
 };
 
 /**
+ * The admin a new token answers to: the signed-in admin, or for a token created with another token, that
+ * token's creator, so disabling or deleting the person reaches every token made on their behalf.
+ */
+const creatorOf = async (context: SiteActorContext, trx: Transaction<DB>): Promise<string | null> => {
+  switch (context.actor.kind) {
+    case 'admin':
+      return context.actor.adminUserId;
+    case 'token':
+      return apiTokensRepository.findCreatorId(context.actor.tokenId, trx);
+    default:
+      return null;
+  }
+};
+
+/**
  * Creates a token bound to one role. The value is returned once and stored only as a hash. The owner
  * role cannot be bound to a token: owner powers stay with people.
  */
@@ -140,7 +158,7 @@ export const createApiToken = async (
         token_prefix: token.slice(0, API_TOKEN_DISPLAY_LENGTH),
         role_id: role.id,
         site_id: network ? null : context.site.id,
-        created_by: context.actor.kind === 'admin' ? context.actor.adminUserId : null,
+        created_by: await creatorOf(context, trx),
         expires_at: input.expiresAt,
       },
       trx,
@@ -189,7 +207,7 @@ type ResolveTokenOptions = {
 export const isTokenExpired = (expiresAt: Date | null, now: Date): boolean =>
   expiresAt !== null && expiresAt.getTime() <= now.getTime();
 
-/** The principal for a bearer API token, or undefined when unknown, revoked or expired. */
+/** The principal for a bearer API token, or undefined when unknown, revoked, expired or its creator is disabled. */
 export const resolveApiToken = async (
   value: string,
   now = new Date(),

@@ -47,6 +47,13 @@ export const AdminUserSchema = Type.Object({
   lastLoginAt: NullableDateTimeSchema,
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
+  /** Usable API tokens this admin created: refused while the account is disabled, revoked when it is deleted. */
+  apiTokens: Type.Array(
+    Type.Object(
+      { id: UuidSchema, name: Type.String(), siteId: Type.Union([UuidSchema, Type.Null()]) },
+      { additionalProperties: false },
+    ),
+  ),
 });
 
 /** Returned whenever a session starts: the user, and the CSRF token for its mutations. */

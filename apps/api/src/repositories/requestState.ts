@@ -67,8 +67,11 @@ export type DeliveryStateRow = RequestStateRow & {
   release: string | null;
   /** The stored delivery descriptor (JSON text); null before a server of this release started. */
   descriptor: string | null;
-  /** The token's revocation and expiry; null when no token was asked about or the token no longer exists. */
-  token: { revokedAt: Date | null; expiresAt: Date | null } | null;
+  /**
+   * The token's revocation, expiry and whether its creator is disabled; null when no token was asked about or
+   * the token no longer exists.
+   */
+  token: { revokedAt: Date | null; expiresAt: Date | null; creatorDisabled: boolean } | null;
 };
 
 /**
@@ -96,10 +99,12 @@ export const readForDelivery = async (
     .$if(tokenId !== undefined, (query) =>
       query
         .leftJoin('api_tokens', (join) => join.on('api_tokens.id', '=', tokenId ?? ''))
+        .leftJoin('admin_users', 'admin_users.id', 'api_tokens.created_by')
         .select([
           'api_tokens.id as token_id',
           'api_tokens.revoked_at as token_revoked_at',
           'api_tokens.expires_at as token_expires_at',
+          'admin_users.status as token_creator_status',
         ]),
     )
     .executeTakeFirstOrThrow();
@@ -112,6 +117,10 @@ export const readForDelivery = async (
     token:
       row.token_id === undefined || row.token_id === null
         ? null
-        : { revokedAt: row.token_revoked_at ?? null, expiresAt: row.token_expires_at ?? null },
+        : {
+            revokedAt: row.token_revoked_at ?? null,
+            expiresAt: row.token_expires_at ?? null,
+            creatorDisabled: row.token_creator_status === 'disabled',
+          },
   };
 };

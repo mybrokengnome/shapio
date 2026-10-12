@@ -418,4 +418,117 @@ describe('roles, admin users, API tokens and the audit log', () => {
     expect(orphaned.length).toBeGreaterThan(0);
     expect(orphaned.every((i) => i.actorName === null && i.actorEmail === null)).toBe(true);
   });
+
+  describe("an admin's API tokens follow their account", () => {
+    type TokenBody = { id: string; name: string; creatorDisabled: boolean; revokedAt: string | null };
+    type UserBody = { id: string; apiTokens: { id: string; name: string; siteId: string | null }[] };
+    type AuditItem = { action: string; targetId: string | null; metadata: Record<string, unknown> };
+
+    const asToken = (token: string) =>
+      testApp.app.inject({
+        method: 'GET',
+        url: '/api/admin/roles',
+        headers: { authorization: `Bearer ${token}` },
+      });
+    const createToken = async (headers: Record<string, string>, payload: object) => {
+      const response = await testApp.app.inject({
+        method: 'POST',
+        url: '/api/admin/tokens',
+        headers,
+        payload,
+      });
+      expect(response.statusCode).toBe(201);
+      return response.json<{ token: string; apiToken: TokenBody }>();
+    };
+    const listedToken = async (id: string) =>
+      (await api('GET', '/api/admin/tokens', ownerSession)).json<TokenBody[]>().find((t) => t.id === id);
+    const listedUser = async (id: string) =>
+      (await api('GET', '/api/admin/users', ownerSession)).json<UserBody[]>().find((u) => u.id === id);
+    const audit = async (query: string) =>
+      (await api('GET', `/api/admin/audit?limit=200&${query}`, ownerSession)).json<{ items: AuditItem[] }>()
+        .items;
+
+    it('refuses them while the creator is disabled, revokes them on deletion and leaves others alone', async () => {
+      const eve = await createAdmin(testApp.db, { roleKeys: ['admin'] });
+      const eveSession = await login(testApp.app, eve);
+      const cli = await createToken(eveSession.headers, {
+        name: 'Eve CLI',
+        roleId: roleIdByKey.get('admin'),
+        network: true,
+      });
+      // A token made with Eve's token answers to Eve as well.
+      const build = await createToken(
+        { authorization: `Bearer ${cli.token}` },
+        { name: 'Production build', roleId: roleIdByKey.get('read-only') },
+      );
+      const createdBy = await testApp.db
+        .selectFrom('api_tokens')
+        .select(['id', 'created_by'])
+        .where('id', 'in', [cli.apiToken.id, build.apiToken.id])
+        .execute();
+      expect(createdBy).toHaveLength(2);
+      expect(createdBy.every((row) => row.created_by === eve.id)).toBe(true);
+      // A token with no recorded creator (an admin deleted before tokens followed their account).
+      const orphan = await createToken(ownerSession.headers, {
+        name: 'Orphan',
+        roleId: roleIdByKey.get('read-only'),
+      });
+      await testApp.db
+        .updateTable('api_tokens')
+        .set({ created_by: null })
+        .where('id', '=', orphan.apiToken.id)
+        .execute();
+
+      expect((await asToken(cli.token)).statusCode).toBe(200);
+      expect((await asToken(build.token)).statusCode).toBe(200);
+      expect((await listedUser(eve.id))?.apiTokens.map((t) => t.name).sort()).toEqual([
+        'Eve CLI',
+        'Production build',
+      ]);
+
+      // Disabled: refused like a revoked token, shown as paused, nothing revoked.
+      const disable = await api('PATCH', `/api/admin/users/${eve.id}`, ownerSession, { status: 'disabled' });
+      expect(disable.statusCode).toBe(200);
+      for (const token of [cli.token, build.token]) {
+        const refused = await asToken(token);
+        expect(refused.statusCode).toBe(401);
+        expect(refused.json()).toMatchObject({ error: { code: 'INVALID_TOKEN' } });
+      }
+      expect(await listedToken(build.apiToken.id)).toMatchObject({ creatorDisabled: true, revokedAt: null });
+      expect((await asToken(orphan.token)).statusCode).toBe(200);
+
+      // Enabled again: the same tokens work.
+      await api('PATCH', `/api/admin/users/${eve.id}`, ownerSession, { status: 'active' });
+      expect((await asToken(cli.token)).statusCode).toBe(200);
+      expect(await listedToken(build.apiToken.id)).toMatchObject({ creatorDisabled: false });
+
+      // Deleted: revoked for good, and the audit log keeps whose they were.
+      expect((await api('DELETE', `/api/admin/users/${eve.id}`, ownerSession)).statusCode).toBe(204);
+      for (const token of [cli.token, build.token]) {
+        expect((await asToken(token)).statusCode).toBe(401);
+      }
+      const rows = await testApp.db
+        .selectFrom('api_tokens')
+        .select(['created_by', 'revoked_at'])
+        .where('id', 'in', [cli.apiToken.id, build.apiToken.id])
+        .execute();
+      expect(rows.every((row) => row.created_by === null && row.revoked_at !== null)).toBe(true);
+      const [deletion] = await audit(`action=admin_user.delete&targetId=${eve.id}`);
+      expect(deletion?.metadata).toEqual({
+        email: eve.email,
+        revokedTokens: expect.arrayContaining([
+          { id: cli.apiToken.id, name: 'Eve CLI' },
+          { id: build.apiToken.id, name: 'Production build' },
+        ]) as unknown,
+      });
+      expect(deletion?.metadata.revokedTokens).toHaveLength(2);
+      const [revocation] = await audit(`action=api_token.revoke&targetId=${build.apiToken.id}`);
+      expect(revocation?.metadata).toEqual({
+        name: 'Production build',
+        reason: 'creator_deleted',
+        createdBy: { id: eve.id, email: eve.email },
+      });
+      expect((await asToken(orphan.token)).statusCode).toBe(200);
+    });
+  });
 });

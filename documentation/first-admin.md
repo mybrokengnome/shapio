@@ -123,6 +123,9 @@ Settings → API tokens creates a token bound to one role. It is shown once; Sha
 Tokens belong to the site they are created on. An admin with `users.manage` can instead create a **network**
 admin token, which works on every site ([Sites](sites.md#api-tokens)).
 
+Tokens stop working while the admin who created them is disabled, and are revoked when that admin is deleted;
+Network → Users names them before you confirm, so you can replace a site's delivery token first.
+
 Sessions, rate limits and the audit log: [Security](security.md).
 
 ## Appearance

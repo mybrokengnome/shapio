@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA_PROCESS_JOB } from '../src/constants/media.js';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import { concat } from '../src/db/sql/text.js';
+import { hashToken } from '../src/helpers/tokens.js';
+import { createAdmin } from './helpers/adminIdentity.js';
 import { jsonField, jsonHasKey } from './helpers/dialect.js';
 import { freePort } from './helpers/freePort.js';
 import { createPng, type MediaAssetBody, type UploadGrantBody } from './helpers/media.js';
@@ -227,6 +229,28 @@ describe('two instances on one database', { timeout: 120_000 }, () => {
     expect(tokenId).not.toBe('');
     expectOk(await call(a, `/api/admin/tokens/${tokenId}`, { method: 'DELETE' }), 204);
     expect((await read()).status).toBe(401);
+  });
+
+  it("disabling or deleting an admin on A refuses their API tokens on B's very next request", async () => {
+    const eve = await createAdmin(database.current.db, { roleKeys: ['admin'] });
+    const eveToken = await createRoleToken(database.current.db, 'read-only');
+    await database.current.db
+      .updateTable('api_tokens')
+      .set({ created_by: eve.id })
+      .where('token_hash', '=', hashToken(eveToken))
+      .execute();
+    const readOn = (server: SpawnedServer) => call(server, '/api/admin/roles', {}, eveToken);
+    expect((await readOn(b)).status).toBe(200);
+
+    expectOk(await patch(a, `/api/admin/users/${eve.id}`, { status: 'disabled' }), 200);
+    expect((await readOn(b)).status).toBe(401);
+    expect((await readOn(a)).status).toBe(401);
+
+    expectOk(await patch(a, `/api/admin/users/${eve.id}`, { status: 'active' }), 200);
+    expect((await readOn(b)).status).toBe(200);
+
+    expectOk(await call(a, `/api/admin/users/${eve.id}`, { method: 'DELETE' }), 204);
+    expect((await readOn(b)).status).toBe(401);
   });
 
   it('a schema change on A regenerates GraphQL on B for its next request', async () => {

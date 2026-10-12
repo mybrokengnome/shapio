@@ -140,7 +140,9 @@ test('settings → profile, with dirty-state protection', async () => {
   await expect(page.getByText('Profile saved.')).toBeVisible();
   await page.getByLabel('Name').fill(OWNER.name);
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByText('Profile saved.').first()).toBeVisible();
+  // The first save's toast may still be showing: wait for this save to land (the form is clean again), or the
+  // next test's navigation meets the unsaved-changes prompt.
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled();
 });
 
 test('settings → sessions lists this device', async () => {
