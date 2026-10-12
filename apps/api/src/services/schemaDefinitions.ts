@@ -203,10 +203,10 @@ export const prepareChange = async (
 };
 
 export const assertAcknowledged = (plans: readonly ChangePlan[], ack: Acknowledgement) => {
-  const needsBreaking = plans.some((plan) => plan.summary.breaking) && !ack.acknowledgeBreaking;
-  const needsDestructive = plans.some((plan) => plan.summary.destructive) && !ack.acknowledgeDestructive;
-  if (needsBreaking || needsDestructive) {
-    throw acknowledgementRequired(plans.length === 1 ? plans[0] : plans);
+  const breaking = plans.some((plan) => plan.summary.breaking);
+  const destructive = plans.some((plan) => plan.summary.destructive);
+  if ((breaking && !ack.acknowledgeBreaking) || (destructive && !ack.acknowledgeDestructive)) {
+    throw acknowledgementRequired(plans.length === 1 ? plans[0] : plans, { breaking, destructive });
   }
 };
 

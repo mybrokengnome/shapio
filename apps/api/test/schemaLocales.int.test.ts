@@ -72,6 +72,8 @@ describe('locales API', () => {
     expect(refused.json()).toMatchObject({
       error: {
         code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED',
+        message:
+          'This change breaks the API contract. Review the plan and resend with acknowledgeBreaking set.',
         details: { plan: { change: { category: 'contract', breaking: true } } },
       },
     });
@@ -86,6 +88,13 @@ describe('locales API', () => {
     const refused = await admin.delete('/api/admin/locales/en');
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({ error: { details: { plan: { impact: { affectedHeads: 3 } } } } });
+    // The message names only what this route takes: acknowledgeBreaking would be refused here (400).
+    const { message } = refused.json<{ error: { message: string } }>().error;
+    expect(message).toBe(
+      'This change destroys data. Review the plan and resend with acknowledgeDestructive set.',
+    );
+    expect(message).not.toContain('acknowledgeBreaking');
+    expect((await admin.delete('/api/admin/locales/en?acknowledgeBreaking=true')).statusCode).toBe(400);
     const deleted = await admin.delete('/api/admin/locales/en?acknowledgeDestructive=true');
     expect(deleted.json()).toEqual({ code: 'en', affectedHeads: 3, deletedEntries: 0, movedEntries: 0 });
     expect(await list()).toEqual([{ code: 'fr', label: 'Français', isDefault: true, fallbacks: [] }]);

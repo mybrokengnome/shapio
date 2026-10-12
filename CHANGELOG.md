@@ -172,6 +172,10 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
 - **REST drafts mode reports `meta.snapshot: null`.** A read with `publicationState=draft` (and
   `@shapio/local` with `drafts: true`) reported a snapshot number as if the drafts could be pinned; it now
   reports `null`, as GraphQL already did.
+- **Acknowledgement errors name only the parameters the change needs.** Deleting a locale with content said
+  to resend with `acknowledgeBreaking`, which that route refuses; the message now names
+  `acknowledgeDestructive` there, `acknowledgeBreaking` for a new default locale, and both only when a
+  model change needs both.
 
 ## [0.5.6] - 2026-10-11
 

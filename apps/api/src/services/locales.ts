@@ -139,10 +139,13 @@ export const setDefaultLocale = async (
     return { code, changed: false };
   }
   if (!acknowledgeBreaking) {
-    throw acknowledgementRequired({
-      change: classifyLocaleChange('locale.defaultChanged', code),
-      impact: { previousDefault: context.snapshot.defaultLocale },
-    });
+    throw acknowledgementRequired(
+      {
+        change: classifyLocaleChange('locale.defaultChanged', code),
+        impact: { previousDefault: context.snapshot.defaultLocale },
+      },
+      { breaking: true, destructive: false },
+    );
   }
   await commitLocaleChange(
     context,
@@ -173,10 +176,10 @@ export const deleteLocale = async (
   const impact = await context.ports.impact.countLocaleRemoval(code);
   // Moving non-localized entries to the default locale loses nothing; purged heads need acknowledging.
   if (impact.affectedHeads > 0 && !acknowledgeDestructive) {
-    throw acknowledgementRequired({
-      change: classifyLocaleChange('locale.removed', code),
-      impact,
-    });
+    throw acknowledgementRequired(
+      { change: classifyLocaleChange('locale.removed', code), impact },
+      { breaking: false, destructive: true },
+    );
   }
   await commitLocaleChange(
     context,
