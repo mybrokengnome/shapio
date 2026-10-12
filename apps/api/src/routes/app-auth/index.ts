@@ -26,7 +26,7 @@ export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: schemas.registerSchema,
       config: { audit: { action: 'app_user.register' }, ...PUBLIC_CREDENTIAL },
-      ...createPerEmailRateLimit(app, 'app-register'),
+      ...createPerEmailRateLimit('app-register'),
     },
     handlers.register,
   );
@@ -39,7 +39,7 @@ export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
         audit: { exempt: 'end-user sign-ins are high volume; failures are rate-limited per IP and email' },
         ...PUBLIC_CREDENTIAL,
       },
-      ...createPerEmailRateLimit(app, 'app-login', {
+      ...createPerEmailRateLimit('app-login', {
         counts: (statusCode) => statusCode === 401,
         perClient: true,
       }),
@@ -123,7 +123,7 @@ export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
         audit: { exempt: 'sends an email; the confirmation itself is audited' },
         ...PUBLIC_CREDENTIAL,
       },
-      ...createPerEmailRateLimit(app, 'app-confirm-resend'),
+      ...createPerEmailRateLimit('app-confirm-resend'),
     },
     handlers.resendConfirmation,
   );
@@ -133,7 +133,7 @@ export const appAuthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: schemas.emailRequestSchema,
       config: { audit: { action: 'app_user.password_reset_request' }, ...PUBLIC_CREDENTIAL },
-      ...createPerEmailRateLimit(app, 'app-password-reset'),
+      ...createPerEmailRateLimit('app-password-reset'),
     },
     handlers.requestPasswordReset,
   );

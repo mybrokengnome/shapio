@@ -13,6 +13,7 @@ import { expectStatus } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { createMemoryEmailTransport, lastTokenSentTo } from './helpers/memoryEmailTransport.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
+import { startEach } from './helpers/startEach.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
 /** App-user accounts and tokens through /api/app-auth (package I, ADR 0005). */
@@ -93,6 +94,22 @@ describe('app-user authentication', () => {
     expect(statuses.at(-1)).toBe(429);
     // The owner, from another address, can still sign in.
     expectStatus(await loginAppUser(testApp.app, user.email), 200);
+  });
+
+  it('holds the per-address sign-in limit when the attempts arrive in parallel', async () => {
+    const { user } = await signUp(testApp.app);
+    const attackerIp = nextTestIp();
+    const burst = await startEach(25, () =>
+      testApp.app.inject({
+        method: 'POST',
+        url: '/api/app-auth/login',
+        remoteAddress: attackerIp,
+        payload: { email: user.email, password: 'wrong password' },
+      }),
+    );
+    const codes = burst.map((response) => response.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(20);
   });
 
   it('rotates refresh tokens and revokes the family when an old one is reused (audited)', async () => {
@@ -359,6 +376,33 @@ describe('app-user email confirmation and password reset', () => {
     expect(accounts).toHaveLength(1);
     expectStatus(await loginAppUser(testApp.app, email), 200);
     expect((await loginAppUser(testApp.app, email, 'another pw 123')).statusCode).toBe(401);
+  });
+
+  it('sends at most 5 reset emails to one address, however many requests arrive at once', async () => {
+    const email = 'barbara@example.com';
+    expectStatus(await registerAppUser(testApp.app, { email }), 202);
+    await deliverEmails();
+    expectStatus(
+      await post('/api/app-auth/confirm-email', { token: lastTokenSentTo(transport, email) }),
+      204,
+    );
+    const ip = nextTestIp();
+    const burst = await startEach(20, () =>
+      testApp.app.inject({
+        method: 'POST',
+        url: '/api/app-auth/password-reset',
+        remoteAddress: ip,
+        payload: { email },
+      }),
+    );
+    const codes = burst.map((response) => response.statusCode);
+    expect(codes.filter((code) => code === 202)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(15);
+    await deliverEmails();
+    const resets = transport.sent.filter(
+      (message) => message.to === email && message.text.includes('https://site.example.com/reset#token='),
+    );
+    expect(resets).toHaveLength(5);
   });
 
   it('resets a password with a single-use link and revokes every sign-in', async () => {
