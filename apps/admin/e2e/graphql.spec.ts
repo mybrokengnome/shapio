@@ -122,10 +122,14 @@ test('Develop → GraphQL frames GraphiQL on the current site in the admin’s l
   await captureWithPlayground('graphql-01-playground');
 });
 
-test('GraphiQL itself passes axe in both looks, with a result and the docs open', async () => {
+test('GraphiQL itself passes axe in both looks, with a result and the docs open', async ({ browser }) => {
   for (const { scheme } of LOOKS) {
-    const own = await page.context().newPage();
+    // A fresh browser each time: GraphiQL keeps its tabs in local storage, and its tab bar (shown from the
+    // second tab on) is its own markup that nests buttons in tabs; one tab is what a first visit shows.
+    const context = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+    const own = await context.newPage();
     try {
+      await signInAsOwner(own);
       const query = encodeURIComponent(`{ ${ROUTE_KEY} { nodes { title summary } } }`);
       await own.goto(new URL(`${PLAYGROUND_PATH}?theme=${scheme}&query=${query}`, ADMIN_URL).toString());
       await expect(own.locator('.graphiql-container')).toBeVisible({ timeout: 20_000 });
@@ -148,7 +152,7 @@ test('GraphiQL itself passes axe in both looks, with a result and the docs open'
         disableRules: ['scrollable-region-focusable'],
       });
     } finally {
-      await own.close();
+      await context.close();
     }
   }
 });
