@@ -170,6 +170,111 @@ describe('type changes that drop values', () => {
     ).toBe(204);
   });
 
+  describe('a multi-value enum (stored as a list of strings)', () => {
+    const VALUES = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B' },
+    ];
+    const tagged = async (apiKey: string) => {
+      const definition = await model(apiKey, [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        { apiKey: 'tags', label: 'Tags', type: 'enum', settings: { multiple: true, values: VALUES } },
+      ]);
+      const one = await create(apiKey, { title: 'One', tags: ['a', 'b'] });
+      const two = await create(apiKey, { title: 'Two', tags: ['b'] });
+      await create(apiKey, { title: 'Empty' });
+      await publish(apiKey, one.id);
+      await publish(apiKey, two.id);
+      const token = await createDeliveryToken(database.current.db, [{ modelId: definition.definition.id }]);
+      const deliver = async (url: string) =>
+        expectStatus(
+          await testApp.app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } }),
+          200,
+        ).json<Delivered>();
+      return { definition, one, two, deliver };
+    };
+
+    it('→ short text drops the values (destructive, counted), never just hides them', async () => {
+      const { definition, one, deliver } = await tagged('note');
+      const tagsId = fieldIdOf(definition, 'tags');
+      const before = await deliver(`/api/content/notes/${one.id}`);
+      expect(before.data.tags).toEqual(['a', 'b']);
+
+      const fields = retype(definition, 'tags', { type: 'string' });
+      const { plan, impact } = await preview(definition, fields);
+      expect(plan.summary).toMatchObject({ destructive: true, supported: true });
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        destructive: true,
+        dropsValues: true,
+        prerequisites: ['convert', 'validateValues'],
+      });
+      expect(impact.steps.find((step) => step.kind === 'convert')).toMatchObject({ droppedEntries: 2 });
+      expect((await change(definition, fields, false)).json()).toMatchObject({
+        error: { code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED' },
+      });
+      expect(await shipped(await change(definition, fields))).toMatchObject({ status: 'activated' });
+
+      // Gone from storage, not left behind under a type that can't read it.
+      for (const head of await headsOf(definition.definition.id)) {
+        expect(head.data).not.toHaveProperty(tagsId);
+      }
+      expect((await deliver(`/api/content/notes/${one.id}`)).data.tags).toBeNull();
+      const past = await deliver(`/api/content/notes/${one.id}?snapshot=${before.meta.snapshot}`);
+      expect(past.data).toMatchObject({ title: 'One', tags: null });
+
+      // Back to a multi-value enum: live entries stay empty (the heads hold nothing). Old snapshots read
+      // their revisions through the current schema, so one from before the drop shows the lists again: the
+      // old revisions keep them, as for every dropped type change.
+      const current = (await admin.get(`/api/admin/models/${definition.definition.id}`)).json<ModelBody>();
+      const reverted = retype(current, 'tags', {
+        type: 'enum',
+        settings: { multiple: true, values: VALUES },
+      });
+      expect(await shipped(await change(current, reverted))).toMatchObject({ status: 'activated' });
+      expect((await deliver(`/api/content/notes/${one.id}`)).data.tags).toBeNull();
+      const pastAgain = await deliver(`/api/content/notes/${one.id}?snapshot=${before.meta.snapshot}`);
+      expect(pastAgain.data.tags).toEqual(['a', 'b']);
+    });
+
+    it('→ rich text is a drop the job carries out, not a conversion that fails', async () => {
+      const { definition, one, deliver } = await tagged('memo');
+      const fields = retype(definition, 'tags', { type: 'richtext', settings: { formatVersion: 1 } });
+      const { plan } = await preview(definition, fields);
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        dropsValues: true,
+      });
+      expect(await shipped(await change(definition, fields))).toMatchObject({ status: 'activated' });
+      expect((await deliver(`/api/content/memos/${one.id}`)).data.tags).toBeNull();
+    });
+
+    it('text → multi-value enum makes each value a one-value list, checked against the choices', async () => {
+      const mood = await model('mood', [{ apiKey: 'tone', label: 'Tone', type: 'text' }]);
+      const kept = await create('mood', { tone: 'a' });
+      const fields = retype(mood, 'tone', { type: 'enum', settings: { multiple: true, values: VALUES } });
+      const { plan } = await preview(mood, fields);
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        destructive: false,
+        dropsValues: false,
+        prerequisites: ['convert', 'validateValues'],
+      });
+      expect(await shipped(await change(mood, fields, false))).toMatchObject({ status: 'activated' });
+      expect((await admin.get(`/api/admin/content/mood/${kept.id}`)).json<EntryBody>().data).toEqual({
+        tone: ['a'],
+      });
+
+      // A value that isn't one of the choices fails the check, with the count, instead of shipping.
+      const current = (await admin.get(`/api/admin/models/${mood.definition.id}`)).json<ModelBody>();
+      const back = retype(current, 'tone', { type: 'text' });
+      expect(await shipped(await change(current, back))).toMatchObject({ status: 'activated' });
+      const text = (await admin.get(`/api/admin/models/${mood.definition.id}`)).json<ModelBody>();
+      await create('mood', { tone: 'loud' });
+      const again = retype(text, 'tone', { type: 'enum', settings: { multiple: true, values: VALUES } });
+      const failed = await shipped(await change(text, again, false));
+      expect(failed).toMatchObject({ status: 'failed', error: { invalidCount: 1 } });
+      expect(failed.error?.step).toMatch(/^validateValues:/);
+    });
+  });
+
   it('a required field: refused with the count unless it has a default, which is backfilled', async () => {
     const poster = await model('poster', [
       { apiKey: 'title', label: 'Title', type: 'string' },

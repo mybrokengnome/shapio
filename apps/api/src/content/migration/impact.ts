@@ -1,4 +1,4 @@
-import { typeChangeDropsValues, type DataType } from '@shapio/schema';
+import { changeDropsValues } from '@shapio/schema';
 import type { Database } from '../../db/index.js';
 import * as entryHeadsRepository from '../../repositories/entryHeads.js';
 import type { StepImpact } from '../../schema/planner/contentPorts.js';
@@ -22,8 +22,7 @@ const droppingFieldId = (step: ContentStep): string | undefined => {
   if (step.kind !== 'convert' || step.change.kind !== 'field.type' || !isModelLevel(step)) {
     return undefined;
   }
-  const { change } = step;
-  return typeChangeDropsValues(change.from as DataType, change.to as DataType) ? change.fieldId : undefined;
+  return changeDropsValues(step.change) ? step.change.fieldId : undefined;
 };
 
 /** A required field whose values the plan drops with no default to backfill: every complete head fails. */

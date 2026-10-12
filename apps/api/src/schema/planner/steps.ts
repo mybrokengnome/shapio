@@ -1,4 +1,4 @@
-import type { JsonValue, SchemaChange, SchemaDefinition, DataType } from '@shapio/schema';
+import type { JsonValue, PlannedChange, SchemaDefinition, DataType } from '@shapio/schema';
 
 /**
  * Where a definition's values live inside entries: for a model, its own heads at the root; for a
@@ -29,7 +29,7 @@ export type ContentStep =
        */
       rebuild?: boolean;
     }
-  | { kind: 'convert'; ownerId: string; change: SchemaChange; locations: ValueLocation[] };
+  | { kind: 'convert'; ownerId: string; change: PlannedChange; locations: ValueLocation[] };
 
 export type IndexStep = {
   kind: 'buildIndex';

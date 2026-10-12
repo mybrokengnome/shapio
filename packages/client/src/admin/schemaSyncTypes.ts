@@ -1,7 +1,7 @@
 import type {
   ExportedDefinition,
   LockFile,
-  SchemaChange,
+  PlannedChange,
   SchemaDefinition,
   SyncDecision,
 } from '@shapio/schema';
@@ -24,7 +24,8 @@ export type SchemaSyncResult = {
   apiKey: string;
   kind: SchemaDefinition['kind'];
   decision: SyncDecision;
-  changes: SchemaChange[];
+  /** Each classified by the server; older servers send no `dropsValues`. */
+  changes: PlannedChange[];
   outcome?: 'activated' | 'pending' | 'skipped';
   version?: number | null;
   changeId?: string;

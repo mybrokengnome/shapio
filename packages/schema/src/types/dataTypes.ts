@@ -80,6 +80,7 @@ export const REFERENCE_DATA_TYPES: ReadonlySet<DataType> = new Set<DataType>([
  */
 export type StorageFamily =
   | 'jsonString'
+  | 'jsonStringArray'
   | 'jsonNumber'
   | 'numericString'
   | 'boolean'
@@ -114,3 +115,15 @@ export const STORAGE_FAMILY: Readonly<Record<DataType, StorageFamily>> = {
   component: 'component',
   dynamiczone: 'dynamiczone',
 };
+
+/** The parts of a field that decide how its values are stored. */
+export type StoredFieldShape = { type: DataType; settings?: object };
+
+/**
+ * The storage family of a field's values, from its type and settings: a multi-value enum holds an array of
+ * strings, not a string. Use this rather than `STORAGE_FAMILY[type]` wherever a field's settings are known.
+ */
+export const storageFamilyOf = (field: StoredFieldShape): StorageFamily =>
+  field.type === 'enum' && (field.settings as { multiple?: unknown } | undefined)?.multiple === true
+    ? 'jsonStringArray'
+    : STORAGE_FAMILY[field.type];

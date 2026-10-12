@@ -740,18 +740,118 @@ describe('classifyChange: code fields', () => {
   });
 });
 
+describe('classifyChange: multi-value enums (stored as lists of strings)', () => {
+  const VALUES = [
+    { value: 'a', label: 'A' },
+    { value: 'b', label: 'B' },
+  ];
+  const tags = (multiple: boolean, overrides: Partial<FieldInput> = {}) =>
+    base({ type: 'enum', settings: settings({ values: VALUES, multiple }), ...overrides });
+  const typeChangeOf = (before: ModelDefinition, after: ModelDefinition) => {
+    const change = classify(before, after).find((found) => found.kind === 'field.type');
+    expect(change).toBeDefined();
+    return change as ClassifiedChange;
+  };
+  const retype = (
+    before: ModelDefinition,
+    to: FieldInput['type'],
+    toSettings: Record<string, unknown> = {},
+  ) =>
+    typeChangeOf(
+      before,
+      editField(before, (f) => ({ ...f, type: to, settings: toSettings }) as FieldDefinition),
+    );
+
+  it('to any text type, rich text or JSON drops the values (a list is not a string)', () => {
+    const multi = tags(true);
+    expectClass(retype(multi, 'string'), DROPS);
+    expectClass(retype(multi, 'text'), DROPS);
+    expectClass(retype(multi, 'code', { language: 'plain' }), DROPS);
+    expectClass(retype(multi, 'richtext', { formatVersion: 1 }), DROPS);
+    expectClass(retype(multi, 'json'), DROPS);
+    expectClass(retype(multi, 'number'), DROPS);
+  });
+
+  it('a required multi-value enum that drops its values checks the required rule', () => {
+    expectClass(retype(tags(true, { required: true }), 'string'), {
+      ...DROPS,
+      prerequisites: ['convert', 'validateValues', 'validateRequired'],
+    });
+  });
+
+  it('a single-value enum to text keeps its stored string, as before', () => {
+    expectClass(retype(tags(false), 'string'), { category: 'additive', breaking: true });
+  });
+
+  it('text to a multi-value enum makes each string a one-value list and checks it against the values', () => {
+    const text = base({ type: 'text' });
+    expectClass(retype(text, 'enum', { values: VALUES, multiple: true }), {
+      category: 'conversion',
+      breaking: true,
+      prerequisites: ['convert', 'validateValues'],
+    });
+    // Into a single-value enum the stored string stays and is only checked.
+    expectClass(retype(text, 'enum', { values: VALUES, multiple: false }), {
+      category: 'validation',
+      breaking: true,
+      prerequisites: ['validateValues'],
+    });
+  });
+
+  it('multiple true → false keeps the first value (destructive); false → true wraps each value', () => {
+    const toSingle = only(
+      tags(true),
+      editField(
+        tags(true),
+        (f) => ({ ...f, settings: { ...f.settings, multiple: false } }) as FieldDefinition,
+      ),
+    );
+    expectClass(toSingle, {
+      category: 'conversion',
+      breaking: true,
+      destructive: true,
+      prerequisites: ['convert', 'validateValues'],
+    });
+    const toMulti = only(
+      tags(false),
+      editField(
+        tags(false),
+        (f) => ({ ...f, settings: { ...f.settings, multiple: true } }) as FieldDefinition,
+      ),
+    );
+    expectClass(toMulti, {
+      category: 'conversion',
+      breaking: true,
+      prerequisites: ['convert', 'validateValues'],
+    });
+  });
+});
+
 describe('typeChangeDropsValues', () => {
   it('drops only across storage families, for pairs Shapio has no converter for', () => {
-    expect(typeChangeDropsValues('media', 'number')).toBe(true);
-    expect(typeChangeDropsValues('date', 'media')).toBe(true);
-    expect(typeChangeDropsValues('relation', 'boolean')).toBe(true);
-    expect(typeChangeDropsValues('string', 'json')).toBe(true);
-    expect(typeChangeDropsValues('string', 'email')).toBe(false);
-    expect(typeChangeDropsValues('number', 'decimal')).toBe(false);
-    expect(typeChangeDropsValues('boolean', 'text')).toBe(false);
-    expect(typeChangeDropsValues('text', 'richtext')).toBe(false);
-    expect(typeChangeDropsValues('richtext', 'string')).toBe(false);
-    expect(typeChangeDropsValues('media', 'media')).toBe(false);
+    const drops = (from: FieldInput['type'], to: FieldInput['type']) =>
+      typeChangeDropsValues({ type: from }, { type: to });
+    expect(drops('media', 'number')).toBe(true);
+    expect(drops('date', 'media')).toBe(true);
+    expect(drops('relation', 'boolean')).toBe(true);
+    expect(drops('string', 'json')).toBe(true);
+    expect(drops('string', 'email')).toBe(false);
+    expect(drops('number', 'decimal')).toBe(false);
+    expect(drops('boolean', 'text')).toBe(false);
+    expect(drops('text', 'richtext')).toBe(false);
+    expect(drops('richtext', 'string')).toBe(false);
+    expect(drops('media', 'media')).toBe(false);
+  });
+
+  it('reads the family from type and settings: a multi-value enum is a list', () => {
+    const multi = { type: 'enum', settings: { multiple: true } } as const;
+    expect(typeChangeDropsValues(multi, { type: 'string' })).toBe(true);
+    expect(typeChangeDropsValues(multi, { type: 'richtext' })).toBe(true);
+    expect(typeChangeDropsValues({ type: 'enum', settings: { multiple: false } }, { type: 'string' })).toBe(
+      false,
+    );
+    expect(typeChangeDropsValues({ type: 'string' }, multi)).toBe(false);
+    expect(typeChangeDropsValues({ type: 'number' }, multi)).toBe(true);
   });
 });
 

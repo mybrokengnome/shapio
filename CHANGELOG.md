@@ -16,6 +16,12 @@ All notable changes to Shapio are listed here. The format follows
   tokens made with those tokens) are refused, and deleting the admin revokes them, with the token names and
   the creator kept in the audit log. Network → Users names those tokens before you disable or remove someone,
   and Settings → API tokens shows a paused token as "Paused: creator disabled".
+- **Changing a multi-value enum's type drops its values instead of hiding them.** Changing an enum with
+  `multiple: true` to short text, long text, or code was treated as a change that keeps the stored values, so it
+  went live with no review while every read returned `null`; to rich text it promised a conversion that then
+  failed. It is now a destructive change that counts the entries losing their value, needs your
+  acknowledgement, and shows "(values dropped)" in `shapio schema diff`. Text changed to a multi-value enum
+  becomes a one-value list, checked against the choices.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
