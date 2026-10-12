@@ -284,7 +284,10 @@ test('"Used in" names each entry by its title and type, and links to it in that 
     }>('/models');
     const model = models.items.find(({ definition }) => definition.apiKey === 'mediaAuthor');
     if (model) {
-      await api.send('DELETE', `/models/${model.definition.id}?expectedVersion=${model.version}`);
+      await api.send(
+        'DELETE',
+        `/models/${model.definition.id}?expectedVersion=${model.version}&acknowledgeBreaking=true`,
+      );
     }
   }
 });

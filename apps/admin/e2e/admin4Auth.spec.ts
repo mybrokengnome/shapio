@@ -146,13 +146,13 @@ test('a session that ends over unsaved edits signs in again in place, and the ed
   // No draft-and-publish, so no autosave: the edits stay unsaved until ⌘S.
   await api.createDefinition('models', {
     kind: 'collection',
-    apiKey: 'memo',
-    label: 'Memo',
+    apiKey: 'jotting',
+    label: 'Jotting',
     draftAndPublish: false,
     fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
   });
-  const memo = await api.send<{ id: string }>('POST', '/content/memo', { data: { title: 'Saved title' } });
-  const memoUrl = `${ADMIN_URL}content/memo/${memo.id}`;
+  const memo = await api.send<{ id: string }>('POST', '/content/jotting', { data: { title: 'Saved title' } });
+  const memoUrl = `${ADMIN_URL}content/jotting/${memo.id}`;
   await page.goto(memoUrl);
   const title = page.getByRole('textbox', { name: 'Title' });
   await expect(title).toHaveValue('Saved title');
@@ -174,7 +174,7 @@ test('a session that ends over unsaved edits signs in again in place, and the ed
   const panel = page.getByRole('dialog', { name: 'Your session has ended' });
   await expect(panel).toBeVisible();
   await expect(panel.getByText(`Signing in as ${OWNER.email}`)).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/content/memo/${memo.id}`));
+  await expect(page).toHaveURL(new RegExp(`/content/jotting/${memo.id}`));
   await expect(title).toHaveValue('Typed after the session ended');
   await captureScreen(page, 'auth-13-session-ended-in-place', { viewports: AUTH_VIEWPORTS });
 
