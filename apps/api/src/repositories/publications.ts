@@ -100,6 +100,26 @@ export const close = (entryId: string, locale: string | null, seq: number, trx: 
   return query.executeTakeFirst();
 };
 
+/**
+ * Ends the live period of (entry, locale) at `seq` only while it still serves `revisionId`; true when it did.
+ * A conversion rolls a head it read before the change set's publications in the same transaction, which may
+ * have published (or unpublished) the entry since: their row is then the right one and stays.
+ */
+export const closeIfServing = async (
+  row: { entryId: string; locale: string; revisionId: string; seq: number },
+  trx: Executor = db,
+): Promise<boolean> => {
+  const result = await trx
+    .updateTable('publication_log')
+    .set({ to_seq: String(row.seq) })
+    .where('entry_id', '=', row.entryId)
+    .where('locale', '=', row.locale)
+    .where('revision_id', '=', row.revisionId)
+    .where('to_seq', 'is', null)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
+};
+
 export const open = (
   row: { entryId: string; modelId: string; locale: string; revisionId: string; seq: number; now: Date },
   trx: Executor = db,

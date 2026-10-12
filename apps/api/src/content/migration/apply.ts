@@ -104,9 +104,19 @@ const conversionRevision = async (
   return revision.id;
 };
 
+/**
+ * The converted published head's log row rolls to its conversion revision at the activation's number, unless
+ * a change set shipping with it already published or unpublished the entry at that number (its row wins).
+ */
 const rollPublication = (context: Context, head: ScannedHead, revisionId: string) =>
   context.activation.atSeq(head.site_id, async (seq) => {
-    await publicationsRepository.close(head.entry_id, head.locale, seq, context.trx);
+    const closed = await publicationsRepository.closeIfServing(
+      { entryId: head.entry_id, locale: head.locale, revisionId: head.revision_id, seq },
+      context.trx,
+    );
+    if (!closed) {
+      return;
+    }
     await publicationsRepository.open(
       {
         entryId: head.entry_id,

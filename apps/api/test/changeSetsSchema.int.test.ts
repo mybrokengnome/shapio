@@ -503,6 +503,11 @@ describe('change sets (schema + content)', () => {
     expect(expectStatus(await deliver(one.id), 200).json<{ data: { title: string } }>().data.title).toBe(
       'One (edited)',
     );
+    // The snapshot serves what the set published, not the old content converted (issue #69).
+    expect(
+      expectStatus(await deliver(one.id, `?snapshot=${seq}`), 200).json<{ data: { title: string } }>().data
+        .title,
+    ).toBe('One (edited)');
     // An entry the set did not touch stays "published": its draft and live heads share the conversion revision.
     expect(
       expectStatus(await admin.get(`/api/admin/content/article/${untouched.id}`), 200).json<EntryBody>()

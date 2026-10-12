@@ -63,6 +63,10 @@ All notable changes to Shapio are listed here. The format follows
   It now lists the schema changes and each entry's values before and after the ship, says who shipped it as
   which snapshot, and shows no ship checks. Also, on a phone, a card's buttons and chips no longer cover its
   title.
+- **Snapshots record what a change set published when it also converts those entries.** A set that changed a
+  field's type and published entries of that model recorded their old content, converted, as the snapshot, so
+  `?snapshot=N`, snapshot diffs, and Restore showed the entries as they were before the set. The snapshot now
+  holds what the set published.
 
 ## [0.5.6] - 2026-10-11
 
