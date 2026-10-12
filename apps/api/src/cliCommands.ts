@@ -3,8 +3,9 @@
  * reference can be generated from these definitions without starting anything.
  */
 import { REMOTE_COMMANDS, type CliCommand, type CliIo } from '@shapio/cli';
+import { Value } from 'typebox/value';
 import { loadConfig } from './config/index.js';
-import { PASSWORD_MIN_LENGTH } from './constants/auth.js';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PERSON_NAME_MAX_LENGTH } from './constants/auth.js';
 import { SITE_KEY_PATTERN } from './constants/sites.js';
 import { SHAPIO_VERSION } from './constants/version.js';
 import { backupDatabase, BackupError } from './db/backup.js';
@@ -18,6 +19,7 @@ import { generateToken } from './helpers/tokens.js';
 import { createLogger } from './logger.js';
 import { mcpCommand } from './mcp/cli.js';
 import { mediaCommand } from './media/cli.js';
+import { EmailSchema, PasswordSchema, PersonNameSchema } from './routes/schemas/adminIdentity.js';
 import { startServer } from './server.js';
 import { SYSTEM_CLI_ACTOR } from './services/actorContext.js';
 import { createAdminDirect } from './services/setup.js';
@@ -147,6 +149,27 @@ const parseOptions = (args: readonly string[]): Map<string, string> => {
   return options;
 };
 
+/**
+ * The rules Setup and invitations apply (the same TypeBox schemas as their routes), so the CLI cannot create
+ * an admin who could never sign in. The name is optional here; when given it follows the same limit.
+ */
+const invalidAdminInput = (
+  email: string,
+  name: string | undefined,
+  password: string | undefined,
+): string | undefined => {
+  if (!Value.Check(EmailSchema, email.trim())) {
+    return '--email must be an email address (at most 254 characters).';
+  }
+  if (name !== undefined && !Value.Check(PersonNameSchema, name)) {
+    return `--name must be 1 to ${PERSON_NAME_MAX_LENGTH} characters.`;
+  }
+  if (password !== undefined && !Value.Check(PasswordSchema, password)) {
+    return `SHAPIO_ADMIN_PASSWORD must be ${PASSWORD_MIN_LENGTH} to ${PASSWORD_MAX_LENGTH} characters.`;
+  }
+  return undefined;
+};
+
 const adminCommand: CliCommand = {
   summary: 'Create an admin account directly in the database (admin create --email ...)',
   usage: ADMIN_USAGE,
@@ -159,8 +182,9 @@ const adminCommand: CliCommand = {
       return 1;
     }
     const providedPassword = io.env.SHAPIO_ADMIN_PASSWORD;
-    if (providedPassword !== undefined && providedPassword.length < PASSWORD_MIN_LENGTH) {
-      io.stderr(`SHAPIO_ADMIN_PASSWORD must be at least ${PASSWORD_MIN_LENGTH} characters.\n`);
+    const invalid = invalidAdminInput(email, options.get('name'), providedPassword);
+    if (invalid) {
+      io.stderr(`${invalid}\n`);
       return 1;
     }
     const password = providedPassword ?? generateToken();

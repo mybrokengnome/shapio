@@ -17,6 +17,8 @@ export const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 export const PASSWORD_MIN_LENGTH = 12;
 /** argon2 accepts more, but unbounded input is a denial-of-service vector. */
 export const PASSWORD_MAX_LENGTH = 256;
+/** An admin's display name. */
+export const PERSON_NAME_MAX_LENGTH = 200;
 
 /** API tokens carry a recognisable prefix (secret scanners, and telling them apart from app-user JWTs). */
 export const API_TOKEN_PREFIX = 'shp_';

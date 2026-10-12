@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **`shapio admin create` applies the same rules as Setup.** It refuses an invalid email, a name over 200
+  characters, and a password outside 12 to 256 characters, instead of creating an admin who could never sign
+  in.
 
 ## [0.5.6] - 2026-10-11
 
