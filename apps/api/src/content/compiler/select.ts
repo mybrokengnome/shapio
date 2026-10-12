@@ -42,6 +42,16 @@ export type ProjectionOptions = {
   richText?: RichTextMode;
   /** Asset views by ID (media fields become views, missing assets are dropped); null leaves IDs as stored. */
   mediaAssets: ReadonlyMap<string, { url: string }> | null;
+  /**
+   * Leaves out a component's `public: false` fields at any depth (delivery audiences: the read mask's
+   * `componentFields`). A left-out field is absent from the value, as a masked top-level field is.
+   */
+  publicComponentFieldsOnly: boolean;
+  /**
+   * Admin reads: an asset that no longer resolves (force-deleted) stays as its bare ID instead of being
+   * dropped, so the editor sees it and can remove it.
+   */
+  keepUnresolvedMedia?: boolean;
 };
 
 /**
@@ -102,7 +112,9 @@ const projectComponent = (
 ): Record<string, unknown> | null =>
   component && isRecord(value)
     ? projectFields(
-        component.fields.filter((field) => !field.deprecated),
+        component.fields.filter(
+          (field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly),
+        ),
         value,
         options,
         false,
@@ -117,7 +129,7 @@ const isStringOrStrings = (value: unknown) =>
  * the current schema (plan developer-face §5): a value written before a type change (text → rich text) is
  * not converted at read time, it is emitted as empty instead of being passed off as the new type.
  */
-const matchesFieldType = (field: FieldDefinition, value: unknown): boolean => {
+export const matchesFieldType = (field: FieldDefinition, value: unknown): boolean => {
   switch (field.type) {
     case 'number':
     case 'integer':
@@ -177,9 +189,12 @@ const projectValue = (
       if (!options.mediaAssets) {
         return value;
       }
-      const assets = (Array.isArray(value) ? value : [value]).flatMap((id) => {
+      const assets = (Array.isArray(value) ? value : [value]).flatMap((id): unknown[] => {
         const asset = typeof id === 'string' ? options.mediaAssets?.get(id) : undefined;
-        return asset ? [asset] : [];
+        if (asset) {
+          return [asset];
+        }
+        return options.keepUnresolvedMedia && typeof id === 'string' ? [id] : [];
       });
       return field.settings.multiple ? assets : (assets[0] ?? null);
     }

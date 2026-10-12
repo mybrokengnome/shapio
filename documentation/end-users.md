@@ -9,9 +9,13 @@ app users are separate: an app user can never reach the admin.
 
 | Role             | Who holds it                                             | Starts with    |
 | ---------------- | -------------------------------------------------------- | -------------- |
-| `public`         | every anonymous request (no token)                       | no permissions |
+| `public`         | every request, anonymous or signed in                    | no permissions |
 | `authenticated`  | every signed-in app user                                 | no permissions |
 | custom app roles | the app users you assign them to (Workspace → App users) | what you grant |
+
+`public` is a floor: a signed-in app user holds `public`, `authenticated`, and their own custom roles together, so
+signing in never takes away what a visitor can read. Grants add up across roles. A field one role allows only on
+**own entries** shows only on the user's own entries, even when another role lets them read every entry.
 
 Network → Roles → App roles sets each role's grants per model: `read`, `create`, `update`, `delete`, `publish`, each
 optionally limited to **own entries** (`ownedByPrincipal`) and to some fields. "Read on all models" is one

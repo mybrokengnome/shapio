@@ -17,7 +17,14 @@ import { entryDocument } from './support/entryDocument';
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120_000);
 
-type Entry = { id: string; version: number; status: string; locale: string; data: Record<string, unknown> };
+type Entry = {
+  id: string;
+  version: number;
+  status: string;
+  locale: string;
+  publishedAt: string | null;
+  data: Record<string, unknown>;
+};
 
 let server: ProjectServer;
 let page: Page;
@@ -399,6 +406,69 @@ test('a save from another session shows the conflict banner; reloading keeps my 
   });
 });
 
+test('an open entry with no edits says another session saved it, and Reload shows that save', async ({
+  browser,
+}) => {
+  const before = await getEntry('en');
+  const other = await openSignedIn(browser);
+  await adminApiFor(other.request, server.adminApi).send('PUT', `/content/page/${entryId}`, {
+    locale: 'en',
+    expectedVersion: before.version,
+    data: { title: 'Saved while this tab was open' },
+  });
+  await other.context().close();
+
+  // The next heartbeat carries the new draft version (TanStack Query refetches it when the tab is shown).
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange', { bubbles: true })));
+  // The full sentence is the notice's name; the bar may show its short form while the drawer is open.
+  const notice = page.getByRole('status', {
+    name: /^Changed by you elsewhere a moment ago\. Reload to see it\./,
+  });
+  await expect(notice).toBeVisible({ timeout: 20_000 });
+  await expect(field('/title').getByRole('textbox')).not.toHaveValue('Saved while this tab was open');
+  await captureScreen(page, 'content-09-remote-change', BOTH);
+
+  await page.getByRole('button', { name: 'Reload', exact: true }).click();
+  await expect(field('/title').getByRole('textbox')).toHaveValue('Saved while this tab was open');
+  await expect(notice).toBeHidden();
+});
+
+test("publishing from a tab that missed another session's save shows the conflict banner, not a publish", async ({
+  browser,
+}) => {
+  const before = await getEntry('en');
+  const other = await openSignedIn(browser);
+  await adminApiFor(other.request, server.adminApi).send('PUT', `/content/page/${entryId}`, {
+    locale: 'en',
+    expectedVersion: before.version,
+    data: { title: 'Saved in the other tab' },
+  });
+  await other.context().close();
+
+  // This tab still shows the old title and "saved"; publishing it must not put the other tab's draft live.
+  await expect(field('/title').getByRole('textbox')).not.toHaveValue('Saved in the other tab');
+  const sheet = await doc().openPreflight();
+  const publishing = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && response.url().endsWith('/publish'),
+  );
+  await sheet.getByRole('button', { name: 'Publish now' }).click();
+  expect((await publishing).status()).toBe(409);
+  await expect(sheet).toBeHidden();
+  const banner = page.getByRole('alert').filter({ hasText: 'Someone else saved this entry' });
+  await expect(banner).toBeVisible();
+  expect(await getEntry('en')).toMatchObject({ status: 'modified', publishedAt: before.publishedAt });
+
+  // After reloading, the tab shows the other draft and publishes it knowingly.
+  await banner.getByRole('button', { name: 'Reload and keep my changes' }).click();
+  await expect(field('/title').getByRole('textbox')).toHaveValue('Saved in the other tab');
+  await doc().publish();
+  expect(await getEntry('en')).toMatchObject({
+    status: 'published',
+    data: { title: 'Saved in the other tab' },
+  });
+});
+
 test('history lists revisions with what restoring would change, and restores one', async () => {
   await (await doc().openSettings()).getByRole('button', { name: 'All versions and compare' }).click();
   const history = page.getByRole('dialog', { name: 'History' });
@@ -668,4 +738,215 @@ test('the entry document works at phone width', async () => {
   await page.goto(entryUrl('en'));
   await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
   await captureScreen(page, 'content-14-entry', BOTH);
+});
+
+test('text a number or JSON editor cannot read is kept, blocks Save and Create, and leaving asks first', async () => {
+  const statTitle = id();
+  await api.createDefinition('models', {
+    id: id(),
+    kind: 'collection',
+    apiKey: 'stat',
+    label: 'Stat',
+    display: { titleFieldId: statTitle },
+    fields: [
+      { id: statTitle, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: id(), apiKey: 'views', label: 'Views', type: 'integer' },
+      { id: id(), apiKey: 'meta', label: 'Meta', type: 'json' },
+    ],
+  });
+  const writes: { method: string; body: string }[] = [];
+  const recordWrite = (request: {
+    method: () => string;
+    url: () => string;
+    postData: () => string | null;
+  }) => {
+    if (['POST', 'PUT'].includes(request.method()) && /\/content\/stat(\/|$|\?)/.test(request.url())) {
+      writes.push({ method: request.method(), body: request.postData() ?? '' });
+    }
+  };
+  page.on('request', recordWrite);
+  const toastFor = (count: number) =>
+    page.getByText(`${count} field${count === 1 ? ' needs' : 's need'} attention before this can be saved.`);
+
+  await test.step('Create is refused while a value does not parse, and nothing is sent', async () => {
+    await page.goto(`${server.adminUrl}content/stat`);
+    await page.getByRole('link', { name: 'New', exact: true }).first().click();
+    await expect(page.getByRole('heading', { level: 1, name: 'New Stat' })).toBeVisible();
+    await field('/title').getByRole('textbox').fill('Visits');
+    const views = await doc().property('views');
+    await views.getByRole('textbox').fill('3.7');
+    await expect(views).toContainText('Enter a whole number.');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(toastFor(1)).toBeVisible();
+    expect(writes).toEqual([]);
+    await expect(page).toHaveURL(/\/content\/stat\/new/);
+    await views.getByRole('textbox').fill('37');
+    await expect(views).not.toContainText('Enter a whole number.');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByText('Entry created.')).toBeVisible();
+    await expect(page).toHaveURL(/\/content\/stat\/[0-9a-f-]{36}$/);
+  });
+  const statId = /\/content\/stat\/([0-9a-f-]{36})$/.exec(page.url())?.[1] ?? '';
+  const getStat = () => api.get<Entry>(`/content/stat/${statId}`);
+  expect((await getStat()).data.views).toBe(37);
+
+  await test.step('Save (⌘S) is refused with the errors on screen; the typed text stays', async () => {
+    writes.splice(0);
+    const views = await doc().property('views');
+    await views.getByRole('textbox').fill('37x');
+    const meta = await doc().property('meta');
+    await meta.getByRole('textbox').fill('{bad json');
+    await expect(meta).toContainText('Not valid JSON');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(toastFor(2)).toBeVisible();
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await captureScreen(page, 'content-15-unparsed', BOTH);
+    expect(writes.filter((write) => !write.body.includes('"autosave":true'))).toEqual([]);
+    await expect(views.getByRole('textbox')).toHaveValue('37x');
+    await expect(meta.getByRole('textbox')).toHaveValue('{bad json');
+  });
+
+  await test.step('autosave sends the other changes and holds the unreadable ones back', async () => {
+    const autosaved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/stat/${statId}`) &&
+        Boolean(response.request().postData()?.includes('"autosave":true')),
+    );
+    await field('/title').getByRole('textbox').fill('Visits this week');
+    const body = JSON.parse((await autosaved).request().postData() ?? '{}') as { data: object };
+    expect(body.data).toEqual({ title: 'Visits this week' });
+    const saved = await getStat();
+    expect(saved.data).toMatchObject({ title: 'Visits this week', views: 37 });
+    expect(saved.data.meta ?? null).toBeNull();
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await expect((await doc().property('views')).getByRole('textbox')).toHaveValue('37x');
+  });
+
+  await test.step('leaving asks first while the text is unsaved', async () => {
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Page' })
+      .click();
+    const prompt = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(prompt).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/content/stat/${statId}`));
+  });
+
+  await test.step('once fixed, Save sends the values', async () => {
+    await (await doc().property('views')).getByRole('textbox').fill('42');
+    await (await doc().property('meta')).getByRole('textbox').fill('{ "source": "web" }');
+    await expect(page.getByText(/Not valid JSON|Enter a whole number/)).toHaveCount(0);
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/stat/${statId}`) &&
+        !response.request().postData()?.includes('"autosave":true'),
+    );
+    await page.keyboard.press('ControlOrMeta+s');
+    expect((await saved).ok()).toBe(true);
+    await expect(status()).toHaveText(/Saved/);
+    expect((await getStat()).data).toMatchObject({ views: 42, meta: { source: 'web' } });
+  });
+  page.off('request', recordWrite);
+});
+
+test('a partly typed date or time is kept as a change: Save is refused and the saved value stays', async () => {
+  const meetingTitle = id();
+  await api.createDefinition('models', {
+    id: id(),
+    kind: 'collection',
+    apiKey: 'meeting',
+    label: 'Meeting',
+    display: { titleFieldId: meetingTitle },
+    fields: [
+      { id: meetingTitle, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: id(), apiKey: 'day', label: 'Day', type: 'date' },
+      { id: id(), apiKey: 'at', label: 'At', type: 'time' },
+      { id: id(), apiKey: 'starts', label: 'Starts', type: 'datetime' },
+    ],
+  });
+  const saved = { title: 'Planning', day: '2026-10-11', at: '09:30', starts: '2026-10-11T08:00:00.000Z' };
+  const meeting = await api.send<Entry>('POST', '/content/meeting', { data: saved });
+  const getMeeting = () => api.get<Entry>(`/content/meeting/${meeting.id}`);
+  const writes: string[] = [];
+  const recordWrite = (request: {
+    method: () => string;
+    url: () => string;
+    postData: () => string | null;
+  }) => {
+    if (request.method() === 'PUT' && request.url().includes(`/content/meeting/${meeting.id}`)) {
+      writes.push(request.postData() ?? '');
+    }
+  };
+  page.on('request', recordWrite);
+  await page.goto(`${server.adminUrl}content/meeting/${meeting.id}`);
+
+  await test.step('removing the month leaves a partial date: inline error, Save refused, nothing sent', async () => {
+    const day = await doc().property('day');
+    const input = day.locator('input[type="date"]');
+    await input.click();
+    await input.press('Backspace');
+    await expect(day).toContainText('Enter a complete date.');
+    await expect(status()).toHaveText(/Unsaved changes/);
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(page.getByText('1 field needs attention before this can be saved.')).toBeVisible();
+    await captureScreen(page, 'content-16-partial-date', BOTH);
+    expect(writes).toEqual([]);
+    expect((await getMeeting()).data).toMatchObject({ day: '2026-10-11' });
+  });
+
+  await test.step('leaving asks first', async () => {
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Page' })
+      .click();
+    const prompt = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(prompt).toBeHidden();
+  });
+
+  await test.step('clearing on purpose still works and saves an empty date', async () => {
+    const day = await doc().property('day');
+    await day.getByRole('button', { name: 'Clear Day' }).click();
+    await expect(day).not.toContainText('Enter a complete date.');
+    await expect(day.locator('input[type="date"]')).toHaveValue('');
+    const put = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes(`/content/meeting/${meeting.id}`) &&
+        !response.request().postData()?.includes('"autosave":true'),
+    );
+    await page.keyboard.press('ControlOrMeta+s');
+    expect((await put).ok()).toBe(true);
+    expect((await getMeeting()).data.day ?? null).toBeNull();
+  });
+
+  await test.step('a partial time and date-time say so too, and save once complete', async () => {
+    const at = await doc().property('at');
+    const time = at.locator('input[type="time"]');
+    await time.click();
+    await time.press('Backspace');
+    await expect(at).toContainText('Enter a complete time.');
+    await time.fill('10:45');
+    await expect(at).not.toContainText('Enter a complete time.');
+
+    const starts = await doc().property('starts');
+    const moment = starts.locator('input[type="datetime-local"]');
+    await moment.click();
+    await moment.press('Backspace');
+    await expect(starts).toContainText('Enter a complete date and time.');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect(page.getByText('1 field needs attention before this can be saved.')).toBeVisible();
+    expect((await getMeeting()).data).toMatchObject({ starts: '2026-10-11T08:00:00.000Z' });
+    await moment.fill('2026-11-02T10:45');
+    await expect(starts).not.toContainText('Enter a complete date and time.');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(async () => (await getMeeting()).data.at).toMatch(/^10:45/);
+    expect(((await getMeeting()).data as { starts: string }).starts).not.toBe('2026-10-11T08:00:00.000Z');
+  });
+  page.off('request', recordWrite);
 });

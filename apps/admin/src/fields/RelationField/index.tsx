@@ -31,7 +31,13 @@ export const RelationField = (props: BuiltInEditorProps) => {
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
   const labels = useEntryLabels(target, ids, environment.locale);
   if (!settings || !target) {
-    return <p className="text-sm text-destructive">{t('content.relation.targetMissing')}</p>;
+    // The schema refuses to delete a model a relation targets, so a target missing from the readable
+    // registry is one this role can't read. Its links are kept on save; there is nothing to show or edit.
+    return (
+      <p role="note" aria-labelledby={labelId} className="text-meta text-muted-foreground">
+        {t('content.relation.targetUnreadable')}
+      </p>
+    );
   }
   const editable = !readOnly && !disabled;
   const commit = (next: string[]) => {

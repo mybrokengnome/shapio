@@ -2,7 +2,14 @@ import { getIntrospectionQuery } from 'graphql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SITE_HEADER } from '../src/constants/sites.js';
 import { createAdmin, login, nextTestIp, toSession } from './helpers/adminIdentity.js';
-import { createDefinition, createDeliveryToken, expectStatus, type EntryBody } from './helpers/content.js';
+import {
+  createDefinition,
+  createDeliveryToken,
+  createRole,
+  createTokenForRole,
+  expectStatus,
+  type EntryBody,
+} from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { dataOf, errorCodes, graphql, GRAPHQL_ENV, toRestShape } from './helpers/graphql.js';
 import { createPng, uploadAsset } from './helpers/media.js';
@@ -181,8 +188,8 @@ describe('GraphQL schema and runtime', () => {
     });
   });
 
-  it('resolves masked optional fields to null and masked required fields to a FORBIDDEN_FIELD error', async () => {
-    await createDefinition(admin, {
+  it("leaves non-public fields out of a delivery token's schema; a role naming one sees it", async () => {
+    const ticket = await createDefinition(admin, {
       kind: 'collection',
       apiKey: 'ticket',
       label: 'Ticket',
@@ -192,19 +199,153 @@ describe('GraphQL schema and runtime', () => {
         { apiKey: 'code', label: 'Code', type: 'string', required: true, public: false },
       ],
     });
+    const fieldId = (apiKey: string) =>
+      ticket.definition.fields.find((field) => field.apiKey === apiKey)?.id as string;
     const entry = await create('ticket', { title: 'T', internalNote: 'n', code: 'C-1' });
     await publish('ticket', entry.id);
-    const result = await gql('{ tickets { nodes { title internalNote code } } }');
-    expect(result.statusCode).toBe(200);
-    expect(result.body.data).toEqual({
+
+    // The name is not in the schema: asking for it fails validation, as for a field that does not exist.
+    const hidden = await gql('{ tickets { nodes { title internalNote } } }');
+    expect(hidden.statusCode).toBe(400);
+    expect(errorCodes(hidden)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+    expect(hidden.body.errors?.[0]?.message).toBe('Cannot query field "internalNote" on type "Ticket".');
+    expect(dataOf(await gql('{ tickets { nodes { title } } }'))).toEqual({
+      tickets: { nodes: [{ title: 'T' }] },
+    });
+    const fields = dataOf<{ __type: { fields: Array<{ name: string }> } }>(
+      await gql('{ __type(name: "Ticket") { fields { name } } }'),
+    ).__type.fields.map((field) => field.name);
+    expect(fields).toContain('title');
+    expect(fields).not.toContain('internalNote');
+    expect(fields).not.toContain('code');
+    const filter = dataOf<{ __type: { inputFields: Array<{ name: string }> } }>(
+      await gql('{ __type(name: "TicketFilter") { inputFields { name } } }'),
+    ).__type.inputFields.map((field) => field.name);
+    expect(filter).not.toContain('internalNote');
+
+    // A delivery role that names a non-public field sees it in its schema and reads it.
+    const named = await createDeliveryToken(database.current.db, [
+      { modelId: ticket.definition.id, fieldIds: [fieldId('title'), fieldId('code')] },
+    ]);
+    expect(dataOf(await gql('{ tickets { nodes { title code } } }', undefined, named))).toEqual({
+      tickets: { nodes: [{ title: 'T', code: 'C-1' }] },
+    });
+    expect(errorCodes(await gql('{ tickets { nodes { internalNote } } }', undefined, named))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+
+    // Admin callers keep the full schema; a field outside an admin role's mask resolves to null, or to a
+    // FORBIDDEN_FIELD error when required.
+    const restricted = await createTokenForRole(
+      database.current.db,
+      await createRole(database.current.db, 'admin', [
+        { action: 'read', modelId: ticket.definition.id, fieldIds: [fieldId('title')] },
+      ]),
+    );
+    const masked = await gql('{ tickets { nodes { title internalNote code } } }', undefined, restricted);
+    expect(masked.statusCode).toBe(200);
+    expect(masked.body.data).toEqual({
       tickets: { nodes: [{ title: 'T', internalNote: null, code: null }] },
     });
-    expect(result.body.errors).toHaveLength(1);
-    expect(result.body.errors?.[0]?.path).toEqual(['tickets', 'nodes', 0, 'code']);
-    expect(result.body.errors?.[0]?.extensions?.code).toBe('FORBIDDEN_FIELD');
-    // An admin principal sees both.
+    expect(masked.body.errors?.[0]?.path).toEqual(['tickets', 'nodes', 0, 'code']);
+    expect(errorCodes(masked)).toEqual(['FORBIDDEN_FIELD']);
     const asAdmin = dataOf(await gql('{ tickets { nodes { internalNote code } } }', undefined, adminToken));
     expect(asAdmin).toEqual({ tickets: { nodes: [{ internalNote: 'n', code: 'C-1' }] } });
+  });
+
+  it('leaves models a delivery token cannot read out of its schema, with the relations to them', async () => {
+    const vault = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'vault',
+      label: 'Vault',
+      fields: [{ apiKey: 'secret', label: 'Secret', type: 'string' }],
+    });
+    const box = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'box',
+      label: 'Box',
+      fields: [
+        { apiKey: 'label', label: 'Label', type: 'string' },
+        {
+          apiKey: 'vaultRef',
+          label: 'Vault',
+          type: 'relation',
+          settings: { target: vault.definition.id, cardinality: 'one' },
+        },
+      ],
+    });
+    const boxOnly = await createDeliveryToken(database.current.db, [{ modelId: box.definition.id }]);
+    const types = dataOf<{ vault: unknown; box: { fields: Array<{ name: string }> } }>(
+      await gql(
+        '{ vault: __type(name: "Vault") { name } box: __type(name: "Box") { fields { name } } }',
+        undefined,
+        boxOnly,
+      ),
+    );
+    expect(types.vault).toBeNull();
+    expect(types.box.fields.map((field) => field.name)).toEqual(expect.arrayContaining(['id', 'label']));
+    expect(types.box.fields.map((field) => field.name)).not.toContain('vaultRef');
+    const roots = dataOf<{
+      __schema: { queryType: { fields: Array<{ name: string }> }; types: Array<{ name: string }> };
+    }>(
+      await gql('{ __schema { queryType { fields { name } } types { name } } }', undefined, boxOnly),
+    ).__schema;
+    expect(roots.queryType.fields.map((field) => field.name)).not.toContain('vaults');
+    expect(roots.types.map((type) => type.name).filter((name) => name.startsWith('Vault'))).toEqual([]);
+    expect(errorCodes(await gql('{ vaults { totalCount } }', undefined, boxOnly))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+    // A token reading every model sees both, and the relation.
+    const both = dataOf<{ __type: { fields: Array<{ name: string }> } }>(
+      await gql('{ __type(name: "Box") { fields { name } } }'),
+    ).__type.fields.map((field) => field.name);
+    expect(both).toContain('vaultRef');
+  });
+
+  it('builds one schema per distinct set of masks, and a schema change rebuilds it', async () => {
+    const shelf = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'shelf',
+      label: 'Shelf',
+      fields: [
+        { apiKey: 'name', label: 'Name', type: 'string' },
+        { apiKey: 'cost', label: 'Cost', type: 'integer', public: false },
+      ],
+    });
+    const costId = shelf.definition.fields.find((field) => field.apiKey === 'cost')?.id as string;
+    const nameId = shelf.definition.fields.find((field) => field.apiKey === 'name')?.id as string;
+    const runtime = testApp.app.graphqlRuntime;
+    const maskedSchemas = () => runtime.schemas.list().filter((entry) => entry.visibility !== 'full');
+    const role = await createRole(database.current.db, 'delivery', [
+      { action: 'read', modelId: shelf.definition.id },
+    ]);
+    const first = await createTokenForRole(database.current.db, role);
+    const second = await createTokenForRole(database.current.db, role);
+    const other = await createDeliveryToken(database.current.db, [
+      { modelId: shelf.definition.id, fieldIds: [nameId, costId] },
+    ]);
+    const shelfFields = async (token: string) =>
+      dataOf<{ __type: { fields: Array<{ name: string }> } }>(
+        await gql('{ __type(name: "Shelf") { fields { name } } }', undefined, token),
+      ).__type.fields.map((field) => field.name);
+
+    const before = maskedSchemas().length;
+    expect(await shelfFields(first)).not.toContain('cost');
+    expect(maskedSchemas()).toHaveLength(before + 1);
+    // Another token of the same role shares that schema.
+    expect(await shelfFields(second)).not.toContain('cost');
+    expect(maskedSchemas()).toHaveLength(before + 1);
+    // Other masks get their own.
+    expect(await shelfFields(other)).toContain('cost');
+    expect(maskedSchemas()).toHaveLength(before + 2);
+
+    // A schema change shows up at once: the new public field is in the role's schema, built again.
+    await updateModel(shelf.definition.id, (definition) => ({
+      ...definition,
+      fields: [...definition.fields, { apiKey: 'colour', label: 'Colour', type: 'string' }],
+    }));
+    expect(await shelfFields(first)).toContain('colour');
+    expect(await shelfFields(other)).not.toContain('colour');
   });
 
   it('enforces the depth and complexity limits (introspection is exempt)', async () => {
@@ -275,7 +416,11 @@ describe('GraphQL schema and runtime', () => {
     // Nor do validation errors suggest schema members to callers who may not introspect.
     const typo = '{ tickets { nodes { internalNot } } }';
     expect((await gql(typo, undefined, null)).body.errors?.[0]?.message).not.toContain('Did you mean');
-    expect((await gql(typo)).body.errors?.[0]?.message).toContain('Did you mean "internalNote"?');
+    // A delivery token gets suggestions from its own schema, which never names a hidden field.
+    expect((await gql(typo)).body.errors?.[0]?.message).not.toContain('internalNote');
+    expect((await gql('{ tickets { nodes { titl } } }')).body.errors?.[0]?.message).toContain(
+      'Did you mean "title"?',
+    );
     // __typename is not introspection.
     expect(dataOf(await gql('{ __typename }', undefined, null))).toEqual({ __typename: 'Query' });
 
@@ -347,9 +492,17 @@ describe('GraphQL schema and runtime', () => {
       ),
     ).toEqual(['DRAFTS_FORBIDDEN']);
 
+    // A publish guarded by a version the draft has moved past is refused, like REST.
+    const stale = await gql(
+      'mutation ($id: ID!) { publishNote(id: $id, expectedVersion: 1) { status } }',
+      { id: created.id },
+      adminToken,
+    );
+    expect(errorCodes(stale)).toEqual(['CONTENT_VERSION_CONFLICT']);
+    expect(await restList()).toEqual([]);
     const published = dataOf(
       await gql<{ publishNote: { status: string } }>(
-        'mutation ($id: ID!) { publishNote(id: $id) { status publishedAt } }',
+        'mutation ($id: ID!) { publishNote(id: $id, expectedVersion: 2) { status publishedAt } }',
         { id: created.id },
         adminToken,
       ),

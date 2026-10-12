@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REMOTE_COMMANDS, type CliIo } from '@shapio/cli';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runContentSchemaJobs } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { createRoleToken, pageDefinition, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
+import { waitFor } from './helpers/waitFor.js';
 
 type Definition = {
   id: string;
@@ -381,5 +383,68 @@ describe('shapio schema pull | diff | apply', () => {
     expect(defaults.code, defaults.stderr).toBe(0);
     expect(defaults.stdout).toContain('Applied 0 definition(s)');
     expect((await remote(productId)).version).toBe(after.version);
+
+    // A form layout change shows only the part that changed, in full and in the same key order on both sides.
+    const ids = (await readDefinitionFile('product')).fields.map((field) => field.id as string);
+    const grouped = await readDefinitionFile('product');
+    await writeDefinitionFile('product', {
+      ...grouped,
+      display: { layout: 'form', groups: [{ id: 'g1', label: 'Main', fieldIds: ids }] },
+    });
+    expect((await cli('apply')).code).toBe(0);
+    await writeDefinitionFile('product', {
+      ...grouped,
+      display: {
+        groups: [
+          { fieldIds: ids.slice(0, 2), id: 'g1', label: 'Main' },
+          { fieldIds: ids.slice(2), id: 'g2', label: 'Details' },
+        ],
+        layout: 'form',
+      },
+    });
+    const layoutDiff = await cli('diff');
+    expect(layoutDiff.stdout).toContain(
+      `~ display.groups[0].fieldIds: ${JSON.stringify(ids)} → ${JSON.stringify(ids.slice(0, 2))}`,
+    );
+    expect(layoutDiff.stdout).toContain(
+      `~ display.groups[1]: (unset) → {"fieldIds":${JSON.stringify(ids.slice(2))},"id":"g2","label":"Details"}`,
+    );
+    expect(layoutDiff.stdout).not.toContain('...');
+    expect((await cli('apply')).code).toBe(0);
+  });
+
+  it('after waiting for a change, reports the version it activated at, as the lock file records', async () => {
+    const created = await admin.post('/api/admin/models', {
+      definition: pageDefinition({ apiKey: 'gadget', label: 'Gadget' }),
+      scope: 'network',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect((await cli('pull', '--force')).code).toBe(0);
+    const gadget = await readDefinitionFile('gadget');
+    // A filterable field needs its index built first: the change stays pending until a job activates it.
+    await writeDefinitionFile('gadget', {
+      ...gadget,
+      fields: [...gadget.fields, { apiKey: 'rank', label: 'Rank', type: 'integer', filterable: true }],
+    });
+    const applying = cli('apply');
+    let settled = false;
+    void applying.finally(() => {
+      settled = true;
+    });
+    await waitFor(
+      async () => {
+        await runContentSchemaJobs(database.current.db);
+        return settled;
+      },
+      { description: 'schema apply finished waiting for the index job' },
+    );
+    const result = await applying;
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Waiting for gadget');
+    const lock = JSON.parse(await readFile(join(workdir, '.shapio', 'schema-lock.json'), 'utf8')) as {
+      schemaVersion: number;
+    };
+    expect(lock.schemaVersion).toBe(await schemaVersion());
+    expect(result.stdout).toContain(`Applied 1 definition(s) at schema version ${lock.schemaVersion}.`);
   });
 });

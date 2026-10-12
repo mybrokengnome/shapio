@@ -1,10 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import { adminApiFor } from './content/api';
 import { NEW_PASSWORD, OWNER } from './support/accounts';
 import { captureScreen, type ViewportName } from './support/capture';
 import { ADMIN_URL } from './support/constants';
+import { endAdminSessions } from './support/database';
 import { readInviteLink } from './support/inviteLink';
 import { logOffset, waitForEmailedLink } from './support/serverLog';
-import { signInAsOwner } from './support/session';
+import { ADMIN_API, signInAsOwner } from './support/session';
 
 /**
  * Signing out and in, deep links behind sign-in, accepting an invitation, password reset and the not-found
@@ -136,4 +138,53 @@ test('a screen that fails to load shows the error page with a way back home', as
   await page.unroute(chunk);
   await page.getByRole('link', { name: 'Back home' }).click();
   await expect(page.getByRole('heading', { name: `Welcome, ${OWNER.name}` })).toBeVisible();
+});
+
+test('a session that ends over unsaved edits signs in again in place, and the edits save', async () => {
+  const password = await signInAsOwner(page);
+  const api = adminApiFor(page.request, ADMIN_API);
+  // No draft-and-publish, so no autosave: the edits stay unsaved until ⌘S.
+  await api.createDefinition('models', {
+    kind: 'collection',
+    apiKey: 'jotting',
+    label: 'Jotting',
+    draftAndPublish: false,
+    fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+  });
+  const memo = await api.send<{ id: string }>('POST', '/content/jotting', { data: { title: 'Saved title' } });
+  const memoUrl = `${ADMIN_URL}content/jotting/${memo.id}`;
+  await page.goto(memoUrl);
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await expect(title).toHaveValue('Saved title');
+
+  // Signing out over unsaved edits asks first; staying keeps them.
+  await title.fill('Typed before signing out');
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  const discard = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(discard).toBeHidden();
+  await expect(title).toHaveValue('Typed before signing out');
+
+  // The session ends elsewhere (expiry, "sign out everywhere"); the next save gets a 401.
+  await endAdminSessions(OWNER.email);
+  await title.fill('Typed after the session ended');
+  await page.keyboard.press('ControlOrMeta+s');
+  const panel = page.getByRole('dialog', { name: 'Your session has ended' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText(`Signing in as ${OWNER.email}`)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/content/jotting/${memo.id}`));
+  await expect(title).toHaveValue('Typed after the session ended');
+  await captureScreen(page, 'auth-13-session-ended-in-place', { viewports: AUTH_VIEWPORTS });
+
+  // A wrong password is covered by the panel's unit test: failed sign-ins count towards the account's rate
+  // limit, which the specs after this one share.
+  await panel.getByLabel('Password').fill(password);
+  await panel.getByRole('button', { name: 'Sign in' }).click();
+  await expect(panel).toBeHidden();
+  // The save that failed runs again by itself.
+  await expect(page.getByRole('status').filter({ hasText: /Saved/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Typed after the session ended');
 });

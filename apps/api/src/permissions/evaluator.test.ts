@@ -156,8 +156,10 @@ describe('permission evaluator', () => {
     expect(await evaluator.evaluate(principal, { action: 'read', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: null,
-      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'] },
-      writeMask: { mode: 'only', fieldIds: [] },
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body'], componentFields: 'public' },
+      rowReadMasks: null,
+      writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
+      rowWriteMasks: null,
     });
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
   });
@@ -208,7 +210,7 @@ describe('permission evaluator', () => {
     );
   });
 
-  it('combines grants: union of fields, any unconditional grant lifts the row filter', async () => {
+  it('combines grants: union of fields, any unconditional grant lifts the row filter, fields per row', async () => {
     const grants = [
       grant({
         roleId: 'a',
@@ -225,13 +227,52 @@ describe('permission evaluator', () => {
     expect(await evaluator.evaluate(owned, { action: 'update', modelId: MODEL })).toEqual({
       allowed: true,
       rowFilter: { kind: 'ownedByPrincipal' },
-      readMask: { mode: 'only', fieldIds: ['f-title'] },
-      writeMask: { mode: 'only', fieldIds: ['f-title'] },
+      readMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
+      rowReadMasks: null,
+      writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
+      rowWriteMasks: null,
     });
     const both: Principal = adminOn(['a', 'b']);
     expect(await evaluator.evaluate(both, { action: 'update', modelId: MODEL })).toMatchObject({
       rowFilter: null,
       writeMask: { mode: 'only', fieldIds: ['f-body', 'f-title'] },
+      // Issue #80: `title` stays writable on own rows only, though `b` reaches every row.
+      rowWriteMasks: {
+        everyRow: { mode: 'only', fieldIds: ['f-body'] },
+        when: [{ condition: { kind: 'ownedByPrincipal' }, mask: { mode: 'only', fieldIds: ['f-title'] } }],
+      },
+    });
+  });
+
+  it('keeps fields granted on own rows only per row when another role reads every row', async () => {
+    const evaluator = createPermissionEvaluator({
+      grants: staticGrants([
+        grant({ roleId: 'everyone', action: 'read', modelId: MODEL }),
+        grant({ roleId: 'self', action: 'read', condition: 'ownedByPrincipal', fieldIds: ['f-notes'] }),
+      ]),
+      fields,
+    });
+    const principal: Principal = {
+      kind: 'appUser',
+      appUserId: 'a',
+      siteId: SITE_A,
+      roleIds: ['everyone', 'self'],
+    };
+    expect(await evaluator.evaluate(principal, { action: 'read', modelId: MODEL })).toEqual({
+      allowed: true,
+      rowFilter: null,
+      readMask: { mode: 'only', fieldIds: ['f-title', 'f-body', 'f-notes'], componentFields: 'public' },
+      rowReadMasks: {
+        everyRow: { mode: 'only', fieldIds: ['f-title', 'f-body'], componentFields: 'public' },
+        when: [
+          {
+            condition: { kind: 'ownedByPrincipal' },
+            mask: { mode: 'only', fieldIds: ['f-notes'], componentFields: 'public' },
+          },
+        ],
+      },
+      writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
+      rowWriteMasks: null,
     });
   });
 

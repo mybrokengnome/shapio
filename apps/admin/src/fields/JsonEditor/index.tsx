@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { inputAria, numberOption } from '../helpers/props';
+import { isUnparsed, unparsedText } from '../helpers/unparsed';
 import { isDeepEqual } from '../helpers/values';
 import { ParseError } from '../ParseError';
 import type { BuiltInEditorProps } from '../types';
@@ -13,6 +14,9 @@ const INDENT = 2;
 
 const format = (value: unknown) =>
   value === null || value === undefined ? '' : JSON.stringify(value, null, INDENT);
+
+/** The text a value shows as: unparsed text as typed, anything else formatted. */
+const textOf = (value: unknown) => (isUnparsed(value) ? value.text : format(value));
 
 const parse = (text: string): { ok: true; value: unknown } | { ok: false; message: string } => {
   if (text.trim() === '') {
@@ -25,22 +29,30 @@ const parse = (text: string): { ok: true; value: unknown } | { ok: false; messag
   }
 };
 
-/** `jsonEditor`: any JSON value, as text. Only text that parses becomes the value; errors show inline. */
+/** What typed text means for the form: the parsed value, or the text itself while it doesn't parse. */
+const valueOf = (text: string): unknown => {
+  const parsed = parse(text);
+  return parsed.ok ? parsed.value : unparsedText(text);
+};
+
+/**
+ * `jsonEditor`: any JSON value, as text. Text that doesn't parse goes to the form as unparsed text (the
+ * error shows inline, the form counts it as a change and refuses to save until it is fixed).
+ */
 export const JsonEditor = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
   const { inputId, value, onChange, onBlur, readOnly, disabled } = props;
-  const [text, setText] = useState(() => format(value));
-  const [problem, setProblem] = useState<string | undefined>();
+  const [text, setText] = useState(() => textOf(value));
   const [seen, setSeen] = useState(value);
   // Follow outside changes (reload, restore, copy from another locale) unless they match what's typed.
   if (!Object.is(seen, value)) {
     setSeen(value);
-    const parsed = parse(text);
-    if (!parsed.ok || !isDeepEqual(parsed.value, value ?? null)) {
-      setText(format(value));
-      setProblem(undefined);
+    if (!isDeepEqual(valueOf(text), value ?? null)) {
+      setText(textOf(value));
     }
   }
+  const parsed = isUnparsed(value) ? parse(value.text) : undefined;
+  const problem = parsed && !parsed.ok ? parsed.message : undefined;
   const errorId = `${inputId}-parse`;
   return (
     <div className="space-y-1">
@@ -55,11 +67,7 @@ export const JsonEditor = (props: BuiltInEditorProps) => {
         className="font-mono text-sm"
         onChange={(event) => {
           setText(event.target.value);
-          const parsed = parse(event.target.value);
-          setProblem(parsed.ok ? undefined : parsed.message);
-          if (parsed.ok) {
-            onChange(parsed.value);
-          }
+          onChange(valueOf(event.target.value));
         }}
         onBlur={onBlur}
       />

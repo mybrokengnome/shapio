@@ -73,7 +73,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `WORKER_POLL_INTERVAL_MS` | `1000` | integer ≥ 50 | How often an idle worker looks for due jobs. |
 | `JOB_LEASE_MS` | `60000` | integer ≥ 500 | How long a claimed job is reserved before another worker may take it over (renewed while it runs). |
 | `SHUTDOWN_TIMEOUT_MS` | `10000` | integer ≥ 0 | On SIGTERM/SIGINT, how long running jobs and requests get to finish. |
-| `RETENTION_DAYS` | `30` | integer 1–3650 | Days to keep finished bookkeeping: succeeded jobs, dispatched outbox events, after-hook run records, resolved content health findings. |
+| `RETENTION_DAYS` | `30` | integer 1–3650 | Days to keep finished bookkeeping: succeeded jobs, dispatched outbox events, after-hook run records, resolved content health findings, finished webhook deliveries and deployment runs (each webhook's newest delivery and each connection's newest and live run are always kept), and credentials after they expire (admin sessions, invitations, password resets, app-user refresh tokens, login codes, email confirmations, preview tokens) or setup tokens after they are used. |
 | `HEALTH_STALE_DAYS` | `14` | integer 1–3650 | Days after which an untouched draft (or unpublished changes) shows up in the Inbox. |
 
 ## Media storage

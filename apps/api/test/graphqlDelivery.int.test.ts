@@ -241,9 +241,13 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       data: Record<string, unknown>;
     }>();
     expect(toRestShape(await gqlArticle(entry.id), ID_RELATIONS)).toEqual(rest.data);
-    // Selecting the hidden (optional) field gives null, never the value.
+    // The hidden field is not in the token's schema: selecting it fails validation, never shows the value.
     const hidden = await gql(`query ($id: ID!) { article(id: $id) { title secret } }`, { id: entry.id });
-    expect(hidden.body).toEqual({ data: { article: { title: 'Has secret', secret: null } } });
+    expect(hidden.statusCode).toBe(400);
+    expect(hidden.body).toEqual({
+      data: null,
+      errors: [expect.objectContaining({ message: 'Cannot query field "secret" on type "Article".' })],
+    });
 
     for (const [url, variables] of [
       ['/api/content/articles?filters[secret][$eq]=classified', { filter: { secret: { eq: 'classified' } } }],
@@ -257,12 +261,15 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       expect(response.statusCode, url).toBe(403);
       expect(response.json()).toMatchObject({ error: { code: 'FORBIDDEN_FIELD' } });
       if (variables) {
+        // The filter input has no `secret` key for this token: the variable is refused before execution.
         const result = await gql(
           'query ($filter: ArticleFilter) { articles(filter: $filter) { totalCount } }',
           variables,
         );
-        expect(errorCodes(result), url).toEqual(['FORBIDDEN_FIELD']);
-        expect(result.body.data).toEqual({ articles: null });
+        expect(result.statusCode, url).toBe(400);
+        expect(result.body.errors?.[0]?.message, url).toContain(
+          'Field "secret" is not defined by type "ArticleFilter".',
+        );
       }
     }
     // `secret` is not sortable, so the sort input has no such key: GraphQL rejects it at validation.
@@ -287,7 +294,9 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
     );
     expect(viaGraphql).toEqual(granted.data);
     expect(granted.data).not.toHaveProperty('views');
-    expect(await gqlArticle(entry.id, 'views', '', named)).toEqual({ views: null });
+    expect(
+      errorCodes(await gql('query ($id: ID!) { article(id: $id) { views } }', { id: entry.id }, named)),
+    ).toEqual(['GRAPHQL_VALIDATION_FAILED']);
   });
 
   it('hides non-public fields of relation targets at every depth, like REST populate', async () => {
@@ -363,7 +372,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       `query ($id: ID!) {
         story(id: $id) {
           title
-          writer { id name email agent { id name taxId } publisher { id name taxId } }
+          writer { id name publisher { id name } }
         }
       }`,
       { id: tale.id },
@@ -373,15 +382,23 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
     expect(result.body.data).toEqual({
       story: {
         title: 'Tale',
-        writer: {
-          id: person.id,
-          name: 'Ada',
-          email: null,
-          agent: null,
-          publisher: { id: house.id, name: 'Public House', taxId: null },
-        },
+        writer: { id: person.id, name: 'Ada', publisher: { id: house.id, name: 'Public House' } },
       },
     });
+    // The hidden fields of relation targets are not in the schema, at any depth.
+    for (const selection of [
+      'writer { email }',
+      'writer { agent { id } }',
+      'writer { publisher { taxId } }',
+    ]) {
+      const refused = await gql(
+        `query ($id: ID!) { story(id: $id) { ${selection} } }`,
+        { id: tale.id },
+        reader,
+      );
+      expect(errorCodes(refused), selection).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+      expect(JSON.stringify(refused.body)).not.toMatch(/TAX-SECRET|ada@private|Hidden Agency/);
+    }
     expect(rest.data.writer).toMatchObject({
       name: 'Ada',
       publisher: { id: house.id, name: 'Public House' },
@@ -417,12 +434,19 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
 
   it('denies anonymous callers and tokens without a grant', async () => {
     expect((await deliver('/api/content/articles', {}, null)).statusCode).toBe(401);
-    expect(errorCodes(await gql('{ articles { totalCount } }', undefined, null))).toEqual([
-      'UNAUTHENTICATED',
-    ]);
+    // Anonymous callers allowed no model get the sign-in signal, as REST.
+    const anonymous = await gql('{ articles { totalCount } }', undefined, null);
+    expect(anonymous.statusCode).toBe(401);
+    expect(errorCodes(anonymous)).toEqual(['UNAUTHENTICATED']);
+    // A token allowed other models: this one is simply not in its schema, so naming it fails validation.
     const other = await createDeliveryToken(database.current.db, [{ modelId: author.definition.id }]);
     expect((await deliver('/api/content/articles', {}, other)).statusCode).toBe(403);
-    expect(errorCodes(await gql('{ articles { totalCount } }', undefined, other))).toEqual(['FORBIDDEN']);
+    expect(errorCodes(await gql('{ articles { totalCount } }', undefined, other))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+    expect(dataOf(await gql('{ __type(name: "Article") { name } }', undefined, other))).toEqual({
+      __type: null,
+    });
     expect((await deliver('/api/content/nope')).statusCode).toBe(404);
     const unknown = await gql('{ nopes { totalCount } }');
     expect(unknown.statusCode).toBe(400);

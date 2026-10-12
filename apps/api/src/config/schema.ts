@@ -74,7 +74,10 @@ export const configSchema = Type.Object({
   SHUTDOWN_TIMEOUT_MS: Type.Integer({ minimum: 0 }),
   /**
    * Days to keep finished bookkeeping: succeeded jobs, dispatched outbox events, after-hook run records,
-   * resolved content health findings.
+   * resolved content health findings, finished webhook deliveries and deployment runs (each webhook's newest
+   * delivery and each connection's newest and live run are always kept), and credentials after they expire
+   * (admin sessions, invitations, password resets, app-user refresh tokens, login codes, email confirmations,
+   * preview tokens) or setup tokens after they are used.
    */
   RETENTION_DAYS: Type.Integer({ minimum: 1, maximum: 3650 }),
   /** Days after which an untouched draft (or unpublished changes) shows up in the Inbox. */

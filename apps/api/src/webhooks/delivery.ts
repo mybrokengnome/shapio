@@ -1,4 +1,4 @@
-import { DELIVERY_BODY_LIMIT } from '../constants/publishing.js';
+import { DELIVERY_BODY_LIMIT, WEBHOOK_SECRET_UNREADABLE } from '../constants/publishing.js';
 import { describeError } from '../helpers/errors.js';
 import { PermanentJobError, type JobHandler } from '../jobs/types.js';
 import {
@@ -10,6 +10,7 @@ import {
 import { OutboundBlockedError } from '../publishing/outbound/ssrf.js';
 import { redactHeaders } from '../publishing/redact.js';
 import { outboundPolicy, type PublishingRuntime } from '../publishing/runtime.js';
+import { decryptIfReadable } from '../publishing/secretBox.js';
 import { DELIVERY_HEADER, EVENT_HEADER, signedHeaders } from '../publishing/signature.js';
 import * as webhooksRepository from '../repositories/webhooks.js';
 
@@ -34,7 +35,8 @@ const summarizeResponse = (response: OutboundResponse) => {
 /**
  * Delivers one webhook delivery (job `webhook.deliver`): a signed POST, at least once. Non-2xx responses and
  * network errors are retried by the queue with exponential backoff up to the webhook's max attempts; then
- * the delivery is dead (dead-lettered). A destination refused by the network policy is dead at once.
+ * the delivery is dead (dead-lettered). A destination refused by the network policy, or a signing secret that
+ * can no longer be decrypted (SESSION_SECRET changed; rotate it to repair), is dead at once.
  * Every attempt is summarised in the delivery log, with the signature redacted and the body truncated.
  */
 export const createWebhookDeliveryHandler =
@@ -53,16 +55,24 @@ export const createWebhookDeliveryHandler =
     }
     const body = JSON.stringify(delivery.payload);
     const at = runtime.now();
-    const headers = {
+    const attempt = delivery.attempts + 1;
+    const unsigned = {
       'content-type': 'application/json',
       [EVENT_HEADER]: delivery.event_type,
       [DELIVERY_HEADER]: delivery.id,
-      ...signedHeaders(runtime.secrets.decrypt(webhook.secret_encrypted), body, at),
     };
-    const attempt = delivery.attempts + 1;
-    const request = { method: 'POST', url: webhook.url, headers: redactHeaders(headers) };
+    let request = { method: 'POST', url: webhook.url, headers: redactHeaders(unsigned) };
     let response: OutboundResponse | undefined;
     let error: string | null = null;
+    let thrown: Error | undefined;
+    const secret = decryptIfReadable(runtime.secrets, webhook.secret_encrypted);
+    if (secret === undefined) {
+      // No retry can help until the secret is rotated: record why, as one attempt, and stop.
+      await record('dead', WEBHOOK_SECRET_UNREADABLE);
+      throw new PermanentJobError(WEBHOOK_SECRET_UNREADABLE);
+    }
+    const headers = { ...unsigned, ...signedHeaders(secret, body, at) };
+    request = { ...request, headers: redactHeaders(headers) };
     try {
       response = await sendOutbound({
         url: webhook.url,
@@ -77,6 +87,7 @@ export const createWebhookDeliveryHandler =
         error = describeStatus(response.status);
       }
     } catch (caught) {
+      thrown = caught instanceof Error ? caught : new Error(String(caught));
       error = describeError(caught);
       if (caught instanceof OutboundBlockedError) {
         await record('dead', caught.message);
@@ -87,6 +98,11 @@ export const createWebhookDeliveryHandler =
     const status = error === null ? 'succeeded' : final ? 'dead' : 'retrying';
     await record(status, error);
     if (error !== null) {
+      // The worker describes the failure once: a thrown error goes on as it is (its message alone when it
+      // becomes permanent), never wrapped in a new error whose message already starts with its name.
+      if (thrown) {
+        throw final ? new PermanentJobError(thrown.message) : thrown;
+      }
       throw final ? new PermanentJobError(error) : new Error(error);
     }
     return { status: response?.status ?? null, attempt };

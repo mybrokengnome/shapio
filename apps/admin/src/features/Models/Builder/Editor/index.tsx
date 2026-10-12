@@ -62,6 +62,8 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const seoField = useAddSeoField();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dismissedChangeId, setDismissedChangeId] = useState<string | undefined>(undefined);
+  // A change that failed or was cancelled stays on screen until dismissed, but no longer blocks editing.
+  const [endedChangeId, setEndedChangeId] = useState<string | undefined>(undefined);
   const [scopeConflict, setScopeConflict] = useState(false);
 
   // A fresh draft each time the builder opens; it is forgotten when the builder closes.
@@ -73,7 +75,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
 
   const changeId = flow.runningChangeId ?? detail.pendingChange?.id;
   const visibleChangeId = changeId === dismissedChangeId ? undefined : changeId;
-  const changeRunning = visibleChangeId !== undefined;
+  const changeRunning = visibleChangeId !== undefined && visibleChangeId !== endedChangeId;
   const { changedElsewhere } = useRemoteChangeNotice(id, baseVersion, changeRunning || flow.applying);
   const saveBlocked = locked || sharedReadOnly || changeRunning;
   const canReview = dirty && issues.length === 0 && !saveBlocked && !flow.reviewing;
@@ -151,7 +153,12 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
         <ChangeProgress
           key={visibleChangeId}
           changeId={visibleChangeId}
-          onFinished={(status) => void flow.onChangeFinished(status)}
+          onFinished={(status) => {
+            if (status !== 'activated') {
+              setEndedChangeId(visibleChangeId);
+            }
+            void flow.onChangeFinished(status);
+          }}
           onDismiss={() => {
             setDismissedChangeId(visibleChangeId);
             flow.dismissChange();

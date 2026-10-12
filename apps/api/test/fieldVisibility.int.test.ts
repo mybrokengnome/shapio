@@ -131,7 +131,14 @@ describe('field visibility of fields added live', () => {
     ]) {
       const refused = await deliver(url);
       expect(refused.statusCode, url).toBe(403);
-      expect(refused.json(), url).toMatchObject({ error: { code: 'FORBIDDEN_FIELD' } });
+      expect(refused.json(), url).toMatchObject({
+        error: {
+          code: 'FORBIDDEN_FIELD',
+          message: url.includes('fields=')
+            ? 'You may not read the field "internalNotes"'
+            : 'You may not filter, sort or search on "internalNotes"',
+        },
+      });
     }
     const viaGraphql = await deliverGraphql(
       'query ($id: ID!) { article(id: $id) { title teaser internalNotes } }',
@@ -139,9 +146,16 @@ describe('field visibility of fields added live', () => {
         id: entry.id,
       },
     );
-    expect(viaGraphql.body).toEqual({
-      data: { article: { title: 'Live', teaser: 'Read me', internalNotes: null } },
+    // Not in the delivery token's schema at all: naming it fails validation.
+    expect(viaGraphql.statusCode).toBe(400);
+    expect(viaGraphql.body.errors?.[0]?.message).toBe(
+      'Cannot query field "internalNotes" on type "Article".',
+    );
+    expect(JSON.stringify(viaGraphql.body)).not.toContain('classified');
+    const shown = await deliverGraphql('query ($id: ID!) { article(id: $id) { title teaser } }', {
+      id: entry.id,
     });
+    expect(shown.body).toEqual({ data: { article: { title: 'Live', teaser: 'Read me' } } });
   });
 
   it('granting the field to the role by field ID exposes it on the next request, without a restart', async () => {

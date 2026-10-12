@@ -140,6 +140,19 @@ describe('content and schema changes', () => {
       summary: 'TBD',
     });
     expect((await create('note', { title: 'n3', summary: null })).statusCode).toBe(422);
+
+    // The history marks the version whose checks failed: it never went live.
+    const revisions = expectStatus(
+      await admin.get(`/api/admin/models/${note.definition.id}/revisions`),
+      200,
+    ).json<{
+      items: Array<{ version: number; status: string; active: boolean }>;
+    }>().items;
+    expect(revisions.map(({ version, status, active }) => ({ version, status, active }))).toEqual([
+      { version: 3, status: 'activated', active: true },
+      { version: 2, status: 'failed', active: false },
+      { version: 1, status: 'activated', active: false },
+    ]);
   });
 
   it('a write that lands between the scan and the activation is caught by the re-check', async () => {
@@ -885,5 +898,141 @@ describe('entry-level conversions and schema changes', () => {
       'draft',
       'published',
     ]);
+  });
+});
+
+/**
+ * A unique field whose values move between per-locale and shared storage (the field's or the model's
+ * `localized` flips): values unique per locale may collide once shared, and the registry rows move between
+ * locale keys and `*` (ADR 0001, ADR 0004).
+ */
+describe('unique fields and localization changes', () => {
+  const database = useTestDatabase();
+  let testApp: TestApp;
+  let admin: SchemaClient;
+
+  beforeAll(async () => {
+    testApp = await createTestApp(database.current, { schemaListen: false });
+    admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
+    expectStatus(await admin.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
+  });
+  afterAll(async () => {
+    await testApp.app.close();
+  });
+
+  const define = (apiKey: string, localized: boolean, codeLocalized: boolean) =>
+    createDefinition(admin, {
+      kind: 'collection',
+      apiKey,
+      label: apiKey,
+      localized,
+      fields: [{ apiKey: 'code', label: 'Code', type: 'string', unique: true, localized: codeLocalized }],
+    });
+  const publishNew = (apiKey: string, locale: string, code: string) =>
+    admin.post(`/api/admin/content/${apiKey}`, { locale, data: { code }, publish: true });
+  /** Moves the model and its `code` field to the given localization; returns the change's final status. */
+  const relocalize = async (current: ModelBody, localized: boolean, codeLocalized: boolean) => {
+    const response = await admin.put(`/api/admin/models/${current.definition.id}`, {
+      definition: {
+        ...current.definition,
+        localized,
+        fields: current.definition.fields.map((field) => ({ ...field, localized: codeLocalized })),
+      },
+      expectedVersion: current.version,
+      acknowledgeBreaking: true,
+      acknowledgeDestructive: true,
+    });
+    expect(response.statusCode).toBe(202);
+    await runContentSchemaJobs(database.current.db);
+    return (
+      await admin.get(`/api/admin/schema/changes/${response.json<{ changeId: string }>().changeId}`)
+    ).json<ChangeBody>();
+  };
+  /** The registry rows of a model as (locale, state, entry), in key order. */
+  const registryOf = (modelId: string) =>
+    database.current.db
+      .selectFrom('unique_values')
+      .select(['locale', 'state', 'entry_id'])
+      .where('model_id', '=', modelId)
+      .orderBy('entry_id')
+      .orderBy('locale')
+      .orderBy('state')
+      .execute();
+  const rowsFor = (entryId: string, locale: string) => [
+    { locale, state: 'draft', entry_id: entryId },
+    { locale, state: 'published', entry_id: entryId },
+  ];
+  const byEntry = (rows: { entry_id: string }[]) =>
+    [...rows].sort((a, b) => a.entry_id.localeCompare(b.entry_id));
+
+  for (const level of ['field', 'model'] as const) {
+    const toShared = (current: ModelBody) =>
+      level === 'field' ? relocalize(current, true, false) : relocalize(current, false, false);
+
+    it(`${level} becomes shared: values unique only per locale are refused, with the entries listed`, async () => {
+      const apiKey = `${level}DupShared`;
+      const definition = await define(apiKey, true, true);
+      const a = expectStatus(await publishNew(apiKey, 'en', 'DUP'), 201).json<EntryBody>();
+      const b = expectStatus(await publishNew(apiKey, 'fr', 'DUP'), 201).json<EntryBody>();
+      const before = await registryOf(definition.definition.id);
+
+      const status = await toShared(definition);
+      expect(status).toMatchObject({
+        status: 'failed',
+        error: { step: expect.stringMatching(/^checkUnique:/) as unknown },
+      });
+      // The entry that finds its value taken is listed (as when a field becomes unique).
+      expect(status.error?.sampleEntryIds).toEqual([expect.toBeOneOf([a.id, b.id])]);
+      // The live registry is untouched and nothing staged is left behind.
+      expect(await registryOf(definition.definition.id)).toEqual(before);
+      expect(
+        await database.current.db
+          .selectFrom('unique_values')
+          .select('entry_id')
+          .where('model_id', '=', definition.definition.id)
+          .execute(),
+      ).toHaveLength(4);
+    });
+
+    it(`${level} becomes shared: the registry moves to the shared key and guards every locale`, async () => {
+      const apiKey = `${level}Shared`;
+      const definition = await define(apiKey, true, true);
+      const a = expectStatus(await publishNew(apiKey, 'en', 'A1'), 201).json<EntryBody>();
+      const b = expectStatus(await publishNew(apiKey, 'fr', 'B1'), 201).json<EntryBody>();
+
+      expect(await toShared(definition)).toMatchObject({ status: 'activated' });
+      expect(await registryOf(definition.definition.id)).toEqual(
+        byEntry([...rowsFor(a.id, '*'), ...rowsFor(b.id, '*')]),
+      );
+      // B1 is held by an entry in fr; a new entry in en may not take it any more.
+      expect((await publishNew(apiKey, 'en', 'B1')).statusCode).toBe(422);
+      expect((await publishNew(apiKey, 'en', 'C1')).statusCode).toBe(201);
+    });
+  }
+
+  it('a field becomes per-locale: the registry moves to locale keys, so locales may share a value', async () => {
+    const definition = await define('fieldPerLocale', true, false);
+    const a = expectStatus(await publishNew('fieldPerLocale', 'en', 'S1'), 201).json<EntryBody>();
+    expect(await registryOf(definition.definition.id)).toEqual(rowsFor(a.id, '*'));
+
+    expect(await relocalize(definition, true, true)).toMatchObject({ status: 'activated' });
+    expect(await registryOf(definition.definition.id)).toEqual(rowsFor(a.id, 'en'));
+    // Unique per locale: S1 is taken in en, free in fr.
+    expect((await publishNew('fieldPerLocale', 'en', 'S1')).statusCode).toBe(422);
+    expect((await publishNew('fieldPerLocale', 'fr', 'S1')).statusCode).toBe(201);
+  });
+
+  it('a model becomes localized: its per-locale unique field moves to locale keys', async () => {
+    const definition = await define('modelPerLocale', false, false);
+    const a = expectStatus(
+      await admin.post('/api/admin/content/modelPerLocale', { data: { code: 'S1' }, publish: true }),
+      201,
+    ).json<EntryBody>();
+    expect(await registryOf(definition.definition.id)).toEqual(rowsFor(a.id, '*'));
+
+    expect(await relocalize(definition, true, true)).toMatchObject({ status: 'activated' });
+    expect(await registryOf(definition.definition.id)).toEqual(rowsFor(a.id, 'en'));
+    expect((await publishNew('modelPerLocale', 'en', 'S1')).statusCode).toBe(422);
+    expect((await publishNew('modelPerLocale', 'fr', 'S1')).statusCode).toBe(201);
   });
 });

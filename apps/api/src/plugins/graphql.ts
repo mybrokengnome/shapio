@@ -8,12 +8,13 @@ import { graphqlRoutes } from '../routes/graphql/index.js';
 import { createLimitsRule } from '../schema/codegen/graphql/complexity.js';
 import { createDocumentCache, type DocumentCache } from '../schema/codegen/graphql/documentCache.js';
 import { createGraphqlSchemaCache, type GraphqlSchemaCache } from '../schema/codegen/graphql/schemaCache.js';
+import { textLiteralsRule } from '../schema/codegen/graphql/textRule.js';
 
 /** What `/api/graphql` requests share: the per-site schemas, the validated documents and the rules. */
 export type GraphqlRuntime = {
   schemas: GraphqlSchemaCache;
   documents: DocumentCache;
-  /** graphql-js's specified rules plus the depth, cost and alias limits. */
+  /** graphql-js's specified rules plus the depth, cost and alias limits, and valid text in string literals. */
   rules: readonly ValidationRule[];
   /** Admin users and API tokens may introspect (anyone, with GRAPHQL_PUBLIC_INTROSPECTION=true). */
   mayIntrospect: (principal: Principal) => boolean;
@@ -40,7 +41,7 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
     app.decorate('graphqlRuntime', {
       schemas,
       documents: createDocumentCache(),
-      rules: [...specifiedRules, createLimitsRule(config)],
+      rules: [...specifiedRules, createLimitsRule(config), textLiteralsRule],
       mayIntrospect: (principal) =>
         config.publicIntrospection || principal.kind === 'admin' || principal.kind === 'token',
     });

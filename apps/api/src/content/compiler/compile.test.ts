@@ -65,6 +65,7 @@ const context = {
   model,
   locales: ['en', 'fr'],
   isReadable: (field: { id: string }) => field.id !== ids.secret,
+  isQueryable: (field: { id: string }) => field.id !== ids.secret,
   allowSnapshot: true,
   resolveModel: () => model,
 };
@@ -162,6 +163,11 @@ describe('content query compiler', () => {
     expect(status(() => compileQuery('sort=secret:desc'))).toBe(403);
     expect(status(() => compileQuery('fields=secret'))).toBe(403);
     expect(status(() => compileQuery('filters[__proto__][x]=1'))).toBe(400);
+  });
+
+  it('names what was refused: reading a hidden field, or filtering, sorting or searching on it', () => {
+    expect(() => compileQuery('fields=title,secret')).toThrow('You may not read the field "secret"');
+    expect(() => compileQuery('sort=secret:desc')).toThrow('You may not filter, sort or search on "secret"');
   });
 
   it('escapes LIKE wildcards in text matches', () => {

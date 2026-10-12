@@ -11,6 +11,7 @@ import { useDiscardGuard } from '@/hooks/useDiscardGuard';
 import { useFieldsEnvironment } from '../../form/context';
 import { EntryFields } from '../../form/EntryFields';
 import { FieldsProvider } from '../../form/FieldsProvider';
+import { refuseUnparsed } from '../../form/refuseUnparsed';
 import { createEntryFormStore, selectDirtyKeys } from '../../form/store';
 import { contentIssuesOf } from '../../helpers/apiErrors';
 import { buildCreateData, defaultFormValues, liveFields } from '../../helpers/formValues';
@@ -51,6 +52,9 @@ export const InlineCreateSheet = ({ target, onClose, onCreated }: InlineCreateSh
     [outer, target, locale, create.isPending],
   );
   const submit = async () => {
+    if (refuseUnparsed(store)) {
+      return;
+    }
     store.getState().reveal();
     try {
       const entry = await create.mutateAsync({

@@ -147,6 +147,76 @@ describe('admin content API', () => {
     expect(restored).toMatchObject({ version: 3, data: { title: 'Hello' } });
   });
 
+  it('publish refuses a draft that moved past the version the caller saw', async () => {
+    const created = expectStatus(await create('article', { title: 'Seen in tab A' }), 201).json<EntryBody>();
+    // Tab B saves (version 2) after tab A loaded version 1.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 1,
+        data: { title: 'Saved in tab B' },
+      }),
+      200,
+    );
+    const publishPath = `/api/admin/content/article/${created.id}/publish`;
+    const stale = await admin.post(publishPath, { expectedVersion: 1 });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      error: { code: 'CONTENT_VERSION_CONFLICT', details: { expectedVersion: 1, currentVersion: 2 } },
+    });
+    const unchanged = expectStatus(
+      await admin.get(`/api/admin/content/article/${created.id}`),
+      200,
+    ).json<EntryBody>();
+    expect(unchanged).toMatchObject({ status: 'draft', publishedAt: null });
+
+    // The stale version is checked before validation: an invalid draft still answers 409, not 422.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 2,
+        autosave: true,
+        data: { title: null },
+      }),
+      200,
+    );
+    expect((await admin.post(publishPath, { expectedVersion: 2 })).statusCode).toBe(409);
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 3,
+        data: { title: 'Saved in tab B' },
+      }),
+      200,
+    );
+
+    // Bad combinations are refused outright.
+    for (const body of [
+      { expectedVersion: 4, expectedVersions: { en: 4 } },
+      { expectedVersions: { fr: 4 } },
+    ]) {
+      const refused = await admin.post(publishPath, body);
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json()).toMatchObject({ error: { code: 'INVALID_EXPECTED_VERSION' } });
+    }
+
+    const published = expectStatus(
+      await admin.post(publishPath, { expectedVersion: 4 }),
+      200,
+    ).json<EntryBody>();
+    expect(published).toMatchObject({ status: 'published', data: { title: 'Saved in tab B' } });
+
+    // Without a version, publish keeps publishing the current draft.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: published.version,
+        data: { title: 'Published unguarded' },
+      }),
+      200,
+    );
+    expect(expectStatus(await admin.post(publishPath, {}), 200).json<EntryBody>()).toMatchObject({
+      status: 'published',
+      data: { title: 'Published unguarded' },
+    });
+  });
+
   it('autosave moves the draft without a revision and without enforcing required', async () => {
     const created = expectStatus(await create('article', { title: 'Draft' }), 201).json<EntryBody>();
     const autosaved = expectStatus(
@@ -288,5 +358,127 @@ describe('admin content API', () => {
       .where('target_id', '=', entry.id)
       .execute();
     expect(audit.map((row) => row.action)).toEqual(['content.publish']);
+  });
+
+  it('publishing a draft that is already live changes nothing: no snapshot, event or publication', async () => {
+    const entry = expectStatus(
+      await create('author', { name: 'Grace' }, { publish: true }),
+      201,
+    ).json<EntryBody>();
+    const seq = async () =>
+      Number(
+        (
+          await database.current.db
+            .selectFrom('publication_state')
+            .select('last_seq')
+            .executeTakeFirstOrThrow()
+        ).last_seq,
+      );
+    const countOf = async (table: 'outbox_events' | 'publication_log') =>
+      table === 'outbox_events'
+        ? (
+            await database.current.db
+              .selectFrom('outbox_events')
+              .select('id')
+              .where('aggregate_id', '=', entry.id)
+              .where('type', '=', 'entry.published')
+              .execute()
+          ).length
+        : (
+            await database.current.db
+              .selectFrom('publication_log')
+              .select('entry_id')
+              .where('entry_id', '=', entry.id)
+              .execute()
+          ).length;
+    const before = await seq();
+
+    const again = expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200);
+    expect(again.json<EntryBody>()).toMatchObject({ status: 'published', data: { name: 'Grace' } });
+    await Promise.all(
+      Array.from({ length: 5 }, async () =>
+        expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200),
+      ),
+    );
+    expect(await seq()).toBe(before);
+    expect(await countOf('outbox_events')).toBe(1);
+    expect(await countOf('publication_log')).toBe(1);
+
+    // Autosaved work on the same revision is a change: publishing it moves the snapshot.
+    expectStatus(
+      await admin.put(`/api/admin/content/author/${entry.id}`, {
+        expectedVersion: entry.version,
+        autosave: true,
+        data: { name: 'Grace H.' },
+      }),
+      200,
+    );
+    expectStatus(await admin.post(`/api/admin/content/author/${entry.id}/publish`, {}), 200);
+    expect(await seq()).toBe(before + 1);
+    expect(await countOf('outbox_events')).toBe(2);
+  });
+
+  const auditOf = async (entryId: string) =>
+    (
+      await database.current.db
+        .selectFrom('audit_events')
+        .select(['action', 'metadata'])
+        .where('target_id', '=', entryId)
+        .orderBy('seq')
+        .execute()
+    ).map((row) => ({
+      action: row.action,
+      metadata: (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) as Record<
+        string,
+        unknown
+      >,
+    }));
+
+  it('create and publish writes one publish audit row, through the admin and the delivery write API', async () => {
+    const viaAdmin = expectStatus(
+      await create('author', { name: 'Barbara' }, { publish: true }),
+      201,
+    ).json<EntryBody>();
+    expect(await auditOf(viaAdmin.id)).toEqual([
+      {
+        action: 'content.publish',
+        metadata: expect.objectContaining({ modelKey: 'author', locales: ['en'], via: 'create' }) as unknown,
+      },
+    ]);
+
+    const viaDelivery = expectStatus(
+      await admin.post('/api/content/authors', { data: { name: 'Frances' }, publish: true }),
+      201,
+    ).json<{ data: { id: string; status: string } }>().data;
+    expect(viaDelivery.status).toBe('published');
+    expect((await auditOf(viaDelivery.id)).map((row) => row.action)).toEqual(['content.publish']);
+
+    // A create without publish on a model with drafts is a save: recorded as a revision, not audited.
+    const draft = expectStatus(await create('author', { name: 'Radia' }), 201).json<EntryBody>();
+    expect(await auditOf(draft.id)).toEqual([]);
+  });
+
+  it('a create on a model without drafts is audited as a publish; later saves are not', async () => {
+    await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'note',
+      label: 'Note',
+      draftAndPublish: false,
+      fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    const note = expectStatus(await create('note', { text: 'first' }), 201).json<EntryBody>();
+    expectStatus(
+      await admin.put(`/api/admin/content/note/${note.id}`, {
+        expectedVersion: note.version,
+        data: { text: 'second' },
+      }),
+      200,
+    );
+    expect(await auditOf(note.id)).toEqual([
+      {
+        action: 'content.publish',
+        metadata: expect.objectContaining({ modelKey: 'note', via: 'create' }) as unknown,
+      },
+    ]);
   });
 });

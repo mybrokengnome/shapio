@@ -79,7 +79,11 @@ describe('field visibility from the schema registry (public flags)', () => {
         .statusCode,
     ).toBe(200);
     const after = await evaluator.evaluate(delivery, { action: 'read', modelId: definitionId });
-    expect(after.readMask).toEqual({ mode: 'only', fieldIds: [title?.id, notes?.id] });
+    expect(after.readMask).toEqual({
+      mode: 'only',
+      fieldIds: [title?.id, notes?.id],
+      componentFields: 'public',
+    });
   });
 
   it('is the lookup the app wires into its own evaluator, and knows nothing of components or unknown IDs', async () => {
@@ -103,5 +107,47 @@ describe('field visibility from the schema registry (public flags)', () => {
     expect(await testApp.app.schemaLookup.getModelFields(modelId)).toEqual(
       expect.arrayContaining([expect.objectContaining({ public: true })]),
     );
+  });
+
+  it('lets role grants name a deprecated field of their model and refuses fields the model does not have', async () => {
+    const created = await admin.post('/api/admin/models', {
+      definition: pageDefinition({
+        apiKey: 'grantedPage',
+        label: 'Granted page',
+        fields: [
+          { apiKey: 'title', label: 'Title', type: 'string' },
+          { apiKey: 'legacy', label: 'Legacy', type: 'string', deprecated: true },
+        ],
+      }),
+    });
+    const { definitionId } = created.json<{ definitionId: string }>();
+    const model = (await admin.get(`/api/admin/models/${definitionId}`)).json<ModelBody>();
+    const fieldIds = model.definition.fields.map((field) => field.id);
+    const grant = (ids: string[]) => ({
+      action: 'update',
+      modelId: definitionId,
+      condition: null,
+      fieldIds: ids,
+    });
+    const role = await admin.post('/api/admin/roles', {
+      key: 'legacy-editor',
+      name: 'Legacy editor',
+      permissions: [grant(fieldIds)],
+    });
+    expect(role.statusCode).toBe(201);
+    const appRole = await admin.post('/api/admin/app-roles', {
+      key: 'legacy-members',
+      name: 'Legacy members',
+      permissions: [grant(fieldIds)],
+    });
+    expect(appRole.statusCode).toBe(201);
+    for (const url of ['/api/admin/roles', '/api/admin/app-roles']) {
+      const refused = await admin.post(url, {
+        key: 'ghost-editor',
+        name: 'Ghost editor',
+        permissions: [grant([`${fieldIds[0] ?? ''}-ghost`])],
+      });
+      expect(refused.json(), url).toMatchObject({ error: { code: 'UNKNOWN_FIELD' } });
+    }
   });
 });

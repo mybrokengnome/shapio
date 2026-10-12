@@ -1,4 +1,4 @@
-import type { Kysely, RawBuilder, Transaction } from 'kysely';
+import type { Kysely, RawBuilder, SqlBool, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import { selectSnapshotDiffRows } from '../db/snapshotDiffQuery.js';
 import type { DB } from '../db/types.js';
@@ -131,3 +131,49 @@ export const snapshotCreatedAt = async (
       .where('seq', '=', String(seq))
       .executeTakeFirst()
   )?.created_at;
+
+export type RecentWindowQuery = {
+  siteId: string;
+  /** The window ends here; only periods live at `to` count. */
+  to: number;
+  /** How many entries the window must hold. */
+  count: number;
+  /** Only these models (the ones the caller may read). */
+  modelIds: readonly string[];
+  /** A compiled row filter over the `entries` row aliased `e`, as for `listChanges`. */
+  rowFilter?: RawBuilder<unknown> | null;
+};
+
+/**
+ * Where a diff ending at `to` must start to cover the last `count` entries that went live or were updated
+ * (by the snapshot their live revision opened at), counting only entries in the given models that pass the
+ * row filter and are still live at `to`. 0 when fewer than `count` exist, so the diff covers everything.
+ * Schema-only snapshots open no period, so they never use up the window.
+ */
+export const recentWindowStart = async (
+  query: RecentWindowQuery,
+  executor: Executor = db,
+): Promise<number> => {
+  if (query.modelIds.length === 0) {
+    return 0;
+  }
+  const to = String(query.to);
+  const rowFilter = query.rowFilter?.$castTo<SqlBool>();
+  const rows = await executor
+    .selectFrom('publication_log as p')
+    .innerJoin('entries as e', 'e.id', 'p.entry_id')
+    .select((eb) => ['p.entry_id', eb.fn.max('p.from_seq').as('last_seq')])
+    .where('p.site_id', '=', query.siteId)
+    .where('p.model_id', 'in', query.modelIds)
+    .where('p.from_seq', '<=', to)
+    .where((eb) => eb.or([eb('p.to_seq', 'is', null), eb('p.to_seq', '>', to)]))
+    .$call((qb) => (rowFilter ? qb.where(rowFilter) : qb))
+    .groupBy('p.entry_id')
+    .orderBy('last_seq', 'desc')
+    .limit(query.count)
+    .execute();
+  if (rows.length < query.count) {
+    return 0;
+  }
+  return Math.max(0, Math.min(...rows.map((row) => Number(row.last_seq))) - 1);
+};

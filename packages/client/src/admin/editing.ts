@@ -4,6 +4,7 @@ import type {
   ContentHealthPage,
   ContentHealthQuery,
   ContentHealthSummary,
+  EntryHeartbeat,
   EntryPresence,
   ModelPresence,
   PresenceHeartbeatInput,
@@ -31,9 +32,9 @@ export const createEditingApi = (request: RequestFn) => ({
     summary: () => request<ContentHealthSummary>(`${ADMIN_PATHS.contentHealth}/summary`),
   },
   presence: {
-    /** Heartbeat (every 15s while the document is visible); returns who else has the entry open. */
+    /** Heartbeat (every 15s while the document is visible): who else has the entry open, and its drafts. */
     heartbeat: (modelKey: string, id: string, body: PresenceHeartbeatInput) =>
-      request<EntryPresence>(entryPath(ADMIN_PATHS.presence, modelKey, id), { method: 'PUT', body }),
+      request<EntryHeartbeat>(entryPath(ADMIN_PATHS.presence, modelKey, id), { method: 'PUT', body }),
     entry: (modelKey: string, id: string) =>
       request<EntryPresence>(entryPath(ADMIN_PATHS.presence, modelKey, id)),
     /** Everyone editing an entry of the model (list rows). */

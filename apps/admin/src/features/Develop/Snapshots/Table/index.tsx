@@ -69,9 +69,7 @@ export const Table = ({ snapshots, current, pinnedBy, showPins }: TableProps) =>
               </TableCell>
               <TableCell className="whitespace-nowrap" title={formatDateTime(snapshot.createdAt)}>
                 {formatRelativeTime(snapshot.createdAt)}
-                <span className="block text-meta text-muted-foreground">
-                  {actorLabel({ type: snapshot.actor.type })}
-                </span>
+                <span className="block text-meta text-muted-foreground">{actorLabel(snapshot.actor)}</span>
               </TableCell>
               <TableCell className="max-w-64">
                 <Badge variant="secondary">{t(SNAPSHOT_SOURCE_KEYS[snapshot.source])}</Badge>

@@ -15,8 +15,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { settle } from '@/helpers/settle';
 import { AccessSheet } from '../../AccessSheet';
 import { AssignmentBadges } from '../../AssignmentBadges';
+import { useAccountConfirmKindAndCopy } from '../../hooks/useAccountConfirm';
 import { Person } from '../../Person';
 
 type RowProps = {
@@ -24,21 +26,30 @@ type RowProps = {
   roleNames: ReadonlyMap<string, string>;
   siteNames: ReadonlyMap<string, string>;
   isSelf: boolean;
-  onToggleStatus: (user: AdminUser) => void;
+  /** Resolves once the status is changed (a confirmation waits for it). */
+  onToggleStatus: (user: AdminUser) => Promise<unknown>;
   /** Resolves once the user is removed (the confirmation waits for it). */
   onRemove: (user: AdminUser) => Promise<unknown>;
 };
 
 /**
  * One admin user. Its menu hands off to the access sheet (role per site), or to an inline confirmation
- * anchored to the menu button.
+ * anchored to the menu button: for removing, and for disabling someone whose API tokens would stop working.
  */
 export const Row = ({ user, roleNames, siteNames, isSelf, onToggleStatus, onRemove }: RowProps) => {
   const { t } = useTranslation();
   // Undefined until first opened, so rows that are never edited don't each hold a form.
   const [editingAccess, setEditingAccess] = useState<boolean | undefined>(undefined);
-  const [removing, setRemoving] = useState(false);
+  const confirm = useAccountConfirmKindAndCopy(user);
   const displayName = user.name || user.email;
+  const toggleStatus = () => {
+    if (confirm.disableNeedsConfirm) {
+      confirm.setKind('disable');
+      return;
+    }
+    // A failure is reported by the mutation cache.
+    void settle(onToggleStatus(user));
+  };
   return (
     <TableRow>
       <TableCell>
@@ -71,12 +82,12 @@ export const Row = ({ user, roleNames, siteNames, isSelf, onToggleStatus, onRemo
           <DropdownMenu>
             <InlineConfirm
               tone="danger"
-              open={removing}
-              onOpenChange={setRemoving}
-              title={t('users.removeTitle', { name: displayName })}
-              description={t('users.removeDescription')}
-              confirmLabel={t('common.remove')}
-              onConfirm={() => onRemove(user)}
+              open={confirm.kind !== null}
+              onOpenChange={(open) => !open && confirm.setKind(null)}
+              title={confirm.copy.title}
+              description={confirm.copy.description}
+              confirmLabel={confirm.copy.confirmLabel}
+              onConfirm={() => (confirm.kind === 'disable' ? onToggleStatus(user) : onRemove(user))}
             >
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" aria-label={`${t('common.actions')}: ${displayName}`}>
@@ -86,18 +97,18 @@ export const Row = ({ user, roleNames, siteNames, isSelf, onToggleStatus, onRemo
             </InlineConfirm>
             <DropdownMenuContent
               align="end"
-              onCloseAutoFocus={(event) => (removing || editingAccess) && event.preventDefault()}
+              onCloseAutoFocus={(event) => (confirm.kind !== null || editingAccess) && event.preventDefault()}
             >
               <DropdownMenuItem onSelect={() => setEditingAccess(true)}>
                 <ShieldCheck aria-hidden="true" />
                 {t('users.editAccess')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onToggleStatus(user)}>
+              <DropdownMenuItem onSelect={toggleStatus}>
                 {user.status === 'active' ? <UserX aria-hidden="true" /> : <UserCheck aria-hidden="true" />}
                 {user.status === 'active' ? t('users.disable') : t('users.enable')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
+              <DropdownMenuItem variant="destructive" onSelect={() => confirm.setKind('remove')}>
                 <Trash2 aria-hidden="true" />
                 {t('common.remove')}
               </DropdownMenuItem>

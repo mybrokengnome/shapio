@@ -139,10 +139,13 @@ export const setDefaultLocale = async (
     return { code, changed: false };
   }
   if (!acknowledgeBreaking) {
-    throw acknowledgementRequired({
-      change: classifyLocaleChange('locale.defaultChanged', code),
-      impact: { previousDefault: context.snapshot.defaultLocale },
-    });
+    throw acknowledgementRequired(
+      {
+        change: classifyLocaleChange('locale.defaultChanged', code),
+        impact: { previousDefault: context.snapshot.defaultLocale },
+      },
+      { breaking: true, destructive: false },
+    );
   }
   await commitLocaleChange(
     context,
@@ -154,7 +157,9 @@ export const setDefaultLocale = async (
 
 /**
  * Deleting a locale removes it from delivery at once and purges its content in a follow-up job, so it is
- * destructive and needs explicit acknowledgement when content exists. The default locale cannot be deleted.
+ * destructive and needs explicit acknowledgement when content exists. Entries that exist only in it are
+ * deleted; entries of non-localized models stored in it move to the default locale. The default locale cannot
+ * be deleted.
  */
 export const deleteLocale = async (
   context: SchemaServiceContext,
@@ -168,16 +173,17 @@ export const deleteLocale = async (
   if (context.snapshot.defaultLocale === code) {
     throw new AppError(422, 'LOCALE_IS_DEFAULT', 'Choose another default locale before deleting this one.');
   }
-  const affectedHeads = await context.ports.impact.countLocaleHeads(code);
-  if (affectedHeads > 0 && !acknowledgeDestructive) {
-    throw acknowledgementRequired({
-      change: classifyLocaleChange('locale.removed', code),
-      impact: { affectedHeads },
-    });
+  const impact = await context.ports.impact.countLocaleRemoval(code);
+  // Moving non-localized entries to the default locale loses nothing; purged heads need acknowledging.
+  if (impact.affectedHeads > 0 && !acknowledgeDestructive) {
+    throw acknowledgementRequired(
+      { change: classifyLocaleChange('locale.removed', code), impact },
+      { breaking: false, destructive: true },
+    );
   }
   await commitLocaleChange(
     context,
-    { kind: 'locale.removed', code, metadata: { affectedHeads } },
+    { kind: 'locale.removed', code, metadata: { ...impact } },
     async (trx, now) => {
       await localesRepository.remove(code, trx);
       await localesRepository.removeFromFallbacks(code, now, trx);
@@ -191,5 +197,5 @@ export const deleteLocale = async (
       );
     },
   );
-  return { code, affectedHeads };
+  return { code, ...impact };
 };

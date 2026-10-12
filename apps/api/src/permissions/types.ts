@@ -147,8 +147,19 @@ export type SiteAction = (typeof SITE_ACTIONS)[number];
 export const GLOBAL_ACTIONS = [...NETWORK_ACTIONS, ...SITE_ACTIONS] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
 
-/** Field visibility by stable field ID. `all` means every field the schema exposes to this principal kind. */
-export type FieldMask = { mode: 'all' } | { mode: 'only'; fieldIds: readonly string[] };
+/**
+ * Which fields of a component (at any depth) a principal sees: `all`, or only those with `public: true`. Grants
+ * name model field IDs only, never a component's fields, so delivery audiences see a component's
+ * `public: false` fields under no grant.
+ */
+export type ComponentFieldVisibility = 'all' | 'public';
+
+/**
+ * Field visibility by stable field ID. `all` means every field the schema exposes to this principal kind,
+ * a component's fields included. `only`: these top-level fields, and `componentFields` inside components.
+ */
+export type FieldMask =
+  { mode: 'all' } | { mode: 'only'; fieldIds: readonly string[]; componentFields: ComponentFieldVisibility };
 
 /** Enumerated row conditions; compiled to SQL only by content/compiler. Never free-form expressions. */
 export type RowCondition = { kind: 'ownedByPrincipal' };
@@ -158,12 +169,40 @@ export type RowFilter =
   | { kind: 'and'; filters: readonly RowFilter[] }
   | { kind: 'or'; filters: readonly RowFilter[] };
 
+/**
+ * Field masks that differ by row: `everyRow` applies to every row the principal may act on, and each `when`
+ * entry adds its mask on the rows matching its condition (a grant limited to the principal's own entries
+ * that names more fields than the grants reaching every row).
+ */
+export type RowFieldMasks = {
+  everyRow: FieldMask;
+  when: ReadonlyArray<{ condition: RowCondition; mask: FieldMask }>;
+};
+
+/** Read masks per row (issue #75). */
+export type RowReadMasks = RowFieldMasks;
+
+/** Write masks per row (issue #80). */
+export type RowWriteMasks = RowFieldMasks;
+
 export type Policy = {
   allowed: boolean;
   /** Extra restriction on which rows the principal may act on. `null` means no restriction. */
   rowFilter: RowFilter | null;
+  /**
+   * Every field the principal may read on some row (the shape of what it can see, e.g. a GraphQL schema).
+   * Values are shown per row: see `rowReadMasks`.
+   */
   readMask: FieldMask;
+  /** null: `readMask` applies to every row. Otherwise readers apply these per row (never `readMask`). */
+  rowReadMasks: RowReadMasks | null;
+  /**
+   * Every field the principal may write on some row (the shape of what it can send, e.g. GraphQL inputs).
+   * Writes are checked per row: see `rowWriteMasks`.
+   */
   writeMask: FieldMask;
+  /** null: `writeMask` applies to every row. Otherwise writes check these per row (never `writeMask`). */
+  rowWriteMasks: RowWriteMasks | null;
 };
 
 export type PolicyRequest = {
@@ -207,11 +246,13 @@ export type PermissionEvaluator = {
   atVersions?: (versions: KnownVersions) => PermissionEvaluator;
 };
 
-const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [] };
+const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [], componentFields: 'public' };
 
 export const DENIED_POLICY: Policy = Object.freeze({
   allowed: false,
   rowFilter: null,
   readMask: EMPTY_MASK,
+  rowReadMasks: null,
   writeMask: EMPTY_MASK,
+  rowWriteMasks: null,
 });

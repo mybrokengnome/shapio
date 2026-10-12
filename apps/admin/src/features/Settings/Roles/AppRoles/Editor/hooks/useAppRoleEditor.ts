@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { AppRole } from '@shapio/client';
+import type { AppContentAction, AppRole } from '@shapio/client';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -8,7 +8,12 @@ import { useUpdateAppRole } from '@/api/appRoles';
 import { i18next } from '@/app/i18n';
 import { settle } from '@/helpers/settle';
 import { requiredText } from '@/helpers/validation';
-import { toMatrix, toPermissions, type PermissionMatrix } from '../../helpers/permissionMatrix';
+import {
+  toMatrix,
+  toPermissions,
+  type PermissionMatrix,
+} from '../../../PermissionMatrix/helpers/permissionMatrix';
+import { APP_ROLE_MATRIX_RULES } from '../../constants';
 
 const detailsSchema = z.object({ name: requiredText(), description: z.string().trim() });
 
@@ -24,12 +29,12 @@ export const useAppRoleEditor = (role: AppRole) => {
     resolver: zodResolver(detailsSchema),
     defaultValues: { name: role.name, description: role.description },
   });
-  const [matrix, setMatrix] = useState<PermissionMatrix>(() => toMatrix(role.permissions));
+  const [matrix, setMatrix] = useState<PermissionMatrix<AppContentAction>>(() => toMatrix(role.permissions));
   const initial = useMemo(
-    () => JSON.stringify(toPermissions(toMatrix(role.permissions))),
+    () => JSON.stringify(toPermissions(toMatrix(role.permissions), APP_ROLE_MATRIX_RULES)),
     [role.permissions],
   );
-  const permissions = useMemo(() => toPermissions(matrix), [matrix]);
+  const permissions = useMemo(() => toPermissions(matrix, APP_ROLE_MATRIX_RULES), [matrix]);
   const permissionsDirty = JSON.stringify(permissions) !== initial;
   const detailsDirty = !role.isSystem && form.formState.isDirty;
 

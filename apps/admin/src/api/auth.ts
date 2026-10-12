@@ -13,12 +13,17 @@ import type {
 } from '@shapio/client';
 import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { currentSite, leaveUnknownSite } from '@/app/currentSite';
+import { hasUnsavedEdits, useSessionStore } from '@/stores/session';
 import { adminApi } from './client';
 import { resetCsrfToken, setCsrfToken, withCsrf } from './csrf';
 import { hasErrorCode, isUnauthorized } from './errors';
 import { queryKeys } from './queryKeys';
 
-/** The signed-in admin, or `null` when there is no valid session (401 is an answer, not an error). */
+/**
+ * The signed-in admin, or `null` when there is no valid session (401 is an answer, not an error). Over
+ * unsaved edits a 401 fails instead: the query keeps the admin it had, so the page stays mounted while the
+ * session is resumed in place.
+ */
 export const meQueryOptions = queryOptions({
   queryKey: queryKeys.me,
   queryFn: async (): Promise<MeResponse | null> => {
@@ -28,6 +33,9 @@ export const meQueryOptions = queryOptions({
       return me;
     } catch (error) {
       if (isUnauthorized(error)) {
+        if (hasUnsavedEdits() || useSessionStore.getState().signInRequired) {
+          throw error;
+        }
         return null;
       }
       // A remembered site that no longer exists: start again without it. A site named in the URL is the
@@ -59,6 +67,7 @@ export const useSetupStatus = () => useQuery(setupStatusQueryOptions);
  */
 const startSession = async (queryClient: QueryClient, started: SessionStarted) => {
   setCsrfToken(started.csrfToken);
+  useSessionStore.getState().clearSignInRequired();
   queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== queryKeys.me[0] });
   queryClient.setQueryData(queryKeys.setupStatus, (previous: SetupStatusResponse | undefined) => ({
     requiresToken: false,
@@ -77,6 +86,27 @@ export const useLogin = () => {
     meta: silent,
     mutationFn: (input: LoginInput) => withCsrf(() => adminApi.auth.login(input)),
     onSuccess: (started) => startSession(queryClient, started),
+  });
+};
+
+/**
+ * Signs the same admin in again over a session that ended while a screen held unsaved edits. Unlike a
+ * fresh sign-in nothing cached is dropped (dropping the open entry's query would unmount its editor): the
+ * admin is re-read, requests that failed while signed out are retried, and saves that failed with a 401
+ * run again (`resumed`).
+ */
+export const useResumeSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['auth', 'resume'],
+    meta: silent,
+    mutationFn: (input: LoginInput) => withCsrf(() => adminApi.auth.login(input)),
+    onSuccess: async (started) => {
+      setCsrfToken(started.csrfToken);
+      await queryClient.fetchQuery({ ...meQueryOptions, staleTime: 0 });
+      useSessionStore.getState().resume();
+      void queryClient.invalidateQueries({ predicate: (query) => query.state.status === 'error' });
+    },
   });
 };
 
@@ -109,6 +139,7 @@ export const useLogout = () => {
     // `me` is set rather than removed so mounted observers see the change.
     onSettled: () => {
       resetCsrfToken();
+      useSessionStore.getState().clearSignInRequired();
       queryClient.setQueryData(queryKeys.me, null);
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== queryKeys.me[0] });
     },

@@ -233,6 +233,109 @@ describe('change sets (schema + content)', () => {
     expect(activated.metadata).toMatchObject({ changeSetId: set.id });
   });
 
+  it('a shipped set keeps showing what it shipped, also after a later set changes the same entry and model', async () => {
+    type ShippedReview = {
+      changeSet: { status: string; shippedSnapshot: number; shippedBy: { type: string } | null };
+      entries: Array<{
+        entryId: string;
+        fields: Array<{ apiKey: string; before: unknown; after: unknown }>;
+        issues: unknown[];
+        draftVersion: number | null;
+      }>;
+      schema: Array<{
+        definitionId: string;
+        stale: boolean;
+        activeVersion: number | null;
+        beforeRevisionId: string | null;
+        impact: unknown;
+        issues: unknown[];
+        plan: { changes: Array<{ fieldId?: string }> } | null;
+      }>;
+      checks: { blocking: unknown[]; warnings: unknown[] };
+      notices: string[];
+    };
+    const getReview = async (id: string) =>
+      expectStatus(await admin.get(`/api/admin/change-sets/${id}/review`), 200).json<ShippedReview>();
+    const entry = await createArticle('Launch');
+    await publish(entry.id);
+    await edit(entry.id, { title: 'Launch (edited)' });
+    const baseRevision = await database.current.db
+      .selectFrom('model_active_versions')
+      .select('revision_id')
+      .where('model_id', '=', article.definition.id)
+      .executeTakeFirstOrThrow();
+    const first = await createSet('Tagline');
+    expectStatus(
+      await putDraft(
+        first.id,
+        article,
+        fieldsWith(article, [{ apiKey: 'tagline', label: 'Tagline', type: 'string' }]),
+      ),
+      200,
+    );
+    await addItem(first.id, entry.id);
+    const shipped = expectStatus(await ship(first.id), 200).json<ChangeSet>();
+    expect(shipped.status).toBe('shipped');
+    article = await reloadModel(article.definition.id);
+    const taglineId = fieldIdOf(article, 'tagline');
+
+    const review = await getReview(first.id);
+    expect(review.changeSet).toMatchObject({
+      status: 'shipped',
+      shippedSnapshot: shipped.shippedSnapshot,
+      shippedBy: { type: 'token' },
+    });
+    expect(review.checks).toMatchObject({ blocking: [], warnings: [] });
+    expect(review.notices).toEqual([]);
+    expect(review.schema).toEqual([
+      expect.objectContaining({
+        definitionId: article.definition.id,
+        stale: false,
+        impact: null,
+        issues: [],
+        beforeRevisionId: baseRevision.revision_id,
+      }),
+    ]);
+    expect(review.schema[0]?.plan?.changes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fieldId: taglineId })]),
+    );
+    expect(review.entries).toEqual([
+      expect.objectContaining({
+        entryId: entry.id,
+        draftVersion: null,
+        issues: [],
+        fields: [expect.objectContaining({ apiKey: 'title', before: 'Launch', after: 'Launch (edited)' })],
+      }),
+    ]);
+
+    // A later set changing the same entry and model leaves the first set's review as it was.
+    await edit(entry.id, { title: 'Launch (again)' });
+    const second = await createSet('Kicker');
+    expectStatus(
+      await putDraft(
+        second.id,
+        article,
+        fieldsWith(article, [{ apiKey: 'kicker', label: 'Kicker', type: 'string' }]),
+      ),
+      200,
+    );
+    await addItem(second.id, entry.id);
+    expect(expectStatus(await ship(second.id), 200).json<ChangeSet>().status).toBe('shipped');
+    article = await reloadModel(article.definition.id);
+    const after = await getReview(first.id);
+    // What it shipped; `activeVersion` is the definition's version now and `changeSet` the set as it is.
+    const shippedPart = (value: ShippedReview) => ({
+      entries: value.entries,
+      schema: value.schema.map((item) => ({ ...item, activeVersion: null })),
+      checks: value.checks,
+      notices: value.notices,
+    });
+    expect(shippedPart(after)).toEqual(shippedPart(review));
+    expect((await getReview(second.id)).entries[0]?.fields).toEqual([
+      expect.objectContaining({ apiKey: 'title', before: 'Launch (edited)', after: 'Launch (again)' }),
+    ]);
+  });
+
   it('a metadata-only activation outside a change set takes no snapshot number (brief §10)', async () => {
     const before = await database.current.db
       .selectFrom('publication_state')
@@ -400,6 +503,11 @@ describe('change sets (schema + content)', () => {
     expect(expectStatus(await deliver(one.id), 200).json<{ data: { title: string } }>().data.title).toBe(
       'One (edited)',
     );
+    // The snapshot serves what the set published, not the old content converted (issue #69).
+    expect(
+      expectStatus(await deliver(one.id, `?snapshot=${seq}`), 200).json<{ data: { title: string } }>().data
+        .title,
+    ).toBe('One (edited)');
     // An entry the set did not touch stays "published": its draft and live heads share the conversion revision.
     expect(
       expectStatus(await admin.get(`/api/admin/content/article/${untouched.id}`), 200).json<EntryBody>()

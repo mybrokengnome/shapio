@@ -2,16 +2,11 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
-import { SCREENSHOT_DIR } from './constants';
+import { SCREENSHOT_DIR, TOAST_SELECTOR, TOAST_SETTLE_TIMEOUT_MS, TOASTER_SELECTOR } from './constants';
 import { renderScheme } from './schemes';
 
 const SCHEMES = ['light', 'dark'] as const;
 const BLOCKING_IMPACTS = new Set(['serious', 'critical']);
-/** Sonner's toast list and each toast in it (see `src/components/ui/sonner.tsx`). */
-const TOASTER_SELECTOR = '[data-sonner-toaster]';
-const TOAST_SELECTOR = '[data-sonner-toast]';
-/** Toasts dismiss after Sonner's 4 s default; allow for that plus the exit transition. */
-const TOAST_SETTLE_TIMEOUT_MS = 5_000;
 
 /** Every screenshot taken in this run, for the report. */
 export const capturedScreenshots: string[] = [];
@@ -67,13 +62,19 @@ type RenderedOptions = {
    * third-party and has known issues of its own).
    */
   exclude?: readonly string[];
+  /** axe rules not run, each with its reason at the call site (e.g. a third-party widget's false positive). */
+  disableRules?: readonly string[];
 };
 
 /**
  * Screenshots the screen as it is rendered now (`{name}.png`) and runs axe: no serious or critical
  * violations allowed. `captureScreen` calls it once per colour scheme; the theme suite once per theme.
  */
-export const captureRendered = async (page: Page, name: string, { exclude = [] }: RenderedOptions = {}) => {
+export const captureRendered = async (
+  page: Page,
+  name: string,
+  { exclude = [], disableRules = [] }: RenderedOptions = {},
+) => {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
   // contrast checks, which would otherwise see half-faded colours.
@@ -88,6 +89,9 @@ export const captureRendered = async (page: Page, name: string, { exclude = [] }
     .exclude(TOASTER_SELECTOR);
   for (const selector of exclude) {
     axe = axe.exclude(selector);
+  }
+  if (disableRules.length > 0) {
+    axe = axe.disableRules([...disableRules]);
   }
   const results = await axe.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const blocking = results.violations

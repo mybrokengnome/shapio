@@ -254,8 +254,9 @@ on the request's site. An app user's access token names its site and is refused 
 (`403 SITE_MISMATCH`), and so are its refresh token, its confirmation and reset links and an OAuth login code
 used on another site.
 
-Which app roles apply is set per site. App roles and their grants are shared, but which ones **anonymous
-callers** (`public`) and **every signed-in app user** (`authenticated`) hold is bound on each site:
+Which app roles apply is set per site. App roles and their grants are shared, but which ones **every caller**
+(`public`, anonymous or signed in) and **every signed-in app user** (`authenticated`, on top of `public`) hold
+is bound on each site:
 
 ```sh
 curl -X PUT "$SHAPIO_URL/api/admin/sites/<site id>/app-roles" -H "Authorization: Bearer $SHAPIO_TOKEN" \

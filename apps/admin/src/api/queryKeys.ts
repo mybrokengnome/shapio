@@ -19,6 +19,8 @@ export const queryKeys = {
   invitationInspect: (token: string) => ['invitations', 'inspect', token] as const,
   invitations: ['invitations'] as const,
   roles: ['roles'] as const,
+  /** One admin or delivery role (under `roles`, so invalidating the list refreshes it too). */
+  role: (id: string) => ['roles', id] as const,
   /** App users (end users of the user's sites) and their roles (package I). */
   appUsers: {
     all: ['appUsers'] as const,
@@ -58,8 +60,13 @@ export const queryKeys = {
     definitions: (category: DefinitionCategory) => ['schema', 'definitions', category] as const,
     definition: (category: DefinitionCategory, id: string) =>
       ['schema', 'definitions', category, id] as const,
+    /** Revisions never change, so this is never invalidated. */
+    revision: (category: DefinitionCategory, id: string, revisionId: string) =>
+      ['schema', 'revisions', category, id, revisionId] as const,
     /** The models and components shared with all sites (the Network → Content types page). */
     sharedDefinitions: ['schema', 'shared'] as const,
+    /** Every site's models, shared ones once (the network roles pages). */
+    everySiteModels: ['schema', 'everySiteModels'] as const,
     change: (changeId: string) => ['schema', 'changes', changeId] as const,
   },
   /** Entries per model; invalidate `content.model(key)` after any write to that model. */
@@ -80,7 +87,8 @@ export const queryKeys = {
       all: ['develop', 'changeSets'] as const,
       list: (status: string) => ['develop', 'changeSets', 'list', status] as const,
       set: (id: string) => ['develop', 'changeSets', 'set', id] as const,
-      review: (id: string) => ['develop', 'changeSets', 'review', id] as const,
+      /** Keyed by the set's status too: a set that finishes shipping in the background gets its shipped review. */
+      review: (id: string, status: string) => ['develop', 'changeSets', 'review', id, status] as const,
       timeline: (id: string) => ['develop', 'changeSets', 'timeline', id] as const,
       draft: (id: string, definitionId: string) =>
         ['develop', 'changeSets', 'draft', id, definitionId] as const,
@@ -91,6 +99,7 @@ export const queryKeys = {
       list: (cursor: string | undefined) => ['develop', 'snapshots', 'list', cursor ?? null] as const,
       snapshot: (seq: number) => ['develop', 'snapshots', 'snapshot', seq] as const,
       changes: (from: number, to: number) => ['develop', 'snapshots', 'changes', from, to] as const,
+      recentChanges: (recent: number, to: number) => ['develop', 'snapshots', 'recent', recent, to] as const,
       ledger: ['develop', 'snapshots', 'ledger'] as const,
       /** One place read through delivery as it was at `seq`, in one locale. */
       place: (seq: number, routeKey: string, locale: string) =>

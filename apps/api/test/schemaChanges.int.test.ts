@@ -188,7 +188,11 @@ describe('planned schema changes (prerequisites)', () => {
     });
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({
-      error: { code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED' },
+      error: {
+        code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED',
+        message:
+          'This change breaks the API contract and destroys data. Review the plan and resend with acknowledgeBreaking and acknowledgeDestructive set.',
+      },
     });
     const accepted = await admin.put(`/api/admin/models/${id}`, {
       definition: changed,

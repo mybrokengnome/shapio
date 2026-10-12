@@ -85,7 +85,3 @@ export const listForEntry = (
 };
 
 export type RevisionSummaryRow = Awaited<ReturnType<typeof listForEntry>>[number];
-
-/** Removes a deleted locale's history (purge follow-up). Revisions' parents never cross locales. */
-export const deleteForLocale = (locale: string, trx: Executor = db) =>
-  trx.deleteFrom('content_revisions').where('locale', '=', locale).executeTakeFirst();

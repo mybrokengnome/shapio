@@ -13,7 +13,7 @@ import {
 } from '@shapio/schema';
 import type { Policy } from '../permissions/types.js';
 import type { HeadRow } from './compiler/compile.js';
-import { maskAllows } from './compiler/policy.js';
+import { maskAllows, rowReadMask } from './compiler/policy.js';
 import { fallbackChain } from './locales.js';
 import type { ContentModel } from './model.js';
 import type { ReadEnvironment } from './read.js';
@@ -51,9 +51,14 @@ const keysOf = (model: ContentModel): SeoKeys => {
 };
 
 /** The entry's own title, only when the caller may read the title field (never a hidden value). */
-const fallbackTitleOf = (model: ContentModel, policy: Policy, row: HeadRow): string | null => {
+const fallbackTitleOf = (
+  env: ReadEnvironment,
+  model: ContentModel,
+  policy: Policy,
+  row: HeadRow,
+): string | null => {
   const field = effectiveTitleField(model.definition);
-  if (!field || !maskAllows(policy.readMask, field)) {
+  if (!field || !maskAllows(rowReadMask(policy, env.actor, row), field)) {
     return null;
   }
   const value = row.data[field.id];
@@ -89,7 +94,7 @@ export const resolveSeoFields = (
       fallbackChain(env.snapshot, defaultsLocaleOf(env, model, row)),
     ),
     image: options.image,
-    fallbackTitle: fallbackTitleOf(model, policy, row),
+    fallbackTitle: fallbackTitleOf(env, model, policy, row),
     keys,
   };
   const output = { ...data };

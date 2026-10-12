@@ -48,7 +48,8 @@ const waitForChanges = async (
  * Records the new state in the lock file and rewrites the files of applied definitions in canonical form
  * (e.g. with server-assigned field IDs), in their scope's folder. Definitions skipped because they were
  * unchanged locally keep their old base, so a later apply still treats them as untouched. Other sites'
- * entries are kept as they are.
+ * entries are kept as they are. Returns the schema version it recorded: the instance's version after any
+ * waited-for changes activated, which can be newer than the one the apply response reported.
  */
 const updateLocalState = async (
   options: SchemaCommandOptions,
@@ -89,6 +90,7 @@ const updateLocalState = async (
     };
   }
   await writeLockFile(options.lockPath, coverSiteIfHeld(lock, state.siteKey));
+  return lock.schemaVersion;
 };
 
 /**
@@ -112,9 +114,9 @@ export const schemaApplyCommand: CliCommand = {
     printResults(response, state, io, false);
     const pending = response.results.filter((item) => item.outcome === 'pending');
     const failed = options.wait ? await waitForChanges(options, pending, io) : [];
-    await updateLocalState(options, state, response);
+    const schemaVersion = await updateLocalState(options, state, response);
     const applied = response.results.filter((item) => item.outcome === 'activated').length;
-    io.stdout(`Applied ${applied} definition(s) at schema version ${response.schemaVersion}.\n`);
+    io.stdout(`Applied ${applied} definition(s) at schema version ${schemaVersion}.\n`);
     return failed.length > 0 ? 1 : 0;
   },
 };

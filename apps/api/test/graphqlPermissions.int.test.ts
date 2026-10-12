@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAdmin, login, type TestSession } from './helpers/adminIdentity.js';
 import {
   createDefinition,
+  createDeliveryToken,
   createRole,
   expectStatus,
   fieldIdOf,
@@ -83,6 +84,31 @@ describe('GraphQL content permissions (twins of the REST permission tests)', () 
     const denied = await reader.gql(CREATE, { data: { title: 'x' } });
     expect(errorCodes(denied)).toEqual(['FORBIDDEN']);
     expect(denied.body.data).toEqual({ createDoc: null });
+  });
+
+  it('a delivery token allowed no model gets 403 FORBIDDEN; one allowed others gets a validation error', async () => {
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+    const nothing = await createDeliveryToken(database.current.db, []);
+    const refused = await graphql(testApp.app, '{ docs { totalCount } }', { headers: bearer(nothing) });
+    expect(refused.statusCode).toBe(403);
+    expect(errorCodes(refused)).toEqual(['FORBIDDEN']);
+    expect(JSON.stringify(refused.body)).not.toContain('Cannot query field');
+    // A query its empty schema can answer still runs.
+    expect(dataOf(await graphql(testApp.app, '{ __typename }', { headers: bearer(nothing) }))).toEqual({
+      __typename: 'Query',
+    });
+
+    const admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
+    const other = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'memo',
+      label: 'Memo',
+      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+    });
+    const elsewhere = await createDeliveryToken(database.current.db, [{ modelId: other.definition.id }]);
+    const unknown = await graphql(testApp.app, '{ docs { totalCount } }', { headers: bearer(elsewhere) });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.body.errors?.[0]?.message).toBe('Cannot query field "docs" on type "Query".');
   });
 
   it('field masks limit what a role reads and writes', async () => {

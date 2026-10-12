@@ -87,7 +87,11 @@ export type ChangeSetSummary = {
   version: number;
 };
 
-export type ChangeSet = ChangeSetSummary & { items: ChangeSetItem[] };
+export type ChangeSet = ChangeSetSummary & {
+  items: ChangeSetItem[];
+  /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
+  shippedBy: ChangeSetActor | null;
+};
 
 export type ChangeSetQuery = {
   /** Comma-separated statuses; default: everything except `discarded`. */
@@ -193,6 +197,8 @@ export type ReviewSchemaItem = {
   affectedEntriesBySite: Array<{ site: SiteRef; entries: number }>;
   issues: ReviewIssue[];
   alsoChangedIn: Array<{ id: string; title: string }>;
+  /** A shipped set: the revision the draft replaced (null for a new definition, and for unshipped sets). */
+  beforeRevisionId: string | null;
 };
 
 export const NOT_RESTORABLE_REASONS = [
@@ -308,7 +314,8 @@ export type Snapshot = {
   source: SnapshotSource;
   changeSetId: string | null;
   changeSetTitle: string | null;
-  actor: { type: string; id: string | null };
+  /** `name`: the admin's or token's name; null for the system, or once the admin or token is deleted. */
+  actor: { type: string; id: string | null; name: string | null };
   changedEntries: number;
   deploymentRuns: Array<{ id: string; connectionId: string; status: DeploymentRunStatus }>;
   createdAt: string;

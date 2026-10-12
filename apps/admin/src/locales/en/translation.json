@@ -4,6 +4,8 @@
     "skipToContent": "Skip to content"
   },
   "common": {
+    "noAccess": "You don't have access to this",
+    "noAccessDescription": "Ask an owner for a role that includes it.",
     "cancel": "Cancel",
     "close": "Close",
     "saveChanges": "Save changes",
@@ -52,6 +54,7 @@
     "apiKeyTaken": "Another one already uses this API ID (IDs are case-insensitive).",
     "pluralApiKeySameAsSingular": "The plural API ID must differ from the API ID.",
     "localeCode": "Use a language code such as en, fr or fr-CA.",
+    "localeExists": "A locale with this code already exists.",
     "tooLong": "This is too long.",
     "selectModel": "Choose a model.",
     "dateTime": "Choose a valid date and time.",
@@ -215,6 +218,11 @@
     "submitting": "Signing in…",
     "forgotPassword": "Forgot password?"
   },
+  "sessionEnded": {
+    "title": "Your session has ended",
+    "description": "Sign in again to keep working. Your unsaved changes are still here.",
+    "account": "Signing in as {{email}}"
+  },
   "forgotPassword": {
     "title": "Reset your password",
     "description": "We'll email you a link to choose a new one.",
@@ -344,6 +352,11 @@
         "title": "Links to deleted entries",
         "sentence": "{{field}} links to an entry that no longer exists",
         "fix": "Fix link"
+      },
+      "mediaMissing": {
+        "title": "Files deleted from the library",
+        "sentence": "A file in {{field}} is no longer in the media library",
+        "fix": "Replace file"
       },
       "relationUnpublished": {
         "title": "Links to unpublished entries",
@@ -553,6 +566,8 @@
     "deleteDescription": "It disappears from the API at once, and its content is purged in the background. This can't be undone.",
     "deleteContent_one": "{{count}} entry version has content in {{label}}. Deleting the locale permanently removes it.",
     "deleteContent_other": "{{count}} entry versions have content in {{label}}. Deleting the locale permanently removes them.",
+    "deleteEntries_one": "{{count}} entry exists only in {{label}} and will be deleted.",
+    "deleteEntries_other": "{{count}} entries exist only in {{label}} and will be deleted.",
     "deleteAcknowledge_one": "I understand {{count}} entry version will be permanently deleted.",
     "deleteAcknowledge_other": "I understand {{count}} entry versions will be permanently deleted.",
     "deleting": "Deleting…",
@@ -575,7 +590,6 @@
     "permissionsCount_one": "{{count}} permission",
     "permissionsCount_other": "{{count}} permissions",
     "createTitle": "Create role",
-    "editTitle": "Edit role",
     "created": "Role created.",
     "saved": "Role saved.",
     "deleteTitle": "Delete {{name}}?",
@@ -608,11 +622,44 @@
       "changesShip": "Ship and schedule change sets",
       "siteSettings": "Site settings"
     },
-    "contentPermissions": "Content, on every model",
+    "contentPermissions": "Content",
+    "contentHintAdmin": "Without a field list, every field.",
+    "contentHintDelivery": "Without a field list, only public fields.",
     "instancePermissions": "Instance",
+    "drafts": "Drafts",
+    "details": "Details",
+    "editPermissions": "Edit permissions",
+    "builtInReadOnly": "Built-in roles can't be changed. To grant something else, create a custom role.",
     "sections": "Role types",
     "tabAdmin": "Admin and token roles",
-    "tabApp": "App roles"
+    "tabApp": "App roles",
+    "matrix": {
+      "model": "Model",
+      "allModels": "All models",
+      "allModelsHint": "Including models created later",
+      "options": "Options",
+      "everyRow": "{{action}} on every row",
+      "ownOnly": "Only their own entries",
+      "fieldScope": "Fields",
+      "allFields": "All fields",
+      "allPublicFields": "All public fields",
+      "selectedFields": "Only selected fields",
+      "notPublic": "Hidden by default",
+      "deprecatedField": "Deprecated",
+      "unknownField": "Not on this model",
+      "fixedOwnOnly": "Only their own entries (set through the API)",
+      "fixedFields": "Only these fields (set through the API): {{fields}}",
+      "unlistedTitle": "Grants on models that no longer exist",
+      "removeGrant": "Remove {{action}} on {{model}}",
+      "actions": {
+        "read": "Read",
+        "create": "Create",
+        "update": "Update",
+        "delete": "Delete",
+        "publish": "Publish",
+        "schemaManage": "Change model"
+      }
+    }
   },
   "apiTokens": {
     "title": "API tokens",
@@ -637,6 +684,7 @@
     "revokeDescription": "Anything using this token will lose access immediately. This can't be undone.",
     "revoked": "Token revoked.",
     "revokedBadge": "Revoked",
+    "pausedBadge": "Paused: creator disabled",
     "draftsChip": "Drafts",
     "empty": "No API tokens yet.",
     "emptyDescription": "Create one to let a site or the CLI talk to Shapio.",
@@ -804,6 +852,11 @@
     "rolesSaved": "Access updated.",
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "They will be signed out and can no longer sign in. Their past changes stay in the history.",
+    "removeDescriptionWithTokens_one": "They will be signed out and can no longer sign in. The API token they created will be revoked: {{names}}. Their past changes stay in the history.",
+    "removeDescriptionWithTokens_other": "They will be signed out and can no longer sign in. The {{count}} API tokens they created will be revoked: {{names}}. Their past changes stay in the history.",
+    "disableTitle": "Disable {{name}}?",
+    "disableDescriptionWithTokens_one": "They will be signed out, and the API token they created will stop working until they are enabled again: {{names}}.",
+    "disableDescriptionWithTokens_other": "They will be signed out, and the {{count}} API tokens they created will stop working until they are enabled again: {{names}}.",
     "removed": "User removed.",
     "statusChanged": "User updated.",
     "empty": "No users yet.",
@@ -1052,6 +1105,7 @@
       "editorHint": "Changing it never changes stored data.",
       "public": "Public",
       "publicHint": "Off: hidden from the delivery API unless a role grants it.",
+      "publicComponentHint": "Off: hidden from the delivery API. Roles can't grant a component's fields.",
       "fieldLocalized": "Localized",
       "fieldLocalizedHint": "Off: one value shared by every locale.",
       "filterable": "Filterable",
@@ -1136,10 +1190,13 @@
       "followUps": "After activation",
       "stepEntries_one": "{{count}} entry version to check",
       "stepEntries_other": "{{count}} entry versions to check",
-      "stepInvalid_one": "{{count}} would fail",
-      "stepInvalid_other": "{{count}} would fail",
-      "stepMissingRequired_one": "{{count}} entry would be left without a required value; untick Required or set a default",
-      "stepMissingRequired_other": "{{count}} entries would be left without a required value; untick Required or set a default",
+      "stepInvalid_one": "{{count}} entry ({{versions}}) would fail",
+      "stepInvalid_other": "{{count}} entries ({{versions}}) would fail",
+      "stepMissingRequired_one": "{{count}} entry ({{versions}}) would be left without a required value; untick Required or set a default",
+      "stepMissingRequired_other": "{{count}} entries ({{versions}}) would be left without a required value; untick Required or set a default",
+      "stepVersions_one": "{{count}} version",
+      "stepVersions_other": "{{count}} versions",
+      "blockedByCheck": "A check above already fails, so this can't ship. Fix it in the builder first.",
       "stepDropped_one": "{{field}}: {{from}} → {{to}}, {{count}} entry loses its value",
       "stepDropped_other": "{{field}}: {{from}} → {{to}}, {{count}} entries lose their value",
       "acknowledge": "Confirm this change",
@@ -1338,7 +1395,10 @@
       "COMPONENT_CYCLE": "Components can't contain themselves, directly or through others.",
       "COMPONENT_TOO_DEEP": "Components are nested too deeply.",
       "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first.",
-      "apiKeyTakenOnSite": "Already used on {{site}}."
+      "apiKeyTakenOnSite": "Already used on {{site}}.",
+      "choicesEmpty": "Add at least one choice.",
+      "choiceValue": "Give every choice a value of up to 64 characters.",
+      "choiceLabel": "Give every choice a label of up to 200 characters."
     },
     "scope": {
       "onlyOn": "Only on {{site}}",
@@ -1491,7 +1551,7 @@
       "none": "Not used in any content.",
       "count_one": "Used by {{count}} entry version.",
       "count_other": "Used by {{count}} entry versions.",
-      "entry": "Entry {{id}}",
+      "hidden": "An entry you can't open",
       "draft": "Draft",
       "published": "Published"
     },
@@ -1586,6 +1646,16 @@
     "presence": {
       "label": "Also editing: {{names}}",
       "youElsewhere": "you, in another tab"
+    },
+    "remoteChange": {
+      "by": "Changed by {{name}} {{when}}. Reload to see it.",
+      "byYou": "Changed by you elsewhere {{when}}. Reload to see it.",
+      "unknown": "Changed {{when}}. Reload to see it.",
+      "short": "Changed elsewhere",
+      "shortBy": "Changed by {{name}}",
+      "shortByYou": "Changed by you elsewhere",
+      "momentAgo": "a moment ago",
+      "reload": "Reload"
     },
     "palette": {
       "switchLocale": "Switch to {{locale}}"
@@ -1808,9 +1878,16 @@
         "duplicate": "Duplicated",
         "localize": "Locale created"
       },
+      "live": "Live",
+      "events": {
+        "published": "Published",
+        "publishedOnSchedule": "Published on schedule",
+        "publishedWithChangeSet": "Published with change set {{title}}",
+        "unpublished": "Unpublished"
+      },
       "changes": {
-        "added": "would be cleared",
-        "removed": "would be filled in",
+        "added": "would be filled in",
+        "removed": "would be cleared",
         "changed": "would change"
       }
     },
@@ -1844,6 +1921,11 @@
       "number": {
         "notNumber": "Enter a number.",
         "notInteger": "Enter a whole number."
+      },
+      "incomplete": {
+        "date": "Enter a complete date.",
+        "time": "Enter a complete time.",
+        "dateTime": "Enter a complete date and time."
       },
       "dateTime": {
         "local": "Your time zone ({{zone}})",
@@ -1934,7 +2016,9 @@
       "change": "Change",
       "remove": "Unlink {{item}}",
       "missingEntry": "Entry {{id}} no longer exists or isn't visible.",
-      "targetMissing": "The model this field links to no longer exists.",
+      "targetUnreadable": "You can't read the content type this field links to.",
+      "unreadableLinks_one": "{{count}} linked entry you can't read",
+      "unreadableLinks_other": "{{count}} linked entries you can't read",
       "chooseTitle": "Choose {{model}}",
       "search": "Search {{model}}",
       "searchPlaceholder": "Search by title…",
@@ -2217,6 +2301,7 @@
       "enabledToast": "Webhook enabled",
       "disabledToast": "Webhook disabled",
       "rotateSecret": "Rotate secret",
+      "secretUnreadable": "Secret can't be read. Rotate it.",
       "rotateTitle": "Rotate the signing secret?",
       "rotateDescription": "The current secret stops working at once.",
       "deleteTitle": "Delete “{{name}}”?",
@@ -2419,7 +2504,7 @@
     "lastLogin": "Last sign-in",
     "editRoles": "Change roles",
     "rolesTitle": "Roles for {{name}}",
-    "rolesDescription": "Every app user also holds the built-in Authenticated role.",
+    "rolesDescription": "Every app user also holds the roles this site gives to everyone (Public) and to signed-in users (Authenticated).",
     "noCustomRoles": "There are no custom app roles yet. Create one in Settings → Roles → App roles.",
     "rolesSaved": "Roles updated.",
     "resendConfirmation": "Resend confirmation email",
@@ -2447,32 +2532,14 @@
     "created": "App role created.",
     "deleteDescription": "App users can't hold a role that's deleted. This can't be undone.",
     "heldBy": "Applies to",
-    "holdersPublic": "Everyone without a token",
+    "holdersPublic": "Everyone, signed in or not",
     "holdersAuthenticated": "Every signed-in app user",
     "userCount_one": "{{count}} app user",
     "userCount_other": "{{count}} app users",
-    "editPermissions": "Edit permissions",
     "details": "Details",
-    "publicExplained": "Applies to every request without a token. It grants nothing until you add permissions; grant read access to serve content to anyone.",
-    "authenticatedExplained": "Every signed-in app user holds this role, in addition to their custom roles. It grants nothing until you add permissions.",
+    "publicExplained": "Applies to every request, with or without a token, so signed-in app users hold it too. It grants nothing until you add permissions; grant read access to serve content to anyone.",
+    "authenticatedExplained": "Every signed-in app user holds this role, in addition to Public and their custom roles. It grants nothing until you add permissions.",
     "permissionsHint": "Reads return published content only. Without a field list, only public fields.",
-    "model": "Model",
-    "allModels": "All models",
-    "allModelsHint": "Including models created later",
-    "options": "Options",
-    "everyRow": "{{action}} on every row",
-    "ownOnly": "Only their own entries",
-    "fieldScope": "Fields",
-    "allPublicFields": "All public fields",
-    "selectedFields": "Only selected fields",
-    "notPublic": "Hidden by default",
-    "actions": {
-      "read": "Read",
-      "create": "Create",
-      "update": "Update",
-      "delete": "Delete",
-      "publish": "Publish"
-    },
     "denyByDefault": "Visitors and app users see nothing until you grant it. Grant read on all models to a built-in role to serve published content.",
     "grantReadAll": "Grant read on all models",
     "readAllGranted": "{{name}} can now read published content in every model."
@@ -2567,7 +2634,8 @@
       "discardTitle": "Discard “{{title}}”?",
       "discardDescription": "Its schema drafts are deleted. Entry drafts stay as they are.",
       "discarded": "Change set discarded",
-      "shippedIn": "Shipped. Live as",
+      "shippedAs": "Shipped as",
+      "shippedByAt": "by {{name}} {{at}}",
       "failedTitle": "The last ship failed; nothing went live",
       "staleTitle": "Changed since you looked",
       "staleDescription": "Something in this change set moved after this review loaded. Refresh to review the latest before shipping.",
@@ -2586,10 +2654,13 @@
       "field": "Field",
       "before": "Live now",
       "after": "After shipping",
+      "beforeShip": "Before",
+      "shippedValue": "Shipped",
       "empty": "empty",
       "raw": "Raw",
       "fieldChangesOf": "Field changes in {{title}}",
       "noFieldChanges": "No field values change.",
+      "notRecorded": "This set shipped as a release, before change sets kept their diff.",
       "schemaChangesOf": "Schema changes to {{name}}",
       "noSchemaChanges": "No schema changes.",
       "schemaStale": "Based on version {{base}}, but version {{active}} is live now. Rebase the draft before shipping.",
@@ -2626,7 +2697,8 @@
       },
       "healthTitle": "Content health",
       "noHealthFindings": "No open health findings on these entries.",
-      "shared": "Shared, affects every site"
+      "shared": "Shared, affects every site",
+      "checksPassedAtShip": "Every check passed when this set shipped."
     },
     "consumers": {
       "window_one": "Reads from delivery traffic over the last {{count}} day.",
@@ -2758,8 +2830,6 @@
       "unavailable": "GraphiQL is turned off",
       "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
     },
-    "noAccess": "You don't have access to this",
-    "noAccessDescription": "Ask an owner for a role that includes it.",
     "actors": {
       "admin": "An admin",
       "token": "An API token",
@@ -3008,8 +3078,8 @@
     "renamed": "Site renamed.",
     "appRoles": {
       "title": "App roles",
-      "description": "What anonymous callers and signed-in app users of this site may do.",
-      "public": "Anonymous callers (public)",
+      "description": "What everyone, and signed-in app users on top, may do on this site. Signed-in users also hold the Public roles.",
+      "public": "Everyone, signed in or not (public)",
       "authenticated": "Signed-in app users (authenticated)",
       "saved": "App roles saved."
     },

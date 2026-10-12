@@ -1,7 +1,8 @@
 import type { FieldDefinition } from '@shapio/schema';
 import { sql, type RawBuilder } from 'kysely';
 import { AppError } from '../../helpers/appError.js';
-import type { FieldMask, Policy, Principal, RowFilter } from '../../permissions/types.js';
+import { unionMasks } from '../../permissions/policy.js';
+import type { FieldMask, Policy, Principal, RowFieldMasks, RowFilter } from '../../permissions/types.js';
 import { contentDialect } from './currentDialect.js';
 import type { ContentSqlDialect } from './dialect/types.js';
 
@@ -73,6 +74,72 @@ export const matchesRowFilter = (
  */
 export const maskAllows = (mask: FieldMask, field: FieldDefinition): boolean =>
   mask.mode === 'all' ? !field.deprecated : mask.fieldIds.includes(field.id);
+
+/** Whether a mask hides a component's `public: false` fields (delivery audiences, at any depth). */
+export const hidesPrivateComponentFields = (mask: FieldMask): boolean =>
+  mask.mode === 'only' && mask.componentFields === 'public';
+
+/** A per-row mask on one entry: the mask for every row, plus each conditioned mask whose condition holds. */
+const maskForRow = (
+  base: FieldMask,
+  rowMasks: RowFieldMasks | null,
+  principal: Principal,
+  entry: EntryOwnership,
+): FieldMask =>
+  rowMasks
+    ? rowMasks.when.reduce(
+        (mask, extra) =>
+          matchesRowFilter(extra.condition, principal, entry) ? unionMasks(mask, extra.mask) : mask,
+        rowMasks.everyRow,
+      )
+    : base;
+
+/**
+ * The fields the caller may read on one loaded entry (issue #75): the mask for every row, plus each
+ * row-conditioned mask whose condition holds for the entry. Evaluated with the same rule the row filter
+ * compiles to, on the entry's loaded ownership columns, never re-queried.
+ */
+export const rowReadMask = (policy: Policy, principal: Principal, entry: EntryOwnership): FieldMask =>
+  maskForRow(policy.readMask, policy.rowReadMasks, principal, entry);
+
+/**
+ * The fields the caller may write on one entry (issue #80), by the same rule as `rowReadMask`: the loaded
+ * entry for changes, the entry a create would produce (`ownershipOfNewEntry`) for new ones.
+ */
+export const rowWriteMask = (policy: Policy, principal: Principal, entry: EntryOwnership): FieldMask =>
+  maskForRow(policy.writeMask, policy.rowWriteMasks, principal, entry);
+
+/** The ownership columns of an entry the principal creates: app users and admins own it, nobody else does. */
+export const ownershipOfNewEntry = (principal: Principal): EntryOwnership => ({
+  owner_app_user_id: principal.kind === 'appUser' ? principal.appUserId : null,
+  created_by_admin_id: principal.kind === 'admin' ? principal.adminUserId : null,
+});
+
+/**
+ * The values of `data` (keyed by field ID) a mask covers, for copies made from what the caller may read
+ * (issue #104). A wildcard mask keeps every value, deprecated fields included: those are hidden from readers
+ * by deprecation, not by permission.
+ */
+export const pickMasked = <T>(mask: FieldMask, data: Readonly<Record<string, T>>): Record<string, T> =>
+  mask.mode === 'all'
+    ? { ...data }
+    : Object.fromEntries(Object.entries(data).filter(([fieldId]) => mask.fieldIds.includes(fieldId)));
+
+/**
+ * Whether the create policy's row filter holds for the entry a create would produce (issue #105). False when
+ * every create grant is limited to the caller's own entries and the caller owns nothing it creates (anonymous
+ * callers and tokens).
+ */
+export const allowsNewEntry = (policy: Policy, principal: Principal): boolean =>
+  matchesRowFilter(policy.rowFilter, principal, ownershipOfNewEntry(principal));
+
+/**
+ * The fields the caller may read on every row it may read. Filters, sorts and searches use it (a filter on a
+ * field hidden on some rows would reveal those rows' values), and so does any reader that shows values
+ * without the entry's ownership at hand.
+ */
+export const everyRowReadMask = (policy: Policy): FieldMask =>
+  policy.rowReadMasks?.everyRow ?? policy.readMask;
 
 export const forbidden = (message: string, details?: Record<string, unknown>) =>
   new AppError(403, 'FORBIDDEN', message, details);

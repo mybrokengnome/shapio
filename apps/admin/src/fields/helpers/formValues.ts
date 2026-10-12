@@ -1,5 +1,6 @@
 import type { MediaAsset } from '@shapio/client';
 import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import { containsUnparsed } from './unparsed';
 import {
   COMPONENT_KEY,
   isEmptyValue,
@@ -106,9 +107,21 @@ export const newComponentItem = (component: ComponentDefinition, zoned: boolean)
     ...defaultFormValues(component.fields),
   });
 
+/**
+ * Text an editor could not parse must never reach the API (a JSON field would store whatever arrived).
+ * Callers refuse first (`refuseUnparsed`); this is the last line, so a missed path fails loudly.
+ */
+const assertParsed = (key: string, value: unknown) => {
+  if (containsUnparsed(value)) {
+    throw new Error(`The value of "${key}" holds text that does not parse; it must not be sent.`);
+  }
+};
+
 /** A form value as the API takes it: client keys stripped, empty values sent as null (= clear). */
-export const toInputValue = (value: unknown): unknown =>
-  isEmptyValue(value) ? null : stripClientKeys(value);
+export const toInputValue = (value: unknown, key = 'value'): unknown => {
+  assertParsed(key, value);
+  return isEmptyValue(value) ? null : stripClientKeys(value);
+};
 
 /** Top-level API keys whose value differs from the baseline (what the last load or save returned). */
 export const dirtyKeysOf = (values: FormValues, baseline: FormValues): string[] =>
@@ -116,14 +129,17 @@ export const dirtyKeysOf = (values: FormValues, baseline: FormValues): string[] 
 
 /** The PUT body's `data`: changed fields only (the API treats it as a patch). */
 export const buildPatch = (values: FormValues, keys: readonly string[]): Record<string, unknown> =>
-  Object.fromEntries(keys.map((key) => [key, toInputValue(values[key])]));
+  Object.fromEntries(keys.map((key) => [key, toInputValue(values[key], key)]));
 
 /** Every non-empty value, for creating an entry. */
 export const buildCreateData = (values: FormValues): Record<string, unknown> =>
   Object.fromEntries(
     Object.entries(values)
       .filter(([, value]) => !isEmptyValue(value))
-      .map(([key, value]) => [key, stripClientKeys(value)]),
+      .map(([key, value]) => {
+        assertParsed(key, value);
+        return [key, stripClientKeys(value)];
+      }),
   );
 
 /**

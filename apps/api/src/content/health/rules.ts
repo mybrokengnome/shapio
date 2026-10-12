@@ -12,6 +12,7 @@ export const HEALTH_RULES = [
   'altMissing',
   'localeMissing',
   'relationMissing',
+  'mediaMissing',
   'relationUnpublished',
   'uniqueConflict',
   'staleDraft',
@@ -69,6 +70,7 @@ export type HealthInputs = {
   published: readonly HeadSnapshot[];
   /** The validator's issues for each draft, `required` included. */
   issuesByLocale: ReadonlyMap<string, readonly ContentIssue[]>;
+  /** The live assets the drafts use; an ID missing here was deleted. */
   assets: ReadonlyMap<string, AssetInfo>;
   edges: readonly EdgeInfo[];
   /** Unique values of a draft already held by another entry's published version. */
@@ -121,6 +123,22 @@ const altMissing = (inputs: HealthInputs): Finding[] =>
           subject: `${use.path}#${use.assetId}#${use.occurrence}`,
           path: use.path,
           params: { assetId: use.assetId, occurrence: use.occurrence },
+        }),
+      ),
+  );
+
+/** Media uses whose asset is no longer in the site's library (an owner force-deleted it). */
+const mediaMissing = (inputs: HealthInputs): Finding[] =>
+  inputs.drafts.flatMap((draft) =>
+    imageUsesOf(inputs.model, draft.data)
+      .filter((use) => !inputs.assets.has(use.assetId))
+      .map((use) =>
+        warning({
+          locale: draft.locale,
+          rule: 'mediaMissing',
+          subject: `${use.path}#${use.assetId}#${use.occurrence}`,
+          path: use.path,
+          params: { assetId: use.assetId },
         }),
       ),
   );
@@ -206,6 +224,7 @@ export const evaluateHealth = (inputs: HealthInputs): Finding[] => {
     ...altMissing(inputs),
     ...localeMissing(inputs),
     ...relationMissing(inputs),
+    ...mediaMissing(inputs),
     ...(publishing ? relationUnpublished(inputs) : []),
     ...(publishing ? uniqueConflict(inputs) : []),
     ...(publishing ? staleness(inputs) : []),

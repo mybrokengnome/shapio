@@ -294,7 +294,58 @@ describe('media library (local storage)', () => {
       // Before the move job runs, the public URL already stops working: the database decides.
       expect((await get(moved.url)).statusCode).toBe(403);
       await runMediaJobs(testApp.app, testApp.db);
-      expect((await get(moved.url)).statusCode).toBe(404);
+      // After the move the old public URL names the private copy, which still needs a signature.
+      expect((await get(moved.url)).statusCode).toBe(403);
+    });
+
+    it('answers a visibility change with URLs that work before and after the move', async () => {
+      const fresh = await uploadAsset(testApp.app, editor.headers, {
+        file: await createPng(1200, 600),
+        filename: 'moving.png',
+        mimeType: 'image/png',
+      });
+      await runMediaJobs(testApp.app, testApp.db);
+      const ready = await getAsset(fresh.id);
+      expect(ready.variants.length).toBeGreaterThan(0);
+      const servedNow = async (view: MediaAssetBody) => [
+        (await get(view.url)).statusCode,
+        ...(await Promise.all(
+          view.variants.map(async (variant) => (await get(variant.url ?? '')).statusCode),
+        )),
+      ];
+      const allOk = (codes: number[]) => codes.every((code) => code === 200);
+
+      const toPrivate = (
+        await api('PATCH', `/api/admin/media/assets/${fresh.id}`, admin, {
+          expectedVersion: ready.version,
+          visibility: 'private',
+        })
+      ).json<MediaAssetBody>();
+      expect(new URL(toPrivate.url).pathname).toMatch(/^\/api\/media\/f\/private\//);
+      expect(new URL(toPrivate.url).searchParams.get('signature')).not.toBeNull();
+      expect(toPrivate.urlExpiresAt).not.toBeNull();
+      expect(allOk(await servedNow(toPrivate))).toBe(true);
+      expect((await get(ready.url)).statusCode).toBe(403);
+      await runMediaJobs(testApp.app, testApp.db);
+      expect(allOk(await servedNow(toPrivate))).toBe(true);
+      expect(allOk(await servedNow(await getAsset(fresh.id)))).toBe(true);
+      expect((await get(ready.url)).statusCode).toBe(403);
+
+      const toPublic = (
+        await api('PATCH', `/api/admin/media/assets/${fresh.id}`, admin, {
+          expectedVersion: toPrivate.version,
+          visibility: 'public',
+        })
+      ).json<MediaAssetBody>();
+      expect(new URL(toPublic.url).pathname).toMatch(/^\/api\/media\/f\/public\//);
+      expect(new URL(toPublic.url).search).toBe('');
+      expect(toPublic.urlExpiresAt).toBeNull();
+      expect(allOk(await servedNow(toPublic))).toBe(true);
+      await runMediaJobs(testApp.app, testApp.db);
+      expect(allOk(await servedNow(toPublic))).toBe(true);
+      const settled = await getAsset(fresh.id);
+      expect(settled.url).toBe(toPublic.url);
+      expect(allOk(await servedNow(settled))).toBe(true);
     });
   });
 

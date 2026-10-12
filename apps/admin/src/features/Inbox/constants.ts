@@ -4,6 +4,7 @@ import {
   Copy,
   FilePen,
   FileWarning,
+  FileX,
   ImageOff,
   Languages,
   Link2Off,
@@ -17,14 +18,14 @@ export const GROUP_PREVIEW = 5;
 /** Schedules read to find the soonest (the API lists newest first), and how many are shown. */
 export const SCHEDULES_SCANNED = 50;
 export const SCHEDULED_SHOWN = 5;
-/** "Recently published" diffs this many snapshots back from the live one, and shows this many entries. */
-export const RECENT_SNAPSHOTS = 5;
+/** "Recently published" shows this many of the latest published or updated entries. */
 export const RECENT_SHOWN = 6;
 
 /** The order groups appear in: what blocks publishing or readers first, housekeeping last. */
 export const RULE_ORDER: readonly HealthRule[] = [
   'requiredEmpty',
   'relationMissing',
+  'mediaMissing',
   'uniqueConflict',
   'altMissing',
   'relationUnpublished',
@@ -38,6 +39,7 @@ export const RULE_ICONS = {
   altMissing: ImageOff,
   localeMissing: Languages,
   relationMissing: Unlink,
+  mediaMissing: FileX,
   relationUnpublished: Link2Off,
   uniqueConflict: Copy,
   staleDraft: Clock,
@@ -49,6 +51,7 @@ export const RULE_TITLE_KEYS = {
   altMissing: 'inbox.rules.altMissing.title',
   localeMissing: 'inbox.rules.localeMissing.title',
   relationMissing: 'inbox.rules.relationMissing.title',
+  mediaMissing: 'inbox.rules.mediaMissing.title',
   relationUnpublished: 'inbox.rules.relationUnpublished.title',
   uniqueConflict: 'inbox.rules.uniqueConflict.title',
   staleDraft: 'inbox.rules.staleDraft.title',
@@ -60,6 +63,7 @@ export const RULE_SENTENCE_KEYS = {
   altMissing: 'inbox.rules.altMissing.sentence',
   localeMissing: 'inbox.rules.localeMissing.sentence',
   relationMissing: 'inbox.rules.relationMissing.sentence',
+  mediaMissing: 'inbox.rules.mediaMissing.sentence',
   relationUnpublished: 'inbox.rules.relationUnpublished.sentence',
   uniqueConflict: 'inbox.rules.uniqueConflict.sentence',
   staleDraft: 'inbox.rules.staleDraft.sentence',
@@ -71,6 +75,7 @@ export const RULE_FIX_KEYS = {
   altMissing: 'inbox.rules.altMissing.fix',
   localeMissing: 'inbox.rules.localeMissing.fix',
   relationMissing: 'inbox.rules.relationMissing.fix',
+  mediaMissing: 'inbox.rules.mediaMissing.fix',
   relationUnpublished: 'inbox.rules.relationUnpublished.fix',
   uniqueConflict: 'inbox.rules.uniqueConflict.fix',
   staleDraft: 'inbox.rules.staleDraft.fix',

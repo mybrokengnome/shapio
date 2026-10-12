@@ -83,7 +83,11 @@ test.afterAll(async () => {
     const { version } = (await (await page.request.get(`${ADMIN_API}/models/${modelId}`)).json()) as {
       version: number;
     };
-    await adminRequest(page.request, 'DELETE', `/models/${modelId}?expectedVersion=${version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
   await site.close();

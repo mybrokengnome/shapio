@@ -371,5 +371,60 @@ describe('snapshot changes', () => {
       expect(result.body.data?._snapshot.snapshot).toBe(await seq());
       expect(noteEntry.id).toBeDefined();
     });
+
+    it('with `recent`, covers the last N readable publications however many schema-only snapshots follow', async () => {
+      const published: EntryBody[] = [];
+      const startedAt: number[] = [];
+      for (const title of ['Recent one', 'Recent two', 'Recent three']) {
+        const entry = await create('page', { title });
+        await publish('page', entry.id);
+        published.push(entry);
+        startedAt.push(await seq());
+      }
+      // A later publication the page token cannot read, then snapshots that change only the schema.
+      await publish('note', (await create('note', { text: 'Unreadable' })).id);
+      await database.current.db.transaction().execute(async (trx) => {
+        for (let index = 0; index < 6; index += 1) {
+          await publicationsRepository.nextSeq(trx, PRIMARY_SITE_ID, { source: 'schema' });
+        }
+      });
+      const current = await seq();
+
+      const body = expectStatus(
+        await get('/api/snapshots/changes?recent=2', pageToken),
+        200,
+      ).json<ChangesBody>();
+      expect(body).toMatchObject({ from: (startedAt[1] ?? 0) - 1, to: current, nextCursor: null });
+      expect(body.items.map((item) => item.id).sort()).toEqual([published[1]?.id, published[2]?.id].sort());
+      expect(body.items.every((item) => item.locales[0]?.change === 'published')).toBe(true);
+
+      // Row filters count too: the note this token may not see (it owns none) does not take a place.
+      const owned = expectStatus(
+        await get('/api/snapshots/changes?recent=1', ownedNotesToken),
+        200,
+      ).json<ChangesBody>();
+      expect(owned.items.map((item) => item.id)).toEqual([published[2]?.id]);
+
+      // An earlier `to` bounds the window; more than exist starts at 0.
+      const earlier = expectStatus(
+        await get(`/api/snapshots/changes?recent=1&to=${startedAt[0]}`, pageToken),
+        200,
+      ).json<ChangesBody>();
+      expect(earlier.items.map((item) => item.id)).toEqual([published[0]?.id]);
+      const all = expectStatus(
+        await get('/api/snapshots/changes?recent=100', pageToken),
+        200,
+      ).json<ChangesBody>();
+      expect(all.from).toBe(0);
+    });
+
+    it('takes exactly one of `from` and `recent`', async () => {
+      for (const query of ['', '?from=0&recent=2', '?recent=0']) {
+        expect((await get(`/api/snapshots/changes${query}`, pageToken)).statusCode).toBe(400);
+      }
+      expect((await get('/api/snapshots/changes?from=0&recent=2', pageToken)).json()).toMatchObject({
+        error: { code: 'INVALID_QUERY' },
+      });
+    });
   });
 });

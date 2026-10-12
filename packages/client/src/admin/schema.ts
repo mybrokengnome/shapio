@@ -14,6 +14,7 @@ import type {
   DefinitionScope,
   DefinitionListItem,
   DefinitionRevision,
+  DefinitionRevisionDetail,
   DeleteLocaleResult,
   Locale,
   PlanPreview,
@@ -56,13 +57,19 @@ export const createDefinitionApi = (request: RequestFn, category: DefinitionCate
       request<ChangeOutcome>(withId(base, id), { method: 'PUT', body }),
     planUpdate: (id: string, body: PlanUpdateInput) =>
       request<PlanPreview>(`${withId(base, id)}/plan`, { method: 'POST', body }),
-    /** Soft delete: entries are kept and reappear if the definition is applied again. */
-    remove: (id: string, expectedVersion: number) =>
-      request<ChangeOutcome>(`${withId(base, id)}${toQueryString({ expectedVersion })}`, {
-        method: 'DELETE',
-      }),
+    /**
+     * Soft delete: entries are kept and reappear if the definition is applied again. Removing the API is a
+     * breaking change: without `acknowledgeBreaking` the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED.
+     */
+    remove: (id: string, expectedVersion: number, options: { acknowledgeBreaking?: boolean } = {}) =>
+      request<ChangeOutcome>(
+        `${withId(base, id)}${toQueryString({ expectedVersion, acknowledgeBreaking: options.acknowledgeBreaking || undefined })}`,
+        { method: 'DELETE' },
+      ),
     revisions: async (id: string) =>
       (await request<{ items: DefinitionRevision[] }>(`${withId(base, id)}/revisions`)).items,
+    revision: (id: string, revisionId: string) =>
+      request<DefinitionRevisionDetail>(withId(`${withId(base, id)}/revisions`, revisionId)),
     changes: async (id: string) =>
       (await request<{ items: SchemaChangeJob[] }>(`${withId(base, id)}/changes`)).items,
   };
@@ -99,7 +106,8 @@ export const createSchemaApi = (request: RequestFn) => ({
       }),
     /**
      * Deletes a locale and purges its content. When content exists and `acknowledgeDestructive` is false,
-     * the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED with `details.plan.impact.affectedHeads`.
+     * the server answers 409 SCHEMA_CHANGE_NOT_ACKNOWLEDGED with `details.plan.impact` (`affectedHeads`,
+     * `deletedEntries`, `movedEntries`).
      */
     remove: (code: string, acknowledgeDestructive: boolean) =>
       request<DeleteLocaleResult>(

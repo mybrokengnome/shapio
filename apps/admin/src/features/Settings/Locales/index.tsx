@@ -98,10 +98,20 @@ export const Locales = () => {
         open={deletion.open}
         onOpenChange={deletion.onOpenChange}
         title={t('locales.deleteTitle', { label: withContent?.locale.label ?? '' })}
-        description={t('locales.deleteContent', {
-          count: withContent?.affectedHeads ?? 0,
-          label: withContent?.locale.label ?? '',
-        })}
+        description={[
+          t('locales.deleteContent', {
+            count: withContent?.affectedHeads ?? 0,
+            label: withContent?.locale.label ?? '',
+          }),
+          withContent?.deletedEntries
+            ? t('locales.deleteEntries', {
+                count: withContent.deletedEntries,
+                label: withContent.locale.label,
+              })
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         acknowledgement={t('locales.deleteAcknowledge', { count: withContent?.affectedHeads ?? 0 })}
         confirmLabel={t('common.delete')}
         destructive

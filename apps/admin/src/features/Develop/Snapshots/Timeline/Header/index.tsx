@@ -1,6 +1,5 @@
 import type { Snapshot } from '@shapio/client';
 import { useTranslation } from 'react-i18next';
-import { useUsers } from '@/api/users';
 import { formatDateTime } from '@/helpers/formatDate';
 import { useActorLabel } from '../../../Changes/hooks/useActorLabel';
 
@@ -16,13 +15,10 @@ type HeaderProps = {
 export const Header = ({ seq, row, previous, changedCount }: HeaderProps) => {
   const { t } = useTranslation();
   const actorLabel = useActorLabel();
-  const users = useUsers();
-  const actorName =
-    row?.actor.type === 'admin' ? users.data?.find((user) => user.id === row.actor.id)?.name : undefined;
   const parts = [
     t('snapshots.version', { seq }),
     row ? formatDateTime(row.createdAt) : '',
-    row ? t('snapshots.timeline.shippedBy', { name: actorName ?? actorLabel({ type: row.actor.type }) }) : '',
+    row ? t('snapshots.timeline.shippedBy', { name: actorLabel(row.actor) }) : '',
     row?.schemaVersion != null ? t('snapshots.schemaVersion', { version: row.schemaVersion }) : '',
     previous !== undefined && changedCount !== undefined
       ? t('snapshots.timeline.changedSince', { count: changedCount, seq: previous })

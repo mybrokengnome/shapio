@@ -78,13 +78,19 @@ type LocalesVariables = { id: string; locales?: string[] };
 /** The body never carries an empty `locales` array: the API requires at least one locale when it is sent. */
 const localesBody = (locales?: string[]) => (locales && locales.length > 0 ? { locales } : {});
 
+/** The draft version(s) the editor saw: the API refuses (409) to publish a draft that moved since. */
+type PublishVariables = LocalesVariables & {
+  expectedVersion?: number;
+  expectedVersions?: Record<string, number>;
+};
+
 export const usePublishEntry = (modelKey: string) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ['content', modelKey, 'publish'],
     meta: silent,
-    mutationFn: ({ id, locales }: LocalesVariables) =>
-      withCsrf(() => adminApi.content.publish(modelKey, id, localesBody(locales))),
+    mutationFn: ({ id, locales, ...versions }: PublishVariables) =>
+      withCsrf(() => adminApi.content.publish(modelKey, id, { ...localesBody(locales), ...versions })),
     onSuccess: (entry) => rememberEntry(queryClient, modelKey, entry),
   });
 };
@@ -120,10 +126,11 @@ export const useDeleteEntry = (modelKey: string) => {
   });
 };
 
-export const useRevisions = (modelKey: string, id: string, locale: string | undefined, enabled: boolean) =>
+/** The entry's revisions (with authors) and publications in a locale, for the history sheet. */
+export const useEntryHistory = (modelKey: string, id: string, locale: string | undefined, enabled: boolean) =>
   useQuery({
     queryKey: queryKeys.content.revisions(modelKey, id, locale),
-    queryFn: () => adminApi.content.revisions(modelKey, id, locale ? { locale } : {}),
+    queryFn: () => adminApi.content.history(modelKey, id, locale ? { locale } : {}),
     enabled,
     staleTime: 0,
     meta: silent,

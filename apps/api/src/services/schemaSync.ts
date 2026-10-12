@@ -1,4 +1,5 @@
 import {
+  classifyChanges,
   decideSync,
   diffDefinitions,
   foldApiKey,
@@ -6,8 +7,8 @@ import {
   lockEntriesForSite,
   parseDefinition,
   type ExportedDefinition,
+  type ClassifiedChange,
   type LockFile,
-  type SchemaChange,
   type SchemaDefinition,
   type SyncDecision,
   type ValidationIssue,
@@ -87,8 +88,11 @@ export type SyncResultItem = {
   apiKey: string;
   kind: SchemaDefinition['kind'];
   decision: SyncDecision;
-  /** For apply/delete/conflict: the target's active definition → local file. */
-  changes: SchemaChange[];
+  /**
+   * For apply/delete/conflict: the target's active definition → local file, classified (so a conflict
+   * listing also says which type changes drop values).
+   */
+  changes: ClassifiedChange[];
   outcome?: 'activated' | 'pending' | 'skipped';
   version?: number | null;
   changeId?: string;
@@ -154,6 +158,13 @@ const parseLocalDefinitions = async (
   return locals;
 };
 
+/** Remote → local changes, classified as the planner would classify them. */
+const classifiedDiff = (remote: SchemaDefinition | undefined, local: SchemaDefinition | undefined) => {
+  const before = remote ?? null;
+  const after = local ?? null;
+  return classifyChanges(diffDefinitions(before, after), { before, after });
+};
+
 /**
  * The base entries this request's view is about: the shared definitions and this site's. A lock that covers
  * other sites' trees too (one repository for several sites) contributes nothing about them, so neither an
@@ -187,10 +198,7 @@ const decideAll = (
       apiKey: shown?.apiKey ?? base_?.apiKey ?? id,
       kind: shown?.kind ?? base_?.kind ?? 'collection',
       decision,
-      changes:
-        decision.action === 'skip'
-          ? []
-          : diffDefinitions(remote?.definition ?? null, local?.definition ?? null),
+      changes: decision.action === 'skip' ? [] : classifiedDiff(remote?.definition, local?.definition),
     };
   });
 };

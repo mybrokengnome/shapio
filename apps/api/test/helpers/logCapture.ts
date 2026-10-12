@@ -22,3 +22,10 @@ export const createLogCapture = (level: Level = 'trace'): LogCapture => {
   );
   return { logger, lines, text: () => lines.join('') };
 };
+
+/** The error messages of the worker's `job dead` lines, as the logger wrote them (causes appended). */
+export const deadJobMessages = (capture: LogCapture): string[] =>
+  capture.lines
+    .map((line) => JSON.parse(line) as { msg?: string; err?: { message?: string } })
+    .filter((line) => line.msg === 'job dead')
+    .map((line) => line.err?.message ?? '');

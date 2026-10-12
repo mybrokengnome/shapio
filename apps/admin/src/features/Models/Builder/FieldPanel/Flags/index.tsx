@@ -29,6 +29,9 @@ const FLAG_KEYS = {
   deprecated: { label: 'models.builder.deprecated', hint: 'models.builder.deprecatedHint' },
 } as const satisfies Record<FlagKey, { label: string; hint: string }>;
 
+/** A component's fields are hidden from delivery whatever a role grants (roles name model fields only). */
+const PUBLIC_COMPONENT_HINT = 'models.builder.publicComponentHint';
+
 /** The on/off options a field of this type supports here (components have no indexes or uniqueness). */
 const availableFlags = (field: FieldDefinition, draft: SchemaDefinition): FlagKey[] => {
   const isComponent = draft.kind === 'component';
@@ -56,7 +59,9 @@ export const Flags = ({ field, draft, at, disabled, onChange }: FlagsProps) => {
           id={`field-${field.id}-${flag}`}
           layout="compact"
           label={t(FLAG_KEYS[flag].label)}
-          hint={t(FLAG_KEYS[flag].hint)}
+          hint={t(
+            flag === 'public' && draft.kind === 'component' ? PUBLIC_COMPONENT_HINT : FLAG_KEYS[flag].hint,
+          )}
           checked={field[flag]}
           onChange={(checked) => onChange({ [flag]: checked })}
           issues={at(flag)}

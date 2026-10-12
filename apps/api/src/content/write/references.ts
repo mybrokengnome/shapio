@@ -1,8 +1,11 @@
 import type { Kysely, Transaction } from 'kysely';
+import type { ContentData } from '../../db/contentData.js';
 import type { DB } from '../../db/types.js';
 import * as contentGuardsRepository from '../../repositories/contentGuards.js';
 import * as entriesRepository from '../../repositories/entries.js';
+import { imageUsesOf } from '../health/imageUses.js';
 import { mediaKindOf } from '../media.js';
+import type { ContentModel } from '../model.js';
 import type { MediaReferenceCheck, RelationReference } from '../validator/index.js';
 import { contentInvalid, type ContentIssue } from '../validator/issues.js';
 
@@ -16,8 +19,15 @@ type TargetOutcome = { relations: readonly RelationReference[]; media: readonly 
  * `lock`: in a write transaction, media rows are held FOR SHARE until commit so an asset cannot be deleted
  * between the check and the reference rows the write adds. Read-only checks (the publish pre-flight) pass
  * `false` and take no locks.
+ * `storedMediaIds`: assets the entry already held before this write. One of them that is gone (an owner
+ * force-deleted it) is not reported as missing, so the entry stays editable and publishable; only media the
+ * write adds must exist (documentation/media.md).
  */
-export type TargetCheckOptions = { siteId: string; lock: boolean };
+export type TargetCheckOptions = { siteId: string; lock: boolean; storedMediaIds?: ReadonlySet<string> };
+
+/** Every asset the given documents point at (media fields and rich-text images, components included). */
+export const mediaIdsOf = (model: ContentModel, documents: readonly Readonly<ContentData>[]) =>
+  new Set(documents.flatMap((data) => imageUsesOf(model, data).map((use) => use.assetId)));
 
 /**
  * Relation values must point at live entries of the field's target model on the same site (brief §4:
@@ -55,7 +65,7 @@ const findRelationIssues = async (
 const findMediaIssues = async (
   executor: Executor,
   checks: readonly MediaReferenceCheck[],
-  { lock, siteId }: TargetCheckOptions,
+  { lock, siteId, storedMediaIds }: TargetCheckOptions,
 ): Promise<ContentIssue[]> => {
   const ids = [...new Set(checks.flatMap((check) => check.assetIds))];
   if (ids.length === 0) {
@@ -70,13 +80,15 @@ const findMediaIssues = async (
     check.assetIds.flatMap((id): ContentIssue[] => {
       const mimeType = live.get(id);
       if (mimeType === undefined) {
-        return [
-          {
-            path: check.path,
-            code: 'MEDIA_MISSING',
-            message: `media asset ${id} does not exist on this site`,
-          },
-        ];
+        return storedMediaIds?.has(id)
+          ? []
+          : [
+              {
+                path: check.path,
+                code: 'MEDIA_MISSING',
+                message: `media asset ${id} does not exist on this site`,
+              },
+            ];
       }
       if (check.allowedKinds && !check.allowedKinds.includes(mediaKindOf(mimeType))) {
         return [
@@ -106,8 +118,13 @@ export const findTargetIssues = async (
  * Relation and media targets of a validated document on the entry's site, checked (and media locked) in the
  * write transaction.
  */
-export const assertTargets = async (trx: Transaction<DB>, outcome: TargetOutcome, siteId: string) => {
-  const issues = await findTargetIssues(trx, outcome, { siteId, lock: true });
+export const assertTargets = async (
+  trx: Transaction<DB>,
+  outcome: TargetOutcome,
+  siteId: string,
+  storedMediaIds?: ReadonlySet<string>,
+) => {
+  const issues = await findTargetIssues(trx, outcome, { siteId, lock: true, storedMediaIds });
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }

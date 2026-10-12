@@ -24,7 +24,7 @@ import { AssistDocumentContext, useAssistDocument } from './hooks/useAssistTarge
 import { useDocumentPaletteActions } from './hooks/useDocumentPaletteActions';
 import { useDocumentShortcuts } from './hooks/useDocumentShortcuts';
 import { useEntryDocument } from './hooks/useEntryDocument';
-import { useEntryPresence } from './hooks/useEntryPresence';
+import { useEntryHeartbeat } from './hooks/useEntryHeartbeat';
 import { usePreflightFlow } from './hooks/usePreflightFlow';
 import { useRevealField } from './hooks/useRevealField';
 import { useSettingsDrawer } from './hooks/useSettingsDrawer';
@@ -36,6 +36,7 @@ import { Presence } from './Presence';
 import { PreviewPane } from './Preview';
 import { useEntryPreview } from './Preview/hooks/useEntryPreview';
 import { PreviewButton } from './PreviewButton';
+import { RemoteChange } from './RemoteChange';
 import { SaveState } from './SaveState';
 import { SettingsDrawer } from './SettingsDrawer';
 import { StatusSection } from './StatusSection';
@@ -72,7 +73,21 @@ export const EntryDocument = ({
 }: EntryDocumentProps) => {
   const { t } = useTranslation();
   const { locales, defaultLocale, labelOf } = useContentLocales(model, locale ?? undefined);
-  const entryDocument = useEntryDocument({ schema, model, mode, locale, defaultLocale, carry, onReload });
+  const { people, drafts } = useEntryHeartbeat(
+    model.apiKey,
+    mode.kind === 'edit' ? mode.entry.id : null,
+    locale,
+  );
+  const entryDocument = useEntryDocument({
+    schema,
+    model,
+    mode,
+    locale,
+    defaultLocale,
+    carry,
+    onReload,
+    drafts,
+  });
   const { setup, saver, lifecycle, publishing, permissions, conflict, dirty } = entryDocument;
   const { store, entry, entryId, environment } = setup;
   const layout = useMemo(() => effectiveLayout(model), [model]);
@@ -84,7 +99,6 @@ export const EntryDocument = ({
   // `?revision=` (Snapshots → Timeline, "Open this version") opens the history at that revision.
   const { revision: linkedRevision } = useSearch({ strict: false });
   const [historyOpen, setHistoryOpen] = useState(linkedRevision !== undefined);
-  const people = useEntryPresence(model.apiKey, mode.kind === 'edit' ? entryId : null, locale);
   const reveal = useRevealField(environment.idPrefix, (apiKey) =>
     drawer.openAt(form ? { section: 'status' } : { section: 'properties', property: apiKey }),
   );
@@ -192,7 +206,14 @@ export const EntryDocument = ({
               title={heading}
               status={entry?.status}
               saveState={
-                mode.kind === 'edit' ? (
+                mode.kind === 'edit' && entryDocument.remoteChange ? (
+                  <RemoteChange
+                    change={entryDocument.remoteChange}
+                    busy={entryDocument.reloading}
+                    onReload={() => entryDocument.reload(false)}
+                    compact={drawer.open || preview.open}
+                  />
+                ) : mode.kind === 'edit' ? (
                   <SaveState
                     state={saver.state}
                     dirty={dirty}

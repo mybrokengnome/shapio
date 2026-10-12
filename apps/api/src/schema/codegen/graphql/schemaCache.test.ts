@@ -3,26 +3,32 @@ import { silentLogger } from '../../../../test/helpers/silentLogger.js';
 import { buildNetworkSchema, type SchemaSnapshot } from '../../snapshot.js';
 import { buildGraphqlSchema } from './schemaBuilder.js';
 import { createGraphqlSchemaCache } from './schemaCache.js';
+import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
 
 const SITE_A = 'site-a';
 const SITE_B = 'site-b';
 const view = (version: number, siteId: string) => buildNetworkSchema(version, [], []).forSite(siteId);
+const masked = (key: string): SchemaVisibility => ({ key, models: new Map(), componentFields: 'public' });
 
-const setup = (options: { idleMs?: number } = {}) => {
+const setup = (options: { idleMs?: number; maxEntries?: number } = {}) => {
   let time = 0;
-  const builds: Array<{ siteId: string | null; version: number }> = [];
+  const builds: Array<{ siteId: string | null; version: number; visibility?: string }> = [];
   let failNext = false;
   const cache = createGraphqlSchemaCache({
     log: silentLogger,
     now: () => time,
     ...options,
-    build: (snapshot: SchemaSnapshot) => {
+    build: (snapshot: SchemaSnapshot, visibility: SchemaVisibility) => {
       if (failNext) {
         failNext = false;
         throw new Error('build failed');
       }
-      builds.push({ siteId: snapshot.siteId, version: snapshot.version });
-      return buildGraphqlSchema(snapshot);
+      builds.push({
+        siteId: snapshot.siteId,
+        version: snapshot.version,
+        ...(visibility === FULL_VISIBILITY ? {} : { visibility: visibility.key }),
+      });
+      return buildGraphqlSchema(snapshot, visibility);
     },
   });
   return {
@@ -104,5 +110,43 @@ describe('GraphQL schema cache', () => {
     expect(builds[1]).toEqual({ siteId: SITE_A, version: 2 });
     expect(cache.peek(SITE_A)?.version).toBe(2);
     expect(cache.peek(SITE_B)).toBeUndefined();
+  });
+
+  it('builds once per visibility: callers with the same masks share a schema, other masks get their own', async () => {
+    const { cache, builds } = setup();
+    const [full, a1, a2, b] = await Promise.all([
+      cache.get(view(1, SITE_A)),
+      cache.get(view(1, SITE_A), masked('delivery:a')),
+      cache.get(view(1, SITE_A), masked('delivery:a')),
+      cache.get(view(1, SITE_A), masked('delivery:b')),
+    ]);
+    expect(builds).toHaveLength(3);
+    expect(a1).toBe(a2);
+    expect(new Set([full, a1, b]).size).toBe(3);
+    expect(cache.peek(SITE_A, 'delivery:a')).toBe(a1);
+    expect(cache.peek(SITE_A)).toBe(full);
+    // A newer version rebuilds the masked schema on its next request.
+    expect((await cache.get(view(2, SITE_A), masked('delivery:a'))).version).toBe(2);
+  });
+
+  it('keeps at most maxEntries schemas, dropping the least recently used', async () => {
+    const { cache } = setup({ maxEntries: 2 });
+    await cache.get(view(1, SITE_A), masked('delivery:a'));
+    await cache.get(view(1, SITE_A), masked('delivery:b'));
+    await cache.get(view(1, SITE_A), masked('delivery:a'));
+    await cache.get(view(1, SITE_A), masked('delivery:c'));
+    expect(cache.peek(SITE_A, 'delivery:a')).toBeDefined();
+    expect(cache.peek(SITE_A, 'delivery:b')).toBeUndefined();
+    expect(cache.peek(SITE_A, 'delivery:c')).toBeDefined();
+  });
+
+  it('refreshes only full schemas in the background; masked ones wait for their next request', async () => {
+    const { cache, builds } = setup();
+    await cache.get(view(1, SITE_A));
+    await cache.get(view(1, SITE_A), masked('delivery:a'));
+    cache.refresh(buildNetworkSchema(2, [], []));
+    await waitForBuilds(builds, 3);
+    expect(builds[2]).toEqual({ siteId: SITE_A, version: 2 });
+    expect(cache.peek(SITE_A, 'delivery:a')?.version).toBe(1);
   });
 });

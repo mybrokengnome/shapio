@@ -16,8 +16,8 @@ import {
 
 /**
  * Where the evaluator gets grants from. The database-backed cache in production, a fixed list in unit tests.
- * `getSiteAppRoleIds`: the app roles a site binds to anonymous callers (`public`) or to every signed-in app
- * user (`authenticated`); a site that binds nothing grants them nothing (sites plan §H).
+ * `getSiteAppRoleIds`: the app roles a site binds to every caller, anonymous or signed in (`public`), or to
+ * every signed-in app user (`authenticated`); a site that binds nothing grants them nothing (sites plan §H).
  */
 export type GrantSource = {
   getGrants: (

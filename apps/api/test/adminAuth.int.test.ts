@@ -4,11 +4,14 @@ import {
   cookieHeader,
   createAdmin,
   login,
+  runEmailJobs,
   sessionCookieOf,
   TEST_PASSWORD,
   type TestAdmin,
 } from './helpers/adminIdentity.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
+import { createMemoryEmailTransport } from './helpers/memoryEmailTransport.js';
+import { startEach } from './helpers/startEach.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
 describe('admin sessions, CSRF and rate limits', () => {
@@ -44,6 +47,26 @@ describe('admin sessions, CSRF and rate limits', () => {
     expect(JSON.stringify(response.json())).not.toContain('password');
     const stored = await testApp.db.selectFrom('admin_sessions').select('token_hash').execute();
     expect(JSON.stringify(stored)).not.toContain(cookie?.value ?? 'missing');
+  });
+
+  it('signs one admin in from several places at once', async () => {
+    const admin = await createAdmin(testApp.db, { roleKeys: ['editor'] });
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        testApp.app.inject({
+          method: 'POST',
+          url: '/api/admin/auth/login',
+          payload: { email: admin.email, password: TEST_PASSWORD },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200, 200, 200]);
+    const sessions = await testApp.db
+      .selectFrom('admin_sessions')
+      .select('id')
+      .where('admin_user_id', '=', admin.id)
+      .execute();
+    expect(sessions).toHaveLength(4);
   });
 
   it('marks the cookie Secure when PUBLIC_URL is https', async () => {
@@ -348,6 +371,51 @@ describe('login rate limits', () => {
       expect((await attempt(`10.0.1.${i + 1}`)).statusCode).toBe(401);
     }
     expect((await attempt('10.0.0.99', TEST_PASSWORD)).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('holds the per-account limit when the attempts arrive in parallel', async () => {
+    const { app, db } = await createTestApp(database.current);
+    const target = await createAdmin(db);
+    const attempt = (ip: string, password = 'wrong password!') =>
+      app.inject({
+        method: 'POST',
+        url: '/api/admin/auth/login',
+        remoteAddress: ip,
+        payload: { email: target.email, password },
+      });
+    // Successful sign-ins never count: five failures are still allowed afterwards.
+    for (let i = 0; i < 4; i += 1) {
+      expect((await attempt('10.0.2.1', TEST_PASSWORD)).statusCode).toBe(200);
+    }
+    // 25 at once from the same IP: the per-IP limit stops some, the per-account one lets exactly 5 reach the password.
+    const burst = await startEach(25, () => attempt('10.0.2.1'));
+    const codes = burst.map((response) => response.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(20);
+    const limited = burst.find((response) => response.statusCode === 429);
+    expect(limited?.json()).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+    expect(Number(limited?.headers['retry-after'])).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it('sends at most 5 reset emails to one address, however many requests arrive at once', async () => {
+    const { app, db } = await createTestApp(database.current);
+    const target = await createAdmin(db);
+    const mail = createMemoryEmailTransport();
+    const burst = await startEach(20, () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/admin/auth/password-reset',
+        remoteAddress: '10.0.3.1',
+        payload: { email: target.email },
+      }),
+    );
+    const codes = burst.map((response) => response.statusCode);
+    expect(codes.filter((code) => code === 202)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(15);
+    await runEmailJobs(app, db, mail);
+    expect(mail.sent.filter((message) => message.to === target.email)).toHaveLength(5);
     await app.close();
   });
 

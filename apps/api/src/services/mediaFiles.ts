@@ -1,12 +1,13 @@
 import type { Readable } from 'node:stream';
 import { AppError } from '../helpers/appError.js';
-import { isValidStorageKey, type MediaVisibility } from '../media/keys.js';
+import { isValidStorageKey, visibilityOfKey, withVisibility, type MediaVisibility } from '../media/keys.js';
 import { verifyMediaGet } from '../media/signing.js';
 import type { ByteRange, MediaStorage, StorageDriver } from '../media/types.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import * as mediaVariantsRepository from '../repositories/mediaVariants.js';
 
 export type ServableFile = {
+  /** Where the bytes are now (may differ from the requested key's prefix while a visibility move runs). */
   key: string;
   driver: StorageDriver;
   mimeType: string;
@@ -21,7 +22,7 @@ export type FileSignature = { expires?: number; signature?: string };
 
 const notFound = () => new AppError(404, 'NOT_FOUND', 'Media file not found');
 
-const findFile = async (key: string): Promise<ServableFile | undefined> => {
+const findStoredFile = async (key: string): Promise<ServableFile | undefined> => {
   const asset = await mediaAssetsRepository.findLiveByStorageKey(key);
   if (asset) {
     return {
@@ -47,6 +48,22 @@ const findFile = async (key: string): Promise<ServableFile | undefined> => {
 };
 
 /**
+ * The file a key names, also under the other visibility prefix: a visibility change answers with URLs built
+ * from the new prefix before the relocate job has moved the objects, and URLs from before the change keep
+ * resolving after it. The bytes come from wherever the row points now.
+ */
+const findFile = async (key: string): Promise<ServableFile | undefined> => {
+  const exact = await findStoredFile(key);
+  if (exact) {
+    return exact;
+  }
+  const visibility = visibilityOfKey(key);
+  return visibility
+    ? findStoredFile(withVisibility(key, visibility === 'public' ? 'private' : 'public'))
+    : undefined;
+};
+
+/**
  * The file behind `/api/media/f/<key>`, if the caller may read it: public files of live assets for
  * anyone; private ones only with a valid, unexpired signature for this exact key (product rule 7). The
  * database decides visibility, so a visibility change or delete takes effect immediately.
@@ -66,6 +83,7 @@ export const authorizeMediaFile = async (
   if (expires === undefined || signature === undefined) {
     throw new AppError(403, 'MEDIA_SIGNATURE_REQUIRED', 'This file is private; use a signed URL');
   }
+  // Signed for the key in the URL, whichever prefix the bytes sit under now.
   const check = verifyMediaGet(signingSecret, key, expires, signature);
   if (check === 'expired') {
     throw new AppError(403, 'MEDIA_URL_EXPIRED', 'This signed URL has expired');

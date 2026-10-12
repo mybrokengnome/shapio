@@ -90,7 +90,10 @@ describe('content api', () => {
 
   it('publishes and unpublishes locales, and reads and restores revisions', async () => {
     const { client, call } = setup(200, { items: [{ id: 'r1' }] });
-    await client.admin.content.publish('page', 'e1', { locales: ['en', 'fr'] });
+    await client.admin.content.publish('page', 'e1', {
+      locales: ['en', 'fr'],
+      expectedVersions: { en: 3, fr: 2 },
+    });
     await client.admin.content.unpublish('page', 'e1', { locales: ['fr'] });
     await expect(client.admin.content.revisions('page', 'e1', { locale: 'en' })).resolves.toEqual([
       { id: 'r1' },
@@ -100,7 +103,7 @@ describe('content api', () => {
     expect(call(0)).toEqual({
       url: `${BASE}/page/e1/publish`,
       method: 'POST',
-      body: { locales: ['en', 'fr'] },
+      body: { locales: ['en', 'fr'], expectedVersions: { en: 3, fr: 2 } },
     });
     expect(call(1)).toEqual({ url: `${BASE}/page/e1/unpublish`, method: 'POST', body: { locales: ['fr'] } });
     expect(call(2)).toMatchObject({ url: `${BASE}/page/e1/revisions?locale=en`, method: 'GET' });
@@ -110,6 +113,16 @@ describe('content api', () => {
       method: 'POST',
       body: { expectedVersion: 4 },
     });
+  });
+
+  it('reads an entry history with its publications', async () => {
+    const history = {
+      items: [{ id: 'r1', authorName: 'Ada' }],
+      publications: [{ revisionId: 'r1', live: true }],
+    };
+    const { client, call } = setup(200, history);
+    await expect(client.admin.content.history('page', 'e1', { locale: 'en' })).resolves.toEqual(history);
+    expect(call(0)).toMatchObject({ url: `${BASE}/page/e1/revisions?locale=en`, method: 'GET' });
   });
 
   it('reads the custom editor manifest', async () => {

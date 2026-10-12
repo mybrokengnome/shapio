@@ -8,7 +8,7 @@ import {
 } from '../content/compiler/compile.js';
 import { entryIdIs } from '../content/compiler/conditions.js';
 import { toLimitOffset } from '../content/compiler/paginate.js';
-import { maskAllows } from '../content/compiler/policy.js';
+import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { selectFields } from '../content/compiler/select.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery, RichTextMode } from '../content/compiler/types.js';
@@ -21,6 +21,7 @@ import {
   systemAttributes,
   type ReadEnvironment,
 } from '../content/read.js';
+import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
@@ -194,12 +195,16 @@ export const readEntryPage = async (
   options: { total: boolean; check?: (seq: number) => void } = { total: true },
 ): Promise<EntryPage> => {
   const read = await withSeoDefaults(unloaded);
-  const { context, model, policy, query } = read;
+  const { context, model, policy } = read;
+  const query = {
+    ...read.query,
+    filter: await visibleReferenceFilter(environmentOf(read, context.db), read.query.filter),
+  };
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
   const sort =
     query.sort.length > 0
       ? query.sort
-      : defaultSortTerms(model.definition, (field) => maskAllows(policy.readMask, field));
+      : defaultSortTerms(model.definition, (field) => maskAllows(everyRowReadMask(policy), field));
   const plan: HeadQueryPlan = {
     siteId: context.site.id,
     modelId: model.definition.id,

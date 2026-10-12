@@ -7,6 +7,7 @@ import { startFakeCloudflare, type FakeCloudflare } from './fixtures/cloudflareA
 import { startFakeGitHub, type FakeGitHub } from './fixtures/githubApi.js';
 import { createDefinition, createSharedDefinition, expectStatus, type EntryBody } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
+import { createLogCapture } from './helpers/logCapture.js';
 import {
   createPublishingTestApp,
   createPublishingWorker,
@@ -52,13 +53,14 @@ describe('deployments', () => {
   const workers: Worker[] = [];
   const clock = createTestClock();
 
-  const worker = () => {
+  const worker = (log?: ReturnType<typeof createLogCapture>['logger']) => {
     const created = createPublishingWorker({
       db: database.current.db,
       app: testApp.app,
       dns: testApp.dns,
       now: clock.now,
       pollIntervalMs: 1000,
+      ...(log ? { log } : {}),
     });
     workers.push(created);
     return created;
@@ -609,6 +611,33 @@ describe('deployments', () => {
         .digest('hex');
       expect(trigger?.headers['x-shapio-signature']).toBe(`v1=${expected}`);
       expect((await getRun(run.id)).status).toBe('triggered');
+    });
+
+    it('fails a triggered run, recording and logging the reason once', async () => {
+      const { connection } = await genericConnection({ name: 'Lost secret' });
+      await sealUnderAnotherKey(connection.id);
+      const run = expectStatus(
+        await admin.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}),
+        201,
+      ).json<Run>();
+      const capture = createLogCapture();
+      await drain(worker(capture.logger));
+
+      const reason =
+        'A stored secret cannot be decrypted (the signing secret changed?). Enter the secret again.';
+      expect(await getRun(run.id)).toMatchObject({ status: 'failed' });
+      const jobs = await database.current.db
+        .selectFrom('jobs')
+        .select('last_error')
+        .where('type', '=', PUBLISHING_JOBS.deploymentTrigger)
+        .where('status', '=', 'dead')
+        .where('last_error', 'like', '%cannot be decrypted%')
+        .execute();
+      expect(jobs.map((job) => job.last_error)).toEqual([`PermanentJobError: ${reason}`]);
+      const dead = capture.lines
+        .map((line) => JSON.parse(line) as { msg: string; err?: { message: string } })
+        .find((line) => line.msg === 'job dead');
+      expect(dead?.err?.message).toBe(reason);
     });
 
     it('regenerates a generated secret on an empty value, returned once; a readable one is kept', async () => {

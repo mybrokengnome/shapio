@@ -40,7 +40,8 @@ export const scaffoldProject = ({ directory, shapioSpec, databaseUrl }: Scaffold
   for (const [path, content] of files) {
     const target = join(root, path);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content, { flag: 'wx' });
+    // `.env` holds SESSION_SECRET and the database password: readable by the owner only.
+    writeFileSync(target, content, { flag: 'wx', ...(path === '.env' ? { mode: 0o600 } : {}) });
   }
   return root;
 };

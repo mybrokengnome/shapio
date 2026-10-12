@@ -10,6 +10,13 @@ const codesFor = (...fields: Parameters<typeof field>[0][]) =>
 const settings = (value: Record<string, unknown>) => value as FieldInput['settings'];
 
 describe('validateDefinition', () => {
+  it('refuses a label with a NUL character or an unpaired surrogate (no database stores them)', () => {
+    expect(codesFor({ apiKey: 'title', label: 'Ti\u0000tle' })).toEqual(['/fields/0/label INVALID_TEXT']);
+    expect(validateDefinition(model({ label: 'Lone \udc00' })).map((found) => found.code)).toEqual([
+      'INVALID_TEXT',
+    ]);
+  });
+
   it('accepts a definition using every data type with its default editor', () => {
     const hero = component({ id: id(900) });
     const definition = model({

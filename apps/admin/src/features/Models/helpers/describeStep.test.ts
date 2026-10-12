@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { initI18n } from '@/app/i18n';
 import { field, model } from '../../../../../../packages/schema/src/testing/fixtures';
 import { describeChange } from './describeChange';
-import { describeStep, describeStepImpact, stepsToShow } from './describeStep';
+import { describeStep, describeStepImpact, hasFailingCheck, stepsToShow } from './describeStep';
 
 const before = model({ fields: [field({ apiKey: 'price', label: 'Price', type: 'media' })] });
 const price = before.fields[0]!;
@@ -16,7 +16,13 @@ const typeChange = {
   from: 'media',
   to: 'number',
 } as const;
-const convert: PlanStep = { kind: 'convert', ownerId: before.id, change: typeChange, locations: [] };
+/** The plan step carries the classified change, with `dropsValues` decided by the planner. */
+const convert: PlanStep = {
+  kind: 'convert',
+  ownerId: before.id,
+  change: classifyChange(typeChange, { before, after }),
+  locations: [],
+};
 const key = `convert:${before.id}:field.type:${price.id}:`;
 
 beforeAll(async () => {
@@ -43,6 +49,37 @@ describe('a type change Shapio cannot convert', () => {
     );
   });
 
+  it('a multi-value enum to text drops its values (the planner sees the settings, not just the types)', () => {
+    const tagsBefore = model({
+      fields: [
+        field({
+          apiKey: 'tags',
+          label: 'Tags',
+          type: 'enum',
+          settings: { multiple: true, values: [{ value: 'a', label: 'A' }] },
+        }),
+      ],
+    });
+    const tags = tagsBefore.fields[0]!;
+    const tagsAfter = {
+      ...tagsBefore,
+      fields: [{ ...tags, type: 'string', settings: {} }],
+    } as SchemaDefinition;
+    const change = classifyChange(
+      { kind: 'field.type', definitionId: tagsBefore.id, fieldId: tags.id, from: 'enum', to: 'string' },
+      { before: tagsBefore, after: tagsAfter },
+    );
+    const step: PlanStep = { kind: 'convert', ownerId: tagsBefore.id, change, locations: [] };
+    expect(
+      describeStep(step, tagsBefore, tagsAfter, {
+        key,
+        kind: 'convert',
+        affectedHeads: 3,
+        droppedEntries: 3,
+      }),
+    ).toBe('Tags: Choice → Short text, 3 entries lose their value');
+  });
+
   it('keeps the plain wording for a conversion Shapio performs', () => {
     const toText: PlanStep = { ...convert, change: { ...typeChange, from: 'number', to: 'string' } };
     expect(describeStep(toText, before, after)).toBe('Convert stored values');
@@ -54,12 +91,24 @@ describe('a type change Shapio cannot convert', () => {
       describeStepImpact(required, {
         key: 'validateRequired',
         kind: 'validateRequired',
-        affectedHeads: 3,
-        invalidHeads: 2,
+        affectedHeads: 4,
+        invalidHeads: 4,
+        invalidEntries: 3,
       }),
     ).toBe(
-      '3 entry versions to check · 2 entries would be left without a required value; untick Required or set a default',
+      '4 entry versions to check · 3 entries (4 versions) would be left without a required value; untick Required or set a default',
     );
+  });
+
+  it('knows a plan with a failing check can not ship', () => {
+    const impact = (invalidHeads?: number) => ({
+      key: 'k',
+      kind: 'validateRequired',
+      affectedHeads: 2,
+      invalidHeads,
+    });
+    expect(hasFailingCheck([impact(), impact(0)])).toBe(false);
+    expect(hasFailingCheck([impact(), impact(1)])).toBe(true);
   });
 
   it('leaves out the value check on the dropped field, keeping each step with its impact', () => {

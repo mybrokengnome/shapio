@@ -84,12 +84,36 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
   it('anonymous callers get nothing until `public` grants it', async () => {
     expect((await deliver('/api/content/posts')).statusCode).toBe(401);
-    expect(errorCodes(await gql(LIST))).toEqual(['UNAUTHENTICATED']);
+    // Allowed no model at all: the sign-in signal, as REST, and no names either way.
+    const list = await gql(LIST);
+    expect(list.statusCode).toBe(401);
+    expect(errorCodes(list)).toEqual(['UNAUTHENTICATED']);
     expect(
       (await deliver('/api/content/posts', undefined, { method: 'POST', payload: { data: { title: 'x' } } }))
         .statusCode,
     ).toBe(403);
-    expect(errorCodes(await gql(CREATE, { data: { title: 'x' } }))).toEqual(['FORBIDDEN']);
+    const create = await gql(CREATE, { data: { title: 'x' } });
+    expect(create.statusCode).toBe(403);
+    expect(errorCodes(create)).toEqual(['FORBIDDEN']);
+    // With a grant on another model, a model it may not read is simply not in its schema.
+    const other = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'notice',
+      label: 'Notice',
+      fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    await setPublicGrants(database.current.db, [{ action: 'read', modelId: other.definition.id }]);
+    const unknown = await gql(LIST);
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.body.errors?.[0]?.message).toBe('Cannot query field "posts" on type "Query".');
+  });
+
+  it('an app user whose roles allow no model gets 403 FORBIDDEN', async () => {
+    await setAuthenticatedGrants(database.current.db, []);
+    const session = await signUp(testApp.app);
+    const refused = await gql(LIST, undefined, session.accessToken);
+    expect(refused.statusCode).toBe(403);
+    expect(errorCodes(refused)).toEqual(['FORBIDDEN']);
   });
 
   it('`public` cannot read unpublished content and sees only public fields it is granted', async () => {
@@ -98,14 +122,16 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
     const viaGraphql = dataOf(await gql(LIST)) as { posts: { nodes: unknown[] } };
     expectSameEntries(viaGraphql.posts.nodes, rest.data);
     expect(JSON.stringify(viaGraphql)).not.toContain('Draft only');
-    expect(dataOf(await one(published.id, undefined, 'title notes'))).toEqual({
-      post: { title: 'Live', notes: null },
-    });
+    // `notes` is not in the anonymous schema: reading or filtering on it fails validation.
+    expect(errorCodes(await one(published.id, undefined, 'title notes'))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+    expect(dataOf(await one(published.id, undefined, 'title'))).toEqual({ post: { title: 'Live' } });
     expect(dataOf(await one(draftOnly.id))).toEqual({ post: null });
     expect((await deliver('/api/content/posts?filters[notes][$eq]=internal note')).statusCode).toBe(403);
     expect(
       errorCodes(await gql('{ posts(filter: { notes: { eq: "internal note" } }) { totalCount } }')),
-    ).toEqual(['FORBIDDEN_FIELD']);
+    ).toEqual(['GRAPHQL_VALIDATION_FAILED']);
 
     await setPublicGrants(database.current.db, [
       { action: 'read', modelId: post.definition.id, fieldIds: [fieldIdOf(post, 'title')] },
@@ -118,9 +144,9 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
   it('a `public: false` field is invisible to app users unless a role grants it by ID', async () => {
     const session = await signUp(testApp.app);
-    expect(dataOf(await one(published.id, session.accessToken, 'title notes'))).toEqual({
-      post: { title: 'Live', notes: null },
-    });
+    expect(errorCodes(await one(published.id, session.accessToken, 'title notes'))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
     expect(
       errorCodes(
         await gql(
@@ -129,7 +155,7 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
           session.accessToken,
         ),
       ),
-    ).toEqual(['FORBIDDEN_FIELD']);
+    ).toEqual(['GRAPHQL_VALIDATION_FAILED']);
     expect(dataOf(await one(draftOnly.id, session.accessToken))).toEqual({ post: null });
 
     const reader = await createAppRole(database.current.db, [
@@ -156,6 +182,25 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
     expect(rest.data).toMatchObject({ notes: 'internal note' });
   });
 
+  it('a model `public` may only create has its create mutation and no read queries', async () => {
+    const submission = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'submission',
+      label: 'Submission',
+      fields: [
+        { apiKey: 'email', label: 'Email', type: 'string' },
+        { apiKey: 'triage', label: 'Triage', type: 'string', public: false },
+      ],
+    });
+    await setPublicGrants(database.current.db, [{ action: 'create', modelId: submission.definition.id }]);
+    const created = await gql('mutation { createSubmission(data: { email: "a@b.c" }) { status } }');
+    expect(dataOf(created)).toEqual({ createSubmission: { status: 'draft' } });
+    const read = await gql('{ submissions { totalCount } }');
+    expect(read.body.errors?.[0]?.message).toBe('Cannot query field "submissions" on type "Query".');
+    const hidden = await gql('mutation { createSubmission(data: { triage: "x" }) { status } }');
+    expect(hidden.body.errors?.[0]?.message).toBe('Field "triage" is not defined by type "SubmissionInput".');
+  });
+
   describe('owner-only writes', () => {
     let alice: AppSessionBody;
     let bob: AppSessionBody;
@@ -174,14 +219,17 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
 
     it('needs a grant to create, and never writes masked fields', async () => {
       const outsider = await signUp(testApp.app);
-      expect(errorCodes(await gql(CREATE, { data: { title: 'no' } }, outsider.accessToken))).toEqual([
-        'FORBIDDEN',
-      ]);
+      // The outsider may write no field, so its schema has no `PostInput`; without data it is refused.
+      const noInput = await gql(CREATE, { data: { title: 'no' } }, outsider.accessToken);
+      expect(noInput.statusCode).toBe(400);
+      expect(noInput.body.errors?.[0]?.message).toBe('Unknown type "PostInput".');
+      expect(
+        errorCodes(await gql('mutation { createPost { id } }', undefined, outsider.accessToken)),
+      ).toEqual(['FORBIDDEN']);
+      // Alice's `PostInput` holds only the fields she may write.
       const masked = await gql(CREATE, { data: { title: 't', notes: 'n' } }, alice.accessToken);
-      expect(masked.body.errors?.[0]?.extensions).toMatchObject({
-        code: 'FORBIDDEN_FIELD',
-        details: { fields: ['notes'] },
-      });
+      expect(masked.statusCode).toBe(400);
+      expect(masked.body.errors?.[0]?.message).toContain('Field "notes" is not defined by type "PostInput".');
       expect(
         errorCodes(await gql(CREATE, { data: { title: 't' }, publish: true }, alice.accessToken)),
       ).toEqual(['FORBIDDEN']);
@@ -254,6 +302,70 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
         alice.accessToken,
       );
       expect(errorCodes(result)).toEqual(['DRAFTS_FORBIDDEN']);
+    });
+  });
+
+  describe('`public` is a floor for signed-in app users (issue #56)', () => {
+    type Nodes = { posts: { nodes: Array<{ title: string; notes: string | null }> } };
+    const NOTES = '{ posts { nodes { title notes } } }';
+
+    it('keeps what `public` reads when `authenticated` grants nothing', async () => {
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, []);
+      const session = await signUp(testApp.app);
+      const anonymous = dataOf(await gql(LIST)) as { posts: { nodes: unknown[] } };
+      const signedIn = dataOf(await gql(LIST, undefined, session.accessToken)) as {
+        posts: { nodes: unknown[] };
+      };
+      expect(signedIn).toEqual(anonymous);
+      expect(signedIn.posts.nodes).toHaveLength(1);
+    });
+
+    it('adds `authenticated` on own entries: the hidden field shows only on its own entry', async () => {
+      const fieldIds = [fieldIdOf(post, 'title'), fieldIdOf(post, 'notes')];
+      await setPublicGrants(database.current.db, [{ action: 'read', modelId: post.definition.id }]);
+      await setAuthenticatedGrants(database.current.db, [
+        { action: 'read', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+        { action: 'update', modelId: post.definition.id, condition: 'ownedByPrincipal', fieldIds },
+      ]);
+      const author = await createAppRole(database.current.db, [
+        { action: 'create', modelId: post.definition.id, fieldIds },
+        { action: 'publish', modelId: post.definition.id, condition: 'ownedByPrincipal' },
+      ]);
+      const session = await signUp(testApp.app);
+      await assignRoles(session.user.id, [author]);
+      const created = dataOf(
+        await gql(
+          CREATE,
+          { data: { title: 'Mine', notes: 'my own note' }, publish: true },
+          session.accessToken,
+        ),
+      ) as { createPost: EntryResult };
+
+      const nodes = (dataOf(await gql(NOTES, undefined, session.accessToken)) as Nodes).posts.nodes;
+      expect(nodes).toEqual(
+        expect.arrayContaining([
+          { title: 'Live', notes: null },
+          { title: 'Mine', notes: 'my own note' },
+        ]),
+      );
+      expect(nodes).toHaveLength(2);
+      expect(
+        dataOf(
+          await gql(
+            UPDATE,
+            { id: created.createPost.id, data: { title: 'Mine, edited' }, v: 1 },
+            session.accessToken,
+          ),
+        ),
+      ).toMatchObject({ updatePost: { id: created.createPost.id } });
+      expect(
+        errorCodes(await gql(UPDATE, { id: published.id, data: { title: 'x' }, v: 1 }, session.accessToken)),
+      ).toEqual(['ENTRY_NOT_FOUND']);
+      // Anonymous callers keep only `public`: their schema has no `notes` field, so the query is refused.
+      const anonymous = await gql(NOTES);
+      expect(errorCodes(anonymous)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+      expect(JSON.stringify(anonymous.body)).not.toContain('my own note');
     });
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { cloneValue } from '../helpers/unparsed';
 import { clientKeyOf, moveItem, toList, withClientKey, type ItemValues } from '../helpers/values';
 
 /** Add, insert, move, duplicate and remove for list values (repeatable components, dynamic zones). */
@@ -18,7 +19,7 @@ export const useListEditor = (value: unknown, onChange: (value: unknown) => void
       commit(items.map((current, at) => (at === index ? item : current))),
     move: (from: number, to: number) => commit(moveItem(items, from, to)),
     duplicate: (index: number) => {
-      const copy = withClientKey(structuredClone(items[index] ?? {}));
+      const copy = withClientKey(cloneValue(items[index] ?? {}));
       commit([...items.slice(0, index + 1), copy, ...items.slice(index + 1)]);
     },
     remove: (index: number) => commit(items.filter((_, at) => at !== index)),

@@ -7,9 +7,9 @@ export const ADMIN_API = `${E2E_ORIGIN}${E2E_BASE_PATH}/api/admin`;
 /**
  * Signs the page's browser context in as the owner through the API, whichever spec ran before: completes
  * first-run setup when it is still pending, otherwise logs in with the owner's current password (the
- * admin spec changes it near its end).
+ * admin spec changes it near its end). Returns the password that worked.
  */
-export const signInAsOwner = async (page: Page) => {
+export const signInAsOwner = async (page: Page): Promise<string> => {
   const request = page.request;
   const status = (await (await request.get(`${ADMIN_API}/setup`)).json()) as { required: boolean };
   if (status.required) {
@@ -17,7 +17,7 @@ export const signInAsOwner = async (page: Page) => {
       data: { name: OWNER.name, email: OWNER.email, password: OWNER.password },
     });
     expect(response.ok()).toBe(true);
-    return;
+    return OWNER.password;
   }
   const attempts: string[] = [];
   for (const password of [NEW_PASSWORD, OWNER.password]) {
@@ -25,7 +25,7 @@ export const signInAsOwner = async (page: Page) => {
       data: { email: OWNER.email, password },
     });
     if (response.ok()) {
-      return;
+      return password;
     }
     const label = password === NEW_PASSWORD ? 'NEW_PASSWORD' : 'OWNER.password';
     attempts.push(`${label}: HTTP ${response.status()} ${(await response.text()).slice(0, 500)}`);

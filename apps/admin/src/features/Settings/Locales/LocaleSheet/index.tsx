@@ -16,7 +16,7 @@ type LocaleSheetProps = {
 
 export const LocaleSheet = ({ open, onOpenChange, locale, locales }: LocaleSheetProps) => {
   const { t } = useTranslation();
-  const { form, onSubmit, pending, error } = useLocaleForm(open, locale, () => onOpenChange(false));
+  const { form, onSubmit, pending, error } = useLocaleForm(open, locale, locales, () => onOpenChange(false));
   const code = form.watch('code');
   return (
     <FormSheet

@@ -230,11 +230,26 @@ describe('admin model API', () => {
     });
 
     const authorDefinition = (await getModel(author.definitionId)).definition;
-    expect((await admin.delete(`/api/admin/models/${book.definitionId}?expectedVersion=1`)).statusCode).toBe(
-      200,
-    );
+    // Deleting a model removes its API: a breaking change that must be acknowledged, as `apply --prune` does.
+    expectStatus(await admin.post('/api/admin/content/book', { data: {} }), 201);
+    const unacknowledged = await admin.delete(`/api/admin/models/${book.definitionId}?expectedVersion=1`);
+    expect(unacknowledged.statusCode).toBe(409);
+    expect(unacknowledged.json()).toMatchObject({ error: { code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED' } });
+    expect((await admin.get(`/api/admin/models/${book.definitionId}`)).statusCode).toBe(200);
+    expect((await admin.get('/api/admin/content/book')).statusCode).toBe(200);
     expect(
-      (await admin.delete(`/api/admin/models/${author.definitionId}?expectedVersion=1`)).statusCode,
+      (
+        await admin.delete(
+          `/api/admin/models/${book.definitionId}?expectedVersion=1&acknowledgeBreaking=true`,
+        )
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await admin.delete(
+          `/api/admin/models/${author.definitionId}?expectedVersion=1&acknowledgeBreaking=true`,
+        )
+      ).statusCode,
     ).toBe(200);
     expect((await admin.get(`/api/admin/models/${author.definitionId}`)).statusCode).toBe(404);
 

@@ -77,17 +77,22 @@ export const withSharedValuesOf = (
   return output;
 };
 
+/** Fields (of those given) whose values differ between two documents. */
+export const changedFieldIds = (
+  fields: ReadonlyArray<{ id: string }>,
+  before: Readonly<ContentData>,
+  after: Readonly<ContentData>,
+): Set<string> =>
+  new Set(
+    fields.filter((field) => !isDeepStrictEqual(before[field.id], after[field.id])).map((field) => field.id),
+  );
+
 /** Shared fields whose values differ between two documents. */
 export const changedSharedFieldIds = (
   model: ModelDefinition,
   before: Readonly<ContentData>,
   after: Readonly<ContentData>,
-): Set<string> =>
-  new Set(
-    sharedFields(model)
-      .filter((field) => !isDeepStrictEqual(before[field.id], after[field.id]))
-      .map((field) => field.id),
-  );
+): Set<string> => changedFieldIds(sharedFields(model), before, after);
 
 export type LocaleHeads = {
   locale: string;

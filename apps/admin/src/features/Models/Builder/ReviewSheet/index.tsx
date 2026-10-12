@@ -18,6 +18,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { hasFailingCheck } from '../../helpers/describeStep';
 import { bucketOfPlan, type PlanBucket } from '../../helpers/planBuckets';
 import { BucketChip } from '../BucketChip';
 import { ChangeList } from './ChangeList';
@@ -75,7 +76,12 @@ export const ReviewSheet = ({
   const bucket = summary ? bucketOfPlan(summary) : 'metadata';
   const needsBreaking = summary?.breaking ?? false;
   const needsDestructive = summary?.destructive ?? false;
-  const canApply = (!needsBreaking || acknowledgedBreaking) && (!needsDestructive || acknowledgedDestructive);
+  // A check the preview already knows fails would only fail the ship; a change set can still be reviewed.
+  const failingCheck = previewShown ? hasFailingCheck(previewShown.impact.steps) : false;
+  const canApply =
+    !failingCheck &&
+    (!needsBreaking || acknowledgedBreaking) &&
+    (!needsDestructive || acknowledgedDestructive);
   return (
     <Sheet open={preview !== undefined} onOpenChange={(open) => !open && !busy && onClose()}>
       <SheetContent size="lg">
@@ -166,6 +172,11 @@ export const ReviewSheet = ({
                   ) : null}
                 </fieldset>
               ) : null}
+              {failingCheck ? (
+                <p id="plan-blocked" className="text-meta text-warning">
+                  {t('models.plan.blockedByCheck')}
+                </p>
+              ) : null}
               <FormError error={error ?? saveError} />
             </SheetBody>
             <SheetFooter>
@@ -190,6 +201,7 @@ export const ReviewSheet = ({
                 pending={applying}
                 pendingLabel={t('models.plan.applying')}
                 disabled={!canApply || saving}
+                aria-describedby={failingCheck ? 'plan-blocked' : undefined}
               >
                 {t('models.plan.apply')}
               </SubmitButton>

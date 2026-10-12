@@ -1,7 +1,10 @@
 import type { ModelDefinition } from '@shapio/schema';
 import { useLocales } from '@/api/locales';
 
-/** The instance's locales, the default one, and the locale a screen edits (null for non-localized models). */
+/**
+ * The instance's locales, the default one, and the locale a screen edits (null for non-localized models).
+ * `error` only when nothing loaded: a failed refetch keeps the list (and the screen) it had.
+ */
 export const useContentLocales = (model: ModelDefinition | undefined, requested: string | undefined) => {
   const locales = useLocales();
   const list = locales.data ?? [];
@@ -15,6 +18,6 @@ export const useContentLocales = (model: ModelDefinition | undefined, requested:
     current,
     labelOf,
     isPending: locales.isPending,
-    error: locales.error,
+    error: locales.data ? null : locales.error,
   };
 };

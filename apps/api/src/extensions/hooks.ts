@@ -84,6 +84,7 @@ const toEntryData = (model: ContentModel, data: Readonly<ContentData> | undefine
         visibleTargets: null,
         populated: new Map(),
         mediaAssets: null,
+        publicComponentFieldsOnly: false,
       });
 
 const reject = (message: string, details?: Record<string, unknown>): never => {

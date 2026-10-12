@@ -138,15 +138,15 @@ Responses: 204 Deleted; 400 Invalid query or body; 401 Not authenticated; 403 No
 
 ### POST /api/admin/content/article/{id}/publish
 
-Publish locales of a Article entry (admin).
+Publish locales of a Article entry (admin; 409 when the expected version is stale).
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
 | `id` (required) | path | string (uuid) |  |
 
-Body: `locales` (array of string).
+Body: `locales` (array of string), `expectedVersion` (integer), `expectedVersions` (object).
 
-Responses: 200 OK; 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry.
+Responses: 200 OK; 400 Invalid query or body; 401 Not authenticated; 403 Not allowed (including filters on hidden fields); 404 Unknown model or entry; 409 Stale version.
 
 ### POST /api/admin/content/article/{id}/unpublish
 
@@ -172,7 +172,8 @@ Entries whose live content changed between two snapshots, by locale.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
-| `from` (required) | query | integer |  |
+| `from` | query | integer |  |
+| `recent` | query | integer |  |
 | `to` | query | integer |  |
 | `after` | query | string (uuid) |  |
 | `limit` | query | integer |  |

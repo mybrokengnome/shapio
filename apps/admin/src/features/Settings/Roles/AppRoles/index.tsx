@@ -16,7 +16,7 @@ import { CreateSheet } from './CreateSheet';
 import { readsAllModels, useGrantReadAll } from './hooks/useGrantReadAll';
 import { Table } from './Table';
 
-/** Settings → Roles → App roles: what anonymous callers and signed-in app users may do with content. */
+/** Settings → Roles → App roles: what everyone, and signed-in app users on top, may do with content. */
 export const AppRoles = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();

@@ -46,3 +46,22 @@ export const fromDateTimeInput = (text: string, utc: boolean): string | null => 
 
 /** The viewer's IANA time zone, for the hint under local-time inputs. */
 export const localTimeZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const TIME_OF_DAY = /^(\d{2}:\d{2})(?::(\d{2})(?:\.(\d+))?)?$/;
+
+/**
+ * A `time` value as people write it: `09:15` for the server's `09:15:00.000`, seconds (and a fraction) only
+ * when they are not zero. Anything else is shown as it is.
+ */
+export const formatTimeOfDay = (value: string): string => {
+  const match = TIME_OF_DAY.exec(value);
+  if (!match) {
+    return value;
+  }
+  const [, minutes = '', seconds = '00', fraction = ''] = match;
+  const trimmed = fraction.replace(/0+$/, '');
+  if (trimmed !== '') {
+    return `${minutes}:${seconds}.${trimmed}`;
+  }
+  return seconds === '00' ? minutes : `${minutes}:${seconds}`;
+};

@@ -75,6 +75,8 @@ export type ContentMigrationPort = {
 export type StepImpact = {
   affectedHeads: number;
   invalidHeads?: number;
+  /** The distinct entries those failing heads belong to (a person counts entries; the check counts heads). */
+  invalidEntries?: number;
   /** A type change Shapio cannot convert: live entries holding a value it drops (absent inside components). */
   droppedEntries?: number;
 };
@@ -87,8 +89,18 @@ export type ContentImpactSource = {
    * `steps` are the plan's content steps (a check's outcome can depend on another step, e.g. a dropped value).
    */
   assess: (step: ContentStep, steps: readonly ContentStep[]) => Promise<StepImpact>;
-  /** Heads stored in one locale (impact of deleting it). */
-  countLocaleHeads: (code: string) => Promise<number>;
+  /** What deleting a locale would do to content. */
+  countLocaleRemoval: (code: string) => Promise<LocaleRemovalImpact>;
+};
+
+/** The content impact of deleting a locale (shown before acknowledging, and on the result). */
+export type LocaleRemovalImpact = {
+  /** Heads of localized models stored in the locale: purged. */
+  affectedHeads: number;
+  /** Entries that exist only in the locale: deleted. */
+  deletedEntries: number;
+  /** Entries of non-localized models stored in the locale: moved to the default locale, not deleted. */
+  movedEntries: number;
 };
 
 export type SchemaContentPorts = { migration: ContentMigrationPort; impact: ContentImpactSource };
@@ -104,6 +116,6 @@ export const NO_CONTENT_PORTS: SchemaContentPorts = {
   impact: {
     countHeads: async () => 0,
     assess: async () => ({ affectedHeads: 0, invalidHeads: 0 }),
-    countLocaleHeads: async () => 0,
+    countLocaleRemoval: async () => ({ affectedHeads: 0, deletedEntries: 0, movedEntries: 0 }),
   },
 };

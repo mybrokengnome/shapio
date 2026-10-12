@@ -1,33 +1,37 @@
 import {
   CONTENT_ACTIONS,
-  DELIVERY_ACTIONS,
   GLOBAL_ACTIONS,
+  type ContentAction,
   type PermissionAction,
   type RoleKind,
 } from '@shapio/client';
+import type { MatrixRules } from './PermissionMatrix/helpers/permissionMatrix';
 
 export { GLOBAL_ACTIONS };
 
 /**
- * The content checkboxes per role kind: admin roles get every content action; delivery roles only read, and
- * may read drafts (drafts mode). Grants made here apply to every model (`modelId: null`).
+ * The permission matrix per role kind. Admin roles: every content action per model, "own entries" (entries
+ * the admin created) and field lists where they mean something. Delivery roles: read per model, with field
+ * lists (tokens own no entries).
  */
-export const CONTENT_ACTIONS_BY_KIND = {
-  admin: CONTENT_ACTIONS,
-  delivery: DELIVERY_ACTIONS,
-} as const satisfies Record<RoleKind, readonly PermissionAction[]>;
-
-/** Every action this form edits, per role kind (the server refuses the others). */
-export const EDITABLE_ACTIONS_BY_KIND: Record<RoleKind, readonly PermissionAction[]> = {
-  admin: [...CONTENT_ACTIONS, ...GLOBAL_ACTIONS],
-  delivery: DELIVERY_ACTIONS,
+export const MATRIX_RULES_BY_KIND: Record<RoleKind, MatrixRules<ContentAction>> = {
+  admin: {
+    actions: CONTENT_ACTIONS,
+    ownOnlyActions: new Set<ContentAction>(['read', 'update', 'delete', 'publish']),
+    fieldScopedActions: new Set<ContentAction>(['read', 'create', 'update']),
+  },
+  delivery: {
+    actions: ['read'],
+    ownOnlyActions: new Set<ContentAction>(),
+    fieldScopedActions: new Set<ContentAction>(['read']),
+  },
 };
 
-/** Every action this form edits, whatever the kind. */
-export const EDITABLE_ACTIONS: readonly PermissionAction[] = [
-  ...EDITABLE_ACTIONS_BY_KIND.admin,
-  ...EDITABLE_ACTIONS_BY_KIND.delivery,
-];
+/** The every-model checkboxes per role kind: instance actions; read drafts (delivery roles only). */
+export const CHECKBOX_ACTIONS_BY_KIND = {
+  admin: GLOBAL_ACTIONS,
+  delivery: ['readDrafts'],
+} as const satisfies Record<RoleKind, readonly PermissionAction[]>;
 
 /** Translation keys per action (action names contain dots, which i18next reads as nesting). */
 export const ACTION_LABEL_KEYS = {

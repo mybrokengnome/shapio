@@ -1,5 +1,5 @@
 import type { Transaction } from 'kysely';
-import { assertAllowed, matchesRowFilter } from '../content/compiler/policy.js';
+import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
 import { resolveModel, type ContentModel } from '../content/model.js';
@@ -65,6 +65,21 @@ export const modelWithPolicy = async (
 };
 
 /**
+ * The create policy, refused (403) before any write when its row filter cannot hold for the new entry: a
+ * create granted only on own entries, for a caller that owns nothing it creates (issue #105).
+ */
+export const modelWithCreatePolicy = async (
+  context: ContentServiceContext,
+  modelKey: string,
+): Promise<{ model: ContentModel; policy: Policy }> => {
+  const result = await modelWithPolicy(context, modelKey, 'create');
+  if (!allowsNewEntry(result.policy, context.actor)) {
+    throw forbidden(`Your role does not allow ${ACTION_LABELS.create} "${modelKey}" entries`);
+  }
+  return result;
+};
+
+/**
  * Entries outside the caller's row filter look like missing entries (no existence oracle). Another site's
  * entry never gets here: every lookup that feeds this is scoped to the request's site and reads it as missing.
  */
@@ -92,7 +107,7 @@ export type EntryEvent =
 export const writeEntryEvent = (
   trx: Transaction<DB>,
   siteId: string,
-  model: ContentModel,
+  model: Pick<ContentModel, 'definition'>,
   type: EntryEvent,
   entryId: string,
   payload: Record<string, unknown>,

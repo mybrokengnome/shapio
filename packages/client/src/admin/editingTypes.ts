@@ -10,6 +10,7 @@ export const HEALTH_RULES = [
   'altMissing',
   'localeMissing',
   'relationMissing',
+  'mediaMissing',
   'relationUnpublished',
   'uniqueConflict',
   'staleDraft',
@@ -17,8 +18,8 @@ export const HEALTH_RULES = [
 ] as const;
 export type HealthRule = (typeof HEALTH_RULES)[number];
 
-/** Pre-flight adds the publish checks that are not health rules: validator issues and missing media. */
-export type PreflightRule = HealthRule | 'invalid' | 'mediaMissing';
+/** Pre-flight adds the publish checks that are not health rules: validator issues. */
+export type PreflightRule = HealthRule | 'invalid';
 
 export type CheckSeverity = 'error' | 'warning';
 
@@ -96,6 +97,19 @@ export type PresenceHeartbeatInput = {
 };
 
 export type EntryPresence = { people: PresencePerson[] };
+
+/** A locale's draft as the server has it: an open document compares `version` with the one it shows. */
+export type DraftState = {
+  locale: string;
+  version: number;
+  /** When the draft last moved (a save, an autosave, or publishing autosaved work). */
+  savedAt: string;
+  /** Who saved it; null when that isn't known reliably (an autosave, a token, a schedule). */
+  savedBy: { name: string; you: boolean } | null;
+};
+
+/** The heartbeat's answer: who else has the entry open, and every locale's current draft version. */
+export type EntryHeartbeat = EntryPresence & { drafts: DraftState[] };
 
 export type ModelPresence = { entries: { entryId: string; people: PresencePerson[] }[] };
 

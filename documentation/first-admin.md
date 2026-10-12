@@ -70,6 +70,11 @@ Custom roles (Network → Roles) grant actions per model (`read`, `create`, `upd
 role grants it. `changes.manage` covers preparing change sets, snapshots and restore; `changes.ship` covers
 shipping and scheduling them; the field-usage report needs `tokens.manage`.
 
+Network → Roles → **New role** names the role; its page then sets the grants: a table of models (every model
+first, then each shared and site model) by action, where **Options** limits an action to the admin's own
+entries or to some fields, and the instance permissions below it. A field list names fields of that model only;
+the server refuses others (`UNKNOWN_FIELD`).
+
 On an instance with several [sites](sites.md#permissions-and-assignments), a role is assigned on one site or on
 all sites. `schema.create`, `users.manage`, `roles.manage`, `audit.read`, `sites.manage` and `schemaManage` are
 network permissions: only roles held on all sites grant them. The Owner role is always held on all sites.
@@ -122,6 +127,9 @@ Settings → API tokens creates a token bound to one role. It is shown once; Sha
 
 Tokens belong to the site they are created on. An admin with `users.manage` can instead create a **network**
 admin token, which works on every site ([Sites](sites.md#api-tokens)).
+
+Tokens stop working while the admin who created them is disabled, and are revoked when that admin is deleted;
+Network → Users names them before you confirm, so you can replace a site's delivery token first.
 
 Sessions, rate limits and the audit log: [Security](security.md).
 

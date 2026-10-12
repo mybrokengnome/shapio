@@ -127,8 +127,11 @@ describe('admin source conventions', () => {
     expect(findings).toEqual([]);
   });
 
-  it('keeps non-modal sheets to the panels people work beside (the entry settings drawer)', () => {
-    const allowed = new Set(['features/Content/Entry/SettingsDrawer/index.tsx']);
+  it('keeps non-modal sheets to the panels people work beside (entry settings, signing in again)', () => {
+    const allowed = new Set([
+      'features/Content/Entry/SettingsDrawer/index.tsx',
+      'features/Shell/ResumeSession/index.tsx',
+    ]);
     const findings = readSourceFiles(['.tsx']).flatMap(({ path, text }) => {
       if (path.startsWith('components/ui/')) {
         return [];

@@ -87,7 +87,7 @@ describe('the built-in SEO component', () => {
     expectStatus(
       await marketingAdmin.request({
         method: 'DELETE',
-        url: `/api/admin/components/${imported.definitionId}?expectedVersion=${current.version}`,
+        url: `/api/admin/components/${imported.definitionId}?expectedVersion=${current.version}&acknowledgeBreaking=true`,
         headers: { [SITE_HEADER]: 'marketing' },
       }),
       200,

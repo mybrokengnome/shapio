@@ -35,6 +35,9 @@ export const PUBLICATION_JOB_MAX_ATTEMPTS = 5;
 export const PREVIEW_TOKEN_DEFAULT_TTL_SECONDS = 60 * 60;
 export const PREVIEW_TOKEN_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const PREVIEW_TOKEN_PREFIX = 'shpv_';
+/** A webhook's signing secret cannot be decrypted (SESSION_SECRET changed): the delivery's recorded reason. */
+export const WEBHOOK_SECRET_UNREADABLE =
+  'The signing secret cannot be decrypted (SESSION_SECRET changed?). Rotate the secret to repair this webhook.';
 /** Webhook delivery log: response body kept per attempt. */
 export const DELIVERY_BODY_LIMIT = 2048;
 /** Cloudflare Pages status polling: interval and how long before a run is reported as unknown. */

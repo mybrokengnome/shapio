@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { bundleKeyFor } from '../src/content/transfer/bundleFile.js';
 import { TRANSFER_IMPORT_JOB } from '../src/content/transfer/job.js';
 import { createUrlBuilder } from '../src/helpers/publicUrl.js';
@@ -15,7 +16,9 @@ import {
 import { createWorker, type Worker } from '../src/jobs/worker.js';
 import { createMediaStorage } from '../src/media/storage.js';
 import type { MediaStorage } from '../src/media/types.js';
-import { testConfig } from './helpers/createTestApp.js';
+import { createDefinition, expectStatus, type EntryBody } from './helpers/content.js';
+import { createTestApp, testConfig, type TestApp } from './helpers/createTestApp.js';
+import { createRoleToken, schemaClient } from './helpers/schemaAdmin.js';
 import { silentLogger } from './helpers/silentLogger.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 import { waitFor } from './helpers/waitFor.js';
@@ -198,5 +201,269 @@ describe('retention job: bundles of dead imports', () => {
       .where('status', '=', 'dead')
       .execute();
     expect(dead).toHaveLength(3);
+  });
+});
+
+/**
+ * Expired credentials and finished delivery and run logs: gone once older than the retention period, except
+ * what the admin shows as the last state (each webhook's newest delivery, each connection's newest and live run).
+ */
+describe('retention job: expired credentials, webhook deliveries and deployment runs', () => {
+  const database = useTestDatabase();
+  let testApp: TestApp;
+  let result: { removed: Record<string, unknown> };
+  const ids: Record<string, string> = {};
+
+  const remaining = async (
+    table:
+      | 'app_refresh_tokens'
+      | 'preview_tokens'
+      | 'password_resets'
+      | 'app_password_resets'
+      | 'email_confirmations'
+      | 'app_login_codes'
+      | 'admin_sessions'
+      | 'admin_invitations'
+      | 'setup_tokens'
+      | 'webhook_deliveries'
+      | 'deployment_runs',
+  ) => {
+    const rows = await database.current.db.selectFrom(table).select('id').execute();
+    const names = Object.fromEntries(Object.entries(ids).map(([name, id]) => [id, name]));
+    return rows.map((row) => names[row.id] ?? row.id).sort();
+  };
+
+  beforeAll(async () => {
+    const { db } = database.current;
+    testApp = await createTestApp(database.current, { schemaListen: false });
+    const admin = schemaClient(testApp.app, await createRoleToken(db));
+    const model = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'note',
+      label: 'Note',
+      fields: [{ apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/note', { data: { text: 'x' } }),
+      201,
+    ).json<EntryBody>();
+    const adminUser = await db
+      .insertInto('admin_users')
+      .values({ email: 'owner@example.com', password_hash: 'x' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const appUser = await db
+      .insertInto('app_users')
+      .values({ email: 'reader@example.com', site_id: PRIMARY_SITE_ID })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+
+    // Every expiring credential: one expired 31 days ago (pruned), one expired 29 days ago (kept).
+    for (const [age, expires] of [
+      ['old', daysAgo(31)],
+      ['recent', daysAgo(29)],
+    ] as const) {
+      const key = `${age}-${randomUUID()}`;
+      const inserted = {
+        refresh: await db
+          .insertInto('app_refresh_tokens')
+          .values({ app_user_id: appUser.id, family_id: randomUUID(), token_hash: key, expires_at: expires })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        preview: await db
+          .insertInto('preview_tokens')
+          .values({
+            token_hash: key,
+            token_prefix: 'shp_pv',
+            model_id: model.definition.id,
+            entry_id: entry.id,
+            site_id: PRIMARY_SITE_ID,
+            created_by: adminUser.id,
+            expires_at: expires,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        reset: await db
+          .insertInto('password_resets')
+          .values({ admin_user_id: adminUser.id, token_hash: key, expires_at: expires })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        appReset: await db
+          .insertInto('app_password_resets')
+          .values({
+            app_user_id: appUser.id,
+            email: 'reader@example.com',
+            token_hash: key,
+            expires_at: expires,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        confirmation: await db
+          .insertInto('email_confirmations')
+          .values({
+            app_user_id: appUser.id,
+            email: 'reader@example.com',
+            token_hash: key,
+            expires_at: expires,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        loginCode: await db
+          .insertInto('app_login_codes')
+          .values({ app_user_id: appUser.id, code_challenge: key, code_hash: key, expires_at: expires })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        session: await db
+          .insertInto('admin_sessions')
+          .values({ admin_user_id: adminUser.id, csrf_secret: key, token_hash: key, expires_at: expires })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+        invitation: await db
+          .insertInto('admin_invitations')
+          .values({ email: `${age}@example.com`, token_hash: key, expires_at: expires })
+          .returning('id')
+          .executeTakeFirstOrThrow(),
+      };
+      for (const [name, row] of Object.entries(inserted)) {
+        ids[`${name}:${age}`] = row.id;
+      }
+    }
+
+    // Setup tokens: spent before the cutoff (pruned), spent recently and the live one (kept).
+    const setupToken = async (name: string, values: { used_at?: Date; superseded_at?: Date }) => {
+      ids[name] = (
+        await db
+          .insertInto('setup_tokens')
+          .values({ token_hash: randomUUID(), ...values })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id;
+    };
+    await setupToken('setup:used-old', { used_at: daysAgo(31) });
+    await setupToken('setup:superseded-old', { superseded_at: daysAgo(40) });
+    await setupToken('setup:used-recent', { used_at: daysAgo(2) });
+    await setupToken('setup:live', {});
+
+    // Webhook deliveries: finished ones older than the cutoff go, except each webhook's newest.
+    const webhook = async (name: string) =>
+      (
+        await db
+          .insertInto('webhooks')
+          .values({ name, url: 'https://example.com/hook', secret_encrypted: 'x', site_id: PRIMARY_SITE_ID })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id;
+    const busy = await webhook('busy');
+    const quiet = await webhook('quiet');
+    const fresh = await webhook('fresh');
+    const delivery = async (name: string, webhookId: string, status: string, age: number) => {
+      ids[name] = (
+        await db
+          .insertInto('webhook_deliveries')
+          .values({
+            webhook_id: webhookId,
+            event_type: 'entry.published',
+            payload: JSON.stringify({}),
+            status,
+            created_at: daysAgo(age),
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id;
+    };
+    await delivery('delivery:succeeded-60', busy, 'succeeded', 60);
+    await delivery('delivery:dead-50', busy, 'dead', 50);
+    await delivery('delivery:retrying-55', busy, 'retrying', 55);
+    await delivery('delivery:newest-40', busy, 'succeeded', 40);
+    await delivery('delivery:only-dead', quiet, 'dead', 90);
+    await delivery('delivery:recent', fresh, 'succeeded', 2);
+
+    // Deployment runs of one connection: the live (highest snapshot) and the newest run stay.
+    const connection = await db
+      .insertInto('deployment_connections')
+      .values({ name: 'site', provider: 'generic_webhook', secrets_encrypted: 'x', site_id: PRIMARY_SITE_ID })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const run = async (name: string, status: string, age: number, seq: number | null, finished: boolean) => {
+      ids[name] = (
+        await db
+          .insertInto('deployment_runs')
+          .values({
+            connection_id: connection.id,
+            trigger: 'manual',
+            status,
+            snapshot_seq: seq === null ? null : String(seq),
+            created_at: daysAgo(age + 1),
+            finished_at: finished ? daysAgo(age) : null,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id;
+    };
+    await run('run:stuck-queued', 'queued', 70, null, false);
+    await run('run:live-deployed', 'deployed', 60, 5, true);
+    await run('run:failed', 'failed', 50, null, true);
+    await run('run:older-snapshot-deployed', 'deployed', 45, 3, true);
+    await run('run:newest-failed', 'failed', 40, null, true);
+
+    const handlers = new Map(createRetentionJobHandlers(db, { days: 30 }));
+    result = (await handlers.get(RETENTION_JOB)?.({
+      id: randomUUID(),
+      type: RETENTION_JOB,
+      payload: {},
+      attempt: 1,
+      maxAttempts: 1,
+      idempotencyKey: null,
+      checkpoint: null,
+      saveCheckpoint: async () => true,
+      signal: new AbortController().signal,
+      log: silentLogger,
+    })) as { removed: Record<string, unknown> };
+  });
+
+  afterAll(async () => {
+    await testApp.app.close();
+  });
+
+  it('deletes credentials that expired before the retention period, keeping recently expired ones', async () => {
+    const pairs = [
+      ['refresh', 'app_refresh_tokens'],
+      ['preview', 'preview_tokens'],
+      ['reset', 'password_resets'],
+      ['appReset', 'app_password_resets'],
+      ['confirmation', 'email_confirmations'],
+      ['loginCode', 'app_login_codes'],
+      ['session', 'admin_sessions'],
+      ['invitation', 'admin_invitations'],
+    ] as const;
+    for (const [name, table] of pairs) {
+      expect(await remaining(table), table).toEqual([`${name}:recent`]);
+    }
+    expect(result.removed.expiredCredentials).toEqual(
+      Object.fromEntries(pairs.map(([, table]) => [table, 1])),
+    );
+  });
+
+  it('deletes setup tokens spent before the retention period, never the live one', async () => {
+    expect(await remaining('setup_tokens')).toEqual(['setup:live', 'setup:used-recent']);
+  });
+
+  it("deletes old finished webhook deliveries, keeping pending ones and each webhook's newest", async () => {
+    expect(await remaining('webhook_deliveries')).toEqual([
+      'delivery:newest-40',
+      'delivery:only-dead',
+      'delivery:recent',
+      'delivery:retrying-55',
+    ]);
+    expect(result.removed.webhookDeliveries).toBe(2);
+  });
+
+  it("deletes old finished deployment runs, keeping unfinished ones and each connection's newest and live run", async () => {
+    expect(await remaining('deployment_runs')).toEqual([
+      'run:live-deployed',
+      'run:newest-failed',
+      'run:stuck-queued',
+    ]);
+    expect(result.removed.deploymentRuns).toBe(2);
   });
 });

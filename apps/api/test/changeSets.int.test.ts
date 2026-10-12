@@ -173,6 +173,8 @@ describe('change sets (content)', () => {
       source: 'change_set',
       changeSetId: set.id,
       changedEntries: 3,
+      // Named as the change set's timeline names who shipped it.
+      actor: { type: 'token', name: expect.stringMatching(/^test admin /) as unknown },
     });
   });
 

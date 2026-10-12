@@ -10,6 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SITE_HEADER } from '../src/constants/sites.js';
 import { createContentPorts } from '../src/content/ports.js';
 import { createTransferJobHandlers } from '../src/content/transfer/job.js';
+import { isSqlite } from '../src/db/dialect.js';
+import { timestampParam } from '../src/db/sql/time.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { createWorker, type Worker } from '../src/jobs/worker.js';
 import { createMediaJobHandlers } from '../src/media/jobs.js';
@@ -331,7 +333,7 @@ describe('content export and import (shapio export / shapio import)', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as { type: string } & Record<string, unknown>);
-    expect(lines[0]).toMatchObject({ type: 'header', format: 'shapio-export', formatVersion: 1 });
+    expect(lines[0]).toMatchObject({ type: 'header', format: 'shapio-export', formatVersion: 2 });
     expect(lines.at(-1)).toMatchObject({
       type: 'end',
       counts: { entry: 3, mediaAsset: 1, definition: 2, locale: 2 },
@@ -888,5 +890,117 @@ describe('roles in one site’s bundle (roles are instance-wide, models belong t
       .where('is_system', '=', false)
       .execute();
     expect(roles.map((role) => role.key)).toEqual(['mixed']);
+  });
+});
+
+describe('timestamps in a bundle (microseconds, order of entries created in one millisecond)', () => {
+  let source: Instance | undefined;
+  let target: Instance | undefined;
+  let worker: Worker | undefined;
+  let workdir: string;
+  /** Two published authors, the larger ID created 386 microseconds after the smaller in the same millisecond. */
+  let ids: [string, string];
+
+  const setCreatedAt = async (instance: Instance, id: string, at: string) => {
+    const { db } = instance.database;
+    await db
+      .updateTable('entries')
+      .set({ created_at: timestampParam(at) })
+      .where('id', '=', id)
+      .execute();
+    await db
+      .updateTable('entry_heads')
+      .set({ entry_created_at: timestampParam(at) })
+      .where('entry_id', '=', id)
+      .execute();
+  };
+  const deliveredOrder = async (instance: Instance) => {
+    const token = await createDeliveryToken(instance.database.db, [{ modelId: null }]);
+    const response = await instance.testApp.app.inject({
+      method: 'GET',
+      url: '/api/content/authors',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    return expectStatus(response, 200)
+      .json<{ data: Array<{ id: string }> }>()
+      .data.map((item) => item.id);
+  };
+  const adminOrder = async (instance: Instance) =>
+    expectStatus(
+      await schemaClient(instance.testApp.app, instance.adminToken).get('/api/admin/content/author'),
+      200,
+    )
+      .json<{ items: Array<{ id: string }> }>()
+      .items.map((item) => item.id);
+
+  beforeAll(async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'shapio-transfer-time-'));
+    source = await startInstance(await createTestDatabase());
+    const admin = schemaClient(source.testApp.app, source.adminToken);
+    await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'author',
+      label: 'Author',
+      fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
+    });
+    const created = await Promise.all(
+      ['Ada', 'Grace'].map(
+        async (name) =>
+          expectStatus(
+            await admin.post('/api/admin/content/author', { data: { name }, publish: true }),
+            201,
+          ).json<EntryBody>().id,
+      ),
+    );
+    ids = created.sort() as [string, string];
+    await setCreatedAt(source, ids[0], '2026-10-01T10:22:58.006201Z');
+    await setCreatedAt(source, ids[1], '2026-10-01T10:22:58.006587Z');
+  });
+
+  afterAll(async () => {
+    await worker?.stop(5000);
+    await stopInstance(source);
+    await stopInstance(target);
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it('keeps microseconds through export and import, so the imported site lists entries in the same order', async () => {
+    const from = source as Instance;
+    const microseconds = !isSqlite();
+    const sourceOrder = await deliveredOrder(from);
+    // Newest first; on SQLite (milliseconds) the two tie and the ID decides.
+    expect(sourceOrder).toEqual(microseconds ? [ids[1], ids[0]] : ids);
+    const bundle = join(workdir, 'content.ndjson');
+    const exported = await runCli('export', ['--url', from.url, '--token', from.adminToken, bundle]);
+    expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    const records = (await readFile(bundle, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string; id?: string; createdAt?: string });
+    expect(records[0]).toMatchObject({ formatVersion: 2 });
+    const stamps = records.filter((record) => record.type === 'entry').map((record) => record.createdAt);
+    for (const stamp of stamps) {
+      expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
+    }
+    if (microseconds) {
+      expect(records.find((record) => record.id === ids[1])?.createdAt).toBe('2026-10-01T10:22:58.006587Z');
+    }
+    await stopInstance(from);
+    source = undefined;
+
+    target = await startInstance(await createTestDatabase());
+    worker = startWorker(target);
+    const imported = await runCli('import', ['--url', target.url, '--token', target.adminToken, bundle]);
+    expect(imported, `${imported.stdout}\n${imported.stderr}`).toMatchObject({ code: 0 });
+    expect(await deliveredOrder(target)).toEqual(sourceOrder);
+    expect(await adminOrder(target)).toEqual(sourceOrder);
+  });
+
+  it('breaks a tie on the creation time by ID in delivery and admin lists', async () => {
+    const instance = target as Instance;
+    await setCreatedAt(instance, ids[0], '2026-10-01T10:22:58.006000Z');
+    await setCreatedAt(instance, ids[1], '2026-10-01T10:22:58.006000Z');
+    expect(await deliveredOrder(instance)).toEqual(ids);
+    expect(await adminOrder(instance)).toEqual(ids);
   });
 });

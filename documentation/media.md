@@ -72,7 +72,9 @@ Media screen; uploads in the entry form use the same flow.
 - **Private** assets are only reachable through signed URLs that expire after one hour. The APIs return a fresh
   signed URL (`url`, `urlExpiresAt`) to callers allowed to read the entry. Nobody can guess one.
 
-Changing an asset's visibility moves its object between prefixes.
+Changing an asset's visibility moves its object between prefixes in the background. Until the move is done,
+the asset's URLs (on S3 or behind a CDN too) go through Shapio's own file route under the new prefix, so the
+URL the change returns works before and after the move.
 
 ## Image variants
 
@@ -121,6 +123,11 @@ only reads on the asset's site issue.
 Every asset shows which entries use it (in fields, components and rich-text images). An asset that content still
 uses cannot be deleted; owners can force it, leaving the content pointing at a missing file. Deleted assets'
 files are purged by a background job.
+
+Content that points at a force-deleted file stays editable and publishable: saves only check the files they
+add, and the entry shows up in the Inbox under "Files deleted from the library". Delivery leaves the missing
+file out. In the admin API, a media value is an asset view, or the bare asset ID when the library no longer
+resolves it, so the editor can see the missing file and remove it.
 
 ## Moving between local disk and S3
 

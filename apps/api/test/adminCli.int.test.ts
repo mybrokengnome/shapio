@@ -93,4 +93,40 @@ describe('shapio admin create', () => {
     expect(usage.code).toBe(1);
     expect(usage.stderr).toContain('Usage');
   });
+
+  it('applies the sign-in rules: refuses a bad email, an over-long name, and a password sign-in would refuse', async () => {
+    const password = { SHAPIO_ADMIN_PASSWORD: 'long enough password' };
+    const notEmail = await cli(['admin', 'create', '--email', 'notanemail'], password);
+    expect(notEmail).toMatchObject({ code: 1 });
+    expect(notEmail.stderr).toContain('--email must be an email address');
+    const longName = await cli(
+      ['admin', 'create', '--email', 'n@example.com', '--name', 'N'.repeat(201)],
+      password,
+    );
+    expect(longName).toMatchObject({ code: 1 });
+    expect(longName.stderr).toContain('--name must be 1 to 200 characters');
+    const longPassword = await cli(['admin', 'create', '--email', 'p@example.com'], {
+      SHAPIO_ADMIN_PASSWORD: 'p'.repeat(5000),
+    });
+    expect(longPassword).toMatchObject({ code: 1 });
+    expect(longPassword.stderr).toContain('SHAPIO_ADMIN_PASSWORD must be 12 to 256 characters');
+    const shortPassword = await cli(['admin', 'create', '--email', 's@example.com'], {
+      SHAPIO_ADMIN_PASSWORD: 'short',
+    });
+    expect(shortPassword).toMatchObject({ code: 1 });
+    const created = await testApp.db
+      .selectFrom('admin_users')
+      .select('email')
+      .where('email', 'in', ['notanemail', 'n@example.com', 'p@example.com', 's@example.com'])
+      .execute();
+    expect(created).toEqual([]);
+
+    // The longest values the API accepts still work and can sign in.
+    const longest = 'q'.repeat(256);
+    const ok = await cli(['admin', 'create', '--email', 'max@example.com', '--name', 'N'.repeat(200)], {
+      SHAPIO_ADMIN_PASSWORD: longest,
+    });
+    expect(ok, ok.stderr).toMatchObject({ code: 0 });
+    expect(await loginStatus('max@example.com', longest)).toBe(200);
+  });
 });

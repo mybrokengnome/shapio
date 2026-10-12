@@ -44,6 +44,7 @@ import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
 import { siteResolutionPlugin } from './plugins/siteResolution.js';
 import { adminPrefixFor, staticAdminPlugin } from './plugins/staticAdmin.js';
+import { textInputPlugin } from './plugins/textInput.js';
 import { themeCataloguePlugin } from './plugins/themeCatalogue.js';
 import { usagePlugin } from './plugins/usage.js';
 import type { HostResolver } from './publishing/outbound/ssrf.js';
@@ -167,6 +168,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   await app.register(requestLogPlugin);
   await app.register(gracefulClosePlugin);
   await app.register(errorHandlerPlugin);
+  await app.register(textInputPlugin);
   await app.register(servicesPlugin, {
     config,
     db: deps.db,

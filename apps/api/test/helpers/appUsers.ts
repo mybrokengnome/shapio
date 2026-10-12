@@ -11,9 +11,9 @@ import * as appRolesRepository from '../../src/repositories/appRoles.js';
 import * as permissionsVersionRepository from '../../src/repositories/permissionsVersion.js';
 import { nextTestIp } from './adminIdentity.js';
 import type { GrantSpec } from './content.js';
+import { drainWorker } from './drainWorker.js';
 import type { MemoryEmailTransport } from './memoryEmailTransport.js';
 import { silentLogger } from './silentLogger.js';
-import { waitFor } from './waitFor.js';
 
 export const APP_PASSWORD = 'app-user password 1';
 
@@ -113,8 +113,7 @@ export const runAppEmailJobs = async (
     leaseMs: 10_000,
     log: silentLogger,
   });
-  await worker.tick();
-  await waitFor(async () => worker.runningJobIds.size === 0);
+  await drainWorker(worker);
   const unfinished = await db
     .selectFrom('jobs')
     .select(['type', 'status', 'last_error'])

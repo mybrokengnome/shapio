@@ -58,6 +58,9 @@ const seedContent = async () => {
     autosave: true,
     data: { summary: null },
   });
+  // Autosaves trigger no health check, and the create's check may already have run on the valid draft;
+  // opening the publish pre-flight checks the entry at once and records its findings.
+  await api.send('POST', `/content/fieldNote/${unfinished.id}/preflight`, {});
   entries.harbour = harbour.id;
   entries.unfinished = unfinished.id;
 };
@@ -86,7 +89,10 @@ test.afterAll(async () => {
 const needsYou = (on: Page) => on.getByRole('region', { name: 'Needs you' });
 const ruleGroup = (on: Page, name: string) => needsYou(on).getByRole('region', { name });
 
-/** The health job runs after each save; reload until its findings are listed. */
+/**
+ * Findings come from the health job after each save (the alt text one) or from the pre-flight (the empty
+ * required field, left by an autosave); reload until they are listed.
+ */
 const waitForFinding = async (on: Page, group: string) => {
   await expect(async () => {
     await on.reload();
@@ -204,6 +210,36 @@ test('the Inbox is home: findings grouped by rule, one sentence each, with a fix
   await expect(owner).toHaveURL(new RegExp(`/content/fieldNote/${entries.harbour}(\\?[^#]*)?#cover$`));
 });
 
+test('snapshots that change only the schema never push publishes out of Recently published', async () => {
+  const models = await api.get<{ items: { definition: { id: string; apiKey: string } }[] }>('/models');
+  const modelId = models.items.find((model) => model.definition.apiKey === 'fieldNote')?.definition.id ?? '';
+  // Six shipped change sets that only relabel the type (back to its name at the end): six snapshots, no entries.
+  for (const label of [
+    'Field notes',
+    'Field note',
+    'Field notes',
+    'Field note',
+    'Field notes',
+    'Field note',
+  ]) {
+    const created = await api.send<{ id: string }>('POST', '/change-sets', { title: `Relabel: ${label}` });
+    const active = await api.get<{ definition: Record<string, unknown>; version: number }>(
+      `/models/${modelId}`,
+    );
+    await api.send('PUT', `/change-sets/${created.id}/schema/${modelId}`, {
+      category: 'model',
+      baseVersion: active.version,
+      definition: { ...active.definition, label },
+    });
+    const set = await api.get<{ version: number }>(`/change-sets/${created.id}`);
+    await api.send('POST', `/change-sets/${created.id}/ship`, { expectedVersion: set.version });
+  }
+  await owner.goto(ADMIN_URL);
+  const published = owner.getByRole('region', { name: 'Recently published' });
+  await expect(row(published, 'Harbour lights')).toContainText('Field note · went live');
+  await expect(published.getByText('Nothing published yet')).toHaveCount(0);
+});
+
 test('the palette finds entries by title and opens them', async () => {
   await owner.goto(ADMIN_URL);
   await expect(owner.getByRole('heading', { level: 1, name: `Welcome, ${OWNER.name}` })).toBeVisible();
@@ -249,6 +285,15 @@ test('an editor gets the Inbox and places only: no Develop, no workspace managem
     }
     await expect(nav.getByRole('list', { name: 'Develop' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: /models/i })).toHaveCount(0);
+
+    // By URL (a bookmark, an old link): the reason, before any form or action.
+    for (const path of ['content/new', 'develop/components/new', 'settings/api-tokens']) {
+      await editor.goto(`${ADMIN_URL}${path}`);
+      await expect(editor.getByText("You don't have access to this")).toBeVisible();
+      await expect(editor.getByRole('textbox')).toHaveCount(0);
+      await expect(editor.getByRole('button', { name: /^(Create|New token)$/ })).toHaveCount(0);
+    }
+    await editor.goto(ADMIN_URL);
 
     await waitForFinding(editor, 'Images without alt text');
     await expect(editor.getByRole('region', { name: 'Scheduled soon' })).toHaveCount(0);

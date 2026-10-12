@@ -11,11 +11,13 @@ import {
   fieldValueExpression,
   hasFieldIndex,
   modelIdLiteral,
+  referenceIdsExpression,
   textMatchExpression,
   valueCastFor,
 } from './expressions.js';
 import { isListValued, NUMERIC_STRING_TYPES } from './operators.js';
-import type { EntryListStatus, FilterNode, FilterOperator, FilterTarget } from './types.js';
+import { compileRowFilter } from './policy.js';
+import type { EntryListStatus, FilterNode, FilterOperator, FilterTarget, ShownTargets } from './types.js';
 
 /**
  * AST → parameterised SQL (Kysely `sql` fragments only). Every value is a bound parameter; the only
@@ -101,14 +103,60 @@ const systemCondition = (
   }
 };
 
+/**
+ * Whether the head `h` stores a reference the read shows: `exists` over the stored IDs (`v`), each looked up
+ * as a target head of the same source, locale chain and row filter (relations: the target query reuses the
+ * aliases `h` and `e`, so the row filter and the locale chain compile as for any head query), or as a live
+ * asset of the site (media).
+ */
+const showsReference = (
+  { field }: FieldTarget,
+  shown: ShownTargets,
+  dialect: ContentSqlDialect,
+): RawBuilder<unknown> => {
+  if (shown.kind === 'none') {
+    return sql`false`;
+  }
+  const ids = referenceIdsExpression(field.id, isListValued(field), dialect);
+  if (shown.kind === 'media') {
+    return sql`exists (select 1 from ${ids.from} where exists (select 1 from media_assets m
+      where ${ids.matches(sql`m.id`)} and m.site_id = ${dialect.uuid(shown.siteId)} and m.deleted_at is null))`;
+  }
+  const table =
+    shown.source.kind === 'heads'
+      ? sql.table('entry_heads')
+      : sql`(${dialect.snapshotRows({ siteId: shown.siteId, modelId: modelIdLiteral(shown.modelId), seq: shown.source.seq })})`;
+  const rowFilter = compileRowFilter(shown.rowFilter, shown.actor, dialect);
+  const where = whereOf(
+    {
+      siteId: shown.siteId,
+      modelId: shown.modelId,
+      source: shown.source,
+      locales: shown.locales,
+      conditions: [ids.matches(sql`h.entry_id`), ...(rowFilter ? [rowFilter] : [])],
+      orderBy: [],
+    },
+    table,
+    dialect,
+  );
+  return sql`exists (select 1 from ${ids.from} where exists (select 1 from ${table} h
+      join entries e on e.id = h.entry_id and e.deleted_at is null where ${where}))`;
+};
+
 const fieldCondition = (
   target: FieldTarget,
   operator: FilterOperator,
   value: unknown,
   dialect: ContentSqlDialect,
+  shown?: ShownTargets,
 ): RawBuilder<unknown> => {
   const { field } = target;
   const equals = (item: unknown) => fieldEqualsExpression(equalityTarget(target), item, dialect);
+  if (shown && (operator === '$null' || operator === '$notNull')) {
+    // Null when no stored reference is shown (a missing value stores none).
+    const present = showsReference(target, shown, dialect);
+    return (operator === '$null') === value ? sql`(not ${present})` : present;
+  }
   switch (operator) {
     case '$eq':
       return equals(value);
@@ -150,11 +198,13 @@ export const compileFilter = (
     case 'or':
       return sql`(${sql.join(node.nodes.map(compileChild), sql` or `)})`;
     case 'not':
-      return sql`(not ${compileChild(node.node)})`;
+      // Range and text matches are NULL on a missing value, and NOT NULL is NULL: coalescing makes `$not X`
+      // exactly the entries `X` does not match, as `$ne`, `$nin` and `$notContains` already are.
+      return sql`(not coalesce(${compileChild(node.node)}, false))`;
     case 'condition':
       return node.target.kind === 'system'
         ? systemCondition(node.target.name, node.operator, node.value, dialect)
-        : fieldCondition(node.target, node.operator, node.value, dialect);
+        : fieldCondition(node.target, node.operator, node.value, dialect, node.shownTargets);
   }
 };
 

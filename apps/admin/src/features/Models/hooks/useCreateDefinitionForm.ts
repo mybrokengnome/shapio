@@ -80,7 +80,21 @@ const takenKeys = (definitions: ReadonlyArray<{ definition: SchemaDefinition }> 
   );
 
 /** Server issues shown on a form field, by the definition property they point at. */
-const ISSUE_FIELDS = ['apiKey', 'pluralApiKey'] as const;
+const ISSUE_FIELDS = ['label', 'apiKey', 'pluralApiKey'] as const;
+
+const ISSUE_PATHS: ReadonlySet<string> = new Set(ISSUE_FIELDS.map((name) => `/${name}`));
+
+/**
+ * The message for a refusal whose issues point at no field on this form (the generic "fix the highlighted
+ * settings" would highlight nothing), or undefined when the form error can describe it itself.
+ */
+const unplacedIssuesMessage = (error: unknown): string | undefined => {
+  const issues = schemaIssuesOf(error);
+  if (issues.length === 0 || issues.some((issue) => ISSUE_PATHS.has(issue.path))) {
+    return undefined;
+  }
+  return issues.map(describeIssue).join(' ');
+};
 
 /**
  * Creates an empty model or component, live (a new definition has no content, so it activates at once),
@@ -131,7 +145,7 @@ export const useCreateDefinitionForm = (
       }),
     );
     if (!created.ok) {
-      const issues = schemaIssuesOf(createDefinition.error);
+      const issues = schemaIssuesOf(created.error);
       for (const name of ISSUE_FIELDS) {
         const found = issues.find((candidate) => candidate.path === `/${name}`);
         if (found) {
@@ -147,5 +161,11 @@ export const useCreateDefinitionForm = (
       ? navigate({ to: '/models/components/$componentId', params: { componentId: id }, ignoreBlocker: true })
       : navigate({ to: '/models/$modelId', params: { modelId: id }, ignoreBlocker: true }));
   });
-  return { form, onSubmit, pending: createDefinition.isPending, error: createDefinition.error };
+  return {
+    form,
+    onSubmit,
+    pending: createDefinition.isPending,
+    error: createDefinition.error,
+    errorMessage: unplacedIssuesMessage(createDefinition.error),
+  };
 };

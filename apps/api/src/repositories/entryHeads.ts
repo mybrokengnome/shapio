@@ -176,21 +176,27 @@ export const countEntriesMatching = async (
   return Number(row.count);
 };
 
-/** Heads of these models that must be complete: published heads, and drafts not saved leniently (autosave). */
+/**
+ * Heads of these models that must be complete (published heads, and drafts not saved leniently by autosave),
+ * and the distinct entries they belong to.
+ */
 export const countStrictHeads = async (
   modelIds: readonly string[],
   executor: Executor = db,
-): Promise<number> => {
+): Promise<{ heads: number; entries: number }> => {
   if (modelIds.length === 0) {
-    return 0;
+    return { heads: 0, entries: 0 };
   }
   const row = await executor
     .selectFrom('entry_heads')
-    .select(({ fn }) => fn.countAll<string>().as('count'))
+    .select(({ fn }) => [
+      fn.countAll<string>().as('heads'),
+      fn.count<string>('entry_id').distinct().as('entries'),
+    ])
     .where('model_id', 'in', modelIds)
     .where((eb) => eb.or([eb('state', '<>', 'draft'), eb('autosaved_at', 'is', null)]))
     .executeTakeFirstOrThrow();
-  return Number(row.count);
+  return { heads: Number(row.heads), entries: Number(row.entries) };
 };
 
 export const countForLocale = async (locale: string, executor: Executor = db): Promise<number> => {
@@ -307,3 +313,17 @@ export const findStatesForEntries = (entryIds: readonly string[], executor: Exec
         .orderBy('entry_id')
         .orderBy('locale')
         .execute();
+
+/**
+ * Every draft head of an entry with the author of its revision: what the presence heartbeat tells an open
+ * document about saves made elsewhere.
+ */
+export const findDraftsWithAuthors = (entryId: string, executor: Executor = db) =>
+  executor
+    .selectFrom('entry_heads as h')
+    .innerJoin('content_revisions as r', 'r.id', 'h.revision_id')
+    .select(['h.locale', 'h.version', 'h.updated_at', 'h.autosaved_at', 'r.author_type', 'r.author_id'])
+    .where('h.entry_id', '=', entryId)
+    .where('h.state', '=', 'draft')
+    .orderBy('h.locale')
+    .execute();

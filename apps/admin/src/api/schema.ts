@@ -4,7 +4,9 @@ import type {
   DefinitionCategory,
   DefinitionListItem,
   DefinitionPayload,
+  SiteSummary,
 } from '@shapio/client';
+import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import {
@@ -13,7 +15,7 @@ import {
   SCHEMA_POLL_INTERVAL_MS,
   SCHEMA_VERSION_STALE_MS,
 } from '@/constants/schema';
-import { adminApi } from './client';
+import { adminApi, siteAdminApi } from './client';
 import { withCsrf } from './csrf';
 import { queryKeys } from './queryKeys';
 
@@ -55,6 +57,42 @@ export const useSharedDefinitions = () =>
     meta: silent,
   });
 
+/** A model on the network roles pages: shared with all sites (`site` null), or one site's own. */
+export type SiteModel = { definition: ModelDefinition; site: SiteSummary | null };
+
+/**
+ * Every site's models, each once: one list per site (shared models and the site's own), shared models
+ * first, then each site's by site name, each by label. `siteCount` says whether naming the site helps.
+ */
+export const useEverySiteModels = () =>
+  useQuery({
+    queryKey: queryKeys.schema.everySiteModels,
+    queryFn: async () => {
+      const sites = await adminApi.sites.list();
+      const lists = await Promise.all(
+        sites.map(async (site) => ({ site, items: await siteAdminApi(site.key).models.list() })),
+      );
+      const byId = new Map<string, SiteModel>();
+      for (const { site, items } of lists) {
+        for (const item of items) {
+          if (isModelDefinition(item.definition) && !byId.has(item.definition.id)) {
+            byId.set(item.definition.id, {
+              definition: item.definition,
+              site: item.siteId === null ? null : site,
+            });
+          }
+        }
+      }
+      const models = [...byId.values()].sort(
+        (a, b) =>
+          (a.site?.name ?? '').localeCompare(b.site?.name ?? '') ||
+          a.definition.label.localeCompare(b.definition.label),
+      );
+      return { models, siteCount: sites.length };
+    },
+    meta: silent,
+  });
+
 /** Models and components together (relation targets, component pickers, cross-definition validation). */
 export const useAllDefinitions = () => {
   const models = useDefinitions('model');
@@ -71,6 +109,27 @@ export const definitionQueryOptions = (category: DefinitionCategory, id: string)
   queryOptions({
     queryKey: queryKeys.schema.definition(category, id),
     queryFn: () => definitionApi(category).get(id),
+    meta: silent,
+  });
+
+/**
+ * The definition's newest schema change, in whatever state it is now (running, activated or failed). Right
+ * after a ship that runs in the background it is that ship's change: the version guard lets no other change
+ * of the definition start until it ends.
+ */
+export const fetchLatestDefinitionChange = async (category: DefinitionCategory, id: string) =>
+  (await definitionApi(category).changes(id))[0];
+
+/** One revision of a definition with its body (immutable, so cached for good). */
+export const definitionRevisionQueryOptions = (
+  category: DefinitionCategory,
+  id: string,
+  revisionId: string,
+) =>
+  queryOptions({
+    queryKey: queryKeys.schema.revision(category, id, revisionId),
+    queryFn: () => definitionApi(category).revision(id, revisionId),
+    staleTime: Infinity,
     meta: silent,
   });
 
@@ -163,7 +222,9 @@ export const useDeleteDefinition = () => {
       category: DefinitionCategory;
       id: string;
       expectedVersion: number;
-    }) => withCsrf(() => definitionApi(category).remove(id, expectedVersion)),
+    }) =>
+      // Only called after the builder's confirm dialog, which is the acknowledgement.
+      withCsrf(() => definitionApi(category).remove(id, expectedVersion, { acknowledgeBreaking: true })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.schema.all }),
   });
 };

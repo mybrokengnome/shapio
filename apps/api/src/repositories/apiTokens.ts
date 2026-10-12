@@ -18,12 +18,15 @@ const LIST_COLUMNS = [
   'api_tokens.created_at',
   'api_tokens.site_id',
   'admin_roles.kind as role_kind',
+  'admin_users.status as creator_status',
 ] as const;
 
+/** Tokens with their role's kind and their creator's status (null when no admin is recorded as creator). */
 const withRole = (trx: Executor) =>
   trx
     .selectFrom('api_tokens')
     .innerJoin('admin_roles', 'admin_roles.id', 'api_tokens.role_id')
+    .leftJoin('admin_users', 'admin_users.id', 'api_tokens.created_by')
     .select(LIST_COLUMNS);
 
 export const insert = (token: NewApiToken, trx: Executor = db) =>
@@ -44,12 +47,45 @@ export const listForSite = (siteId: string, includeNetwork: boolean, trx: Execut
 export const findById = (id: string, trx: Executor = db) =>
   withRole(trx).where('api_tokens.id', '=', id).executeTakeFirst();
 
-/** A usable token for this hash: not revoked. Expiry is checked by the caller. */
+/**
+ * A usable token for this hash: not revoked, and its creator (if one is recorded) is not disabled. Expiry is
+ * checked by the caller.
+ */
 export const findLiveByHash = (tokenHash: string, trx: Executor = db) =>
   withRole(trx)
     .where('api_tokens.token_hash', '=', tokenHash)
     .where('api_tokens.revoked_at', 'is', null)
+    .where((eb) => eb.or([eb('admin_users.id', 'is', null), eb('admin_users.status', '=', 'active')]))
     .executeTakeFirst();
+
+/** The creator recorded on a token (null when none is, or the token does not exist). */
+export const findCreatorId = async (id: string, trx: Executor = db): Promise<string | null> =>
+  (await trx.selectFrom('api_tokens').select('created_by').where('id', '=', id).executeTakeFirst())
+    ?.created_by ?? null;
+
+/** Every token of this creator that is not revoked yet (expired ones included), on any site. */
+export const listLiveByCreator = (adminUserId: string, trx: Executor = db) =>
+  trx
+    .selectFrom('api_tokens')
+    .select(['id', 'name', 'site_id'])
+    .where('created_by', '=', adminUserId)
+    .where('revoked_at', 'is', null)
+    .orderBy('created_at')
+    .orderBy('id')
+    .execute();
+
+/** Revokes these tokens (any site); tokens already revoked keep their first revocation time. */
+export const revokeByIds = async (ids: readonly string[], now: Date, trx: Executor = db): Promise<void> => {
+  if (ids.length === 0) {
+    return;
+  }
+  await trx
+    .updateTable('api_tokens')
+    .set({ revoked_at: now, updated_at: now })
+    .where('id', 'in', ids)
+    .where('revoked_at', 'is', null)
+    .execute();
+};
 
 export const touchLastUsed = (id: string, now: Date, staleBefore: Date, trx: Executor = db) =>
   trx

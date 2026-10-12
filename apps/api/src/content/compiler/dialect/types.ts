@@ -57,6 +57,16 @@ export type FieldIndexDefinition = {
 /** The snapshot CTE's inputs (`compile.ts`). */
 export type SnapshotSource = { name: string; siteId: string; modelId: RawBuilder<unknown>; seq: number };
 
+/**
+ * The IDs a reference field (relation or media) stores: `from` is a FROM item aliased `v` that reads the head
+ * `h` of the enclosing query, and `matches(column)` whether a UUID column holds one of them (used in a nested
+ * subquery that reads `v`).
+ */
+export type ReferenceIds = {
+  from: RawBuilder<unknown>;
+  matches: (column: RawBuilder<unknown>) => RawBuilder<unknown>;
+};
+
 export type ContentSqlDialect = {
   name: ContentDialectName;
 
@@ -109,6 +119,10 @@ export type ContentSqlDialect = {
   ) => RawBuilder<unknown>;
   /** `with <name> as (published revisions of the model as of the sequence) ` (note the trailing space). */
   snapshotCte: (source: SnapshotSource) => RawBuilder<unknown>;
+  /** The SELECT of `snapshotCte`, for a FROM item (a relation's target model, read as of the same sequence). */
+  snapshotRows: (source: Omit<SnapshotSource, 'name'>) => RawBuilder<unknown>;
+  /** The IDs a top-level relation or media field stores (`list`: an array of IDs; else one ID). */
+  referenceIds: (fieldId: string, list: boolean) => ReferenceIds;
 
   /**
    * The column a field index is built on, where the database indexes a generated column rather than the

@@ -1,5 +1,5 @@
 import { Type, type Static } from 'typebox';
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../../constants/auth.js';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PERSON_NAME_MAX_LENGTH } from '../../constants/auth.js';
 import {
   CONTENT_ACTIONS,
   GLOBAL_ACTIONS,
@@ -25,7 +25,7 @@ export const EmailSchema = Type.String({ format: 'email', minLength: 3, maxLengt
 export const PasswordSchema = Type.String({ minLength: PASSWORD_MIN_LENGTH, maxLength: PASSWORD_MAX_LENGTH });
 /** A password being checked (login, current password): any length policy applies only to new ones. */
 export const PasswordAttemptSchema = Type.String({ minLength: 1, maxLength: PASSWORD_MAX_LENGTH });
-export const PersonNameSchema = Type.String({ minLength: 1, maxLength: 200 });
+export const PersonNameSchema = Type.String({ minLength: 1, maxLength: PERSON_NAME_MAX_LENGTH });
 /** Single-use tokens from links and logs: 43 base64url characters. */
 export const OneTimeTokenSchema = Type.String({ minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' });
 
@@ -47,6 +47,13 @@ export const AdminUserSchema = Type.Object({
   lastLoginAt: NullableDateTimeSchema,
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
+  /** Usable API tokens this admin created: refused while the account is disabled, revoked when it is deleted. */
+  apiTokens: Type.Array(
+    Type.Object(
+      { id: UuidSchema, name: Type.String(), siteId: Type.Union([UuidSchema, Type.Null()]) },
+      { additionalProperties: false },
+    ),
+  ),
 });
 
 /** Returned whenever a session starts: the user, and the CSRF token for its mutations. */

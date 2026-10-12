@@ -109,6 +109,19 @@ export const RevisionSummarySchema = Type.Object({
   createdAt: Timestamp,
 });
 
+/** One live period of an entry's locale, for its history: who published it, how, and whether it is live now. */
+export const EntryPublicationSchema = Type.Object({
+  revisionId: Type.String(),
+  locale: Type.String(),
+  publishedAt: Timestamp,
+  publishedBy: Type.Union([Type.String(), Type.Null()]),
+  via: Type.Union([Type.Literal('schedule'), Type.Literal('changeSet'), Type.Null()]),
+  changeSetTitle: Type.Union([Type.String(), Type.Null()]),
+  live: Type.Boolean(),
+  unpublishedAt: Type.Union([Timestamp, Type.Null()]),
+  unpublishedBy: Type.Union([Type.String(), Type.Null()]),
+});
+
 /** Delivery bodies are pre-serialized by the controller (ETag over the exact bytes); this documents them. */
 export const DeliveryResponseSchema = Type.Object({
   data: Type.Unknown(),

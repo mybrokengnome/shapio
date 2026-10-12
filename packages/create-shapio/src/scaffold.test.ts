@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -35,6 +35,10 @@ describe('scaffoldProject', () => {
     expect(env).toContain('DATABASE_URL=postgres://');
     expect(env).toContain('PUBLIC_URL=http://localhost:4300');
     expect(env).toMatch(/^SESSION_SECRET=[A-Za-z0-9_-]{43}$/m);
+    if (process.platform !== 'win32') {
+      // SESSION_SECRET and the database password: owner only.
+      expect(statSync(join(root, '.env')).mode & 0o777).toBe(0o600);
+    }
     expect(readFileSync(join(root, 'ecosystem.config.cjs'), 'utf8')).toContain("exec_mode: 'fork'");
     const projectConfig = readFileSync(join(root, 'shapio.config.ts'), 'utf8');
     expect(projectConfig).toContain('export const config = defineConfig(');

@@ -1,5 +1,6 @@
 import type { Role } from '@shapio/client';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { MoreHorizontal, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RowTitle } from '@/components/RowTitle';
 import { TableCard } from '@/components/TableCard';
@@ -20,9 +21,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-type TableProps = { roles: Role[]; onEdit: (role: Role) => void; onDelete: (role: Role) => void };
+type TableProps = { roles: Role[]; onDelete: (role: Role) => void };
 
-export const Table = ({ roles, onEdit, onDelete }: TableProps) => {
+export const Table = ({ roles, onDelete }: TableProps) => {
   const { t } = useTranslation();
   return (
     <TableCard>
@@ -43,7 +44,11 @@ export const Table = ({ roles, onEdit, onDelete }: TableProps) => {
             <TableRow key={role.id}>
               <TableCell className="max-w-xs">
                 <span className="flex items-center gap-2">
-                  <RowTitle>{role.name}</RowTitle>
+                  <RowTitle asChild>
+                    <Link to="/network/roles/$roleId" params={{ roleId: role.id }}>
+                      {role.name}
+                    </Link>
+                  </RowTitle>
                   <Badge variant={role.isSystem ? 'secondary' : 'outline'}>
                     {role.isSystem ? t('roles.builtIn') : t('roles.custom')}
                   </Badge>
@@ -70,9 +75,11 @@ export const Table = ({ roles, onEdit, onDelete }: TableProps) => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onEdit(role)}>
-                        <Pencil aria-hidden="true" />
-                        {t('common.edit')}
+                      <DropdownMenuItem asChild>
+                        <Link to="/network/roles/$roleId" params={{ roleId: role.id }}>
+                          <SlidersHorizontal aria-hidden="true" />
+                          {t('roles.editPermissions')}
+                        </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" onSelect={() => onDelete(role)}>
                         <Trash2 aria-hidden="true" />

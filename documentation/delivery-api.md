@@ -33,7 +33,8 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 
 - Delivery tokens can only ever read, whatever their role says.
 - A role's grant covers every field marked `public` (the default); `public: false` fields are hidden unless the
-  grant names them.
+  grant names them. In [GraphQL](graphql.md#what-each-caller-sees) hidden fields are not even in the token's
+  schema.
 - Without a token, a request is _anonymous_: it gets what the built-in **public** app role grants, which is
   nothing until you allow it (Network → Roles → App roles). Use that for content anyone may read from the
   browser. App users' own tokens are covered in [End users](end-users.md).
@@ -159,13 +160,15 @@ curl -G "$SHAPIO_URL/api/content/articles" -H "Authorization: Bearer $SHAPIO_DEL
 sorted). JSON, rich text, component and dynamic zone fields cannot be filtered. `$in` takes repeated values or `a,b`. Values are read
 like stored values, so `2026-10-01T10:00:00+02:00` matches `2026-10-01T08:00:00.000Z`. Unknown fields,
 operators a type does not support, and filters or sorts on fields your token may not read are refused (400/403)
-rather than ignored, so a filter can never reveal a hidden value.
+rather than ignored, so a filter can never reveal a hidden value. Relation and media filters see what the
+response shows: a link to an entry that is unpublished, outside the read's locales, or one your token may not
+read, and a deleted asset, count as not there, so `$null` matches an entry whose links are all hidden.
 
 ## Snapshots: one consistent moment
 
-Every publish moves a global **publication snapshot** number forward; every delivery response reports the
-one it read in `meta.snapshot`. Pass `snapshot=N` and Shapio answers exactly as it would have at that moment,
-even if more was published since:
+Every publish moves a global **publication snapshot** number forward; every published read reports the
+one it read in `meta.snapshot` (a [draft read](#drafts-in-development) reports `null`). Pass `snapshot=N`
+and Shapio answers exactly as it would have at that moment, even if more was published since:
 
 ```sh
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/pages?snapshot=10&locale=en"
@@ -258,8 +261,8 @@ curl -H "Authorization: Bearer $SHAPIO_DEV_DELIVERY_TOKEN" \
   "$SHAPIO_URL/api/content/articles?publicationState=draft&populate=author"
 ```
 
-A draft read serves each entry's saved draft in the delivery shape, entries never published included, and
-`meta.publicationState: "draft"`. Relation targets and `populate` follow their drafts too, still only for
+A draft read serves each entry's saved draft in the delivery shape, entries never published included, with
+`meta.publicationState: "draft"` and `meta.snapshot: null`. Relation targets and `populate` follow their drafts too, still only for
 models the role may read. Responses are `Cache-Control: private, no-store`, so no cache keeps them, and field
 usage does not count them. A draft cannot be pinned: `publicationState=draft` with `snapshot` is a 400.
 Published reads are unchanged, byte for byte.

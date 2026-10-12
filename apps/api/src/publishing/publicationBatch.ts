@@ -59,7 +59,10 @@ export type PublicationResult = {
   entryId: string;
   locale: string;
   action: 'publish' | 'unpublish';
-  /** Publication sequence of the change; null for an unpublish of a locale that was not live. */
+  /**
+   * Publication sequence of the change; null when nothing changed (an unpublish of a locale that was not live,
+   * a publish of a draft that already was).
+   */
   snapshot: number | null;
   revisionId: string | null;
 };

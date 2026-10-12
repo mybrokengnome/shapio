@@ -82,6 +82,8 @@ export type PlanStepImpact = {
   kind: string;
   affectedHeads: number;
   invalidHeads?: number;
+  /** The distinct entries those failing heads (entry versions) belong to. */
+  invalidEntries?: number;
   /** On a `convert` step of a type change Shapio cannot convert: live entries that lose their value. */
   droppedEntries?: number;
 };
@@ -148,7 +150,14 @@ export type DefinitionRevision = {
   createdByType: string;
   createdById: string | null;
   createdAt: string;
+  /** The change that wrote this version: `failed` and `cancelled` versions never went live. */
+  status: SchemaChangeStatus;
+  /** The version the model serves now. */
+  active: boolean;
 };
+
+/** One revision of a definition with its body. */
+export type DefinitionRevisionDetail = DefinitionRevision & { definition: SchemaDefinition };
 
 export type SchemaSummaryItem = {
   id: string;
@@ -180,4 +189,12 @@ export type UpdateLocaleInput = { label: string; fallbacks?: string[] };
 
 export type SetDefaultLocaleResult = { code: string; changed: boolean };
 
-export type DeleteLocaleResult = { code: string; affectedHeads: number };
+export type DeleteLocaleResult = {
+  code: string;
+  /** Heads of localized models in the locale, purged. */
+  affectedHeads: number;
+  /** Entries that existed only in the locale, deleted. */
+  deletedEntries: number;
+  /** Entries of non-localized models stored in the locale, moved to the default locale. */
+  movedEntries: number;
+};

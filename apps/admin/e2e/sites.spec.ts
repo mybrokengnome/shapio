@@ -42,7 +42,7 @@ const onBlog = () => siteApi(page.request, SITE.key);
 /** Deletes a definition at its active version, through the site whose view has it. */
 const deleteDefinition = async (api: ReturnType<typeof siteApi>, path: string) => {
   const { version } = await api.get<{ version: number }>(path);
-  await api.send('DELETE', `${path}?expectedVersion=${version}`);
+  await api.send('DELETE', `${path}?expectedVersion=${version}&acknowledgeBreaking=true`);
 };
 
 const switcher = (on: Page) => on.getByRole('button', { name: /^Switch site/ });
@@ -125,7 +125,7 @@ test.afterAll(async () => {
   }
   if (modelId) {
     const { version } = await owner().get<{ version: number }>(`/models/${modelId}`);
-    await owner().send('DELETE', `/models/${modelId}?expectedVersion=${version}`);
+    await owner().send('DELETE', `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`);
   }
   await page.context().close();
 });
@@ -174,7 +174,7 @@ test('Network → Sites creates a site with a fixed key', async () => {
 test("a site's app role bindings: public and authenticated callers", async () => {
   await page.getByRole('row').filter({ hasText: SITE.name }).getByRole('link', { name: SITE.name }).click();
   const panel = page.getByRole('region', { name: 'App roles' });
-  const anonymous = panel.getByRole('group', { name: 'Anonymous callers (public)' });
+  const anonymous = panel.getByRole('group', { name: 'Everyone, signed in or not (public)' });
   // A new site binds nothing: deny by default.
   await expect(anonymous.getByRole('checkbox', { checked: true })).toHaveCount(0);
   await anonymous.getByRole('checkbox', { name: 'Public' }).check();

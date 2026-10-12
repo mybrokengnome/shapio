@@ -1,6 +1,13 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
-import { assertWritable } from '../content/compiler/policy.js';
+import {
+  assertWritable,
+  ownershipOfNewEntry,
+  pickMasked,
+  rowReadMask,
+  rowWriteMask,
+} from '../content/compiler/policy.js';
 import {
   contentVersionConflict,
   entryLocaleNotFound,
@@ -8,16 +15,23 @@ import {
   revisionNotFound,
   singletonExists,
 } from '../content/errors.js';
-import { changedSharedFieldIds, withSharedValuesOf, writeLocaleFor } from '../content/locales.js';
+import {
+  changedFieldIds,
+  changedSharedFieldIds,
+  withSharedValuesOf,
+  writeLocaleFor,
+} from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
+import { validateRevisionData } from '../content/revisionData.js';
 import { uniqueFields } from '../content/unique.js';
 import { buildValidator, type ModelValidator, type ValidationOutcome } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from '../content/write/heads.js';
-import { assertTargets } from '../content/write/references.js';
+import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
+import type { Policy } from '../permissions/types.js';
 import * as contentGuardsRepository from '../repositories/contentGuards.js';
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
 import * as entriesRepository from '../repositories/entries.js';
@@ -30,11 +44,12 @@ import { actorColumns } from '../schema/planner/actor.js';
 import {
   assertEntryVisible,
   auditEntry,
+  modelWithCreatePolicy,
   modelWithPolicy,
   writeEntryEvent,
   type ContentServiceContext,
 } from './contentAccess.js';
-import { publishLocalesInTransaction } from './contentPublishing.js';
+import { auditPublished, publishLocalesInTransaction } from './contentPublishing.js';
 import { viewAfterWrite, type AdminEntryView } from './contentReads.js';
 import * as mediaReferencesService from './mediaReferences.js';
 
@@ -74,17 +89,12 @@ const applyPatch = (base: Readonly<ContentData>, patch: Readonly<ContentData>): 
   return output;
 };
 
-const inputPatch = (
-  validator: ModelValidator,
-  model: ContentModel,
-  mask: Parameters<typeof assertWritable>[0],
-  data: unknown,
-) => {
+/** The input as a validated patch. Callers check its fields against the entry's write mask (`rowWriteMask`). */
+const inputPatch = (validator: ModelValidator, data: unknown) => {
   const { patch, issues } = validator.fromInput((data ?? {}) as Record<string, unknown>);
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }
-  assertWritable(mask, model.definition.fields, Object.keys(patch));
   return patch;
 };
 
@@ -100,10 +110,17 @@ const validated = (
   return outcome;
 };
 
-const ownerOf = (context: ContentServiceContext) => ({
-  ownerAppUserId: context.actor.kind === 'appUser' ? context.actor.appUserId : null,
-  createdByAdminId: context.actor.kind === 'admin' ? context.actor.adminUserId : null,
-});
+const ownerOf = (context: ContentServiceContext) => {
+  const ownership = ownershipOfNewEntry(context.actor);
+  return {
+    ownerAppUserId: ownership.owner_app_user_id,
+    createdByAdminId: ownership.created_by_admin_id,
+  };
+};
+
+/** The write mask on the entry a create produces: the caller owns it (issue #80). */
+const newEntryWriteMask = (context: ContentServiceContext, policy: Policy) =>
+  rowWriteMask(policy, context.actor, ownershipOfNewEntry(context.actor));
 
 export type CreateEntryInput = { locale?: string; data?: unknown; publish?: boolean };
 
@@ -112,14 +129,15 @@ export const createEntry = async (
   modelKey: string,
   input: CreateEntryInput,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'create');
+  const { model, policy } = await modelWithCreatePolicy(context, modelKey);
   const publish = Boolean(input.publish) || !model.definition.draftAndPublish;
   if (input.publish && model.definition.draftAndPublish) {
     await modelWithPolicy(context, modelKey, 'publish');
   }
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, model, policy.writeMask, input.data);
+  const patch = inputPatch(validator, input.data);
+  assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(patch));
   const outcome = validated(validator, applyPatch(defaultsOf(model.definition), patch), false);
   const entryId = await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
@@ -163,7 +181,7 @@ export const createEntry = async (
       revisionId: draft.revision_id,
     });
     if (publish) {
-      await publishLocalesInTransaction(
+      const published = await publishLocalesInTransaction(
         {
           write,
           site: context.site,
@@ -175,6 +193,7 @@ export const createEntry = async (
         [locale],
         [draft],
       );
+      await auditPublished(trx, context, model, entry.id, published, { via: 'create' });
     }
     await syncEntryUniqueValues(write, entry.id);
     await context.hooks.run('afterCreate', hook);
@@ -282,6 +301,13 @@ const saveDraftChanges = async (
   return written;
 };
 
+/**
+ * A save that changes nothing: the draft exists, holds no autosaved work (saving that must still make it a
+ * revision), and the validated data is what it already has.
+ */
+const isUnchangedSave = (previous: HeadRecord | undefined, after: ContentData): previous is HeadRecord =>
+  previous !== undefined && previous.autosaved_at === null && isDeepStrictEqual(previous.data, after);
+
 export const updateEntry = async (
   context: ContentServiceContext,
   modelKey: string,
@@ -292,7 +318,7 @@ export const updateEntry = async (
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const autosave = Boolean(input.autosave) && model.definition.draftAndPublish;
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, model, policy.writeMask, input.data);
+  const patch = inputPatch(validator, input.data);
   let servedLocale = locale;
   await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
     const write: WriteContext = {
@@ -302,12 +328,14 @@ export const updateEntry = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const entry = assertEntryVisible(
       policy,
       context.actor,
       await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
+    // After the row check, so an entry the caller cannot see stays a 404 (issue #80).
+    assertWritable(rowWriteMask(policy, context.actor, entry), model.definition.fields, Object.keys(patch));
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
     // Non-localized entries keep their heads in the locale they were created in.
     const targetLocale = model.definition.localized
@@ -327,7 +355,11 @@ export const updateEntry = async (
     }
     const before = previous?.data ?? newLocaleBase(model, heads);
     const outcome = validated(validator, applyPatch(before, patch), autosave);
-    await assertTargets(trx, outcome, context.site.id);
+    if (isUnchangedSave(previous, outcome.data)) {
+      // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
+      return;
+    }
+    await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]));
     const hook = {
       trx,
       site: context.site,
@@ -376,7 +408,12 @@ export const restoreRevision = async (
     throw revisionNotFound(revisionId);
   }
   const validator = buildValidator(context.snapshot, model);
-  await runEntryWrite(context.db, model, context.site.id, [revision.locale], async (trx) => {
+  // A non-localized entry's revisions may carry a locale its heads have since left (a deleted locale's).
+  const writeLocale = model.definition.localized
+    ? revision.locale
+    : writeLocaleFor(context.snapshot, model.definition, undefined);
+  let targetLocale = revision.locale;
+  await runEntryWrite(context.db, model, context.site.id, [writeLocale], async (trx) => {
     const write: WriteContext = {
       trx,
       siteId: context.site.id,
@@ -384,27 +421,35 @@ export const restoreRevision = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const entry = assertEntryVisible(
       policy,
       context.actor,
       await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
       id,
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
-    const previous = heads.find((head) => head.state === 'draft' && head.locale === revision.locale);
+    if (!model.definition.localized) {
+      targetLocale = heads.find((head) => head.state === 'draft')?.locale ?? revision.locale;
+    }
+    const previous = heads.find((head) => head.state === 'draft' && head.locale === targetLocale);
     if (!previous || previous.version !== input.expectedVersion) {
       throw contentVersionConflict(input.expectedVersion, previous?.version ?? null);
     }
-    // Restored values must still satisfy the current schema (it may have changed since).
-    const outcome = validated(validator, revision.data, false);
+    // Restored values must still satisfy the current schema (it may have changed since); values saved under
+    // an earlier field type come back empty, as the revision's view shows them.
+    const outcome = validateRevisionData(validator, revision.data);
+    if (outcome.issues.length > 0) {
+      throw contentInvalid(outcome.issues);
+    }
+    // Every field the restore changes in this locale (shared ones fan out from it), issue #103.
     assertWritable(
-      policy.writeMask,
+      rowWriteMask(policy, context.actor, entry),
       model.definition.fields,
-      changedSharedFieldIds(model.definition, previous.data, outcome.data),
+      changedFieldIds(model.definition.fields, previous.data, outcome.data),
     );
-    await assertTargets(trx, outcome, context.site.id);
+    await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [previous.data]));
     const changes = draftChanges(model, heads, {
-      locale: revision.locale,
+      locale: targetLocale,
       previous,
       before: previous.data,
       after: outcome.data,
@@ -414,12 +459,12 @@ export const restoreRevision = async (
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
     await writeEntryEvent(trx, context.site.id, model, 'entry.restored', id, {
-      locale: revision.locale,
+      locale: targetLocale,
       fromRevisionId: revisionId,
     });
-    await auditEntry(trx, context, model, 'content.restore', id, { locale: revision.locale, revisionId });
+    await auditEntry(trx, context, model, 'content.restore', id, { locale: targetLocale, revisionId });
   });
-  return viewAfterWrite(context, model, policy, id, revision.locale);
+  return viewAfterWrite(context, model, policy, id, targetLocale);
 };
 
 /** Soft-deletes an entry: heads, edges and registry rows go; revisions stay as history. */
@@ -472,14 +517,15 @@ export const deleteEntry = async (
 
 /**
  * Copies every locale's draft into a new entry. Unique fields are left empty (a copy could never satisfy
- * them) and the copy is flagged as not fully validated, so the editor completes it before saving.
+ * them), and so are fields the caller may not read on the source. The copy is flagged as not fully validated,
+ * so the editor completes it before saving.
  */
 export const duplicateEntry = async (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'create');
+  const { model, policy } = await modelWithCreatePolicy(context, modelKey);
   const read = await modelWithPolicy(context, modelKey, 'read');
   if (model.definition.kind === 'singleton') {
     throw singletonExists(modelKey);
@@ -495,12 +541,15 @@ export const duplicateEntry = async (
       actor: context.actor,
       now: new Date(),
     };
-    assertEntryVisible(
+    const source = assertEntryVisible(
       read.policy,
       context.actor,
       await entriesRepository.findLive(id, model.definition.id, context.site.id, trx),
       id,
     );
+    // Only what the caller may read on the source is copied (issue #104); the rest is left empty like unique
+    // fields, for the editor to fill before saving.
+    const readable = rowReadMask(read.policy, context.actor, source);
     const drafts = (await entryHeadsRepository.findForEntry(id, trx)).filter(
       (head) => head.state === 'draft',
     );
@@ -509,10 +558,12 @@ export const duplicateEntry = async (
       trx,
     );
     for (const draft of drafts) {
-      const copy = Object.fromEntries(Object.entries(draft.data).filter(([key]) => !unique.has(key)));
-      assertWritable(policy.writeMask, model.definition.fields, Object.keys(copy));
+      const copy = Object.fromEntries(
+        Object.entries(pickMasked(readable, draft.data)).filter(([key]) => !unique.has(key)),
+      );
+      assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(copy));
       const outcome = validated(validator, copy, true);
-      await assertTargets(trx, outcome, context.site.id);
+      await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [draft.data]));
       await writeDraft(write, {
         entryId: entry.id,
         locale: draft.locale,

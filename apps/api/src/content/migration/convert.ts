@@ -2,8 +2,9 @@ import {
   plainTextToRichText,
   RICHTEXT_FORMAT,
   richTextToPlainText,
-  typeChangeDropsValues,
+  changeDropsValues,
   type DataType,
+  type PlannedChange,
   type RichTextDocument,
   type SchemaChange,
 } from '@shapio/schema';
@@ -31,10 +32,6 @@ const NUMERIC_STRING_TYPES: ReadonlySet<DataType> = new Set(['decimal', 'biginte
 const TEXT_TYPES: ReadonlySet<DataType> = new Set(['string', 'text']);
 
 const convertType = (from: DataType, to: DataType, value: unknown): Conversion => {
-  // A pair Shapio has no converter for: the value is dropped (a destructive change the person acknowledged).
-  if (typeChangeDropsValues(from, to)) {
-    return CLEAR;
-  }
   if (NUMERIC_STRING_TYPES.has(to)) {
     return typeof value === 'number' ? set(String(value)) : KEEP;
   }
@@ -52,6 +49,10 @@ const convertType = (from: DataType, to: DataType, value: unknown): Conversion =
   if (to === 'richtext') {
     return typeof value === 'string' ? set(plainTextToRichText(value)) : KEEP;
   }
+  // Text into a multi-value enum (the only cross-family conversion into an enum): a one-value list.
+  if (to === 'enum') {
+    return typeof value === 'string' ? set([value]) : KEEP;
+  }
   return KEEP;
 };
 
@@ -66,7 +67,12 @@ const convertCardinality = (toSingle: boolean, value: unknown): Conversion => {
 };
 
 /** The conversion a field change needs for one stored value (present, non-null). */
-export const convertValue = (change: SchemaChange, value: unknown): Conversion => {
+export const convertValue = (change: PlannedChange, value: unknown): Conversion => {
+  // A pair Shapio has no converter for, as the planner classified it from both sides' type and settings:
+  // the value is dropped (a destructive change the person acknowledged).
+  if (changeDropsValues(change)) {
+    return CLEAR;
+  }
   if (change.kind === 'field.type') {
     return convertType(change.from as DataType, change.to as DataType, value);
   }

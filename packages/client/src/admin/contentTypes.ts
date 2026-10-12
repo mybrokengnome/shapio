@@ -143,6 +143,15 @@ export type UpdateEntryInput = {
 /** Publish or unpublish these locales atomically (the request's default locale when omitted). */
 export type EntryLocalesInput = { locales?: string[] };
 
+/**
+ * Publish these locales, optionally guarded by the draft version(s) you saw (409 CONTENT_VERSION_CONFLICT when
+ * one moved): `expectedVersion` for a publish of one locale, `expectedVersions` (per locale) for several.
+ */
+export type EntryPublishInput = EntryLocalesInput & {
+  expectedVersion?: number;
+  expectedVersions?: Record<string, number>;
+};
+
 export type RevisionSummary = {
   id: string;
   locale: string;
@@ -156,6 +165,28 @@ export type RevisionSummary = {
 };
 
 export type RevisionDetail = RevisionSummary & { data: EntryData };
+
+/** One live period of an entry's locale: who published it and how, and whether it is still live. */
+export type EntryPublication = {
+  /** The revision that went live. */
+  revisionId: string;
+  locale: string;
+  publishedAt: string;
+  publishedBy: string | null;
+  /** How it went live when not by a plain Publish: on schedule, or with a change set (`changeSetTitle`). */
+  via: 'schedule' | 'changeSet' | null;
+  changeSetTitle: string | null;
+  live: boolean;
+  /** Set when it stopped being live without another publication of the locale replacing it. */
+  unpublishedAt: string | null;
+  unpublishedBy: string | null;
+};
+
+/** An entry's history: revisions with who made them, and its publications (both newest first). */
+export type EntryHistory = {
+  items: Array<RevisionSummary & { authorName: string | null }>;
+  publications: EntryPublication[];
+};
 
 /** One problem with a content value (422 CONTENT_INVALID `details.issues`). */
 export type ContentIssue = { path: string; code: string; message: string };

@@ -10,7 +10,7 @@ import type { AppPermissionGrantRow, AppRoleRow } from '../repositories/appRoles
 import * as permissionsVersionRepository from '../repositories/permissionsVersion.js';
 import type { ActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
-import { assertModelsExist, validatePermissions, type PermissionInput } from './roles.js';
+import { assertGrantTargetsExist, validatePermissions, type PermissionInput } from './roles.js';
 
 /**
  * App roles (Settings → Roles → App roles): the built-in `public` (anonymous callers) and `authenticated`
@@ -120,7 +120,7 @@ export const createAppRole = async (
   schema: FieldVisibilityLookup,
 ): Promise<AppRoleView> => {
   validateAppPermissions(input.permissions);
-  await assertModelsExist(input.permissions, schema);
+  await assertGrantTargetsExist(input.permissions, schema);
   try {
     return await db.transaction().execute(async (trx) => {
       const role = await appRolesRepository.insert(
@@ -178,7 +178,7 @@ export const updateAppRole = async (
     }
     if (input.permissions) {
       validateAppPermissions(input.permissions);
-      await assertModelsExist(input.permissions, schema, trx);
+      await assertGrantTargetsExist(input.permissions, schema, trx);
     }
     const updated = await appRolesRepository.updateIfVersion(
       id,

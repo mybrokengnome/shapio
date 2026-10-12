@@ -35,6 +35,12 @@ type Check = {
 type Preflight = { locales: { locale: string; ready: boolean; checks: Check[] }[]; entry: Check[] };
 type Finding = { entryId: string; rule: string; locale: string; entryTitle: string | null; path?: string };
 type Person = { userId: string; name: string; you: boolean; locale: string | null };
+type DraftState = {
+  locale: string;
+  version: number;
+  savedAt: string;
+  savedBy: { name: string; you: boolean } | null;
+};
 
 const HEALTH_TYPES = Object.values(CONTENT_HEALTH_JOBS);
 
@@ -383,6 +389,7 @@ describe('editor experience: pre-flight, content health, presence, counts, model
   describe('presence', () => {
     let first: TestSession;
     let second: TestSession;
+    let secondAdminId: string;
     let entryId: string;
 
     const as = (session: TestSession, method: 'GET' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
@@ -395,7 +402,9 @@ describe('editor experience: pre-flight, content health, presence, counts, model
 
     beforeAll(async () => {
       first = await login(testApp.app, await createAdmin(database.current.db));
-      second = await login(testApp.app, await createAdmin(database.current.db));
+      const secondAdmin = await createAdmin(database.current.db);
+      secondAdminId = secondAdmin.id;
+      second = await login(testApp.app, secondAdmin);
       entryId = expectStatus(
         await admin.post('/api/admin/content/article', { data: { title: 'Shared' } }),
         201,
@@ -404,11 +413,11 @@ describe('editor experience: pre-flight, content health, presence, counts, model
 
     it('shows who else has the entry open, per tab, and forgets tabs that leave or go quiet', async () => {
       const url = `/api/admin/presence/article/${entryId}`;
-      expect(expectStatus(await as(first, 'PUT', url, { tabId: 'tab-a', locale: 'en' }), 200).json()).toEqual(
-        {
-          people: [],
-        },
-      );
+      expect(
+        expectStatus(await as(first, 'PUT', url, { tabId: 'tab-a', locale: 'en' }), 200).json<{
+          people: Person[];
+        }>().people,
+      ).toEqual([]);
       const seenBySecond = expectStatus(await as(second, 'PUT', url, { tabId: 'tab-b' }), 200).json<{
         people: Person[];
       }>();
@@ -437,6 +446,80 @@ describe('editor experience: pre-flight, content health, presence, counts, model
         .where('entry_id', '=', entryId)
         .execute();
       expect(expectStatus(await as(second, 'GET', url), 200).json()).toEqual({ people: [] });
+    });
+
+    it("tells each tab every locale's draft version and who saved it, when that is known", async () => {
+      const url = `/api/admin/presence/article/${entryId}`;
+      await database.current.db
+        .updateTable('admin_users')
+        .set({ name: 'Second Admin' })
+        .where('id', '=', secondAdminId)
+        .execute();
+      const draftsSeenBy = async (session: TestSession) =>
+        expectStatus(await as(session, 'PUT', url, { tabId: 'drafts', locale: 'en' }), 200).json<{
+          drafts: DraftState[];
+        }>().drafts;
+      const entryOf = async (locale: string) =>
+        expectStatus(
+          await admin.get(`/api/admin/content/article/${entryId}?locale=${locale}`),
+          200,
+        ).json<EntryBody>();
+
+      // Created with an API token: the version is there, the name is not (only admins are named).
+      const created = await entryOf('en');
+      expect(await draftsSeenBy(first)).toEqual([
+        { locale: 'en', version: created.version, savedAt: expect.any(String) as unknown, savedBy: null },
+      ]);
+
+      // An explicit save names its admin; the saver sees it as "you".
+      const saved = expectStatus(
+        await as(second, 'PUT', `/api/admin/content/article/${entryId}`, {
+          locale: 'en',
+          expectedVersion: created.version,
+          data: { title: 'Saved by the second admin' },
+        }),
+        200,
+      ).json<EntryBody>();
+      expect(saved.version).toBeGreaterThan(created.version);
+      expect(await draftsSeenBy(first)).toEqual([
+        {
+          locale: 'en',
+          version: saved.version,
+          savedAt: expect.any(String) as unknown,
+          savedBy: { name: 'Second Admin', you: false },
+        },
+      ]);
+      expect((await draftsSeenBy(second))[0]?.savedBy).toEqual({ name: 'Second Admin', you: true });
+
+      // An autosave moves the version but not the revision's author: no name rather than the wrong one.
+      const autosaved = expectStatus(
+        await as(first, 'PUT', `/api/admin/content/article/${entryId}`, {
+          locale: 'en',
+          expectedVersion: saved.version,
+          autosave: true,
+          data: { title: 'Autosaved by the first admin' },
+        }),
+        200,
+      ).json<EntryBody>();
+      expect(await draftsSeenBy(second)).toEqual([
+        { locale: 'en', version: autosaved.version, savedAt: expect.any(String) as unknown, savedBy: null },
+      ]);
+
+      // Every locale is listed, so a tab compares the draft it shows whatever its locale.
+      expectStatus(
+        await as(first, 'PUT', `/api/admin/content/article/${entryId}`, {
+          locale: 'fr',
+          expectedVersion: null,
+          data: { title: 'En français' },
+        }),
+        200,
+      );
+      expect(
+        (await draftsSeenBy(second)).map((draft) => [draft.locale, draft.savedBy?.name ?? null]),
+      ).toEqual([
+        ['en', null],
+        ['fr', 'Test Admin'],
+      ]);
     });
 
     it('needs an admin session and a readable entry', async () => {

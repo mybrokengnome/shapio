@@ -100,6 +100,26 @@ export const close = (entryId: string, locale: string | null, seq: number, trx: 
   return query.executeTakeFirst();
 };
 
+/**
+ * Ends the live period of (entry, locale) at `seq` only while it still serves `revisionId`; true when it did.
+ * A conversion rolls a head it read before the change set's publications in the same transaction, which may
+ * have published (or unpublished) the entry since: their row is then the right one and stays.
+ */
+export const closeIfServing = async (
+  row: { entryId: string; locale: string; revisionId: string; seq: number },
+  trx: Executor = db,
+): Promise<boolean> => {
+  const result = await trx
+    .updateTable('publication_log')
+    .set({ to_seq: String(row.seq) })
+    .where('entry_id', '=', row.entryId)
+    .where('locale', '=', row.locale)
+    .where('revision_id', '=', row.revisionId)
+    .where('to_seq', 'is', null)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
+};
+
 export const open = (
   row: { entryId: string; modelId: string; locale: string; revisionId: string; seq: number; now: Date },
   trx: Executor = db,
@@ -130,3 +150,70 @@ export const hasOpen = async (entryId: string, executor: Executor = db): Promise
 
 export const removeForLocale = (locale: string, trx: Executor = db) =>
   trx.deleteFrom('publication_log').where('locale', '=', locale).executeTakeFirst();
+
+/**
+ * The revision each (entry, locale) of these entries served at the site's snapshot `seq`, with its data:
+ * the log row whose live period contains `seq` (`from_seq <= seq and (to_seq is null or to_seq > seq)`),
+ * the rule `?snapshot=N` reads with. Pairs not live at `seq` are absent.
+ */
+export const findRevisionsLiveAt = (
+  siteId: string,
+  entryIds: readonly string[],
+  seq: number,
+  executor: Executor = db,
+) => {
+  if (entryIds.length === 0) {
+    return Promise.resolve([]);
+  }
+  return executor
+    .selectFrom('publication_log as pl')
+    .innerJoin('content_revisions as r', 'r.id', 'pl.revision_id')
+    .select(['pl.entry_id', 'pl.locale', 'pl.revision_id', 'r.data'])
+    .where('pl.site_id', '=', siteId)
+    .where('pl.entry_id', 'in', entryIds)
+    .where('pl.from_seq', '<=', String(seq))
+    .where((eb) => eb.or([eb('pl.to_seq', 'is', null), eb('pl.to_seq', '>', String(seq))]))
+    .execute();
+};
+
+/**
+ * An entry's publications (one row per live period of a locale), newest first, with the ledger rows that
+ * opened and closed each: when, why (`source`, the change set) and who, for the entry's history.
+ */
+export const listForEntry = (
+  entryId: string,
+  locale: string | null,
+  limit: number,
+  executor: Executor = db,
+) =>
+  executor
+    .selectFrom('publication_log as l')
+    .leftJoin('publication_snapshots as opened', (join) =>
+      join.onRef('opened.site_id', '=', 'l.site_id').onRef('opened.seq', '=', 'l.from_seq'),
+    )
+    .leftJoin('publication_snapshots as closed', (join) =>
+      join.onRef('closed.site_id', '=', 'l.site_id').onRef('closed.seq', '=', 'l.to_seq'),
+    )
+    .leftJoin('change_sets as cs', 'cs.id', 'opened.change_set_id')
+    .select([
+      'l.revision_id',
+      'l.locale',
+      'l.from_seq',
+      'l.to_seq',
+      'l.published_at',
+      'opened.source',
+      'opened.actor_type',
+      'opened.actor_id',
+      'cs.title as change_set_title',
+      'closed.created_at as closed_at',
+      'closed.actor_type as closed_actor_type',
+      'closed.actor_id as closed_actor_id',
+    ])
+    .where('l.entry_id', '=', entryId)
+    .$if(locale !== null, (qb) => qb.where('l.locale', '=', locale ?? ''))
+    .orderBy('l.from_seq', 'desc')
+    .orderBy('l.id', 'desc')
+    .limit(limit)
+    .execute();
+
+export type EntryPublicationRow = Awaited<ReturnType<typeof listForEntry>>[number];

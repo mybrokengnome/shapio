@@ -1,7 +1,9 @@
 import { matchesRowFilter } from '../content/compiler/policy.js';
+import * as adminUsersRepository from '../repositories/adminUsers.js';
 import * as editorPresenceRepository from '../repositories/editorPresence.js';
 import type { ActivePresenceRow } from '../repositories/editorPresence.js';
 import * as entriesRepository from '../repositories/entries.js';
+import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import { requireAdminPrincipal } from './auth.js';
 import { assertEntryVisible, modelWithPolicy, type ContentServiceContext } from './contentAccess.js';
 
@@ -18,6 +20,18 @@ export type PresencePersonView = {
   locale: string | null;
   since: string;
   you: boolean;
+};
+
+/**
+ * A locale's draft as the server has it, so an open document learns that a save elsewhere moved it.
+ * `savedBy` is null when the name isn't reliable: an autosave (it moves the head, not the revision and its
+ * author), an author that is not an admin (token, schedule), or an admin who no longer exists.
+ */
+export type DraftStateView = {
+  locale: string;
+  version: number;
+  savedAt: string;
+  savedBy: { name: string; you: boolean } | null;
 };
 
 const since = (now: Date) => new Date(now.getTime() - PRESENCE_TTL_MS);
@@ -53,6 +67,30 @@ const visibleEntry = async (context: ContentServiceContext, modelKey: string, id
   return model;
 };
 
+const draftStates = async (
+  context: ContentServiceContext,
+  entryId: string,
+  adminUserId: string,
+): Promise<DraftStateView[]> => {
+  const drafts = await entryHeadsRepository.findDraftsWithAuthors(entryId, context.db);
+  const named = drafts.filter((draft) => !draft.autosaved_at && draft.author_type === 'admin');
+  const authorIds = [
+    ...new Set(named.map((draft) => draft.author_id).filter((id): id is string => id !== null)),
+  ];
+  const names = new Map(
+    (await adminUsersRepository.findNamesByIds(authorIds, context.db)).map((user) => [user.id, user.name]),
+  );
+  return drafts.map((draft) => {
+    const name = named.includes(draft) && draft.author_id ? names.get(draft.author_id) : undefined;
+    return {
+      locale: draft.locale,
+      version: draft.version,
+      savedAt: draft.updated_at.toISOString(),
+      savedBy: name === undefined ? null : { name, you: draft.author_id === adminUserId },
+    };
+  });
+};
+
 export const heartbeat = async (
   context: ContentServiceContext,
   modelKey: string,
@@ -73,8 +111,11 @@ export const heartbeat = async (
     },
     context.db,
   );
-  const rows = await editorPresenceRepository.listActiveForEntry(id, since(now), context.db);
-  return { people: toPeople(rows, { userId: principal.adminUserId, tabId: input.tabId }) };
+  const [rows, drafts] = await Promise.all([
+    editorPresenceRepository.listActiveForEntry(id, since(now), context.db),
+    draftStates(context, id, principal.adminUserId),
+  ]);
+  return { people: toPeople(rows, { userId: principal.adminUserId, tabId: input.tabId }), drafts };
 };
 
 export const entryPresence = async (context: ContentServiceContext, modelKey: string, id: string) => {

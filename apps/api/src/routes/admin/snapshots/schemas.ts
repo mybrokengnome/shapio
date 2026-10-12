@@ -41,7 +41,8 @@ export const SnapshotSchema = Type.Object({
       site: Type.Object({ id: UuidSchema, key: Type.String() }),
     }),
   ),
-  actor: Type.Object({ type: Type.String(), id: NullableString }),
+  /** `name`: the admin's or token's name, null for the system or a deleted actor. */
+  actor: Type.Object({ type: Type.String(), id: NullableString, name: NullableString }),
   /** (entry, locale) publications that started or ended at this snapshot. */
   changedEntries: Type.Integer(),
   deploymentRuns: Type.Array(

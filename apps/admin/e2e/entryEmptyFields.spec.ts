@@ -133,12 +133,20 @@ test.afterAll(async () => {
     const model = await page.request.get(`${ADMIN_API}/models/${modelId}`);
     if (model.ok()) {
       const { version } = (await model.json()) as { version: number };
-      await adminRequest(page.request, 'DELETE', `/models/${modelId}?expectedVersion=${version}`);
+      await adminRequest(
+        page.request,
+        'DELETE',
+        `/models/${modelId}?expectedVersion=${version}&acknowledgeBreaking=true`,
+      );
     }
   }
   for (const componentId of [ids.textItem, ids.fact, ids.promo]) {
     const { version } = await getJson<{ version: number }>(`/components/${componentId}`);
-    await adminRequest(page.request, 'DELETE', `/components/${componentId}?expectedVersion=${version}`);
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/components/${componentId}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
   }
   await page.context().close();
 });

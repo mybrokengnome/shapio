@@ -4,7 +4,7 @@ import type { ContentModel } from '../content/model.js';
 import { findPublishedUniqueConflicts } from '../content/unique.js';
 import { buildValidator } from '../content/validator/index.js';
 import type { ContentIssue } from '../content/validator/issues.js';
-import { findTargetIssues } from '../content/write/references.js';
+import { findTargetIssues, mediaIdsOf } from '../content/write/references.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
@@ -19,7 +19,7 @@ import { targetLocales } from './contentPublishing.js';
  * locked, so an extension's `beforePublish` can still refuse a publish that passed. Each call also records
  * the entry's health findings, so the Inbox stays current.
  */
-export type PreflightRule = HealthRule | 'invalid' | 'mediaMissing';
+export type PreflightRule = HealthRule | 'invalid';
 
 export type PreflightCheck = {
   rule: PreflightRule;
@@ -35,7 +35,11 @@ export type PreflightResult = {
 };
 
 /** Health rules that matter when publishing a locale; the others are covered by errors or are about time. */
-const LOCALE_WARNINGS: ReadonlySet<HealthRule> = new Set(['altMissing', 'relationUnpublished']);
+const LOCALE_WARNINGS: ReadonlySet<HealthRule> = new Set([
+  'altMissing',
+  'mediaMissing',
+  'relationUnpublished',
+]);
 
 const RULE_OF_ISSUE: Partial<Record<ContentIssue['code'], PreflightRule>> = {
   REQUIRED: 'requiredEmpty',
@@ -65,7 +69,12 @@ const localeErrors = async (
   draft: HeadRecord,
 ): Promise<PreflightCheck[]> => {
   const outcome = buildValidator(context.snapshot, model).validate(draft.data);
-  const targets = await findTargetIssues(context.db, outcome, { siteId: context.site.id, lock: false });
+  // Assets the draft holds that were force-deleted since do not block publishing (a mediaMissing warning).
+  const targets = await findTargetIssues(context.db, outcome, {
+    siteId: context.site.id,
+    lock: false,
+    storedMediaIds: mediaIdsOf(model, [draft.data]),
+  });
   return [...outcome.issues, ...targets].map(issueCheck);
 };
 

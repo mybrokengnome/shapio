@@ -44,3 +44,14 @@ describe('summarizeValue for rich text', () => {
     expect(summarizeValue(body!, 'not a document')).toBe('');
   });
 });
+
+describe('summarizeValue for time', () => {
+  const [time] = component({ fields: [field({ apiKey: 'opensAt', type: 'time' })] }).fields;
+
+  it('shows the time as typed, not as the server normalises it', () => {
+    expect(summarizeValue(time!, '09:15:00.000')).toBe('09:15');
+    expect(summarizeValue(time!, '09:15')).toBe('09:15');
+    expect(summarizeValue(time!, '09:15:30.000')).toBe('09:15:30');
+    expect(summarizeValue(time!, '09:15:30.250')).toBe('09:15:30.25');
+  });
+});

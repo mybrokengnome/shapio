@@ -6,7 +6,9 @@ import type {
   ContentListQuery,
   CreateEntryInput,
   EditorManifest,
+  EntryHistory,
   EntryLocalesInput,
+  EntryPublishInput,
   ExtensionThemeList,
   RevisionDetail,
   RevisionSummary,
@@ -41,7 +43,8 @@ export const createContentApi = (request: RequestFn) => ({
     remove: (modelKey: string, id: string) => request<void>(entryPath(modelKey, id), { method: 'DELETE' }),
     duplicate: (modelKey: string, id: string) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/duplicate`, { method: 'POST' }),
-    publish: (modelKey: string, id: string, body: EntryLocalesInput = {}) =>
+    /** With `expectedVersion`/`expectedVersions`, 409 CONTENT_VERSION_CONFLICT when a draft moved since. */
+    publish: (modelKey: string, id: string, body: EntryPublishInput = {}) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/publish`, { method: 'POST', body }),
     unpublish: (modelKey: string, id: string, body: EntryLocalesInput = {}) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/unpublish`, { method: 'POST', body }),
@@ -51,6 +54,9 @@ export const createContentApi = (request: RequestFn) => ({
           `${revisionsPath(modelKey, id)}${toQueryString({ locale })}`,
         )
       ).items,
+    /** Revisions with their authors' names, and the entry's publications (who published, when, how). */
+    history: (modelKey: string, id: string, { locale }: { locale?: string } = {}) =>
+      request<EntryHistory>(`${revisionsPath(modelKey, id)}${toQueryString({ locale })}`),
     revision: (modelKey: string, id: string, revisionId: string) =>
       request<RevisionDetail>(withId(revisionsPath(modelKey, id), revisionId)),
     /** Brings an older revision back as the new draft of its locale (a new revision). */

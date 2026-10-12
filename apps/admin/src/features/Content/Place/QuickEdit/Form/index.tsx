@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
 import { EntryFields } from '@/fields/form/EntryFields';
 import { FieldsProvider } from '@/fields/form/FieldsProvider';
+import { refuseUnparsed } from '@/fields/form/refuseUnparsed';
 import { selectDirtyKeys } from '@/fields/form/store';
 import { contentIssuesOf } from '@/fields/helpers/apiErrors';
 import { buildPatch } from '@/fields/helpers/formValues';
@@ -78,6 +79,9 @@ export const Form = ({
   }, []);
 
   const submit = async () => {
+    if (refuseUnparsed(store)) {
+      return;
+    }
     store.getState().reveal();
     const state = store.getState();
     const keys = selectDirtyKeys(state);

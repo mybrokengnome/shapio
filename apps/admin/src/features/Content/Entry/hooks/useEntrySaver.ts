@@ -2,10 +2,15 @@ import type { AdminEntry, MediaAsset, ShapioApiError } from '@shapio/client';
 import type { ComponentDefinition, ModelDefinition } from '@shapio/schema';
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useSaveEntry } from '@/api/content';
+import { isUnauthorized } from '@/api/errors';
+import { refuseUnparsed } from '@/fields/form/refuseUnparsed';
 import type { EntryFormStore } from '@/fields/form/store';
 import { contentIssuesOf, isEditConflict } from '@/fields/helpers/apiErrors';
 import { buildPatch, dirtyKeysOf, toFormValues } from '@/fields/helpers/formValues';
+import { containsUnparsed } from '@/fields/helpers/unparsed';
+import type { FormValues } from '@/fields/helpers/values';
 import { logError, reportError } from '@/helpers/reportError';
+import { useSessionStore } from '@/stores/session';
 
 export type SaveKind = 'autosave' | 'save';
 export type SaveOutcome = 'saved' | 'unchanged' | 'invalid' | 'conflict' | 'failed';
@@ -29,10 +34,24 @@ type EntrySaverOptions = {
 };
 
 /**
+ * The changed fields a save sends. Fields still holding text an editor couldn't parse are held back (only
+ * autosave gets this far with them): they are left out of `sent`, so the save's result doesn't overwrite them
+ * and they stay unsaved changes.
+ */
+const sendableChanges = (values: FormValues, baseline: FormValues) => {
+  const held = new Set(Object.keys(values).filter((key) => containsUnparsed(values[key])));
+  return {
+    keys: dirtyKeysOf(values, baseline).filter((key) => !held.has(key)),
+    sent: Object.fromEntries(Object.entries(values).filter(([key]) => !held.has(key))),
+  };
+};
+
+/**
  * Saving one locale's draft. Saves run one at a time (an explicit save waits for a running autosave), so
  * every request carries the latest version and nothing races. Only changed fields are sent (the API takes
  * a patch). Autosave moves the draft without a revision and skips `required`; Save creates a revision and
- * validates everything. 422 issues land on the fields; 409 conflicts go to the conflict dialog.
+ * validates everything. 422 issues land on the fields; 409 conflicts go to the conflict dialog. A save that
+ * failed because the session ended runs again once it is resumed in place (the edits never left the page).
  */
 export const useEntrySaver = ({
   model,
@@ -48,6 +67,8 @@ export const useEntrySaver = ({
   const { mutateAsync } = useSaveEntry(model.apiKey);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [state, setState] = useState<SaveState>({ status: 'idle', kind: undefined, at: undefined });
+  /** The save that failed with a 401, if any: Save wins over autosave. */
+  const failedSignedOut = useRef<SaveKind | undefined>(undefined);
   const latest = useRef({ onSaved, onConflict, onAsset });
   useEffect(() => {
     latest.current = { onSaved, onConflict, onAsset };
@@ -55,8 +76,11 @@ export const useEntrySaver = ({
 
   const runSave = useCallback(
     async (kind: SaveKind): Promise<SaveOutcome> => {
+      if (kind === 'save' && refuseUnparsed(store)) {
+        return 'invalid';
+      }
       const { values, baseline } = store.getState();
-      const keys = dirtyKeysOf(values, baseline);
+      const { keys, sent } = sendableChanges(values, baseline);
       if (kind === 'autosave' && keys.length === 0) {
         return 'unchanged';
       }
@@ -77,7 +101,7 @@ export const useEntrySaver = ({
         versionRef.current = entry.version;
         store
           .getState()
-          .acceptSaved(values, toFormValues(model.fields, entry.data, components, latest.current.onAsset));
+          .acceptSaved(sent, toFormValues(model.fields, entry.data, components, latest.current.onAsset));
         if (kind === 'save') {
           store.getState().setIssues([]);
         }
@@ -95,6 +119,12 @@ export const useEntrySaver = ({
         if (isEditConflict(error)) {
           latest.current.onConflict(error);
           return 'conflict';
+        }
+        if (isUnauthorized(error)) {
+          // The sign-in panel says what happened; the save runs again after it.
+          failedSignedOut.current = failedSignedOut.current === 'save' ? 'save' : kind;
+          logError(error, 'saving an entry after the session ended');
+          return 'failed';
         }
         (kind === 'save' ? reportError : logError)(
           error,
@@ -114,6 +144,20 @@ export const useEntrySaver = ({
   }, []);
 
   const save = useCallback((kind: SaveKind) => exclusive(() => runSave(kind)), [exclusive, runSave]);
+
+  const resumed = useSessionStore((session) => session.resumed);
+  const latestSave = useRef(save);
+  useEffect(() => {
+    latestSave.current = save;
+  });
+  useEffect(() => {
+    const kind = failedSignedOut.current;
+    if (kind === undefined) {
+      return;
+    }
+    failedSignedOut.current = undefined;
+    void latestSave.current(kind);
+  }, [resumed]);
 
   return { save, exclusive, state };
 };

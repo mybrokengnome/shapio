@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
+import { NoAccess } from '@/components/NoAccess';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { useDevelopPermissions } from '../Changes/hooks/useDevelopPermissions';
-import { NoAccess } from '../Changes/NoAccess';
 import { FailedJobs } from './FailedJobs';
 import { HealthCard } from './HealthCard';
 import { OperationsCard } from './OperationsCard';

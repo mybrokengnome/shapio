@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAdmin, login } from './helpers/adminIdentity.js';
 import {
   createDefinition,
   createDeliveryToken,
@@ -123,5 +124,129 @@ describe('content with media', () => {
     expect(wrongKind.json()).toMatchObject({
       error: { details: { issues: [{ path: '/clip', code: 'NOT_ALLOWED' }] } },
     });
+  });
+
+  it('keeps content that points at a force-deleted asset editable, publishable, and in the Inbox', async () => {
+    const owner = await login(testApp.app, await createAdmin(database.current.db, { roleKeys: ['owner'] }));
+    const upload = (filename: string) =>
+      createPng(12, 12).then((file) =>
+        uploadAsset(testApp.app, headers, { file, filename, mimeType: 'image/png' }),
+      );
+    const [gone, kept] = [await upload('gone.png'), await upload('kept.png')];
+    const notes = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'quickNote',
+      label: 'Quick note',
+      draftAndPublish: false,
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        { apiKey: 'cover', label: 'Cover', type: 'media' },
+      ],
+    });
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/gallery', {
+        data: { cover: gone.id, photos: [gone.id, kept.id] },
+      }),
+      201,
+    ).json<EntryBody>();
+    expectStatus(await admin.post(`/api/admin/content/gallery/${entry.id}/publish`, {}), 200);
+    const note = expectStatus(
+      await admin.post('/api/admin/content/quickNote', { data: { cover: gone.id } }),
+      201,
+    ).json<EntryBody>();
+
+    expectStatus(
+      await testApp.app.inject({
+        method: 'DELETE',
+        url: `/api/admin/media/assets/${gone.id}?force=true`,
+        headers: owner.headers,
+      }),
+      204,
+    );
+    // Both entries are queued for a health check in the delete's transaction.
+    const queued = await database.current.db
+      .selectFrom('jobs')
+      .select('payload')
+      .where('type', '=', 'content.health.entry')
+      .where('idempotency_key', 'like', `health:media-delete:${gone.id}:%`)
+      .execute();
+    expect(queued.map((job) => (job.payload as { entryId: string }).entryId).sort()).toEqual(
+      [entry.id, note.id].sort(),
+    );
+
+    // The admin read keeps the dangling ID (a bare string) so the editor can see and remove it.
+    const read = expectStatus(
+      await admin.get(`/api/admin/content/gallery/${entry.id}`),
+      200,
+    ).json<EntryBody>();
+    expect(read.data.cover).toBe(gone.id);
+    expect((read.data.photos as unknown[])[0]).toBe(gone.id);
+    expect((read.data.photos as MediaAssetBody[])[1]).toMatchObject({ id: kept.id });
+
+    // A patch of untouched keys saves and publishes; delivery leaves the missing file out.
+    const saved = expectStatus(
+      await admin.put(`/api/admin/content/gallery/${entry.id}`, {
+        expectedVersion: read.version,
+        data: { body: null },
+      }),
+      200,
+    ).json<EntryBody>();
+    expectStatus(await admin.post(`/api/admin/content/gallery/${entry.id}/publish`, {}), 200);
+    const delivered = expectStatus(
+      await testApp.app.inject({
+        method: 'GET',
+        url: `/api/content/galleries/${entry.id}`,
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      200,
+    ).json<{ data: Record<string, unknown> }>();
+    expect(delivered.data.cover).toBeNull();
+    expect((delivered.data.photos as MediaAssetBody[]).map((photo) => photo.id)).toEqual([kept.id]);
+
+    // The pre-flight warns instead of refusing, and records the finding for the Inbox.
+    const preflight = expectStatus(
+      await admin.post(`/api/admin/content/gallery/${entry.id}/preflight`, {}),
+      200,
+    ).json<{ locales: { ready: boolean; checks: { rule: string; severity: string; path?: string }[] }[] }>();
+    expect(preflight.locales[0]?.ready).toBe(true);
+    expect(preflight.locales[0]?.checks.filter((check) => check.rule === 'mediaMissing')).toEqual([
+      expect.objectContaining({ severity: 'warning', path: '/cover' }),
+      expect.objectContaining({ severity: 'warning', path: '/photos' }),
+    ]);
+    const recorded = await database.current.db
+      .selectFrom('content_health_findings')
+      .select(['rule', 'path'])
+      .where('entry_id', '=', entry.id)
+      .where('rule', '=', 'mediaMissing')
+      .where('resolved_at', 'is', null)
+      .orderBy('path')
+      .execute();
+    expect(recorded).toEqual([
+      { rule: 'mediaMissing', path: '/cover' },
+      { rule: 'mediaMissing', path: '/photos' },
+    ]);
+
+    // Removing the kept photo leaves the dangling one, which is accepted; adding the deleted asset anew is not.
+    expectStatus(
+      await admin.put(`/api/admin/content/gallery/${entry.id}`, {
+        expectedVersion: saved.version,
+        data: { photos: [gone.id] },
+      }),
+      200,
+    );
+    const added = await admin.post('/api/admin/content/gallery', { data: { cover: gone.id } });
+    expect(added.json()).toMatchObject({
+      error: { details: { issues: [{ path: '/cover', code: 'MEDIA_MISSING' }] } },
+    });
+
+    // A model without drafts publishes on every save; it saves too.
+    expectStatus(
+      await admin.put(`/api/admin/content/quickNote/${note.id}`, {
+        expectedVersion: note.version,
+        data: { title: 'Still here' },
+      }),
+      200,
+    );
+    expect(notes.definition.draftAndPublish).toBe(false);
   });
 });

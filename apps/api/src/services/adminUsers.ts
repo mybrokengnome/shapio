@@ -8,7 +8,8 @@ import type { Principal, RoleAssignment } from '../permissions/types.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminSessionsRepository from '../repositories/adminSessions.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
-import type { AdminUserSummary } from '../repositories/adminUsers.js';
+import type { AdminUserSummary, AdminUserApiToken } from '../repositories/adminUsers.js';
+import * as apiTokensRepository from '../repositories/apiTokens.js';
 import type { ActorContext } from './actorContext.js';
 import { recordAudit } from './audit.js';
 import {
@@ -34,6 +35,8 @@ export type AdminUserView = {
   lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Usable API tokens this admin created: refused while the account is disabled, revoked when it is deleted. */
+  apiTokens: AdminUserApiToken[];
 };
 
 export const toAdminUserView = (row: AdminUserSummary): AdminUserView => ({
@@ -46,6 +49,7 @@ export const toAdminUserView = (row: AdminUserSummary): AdminUserView => ({
   lastLoginAt: row.last_login_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  apiTokens: row.api_tokens,
 });
 
 /** Emails are compared and stored trimmed and lower-cased. */
@@ -204,14 +208,47 @@ export const deleteAdminUser = async (context: ActorContext, id: string): Promis
       }
       await assertAnotherOwnerRemains(id, trx);
     }
+    const revokedTokens = await revokeTokensOfDeletedAdmin(context, target, trx);
     await adminUsersRepository.deleteById(id, trx);
     await recordAudit(trx, {
       ...context,
       action: 'admin_user.delete',
       target: { type: 'admin_user', id },
-      metadata: { email: target.email },
+      metadata: { email: target.email, revokedTokens },
     });
   });
+};
+
+/**
+ * Revokes every API token the admin created, on any site, before the account goes (the creator column is
+ * cleared with it). Each revocation is audited with the token's name and its creator, so the record keeps
+ * whose token it was.
+ */
+const revokeTokensOfDeletedAdmin = async (
+  context: ActorContext,
+  target: AdminUserSummary,
+  trx: Transaction<DB>,
+): Promise<{ id: string; name: string }[]> => {
+  const tokens = await apiTokensRepository.listLiveByCreator(target.id, trx);
+  // Network events, like the deletion itself: the tokens may belong to several sites.
+  await apiTokensRepository.revokeByIds(
+    tokens.map((token) => token.id),
+    new Date(),
+    trx,
+  );
+  for (const token of tokens) {
+    await recordAudit(trx, {
+      ...context,
+      action: 'api_token.revoke',
+      target: { type: 'api_token', id: token.id },
+      metadata: {
+        name: token.name,
+        reason: 'creator_deleted',
+        createdBy: { id: target.id, email: target.email },
+      },
+    });
+  }
+  return tokens.map(({ id, name }) => ({ id, name }));
 };
 
 /** Signs another admin out everywhere. */

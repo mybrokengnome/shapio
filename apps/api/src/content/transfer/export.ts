@@ -15,6 +15,8 @@ import { toActiveDefinitions } from '../../schema/loadSnapshot.js';
 import {
   BUNDLE_FORMAT,
   BUNDLE_FORMAT_VERSION,
+  bundleTimestamp,
+  nullableBundleTimestamp,
   type BundleRecord,
   type EntryRecord,
   type ExportOptions,
@@ -26,8 +28,6 @@ import { keepKnownGrants, toGrant } from './permissions.js';
 type Executor = Transaction<DB>;
 
 const BATCH_SIZE = 200;
-
-const iso = (value: Date | null) => (value === null ? null : value.toISOString());
 
 /** Revisions with every parent before its children (parents outside the list are dropped as links). */
 export const orderParentsFirst = (revisions: readonly ExportRevisionRow[]): RevisionRecord[] => {
@@ -50,7 +50,7 @@ export const orderParentsFirst = (revisions: readonly ExportRevisionRow[]): Revi
           item.parent_revision_id && byId.has(item.parent_revision_id) ? item.parent_revision_id : null,
         reason: item.reason as RevisionRecord['reason'],
         data: item.data,
-        createdAt: item.created_at.toISOString(),
+        createdAt: bundleTimestamp(item.created_at),
       });
     }
   };
@@ -63,11 +63,11 @@ const toHead = (head: ExportHeadRow): EntryRecord['heads'][number] => ({
   state: head.state as 'draft' | 'published',
   revisionId: head.revision_id,
   data: head.data,
-  autosavedAt: iso(head.autosaved_at),
+  autosavedAt: nullableBundleTimestamp(head.autosaved_at),
   version: head.version,
-  createdAt: head.created_at.toISOString(),
-  updatedAt: head.updated_at.toISOString(),
-  publishedAt: head.state === 'published' ? iso(head.published_at) : null,
+  createdAt: bundleTimestamp(head.created_at),
+  updatedAt: bundleTimestamp(head.updated_at),
+  publishedAt: head.state === 'published' ? nullableBundleTimestamp(head.published_at) : null,
 });
 
 /** The site's view: the shared definitions and the site's own (another site's never leave with a bundle). */
@@ -167,11 +167,11 @@ async function* roleAndUserRecords(
         email: user.email,
         name: user.name,
         passwordHash: user.password_hash,
-        confirmedAt: iso(user.confirmed_at),
-        blockedAt: iso(user.blocked_at),
-        passwordChangedAt: iso(user.password_changed_at),
-        createdAt: user.created_at.toISOString(),
-        updatedAt: user.updated_at.toISOString(),
+        confirmedAt: nullableBundleTimestamp(user.confirmed_at),
+        blockedAt: nullableBundleTimestamp(user.blocked_at),
+        passwordChangedAt: nullableBundleTimestamp(user.password_changed_at),
+        createdAt: bundleTimestamp(user.created_at),
+        updatedAt: bundleTimestamp(user.updated_at),
         roleKeys: user.role_keys,
         oauthAccounts: accounts
           .filter((account) => account.app_user_id === user.id)
@@ -223,8 +223,8 @@ async function* mediaRecords(trx: Executor, siteId: string): AsyncGenerator<Bund
       id: folder.id,
       parentId: folder.parent_id,
       name: folder.name,
-      createdAt: folder.created_at.toISOString(),
-      updatedAt: folder.updated_at.toISOString(),
+      createdAt: bundleTimestamp(folder.created_at),
+      updatedAt: bundleTimestamp(folder.updated_at),
     };
   }
   for (let after: string | null = null; ;) {
@@ -249,8 +249,8 @@ async function* mediaRecords(trx: Executor, siteId: string): AsyncGenerator<Bund
         focalY: asset.focal_y,
         visibility: asset.visibility as 'public' | 'private',
         storageKey: asset.storage_key,
-        createdAt: asset.created_at.toISOString(),
-        updatedAt: asset.updated_at.toISOString(),
+        createdAt: bundleTimestamp(asset.created_at),
+        updatedAt: bundleTimestamp(asset.updated_at),
       };
     }
     after = assets.at(-1)?.id ?? null;
@@ -291,8 +291,8 @@ async function* entryRecords(
         id: entry.id,
         modelId: entry.model_id,
         ownerAppUserId: options.includeUsers ? entry.owner_app_user_id : null,
-        createdAt: entry.created_at.toISOString(),
-        updatedAt: entry.updated_at.toISOString(),
+        createdAt: bundleTimestamp(entry.created_at),
+        updatedAt: bundleTimestamp(entry.updated_at),
         revisions: orderParentsFirst(revisions.get(entry.id) ?? []),
         heads: entryHeads.map(toHead),
       };

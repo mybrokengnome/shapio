@@ -4,9 +4,9 @@ import { useMemo } from 'react';
 import { apiClient } from '@/api/client';
 import { isForbidden } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
-import { useSnapshotChanges } from '@/api/snapshots';
+import { useRecentSnapshotChanges } from '@/api/snapshots';
 import { useContentSchema } from '@/features/Content/hooks/useContentSchema';
-import { RECENT_SHOWN, RECENT_SNAPSHOTS } from '../constants';
+import { RECENT_SHOWN } from '../constants';
 import { useEntryTitles } from './useEntryTitles';
 
 export type RecentEntry = {
@@ -19,8 +19,9 @@ export type RecentEntry = {
 };
 
 /**
- * What went live in the last few snapshots: the snapshot diff from `current - RECENT_SNAPSHOTS` to the
- * current one (only models the admin may read), entries published or updated, titles from the list API.
+ * What went live most recently: the snapshot diff up to the current snapshot that covers the last
+ * `RECENT_SHOWN` entries the admin may read that were published or updated (schema-only snapshots never
+ * push them out), titles from the list API.
  * Reading no model is not an error here: the server answers with an empty list (an older server's 403 is
  * read the same way), so the panel shows its empty state, never a permission lock.
  */
@@ -32,7 +33,7 @@ export const useRecentlyPublished = () => {
     meta: { silent: true },
   });
   const to = current.data?.snapshot ?? 0;
-  const changes = useSnapshotChanges(Math.max(0, to - RECENT_SNAPSHOTS), to, to > 0);
+  const changes = useRecentSnapshotChanges(RECENT_SHOWN, to, to > 0);
   const live = useMemo(
     () =>
       (changes.data?.items ?? []).flatMap((item) => {

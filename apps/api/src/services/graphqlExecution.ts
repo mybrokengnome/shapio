@@ -24,7 +24,12 @@ export type GraphqlOperationInput = {
 
 export type PreparedOperation =
   | (PreparedDocument & { ok: true; operation: OperationDefinitionNode })
-  | { ok: false; errors: readonly GraphQLError[] };
+  | {
+      ok: false;
+      errors: readonly GraphQLError[];
+      /** The parsed document when it parsed but failed validation (or named no operation); absent on a syntax error. */
+      document?: DocumentNode;
+    };
 
 type PrepareDependencies = { documents: DocumentCache; rules: readonly ValidationRule[] };
 
@@ -44,7 +49,7 @@ const prepareDocument = (
   schema: GraphQLSchema,
   source: string,
   { documents, rules }: PrepareDependencies,
-): PreparedDocument | readonly GraphQLError[] => {
+): PreparedDocument | { errors: readonly GraphQLError[]; document?: DocumentNode } => {
   const cached = documents.get(schema, source);
   if (cached) {
     return cached;
@@ -54,13 +59,13 @@ const prepareDocument = (
     document = parse(source);
   } catch (error) {
     if (error instanceof GraphQLError) {
-      return [error];
+      return { errors: [error] };
     }
     throw error;
   }
   const errors = validate(schema, document, rules);
   if (errors.length > 0) {
-    return errors;
+    return { errors, document };
   }
   const prepared = { document, selectsIntrospection: documentSelectsIntrospection(document) };
   documents.set(schema, source, prepared);
@@ -73,15 +78,15 @@ export const prepareOperation = (
   dependencies: PrepareDependencies,
 ): PreparedOperation => {
   const prepared = prepareDocument(schema, input.query, dependencies);
-  if (!('document' in prepared)) {
-    return { ok: false, errors: prepared };
+  if ('errors' in prepared) {
+    return { ok: false, ...prepared };
   }
   const operation = getOperationAST(prepared.document, input.operationName ?? undefined);
   if (!operation) {
     const message = input.operationName
       ? `Unknown operation named "${input.operationName}".`
       : 'Must provide operation name if query contains multiple operations.';
-    return { ok: false, errors: [new GraphQLError(message)] };
+    return { ok: false, errors: [new GraphQLError(message)], document: prepared.document };
   }
   return { ok: true, ...prepared, operation };
 };

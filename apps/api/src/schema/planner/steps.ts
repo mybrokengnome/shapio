@@ -1,4 +1,4 @@
-import type { JsonValue, SchemaChange, SchemaDefinition, DataType } from '@shapio/schema';
+import type { JsonValue, PlannedChange, SchemaDefinition, DataType } from '@shapio/schema';
 
 /**
  * Where a definition's values live inside entries: for a model, its own heads at the root; for a
@@ -29,7 +29,7 @@ export type ContentStep =
        */
       rebuild?: boolean;
     }
-  | { kind: 'convert'; ownerId: string; change: SchemaChange; locations: ValueLocation[] };
+  | { kind: 'convert'; ownerId: string; change: PlannedChange; locations: ValueLocation[] };
 
 export type IndexStep = {
   kind: 'buildIndex';
@@ -48,7 +48,10 @@ export type FollowUpStep =
   | IndexStep
   | { kind: 'dropIndex'; indexName: string }
   | { kind: 'releaseUnique'; fieldId: string }
-  /** Deletes a removed locale's heads, revisions and unique-registry rows (content ports). */
+  /**
+   * Deletes a removed locale's heads, revisions and unique-registry rows, and moves non-localized entries stored
+   * in it to the default locale (content ports).
+   */
   | { kind: 'purgeLocale'; code: string };
 
 export const isIndexStep = (step: PrerequisiteStep): step is IndexStep => step.kind === 'buildIndex';

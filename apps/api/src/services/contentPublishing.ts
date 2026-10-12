@@ -1,7 +1,14 @@
-import { entryLocaleNotFound, publishingDisabled } from '../content/errors.js';
+import type { Transaction } from 'kysely';
+import {
+  contentVersionConflict,
+  entryLocaleNotFound,
+  invalidExpectedVersion,
+  publishingDisabled,
+} from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
 import { writeLocaleFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
+import { validateRevisionData } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import {
@@ -12,9 +19,10 @@ import {
   unpublishLocale,
   type WriteContext,
 } from '../content/write/heads.js';
-import { assertTargets } from '../content/write/references.js';
+import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
+import type { DB } from '../db/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
@@ -29,7 +37,7 @@ import {
   writeEntryEvent,
   type ContentServiceContext,
 } from './contentAccess.js';
-import { viewAfterWrite, type AdminEntryView } from './contentReads.js';
+import { statusOf, viewAfterWrite, type AdminEntryView } from './contentReads.js';
 
 /**
  * Publishing (ADR 0004: strictly per locale). Publishing a locale validates its draft against the current
@@ -48,7 +56,10 @@ export type PublishTransaction = {
 
 export type PublishedLocale = { locale: string; revisionId: string; snapshot: number };
 
-/** Publishes the given locales of a locked entry. One publication sequence number covers them all. */
+/**
+ * Publishes the given locales of a locked entry. One publication sequence number covers them all. A locale
+ * whose draft is already live is left alone and not in the result.
+ */
 export const publishLocalesInTransaction = async (
   tx: PublishTransaction,
   entryId: string,
@@ -69,14 +80,19 @@ export const publishLocalesInTransaction = async (
         drafts.map((head) => head.locale),
       );
     }
+    const published = heads.find((head) => head.state === 'published' && head.locale === locale);
+    if (statusOf(draft, published) === 'published') {
+      // The draft is already live: nothing to publish, so no snapshot, event or publication-log row.
+      continue;
+    }
     const outcome = validator.validate(draft.data);
     if (outcome.issues.length > 0) {
       throw contentInvalid(
         outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
       );
     }
-    await assertTargets(trx, outcome, site.id);
-    const published = heads.find((head) => head.state === 'published' && head.locale === locale);
+    // Every asset of a saved draft passed the check when it was saved; one gone since was force-deleted.
+    await assertTargets(trx, outcome, site.id, mediaIdsOf(model, [draft.data]));
     const context = {
       trx,
       site,
@@ -114,13 +130,21 @@ export const publishRevisionInTransaction = async (
 ): Promise<PublishedLocale> => {
   const { write, snapshot, hooks, site } = tx;
   const { model, trx, actor } = write;
-  const outcome = buildValidator(snapshot, model).validate(source.data);
+  const outcome = validateRevisionData(buildValidator(snapshot, model), source.data);
   if (outcome.issues.length > 0) {
     throw contentInvalid(
       outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
     );
   }
-  await assertTargets(trx, outcome, site.id);
+  await assertTargets(
+    trx,
+    outcome,
+    site.id,
+    mediaIdsOf(
+      model,
+      heads.filter((head) => head.locale === locale).map((head) => head.data),
+    ),
+  );
   const published = heads.find((head) => head.state === 'published' && head.locale === locale);
   const context = {
     trx,
@@ -171,13 +195,80 @@ export const targetLocales = (
   ];
 };
 
+/**
+ * Records one `content.publish` audit row for the locales a publish actually put live. Writes nothing when
+ * nothing was published, so a publish that changed nothing leaves no trace.
+ */
+export const auditPublished = async (
+  trx: Transaction<DB>,
+  context: ContentServiceContext,
+  model: ContentModel,
+  entryId: string,
+  published: readonly PublishedLocale[],
+  extra: Record<string, unknown> = {},
+) => {
+  if (published.length === 0) {
+    return;
+  }
+  await auditEntry(trx, context, model, 'content.publish', entryId, {
+    locales: published.map((item) => item.locale),
+    snapshot: published[0]?.snapshot ?? null,
+    revisions: published.map((item) => item.revisionId),
+    ...extra,
+  });
+};
+
 type LocalesInput = { locales?: string[] };
+
+/** A publish request: the locales, and optionally the draft version(s) the caller saw. */
+export type PublishInput = LocalesInput & {
+  expectedVersion?: number;
+  expectedVersions?: Record<string, number>;
+};
+
+/** Each published locale's draft version, from either form of the request; empty when it names none. */
+const expectedVersionsOf = (input: PublishInput, locales: readonly string[]): Map<string, number> => {
+  if (input.expectedVersion !== undefined && input.expectedVersions !== undefined) {
+    throw invalidExpectedVersion('Send expectedVersion or expectedVersions, not both', {});
+  }
+  if (input.expectedVersion !== undefined) {
+    if (locales.length !== 1) {
+      throw invalidExpectedVersion(
+        'expectedVersion is for a publish of one locale; send expectedVersions for several',
+        { locales },
+      );
+    }
+    return new Map([[locales[0] as string, input.expectedVersion]]);
+  }
+  const entries = Object.entries(input.expectedVersions ?? {});
+  const unknown = entries.filter(([locale]) => !locales.includes(locale)).map(([locale]) => locale);
+  if (unknown.length > 0) {
+    throw invalidExpectedVersion('expectedVersions names locales this request does not publish', {
+      locales: unknown,
+    });
+  }
+  return new Map(entries);
+};
+
+/** Refuses a publish whose caller saw an older draft than the one that would go live (optimistic concurrency). */
+const assertExpectedVersions = (
+  input: PublishInput,
+  locales: readonly string[],
+  heads: readonly HeadRecord[],
+) => {
+  for (const [locale, expected] of expectedVersionsOf(input, locales)) {
+    const draft = heads.find((head) => head.state === 'draft' && head.locale === locale);
+    if (draft && draft.version !== expected) {
+      throw contentVersionConflict(expected, draft.version);
+    }
+  }
+};
 
 const changePublication = async (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
-  input: LocalesInput,
+  input: PublishInput,
   operation: 'publish' | 'unpublish',
 ): Promise<AdminEntryView> => {
   const { model, policy } = await modelWithPolicy(context, modelKey, 'publish');
@@ -201,23 +292,19 @@ const changePublication = async (
     );
     const heads = await entryHeadsRepository.lockForEntry(id, trx);
     const locales = targetLocales(context, model, input.locales, heads);
-    let metadata: Record<string, unknown>;
     const seqs = createSeqAllocator(trx, context.site.id, {
       source: operation,
       actor: actorColumns(context.actor),
     });
     if (operation === 'publish') {
+      assertExpectedVersions(input, locales, heads);
       const published = await publishLocalesInTransaction(
         { write, site: context.site, snapshot: context.snapshot, hooks: context.hooks, seq: seqs },
         id,
         locales,
         heads,
       );
-      metadata = {
-        locales,
-        snapshot: published[0]?.snapshot ?? null,
-        revisions: published.map((item) => item.revisionId),
-      };
+      await auditPublished(trx, context, model, id, published);
     } else {
       const live = locales.filter((locale) =>
         heads.some((head) => head.state === 'published' && head.locale === locale),
@@ -230,11 +317,10 @@ const changePublication = async (
           snapshot: seq,
         });
       }
-      metadata = { locales: live, snapshot: seq };
+      await auditEntry(trx, context, model, 'content.unpublish', id, { locales: live, snapshot: seq });
     }
     await syncEntryUniqueValues(write, id);
     await touchEntry(write, id);
-    await auditEntry(trx, context, model, `content.${operation}`, id, metadata);
   });
   return viewAfterWrite(context, model, policy, id, input.locales?.[0]);
 };
@@ -244,7 +330,7 @@ export const publishEntry = (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
-  input: LocalesInput,
+  input: PublishInput,
 ) => changePublication(context, modelKey, id, input, 'publish');
 
 export const unpublishEntry = (

@@ -182,6 +182,11 @@ is written by the model's author and stays visible (13px meta).
   surface and the primary on the look's ground).
 - A screen renders only its content: start with `Page` and `PageHeader`; don't add headers, gutters or
   backgrounds of your own.
+- A session that ends while a screen has unsaved edits never leaves the page: the Shell keeps everything
+  mounted and opens **`ResumeSession`**, a non-modal sheet asking the same admin's password ("Your session
+  has ended"); failed saves run again once it is accepted. Screens count as having unsaved edits through
+  `UnsavedChangesGuard` and `useDiscardGuard`, so use one of them for any dirty state. Without unsaved
+  edits the visitor goes to Sign in as before. Sign out asks first over unsaved edits too.
 
 ### Sites
 
@@ -420,8 +425,8 @@ message.
   from the sm breakpoint, full width on phones); `SheetHeader`, `SheetBody` (scrolling middle), `SheetFooter`
   (bordered action row on a muted band, Cancel then the primary action). Don't set
   widths with `className`; use `size`. `SheetContent nonModal` (paired with `<Sheet modal={false}>`) drops
-  the overlay and focus trap so the page stays interactive; only the entry settings drawer (`xs`) uses it,
-  and `src/test/conventions.test.ts` enforces both the pairing and that single use.
+  the overlay and focus trap so the page stays interactive; only the entry settings drawer (`xs`) and the
+  Shell's `ResumeSession` use it, and `src/test/conventions.test.ts` enforces the pairing and that allowlist.
 - `Alert` variants: `default`, `destructive`, `warning`, `info`, `success` (tinted status surfaces; light `info` is a neutral
   `muted` note with a cobalt icon).
 - `Card`: 12px radius, border, no shadow, 20px padding. Prefer `Panel` in screens.
@@ -630,8 +635,9 @@ grouped listbox (↑↓, Enter, Esc, focus returns where it was), and screens ad
 
 No centred dialogs for creating, editing, picking or routine confirmation. Sheets are still modal for
 assistive technology (focus trap, inert dimmed page), which keeps keyboard, screen-reader behaviour and
-the dirty-close guard working. The one exception is the document's settings drawer: non-modal, so the
-document stays interactive beside it (see Patterns → Document).
+the dirty-close guard working. Two exceptions are non-modal: the document's settings drawer, so the
+document stays interactive beside it (see Patterns → Document), and the Shell's `ResumeSession`, so the
+unsaved edits stay readable and editable while the person signs in again (see Shell).
 
 | Need                                                            | Pattern                                                               | Component                       |
 | --------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------- |
@@ -642,9 +648,13 @@ document stays interactive beside it (see Patterns → Document).
 | Review before a risky save (schema plan)                        | sheet `lg`, so the thing being changed stays in view                  | `Sheet`                         |
 | Confirm a routine destructive or consequential action           | inline confirm anchored to the trigger (or to the row's menu button)  | `InlineConfirm`                 |
 | Show a one-time secret                                          | inline panel at the top of the page where it was created              | `SecretReveal`                  |
-| Notice after an action (other locales, remote change, conflict) | banner in place (`Alert`) or a toast with an action                   | `Alert`, `toast(…, { action })` |
+| Notice after an action (other locales, remote change, conflict) | banner (`Alert`), toast with an action, or the top bar's save state   | `Alert`, `toast(…, { action })` |
 | Irreversible acknowledgement                                    | blocking dialog, the only kind left                                   | `ConfirmDialog`                 |
 | Go anywhere, run a command                                      | the command palette, the one centred overlay (see Patterns)           | `CommandPalette`                |
+
+A remote change (another tab saved the entry) while the document has no edits of its own replaces the save
+state in the document's top bar ("Changed by … Reload to see it." with a Reload button); with unsaved edits it
+raises the conflict banner instead.
 
 `ConfirmDialog` is kept only for: leaving with unsaved changes (`UnsavedChangesGuard`, `useDiscardGuard`),
 deleting a model, force-deleting a file that content uses, deleting a locale that has content, changing the

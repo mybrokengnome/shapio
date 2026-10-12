@@ -20,7 +20,6 @@ import {
   type GraphQLFieldConfigMap,
   type GraphQLOutputType,
 } from 'graphql';
-import { liveFields } from '../../../content/model.js';
 import { COMPONENT_KEY } from '../../../content/validator/index.js';
 import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
@@ -28,12 +27,15 @@ import { RELATION_LIST_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ValueNode } from './context.js';
 import { describeDefinition, describeField } from './descriptions.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
+import { modelReadable, readableFields } from './visibility.js';
 
 /**
- * Object types for models (entries) and components, built from the snapshot. Values come from the delivery
- * projection (`content/compiler/select.ts`), which leaves out every field outside the caller's read mask:
- * such a field resolves to null when optional and to a FORBIDDEN_FIELD error when required (ADR 0005), so
- * a client never mistakes a hidden value for an empty one.
+ * Object types for models (entries) and components, built from the snapshot and holding only the fields the
+ * caller may see (visibility.ts): a delivery caller's schema never names a field outside its read mask, a
+ * component's non-public field, or a model it cannot read. Values come from the delivery projection
+ * (`content/compiler/select.ts`), which leaves out every field outside the caller's read mask for that row:
+ * such a field resolves to null when optional and to a FORBIDDEN_FIELD error when required (ADR 0005), so a
+ * client never mistakes a hidden value for an empty one.
  */
 type FieldConfig = GraphQLFieldConfig<ValueNode, GraphqlContext>;
 
@@ -73,7 +75,9 @@ const componentById = (build: SchemaBuild, id: string): ComponentDefinition | un
 
 const relationField = (build: SchemaBuild, field: FieldDefinition<'relation'>): FieldConfig | undefined => {
   const target = modelById(build, field.settings.target);
-  if (!target) {
+  // A relation to a model the caller cannot read is left out: it could only ever resolve empty, and its type
+  // would name the model (REST keeps the key, with null or []).
+  if (!target || !modelReadable(build.visibility, target.id)) {
     return undefined;
   }
   const targetType = entryType(build, target);
@@ -105,10 +109,10 @@ const relationField = (build: SchemaBuild, field: FieldDefinition<'relation'>): 
 
 const componentField = (build: SchemaBuild, field: FieldDefinition<'component'>): FieldConfig | undefined => {
   const component = componentById(build, field.settings.component);
-  if (!component || liveFields(component.fields).length === 0) {
+  const type = component ? componentType(build, component) : null;
+  if (!type) {
     return undefined;
   }
-  const type = componentType(build, component);
   const toNode = (value: unknown, node: ValueNode) =>
     isRecord(value) ? { data: value, scope: node.scope } : null;
   if (field.settings.repeatable) {
@@ -123,12 +127,17 @@ const componentField = (build: SchemaBuild, field: FieldDefinition<'component'>)
   return { type, resolve: (node) => toNode(node.data[field.apiKey], node) };
 };
 
+/** A zone's allowed components that have a type for this caller (some visible field), with their types. */
+const zoneMembers = (build: SchemaBuild, field: FieldDefinition<'dynamiczone'>) =>
+  field.settings.components.flatMap((id) => {
+    const component = componentById(build, id);
+    const type = component ? componentType(build, component) : null;
+    return component && type ? [{ component, type }] : [];
+  });
+
 const zoneType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) =>
   memoType(build.zones, `${owner.id}:${field.id}`, () => {
-    const members = field.settings.components
-      .map((id) => componentById(build, id))
-      .filter((component) => component !== undefined && liveFields(component.fields).length > 0)
-      .map((component) => componentType(build, component as ComponentDefinition));
+    const members = zoneMembers(build, field).map(({ type }) => type);
     return members.length === 0
       ? null
       : new GraphQLUnionType({
@@ -150,13 +159,9 @@ const zoneField = (
   if (!type) {
     return undefined;
   }
-  // Items of components no longer allowed in the zone (or deleted) have no member type to resolve to.
-  const allowed = new Set(
-    field.settings.components.flatMap((id) => {
-      const component = componentById(build, id);
-      return component ? [component.apiKey] : [];
-    }),
-  );
+  // Items of components no longer allowed in the zone (or deleted, or with no field this caller sees) have no
+  // member type to resolve to.
+  const allowed = new Set(zoneMembers(build, field).map(({ component }) => component.apiKey));
   return {
     type: list(type),
     resolve: (node) => {
@@ -217,12 +222,12 @@ const valueField = (
 };
 
 /**
- * Fields of a model or component. On entries (`masked`), a field missing from the projection is outside the
- * caller's read mask.
+ * Fields of a model or component. When `masked`, a field missing from the projection is outside the caller's
+ * read mask (the projection always emits every visible field, null when empty).
  */
 const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: boolean) => {
   const fields: GraphQLFieldConfigMap<ValueNode, GraphqlContext> = {};
-  for (const field of liveFields(owner.fields)) {
+  for (const field of readableFields(build.visibility, owner)) {
     const config = valueField(build, owner, field);
     if (!config) {
       continue;
@@ -245,17 +250,29 @@ const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: b
   return fields;
 };
 
-export const componentType = (build: SchemaBuild, component: ComponentDefinition) =>
-  memoType(
-    build.objects,
-    component.id,
-    () =>
-      new GraphQLObjectType<ValueNode, GraphqlContext>({
-        name: componentTypeName(component),
-        description: describeDefinition(component),
-        fields: () => definitionFields(build, component, false),
-      }),
-  );
+/**
+ * A component's type, or null when the caller sees none of its fields (GraphQL forbids empty object types).
+ * Its fields are resolved eagerly to know that; components never nest cyclically (the registry validator
+ * rejects cycles), and relation targets are thunked entry types, so this terminates.
+ */
+const componentType = (
+  build: SchemaBuild,
+  component: ComponentDefinition,
+): GraphQLObjectType<ValueNode, GraphqlContext> | null =>
+  memoType(build.components, component.id, () => {
+    // Masked like entries: a delivery read leaves out a component's non-public fields (read mask).
+    const fields = definitionFields(build, component, true);
+    if (Object.keys(fields).length === 0) {
+      return null;
+    }
+    const type = new GraphQLObjectType<ValueNode, GraphqlContext>({
+      name: componentTypeName(component),
+      description: describeDefinition(component),
+      fields,
+    });
+    build.objects.set(component.id, type);
+    return type;
+  });
 
 const SYSTEM_STRING = (name: 'locale' | 'createdAt' | 'updatedAt') => ({
   type: new GraphQLNonNull(GraphQLString),

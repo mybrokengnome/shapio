@@ -9,6 +9,7 @@ import {
   definitionInputFor,
   IdParamsSchema,
   ImpactSchema,
+  RevisionListItemSchema,
   RevisionSummarySchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
@@ -69,7 +70,14 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
     },
     remove: {
       params: IdParamsSchema,
-      querystring: Type.Object({ expectedVersion: ExpectedVersion }, closed),
+      querystring: Type.Object(
+        {
+          expectedVersion: ExpectedVersion,
+          /** Deleting a definition removes its API (a breaking change), like `schema apply --prune`. */
+          acknowledgeBreaking: Type.Optional(Type.Boolean()),
+        },
+        closed,
+      ),
       response: outcome,
     },
     changeScope: {
@@ -97,7 +105,7 @@ export const definitionRouteSchemas = (category: 'model' | 'component') => {
     },
     listRevisions: {
       params: IdParamsSchema,
-      response: { 200: Type.Object({ items: Type.Array(RevisionSummarySchema) }) },
+      response: { 200: Type.Object({ items: Type.Array(RevisionListItemSchema) }) },
     },
     getRevision: {
       params: Type.Object({ id: StableIdSchema, revisionId: StableIdSchema }),

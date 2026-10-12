@@ -75,6 +75,7 @@ const parseContext = {
   model: fixtureModel,
   locales: ['en', 'fr', 'de'],
   isReadable: () => true,
+  isQueryable: () => true,
   allowSnapshot: true,
   resolveModel: () => fixtureModel,
 };

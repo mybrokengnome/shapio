@@ -22,11 +22,14 @@ import { memoType, type SchemaBuild } from './build.js';
 import { describeField } from './descriptions.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 import { enumType } from './outputTypes.js';
+import { writableFields } from './visibility.js';
 
 /**
  * Write inputs: `XInput` (models), `CInput` (components) and `XFieldZoneInput` (dynamic-zone items, one
  * optional key per allowed component; exactly one must be set). Every field is optional: writes are patches
- * (ADR 0001), `null` clears a field, and the content validator enforces required fields and every rule.
+ * (ADR 0001), `null` clears a field, and the content validator enforces required fields and every rule. They
+ * hold only the fields the caller may write (visibility.ts: a model's create and update write masks; a
+ * component's public fields for delivery callers), so a delivery caller's schema names no hidden field.
  */
 const list = (type: GraphQLInputType) => new GraphQLList(new GraphQLNonNull(type));
 
@@ -78,7 +81,7 @@ const fieldInputType = (
 
 const inputFields = (build: SchemaBuild, owner: SchemaDefinition): GraphQLInputFieldConfigMap => {
   const fields: GraphQLInputFieldConfigMap = {};
-  for (const field of liveFields(owner.fields)) {
+  for (const field of writableFields(build.visibility, owner)) {
     const type = fieldInputType(build, owner, field);
     if (type) {
       fields[field.apiKey] = { type, description: describeField(field) };

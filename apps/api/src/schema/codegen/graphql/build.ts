@@ -2,21 +2,34 @@ import type { GraphQLEnumType, GraphQLInputObjectType, GraphQLObjectType, GraphQ
 import type { SchemaSnapshot } from '../../snapshot.js';
 import type { GraphqlContext, ValueNode } from './context.js';
 import type { FixedTypes } from './fixedTypes.js';
+import type { SchemaVisibility } from './visibility.js';
 
-/** State of one schema build: the snapshot it is built from and the types created so far (by ID). */
+/**
+ * State of one schema build: the snapshot it is built from, what the caller may see of it (visibility.ts) and
+ * the types created so far (by ID).
+ */
 export type SchemaBuild = {
   snapshot: SchemaSnapshot;
+  visibility: SchemaVisibility;
   fixed: FixedTypes;
   objects: Map<string, GraphQLObjectType<ValueNode, GraphqlContext>>;
+  /** Component types by ID; null when the caller sees none of the component's fields. */
+  components: Map<string, GraphQLObjectType<ValueNode, GraphqlContext> | null>;
   enums: Map<string, GraphQLEnumType>;
   zones: Map<string, GraphQLUnionType | null>;
   inputs: Map<string, GraphQLInputObjectType | null>;
 };
 
-export const createBuild = (snapshot: SchemaSnapshot, fixed: FixedTypes): SchemaBuild => ({
+export const createBuild = (
+  snapshot: SchemaSnapshot,
+  visibility: SchemaVisibility,
+  fixed: FixedTypes,
+): SchemaBuild => ({
   snapshot,
+  visibility,
   fixed,
   objects: new Map(),
+  components: new Map(),
   enums: new Map(),
   zones: new Map(),
   inputs: new Map(),

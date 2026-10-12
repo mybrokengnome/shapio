@@ -8,8 +8,234 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **The model builder no longer stays on the old version after a quick change.** When a change's checks or
+  conversions finished before the builder looked them up, it never reloaded: no "Model updated", the old
+  version under the title, and a "changed in another session" banner for your own change. It now follows the
+  change in any state, so a finished one reloads the new version at once.
+- **API tokens no longer outlive their admin.** While an admin is disabled, the API tokens they created (and
+  tokens made with those tokens) are refused, and deleting the admin revokes them, with the token names and
+  the creator kept in the audit log. Network → Users names those tokens before you disable or remove someone,
+  and Settings → API tokens shows a paused token as "Paused: creator disabled".
+- **Changing a multi-value enum's type drops its values instead of hiding them.** Changing an enum with
+  `multiple: true` to short text, long text, or code was treated as a change that keeps the stored values, so it
+  went live with no review while every read returned `null`; to rich text it promised a conversion that then
+  failed. It is now a destructive change that counts the entries losing their value, needs your
+  acknowledgement, and shows "(values dropped)" in `shapio schema diff`. Text changed to a multi-value enum
+  becomes a one-value list, checked against the choices.
+- **An ended admin session no longer throws away unsaved edits.** When the session expires or is signed out
+  elsewhere while you have unsaved changes, the admin stays on the page and asks for your password in a panel
+  beside it; the save that failed runs again once you sign in. Signing out from the account menu over unsaved
+  changes now asks first, like leaving the page.
+- **Signing in from several places at once works on MySQL.** Parallel correct sign-ins of one admin could
+  deadlock in InnoDB and answer 500; the sign-in now updates the admin before it creates the session.
+- **Inbox "Recently published" keeps the latest publishes.** It used to look at the last five snapshots only,
+  so a few schema changes, or publishes in types you can't read, emptied it and it said "Nothing published
+  yet". It now lists the latest entries you may read that went live. `GET /api/snapshots/changes` takes
+  `recent=N` in place of `from` for this.
+- **Deleting a media file shows only "Deleted".** The open file sheet read the file again after the delete,
+  and the 404 added a red "This no longer exists" toast beside the success one. A file that's gone no longer
+  raises a toast; the screens that show files already say when one is missing.
+- **Media "Used in" names entries by title.** Each entry version using a file now shows the entry's title and
+  type and links to it in that locale, instead of a raw entry ID. Entries in types you can't read say so,
+  without a link. `GET /api/admin/media/assets/:id/usage` returns each entry's `title`.
+- **The GraphQL playground passes accessibility checks.** GraphiQL's query, variables, headers, and response
+  editors now have names for screen readers, its colours reach WCAG AA contrast in both themes, and links in
+  its docs are underlined.
+- **Asking for a hidden field in `fields=` says so.** The 403 `FORBIDDEN_FIELD` now reads "You may not read the
+  field …" instead of "You may not filter, sort or search on …", which the request never did.
+- **An open entry now learns that another tab saved it.** With no edits of its own, the tab says who changed
+  the draft and when, in place of "Saved", with a Reload button; with unsaved edits, it shows the "Someone else
+  saved this entry" banner, which keeps them. The presence heartbeat now carries every locale's draft version.
+- **A partly typed date or time no longer clears the saved value.** While a date, time, or date-time is
+  incomplete, the field says "Enter a complete date." (or time, or date and time), stays an unsaved change, and
+  Save, Create, and Publish refuse until it is complete or cleared. Leaving the page asks first.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
+  half-typed JSON now stays in the field with its error, counts as an unsaved change, and blocks Save, Create,
+  and Publish; autosave saves the other changes and holds that field back until it is fixed.
+- **Public off on a component's field now hides it from delivery.** REST, GraphQL, in-process delivery, and
+  previews returned a component's `public: false` fields to delivery tokens, app users, and anonymous callers,
+  in single, repeatable, and dynamic-zone components. They are now left out at any depth; admin reads still
+  show them.
+- **Per-account sign-in and reset limits hold under parallel requests.** Sending many requests at once used to
+  check up to 20 passwords a minute against one account and send 20 reset emails to one address; now each
+  request takes its slot before it runs, so admin and app-user sign-ins, password resets, sign-ups, and
+  confirmation resends stay at 5 per 15 minutes. Successful sign-ins still never count.
+- **Deleting a locale no longer deletes entries of models that aren't localized.** Such an entry stays in the
+  locale it was created in, so deleting that locale after the default changed used to delete it. It now moves
+  to the default locale, with its history, links, and unique values intact. Entries of localized models that
+  existed only in the deleted locale are deleted like a normal delete: an `entry.deleted` event is sent, and their
+  unique values can be used again. The confirmation now says how many entries will be deleted and how many move.
+- **Unique fields stay unique when they stop being per-locale.** Making a unique field shared, or its model
+  non-localized, now checks for entries that hold the same value in different locales and refuses the change
+  if any do, as making a field unique does. The registry of taken values moves to the shared key, so a later
+  duplicate is refused in every locale. The reverse change, making a unique field per-locale, now lets
+  locales share a value while still refusing duplicates within a locale.
+- **Webhooks survive an unreadable secret.** After `SESSION_SECRET` changes, a webhook's deliveries are recorded
+  as dead with the reason, the webhook list and page show a warning, and Rotate secret repairs it. Before,
+  deliveries stayed pending forever and nothing in the admin said why.
+- **Publish no longer puts live a draft the editor never saw.** Publishing from a tab that missed another
+  session's save now shows the "Someone else saved this entry" banner instead of publishing. The publish API
+  takes the draft version you read (`expectedVersion`, or `expectedVersions` per locale) and answers 409
+  `CONTENT_VERSION_CONFLICT` when it moved. The editor, list, and bulk Publish send it; `@shapio/client` and
+  the GraphQL `publish…` mutations accept it.
+- **A shipped change set keeps showing what it shipped.** Its page used to compare the set with what it had
+  just made live, so it said "No schema changes", asked to rebase the draft, and showed "Shipping is blocked".
+  It now lists the schema changes and each entry's values before and after the ship, says who shipped it as
+  which snapshot, and shows no ship checks. Also, on a phone, a card's buttons and chips no longer cover its
+  title.
+- **Snapshots record what a change set published when it also converts those entries.** A set that changed a
+  field's type and published entries of that model recorded their old content, converted, as the snapshot, so
+  `?snapshot=N`, snapshot diffs, and Restore showed the entries as they were before the set. The snapshot now
+  holds what the set published.
+- **New content types show why a name is refused on the first Create.** A name the server rejects, such as
+  `Query`, `Media`, or one another type's GraphQL names already use, now shows its reason under API ID straight
+  away instead of only "Fix the highlighted settings" with nothing highlighted. A refusal that points at no field
+  shows its own reason above the buttons.
+- **Signing in no longer takes away what visitors can read.** A signed-in app user now holds the roles the site
+  gives to everyone (`public`) as well as the `authenticated` roles and their own, so content `public` can read
+  no longer returns 403 once someone signs in. Anonymous callers still hold only the `public` roles.
+- **Fields granted only on your own entries stay off everyone else's.** When one role could read every entry
+  and another could read your own entries with more fields (an email, say), those extra fields showed on every
+  entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,
+  or searching on such a field is refused unless every entry you can read is your own.
+- **Restoring a revision saved before a field's type changed** brings it back as its history view shows it,
+  with values of the old type empty, instead of failing with `must be a string`. Restoring a snapshot from
+  before the change works the same way, and a required field left empty is refused with a message naming the
+  type change.
+- **History compare says the right thing.** Restoring a version that fills an empty field now reads "would be
+  filled in", and one that empties a field reads "would be cleared" (they were swapped). Dates in the compare
+  show in your time, not as raw UTC text.
+- **Relation and media filters no longer match what the response hides.** A delivery filter naming an
+  unpublished entry, an entry the token may not read, or a force-deleted asset now matches as if the link were
+  not there, so `$eq`, `$ne`, `$in`, and `$nin` agree with the returned data. A filter on a relation into a
+  model the token may not read is refused with 403, like a hidden field.
+- **`$not` is now the exact complement of the filter it wraps.** Over a range or text match (`$gte`,
+  `$contains`, …), it used to leave out entries whose field is empty, so they appeared in neither result; it now
+  includes them, like `$ne`, `$nin`, and `$notContains` (REST, GraphQL, and the admin list).
+- **Publishing a draft that is already live is a no-op.** It no longer makes a new snapshot, writes an
+  `entry.published` event (so webhooks and deployment triggers stay quiet), or adds a publication-log row. This
+  covers bulk Publish, scheduled publishes, and change sets too, and matches how unpublishing twice behaves.
+- **Entries using a force-deleted file can be saved again.** After an owner force-deleted a file that content
+  used, saving or publishing those entries failed with `MEDIA_MISSING`. Saves now check only the files they add,
+  the admin shows the missing file so you can remove it, and the Inbox lists the entries under "Files deleted
+  from the library".
+- **Entry history shows publishes and who did what.** History now names who made each revision, lists every
+  publish and unpublish with who did it ("Published on schedule", "Published with change set Launch"), and marks
+  the version that is live. A save that changes nothing no longer adds an empty "Saved" row: the admin and
+  delivery write APIs answer with the same version, record no revision, and send no `entry.updated` event (a
+  save over autosaved work still records one).
+- **Changing a file's visibility returns a URL that keeps working.** The URL in the answer used the old prefix
+  and broke once the background move finished. Until the move is done, the file's URLs now go through
+  Shapio's own file route under the new prefix (also on S3 and behind a CDN), and that route serves the file
+  before and after the move.
+- **Creating an entry that goes live is now in the audit log.** Create and publish (in the admin, the delivery
+  write API, or on a model without drafts) writes one `content.publish` row marked `via: create`, like the
+  Publish button, bulk Publish, schedules, and change sets already did.
+- **A type change review that knows a check fails no longer lets it ship.** When a type change would leave a
+  required field empty, the review says both numbers ("3 entries (4 versions) would be left without a required
+  value"), and Ship now stays disabled with the reason until you untick Required or set a default; Review in a
+  change set still works. After a change fails, Review works again while the "didn't go live" notice is still
+  shown.
+- **A NUL character or an unpaired surrogate in input is a clear 422, not a server error.** Any request
+  carrying one (content saves, delivery filters and search, GraphQL, app-user sign-up, locales, models) is
+  refused with `INVALID_TEXT` and the path of the value, and import bundles and other content writes refuse it
+  too. PostgreSQL failed with an internal error and SQLite stored the text, so both now agree.
+- **Export and import keep timestamps to the microsecond.** Entries created within one millisecond on PostgreSQL
+  no longer swap places in lists after an import. Bundles are now format 2 (six fractional digits); format 1
+  bundles still import, and older Shapio releases refuse a format 2 bundle instead of misreading it.
+- **`shapio status` no longer reports success for a server that is not Shapio.** A URL that answers 200 with
+  something else (the admin page, a proxy's default page) now exits 1 with "not a Shapio instance", and a ready
+  check that does not say ready exits 1 too.
+- **A link to a content type you can't read no longer claims it was deleted.** A relation field whose target
+  your role can't read now says "You can't read the content type this field links to.", and the entry's
+  properties show "1 linked entry you can't read" instead of "Untitled" and an ID. The links are kept on save,
+  as before.
+- **Expired credentials and old delivery logs are now pruned.** The daily retention job deletes credentials
+  that expired more than `RETENTION_DAYS` ago (admin sessions, invitations, password resets, app-user refresh
+  tokens, login codes, email confirmations, and preview tokens), spent setup tokens, and finished webhook
+  deliveries and deployment runs older than that. Each webhook keeps its newest delivery, and each deployment
+  connection keeps its newest and live run.
+- **Deleting a model or component through the API needs the breaking-change acknowledgement.**
+  `DELETE /api/admin/models/:id` (and `/components/:id`) removed the API at once with no acknowledgement, while
+  `shapio schema apply --prune` refuses the same deletion without `--allow-breaking`. It now answers 409
+  `SCHEMA_CHANGE_NOT_ACKNOWLEDGED` unless `acknowledgeBreaking=true` is sent; the admin sends it after its
+  confirm dialog.
+- **New `.env` files and SQLite databases are readable by their owner only.** `create-shapio` writes `.env`
+  (SESSION_SECRET, the database password) with mode 0600, and Shapio creates a new SQLite file, with its WAL
+  files, the same way. Existing files keep their permissions.
+- **`shapio schema diff` shows what changed inside a value.** Display changes (a form layout's groups, for
+  example) were cut at 77 characters, with the two sides in different key orders, so the change itself was
+  usually hidden. The diff, `apply`, and conflict output now print one line per part that changed (such as
+  `~ display.groups[1].label: "Main" → "Details"`), in full and with sorted keys.
+- **`shapio admin create` applies the same rules as Setup.** It refuses an invalid email, a name over 200
+  characters, and a password outside 12 to 256 characters, instead of creating an admin who could never sign
+  in.
+- **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
+  listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
+  of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
+- **On SQLite, a second server or a worker can no longer run on a file another process serves.**
+  `shapio worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the
+  same file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
+  `<database>-shapio.lock` that is released when it exits, even after a crash. `shapio migrate`, `backup`, and
+  `admin create` still run beside it.
+- **`shapio schema apply` reports the version it activated at.** After waiting for a change's background
+  checks, the last line printed the schema version from before the change; it now prints the version the
+  lock file records.
+- **Webhook and deployment job errors read once.** A webhook timeout was recorded as
+  `Error: Error: Request timed out after 10000 ms`, and a failed deployment trigger logged its message
+  twice (three times for a secret that cannot be decrypted); each now names the problem once.
+- **The development server reports an invalid setting in one line.** `pnpm dev` printed a raw stack trace
+  for a setting that `shapio start` reports as one line; both now print the same message.
+- **REST drafts mode reports `meta.snapshot: null`.** A read with `publicationState=draft` (and
+  `@shapio/local` with `drafts: true`) reported a snapshot number as if the drafts could be pinned; it now
+  reports `null`, as GraphQL already did.
+- **Acknowledgement errors name only the parameters the change needs.** Deleting a locale with content said
+  to resend with `acknowledgeBreaking`, which that route refuses; the message now names
+  `acknowledgeDestructive` there, `acknowledgeBreaking` for a new default locale, and both only when a
+  model change needs both.
+- **Pages your role can't use say so before you fill anything in.** Opening New content type, New component,
+  a New entry of a type you can't create, or Settings → API tokens by URL, bookmark, or an old link now shows
+  "You don't have access to this" instead of a form that fails on submit or a New token button.
+- **Admin copy and layout fixes.** File sizes under a kilobyte read "44 bytes", not "44 byte". A time reads
+  "09:15" in the entry settings, not "09:15:00.000". A date fills its column in a form. A new entry's
+  settings no longer show an empty Status heading. Snapshots name the person or token that took them. A
+  choice field says when it has no choices or a choice lacks a value or label. Adding `FR` when `fr` exists
+  says the locale already exists. Site and role keys are suggested from the name, as API IDs are.
+- **Scheduled publish and assist job errors read once.** A scheduled publication or an assist content
+  operation that failed for good logged its reason twice; it now names it once.
+- **Time and date-time inputs fill their form column.** In a form they kept their natural width; they now
+  fill the column their width setting gives them, as text and date inputs do.
+- **Roles can be limited to some models and fields in the admin.** A role's page (Network → Roles → the role)
+  has a table of models, shared and per site, by action, with field lists per action, and shows every grant
+  the role holds, including grants made through the API and grants on deleted models, which can be removed.
+  Saving a grant whose field list names a field the model doesn't have is refused with `UNKNOWN_FIELD`, for
+  admin, delivery, and app roles.
+- **A delivery caller's GraphQL schema no longer names what it can't read.** Introspection with a delivery token
+  listed every `public: false` field (in components too) and every model of the site. The schema a delivery
+  token, app user, or anonymous caller sees now holds only the models, fields, filters, and inputs its role
+  allows, and leaves out relations to models it can't read. This changes what delivery callers get: a query
+  naming a hidden field, or a model the caller can't read while it may read others, now fails validation
+  (`400`, `Cannot query field …`) instead of returning `null` or `FORBIDDEN`. A caller allowed no model at all
+  still gets `401 UNAUTHENTICATED` (anonymous) or `403 FORBIDDEN`. Admin sessions and admin tokens, the
+  playground included, still see the full schema.
+- **Fields you may change only on your own entries stay locked on everyone else's.** When one role could
+  change some fields on every entry and another could change more fields on your own entries, those extra
+  fields could be changed on any entry. They are now refused with `FORBIDDEN_FIELD` on entries you don't own,
+  over the admin, REST, and GraphQL; new entries count as your own.
+- **Restoring a revision checks every field it changes.** On localized content types, a restore could change
+  fields of its locale that your role may not edit. Those restores are now refused with `FORBIDDEN_FIELD`.
+- **Duplicating an entry copies only what you may read on it.** A field you could not read on someone else's
+  entry (granted only on your own entries, say) was copied into the duplicate, which you own, so the value
+  showed there. It is now left empty, like unique fields, for you to fill in before saving.
+- **Creating only your own entries needs someone to own them.** A role that may create entries only as their
+  owner, bound to the public audience or held by an API token, let anonymous callers and tokens create, though
+  they own nothing. Those creates are now refused with 403 before anything is written; signed-in users and
+  admins create as before.
+- **`$null` and `$notNull` on relation and media fields agree with the response.** An entry whose links all
+  point at unpublished entries, entries outside the read's locales or the token's row filter, or force-deleted
+  assets now counts as null, as it reads, in REST and GraphQL, on live and pinned snapshot reads.
 
 ## [0.5.6] - 2026-10-11
 

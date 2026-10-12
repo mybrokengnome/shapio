@@ -1,5 +1,11 @@
 import type { PlanStep, PlanStepImpact } from '@shapio/client';
-import { isDataType, typeChangeDropsValues, type DataType, type SchemaDefinition } from '@shapio/schema';
+import {
+  changeDropsValues,
+  isDataType,
+  type DataType,
+  type PlannedChange,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import en from '@/locales/en/translation.json';
 import { fieldLabelOf } from './describeChange';
@@ -10,13 +16,17 @@ const isKnownStep = (kind: string): kind is StepKind => Object.hasOwn(en.models.
 
 type DroppedTypeChange = { fieldId: string | undefined; from: DataType; to: DataType };
 
-/** The type change a `convert` step carries when Shapio can't convert it and drops the field's values. */
+/**
+ * The type change a `convert` step carries when Shapio can't convert it and drops the field's values, as the
+ * planner classified it (`dropsValues`, decided from both sides' type and settings).
+ */
 const droppedTypeChange = (step: PlanStep): DroppedTypeChange | undefined => {
   if (step.kind !== 'convert' || typeof step.change !== 'object' || step.change === null) {
     return undefined;
   }
-  const { kind, fieldId, from, to } = step.change as Record<string, unknown>;
-  if (kind !== 'field.type' || !isDataType(from) || !isDataType(to) || !typeChangeDropsValues(from, to)) {
+  const change = step.change as PlannedChange;
+  const { fieldId, from, to } = change;
+  if (!changeDropsValues(change) || !isDataType(from) || !isDataType(to)) {
     return undefined;
   }
   return { fieldId: typeof fieldId === 'string' ? fieldId : undefined, from, to };
@@ -88,9 +98,18 @@ export const describeStepImpact = (
   if (!impact.invalidHeads) {
     return checked;
   }
+  // A person counts entries; the check counts entry versions (draft and published, per locale): say both.
+  const counts = {
+    count: impact.invalidEntries ?? impact.invalidHeads,
+    versions: i18next.t('models.plan.stepVersions', { count: impact.invalidHeads }),
+  };
   const failing =
     step.kind === 'validateRequired'
-      ? i18next.t('models.plan.stepMissingRequired', { count: impact.invalidHeads })
-      : i18next.t('models.plan.stepInvalid', { count: impact.invalidHeads });
+      ? i18next.t('models.plan.stepMissingRequired', counts)
+      : i18next.t('models.plan.stepInvalid', counts);
   return `${checked} · ${failing}`;
 };
+
+/** The plan already knows a prerequisite check fails (entries that wouldn't fit), so shipping it can't work. */
+export const hasFailingCheck = (impacts: readonly PlanStepImpact[]): boolean =>
+  impacts.some((impact) => (impact.invalidHeads ?? 0) > 0);

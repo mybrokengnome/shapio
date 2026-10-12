@@ -1,6 +1,7 @@
 import type { UsageMeter } from '../../assist/completion.js';
 import { assistDisabled } from '../../assist/errors.js';
 import { ASSIST_CONTENT_OPS_MAX_FINDINGS, type ContentOpsRule } from '../../constants/assist.js';
+import { rowWriteMask } from '../../content/compiler/policy.js';
 import type { ContentModel } from '../../content/model.js';
 import { resolveModel } from '../../content/model.js';
 import { AppError } from '../../helpers/appError.js';
@@ -220,7 +221,11 @@ const writeLocaleDraft = async (
   if (source.drafts.some((head) => head.locale === target)) {
     return { entryId: finding.entryId, locale: target, reason: 'localeCreatedMeanwhile' };
   }
-  const fields = translatableFields(model, readPolicy, updatePolicy);
+  const fields = translatableFields(
+    model,
+    readPolicy,
+    rowWriteMask(updatePolicy, state.context.actor, source.entry),
+  );
   const translated = await translateDocument(state.context, state.meter, {
     model,
     fields,
@@ -401,7 +406,8 @@ export const runContentOpsJob = async (
       } else {
         await markFailed(deps, run, errorCode);
       }
-      throw new PermanentJobError(error instanceof Error ? error.message : String(error), { cause: error });
+      // No `cause`: the logger would append its message to this one, which already says it.
+      throw new PermanentJobError(error instanceof Error ? error.message : String(error));
     }
     throw error;
   }

@@ -237,9 +237,40 @@ test('shipping is strict: a draft that moved after the review is refused until r
     .getByRole('alertdialog', { name: `Ship “${SET_TITLE}”?` })
     .getByRole('button', { name: 'Ship' })
     .click();
-  await expect(page.getByText('Shipped. Live as')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^Shipped as v\d+ by /)).toBeVisible({ timeout: 30_000 });
   const live = await deliveryRead(`/${entries[0]?.id ?? ''}?fields=title`);
   expect(((await live.json()) as { data: { title: string } }).data.title).toBe('Hello rich text, again');
+});
+
+test('a shipped set still shows what it shipped and no ship blockers, also after a reload', async () => {
+  for (const reload of [false, true]) {
+    if (reload) {
+      await page.reload();
+    }
+    await expect(page.getByText(/^Shipped as v\d+ by /)).toBeVisible();
+    await tab('Changes').click();
+    const schemaChanges = page.getByRole('list', { name: 'Schema changes to Dev article' });
+    await expect(schemaChanges).toContainText('Change the type of Body from Long text to Rich text');
+    await expect(schemaChanges.getByText('Breaking')).toBeVisible();
+    // Entry values come from the snapshot ledger (issue #69 for sets that convert the entries they publish).
+    const firstFields = page.getByRole('table', { name: /^Field changes in / }).first();
+    await expect(firstFields.getByRole('columnheader', { name: 'Before' })).toBeVisible();
+    await expect(firstFields.getByRole('columnheader', { name: 'Shipped' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Live now' })).toHaveCount(0);
+    await expect(page.getByText(/Rebase the draft/)).toHaveCount(0);
+    await expect(page.getByText('No schema changes.')).toHaveCount(0);
+    await expect(page.getByText(/fields this set adds are available after it ships/)).toHaveCount(0);
+    if (reload) {
+      await captureScreen(page, 'changes-06-shipped', BOTH);
+    }
+    await tab('Checks').click();
+    await expect(page.getByText('Every check passed when this set shipped.')).toBeVisible();
+    await expect(page.getByText('Shipping is blocked')).toHaveCount(0);
+    await expect(page.getByLabel('I understand this changes the API contract', { exact: false })).toHaveCount(
+      0,
+    );
+  }
+  await captureScreen(page, 'changes-07-shipped-checks', BOTH);
 });
 
 test('Snapshots lists the ledger; the detail diffs against the previous snapshot and scrubs through time', async () => {

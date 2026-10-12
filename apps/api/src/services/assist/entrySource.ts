@@ -3,6 +3,7 @@ import type { ContentModel } from '../../content/model.js';
 import { AppError } from '../../helpers/appError.js';
 import type { Policy } from '../../permissions/types.js';
 import * as entriesRepository from '../../repositories/entries.js';
+import type { EntryRow } from '../../repositories/entries.js';
 import * as entryHeadsRepository from '../../repositories/entryHeads.js';
 import type { HeadRecord } from '../../repositories/entryHeads.js';
 import { assertEntryVisible, type ContentServiceContext } from '../contentAccess.js';
@@ -25,8 +26,8 @@ export const loadEntryDraft = async (
   policy: Policy,
   entryId: string,
   locale: string,
-): Promise<{ drafts: HeadRecord[]; draft: HeadRecord }> => {
-  assertEntryVisible(
+): Promise<{ entry: EntryRow; drafts: HeadRecord[]; draft: HeadRecord }> => {
+  const entry = assertEntryVisible(
     policy,
     context.actor,
     await entriesRepository.findLive(entryId, model.definition.id, context.site.id, context.db),
@@ -42,5 +43,5 @@ export const loadEntryDraft = async (
       drafts.map((head) => head.locale),
     );
   }
-  return { drafts, draft };
+  return { entry, drafts, draft };
 };

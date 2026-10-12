@@ -39,7 +39,7 @@ const toSnapshot = (head: HeadRecord): HeadSnapshot => ({
   autosavedAt: head.autosaved_at,
 });
 
-/** The images the drafts use, from the entry's own site's library (media is per site; sites plan §H). */
+/** The live assets the drafts use (any kind), from the entry's own site's library (media is per site; sites plan §H). */
 const loadAssets = async (
   executor: Executor,
   model: ContentModel,

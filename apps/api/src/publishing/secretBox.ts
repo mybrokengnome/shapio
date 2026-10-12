@@ -29,6 +29,22 @@ export const secretUnreadable = () =>
     'A stored secret cannot be decrypted (the signing secret changed?). Enter the secret again.',
   );
 
+/** Whether a thrown value is the "stored secret cannot be decrypted" error (SESSION_SECRET changed). */
+export const isSecretUnreadable = (error: unknown) =>
+  error instanceof AppError && error.code === 'SECRET_UNREADABLE';
+
+/** The decrypted secret, or undefined when it cannot be decrypted (sealed under another SESSION_SECRET). */
+export const decryptIfReadable = (box: SecretBox, sealed: string): string | undefined => {
+  try {
+    return box.decrypt(sealed);
+  } catch (error) {
+    if (!isSecretUnreadable(error)) {
+      throw error;
+    }
+    return undefined;
+  }
+};
+
 export const createSecretBox = (signingSecret: string): SecretBox => {
   const key = Buffer.from(hkdfSync('sha256', signingSecret, 'shapio', KEY_INFO, 32));
   const macKey = Buffer.from(hkdfSync('sha256', signingSecret, 'shapio', MAC_INFO, 32));

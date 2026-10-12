@@ -10,7 +10,7 @@ const ParamsSchema = Type.Record(Type.String(), Type.Union([Type.String(), Type.
 const DateTime = Type.String({ format: 'date-time' });
 
 const PreflightCheckSchema = Type.Object({
-  rule: Type.Union([HealthRuleSchema, Type.Literal('invalid'), Type.Literal('mediaMissing')]),
+  rule: Type.Union([HealthRuleSchema, Type.Literal('invalid')]),
   severity: Type.Enum(['error', 'warning']),
   path: Type.Optional(Type.String()),
   code: Type.Optional(Type.String()),
@@ -85,6 +85,13 @@ const PersonSchema = Type.Object({
   you: Type.Boolean(),
 });
 const EntryPresenceSchema = Type.Object({ people: Type.Array(PersonSchema) });
+/** A locale's draft as the server has it (its version, when and by whom it was last saved). */
+const DraftStateSchema = Type.Object({
+  locale: Type.String(),
+  version: Type.Integer(),
+  savedAt: DateTime,
+  savedBy: Type.Union([Type.Object({ name: Type.String(), you: Type.Boolean() }), Type.Null()]),
+});
 const TabIdSchema = Type.String({ minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' });
 
 export const heartbeatSchema = {
@@ -93,7 +100,9 @@ export const heartbeatSchema = {
     { tabId: TabIdSchema, locale: Type.Optional(Type.Union([LocaleCodeSchema, Type.Null()])) },
     closed,
   ),
-  response: { 200: EntryPresenceSchema },
+  response: {
+    200: Type.Object({ people: Type.Array(PersonSchema), drafts: Type.Array(DraftStateSchema) }),
+  },
 };
 
 export const entryPresenceSchema = { params: EntryParamsSchema, response: { 200: EntryPresenceSchema } };

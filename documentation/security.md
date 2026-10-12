@@ -27,6 +27,9 @@ see [SECURITY.md](../SECURITY.md).
 - `shp_…` tokens are shown once and stored as SHA-256 hashes; each has a role, an optional expiry and a last-used
   time, and can be revoked at once.
 - A token bound to a **delivery** role can only read, whatever the role says.
+- A token answers to the admin who created it (or who created the token it was made with): while that admin is
+  disabled it is refused, and deleting the admin revokes it. A token left without a recorded creator, because
+  its admin was deleted by an earlier release, keeps working until you revoke it.
 - App users (end users) get short-lived JWT access tokens (15 minutes) and rotating refresh tokens; reusing a
   refresh token revokes that login ([End users](end-users.md)).
 - Preview tokens are scoped to one entry, a locale and its site, expire, and are sent as bearer tokens, never in

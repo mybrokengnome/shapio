@@ -23,7 +23,13 @@ type PlanPreview = {
     summary: { destructive: boolean; supported: boolean };
   };
   impact: {
-    steps: Array<{ kind: string; affectedHeads: number; invalidHeads?: number; droppedEntries?: number }>;
+    steps: Array<{
+      kind: string;
+      affectedHeads: number;
+      invalidHeads?: number;
+      invalidEntries?: number;
+      droppedEntries?: number;
+    }>;
   };
 };
 type Delivered = { data: Record<string, unknown>; meta: { snapshot: number } };
@@ -170,6 +176,237 @@ describe('type changes that drop values', () => {
     ).toBe(204);
   });
 
+  describe('a multi-value enum (stored as a list of strings)', () => {
+    const VALUES = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B' },
+    ];
+    const tagged = async (apiKey: string) => {
+      const definition = await model(apiKey, [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        { apiKey: 'tags', label: 'Tags', type: 'enum', settings: { multiple: true, values: VALUES } },
+      ]);
+      const one = await create(apiKey, { title: 'One', tags: ['a', 'b'] });
+      const two = await create(apiKey, { title: 'Two', tags: ['b'] });
+      await create(apiKey, { title: 'Empty' });
+      await publish(apiKey, one.id);
+      await publish(apiKey, two.id);
+      const token = await createDeliveryToken(database.current.db, [{ modelId: definition.definition.id }]);
+      const deliver = async (url: string) =>
+        expectStatus(
+          await testApp.app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } }),
+          200,
+        ).json<Delivered>();
+      return { definition, one, two, deliver };
+    };
+
+    it('→ short text drops the values (destructive, counted), never just hides them', async () => {
+      const { definition, one, deliver } = await tagged('note');
+      const tagsId = fieldIdOf(definition, 'tags');
+      const before = await deliver(`/api/content/notes/${one.id}`);
+      expect(before.data.tags).toEqual(['a', 'b']);
+
+      const fields = retype(definition, 'tags', { type: 'string' });
+      const { plan, impact } = await preview(definition, fields);
+      expect(plan.summary).toMatchObject({ destructive: true, supported: true });
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        destructive: true,
+        dropsValues: true,
+        prerequisites: ['convert', 'validateValues'],
+      });
+      expect(impact.steps.find((step) => step.kind === 'convert')).toMatchObject({ droppedEntries: 2 });
+      expect((await change(definition, fields, false)).json()).toMatchObject({
+        error: { code: 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED' },
+      });
+      expect(await shipped(await change(definition, fields))).toMatchObject({ status: 'activated' });
+
+      // Gone from storage, not left behind under a type that can't read it.
+      for (const head of await headsOf(definition.definition.id)) {
+        expect(head.data).not.toHaveProperty(tagsId);
+      }
+      expect((await deliver(`/api/content/notes/${one.id}`)).data.tags).toBeNull();
+      const past = await deliver(`/api/content/notes/${one.id}?snapshot=${before.meta.snapshot}`);
+      expect(past.data).toMatchObject({ title: 'One', tags: null });
+
+      // Back to a multi-value enum: live entries stay empty (the heads hold nothing). Old snapshots read
+      // their revisions through the current schema, so one from before the drop shows the lists again: the
+      // old revisions keep them, as for every dropped type change.
+      const current = (await admin.get(`/api/admin/models/${definition.definition.id}`)).json<ModelBody>();
+      const reverted = retype(current, 'tags', {
+        type: 'enum',
+        settings: { multiple: true, values: VALUES },
+      });
+      expect(await shipped(await change(current, reverted))).toMatchObject({ status: 'activated' });
+      expect((await deliver(`/api/content/notes/${one.id}`)).data.tags).toBeNull();
+      const pastAgain = await deliver(`/api/content/notes/${one.id}?snapshot=${before.meta.snapshot}`);
+      expect(pastAgain.data.tags).toEqual(['a', 'b']);
+    });
+
+    it('→ rich text is a drop the job carries out, not a conversion that fails', async () => {
+      const { definition, one, deliver } = await tagged('memo');
+      const fields = retype(definition, 'tags', { type: 'richtext', settings: { formatVersion: 1 } });
+      const { plan } = await preview(definition, fields);
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        dropsValues: true,
+      });
+      expect(await shipped(await change(definition, fields))).toMatchObject({ status: 'activated' });
+      expect((await deliver(`/api/content/memos/${one.id}`)).data.tags).toBeNull();
+    });
+
+    it('text → multi-value enum makes each value a one-value list, checked against the choices', async () => {
+      const mood = await model('mood', [{ apiKey: 'tone', label: 'Tone', type: 'text' }]);
+      const kept = await create('mood', { tone: 'a' });
+      const fields = retype(mood, 'tone', { type: 'enum', settings: { multiple: true, values: VALUES } });
+      const { plan } = await preview(mood, fields);
+      expect(plan.changes.find((candidate) => candidate.kind === 'field.type')).toMatchObject({
+        destructive: false,
+        dropsValues: false,
+        prerequisites: ['convert', 'validateValues'],
+      });
+      expect(await shipped(await change(mood, fields, false))).toMatchObject({ status: 'activated' });
+      expect((await admin.get(`/api/admin/content/mood/${kept.id}`)).json<EntryBody>().data).toEqual({
+        tone: ['a'],
+      });
+
+      // A value that isn't one of the choices fails the check, with the count, instead of shipping.
+      const current = (await admin.get(`/api/admin/models/${mood.definition.id}`)).json<ModelBody>();
+      const back = retype(current, 'tone', { type: 'text' });
+      expect(await shipped(await change(current, back))).toMatchObject({ status: 'activated' });
+      const text = (await admin.get(`/api/admin/models/${mood.definition.id}`)).json<ModelBody>();
+      await create('mood', { tone: 'loud' });
+      const again = retype(text, 'tone', { type: 'enum', settings: { multiple: true, values: VALUES } });
+      const failed = await shipped(await change(text, again, false));
+      expect(failed).toMatchObject({ status: 'failed', error: { invalidCount: 1 } });
+      expect(failed.error?.step).toMatch(/^validateValues:/);
+    });
+  });
+
+  const save = async (apiKey: string, entry: EntryBody, data: Record<string, unknown>) =>
+    expectStatus(
+      await admin.put(`/api/admin/content/${apiKey}/${entry.id}`, { expectedVersion: entry.version, data }),
+      200,
+    ).json<EntryBody>();
+  const firstRevisionOf = async (apiKey: string, id: string) => {
+    const { items } = (await admin.get(`/api/admin/content/${apiKey}/${id}/revisions`)).json<{
+      items: Array<{ id: string; reason: string }>;
+    }>();
+    return items.find((item) => item.reason === 'create')?.id ?? '';
+  };
+  const lastSnapshot = async () =>
+    Number(
+      (await database.current.db.selectFrom('publication_state').select('last_seq').executeTakeFirstOrThrow())
+        .last_seq,
+    );
+
+  it('a revision saved before a type change restores as its view shows it, values of the old type empty', async () => {
+    const jot = await model('jot', [
+      { apiKey: 't', label: 'T', type: 'string' },
+      { apiKey: 'int', label: 'Int', type: 'integer' },
+      { apiKey: 'm', label: 'M', type: 'media' },
+    ]);
+    const created = await create('jot', { t: 'v1', int: 7, m: first.id });
+    await publish('jot', created.id);
+    const at = await lastSnapshot();
+    await save('jot', created, { t: 'v2' });
+    await publish('jot', created.id);
+    const revisionId = await firstRevisionOf('jot', created.id);
+
+    const retyped = retype(jot, 'int', { type: 'string' }).map((field) =>
+      field.apiKey === 'm' ? { ...field, editor: undefined, settings: {}, type: 'number' } : field,
+    );
+    expect(await shipped(await change(jot, retyped))).toMatchObject({ status: 'activated' });
+    const view = (await admin.get(`/api/admin/content/jot/${created.id}/revisions/${revisionId}`)).json<{
+      data: Record<string, unknown>;
+    }>();
+    expect(view.data).toEqual({ t: 'v1', int: null, m: null });
+
+    const current = (await admin.get(`/api/admin/content/jot/${created.id}`)).json<EntryBody>();
+    const restored = expectStatus(
+      await admin.post(`/api/admin/content/jot/${created.id}/revisions/${revisionId}/restore`, {
+        expectedVersion: current.version,
+      }),
+      200,
+    ).json<EntryBody>();
+    expect(restored.data).toEqual({ t: 'v1', int: null, m: null });
+
+    // Restoring the snapshot served before the change: restorable, published with the old-type values empty.
+    const restore = expectStatus(await admin.post(`/api/admin/snapshots/${at}/restore`, {}), 201).json<{
+      id: string;
+      version: number;
+    }>();
+    const review = expectStatus(await admin.get(`/api/admin/change-sets/${restore.id}/review`), 200).json<{
+      notRestorable: unknown[];
+      entries: Array<{
+        entryId: string;
+        issues: unknown[];
+        fields: Array<{ apiKey: string; after: unknown }>;
+      }>;
+    }>();
+    expect(review.notRestorable).toEqual([]);
+    // The live value converted to "7" goes back to empty, as the snapshot showed it.
+    const reviewed = review.entries.find((item) => item.entryId === created.id);
+    expect(reviewed?.issues).toEqual([]);
+    expect(reviewed?.fields.map((field) => [field.apiKey, field.after])).toEqual([
+      ['t', 'v1'],
+      ['int', null],
+    ]);
+    expectStatus(
+      await admin.post(`/api/admin/change-sets/${restore.id}/ship`, {
+        expectedVersion: restore.version,
+        acknowledgeBreaking: true,
+        acknowledgeDestructive: true,
+      }),
+      200,
+    );
+    const token = await createDeliveryToken(database.current.db, [{ modelId: jot.definition.id }]);
+    const delivered = expectStatus(
+      await testApp.app.inject({
+        method: 'GET',
+        url: `/api/content/jots/${created.id}`,
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      200,
+    ).json<Delivered>();
+    expect(delivered.data).toMatchObject({ t: 'v1', int: null, m: null });
+  });
+
+  it('restoring a revision whose required value had the old type is refused, naming the type change', async () => {
+    const card = await model('card', [
+      { apiKey: 't', label: 'T', type: 'string' },
+      { apiKey: 'n', label: 'N', type: 'integer', required: true },
+    ]);
+    const created = await create('card', { t: 'v1', n: 5 });
+    await save('card', created, { t: 'v2', n: 5 });
+    const revisionId = await firstRevisionOf('card', created.id);
+    expect(await shipped(await change(card, retype(card, 'n', { type: 'string' })))).toMatchObject({
+      status: 'activated',
+    });
+    const current = (await admin.get(`/api/admin/content/card/${created.id}`)).json<EntryBody>();
+    expect(current.data).toEqual({ t: 'v2', n: '5' });
+
+    const refused = await admin.post(
+      `/api/admin/content/card/${created.id}/revisions/${revisionId}/restore`,
+      {
+        expectedVersion: current.version,
+      },
+    );
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({
+      error: {
+        code: 'CONTENT_INVALID',
+        details: {
+          issues: [
+            {
+              path: '/n',
+              code: 'REQUIRED',
+              message: expect.stringContaining("before the field's type changed to string") as unknown,
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('a required field: refused with the count unless it has a default, which is backfilled', async () => {
     const poster = await model('poster', [
       { apiKey: 'title', label: 'Title', type: 'string' },
@@ -180,7 +417,11 @@ describe('type changes that drop values', () => {
 
     const required = retype(poster, 'cover', { type: 'integer' });
     const { impact } = await preview(poster, required);
-    expect(impact.steps.find((step) => step.kind === 'validateRequired')).toMatchObject({ invalidHeads: 2 });
+    // One entry, published: two versions (draft and published) fail, and the review says both numbers.
+    expect(impact.steps.find((step) => step.kind === 'validateRequired')).toMatchObject({
+      invalidHeads: 2,
+      invalidEntries: 1,
+    });
     expect(await shipped(await change(poster, required))).toMatchObject({
       status: 'failed',
       error: {

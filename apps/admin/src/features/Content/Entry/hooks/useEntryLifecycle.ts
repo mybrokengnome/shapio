@@ -13,6 +13,7 @@ import {
   useDuplicateEntry,
   useRestoreRevision,
 } from '@/api/content';
+import { refuseUnparsed } from '@/fields/form/refuseUnparsed';
 import type { EntryFormStore } from '@/fields/form/store';
 import { contentIssuesOf, isEditConflict, referrersOf } from '@/fields/helpers/apiErrors';
 import { buildCreateData } from '@/fields/helpers/formValues';
@@ -68,6 +69,9 @@ export const useEntryLifecycle = ({
     });
 
   const create = async () => {
+    if (refuseUnparsed(store)) {
+      return;
+    }
     store.getState().reveal();
     try {
       const entry = await createMutation.mutateAsync({

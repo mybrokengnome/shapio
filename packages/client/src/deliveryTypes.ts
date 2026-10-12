@@ -32,7 +32,8 @@ export type DeliveryGetQuery = Pick<
 
 export type DeliveryMeta = {
   locale: string;
-  snapshot: number;
+  /** The publication snapshot this response reflects; null in drafts mode, which cannot be pinned. */
+  snapshot: number | null;
   /** Drafts mode reads only (`publicationState=draft`); published responses carry no such member. */
   publicationState?: 'draft';
 };

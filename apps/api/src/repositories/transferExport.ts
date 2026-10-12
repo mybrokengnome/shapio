@@ -1,9 +1,19 @@
 import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
+import { timestampCursorText } from '../db/sql/time.js';
 import { emptyArray, sortedArrayAgg } from '../db/sql/values.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
+
+/**
+ * A timestamp column as UTC ISO text with the full stored precision (microseconds on PostgreSQL and MySQL), so
+ * a bundle keeps the exact instant: a JavaScript Date would cut it to milliseconds and reorder entries created
+ * within one millisecond.
+ */
+const stamp = <C extends string>(column: string, alias: C) => timestampCursorText(column).as(alias);
+const nullableStamp = <C extends string>(column: string, alias: C) =>
+  timestampCursorText(column).$castTo<string | null>().as(alias);
 
 /**
  * Reads behind `GET /api/admin/transfer/export` (content export, package L). The export runs them all in one
@@ -22,7 +32,8 @@ export const listLiveEntries = (
 ) =>
   executor
     .selectFrom('entries')
-    .select(['id', 'model_id', 'owner_app_user_id', 'created_at', 'updated_at'])
+    .select(['id', 'model_id', 'owner_app_user_id'])
+    .select([stamp('created_at', 'created_at'), stamp('updated_at', 'updated_at')])
     .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
@@ -51,11 +62,11 @@ export const listHeadsForEntries = (entryIds: readonly string[], executor: Execu
           'h.state',
           'h.revision_id',
           'h.data',
-          'h.autosaved_at',
           'h.version',
-          'h.created_at',
-          'h.updated_at',
-          'pl.published_at',
+          nullableStamp('h.autosaved_at', 'autosaved_at'),
+          stamp('h.created_at', 'created_at'),
+          stamp('h.updated_at', 'updated_at'),
+          nullableStamp('pl.published_at', 'published_at'),
         ])
         .where('h.entry_id', 'in', entryIds)
         .orderBy('h.entry_id')
@@ -73,7 +84,6 @@ const REVISION_COLUMNS = [
   'reason',
   'data',
   'author_type',
-  'created_at',
 ] as const;
 
 /** Every revision of these entries (full history). */
@@ -83,8 +93,9 @@ export const listRevisionsForEntries = (entryIds: readonly string[], executor: E
     : executor
         .selectFrom('content_revisions')
         .select(REVISION_COLUMNS)
+        .select(stamp('created_at', 'created_at'))
         .where('entry_id', 'in', entryIds)
-        .orderBy('created_at')
+        .orderBy('content_revisions.created_at')
         .orderBy('id')
         .execute();
 
@@ -97,8 +108,9 @@ export const listRevisionsByIds = (ids: readonly string[], executor: Executor = 
     : executor
         .selectFrom('content_revisions')
         .select(REVISION_COLUMNS)
+        .select(stamp('created_at', 'created_at'))
         .where('id', 'in', ids)
-        .orderBy('created_at')
+        .orderBy('content_revisions.created_at')
         .orderBy('id')
         .execute();
 
@@ -106,9 +118,10 @@ export const listRevisionsByIds = (ids: readonly string[], executor: Executor = 
 export const listMediaFolders = (siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('media_folders')
-    .select(['id', 'parent_id', 'name', 'created_at', 'updated_at'])
+    .select(['id', 'parent_id', 'name'])
+    .select([stamp('created_at', 'created_at'), stamp('updated_at', 'updated_at')])
     .where('site_id', '=', siteId)
-    .orderBy('created_at')
+    .orderBy('media_folders.created_at')
     .orderBy('id')
     .execute();
 
@@ -129,8 +142,6 @@ const ASSET_COLUMNS = [
   'status',
   'storage_driver',
   'storage_key',
-  'created_at',
-  'updated_at',
 ] as const;
 
 /** One site's live media assets after `afterId` (keyset). */
@@ -143,6 +154,7 @@ export const listLiveAssets = (
   executor
     .selectFrom('media_assets')
     .select(ASSET_COLUMNS)
+    .select([stamp('created_at', 'created_at'), stamp('updated_at', 'updated_at')])
     .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .$if(afterId !== null, (qb) => qb.where('id', '>', afterId as string))
@@ -166,11 +178,11 @@ export const listAppUsers = (
       'email',
       'name',
       'password_hash',
-      'confirmed_at',
-      'blocked_at',
-      'password_changed_at',
-      'created_at',
-      'updated_at',
+      nullableStamp('confirmed_at', 'confirmed_at'),
+      nullableStamp('blocked_at', 'blocked_at'),
+      nullableStamp('password_changed_at', 'password_changed_at'),
+      stamp('created_at', 'created_at'),
+      stamp('updated_at', 'updated_at'),
     ])
     .select((eb) => [
       eb.fn

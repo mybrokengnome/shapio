@@ -1,5 +1,6 @@
 import { useBlocker } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { useRegisterUnsavedEdits } from '@/hooks/useRegisterUnsavedEdits';
 import { ConfirmDialog } from '../ConfirmDialog';
 
 /** A navigation the guard may let through: the pathnames it goes from and to. */
@@ -23,7 +24,7 @@ type UnsavedChangesGuardProps = {
 
 /**
  * Dirty-state protection: while `when` is true, in-app navigation asks before discarding edits and the
- * browser warns on reload/close.
+ * browser warns on reload/close. An ended session never navigates away from them: it is resumed in place.
  */
 export const UnsavedChangesGuard = ({
   when,
@@ -34,6 +35,7 @@ export const UnsavedChangesGuard = ({
   leaveLabel,
 }: UnsavedChangesGuardProps) => {
   const { t } = useTranslation();
+  useRegisterUnsavedEdits(when);
   const blocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
       when && (shouldBlock?.({ currentPath: current.pathname, nextPath: next.pathname }) ?? true),

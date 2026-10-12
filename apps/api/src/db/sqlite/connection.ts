@@ -1,3 +1,4 @@
+import { closeSync, openSync } from 'node:fs';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { CompiledQuery, QueryResult } from 'kysely';
 import { publishNotification } from '../notifyHub.js';
@@ -47,6 +48,21 @@ type PreparedStatement = {
 const STATEMENT_CACHE_SIZE = 500;
 
 /**
+ * Creates a new database file readable by its owner only (it holds password hashes and, without
+ * SESSION_SECRET, the generated signing secret). `node:sqlite` takes no file mode, so the empty file is made
+ * first; SQLite gives its `-wal` and `-shm` files the same permissions. An existing file is left as it is.
+ */
+const createPrivateFile = (path: string) => {
+  try {
+    closeSync(openSync(path, 'wx', 0o600));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw error;
+    }
+  }
+};
+
+/**
  * One `node:sqlite` connection. The writer runs every write transaction; readers run read-only
  * transactions and autocommit reads (WAL lets them read while the writer works). Calls are synchronous:
  * a statement blocks the event loop while it runs.
@@ -63,6 +79,9 @@ export class SqliteConnection {
   constructor(options: ConnectionOptions) {
     this.#options = options;
     this.role = options.role;
+    if (options.location !== ':memory:') {
+      createPrivateFile(options.location);
+    }
     this.#database = new DatabaseSync(options.location, { enableForeignKeyConstraints: true });
     this.#database.exec(`pragma busy_timeout = ${options.busyTimeoutMs}`);
     if (options.location !== ':memory:') {
