@@ -7,6 +7,7 @@ import {
 import type { ContentHooks } from '../content/hooks.js';
 import { writeLocaleFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
+import { validateRevisionData } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import {
@@ -119,7 +120,7 @@ export const publishRevisionInTransaction = async (
 ): Promise<PublishedLocale> => {
   const { write, snapshot, hooks, site } = tx;
   const { model, trx, actor } = write;
-  const outcome = buildValidator(snapshot, model).validate(source.data);
+  const outcome = validateRevisionData(buildValidator(snapshot, model), source.data);
   if (outcome.issues.length > 0) {
     throw contentInvalid(
       outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),

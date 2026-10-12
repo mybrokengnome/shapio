@@ -1,5 +1,6 @@
 import { RESTORE_MAX_ITEMS } from '../constants/publishing.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
+import { validateRevisionData } from '../content/revisionData.js';
 import { findPublishedUniqueConflicts } from '../content/unique.js';
 import { buildValidator } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
@@ -152,7 +153,7 @@ const checkLocale = async (
   if (!revision) {
     return blockedBy(change, locale, model, 'invalid', 'The revision served then is missing');
   }
-  const outcome = buildValidator(context.snapshot, model).validate(revision.data);
+  const outcome = validateRevisionData(buildValidator(context.snapshot, model), revision.data);
   if (outcome.issues.length > 0) {
     const first = outcome.issues[0];
     return blockedBy(

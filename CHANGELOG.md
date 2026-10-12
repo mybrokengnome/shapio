@@ -75,6 +75,10 @@ All notable changes to Shapio are listed here. The format follows
   and another could read your own entries with more fields (an email, say), those extra fields showed on every
   entry. They now show only on entries you own, over REST, GraphQL, populate, and previews. Filtering, sorting,
   or searching on such a field is refused unless every entry you can read is your own.
+- **Restoring a revision saved before a field's type changed** brings it back as its history view shows it,
+  with values of the old type empty, instead of failing with `must be a string`. Restoring a snapshot from
+  before the change works the same way, and a required field left empty is refused with a message naming the
+  type change.
 
 ## [0.5.6] - 2026-10-11
 

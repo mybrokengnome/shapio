@@ -10,6 +10,7 @@ import {
 } from '../content/errors.js';
 import { changedSharedFieldIds, withSharedValuesOf, writeLocaleFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
+import { validateRevisionData } from '../content/revisionData.js';
 import { uniqueFields } from '../content/unique.js';
 import { buildValidator, type ModelValidator, type ValidationOutcome } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
@@ -403,8 +404,12 @@ export const restoreRevision = async (
     if (!previous || previous.version !== input.expectedVersion) {
       throw contentVersionConflict(input.expectedVersion, previous?.version ?? null);
     }
-    // Restored values must still satisfy the current schema (it may have changed since).
-    const outcome = validated(validator, revision.data, false);
+    // Restored values must still satisfy the current schema (it may have changed since); values saved under
+    // an earlier field type come back empty, as the revision's view shows them.
+    const outcome = validateRevisionData(validator, revision.data);
+    if (outcome.issues.length > 0) {
+      throw contentInvalid(outcome.issues);
+    }
     assertWritable(
       policy.writeMask,
       model.definition.fields,

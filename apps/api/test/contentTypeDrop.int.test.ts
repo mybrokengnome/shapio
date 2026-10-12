@@ -275,6 +275,132 @@ describe('type changes that drop values', () => {
     });
   });
 
+  const save = async (apiKey: string, entry: EntryBody, data: Record<string, unknown>) =>
+    expectStatus(
+      await admin.put(`/api/admin/content/${apiKey}/${entry.id}`, { expectedVersion: entry.version, data }),
+      200,
+    ).json<EntryBody>();
+  const firstRevisionOf = async (apiKey: string, id: string) => {
+    const { items } = (await admin.get(`/api/admin/content/${apiKey}/${id}/revisions`)).json<{
+      items: Array<{ id: string; reason: string }>;
+    }>();
+    return items.find((item) => item.reason === 'create')?.id ?? '';
+  };
+  const lastSnapshot = async () =>
+    Number(
+      (await database.current.db.selectFrom('publication_state').select('last_seq').executeTakeFirstOrThrow())
+        .last_seq,
+    );
+
+  it('a revision saved before a type change restores as its view shows it, values of the old type empty', async () => {
+    const note = await model('note', [
+      { apiKey: 't', label: 'T', type: 'string' },
+      { apiKey: 'int', label: 'Int', type: 'integer' },
+      { apiKey: 'm', label: 'M', type: 'media' },
+    ]);
+    const created = await create('note', { t: 'v1', int: 7, m: first.id });
+    await publish('note', created.id);
+    const at = await lastSnapshot();
+    await save('note', created, { t: 'v2' });
+    await publish('note', created.id);
+    const revisionId = await firstRevisionOf('note', created.id);
+
+    const retyped = retype(note, 'int', { type: 'string' }).map((field) =>
+      field.apiKey === 'm' ? { ...field, editor: undefined, settings: {}, type: 'number' } : field,
+    );
+    expect(await shipped(await change(note, retyped))).toMatchObject({ status: 'activated' });
+    const view = (await admin.get(`/api/admin/content/note/${created.id}/revisions/${revisionId}`)).json<{
+      data: Record<string, unknown>;
+    }>();
+    expect(view.data).toEqual({ t: 'v1', int: null, m: null });
+
+    const current = (await admin.get(`/api/admin/content/note/${created.id}`)).json<EntryBody>();
+    const restored = expectStatus(
+      await admin.post(`/api/admin/content/note/${created.id}/revisions/${revisionId}/restore`, {
+        expectedVersion: current.version,
+      }),
+      200,
+    ).json<EntryBody>();
+    expect(restored.data).toEqual({ t: 'v1', int: null, m: null });
+
+    // Restoring the snapshot served before the change: restorable, published with the old-type values empty.
+    const restore = expectStatus(await admin.post(`/api/admin/snapshots/${at}/restore`, {}), 201).json<{
+      id: string;
+      version: number;
+    }>();
+    const review = expectStatus(await admin.get(`/api/admin/change-sets/${restore.id}/review`), 200).json<{
+      notRestorable: unknown[];
+      entries: Array<{
+        entryId: string;
+        issues: unknown[];
+        fields: Array<{ apiKey: string; after: unknown }>;
+      }>;
+    }>();
+    expect(review.notRestorable).toEqual([]);
+    // The live value converted to "7" goes back to empty, as the snapshot showed it.
+    const reviewed = review.entries.find((item) => item.entryId === created.id);
+    expect(reviewed?.issues).toEqual([]);
+    expect(reviewed?.fields.map((field) => [field.apiKey, field.after])).toEqual([
+      ['t', 'v1'],
+      ['int', null],
+    ]);
+    expectStatus(
+      await admin.post(`/api/admin/change-sets/${restore.id}/ship`, {
+        expectedVersion: restore.version,
+        acknowledgeBreaking: true,
+        acknowledgeDestructive: true,
+      }),
+      200,
+    );
+    const token = await createDeliveryToken(database.current.db, [{ modelId: note.definition.id }]);
+    const delivered = expectStatus(
+      await testApp.app.inject({
+        method: 'GET',
+        url: `/api/content/notes/${created.id}`,
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      200,
+    ).json<Delivered>();
+    expect(delivered.data).toMatchObject({ t: 'v1', int: null, m: null });
+  });
+
+  it('restoring a revision whose required value had the old type is refused, naming the type change', async () => {
+    const card = await model('card', [
+      { apiKey: 't', label: 'T', type: 'string' },
+      { apiKey: 'n', label: 'N', type: 'integer', required: true },
+    ]);
+    const created = await create('card', { t: 'v1', n: 5 });
+    await save('card', created, { t: 'v2', n: 5 });
+    const revisionId = await firstRevisionOf('card', created.id);
+    expect(await shipped(await change(card, retype(card, 'n', { type: 'string' })))).toMatchObject({
+      status: 'activated',
+    });
+    const current = (await admin.get(`/api/admin/content/card/${created.id}`)).json<EntryBody>();
+    expect(current.data).toEqual({ t: 'v2', n: '5' });
+
+    const refused = await admin.post(
+      `/api/admin/content/card/${created.id}/revisions/${revisionId}/restore`,
+      {
+        expectedVersion: current.version,
+      },
+    );
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({
+      error: {
+        code: 'CONTENT_INVALID',
+        details: {
+          issues: [
+            {
+              path: '/n',
+              code: 'REQUIRED',
+              message: expect.stringContaining("before the field's type changed to string") as unknown,
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('a required field: refused with the count unless it has a default, which is backfilled', async () => {
     const poster = await model('poster', [
       { apiKey: 'title', label: 'Title', type: 'string' },

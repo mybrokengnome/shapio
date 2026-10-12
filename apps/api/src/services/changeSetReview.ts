@@ -1,5 +1,6 @@
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
-import { resolveModelById } from '../content/model.js';
+import { resolveModelById, type ContentModel } from '../content/model.js';
+import { dropForeignTypedValues } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetItems.js';
@@ -100,18 +101,22 @@ type EntryReviewContext = {
   heads: readonly EntryHeadRow[];
 };
 
-/** What an item publishes: its source revision (restore), the draft, or nothing (unpublish). */
+/**
+ * What an item publishes: its source revision (restore; values saved under an earlier field type are left out,
+ * as publishing it leaves them out), the draft, or nothing (unpublish).
+ */
 const afterOf = async (
   review: EntryReviewContext,
   item: ChangeSetItemRow,
   draft: EntryHeadRow | undefined,
+  model: ContentModel | undefined,
 ) => {
   if (item.action === 'unpublish') {
     return null;
   }
   if (item.source_revision_id) {
     const revision = await contentRevisionsRepository.findById(item.source_revision_id, review.context.db);
-    return revision?.data ?? null;
+    return revision && model ? dropForeignTypedValues(model, revision.data).data : (revision?.data ?? null);
   }
   return draft?.data ?? null;
 };
@@ -124,7 +129,7 @@ const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): 
   const published = heads.find((head) => head.state === 'published' && head.locale === item.locale);
   const model = resolveModelById(proposed, modelId) ?? resolveModelById(context.snapshot, modelId);
   const readable = await readableFields(context, model, modelId);
-  const after = await afterOf(review, item, draft);
+  const after = await afterOf(review, item, draft, model);
   const before = published?.data ?? null;
   const issues: Issue[] = [];
   if (item.action === 'publish' && model && after && !converted.has(modelId)) {

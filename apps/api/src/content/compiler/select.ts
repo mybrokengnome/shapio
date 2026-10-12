@@ -124,7 +124,7 @@ const isStringOrStrings = (value: unknown) =>
  * the current schema (plan developer-face §5): a value written before a type change (text → rich text) is
  * not converted at read time, it is emitted as empty instead of being passed off as the new type.
  */
-const matchesFieldType = (field: FieldDefinition, value: unknown): boolean => {
+export const matchesFieldType = (field: FieldDefinition, value: unknown): boolean => {
   switch (field.type) {
     case 'number':
     case 'integer':
