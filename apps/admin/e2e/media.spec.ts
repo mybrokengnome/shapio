@@ -237,6 +237,8 @@ test('deleting a file content uses is blocked; the owner can delete it anyway', 
   await captureScreen(page, 'media-11-delete-blocked', { viewports: ['desktop'] });
   await blocked.getByRole('button', { name: 'Delete anyway' }).click();
   await expect(toast(`Deleted ${HERO}`)).toBeVisible();
+  // The open sheet's asset query refetches and 404s; the sheet handles that, so no error toast beside it.
+  await expect(page.getByText('This no longer exists. It may have been deleted.')).toHaveCount(0);
   await expect(details()).toBeHidden();
   await expect(card(HERO)).toBeHidden();
   const gone = await page.request.get(`${ADMIN_API}/media/assets?search=${HERO}`);

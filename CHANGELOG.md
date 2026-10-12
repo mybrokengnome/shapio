@@ -32,6 +32,9 @@ All notable changes to Shapio are listed here. The format follows
   so a few schema changes, or publishes in types you can't read, emptied it and it said "Nothing published
   yet". It now lists the latest entries you may read that went live. `GET /api/snapshots/changes` takes
   `recent=N` in place of `from` for this.
+- **Deleting a media file shows only "Deleted".** The open file sheet read the file again after the delete,
+  and the 404 added a red "This no longer exists" toast beside the success one. A file that's gone no longer
+  raises a toast; the screens that show files already say when one is missing.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
