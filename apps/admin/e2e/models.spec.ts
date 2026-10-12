@@ -501,6 +501,83 @@ test("a saved field changes to a type Shapio can't convert: Media to Number drop
   await expect(price.getByRole('textbox')).toHaveValue('');
 });
 
+test('a type change that leaves a required field empty counts entries and versions, and blocks Ship', async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const ticketId = randomUUID();
+  await api.createDefinition('models', {
+    id: ticketId,
+    kind: 'collection',
+    apiKey: 'ticket',
+    label: 'Ticket',
+    fields: [
+      { apiKey: 'name', label: 'Name', type: 'string' },
+      { apiKey: 'photos', label: 'Photos', type: 'media', settings: { allowedKinds: ['image'] } },
+    ],
+  });
+  await expect
+    .poll(async () => (await page.request.get(`${ADMIN_API}/models/${ticketId}`)).status())
+    .toBe(200);
+  const picture = await api.uploadPng('ticket.png', 40, 30);
+  const tickets = [];
+  for (const [name, photos] of [
+    ['Front row', picture.id],
+    ['Balcony', picture.id],
+    ['Standing', null],
+  ] as const) {
+    tickets.push(
+      await api.send<{ id: string; version: number }>('POST', '/content/ticket', { data: { name, photos } }),
+    );
+  }
+  // One published and edited since: three entries, four entry versions.
+  const first = tickets[0];
+  await api.send('POST', `/content/ticket/${first?.id ?? ''}/publish`, {});
+  await api.send('PUT', `/content/ticket/${first?.id ?? ''}`, {
+    expectedVersion: first?.version,
+    data: { name: 'Front row, edited' },
+  });
+
+  await openModel('Ticket');
+  await fieldRow('Photos').click();
+  await properties()
+    .getByRole('radio', { name: /^Number/ })
+    .check();
+  await page.getByRole('switch', { name: 'Required' }).click();
+  const plan = await review();
+  await expect(plan.getByText('Photos: Media → Number, 2 entries lose their value')).toBeVisible();
+  await expect(
+    plan.getByText(
+      '4 entry versions to check · 3 entries (4 versions) would be left without a required value; untick Required or set a default',
+    ),
+  ).toBeVisible();
+  await plan.getByLabel('I understand this changes the API contract', { exact: false }).check();
+  await plan.getByLabel('I understand stored data will be converted or removed', { exact: false }).check();
+  const ship = plan.getByRole('button', { name: 'Ship now' });
+  await expect(ship).toBeDisabled();
+  await expect(ship).toHaveAccessibleDescription(
+    "A check above already fails, so this can't ship. Fix it in the builder first.",
+  );
+  await expect(plan.getByRole('button', { name: 'Review in a change set' })).toBeEnabled();
+  await captureScreen(page, 'models-18d-plan-required-blocked', { viewports: ['desktop'] });
+
+  // Untick Required: the same change can ship.
+  await plan.getByRole('button', { name: 'Cancel' }).click();
+  await expect(plan).toBeHidden();
+  await page.getByRole('switch', { name: 'Required' }).click();
+  const unblocked = await review();
+  await unblocked.getByLabel('I understand this changes the API contract', { exact: false }).check();
+  await unblocked
+    .getByLabel('I understand stored data will be converted or removed', { exact: false })
+    .check();
+  await expect(unblocked.getByRole('button', { name: 'Ship now' })).toBeEnabled();
+  await unblocked.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Discard changes' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Discard your changes?' })
+    .getByRole('button', { name: 'Discard changes' })
+    .click();
+  await expect(page.getByText('Unsaved changes')).toBeHidden();
+});
+
 test('components live under Develop with their own builder', async () => {
   await nav().getByRole('link', { name: 'Components', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Components' })).toBeVisible();

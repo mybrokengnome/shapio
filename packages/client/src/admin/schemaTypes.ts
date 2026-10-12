@@ -82,6 +82,8 @@ export type PlanStepImpact = {
   kind: string;
   affectedHeads: number;
   invalidHeads?: number;
+  /** The distinct entries those failing heads (entry versions) belong to. */
+  invalidEntries?: number;
   /** On a `convert` step of a type change Shapio cannot convert: live entries that lose their value. */
   droppedEntries?: number;
 };
