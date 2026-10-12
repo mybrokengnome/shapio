@@ -153,6 +153,17 @@ describe('scheduled publications', () => {
     expect((await admin.delete(`/api/admin/publishing/schedules/${cancelled.id}`)).statusCode).toBe(409);
   });
 
+  it('a scheduled publish of a draft that is already live completes without a new publication', async () => {
+    const entry = await createEntry('Already live');
+    expectStatus(await admin.post(`/api/admin/content/article/${entry.id}/publish`, {}), 200);
+    const created = expectStatus(await schedule(admin, entry.id, new Date()), 201).json<Schedule>();
+
+    await drainJobs(worker(), database.current.db, { types: [PUBLISHING_JOBS.scheduledPublication] });
+    expect(await scheduleRow(created.id)).toMatchObject({ status: 'done', error: null, snapshot_seq: null });
+    expect(await publicationsOf(entry.id)).toHaveLength(1);
+    expect(await publishEventsOf(entry.id)).toHaveLength(1);
+  });
+
   it('checks publish permission when scheduling, and again when it runs', async () => {
     const entry = await createEntry('Permission');
     const readOnly = schemaClient(testApp.app, await createRoleToken(database.current.db, 'read-only'));

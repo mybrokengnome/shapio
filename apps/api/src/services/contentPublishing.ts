@@ -35,7 +35,7 @@ import {
   writeEntryEvent,
   type ContentServiceContext,
 } from './contentAccess.js';
-import { viewAfterWrite, type AdminEntryView } from './contentReads.js';
+import { statusOf, viewAfterWrite, type AdminEntryView } from './contentReads.js';
 
 /**
  * Publishing (ADR 0004: strictly per locale). Publishing a locale validates its draft against the current
@@ -54,7 +54,10 @@ export type PublishTransaction = {
 
 export type PublishedLocale = { locale: string; revisionId: string; snapshot: number };
 
-/** Publishes the given locales of a locked entry. One publication sequence number covers them all. */
+/**
+ * Publishes the given locales of a locked entry. One publication sequence number covers them all. A locale
+ * whose draft is already live is left alone and not in the result.
+ */
 export const publishLocalesInTransaction = async (
   tx: PublishTransaction,
   entryId: string,
@@ -75,6 +78,11 @@ export const publishLocalesInTransaction = async (
         drafts.map((head) => head.locale),
       );
     }
+    const published = heads.find((head) => head.state === 'published' && head.locale === locale);
+    if (statusOf(draft, published) === 'published') {
+      // The draft is already live: nothing to publish, so no snapshot, event or publication-log row.
+      continue;
+    }
     const outcome = validator.validate(draft.data);
     if (outcome.issues.length > 0) {
       throw contentInvalid(
@@ -82,7 +90,6 @@ export const publishLocalesInTransaction = async (
       );
     }
     await assertTargets(trx, outcome, site.id);
-    const published = heads.find((head) => head.state === 'published' && head.locale === locale);
     const context = {
       trx,
       site,
@@ -265,7 +272,7 @@ const changePublication = async (
         heads,
       );
       metadata = {
-        locales,
+        locales: published.map((item) => item.locale),
         snapshot: published[0]?.snapshot ?? null,
         revisions: published.map((item) => item.revisionId),
       };
