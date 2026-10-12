@@ -226,6 +226,10 @@ worker` is refused on SQLite (its jobs run inside `shapio start`), and a second 
 - **Duplicating an entry copies only what you may read on it.** A field you could not read on someone else's
   entry (granted only on your own entries, say) was copied into the duplicate, which you own, so the value
   showed there. It is now left empty, like unique fields, for you to fill in before saving.
+- **Creating only your own entries needs someone to own them.** A role that may create entries only as their
+  owner, bound to the public audience or held by an API token, let anonymous callers and tokens create, though
+  they own nothing. Those creates are now refused with 403 before anything is written; signed-in users and
+  admins create as before.
 
 ## [0.5.6] - 2026-10-11
 

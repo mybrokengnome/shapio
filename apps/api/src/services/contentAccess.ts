@@ -1,5 +1,5 @@
 import type { Transaction } from 'kysely';
-import { assertAllowed, matchesRowFilter } from '../content/compiler/policy.js';
+import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
 import { resolveModel, type ContentModel } from '../content/model.js';
@@ -62,6 +62,21 @@ export const modelWithPolicy = async (
   );
   assertAllowed(policy, `${ACTION_LABELS[action]} "${modelKey}" entries`);
   return { model, policy };
+};
+
+/**
+ * The create policy, refused (403) before any write when its row filter cannot hold for the new entry: a
+ * create granted only on own entries, for a caller that owns nothing it creates (issue #105).
+ */
+export const modelWithCreatePolicy = async (
+  context: ContentServiceContext,
+  modelKey: string,
+): Promise<{ model: ContentModel; policy: Policy }> => {
+  const result = await modelWithPolicy(context, modelKey, 'create');
+  if (!allowsNewEntry(result.policy, context.actor)) {
+    throw forbidden(`Your role does not allow ${ACTION_LABELS.create} "${modelKey}" entries`);
+  }
+  return result;
 };
 
 /**

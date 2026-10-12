@@ -44,6 +44,7 @@ import { actorColumns } from '../schema/planner/actor.js';
 import {
   assertEntryVisible,
   auditEntry,
+  modelWithCreatePolicy,
   modelWithPolicy,
   writeEntryEvent,
   type ContentServiceContext,
@@ -128,7 +129,7 @@ export const createEntry = async (
   modelKey: string,
   input: CreateEntryInput,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'create');
+  const { model, policy } = await modelWithCreatePolicy(context, modelKey);
   const publish = Boolean(input.publish) || !model.definition.draftAndPublish;
   if (input.publish && model.definition.draftAndPublish) {
     await modelWithPolicy(context, modelKey, 'publish');
@@ -524,7 +525,7 @@ export const duplicateEntry = async (
   modelKey: string,
   id: string,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'create');
+  const { model, policy } = await modelWithCreatePolicy(context, modelKey);
   const read = await modelWithPolicy(context, modelKey, 'read');
   if (model.definition.kind === 'singleton') {
     throw singletonExists(modelKey);
