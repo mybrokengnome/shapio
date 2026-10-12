@@ -1,12 +1,19 @@
 import type { Insertable, Kysely, Transaction } from 'kysely';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
+import { timestampParam } from '../db/sql/time.js';
 import { nextSequenceValue } from '../db/sql/values.js';
 import type { DB, MediaAssets } from '../db/types.js';
 import { appUserSiteOf } from './appUsers.js';
 import { entryCreatedAtOf, entrySiteOf } from './entries.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
+
+/**
+ * Bundle timestamps go through `timestampParam`, so each database stores them its own way: microseconds kept on
+ * PostgreSQL and MySQL, SQLite's fixed millisecond text (the raw text would break its text order).
+ */
+const nullableStamp = (text: string | null) => (text === null ? null : timestampParam(text));
 
 /**
  * Writes and lookups behind `POST /api/admin/transfer/import` (package L). Imports preserve IDs and
@@ -86,8 +93,8 @@ export const insertEntries = async (
         site_id: siteId,
         model_id: row.modelId,
         owner_app_user_id: row.ownerAppUserId,
-        created_at: row.createdAt,
-        updated_at: row.updatedAt,
+        created_at: timestampParam(row.createdAt),
+        updated_at: timestampParam(row.updatedAt),
       })),
     )
     .onConflict((oc) => oc.column('id').doNothing())
@@ -95,7 +102,11 @@ export const insertEntries = async (
 };
 
 export const setEntryUpdatedAt = (id: string, updatedAt: string, trx: Executor = db) =>
-  trx.updateTable('entries').set({ updated_at: updatedAt }).where('id', '=', id).execute();
+  trx
+    .updateTable('entries')
+    .set({ updated_at: timestampParam(updatedAt) })
+    .where('id', '=', id)
+    .execute();
 
 /** Revisions are immutable and keep their IDs, so an existing revision is the same revision: skipped. */
 export const insertRevision = (
@@ -123,7 +134,7 @@ export const insertRevision = (
       author_type: 'system',
       author_id: 'transfer',
       parent_revision_id: revision.parentRevisionId,
-      created_at: revision.createdAt,
+      created_at: timestampParam(revision.createdAt),
     })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute();
@@ -154,10 +165,10 @@ export const insertHead = (head: ImportedHead, trx: Executor = db) =>
       state: head.state,
       revision_id: head.revisionId,
       data: head.data,
-      autosaved_at: head.autosavedAt,
+      autosaved_at: nullableStamp(head.autosavedAt),
       version: head.version,
-      created_at: head.createdAt,
-      updated_at: head.updatedAt,
+      created_at: timestampParam(head.createdAt),
+      updated_at: timestampParam(head.updatedAt),
     })
     .execute();
 
@@ -168,10 +179,10 @@ export const moveHead = (head: ImportedHead, trx: Executor = db) =>
     .set((eb) => ({
       revision_id: head.revisionId,
       data: head.data,
-      autosaved_at: head.autosavedAt,
+      autosaved_at: nullableStamp(head.autosavedAt),
       version: eb('version', '+', eb.lit(1)),
       change_seq: nextSequenceValue('entry_heads_change_seq'),
-      updated_at: head.updatedAt,
+      updated_at: timestampParam(head.updatedAt),
     }))
     .where('entry_id', '=', head.entryId)
     .where('locale', '=', head.locale)
@@ -211,10 +222,17 @@ export const findAssets = (ids: readonly string[], executor: Executor = db) =>
 
 export type TargetAssetRow = Awaited<ReturnType<typeof findAssets>>[number];
 
-export const insertAsset = (asset: Insertable<MediaAssets>, trx: Executor = db) =>
+export const insertAsset = (
+  asset: Insertable<MediaAssets> & { created_at: string; updated_at: string },
+  trx: Executor = db,
+) =>
   trx
     .insertInto('media_assets')
-    .values(asset)
+    .values({
+      ...asset,
+      created_at: timestampParam(asset.created_at),
+      updated_at: timestampParam(asset.updated_at),
+    })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute();
 
@@ -257,8 +275,8 @@ export const insertFolder = (
       site_id: siteId,
       parent_id: folder.parentId,
       name: folder.name,
-      created_at: folder.createdAt,
-      updated_at: folder.updatedAt,
+      created_at: timestampParam(folder.createdAt),
+      updated_at: timestampParam(folder.updatedAt),
     })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute();
@@ -317,11 +335,11 @@ export const insertAppUser = (
       email: user.email,
       name: user.name,
       password_hash: user.passwordHash,
-      confirmed_at: user.confirmedAt,
-      blocked_at: user.blockedAt,
-      password_changed_at: user.passwordChangedAt,
-      created_at: user.createdAt,
-      updated_at: user.updatedAt,
+      confirmed_at: nullableStamp(user.confirmedAt),
+      blocked_at: nullableStamp(user.blockedAt),
+      password_changed_at: nullableStamp(user.passwordChangedAt),
+      created_at: timestampParam(user.createdAt),
+      updated_at: timestampParam(user.updatedAt),
     })
     .onConflict((oc) => oc.column('id').doNothing())
     .execute();

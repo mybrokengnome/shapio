@@ -117,6 +117,9 @@ All notable changes to Shapio are listed here. The format follows
   carrying one (content saves, delivery filters and search, GraphQL, app-user sign-up, locales, models) is
   refused with `INVALID_TEXT` and the path of the value, and import bundles and other content writes refuse it
   too. PostgreSQL failed with an internal error and SQLite stored the text, so both now agree.
+- **Export and import keep timestamps to the microsecond.** Entries created within one millisecond on PostgreSQL
+  no longer swap places in lists after an import. Bundles are now format 2 (six fractional digits); format 1
+  bundles still import, and older Shapio releases refuse a format 2 bundle instead of misreading it.
 
 ## [0.5.6] - 2026-10-11
 

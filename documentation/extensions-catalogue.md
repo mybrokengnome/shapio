@@ -553,9 +553,10 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
   files with `--with-media`), for moving content between instances.
 - **Where it runs:** CLI (`shapio export`, `shapio import`) over HTTP: `/api/admin/transfer/export`,
   `/import`, `/imports/:id`, `/media/:assetId`.
-- **Contract:** newline-delimited JSON, `format: "shapio-export"`, `formatVersion: 1`, content type
-  `application/x-ndjson`, records in order: header, locales, schema lock, definitions, app roles, delivery roles,
-  app users (opt-in), webhooks, deployment connections, media folders, media assets, entries, end. Schema:
+- **Contract:** newline-delimited JSON, `format: "shapio-export"`, `formatVersion: 2` (1 still imports),
+  content type `application/x-ndjson`, records in order: header, locales, schema lock, definitions, app roles,
+  delivery roles, app users (opt-in), webhooks, deployment connections, media folders, media assets, entries,
+  end. Schema:
   [`apps/api/src/content/transfer/format.ts`](../apps/api/src/content/transfer/format.ts).
 - **Example:**
 
@@ -618,7 +619,7 @@ The full list of variables is in the [environment reference](reference/environme
 | `@shapio/editor-sdk` (custom editors)     | `EDITOR_CONTRACT_VERSION` = 1; mismatched editors fall back to built-in ones |
 | Webhook signature (`v1=`) and event names | versioned by the `v1` prefix                                                 |
 | HTTP APIs and `@shapio/client`            | semver with the packages; OpenAPI at `/api/docs`                             |
-| Export bundle                             | `formatVersion` 1                                                            |
+| Export bundle                             | `formatVersion` 2 (imports 1 and 2)                                          |
 | MCP tool names                            | stable                                                                       |
 | Shapio's database tables (`db`, `trx`)    | internal; may change in any release                                          |
 | Deployment, email and storage adapters    | internal; chosen by configuration, not extended by code                      |
