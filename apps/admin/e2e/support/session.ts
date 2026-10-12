@@ -1,8 +1,23 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { NEW_PASSWORD, OWNER } from './accounts';
-import { E2E_BASE_PATH, E2E_ORIGIN } from './constants';
+import { ARTIFACTS_DIR, E2E_BASE_PATH, E2E_ORIGIN } from './constants';
 
 export const ADMIN_API = `${E2E_ORIGIN}${E2E_BASE_PATH}/api/admin`;
+
+/**
+ * The owner password that last signed in, kept in the run's files (worker processes come and go). Trying it
+ * first keeps failed sign-ins to one per password change: the server locks an account out after five failures
+ * from one IP, and a CI shard without admin4Auth.spec.ts never sets NEW_PASSWORD. With no file yet, the owner
+ * came from admin1Setup.spec.ts's setup screen, so it still has OWNER.password.
+ */
+const OWNER_PASSWORD_FILE = join(ARTIFACTS_DIR, 'owner-password.txt');
+
+const passwordsToTry = (): string[] => {
+  const known = existsSync(OWNER_PASSWORD_FILE) ? readFileSync(OWNER_PASSWORD_FILE, 'utf8') : OWNER.password;
+  return [known, ...[NEW_PASSWORD, OWNER.password].filter((password) => password !== known)];
+};
 
 /**
  * Signs the page's browser context in as the owner through the API, whichever spec ran before: completes
@@ -17,14 +32,16 @@ export const signInAsOwner = async (page: Page): Promise<string> => {
       data: { name: OWNER.name, email: OWNER.email, password: OWNER.password },
     });
     expect(response.ok()).toBe(true);
+    writeFileSync(OWNER_PASSWORD_FILE, OWNER.password);
     return OWNER.password;
   }
   const attempts: string[] = [];
-  for (const password of [NEW_PASSWORD, OWNER.password]) {
+  for (const password of passwordsToTry()) {
     const response = await request.post(`${ADMIN_API}/auth/login`, {
       data: { email: OWNER.email, password },
     });
     if (response.ok()) {
+      writeFileSync(OWNER_PASSWORD_FILE, password);
       return password;
     }
     const label = password === NEW_PASSWORD ? 'NEW_PASSWORD' : 'OWNER.password';

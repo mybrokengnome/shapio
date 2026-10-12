@@ -492,7 +492,9 @@ An entry of a document type (`display.layout` unset or `document`, the default) 
 form. Top to bottom:
 
 1. **Top bar** (thin, sticky): breadcrumb (place / title), `StatusChip`, save state, presence avatars,
-   Preview, Settings, Publish (primary, last). No side panel.
+   Preview, Settings, Publish (primary, last). No side panel. While the settings drawer is open the bar is
+   narrow: Settings shows its icon only and the save state its short text ("Changed elsewhere" with an
+   icon-only Reload for a change saved elsewhere), so the bar stays one row.
 2. **Cover** (the model's cover field, a single image): full width, with Replace / Focal point / Remove on
    hover; dropping a file replaces it. Empty: a dashed "Add a cover" band.
 3. **Title** (the model's title field): one line, `text-display`, no border, no label. Only string/text

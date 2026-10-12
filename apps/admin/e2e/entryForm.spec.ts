@@ -265,28 +265,65 @@ test('a Product type set to Form opens its entries as a form', async () => {
     const bar = page.locator('[data-slot="entry-top-bar"]');
     await expect(bar.getByRole('link', { name: 'Product', exact: true })).toBeVisible();
     await expect(bar.getByRole('status')).not.toContainText('2026');
-    // Measured once the bar has settled (the autosave's status, the Save button and the drawer can still be
-    // landing): polled until one row with nothing overlapping, so only a lasting overlap fails.
-    // The boxes come along so a failure shows the numbers.
+    // Measured once the bar and the drawer have settled (the autosave's status, the Save button and the
+    // drawer's slide can still be landing): polled until no transition runs, the bar ends left of the
+    // drawer, sits on one row and nothing overlaps or clips, so only a lasting overlap fails. A bar
+    // measured mid-slide is still wide and would pass. The boxes come along so a failure shows the numbers.
     const measure = () =>
       bar.evaluate((element) => {
         const rect = (target: Element | null) => target?.getBoundingClientRect() ?? null;
         const [left, actions] = [...element.children];
         const breadcrumb = rect(element.querySelector('nav'));
-        const saveState = rect(left?.querySelector('[role="status"]') ?? null);
+        // The save-state slot: the save state, or the "Changed elsewhere" notice with its Reload button.
+        const saveState = rect(left?.lastElementChild ?? null);
+        const status = left?.querySelector('[role="status"]');
         const actionsBox = rect(actions ?? null);
-        const placeName = element.querySelector('nav a');
+        const drawerBox = rect(document.querySelector('#entry-settings'));
+        // The place name is whole when the breadcrumb (which clips) doesn't cut it off.
+        const placeName = rect(element.querySelector('nav a'));
         return {
-          placeNameFits: (placeName?.clientWidth ?? 0) >= (placeName?.scrollWidth ?? 0),
+          settled: document.getAnimations().every((animation) => !(animation instanceof CSSTransition)),
+          clearOfDrawer: Boolean(drawerBox && element.getBoundingClientRect().right <= drawerBox.left),
+          oneRow: Boolean(saveState && actionsBox && actionsBox.top < saveState.bottom),
+          placeNameFits: Boolean(breadcrumb && placeName && placeName.right <= breadcrumb.right),
+          statusFits: Boolean(status && status.clientWidth >= status.scrollWidth),
           breadcrumbClear: Boolean(breadcrumb && saveState && breadcrumb.right <= saveState.left),
           saveStateClear: Boolean(saveState && actionsBox && saveState.right <= actionsBox.left),
-          boxes: { breadcrumb, saveState, actions: actionsBox },
+          boxes: { breadcrumb, saveState, actions: actionsBox, drawer: drawerBox },
         };
       });
-    await expect
-      .poll(measure)
-      .toMatchObject({ placeNameFits: true, breadcrumbClear: true, saveStateClear: true });
+    const fits = {
+      settled: true,
+      clearOfDrawer: true,
+      oneRow: true,
+      placeNameFits: true,
+      statusFits: true,
+      breadcrumbClear: true,
+      saveStateClear: true,
+    };
+    await expect.poll(measure).toMatchObject(fits);
     await captureScreen(page, 'form-04-layout-switch');
+
+    // Another session saves the entry: "Changed elsewhere" and Reload take the save state's place, and the
+    // bar still fits. Reload shows that save.
+    const entryId = /\/content\/product\/([0-9a-f-]{36})/.exec(entryUrl)?.[1] ?? '';
+    const { version } = (await (
+      await page.request.get(`${ADMIN_API}/content/product/${entryId}`)
+    ).json()) as {
+      version: number;
+    };
+    await adminRequest(page.request, 'PUT', `/content/product/${entryId}`, {
+      expectedVersion: version,
+      data: { price: 13 },
+    });
+    // The next heartbeat carries the new draft version (TanStack Query refetches it when the tab is shown).
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange', { bubbles: true })));
+    await expect(bar.getByRole('status')).toHaveText('Changed elsewhere', { timeout: 20_000 });
+    await expect.poll(measure).toMatchObject(fits);
+    await captureScreen(page, 'form-05-remote-change');
+    await bar.getByRole('button', { name: 'Reload', exact: true }).click();
+    await expect(doc.field('/price').locator('input')).toHaveValue('13');
+    await expect(bar.getByRole('button', { name: 'Reload', exact: true })).toHaveCount(0);
 
     // The switch turns it off; the word Document on its left would do the same.
     await layout.getByRole('switch', { name: 'Open as a form' }).click();
