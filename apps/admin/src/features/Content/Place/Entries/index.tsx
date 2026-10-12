@@ -178,7 +178,7 @@ export const Entries = ({
           canDelete={permissions.canDelete}
           running={bulk.running}
           onClear={() => replaceSelection([])}
-          onAction={(action) => void bulk.run(action, [...selected]).then(replaceSelection)}
+          onAction={(action) => void bulk.run(action, [...selected], list.data?.items).then(replaceSelection)}
         />
       ) : null}
     </>

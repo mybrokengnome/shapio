@@ -1,11 +1,11 @@
-import type { AdminEntry } from '@shapio/client';
+import type { AdminEntry, ShapioApiError } from '@shapio/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { entryQueryOptions, usePublishEntry, useUnpublishEntry } from '@/api/content';
 import type { EntryFormStore } from '@/fields/form/store';
-import { contentIssuesOf } from '@/fields/helpers/apiErrors';
+import { contentIssuesOf, isEditConflict } from '@/fields/helpers/apiErrors';
 import { dirtyKeysOf } from '@/fields/helpers/formValues';
 import { reportError } from '@/helpers/reportError';
 import type { SaveKind, SaveOutcome } from './useEntrySaver';
@@ -17,27 +17,37 @@ type PublishingOptions = {
   /** The draft holds autosaved work that has not been validated by a Save. */
   autosaved: boolean;
   locale: string | null;
+  /** The draft version this document shows; publish sends it so a draft saved elsewhere since is refused. */
+  versionRef: MutableRefObject<number | null>;
+  /** Every locale's state as last read (its draft version guards "publish the other locales too"). */
+  entryLocales: AdminEntry['locales'];
   store: EntryFormStore;
   save: (kind: SaveKind) => Promise<SaveOutcome>;
   exclusive: <T>(task: () => Promise<T>) => Promise<T>;
   onEntry: (entry: AdminEntry) => void;
+  /** Someone else saved since this document loaded: the conflict banner takes over, nothing is published. */
+  onConflict: (error: ShapioApiError) => void;
 };
 
 /**
  * Publishing is per locale (ADR 0004): publishing this locale never changes another locale's live content.
  * Unsaved or autosaved changes are saved first (fully validated). When other published locales still serve
  * older shared values the document offers to publish them too; `othersDismissed` hides that notice until
- * the next publish.
+ * the next publish. Every publish carries the draft versions this document saw, so a stale tab gets the
+ * conflict banner instead of publishing a draft it never showed.
  */
 export const usePublishing = ({
   modelKey,
   entryId,
   autosaved,
   locale,
+  versionRef,
+  entryLocales,
   store,
   save,
   exclusive,
   onEntry,
+  onConflict,
 }: PublishingOptions) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -47,20 +57,26 @@ export const usePublishing = ({
   // A non-localized model has no locale: omit `locales` so the API uses its default.
   const locales = locale ? [locale] : undefined;
 
-  /** Resolves true when this locale went live (the pre-flight closes then). */
+  /** Resolves true when the pre-flight should close: this locale went live, or the conflict banner took over. */
   const publish = async (): Promise<boolean> => {
     if (!entryId) {
       return false;
     }
     const { values, baseline } = store.getState();
     if (dirtyKeysOf(values, baseline).length > 0 || autosaved) {
-      if ((await save('save')) !== 'saved') {
-        return false;
+      const outcome = await save('save');
+      if (outcome !== 'saved') {
+        return outcome === 'conflict';
       }
     }
     return exclusive(async () => {
       try {
-        const published = await publishMutation.mutateAsync({ id: entryId, locales });
+        const expectedVersion = versionRef.current;
+        const published = await publishMutation.mutateAsync({
+          id: entryId,
+          locales,
+          ...(expectedVersion !== null ? { expectedVersion } : {}),
+        });
         onEntry(published);
         toast.success(t('content.form.publishedToast'));
         setOthersDismissed(false);
@@ -72,6 +88,10 @@ export const usePublishing = ({
           store.getState().reveal();
           toast.error(t('content.form.fixProblems', { count: issues.length }));
           return false;
+        }
+        if (isEditConflict(error)) {
+          onConflict(error);
+          return true;
         }
         reportError(error, 'publishing an entry');
         return false;
@@ -86,7 +106,12 @@ export const usePublishing = ({
     await exclusive(async () => {
       try {
         // The response describes the first published locale; re-read the one being edited.
-        await publishMutation.mutateAsync({ id: entryId, locales: others });
+        const expectedVersions = Object.fromEntries(
+          entryLocales
+            .filter((state) => others.includes(state.locale))
+            .map((state) => [state.locale, state.version]),
+        );
+        await publishMutation.mutateAsync({ id: entryId, locales: others, expectedVersions });
         onEntry(
           await queryClient.fetchQuery({
             ...entryQueryOptions(modelKey, entryId, locale ?? undefined),
@@ -95,6 +120,10 @@ export const usePublishing = ({
         );
         toast.success(t('content.form.publishedOthersToast', { count: others.length }));
       } catch (error) {
+        if (isEditConflict(error)) {
+          onConflict(error);
+          return;
+        }
         reportError(error, 'publishing other locales');
       }
     });

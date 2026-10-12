@@ -19,6 +19,10 @@ export const contentVersionConflict = (expectedVersion: number | null, currentVe
     { expectedVersion, currentVersion },
   );
 
+/** `expectedVersion` names one locale's version; `expectedVersions` only the locales being published. */
+export const invalidExpectedVersion = (message: string, details: Record<string, unknown>) =>
+  new AppError(400, 'INVALID_EXPECTED_VERSION', message, details);
+
 /** The model (or a component it embeds) was activated in a new version after this request pinned its schema. */
 export const schemaChanged = () =>
   new AppError(

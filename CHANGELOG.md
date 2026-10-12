@@ -49,6 +49,11 @@ All notable changes to Shapio are listed here. The format follows
 - **Webhooks survive an unreadable secret.** After `SESSION_SECRET` changes, a webhook's deliveries are recorded
   as dead with the reason, the webhook list and page show a warning, and Rotate secret repairs it. Before,
   deliveries stayed pending forever and nothing in the admin said why.
+- **Publish no longer puts live a draft the editor never saw.** Publishing from a tab that missed another
+  session's save now shows the "Someone else saved this entry" banner instead of publishing. The publish API
+  takes the draft version you read (`expectedVersion`, or `expectedVersions` per locale) and answers 409
+  `CONTENT_VERSION_CONFLICT` when it moved. The editor, list, and bulk Publish send it; `@shapio/client` and
+  the GraphQL `publish…` mutations accept it.
 
 ## [0.5.6] - 2026-10-11
 

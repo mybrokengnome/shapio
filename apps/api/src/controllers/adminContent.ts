@@ -24,6 +24,7 @@ type UpdateRequest = FastifyRequest<{
   };
 }>;
 type LocalesRequest = FastifyRequest<{ Params: EntryParams; Body: { locales?: string[] } }>;
+type PublishRequest = FastifyRequest<{ Params: EntryParams; Body: contentPublishingService.PublishInput }>;
 type RevisionsRequest = FastifyRequest<{ Params: EntryParams; Querystring: LocaleQuery }>;
 type RevisionRequest = FastifyRequest<{ Params: RevisionParams }>;
 type RestoreRequest = FastifyRequest<{ Params: RevisionParams; Body: { expectedVersion: number } }>;
@@ -93,7 +94,7 @@ export const duplicateEntry = async (request: FastifyRequest<{ Params: EntryPara
       ),
     );
 
-export const publishEntry = async (request: LocalesRequest) =>
+export const publishEntry = async (request: PublishRequest) =>
   contentPublishingService.publishEntry(
     await contentContextFor(request),
     request.params.modelKey,

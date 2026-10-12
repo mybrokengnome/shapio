@@ -7,6 +7,7 @@ import { queryKeys } from '@/api/queryKeys';
 import { i18next } from '@/app/i18n';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
+import { expectedVersionOf, type VersionedRow } from '../helpers/expectedVersion';
 
 export type BulkAction = 'publish' | 'unpublish' | 'delete';
 
@@ -25,22 +26,33 @@ const FAILURE_KEYS = {
 /**
  * Publish, unpublish or delete several entries, one request each (so one failure, e.g. an entry still
  * referenced or invalid, does not stop the rest), then a summary with the first reason for any failures.
+ * Publishing sends each loaded row's draft version, so a draft saved since the list loaded fails (409);
+ * rows ticked on another page are not in `rows` and publish unguarded.
  */
 export const useBulkEntryActions = (modelKey: string, locale: string | null) => {
   const queryClient = useQueryClient();
   const [running, setRunning] = useState<BulkAction | null>(null);
-  const run = async (action: BulkAction, ids: readonly string[]): Promise<string[]> => {
+  const run = async (
+    action: BulkAction,
+    ids: readonly string[],
+    rows: readonly VersionedRow[] = [],
+  ): Promise<string[]> => {
     setRunning(action);
     const failed: string[] = [];
     let firstError: unknown;
     const locales = locale ? { locales: [locale] } : {};
+    const expectedOf = (id: string) => {
+      const row = rows.find((candidate) => candidate.id === id);
+      const expectedVersion = row ? expectedVersionOf(row, locale) : undefined;
+      return expectedVersion !== undefined ? { expectedVersion } : {};
+    };
     for (const id of ids) {
       try {
         await withCsrf<unknown>(() =>
           action === 'delete'
             ? adminApi.content.remove(modelKey, id)
             : action === 'publish'
-              ? adminApi.content.publish(modelKey, id, locales)
+              ? adminApi.content.publish(modelKey, id, { ...locales, ...expectedOf(id) })
               : adminApi.content.unpublish(modelKey, id, locales),
         );
       } catch (error) {

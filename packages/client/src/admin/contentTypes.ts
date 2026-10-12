@@ -143,6 +143,15 @@ export type UpdateEntryInput = {
 /** Publish or unpublish these locales atomically (the request's default locale when omitted). */
 export type EntryLocalesInput = { locales?: string[] };
 
+/**
+ * Publish these locales, optionally guarded by the draft version(s) you saw (409 CONTENT_VERSION_CONFLICT when
+ * one moved): `expectedVersion` for a publish of one locale, `expectedVersions` (per locale) for several.
+ */
+export type EntryPublishInput = EntryLocalesInput & {
+  expectedVersion?: number;
+  expectedVersions?: Record<string, number>;
+};
+
 export type RevisionSummary = {
   id: string;
   locale: string;

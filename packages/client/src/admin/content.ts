@@ -7,6 +7,7 @@ import type {
   CreateEntryInput,
   EditorManifest,
   EntryLocalesInput,
+  EntryPublishInput,
   ExtensionThemeList,
   RevisionDetail,
   RevisionSummary,
@@ -41,7 +42,8 @@ export const createContentApi = (request: RequestFn) => ({
     remove: (modelKey: string, id: string) => request<void>(entryPath(modelKey, id), { method: 'DELETE' }),
     duplicate: (modelKey: string, id: string) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/duplicate`, { method: 'POST' }),
-    publish: (modelKey: string, id: string, body: EntryLocalesInput = {}) =>
+    /** With `expectedVersion`/`expectedVersions`, 409 CONTENT_VERSION_CONFLICT when a draft moved since. */
+    publish: (modelKey: string, id: string, body: EntryPublishInput = {}) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/publish`, { method: 'POST', body }),
     unpublish: (modelKey: string, id: string, body: EntryLocalesInput = {}) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/unpublish`, { method: 'POST', body }),

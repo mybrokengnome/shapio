@@ -18,7 +18,7 @@ import type { useRowActions } from '../hooks/useRowActions';
 
 type RowActionsProps = {
   modelKey: string;
-  entry: { id: string; status: EntryStatus };
+  entry: { id: string; status: EntryStatus; locale: string; version: number };
   /** The entry's title, for the buttons' names and the confirmations. */
   label: string;
   locale: string | null;
@@ -86,7 +86,7 @@ export const RowActions = ({
       : t(live ? 'place.actions.unpublishDescription' : 'place.actions.publishDescription'),
     confirmLabel: t(live ? 'content.actions.unpublish' : 'content.actions.publish'),
     pendingLabel: t(live ? 'place.actions.unpublishing' : 'place.actions.publishing'),
-    onConfirm: () => (live ? actions.unpublish(entry.id, label) : actions.publish(entry.id, label)),
+    onConfirm: () => (live ? actions.unpublish(entry.id, label) : actions.publish(entry, label)),
   };
   const deleteConfirm = {
     tone: 'danger' as const,

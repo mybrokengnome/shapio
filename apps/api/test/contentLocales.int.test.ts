@@ -166,6 +166,36 @@ describe('content localization', () => {
     });
   });
 
+  it('a publish of several locales is refused whole when one draft moved past its expected version', async () => {
+    const created = expectStatus(
+      await admin.post('/api/admin/content/product', { locale: 'en', data: { name: 'Stool', price: 5 } }),
+      201,
+    ).json<EntryBody>();
+    await save(created.id, 'fr', { name: 'Tabouret' });
+    const seen = await entryIn(created.id, 'en');
+    const versions = Object.fromEntries(seen.locales.map((state) => [state.locale, state.version]));
+    // Someone else saves the French draft after this editor read the versions.
+    await save(created.id, 'fr', { name: 'Tabouret (edited elsewhere)' });
+    const path = `/api/admin/content/product/${created.id}/publish`;
+    const stale = await admin.post(path, { locales: ['en', 'fr'], expectedVersions: versions });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { code: 'CONTENT_VERSION_CONFLICT' } });
+    for (const locale of ['en', 'fr']) {
+      expect((await deliver(`/api/content/products/${created.id}?locale=${locale}`)).statusCode).toBe(404);
+    }
+    // One version cannot guard two locales.
+    const ambiguous = await admin.post(path, { locales: ['en', 'fr'], expectedVersion: versions.en });
+    expect(ambiguous.json()).toMatchObject({ error: { code: 'INVALID_EXPECTED_VERSION' } });
+
+    const fresh = await entryIn(created.id, 'en');
+    const current = Object.fromEntries(fresh.locales.map((state) => [state.locale, state.version]));
+    expectStatus(await admin.post(path, { locales: ['en', 'fr'], expectedVersions: current }), 200);
+    expect(
+      expectStatus(await deliver(`/api/content/products/${created.id}?locale=fr`), 200).json<Delivered>()
+        .data,
+    ).toMatchObject({ name: 'Tabouret (edited elsewhere)' });
+  });
+
   it('rejects unknown locales and reports a missing locale version', async () => {
     const created = expectStatus(
       await admin.post('/api/admin/content/product', { locale: 'en', data: { name: 'Desk' } }),

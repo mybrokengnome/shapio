@@ -61,7 +61,8 @@ test('an entry of a non-localized model is created and published from the docume
   await preflight.getByRole('button', { name: 'Publish now' }).click();
   const response = await published;
   expect(response.status(), await response.text()).toBe(200);
-  expect(response.request().postDataJSON()).toEqual({});
+  // No locales; only the draft version on screen (the API refuses a draft saved elsewhere since).
+  expect(response.request().postDataJSON()).toEqual({ expectedVersion: 1 });
   await expect(page.getByText('Published.')).toBeVisible();
   await expect(page.getByText('Published', { exact: true }).first()).toBeVisible();
 

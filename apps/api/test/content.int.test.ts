@@ -147,6 +147,76 @@ describe('admin content API', () => {
     expect(restored).toMatchObject({ version: 3, data: { title: 'Hello' } });
   });
 
+  it('publish refuses a draft that moved past the version the caller saw', async () => {
+    const created = expectStatus(await create('article', { title: 'Seen in tab A' }), 201).json<EntryBody>();
+    // Tab B saves (version 2) after tab A loaded version 1.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 1,
+        data: { title: 'Saved in tab B' },
+      }),
+      200,
+    );
+    const publishPath = `/api/admin/content/article/${created.id}/publish`;
+    const stale = await admin.post(publishPath, { expectedVersion: 1 });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      error: { code: 'CONTENT_VERSION_CONFLICT', details: { expectedVersion: 1, currentVersion: 2 } },
+    });
+    const unchanged = expectStatus(
+      await admin.get(`/api/admin/content/article/${created.id}`),
+      200,
+    ).json<EntryBody>();
+    expect(unchanged).toMatchObject({ status: 'draft', publishedAt: null });
+
+    // The stale version is checked before validation: an invalid draft still answers 409, not 422.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 2,
+        autosave: true,
+        data: { title: null },
+      }),
+      200,
+    );
+    expect((await admin.post(publishPath, { expectedVersion: 2 })).statusCode).toBe(409);
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: 3,
+        data: { title: 'Saved in tab B' },
+      }),
+      200,
+    );
+
+    // Bad combinations are refused outright.
+    for (const body of [
+      { expectedVersion: 4, expectedVersions: { en: 4 } },
+      { expectedVersions: { fr: 4 } },
+    ]) {
+      const refused = await admin.post(publishPath, body);
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json()).toMatchObject({ error: { code: 'INVALID_EXPECTED_VERSION' } });
+    }
+
+    const published = expectStatus(
+      await admin.post(publishPath, { expectedVersion: 4 }),
+      200,
+    ).json<EntryBody>();
+    expect(published).toMatchObject({ status: 'published', data: { title: 'Saved in tab B' } });
+
+    // Without a version, publish keeps publishing the current draft.
+    expectStatus(
+      await admin.put(`/api/admin/content/article/${created.id}`, {
+        expectedVersion: published.version,
+        data: { title: 'Published unguarded' },
+      }),
+      200,
+    );
+    expect(expectStatus(await admin.post(publishPath, {}), 200).json<EntryBody>()).toMatchObject({
+      status: 'published',
+      data: { title: 'Published unguarded' },
+    });
+  });
+
   it('autosave moves the draft without a revision and without enforcing required', async () => {
     const created = expectStatus(await create('article', { title: 'Draft' }), 201).json<EntryBody>();
     const autosaved = expectStatus(
