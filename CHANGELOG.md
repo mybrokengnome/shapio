@@ -150,6 +150,11 @@ All notable changes to Shapio are listed here. The format follows
 - **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
   listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
   of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
+- **On SQLite, a second server or a worker can no longer run on a file another process serves.** `shapio
+worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the same
+  file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
+  `<database>-shapio.lock` that is released when it exits, even after a crash. `shapio migrate`, `backup`, and
+  `admin create` still run beside it.
 
 ## [0.5.6] - 2026-10-11
 

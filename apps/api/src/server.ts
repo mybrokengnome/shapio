@@ -10,6 +10,7 @@ import { createContentPorts } from './content/ports.js';
 import { createTransferJobHandlers } from './content/transfer/job.js';
 import { createDb, type Database } from './db/index.js';
 import { migrateToLatest } from './db/migrator.js';
+import { acquireProcessLock, type ProcessLock } from './db/sqlite/processLock.js';
 import { assertDatabaseReachable, assertNoPendingMigrations } from './db/startupChecks.js';
 import { createAppUserEmailJobHandlers } from './email/appUserJobs.js';
 import { createEmailTransport } from './email/createTransport.js';
@@ -155,12 +156,15 @@ export const startExtensions = async (
 export const startServer = async (config: AppConfig): Promise<RunningServer> => {
   const logger = createLogger(config);
   const db = openDatabase(config, 'api', logger);
+  let processLock: ProcessLock | undefined;
   let tls: TlsRuntime | undefined;
   let extensions: ExtensionRuntime | undefined;
   try {
     // Before touching the database, so a broken config fails fast.
     const project = await loadProjectConfig({ configPath: config.extensions.configPath });
     await assertDatabaseReachable(db, config.database.url);
+    // SQLite: one serving process per file; refused before migrating when another process serves it.
+    processLock = acquireProcessLock(config.database.url);
     if (config.database.migrateOnStart) {
       await migrateToLatest(db, logger.child({ component: 'migrator' }));
     } else {
@@ -186,6 +190,7 @@ export const startServer = async (config: AppConfig): Promise<RunningServer> => 
 
     const tlsRuntime = tls;
     const extensionRuntime = extensions;
+    const heldLock = processLock;
     let closing: Promise<void> | undefined;
     const close = () => {
       closing ??= (async () => {
@@ -194,6 +199,7 @@ export const startServer = async (config: AppConfig): Promise<RunningServer> => 
         await tlsRuntime.close();
         extensionRuntime.close();
         await db.destroy();
+        heldLock.release();
         logger.info('shutdown complete');
       })();
       return closing;
@@ -224,6 +230,7 @@ export const startServer = async (config: AppConfig): Promise<RunningServer> => 
     extensions?.close();
     await tls?.close();
     await db.destroy();
+    processLock?.release();
     throw error;
   }
 };

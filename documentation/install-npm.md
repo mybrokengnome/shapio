@@ -139,7 +139,8 @@ npm run worker
 ```
 
 With PM2, add a second app to `ecosystem.config.cjs` with `args: 'worker'`. SQLite refuses
-`WORKER_MODE=dedicated`: its jobs always run inside the API process ([SQLite](sqlite.md#limits)).
+`WORKER_MODE=dedicated` and `npm run worker`: its jobs always run inside the API process
+([SQLite](sqlite.md#limits)).
 
 ## Next
 
