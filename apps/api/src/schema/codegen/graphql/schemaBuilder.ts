@@ -15,6 +15,7 @@ import { queryFields } from './operations.js';
 import { siteQueryFields } from './siteFields.js';
 import { snapshotQueryFields } from './snapshotFields.js';
 import { buildUsageMap, USAGE_MAP_EXTENSION } from './usageSelection.js';
+import { FULL_VISIBILITY, modelInSchema, modelReadable, type SchemaVisibility } from './visibility.js';
 
 /** A root field every schema has (GraphQL needs one even before the first model exists). */
 const SCHEMA_VERSION_FIELD = RESERVED_QUERY_NAMES[0] as string;
@@ -22,20 +23,28 @@ const SCHEMA_VERSION_FIELD = RESERVED_QUERY_NAMES[0] as string;
 export type BuiltSchema = { version: number; schema: GraphQLSchema };
 
 /**
- * The GraphQL schema of one schema snapshot, built programmatically (never from SDL strings, ADR 0006).
- * Resolvers close over the snapshot they were built from, so a request always executes against the model
- * definitions its schema describes.
+ * The GraphQL schema of one schema snapshot as one caller may see it (visibility.ts; admin callers and tools
+ * see everything), built programmatically (never from SDL strings, ADR 0006). A model no policy allows is
+ * absent; one the caller may only write has its mutations and no read queries. Resolvers close over the
+ * snapshot they were built from, so a request always executes against the model definitions its schema
+ * describes.
  */
-export const buildGraphqlSchema = (snapshot: SchemaSnapshot): BuiltSchema => {
-  const build = createBuild(snapshot, createFixedTypes());
+export const buildGraphqlSchema = (
+  snapshot: SchemaSnapshot,
+  visibility: SchemaVisibility = FULL_VISIBILITY,
+): BuiltSchema => {
+  const build = createBuild(snapshot, visibility, createFixedTypes());
   const models = snapshot.definitions
     .map((active) => active.definition)
     .filter((definition): definition is ModelDefinition => isModelDefinition(definition))
+    .filter((model) => modelInSchema(visibility, model.id))
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
   const query: GraphQLFieldConfigMap<unknown, GraphqlContext> = {};
   const mutation: GraphQLFieldConfigMap<unknown, GraphqlContext> = {};
   for (const model of models) {
-    Object.assign(query, queryFields(build, model));
+    if (modelReadable(visibility, model.id)) {
+      Object.assign(query, queryFields(build, model));
+    }
     Object.assign(mutation, mutationFields(build, model));
   }
   // Reserved in naming.ts (RESERVED_QUERY_NAMES), so no model can take it.

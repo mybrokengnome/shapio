@@ -6,6 +6,13 @@ export const GRAPHQL_DOCUMENT_CACHE_SIZE = 500;
 /** A site's GraphQL schema is dropped from memory when no request has used it for this long. */
 export const GRAPHQL_SITE_SCHEMA_IDLE_MS = 10 * 60 * 1000;
 
+/**
+ * GraphQL schemas kept at most, across sites and visibility sets (one per distinct set of masks delivery
+ * callers hold, plus each site's full schema); the least recently used is dropped first. A 30-model schema
+ * takes about 1.6 MB.
+ */
+export const GRAPHQL_SCHEMA_VARIANTS_MAX = 32;
+
 /** `/api/graphql/playground?query=`: the longest operation the page opens with (it travels in the URL). */
 export const PLAYGROUND_QUERY_MAX_LENGTH = 8192;
 

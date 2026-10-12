@@ -35,12 +35,30 @@ primary site. Naming another site than the token's is refused with `403 SITE_MIS
 `_snapshot` and `_changes` are the request site's. GET responses vary on `Shapio-Site` as well as on the
 credentials.
 
-Each site has its own schema: its own content types and the shared ones. Two sites can each have a `post`
+Each site has its own schema: its own content types and the shared ones. Within a site, the schema follows the
+caller's role ([below](#what-each-caller-sees)). Two sites can each have a `post`
 with different fields, and each site's schema shows its own; a content type of one site is not in another
 site's schema or introspection, so a query for it there fails validation (`400`). Generate client types per
 site (introspect with `?site=` or `Shapio-Site`). A site's schema is built on its first request and rebuilt
 when a model changes; a site's schema that no request has used for ten minutes is dropped from memory and built
 again when next asked for.
+
+## What each caller sees
+
+Admin sessions and admin API tokens see the whole schema of the site. A delivery token, an app user or an
+anonymous caller sees only what its role allows:
+
+- content types it may neither read nor write are left out, names included; one it may only write (a contact
+  form, say) has its mutations and no queries;
+- fields with `public: false` are left out, in components too, unless the role names them; filter, sort and
+  input types hold the same fields (inputs: those the role may write);
+- a relation to a content type the caller can't read is left out (REST keeps the key, always `null` or `[]`).
+
+So a query naming a hidden field or content type fails validation (`400`, `Cannot query field "…" on type "…"`),
+exactly like a name that doesn't exist. A caller allowed no content type at all gets what REST answers instead:
+`401 UNAUTHENTICATED` when anonymous (send a token or sign in), `403 FORBIDDEN` otherwise. Introspect with the token your client will use, and generate its types
+from that. Callers whose roles allow the same fields share one schema; each is built on its first request and
+again after a model changes.
 
 ## Schema shape
 

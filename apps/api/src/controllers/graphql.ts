@@ -1,15 +1,17 @@
 import { findInvalidText, INVALID_TEXT_MESSAGE } from '@shapio/schema';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
-import { OperationTypeNode } from 'graphql';
+import { getOperationAST, OperationTypeNode, type DocumentNode } from 'graphql';
 import { DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
+import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
 import {
   formatGraphqlRequestError,
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
+import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import {
   executeOperation,
   prepareOperation,
@@ -25,6 +27,15 @@ const introspectionDisabled = () =>
     'INTROSPECTION_DISABLED',
     'Schema introspection needs an admin session or an API token (or GRAPHQL_PUBLIC_INTROSPECTION=true)',
   );
+
+/**
+ * A caller allowed no model at all gets the answer REST gives (sign-in signal for app clients) rather than a
+ * validation error from its empty schema: anonymous queries 401, anything else 403. Nothing is named either way.
+ */
+const noContentAccess = (anonymous: boolean, document: DocumentNode, operationName?: string | null) =>
+  anonymous && getOperationAST(document, operationName ?? undefined)?.operation !== OperationTypeNode.MUTATION
+    ? new AppError(401, 'UNAUTHENTICATED', 'This content needs a delivery token')
+    : new AppError(403, 'FORBIDDEN', 'Your credentials may not read or write any content here');
 
 const mutationOverGet = () =>
   new AppError(405, 'METHOD_NOT_ALLOWED', 'Only queries may be sent with GET; send mutations with POST');
@@ -60,9 +71,15 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
 const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: GraphqlOperationInput) => {
   const runtime = request.server.graphqlRuntime;
   const mayIntrospect = runtime.mayIntrospect(request.principal);
-  const { schema } = await runtime.schemas.get(await getRequestSchema(request));
+  const view = await getRequestSchema(request);
+  // The schema as this caller may see it: a delivery caller's never names a field or model it cannot read.
+  const visibility = await resolveSchemaVisibility(view, getRequestPermissions(request), request.principal);
+  const { schema } = await runtime.schemas.get(view, visibility);
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
+    if (prepared.document && hasNoContentAccess(visibility)) {
+      throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
+    }
     return send(
       reply,
       formatGraphqlResult({ errors: prepared.errors }, { log: request.log, hideSuggestions: !mayIntrospect }),
