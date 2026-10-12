@@ -20,6 +20,10 @@ All notable changes to Shapio are listed here. The format follows
   over the admin, REST, and GraphQL; new entries count as your own.
 - **Restoring a revision checks every field it changes.** On localized content types, a restore could change
   fields of its locale that your role may not edit. Those restores are now refused with `FORBIDDEN_FIELD`.
+- **Creating only your own entries needs someone to own them.** A role that may create entries only as their
+  owner, bound to the public audience or held by an API token, let anonymous callers and tokens create, though
+  they own nothing. Those creates are now refused with 403 before anything is written; signed-in users and
+  admins create as before.
 
 ## [0.5.6] - 2026-10-11
 

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { buildPolicy, type Grant } from '../../permissions/policy.js';
 import type { Policy, Principal } from '../../permissions/types.js';
-import { everyRowReadMask, ownershipOfNewEntry, rowReadMask, rowWriteMask } from './policy.js';
+import {
+  allowsNewEntry,
+  everyRowReadMask,
+  ownershipOfNewEntry,
+  rowReadMask,
+  rowWriteMask,
+} from './policy.js';
 
 const policy: Policy = {
   allowed: true,
@@ -72,5 +79,57 @@ describe('write masks on one entry (issue #80)', () => {
       mode: 'only',
       fieldIds: ['f-bio'],
     });
+  });
+});
+
+describe('creating under a row filter (issue #105)', () => {
+  const admin: Principal = {
+    kind: 'admin',
+    adminUserId: 'a-1',
+    sessionId: 'session',
+    assignments: [],
+    siteId: 's',
+    roleIds: [],
+    networkRoleIds: [],
+  };
+  const token: Principal = { kind: 'token', tokenId: 't', scope: 'delivery', roleId: 'r', siteId: 's' };
+  const create = (...conditions: Array<'ownedByPrincipal' | null>) =>
+    buildPolicy(
+      conditions.map((condition): Grant => ({
+        roleId: 'r',
+        action: 'create',
+        modelId: 'm',
+        condition,
+        fieldIds: null,
+      })),
+      { action: 'create', modelId: 'm' },
+      'delivery',
+      [{ id: 'f-name', public: true }],
+    );
+
+  it('refuses callers that own nothing when every create grant is limited to own entries', () => {
+    const ownOnly = create('ownedByPrincipal');
+    expect(allowsNewEntry(ownOnly, anonymous)).toBe(false);
+    expect(allowsNewEntry(ownOnly, token)).toBe(false);
+    expect(allowsNewEntry(ownOnly, appUser)).toBe(true);
+    expect(allowsNewEntry(ownOnly, admin)).toBe(true);
+  });
+
+  it('allows everyone a grant without a condition covers', () => {
+    const mixed = create('ownedByPrincipal', null);
+    expect(mixed.rowFilter).toBeNull();
+    expect(allowsNewEntry(mixed, anonymous)).toBe(true);
+    expect(allowsNewEntry(mixed, token)).toBe(true);
+  });
+
+  it('evaluates combined filters on the new entry', () => {
+    const base = create(null);
+    const ownAnd: Policy = {
+      ...base,
+      rowFilter: { kind: 'and', filters: [{ kind: 'ownedByPrincipal' }] },
+    };
+    expect(allowsNewEntry(ownAnd, appUser)).toBe(true);
+    expect(allowsNewEntry(ownAnd, anonymous)).toBe(false);
+    expect(allowsNewEntry({ ...base, rowFilter: { kind: 'or', filters: [] } }, appUser)).toBe(false);
   });
 });

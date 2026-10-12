@@ -112,6 +112,14 @@ export const ownershipOfNewEntry = (principal: Principal): EntryOwnership => ({
 });
 
 /**
+ * Whether the create policy's row filter holds for the entry a create would produce (issue #105). False when
+ * every create grant is limited to the caller's own entries and the caller owns nothing it creates (anonymous
+ * callers and tokens).
+ */
+export const allowsNewEntry = (policy: Policy, principal: Principal): boolean =>
+  matchesRowFilter(policy.rowFilter, principal, ownershipOfNewEntry(principal));
+
+/**
  * The fields the caller may read on every row it may read. Filters, sorts and searches use it (a filter on a
  * field hidden on some rows would reveal those rows' values), and so does any reader that shows values
  * without the entry's ownership at hand.
