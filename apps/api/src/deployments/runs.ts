@@ -2,7 +2,7 @@ import type { Kysely, Transaction } from 'kysely';
 import { JOB_PRIORITY } from '../constants/jobPriorities.js';
 import { DEPLOYMENT_EVENTS, PROVIDER_POLL_MAX_MS, PUBLISHING_JOBS } from '../constants/publishing.js';
 import type { DB } from '../db/types.js';
-import { describeError } from '../helpers/errors.js';
+import { describeError, errorMessage } from '../helpers/errors.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import { enqueueJob } from '../jobs/queue.js';
 import { PermanentJobError, type JobHandler } from '../jobs/types.js';
@@ -200,10 +200,11 @@ export const createDeploymentTriggerHandler =
     try {
       connection = resolveConnection(runtime, row);
     } catch (error) {
-      // A secret's environment variable is missing: retrying will not help until the server is fixed.
-      const message = error instanceof Error ? error.message : String(error);
+      // A secret's environment variable is missing: retrying will not help until the server is fixed. No
+      // `cause`: it would repeat the same message in the worker's log.
+      const message = errorMessage(error);
       await failRun(runtime, runId, `Trigger failed: ${message}`);
-      throw new PermanentJobError(message, { cause: error });
+      throw new PermanentJobError(message);
     }
     const context: RunContext = {
       ...providerContextFor(runtime, connection, job.signal),
@@ -218,7 +219,7 @@ export const createDeploymentTriggerHandler =
       const message = describeError(error);
       if (error instanceof OutboundBlockedError || job.attempt >= job.maxAttempts) {
         await failRun(runtime, runId, `Trigger failed: ${message}`);
-        throw new PermanentJobError(message, { cause: error });
+        throw new PermanentJobError(errorMessage(error));
       }
       await deploymentRunsRepository.appendTimeline(
         runId,
@@ -280,7 +281,7 @@ export const createDeploymentPollHandler =
           },
           'shapio',
         );
-        throw new PermanentJobError(describeError(error), { cause: error });
+        throw new PermanentJobError(errorMessage(error));
       }
       throw error;
     }

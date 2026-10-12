@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PUBLISHING_JOBS } from '../src/constants/publishing.js';
 import type { Worker } from '../src/jobs/worker.js';
@@ -190,6 +192,67 @@ describe('webhooks', () => {
       .execute();
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.last_error).toContain('HTTP 500');
+  });
+
+  describe('a receiver that never answers', () => {
+    let slowApp: TestApp & { dns: FakeDns };
+    let silent: Server;
+    let silentUrl: string;
+
+    beforeAll(async () => {
+      // The shortest timeout the config allows, so each attempt gives up after a second.
+      slowApp = await createPublishingTestApp(database.current, { env: { OUTBOUND_TIMEOUT_MS: '1000' } });
+      silent = createServer(() => undefined);
+      await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+      silentUrl = `http://127.0.0.1:${(silent.address() as AddressInfo).port}/hooks`;
+    });
+    afterAll(async () => {
+      silent.closeAllConnections();
+      await new Promise((resolve) => silent.close(resolve));
+      await slowApp.app.close();
+    });
+
+    it('records the timeout once, as the delivery log shows it, on a retry and when it gives up', async () => {
+      const created = expectStatus(
+        await createWebhook({
+          name: 'Slow',
+          url: silentUrl,
+          events: ['entry.created'],
+          allowPrivateNetwork: true,
+          maxAttempts: 2,
+        }),
+        201,
+      ).json<{ webhook: Webhook }>();
+      expectStatus(await admin.post('/api/admin/content/article', { data: { title: 'Slow' } }), 201);
+      const clock = createTestClock();
+      const running = createPublishingWorker({
+        db: database.current.db,
+        app: slowApp.app,
+        dns: slowApp.dns,
+        now: clock.now,
+      });
+      workers.push(running);
+      // Earlier cases leave their own delivery jobs behind: only this receiver's attempts time out.
+      const timedOutJobs = () =>
+        database.current.db
+          .selectFrom('jobs')
+          .select(['status', 'last_error'])
+          .where('type', '=', PUBLISHING_JOBS.webhookDeliver)
+          .where('last_error', 'like', '%timed out%')
+          .execute();
+      const timedOut = 'Request timed out after 1000 ms';
+
+      await drainJobs(running, database.current.db, { types: JOB_TYPES, now: clock.now });
+      expect(await timedOutJobs()).toEqual([{ status: 'pending', last_error: `Error: ${timedOut}` }]);
+      clock.advance(10 * 60 * 1000);
+      await drainJobs(running, database.current.db, { types: JOB_TYPES, now: clock.now });
+      expect(await timedOutJobs()).toEqual([
+        { status: 'dead', last_error: `PermanentJobError: ${timedOut}` },
+      ]);
+
+      const [delivery] = await deliveriesOf(created.webhook.id);
+      expect(delivery).toMatchObject({ status: 'dead', attempts: 2, lastError: `Error: ${timedOut}` });
+    });
   });
 
   describe('SSRF protection', () => {

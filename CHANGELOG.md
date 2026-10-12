@@ -10,6 +10,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Webhook and deployment job errors read once.** A webhook timeout was recorded as
+  `Error: Error: Request timed out after 10000 ms`, and a failed deployment trigger logged its message
+  twice (three times for a secret that cannot be decrypted); each now names the problem once.
 
 ## [0.5.6] - 2026-10-11
 
