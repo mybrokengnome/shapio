@@ -18,7 +18,8 @@ export type IssueCode =
   | 'INVALID_RICHTEXT'
   | 'NOT_UNIQUE'
   | 'RELATION_TARGET_MISSING'
-  | 'MEDIA_MISSING';
+  | 'MEDIA_MISSING'
+  | 'INVALID_TEXT';
 
 /** One problem with a content value. `path` is a JSON pointer in API keys, e.g. `/sections/0/title`. */
 export type ContentIssue = { path: string; code: IssueCode; message: string };

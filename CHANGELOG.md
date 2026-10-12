@@ -113,6 +113,10 @@ All notable changes to Shapio are listed here. The format follows
   value"), and Ship now stays disabled with the reason until you untick Required or set a default; Review in a
   change set still works. After a change fails, Review works again while the "didn't go live" notice is still
   shown.
+- **A NUL character or an unpaired surrogate in input is a clear 422, not a server error.** Any request
+  carrying one (content saves, delivery filters and search, GraphQL, app-user sign-up, locales, models) is
+  refused with `INVALID_TEXT` and the path of the value, and import bundles and other content writes refuse it
+  too. PostgreSQL failed with an internal error and SQLite stored the text, so both now agree.
 
 ## [0.5.6] - 2026-10-11
 

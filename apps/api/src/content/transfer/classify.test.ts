@@ -127,6 +127,9 @@ describe('parseRecord', () => {
     expect(() => parseRecord('{"type":"secret"}', 3)).toThrow('Bundle line 3: unknown record type "secret"');
     expect(() => parseRecord('{"type":"locale","code":"en"}', 4)).toThrow(/Bundle line 4: locale/);
     expect(() => parseRecord('not json', 5)).toThrow('Bundle line 5: not valid JSON');
+    expect(() => parseRecord('{"type":"locale","code":"en","label":"Eng\\u0000"}', 6)).toThrow(
+      'Bundle line 6: /label must not contain NUL characters or unpaired surrogates',
+    );
   });
 
   it('accepts only argon2 hashes as app-user passwords', () => {

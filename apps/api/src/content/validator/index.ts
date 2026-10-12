@@ -1,4 +1,6 @@
 import {
+  findInvalidText,
+  INVALID_TEXT_MESSAGE,
   isComponentDefinition,
   isEmptyRichText,
   richTextMediaIds,
@@ -122,7 +124,15 @@ const validateFields = (
       }
       continue;
     }
-    const checked = checkField(field, value, pointer(path, field.apiKey), walk, components);
+    const at = pointer(path, field.apiKey);
+    // Components and zones are walked field by field; any other value is checked whole (json keys too).
+    const invalidText =
+      field.type === 'component' || field.type === 'dynamiczone' ? undefined : findInvalidText(value, at);
+    if (invalidText !== undefined) {
+      issue(walk, invalidText, 'INVALID_TEXT', INVALID_TEXT_MESSAGE);
+      continue;
+    }
+    const checked = checkField(field, value, at, walk, components);
     if (checked !== undefined) {
       output[field.id] = checked;
     }

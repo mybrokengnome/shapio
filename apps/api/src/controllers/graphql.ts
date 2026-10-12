@@ -1,3 +1,4 @@
+import { findInvalidText, INVALID_TEXT_MESSAGE } from '@shapio/schema';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { OperationTypeNode } from 'graphql';
 import { DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
@@ -47,6 +48,11 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
   }
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new AppError(400, 'BAD_REQUEST', '`variables` must be a JSON object');
+  }
+  // Decoded from JSON escapes here, after the request-level text check (plugins/textInput.ts).
+  const path = findInvalidText(parsed, '/query/variables');
+  if (path !== undefined) {
+    throw new AppError(422, 'INVALID_TEXT', `Text ${INVALID_TEXT_MESSAGE}`, { path });
   }
   return parsed as Record<string, unknown>;
 };

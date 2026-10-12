@@ -8,6 +8,7 @@ import { checkApiKeySyntax, foldApiKey, isApiKeySyntaxValid } from './apiKey.js'
 import { checkDefaultValue } from './defaultValue.js';
 import { issue, type ValidationIssue } from './issues.js';
 import { RESERVED_DEFINITION_API_KEYS, RESERVED_FIELD_API_KEYS } from './naming.js';
+import { findInvalidText, INVALID_TEXT_MESSAGE } from './text.js';
 import { collectSchemaErrors } from './typeboxIssues.js';
 
 /**
@@ -462,6 +463,10 @@ const checkPluralApiKey = (definition: SchemaDefinition): ValidationIssue[] => {
 /** All problems with one definition, in document order. Empty means valid on its own. */
 export const validateDefinition = (definition: SchemaDefinition): ValidationIssue[] => {
   const issues: ValidationIssue[] = [];
+  const invalidText = findInvalidText(definition);
+  if (invalidText !== undefined) {
+    issues.push(issue(invalidText, 'INVALID_TEXT', INVALID_TEXT_MESSAGE));
+  }
   if (!isStableId(definition.id)) {
     issues.push(issue('/id', 'INVALID_ID', 'must be a lower-case UUID'));
   }

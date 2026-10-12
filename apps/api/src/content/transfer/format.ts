@@ -1,3 +1,4 @@
+import { findInvalidText, INVALID_TEXT_MESSAGE } from '@shapio/schema';
 import { Type, type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { AppError } from '../../helpers/appError.js';
@@ -319,6 +320,10 @@ export const parseRecord = (text: string, line: number): BundleRecord => {
     value = JSON.parse(text);
   } catch {
     throw new BundleFormatError(line, 'not valid JSON');
+  }
+  const invalidText = findInvalidText(value);
+  if (invalidText !== undefined) {
+    throw new BundleFormatError(line, `${invalidText} ${INVALID_TEXT_MESSAGE}`);
   }
   const type = (value as { type?: unknown } | null)?.type;
   const schema = typeof type === 'string' ? SCHEMAS[type as BundleRecord['type']] : undefined;

@@ -12,6 +12,7 @@ export type ValidationIssue = {
 
 export type IssueCode =
   | 'INVALID_STRUCTURE'
+  | 'INVALID_TEXT'
   | 'INVALID_ID'
   | 'DUPLICATE_ID'
   | 'API_KEY_INVALID'

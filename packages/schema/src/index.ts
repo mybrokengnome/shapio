@@ -17,6 +17,7 @@ export * from './validators/issues.js';
 export * from './validators/naming.js';
 export * from './validators/parse.js';
 export * from './validators/schema.js';
+export * from './validators/text.js';
 export * from './diff/types.js';
 export * from './diff/diffDefinitions.js';
 export * from './diff/classify.js';
