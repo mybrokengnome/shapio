@@ -24,13 +24,21 @@ export const schemaChangeUnsupported = (changes: readonly unknown[]) =>
     changes,
   });
 
-export const acknowledgementRequired = (plan: unknown) =>
-  new AppError(
-    409,
-    'SCHEMA_CHANGE_NOT_ACKNOWLEDGED',
-    'This change breaks the API contract or destroys data. Review the plan and resend with acknowledgeBreaking (and acknowledgeDestructive) set.',
-    { plan },
-  );
+/** What a change needs acknowledged: each one is a request parameter of the same name. */
+export type AcknowledgementNeeds = { breaking: boolean; destructive: boolean };
+
+const acknowledgementMessage = ({ breaking, destructive }: AcknowledgementNeeds) => {
+  if (breaking && destructive) {
+    return 'This change breaks the API contract and destroys data. Review the plan and resend with acknowledgeBreaking and acknowledgeDestructive set.';
+  }
+  return breaking
+    ? 'This change breaks the API contract. Review the plan and resend with acknowledgeBreaking set.'
+    : 'This change destroys data. Review the plan and resend with acknowledgeDestructive set.';
+};
+
+/** The message names only the parameters the change needs, so it never asks for one a route does not take. */
+export const acknowledgementRequired = (plan: unknown, needs: AcknowledgementNeeds) =>
+  new AppError(409, 'SCHEMA_CHANGE_NOT_ACKNOWLEDGED', acknowledgementMessage(needs), { plan });
 
 export const schemaReadOnly = (reason: string | null) =>
   new AppError(

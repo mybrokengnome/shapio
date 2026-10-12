@@ -10,6 +10,10 @@ All notable changes to Shapio are listed here. The format follows
 
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
+- **Acknowledgement errors name only the parameters the change needs.** Deleting a locale with content said
+  to resend with `acknowledgeBreaking`, which that route refuses; the message now names
+  `acknowledgeDestructive` there, `acknowledgeBreaking` for a new default locale, and both only when a
+  model change needs both.
 
 ## [0.5.6] - 2026-10-11
 
