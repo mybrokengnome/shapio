@@ -1845,6 +1845,11 @@
         "notNumber": "Enter a number.",
         "notInteger": "Enter a whole number."
       },
+      "incomplete": {
+        "date": "Enter a complete date.",
+        "time": "Enter a complete time.",
+        "dateTime": "Enter a complete date and time."
+      },
       "dateTime": {
         "local": "Your time zone ({{zone}})",
         "utc": "UTC"

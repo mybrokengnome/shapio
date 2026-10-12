@@ -8,6 +8,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- **A partly typed date or time no longer clears the saved value.** While a date, time, or date-time is
+  incomplete, the field says "Enter a complete date." (or time, or date and time), stays an unsaved change, and
+  Save, Create, and Publish refuse until it is complete or cleared. Leaving the page asks first.
 - `shapio` and `create-shapio` now say plainly that Node.js 24 or newer is needed instead of failing with
   `No such built-in module: node:sqlite` on older Node.
 - **Number and JSON fields no longer drop text that doesn't parse.** Text such as `3.7` in an integer field or
