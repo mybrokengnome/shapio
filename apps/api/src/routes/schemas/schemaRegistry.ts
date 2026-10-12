@@ -105,6 +105,22 @@ export const RevisionSummarySchema = Type.Object({
   createdAt: Timestamp,
 });
 
+/** A revision in a definition's history: whether its change went live, and whether it is the active one. */
+export const RevisionListItemSchema = Type.Intersect([
+  RevisionSummarySchema,
+  Type.Object({
+    /** The change that wrote it: `failed` and `cancelled` revisions never went live. */
+    status: Type.Union([
+      Type.Literal('pending'),
+      Type.Literal('running'),
+      Type.Literal('activated'),
+      Type.Literal('failed'),
+      Type.Literal('cancelled'),
+    ]),
+    active: Type.Boolean(),
+  }),
+]);
+
 export const SyncApplyBodySchema = Type.Object(
   {
     /** One entry per local schema file. Validated per file by the service so errors name the file. */

@@ -147,6 +147,9 @@ All notable changes to Shapio are listed here. The format follows
 - **`shapio admin create` applies the same rules as Setup.** It refuses an invalid email, a name over 200
   characters, and a password outside 12 to 256 characters, instead of creating an admin who could never sign
   in.
+- **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
+  listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
+  of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
 
 ## [0.5.6] - 2026-10-11
 

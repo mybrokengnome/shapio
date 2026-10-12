@@ -134,6 +134,9 @@ export const createDefinitionControllers = (category: DefinitionCategory) => ({
         createdByType: row.created_by_type,
         createdById: row.created_by_id,
         createdAt: row.created_at.toISOString(),
+        // A revision no change job wrote was written by an activation (a conversion): it went live.
+        status: row.change_status ?? 'activated',
+        active: row.id === row.active_revision_id,
       })),
     };
   },

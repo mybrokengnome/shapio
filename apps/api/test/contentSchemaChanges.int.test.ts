@@ -140,6 +140,19 @@ describe('content and schema changes', () => {
       summary: 'TBD',
     });
     expect((await create('note', { title: 'n3', summary: null })).statusCode).toBe(422);
+
+    // The history marks the version whose checks failed: it never went live.
+    const revisions = expectStatus(
+      await admin.get(`/api/admin/models/${note.definition.id}/revisions`),
+      200,
+    ).json<{
+      items: Array<{ version: number; status: string; active: boolean }>;
+    }>().items;
+    expect(revisions.map(({ version, status, active }) => ({ version, status, active }))).toEqual([
+      { version: 3, status: 'activated', active: true },
+      { version: 2, status: 'failed', active: false },
+      { version: 1, status: 'activated', active: false },
+    ]);
   });
 
   it('a write that lands between the scan and the activation is caught by the re-check', async () => {

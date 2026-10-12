@@ -150,6 +150,10 @@ export type DefinitionRevision = {
   createdByType: string;
   createdById: string | null;
   createdAt: string;
+  /** The change that wrote this version: `failed` and `cancelled` versions never went live. */
+  status: SchemaChangeStatus;
+  /** The version the model serves now. */
+  active: boolean;
 };
 
 /** One revision of a definition with its body. */
