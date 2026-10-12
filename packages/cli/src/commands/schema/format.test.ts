@@ -19,12 +19,12 @@ describe('formatChange', () => {
   });
 
   it("follows the server's classification: a multi-value enum to text drops its values", () => {
-    expect(formatChange({ ...typeChange('enum', 'string'), dropsValues: true }, names)).toBe(
+    expect(formatChange({ ...typeChange('enum', 'string'), dropsValues: true }, names)).toEqual([
       '~ field price type: "enum" → "string" (values dropped)',
-    );
-    expect(formatChange({ ...typeChange('media', 'number'), dropsValues: false }, names)).toBe(
+    ]);
+    expect(formatChange({ ...typeChange('media', 'number'), dropsValues: false }, names)).toEqual([
       '~ field price type: "media" → "number"',
-    );
+    ]);
   });
 
   it('prints a type change Shapio converts as before', () => {
