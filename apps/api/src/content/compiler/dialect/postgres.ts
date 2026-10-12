@@ -1,6 +1,13 @@
 import { sql, type RawBuilder } from 'kysely';
 import { CONTENT_HEADS_COLUMNS } from '../heads.js';
-import type { ContentSqlDialect, ListElement, TextMatchOperator, ValueCast } from './types.js';
+import type {
+  ContentSqlDialect,
+  ReferenceIds,
+  SnapshotSource,
+  ListElement,
+  TextMatchOperator,
+  ValueCast,
+} from './types.js';
 
 /**
  * PostgreSQL content SQL (ADR 0001): JSONB with a GIN `jsonb_path_ops` index serving containment, so
@@ -65,6 +72,36 @@ const castParameter = (value: unknown, cast: ValueCast): RawBuilder<unknown> => 
 export const containment = (document: Readonly<Record<string, unknown>>): RawBuilder<unknown> =>
   sql`(${DATA} @> ${JSON.stringify(document)}::jsonb)`;
 
+/** Published revisions of a model as of a publication sequence (`snapshotCte`, relation targets). */
+const snapshotRows = ({ siteId, modelId, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
+      r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
+      en.created_at as entry_created_at
+    from publication_log pl
+    join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
+    where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelId}
+      and pl.from_seq <= ${seq}::bigint
+      and (pl.to_seq is null or pl.to_seq > ${seq}::bigint)`;
+
+/** A UUID-shaped text cast to uuid; anything else is no ID (a cast would fail the whole statement). */
+const asUuid = (text: RawBuilder<unknown>): RawBuilder<unknown> =>
+  sql`(case when ${text} ~ '^[0-9A-Fa-f-]{36}$' then (${text})::uuid end)`;
+
+/** One row per stored ID: `jsonb_array_elements_text` for a list, a one-row select for a single ID. */
+const referenceIds = (fieldId: string, list: boolean): ReferenceIds => {
+  const json = sql`(${DATA} -> ${sql.lit(fieldId)})`;
+  return list
+    ? {
+        from: sql`jsonb_array_elements_text(case when jsonb_typeof(${json}) = 'array' then ${json} end) as v(id)`,
+        matches: (column) => sql`${column} = ${asUuid(sql`v.id`)}`,
+      }
+    : {
+        from: sql`(select ${asUuid(sql`(case when jsonb_typeof(${json}) = 'string' then ${fieldText(fieldId)} end)`)} as id) v`,
+        matches: (column) => sql`${column} = v.id`,
+      };
+};
+
 export const postgresContentDialect: ContentSqlDialect = {
   name: 'postgres',
 
@@ -105,17 +142,10 @@ export const postgresContentDialect: ContentSqlDialect = {
 
   localeRank: (chain, column) => sql`array_position(${[...chain]}::text[], ${column})`,
   sortDirection: (direction) => (direction === 'desc' ? sql`desc` : sql`asc`),
-  snapshotCte: ({ name, siteId, modelId, seq }) => sql`with ${sql.id(name)} as (
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
-      en.created_at as entry_created_at
-    from publication_log pl
-    join content_revisions r on r.id = pl.revision_id
-    join entries en on en.id = pl.entry_id
-    where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelId}
-      and pl.from_seq <= ${seq}::bigint
-      and (pl.to_seq is null or pl.to_seq > ${seq}::bigint)
+  snapshotCte: (source) => sql`with ${sql.id(source.name)} as (${snapshotRows(source)}
   ) `,
+  snapshotRows,
+  referenceIds,
 
   createFieldIndex: ({ name, table, leading, expression, modelIdColumn, modelId }) =>
     sql`create index concurrently if not exists ${sql.id(name)} on ${sql.table(table)} (${leading}, ${expression}) where ${sql.ref(modelIdColumn)} = ${modelId}`,

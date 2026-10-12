@@ -1,5 +1,7 @@
 import type { FieldDefinition } from '@shapio/schema';
 import { AppError } from '../../helpers/appError.js';
+import type { Principal, RowFilter } from '../../permissions/types.js';
+import type { HeadSource, LocaleScope } from './compile.js';
 
 /** The parsed, allowlisted form of a content query. Nothing in it is raw request text used as SQL. */
 
@@ -33,7 +35,34 @@ export type FilterNode =
   | { kind: 'and'; nodes: FilterNode[] }
   | { kind: 'or'; nodes: FilterNode[] }
   | { kind: 'not'; node: FilterNode }
-  | { kind: 'condition'; target: FilterTarget; operator: FilterOperator; value: unknown };
+  | {
+      kind: 'condition';
+      target: FilterTarget;
+      operator: FilterOperator;
+      value: unknown;
+      /**
+       * `$null`/`$notNull` on a relation or media field: the targets the read shows (`visibleReferences.ts`), so
+       * a value whose targets are all hidden counts as null. Absent: the stored value decides.
+       */
+      shownTargets?: ShownTargets;
+    };
+
+/**
+ * Which stored references a read shows: relation targets with a head in the read's source and locale chain
+ * that the target's row filter lets through, live media assets, or none at all (a target model that is gone).
+ */
+export type ShownTargets =
+  | {
+      kind: 'relation';
+      siteId: string;
+      modelId: string;
+      source: HeadSource;
+      locales: LocaleScope;
+      rowFilter: RowFilter | null;
+      actor: Principal;
+    }
+  | { kind: 'media'; siteId: string }
+  | { kind: 'none' };
 
 export type SortTerm = { target: FilterTarget; direction: 'asc' | 'desc' };
 

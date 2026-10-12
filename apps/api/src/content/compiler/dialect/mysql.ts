@@ -2,7 +2,14 @@ import { sql, type RawBuilder } from 'kysely';
 import { toDatetimeText } from '../../../db/mysql/codec.js';
 import { fieldIndexColumnName } from '../../../db/mysql/fieldIndexColumns.js';
 import { CONTENT_HEADS_COLUMNS, CONTENT_HEADS_TABLE } from '../heads.js';
-import type { ContentSqlDialect, FieldIndexDefinition, ListElement, ValueCast } from './types.js';
+import type {
+  ContentSqlDialect,
+  ReferenceIds,
+  SnapshotSource,
+  FieldIndexDefinition,
+  ListElement,
+  ValueCast,
+} from './types.js';
 
 /**
  * MySQL content SQL (ADR 0001, "MySQL"). `data` is a JSON column; there is no containment index and no
@@ -101,6 +108,40 @@ const addIndexColumn = ({
   sql`alter table ${sql.table(table)} add column ${sql.id(fieldIndexColumnName(name))} ${numericString ? DECIMAL : COLUMN_TYPES[cast]}
     generated always as (${expression}) virtual invisible, algorithm=inplace, lock=none`;
 
+/** Published revisions of a model as of a publication sequence (`snapshotCte`, relation targets). */
+const snapshotRows = ({ siteId, modelId, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
+      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
+      en.created_at as entry_created_at
+    from publication_log pl
+    join content_revisions r on r.id = pl.revision_id
+    join entries en on en.id = pl.entry_id
+    where pl.site_id = ${siteId} and pl.model_id = ${modelId}
+      and pl.from_seq <= ${seq}
+      and (pl.to_seq is null or pl.to_seq > ${seq})`;
+
+/**
+ * One row per field: a list stays one JSON array that the nested subquery tests with `member of` (a correlated
+ * `json_table` there loses its rows once the target query has the locale chain's `not exists`, on MySQL 8.4);
+ * a single ID is converted to the ASCII, case-insensitive form of UUID columns, so it matches them and their
+ * indexes.
+ */
+const referenceIds = (fieldId: string, list: boolean): ReferenceIds => {
+  if (list) {
+    const json = fieldJson(fieldId);
+    return {
+      from: sql`(select case when json_type(${json}) = 'ARRAY' collate utf8mb4_bin then ${json} end as ids) v`,
+      matches: (column) => sql`${column} member of (v.ids)`,
+    };
+  }
+  // json_value is null for an array or object, and for a value longer than an ID.
+  const text = sql`json_value(${DATA}, ${path(fieldId)} returning char(36) null on error)`;
+  return {
+    from: sql`(select convert(${text} using ascii) collate ascii_general_ci as id) v`,
+    matches: (column) => sql`${column} = v.id`,
+  };
+};
+
 export const mysqlContentDialect: ContentSqlDialect = {
   name: 'mysql',
 
@@ -166,17 +207,10 @@ export const mysqlContentDialect: ContentSqlDialect = {
       ? sql`(${expression} is null) ${order}, ${expression} ${order}`
       : sql`${expression} ${order}`;
   },
-  snapshotCte: ({ name, siteId, modelId, seq }) => sql`with ${sql.id(name)} as (
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published' as state, r.data, 0 as version,
-      r.id as revision_id, pl.published_at as updated_at, null as autosaved_at,
-      en.created_at as entry_created_at
-    from publication_log pl
-    join content_revisions r on r.id = pl.revision_id
-    join entries en on en.id = pl.entry_id
-    where pl.site_id = ${siteId} and pl.model_id = ${modelId}
-      and pl.from_seq <= ${seq}
-      and (pl.to_seq is null or pl.to_seq > ${seq})
+  snapshotCte: (source) => sql`with ${sql.id(source.name)} as (${snapshotRows(source)}
   ) `,
+  snapshotRows,
+  referenceIds,
 
   fieldIndexColumn: {
     add: addIndexColumn,

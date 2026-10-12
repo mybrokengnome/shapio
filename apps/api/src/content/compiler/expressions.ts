@@ -6,6 +6,7 @@ import type {
   ContentSqlDialect,
   EqualityTarget,
   FieldIndexDefinition,
+  ReferenceIds,
   TextMatchOperator,
   ValueCast,
 } from './dialect/types.js';
@@ -133,6 +134,16 @@ export const fieldMissingExpression = (
 ): RawBuilder<unknown> => {
   assertStableId(fieldId, 'a field ID');
   return dialect.fieldMissing(fieldId);
+};
+
+/** The IDs a top-level relation or media field stores, one row each (`v`; see `ContentSqlDialect`). */
+export const referenceIdsExpression = (
+  fieldId: string,
+  list: boolean,
+  dialect: ContentSqlDialect = contentDialect(),
+): ReferenceIds => {
+  assertStableId(fieldId, 'a field ID');
+  return dialect.referenceIds(fieldId, list);
 };
 
 /** The field holds a value (the opposite of `fieldMissingExpression`): for counting heads that hold one. */
