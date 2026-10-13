@@ -162,16 +162,17 @@ parent. A kind's own fields can't reuse the API ID of an inherited field (compar
 - A relation to Products accepts an entry of any kind of product. A relation to Digital accepts Digital
   entries only.
 
-**Routes and `__model`.** A kind is read under its parent: `/api/content/products` lists products of every
-kind, `/api/content/products/digital` lists Digital ones, and `/api/content/products/digital/<id>` reads one.
-The kind's **route key** is its ancestors' plural API IDs and its own, joined by `/` (`products/digital`).
+**Routes and `__model`.** A kind is read under its parent's plural API ID. With Post (`posts`) and its kind
+Guide (`guides`), `/api/content/posts` lists posts of every kind, `/api/content/posts/guides` lists guides, and
+`/api/content/posts/guides/<id>` reads one. The kind's **route key** is its ancestors' plural API IDs and its
+own plural API ID, joined by `/` (`posts/guides`).
 Every entry the delivery API returns names its own type in `__model` (the singular API ID), so a site can
 render each row of a mixed list in its own shape. A parent's list filters, sorts, and searches on the fields
 every kind shares ([Delivery API](delivery-api.md#types-that-extend-a-type)).
 
-**GraphQL.** A type with kinds gets an interface, `ProductInterface`, that it and every kind implement. The
-`products` query returns the interface, and you ask for a kind's own fields with a fragment
-(`... on DigitalProduct { downloadUrl }`). See [GraphQL](graphql.md#types-that-extend-a-type).
+**GraphQL.** A type with kinds gets an interface, `PostInterface`, that it and every kind implement. The
+`posts` query returns the interface, and you ask for a kind's own fields with a fragment
+(`... on Guide { timeToComplete }`). See [GraphQL](graphql.md#types-that-extend-a-type).
 
 **Permissions.** A grant on a parent covers its kinds: `read` on Products reads Digital and Physical too. A
 kind can have grants of its own, which only ever add to what the parent's grants allow. You can't allow a

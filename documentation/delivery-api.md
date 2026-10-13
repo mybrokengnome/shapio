@@ -8,8 +8,8 @@ GET {PUBLIC_URL}{BASE_PATH}/api/content/<plural API ID>/<entry id>   # a collect
 GET {PUBLIC_URL}{BASE_PATH}/api/content/<API ID>                     # a single type: its entry
 ```
 
-A type that extends another is read under its parent's route: `/api/content/products/digital` and
-`/api/content/products/digital/<entry id>` ([below](#types-that-extend-a-type)).
+A type that extends another is read under its parent's route, by its own plural API ID:
+`/api/content/posts/guides` and `/api/content/posts/guides/<entry id>` ([below](#types-that-extend-a-type)).
 
 A collection is addressed by its **plural API ID** (`/api/content/articles`), a single type by its **API ID**
 (`/api/content/homepage`). The singular API ID of a collection is not a delivery route: `/api/content/article`
@@ -173,7 +173,7 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 ```json
 {
   "data": [
-    { "id": "1a…", "__model": "guide", "title": "Pin your builds", "level": "beginner" },
+    { "id": "1a…", "__model": "guide", "title": "Pin your builds", "timeToComplete": 12 },
     { "id": "2b…", "__model": "post", "title": "Release notes" },
     { "id": "3c…", "__model": "opinion", "title": "Why models are data", "stance": "for" }
   ],

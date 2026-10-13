@@ -111,7 +111,7 @@ query Posts {
       id
       title
       ... on Guide {
-        level
+        timeToComplete
       }
       ... on Opinion {
         stance

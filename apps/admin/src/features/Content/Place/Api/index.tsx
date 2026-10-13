@@ -38,7 +38,7 @@ export const Api = ({ schema, model }: ApiProps) => {
     () => new Map<string, SchemaDefinition>([...schema.models, ...schema.components]),
     [schema],
   );
-  // A kind's delivery path nests under its ancestors' (`products/digital`).
+  // A kind's delivery path nests under its ancestors' (`posts/guides`).
   const endpoints = restEndpoints(model, lookup);
   const routePath = routePathOf(
     model,

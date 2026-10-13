@@ -31,7 +31,7 @@ const PreviewRow = ({ label, names }: PreviewRowProps) => (
  * Every API name a model's API IDs produce (REST path, GraphQL queries), updated as they are typed, so it
  * is clear there is nothing else to configure. A collection is listed under its plural API ID
  * (`/api/content/articles`, `articles`) and read one by one under the singular (`article`); a kind's path
- * nests under its ancestors' (`/api/content/products/digital`, as `routePathOf` builds it), while its
+ * nests under its ancestors' (`/api/content/posts/guides`, as `routePathOf` builds it), while its
  * GraphQL names stay its own. Nothing for components or while the ID is empty.
  */
 export const EndpointPreview = ({ apiKey, pluralApiKey, kind, ancestors = [] }: EndpointPreviewProps) => {

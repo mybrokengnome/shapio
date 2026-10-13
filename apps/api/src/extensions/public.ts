@@ -79,7 +79,7 @@ export type ServiceField = {
 
 /** A content model with its effective fields and where the delivery API serves it. */
 export type ServiceModel = HookModel & {
-  /** The delivery route key: the plural API ID, nested under the models it extends (`products/digital`). */
+  /** The delivery route key: the plural API ID, nested under the models it extends (`posts/guides`). */
   routeKey: string;
   fields: ServiceField[];
 };

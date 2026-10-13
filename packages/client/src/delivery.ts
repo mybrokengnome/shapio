@@ -11,7 +11,7 @@ import type { RequestFn } from './request.js';
 export const DELIVERY_PATH = '/api/content';
 
 /**
- * The delivery path of a route key. A type that extends another has a nested key (`products/digital`), sent as
+ * The delivery path of a route key. A type that extends another has a nested key (`posts/guides`), sent as
  * nested path segments: each segment is encoded, the `/` between them never is.
  */
 const routePath = (routeKey: string) =>
@@ -49,7 +49,7 @@ const draftsPinned = () =>
 /**
  * Published content, typed by the caller (`delivery.list<Article>('articles', { locale: 'fr', snapshot })`).
  * A collection is read with `list` (a page) and `get` (one entry); a singleton with `singleton`. A type that
- * extends another is read by its nested route key (`delivery.list('products/digital')`); a parent's list
+ * extends another is read by its nested route key (`delivery.list('posts/guides')`); a parent's list
  * holds every kind, each entry naming its own in `__model`. Each read
  * takes Next.js cache options last and is tagged for `revalidateTag` (nextCache.ts): lists and singletons with
  * the site and model tags, `get` with the entry's tag too. In drafts mode (`drafts: true`) every read asks for

@@ -42,7 +42,7 @@ const apiKeyIn = (index: DefinitionIndex, id: string) => index.get(id)?.apiKey ?
 
 /**
  * The delivery route key: a collection's plural API ID (`articles`), a singleton's API ID, and for a type that
- * extends another its ancestors' plural API IDs and its own (`products/digital`). The admin content API uses
+ * extends another its ancestors' plural API IDs and its own (`posts/guides`). The admin content API uses
  * the singular API ID instead. Components have no route.
  */
 export const routeKeyOf = (schema: Exported, definition: SchemaDefinition): string => {

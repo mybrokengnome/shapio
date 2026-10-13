@@ -29,7 +29,7 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
         "Every model (collection, singleton) and component of this server's site (its own and the ones shared " +
         'with all sites) with its API IDs, scope, version and fields (types only). A collection that extends ' +
         'another names it in extends and lists the inherited fields first, each with inheritedFrom. Delivery ' +
-        "reads use routeKey for collections (the plural API ID, nested under the parent's: products/digital).",
+        "reads use routeKey for collections (the plural API ID, nested under the parent's: posts/guides).",
       inputSchema: z.object({}),
       annotations: READ_ONLY,
     },

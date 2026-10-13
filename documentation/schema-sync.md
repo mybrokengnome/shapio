@@ -93,7 +93,7 @@ inherits stay in the parent's file, and pull never copies them in. The CLI print
 
 ```text
 model guide (extends post): create
-    + field level
+    + field timeToComplete
 model opinion (extends post): update [BREAKING]
     ~ extends: article → post
     + field summary

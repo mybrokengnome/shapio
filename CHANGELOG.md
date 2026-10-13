@@ -16,11 +16,11 @@ All notable changes to Shapio are listed here. The format follows
   See [Modelling](documentation/modelling.md#types-that-extend-a-type).
 - **Nested routes and mixed lists.** A kind is read under its parent: `/api/content/products` lists every
   product, of every kind, filtered and sorted on the shared fields, and paged together, each row in its own
-  shape; `/api/content/products/digital` lists one kind. A relation to Products accepts any kind, and
+  shape; `/api/content/posts/guides` lists one kind. A relation to Products accepts any kind, and
   `populate` returns each in its own shape. `@shapio/client` sends nested route keys as nested paths.
 - **GraphQL interfaces.** A type with kinds gets `ProductInterface`, which it and every kind implement.
   `products`, `product(id)`, and relations to Products return the interface; ask for a kind's own fields with a
-  fragment (`... on DigitalProduct`). A type without kinds keeps exactly the schema it had.
+  fragment (`... on Guide`). A type without kinds keeps exactly the schema it had.
 - **Grants flow down.** A grant on a parent covers its kinds. A kind can get grants of its own, which only
   add access. The roles matrix shows kinds under their parent, with the inherited grant beside their own.
 - **Change kind.** An entry can move to another kind in its family from the Settings panel's danger zone

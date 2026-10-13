@@ -3,7 +3,7 @@ import type { ContentListQuery } from './admin/contentTypes.js';
 /**
  * The delivery API (`/api/content/:routeKey`): published content as sites and apps read it. `routeKey` is a
  * collection's plural API ID (`articles`) or a singleton's API ID (`homepage`); a type that extends another is
- * nested under its ancestors' plural API IDs (`products/digital`).
+ * nested under its ancestors' plural API IDs (`posts/guides`).
  */
 /**
  * How rich-text fields come back: `json` (the server's default) the stored document `{ format, version, doc }`,
@@ -43,7 +43,7 @@ export type DeliveryPagination = { page: number; pageSize: number; total: number
 
 /**
  * What every delivery entry carries besides its fields. `__model` is the singular API ID of the entry's own
- * model: in a parent's list (`/api/content/products`) each row is one kind (`product`, `digitalProduct`) in its
+ * model: in a parent's list (`/api/content/posts`) each row is one kind (`post`, `guide`) in its
  * own shape, so switch on `__model` the way a dynamic zone item is read by `__component`.
  */
 export type DeliveryEntryAttributes = { __model: string };

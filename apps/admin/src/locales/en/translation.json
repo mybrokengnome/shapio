@@ -1433,7 +1433,7 @@
     },
     "inheritance": {
       "extends": "Extends",
-      "extendsHint": "Makes it a kind of another collection: it gets that type's fields, locked, and adds its own. Its API path nests under the parent's, as in /api/content/products/digital.",
+      "extendsHint": "Makes it a kind of another collection: it gets that type's fields, locked, and adds its own. Its API path nests under the parent's, as in /api/content/posts/guides.",
       "noParent": "Nothing (a type of its own)",
       "noCollections": "No collection here to extend yet.",
       "reparentWarning": "Moving it under another type changes its API: reviewed as a breaking change.",

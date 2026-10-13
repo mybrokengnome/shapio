@@ -52,7 +52,7 @@ const ancestorModels = (model: ModelDefinition, index: DefinitionIndex | undefin
     return ancestor && isModelDefinition(ancestor) ? [ancestor] : [];
   });
 
-/** The model's REST route key: nested under its ancestors' (`products/digital`) when it is a kind. */
+/** The model's REST route key: nested under its ancestors' (`posts/guides`) when it is a kind. */
 const restRouteKeyOf = (model: ModelDefinition, index: DefinitionIndex | undefined) =>
   index ? routePathOf(model, ancestorModels(model, index)) : routeKeyOf(model);
 
