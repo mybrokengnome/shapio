@@ -12,9 +12,9 @@ const schemaItemsOf = (set: ChangeSet) =>
   set.items.filter((item): item is ChangeSetSchemaItem => item.kind === 'schema');
 
 /**
- * Relation targets and component references are stable IDs. Agents think in API IDs, so a reference that
- * is not an ID is looked up among the active definitions and the set's drafts (and this definition itself,
- * for a self-relation); anything unknown is left for the server to report.
+ * Relation targets, component references and `extends` (the parent type) are stable IDs. Agents think in API
+ * IDs, so a reference that is not an ID is looked up among the active definitions and the set's drafts (and
+ * this definition itself, for a self-relation); anything unknown is left for the server to report.
  */
 const resolveReferences = (definition: DraftDefinition, idsByApiKey: ReadonlyMap<string, string>) => {
   const resolve = (value: unknown) =>
@@ -22,6 +22,7 @@ const resolveReferences = (definition: DraftDefinition, idsByApiKey: ReadonlyMap
   const fields = Array.isArray(definition.fields) ? (definition.fields as FieldLike[]) : [];
   return {
     ...definition,
+    ...(definition.extends === undefined ? {} : { extends: resolve(definition.extends) }),
     fields: fields.map((field) => {
       const settings = field.settings;
       if (!settings) {

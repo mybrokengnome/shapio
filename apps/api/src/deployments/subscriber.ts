@@ -5,13 +5,16 @@ import { ensureQueuedRun } from './runs.js';
 import type { TriggerPolicy } from './types.js';
 
 /** Which outbox events start a run, by trigger policy. Unpublishing and deleting live content change the site too. */
-const policyFor = (event: { type: string; payload: unknown }): TriggerPolicy | undefined => {
+export const policyFor = (event: { type: string; payload: unknown }): TriggerPolicy | undefined => {
   switch (event.type) {
     case 'entry.published':
     case 'entry.unpublished':
       return 'publish';
     case 'entry.deleted':
       return (event.payload as { wasPublished?: boolean } | null)?.wasPublished ? 'publish' : undefined;
+    // A kind change moves live content to another route only when the entry had a published head.
+    case 'entry.kind_changed':
+      return (event.payload as { published?: boolean } | null)?.published ? 'publish' : undefined;
     case CHANGE_SET_EVENTS.shipped:
       return 'change_set';
     case 'schema.activated':

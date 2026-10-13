@@ -209,6 +209,7 @@ export const NOT_RESTORABLE_REASONS = [
   'locale_missing',
   'invalid',
   'unique_conflict',
+  'kind_changed',
 ] as const;
 export type NotRestorableReason = (typeof NOT_RESTORABLE_REASONS)[number];
 
@@ -304,6 +305,7 @@ export const SNAPSHOT_SOURCES = [
   'schema',
   'conversion',
   'import',
+  'kind_change',
   'legacy',
 ] as const;
 export type SnapshotSource = (typeof SNAPSHOT_SOURCES)[number];

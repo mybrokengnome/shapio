@@ -10,8 +10,8 @@ import type { ContentModel } from '../model.js';
 /**
  * Steps 1 and 2 of the write policy (see `runEntryWrite`) for one or several models: their shared advisory
  * locks in key order (the order activations use, so two writers never wait on each other in a cycle),
- * then a re-check that each model and every component it embeds are still at the versions the request
- * validated against. Throws 409 SCHEMA_CHANGED otherwise.
+ * then a re-check that each model, every model it extends and every component it embeds are still at the
+ * versions the request validated against. Throws 409 SCHEMA_CHANGED otherwise.
  */
 export const guardModelVersions = async (
   trx: Transaction<DB>,
@@ -19,13 +19,19 @@ export const guardModelVersions = async (
   /** The site the write is on: a definition that is no longer in its view counts as changed. */
   siteId: string,
 ): Promise<void> => {
-  const keys = [...new Set(models.map((model) => lockKeyFromId(model.definition.id)))].sort((a, b) => a - b);
+  // Ancestors' keys too: an activation of a parent locks it, and the child's shape depends on it.
+  const lockedIds = models.flatMap((model) => [model.definition.id, ...model.ancestors.keys()]);
+  const keys = [...new Set(lockedIds.map((id) => lockKeyFromId(id)))].sort((a, b) => a - b);
   for (const key of keys) {
     await acquireXactLockShared(trx, LOCK_NAMESPACE.model, key);
   }
   const expected = new Map<string, number>();
   for (const model of models) {
     expected.set(model.definition.id, model.version);
+    // A parent change reshapes this model without moving its own version (plan polymorphic-types).
+    for (const [id, ancestor] of model.ancestors) {
+      expected.set(id, ancestor.version);
+    }
     for (const [id, component] of model.components) {
       expected.set(id, component.version);
     }
@@ -51,11 +57,12 @@ export const lockWriteLocales = async (
 
 /**
  * Every entry write is one transaction under the transitional write policy (ADR 0002):
- * 1. the shared advisory lock of the model (the same key the planner's activation takes exclusively, so an
- *    activation waits for in-flight writes and blocks new ones while it re-checks and flips the pointer);
- * 2. a re-check that the model and every component it embeds are still at the versions this request
- *    validated against, and still in the site's view (an activation or scope change that committed before
- *    the lock was granted is detected here);
+ * 1. the shared advisory locks of the model and its ancestors (the same keys the planner's activation takes
+ *    exclusively, so an activation waits for in-flight writes and blocks new ones while it re-checks and
+ *    flips the pointer);
+ * 2. a re-check that the model, its ancestors and every component it embeds are still at the versions this
+ *    request validated against, and still in the site's view (an activation or scope change that committed
+ *    before the lock was granted is detected here);
  * 3. the target locale rows held FOR SHARE, so a locale cannot be deleted under the write.
  * Component activations lock every dependent model, so the model's own key covers them too.
  * Scheduled and release publications (publishing/publicationBatch.ts) apply the same guard to several models.

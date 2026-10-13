@@ -16,12 +16,13 @@ export const hasSeoField = (definition: SchemaDefinition): boolean =>
 
 /**
  * A single (non-repeatable) field holding the shared SEO component, with the SEO editor, localized when the
- * model is (the person can still change that in the field's properties).
+ * model is (the person can still change that in the field's properties). Its name avoids those in `taken`
+ * (the resolved draft for a kind, whose inherited fields' API IDs are taken too).
  */
-export const createSeoField = (definition: SchemaDefinition) =>
+export const createSeoField = (definition: SchemaDefinition, taken: SchemaDefinition = definition) =>
   createField(definition, {
     type: 'component',
-    ...uniqueNewFieldName(definition, SEO_FIELD_LABEL),
+    ...uniqueNewFieldName(taken, SEO_FIELD_LABEL),
     settings: { component: SEO_COMPONENT_ID, repeatable: false },
     editorId: SEO_EDITOR_ID,
     localized: definition.kind !== 'component' && definition.localized,

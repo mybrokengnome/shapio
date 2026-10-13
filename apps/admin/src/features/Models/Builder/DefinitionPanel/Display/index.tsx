@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { titleFieldCandidates } from '../../../helpers/display';
 import { pruneLayout, withKey } from '../../../helpers/draft';
+import type { DraftParent } from '../../../helpers/inheritance';
 import { issuesUnder } from '../../../helpers/issues';
 import { ChoicesControl } from '../../controls/ChoicesControl';
 import { IssueList } from '../../controls/IssueList';
@@ -11,7 +12,16 @@ import { DocumentLayout } from './DocumentLayout';
 import { Groups } from './Groups';
 import { Layout } from './Layout';
 
-type DisplayProps = { definition: SchemaDefinition; issues: readonly ValidationIssue[]; disabled: boolean };
+type DisplayProps = {
+  /** The draft resolved over its parent: choices and current values include inherited fields. */
+  definition: SchemaDefinition;
+  /** The draft itself (own groups are edited here; inherited ones belong to their type). */
+  own: SchemaDefinition;
+  /** The collection the draft extends, if any. */
+  parent: DraftParent;
+  issues: readonly ValidationIssue[];
+  disabled: boolean;
+};
 
 const DIRECTION_LABEL_KEYS = {
   asc: 'models.builder.sortAscending',
@@ -23,13 +33,14 @@ const DOCUMENT_ONLY_KEYS = ['coverFieldId', 'canvasFieldIds', 'stripFieldIds'] a
 
 /**
  * How entries are labelled, listed, and laid out: document or form, title, order, list columns, the entry
- * document, and groups.
+ * document, and groups. A kind shows the values it inherits until it sets its own, and may pick inherited
+ * fields.
  */
-export const Display = ({ definition, issues, disabled }: DisplayProps) => {
+export const Display = ({ definition, own, parent, issues, disabled }: DisplayProps) => {
   const { t } = useTranslation();
   const update = useDefinitionDraftStore((state) => state.update);
   const setDisplay = (key: string, value: unknown) =>
-    update((draft) => pruneLayout({ ...draft, display: withKey(draft.display, key, value) }));
+    update((draft) => pruneLayout({ ...draft, display: withKey(draft.display, key, value) }, parent));
   const at = (key: string) => issuesUnder(issues, `/display/${key}`);
   const option = (field: { id: string; label: string }) => ({ value: field.id, label: field.label });
   const { display } = definition;
@@ -97,11 +108,11 @@ export const Display = ({ definition, issues, disabled }: DisplayProps) => {
         disabled={disabled}
       />
       {layout === 'document' ? (
-        <DocumentLayout model={definition} issues={issues} disabled={disabled} />
+        <DocumentLayout model={definition} parent={parent} issues={issues} disabled={disabled} />
       ) : (
         <IssueList issues={DOCUMENT_ONLY_KEYS.flatMap((key) => at(key))} />
       )}
-      <Groups model={definition} issues={at('groups')} disabled={disabled} />
+      {own.kind === 'component' ? null : <Groups model={own} issues={at('groups')} disabled={disabled} />}
     </>
   );
 };

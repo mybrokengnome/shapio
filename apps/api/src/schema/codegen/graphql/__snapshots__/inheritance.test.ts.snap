@@ -1,0 +1,185 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GraphQL interfaces for models with children > prints the family (the SDL reviewed in the plan) 1`] = `
+""""Product"""
+interface ProductInterface {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [ProductInterface!]
+
+  """Name"""
+  name: String
+
+  """Price"""
+  price: Float
+
+  """Tone"""
+  tone: ProductToneEnum
+
+  """Sections"""
+  sections: [ProductSectionsZone!]
+
+  """Related"""
+  related: [ProductInterface!]
+
+  """Secret"""
+  secret: String
+}
+
+"""Physical product"""
+interface PhysicalProductInterface implements ProductInterface {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [PhysicalProductInterface!]
+
+  """Name"""
+  name: String
+
+  """Price"""
+  price: Float
+
+  """Tone"""
+  tone: ProductToneEnum
+
+  """Sections"""
+  sections: [ProductSectionsZone!]
+
+  """Related"""
+  related: [ProductInterface!]
+
+  """Secret"""
+  secret: String
+
+  """Weight"""
+  weight: Float
+}
+
+"""Product"""
+type Product implements ProductInterface {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [Product!]
+
+  """Name"""
+  name: String
+
+  """Price"""
+  price: Float
+
+  """Tone"""
+  tone: ProductToneEnum
+
+  """Sections"""
+  sections: [ProductSectionsZone!]
+
+  """Related"""
+  related: [ProductInterface!]
+
+  """Secret"""
+  secret: String
+}
+
+"""Digital product"""
+type DigitalProduct implements ProductInterface {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [DigitalProduct!]
+
+  """Name"""
+  name: String
+
+  """Price"""
+  price: Float
+
+  """Tone"""
+  tone: ProductToneEnum
+
+  """Sections"""
+  sections: [ProductSectionsZone!]
+
+  """Related"""
+  related: [ProductInterface!]
+
+  """Secret"""
+  secret: String
+
+  """File size"""
+  fileSize: Int53
+}
+
+"""Apparel"""
+type Apparel implements ProductInterface & PhysicalProductInterface {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [Apparel!]
+
+  """Name"""
+  name: String
+
+  """Price"""
+  price: Float
+
+  """Tone"""
+  tone: ProductToneEnum
+
+  """Sections"""
+  sections: [ProductSectionsZone!]
+
+  """Related"""
+  related: [ProductInterface!]
+
+  """Secret"""
+  secret: String
+
+  """Weight"""
+  weight: Float
+
+  """Size"""
+  size: ApparelSizeEnum
+}"
+`;

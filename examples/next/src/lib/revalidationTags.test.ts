@@ -23,6 +23,25 @@ describe('changeTags', () => {
     ]);
   });
 
+  it("revalidates a child kind's entry under its own route key and every ancestor's", () => {
+    expect(
+      changeTags(
+        [
+          { routeKey: 'posts/guides', id: 'g1' },
+          { routeKey: 'posts', id: 'p1' },
+        ],
+        false,
+        undefined,
+      ),
+    ).toEqual([
+      'shapio:posts',
+      'shapio:posts/guides',
+      'shapio:posts/guides:g1',
+      'shapio:posts:g1',
+      'shapio:posts:p1',
+    ]);
+  });
+
   it('revalidates the site tag (every read) after a schema change', () => {
     expect(changeTags([{ routeKey: 'articles', id: 'a1' }], true, 'marketing')).toEqual([
       'shapio:site:marketing',

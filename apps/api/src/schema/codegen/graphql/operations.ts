@@ -1,4 +1,4 @@
-import { isStableId, type ModelDefinition } from '@shapio/schema';
+import { isStableId, type ResolvedModelDefinition } from '@shapio/schema';
 import {
   GraphQLBoolean,
   GraphQLID,
@@ -17,8 +17,9 @@ import * as contentDeliveryService from '../../../services/contentDelivery.js';
 import type { SchemaBuild } from './build.js';
 import { PAGE_SIZE_ARGUMENT, TOTAL_COUNT_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ReadScope } from './context.js';
+import { servableNodes } from './entryKinds.js';
 import { collectionQueryName, modelTypeName, singleQueryName } from './names.js';
-import { entryType } from './outputTypes.js';
+import { entryOutputType } from './outputTypes.js';
 import {
   createFilterInput,
   createSortInput,
@@ -31,7 +32,9 @@ import {
 /**
  * Root query fields per model, named only by naming.ts: `page(id)` and `pageCollection(…)` (singletons:
  * `home(…)`). They call the delivery service REST uses (`services/contentDelivery.ts`) with the querystring
- * REST would receive, so both APIs parse, authorize and read identically.
+ * REST would receive, so both APIs parse, authorize and read identically. A model with children reads its
+ * whole family there (plan polymorphic-types D5) and is typed as its interface (D9): filters and sorts name
+ * its effective fields, and each row resolves to its own kind's type.
  */
 export type RootField = GraphQLFieldConfig<unknown, GraphqlContext, Record<string, unknown>>;
 
@@ -86,12 +89,12 @@ export const assertId = (id: unknown): string => {
   return id;
 };
 
-const connectionType = (build: SchemaBuild, model: ModelDefinition) =>
+const connectionType = (build: SchemaBuild, model: ResolvedModelDefinition) =>
   new GraphQLObjectType({
     name: modelTypeName(model, 'Connection'),
     fields: {
       nodes: {
-        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(entryType(build, model)))),
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(entryOutputType(build, model)))),
         extensions: { cost: { list: 'pageSize' } },
       },
       totalCount: {
@@ -108,7 +111,7 @@ const connectionType = (build: SchemaBuild, model: ModelDefinition) =>
     },
   });
 
-const collectionQuery = (build: SchemaBuild, model: ModelDefinition): RootField => {
+const collectionQuery = (build: SchemaBuild, model: ResolvedModelDefinition): RootField => {
   return {
     type: connectionType(build, model),
     description: `A page of ${model.label} entries`,
@@ -139,7 +142,13 @@ const collectionQuery = (build: SchemaBuild, model: ModelDefinition): RootField 
         { fallback: scope.fallback, drafts: scope.drafts },
       )) as contentDeliveryService.DeliveryList;
       return {
-        nodes: result.data.map((entry) => entryNode(entry, scope)),
+        // A row of a kind this caller's schema has no type for is left out (REST already leaves out kinds the
+        // caller may not read, so this only guards against a type the schema could not resolve).
+        nodes: servableNodes(
+          build,
+          model,
+          result.data.map((entry) => entryNode(entry, scope)),
+        ),
         totalCount: result.meta.pagination.total,
         pageInfo: result.meta.pagination,
         locale: result.meta.locale,
@@ -149,10 +158,10 @@ const collectionQuery = (build: SchemaBuild, model: ModelDefinition): RootField 
   };
 };
 
-const singleQuery = (build: SchemaBuild, model: ModelDefinition): RootField => {
+const singleQuery = (build: SchemaBuild, model: ResolvedModelDefinition): RootField => {
   const singleton = model.kind === 'singleton';
   return {
-    type: entryType(build, model),
+    type: entryOutputType(build, model),
     description: singleton
       ? `The ${model.label} entry`
       : `One ${model.label} entry by ID (null when not found)`,
@@ -175,7 +184,10 @@ const singleQuery = (build: SchemaBuild, model: ModelDefinition): RootField => {
               rawQuery,
               options,
             );
-        return entryNode((result as contentDeliveryService.DeliveryItem).data, scope);
+        const [node] = servableNodes(build, model, [
+          entryNode((result as contentDeliveryService.DeliveryItem).data, scope),
+        ]);
+        return node ?? null;
       } catch (error) {
         if (isNotFound(error)) {
           return null;
@@ -188,7 +200,7 @@ const singleQuery = (build: SchemaBuild, model: ModelDefinition): RootField => {
 
 export const queryFields = (
   build: SchemaBuild,
-  model: ModelDefinition,
+  model: ResolvedModelDefinition,
 ): GraphQLFieldConfigMap<unknown, GraphqlContext> =>
   model.kind === 'singleton'
     ? { [singleQueryName(model)]: singleQuery(build, model) }

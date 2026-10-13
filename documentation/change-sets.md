@@ -114,6 +114,10 @@ the same. A change that converts stored values does: converted published content
 so `?snapshot=N` returns converted values for every snapshot from then on. Older snapshots are read through the
 current schema; a value stored under an earlier field type comes back as `null`.
 
+An entry that [changed kind](content.md#changing-an-entrys-kind) keeps its old kind in older snapshots: a build
+pinned to a snapshot from before the change still finds it under its old route and in its old shape, and
+snapshots from the change on serve it under the new kind.
+
 Open a snapshot to see what changed since the one before, and scrub through snapshots to see the entries and
 schema version at each. **Compare** diffs any snapshot with the live one. Readers pin a snapshot themselves with
 `snapshot=N` ([Snapshots and the changes API](snapshots.md)).
@@ -131,8 +135,9 @@ and nothing is deleted. **The schema is not rolled back**: reverting a contract 
 the review shows schema differences as information only.
 
 Entries that cannot be restored are listed in the review with the reason, never skipped silently: the entry was
-deleted, its model is gone or no longer has drafts, its localization or locale changed, the old version no longer
-fits the current schema, or a unique value is now used by another entry. A restore holds at most 5,000 items;
+deleted, its model is gone or no longer has drafts, its localization or locale changed, it changed kind since
+(`kindChanged`), the old version no longer fits the current schema, or a unique value is now used by another
+entry. A restore holds at most 5,000 items;
 restore a newer snapshot if you hit that (`422 CHANGE_SET_TOO_LARGE`).
 
 ## Field usage

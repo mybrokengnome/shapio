@@ -71,7 +71,7 @@ export const dryRun = async (
     // anything left is from an earlier attempt.
     for (const step of steps) {
       if (step.kind === 'checkUnique') {
-        await uniqueValuesRepository.removeForField(registryFieldIdOf(step), database);
+        await uniqueValuesRepository.removeForField(registryFieldIdOf(step), [step.modelId], database);
       }
     }
     checkpoint.prepared = true;

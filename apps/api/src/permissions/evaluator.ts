@@ -152,7 +152,9 @@ export const createPermissionEvaluator = ({ grants, fields }: EvaluatorDependenc
         roles.audience === 'delivery'
           ? await fields.getModelFields(request.modelId, executor, versions)
           : undefined;
-      return buildPolicy(held, request, roles.audience, modelFields);
+      // Grants on the models this one extends apply to it too (plan polymorphic-types D8).
+      const ancestors = await fields.getAncestors(request.modelId, executor, versions);
+      return buildPolicy(held, request, roles.audience, modelFields, ancestors);
     },
     canPerform: async (principal, action, executor) => {
       const roles = await rolesOf(principal, grants, executor, versions);

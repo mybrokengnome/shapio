@@ -64,8 +64,9 @@ export const registerContentTools = ({ server, client }: ToolContext) => {
           ...(sort ? { sort: sort as ContentSort[] } : {}),
         };
         if (published || snapshot !== undefined) {
-          const { definition } = findDefinition(await readSchema(client), model);
-          const routeKey = routeKeyOf(definition);
+          const schema = await readSchema(client);
+          const { definition } = findDefinition(schema, model);
+          const routeKey = routeKeyOf(schema, definition);
           return definition.kind === 'singleton'
             ? client.delivery.singleton(routeKey, {
                 ...(rest.locale ? { locale: rest.locale } : {}),
@@ -96,8 +97,9 @@ export const registerContentTools = ({ server, client }: ToolContext) => {
     ({ model, id, locale, published, snapshot }) =>
       runTool(async () => {
         if (published || snapshot !== undefined) {
-          const { definition } = findDefinition(await readSchema(client), model);
-          return client.delivery.get(routeKeyOf(definition), id, {
+          const schema = await readSchema(client);
+          const { definition } = findDefinition(schema, model);
+          return client.delivery.get(routeKeyOf(schema, definition), id, {
             ...(locale ? { locale } : {}),
             ...(snapshot !== undefined ? { snapshot } : {}),
           });

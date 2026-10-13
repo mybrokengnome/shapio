@@ -277,6 +277,17 @@ export const findLiveEntryIds = async (
           .execute()
       ).map((row) => row.id);
 
+/** The entries among these that are not deleted, with their model now. */
+export const findLiveEntryModels = (entryIds: readonly string[], executor: Executor = db) =>
+  entryIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('entries')
+        .select(['id', 'model_id'])
+        .where('id', 'in', [...new Set(entryIds)])
+        .where('deleted_at', 'is', null)
+        .execute();
+
 /**
  * Records the draft version each entry item that publishes its draft has now (when it is added or the set
  * is scheduled), so a scheduled ship can tell which drafts changed after review.
@@ -294,4 +305,15 @@ export const recordReviewedDraftVersions = (changeSetId: string, trx: Executor =
     .where('i.action', '=', 'publish')
     .where('i.source_revision_id', 'is', null)
     .$if(itemId !== undefined, (qb) => qb.where('i.id', '=', itemId ?? ''))
+    .execute();
+
+/** Change sets not yet shipped or discarded that hold an item of this entry (change kind waits for them). */
+export const findUnfinishedSetsForEntry = (entryId: string, executor: Executor = db) =>
+  executor
+    .selectFrom('change_set_items as i')
+    .innerJoin('change_sets as s', 's.id', 'i.change_set_id')
+    .select(['s.id', 's.title'])
+    .distinct()
+    .where('i.entry_id', '=', entryId)
+    .where('s.status', 'in', ['open', 'scheduled', 'shipping', 'failed'])
     .execute();

@@ -9,10 +9,12 @@ type ChangeListProps = {
   changes: readonly ClassifiedChange[];
   before: SchemaDefinition | null;
   after: SchemaDefinition | null;
+  /** A model's name by ID (a parent named in a re-parent). */
+  definitionName?: (id: string) => string | undefined;
 };
 
 /** Every change in the plan, grouped by how it is applied, most demanding group first. */
-export const ChangeList = ({ changes, before, after }: ChangeListProps) => {
+export const ChangeList = ({ changes, before, after, definitionName }: ChangeListProps) => {
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
@@ -28,7 +30,7 @@ export const ChangeList = ({ changes, before, after }: ChangeListProps) => {
                 key={`${change.kind}-${change.fieldId ?? ''}-${change.property ?? ''}-${index}`}
                 className="px-3 py-2.5 text-sm"
               >
-                {describeChange(change, before, after)}
+                {describeChange(change, before, after, { definitionName })}
               </li>
             ))}
           </ul>

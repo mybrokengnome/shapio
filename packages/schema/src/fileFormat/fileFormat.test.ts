@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { field, id, model } from '../testing/fixtures.js';
+import { component, field, id, model } from '../testing/fixtures.js';
 import { parseDefinition } from '../validators/parse.js';
 import { canonicalJson, serializeDefinition } from './canonical.js';
 import { hashDefinition, sha256 } from './hash.js';
@@ -200,5 +200,54 @@ describe('schema file layout', () => {
     expect(scopeOfSchemaFilePath('sites/blog/models/post.json')).toEqual({ site: 'blog' });
     expect(scopeOfSchemaFilePath('sites/blog/notes.json')).toBeUndefined();
     expect(scopeOfSchemaFilePath('models/readme.md')).toBeUndefined();
+  });
+});
+
+describe('definition files with extends (plan polymorphic-types)', () => {
+  const child = model({
+    id: id(2),
+    apiKey: 'digitalProduct',
+    pluralApiKey: 'digital',
+    extends: id(1),
+    fields: [field({ apiKey: 'downloadUrl', id: id(21), type: 'url' })],
+  });
+
+  it('round-trips extends through files and hashes it', async () => {
+    const text = serializeDefinition(child);
+    expect(JSON.parse(text)).toMatchObject({ extends: id(1) });
+    const reparsed = parseDefinition(JSON.parse(text));
+    expect(reparsed.ok).toBe(true);
+    if (reparsed.ok) {
+      expect(serializeDefinition(reparsed.definition)).toBe(text);
+      expect(await hashDefinition(reparsed.definition)).toBe(await hashDefinition(child));
+    }
+    const { extends: _parent, ...withoutParent } = child;
+    expect(await hashDefinition(withoutParent)).not.toBe(await hashDefinition(child));
+  });
+
+  it('treats an empty extends as unset', () => {
+    const parsed = parseDefinition({ ...JSON.parse(serializeDefinition(child)), extends: '' });
+    expect(parsed.ok && 'extends' in parsed.definition).toBe(false);
+  });
+
+  it('leaves the hashes of definitions without extends unchanged (pinned from before inheritance)', async () => {
+    const definitions = [
+      model({
+        id: id(1),
+        apiKey: 'page',
+        fields: [
+          field({ id: id(2), apiKey: 'title' }),
+          field({ id: id(3), apiKey: 'body', type: 'richtext' }),
+        ],
+        display: { titleFieldId: id(2) },
+      }),
+      model({ id: id(4), apiKey: 'home', kind: 'singleton', localized: true }),
+      component({ id: id(5), apiKey: 'hero', fields: [field({ id: id(6), apiKey: 'heading' })] }),
+    ];
+    expect(await Promise.all(definitions.map((definition) => hashDefinition(definition)))).toEqual([
+      'sha256:e40d1f16dfec56e7fa55b4f737155bb210e1604310d439bf05936c25f3156c13',
+      'sha256:aca3cd558695109402f6fc17d1d308a0c34834b7977a78f590068bb3857e5b63',
+      'sha256:cf915cd816a78d4f943e9208c49724704fcb60f0472a2547287ddb3b8161d7fa',
+    ]);
   });
 });

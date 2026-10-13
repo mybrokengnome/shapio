@@ -1,8 +1,12 @@
 import {
+  createDefinitionIndex,
   findDependentModels,
   isComponentDefinition,
-  routeKeyOf,
+  isModelDefinition,
+  routePathOf,
+  type DefinitionIndex,
   type LocaleDefinition,
+  type ModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 
@@ -25,18 +29,30 @@ export type ActiveDefinition = {
 export type RouteKeyCollision = { routeKey: string; servedApiKey: string; hiddenApiKey: string };
 
 /**
+ * Model inheritance over the schema (plan polymorphic-types), from `@shapio/schema`'s `createDefinitionIndex`:
+ * `resolve` gives a model's effective definition (inherited fields first, `inheritedFrom` set), the others
+ * walk the family. `byId` and `definitions` keep the stored definitions (own fields only), which the planner,
+ * activation, sync and hashing need; everything that reads content uses `resolve` (or `ContentModel`).
+ */
+export type SchemaInheritance = Pick<
+  DefinitionIndex,
+  'resolve' | 'ancestors' | 'childrenOf' | 'descendants' | 'family' | 'rootOf'
+>;
+
+/**
  * What every schema exposes: lookups by stable ID, the locales, and scopes. Code that only resolves by ID
  * (content checks, validators, conversions) takes this, so it works on the full set and on a site's view.
  */
-export type SchemaById = {
+export type SchemaById = SchemaInheritance & {
   version: number;
   definitions: readonly ActiveDefinition[];
+  /** Stored definitions (own fields only); `resolve` gives a model's effective fields. */
   byId: ReadonlyMap<string, ActiveDefinition>;
   /** The site a definition belongs to: null when shared, undefined when no such definition is active. */
   scopeOf: (id: string) => string | null | undefined;
   locales: readonly LocaleDefinition[];
   defaultLocale: string;
-  /** Models whose entries embed this component, directly or through other components. */
+  /** Models whose entries embed this component: directly, through other components or by inheritance. */
   dependentModelIds: (componentId: string) => string[];
 };
 
@@ -62,8 +78,9 @@ export type SchemaSnapshot = SchemaById & {
   /** Collections and singletons by exact API key (the admin content API and GraphQL resolve here). */
   modelsByApiKey: ReadonlyMap<string, ActiveDefinition>;
   /**
-   * Collections by plural API ID and singletons by API ID (`routeKeyOf`): the delivery and preview routes
-   * resolve `/api/content/:modelKey` here.
+   * Collections by route key (`routePathOf`: the plural API ID, under the ancestors' for a model that extends
+   * another, `products/digital`) and singletons by API ID: the delivery and preview routes resolve
+   * `/api/content/:modelKey` here. A child is reachable only by its nested key.
    */
   modelsByRouteKey: ReadonlyMap<string, ActiveDefinition>;
   /** Route keys claimed twice; the registry logs them. Empty for any schema the validator accepted. */
@@ -77,14 +94,21 @@ export type SchemaSnapshot = SchemaById & {
  * On a collision the model whose API ID is the route key keeps it (a singleton keeps the URL it always
  * had); otherwise the first definition does. Deterministic, so every instance serves the same model.
  */
-const indexByRouteKey = (definitions: readonly ActiveDefinition[]) => {
+const indexByRouteKey = (definitions: readonly ActiveDefinition[], inheritance: SchemaInheritance) => {
   const modelsByRouteKey = new Map<string, ActiveDefinition>();
   const routeKeyCollisions: RouteKeyCollision[] = [];
+  const byId = new Map(definitions.map((active) => [active.definition.id, active.definition]));
   for (const active of definitions) {
-    if (isComponentDefinition(active.definition)) {
+    if (!isModelDefinition(active.definition)) {
       continue;
     }
-    const routeKey = routeKeyOf(active.definition);
+    const ancestors = inheritance
+      .ancestors(active.definition.id)
+      .map((id) => byId.get(id))
+      .filter(
+        (ancestor): ancestor is ModelDefinition => ancestor !== undefined && isModelDefinition(ancestor),
+      );
+    const routeKey = routePathOf(active.definition, ancestors);
     const existing = modelsByRouteKey.get(routeKey);
     if (!existing) {
       modelsByRouteKey.set(routeKey, active);
@@ -110,7 +134,14 @@ const byIdPart = (
   const byId = new Map(definitions.map((active) => [active.definition.id, active]));
   const all = definitions.map((active) => active.definition);
   const dependents = new Map<string, string[]>();
+  const index = createDefinitionIndex(all);
   return {
+    resolve: index.resolve,
+    ancestors: index.ancestors,
+    childrenOf: index.childrenOf,
+    descendants: index.descendants,
+    family: index.family,
+    rootOf: index.rootOf,
     version,
     definitions,
     byId,
@@ -141,9 +172,10 @@ const buildView = (
       active,
     );
   }
-  const { modelsByRouteKey, routeKeyCollisions } = indexByRouteKey(definitions);
+  const part = byIdPart(network.version, definitions, network.locales);
+  const { modelsByRouteKey, routeKeyCollisions } = indexByRouteKey(definitions, part);
   return Object.freeze({
-    ...byIdPart(network.version, definitions, network.locales),
+    ...part,
     siteId,
     modelsByApiKey,
     modelsByRouteKey,

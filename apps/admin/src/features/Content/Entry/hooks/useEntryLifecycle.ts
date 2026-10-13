@@ -97,7 +97,7 @@ export const useEntryLifecycle = ({
       return;
     }
     try {
-      await deleteMutation.mutateAsync(entryId);
+      await deleteMutation.mutateAsync({ id: entryId });
       markClean();
       toast.success(t('content.form.deletedToast'));
       void navigate({ to: '/content/$modelKey', params: { modelKey: model.apiKey } });
@@ -115,7 +115,7 @@ export const useEntryLifecycle = ({
     if (!entryId) {
       return;
     }
-    const copy = await duplicateMutation.mutateAsync(entryId).catch(() => undefined);
+    const copy = await duplicateMutation.mutateAsync({ id: entryId }).catch(() => undefined);
     if (copy) {
       toast.success(t('content.form.duplicatedToast'));
       openEntry(copy);

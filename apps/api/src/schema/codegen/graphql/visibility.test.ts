@@ -191,6 +191,10 @@ describe('GraphQL schema visibility', () => {
     expect(schema.getType('ArticleInput')).toBeUndefined();
   });
 
+  it('prints the same masked schema as before model inheritance existed (no model has children)', async () => {
+    expect(printSchema((await build(PUBLIC_READER)).schema)).toMatchSnapshot();
+  });
+
   it('gives a write-only model its mutations with a masked input and no read queries or type', async () => {
     const { schema } = await build(PUBLIC_READER);
     const query = Object.keys(schema.getQueryType()?.getFields() ?? {});

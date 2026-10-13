@@ -1,4 +1,4 @@
-import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import {
   getArgumentValues,
   getNamedType,
@@ -16,6 +16,7 @@ import { liveFields } from '../../../content/model.js';
 import type { FieldRead } from '../../../usage/aggregator.js';
 import { relationFieldPath } from '../../../usage/keys.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
+import { resolvedModelById } from './entryKinds.js';
 import { modelTypeName } from './names.js';
 
 /**
@@ -25,6 +26,10 @@ import { modelTypeName } from './names.js';
  * names its fields); a field selected inside a relation's target counts one level deep as
  * `<relation field ID>.<target field ID>`. `localizations` reads the same model. Root fields read with
  * `publicationState: DRAFT` are previews and are skipped.
+ *
+ * Model inheritance (plan polymorphic-types D9): `<Type>Interface` maps to the model that declares it, so a
+ * field read through a parent's list counts against the parent; a fragment whose type condition is an entry
+ * type or interface (`... on DigitalProduct`) counts against that type's model.
  *
  * Like the cost walk in complexity.ts, each fragment is expanded at most once per walk context, so
  * fragments spreading each other repeatedly cannot make the walk exponential.
@@ -37,25 +42,32 @@ export type GraphqlUsageMap = ReadonlyMap<string, EntryTypeInfo>;
 
 export const USAGE_MAP_EXTENSION = 'shapioUsageMap';
 
+/** A model's entry type name as relations to it are typed: its interface when it has children. */
+const servedTypeName = (snapshot: SchemaSnapshot, model: ResolvedModelDefinition) =>
+  modelTypeName(model, snapshot.childrenOf(model.id).length > 0 ? 'Interface' : '');
+
 export const buildUsageMap = (snapshot: SchemaSnapshot): GraphqlUsageMap => {
   const models = snapshot.definitions
-    .map((active) => active.definition)
-    .filter((definition): definition is ModelDefinition => isModelDefinition(definition));
-  const typeOf = new Map(models.map((model) => [model.id, modelTypeName(model)]));
-  return new Map(
-    models.map((model) => [
-      modelTypeName(model),
-      {
-        modelId: model.id,
-        fields: new Map(
-          liveFields(model.fields).map((field) => {
-            const targetType = field.type === 'relation' ? typeOf.get(field.settings.target) : undefined;
-            return [field.apiKey, { id: field.id, ...(targetType ? { targetType } : {}) }];
-          }),
-        ),
-      },
-    ]),
-  );
+    .map((active) => resolvedModelById(snapshot, active.definition.id))
+    .filter((model): model is ResolvedModelDefinition => model !== undefined);
+  const typeOf = new Map(models.map((model) => [model.id, servedTypeName(snapshot, model)]));
+  const map = new Map<string, EntryTypeInfo>();
+  for (const model of models) {
+    const info: EntryTypeInfo = {
+      modelId: model.id,
+      fields: new Map(
+        liveFields(model.fields).map((field) => {
+          const targetType = field.type === 'relation' ? typeOf.get(field.settings.target) : undefined;
+          return [field.apiKey, { id: field.id, ...(targetType ? { targetType } : {}) }];
+        }),
+      ),
+    };
+    map.set(modelTypeName(model), info);
+    if (snapshot.childrenOf(model.id).length > 0) {
+      map.set(modelTypeName(model, 'Interface'), info);
+    }
+  }
+  return map;
 };
 
 export const usageMapOf = (schema: GraphQLSchema): GraphqlUsageMap | undefined =>
@@ -80,20 +92,37 @@ type Walk = {
   snapshot: number | null;
 };
 
-/** The field nodes of a selection set, fragments flattened (each at most once per `context`). */
-const fieldNodes = (walk: Walk, selectionSet: SelectionSetNode, context: string): FieldNode[] => {
-  const nodes: FieldNode[] = [];
+/** A selected field and the entry type it is read on (a fragment's type condition, else the enclosing type). */
+type SelectedField = { node: FieldNode; typeName: string };
+
+/** The type a fragment's fields are read on: its type condition when that is an entry type or interface. */
+const conditionType = (walk: Walk, condition: string | undefined, typeName: string) =>
+  condition !== undefined && walk.map.has(condition) ? condition : typeName;
+
+/**
+ * The field nodes of a selection set read on `typeName`, fragments flattened (each at most once per
+ * `context`), each with the type it is read on (inline fragments and spreads keep their type condition).
+ */
+const fieldNodes = (
+  walk: Walk,
+  selectionSet: SelectionSetNode,
+  context: string,
+  typeName: string,
+): SelectedField[] => {
+  const nodes: SelectedField[] = [];
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
-      nodes.push(selection);
+      nodes.push({ node: selection, typeName });
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      nodes.push(...fieldNodes(walk, selection.selectionSet, context));
+      const type = conditionType(walk, selection.typeCondition?.name.value, typeName);
+      nodes.push(...fieldNodes(walk, selection.selectionSet, context, type));
     } else {
       const key = `${context}|${selection.name.value}`;
       const fragment = walk.fragments.get(selection.name.value);
       if (fragment && !walk.expanded.has(key)) {
         walk.expanded.add(key);
-        nodes.push(...fieldNodes(walk, fragment.selectionSet, context));
+        const type = conditionType(walk, fragment.typeCondition.name.value, typeName);
+        nodes.push(...fieldNodes(walk, fragment.selectionSet, context, type));
       }
     }
   }
@@ -113,12 +142,13 @@ const walkTarget = (
   modelId: string,
   relationId: string,
 ) => {
-  const info = walk.map.get(typeName);
-  if (!info) {
-    return;
-  }
-  for (const node of fieldNodes(walk, selectionSet, `target:${modelId}:${relationId}`)) {
-    const field = info.fields.get(node.name.value);
+  for (const { node, typeName: readOn } of fieldNodes(
+    walk,
+    selectionSet,
+    `target:${modelId}:${relationId}`,
+    typeName,
+  )) {
+    const field = walk.map.get(readOn)?.fields.get(node.name.value);
     if (field) {
       addPath(walk, modelId, relationFieldPath(relationId, field.id));
     }
@@ -126,13 +156,13 @@ const walkTarget = (
 };
 
 const walkEntry = (walk: Walk, typeName: string, selectionSet: SelectionSetNode) => {
-  const info = walk.map.get(typeName);
-  if (!info) {
-    return;
-  }
-  for (const node of fieldNodes(walk, selectionSet, `entry:${typeName}`)) {
+  for (const { node, typeName: readOn } of fieldNodes(walk, selectionSet, `entry:${typeName}`, typeName)) {
+    const info = walk.map.get(readOn);
+    if (!info) {
+      continue;
+    }
     if (node.name.value === 'localizations' && node.selectionSet) {
-      walkEntry(walk, typeName, node.selectionSet);
+      walkEntry(walk, readOn, node.selectionSet);
       continue;
     }
     const field = info.fields.get(node.name.value);
@@ -168,7 +198,7 @@ const walkObjects = (walk: Walk, typeName: string, selectionSet: SelectionSetNod
   if (!parent || !(isObjectType(parent) || isInterfaceType(parent))) {
     return;
   }
-  for (const node of fieldNodes(walk, selectionSet, `objects:${typeName}`)) {
+  for (const { node } of fieldNodes(walk, selectionSet, `objects:${typeName}`, typeName)) {
     const definition = parent.getFields()[node.name.value];
     if (!definition || node.name.value.startsWith('__') || !node.selectionSet) {
       continue;

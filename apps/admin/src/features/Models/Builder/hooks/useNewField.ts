@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { withAddedField } from '../../helpers/display';
 import { createField, removeField } from '../../helpers/draft';
+import { resolveDraft } from '../../helpers/inheritance';
 import { uniqueNewFieldName } from '../../helpers/newField';
+import { useDraftParent } from './useDraftParent';
 
 /** The field list's "Add field" button (focus goes back there when a new field is discarded). */
 export const ADD_FIELD_BUTTON_ID = 'add-field-button';
@@ -24,17 +26,19 @@ export const useNewField = () => {
   const update = useDefinitionDraftStore((state) => state.update);
   const select = useDefinitionDraftStore((state) => state.select);
   const [added, setAdded] = useState<FieldDefinition | null>(null);
+  const { parent } = useDraftParent();
 
   const add = () => {
     const { draft } = useDefinitionDraftStore.getState();
     if (!draft) {
       return;
     }
+    // Inherited fields' names are taken too: a kind's own field can't reuse them.
     const field = createField(draft, {
       type: 'string',
-      ...uniqueNewFieldName(draft, t('models.builder.newField')),
+      ...uniqueNewFieldName(resolveDraft(draft, parent), t('models.builder.newField')),
     });
-    update((current) => withAddedField(current, field));
+    update((current) => withAddedField(current, field, parent));
     select({ type: 'field', fieldId: field.id });
     setAdded(field);
     afterRender(() => {
@@ -52,7 +56,7 @@ export const useNewField = () => {
     added !== null && field.id === added.id && canonicalJson(field) === canonicalJson(added);
 
   const discard = (fieldId: string) => {
-    update((current) => removeField(current, fieldId));
+    update((current) => removeField(current, fieldId, parent));
     select({ type: 'definition' });
     setAdded(null);
     afterRender(() => document.getElementById(ADD_FIELD_BUTTON_ID)?.focus());

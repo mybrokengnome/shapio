@@ -1,4 +1,11 @@
-import type { AdminEntry, ContentListQuery, CreateEntryInput, UpdateEntryInput } from '@shapio/client';
+import type {
+  AdminEntry,
+  ContentListQuery,
+  CreateEntryInput,
+  DefinitionListItem,
+  UpdateEntryInput,
+} from '@shapio/client';
+import { ancestorChain, type SchemaDefinition } from '@shapio/schema';
 import {
   keepPreviousData,
   queryOptions,
@@ -40,16 +47,60 @@ export const entryQueryOptions = (modelKey: string, id: string, locale: string |
 export const useEntry = (modelKey: string, id: string, locale: string | undefined, enabled = true) =>
   useQuery({ ...entryQueryOptions(modelKey, id, locale), enabled });
 
-/** Remembers a write's result as the entry's latest state and refreshes that model's lists. */
+/**
+ * The model's API key after its ancestors' (root first), from the cached registry: a type's list holds its
+ * kinds' entries, so a write to a kind changes every ancestor's list too. Just the key when it is unknown.
+ */
+export const lineageKeysOf = (queryClient: QueryClient, modelKey: string): string[] => {
+  const items = queryClient.getQueryData<DefinitionListItem[]>(queryKeys.schema.definitions('model')) ?? [];
+  const byId = new Map<string, SchemaDefinition>(items.map(({ definition }) => [definition.id, definition]));
+  const model = items.find(({ definition }) => definition.apiKey === modelKey)?.definition;
+  if (!model) {
+    return [modelKey];
+  }
+  const ancestors = ancestorChain(model, (id) => byId.get(id)).ids.flatMap((id) => {
+    const apiKey = byId.get(id)?.apiKey;
+    return apiKey ? [apiKey] : [];
+  });
+  return [...ancestors, modelKey];
+};
+
+/**
+ * Refreshes what a write to these models' entries changes: each model's lists and revisions, and every
+ * ancestor's lists. With `counts`, also the entries per model (the sidebar's counts).
+ */
+export const invalidateEntryLists = (
+  queryClient: QueryClient,
+  modelKeys: readonly string[],
+  { counts = false }: { counts?: boolean } = {},
+) => {
+  const written = new Set(modelKeys);
+  const listed = new Set(modelKeys.flatMap((modelKey) => lineageKeysOf(queryClient, modelKey)));
+  return Promise.all([
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [scope, modelKey, part] }) =>
+        scope === 'content' &&
+        typeof modelKey === 'string' &&
+        ((listed.has(modelKey) && part === 'list') || (written.has(modelKey) && part === 'revisions')),
+    }),
+    counts ? queryClient.invalidateQueries({ queryKey: queryKeys.contentCounts }) : undefined,
+  ]);
+};
+
+/**
+ * Remembers a write's result as the entry's latest state and refreshes its model's lists (the route's and the
+ * entry's own, when it was written through a parent type) and their ancestors'.
+ */
 const rememberEntry = (queryClient: QueryClient, modelKey: string, entry: AdminEntry) => {
   queryClient.setQueryData(queryKeys.content.entry(modelKey, entry.id, entry.locale), entry);
-  return queryClient.invalidateQueries({
-    predicate: (query) =>
-      query.queryKey[0] === 'content' &&
-      query.queryKey[1] === modelKey &&
-      (query.queryKey[2] === 'list' || query.queryKey[2] === 'revisions'),
-  });
+  return invalidateEntryLists(queryClient, [modelKey, entry.model]);
 };
+
+/**
+ * Which entry a mutation acts on. `modelKey` overrides the hook's: a type's list runs row actions against
+ * each row's own kind.
+ */
+export type EntryTarget = { id: string; modelKey?: string };
 
 export const useCreateEntry = (modelKey: string) => {
   const queryClient = useQueryClient();
@@ -73,7 +124,7 @@ export const useSaveEntry = (modelKey: string) => {
 };
 
 /** Omitting `locales` targets the request's default locale; it is the only form a non-localized model accepts. */
-type LocalesVariables = { id: string; locales?: string[] };
+type LocalesVariables = EntryTarget & { locales?: string[] };
 
 /** The body never carries an empty `locales` array: the API requires at least one locale when it is sent. */
 const localesBody = (locales?: string[]) => (locales && locales.length > 0 ? { locales } : {});
@@ -89,9 +140,9 @@ export const usePublishEntry = (modelKey: string) => {
   return useMutation({
     mutationKey: ['content', modelKey, 'publish'],
     meta: silent,
-    mutationFn: ({ id, locales, ...versions }: PublishVariables) =>
-      withCsrf(() => adminApi.content.publish(modelKey, id, { ...localesBody(locales), ...versions })),
-    onSuccess: (entry) => rememberEntry(queryClient, modelKey, entry),
+    mutationFn: ({ id, locales, modelKey: key = modelKey, ...versions }: PublishVariables) =>
+      withCsrf(() => adminApi.content.publish(key, id, { ...localesBody(locales), ...versions })),
+    onSuccess: (entry, { modelKey: key = modelKey }) => rememberEntry(queryClient, key, entry),
   });
 };
 
@@ -100,9 +151,9 @@ export const useUnpublishEntry = (modelKey: string) => {
   return useMutation({
     mutationKey: ['content', modelKey, 'unpublish'],
     meta: silent,
-    mutationFn: ({ id, locales }: LocalesVariables) =>
-      withCsrf(() => adminApi.content.unpublish(modelKey, id, localesBody(locales))),
-    onSuccess: (entry) => rememberEntry(queryClient, modelKey, entry),
+    mutationFn: ({ id, locales, modelKey: key = modelKey }: LocalesVariables) =>
+      withCsrf(() => adminApi.content.unpublish(key, id, localesBody(locales))),
+    onSuccess: (entry, { modelKey: key = modelKey }) => rememberEntry(queryClient, key, entry),
   });
 };
 
@@ -110,8 +161,9 @@ export const useDuplicateEntry = (modelKey: string) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ['content', modelKey, 'duplicate'],
-    mutationFn: (id: string) => withCsrf(() => adminApi.content.duplicate(modelKey, id)),
-    onSuccess: (entry) => rememberEntry(queryClient, modelKey, entry),
+    mutationFn: ({ id, modelKey: key = modelKey }: EntryTarget) =>
+      withCsrf(() => adminApi.content.duplicate(key, id)),
+    onSuccess: (entry, { modelKey: key = modelKey }) => rememberEntry(queryClient, key, entry),
   });
 };
 
@@ -121,8 +173,13 @@ export const useDeleteEntry = (modelKey: string) => {
   return useMutation({
     mutationKey: ['content', modelKey, 'delete'],
     meta: silent,
-    mutationFn: (id: string) => withCsrf(() => adminApi.content.remove(modelKey, id)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.content.model(modelKey) }),
+    mutationFn: ({ id, modelKey: key = modelKey }: EntryTarget) =>
+      withCsrf(() => adminApi.content.remove(key, id)),
+    onSuccess: (_, { modelKey: key = modelKey }) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.content.model(key) }),
+        invalidateEntryLists(queryClient, [modelKey, key]),
+      ]),
   });
 };
 
@@ -160,5 +217,74 @@ export const useRestoreRevision = (modelKey: string) => {
       expectedVersion: number;
     }) => withCsrf(() => adminApi.content.restore(modelKey, id, revisionId, expectedVersion)),
     onSuccess: (entry) => rememberEntry(queryClient, modelKey, entry),
+  });
+};
+
+/**
+ * The kind change an editor asks about: another kind of the entry's family, at the draft version it saw of
+ * `locale`'s draft (null: a model that isn't localized).
+ */
+export type KindChangeVariables = {
+  id: string;
+  targetModelKey: string;
+  expectedVersion: number;
+  locale: string | null;
+};
+
+/** The change is only sent once the person acknowledged what it drops, so it always acknowledges. */
+const kindChangeBody = ({ targetModelKey, expectedVersion, locale }: KindChangeVariables) =>
+  ({
+    targetModelKey,
+    expectedVersion,
+    ...(locale ? { locale } : {}),
+    acknowledgeDroppedFields: true,
+  }) as const;
+
+/** What changing the entry's kind would drop (a dry run); idle until a target is picked. */
+export const useKindChangePreview = (modelKey: string, variables: KindChangeVariables | undefined) =>
+  useQuery({
+    queryKey: queryKeys.content.kindChange(
+      modelKey,
+      variables?.id ?? '',
+      variables?.targetModelKey ?? '',
+      variables?.expectedVersion ?? 0,
+      variables?.locale ?? null,
+    ),
+    queryFn: () =>
+      variables
+        ? withCsrf(() =>
+            adminApi.content.previewKindChange(modelKey, variables.id, kindChangeBody(variables)),
+          )
+        : Promise.reject(new Error('No kind change to preview')),
+    enabled: variables !== undefined,
+    staleTime: 0,
+    retry: false,
+    meta: silent,
+  });
+
+/**
+ * Moves an entry to another kind of its family. The entry is remembered under its new kind; both kinds' lists
+ * and their ancestors', and the counts, refresh; the entry under its old kind goes stale without a refetch
+ * (the editor leaves it for the new route).
+ */
+export const useChangeEntryKind = (modelKey: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['content', modelKey, 'changeKind'],
+    meta: silent,
+    mutationFn: (variables: KindChangeVariables) =>
+      withCsrf(() => adminApi.content.changeKind(modelKey, variables.id, kindChangeBody(variables))),
+    onSuccess: ({ entry, target }, { id }) => {
+      if (entry) {
+        queryClient.setQueryData(queryKeys.content.entry(entry.model, entry.id, entry.locale), entry);
+      }
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.content.model(modelKey), 'entry', id],
+          refetchType: 'none',
+        }),
+        invalidateEntryLists(queryClient, [modelKey, target.modelKey], { counts: true }),
+      ]);
+    },
   });
 };

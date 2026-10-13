@@ -1,4 +1,4 @@
-import { routeKeyOf, type ModelDefinition, type SchemaDefinition } from '@shapio/schema';
+import { routePathOf, type ModelDefinition, type SchemaDefinition } from '@shapio/schema';
 import { Link } from '@tanstack/react-router';
 import { ArrowUpRight } from 'lucide-react';
 import { useMemo } from 'react';
@@ -38,12 +38,20 @@ export const Api = ({ schema, model }: ApiProps) => {
     () => new Map<string, SchemaDefinition>([...schema.models, ...schema.components]),
     [schema],
   );
-  const endpoints = restEndpoints(model);
+  // A kind's delivery path nests under its ancestors' (`posts/guides`).
+  const endpoints = restEndpoints(model, lookup);
+  const routePath = routePathOf(
+    model,
+    schema.index.ancestors(model.id).flatMap((id) => {
+      const ancestor = schema.models.get(id);
+      return ancestor ? [ancestor] : [];
+    }),
+  );
   return (
     <>
       <PageHeader
         title={model.label}
-        meta={t('place.api.meta', { apiKey: model.apiKey, routeKey: routeKeyOf(model) })}
+        meta={t('place.api.meta', { apiKey: model.apiKey, routeKey: routePath })}
         actions={
           <Button asChild variant="outline">
             <Link to="/api-explorer">

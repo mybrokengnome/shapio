@@ -23,6 +23,7 @@ export const SNAPSHOT_SOURCES = [
   'schema',
   'conversion',
   'import',
+  'kind_change',
   'legacy',
 ] as const;
 

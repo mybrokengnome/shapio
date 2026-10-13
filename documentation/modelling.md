@@ -8,7 +8,7 @@ saved. No rebuild, no restart, no deploy.
 
 ## Kinds of definitions
 
-| Kind            | What it is                                                               | API                                                                               |
+| Shape           | What it is                                                               | API                                                                               |
 | --------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | **Collection**  | Many entries: articles, products, authors                                | `/api/content/<pluralApiKey>` lists, `/api/content/<pluralApiKey>/<id>` reads one |
 | **Single type** | Exactly one entry: the home page, site settings                          | `/api/content/<apiKey>` reads it                                                  |
@@ -129,6 +129,79 @@ schema delivery callers see. On a component's field, off always hides it
 from delivery tokens, app users, anonymous callers, and previews, because roles grant a model's fields, never a
 component's.
 
+## Types that extend a type
+
+A collection can extend another collection. Products holds what every product has (name, price, images), and
+Digital and Physical extend it with their own fields (a download link, a weight). Digital and Physical are
+**kinds** of product, and Products with all its kinds is a **family**. A kind can have kinds of its own
+(Products, then Physical, then Apparel), up to 8 levels.
+
+Pick the parent under **Extends** when you create the type, or set `extends` in its schema file to the
+parent's stable ID ([Schema sync](schema-sync.md#types-that-extend-a-type)). The parent is a full type of its
+own: a plain Product sits next to the Digital and Physical ones.
+
+**What a kind inherits.** Every field of its parent (and of the parent's parent) comes first, in the parent's
+order, followed by the kind's own fields. Inherited fields are the parent's fields, not copies, and they keep
+the parent's field IDs. So a field you add to Products is on every kind at once, live, and the checks a new
+field needs (a required value, a unique value, an index) run over the entries of every kind. Display settings
+(layout, title field, list columns, default sort, cover) carry over until the kind sets its own, and the
+parent's groups come before the kind's.
+
+**What is locked.** A kind can't change, hide, or replace a field it inherits: edit it on the type that
+declares it. The builder shows inherited fields in a locked block above the kind's own, with a link to the
+parent. A kind's own fields can't reuse the API ID of an inherited field (compared ignoring case).
+
+**The rules.**
+
+- Only collections. A single type or a component can neither extend nor be extended, and a type with kinds
+  can't become a single type.
+- A kind has the same **Localized** and **Draft & publish** settings as its parent. The admin fills them in
+  from the parent and locks them.
+- A kind is available where its parent is: both shared with all sites, or both on the same site. Sharing a
+  root type, or keeping it on one site, moves its whole family with it; a kind can't move on its own.
+- A relation to Products accepts an entry of any kind of product. A relation to Digital accepts Digital
+  entries only.
+
+**Routes and `__model`.** A kind is read under its parent's plural API ID. With Post (`posts`) and its kind
+Guide (`guides`), `/api/content/posts` lists posts of every kind, `/api/content/posts/guides` lists guides, and
+`/api/content/posts/guides/<id>` reads one. The kind's **route key** is its ancestors' plural API IDs and its
+own plural API ID, joined by `/` (`posts/guides`).
+Every entry the delivery API returns names its own type in `__model` (the singular API ID), so a site can
+render each row of a mixed list in its own shape. A parent's list filters, sorts, and searches on the fields
+every kind shares ([Delivery API](delivery-api.md#types-that-extend-a-type)).
+
+**GraphQL.** A type with kinds gets an interface, `PostInterface`, that it and every kind implement. The
+`posts` query returns the interface, and you ask for a kind's own fields with a fragment
+(`... on Guide { timeToComplete }`). See [GraphQL](graphql.md#types-that-extend-a-type).
+
+**Permissions.** A grant on a parent covers its kinds: `read` on Products reads Digital and Physical too. A
+kind can have grants of its own, which only ever add to what the parent's grants allow. You can't allow a
+parent and refuse one of its kinds ([End users](end-users.md#access-is-denied-until-you-allow-it),
+[Security](security.md#permissions)).
+
+**Change kind.** An entry can move to another kind in its family: a Post becomes a Guide, or a Digital
+product becomes a plain Product. See [Content](content.md#changing-an-entrys-kind).
+
+**Moving a type under another parent** (or giving it a parent, or taking its parent away) is a contract
+change, like changing an API ID. Its route moves and it gains the new parent's fields, so the review asks you
+to acknowledge a **breaking** change. If it loses fields that hold values, their values are dropped, a
+**destructive** change you acknowledge too.
+
+**What Shapio refuses, and why.**
+
+| Refusal                     | Why                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `UNKNOWN_PARENT`            | `extends` names a type that doesn't exist                                                                    |
+| `INVALID_PARENT`            | the type or its parent is not a collection, a type extends itself, or the two are not available in one place |
+| `INHERITANCE_CYCLE`         | types extend each other in a loop                                                                            |
+| `INHERITANCE_TOO_DEEP`      | the family would be more than 8 levels deep                                                                  |
+| `INHERITED_FLAG_MISMATCH`   | Localized or Draft & publish differs from the parent's; the message names the value to set                   |
+| `INHERITED_FIELD_COLLISION` | a kind's own field has the API ID of a field it inherits                                                     |
+| `HAS_CHILDREN`              | you deleted a type that others extend: delete its kinds, or move them under another type, first              |
+
+A relation always points at one type and its kinds. A relation to unrelated types (a link that can be an
+Author or a Product) is a different feature, and Shapio doesn't have it yet.
+
 ## What a change does
 
 Saving a model runs Shapio's change planner. It compares the new definition with the active one, classifies
@@ -147,6 +220,8 @@ new version, atomically. If a check fails, the old version stays active and cont
 | Change a field's type                                                                                 | live when the stored form stays the same (`string` → `text`); otherwise an explicit conversion with validation; when Shapio can't convert, the values are dropped: a **destructive** change you acknowledge, and old snapshots keep the old values in storage but show them as `null`. A multi-value `enum` stores a list, so changing it to any other type drops its values, and text changed to a multi-value `enum` becomes a one-value list checked against the choices |
 | Change an API ID or plural API ID, hide a field (`public` off, `deprecated`), delete a field or model | **breaking**: an API contract change you must acknowledge                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Turn off `localized` on a field or model, or turn off drafts                                          | **destructive** conversion: you must acknowledge that values in other locales (or drafts) are dropped                                                                                                                                                                                                                                                                                                                                                                       |
+| Add or change a field on a type with kinds                                                            | applies to every kind: checks run over every kind's entries, and indexes are built for each kind                                                                                                                                                                                                                                                                                                                                                                            |
+| Give a type a parent, move it under another one, or take its parent away                              | **breaking**, like an API ID change; fields it loses that hold values are dropped (**destructive**)                                                                                                                                                                                                                                                                                                                                                                         |
 
 Deleting a field keeps its stored values (they are no longer returned); deleting a model hides its entries,
 which come back if you restore it. Rolling a model back to an earlier version is a metadata change: it never
@@ -186,7 +261,8 @@ model it reads. A new model's indexes are built in the background, one at a time
 
 ## Content from a new model
 
-1. Models → New model: kind, label, API ID (and, for a collection, the plural API ID); add fields.
+1. Models → New model: shape (collection or single type), label, API ID (and, for a collection, the plural
+   API ID); add fields.
 2. Save. The model is listed under Content at once.
 3. Create an entry, Save, Publish.
 4. Give your site's delivery role `read` on the model (Network → Roles), or grant the public app role read

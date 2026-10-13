@@ -1,10 +1,15 @@
 import {
+  ancestorChain,
   collectionQueryName,
+  INTERFACE_TYPE_SUFFIX,
   isModelDefinition,
   MUTATION_PREFIXES,
-  routeKeyOf,
+  resolveModelDefinition,
+  routePathOf,
   toTypeName,
   type FieldDefinition,
+  type ModelDefinition,
+  type ResolvedField,
   type SchemaDefinition,
 } from '@shapio/schema';
 
@@ -12,8 +17,31 @@ import {
  * The API shapes a definition produces, derived from the registry naming helpers in `@shapio/schema`
  * (`routeKeyOf`, `toTypeName`, `collectionQueryName`, `MUTATION_PREFIXES`), the same names the server's
  * OpenAPI and GraphQL builders use. Previews of a definition being edited, before it exists on the server.
+ * A kind (a model that extends another) is previewed with its inherited fields and its nested REST path.
  */
 export type DefinitionLookup = ReadonlyMap<string, SchemaDefinition>;
+
+/** Whether the definition is already resolved (`resolveModelDefinition` adds `ancestorIds`). */
+const isResolved = (definition: SchemaDefinition) => 'ancestorIds' in definition;
+
+/**
+ * The definition as entries see it: a kind with its ancestors' fields first (`resolveModelDefinition`).
+ * Idempotent: an already resolved definition (callers may pass one) is returned as it is.
+ */
+export const effectiveDefinition = (
+  definition: SchemaDefinition,
+  lookup: DefinitionLookup,
+): SchemaDefinition =>
+  isModelDefinition(definition) && definition.extends !== undefined && !isResolved(definition)
+    ? resolveModelDefinition(definition, (id) => lookup.get(id))
+    : definition;
+
+/** The model's ancestors, root first (none for a root or a broken chain's missing part). */
+const ancestorsOf = (definition: ModelDefinition, lookup: DefinitionLookup): ModelDefinition[] =>
+  ancestorChain(definition, (id) => lookup.get(id)).ids.flatMap((id) => {
+    const ancestor = lookup.get(id);
+    return ancestor && isModelDefinition(ancestor) ? [ancestor] : [];
+  });
 
 export type RestEndpoint = {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -23,11 +51,14 @@ export type RestEndpoint = {
 
 const liveFields = (definition: SchemaDefinition) => definition.fields.filter((field) => !field.deprecated);
 
-export const restEndpoints = (definition: SchemaDefinition): RestEndpoint[] => {
+export const restEndpoints = (
+  definition: SchemaDefinition,
+  lookup: DefinitionLookup = new Map(),
+): RestEndpoint[] => {
   if (!isModelDefinition(definition)) {
     return [];
   }
-  const delivery = `/api/content/${routeKeyOf(definition)}`;
+  const delivery = `/api/content/${routePathOf(definition, ancestorsOf(definition, lookup))}`;
   const admin = `/api/admin/content/${definition.apiKey}`;
   const collection = definition.kind === 'collection';
   return [
@@ -102,6 +133,7 @@ const sampleObject = (
 
 const SYSTEM_SAMPLE = {
   id: '<uuid>',
+  __model: '<model API ID>',
   locale: '<locale>',
   createdAt: '<datetime>',
   updatedAt: '<datetime>',
@@ -109,8 +141,9 @@ const SYSTEM_SAMPLE = {
 };
 
 /** An example delivery response (`GET /api/content/:routeKey`), as pretty JSON. */
-export const restResponseSample = (definition: SchemaDefinition, lookup: DefinitionLookup): string => {
-  const item = { ...SYSTEM_SAMPLE, ...sampleObject(definition, lookup, 0) };
+export const restResponseSample = (stored: SchemaDefinition, lookup: DefinitionLookup): string => {
+  const definition = effectiveDefinition(stored, lookup);
+  const item = { ...SYSTEM_SAMPLE, __model: definition.apiKey, ...sampleObject(definition, lookup, 0) };
   if (!isModelDefinition(definition)) {
     return JSON.stringify(sampleObject(definition, lookup, 0), null, 2);
   }
@@ -124,7 +157,9 @@ export const restResponseSample = (definition: SchemaDefinition, lookup: Definit
 
 const listOf = (multiple: boolean, type: string) => (multiple ? `[${type}!]` : type);
 
-const graphqlFieldType = (owner: SchemaDefinition, field: FieldDefinition, lookup: DefinitionLookup) => {
+const graphqlFieldType = (subject: SchemaDefinition, field: ResolvedField, lookup: DefinitionLookup) => {
+  // Enum and zone types of an inherited field belong to the model that declares it.
+  const owner = (field.inheritedFrom === undefined ? undefined : lookup.get(field.inheritedFrom)) ?? subject;
   const nameOf = (id: string) => {
     const target = lookup.get(id);
     return target ? toTypeName(target.apiKey) : 'JSON';
@@ -158,8 +193,17 @@ const graphqlFieldType = (owner: SchemaDefinition, field: FieldDefinition, looku
 const READ_ARGS =
   'locale: String, fallback: Boolean = true, publicationState: PublicationState = PUBLISHED, snapshot: Int';
 
+/** The interfaces a kind's type implements: each ancestor's (every ancestor has kinds), root first. */
+const interfacesOf = (definition: SchemaDefinition, lookup: DefinitionLookup): string => {
+  const ancestors = isModelDefinition(definition) ? ancestorsOf(definition, lookup) : [];
+  return ancestors.length === 0
+    ? ''
+    : ` implements ${ancestors.map((ancestor) => `${toTypeName(ancestor.apiKey)}${INTERFACE_TYPE_SUFFIX}`).join(' & ')}`;
+};
+
 /** The definition's GraphQL type and (for models) its root queries and mutations, as SDL. */
-export const graphqlSdl = (definition: SchemaDefinition, lookup: DefinitionLookup): string => {
+export const graphqlSdl = (stored: SchemaDefinition, lookup: DefinitionLookup): string => {
+  const definition = effectiveDefinition(stored, lookup);
   const name = toTypeName(definition.apiKey);
   const system = isModelDefinition(definition)
     ? [
@@ -174,7 +218,8 @@ export const graphqlSdl = (definition: SchemaDefinition, lookup: DefinitionLooku
   const fields = liveFields(definition).map(
     (field) => `${field.apiKey}: ${graphqlFieldType(definition, field, lookup)}`,
   );
-  const type = `type ${name} {\n${[...system, ...fields].map((line) => `  ${line}`).join('\n')}\n}`;
+  const body = [...system, ...fields].map((line) => `  ${line}`).join('\n');
+  const type = `type ${name}${interfacesOf(definition, lookup)} {\n${body}\n}`;
   if (!isModelDefinition(definition)) {
     return `${type}\n`;
   }

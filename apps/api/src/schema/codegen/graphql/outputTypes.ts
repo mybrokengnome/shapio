@@ -1,9 +1,8 @@
 import {
   isComponentDefinition,
-  isModelDefinition,
   type ComponentDefinition,
   type FieldDefinition,
-  type ModelDefinition,
+  type ResolvedModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 import {
@@ -11,6 +10,7 @@ import {
   GraphQLEnumType,
   GraphQLFloat,
   GraphQLID,
+  GraphQLInterfaceType,
   GraphQLList,
   GraphQLNonNull,
   GraphQLObjectType,
@@ -26,6 +26,7 @@ import { memoType, type SchemaBuild } from './build.js';
 import { RELATION_LIST_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ValueNode } from './context.js';
 import { describeDefinition, describeField } from './descriptions.js';
+import { declaringOwner, hasChildren, kindTypeName, resolvedModelById, servableNodes } from './entryKinds.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 import { modelReadable, readableFields } from './visibility.js';
 
@@ -47,13 +48,15 @@ export const maskedFieldError = (field: FieldDefinition) =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const enumType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'enum'>) =>
-  memoType(
+/** An enum field's type, keyed and named by the model that declares the field (shared down a family). */
+export const enumType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'enum'>) => {
+  const declaring = declaringOwner(build, owner, field);
+  return memoType(
     build.enums,
-    `${owner.id}:${field.id}`,
+    `${declaring.id}:${field.id}`,
     () =>
       new GraphQLEnumType({
-        name: fieldTypeName(owner, field, 'Enum'),
+        name: fieldTypeName(declaring, field, 'Enum'),
         values: Object.fromEntries(
           field.settings.values.map((entry) => [
             entry.value,
@@ -62,10 +65,6 @@ export const enumType = (build: SchemaBuild, owner: SchemaDefinition, field: Fie
         ),
       }),
   );
-
-const modelById = (build: SchemaBuild, id: string): ModelDefinition | undefined => {
-  const definition = build.snapshot.byId.get(id)?.definition;
-  return definition && isModelDefinition(definition) ? definition : undefined;
 };
 
 const componentById = (build: SchemaBuild, id: string): ComponentDefinition | undefined => {
@@ -74,19 +73,21 @@ const componentById = (build: SchemaBuild, id: string): ComponentDefinition | un
 };
 
 const relationField = (build: SchemaBuild, field: FieldDefinition<'relation'>): FieldConfig | undefined => {
-  const target = modelById(build, field.settings.target);
+  const target = resolvedModelById(build.snapshot, field.settings.target);
   // A relation to a model the caller cannot read is left out: it could only ever resolve empty, and its type
   // would name the model (REST keeps the key, with null or []).
   if (!target || !modelReadable(build.visibility, target.id)) {
     return undefined;
   }
-  const targetType = entryType(build, target);
+  // A target with children is its interface: the loader reads its whole family, each row as its own kind.
+  const targetType = entryOutputType(build, target);
   const load = async (id: unknown, node: ValueNode, context: GraphqlContext) => {
     if (typeof id !== 'string') {
       return null;
     }
     const entry = await context.loaders.entries(build.snapshot, target.id, node.scope).load(id);
-    return entry ? entryNode(entry, node.scope) : null;
+    const [loaded] = entry ? servableNodes(build, target, [entryNode(entry, node.scope)]) : [];
+    return loaded ?? null;
   };
   if (field.settings.cardinality === 'many') {
     return {
@@ -135,13 +136,15 @@ const zoneMembers = (build: SchemaBuild, field: FieldDefinition<'dynamiczone'>) 
     return component && type ? [{ component, type }] : [];
   });
 
-const zoneType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) =>
-  memoType(build.zones, `${owner.id}:${field.id}`, () => {
+/** A zone's union, keyed and named by the model that declares the field (shared down a family). */
+const zoneType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) => {
+  const declaring = declaringOwner(build, owner, field);
+  return memoType(build.zones, `${declaring.id}:${field.id}`, () => {
     const members = zoneMembers(build, field).map(({ type }) => type);
     return members.length === 0
       ? null
       : new GraphQLUnionType({
-          name: fieldTypeName(owner, field, 'Zone'),
+          name: fieldTypeName(declaring, field, 'Zone'),
           types: members,
           resolveType: (node: ValueNode) => {
             const component = build.snapshot.componentsByApiKey.get(String(node.data[COMPONENT_KEY]));
@@ -149,6 +152,7 @@ const zoneType = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefin
           },
         });
   });
+};
 
 const zoneField = (
   build: SchemaBuild,
@@ -279,9 +283,71 @@ const SYSTEM_STRING = (name: 'locale' | 'createdAt' | 'updatedAt') => ({
   resolve: (node: ValueNode) => node.data[name],
 });
 
+const LOCALIZATIONS_DESCRIPTION = 'This entry in its other locales, read the same way (published or draft)';
+
+/** The system fields every entry type and entry interface has, before `localizations` and the model's own. */
+const systemFields = (): GraphQLFieldConfigMap<ValueNode, GraphqlContext> => ({
+  id: { type: new GraphQLNonNull(GraphQLID), resolve: (node) => node.data.id },
+  locale: {
+    ...SYSTEM_STRING('locale'),
+    description: 'The locale that served this entry (fallback aware)',
+  },
+  createdAt: SYSTEM_STRING('createdAt'),
+  updatedAt: SYSTEM_STRING('updatedAt'),
+  publishedAt: { type: GraphQLString, resolve: (node) => node.data.publishedAt ?? null },
+});
+
+const localizationsCost = (build: SchemaBuild) => ({
+  cost: { list: Math.max(1, build.snapshot.locales.length - 1) },
+});
+
+/**
+ * `<Type>Interface` of a model with children (plan polymorphic-types D9): the system fields and the model's
+ * effective fields as the caller may read them on the model itself. Each readable descendant's read mask holds
+ * at least those fields (a grant on a model applies to its descendants, D8, and inherited fields keep their ID
+ * and `public` flag), so every implementing type has every interface field with the same type. It implements
+ * the interfaces of its readable ancestors; `localizations` lists the interface and narrows to each kind's own
+ * type on the object types. Rows resolve to their kind's type through `__model`.
+ */
+export const interfaceType = (build: SchemaBuild, model: ResolvedModelDefinition): GraphQLInterfaceType =>
+  memoType(build.interfaces, model.id, () => {
+    const type: GraphQLInterfaceType = new GraphQLInterfaceType({
+      name: modelTypeName(model, 'Interface'),
+      description: describeDefinition(model),
+      interfaces: () => ancestorInterfaces(build, model),
+      fields: () => ({
+        ...systemFields(),
+        localizations: {
+          type: list(type),
+          description: LOCALIZATIONS_DESCRIPTION,
+          extensions: localizationsCost(build),
+        },
+        ...definitionFields(build, model, true),
+      }),
+      resolveType: (node: ValueNode) => kindTypeName(build, model, node),
+    });
+    return type;
+  });
+
+/** The interfaces of a model's readable ancestors, root first (an unreadable ancestor has none here). */
+const ancestorInterfaces = (build: SchemaBuild, model: ResolvedModelDefinition): GraphQLInterfaceType[] =>
+  model.ancestorIds.flatMap((id) => {
+    const ancestor = modelReadable(build.visibility, id) ? resolvedModelById(build.snapshot, id) : undefined;
+    return ancestor ? [interfaceType(build, ancestor)] : [];
+  });
+
+/** The interfaces a model's object type implements: its readable ancestors', then its own when it has children. */
+const implementedInterfaces = (
+  build: SchemaBuild,
+  model: ResolvedModelDefinition,
+): GraphQLInterfaceType[] => [
+  ...ancestorInterfaces(build, model),
+  ...(hasChildren(build, model.id) ? [interfaceType(build, model)] : []),
+];
+
 export const entryType = (
   build: SchemaBuild,
-  model: ModelDefinition,
+  model: ResolvedModelDefinition,
 ): GraphQLObjectType<ValueNode, GraphqlContext> =>
   memoType(build.objects, model.id, () => {
     const type: GraphQLObjectType<ValueNode, GraphqlContext> = new GraphQLObjectType<
@@ -290,19 +356,13 @@ export const entryType = (
     >({
       name: modelTypeName(model),
       description: describeDefinition(model),
+      interfaces: () => implementedInterfaces(build, model),
       fields: () => ({
-        id: { type: new GraphQLNonNull(GraphQLID), resolve: (node) => node.data.id },
-        locale: {
-          ...SYSTEM_STRING('locale'),
-          description: 'The locale that served this entry (fallback aware)',
-        },
-        createdAt: SYSTEM_STRING('createdAt'),
-        updatedAt: SYSTEM_STRING('updatedAt'),
-        publishedAt: { type: GraphQLString, resolve: (node) => node.data.publishedAt ?? null },
+        ...systemFields(),
         localizations: {
           type: list(type),
-          description: 'This entry in its other locales, read the same way (published or draft)',
-          extensions: { cost: { list: Math.max(1, build.snapshot.locales.length - 1) } },
+          description: LOCALIZATIONS_DESCRIPTION,
+          extensions: localizationsCost(build),
           resolve: async (node, _args, context) => {
             const versions = await context.loaders
               .localizations(build.snapshot, model.id, node.scope)
@@ -319,3 +379,13 @@ export const entryType = (
     });
     return type;
   });
+
+/**
+ * The output type of a model's entries wherever they are served (lookups, lists, relation targets): its
+ * interface when it has children, so rows of every kind fit, else its object type, unchanged.
+ */
+export const entryOutputType = (
+  build: SchemaBuild,
+  model: ResolvedModelDefinition,
+): GraphQLObjectType<ValueNode, GraphqlContext> | GraphQLInterfaceType =>
+  hasChildren(build, model.id) ? interfaceType(build, model) : entryType(build, model);

@@ -894,3 +894,13 @@ describe('classifyLocaleChange', () => {
     expect(classifyLocaleChange(kind, 'fr')).toEqual({ kind, code: 'fr', category, breaking, destructive });
   });
 });
+
+describe('classifyChange: model.extends', () => {
+  it('is a step-free contract change: breaking, not destructive, no prerequisites', () => {
+    expectClass(only(base(), base({}, { extends: id(9) })), { category: 'contract', breaking: true });
+    expectClass(only(base({}, { extends: id(8) }), base({}, { extends: id(9) })), {
+      category: 'contract',
+      breaking: true,
+    });
+  });
+});

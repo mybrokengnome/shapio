@@ -153,9 +153,13 @@ export const typeChangeDropsValues = (from: StoredFieldShape, to: StoredFieldSha
  */
 export type PlannedChange = SchemaChange & { dropsValues?: boolean };
 
-/** Whether a (classified) change drops every stored value of its field; false for plans without the flag. */
+/**
+ * Whether a (classified) change drops every stored value of its field; false for plans without the flag. A
+ * type change Shapio cannot convert, or an inherited field a model loses when it moves to another parent
+ * (`field.removed` marked by the planner, plan polymorphic-types decision 6).
+ */
 export const changeDropsValues = (change: PlannedChange): boolean =>
-  change.kind === 'field.type' && change.dropsValues === true;
+  (change.kind === 'field.type' || change.kind === 'field.removed') && change.dropsValues === true;
 
 /** A required field whose values are dropped is backfilled from its default, else checked (no silent nulls). */
 const requiredStep = (field: FieldDefinition | undefined): PrerequisiteKind[] => {
@@ -431,6 +435,10 @@ export const classifyChange = (change: SchemaChange, context: ClassifyContext): 
           : result('conversion', { destructive: true, prerequisites: ['convert', ...checks] });
       break;
     }
+    case 'model.extends':
+      // A marker: the content work comes from diffing the resolved definitions of the family.
+      classification = result('contract', { breaking: true });
+      break;
     case 'model.draftAndPublish':
       classification =
         change.to === true

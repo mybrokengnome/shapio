@@ -123,7 +123,10 @@ describe('API docs and generated types', () => {
       schemaVersion: number;
     }>();
     expect(schemaVersion).toBeGreaterThan(0);
-    expect(source).toContain('export type Event = EntrySystemFields & {');
+    expect(source).toContain('export type EventFields = EntrySystemFields & {');
+    expect(source).toContain(
+      'export type Event = EventFields & { __model: "event"; __kinds: readonly ["event"] };',
+    );
     expect(source).toContain('state: "open" | "closed" | null;');
     expect(source).toContain('venue: Related<Venue> | null;');
     expect(source).toContain('sections: Array<({ __component: "hero" } & Hero)> | null;');

@@ -7,7 +7,15 @@ type Executor = Kysely<DB> | Transaction<DB>;
 
 /** Why a publication sequence number was taken (the `publication_snapshots` ledger). */
 export type SnapshotSource =
-  'publish' | 'unpublish' | 'delete' | 'schedule' | 'change_set' | 'schema' | 'conversion' | 'import';
+  | 'publish'
+  | 'unpublish'
+  | 'delete'
+  | 'schedule'
+  | 'change_set'
+  | 'schema'
+  | 'conversion'
+  | 'import'
+  | 'kind_change';
 
 export type SnapshotMeta = {
   source: SnapshotSource;
@@ -175,6 +183,28 @@ export const findRevisionsLiveAt = (
     .where((eb) => eb.or([eb('pl.to_seq', 'is', null), eb('pl.to_seq', '>', String(seq))]))
     .execute();
 };
+
+/**
+ * The model each of these entries was published as at snapshot `seq` (the log rows live then; an entry
+ * that changed kind since has its old kind here). Entries not live at `seq` are absent.
+ */
+export const findModelsLiveAt = (
+  siteId: string,
+  entryIds: readonly string[],
+  seq: number,
+  executor: Executor = db,
+) =>
+  entryIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('publication_log as pl')
+        .select(['pl.entry_id', 'pl.model_id'])
+        .distinct()
+        .where('pl.site_id', '=', siteId)
+        .where('pl.entry_id', 'in', [...new Set(entryIds)])
+        .where('pl.from_seq', '<=', String(seq))
+        .where((eb) => eb.or([eb('pl.to_seq', 'is', null), eb('pl.to_seq', '>', String(seq))]))
+        .execute();
 
 /**
  * An entry's publications (one row per live period of a locale), newest first, with the ledger rows that

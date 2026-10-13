@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolContext } from '../context.js';
-import { findDefinition, readSchema, summarize } from '../definitions.js';
+import { describeDefinition, findDefinition, readSchema, summarizer } from '../definitions.js';
 import { putDefinitionDraft } from '../schemaDrafts.js';
 import { runTool } from './results.js';
 
@@ -12,10 +12,12 @@ const SHARED_DESCRIPTION =
 
 const DEFINITION_DESCRIPTION =
   'A whole definition in Shapio\'s authored format: { kind: "collection" | "singleton" | "component", apiKey, ' +
-  'label, pluralApiKey? (collections), localized?, draftAndPublish?, fields: [{ apiKey, label, type, required?, ' +
-  'localized?, settings? }] }. IDs are optional: an existing definition keeps its IDs (matched by API ID). ' +
-  'Relation targets and component references may be given as API IDs. Read shapio://schema/{apiKey} to see ' +
-  'the format of an existing one.';
+  'label, pluralApiKey? (collections), extends? (collections), localized?, draftAndPublish?, fields: [{ apiKey, ' +
+  'label, type, required?, localized?, settings? }] }. IDs are optional: an existing definition keeps its IDs ' +
+  '(matched by API ID). Relation targets, component references and extends may be given as API IDs. A ' +
+  'collection with extends inherits every field of that collection: list only its own fields, never an ' +
+  "inherited one, and give it the parent's localized and draftAndPublish. Read shapio://schema/{apiKey} to " +
+  'see the format of an existing one.';
 
 /** The schema: list and read definitions, and draft changes into a change set (never activated here). */
 export const registerSchemaTools = ({ server, client }: ToolContext) => {
@@ -25,15 +27,19 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
       title: 'List content types',
       description:
         "Every model (collection, singleton) and component of this server's site (its own and the ones shared " +
-        'with all sites) with its API IDs, scope, version and fields (types only). Delivery reads use ' +
-        'pluralApiKey for collections.',
+        'with all sites) with its API IDs, scope, version and fields (types only). A collection that extends ' +
+        'another names it in extends and lists the inherited fields first, each with inheritedFrom. Delivery ' +
+        "reads use routeKey for collections (the plural API ID, nested under the parent's: posts/guides).",
       inputSchema: z.object({}),
       annotations: READ_ONLY,
     },
     () =>
       runTool(async () => {
         const schema = await readSchema(client);
-        return { schemaVersion: schema.schemaVersion, definitions: schema.definitions.map(summarize) };
+        return {
+          schemaVersion: schema.schemaVersion,
+          definitions: schema.definitions.map(summarizer(schema)),
+        };
       }),
   );
 
@@ -41,13 +47,20 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
     'schema_get',
     {
       title: 'Read a content type',
-      description: 'One definition in full (fields with settings), by API ID or stable ID, with its version.',
+      description:
+        'One definition in full (fields with settings), by API ID or stable ID, with its version. A collection ' +
+        'that extends another holds only its own fields; extendsApiKey, routeKey and inheritedFields describe ' +
+        'what it inherits.',
       inputSchema: z.object({
         apiKey: z.string().min(1).describe('API ID (or stable ID) of the definition'),
       }),
       annotations: READ_ONLY,
     },
-    ({ apiKey }) => runTool(async () => findDefinition(await readSchema(client), apiKey)),
+    ({ apiKey }) =>
+      runTool(async () => {
+        const schema = await readSchema(client);
+        return describeDefinition(schema, findDefinition(schema, apiKey));
+      }),
   );
 
   server.registerTool(

@@ -22,6 +22,7 @@ const NOT_RESTORABLE_KEYS = {
   locale_missing: 'changes.review.notRestorable.locale_missing',
   invalid: 'changes.review.notRestorable.invalid',
   unique_conflict: 'changes.review.notRestorable.unique_conflict',
+  kind_changed: 'changes.review.notRestorable.kind_changed',
 } as const;
 
 type ChecksTabProps = { review: ChangeSetReview; flow: ShipFlow };

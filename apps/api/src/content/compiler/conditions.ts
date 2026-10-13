@@ -16,3 +16,7 @@ export const entryIdIn = (
   ids: readonly string[],
   dialect: ContentSqlDialect = contentDialect(),
 ): RawBuilder<boolean> => dialect.oneOf(sql`h.entry_id`, ids, 'uuid');
+
+/** No head: a read narrowed to kinds the caller may not read (`filters[__model]`). */
+export const matchesNothing = (dialect: ContentSqlDialect = contentDialect()): RawBuilder<unknown> =>
+  dialect.bool(false);

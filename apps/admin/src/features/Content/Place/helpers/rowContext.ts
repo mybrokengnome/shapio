@@ -2,17 +2,20 @@ import type { AdminEntryListItem } from '@shapio/client';
 import type { RowContext } from '../Row';
 import { rowMoreId } from './rowIds';
 
-/** The table's columns besides the field columns: tick box, status, author, (locale), updated, actions. */
+/**
+ * The table's columns besides the field columns: tick box, (entry), (kind), status, author, (locale),
+ * updated, actions.
+ */
 export const fixedColumnCount = (context: RowContext) =>
-  5 + (context.titleColumn ? 0 : 1) + (context.locale ? 1 : 0);
+  5 + (context.titleColumn ? 0 : 1) + (context.showKind ? 1 : 0) + (context.locale ? 1 : 0);
 
 /** The row's quick actions (shared by table rows and phone rows). */
 export const rowActionsProps = (context: RowContext, item: AdminEntryListItem, label: string) => {
-  const { model, locale, quickEdit } = context;
+  const { locale, quickEdit } = context;
   // A row read from a fallback locale has no version in this locale yet: the document creates it.
   const editable = quickEdit !== null && (locale === null || item.locale === locale);
   return {
-    modelKey: model.apiKey,
+    modelKey: item.model,
     entry: item,
     label,
     locale,

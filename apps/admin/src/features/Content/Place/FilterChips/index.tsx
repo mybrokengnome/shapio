@@ -1,5 +1,5 @@
 import type { AdminEntryListItem, EntryStatus } from '@shapio/client';
-import type { ModelDefinition } from '@shapio/schema';
+import type { ModelDefinition, ResolvedModelDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { shortId } from '@/fields/helpers/titles';
@@ -10,7 +10,9 @@ import { ActiveFilter } from '../ActiveFilter';
 import { AuthorFilter } from '../AuthorFilter';
 import { FilterChip } from '../FilterChip';
 import { relationFilterFields } from '../helpers/filterLabels';
+import { kindFilterChoices } from '../helpers/kindFilter';
 import { useAuthorChoices } from '../hooks/useAuthorChoices';
+import { KindFilter } from '../KindFilter';
 import { RelationFilter } from '../RelationFilter';
 import { StatusFilter } from '../StatusFilter';
 
@@ -20,6 +22,10 @@ type FilterChipsProps = {
   filters: readonly ListFilter[];
   status: EntryStatus | undefined;
   author: string | undefined;
+  /** The place's type and its kinds when it has some (none otherwise: no Kind filter). */
+  kinds: readonly ResolvedModelDefinition[];
+  /** The kind the list is narrowed to. */
+  kind: ModelDefinition | undefined;
   /** Changes some of the list's filters at once (one URL update). */
   onSearchChange: (changes: FilterChanges) => void;
   /** The page's entries (their authors are offered by "Created by"). */
@@ -30,6 +36,7 @@ export type FilterChanges = {
   filters?: ListFilter[];
   status?: EntryStatus | undefined;
   author?: string | undefined;
+  kind?: string | undefined;
 };
 
 type ChipProps = { subject: string; value: string; onRemove: () => void };
@@ -41,9 +48,9 @@ const Chip = ({ subject, value, onRemove }: ChipProps) => (
 );
 
 /**
- * The list's filters as chips: status and "created by" (quick filters), every applied condition (removable),
- * and a dashed chip per relation ("+ Author") that filters by one related entry. Other conditions are added
- * with the Filters button.
+ * The list's filters as chips: status, "created by" and, for a type with kinds, kind (quick filters), every
+ * applied condition (removable), and a dashed chip per relation ("+ Author") that filters by one related
+ * entry. Other conditions are added with the Filters button.
  */
 export const FilterChips = ({
   schema,
@@ -51,6 +58,8 @@ export const FilterChips = ({
   filters,
   status,
   author,
+  kinds,
+  kind,
   onSearchChange,
   items,
 }: FilterChipsProps) => {
@@ -58,7 +67,8 @@ export const FilterChips = ({
   const { choices, meId, nameOf } = useAuthorChoices(items);
   const used = new Set(filters.map((filter) => filter.field));
   const adders = relationFilterFields(model).filter((field) => !used.has(field.apiKey));
-  const applied = filters.length + (status ? 1 : 0) + (author ? 1 : 0);
+  const applied = filters.length + (status ? 1 : 0) + (author ? 1 : 0) + (kind ? 1 : 0);
+  const kindChoices = kindFilterChoices(kinds);
   return (
     <div className="flex w-full flex-wrap items-center gap-2">
       <ul aria-label={t('place.filters.active')} className="flex flex-wrap items-center gap-2">
@@ -67,6 +77,13 @@ export const FilterChips = ({
             subject={t('place.filters.statusIs')}
             value={t(ENTRY_STATUS_LABEL_KEYS[status])}
             onRemove={() => onSearchChange({ status: undefined })}
+          />
+        ) : null}
+        {kind ? (
+          <Chip
+            subject={t('place.filters.kindIs')}
+            value={kind.label}
+            onRemove={() => onSearchChange({ kind: undefined })}
           />
         ) : null}
         {author ? (
@@ -86,6 +103,9 @@ export const FilterChips = ({
           />
         ))}
         {status ? null : <StatusFilter onPick={(next) => onSearchChange({ status: next })} />}
+        {kind || kindChoices.length === 0 ? null : (
+          <KindFilter kinds={kindChoices} onPick={(next) => onSearchChange({ kind: next })} />
+        )}
         {author ? null : (
           <AuthorFilter choices={choices} meId={meId} onPick={(next) => onSearchChange({ author: next })} />
         )}
@@ -109,7 +129,9 @@ export const FilterChips = ({
           type="button"
           variant="ghost"
           size="xs"
-          onClick={() => onSearchChange({ filters: [], status: undefined, author: undefined })}
+          onClick={() =>
+            onSearchChange({ filters: [], status: undefined, author: undefined, kind: undefined })
+          }
         >
           {t('place.filters.clearChips')}
         </Button>

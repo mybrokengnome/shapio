@@ -1,9 +1,12 @@
 import {
   embeddedComponentIds,
   isComponentDefinition,
+  isModelDefinition,
+  routePathOf,
   type ComponentDefinition,
   type FieldDefinition,
   type ModelDefinition,
+  type ResolvedModelDefinition,
 } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
 import type { ActiveDefinition, SchemaById, SchemaSnapshot } from '../schema/snapshot.js';
@@ -17,12 +20,34 @@ export const SHARED_LOCALE = '*';
 
 /** A collection or singleton resolved from a pinned snapshot, with what writes need to know about it. */
 export type ContentModel = {
-  definition: ModelDefinition;
+  /** The effective definition: inherited fields first (`inheritedFrom` set), then the model's own. */
+  definition: ResolvedModelDefinition;
   /** Per-model version at the pinned snapshot (re-checked at commit). */
   version: number;
   revisionId: string;
-  /** Components reachable from the model (directly or through other components), with their versions. */
+  /**
+   * The models this one extends, by ID, at the pinned snapshot: a parent change changes this model's shape
+   * without changing its own version, so writes re-check these too and validators are cached by them.
+   */
+  ancestors: ReadonlyMap<string, { version: number; revisionId: string }>;
+  /** Components reachable from the model's effective fields (directly or through other components). */
   components: ReadonlyMap<string, { definition: ComponentDefinition; version: number }>;
+  /**
+   * Where the model is served (plan polymorphic-types): its route key (`products/digital`) and its ancestors'
+   * API IDs, root first. Set by the resolvers here; absent on models built by hand.
+   */
+  route?: ModelRoute;
+};
+
+export type ModelRoute = { key: string; ancestors: readonly string[] };
+
+/** Where a model is served: its nested route key and its ancestors' API IDs, root first. */
+export const modelRouteOf = (snapshot: SchemaById, definition: ModelDefinition): ModelRoute => {
+  const ancestorIds = snapshot.ancestors(definition.id);
+  const ancestors = ancestorIds
+    .map((id) => snapshot.byId.get(id)?.definition)
+    .filter((ancestor): ancestor is ModelDefinition => ancestor !== undefined && isModelDefinition(ancestor));
+  return { key: routePathOf(definition, ancestors), ancestors: ancestors.map((ancestor) => ancestor.apiKey) };
 };
 
 export const modelNotFound = (key: string) =>
@@ -43,15 +68,28 @@ const collectComponents = (snapshot: SchemaById, model: ModelDefinition): Conten
   return found;
 };
 
+const ancestorsOf = (snapshot: SchemaById, definition: ResolvedModelDefinition): ContentModel['ancestors'] =>
+  new Map(
+    definition.ancestorIds.flatMap((id) => {
+      const ancestor = snapshot.byId.get(id);
+      return ancestor ? [[id, { version: ancestor.version, revisionId: ancestor.revisionId }] as const] : [];
+    }),
+  );
+
 const toContentModel = (
   snapshot: SchemaById,
   active: ActiveDefinition & { definition: ModelDefinition },
-): ContentModel => ({
-  definition: active.definition,
-  version: active.version,
-  revisionId: active.revisionId,
-  components: collectComponents(snapshot, active.definition),
-});
+): ContentModel => {
+  const definition = snapshot.resolve(active.definition.id) as ResolvedModelDefinition;
+  return {
+    definition,
+    version: active.version,
+    revisionId: active.revisionId,
+    ancestors: ancestorsOf(snapshot, definition),
+    components: collectComponents(snapshot, definition),
+    route: modelRouteOf(snapshot, definition),
+  };
+};
 
 const isModel = (
   active: ActiveDefinition | undefined,

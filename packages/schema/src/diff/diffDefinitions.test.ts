@@ -133,3 +133,17 @@ describe('diffDefinitions', () => {
     ]);
   });
 });
+
+describe('diffDefinitions: extends (plan polymorphic-types)', () => {
+  it('reports gaining, changing and losing a parent as model.extends', () => {
+    const child = { ...base(), extends: id(8) };
+    expect(diffDefinitions(base(), child)).toEqual([
+      { kind: 'model.extends', definitionId: id(1), from: null, to: id(8) },
+    ]);
+    expect(kinds(diffDefinitions(child, { ...child, extends: id(9) }))).toEqual(['model.extends']);
+    expect(diffDefinitions(child, base())).toEqual([
+      { kind: 'model.extends', definitionId: id(1), from: id(8), to: null },
+    ]);
+    expect(diffDefinitions(child, { ...child })).toEqual([]);
+  });
+});

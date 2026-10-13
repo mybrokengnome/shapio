@@ -1,5 +1,6 @@
 import {
   type COMPONENT_TYPE_SUFFIXES,
+  type INTERFACE_TYPE_SUFFIX,
   type MODEL_TYPE_SUFFIXES,
   type MUTATION_PREFIXES,
   toTypeName,
@@ -11,7 +12,8 @@ import {
  * Every per-definition GraphQL name, derived only from `@shapio/schema` `validators/naming.ts` (ADR 0002:
  * the registry validator rejects collisions against exactly these names at modelling time).
  */
-type ModelSuffix = (typeof MODEL_TYPE_SUFFIXES)[number];
+/** `<Type>Interface` exists only for a model with children (plan polymorphic-types D9). */
+type ModelSuffix = (typeof MODEL_TYPE_SUFFIXES)[number] | typeof INTERFACE_TYPE_SUFFIX;
 type ComponentSuffix = (typeof COMPONENT_TYPE_SUFFIXES)[number];
 export type MutationPrefix = (typeof MUTATION_PREFIXES)[number];
 

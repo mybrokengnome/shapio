@@ -1,5 +1,5 @@
 import type { AdminEntryPage } from '@shapio/client';
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { FileStack } from 'lucide-react';
 import { useMemo } from 'react';
@@ -23,6 +23,7 @@ import { useBulkEntryActions } from '../hooks/useBulkEntryActions';
 import { useListColumns } from '../hooks/useListColumns';
 import { useListView } from '../hooks/useListView';
 import { useModelPresence } from '../hooks/useModelPresence';
+import type { PlaceKinds } from '../hooks/usePlaceKinds';
 import type { usePlacePermissions } from '../hooks/usePlacePermissions';
 import type { usePlaceSearch } from '../hooks/usePlaceSearch';
 import { usePreviewEntry } from '../hooks/usePreviewEntry';
@@ -36,17 +37,20 @@ import { Toolbar } from '../Toolbar';
 
 type EntriesProps = {
   schema: ContentSchema;
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   locale: string | null;
   localeLabelOf: (code: string) => string;
   placeSearch: ReturnType<typeof usePlaceSearch>;
   list: UseQueryResult<AdminEntryPage>;
   permissions: ReturnType<typeof usePlacePermissions>;
+  kinds: PlaceKinds;
 };
 
 /**
  * A collection's entries: search, filter chips, sort, columns, table or cards, pages, presence, quick
- * actions per row and bulk actions for the selection.
+ * actions per row and bulk actions for the selection. A type with kinds lists every kind's entries (columns
+ * and filters over the type's fields, which every kind has), shows each row's kind and filters by kind; each
+ * row opens and acts under its own kind.
  */
 export const Entries = ({
   schema,
@@ -56,14 +60,16 @@ export const Entries = ({
   placeSearch,
   list,
   permissions,
+  kinds,
 }: EntriesProps) => {
   const { t } = useTranslation();
-  const { search, setSearch, sort } = placeSearch;
+  const { search, setSearch, sort, kind } = placeSearch;
   const { selected, changeSelection, replaceSelection } = useSelection();
   const bulk = useBulkEntryActions(model.apiKey, locale);
   const { columns, columnChoices, customized, setColumnVisible, resetColumns } = useListColumns(model);
   const { view, cover, setView } = useListView(model);
-  const { byEntry: presence } = useModelPresence(model.apiKey);
+  const kindKeys = useMemo(() => kinds.kinds.map((member) => member.apiKey), [kinds.kinds]);
+  const { byEntry: presence } = useModelPresence(kindKeys);
   const actions = useRowActions(model.apiKey, locale);
   const { preview } = usePreviewEntry(model.apiKey, locale);
   const fields = useMemo(() => liveFields(model.fields), [model]);
@@ -71,10 +77,12 @@ export const Entries = ({
   const wide = useIsMdUp();
   const quickEditable = useMemo(() => quickEditFieldsOf(model).length > 0, [model]);
   const filters = search.filters ?? [];
-  const filtered = Boolean(search.q || search.status || search.author || filters.length > 0);
+  const filtered = Boolean(search.q || search.status || search.author || kind || filters.length > 0);
   const title = titleFieldOf(model);
   const context: RowContext = {
     model,
+    kindOf: kinds.kindOf,
+    showKind: kinds.isFamily,
     columns,
     titleColumn: title && columns.includes(title) ? title : undefined,
     locale,
@@ -101,8 +109,8 @@ export const Entries = ({
           icon={FileStack}
           title={filtered ? t('place.list.emptyFiltered') : t('place.list.empty', { place: model.label })}
           action={
-            filtered || !permissions.canCreate ? undefined : (
-              <NewButton modelKey={model.apiKey} locale={locale} />
+            filtered || kinds.creatable.length === 0 ? undefined : (
+              <NewButton model={model} kinds={kinds.creatable} locale={locale} />
             )
           }
         />
@@ -145,6 +153,8 @@ export const Entries = ({
                 filters={filters}
                 status={search.status}
                 author={search.author}
+                kinds={kinds.isFamily ? kinds.kinds : []}
+                kind={kind}
                 items={list.data?.items}
                 onSearchChange={({ filters: next, ...rest }) =>
                   setSearch({

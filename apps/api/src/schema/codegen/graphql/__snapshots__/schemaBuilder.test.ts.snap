@@ -1,0 +1,1084 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildGraphqlSchema > prints exactly the schema it printed before model inheritance existed (no model has children) 1`] = `
+""""Author"""
+type Author {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [Author!]
+
+  """Name"""
+  name: String
+}
+
+"""Home"""
+type Home {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [Home!]
+
+  """Headline"""
+  headline: String
+}
+
+"""
+Page
+
+A page of the site
+"""
+type Page {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+
+  """
+  This entry in its other locales, read the same way (published or draft)
+  """
+  localizations: [Page!]
+
+  """
+  Title
+  
+  Shown in the browser tab
+  """
+  title: String
+
+  """Body"""
+  body: RichText
+
+  """Views"""
+  views: Int53
+
+  """Score"""
+  score: Float
+
+  """Price"""
+  price: String
+
+  """Big"""
+  big: String
+
+  """Live"""
+  live: Boolean
+
+  """Day"""
+  day: String
+
+  """At"""
+  at: String
+
+  """Time"""
+  time: String
+
+  """Tone"""
+  tone: PageToneEnum
+
+  """Tags"""
+  tags: [PageTagsEnum!]
+
+  """Meta"""
+  meta: JSON
+
+  """Slug"""
+  slug: String
+
+  """Cover"""
+  cover: Media
+
+  """Photos"""
+  photos: [Media!]
+
+  """Author"""
+  author: Author
+
+  """Related"""
+  related: [Page!]
+
+  """Header"""
+  header: Hero
+
+  """Quotes"""
+  quotes: [Quote!]
+
+  """Sections"""
+  sections: [PageSectionsZone!]
+}
+
+"""
+A rich-text document: the versioned JSON document and its sanitized HTML rendering.
+"""
+type RichText {
+  """\`{ format, version, doc }\` (ProseMirror JSON)"""
+  json: JSON!
+  html: String!
+}
+
+"""Any JSON value (JSON fields and rich-text documents)."""
+scalar JSON
+
+"""An integer between -(2^53 - 1) and 2^53 - 1, as a JSON number."""
+scalar Int53
+
+enum PageToneEnum {
+  """Calm"""
+  calm
+}
+
+enum PageTagsEnum {
+  """A"""
+  a
+}
+
+"""
+A media asset. Private assets carry signed URLs that expire at \`urlExpiresAt\`.
+"""
+type Media {
+  id: ID!
+  filename: String!
+  mimeType: String!
+  sizeBytes: Float!
+  width: Int
+  height: Int
+  alt: String!
+  caption: String!
+  focalPoint: FocalPoint
+  url: String!
+  urlExpiresAt: String
+  variants: [MediaVariant!]!
+}
+
+"""
+Where the subject of an image is, as fractions of its width and height (0 to 1).
+"""
+type FocalPoint {
+  x: Float!
+  y: Float!
+}
+
+"""A ready image variant (thumbnail, responsive width, converted format)."""
+type MediaVariant {
+  name: String!
+  width: Int
+  height: Int
+  format: String
+  mimeType: String!
+  url: String!
+}
+
+"""Hero"""
+type Hero {
+  """Heading"""
+  heading: String
+
+  """Image"""
+  image: Media
+}
+
+"""Quote"""
+type Quote {
+  """Text"""
+  text: String
+}
+
+union PageSectionsZone = Hero | Quote
+
+type Query {
+  """One Author entry by ID (null when not found)"""
+  author(
+    id: ID!
+
+    """Locale code; the default locale when omitted"""
+    locale: String
+
+    """
+    Serve the locale's fallback when an entry has no version in the requested locale
+    """
+    fallback: Boolean = true
+
+    """
+    DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts
+    """
+    publicationState: PublicationState = PUBLISHED
+
+    """Read published content as of this publication sequence"""
+    snapshot: Int
+  ): Author
+
+  """A page of Author entries"""
+  authors(
+    filter: AuthorFilter
+    sort: [AuthorSort!]
+
+    """Case-insensitive search of the model's title field"""
+    search: String
+    page: Int
+    pageSize: Int
+
+    """Locale code; the default locale when omitted"""
+    locale: String
+
+    """
+    Serve the locale's fallback when an entry has no version in the requested locale
+    """
+    fallback: Boolean = true
+
+    """
+    DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts
+    """
+    publicationState: PublicationState = PUBLISHED
+
+    """Read published content as of this publication sequence"""
+    snapshot: Int
+  ): AuthorConnection
+
+  """The Home entry"""
+  home(
+    """Locale code; the default locale when omitted"""
+    locale: String
+
+    """
+    Serve the locale's fallback when an entry has no version in the requested locale
+    """
+    fallback: Boolean = true
+
+    """
+    DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts
+    """
+    publicationState: PublicationState = PUBLISHED
+
+    """Read published content as of this publication sequence"""
+    snapshot: Int
+  ): Home
+
+  """One Page entry by ID (null when not found)"""
+  page(
+    id: ID!
+
+    """Locale code; the default locale when omitted"""
+    locale: String
+
+    """
+    Serve the locale's fallback when an entry has no version in the requested locale
+    """
+    fallback: Boolean = true
+
+    """
+    DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts
+    """
+    publicationState: PublicationState = PUBLISHED
+
+    """Read published content as of this publication sequence"""
+    snapshot: Int
+  ): Page
+
+  """A page of Page entries"""
+  pages(
+    filter: PageFilter
+    sort: [PageSort!]
+
+    """Case-insensitive search of the model's title field"""
+    search: String
+    page: Int
+    pageSize: Int
+
+    """Locale code; the default locale when omitted"""
+    locale: String
+
+    """
+    Serve the locale's fallback when an entry has no version in the requested locale
+    """
+    fallback: Boolean = true
+
+    """
+    DRAFT needs an admin user, an admin API token or a delivery token granted Read drafts
+    """
+    publicationState: PublicationState = PUBLISHED
+
+    """Read published content as of this publication sequence"""
+    snapshot: Int
+  ): PageConnection
+
+  """
+  The schema version this API reflects; it changes whenever a model changes
+  """
+  _schemaVersion: Int!
+
+  """
+  Entries whose live content changed between two snapshots (incremental builds)
+  """
+  _changes(
+    from: Int!
+
+    """Defaults to the current snapshot"""
+    to: Int
+
+    """\`nextCursor\` of the previous page"""
+    after: ID
+
+    """Entries per page (default 100, at most 500)"""
+    first: Int
+  ): SnapshotChangePage!
+
+  """The current snapshot and schema version"""
+  _snapshot: SnapshotInfo!
+
+  """The request's site: its key, name and SEO defaults"""
+  _site: SiteInfo!
+}
+
+"""
+DRAFT is for admin principals and delivery tokens granted Read drafts (development servers).
+"""
+enum PublicationState {
+  PUBLISHED
+  DRAFT
+}
+
+type AuthorConnection {
+  nodes: [Author!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+
+  """The requested locale"""
+  locale: String!
+
+  """
+  Publication sequence this page reflects (pin a site build with \`snapshot\`); null for drafts
+  """
+  snapshot: Int
+}
+
+type PageInfo {
+  page: Int!
+  pageSize: Int!
+  pageCount: Int!
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+}
+
+"""Conditions on Author entries; every key given must hold (AND)."""
+input AuthorFilter {
+  id: IDFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+
+  """Name"""
+  name: StringFilter
+
+  """All must hold"""
+  and: [AuthorFilter!]
+
+  """At least one must hold"""
+  or: [AuthorFilter!]
+
+  """Must not hold"""
+  not: AuthorFilter
+}
+
+"""
+Conditions on one ID value, ANDed. The same operators as the REST API's filters.
+"""
+input IDFilter {
+  """Equals (on list fields: contains)"""
+  eq: ID
+
+  """Does not equal"""
+  ne: ID
+
+  """Equals one of"""
+  in: [ID!]
+
+  """Equals none of"""
+  nin: [ID!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+}
+
+"""
+Conditions on one DateTime value, ANDed. The same operators as the REST API's filters.
+"""
+input DateTimeFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+}
+
+"""
+Conditions on one String value, ANDed. The same operators as the REST API's filters.
+"""
+input StringFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+
+  """Contains, case-sensitive (needs filterable)"""
+  contains: String
+
+  """Does not contain, case-sensitive (needs filterable)"""
+  notContains: String
+
+  """Contains, case-insensitive (needs filterable)"""
+  containsi: String
+
+  """Starts with (needs filterable)"""
+  startsWith: String
+
+  """Ends with (needs filterable)"""
+  endsWith: String
+}
+
+"""One sort key of Author entries (set exactly one field per item)."""
+input AuthorSort {
+  id: SortDirection
+  createdAt: SortDirection
+  updatedAt: SortDirection
+}
+
+enum SortDirection {
+  ASC
+  DESC
+}
+
+type PageConnection {
+  nodes: [Page!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+
+  """The requested locale"""
+  locale: String!
+
+  """
+  Publication sequence this page reflects (pin a site build with \`snapshot\`); null for drafts
+  """
+  snapshot: Int
+}
+
+"""Conditions on Page entries; every key given must hold (AND)."""
+input PageFilter {
+  id: IDFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+
+  """
+  Title
+  
+  Shown in the browser tab
+  """
+  title: StringFilter
+
+  """Views"""
+  views: IntFilter
+
+  """Score"""
+  score: FloatFilter
+
+  """Price"""
+  price: DecimalFilter
+
+  """Big"""
+  big: BigIntFilter
+
+  """Live"""
+  live: BooleanFilter
+
+  """Day"""
+  day: DateFilter
+
+  """At"""
+  at: DateTimeFilter
+
+  """Time"""
+  time: TimeFilter
+
+  """Tone"""
+  tone: StringFilter
+
+  """Tags"""
+  tags: StringFilter
+
+  """Slug"""
+  slug: StringFilter
+
+  """Cover"""
+  cover: IDFilter
+
+  """Photos"""
+  photos: IDFilter
+
+  """Author"""
+  author: IDFilter
+
+  """Related"""
+  related: IDFilter
+
+  """All must hold"""
+  and: [PageFilter!]
+
+  """At least one must hold"""
+  or: [PageFilter!]
+
+  """Must not hold"""
+  not: PageFilter
+}
+
+"""
+Conditions on one Int value, ANDed. The same operators as the REST API's filters.
+"""
+input IntFilter {
+  """Equals (on list fields: contains)"""
+  eq: Int53
+
+  """Does not equal"""
+  ne: Int53
+
+  """Equals one of"""
+  in: [Int53!]
+
+  """Equals none of"""
+  nin: [Int53!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: Int53
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: Int53
+
+  """Greater than (needs filterable or sortable)"""
+  gt: Int53
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: Int53
+}
+
+"""
+Conditions on one Float value, ANDed. The same operators as the REST API's filters.
+"""
+input FloatFilter {
+  """Equals (on list fields: contains)"""
+  eq: Float
+
+  """Does not equal"""
+  ne: Float
+
+  """Equals one of"""
+  in: [Float!]
+
+  """Equals none of"""
+  nin: [Float!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: Float
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: Float
+
+  """Greater than (needs filterable or sortable)"""
+  gt: Float
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: Float
+}
+
+"""
+Conditions on one Decimal value, ANDed. The same operators as the REST API's filters.
+"""
+input DecimalFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+}
+
+"""
+Conditions on one BigInt value, ANDed. The same operators as the REST API's filters.
+"""
+input BigIntFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+}
+
+"""
+Conditions on one Boolean value, ANDed. The same operators as the REST API's filters.
+"""
+input BooleanFilter {
+  """Equals (on list fields: contains)"""
+  eq: Boolean
+
+  """Does not equal"""
+  ne: Boolean
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+}
+
+"""
+Conditions on one Date value, ANDed. The same operators as the REST API's filters.
+"""
+input DateFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+}
+
+"""
+Conditions on one Time value, ANDed. The same operators as the REST API's filters.
+"""
+input TimeFilter {
+  """Equals (on list fields: contains)"""
+  eq: String
+
+  """Does not equal"""
+  ne: String
+
+  """Equals one of"""
+  in: [String!]
+
+  """Equals none of"""
+  nin: [String!]
+
+  """true: has no value; false: has a value"""
+  null: Boolean
+
+  """true: has a value; false: has no value"""
+  notNull: Boolean
+
+  """Less than (needs filterable or sortable)"""
+  lt: String
+
+  """Less than or equal (needs filterable or sortable)"""
+  lte: String
+
+  """Greater than (needs filterable or sortable)"""
+  gt: String
+
+  """Greater than or equal (needs filterable or sortable)"""
+  gte: String
+}
+
+"""One sort key of Page entries (set exactly one field per item)."""
+input PageSort {
+  id: SortDirection
+  createdAt: SortDirection
+  updatedAt: SortDirection
+  title: SortDirection
+  views: SortDirection
+}
+
+type SnapshotChangePage {
+  from: Int!
+  to: Int!
+  fromSchemaVersion: Int
+  toSchemaVersion: Int
+  nodes: [SnapshotChange!]!
+
+  """Pass as \`after\` for the next page; null on the last page"""
+  nextCursor: ID
+}
+
+"""
+An entry whose live content differs between two snapshots, with the locales that changed
+"""
+type SnapshotChange {
+  id: ID!
+  modelId: ID!
+
+  """The model's API ID"""
+  modelKey: String!
+
+  """The REST route key (\`/api/content/<routeKey>\`)"""
+  routeKey: String!
+  locales: [SnapshotChangeLocale!]!
+}
+
+type SnapshotChangeLocale {
+  locale: String!
+  change: SnapshotChangeKind!
+}
+
+enum SnapshotChangeKind {
+  """Not live at \`from\`, live at \`to\`"""
+  PUBLISHED
+
+  """Live at both ends with different content"""
+  UPDATED
+
+  """Live at \`from\`, not live (or deleted) at \`to\`"""
+  UNPUBLISHED
+}
+
+type SnapshotInfo {
+  """The latest publication sequence number"""
+  snapshot: Int!
+
+  """The active schema version"""
+  schemaVersion: Int!
+  publishedAt: String
+}
+
+"""The site this request reads, and its SEO defaults"""
+type SiteInfo {
+  key: String!
+  name: String!
+  seo: SiteSeoDefaults!
+}
+
+type SiteSeoDefaults {
+  locales: [SiteSeoLocale!]!
+  twitterHandle: String
+
+  """The default social image (a public image), or null"""
+  image: Media
+}
+
+"""
+One locale's default SEO texts; a missing one falls back along the locale chain
+"""
+type SiteSeoLocale {
+  locale: String!
+  siteName: String
+
+  """
+  Page titles go through it: \`%s\` is replaced by the title, e.g. \`%s · Acme\`
+  """
+  titleTemplate: String
+
+  """Used where an entry has no SEO description"""
+  description: String
+}
+
+type Mutation {
+  """Creates a Author entry (a draft unless \`publish\` is true)"""
+  createAuthor(data: AuthorInput, locale: String, publish: Boolean): Entry
+
+  """
+  Changes the given fields of the draft (a patch: omitted fields keep their values)
+  """
+  updateAuthor(id: ID!, data: AuthorInput, locale: String, expectedVersion: Int): Entry
+  deleteAuthor(id: ID!): ID!
+
+  """
+  Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
+  """
+  publishAuthor(id: ID!, locales: [String!], expectedVersion: Int): Entry
+
+  """Unpublishes the given locales (default: the default locale)"""
+  unpublishAuthor(id: ID!, locales: [String!]): Entry
+
+  """Creates a Home entry (a draft unless \`publish\` is true)"""
+  createHome(data: HomeInput, locale: String, publish: Boolean): Entry
+
+  """
+  Changes the given fields of the draft (a patch: omitted fields keep their values)
+  """
+  updateHome(id: ID!, data: HomeInput, locale: String, expectedVersion: Int): Entry
+  deleteHome(id: ID!): ID!
+
+  """
+  Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
+  """
+  publishHome(id: ID!, locales: [String!], expectedVersion: Int): Entry
+
+  """Unpublishes the given locales (default: the default locale)"""
+  unpublishHome(id: ID!, locales: [String!]): Entry
+
+  """Creates a Page entry (a draft unless \`publish\` is true)"""
+  createPage(data: PageInput, locale: String, publish: Boolean): Entry
+
+  """
+  Changes the given fields of the draft (a patch: omitted fields keep their values)
+  """
+  updatePage(id: ID!, data: PageInput, locale: String, expectedVersion: Int): Entry
+  deletePage(id: ID!): ID!
+
+  """
+  Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
+  """
+  publishPage(id: ID!, locales: [String!], expectedVersion: Int): Entry
+
+  """Unpublishes the given locales (default: the default locale)"""
+  unpublishPage(id: ID!, locales: [String!]): Entry
+}
+
+type Entry {
+  id: ID!
+  locale: String!
+  version: Int!
+
+  """draft, published or modified"""
+  status: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+}
+
+input AuthorInput {
+  """Name"""
+  name: String
+}
+
+input HomeInput {
+  """Headline"""
+  headline: String
+}
+
+input PageInput {
+  """
+  Title
+  
+  Shown in the browser tab
+  """
+  title: String
+
+  """Body"""
+  body: JSON
+
+  """Views"""
+  views: Int53
+
+  """Score"""
+  score: Float
+
+  """Price"""
+  price: String
+
+  """Big"""
+  big: String
+
+  """Live"""
+  live: Boolean
+
+  """Day"""
+  day: String
+
+  """At"""
+  at: String
+
+  """Time"""
+  time: String
+
+  """Tone"""
+  tone: PageToneEnum
+
+  """Tags"""
+  tags: [PageTagsEnum!]
+
+  """Meta"""
+  meta: JSON
+
+  """Slug"""
+  slug: String
+
+  """Cover"""
+  cover: ID
+
+  """Photos"""
+  photos: [ID!]
+
+  """Author"""
+  author: ID
+
+  """Related"""
+  related: [ID!]
+
+  """Header"""
+  header: HeroInput
+
+  """Quotes"""
+  quotes: [QuoteInput!]
+
+  """Sections"""
+  sections: [PageSectionsZoneInput!]
+}
+
+input HeroInput {
+  """Heading"""
+  heading: String
+
+  """Image"""
+  image: ID
+}
+
+input QuoteInput {
+  """Text"""
+  text: String
+}
+
+input PageSectionsZoneInput {
+  """A Hero item"""
+  hero: HeroInput
+
+  """A Quote item"""
+  quote: QuoteInput
+}"
+`;

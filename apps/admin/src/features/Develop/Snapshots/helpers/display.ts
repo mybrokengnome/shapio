@@ -10,6 +10,7 @@ export const SNAPSHOT_SOURCE_KEYS = {
   schema: 'snapshots.sources.schema',
   conversion: 'snapshots.sources.conversion',
   import: 'snapshots.sources.import',
+  kind_change: 'snapshots.sources.kind_change',
   legacy: 'snapshots.sources.legacy',
 } as const satisfies Record<SnapshotSource, string>;
 

@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { BucketChip } from '@/features/Models/Builder/BucketChip';
 import { describeChange } from '@/features/Models/helpers/describeChange';
 import { groupByBucket } from '@/features/Models/helpers/planBuckets';
+import { useDefinitionName } from '@/features/Models/hooks/useDefinitionName';
 
 type PlanProps = { before: SchemaDefinition; after: SchemaDefinition };
 
@@ -17,6 +18,7 @@ type PlanProps = { before: SchemaDefinition; after: SchemaDefinition };
  */
 export const Plan = ({ before, after }: PlanProps) => {
   const { t } = useTranslation();
+  const { definitionName } = useDefinitionName();
   const changes = useMemo(
     () => classifyChanges(diffDefinitions(before, after), { before, after }),
     [before, after],
@@ -45,7 +47,7 @@ export const Plan = ({ before, after }: PlanProps) => {
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {group.changes.map((change, index) => (
               <li key={`${change.kind}:${change.fieldId ?? ''}:${change.property ?? ''}:${index}`}>
-                {describeChange(change, before, after)}
+                {describeChange(change, before, after, { definitionName })}
               </li>
             ))}
           </ul>

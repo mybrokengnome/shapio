@@ -9,6 +9,7 @@ export const CHANGE_KINDS = [
   'model.kind',
   'model.localized',
   'model.draftAndPublish',
+  'model.extends',
   'field.added',
   'field.removed',
   'field.order',

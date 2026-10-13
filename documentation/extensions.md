@@ -68,7 +68,7 @@ hooks: {
 },
 ```
 
-The events are `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`, `beforePublish`, `afterPublish`, `beforeDelete` and `afterDelete`. Hooks keyed by API ID, by model ID and by `*` all run, in that order. Changing a model's API ID is a flagged contract change, and hooks keyed by the old ID stop matching it.
+The events are `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`, `beforePublish`, `afterPublish`, `beforeDelete` and `afterDelete`. Hooks keyed by API ID, by model ID and by `*` all run, in that order. Changing a model's API ID is a flagged contract change, and hooks keyed by the old ID stop matching it. A hook keyed by a type also runs for every type that extends it, the way its grants and fields apply to them: a hook on `post` runs for a guide, and a hook on `guide` runs for guides only. They run in this order: the type's own hooks, then each parent's (nearest first), then `*`. `model.apiKey` names the entry's own type.
 
 Hooks fire however the change is made: the admin UI, the REST API, GraphQL mutations (the same content services), scheduled publications and change sets, in the API process and in a dedicated worker alike.
 
@@ -99,18 +99,18 @@ The write holds one pooled database connection while your hook runs. Do every da
 
 ### Context
 
-| Field                                                                                                         | `before*` | `after*`                |
-| ------------------------------------------------------------------------------------------------------------- | --------- | ----------------------- |
-| `event`, `model` (`id`, `apiKey`, `label`, `kind`, `localized`, `draftAndPublish`)                            | ✓         | ✓                       |
-| `site` (`id`, `key`): the entry's [site](sites.md); `services` read this site                                 | ✓         | ✓                       |
-| `entry` (`id`, `locale`, `state`: `draft`, `published` or `deleted`), `locale`                                | ✓         | ✓                       |
-| `data`: the document after the change, keyed by field API ID (media and relations as IDs; absent for deletes) | ✓         | ✓ (as it was at commit) |
-| `before`: the previous draft (update) or the live version being replaced (publish)                            | ✓         | ✓                       |
-| `principal`: who made the change (`admin`, `token`, `appUser`, `anonymous`, or `system`)                      | ✓         | ✓                       |
-| `trx`: a Kysely transaction (the write's, or the hook run's)                                                  | ✓         | ✓                       |
-| `services`, `logger`, `signal` (aborted on shutdown)                                                          | ✓         | ✓                       |
-| `reject(message, details)`                                                                                    | ✓         |                         |
-| `eventId`, `idempotencyKey`, `attempt`                                                                        |           | ✓                       |
+| Field                                                                                                                  | `before*` | `after*`                |
+| ---------------------------------------------------------------------------------------------------------------------- | --------- | ----------------------- |
+| `event`, `model` (`id`, `apiKey`, `label`, `kind`, `localized`, `draftAndPublish`, and `extends`, the parent's API ID) | ✓         | ✓                       |
+| `site` (`id`, `key`): the entry's [site](sites.md); `services` read this site                                          | ✓         | ✓                       |
+| `entry` (`id`, `locale`, `state`: `draft`, `published` or `deleted`), `locale`                                         | ✓         | ✓                       |
+| `data`: the document after the change, keyed by field API ID (media and relations as IDs; absent for deletes)          | ✓         | ✓ (as it was at commit) |
+| `before`: the previous draft (update) or the live version being replaced (publish)                                     | ✓         | ✓                       |
+| `principal`: who made the change (`admin`, `token`, `appUser`, `anonymous`, or `system`)                               | ✓         | ✓                       |
+| `trx`: a Kysely transaction (the write's, or the hook run's)                                                           | ✓         | ✓                       |
+| `services`, `logger`, `signal` (aborted on shutdown)                                                                   | ✓         | ✓                       |
+| `reject(message, details)`                                                                                             | ✓         |                         |
+| `eventId`, `idempotencyKey`, `attempt`                                                                                 |           | ✓                       |
 
 Hooks are trusted server code: `data` is the full document, not masked by the principal's permissions.
 
@@ -166,7 +166,7 @@ services: {
   - `logger`.
   - `services`: Shapio's services and the custom services declared so far.
 - Shapio's own services:
-  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()` (the site's content types: its own and the shared ones). These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
+  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()` (the site's content types: its own and the shared ones, each with `routeKey`, `extends` for a type that extends another, and its `fields`: `id`, `apiKey`, `label`, `type`, `required`, `localized`, and, on a field it inherits, `inheritedFrom`, the API ID of the type that declares it, with inherited fields first). These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
   - `media.usages(assetId)`: where an asset is referenced.
   - `jobs.enqueue(name, payload?, { runAt?, idempotencyKey?, maxAttempts? })`: queues one of your jobs.
   - `logger`.

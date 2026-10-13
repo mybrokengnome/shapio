@@ -13,6 +13,7 @@ import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { describeChange } from '@/features/Models/helpers/describeChange';
+import { useDefinitionName } from '@/features/Models/hooks/useDefinitionName';
 import type { GuardConflict } from '../helpers/guard';
 
 const REASON_KEYS = {
@@ -26,13 +27,14 @@ type ChangeListProps = { label: string; before: SchemaDefinition; after: SchemaD
 
 const ChangeList = ({ label, before, after }: ChangeListProps) => {
   const changes = classifyChanges(diffDefinitions(before, after), { before, after });
+  const { definitionName } = useDefinitionName();
   return (
     <div className="min-w-0 space-y-2">
       <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</h3>
       <ul className="list-disc space-y-1 pl-5 text-sm">
         {changes.map((change, index) => (
           <li key={`${change.kind}:${change.fieldId ?? ''}:${change.property ?? ''}:${index}`}>
-            {describeChange(change, before, after)}
+            {describeChange(change, before, after, { definitionName })}
           </li>
         ))}
       </ul>

@@ -49,16 +49,21 @@ export const insert = (entry: NewEntry, trx: Executor = db) =>
 
 export type EntryRow = Awaited<ReturnType<typeof insert>>;
 
+/** One model, or any of a family's (plan polymorphic-types: a route reads its model's family). */
+type ModelScope = string | readonly string[];
+
+const modelIdsOf = (scope: ModelScope): readonly string[] => (typeof scope === 'string' ? [scope] : scope);
+
 /**
- * A live entry of a model on one site. Another site's entry reads as missing (sites plan §H: the site is a
- * tenancy boundary), exactly like an entry that does not exist.
+ * A live entry of a model (or of any model of `modelId` when it is a list) on one site. Another site's entry
+ * reads as missing (sites plan §H: the site is a tenancy boundary), exactly like an entry that does not exist.
  */
-export const findLive = (id: string, modelId: string, siteId: string, executor: Executor = db) =>
+export const findLive = (id: string, modelId: ModelScope, siteId: string, executor: Executor = db) =>
   executor
     .selectFrom('entries')
     .select(COLUMNS)
     .where('id', '=', id)
-    .where('model_id', '=', modelId)
+    .where('model_id', 'in', modelIdsOf(modelId))
     .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .executeTakeFirst();
@@ -67,12 +72,12 @@ export const findLive = (id: string, modelId: string, siteId: string, executor: 
  * Locks a live entry of one site for the rest of the transaction: every write to one entry is serialized.
  * Another site's entry reads as missing.
  */
-export const lockLive = (id: string, modelId: string, siteId: string, trx: Transaction<DB>) =>
+export const lockLive = (id: string, modelId: ModelScope, siteId: string, trx: Transaction<DB>) =>
   trx
     .selectFrom('entries')
     .select(COLUMNS)
     .where('id', '=', id)
-    .where('model_id', '=', modelId)
+    .where('model_id', 'in', modelIdsOf(modelId))
     .where('site_id', '=', siteId)
     .where('deleted_at', 'is', null)
     .forUpdate()
@@ -136,20 +141,23 @@ export const maxLivePerSite = async (modelId: string, executor: Executor = db): 
   return Number(row?.count ?? 0);
 };
 
-/** Live entries of a model on one site among `ids` (relation target checks: relations never cross sites). */
+/**
+ * Live entries of a model (or of any of a family's models) on one site among `ids` (relation target checks:
+ * relations never cross sites).
+ */
 export const findLiveIds = async (
-  modelId: string,
+  modelId: ModelScope,
   ids: readonly string[],
   siteId: string,
   executor: Executor = db,
 ) => {
-  if (ids.length === 0) {
+  if (ids.length === 0 || modelIdsOf(modelId).length === 0) {
     return [];
   }
   const rows = await executor
     .selectFrom('entries')
     .select('id')
-    .where('model_id', '=', modelId)
+    .where('model_id', 'in', modelIdsOf(modelId))
     .where('site_id', '=', siteId)
     .where('id', 'in', ids)
     .where('deleted_at', 'is', null)
@@ -230,3 +238,7 @@ export const countBySiteOutside = (modelId: string, siteId: string, executor: Ex
     .groupBy('site_id')
     .orderBy('site_id')
     .execute();
+
+/** Moves an entry to another model of its family (change kind, plan polymorphic-types). */
+export const changeModel = (id: string, modelId: string, now: Date, trx: Executor = db) =>
+  trx.updateTable('entries').set({ model_id: modelId, updated_at: now }).where('id', '=', id).execute();

@@ -38,7 +38,8 @@ const titlesFor = async (context: ContentServiceContext, items: readonly MediaUs
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   return (item: MediaUsageView): string | null => {
     const policy = policies.get(item.modelId);
-    const definition = context.snapshot.byId.get(item.modelId)?.definition;
+    // Effective fields: a kind's title may be inherited (plan polymorphic-types).
+    const definition = context.snapshot.resolve(item.modelId);
     const entry = entryById.get(item.entryId);
     if (!policy || !entry || !definition || !isModelDefinition(definition)) {
       return null;

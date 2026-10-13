@@ -356,6 +356,7 @@ export const NOT_RESTORABLE_REASONS = [
   'locale_missing',
   'invalid',
   'unique_conflict',
+  'kind_changed',
 ] as const;
 
 export const NotRestorableSchema = Type.Object({

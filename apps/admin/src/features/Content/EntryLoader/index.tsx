@@ -1,5 +1,6 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import { useQueryClient } from '@tanstack/react-query';
+import { Navigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { entryQueryOptions } from '@/api/content';
 import { queryKeys } from '@/api/queryKeys';
@@ -13,7 +14,7 @@ import { useEntryForLocale } from '../hooks/useEntryForLocale';
 
 type EntryLoaderProps = {
   schema: ContentSchema;
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   entryId: string;
   locale: string | null;
   onLocaleChange: (code: string) => void;
@@ -47,6 +48,23 @@ export const EntryLoader = ({ schema, model, entryId, locale, onLocaleChange }: 
   }
   if (!loaded.mode) {
     return <LoadingState rows={6} />;
+  }
+  // Read through a parent type (an old link, a relation): the entry opens under its own kind, with its fields.
+  const ownKey =
+    loaded.mode.kind === 'edit'
+      ? loaded.mode.entry.model
+      : loaded.mode.kind === 'newLocale'
+        ? loaded.mode.source.model
+        : model.apiKey;
+  if (ownKey !== model.apiKey) {
+    return (
+      <Navigate
+        to="/content/$modelKey/$entryId"
+        params={{ modelKey: ownKey, entryId }}
+        search={locale ? { locale } : {}}
+        replace
+      />
+    );
   }
   return (
     <EntryDocument

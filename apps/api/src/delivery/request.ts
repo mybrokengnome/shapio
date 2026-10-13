@@ -3,6 +3,7 @@ import { Value } from 'typebox/value';
 import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { apiKeyOfRoute } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
+import { splitContentPath } from '../helpers/contentRoutes.js';
 import type { ErrorLike } from '../helpers/errorResponse.js';
 import { withoutSiteParameter } from '../helpers/siteQuery.js';
 import { SnapshotChangesQuerySchema, type SnapshotChangesQuery } from '../routes/snapshots/schemas.js';
@@ -37,29 +38,32 @@ export type DeliveryRoute =
 /** A matched path: the route, its querystring without `site`, and the site the path names, if any. */
 export type MatchedRequest = { route: DeliveryRoute; query: string; site: string | undefined };
 
-const decodeSegment = (segment: string): string | undefined => {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
+/**
+ * `content/<routeKey>[/<id>]`: the route key may be nested (`products/digital`, or one encoded segment), split
+ * the way the server's URL rewrite splits it (helpers/contentRoutes.ts).
+ */
+const contentRouteOf = (segments: readonly string[]): DeliveryRoute | undefined => {
+  const split = splitContentPath(segments);
+  if (!split || split.rest.length > 1) {
     return undefined;
   }
+  const [id] = split.rest;
+  if (id === undefined) {
+    return { kind: 'list', routeKey: split.routeKey };
+  }
+  return id ? { kind: 'item', routeKey: split.routeKey, id } : undefined;
 };
 
 const routeOf = (segments: readonly string[]): DeliveryRoute | undefined => {
   const [api, group, first, second, ...rest] = segments;
-  if (api !== 'api' || rest.length > 0) {
+  if (api !== 'api') {
     return undefined;
   }
   if (group === 'content' && first) {
-    const routeKey = decodeSegment(first);
-    if (routeKey === undefined) {
-      return undefined;
-    }
-    if (second === undefined) {
-      return { kind: 'list', routeKey };
-    }
-    const id = decodeSegment(second);
-    return id ? { kind: 'item', routeKey, id } : undefined;
+    return contentRouteOf(segments.slice(2));
+  }
+  if (rest.length > 0) {
+    return undefined;
   }
   if (group === 'site' && first === undefined) {
     return { kind: 'site' };

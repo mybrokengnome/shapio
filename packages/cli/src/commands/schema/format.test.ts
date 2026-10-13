@@ -1,6 +1,7 @@
+import { ShapioApiError, type SchemaSyncResult } from '@shapio/client';
 import type { DataType, SchemaChange } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
-import { formatChange } from './format.js';
+import { formatApiError, formatChange, formatItem } from './format.js';
 
 const names = new Map([['f1', 'price']]);
 const typeChange = (from: DataType, to: DataType): SchemaChange => ({
@@ -73,5 +74,102 @@ describe('formatChange', () => {
     expect(formatChange(change, names)).toEqual([
       `~ field price canvasFieldIds: ["a","b"] → ["b","a","${long}"]`,
     ]);
+  });
+});
+
+describe('types that extend a type', () => {
+  // As collectNames reads them from the files: the parent's file names the inherited field.
+  const familyNames = new Map([
+    ['post-id', 'post'],
+    ['guide-id', 'guide'],
+    ['article-id', 'article'],
+    ['f-summary', 'summary'],
+  ]);
+  const parents = new Map([['guide-id', 'post-id']]);
+  const item = (changes: SchemaChange[]): SchemaSyncResult => ({
+    definitionId: 'guide-id',
+    apiKey: 'guide',
+    kind: 'collection',
+    decision: { action: 'update', expectedVersion: 3 },
+    changes,
+    plan: { summary: { breaking: true } },
+  });
+
+  it('names the parent in the header, by API ID', () => {
+    expect(formatItem(item([]), familyNames, parents)).toBe('model guide (extends post): update [BREAKING]');
+    expect(formatItem({ ...item([]), definitionId: 'post-id', apiKey: 'post' }, familyNames, parents)).toBe(
+      'model post: update [BREAKING]',
+    );
+  });
+
+  it('prints a re-parent with both parents by name, and gaining or losing a parent as (none)', () => {
+    const reparent: SchemaChange = {
+      kind: 'model.extends',
+      definitionId: 'guide-id',
+      from: 'post-id',
+      to: 'article-id',
+    };
+    expect(formatChange(reparent, familyNames)).toEqual(['~ extends: post → article']);
+    expect(formatChange({ ...reparent, from: null }, familyNames)).toEqual(['~ extends: (none) → article']);
+    expect(formatChange({ ...reparent, to: null }, familyNames)).toEqual(['~ extends: post → (none)']);
+    // A parent the files do not hold (only on the instance) falls back to its ID.
+    expect(formatChange({ ...reparent, to: 'remote-id' }, familyNames)).toEqual([
+      '~ extends: post → remote-id',
+    ]);
+  });
+
+  it('names inherited fields, and the kind a change lands on when it is not the item itself', () => {
+    const gained: SchemaChange = { kind: 'field.removed', definitionId: 'guide-id', fieldId: 'f-summary' };
+    const onChild: SchemaChange = {
+      kind: 'field.required',
+      definitionId: 'guide-id',
+      fieldId: 'f-summary',
+      from: false,
+      to: true,
+    };
+    expect(
+      formatItem({ ...item([gained]), definitionId: 'post-id', apiKey: 'post' }, familyNames, parents),
+    ).toBe('model post: update [BREAKING]\n    - field summary (on guide)');
+    expect(formatItem(item([onChild]), familyNames, parents)).toBe(
+      'model guide (extends post): update [BREAKING]\n    ~ field summary required: false → true',
+    );
+  });
+
+  it('adds a hint for each inheritance problem in the refused files', () => {
+    const error = new ShapioApiError(422, {
+      error: {
+        code: 'SCHEMA_INVALID',
+        message: 'The schema files are invalid',
+        details: {
+          issues: [
+            {
+              path: '/definitions/1/extends',
+              code: 'UNKNOWN_PARENT',
+              message: 'extends a type that does not exist',
+            },
+            {
+              path: '/definitions/1/localized',
+              code: 'INHERITED_FLAG_MISMATCH',
+              message: 'must equal the parent\'s: set "localized" to true, as "post" has it',
+            },
+          ],
+        },
+      },
+    });
+    const text = formatApiError(error, ['schema/models/post.json', 'schema/models/guide.json'], familyNames);
+    expect(text).toContain('  schema/models/guide.json /extends: extends a type that does not exist');
+    expect(text).toContain('"extends" holds the stable ID of the parent type');
+    expect(text).toContain('must agree on "localized" and "draftAndPublish"');
+  });
+
+  it('explains how to delete a type that others extend', () => {
+    const error = new ShapioApiError(422, {
+      error: {
+        code: 'SCHEMA_INVALID',
+        message: 'Invalid',
+        details: { issues: [{ path: '', code: 'HAS_CHILDREN', message: '"guide" extends "post"' }] },
+      },
+    });
+    expect(formatApiError(error, [], familyNames)).toContain('Delete the types that extend it first');
   });
 });

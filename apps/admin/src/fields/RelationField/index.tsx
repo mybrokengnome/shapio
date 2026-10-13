@@ -9,13 +9,14 @@ import { entryTitle, shortId } from '../helpers/titles';
 import { moveItem, toList } from '../helpers/values';
 import { useEntryLabels } from '../hooks/useEntryLabels';
 import type { BuiltInEditorProps } from '../types';
+import { useRelationKinds } from './hooks/useRelationKinds';
 import { InlineCreateSheet } from './InlineCreateSheet';
 import { RelationPicker } from './RelationPicker';
 
 /**
  * `relationPicker`: links to entries of another model, one or many (ordered). Entries are found by their
  * title in a picker anchored to the field; with `allowInlineCreate`, a new one can be created in a sheet
- * without leaving the form.
+ * without leaving the form. A relation to a type with kinds links any kind's entries and names each one's kind.
  */
 export const RelationField = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
@@ -30,6 +31,7 @@ export const RelationField = (props: BuiltInEditorProps) => {
   const multiple = settings?.cardinality === 'many';
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
   const labels = useEntryLabels(target, ids, environment.locale);
+  const relationKinds = useRelationKinds(target);
   if (!settings || !target) {
     // The schema refuses to delete a model a relation targets, so a target missing from the readable
     // registry is one this role can't read. Its links are kept on save; there is nothing to show or edit.
@@ -69,7 +71,9 @@ export const RelationField = (props: BuiltInEditorProps) => {
                       {t('content.relation.missingEntry', { id: shortId(id) })}
                     </span>
                   )}
-                  <span className="block text-meta text-muted-foreground">{target.label}</span>
+                  <span className="block text-meta text-muted-foreground">
+                    {relationKinds.kindLabelOf(labels.byId.get(id)?.model) ?? target.label}
+                  </span>
                 </span>
                 {editable && multiple ? (
                   <>
@@ -131,9 +135,13 @@ export const RelationField = (props: BuiltInEditorProps) => {
             ) : null
           }
           target={target}
+          kindLabelOf={relationKinds.kindLabelOf}
           multiple={multiple}
           selected={ids}
-          exclude={environment.entryId && target.id === environment.model.id ? [environment.entryId] : []}
+          // An entry never links to itself, whichever kind of the target's family it is.
+          exclude={
+            environment.entryId && relationKinds.covers(environment.model.id) ? [environment.entryId] : []
+          }
           locale={environment.locale}
           full={!canAddMore}
           // TODO(per-model permissions in `me`): also require `create` on the target model. Until `me` carries
@@ -151,6 +159,7 @@ export const RelationField = (props: BuiltInEditorProps) => {
       {creating ? (
         <InlineCreateSheet
           target={target}
+          kinds={relationKinds.kinds}
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false);

@@ -1,5 +1,7 @@
-import type { SchemaDefinition } from '../types/definitions.js';
+import { createDefinitionIndex } from '../inheritance/resolve.js';
+import { isModelDefinition, type SchemaDefinition } from '../types/definitions.js';
 import { foldApiKey } from './apiKey.js';
+import { checkInheritance } from './inheritance.js';
 import { issue, type ValidationIssue } from './issues.js';
 import {
   generatedNames,
@@ -97,8 +99,13 @@ const checkGeneratedNames = (definitions: readonly SchemaDefinition[]): Validati
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const issues: ValidationIssue[] = [];
   const seen = new Map<string, GeneratedName>();
+  const parents = new Set(
+    definitions.flatMap((definition) =>
+      isModelDefinition(definition) && definition.extends !== undefined ? [definition.extends] : [],
+    ),
+  );
   for (const definition of definitions) {
-    for (const name of generatedNames(definition)) {
+    for (const name of generatedNames(definition, { hasChildren: parents.has(definition.id) })) {
       const folded = `${name.namespace}:${foldApiKey(name.name)}`;
       const path = name.fieldId
         ? `/fields/${definition.fields.findIndex((field) => field.id === name.fieldId)}/apiKey`
@@ -274,11 +281,12 @@ const checkNesting = (definitions: readonly SchemaDefinition[]): ValidationIssue
 
 /**
  * Cross-definition checks over a whole schema (every active definition with the proposed change applied):
- * unique IDs and API keys, GraphQL name collisions, relation and component targets, component cycles and
- * nesting depth. Each definition must already pass `validateDefinition`.
+ * unique IDs and API keys, model inheritance, GraphQL name collisions, relation and component targets,
+ * component cycles and nesting depth. Each definition must already pass `validateDefinition`.
  */
 export const validateSchema = (definitions: readonly SchemaDefinition[]): ValidationIssue[] => [
   ...checkIdentity(definitions),
+  ...checkInheritance(definitions),
   ...checkGeneratedNames(definitions),
   ...checkReferences(definitions),
   ...checkNesting(definitions),
@@ -301,8 +309,9 @@ export const findReferencingDefinitions = (
   );
 
 /**
- * Models that embed a component directly or through other components, i.e. whose entries change shape
- * when the component does (brief §5: "editing a shared component must account for all dependent models").
+ * Models that embed a component directly, through other components or through an inherited field, i.e.
+ * whose entries change shape when the component does (brief §5: "editing a shared component must account for
+ * all dependent models").
  */
 export const findDependentModels = (
   definitions: readonly SchemaDefinition[],
@@ -314,6 +323,7 @@ export const findDependentModels = (
       embeddedBy.set(child, [...(embeddedBy.get(child) ?? []), definition]);
     }
   }
+  const index = createDefinitionIndex(definitions);
   const models = new Map<string, SchemaDefinition>();
   const visited = new Set<string>();
   const queue = [componentId];
@@ -327,7 +337,13 @@ export const findDependentModels = (
       if (parent.kind === 'component') {
         queue.push(parent.id);
       } else {
-        models.set(parent.id, parent);
+        // Models that extend an embedding model inherit the field, so their entries hold the component too.
+        for (const id of index.family(parent.id)) {
+          const model = index.get(id);
+          if (model) {
+            models.set(id, model);
+          }
+        }
       }
     }
   }

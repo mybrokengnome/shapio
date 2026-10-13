@@ -43,8 +43,13 @@ export type ParseContext = {
   model: ModelDefinition;
   /** Locale codes the instance has. */
   locales: readonly string[];
-  /** The read mask, per field: what `fields` may select and `populate` may expand. */
+  /** The read mask, per field: what `populate` may expand, and what `fields` may select unless `isSelectable` says. */
   isReadable: (field: FieldDefinition) => boolean;
+  /**
+   * What `fields` may select, when it differs from `isReadable`: a family read (plan polymorphic-types) selects
+   * only fields readable on every row of every kind it reads.
+   */
+  isSelectable?: (field: FieldDefinition) => boolean;
   /**
    * Whether a field may be filtered, sorted or searched on: readable on every row the caller may read, so a
    * query never reveals a value hidden on some rows.
@@ -62,7 +67,15 @@ export type ParseContext = {
   allowPublicationState?: boolean;
   /** Target models of relation fields, for nested populate paths. */
   resolveModel: (modelId: string) => ModelDefinition | undefined;
+  /**
+   * The route model's family by API ID (model ID values), for `filters[__model]`. Absent: the filter is refused
+   * (GraphQL, where `__` names are reserved).
+   */
+  kinds?: ReadonlyMap<string, string>;
 };
+
+/** The system attribute naming an entry's kind; it filters by kind, never as a field. */
+const KIND_KEY = '__model';
 
 const TOP_LEVEL_KEYS = new Set([
   'filters',
@@ -119,7 +132,9 @@ const resolveTarget = (context: ParseContext, key: string, use: TargetUse = 'que
   if (!field) {
     throw queryInvalid(`Unknown field "${key}"`, { field: key });
   }
-  if (use === 'select' ? !context.isReadable(field) : !context.isQueryable(field)) {
+  const allowed =
+    use === 'select' ? (context.isSelectable ?? context.isReadable)(field) : context.isQueryable(field);
+  if (!allowed) {
     throw queryForbidden(
       use === 'select'
         ? `You may not read the field "${key}"`
@@ -396,16 +411,59 @@ const parsePublicationState = (
   return { publicationState: value as PublicationState };
 };
 
+/**
+ * `filters[__model][$eq]=guide` or `[$in]=guide,opinion` (a bare value is `$eq`): the kinds of the route's
+ * family to read, by singular API ID. A top-level filter only; it narrows which kinds are read rather than
+ * becoming a condition.
+ */
+const parseKinds = (value: QueryValue, context: ParseContext): string[] => {
+  const kinds = context.kinds;
+  if (!kinds) {
+    throw queryInvalid(`Unknown field "${KIND_KEY}"`, { field: KIND_KEY });
+  }
+  const operators: Array<[string, QueryValue]> = isTree(value) ? Object.entries(value) : [['$eq', value]];
+  const [entry, ...extra] = operators;
+  if (!entry || extra.length > 0 || (entry[0] !== '$eq' && entry[0] !== '$in')) {
+    throw queryInvalid(`"${KIND_KEY}" takes one $eq or $in of kinds`, { field: KIND_KEY });
+  }
+  const [operator, operand] = entry;
+  const values = operator === '$in' ? toList(operand) : [operand];
+  if (operator === '$eq' && typeof operand !== 'string') {
+    throw queryInvalid(`"${KIND_KEY}" $eq needs a single value`, { field: KIND_KEY });
+  }
+  return values.map((item) => {
+    const modelId = typeof item === 'string' ? kinds.get(item) : undefined;
+    if (modelId === undefined) {
+      throw queryInvalid(
+        `"${typeof item === 'string' ? item : JSON.stringify(item)}" is not a kind of this model`,
+        {
+          field: KIND_KEY,
+        },
+      );
+    }
+    return modelId;
+  });
+};
+
+/** The filter tree without its `__model` key, and the kinds that key names. */
+const splitKindFilter = (filters: QueryTree, context: ParseContext) => {
+  const { [KIND_KEY]: kindFilter, ...rest } = filters;
+  return {
+    filters: Object.keys(rest).length > 0 ? rest : null,
+    kinds: kindFilter !== undefined ? parseKinds(kindFilter, context) : undefined,
+  };
+};
+
 export const parseContentQuery = (tree: QueryTree, context: ParseContext): ContentQuery => {
   for (const key of Object.keys(tree)) {
     if (!TOP_LEVEL_KEYS.has(key)) {
       throw queryInvalid(`Unknown query parameter "${key}"`);
     }
   }
-  const filters = tree.filters;
-  if (filters !== undefined && !isTree(filters)) {
+  if (tree.filters !== undefined && !isTree(tree.filters)) {
     throw queryInvalid('filters needs field conditions, e.g. filters[title][$eq]=Hello');
   }
+  const { filters, kinds } = tree.filters ? splitKindFilter(tree.filters, context) : { filters: null };
   const locale = single(tree.locale, 'locale');
   if (locale !== undefined && !context.locales.includes(locale)) {
     throw queryInvalid(`Unknown locale "${locale}"`);
@@ -429,5 +487,6 @@ export const parseContentQuery = (tree: QueryTree, context: ParseContext): Conte
     ...parseSeo(tree, context),
     ...parsePublicationState(tree, context),
     ...parseAdminFilters(tree, context),
+    ...(kinds ? { kinds } : {}),
   };
 };

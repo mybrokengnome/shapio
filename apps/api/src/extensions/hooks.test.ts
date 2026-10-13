@@ -22,4 +22,36 @@ describe('matchHooks', () => {
     ]);
     expect(matchHooks(hooks, { apiKey: 'article', id: 'm_123' }, 'beforePublish')).toEqual([]);
   });
+
+  it("runs a parent type's hooks for its kinds, never a kind's hooks for its parent (ADR 0012)", () => {
+    const onPost = () => undefined;
+    const onGuide = () => undefined;
+    const onRootId = () => undefined;
+    const hooks = {
+      post: { afterUpdate: onPost },
+      guide: { afterUpdate: onGuide },
+      m_root: { afterUpdate: onRootId },
+      '*': { afterUpdate: all },
+    };
+    const guide = {
+      apiKey: 'guide',
+      id: 'm_guide',
+      ancestors: [
+        { apiKey: 'content', id: 'm_root' },
+        { apiKey: 'post', id: 'm_post' },
+      ],
+    };
+    expect(matchHooks(hooks, guide, 'afterUpdate')).toEqual([
+      { name: 'guide.afterUpdate', hook: onGuide },
+      { name: 'post.afterUpdate', hook: onPost },
+      { name: 'm_root.afterUpdate', hook: onRootId },
+      { name: '*.afterUpdate', hook: all },
+    ]);
+    const post = { apiKey: 'post', id: 'm_post', ancestors: [{ apiKey: 'content', id: 'm_root' }] };
+    expect(matchHooks(hooks, post, 'afterUpdate').map(({ name }) => name)).toEqual([
+      'post.afterUpdate',
+      'm_root.afterUpdate',
+      '*.afterUpdate',
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import { isModelDefinition, RESERVED_QUERY_NAMES, type ModelDefinition } from '@shapio/schema';
+import { RESERVED_QUERY_NAMES, type ResolvedModelDefinition } from '@shapio/schema';
 import {
   GraphQLInt,
   GraphQLNonNull,
@@ -9,9 +9,11 @@ import {
 import type { SchemaSnapshot } from '../../snapshot.js';
 import { createBuild } from './build.js';
 import type { GraphqlContext } from './context.js';
+import { hasChildren, resolvedModelById } from './entryKinds.js';
 import { createFixedTypes } from './fixedTypes.js';
 import { mutationFields } from './mutations.js';
 import { queryFields } from './operations.js';
+import { entryType } from './outputTypes.js';
 import { siteQueryFields } from './siteFields.js';
 import { snapshotQueryFields } from './snapshotFields.js';
 import { buildUsageMap, USAGE_MAP_EXTENSION } from './usageSelection.js';
@@ -34,9 +36,10 @@ export const buildGraphqlSchema = (
   visibility: SchemaVisibility = FULL_VISIBILITY,
 ): BuiltSchema => {
   const build = createBuild(snapshot, visibility, createFixedTypes());
+  // Effective definitions (inherited fields first): types, inputs, filters and sorts hold every field a kind has.
   const models = snapshot.definitions
-    .map((active) => active.definition)
-    .filter((definition): definition is ModelDefinition => isModelDefinition(definition))
+    .map((active) => resolvedModelById(snapshot, active.definition.id))
+    .filter((model): model is ResolvedModelDefinition => model !== undefined)
     .filter((model) => modelInSchema(visibility, model.id))
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
   const query: GraphQLFieldConfigMap<unknown, GraphqlContext> = {};
@@ -44,6 +47,10 @@ export const buildGraphqlSchema = (
   for (const model of models) {
     if (modelReadable(visibility, model.id)) {
       Object.assign(query, queryFields(build, model));
+      if (hasChildren(build, model.id)) {
+        // Its queries return its interface; its own kind's rows still need their object type.
+        entryType(build, model);
+      }
     }
     Object.assign(mutation, mutationFields(build, model));
   }
@@ -57,8 +64,9 @@ export const buildGraphqlSchema = (
   const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: query }),
     ...(models.length > 0 ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) } : {}),
-    // Every generated object type, including those reachable only as dynamic-zone union members.
-    types: [...build.objects.values()],
+    // Every generated object type, including those reachable only as dynamic-zone union members or as an
+    // interface's implementations, and every interface.
+    types: [...build.objects.values(), ...build.interfaces.values()],
     // Entry type → model and fields, for counting field usage per operation (usageSelection.ts).
     extensions: { [USAGE_MAP_EXTENSION]: buildUsageMap(snapshot) },
   });

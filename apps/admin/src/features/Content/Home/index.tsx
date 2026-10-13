@@ -9,7 +9,10 @@ import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { useContentSchema } from '../hooks/useContentSchema';
 
-/** `/content`: opens the first model's content, or explains that a model comes first. */
+/**
+ * `/content`: opens the first model's content (a collection that extends nothing, whose list holds its kinds'
+ * entries, when there is one), or explains that a model comes first.
+ */
 export const ContentHome = () => {
   const { t } = useTranslation();
   const { schema, error } = useContentSchema();
@@ -20,7 +23,7 @@ export const ContentHome = () => {
     return <LoadingState />;
   }
   const [first] = schema.sortedModels
-    .filter((model) => model.kind === 'collection')
+    .filter((model) => model.kind === 'collection' && model.ancestorIds.length === 0)
     .concat(schema.sortedModels);
   if (first) {
     return <Navigate to="/content/$modelKey" params={{ modelKey: first.apiKey }} replace />;

@@ -188,7 +188,12 @@ export const modelUsage = async (
     throw modelNotFound(modelId);
   }
   const since = windowStartDay(days);
-  const rows = await usageRepository.fieldUsageForModel(site.id, modelId, since);
+  // A parent's fields are read through its kinds too: their reads of inherited fields count here.
+  const kinds = snapshot.descendants(modelId);
+  const rows = await usageRepository.fieldUsageForModel(site.id, modelId, since, undefined, {
+    modelIds: kinds,
+    fieldIds: fieldsOf(snapshot, modelId).map((field) => field.id),
+  });
   const paths = [...new Set(rows.map((row) => row.fieldPath))];
   const fields = paths
     .map((fieldPath) => {

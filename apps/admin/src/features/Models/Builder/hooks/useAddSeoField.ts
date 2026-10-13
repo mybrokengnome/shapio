@@ -8,7 +8,9 @@ import { logError } from '@/helpers/reportError';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { withAddedField } from '../../helpers/display';
+import { resolveDraft } from '../../helpers/inheritance';
 import { createSeoField, hasSeoField } from '../../helpers/seoField';
+import { useDraftParent } from './useDraftParent';
 import { labelInputIdOf } from './useNewField';
 
 /**
@@ -30,7 +32,11 @@ export const useAddSeoField = () => {
   const { t } = useTranslation();
   const components = useDefinitions('component');
   const { canShare } = useSchemaScopeAccess();
-  const present = useDefinitionDraftStore((state) => (state.draft ? hasSeoField(state.draft) : false));
+  const { parent } = useDraftParent();
+  // A kind whose parent has the SEO field inherits it.
+  const present = useDefinitionDraftStore((state) =>
+    state.draft ? hasSeoField(resolveDraft(state.draft, parent)) : false,
+  );
   const update = useDefinitionDraftStore((state) => state.update);
   const select = useDefinitionDraftStore((state) => state.select);
   const ensure = useEnsureSeoComponent();
@@ -48,11 +54,12 @@ export const useAddSeoField = () => {
 
   const add = () => {
     const { draft } = useDefinitionDraftStore.getState();
-    if (!draft || hasSeoField(draft)) {
+    const resolved = draft ? resolveDraft(draft, parent) : undefined;
+    if (!draft || !resolved || hasSeoField(resolved)) {
       return;
     }
-    const field = createSeoField(draft);
-    update((current) => withAddedField(current, field));
+    const field = createSeoField(draft, resolved);
+    update((current) => withAddedField(current, field, parent));
     select({ type: 'field', fieldId: field.id });
     requestAnimationFrame(() => {
       document.getElementById(labelInputIdOf(field.id))?.scrollIntoView({ block: 'center' });

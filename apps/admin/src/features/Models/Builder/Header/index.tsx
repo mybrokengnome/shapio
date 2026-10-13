@@ -20,6 +20,8 @@ type HeaderProps = SaveActionsProps & {
   issueCount: number;
   /** Deleting is not possible right now (locked, a change running). */
   deleteBlocked: boolean;
+  /** Kinds that extend this type: it can't be deleted while it has any (they go first). */
+  kindCount: number;
   onDelete: () => void;
 };
 
@@ -30,6 +32,7 @@ export const Header = ({
   dirty,
   issueCount,
   deleteBlocked,
+  kindCount,
   onDelete,
   ...saveActions
 }: HeaderProps) => {
@@ -79,9 +82,18 @@ export const Header = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem variant="destructive" disabled={deleteBlocked} onSelect={onDelete}>
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={deleteBlocked || kindCount > 0}
+                onSelect={onDelete}
+              >
                 <Trash2 aria-hidden="true" />
                 {t('models.builder.delete')}
+                {kindCount > 0 ? (
+                  <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                    {t('models.inheritance.hasKinds', { count: kindCount })}
+                  </span>
+                ) : null}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -5,9 +5,44 @@ import { describe, expect, it, vi } from 'vitest';
 import { createShapioMcpServer } from './server.js';
 
 const AUTHOR_ID = '11111111-1111-4111-8111-111111111111';
+const POST_ID = '22222222-2222-4222-8222-222222222222';
+const GUIDE_ID = '33333333-3333-4333-8333-333333333333';
+
+const field = (id: string, apiKey: string) => ({ id, apiKey, label: apiKey, type: 'string' });
+
+/** Post (title) and Guide (level), which extends it: the stored definitions, own fields only. */
+const FAMILY = [
+  {
+    definition: {
+      id: POST_ID,
+      kind: 'collection',
+      apiKey: 'post',
+      pluralApiKey: 'posts',
+      label: 'Post',
+      fields: [field('44444444-4444-4444-8444-444444444444', 'title')],
+    },
+    version: 1,
+    hash: 'p',
+    site: null,
+  },
+  {
+    definition: {
+      id: GUIDE_ID,
+      kind: 'collection',
+      apiKey: 'guide',
+      pluralApiKey: 'guides',
+      label: 'Guide',
+      extends: POST_ID,
+      fields: [field('55555555-5555-4555-8555-555555555555', 'level')],
+    },
+    version: 1,
+    hash: 'g',
+    site: null,
+  },
+];
 
 /** Only the client calls these tests make; anything else would throw. */
-const fakeClient = () => {
+const fakeClient = (extra: unknown[] = []) => {
   const putSchemaDraft = vi.fn(async (_set: string, definitionId: string) => ({
     id: 'd1',
     definitionId,
@@ -32,6 +67,7 @@ const fakeClient = () => {
               version: 2,
               hash: 'h',
             },
+            ...extra,
           ],
         }),
       },
@@ -104,6 +140,47 @@ describe('the Shapio MCP server', () => {
       definition: { id: definitionId, fields: [{ settings: { target: AUTHOR_ID } }] },
     });
     expect(textOf(result)).toMatchObject({ changeSetId: 'cs1', definitionId });
+  });
+
+  it('lists a type that extends another with its parent, nested route and inherited fields first', async () => {
+    const mcp = await connect(false, fakeClient(FAMILY).client);
+    const { definitions } = textOf(await mcp.callTool({ name: 'schema_list', arguments: {} })) as {
+      definitions: Array<Record<string, unknown>>;
+    };
+    expect(definitions.find((definition) => definition.apiKey === 'guide')).toMatchObject({
+      extends: 'post',
+      pluralApiKey: 'guides',
+      routeKey: 'posts/guides',
+      fields: [
+        { apiKey: 'title', inheritedFrom: 'post' },
+        { apiKey: 'level', type: 'string' },
+      ],
+    });
+    const post = definitions.find((definition) => definition.apiKey === 'post');
+    expect(post).toMatchObject({ routeKey: 'posts', fields: [{ apiKey: 'title' }] });
+    expect(post).not.toHaveProperty('extends');
+  });
+
+  it('reads a child as stored, with what it inherits beside it', async () => {
+    const mcp = await connect(false, fakeClient(FAMILY).client);
+    const result = textOf(await mcp.callTool({ name: 'schema_get', arguments: { apiKey: 'guide' } }));
+    expect(result).toMatchObject({
+      definition: { extends: POST_ID, fields: [{ apiKey: 'level' }] },
+      extendsApiKey: 'post',
+      routeKey: 'posts/guides',
+      inheritedFields: [{ apiKey: 'title', inheritedFrom: 'post' }],
+    });
+  });
+
+  it('drafts a child whose parent is given by API ID', async () => {
+    const { client, putSchemaDraft } = fakeClient(FAMILY);
+    const mcp = await connect(false, client);
+    await mcp.callTool({
+      name: 'schema_draft',
+      arguments: { definition: { kind: 'collection', apiKey: 'opinion', extends: 'post', fields: [] } },
+    });
+    const [, , body] = putSchemaDraft.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
+    expect(body).toMatchObject({ definition: { extends: POST_ID } });
   });
 
   it('turns API refusals into tool errors with the code', async () => {

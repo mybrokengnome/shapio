@@ -8,15 +8,19 @@ import {
   type SchemaDefinition,
 } from '@shapio/schema';
 import { pruneLayout, withKey } from './draft';
+import { resolveDraft, type DraftParent } from './inheritance';
 
 /**
  * Fields that may label entries (`display.titleFieldId`). Asks the definition validator rather than
- * duplicating its rule: each field is checked alone, as the only field of a minimal definition.
+ * duplicating its rule: each field is checked alone, as the only field of a minimal definition. Pass a
+ * resolved definition to include inherited fields; the probe drops `extends`, since the validator leaves a
+ * child's display to the schema-level check.
  */
 export const titleFieldCandidates = (definition: SchemaDefinition): FieldDefinition[] =>
   definition.fields.filter((field) => {
+    const { extends: _parent, ...standalone } = definition as SchemaDefinition & { extends?: string };
     const probe = {
-      ...definition,
+      ...standalone,
       fields: [field],
       display: { titleFieldId: field.id },
     } as SchemaDefinition;
@@ -26,14 +30,20 @@ export const titleFieldCandidates = (definition: SchemaDefinition): FieldDefinit
 /**
  * Appends a new field. The first field that can label entries also becomes the title field while none is
  * set, so entries get a readable title without a trip to the model settings. A title field left unset on
- * purpose next to existing candidates stays unset. A new block field (rich text, a zone, a repeatable list,
- * a gallery) joins the document's configured fields, as it would join the automatic ones.
+ * purpose next to existing candidates stays unset, and so does one a child inherits (or could: an inherited
+ * candidate counts). A new block field (rich text, a zone, a repeatable list, a gallery) joins the
+ * document's configured fields, as it would join the automatic ones.
  */
-export const withAddedField = (definition: SchemaDefinition, field: FieldDefinition): SchemaDefinition => {
+export const withAddedField = (
+  definition: SchemaDefinition,
+  field: FieldDefinition,
+  parent?: DraftParent,
+): SchemaDefinition => {
   const next = { ...definition, fields: [...definition.fields, field] };
+  const view = resolveDraft(definition, parent);
   const becomesTitle =
-    definition.display.titleFieldId === undefined &&
-    titleFieldCandidates(definition).length === 0 &&
+    view.display.titleFieldId === undefined &&
+    titleFieldCandidates(view).length === 0 &&
     titleFieldCandidates(next).some((candidate) => candidate.id === field.id);
   const titled = becomesTitle ? { ...next, display: { ...next.display, titleFieldId: field.id } } : next;
   if (
@@ -57,7 +67,7 @@ export type DocumentPlacement = { inDocument: boolean; lock: PlacementLock | und
 /**
  * Whether the entry document shows the field (`effectiveLayout`), and why that can't be switched: the title
  * is the document's heading, the cover chosen in Display sits above it, and the last document field stays
- * because an empty list means the automatic layout.
+ * because an empty list means the automatic layout. Pass the resolved model for a child.
  */
 export const documentPlacementOf = (model: ModelDefinition, field: FieldDefinition): DocumentPlacement => {
   const layout = effectiveLayout(model);
@@ -76,19 +86,22 @@ export const documentPlacementOf = (model: ModelDefinition, field: FieldDefiniti
 /**
  * Puts the field in the document or takes it out. The automatic layout becomes an explicit list first; a
  * field put in goes before the first listed field that follows it in field order. Taking a field out keeps
- * the others, and `pruneLayout` keeps the strip and cover consistent.
+ * the others, and `pruneLayout` keeps the strip and cover consistent. A child's layout is worked out over its
+ * resolved fields (inherited ones first) and written to its own display.
  */
 export const withDocumentPlacement = (
   model: ModelDefinition,
   fieldId: string,
   inDocument: boolean,
+  parent?: DraftParent,
 ): ModelDefinition => {
-  const current = effectiveLayout(model).canvas.map((field) => field.id);
+  const view = resolveDraft(model, parent) as ModelDefinition;
+  const current = effectiveLayout(view).canvas.map((field) => field.id);
   const without = current.filter((id) => id !== fieldId);
   let next = without;
   if (inDocument) {
-    const order = new Map(model.fields.map((field, index) => [field.id, index]));
-    const position = order.get(fieldId) ?? model.fields.length;
+    const order = new Map(view.fields.map((field, index) => [field.id, index]));
+    const position = order.get(fieldId) ?? view.fields.length;
     const before = without.findIndex((id) => (order.get(id) ?? 0) > position);
     next =
       before === -1
@@ -96,7 +109,7 @@ export const withDocumentPlacement = (
         : [...without.slice(0, before), fieldId, ...without.slice(before)];
   }
   const display = withKey(model.display, 'canvasFieldIds', next.length > 0 ? next : undefined);
-  return pruneLayout({ ...model, display }) as ModelDefinition;
+  return pruneLayout({ ...model, display }, parent) as ModelDefinition;
 };
 
 export type DocumentLayoutChoices = {
@@ -110,7 +123,7 @@ export type DocumentLayoutChoices = {
   stripOptions: FieldDefinition[];
 };
 
-/** What the Display section offers for the entry document, from the definition being edited. */
+/** What the Display section offers for the entry document, from the definition being edited (resolved). */
 export const documentLayoutChoices = (model: ModelDefinition): DocumentLayoutChoices => {
   const live = model.fields.filter((field) => !field.deprecated);
   const layout = effectiveLayout(model);

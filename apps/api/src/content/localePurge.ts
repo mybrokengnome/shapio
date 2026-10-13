@@ -113,9 +113,9 @@ export const purgeLocale = (database: Database, code: string) =>
     );
     await entriesRepository.softDeleteHeadless(null, new Date(), trx);
     for (const entry of deleted) {
-      const model = schema.byId.get(entry.model_id)?.definition;
+      const model = schema.resolve(entry.model_id);
       // A model that is no longer active has no API to announce the deletion to.
-      if (model && isModelDefinition(model)) {
+      if (model) {
         await writeEntryEvent(trx, entry.site_id, { definition: model }, 'entry.deleted', entry.id, {
           wasPublished: entry.was_published,
           snapshot: null,

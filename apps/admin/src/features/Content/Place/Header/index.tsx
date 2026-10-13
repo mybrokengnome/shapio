@@ -1,23 +1,24 @@
 import type { Locale } from '@shapio/client';
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/PageHeader';
 import { LocaleSelect } from '../../LocaleSelect';
 import { NewButton } from '../NewButton';
 
 type HeaderProps = {
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   /** Entries in the place; undefined while unknown. */
   count: number | undefined;
   locales: readonly Locale[];
   /** The list's locale; null for models that aren't localized. */
   locale: string | null;
   onLocaleChange: (code: string) => void;
-  canCreate: boolean;
+  /** The kinds the admin may create (New, or a menu of them). */
+  creatable: readonly ResolvedModelDefinition[];
 };
 
 /** A collection's header: its name and entry count, the content locale and New. */
-export const Header = ({ model, count, locales, locale, onLocaleChange, canCreate }: HeaderProps) => {
+export const Header = ({ model, count, locales, locale, onLocaleChange, creatable }: HeaderProps) => {
   const { t } = useTranslation();
   return (
     <PageHeader
@@ -34,7 +35,7 @@ export const Header = ({ model, count, locales, locale, onLocaleChange, canCreat
               onChange={onLocaleChange}
             />
           ) : null}
-          {canCreate ? <NewButton modelKey={model.apiKey} locale={locale} /> : null}
+          <NewButton model={model} kinds={creatable} locale={locale} />
         </>
       }
     />

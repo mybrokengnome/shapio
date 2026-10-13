@@ -31,7 +31,7 @@ export const EntryTable = ({
   onSelectChange,
 }: EntryTableProps) => {
   const { t } = useTranslation();
-  const { model, columns, titleColumn, locale } = context;
+  const { columns, titleColumn, locale } = context;
   const allSelected = items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
   const ariaSort = (field: string) =>
@@ -60,6 +60,7 @@ export const EntryTable = ({
               {header(field.apiKey, field.label, isSortableField(field))}
             </TableHead>
           ))}
+          {context.showKind ? <TableHead>{t('place.list.kind')}</TableHead> : null}
           <TableHead>{t('place.list.status')}</TableHead>
           <TableHead>{t('place.list.author')}</TableHead>
           {locale ? <TableHead>{t('place.list.locale')}</TableHead> : null}
@@ -77,7 +78,7 @@ export const EntryTable = ({
             key={item.id}
             context={context}
             item={item}
-            label={labelOf(model, item, t('content.untitled'))}
+            label={labelOf(context.kindOf(item.model), item, t('content.untitled'))}
             selected={selected.has(item.id)}
             people={presence.get(item.id) ?? NOBODY}
             onSelectChange={(checked) => onSelectChange([item.id], checked)}

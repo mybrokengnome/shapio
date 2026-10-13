@@ -10,7 +10,7 @@ type RestShapeProps = { definition: SchemaDefinition; lookup: DefinitionLookup }
 /** The REST endpoints the definition gets and an example delivery response. */
 export const RestShape = ({ definition, lookup }: RestShapeProps) => {
   const { t } = useTranslation();
-  const endpoints = restEndpoints(definition);
+  const endpoints = restEndpoints(definition, lookup);
   const sample = useMemo(() => restResponseSample(definition, lookup), [definition, lookup]);
   return (
     <div className="space-y-5">

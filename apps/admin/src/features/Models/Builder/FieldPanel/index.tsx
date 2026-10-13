@@ -1,9 +1,10 @@
 import { entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
-import { Trash2 } from 'lucide-react';
+import { Lock, Trash2 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { IconTile } from '@/components/IconTile';
 import { Panel } from '@/components/Panel';
+import { TextLink } from '@/components/TextLink';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
@@ -16,6 +17,7 @@ import { withFieldTypeOrSaved } from '../../helpers/newField';
 import { IssueList } from '../controls/IssueList';
 import { TextControl } from '../controls/TextControl';
 import { labelInputIdOf } from '../hooks/useNewField';
+import { useResolvedDraftAndParent } from '../hooks/useResolvedDraftAndParent';
 import { PanelSection } from '../PanelSection';
 import { DataType } from './DataType';
 import { DefaultValue } from './DefaultValue';
@@ -35,6 +37,11 @@ type FieldPanelProps = {
   /** The field was just added and is still untouched: Escape discards it. */
   untouched: boolean;
   onDiscard: () => void;
+  /**
+   * The ancestor that declares the field, when the draft inherits it: the panel is read-only and points
+   * there (inherited fields are locked; plan polymorphic-types decision 5).
+   */
+  inheritedFrom?: { id: string; label: string };
 };
 
 /** Field properties that have their own control; issues anywhere else are listed at the top. */
@@ -60,26 +67,37 @@ const CONTROLLED = new Set([
  * saved yet takes any type and its API ID follows its label until edited. A saved one can change to any
  * type too; one Shapio can't convert drops the field's stored values.
  */
-export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscard }: FieldPanelProps) => {
+export const FieldPanel = ({
+  field,
+  index,
+  issues,
+  disabled: editingDisabled,
+  untouched,
+  onDiscard,
+  inheritedFrom,
+}: FieldPanelProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
+  const { resolved, parent } = useResolvedDraftAndParent();
+  const disabled = editingDisabled || inheritedFrom !== undefined;
   const base = useDefinitionDraftStore((state) => state.base);
   const updateField = useDefinitionDraftStore((state) => state.updateField);
   const update = useDefinitionDraftStore((state) => state.update);
   const select = useDefinitionDraftStore((state) => state.select);
   const saved = base?.fields.find((candidate) => candidate.id === field.id);
   const typeChoices = useTypeChoices(base, saved, field.type);
-  if (!draft) {
+  if (!draft || !resolved) {
     return null;
   }
   const path = fieldPath(index);
-  const at = (property: string) => issuesUnder(issues, `${path}/${property}`);
-  const model = draft.kind === 'component' ? undefined : draft;
+  const at = (property: string) => (inheritedFrom ? [] : issuesUnder(issues, `${path}/${property}`));
+  // Layout questions (document placement, form widths) are answered over the inherited fields too.
+  const model = resolved.kind === 'component' ? undefined : resolved;
   const isForm = model !== undefined && entryLayoutOf(model) === 'form';
   // Width has a control on a form's live fields (and on any model field with a width problem); anywhere
   // else, such as a component's field, which may not have one, its issue is listed at the top.
   const showsWidth = model !== undefined && !field.deprecated && (isForm || at('width').length > 0);
-  const otherIssues = issuesUnder(issues, path).filter((found) => {
+  const otherIssues = (inheritedFrom ? [] : issuesUnder(issues, path)).filter((found) => {
     const property = found.path.slice(path.length + 1).split('/')[0] ?? '';
     return !CONTROLLED.has(property) || (property === 'width' && !showsWidth);
   });
@@ -114,21 +132,37 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
             <h2 className="min-w-0 truncate text-base font-semibold">{label}</h2>
             <Badge variant="secondary">{t(`models.dataTypes.${field.type}.name`)}</Badge>
           </div>
-          <Button
-            type="button"
-            variant="destructive-ghost"
-            size="sm"
-            disabled={disabled}
-            onClick={() => {
-              update((current) => removeField(current, field.id));
-              select({ type: 'definition' });
-            }}
-          >
-            <Trash2 aria-hidden="true" />
-            {t('models.builder.removeField')}
-          </Button>
+          {inheritedFrom ? null : (
+            <Button
+              type="button"
+              variant="destructive-ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                update((current) => removeField(current, field.id, parent));
+                select({ type: 'definition' });
+              }}
+            >
+              <Trash2 aria-hidden="true" />
+              {t('models.builder.removeField')}
+            </Button>
+          )}
         </div>
         <div className="space-y-5 p-5">
+          {inheritedFrom ? (
+            <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-meta text-muted-foreground">
+              <Lock aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                <Trans
+                  i18nKey="models.inheritance.fieldLocked"
+                  values={{ model: inheritedFrom.label }}
+                  components={{
+                    modelLink: <TextLink to="/models/$modelId" params={{ modelId: inheritedFrom.id }} />,
+                  }}
+                />
+              </span>
+            </p>
+          ) : null}
           <IssueList issues={otherIssues} />
 
           <PanelSection title={t('models.builder.dataType')} titleId={id('type-heading')}>
@@ -138,7 +172,9 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
               {...typeChoices}
               disabled={disabled}
               onChange={(type) =>
-                update((current) => pruneLayout(withFieldTypeOrSaved(current, field.id, type, saved)))
+                update((current) =>
+                  pruneLayout(withFieldTypeOrSaved(current, field.id, type, saved, parent), parent),
+                )
               }
             />
           </PanelSection>
@@ -178,35 +214,39 @@ export const FieldPanel = ({ field, index, issues, disabled, untouched, onDiscar
             {model && !field.deprecated && !isForm ? (
               <Placement model={model} field={field} issues={issues} disabled={disabled} />
             ) : null}
-            {model && !field.deprecated ? (
+            {model && draft.kind !== 'component' && !field.deprecated ? (
               <div className="grid items-start gap-5 @lg/field-group:grid-cols-2">
-                <Group model={model} field={field} disabled={disabled} />
+                {/* A field joins one of the draft's own groups; inherited groups belong to their type. */}
+                <Group model={draft} field={field} disabled={disabled} />
                 {showsWidth ? <Width field={field} issues={at('width')} disabled={disabled} /> : null}
               </div>
             ) : null}
           </PanelSection>
 
           <PanelSection title={t('models.builder.options')}>
-            <Flags field={field} draft={draft} at={at} disabled={disabled} onChange={set} />
+            <Flags field={field} draft={resolved} at={at} disabled={disabled} onChange={set} />
           </PanelSection>
 
           <PanelSection title={t('models.builder.settings')}>
             <TypeSettings
               field={field}
-              draft={draft}
+              draft={resolved}
               path={path}
               issues={issues}
               disabled={disabled}
               onChange={(key, value) =>
                 update((current) =>
-                  pruneLayout({
-                    ...current,
-                    fields: current.fields.map((candidate) =>
-                      candidate.id === field.id
-                        ? withCompatibleEditor(withSetting(candidate, key, value))
-                        : candidate,
-                    ),
-                  }),
+                  pruneLayout(
+                    {
+                      ...current,
+                      fields: current.fields.map((candidate) =>
+                        candidate.id === field.id
+                          ? withCompatibleEditor(withSetting(candidate, key, value))
+                          : candidate,
+                      ),
+                    },
+                    parent,
+                  ),
                 )
               }
             />

@@ -1,4 +1,5 @@
 import { Copy, Trash2, Undo2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InlineConfirm } from '@/components/InlineConfirm';
 import { Button } from '@/components/ui/button';
@@ -10,12 +11,17 @@ type DangerZoneProps = {
   onUnpublish?: () => Promise<unknown>;
   onDuplicate?: () => void;
   onDelete?: () => Promise<unknown>;
+  /** Moving the entry to another kind of its family (entries of a type with kinds). */
+  changeKind?: ReactNode;
 };
 
-/** Taking the entry offline, copying it, deleting it: each consequential one confirmed in place. */
-export const DangerZone = ({ title, onUnpublish, onDuplicate, onDelete }: DangerZoneProps) => {
+/**
+ * Taking the entry offline, copying it, deleting it (each consequential one confirmed in place), and
+ * changing its kind (confirmed in a blocking dialog: dropped values don't come back from here).
+ */
+export const DangerZone = ({ title, onUnpublish, onDuplicate, onDelete, changeKind }: DangerZoneProps) => {
   const { t } = useTranslation();
-  if (!onUnpublish && !onDuplicate && !onDelete) {
+  if (!onUnpublish && !onDuplicate && !onDelete && !changeKind) {
     return null;
   }
   return (
@@ -60,6 +66,7 @@ export const DangerZone = ({ title, onUnpublish, onDuplicate, onDelete }: Danger
           />
         ) : null}
       </div>
+      {changeKind}
     </DrawerSection>
   );
 };

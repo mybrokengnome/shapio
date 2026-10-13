@@ -1,4 +1,14 @@
-import { collectionQueryName, routeKeyOf, type FieldDefinition, type ModelDefinition } from '@shapio/schema';
+import {
+  collectionQueryName,
+  INTERFACE_TYPE_SUFFIX,
+  isModelDefinition,
+  routeKeyOf,
+  routePathOf,
+  toTypeName,
+  type DefinitionIndex,
+  type FieldDefinition,
+  type ModelDefinition,
+} from '@shapio/schema';
 import type { DeliveryOperation } from './operations';
 import { filterParamName, type RequestDraft } from './request';
 
@@ -6,7 +16,9 @@ import { filterParamName, type RequestDraft } from './request';
  * The GraphQL tab's operations per model and the query each one sends, built from the REST tab's request
  * for the same endpoint (same filters, sort, search, page, locale, snapshot and fields), so the two read
  * the same rows. Field selections follow the server's types: scalars as they are, rich text as `html`,
- * media as `url alt`, relations as `id`, components and zones as `__typename`.
+ * media as `url alt`, relations as `id`, components and zones as `__typename`. With the schema's definition
+ * index, a kind's inherited fields count as its own, a kind's REST endpoint is its nested path, and a type
+ * with kinds reads `__typename` and an inline fragment per kind (its interface returns every kind's rows).
  */
 export type GraphqlOperation = { id: string; name: string; modelId: string; list: boolean };
 
@@ -33,15 +45,27 @@ export const graphqlOperations = (model: ModelDefinition): GraphqlOperation[] =>
   ];
 };
 
+/** The models a definition's ancestors are, root first (none without an index or for a root). */
+const ancestorModels = (model: ModelDefinition, index: DefinitionIndex | undefined): ModelDefinition[] =>
+  (index?.ancestors(model.id) ?? []).flatMap((id) => {
+    const ancestor = index?.get(id);
+    return ancestor && isModelDefinition(ancestor) ? [ancestor] : [];
+  });
+
+/** The model's REST route key: nested under its ancestors' (`posts/guides`) when it is a kind. */
+const restRouteKeyOf = (model: ModelDefinition, index: DefinitionIndex | undefined) =>
+  index ? routePathOf(model, ancestorModels(model, index)) : routeKeyOf(model);
+
 /** The REST endpoint a GraphQL operation mirrors: the list, the read by ID, or the singleton's read. */
 export const restOperationFor = (
   model: ModelDefinition,
   operation: GraphqlOperation,
   restOperations: readonly DeliveryOperation[],
+  index?: DefinitionIndex,
 ): DeliveryOperation | undefined =>
   restOperations.find(
     (candidate) =>
-      candidate.routeKey === routeKeyOf(model) &&
+      candidate.routeKey === restRouteKeyOf(model, index) &&
       (operation.list ? candidate.list : model.kind === 'collection' ? candidate.byId : !candidate.byId),
   );
 
@@ -54,16 +78,17 @@ export const counterpartOperationId = (
   operationId: string | undefined,
   models: readonly ModelDefinition[],
   restOperations: readonly DeliveryOperation[],
+  index?: DefinitionIndex,
 ): string | undefined => {
   if (target === 'graphql') {
     const rest = restOperations.find((candidate) => candidate.id === operationId);
-    const model = rest && models.find((candidate) => routeKeyOf(candidate) === rest.routeKey);
+    const model = rest && models.find((candidate) => restRouteKeyOf(candidate, index) === rest.routeKey);
     return model && graphqlOperations(model).find((candidate) => candidate.list === rest.list)?.id;
   }
   for (const model of models) {
     const operation = graphqlOperations(model).find((candidate) => candidate.id === operationId);
     if (operation) {
-      return restOperationFor(model, operation, restOperations)?.id;
+      return restOperationFor(model, operation, restOperations, index)?.id;
     }
   }
   return undefined;
@@ -222,8 +247,32 @@ const selectedFields = (model: ModelDefinition, draft: RequestDraft): FieldDefin
   return chosen.length > 0 ? chosen : live;
 };
 
-const selection = (fields: readonly FieldDefinition[], indent: string) =>
-  ['id', ...fields.map(selectionOf)].map((line) => `${indent}${line}`).join('\n');
+/**
+ * One inline fragment per kind below the model, each with the kind's own live fields: on the kind's
+ * interface when it has kinds of its own (so their rows match too), else on its object type. Kinds without
+ * fields of their own add nothing.
+ */
+const kindFragments = (model: ModelDefinition, index: DefinitionIndex | undefined): string[] =>
+  (index?.descendants(model.id) ?? []).flatMap((id) => {
+    const kind = index?.get(id);
+    const own = kind && isModelDefinition(kind) ? kind.fields.filter((field) => !field.deprecated) : [];
+    if (!kind || own.length === 0) {
+      return [];
+    }
+    const suffix = (index?.childrenOf(id).length ?? 0) > 0 ? INTERFACE_TYPE_SUFFIX : '';
+    const type = `${toTypeName(kind.apiKey)}${suffix}`;
+    return [`... on ${type} {`, ...own.map((field) => `  ${selectionOf(field)}`), '}'];
+  });
+
+/** What a type with kinds adds to its selection: `__typename` (which kind a row is) and the fragments. */
+type KindSelection = { typename: boolean; fragments: readonly string[] };
+
+const NO_KINDS: KindSelection = { typename: false, fragments: [] };
+
+const selection = (fields: readonly FieldDefinition[], indent: string, kinds: KindSelection = NO_KINDS) =>
+  [...(kinds.typename ? ['__typename'] : []), 'id', ...fields.map(selectionOf), ...kinds.fragments]
+    .map((line) => `${indent}${line}`)
+    .join('\n');
 
 const readArguments = (draft: RequestDraft): Array<[string, string]> => {
   const args: Array<[string, string]> = [];
@@ -265,12 +314,22 @@ const listArguments = (model: ModelDefinition, draft: RequestDraft, skipped: str
 const call = (name: string, args: ReadonlyArray<[string, string]>) =>
   args.length === 0 ? name : `${name}(${args.map(([key, value]) => `${key}: ${value}`).join(', ')})`;
 
-/** The query for one operation, carrying over what the REST draft for the same endpoint sets. */
+/**
+ * The query for one operation, carrying over what the REST draft for the same endpoint sets. With `index`,
+ * `model` is read with its inherited fields, and a type with kinds selects each kind's own fields through
+ * inline fragments.
+ */
 export const graphqlQuery = (
-  model: ModelDefinition,
+  stored: ModelDefinition,
   operation: GraphqlOperation,
   draft: RequestDraft,
+  index?: DefinitionIndex,
 ): GraphqlQuery => {
+  const model: ModelDefinition = index?.resolve(stored.id) ?? stored;
+  const kinds: KindSelection = {
+    typename: (index?.descendants(stored.id).length ?? 0) > 0,
+    fragments: kindFragments(stored, index),
+  };
   const skipped: string[] = [];
   if (draft.populate.trim()) {
     // GraphQL expands relations by selecting them; there is no populate argument.
@@ -279,7 +338,7 @@ export const graphqlQuery = (
   const fields = selectedFields(model, draft);
   if (operation.list) {
     const args = [...listArguments(model, draft, skipped), ...readArguments(draft)];
-    const body = `  ${call(operation.name, args)} {\n    totalCount\n    nodes {\n${selection(fields, '      ')}\n    }\n  }`;
+    const body = `  ${call(operation.name, args)} {\n    totalCount\n    nodes {\n${selection(fields, '      ', kinds)}\n    }\n  }`;
     return { query: `query {\n${body}\n}\n`, skipped };
   }
   const id = draft.id.trim();
@@ -289,6 +348,6 @@ export const graphqlQuery = (
     ...readArguments(draft),
   ];
   const header = byId && !id ? 'query ($id: ID!) {' : 'query {';
-  const body = `  ${call(operation.name, args)} {\n${selection(fields, '    ')}\n  }`;
+  const body = `  ${call(operation.name, args)} {\n${selection(fields, '    ', kinds)}\n  }`;
   return { query: `${header}\n${body}\n}\n`, skipped };
 };

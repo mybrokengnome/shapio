@@ -276,3 +276,54 @@ describe('write masks per row (issue #80)', () => {
     );
   });
 });
+
+describe('grants flow down to models that extend the granted one (plan polymorphic-types D8)', () => {
+  const PARENT = 'model-product';
+  const CHILD = 'model-digital';
+  const CHILD_FIELDS: readonly ModelField[] = [
+    { id: 'f-name', public: true },
+    { id: 'f-cost', public: false },
+    { id: 'f-url', public: true },
+  ];
+  const onChild = (action: 'read' | 'update' | 'schemaManage') => ({ action, modelId: CHILD }) as const;
+
+  it('a grant on an ancestor applies to the child; a wildcard covers the child’s own fields', () => {
+    const grants = [grant({ action: 'read', modelId: PARENT })];
+    expect(buildPolicy(grants, onChild('read'), 'delivery', CHILD_FIELDS, []).allowed).toBe(false);
+    const policy = buildPolicy(grants, onChild('read'), 'delivery', CHILD_FIELDS, [PARENT]);
+    expect(policy.allowed).toBe(true);
+    expect(policy.readMask).toEqual({
+      mode: 'only',
+      fieldIds: ['f-name', 'f-url'],
+      componentFields: 'public',
+    });
+  });
+
+  it('an explicit field list on the parent applies as written; a child grant widens it', () => {
+    const policy = buildPolicy(
+      [
+        grant({ action: 'read', modelId: PARENT, fieldIds: ['f-name'] }),
+        grant({ action: 'read', modelId: CHILD, fieldIds: ['f-cost'] }),
+      ],
+      onChild('read'),
+      'delivery',
+      CHILD_FIELDS,
+      [PARENT],
+    );
+    expect(policy.readMask).toEqual({
+      mode: 'only',
+      fieldIds: ['f-name', 'f-cost'],
+      componentFields: 'public',
+    });
+  });
+
+  it('a grant on the child never reaches the parent', () => {
+    const policy = buildPolicy([grant({ action: 'read', modelId: CHILD })], read, 'admin', undefined, []);
+    expect(policy.allowed).toBe(false);
+  });
+
+  it('schema management of the parent covers the child', () => {
+    const grants = [grant({ action: 'schemaManage', modelId: PARENT })];
+    expect(buildPolicy(grants, onChild('schemaManage'), 'admin', undefined, [PARENT]).allowed).toBe(true);
+  });
+});

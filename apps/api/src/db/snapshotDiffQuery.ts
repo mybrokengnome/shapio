@@ -105,6 +105,18 @@ const liveAt = (dialect: DiffDialect, siteId: string, seq: number) => sql`(
   limit 1
 )`;
 
+/**
+ * The model the entry had in the publication log as of `seq` (its latest period starting by then): an entry
+ * that changed kind (plan polymorphic-types) is reported under the kind it was published as, not under
+ * `entries.model_id`, its kind now.
+ */
+const modelAt = (dialect: DiffDialect, siteId: string, seq: number) => sql`(
+  select p.model_id from publication_log p
+  where p.site_id = ${dialect.uuid(siteId)} and p.entry_id = g.entry_id and p.from_seq <= ${dialect.seq(seq)}
+  order by p.from_seq desc
+  limit 1
+)`;
+
 export const selectSnapshotDiffRows = async (
   params: SnapshotDiffParams,
   executor: Executor,
@@ -136,19 +148,23 @@ export const selectSnapshotDiffRows = async (
       from states s
       where ${dialect.distinct(sql`s.from_revision_id`, sql`s.to_revision_id`)}
     )
-    select ch.entry_id, e.model_id,
-      ${dialect.aggregate(sql`${dialect.object}(
-          'locale', ch.locale,
-          'change', ch.${dialect.change},
-          'fromRevisionId', ch.from_revision_id,
-          'toRevisionId', ch.to_revision_id
-        )`)} as locales
-    from changes ch
-    join entries e on e.id = ch.entry_id
-    where ${params.rowFilter ?? sql`true`}
-    group by ch.entry_id, e.model_id
-    order by ch.entry_id
-    limit ${params.maxRows}
+    select g.entry_id, ${modelAt(dialect, params.siteId, to)} as model_id, g.locales
+    from (
+      select ch.entry_id,
+        ${dialect.aggregate(sql`${dialect.object}(
+            'locale', ch.locale,
+            'change', ch.${dialect.change},
+            'fromRevisionId', ch.from_revision_id,
+            'toRevisionId', ch.to_revision_id
+          )`)} as locales
+      from changes ch
+      join entries e on e.id = ch.entry_id
+      where ${params.rowFilter ?? sql`true`}
+      group by ch.entry_id
+      order by ch.entry_id
+      limit ${params.maxRows}
+    ) g
+    order by g.entry_id
   `.execute(executor);
   return result.rows.map((row) =>
     typeof row.locales === 'string'

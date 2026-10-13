@@ -32,7 +32,13 @@ const definition = normalizeDefinition({
   ],
 }) as ModelDefinition;
 
-const model: ContentModel = { definition, version: 1, revisionId: 'r', components: new Map() };
+const model: ContentModel = {
+  definition: { ...definition, ancestorIds: [] },
+  version: 1,
+  revisionId: 'r',
+  ancestors: new Map(),
+  components: new Map(),
+};
 
 const project = (data: Record<string, unknown>, richText: RichTextMode | null = 'both') =>
   projectData(data, {
@@ -172,9 +178,10 @@ describe('projectData', () => {
       ],
     }) as ModelDefinition;
     const thingModel: ContentModel = {
-      definition: thing,
+      definition: { ...thing, ancestorIds: [] },
       version: 1,
       revisionId: 'r',
+      ancestors: new Map(),
       components: new Map([
         [c.box, { definition: box, version: 1 }],
         [c.address, { definition: address, version: 1 }],

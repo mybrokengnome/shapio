@@ -20,7 +20,9 @@ import { assessStep } from './migration/impact.js';
 const runFollowUp = async (database: Database, step: FollowUpStep, log: FastifyBaseLogger): Promise<void> => {
   switch (step.kind) {
     case 'releaseUnique':
-      await uniqueValuesRepository.removeForField(step.fieldId, database);
+      // Only the members that lose the field (a parent keeps its rows when a child moves away); a plan
+      // made before inheritance names no models, which means every model's rows.
+      await uniqueValuesRepository.removeForField(step.fieldId, step.modelIds ?? null, database);
       return;
     case 'purgeLocale':
       log.info(

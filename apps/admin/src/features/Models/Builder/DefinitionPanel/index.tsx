@@ -1,11 +1,14 @@
-import { routeKeyOf, type ValidationIssue } from '@shapio/schema';
+import { routeKeyOf, type ModelDefinition, type ValidationIssue } from '@shapio/schema';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { followPlural } from '../../helpers/followPlural';
 import { issuesUnder } from '../../helpers/issues';
+import { useModelIndex } from '../../hooks/useModelIndex';
+import { SelectControl } from '../controls/SelectControl';
 import { SwitchControl } from '../controls/SwitchControl';
 import { TextControl } from '../controls/TextControl';
+import { useResolvedDraftAndParent } from '../hooks/useResolvedDraftAndParent';
 import { PanelSection } from '../PanelSection';
 import { Display } from './Display';
 
@@ -14,15 +17,27 @@ type DefinitionPanelProps = {
   disabled: boolean;
   /** Where the definition is available (the `Scope` section), first; absent on a single-site instance. */
   scopeSection?: ReactNode;
+  /** The collections this one may extend (same scope, not its own family). */
+  parentChoices: readonly ModelDefinition[];
+  /** How many kinds extend this one directly: their flags must stay equal to its own. */
+  kindCount: number;
 };
 
 /** The definition's own settings (the expanded Model settings panel): naming, content and display. */
-export const DefinitionPanel = ({ issues, disabled, scopeSection }: DefinitionPanelProps) => {
+export const DefinitionPanel = ({
+  issues,
+  disabled,
+  scopeSection,
+  parentChoices,
+  kindCount,
+}: DefinitionPanelProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
   const base = useDefinitionDraftStore((state) => state.base);
   const update = useDefinitionDraftStore((state) => state.update);
-  if (!draft) {
+  const { resolved, parent } = useResolvedDraftAndParent();
+  const { index } = useModelIndex();
+  if (!draft || !resolved) {
     return null;
   }
   const set = (patch: Record<string, unknown>) => update((current) => ({ ...current, ...patch }));
@@ -37,6 +52,39 @@ export const DefinitionPanel = ({ issues, disabled, scopeSection }: DefinitionPa
         ? { ...current, apiKey, pluralApiKey: followPlural(current.apiKey, apiKey, current.pluralApiKey) }
         : { ...current, apiKey },
     );
+  // Re-parenting goes through the review like any contract change. A kind's flags equal its parent's, so
+  // they follow the new parent.
+  const setParent = (parentId: string | undefined) =>
+    update((current) => {
+      if (current.kind !== 'collection') {
+        return current;
+      }
+      const { extends: _previous, ...rest } = current;
+      const next = index.get(parentId ?? '');
+      if (parentId === undefined || !next || next.kind !== 'collection') {
+        return parentId === undefined ? rest : { ...rest, extends: parentId };
+      }
+      return { ...rest, extends: parentId, localized: next.localized, draftAndPublish: next.draftAndPublish };
+    });
+  const parentId = draft.kind === 'collection' ? draft.extends : undefined;
+  const parentLabel = parentId === undefined ? undefined : (index.get(parentId)?.label ?? parentId);
+  // The current parent stays listed even when it would no longer be offered (another scope, say).
+  const parentOptions = [
+    ...(parentId !== undefined && !parentChoices.some((choice) => choice.id === parentId)
+      ? [{ value: parentId, label: parentLabel ?? parentId }]
+      : []),
+    ...parentChoices.map((choice) => ({ value: choice.id, label: choice.label })),
+  ];
+  const baseParentId = base?.kind === 'collection' ? base.extends : undefined;
+  const reparented = base !== null && baseParentId !== parentId;
+  // A kind's flags are its parent's; a parent's flags are shared by its kinds, so neither can change alone.
+  const flagsHint =
+    parentLabel !== undefined
+      ? t('models.inheritance.flagsFollowParent', { model: parentLabel })
+      : kindCount > 0
+        ? t('models.inheritance.flagsSharedWithKinds', { count: kindCount })
+        : undefined;
+  const flagsLocked = flagsHint !== undefined;
   return (
     <div className="space-y-6">
       {scopeSection}
@@ -74,6 +122,20 @@ export const DefinitionPanel = ({ issues, disabled, scopeSection }: DefinitionPa
             monospace
           />
         ) : null}
+        {draft.kind === 'collection' ? (
+          <SelectControl
+            id="definition-extends"
+            label={t('models.inheritance.extends')}
+            hint={t('models.inheritance.extendsHint')}
+            description={reparented ? t('models.inheritance.reparentWarning') : undefined}
+            value={parentId}
+            options={parentOptions}
+            unsetLabel={t('models.inheritance.noParent')}
+            onChange={setParent}
+            issues={at('extends')}
+            disabled={disabled}
+          />
+        ) : null}
         <TextControl
           id="definition-description"
           label={t('models.descriptionLabel')}
@@ -103,24 +165,27 @@ export const DefinitionPanel = ({ issues, disabled, scopeSection }: DefinitionPa
             id="definition-localized"
             label={t('models.localized')}
             hint={t('models.builder.modelLocalizedHint')}
+            description={flagsHint}
             checked={draft.localized}
             onChange={(localized) => set({ localized })}
             issues={at('localized')}
-            disabled={disabled}
+            // A mismatch the validator reports stays fixable.
+            disabled={disabled || (flagsLocked && at('localized').length === 0)}
           />
           <SwitchControl
             id="definition-draftAndPublish"
             label={t('models.builder.draftAndPublish')}
             hint={t('models.builder.draftAndPublishHint')}
+            description={flagsHint}
             checked={draft.draftAndPublish}
             onChange={(draftAndPublish) => set({ draftAndPublish })}
             issues={at('draftAndPublish')}
-            disabled={disabled}
+            disabled={disabled || (flagsLocked && at('draftAndPublish').length === 0)}
           />
         </PanelSection>
       )}
       <PanelSection title={t('models.builder.display')}>
-        <Display definition={draft} issues={issues} disabled={disabled} />
+        <Display definition={resolved} own={draft} parent={parent} issues={issues} disabled={disabled} />
       </PanelSection>
     </div>
   );

@@ -1,4 +1,10 @@
-import type { GraphQLEnumType, GraphQLInputObjectType, GraphQLObjectType, GraphQLUnionType } from 'graphql';
+import type {
+  GraphQLEnumType,
+  GraphQLInputObjectType,
+  GraphQLInterfaceType,
+  GraphQLObjectType,
+  GraphQLUnionType,
+} from 'graphql';
 import type { SchemaSnapshot } from '../../snapshot.js';
 import type { GraphqlContext, ValueNode } from './context.js';
 import type { FixedTypes } from './fixedTypes.js';
@@ -13,6 +19,11 @@ export type SchemaBuild = {
   visibility: SchemaVisibility;
   fixed: FixedTypes;
   objects: Map<string, GraphQLObjectType<ValueNode, GraphqlContext>>;
+  /**
+   * `<Type>Interface` by model ID, for models that have children (plan polymorphic-types D9): the model's own
+   * object type and every descendant's implement it.
+   */
+  interfaces: Map<string, GraphQLInterfaceType>;
   /** Component types by ID; null when the caller sees none of the component's fields. */
   components: Map<string, GraphQLObjectType<ValueNode, GraphqlContext> | null>;
   enums: Map<string, GraphQLEnumType>;
@@ -29,6 +40,7 @@ export const createBuild = (
   visibility,
   fixed,
   objects: new Map(),
+  interfaces: new Map(),
   components: new Map(),
   enums: new Map(),
   zones: new Map(),

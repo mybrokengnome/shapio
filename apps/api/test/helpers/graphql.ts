@@ -101,7 +101,26 @@ export const toRestShape = (value: unknown, shape: Shape = {}): unknown => {
   return output;
 };
 
+/**
+ * REST delivery data without `__model` and `__kinds` (every delivery entry's own model API ID and its kind
+ * lineage, plan polymorphic-types): GraphQL has no such fields (clients use `__typename`), so twins compare
+ * everything else.
+ */
+export const withoutModelKey = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(withoutModelKey);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== '__model' && key !== '__kinds')
+      .map(([key, item]) => [key, withoutModelKey(item)]),
+  );
+};
+
 /** Asserts the GraphQL entries equal the REST entries after shape normalisation (order and values). */
 export const expectSameEntries = (graphqlEntries: unknown, restEntries: unknown, shape: Shape = {}) => {
-  expect(toRestShape(graphqlEntries, shape)).toEqual(restEntries);
+  expect(toRestShape(graphqlEntries, shape)).toEqual(withoutModelKey(restEntries));
 };

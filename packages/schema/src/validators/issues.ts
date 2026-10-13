@@ -39,7 +39,14 @@ export type IssueCode =
   | 'INVALID_REFERENCE_TARGET'
   | 'COMPONENT_CYCLE'
   | 'COMPONENT_TOO_DEEP'
-  | 'REFERENCED_DEFINITION';
+  | 'REFERENCED_DEFINITION'
+  | 'UNKNOWN_PARENT'
+  | 'INVALID_PARENT'
+  | 'INHERITANCE_CYCLE'
+  | 'INHERITANCE_TOO_DEEP'
+  | 'INHERITED_FIELD_COLLISION'
+  | 'INHERITED_FLAG_MISMATCH'
+  | 'HAS_CHILDREN';
 
 export class SchemaValidationError extends Error {
   readonly issues: readonly ValidationIssue[];

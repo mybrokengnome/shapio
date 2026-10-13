@@ -27,7 +27,8 @@ type CardProps = {
 /** One entry as a tile: its cover, title, status and last update; tick box and actions on hover. */
 export const Card = ({ context, cover, item, label, selected, people, onSelectChange }: CardProps) => {
   const { t } = useTranslation();
-  const { model, locale } = context;
+  const { locale } = context;
+  const kind = context.kindOf(item.model);
   const asset = coverAssetOf(item.data[cover.apiKey]);
   return (
     <li
@@ -57,7 +58,7 @@ export const Card = ({ context, cover, item, label, selected, people, onSelectCh
           <RowTitle asChild className="line-clamp-2 min-w-0">
             <Link
               to="/content/$modelKey/$entryId"
-              params={{ modelKey: model.apiKey, entryId: item.id }}
+              params={{ modelKey: kind.apiKey, entryId: item.id }}
               search={locale ? { locale } : {}}
             >
               {label}
@@ -68,6 +69,9 @@ export const Card = ({ context, cover, item, label, selected, people, onSelectCh
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <EntryStatusChip status={item.status} size="sm" />
+            {context.showKind ? (
+              <span className="truncate text-meta text-muted-foreground">{kind.label}</span>
+            ) : null}
             <time
               dateTime={item.updatedAt}
               title={formatDateTime(item.updatedAt)}
@@ -77,7 +81,7 @@ export const Card = ({ context, cover, item, label, selected, people, onSelectCh
             </time>
           </div>
           <RowActions
-            modelKey={model.apiKey}
+            modelKey={kind.apiKey}
             entry={item}
             label={label}
             locale={locale}

@@ -7,10 +7,11 @@ import { usePaletteItems } from '@/components/CommandPalette/hooks/usePaletteIte
 import type { PaletteItem } from '@/components/CommandPalette/types';
 import { SETTINGS_GROUPS } from '@/features/Settings/sections';
 import { canSeeNetwork } from '@/helpers/sites';
+import { flattenPlaces } from '../helpers/placeTree';
 import { isVisible, NETWORK_ITEMS } from '../navItems';
 import { useNavAccess } from './useNavAccess';
 import { usePlaces } from './usePlaces';
-import type { ShellNavGroup } from './useShellNavGroups';
+import { flattenNavItems, type ShellNavGroup } from './useShellNavGroups';
 
 /**
  * Every sidebar destination, then the settings pages and (for network admins, from any site) the network
@@ -22,7 +23,7 @@ const useGoToItems = (groups: readonly ShellNavGroup[]): PaletteItem[] => {
   const { data: me } = useMe();
   return useMemo(() => {
     const items: PaletteItem[] = groups.flatMap((group) =>
-      group.items.flatMap((item) =>
+      flattenNavItems(group.items).flatMap((item) =>
         item.variant !== 'add'
           ? [
               {
@@ -68,7 +69,7 @@ const useCreateItems = (): PaletteItem[] => {
   const places = usePlaces();
   return useMemo(
     () => [
-      ...(places ?? [])
+      ...flattenPlaces(places ?? [])
         .filter((place) => place.kind === 'collection' && place.canCreate)
         .map((place): PaletteItem => ({
           id: `create:${place.id}`,

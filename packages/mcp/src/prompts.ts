@@ -21,7 +21,9 @@ export const registerPrompts = ({ server }: ToolContext) => {
         `Model content types in Shapio for ${subject}.\n\n` +
           '1. Call schema_list and read the existing types first; reuse or extend them instead of duplicating.\n' +
           '2. Design the types: API IDs are camelCase GraphQL names, labels are for people; prefer components ' +
-          'for repeated groups and relations for shared entities.\n' +
+          'for repeated groups and relations for shared entities. When several kinds of one thing share ' +
+          'fields (products that are digital or physical), make one collection and let each kind extend it ' +
+          '(extends), listing only its own fields.\n' +
           '3. Draft each type with schema_draft (one change set for the whole design: pass the changeSetId ' +
           'from the first call to the rest).\n' +
           '4. Read change_sets_review, fix every blocking issue, and summarise the design and the review for ' +

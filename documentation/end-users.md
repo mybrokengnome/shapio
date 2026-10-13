@@ -21,6 +21,13 @@ Network → Roles → App roles sets each role's grants per model: `read`, `crea
 optionally limited to **own entries** (`ownedByPrincipal`) and to some fields. "Read on all models" is one
 click for `public` or `authenticated`. App users see `public` fields only, unless a grant names hidden ones.
 
+A grant on a type covers the types that extend it ([Modelling](modelling.md#types-that-extend-a-type)):
+`read` on Post lets a role read Guides and Opinions too, and "every field" includes their own fields. A kind can
+have grants of its own, which only add to its parent's: `create` on Guide alone lets a member write guides
+without writing plain posts. A grant can't take away what a parent's grant allows, so to keep a kind from a
+role, grant the role its sibling kinds one by one instead of the parent. A role with `read` on Guide but not on
+Post reads `/api/content/posts/guides`, but not the list of every post at `/api/content/posts`.
+
 On an instance with several [sites](sites.md#app-users-and-anonymous-access), app users belong to one site: the
 same address can have a separate account on each, and sign-up, sign-in and OAuth happen on the request's site
 (`?site=` or `Shapio-Site`, else the primary site). An access token, refresh token, email link or OAuth code is

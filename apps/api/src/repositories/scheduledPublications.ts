@@ -89,3 +89,13 @@ export const cancel = (id: string, now: Date, trx: Executor = db) =>
     .where('status', 'in', ['scheduled', 'failed'])
     .returningAll()
     .executeTakeFirst();
+
+/** Whether the entry has a publication still scheduled (change kind waits for it). */
+export const hasScheduledForEntry = async (entryId: string, executor: Executor = db): Promise<boolean> =>
+  (await executor
+    .selectFrom('scheduled_publications')
+    .select('id')
+    .where('entry_id', '=', entryId)
+    .where('status', '=', 'scheduled')
+    .limit(1)
+    .executeTakeFirst()) !== undefined;

@@ -4,6 +4,7 @@ import { paginationMeta } from '../content/compiler/paginate.js';
 import { everyRowReadMask } from '../content/compiler/policy.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
+import { familyIdsOf, kindsMetaOf, type ReadMember } from '../content/family.js';
 import { resolveRouteModel, type ContentModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
@@ -20,7 +21,7 @@ import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
-import { parseQueryFor } from './contentReads.js';
+import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
 
 /**
@@ -123,6 +124,8 @@ type PreviewScope = {
   context: ContentServiceContext;
   model: ContentModel;
   policy: Policy;
+  /** Every kind of the route's model the preview may read (plan polymorphic-types). */
+  members: ReadMember[];
 };
 
 /** Resolves the token and builds a content context that reads as the preview principal. */
@@ -137,7 +140,8 @@ const authorize = async (
     throw unauthenticated();
   }
   const model = resolveRouteModel(base.snapshot, request.modelKey);
-  if (model.definition.id !== token.model_id) {
+  // The token is for its entry's own kind; any ancestor's route reads it too (plan polymorphic-types).
+  if (!familyIdsOf(base.snapshot, model.definition.id).includes(token.model_id)) {
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another model');
   }
   const creator = await loadAdminPrincipal(
@@ -163,7 +167,7 @@ const authorize = async (
   if (!policy.allowed) {
     throw new AppError(403, 'FORBIDDEN', `The preview token may not read "${request.modelKey}"`);
   }
-  return { token, context, model, policy };
+  return { token, context, model, policy, members: await familyMembersFor(context, model, policy) };
 };
 
 /** The token's locale wins; a different `locale` in the query is refused rather than silently ignored. */
@@ -172,6 +176,7 @@ const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
     allowSnapshot: false,
     allowRichText: true,
     allowSeo: true,
+    members: scope.members,
   });
   if (scope.token.locale && query.locale && query.locale !== scope.token.locale) {
     throw new AppError(403, 'PREVIEW_SCOPE', `This preview token is for locale "${scope.token.locale}"`);
@@ -187,6 +192,7 @@ const readOf = (scope: PreviewScope, query: ContentQuery): DeliveryRead => ({
   source: DRAFT,
   model: scope.model,
   policy: scope.policy,
+  members: scope.members,
   query,
   fallback: true,
   conditions: entryCondition(scope.token),
@@ -197,6 +203,12 @@ const metaOf = (scope: PreviewScope, query: ContentQuery) => ({
   preview: true as const,
   expiresAt: scope.token.expires_at,
 });
+
+/** `meta.kinds` of a family list, as delivery reports it. */
+const kindsOf = (scope: PreviewScope) => {
+  const kinds = kindsMetaOf(scope.context.snapshot, scope.model, scope.members);
+  return kinds ? { kinds } : {};
+};
 
 export const listPreview = async (
   runtime: PublishingRuntime,
@@ -209,7 +221,11 @@ export const listPreview = async (
   const { entries, limit, total } = await readEntryPage(readOf(scope, query));
   return {
     data: entries,
-    meta: { ...metaOf(scope, query), pagination: paginationMeta(query.page, limit, total) },
+    meta: {
+      ...metaOf(scope, query),
+      pagination: paginationMeta(query.page, limit, total),
+      ...kindsOf(scope),
+    },
   };
 };
 

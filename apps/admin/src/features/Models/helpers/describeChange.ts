@@ -12,6 +12,7 @@ const CHANGE_KEYS = {
   'model.kind': 'models.changes.modelKind',
   'model.localized': 'models.changes.modelLocalized',
   'model.draftAndPublish': 'models.changes.modelDraftAndPublish',
+  'model.extends': 'models.changes.modelExtends',
   'field.added': 'models.changes.fieldAdded',
   'field.removed': 'models.changes.fieldRemoved',
   'field.order': 'models.changes.fieldOrder',
@@ -62,12 +63,41 @@ export const fieldLabelOf = (
   return field?.label ?? fieldId ?? '';
 };
 
+/** What a sentence may look up besides the two definitions. */
+export type DescribeContext = {
+  /** A model's name by stable ID (e.g. from the definitions cache); IDs are never shown in its place. */
+  definitionName?: (id: string) => string | undefined;
+};
+
+const nameOf = (id: unknown, context: DescribeContext): string | undefined =>
+  typeof id === 'string' ? context.definitionName?.(id) : undefined;
+
+/**
+ * "Make this a kind of Products", "Move this from Products to Media", "Stop being a kind of Products", by
+ * the parents' names; without them, a sentence that names neither (a stable ID means nothing to a person).
+ */
+const describeExtends = (change: ClassifiedChange, context: DescribeContext): string => {
+  const from = nameOf(change.from, context);
+  const to = nameOf(change.to, context);
+  const hasFrom = typeof change.from === 'string';
+  const hasTo = typeof change.to === 'string';
+  if ((hasFrom && from === undefined) || (hasTo && to === undefined)) {
+    return i18next.t('models.changes.modelExtends');
+  }
+  const move = hasFrom ? (hasTo ? 'moved' : 'removed') : 'added';
+  return i18next.t('models.changes.modelExtends', { context: move, from, to });
+};
+
 /** One sentence describing a planned change, e.g. "Rename the API key of Title from title to headline". */
 export const describeChange = (
   change: ClassifiedChange,
   before: SchemaDefinition | null,
   after: SchemaDefinition | null,
+  context: DescribeContext = {},
 ): string => {
+  if (change.kind === 'model.extends') {
+    return describeExtends(change, context);
+  }
   const field = fieldLabelOf(change.fieldId, before, after);
   const addedType =
     change.kind === 'field.added' && typeof change.to === 'object' && change.to !== null

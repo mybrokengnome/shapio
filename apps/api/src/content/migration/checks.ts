@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { changeDropsValues } from '@shapio/schema';
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../../db/types.js';
 import * as entriesRepository from '../../repositories/entries.js';
@@ -34,9 +35,10 @@ export const stepModelIds = (step: ContentStep): string[] =>
     ? [step.modelId]
     : [...new Set(step.locations.map((location) => location.modelId))];
 
+/** The definition a change's steps are for (a family member's checks name the changed model as owner). */
 export const ownerOf = (steps: readonly ContentStep[]) => {
   const [step] = steps;
-  return step?.kind === 'checkUnique' ? step.modelId : (step?.ownerId ?? '');
+  return step?.kind === 'checkUnique' ? (step.ownerId ?? step.modelId) : (step?.ownerId ?? '');
 };
 
 const appliesTo = (step: ContentStep, head: ProposedHead) => stepModelIds(step).includes(head.model_id);
@@ -60,18 +62,23 @@ const isValid = (proposed: SchemaById, head: ProposedHead) => {
   );
 };
 
+/** A conversion that clears values (a type Shapio cannot convert, a field a moved type loses): never fails. */
+const clearsValues = (step: ContentStep) => step.kind === 'convert' && changeDropsValues(step.change);
+
 /**
  * The step a whole-entry validation failure is reported under: the change's own validation step, else (for a
- * head the change rewrites) the first conversion or backfill.
+ * head the change rewrites) the first conversion or backfill, preferring one that can itself fail over one
+ * that only clears values.
  */
 const validationStepKey = (steps: readonly ContentStep[], head: ProposedHead) => {
   const declared = steps.find((step) => step.kind === 'validateValues' && appliesTo(step, head));
   if (declared) {
     return stepKey(declared);
   }
-  const transform = head.changed
-    ? steps.find((step) => isTransformStep(step) && appliesTo(step, head))
-    : undefined;
+  const transforms = head.changed
+    ? steps.filter((step) => isTransformStep(step) && appliesTo(step, head))
+    : [];
+  const transform = transforms.find((step) => !clearsValues(step)) ?? transforms[0];
   return transform ? stepKey(transform) : undefined;
 };
 
@@ -126,12 +133,16 @@ export const checkEntry = async (
 ): Promise<StepFailures> => {
   const failures: StepFailures = new Map(proposal.failedSteps);
   for (const head of proposal.heads) {
+    let lacking = false;
     for (const step of steps) {
       if (step.kind === 'validateRequired' && appliesTo(step, head) && lacksRequired(step, head)) {
         add(failures, stepKey(step));
+        lacking = true;
       }
     }
-    const validationKey = validationStepKey(steps, head);
+    // A head that lacks a required value fails whole-entry validation for that reason: it is reported
+    // under the required-value check, not again under a conversion that has nothing to do with it.
+    const validationKey = lacking ? undefined : validationStepKey(steps, head);
     if (validationKey && !isValid(context.proposed, head)) {
       add(failures, validationKey);
     }
@@ -160,11 +171,14 @@ export const tallyFailures = (tallies: Tallies, entryId: string, failures: StepF
 const failureReason = (step: ContentStep, count: number): string => {
   switch (step.kind) {
     case 'validateRequired':
-      return `${count} entry version(s) have no value for the required field`;
+      return `${count} entry version(s) have no value for the required field${step.fieldApiKey ? ` "${step.fieldApiKey}"` : ''}`;
     case 'checkUnique':
       return `${count} entry version(s) share a value that must be unique`;
     case 'convert':
-      return `${count} entry version(s) hold values that cannot be converted`;
+      // Clearing a value always succeeds: such a step only fails for what the cleared entry then lacks.
+      return clearsValues(step)
+        ? `${count} entry version(s) do not satisfy the new definition`
+        : `${count} entry version(s) hold values that cannot be converted`;
     default:
       return `${count} entry version(s) do not satisfy the new definition`;
   }
@@ -215,15 +229,20 @@ export const singletonViolation = async (
 export const discardStaged = async (steps: readonly ContentStep[], executor: Executor) => {
   for (const step of steps) {
     if (step.kind === 'checkUnique') {
-      await uniqueValuesRepository.removeForField(registryFieldIdOf(step), executor);
+      await uniqueValuesRepository.removeForField(registryFieldIdOf(step), [step.modelId], executor);
     }
   }
 };
 
-/** At activation: the staged rows of already-unique fields replace their live rows. */
+/**
+ * At activation: the staged rows of already-unique fields replace their live rows. A field a family shares
+ * has one check per member, all staged under the same registry ID: it is swapped once, for all of them.
+ */
 export const promoteStaged = async (steps: readonly ContentStep[], executor: Executor) => {
+  const swapped = new Set<string>();
   for (const step of steps) {
-    if (step.kind === 'checkUnique' && step.rebuild) {
+    if (step.kind === 'checkUnique' && step.rebuild && !swapped.has(step.fieldId)) {
+      swapped.add(step.fieldId);
       await uniqueValuesRepository.replaceField(registryFieldIdOf(step), step.fieldId, executor);
     }
   }

@@ -376,7 +376,11 @@ const checkDocumentLayout = (
   return issues;
 };
 
-const checkDisplay = (definition: SchemaDefinition): ValidationIssue[] => {
+/**
+ * The display's references to fields. Also run by the inheritance check on a child's resolved definition,
+ * whose display may name inherited fields.
+ */
+export const checkDisplay = (definition: SchemaDefinition): ValidationIssue[] => {
   const fields = new Map(definition.fields.map((field) => [field.id, field]));
   const fieldIds = new Set(fields.keys());
   const issues: ValidationIssue[] = [];
@@ -482,6 +486,10 @@ export const validateDefinition = (definition: SchemaDefinition): ValidationIssu
   }
   definition.fields.forEach((field, index) => issues.push(...checkField(field, index, definition)));
   issues.push(...checkFieldUniqueness(definition));
-  issues.push(...checkDisplay(definition));
+  // A model that extends another may name inherited fields in its display, which this definition alone
+  // cannot see: the schema-level inheritance check validates its display against the resolved fields.
+  if (definition.kind === 'component' || definition.extends === undefined) {
+    issues.push(...checkDisplay(definition));
+  }
   return issues;
 };

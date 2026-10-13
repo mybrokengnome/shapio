@@ -52,26 +52,56 @@ export type HookEnvironment = {
 
 type MatchedHook<H> = { name: string; hook: H };
 
-type ModelRef = { id: string; apiKey: string };
+type ModelKeys = { id: string; apiKey: string };
 
-/** Hooks for an event, by model API key, then model ID, then `*` (each named `<key>.<event>`). */
+/** A model to match hooks for, with the models it extends (root first; ADR 0012). */
+type ModelRef = ModelKeys & { ancestors?: readonly ModelKeys[] };
+
+/**
+ * Hooks for an event, by model API key, then model ID, then each model it extends (nearest first, API key then
+ * ID), then `*` (each named `<key>.<event>`). A hook on a parent type runs for its kinds, as its grants and
+ * fields apply to them.
+ */
 export const matchHooks = <E extends LifecycleEvent>(
   hooks: Readonly<Record<string, ModelHooks>>,
   model: ModelRef,
   event: E,
 ): Array<MatchedHook<NonNullable<ModelHooks[E]>>> =>
-  [...new Set([model.apiKey, model.id, '*'])].flatMap((key) => {
+  [
+    ...new Set([
+      model.apiKey,
+      model.id,
+      ...[...(model.ancestors ?? [])].reverse().flatMap((ancestor) => [ancestor.apiKey, ancestor.id]),
+      '*',
+    ]),
+  ].flatMap((key) => {
     const hook = hooks[key]?.[event];
     return hook ? [{ name: `${key}.${event}`, hook: hook }] : [];
   });
 
-export const toHookModel = (definition: ModelDefinition): HookModel => ({
+/** The model as hooks see it; `parentApiKey` is the API ID of the model it extends, if any. */
+export const toHookModel = (definition: ModelDefinition, parentApiKey?: string): HookModel => ({
   id: definition.id,
   apiKey: definition.apiKey,
   label: definition.label,
   kind: definition.kind,
   localized: definition.localized,
   draftAndPublish: definition.draftAndPublish,
+  ...(parentApiKey === undefined ? {} : { extends: parentApiKey }),
+});
+
+/** A content model's hook view: its route lists its ancestors' API IDs, root first, so the parent is last. */
+const hookModelOf = (model: ContentModel): HookModel =>
+  toHookModel(model.definition, model.route?.ancestors.at(-1));
+
+/** The models a content model extends, root first, by ID and API ID (the route's API IDs are in that order). */
+const ancestorKeysOf = (model: ContentModel): ModelKeys[] =>
+  model.definition.ancestorIds.map((id, index) => ({ id, apiKey: model.route?.ancestors[index] ?? id }));
+
+const hookTargetOf = (model: ContentModel): ModelRef => ({
+  id: model.definition.id,
+  apiKey: model.definition.apiKey,
+  ancestors: ancestorKeysOf(model),
 });
 
 /** Storage form (field IDs) → API keys, unmasked: hooks are trusted server code. */
@@ -99,14 +129,14 @@ const runBeforeHooks = async (
   event: BeforeEvent,
   context: LifecycleContext,
 ) => {
-  const matched = matchHooks(environment.hooks, context.model.definition, event);
+  const matched = matchHooks(environment.hooks, hookTargetOf(context.model), event);
   if (matched.length === 0) {
     return;
   }
   const shared = {
     event,
     site: context.site,
-    model: toHookModel(context.model.definition),
+    model: hookModelOf(context.model),
     entry: { id: context.entryId, locale: context.locale, state: ENTRY_STATE_BY_EVENT[event] },
     locale: context.locale,
     data: toEntryData(context.model, context.data),
@@ -132,6 +162,8 @@ export type AfterHookEventPayload = {
   /** The entry's site (absent on events recorded before sites: the primary site). */
   site?: SiteRef;
   model: HookModel;
+  /** The models the entry's model extends, root first (absent on events recorded before inheritance). */
+  ancestors?: ModelKeys[];
   entry: HookEntry;
   data: EntryData | null;
   before: EntryData | null;
@@ -143,13 +175,14 @@ const recordAfterHookPoint = async (
   event: AfterEvent,
   context: LifecycleContext,
 ) => {
-  if (matchHooks(environment.hooks, context.model.definition, event).length === 0) {
+  if (matchHooks(environment.hooks, hookTargetOf(context.model), event).length === 0) {
     return;
   }
   const payload: AfterHookEventPayload = {
     event,
     site: context.site,
-    model: toHookModel(context.model.definition),
+    model: hookModelOf(context.model),
+    ancestors: ancestorKeysOf(context.model),
     entry: { id: context.entryId, locale: context.locale, state: ENTRY_STATE_BY_EVENT[event] },
     data: toEntryData(context.model, context.data) ?? null,
     before: toEntryData(context.model, context.before) ?? null,
@@ -163,6 +196,13 @@ const recordAfterHookPoint = async (
     siteId: context.site.id,
   });
 };
+
+/** The model an outbox event's hooks match: the payload's model and the models it extends. */
+const targetOfPayload = (payload: AfterHookEventPayload): ModelRef => ({
+  id: payload.model.id,
+  apiKey: payload.model.apiKey,
+  ancestors: payload.ancestors ?? [],
+});
 
 /** Registers the project's hooks on the content hook engine. */
 export const registerProjectHooks = (engine: ContentHooks, environment: HookEnvironment) => {
@@ -182,7 +222,7 @@ export const createAfterHookSubscriber =
       return;
     }
     const payload = event.payload as AfterHookEventPayload;
-    for (const { name } of matchHooks(hooks, payload.model, payload.event)) {
+    for (const { name } of matchHooks(hooks, targetOfPayload(payload), payload.event)) {
       await enqueueJob(
         {
           type: AFTER_HOOK_JOB,
@@ -206,7 +246,7 @@ export const createAfterHookJobHandler =
       throw new PermanentJobError(`Outbox event ${eventId} not found`);
     }
     const payload = event.payload as AfterHookEventPayload;
-    const matched = matchHooks(environment.hooks, payload.model, payload.event).find(
+    const matched = matchHooks(environment.hooks, targetOfPayload(payload), payload.event).find(
       (candidate) => candidate.name === name,
     );
     if (!matched) {

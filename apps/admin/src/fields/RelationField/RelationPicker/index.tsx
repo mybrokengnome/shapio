@@ -22,6 +22,8 @@ type RelationPickerProps = {
   /** The field's button that opens the picker; absent while nothing more can be linked. */
   trigger: ReactElement | null;
   target: ModelDefinition;
+  /** An entry's own kind's label, when the target has kinds. */
+  kindLabelOf: (modelKey: string | undefined) => string | undefined;
   multiple: boolean;
   /** Linked now. */
   selected: readonly string[];
@@ -50,6 +52,7 @@ export const RelationPicker = ({
   onOpenChange,
   trigger,
   target,
+  kindLabelOf,
   multiple,
   selected,
   exclude,
@@ -100,6 +103,7 @@ export const RelationPicker = ({
   const results = (listClassName?: string) => (
     <Results
       target={target}
+      kindLabelOf={kindLabelOf}
       locale={locale}
       multiple={multiple}
       selected={selected}

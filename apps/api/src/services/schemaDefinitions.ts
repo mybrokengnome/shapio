@@ -1,10 +1,12 @@
-import { parseDefinition, type SchemaDefinition } from '@shapio/schema';
+import { isModelDefinition, parseDefinition, type SchemaDefinition } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
 import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import * as schemaSettingsRepository from '../repositories/schemaSettings.js';
 import {
   acknowledgementRequired,
+  definitionHasChildren,
+  familyFlagChange,
   definitionNotFound,
   schemaChangeUnsupported,
   schemaInvalid,
@@ -149,6 +151,34 @@ const rawId = (raw: unknown): string | undefined => {
   return typeof id === 'string' ? id : undefined;
 };
 
+const FAMILY_FLAGS = ['localized', 'draftAndPublish'] as const;
+
+/** The models that extend a definition, by ID and API ID. */
+const childrenOf = (context: SchemaServiceContext, id: string) =>
+  context.snapshot.network.childrenOf(id).flatMap((childId) => {
+    const child = context.snapshot.network.byId.get(childId);
+    return child ? [{ id: childId, apiKey: child.definition.apiKey }] : [];
+  });
+
+/**
+ * A parent's localization or drafts flag cannot change on its own: its kinds must match it, so they change
+ * together in a change set (the change set's planner validates them as one schema).
+ */
+const assertFamilyFlagsKept = (
+  context: SchemaServiceContext,
+  before: SchemaDefinition | null,
+  after: SchemaDefinition,
+) => {
+  if (!before || !isModelDefinition(before) || !isModelDefinition(after)) {
+    return;
+  }
+  const flags = FAMILY_FLAGS.filter((flag) => before[flag] !== after[flag]);
+  const children = flags.length > 0 ? childrenOf(context, after.id) : [];
+  if (children.length > 0) {
+    throw familyFlagChange(after.apiKey, flags, children);
+  }
+};
+
 /**
  * Validates a proposal and plans it against the pinned snapshot (brief §5 steps 1–4). Throws on stale
  * versions, invalid definitions and unsupported conversions; never writes.
@@ -185,6 +215,7 @@ export const prepareChange = async (
       { path: '/kind', code: 'INVALID_STRUCTURE', message: `must be a ${input.category} kind` },
     ]);
   }
+  assertFamilyFlagsKept(context, before, after);
   const plan = buildChangePlan({
     before,
     after,
@@ -309,6 +340,10 @@ export const deleteDefinition = async (
     siteId: active.siteId,
     hasContent: true,
   });
+  const children = childrenOf(context, input.id);
+  if (children.length > 0) {
+    throw definitionHasChildren(active.definition.apiKey, children);
+  }
   if (plan.issues.length > 0) {
     throw schemaInvalid(plan.issues);
   }

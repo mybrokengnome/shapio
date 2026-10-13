@@ -64,6 +64,30 @@ If `SESSION_SECRET` changes, Shapio can no longer read the stored signing secret
 "Secret can't be read. Rotate it.", and its deliveries are recorded as dead with that reason instead of being
 sent. Rotate the secret, give the new one to the receiver, and redeliver anything it missed from the delivery log.
 
+### Entry events
+
+`entry.created`, `entry.updated`, `entry.published`, `entry.unpublished`, `entry.restored`, `entry.deleted` and
+`entry.kind_changed` name the entry and its type in `data`, with the event's own details (such as `locale`,
+`revisionId` and `snapshot`) beside them:
+
+| Field       | Value                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| `entryId`   | the entry's ID                                                                                         |
+| `modelId`   | the stable ID of the entry's type                                                                      |
+| `modelKey`  | its API ID (`guide`)                                                                                   |
+| `routeKey`  | its delivery route key: the plural API ID, nested under the types it extends (`posts/guides`)          |
+| `ancestors` | the API IDs of the types it extends, the root first (`["post"]`); `[]` for a type that extends nothing |
+
+A guide is also in the posts list, so a site that caches by route revalidates the guide's route key and every
+prefix of it (`posts`, then `posts/guides`). With `@shapio/client`, `shapioTags.changed(data.routeKey,
+data.entryId)` gives the Next.js cache tags for all of them ([Delivery API](delivery-api.md#nextjs-cache-tags)).
+
+`entry.kind_changed` is sent when an entry moves to another kind in its family
+([Content](content.md#changing-an-entrys-kind)). `from` and `to` are the API IDs of the old and the new kind,
+and `modelKey`, `routeKey`, and `ancestors` describe the new one. A site that routes by kind should drop the
+entry's old route and add the new one. When the entry was published, deployment connections treat the event
+like a publish.
+
 ### Outbound requests and private networks
 
 Webhooks and deployment connections never call private, loopback or link-local addresses (`10.x`, `192.168.x`,
@@ -205,7 +229,8 @@ Editors preview drafts on the real site before publishing.
    `https://www.example.com/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`.
    Variables: `{token}`, `{modelKey}`, `{entryId}`, `{locale}`, and `{path}` (`modelKey/entryId`).
    `{modelKey}` is the model's route key, as in the delivery and preview APIs: the plural API ID of a collection
-   (`articles`), the API ID of a single type (`homepage`).
+   (`articles`), the API ID of a single type (`homepage`), and for a type that extends another its nested route
+   key (`articles/guides`).
 2. The entry document's **Preview** opens that URL beside the document with a fresh **preview token**: scoped to
    the entry, its locale and its [site](sites.md), expiring after an hour (the admin replaces it before then),
    never an admin credential. Putting it after `#` keeps it out of server logs and Referer

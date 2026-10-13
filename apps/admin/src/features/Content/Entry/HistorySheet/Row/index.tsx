@@ -20,6 +20,8 @@ const REASON_KEYS = {
   restore: 'content.history.reasons.restore',
   duplicate: 'content.history.reasons.duplicate',
   localize: 'content.history.reasons.localize',
+  // A field's type change or a kind change rewrote the stored values.
+  conversion: 'content.history.reasons.conversion',
 } as const;
 
 const reasonKey = (reason: string) =>

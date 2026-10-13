@@ -9,7 +9,8 @@ import { deliveryEnvironment } from './contentDeliveryReads.js';
  * Batched delivery reads by entry ID, for GraphQL's per-request DataLoaders (relation targets and
  * `localizations`). The projection is REST's `populate` projection: the target model's policy (row filter
  * and read mask), published heads only unless an admin asked for drafts, relation IDs limited to visible
- * targets, media as asset views, rich text with sanitized HTML.
+ * targets, media as asset views, rich text with sanitized HTML. A model that others extend is read over its
+ * family (plan polymorphic-types D7): each entry is projected as its own kind, under that kind's policy.
  */
 export type BatchReadOptions = {
   /** Requested locale; the default locale when absent. */
@@ -33,7 +34,11 @@ const sourceOf = (options: BatchReadOptions): HeadSource => {
     : { kind: 'heads', state: 'published' };
 };
 
-/** Entries of one model by ID, keyed by entry ID. Entries the caller may not read are simply absent. */
+/**
+ * Entries of a model and its descendants by ID, keyed by entry ID, each projected as its own kind under that
+ * kind's policy. Entries the caller may not read (a kind it may not read included) are simply absent. One
+ * read per family member that may hold a wanted ID; a model without children is one read, as before.
+ */
 export const loadDeliveryEntries = async (
   context: ContentServiceContext,
   modelId: string,
@@ -41,19 +46,29 @@ export const loadDeliveryEntries = async (
   options: BatchReadOptions,
 ): Promise<Map<string, DeliveryEntry>> => {
   const found = new Map<string, DeliveryEntry>();
-  const model = resolveModelById(context.snapshot, modelId);
-  if (!model || ids.length === 0) {
+  if (ids.length === 0 || !resolveModelById(context.snapshot, modelId)) {
     return found;
   }
   const env = deliveryEnvironment(context, context.db, sourceOf(options), options.locale);
-  const policy = await readPolicy(env, modelId);
-  const scope = readScopeFor(context.snapshot, model.definition, options.locale, {
-    fallback: options.fallback,
-  });
-  const rows = await fetchHeadsByIds(env, model, policy, ids, scope);
-  const projected = await projectRows(env, model, policy, rows, { fields: null, populate: new Map() });
-  for (const { row, data } of projected) {
-    found.set(row.entry_id, { ...systemAttributes(env, row), ...data });
+  for (const memberId of context.snapshot.family(modelId)) {
+    const pending = ids.filter((id) => !found.has(id));
+    const member = resolveModelById(context.snapshot, memberId);
+    if (pending.length === 0) {
+      break;
+    }
+    if (!member) {
+      continue;
+    }
+    // Sequential on purpose: one pool connection per batch, however large the family.
+    const policy = await readPolicy(env, memberId);
+    const scope = readScopeFor(context.snapshot, member.definition, options.locale, {
+      fallback: options.fallback,
+    });
+    const rows = await fetchHeadsByIds(env, member, policy, pending, scope);
+    const projected = await projectRows(env, member, policy, rows, { fields: null, populate: new Map() });
+    for (const { row, data } of projected) {
+      found.set(row.entry_id, { ...systemAttributes(env, row), ...data });
+    }
   }
   return found;
 };

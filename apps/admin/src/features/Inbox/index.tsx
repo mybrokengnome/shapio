@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Dashboard } from '@/features/Home';
 import { useModelSummaries } from '@/features/Home/hooks/useModelSummaries';
 import { Stats } from '@/features/Home/Stats';
+import { flattenPlaces } from '@/features/Shell/helpers/placeTree';
 import { usePlaces } from '@/features/Shell/hooks/usePlaces';
 import { GetStarted } from './GetStarted';
 import { useFindingGroups } from './hooks/useFindingGroups';
@@ -75,7 +76,7 @@ export const Inbox = () => {
       {definitions.isPending || (empty && places === undefined) ? (
         <LoadingState rows={3} />
       ) : empty ? (
-        <GetStarted places={places ?? []} />
+        <GetStarted places={flattenPlaces(places ?? [])} />
       ) : (
         <ContentInbox isAdmin={isAdmin} canSeeSchedules={canSeeSchedules} findingGroups={findingGroups} />
       )}

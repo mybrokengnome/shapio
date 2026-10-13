@@ -12,6 +12,7 @@ import {
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { SchemaById } from '../../schema/snapshot.js';
+import { familyIdsOf } from '../family.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
 import { pointer, type ContentIssue } from './issues.js';
 import { checkLength, checkScalar, isReferenceId } from './scalars.js';
@@ -32,8 +33,28 @@ import { checkLength, checkScalar, isReferenceId } from './scalars.js';
  * keeps values until an explicit cleanup); deprecated fields' values are kept but not validated.
  */
 export const COMPONENT_KEY = '__component';
+/**
+ * The API ID of an entry's own model on every delivered entry (plan polymorphic-types). A system attribute:
+ * never a field (API IDs may not start with `__`), so a write naming it fails as an unknown field.
+ */
+export const MODEL_KEY = '__model';
+/**
+ * The singular API IDs of an entry's kind lineage on every delivered entry, root first and its own kind last
+ * (plan polymorphic-types). A system attribute like `MODEL_KEY`: never a field, never written.
+ */
+export const KINDS_KEY = '__kinds';
 
-export type RelationReference = { path: string; fieldId: string; targetModelId: string; entryIds: string[] };
+/**
+ * A relation value to check: `targetModelIds` is the target's family at the validator's snapshot (the target
+ * and every kind of it, plan polymorphic-types), any of which an entry may be.
+ */
+export type RelationReference = {
+  path: string;
+  fieldId: string;
+  targetModelId: string;
+  targetModelIds: readonly string[];
+  entryIds: string[];
+};
 
 /** Media a document points at (media fields and rich-text images), checked against the library on write. */
 export type MediaReferenceCheck = {
@@ -62,7 +83,10 @@ export type ModelValidator = {
   validate: (data: Readonly<ContentData>, options?: ValidateOptions) => ValidationOutcome;
 };
 
-type Walk = ValidationOutcome & { options: ValidateOptions };
+/** Relation target → its family (the target first). */
+type TargetFamilies = ReadonlyMap<string, readonly string[]>;
+
+type Walk = ValidationOutcome & { options: ValidateOptions; families: TargetFamilies };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -226,7 +250,14 @@ const checkStructured = (
       if (field.settings.cardinality === 'many') {
         checkCount(walk, path, ids.length, field.settings);
       }
-      walk.relations.push({ path, fieldId: field.id, targetModelId: field.settings.target, entryIds: ids });
+      const target = field.settings.target;
+      walk.relations.push({
+        path,
+        fieldId: field.id,
+        targetModelId: target,
+        targetModelIds: walk.families.get(target) ?? [target],
+        entryIds: ids,
+      });
       return value;
     }
     case 'media': {
@@ -375,7 +406,7 @@ function mapFieldInput(
   return value;
 }
 
-const compile = (model: ContentModel): ModelValidator => {
+const compile = (model: ContentModel, families: TargetFamilies): ModelValidator => {
   const components: Components = new Map(
     [...model.components].map(([id, entry]) => [id, entry.definition] as const),
   );
@@ -386,7 +417,7 @@ const compile = (model: ContentModel): ModelValidator => {
       return { patch: mapInput(model.definition, input, '', issues, components), issues };
     },
     validate: (data, options = {}) => {
-      const walk: Walk = { data: {}, issues: [], relations: [], media: [], options };
+      const walk: Walk = { data: {}, issues: [], relations: [], media: [], options, families };
       walk.data = validateFields(model.definition, data, '', walk, components);
       return { data: walk.data, issues: walk.issues, relations: walk.relations, media: walk.media };
     },
@@ -396,22 +427,46 @@ const compile = (model: ContentModel): ModelValidator => {
 const MAX_CACHED_VALIDATORS = 500;
 const cache = new Map<string, ModelValidator>();
 
-/** The cache key: the model's revision plus every embedded component's revision. */
-const cacheKey = (snapshot: SchemaById, model: ContentModel) =>
+/** Every model the model's relation fields (its own and its components') may point at. */
+const relationTargetsOf = (model: ContentModel): string[] => {
+  const fields = [
+    ...model.definition.fields,
+    ...[...model.components.values()].flatMap((component) => component.definition.fields),
+  ];
+  return [
+    ...new Set(fields.flatMap((field) => (field.type === 'relation' ? [field.settings.target] : []))),
+  ].sort();
+};
+
+/** Each relation target's family at the snapshot: a relation to a model accepts any of its kinds. */
+const targetFamiliesOf = (snapshot: SchemaById, model: ContentModel): TargetFamilies =>
+  new Map(relationTargetsOf(model).map((target) => [target, familyIdsOf(snapshot, target)] as const));
+
+/**
+ * The cache key: the model's revision, every ancestor's (in chain order: a parent edit changes the effective
+ * fields), every embedded component's, and the family of every relation target (a new kind of a target
+ * widens what its relations accept).
+ */
+const cacheKey = (snapshot: SchemaById, model: ContentModel, families: TargetFamilies) =>
   [
     model.revisionId,
+    ...[...model.ancestors.values()].map((ancestor) => ancestor.revisionId),
+    '',
     ...[...model.components.keys()].sort().map((id) => snapshot.byId.get(id)?.revisionId ?? id),
+    '',
+    ...[...families].map(([target, family]) => `${target}=${family.join(',')}`),
   ].join(':');
 
 /** The compiled validator for a model at the pinned snapshot, cached by schema revision IDs. */
 export const buildValidator = (snapshot: SchemaById, model: ContentModel): ModelValidator => {
-  const key = cacheKey(snapshot, model);
+  const families = targetFamiliesOf(snapshot, model);
+  const key = cacheKey(snapshot, model, families);
   let validator = cache.get(key);
   if (!validator) {
     if (cache.size >= MAX_CACHED_VALIDATORS) {
       cache.clear();
     }
-    validator = compile(model);
+    validator = compile(model, families);
     cache.set(key, validator);
   }
   return validator;

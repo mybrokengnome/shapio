@@ -3,11 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { documentLayoutChoices } from '../../../../helpers/display';
 import { pruneLayout, withKey } from '../../../../helpers/draft';
+import type { DraftParent } from '../../../../helpers/inheritance';
 import { issuesUnder } from '../../../../helpers/issues';
 import { ChoicesControl } from '../../../controls/ChoicesControl';
 import { SelectControl } from '../../../controls/SelectControl';
 
-type DocumentLayoutProps = { model: ModelDefinition; issues: readonly ValidationIssue[]; disabled: boolean };
+type DocumentLayoutProps = {
+  /** The draft, resolved over its parent when it extends one. */
+  model: ModelDefinition;
+  parent: DraftParent;
+  issues: readonly ValidationIssue[];
+  disabled: boolean;
+};
 
 const option = (field: { id: string; label: string }) => ({ value: field.id, label: field.label });
 
@@ -15,11 +22,11 @@ const option = (field: { id: string; label: string }) => ({ value: field.id, lab
  * How an entry opens as a document (`effectiveLayout`): the cover image, the fields written in the canvas,
  * and the properties shown as chips. Unset keys follow the defaults, so new fields join automatically.
  */
-export const DocumentLayout = ({ model, issues, disabled }: DocumentLayoutProps) => {
+export const DocumentLayout = ({ model, parent, issues, disabled }: DocumentLayoutProps) => {
   const { t } = useTranslation();
   const update = useDefinitionDraftStore((state) => state.update);
   const setDisplay = (key: string, value: unknown) =>
-    update((draft) => pruneLayout({ ...draft, display: withKey(draft.display, key, value) }));
+    update((draft) => pruneLayout({ ...draft, display: withKey(draft.display, key, value) }, parent));
   const at = (key: string) => issuesUnder(issues, `/display/${key}`);
   const choices = documentLayoutChoices(model);
   return (

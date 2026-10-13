@@ -1,22 +1,30 @@
 import type { FieldDefinition, SeoDefaults } from '@shapio/schema';
-import type { Kysely, Transaction } from 'kysely';
+import type { Kysely, RawBuilder, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
-import { compileHeadQuery, type HeadRow, type HeadSource, type LocaleScope } from './compiler/compile.js';
+import {
+  compileHeadQuery,
+  type HeadQueryMember,
+  type HeadRow,
+  type HeadSource,
+  type LocaleScope,
+} from './compiler/compile.js';
 import { entryIdIn } from './compiler/conditions.js';
 import { compileRowFilter, hidesPrivateComponentFields, maskAllows, rowReadMask } from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
+import { groupByMember, readableMembers, type ReadMember } from './family.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
+import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
 /**
  * The read side shared by the admin and delivery APIs: fetching heads under a policy, deciding which
@@ -49,6 +57,32 @@ export const readPolicy = (env: ReadEnvironment, modelId: string): Promise<Polic
   env.permissions.evaluate(env.actor, { action: 'read', modelId }, env.executor);
 
 /**
+ * The plan members and shared conditions of a read over these members. A lone member's row filter stays a
+ * plan condition, so a read of a model without kinds compiles exactly as it always has; with several, each
+ * member carries its own.
+ */
+export const planMembers = (
+  members: readonly ReadMember[],
+  actor: Principal,
+): { members: HeadQueryMember[]; conditions: RawBuilder<unknown>[] } => {
+  const compiled = members.map((member) => ({
+    modelId: member.model.definition.id,
+    rowFilter: compileRowFilter(member.policy.rowFilter, actor),
+  }));
+  const [single] = compiled;
+  if (compiled.length === 1 && single) {
+    return { members: [{ modelId: single.modelId }], conditions: single.rowFilter ? [single.rowFilter] : [] };
+  }
+  return {
+    members: compiled.map(({ modelId, rowFilter }) => ({
+      modelId,
+      ...(rowFilter ? { conditions: [rowFilter] } : {}),
+    })),
+    conditions: [],
+  };
+};
+
+/**
  * Heads of the given entries that the policy lets the caller read, served per the locale chain (or per
  * `locales` when given: GraphQL's `fallback: false` and `localizations`).
  */
@@ -65,7 +99,7 @@ export const fetchHeadsByIds = async (
   const rowFilter = compileRowFilter(policy.rowFilter, env.actor);
   const { rows } = compileHeadQuery({
     siteId: env.siteId,
-    modelId: model.definition.id,
+    members: [{ modelId: model.definition.id }],
     source: env.source,
     locales: locales ?? readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
     conditions: [entryIdIn(ids), ...(rowFilter ? [rowFilter] : [])],
@@ -74,13 +108,45 @@ export const fetchHeadsByIds = async (
   return contentQueriesRepository.runHeadQuery(rows, env.executor);
 };
 
+/** What a family fetch read: the readable members (with their policies) and their heads. */
+export type FamilyHeads = { members: ReadMember[]; rows: HeadRow[] };
+
+/**
+ * Heads of the given entries over the model's family (a relation to a model accepts any of its kinds, plan
+ * polymorphic-types), each member under its own read policy, served per the locale chain (or `locales`).
+ * Members the caller may not read are left out.
+ */
+export const fetchFamilyHeadsByIds = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  ids: readonly string[],
+  locales?: LocaleScope,
+): Promise<FamilyHeads> => {
+  const members = await readableMembers(env.snapshot, model, (modelId) => readPolicy(env, modelId));
+  if (ids.length === 0 || members.length === 0) {
+    return { members, rows: [] };
+  }
+  const plan = planMembers(members, env.actor);
+  const { rows } = compileHeadQuery({
+    siteId: env.siteId,
+    members: plan.members,
+    source: env.source,
+    // Every member shares the root's localization (plan polymorphic-types, D3).
+    locales: locales ?? readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
+    conditions: [entryIdIn(ids), ...plan.conditions],
+    orderBy: [],
+  });
+  return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
+};
+
 /** Target heads read for relation visibility, by target model, for populate to reuse (same policy and locales). */
-type FetchedTargets = Map<string, { ids: ReadonlySet<string>; rows: readonly HeadRow[] }>;
+type FetchedTargets = Map<string, { ids: ReadonlySet<string>; heads: FamilyHeads }>;
 
 /**
  * Relation targets the caller may see in these rows: for delivery, only targets that are published (at the
  * same snapshot) and readable under their model's policy, so a published entry never leaks the ID of a
- * draft (brief §10). Admin reads see every ID (null). The heads read are returned for populate.
+ * draft (brief §10). A relation to a model with kinds shows targets of any kind the caller may read. Admin
+ * reads see every ID (null). The heads read are returned for populate.
  */
 const relationTargets = async (
   env: ReadEnvironment,
@@ -103,27 +169,30 @@ const relationTargets = async (
     if (!target) {
       continue;
     }
-    const policy = await readPolicy(env, targetModelId);
-    const found = await fetchHeadsByIds(env, target, policy, [...ids]);
-    found.forEach((row) => visible.add(row.entry_id));
-    fetched.set(targetModelId, { ids, rows: found });
+    const heads = await fetchFamilyHeadsByIds(env, target, [...ids]);
+    heads.rows.forEach((row) => visible.add(row.entry_id));
+    fetched.set(targetModelId, { ids, heads });
   }
   return { visible, fetched };
 };
 
 /**
- * `fetchHeadsByIds` for populate, answered from the heads relation visibility already read when it asked for
- * every one of these IDs under the same policy and locale scope (populate's default), else from the database.
+ * `fetchFamilyHeadsByIds` for populate, answered from the heads relation visibility already read when it
+ * asked for every one of these IDs under the same policies and locale scope (populate's default), else from
+ * the database.
  */
 const fetchReusing =
   (fetched: FetchedTargets): PopulateEnvironment['fetch'] =>
-  async (env, model, policy, ids) => {
+  async (env, model, ids) => {
     const known = fetched.get(model.definition.id);
     if (known && ids.every((id) => known.ids.has(id))) {
       const wanted = new Set(ids);
-      return known.rows.filter((row) => wanted.has(row.entry_id));
+      return {
+        members: known.heads.members,
+        rows: known.heads.rows.filter((row) => wanted.has(row.entry_id)),
+      };
     }
-    return fetchHeadsByIds(env, model, policy, ids);
+    return fetchFamilyHeadsByIds(env, model, ids);
   };
 
 /**
@@ -243,9 +312,23 @@ export const toDeliveryAsset = (view: MediaAssetView) => ({
 
 export type ProjectedEntry = Record<string, unknown>;
 
-/** System attributes first, then the readable, selected fields by API key. */
+/** The singular API IDs of a model's lineage, root first, the model last. */
+export const kindLineage = (snapshot: ReadEnvironment['snapshot'], modelId: string): string[] =>
+  [...snapshot.ancestors(modelId), modelId].flatMap((id) => {
+    const apiKey = snapshot.byId.get(id)?.definition.apiKey;
+    return apiKey === undefined ? [] : [apiKey];
+  });
+
+/**
+ * System attributes first, then the readable, selected fields by API key. `__model` is the API ID of the
+ * entry's own model, on every entry (plan polymorphic-types): a family read mixes kinds, and a client can rely
+ * on it everywhere, as it does on `__component` in dynamic zones. `__kinds` is the kind's lineage, root first,
+ * so a client can tell a Physical row from its Apparel kind without knowing the schema.
+ */
 export const systemAttributes = (env: ReadEnvironment, row: HeadRow): Record<string, unknown> => ({
   id: row.entry_id,
+  [MODEL_KEY]: env.snapshot.byId.get(row.model_id)?.definition.apiKey ?? null,
+  [KINDS_KEY]: kindLineage(env.snapshot, row.model_id),
   locale: row.locale,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -282,7 +365,6 @@ export const projectRows = async (
     ...env,
     project: projectRows,
     fetch: fetchReusing(fetched),
-    policyFor: readPolicy,
     system: systemAttributes,
   };
   const populated = await populateRelations(populateEnv, rows, fields, query.populate);
@@ -314,5 +396,35 @@ export const projectRows = async (
           )
         : data,
     };
+  });
+};
+
+/**
+ * Rows of a family read projected each through its own member (plan polymorphic-types): the member's
+ * effective fields, read mask, components and SEO fields. Without `fields=` a row carries every field its kind
+ * has and the caller may read; with it, the named (shared) fields. Rows keep their order; a row of a model
+ * that is not a member is left out.
+ */
+export const projectMemberRows = async (
+  env: ReadEnvironment,
+  members: readonly ReadMember[],
+  rows: readonly HeadRow[],
+  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
+  const projected = new Map<HeadRow, ProjectedEntry>();
+  for (const group of groupByMember(members, rows)) {
+    for (const { row, data } of await projectRows(
+      env,
+      group.member.model,
+      group.member.policy,
+      group.rows,
+      query,
+    )) {
+      projected.set(row, data);
+    }
+  }
+  return rows.flatMap((row) => {
+    const data = projected.get(row);
+    return data ? [{ row, data }] : [];
   });
 };

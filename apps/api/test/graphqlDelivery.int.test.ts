@@ -16,6 +16,7 @@ import {
   graphql,
   GRAPHQL_ENV,
   toRestShape,
+  withoutModelKey,
 } from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -209,7 +210,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
         data: Record<string, unknown>;
       }>();
       const entry = await gqlArticle(post.id, populatedFields);
-      expect(toRestShape(entry)).toEqual(rest.data);
+      expect(toRestShape(entry)).toEqual(withoutModelKey(rest.data));
       if (!authorPublished) {
         expect(JSON.stringify(entry)).not.toContain(draftAuthor.id);
       }
@@ -222,7 +223,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
     const unpopulated = expectStatus(await deliver(`/api/content/articles/${post.id}`), 200).json<{
       data: Record<string, unknown>;
     }>();
-    expect(toRestShape(await gqlArticle(post.id), ID_RELATIONS)).toEqual(unpopulated.data);
+    expect(toRestShape(await gqlArticle(post.id), ID_RELATIONS)).toEqual(withoutModelKey(unpopulated.data));
 
     const current = (await admin.get(`/api/admin/content/article/${post.id}`)).json<EntryBody>();
     await save('article', current, { related: [liveAuthor.id], author: liveAuthor.id });
@@ -240,7 +241,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
     const rest = expectStatus(await deliver(`/api/content/articles/${entry.id}`), 200).json<{
       data: Record<string, unknown>;
     }>();
-    expect(toRestShape(await gqlArticle(entry.id), ID_RELATIONS)).toEqual(rest.data);
+    expect(toRestShape(await gqlArticle(entry.id), ID_RELATIONS)).toEqual(withoutModelKey(rest.data));
     // The hidden field is not in the token's schema: selecting it fails validation, never shows the value.
     const hidden = await gql(`query ($id: ID!) { article(id: $id) { title secret } }`, { id: entry.id });
     expect(hidden.statusCode).toBe(400);
@@ -292,7 +293,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       '',
       named,
     );
-    expect(viaGraphql).toEqual(granted.data);
+    expect(viaGraphql).toEqual(withoutModelKey(granted.data));
     expect(granted.data).not.toHaveProperty('views');
     expect(
       errorCodes(await gql('query ($id: ID!) { article(id: $id) { views } }', { id: entry.id }, named)),
@@ -564,7 +565,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       entry.id,
       'id locale createdAt updatedAt publishedAt title body { json html }',
     );
-    expect(toRestShape(selected)).toEqual(rest.data);
+    expect(toRestShape(selected)).toEqual(withoutModelKey(rest.data));
     expect((selected?.body as { html: string }).html).toBe(
       '<h2>&lt;script&gt;x&lt;/script&gt;</h2><p><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">link</a></p>',
     );

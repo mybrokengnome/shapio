@@ -40,4 +40,18 @@ describe('describeIssue', () => {
     );
     expect(describeIssue(issue('/fields/0/settings/min'))).toBe("This setting isn't valid.");
   });
+
+  it('translates every inheritance issue', () => {
+    for (const code of [
+      'UNKNOWN_PARENT',
+      'INVALID_PARENT',
+      'INHERITANCE_CYCLE',
+      'INHERITANCE_TOO_DEEP',
+      'INHERITED_FLAG_MISMATCH',
+      'INHERITED_FIELD_COLLISION',
+      'HAS_CHILDREN',
+    ]) {
+      expect(describeIssue({ code, message: 'server text' })).not.toBe('server text');
+    }
+  });
 });

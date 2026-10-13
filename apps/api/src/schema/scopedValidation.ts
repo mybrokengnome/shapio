@@ -1,4 +1,9 @@
-import { validateSchema, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  validateSchema,
+  type SchemaDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
 
 /**
  * Schema validation with per-site schemas (plan site-schema, rule 5): a change must leave every view it
@@ -56,6 +61,37 @@ const sharedReferenceIssues = (proposed: readonly ScopedDefinition[]): Validatio
           : [];
       }),
     );
+};
+
+const describeScope = (siteId: string | null, siteKeys: ReadonlyMap<string, string> | undefined) =>
+  siteId === null ? 'shared with all sites' : `on site "${siteKeys?.get(siteId) ?? siteId}"`;
+
+/**
+ * A model and the model it extends have the same scope: both shared, or both on the same site (plan
+ * polymorphic-types D3). Otherwise one of the views would hold a child without its parent.
+ */
+const inheritanceScopeIssues = (
+  proposed: readonly ScopedDefinition[],
+  siteKeys: ReadonlyMap<string, string> | undefined,
+): ValidationIssue[] => {
+  const scopes = new Map(proposed.map((entry) => [entry.definition.id, entry]));
+  return proposed.flatMap(({ definition, siteId }) => {
+    if (!isModelDefinition(definition) || definition.extends === undefined) {
+      return [];
+    }
+    const parent = scopes.get(definition.extends);
+    if (!parent || parent.siteId === siteId) {
+      return [];
+    }
+    return [
+      {
+        path: '/extends',
+        code: 'INVALID_PARENT' as const,
+        message: `"${parent.definition.apiKey}" is ${describeScope(parent.siteId, siteKeys)} and this type is ${describeScope(siteId, siteKeys)}; a type and the type it extends must be available in the same place`,
+        definitionId: definition.id,
+      },
+    ];
+  });
 };
 
 /** Definition and field IDs are stable identities: unique across every site, not only within a view. */
@@ -131,15 +167,20 @@ export const validateScoped = (
     const siteKey = siteId === null ? undefined : options.siteKeys?.get(siteId);
     issues.set(key, siteKey ? { ...found, siteKey } : found);
   };
-  for (const found of [...globalIdIssues(proposed), ...sharedReferenceIssues(proposed)]) {
+  const scopeIssues = inheritanceScopeIssues(proposed, options.siteKeys);
+  for (const found of [...globalIdIssues(proposed), ...sharedReferenceIssues(proposed), ...scopeIssues]) {
     add(found, null);
   }
+  // A parent in another scope is missing from the child's view; the scope issue already says why.
+  const misplaced = new Set(scopeIssues.map((found) => found.definitionId));
   for (const siteId of touchedViews(proposed, touched)) {
     const view = proposed
       .filter((entry) => entry.siteId === null || entry.siteId === siteId)
       .map((entry) => entry.definition);
     for (const found of validateSchema(view)) {
-      add(found, siteId);
+      if (!(found.code === 'UNKNOWN_PARENT' && misplaced.has(found.definitionId))) {
+        add(found, siteId);
+      }
     }
   }
   return [...issues.values()];

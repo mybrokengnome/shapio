@@ -16,7 +16,14 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
-import { dataOf, errorCodes, expectSameEntries, graphql, GRAPHQL_ENV } from './helpers/graphql.js';
+import {
+  dataOf,
+  errorCodes,
+  expectSameEntries,
+  graphql,
+  GRAPHQL_ENV,
+  withoutModelKey,
+} from './helpers/graphql.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
@@ -139,7 +146,7 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
     const titleOnly = expectStatus(await deliver(`/api/content/posts/${published.id}`), 200).json<{
       data: Record<string, unknown>;
     }>();
-    expect(dataOf(await one(published.id))).toEqual({ post: titleOnly.data });
+    expect(dataOf(await one(published.id))).toEqual({ post: withoutModelKey(titleOnly.data) });
   });
 
   it('a `public: false` field is invisible to app users unless a role grants it by ID', async () => {
@@ -177,7 +184,7 @@ describe('GraphQL for app users (twins of the REST app-user tests)', () => {
         await one(published.id, session.accessToken, 'id locale createdAt updatedAt publishedAt title notes'),
       ),
     ).toEqual({
-      post: rest.data,
+      post: withoutModelKey(rest.data),
     });
     expect(rest.data).toMatchObject({ notes: 'internal note' });
   });

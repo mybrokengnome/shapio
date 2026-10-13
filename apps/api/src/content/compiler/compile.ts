@@ -17,7 +17,14 @@ import {
 } from './expressions.js';
 import { isListValued, NUMERIC_STRING_TYPES } from './operators.js';
 import { compileRowFilter } from './policy.js';
-import type { EntryListStatus, FilterNode, FilterOperator, FilterTarget, ShownTargets } from './types.js';
+import type {
+  EntryListStatus,
+  FilterNode,
+  FilterOperator,
+  FilterTarget,
+  OrderTerm,
+  ShownTargets,
+} from './types.js';
 
 /**
  * AST → parameterised SQL (Kysely `sql` fragments only). Every value is a bound parameter; the only
@@ -125,17 +132,29 @@ const showsReference = (
   const table =
     shown.source.kind === 'heads'
       ? sql.table('entry_heads')
-      : sql`(${dialect.snapshotRows({ siteId: shown.siteId, modelId: modelIdLiteral(shown.modelId), seq: shown.source.seq })})`;
-  const rowFilter = compileRowFilter(shown.rowFilter, shown.actor, dialect);
+      : sql`(${dialect.snapshotRows({ siteId: shown.siteId, modelIds: shown.members.map((member) => modelIdLiteral(member.modelId)), seq: shown.source.seq })})`;
+  const members = shown.members.map((member) => {
+    const rowFilter = compileRowFilter(member.rowFilter, shown.actor, dialect);
+    return { modelId: member.modelId, conditions: rowFilter ? [rowFilter] : [] };
+  });
+  const [single] = members;
+  const matches = ids.matches(sql`h.entry_id`);
   const where = whereOf(
-    {
-      siteId: shown.siteId,
-      modelId: shown.modelId,
-      source: shown.source,
-      locales: shown.locales,
-      conditions: [ids.matches(sql`h.entry_id`), ...(rowFilter ? [rowFilter] : [])],
-      orderBy: [],
-    },
+    members.length === 1 && single
+      ? {
+          siteId: shown.siteId,
+          model: modelIs(single.modelId),
+          source: shown.source,
+          locales: shown.locales,
+          conditions: [matches, ...single.conditions],
+        }
+      : {
+          siteId: shown.siteId,
+          model: anyMember(members),
+          source: shown.source,
+          locales: shown.locales,
+          conditions: [matches],
+        },
     table,
     dialect,
   );
@@ -242,17 +261,29 @@ export const compileSearch = (
 const SNAPSHOT_CTE = 'content_snapshot';
 
 /** The FROM item for a source, aliased `alias`, and the CTE it needs (snapshots only). */
-const sourceOf = (source: HeadSource, modelId: string, siteId: string, dialect: ContentSqlDialect) => {
+const sourceOf = (
+  source: HeadSource,
+  modelIds: readonly string[],
+  siteId: string,
+  dialect: ContentSqlDialect,
+) => {
   if (source.kind === 'heads') {
     return { cte: null, table: sql.table('entry_heads') };
   }
   const cte = dialect.snapshotCte({
     name: SNAPSHOT_CTE,
     siteId,
-    modelId: modelIdLiteral(modelId),
+    modelIds: modelIds.map(modelIdLiteral),
     seq: source.seq,
   });
   return { cte, table: sql.id(SNAPSHOT_CTE) };
+};
+
+/** One model a head query reads, with the conditions that apply to its heads only (its row filter). */
+export type HeadQueryMember = {
+  modelId: string;
+  /** ANDed after the plan's own conditions, on this member's heads only. */
+  conditions?: readonly RawBuilder<unknown>[];
 };
 
 export type HeadQueryPlan = {
@@ -261,20 +292,28 @@ export type HeadQueryPlan = {
    * ownership row filter in `conditions`. It comes from the service context, never from the request.
    */
   siteId: string;
-  modelId: string;
+  /**
+   * The models read: one, or the readable members of a family (plan polymorphic-types), each read as its own
+   * UNION ALL arm so it keeps its partial indexes. Never empty.
+   */
+  members: readonly HeadQueryMember[];
   source: HeadSource;
   locales: LocaleScope;
-  /** Extra conditions (filters, search, row filter, ID restriction), all ANDed. */
+  /** Extra conditions (filters, search, row filter, ID restriction), all ANDed, on every member. */
   conditions: readonly RawBuilder<unknown>[];
   /**
    * Whether any of `conditions` names an `entries` column (`e`: ownership row filters, the admin author filter,
-   * `createdAt` filters). Unknown when absent: assumed whenever there are conditions.
+   * `createdAt` filters). Unknown when absent: assumed whenever there are conditions. A member's own
+   * conditions always count as naming one.
    */
   conditionsReadEntries?: boolean;
-  orderBy: readonly RawBuilder<unknown>[];
+  orderBy: readonly OrderTerm[];
   limit?: number;
   offset?: number;
 };
+
+/** The members of a plan that reads one model. */
+export const singleMember = (modelId: string): HeadQueryMember[] => [{ modelId }];
 
 const localeConditions = (
   scope: LocaleScope,
@@ -299,13 +338,36 @@ const localeConditions = (
   ];
 };
 
-const whereOf = (plan: HeadQueryPlan, table: RawBuilder<unknown>, dialect: ContentSqlDialect) => {
+/** The heads one statement (or one arm of a family read) selects. */
+type HeadScope = {
+  siteId: string;
+  /** The condition on `h.model_id`. */
+  model: RawBuilder<unknown>;
+  source: HeadSource;
+  locales: LocaleScope;
+  conditions: readonly RawBuilder<unknown>[];
+};
+
+const modelIs = (modelId: string) => sql`h.model_id = ${modelIdLiteral(modelId)}`;
+
+/** Heads of any of the members, each under its own conditions (a relation's target family). */
+const anyMember = (members: ReadonlyArray<{ modelId: string; conditions: readonly RawBuilder<unknown>[] }>) =>
+  sql`(${sql.join(
+    members.map((member) =>
+      member.conditions.length === 0
+        ? modelIs(member.modelId)
+        : sql`(${modelIs(member.modelId)} and ${sql.join([...member.conditions], sql` and `)})`,
+    ),
+    sql` or `,
+  )})`;
+
+const whereOf = (scope: HeadScope, table: RawBuilder<unknown>, dialect: ContentSqlDialect) => {
   const conditions = [
-    sql`h.site_id = ${dialect.uuid(plan.siteId)}`,
-    sql`h.model_id = ${modelIdLiteral(plan.modelId)}`,
-    ...(plan.source.kind === 'heads' ? [sql`h.state = ${plan.source.state}`] : []),
-    ...localeConditions(plan.locales, table, plan.source, dialect),
-    ...plan.conditions,
+    sql`h.site_id = ${dialect.uuid(scope.siteId)}`,
+    scope.model,
+    ...(scope.source.kind === 'heads' ? [sql`h.state = ${scope.source.state}`] : []),
+    ...localeConditions(scope.locales, table, scope.source, dialect),
+    ...scope.conditions,
   ];
   return sql.join(conditions, sql` and `);
 };
@@ -313,6 +375,8 @@ const whereOf = (plan: HeadQueryPlan, table: RawBuilder<unknown>, dialect: Conte
 /** Columns every head query returns. */
 export type HeadRow = {
   entry_id: string;
+  /** The head's model: the route's model, or the family member the entry is (plan polymorphic-types). */
+  model_id: string;
   locale: string;
   data: Record<string, unknown>;
   version: number;
@@ -334,41 +398,162 @@ export type HeadRow = {
  */
 const countFrom = (
   plan: HeadQueryPlan,
+  member: HeadQueryMember,
   table: RawBuilder<unknown>,
   where: RawBuilder<unknown>,
   joined: RawBuilder<unknown>,
 ): RawBuilder<unknown> =>
-  plan.source.kind === 'heads' && !(plan.conditionsReadEntries ?? plan.conditions.length > 0)
+  plan.source.kind === 'heads' &&
+  !(plan.conditionsReadEntries ?? plan.conditions.length > 0) &&
+  (member.conditions?.length ?? 0) === 0
     ? sql`from ${table} h where ${where}`
     : joined;
 
-const HEAD_COLUMNS = sql`h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
+const HEAD_COLUMNS = sql`h.entry_id, h.model_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
       h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id`;
 
-/** The parts every statement over a plan's heads shares. */
-const headQueryParts = (plan: HeadQueryPlan, dialect: ContentSqlDialect) => {
-  const { cte, table } = sourceOf(plan.source, plan.modelId, plan.siteId, dialect);
-  const where = whereOf(plan, table, dialect);
+/** The same columns read back from the union of a family read's arms (aliased `u`). */
+const UNION_COLUMNS = sql`u.entry_id, u.model_id, u.locale, u.data, u.version, u.revision_id, u.updated_at,
+      u.autosaved_at, u.created_at, u.entry_updated_at, u.created_by_admin_id, u.owner_app_user_id`;
+
+const renderTerm = (expression: RawBuilder<unknown>, term: OrderTerm, dialect: ContentSqlDialect) =>
+  dialect.sortTerm
+    ? dialect.sortTerm(expression, term.direction, term.nullable)
+    : sql`${expression} ${dialect.sortDirection(term.direction, term.nullable)}`;
+
+const orderByOf = (terms: readonly RawBuilder<unknown>[]) =>
+  terms.length > 0 ? sql` order by ${sql.join([...terms])}` : sql``;
+
+/** The FROM, WHERE and COUNT FROM of one member's heads. */
+const memberParts = (
+  plan: HeadQueryPlan,
+  member: HeadQueryMember,
+  table: RawBuilder<unknown>,
+  dialect: ContentSqlDialect,
+) => {
+  const where = whereOf(
+    {
+      siteId: plan.siteId,
+      model: modelIs(member.modelId),
+      source: plan.source,
+      locales: plan.locales,
+      conditions: [...plan.conditions, ...(member.conditions ?? [])],
+    },
+    table,
+    dialect,
+  );
   const from = sql`from ${table} h join entries e on e.id = h.entry_id and e.deleted_at is null where ${where}`;
-  const orderBy = plan.orderBy.length > 0 ? sql` order by ${sql.join([...plan.orderBy])}` : sql``;
+  return { from, counted: countFrom(plan, member, table, where, from) };
+};
+
+type HeadQueryParts = {
+  prefix: RawBuilder<unknown>;
+  columns: RawBuilder<unknown>;
+  /** FROM … ORDER BY … LIMIT … OFFSET. */
+  rows: RawBuilder<unknown>;
+  /** A scalar subquery with the matching total. */
+  total: RawBuilder<unknown>;
+  /** The whole COUNT statement after the prefix. */
+  count: RawBuilder<unknown>;
+};
+
+/** One model: the statement as it has always been. */
+const singleParts = (
+  plan: HeadQueryPlan,
+  member: HeadQueryMember,
+  table: RawBuilder<unknown>,
+  dialect: ContentSqlDialect,
+): Omit<HeadQueryParts, 'prefix'> => {
+  const { from, counted } = memberParts(plan, member, table, dialect);
+  const orderBy = orderByOf(plan.orderBy.map((term) => renderTerm(term.expression, term, dialect)));
   const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
   const offset = plan.offset ? sql` offset ${plan.offset}` : sql``;
   return {
-    prefix: cte ?? sql``,
+    columns: HEAD_COLUMNS,
     rows: sql`${from}${orderBy}${limit}${offset}`,
-    countFrom: countFrom(plan, table, where, from),
+    total: sql`(select count(*) ${counted})`,
+    count: sql`select count(*) as total ${counted}`,
   };
+};
+
+/**
+ * A family read (plan polymorphic-types): one arm per member, each `h.model_id = '<literal>'` with that
+ * member's conditions, so each keeps its partial expression indexes and entry-order index. Each arm is a
+ * derived table that projects the sort expressions as `s0…sn`, sorts and stops at `offset + limit` itself
+ * (SQLite allows ORDER BY and LIMIT in a compound member only inside a derived table); the union is ordered
+ * by the aliases and paged on the outside. The total is the sum of the arms' counts.
+ */
+const unionParts = (
+  plan: HeadQueryPlan,
+  table: RawBuilder<unknown>,
+  dialect: ContentSqlDialect,
+): Omit<HeadQueryParts, 'prefix'> => {
+  const pageEnd = plan.limit !== undefined ? plan.limit + (plan.offset ?? 0) : undefined;
+  const aliases = plan.orderBy.map((_term, index) => `s${index}`);
+  const projected = plan.orderBy.map(
+    (term, index) => sql`${term.expression} as ${sql.id(aliases[index] as string)}`,
+  );
+  const arms = plan.members.map((member, index) => {
+    const { from, counted } = memberParts(plan, member, table, dialect);
+    const columns = projected.length > 0 ? sql`${HEAD_COLUMNS}, ${sql.join(projected)}` : HEAD_COLUMNS;
+    const orderBy =
+      pageEnd !== undefined
+        ? orderByOf(plan.orderBy.map((term) => renderTerm(term.expression, term, dialect)))
+        : sql``;
+    const limit = pageEnd !== undefined ? sql` limit ${pageEnd}` : sql``;
+    return {
+      rows: sql`select * from (select ${columns}
+      ${from}${orderBy}${limit}) ${sql.id(`a${index}`)}`,
+      total: sql`(select count(*) ${counted})`,
+    };
+  });
+  const orderBy = orderByOf(
+    plan.orderBy.map((term, index) => renderTerm(sql.ref(`u.${aliases[index] as string}`), term, dialect)),
+  );
+  const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
+  const offset = plan.offset ? sql` offset ${plan.offset}` : sql``;
+  const total = sql`(${sql.join(
+    arms.map((arm) => arm.total),
+    sql` + `,
+  )})`;
+  return {
+    columns: UNION_COLUMNS,
+    rows: sql`from (${sql.join(
+      arms.map((arm) => arm.rows),
+      sql`
+      union all `,
+    )}) u${orderBy}${limit}${offset}`,
+    total,
+    count: sql`select ${total} as total`,
+  };
+};
+
+/** The parts every statement over a plan's heads shares. */
+const headQueryParts = (plan: HeadQueryPlan, dialect: ContentSqlDialect): HeadQueryParts => {
+  const [first] = plan.members;
+  if (!first) {
+    throw new Error('A head query reads at least one model');
+  }
+  const { cte, table } = sourceOf(
+    plan.source,
+    plan.members.map((member) => member.modelId),
+    plan.siteId,
+    dialect,
+  );
+  const parts =
+    plan.members.length === 1 ? singleParts(plan, first, table, dialect) : unionParts(plan, table, dialect);
+  return { prefix: cte ?? sql``, ...parts };
 };
 
 /** The SELECT for a plan: rows, plus the matching COUNT for pagination. */
 export const compileHeadQuery = (plan: HeadQueryPlan, dialect: ContentSqlDialect = contentDialect()) => {
-  const { prefix, rows, countFrom: counted } = headQueryParts(plan, dialect);
+  const { prefix, columns, rows, count } = headQueryParts(plan, dialect);
   return {
-    rows: sql<HeadRow>`${prefix}select ${HEAD_COLUMNS}
+    rows: sql<HeadRow>`${prefix}select ${columns}
       ${rows}`,
     count: sql<{
       total: string | number;
-    }>`${prefix}select count(*) as total ${counted}`,
+    }>`${prefix}${count}`,
   };
 };
 
@@ -387,13 +572,11 @@ export const compileHeadPage = (
   options: { total: boolean },
   dialect: ContentSqlDialect = contentDialect(),
 ) => {
-  const { prefix, rows, countFrom: counted } = headQueryParts(plan, dialect);
-  const total = options.total ? sql`(select count(*) ${counted})` : sql`null`;
+  const { prefix, columns, rows, total: counted } = headQueryParts(plan, dialect);
+  const total = options.total ? counted : sql`null`;
   const seq = sql`(select ps.last_seq from publication_state ps where ps.site_id = ${dialect.uuid(plan.siteId)})`;
   return {
-    rows: sql<
-      HeadRow & HeadPageMeta
-    >`${prefix}select ${HEAD_COLUMNS}, ${total} as page_total, ${seq} as page_seq
+    rows: sql<HeadRow & HeadPageMeta>`${prefix}select ${columns}, ${total} as page_total, ${seq} as page_seq
       ${rows}`,
     meta: sql<HeadPageMeta>`${prefix}select ${total} as page_total, ${seq} as page_seq`,
   };

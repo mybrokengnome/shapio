@@ -37,16 +37,18 @@ const MODELS: SiteModel[] = [
 const Harness = ({
   initial,
   onPermissions,
+  models = MODELS,
 }: {
   initial: MatrixPermission<ContentAction>[];
   onPermissions: (permissions: MatrixPermission<ContentAction>[]) => void;
+  models?: SiteModel[];
 }) => {
   const [matrix, setMatrix] = useState(() => toMatrix(initial));
   return (
     <TooltipProvider>
       <PermissionMatrix
         matrix={matrix}
-        models={MODELS}
+        models={models}
         showSites
         rules={RULES}
         audience="admin"
@@ -59,9 +61,15 @@ const Harness = ({
   );
 };
 
-const renderMatrix = (initial: MatrixPermission<ContentAction>[]) => {
+const renderMatrix = (initial: MatrixPermission<ContentAction>[], models: SiteModel[] = MODELS) => {
   const saved: { current: MatrixPermission<ContentAction>[] } = { current: initial };
-  render(<Harness initial={initial} onPermissions={(permissions) => (saved.current = permissions)} />);
+  render(
+    <Harness
+      initial={initial}
+      models={models}
+      onPermissions={(permissions) => (saved.current = permissions)}
+    />,
+  );
   return saved;
 };
 
@@ -140,5 +148,43 @@ describe('PermissionMatrix for admin roles', () => {
       { action: 'read', modelId: null, condition: null, fieldIds: ['m-article-title'] },
       { action: 'update', modelId: 'm-article', condition: null, fieldIds: [] },
     ]);
+  });
+
+  it('puts kinds under their parent, shows what they inherit and lets them add their own grant', async () => {
+    const product = model('m-product', 'Products', 'product');
+    const digital = {
+      ...model('m-digital', 'Digital', 'digitalProduct'),
+      extends: 'm-product',
+      fields: [{ id: 'm-digital-url', apiKey: 'url', label: 'Download', type: 'url', public: true }],
+    } as unknown as ModelDefinition;
+    // The kind comes first in the list; the matrix still puts it under its parent.
+    const saved = renderMatrix(
+      [{ action: 'read', modelId: 'm-product', condition: null, fieldIds: ['m-product-title'] }],
+      [
+        { definition: digital, site: null },
+        { definition: product, site: null },
+      ],
+    );
+    const rows = screen.getAllByRole('row');
+    expect(within(rows[2] as HTMLElement).getByText('Products')).toBeTruthy();
+    expect(within(rows[3] as HTMLElement).getByText('Digital')).toBeTruthy();
+    expect(screen.getByText('digitalProduct · Inherited from Products')).toBeTruthy();
+    expect(screen.getByText('Read inherited from Products')).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Read: Digital' })).toHaveProperty('ariaChecked', 'false');
+    expect(screen.getByText(/A grant on a kind can only add access/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Options: Digital' }));
+    expect(screen.getByText('Inherited from Products: Title')).toBeTruthy();
+    // Its own grant covers its effective fields: inherited ones first, then its own.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Read: Digital' }));
+    await userEvent.click(screen.getAllByRole('radio', { name: 'Only selected fields' })[0] as HTMLElement);
+    expect(screen.getByRole('checkbox', { name: 'Download' })).toHaveProperty('ariaChecked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Title' })).toHaveProperty('ariaChecked', 'true');
+    expect(saved.current).toContainEqual({
+      action: 'read',
+      modelId: 'm-digital',
+      condition: null,
+      fieldIds: ['m-product-title', 'm-product-notes', 'm-digital-url'],
+    });
   });
 });

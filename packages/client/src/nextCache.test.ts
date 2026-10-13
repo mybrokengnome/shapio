@@ -36,6 +36,30 @@ describe('shapioTags', () => {
     expect(shapioTags.model('articles')).toBe('shapio:articles');
     expect(shapioTags.entry('articles', 'e1')).toBe('shapio:articles:e1');
   });
+
+  it('revalidates a changed entry under its own route key and every ancestor prefix', () => {
+    expect(shapioTags.changed('posts/guides', 'e1')).toEqual([
+      'shapio:posts',
+      'shapio:posts:e1',
+      'shapio:posts/guides',
+      'shapio:posts/guides:e1',
+    ]);
+    expect(shapioTags.changed('products/physical/apparel')).toEqual([
+      'shapio:products',
+      'shapio:products/physical',
+      'shapio:products/physical/apparel',
+    ]);
+    expect(shapioTags.changed('articles', 'e1')).toEqual(['shapio:articles', 'shapio:articles:e1']);
+  });
+
+  it('tags a nested read with its own route key', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    const { client, cacheInit } = setup();
+    await client.delivery.get('posts/guides', 'e1');
+    expect(cacheInit()).toEqual([
+      { next: { tags: ['shapio:site', 'shapio:posts/guides', 'shapio:posts/guides:e1'] } },
+    ]);
+  });
 });
 
 describe('Next.js fetch options on delivery reads', () => {

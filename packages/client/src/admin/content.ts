@@ -3,10 +3,12 @@ import { toContentQueryString } from './contentQuery.js';
 import type {
   AdminEntry,
   AdminEntryPage,
+  ChangeEntryKindInput,
   ContentListQuery,
   CreateEntryInput,
   EditorManifest,
   EntryHistory,
+  EntryKindChange,
   EntryLocalesInput,
   EntryPublishInput,
   ExtensionThemeList,
@@ -48,6 +50,18 @@ export const createContentApi = (request: RequestFn) => ({
       request<AdminEntry>(`${entryPath(modelKey, id)}/publish`, { method: 'POST', body }),
     unpublish: (modelKey: string, id: string, body: EntryLocalesInput = {}) =>
       request<AdminEntry>(`${entryPath(modelKey, id)}/unpublish`, { method: 'POST', body }),
+    /** What changing the entry's kind would drop, without changing anything. */
+    previewKindChange: (modelKey: string, id: string, body: ChangeEntryKindInput) =>
+      request<EntryKindChange>(`${entryPath(modelKey, id)}/kind${toQueryString({ dryRun: 1 })}`, {
+        method: 'POST',
+        body,
+      }),
+    /**
+     * Moves the entry to another kind of its family, dropping the values of fields the target lacks; the
+     * answer carries the entry under its new kind. 409 while it is in an open change set or scheduled.
+     */
+    changeKind: (modelKey: string, id: string, body: ChangeEntryKindInput) =>
+      request<EntryKindChange>(`${entryPath(modelKey, id)}/kind`, { method: 'POST', body }),
     revisions: async (modelKey: string, id: string, { locale }: { locale?: string } = {}) =>
       (
         await request<{ items: RevisionSummary[] }>(

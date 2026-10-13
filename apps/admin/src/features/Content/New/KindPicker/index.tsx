@@ -19,7 +19,7 @@ export const KindPicker = ({ control, kinds }: KindPickerProps) => {
   return (
     <FieldSet className="gap-3">
       <FieldLegend variant="label" className="mb-0">
-        {t('models.kind')}
+        {t('models.shape')}
       </FieldLegend>
       <RadioGroup
         ref={ref}

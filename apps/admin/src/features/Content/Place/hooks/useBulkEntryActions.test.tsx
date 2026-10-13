@@ -47,4 +47,24 @@ describe('useBulkEntryActions', () => {
     ]);
     expect(toast.error).toHaveBeenCalledTimes(1);
   });
+
+  it("sends each loaded row to its own kind, and rows not loaded to the place's type", async () => {
+    mocks.publish.mockReset().mockResolvedValue({});
+    const { result } = renderHook(() => useBulkEntryActions('product', null), { wrapper });
+    await act(async () => {
+      await result.current.run(
+        'publish',
+        ['plain', 'digital', 'otherPage'],
+        [
+          { id: 'plain', model: 'product', locale: 'en', version: 1 },
+          { id: 'digital', model: 'digital', locale: 'en', version: 3 },
+        ],
+      );
+    });
+    expect(mocks.publish.mock.calls).toEqual([
+      ['product', 'plain', { expectedVersion: 1 }],
+      ['digital', 'digital', { expectedVersion: 3 }],
+      ['product', 'otherPage', {}],
+    ]);
+  });
 });
