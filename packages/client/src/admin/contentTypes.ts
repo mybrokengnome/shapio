@@ -49,6 +49,11 @@ export type EntryLocaleStatus = { locale: string; status: EntryStatus };
 
 export type AdminEntryListItem = {
   id: string;
+  /**
+   * The entry's own model (its singular API ID). A type's list holds its kinds' entries too, so a row may
+   * belong to a kind of the model the list was read for.
+   */
+  model: string;
   locale: string;
   version: number;
   status: EntryStatus;
@@ -138,6 +143,33 @@ export type UpdateEntryInput = {
   data?: EntryData;
   /** Autosave: moves the draft head only (no revision) and does not enforce `required`. */
   autosave?: boolean;
+};
+
+/**
+ * Moves an entry to another kind of its family (any member, the root included). Values of fields the target
+ * lacks are dropped, so a change that drops any must acknowledge it; `expectedVersion` is the draft version
+ * the editor saw, of `locale`'s draft (the default locale's when absent).
+ */
+export type ChangeEntryKindInput = {
+  /** The target kind's API ID (singular). */
+  targetModelKey: string;
+  expectedVersion: number;
+  locale?: string;
+  /** Required on a change that drops fields; optional on a dry run. */
+  acknowledgeDroppedFields?: true;
+};
+
+/** A field whose values a kind change drops (the source has it, the target doesn't). */
+export type DroppedField = { id: string; apiKey: string; label: string };
+
+/**
+ * A kind change's answer: the fields whose values it drops and the kind the entry becomes; `entry` is the
+ * entry under its new kind (absent on a dry run, `?dryRun=1`).
+ */
+export type EntryKindChange = {
+  droppedFields: DroppedField[];
+  target: { modelId: string; modelKey: string; routeKey: string };
+  entry?: AdminEntry;
 };
 
 /** Publish or unpublish these locales atomically (the request's default locale when omitted). */

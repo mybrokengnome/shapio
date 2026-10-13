@@ -80,10 +80,42 @@ the new base), use `git diff` to bring your change back on top of the target's, 
 
 ### Breaking, destructive and deletions
 
-- Changes that break API clients (an API ID or plural API ID change, hiding a field, deleting a field) need
-  `--allow-breaking`; destructive conversions need `--allow-destructive`.
+- Changes that break API clients (an API ID or plural API ID change, hiding a field, deleting a field, moving a
+  type under another parent) need `--allow-breaking`; destructive conversions need `--allow-destructive`.
 - Deleting a file does nothing on the target unless you pass `--prune`. With `--prune`, a model whose file you
   deleted is deleted on the target (guarded the same way: refused if the target changed it since your pull).
+
+### Types that extend a type
+
+A type that extends another ([Modelling](modelling.md#types-that-extend-a-type)) has `extends` in its file:
+the parent's stable ID, the way a relation names its target. Its file holds only its own fields; the fields it
+inherits stay in the parent's file, and pull never copies them in. The CLI prints names, not IDs:
+
+```text
+model guide (extends post): create
+    + field level
+model opinion (extends post): update [BREAKING]
+    ~ extends: article → post
+    + field summary
+```
+
+- **Order doesn't matter.** Apply plans every file together, so a new parent and its new kinds can go in one
+  apply, in any order and from any file.
+- **A kind matches its parent.** Every pulled file spells out `localized` and `draftAndPublish`. A kind's must
+  equal its parent's; otherwise apply refuses with `INHERITED_FLAG_MISMATCH` and the message names the value to
+  set.
+- **Same place.** A kind's file sits where its parent's does: both in the shared `models/`, or both in one
+  site's `sites/<key>/models/`. Otherwise apply refuses with `INVALID_PARENT`.
+- **Moving a type under another parent** (changing `extends`, adding it to an existing type, or removing it)
+  is breaking, so it needs `--allow-breaking`. `schema diff` shows a re-parent as the `extends` change
+  only: the fields the type gains and loses are those of the old and new parent's files. When the type loses
+  fields that hold values, it also needs `--allow-destructive`.
+- **Deleting a parent.** With `--prune`, deleting the file of a type that others extend is refused
+  (`HAS_CHILDREN`). Delete its kinds' files, or move them under another type, and apply that first.
+
+The other refusals (`UNKNOWN_PARENT`, `INHERITANCE_CYCLE`, `INHERITANCE_TOO_DEEP`, `INHERITED_FIELD_COLLISION`)
+are listed in [Modelling](modelling.md#types-that-extend-a-type). Each prints the file and the property to fix,
+and a hint.
 
 ### Pull again after upgrading
 

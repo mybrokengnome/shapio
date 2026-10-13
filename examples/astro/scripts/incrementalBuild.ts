@@ -74,21 +74,29 @@ const slugAt = async (change: SnapshotChange, locale: string, snapshot: number):
 };
 
 /**
- * The models whose entries have a route of their own, found by slug. Any other model (a redirect type a user
- * adds, say) maps to no route here: it may have no `slug` field, and Astro's incremental build still decides
- * page by page what to rebuild.
+ * The route key of the change's family root. A type that extends another is listed under a nested route key
+ * (`articles/guides`); its entries are in the root's list and use the root's pages, so a Guide that extends
+ * Article rebuilds article pages.
  */
-const SLUG_ROUTED_MODELS = new Set(['page', 'article']);
+const familyOf = (change: SnapshotChange): string => change.routeKey.split('/')[0] ?? change.routeKey;
+
+/**
+ * The families whose entries have a route of their own, found by slug (by their root's route key). Any other
+ * model (a redirect type a user adds, say) maps to no route here: it may have no `slug` field, and Astro's
+ * incremental build still decides page by page what to rebuild.
+ */
+const SLUG_ROUTED_FAMILIES = new Set(['pages', 'articles']);
 
 /** Site routes (src/pages) an entry change touches. */
 const routesOf = async (change: SnapshotChange, from: number, to: number): Promise<string[]> => {
   const routes: string[] = [];
+  const family = familyOf(change);
   for (const { locale, change: kind } of change.locales) {
-    if (change.modelKey === 'author') {
+    if (family === 'authors') {
       routes.push(`/${locale}/articles/`);
       continue;
     }
-    if (!SLUG_ROUTED_MODELS.has(change.modelKey)) {
+    if (!SLUG_ROUTED_FAMILIES.has(family)) {
       continue;
     }
     // An unpublished entry's route is where it was; the others are where they are now.
@@ -96,9 +104,9 @@ const routesOf = async (change: SnapshotChange, from: number, to: number): Promi
     if (slug === null) {
       continue;
     }
-    if (change.modelKey === 'page') {
+    if (family === 'pages') {
       routes.push(slug === 'home' ? `/${locale}/` : `/${locale}/${slug}/`);
-    } else if (change.modelKey === 'article') {
+    } else if (family === 'articles') {
       routes.push(`/${locale}/articles/${slug}/`, `/${locale}/articles/`);
     }
   }

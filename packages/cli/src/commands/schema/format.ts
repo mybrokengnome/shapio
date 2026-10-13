@@ -1,7 +1,23 @@
 import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
 import { isDataType, typeChangeDropsValues, type PlannedChange, type SchemaChange } from '@shapio/schema';
 
-/** Human-readable output for schema sync: decisions, per-definition diffs and server refusals. */
+/**
+ * Human-readable output for schema sync: decisions, per-definition diffs and server refusals. Definitions and
+ * fields are named by API ID wherever the files (`names`, by stable ID) or the payload know one, never by ID.
+ */
+
+/**
+ * Each local model's parent (`extends`, a stable ID), keyed by the model's stable ID and by `parentKeyOf` its
+ * API ID: the files' view, for `model guide (extends post)`, also for a new file without an ID.
+ */
+export type ParentIds = ReadonlyMap<string, string>;
+
+/** The `ParentIds` key of a model by API ID (a stable ID never contains `:`). */
+export const parentKeyOf = (apiKey: string) => `apiKey:${apiKey}`;
+
+/** A definition's API ID from the files, else its ID; `(none)` for a model that extends nothing. */
+const definitionName = (id: unknown, names: ReadonlyMap<string, string>): string =>
+  typeof id === 'string' && id !== '' ? (names.get(id) ?? id) : '(none)';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -92,6 +108,8 @@ export const formatChange = (change: PlannedChange, names: ReadonlyMap<string, s
       return [`- field ${field}`];
     case 'field.order':
       return ['~ field order'];
+    case 'model.extends':
+      return [`~ extends: ${definitionName(change.from, names)} → ${definitionName(change.to, names)}`];
     default: {
       const subject = change.kind.startsWith('field.') ? `field ${field} ` : '';
       const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
@@ -124,18 +142,35 @@ export const describeDecision = (item: SchemaSyncResult): string => {
   return decision.action;
 };
 
-export const formatItem = (item: SchemaSyncResult, names: ReadonlyMap<string, string>): string => {
+/**
+ * A change the server reports on another member of the item's family (a parent's new field, as each kind
+ * that inherits it sees it) names that member, so the same line twice never reads as a duplicate.
+ */
+const onMember = (change: PlannedChange, item: SchemaSyncResult, names: ReadonlyMap<string, string>) =>
+  change.definitionId && change.definitionId !== item.definitionId
+    ? ` (on ${definitionName(change.definitionId, names)})`
+    : '';
+
+export const formatItem = (
+  item: SchemaSyncResult,
+  names: ReadonlyMap<string, string>,
+  parents: ParentIds = new Map(),
+): string => {
   const flags = [
     item.plan?.summary?.breaking ? 'BREAKING' : '',
     item.plan?.summary?.destructive ? 'DESTRUCTIVE' : '',
     item.outcome === 'pending' ? `pending change ${item.changeId ?? ''}` : '',
   ].filter(Boolean);
-  const header = `${item.kind === 'component' ? 'component' : 'model'} ${item.apiKey}: ${describeDecision(item)}${flags.length ? ` [${flags.join(', ')}]` : ''}`;
-  const lines = item.changes.flatMap((change) => formatChange(change, names).map((line) => `    ${line}`));
+  const parent = parents.get(item.definitionId) ?? parents.get(parentKeyOf(item.apiKey));
+  const extendsNote = parent === undefined ? '' : ` (extends ${definitionName(parent, names)})`;
+  const header = `${item.kind === 'component' ? 'component' : 'model'} ${item.apiKey}${extendsNote}: ${describeDecision(item)}${flags.length ? ` [${flags.join(', ')}]` : ''}`;
+  const lines = item.changes.flatMap((change) =>
+    formatChange(change, names).map((line) => `    ${line}${onMember(change, item, names)}`),
+  );
   return [header, ...lines].join('\n');
 };
 
-type Issue = { path?: string; message?: string; definitionId?: string; siteKey?: string };
+type Issue = { path?: string; code?: string; message?: string; definitionId?: string; siteKey?: string };
 type ScopeItem = {
   definitionId?: string;
   apiKey?: string;
@@ -169,7 +204,7 @@ const scopeItemLines = (code: string, items: readonly ScopeItem[]) =>
       : `  ${name} (${SCOPE_OF[item.scope ?? ''] ?? item.scope ?? '?'}): ${item.message ?? 'not allowed'}`;
   });
 
-/** What to do next, per refusal. */
+/** What to do next, per refusal (an error code, or the code of an issue in an invalid file). */
 const HINTS: Readonly<Record<string, string>> = {
   SCHEMA_CHANGE_NOT_ACKNOWLEDGED:
     'Review the changes with `shapio schema diff`, then re-run with --allow-breaking and/or --allow-destructive.',
@@ -179,6 +214,18 @@ const HINTS: Readonly<Record<string, string>> = {
     'Sync never moves a definition between sites: run `shapio schema pull` to get the instance’s layout, or change the scope with `shapio schema scope`.',
   FORBIDDEN_SCOPE:
     'Shared definitions (in models/ and components/) need schema permission on every site: apply with a network token, or leave those files unchanged.',
+  UNKNOWN_PARENT:
+    '"extends" holds the stable ID of the parent type: check the ID, or add the parent’s file (it can be in the same apply).',
+  INVALID_PARENT:
+    'Only a collection can extend another collection, and both must be in the same place: both shared (models/), or both in one site’s folder.',
+  INHERITANCE_CYCLE:
+    'Follow the "extends" chain from the type named above and remove the link that leads back to it.',
+  INHERITANCE_TOO_DEEP: 'A family can be at most 8 types deep: make the type extend one higher up the chain.',
+  INHERITED_FLAG_MISMATCH:
+    'A type and the type it extends must agree on "localized" and "draftAndPublish": set the value the message names.',
+  INHERITED_FIELD_COLLISION:
+    'A type cannot declare a field its parent already has: rename its own field, or remove it and use the inherited one.',
+  HAS_CHILDREN: 'Delete the types that extend it first, or make them extend another type, then apply again.',
 };
 
 const issueWhere = (found: Issue, filePaths: readonly string[]) => {
@@ -201,11 +248,12 @@ export const formatApiError = (
   error: ShapioApiError,
   filePaths: readonly string[],
   names: ReadonlyMap<string, string>,
+  parents: ParentIds = new Map(),
 ): string => {
   const details = (error.details ?? {}) as ErrorDetails;
   const lines = [`${error.code}: ${error.message}`];
   for (const conflict of details.conflicts ?? []) {
-    lines.push(formatItem(conflict, names));
+    lines.push(formatItem(conflict, names, parents));
   }
   for (const found of details.issues ?? []) {
     lines.push(`  ${issueWhere(found, filePaths)}: ${found.message ?? ''}`);
@@ -214,9 +262,7 @@ export const formatApiError = (
   if (error.code === 'SCOPE_IN_USE') {
     lines.push(...siteCountLines(details.sites));
   }
-  const hint = HINTS[error.code];
-  if (hint) {
-    lines.push(hint);
-  }
+  const codes = new Set([error.code, ...(details.issues ?? []).flatMap((found) => found.code ?? [])]);
+  lines.push(...[...codes].flatMap((code) => HINTS[code] ?? []));
   return `${lines.join('\n')}\n`;
 };

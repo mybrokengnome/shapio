@@ -91,6 +91,11 @@ Things to know:
 - **Schema changes.** When `schemaVersions.from` and `schemaVersions.to` differ (or either is `null`, for
   snapshots from before Shapio recorded them), fields may have been added, converted or removed without any
   entry being republished. Rebuild the affected models (or everything) instead of trusting the list.
+- **Types that extend a type.** A kind's `routeKey` is nested (`posts/guides`), and `modelKey` is its own API
+  ID. An entry that [changed kind](content.md#changing-an-entrys-kind) between the two snapshots is reported
+  under its kind at `to` (at `from` when it was unpublished). Older snapshots keep it under its old kind, so a
+  site that routes by kind should refresh the old route too, and every ancestor's list
+  ([cache tags](delivery-api.md#nextjs-cache-tags)).
 - **Deleting a locale** removes its history, so later diffs no longer mention it.
 - `to` beyond the current snapshot is `400 SNAPSHOT_INVALID`; a token or signed-in user who may read no
   model (or an instance with no models yet) gets an empty list; anonymous callers get 401 unless the

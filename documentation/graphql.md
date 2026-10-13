@@ -84,6 +84,49 @@ it), a component is its own type, and a dynamic zone is a list of a union of its
 A code field is a `String`, exactly as saved; its description ends with its language (`Code: html`), so
 introspection tells a site how to treat it.
 
+### Types that extend a type
+
+A type with kinds ([Modelling](modelling.md#types-that-extend-a-type)) gets an **interface** named after it:
+Post, with Guide and Opinion as kinds, gets `PostInterface`. It holds the system fields and every field the
+whole family shares (the post's fields), as your role may read them. `Post`, `Guide`, and `Opinion` all
+implement it, and a kind of a kind implements every ancestor's interface.
+
+| Name                                   | Returns                                              |
+| -------------------------------------- | ---------------------------------------------------- |
+| `posts(filter, sort, search, page, …)` | every post, of any kind: `nodes` are `PostInterface` |
+| `post(id: ID!, …)`                     | one post of any kind, as `PostInterface`             |
+| `guides(…)`, `guide(id)`               | guides only, as `Guide`                              |
+| a relation to Post, in any type        | `PostInterface` (or a list of it)                    |
+
+Filters and sorts on `posts` take the shared fields. GraphQL names don't nest: a kind's names come from its own
+API IDs (`guide`, `guides`, `Guide`), even though its REST route is `posts/guides`.
+
+Ask for a kind's own fields with an inline fragment, and for the kind itself with `__typename`:
+
+```graphql
+query Posts {
+  posts(sort: [{ publishedOn: DESC }], pageSize: 10) {
+    nodes {
+      __typename
+      id
+      title
+      ... on Guide {
+        level
+      }
+      ... on Opinion {
+        stance
+      }
+    }
+  }
+}
+```
+
+A kind your role can't read is not in your schema, and its entries are left out of `posts`. A type without
+kinds keeps exactly the schema it had. When it gains its first kind, `posts` and relations to Post start
+returning `PostInterface`: queries that ask for the post's fields keep working, but regenerate your client
+types. `PostInterface` is only generated once Post has a kind; a type whose own names would collide with it is
+refused when you save it.
+
 ### Reading drafts
 
 `publicationState: DRAFT` reads drafts. Admin users and admin API tokens may ask for it, and so may a delivery
@@ -168,7 +211,8 @@ query Since($from: Int!) {
 }
 ```
 
-`change` is `PUBLISHED`, `UPDATED` or `UNPUBLISHED`; only models the caller may read are reported. When the two
+`change` is `PUBLISHED`, `UPDATED`, or `UNPUBLISHED`; only models the caller may read are reported. A kind's
+`routeKey` is nested (`posts/guides`). When the two
 schema versions differ, rebuild the affected models. See [Snapshots and the changes API](snapshots.md).
 
 These names are reserved: `_changes`, `_snapshot` and `_schemaVersion` as query names, and `SnapshotChange`,

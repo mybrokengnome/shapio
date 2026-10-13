@@ -12,8 +12,9 @@ export const siteTags = (siteKey: string | undefined): string[] => [shapioTags.s
 
 /**
  * The tags to revalidate for the entries that changed between two snapshots: each entry's model and the entry
- * itself. A schema change (fields added, converted or removed) can change any read, so it revalidates the
- * site tag, which every read carries.
+ * itself, under its route key and every ancestor's (a Guide that extends Post is also in the Posts list, so
+ * `posts/guides` revalidates `posts` too). A schema change (fields added, converted or removed) can change any
+ * read, so it revalidates the site tag, which every read carries.
  */
 export const changeTags = (
   changes: readonly ChangedEntryRef[],
@@ -23,8 +24,6 @@ export const changeTags = (
   if (schemaChanged) {
     return siteTags(siteKey);
   }
-  const tags = new Set(
-    changes.flatMap(({ routeKey, id }) => [shapioTags.model(routeKey), shapioTags.entry(routeKey, id)]),
-  );
+  const tags = new Set(changes.flatMap(({ routeKey, id }) => shapioTags.changed(routeKey, id)));
   return [...tags].sort();
 };

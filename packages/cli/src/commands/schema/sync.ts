@@ -2,7 +2,7 @@ import { createClient, ShapioApiError, type SchemaApplyResult } from '@shapio/cl
 import { LOCK_FILE_FORMAT_VERSION, lockCoversSite, type LockFile } from '@shapio/schema';
 import type { CliIo } from '../../types.js';
 import { displayPath, readLocalFiles, readLockFile, type LocalFile } from './files.js';
-import { formatApiError, formatItem } from './format.js';
+import { formatApiError, formatItem, parentKeyOf, type ParentIds } from './format.js';
 import type { ConnectionOptions, SchemaCommandOptions } from './options.js';
 import { baseForSite, filesForSite, scopesOf } from './siteTree.js';
 
@@ -13,20 +13,34 @@ export const EMPTY_LOCK: LockFile = {
   definitions: {},
 };
 
-export type LocalState = { files: LocalFile[]; lock: LockFile; names: Map<string, string> };
+export type LocalState = {
+  files: LocalFile[];
+  lock: LockFile;
+  /** API IDs by stable ID, of every definition and field in the files. */
+  names: Map<string, string>;
+  /** Each model's parent (`extends`) by stable ID. */
+  parents: ParentIds;
+};
 
 /** One site's part of the local tree: what an apply for `siteKey` sends. */
 export type SiteState = LocalState & { siteKey: string; sent: LocalFile[] };
 
-/** Field and definition names by ID from the local files, for readable diffs. */
-const collectNames = (files: readonly LocalFile[]) => {
+type RawDefinition = {
+  id?: string;
+  apiKey?: string;
+  extends?: string;
+  fields?: Array<{ id?: string; apiKey?: string }>;
+};
+
+/**
+ * Field and definition names by ID from every local file (all sites' folders too), for readable diffs. A type
+ * that extends another stores only its own fields, and an inherited field keeps its parent's ID, so the
+ * parent's file names it: the whole file set is read, never one site's part, and inherited fields resolve.
+ */
+export const collectNames = (files: readonly LocalFile[]): Map<string, string> => {
   const names = new Map<string, string>();
   for (const file of files) {
-    const raw = file.raw as {
-      id?: string;
-      apiKey?: string;
-      fields?: Array<{ id?: string; apiKey?: string }>;
-    };
+    const raw = file.raw as RawDefinition;
     if (raw.id && raw.apiKey) {
       names.set(raw.id, raw.apiKey);
     }
@@ -39,9 +53,35 @@ const collectNames = (files: readonly LocalFile[]) => {
   return names;
 };
 
+/**
+ * Each model's parent ID (`extends`, a stable ID like a relation's target) from the local files, keyed by the
+ * model's ID and by its API ID (`parentKeyOf`): a new file may have no ID yet, which the instance assigns.
+ */
+export const collectParents = (files: readonly LocalFile[]): Map<string, string> => {
+  const parents = new Map<string, string>();
+  for (const file of files) {
+    const raw = file.raw as RawDefinition;
+    if (typeof raw.extends !== 'string' || raw.extends === '') {
+      continue;
+    }
+    if (raw.id) {
+      parents.set(raw.id, raw.extends);
+    }
+    if (raw.apiKey) {
+      parents.set(parentKeyOf(raw.apiKey), raw.extends);
+    }
+  }
+  return parents;
+};
+
 export const readLocalState = async (options: SchemaCommandOptions): Promise<LocalState> => {
   const files = await readLocalFiles(options.dir);
-  return { files, lock: (await readLockFile(options.lockPath)) ?? EMPTY_LOCK, names: collectNames(files) };
+  return {
+    files,
+    lock: (await readLockFile(options.lockPath)) ?? EMPTY_LOCK,
+    names: collectNames(files),
+    parents: collectParents(files),
+  };
 };
 
 /** The admin client for the command's site (`--site`, else the token's site, else the primary). */
@@ -111,6 +151,7 @@ export const sendApply = async (
           error,
           state.sent.map((file) => displayPath(file.path)),
           state.names,
+          state.parents,
         ),
       );
       return undefined;
@@ -122,7 +163,7 @@ export const sendApply = async (
 export const printResults = (response: SchemaApplyResult, state: LocalState, io: CliIo, verbose: boolean) => {
   for (const item of response.results) {
     if (verbose || item.decision.action !== 'skip' || item.decision.reason !== 'unchangedLocally') {
-      io.stdout(`${formatItem(item, state.names)}\n`);
+      io.stdout(`${formatItem(item, state.names, state.parents)}\n`);
     }
   }
 };

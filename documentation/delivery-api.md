@@ -8,6 +8,9 @@ GET {PUBLIC_URL}{BASE_PATH}/api/content/<plural API ID>/<entry id>   # a collect
 GET {PUBLIC_URL}{BASE_PATH}/api/content/<API ID>                     # a single type: its entry
 ```
 
+A type that extends another is read under its parent's route: `/api/content/products/digital` and
+`/api/content/products/digital/<entry id>` ([below](#types-that-extend-a-type)).
+
 A collection is addressed by its **plural API ID** (`/api/content/articles`), a single type by its **API ID**
 (`/api/content/homepage`). The singular API ID of a collection is not a delivery route: `/api/content/article`
 is a 404. Both IDs are set on the model ([Modelling](modelling.md#kinds-of-definitions)). The admin content API
@@ -79,6 +82,7 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
   "data": [
     {
       "id": "6f2c…",
+      "__model": "article",
       "locale": "fr",
       "createdAt": "2026-10-01T09:12:44.512Z",
       "updatedAt": "2026-10-01T09:30:02.104Z",
@@ -105,6 +109,9 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
 ```
 
 - Entries are flat: system attributes, then every readable field by API ID, `null` (or `[]`) when empty.
+- Every entry carries `__model`: the singular API ID of its own type. In a list of a type with kinds, it tells
+  you which kind each row is. It is not a field: `fields=` and `sort` can't name it, and a write that sends it
+  is refused.
 - **Rich text** is the stored JSON document by default. Ask for `richText=html` to get
   `{ format, version, html }` instead, or `richText=both` for the document and `html` together. The HTML is
   rendered on the server from the JSON with an allow-list sanitiser (safe link protocols only, images resolved
@@ -123,6 +130,63 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
 Errors always look like `{ "error": { "code": "…", "message": "…", "details": … } }`: 400 for an invalid query,
 401 without credentials for content that needs them, 403 when your role may not read the model, 404 for an
 unknown model or entry.
+
+## Types that extend a type
+
+A collection can extend another ([Modelling](modelling.md#types-that-extend-a-type)): Post, with Guide and
+Opinion as its kinds. A kind is read under its parent, by its **route key**, the plural API IDs of its
+ancestors and its own joined by `/`:
+
+```text
+GET /api/content/posts                  # every post: plain posts, guides, and opinions
+GET /api/content/posts/<entry id>       # one post, of any kind
+GET /api/content/posts/guides           # guides only
+GET /api/content/posts/guides/<entry id>
+```
+
+A kind's plural API ID on its own (`/api/content/guides`) is not a route. Reading an entry under the wrong
+kind is a 404: `/api/content/posts/guides/<id>` of an opinion is not found, while `/api/content/posts/<id>`
+finds it.
+
+A parent's list holds every kind, in one page, sorted and counted together:
+
+- Each row comes in its own shape, with `__model` naming its kind: a guide has the post's fields and its own.
+- Filters, `sort`, `q`, and `fields=` take the fields of the type you read, which every kind under it has
+  (and only those your token may read on every kind in the list). To filter on a kind's own field, read that
+  kind's route.
+- Without `fields=`, each row carries every field its own kind has that you may read. With `fields=`, every
+  row carries only the shared fields you named.
+- To read only some kinds, filter on `__model` with the singular API IDs you want:
+  `?filters[__model][$eq]=post` lists plain posts alone, `?filters[__model][$in]=guide,opinion` two kinds. Only
+  `$eq` and `$in` work, and only with kinds of the type you read; the total counts just those kinds.
+- Kinds your token may not read are left out of the list, never refused with a 403. Reading the route itself
+  needs `read` on its type, and a grant on a parent covers its kinds ([End users](end-users.md)).
+- With no `sort`, the list follows the parent's default sort.
+
+A relation to a type with kinds can point at an entry of any kind. Populated, each target comes in its own
+shape with its own `__model`, under the same rules.
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/posts?sort=publishedOn:desc&pageSize=10"
+```
+
+```json
+{
+  "data": [
+    { "id": "1a…", "__model": "guide", "title": "Pin your builds", "level": "beginner" },
+    { "id": "2b…", "__model": "post", "title": "Release notes" },
+    { "id": "3c…", "__model": "opinion", "title": "Why models are data", "stance": "for" }
+  ],
+  "meta": {
+    "locale": "en",
+    "snapshot": 41,
+    "pagination": { "page": 1, "pageSize": 10, "total": 3, "pageCount": 1 }
+  }
+}
+```
+
+With `@shapio/client`, pass the nested route key as it is: `delivery.list('posts/guides')`. The client sends
+it as nested path segments.
 
 ## Query parameters
 
@@ -214,8 +278,9 @@ data cache, so a site refreshes exactly what changed with `revalidateTag`:
 | `delivery.get(routeKey, id)` | `shapio:site:<key>`, `shapio:<routeKey>`, `shapio:<routeKey>:<id>` |
 | `site.get()`                 | `shapio:site:<key>`                                                |
 
-Models are tagged by their route key (a collection's plural API ID, a singleton's API ID), as the
-[snapshot diff](snapshots.md#what-changed-between-two-snapshots) names them. The site tag is `shapio:site:<key>`
+Models are tagged by their route key (a collection's plural API ID, a singleton's API ID, and for a kind its
+nested route key, `posts/guides`), as the [snapshot diff](snapshots.md#what-changed-between-two-snapshots)
+names them. The site tag is `shapio:site:<key>`
 when the client names a site (`site: 'marketing'`) and `shapio:site` when it leaves the site to the token.
 `shapioTags.site(key)`, `shapioTags.model(routeKey)` and `shapioTags.entry(routeKey, id)` build the same strings:
 
@@ -228,6 +293,20 @@ const { data } = await shapio.delivery.get<Article>('articles', id, { locale: 'e
 
 // In the webhook route, for each entry in the snapshot diff:
 revalidateTag(shapioTags.entry('articles', id), { expire: 0 });
+```
+
+A guide is also in the posts list and readable as `posts/<id>`, so when one changes, revalidate the tags of
+its own route key and of every ancestor's. `shapioTags.changed(routeKey, id)` gives them all:
+`shapioTags.changed('posts/guides', id)` is `shapio:posts`, `shapio:posts:<id>`, `shapio:posts/guides` and
+`shapio:posts/guides:<id>`. Webhook payloads carry the same `routeKey`
+([Webhooks](publishing.md#entry-events)), so any framework can do the same.
+
+```ts
+for (const entry of diff.items) {
+  for (const tag of shapioTags.changed(entry.routeKey, entry.id)) {
+    revalidateTag(tag, { expire: 0 });
+  }
+}
 ```
 
 The cache mode is yours: the client sets `cache` and `next.revalidate` only when you ask, with

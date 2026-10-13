@@ -125,6 +125,19 @@ describe('content api', () => {
     expect(call(0)).toMatchObject({ url: `${BASE}/page/e1/revisions?locale=en`, method: 'GET' });
   });
 
+  it("previews and changes an entry's kind", async () => {
+    const body = { targetModelKey: 'guide', expectedVersion: 3, acknowledgeDroppedFields: true } as const;
+    const preview = {
+      droppedFields: [{ id: 'f1', apiKey: 'mood', label: 'Mood' }],
+      target: { modelId: 'm2', modelKey: 'guide', routeKey: 'posts/guides' },
+    };
+    const { client, call } = setup(200, preview);
+    await expect(client.admin.content.previewKindChange('opinion', 'e1', body)).resolves.toEqual(preview);
+    expect(call(0)).toEqual({ url: `${BASE}/opinion/e1/kind?dryRun=1`, method: 'POST', body });
+    await client.admin.content.changeKind('opinion', 'e1', body);
+    expect(call(1)).toEqual({ url: `${BASE}/opinion/e1/kind`, method: 'POST', body });
+  });
+
   it('reads the custom editor manifest', async () => {
     const { client, call } = setup(200, { items: [] });
     await expect(client.admin.extensions.editors()).resolves.toEqual({ items: [] });

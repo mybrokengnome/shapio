@@ -2,7 +2,8 @@ import type { ContentListQuery } from './admin/contentTypes.js';
 
 /**
  * The delivery API (`/api/content/:routeKey`): published content as sites and apps read it. `routeKey` is a
- * collection's plural API ID (`articles`) or a singleton's API ID (`homepage`).
+ * collection's plural API ID (`articles`) or a singleton's API ID (`homepage`); a type that extends another is
+ * nested under its ancestors' plural API IDs (`products/digital`).
  */
 /**
  * How rich-text fields come back: `json` (the server's default) the stored document `{ format, version, doc }`,
@@ -40,9 +41,19 @@ export type DeliveryMeta = {
 
 export type DeliveryPagination = { page: number; pageSize: number; total: number; pageCount: number };
 
+/**
+ * What every delivery entry carries besides its fields. `__model` is the singular API ID of the entry's own
+ * model: in a parent's list (`/api/content/products`) each row is one kind (`product`, `digitalProduct`) in its
+ * own shape, so switch on `__model` the way a dynamic zone item is read by `__component`.
+ */
+export type DeliveryEntryAttributes = { __model: string };
+
+/** A delivery entry: the caller's type with the attributes every entry carries. */
+export type DeliveryEntry<T = Record<string, unknown>> = T & DeliveryEntryAttributes;
+
 export type DeliveryList<T = Record<string, unknown>> = {
-  data: T[];
+  data: Array<DeliveryEntry<T>>;
   meta: DeliveryMeta & { pagination: DeliveryPagination };
 };
 
-export type DeliveryItem<T = Record<string, unknown>> = { data: T; meta: DeliveryMeta };
+export type DeliveryItem<T = Record<string, unknown>> = { data: DeliveryEntry<T>; meta: DeliveryMeta };

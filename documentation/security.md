@@ -43,6 +43,11 @@ see [SECURITY.md](../SECURITY.md).
 
 - Deny by default, for every kind of caller: roles grant actions per model and per field; anonymous delivery
   gets nothing until the `public` role is granted something.
+- A grant on a type covers the types that extend it, and a kind's own grants only widen access: a role can
+  never be refused a kind of a type it is granted. Review a parent's grants with all its kinds in mind. In a
+  parent's list, the fields you may filter or sort on are those you may read on every kind in it, so a filter
+  can't reveal a value of a kind you can't read
+  ([Modelling](modelling.md#types-that-extend-a-type)).
 - The server enforces everything (validation, permissions, schema consistency); the admin UI is never the only
   check.
 - [Sites](sites.md) are a tenancy boundary in every query: another site's entries, assets, change sets and tokens

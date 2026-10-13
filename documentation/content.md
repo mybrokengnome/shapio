@@ -56,6 +56,32 @@ the site serves. Open one to see it; **Restore this version** brings it back as 
 nothing is rewritten). Publish it to make it live. A save that changes nothing records no revision: the API answers
 with the same version and sends no `entry.updated` event.
 
+## Changing an entry's kind
+
+In a type with kinds ([Modelling](modelling.md#types-that-extend-a-type)), one list shows the whole family: the
+Posts list has plain posts, guides, and opinions, with a **Kind** column, a Kind filter, and a **New** menu to
+pick which kind to create. Each entry opens in the form of its own kind.
+
+An entry can move to another kind in its family: a Post becomes a Guide, an Opinion becomes a plain Post. Open
+the entry's **Settings** panel and choose **Change kind** in the danger zone, then pick the new kind. Shapio
+lists the fields the new kind doesn't have; their values are dropped from the entry, so you tick a box to
+confirm before it moves. Save your edits first: an entry with unsaved changes can't change kind.
+
+- Every locale moves together, drafts and published versions alike, in one step. The entry keeps its ID.
+- Earlier revisions keep the dropped values, so History still shows them.
+- A published entry is live under its new kind at once: a Post that became a Guide is read at
+  `posts/guides/<id>` (and still at `posts/<id>`, where every kind of post is). Older
+  [snapshots](change-sets.md#snapshots) keep serving it under its old kind.
+- It needs `update` on the current kind, `create` on the new one, and `publish` on the new one when the entry
+  is published.
+- An entry in an open change set, or with a scheduled publish, can't change kind until that ships or is
+  removed.
+
+The API is `POST /api/admin/content/<API ID>/<id>/kind` with
+`{ "targetModelKey": "guide", "expectedVersion": 3, "acknowledgeDroppedFields": true }`. Add `?dryRun=1` to
+list the fields that would be dropped without changing anything. Webhooks receive `entry.kind_changed`
+([Webhooks](publishing.md#entry-events)).
+
 ## Deleting
 
 Deleting an entry removes it from the admin and the APIs; its revisions stay as history. An entry that other

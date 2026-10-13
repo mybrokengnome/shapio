@@ -37,6 +37,22 @@ describe('delivery api', () => {
     expect(url(1)).toBe('https://cms.test/api/content/homepage');
   });
 
+  it('sends a nested route key as path segments, encoding each one but never the slash', async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [], meta: { locale: 'en', snapshot: 4 } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const client = createClient({ baseUrl: 'https://cms.test', token: 'tok', fetch });
+    await client.delivery.list('products/digital');
+    await client.delivery.get('products/physical/apparel', 'a b');
+    const raw = (index: number) => (fetch.mock.calls[index] as unknown as [string])[0];
+    expect(raw(0)).toBe('https://cms.test/api/content/products/digital');
+    expect(raw(1)).toBe('https://cms.test/api/content/products/physical/apparel/a%20b');
+  });
+
   it('asks for a rich-text shape, alone or after the snapshot', async () => {
     const { client, url } = setup();
     await client.delivery.get('articles', 'e1', { richText: 'html' });

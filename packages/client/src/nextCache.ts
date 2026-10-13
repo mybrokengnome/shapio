@@ -28,17 +28,41 @@ export type NextFetchInit = {
 const TAG_PREFIX = 'shapio';
 
 /**
+ * A route key and each ancestor's, root first: `posts/guides` → `posts`, `posts/guides`. A type that extends
+ * another is read under a nested route key, and its entries are also in every ancestor's list.
+ */
+const routeKeyPrefixes = (routeKey: string): string[] => {
+  const segments = routeKey.split('/');
+  return segments.map((_, index) => segments.slice(0, index + 1).join('/'));
+};
+
+const modelTag = (routeKey: string) => `${TAG_PREFIX}:${routeKey}`;
+const entryTag = (routeKey: string, entryId: string) => `${TAG_PREFIX}:${routeKey}:${entryId}`;
+
+/**
  * The cache tags delivery reads carry (`revalidateTag(shapioTags.entry('articles', id), { expire: 0 })`).
- * Models are named by their route key: a collection's plural API ID, a singleton's API ID.
+ * Models are named by their route key: a collection's plural API ID, a singleton's API ID, and for a type that
+ * extends another its ancestors' plural API IDs and its own joined by `/` (`posts/guides`).
  */
 export const shapioTags = {
   /** Every delivery read of the site; `shapio:site` when the client names no site. */
   site: (siteKey?: string) =>
     siteKey === undefined ? `${TAG_PREFIX}:site` : `${TAG_PREFIX}:site:${siteKey}`,
   /** Every read of one model (lists, singletons and its entries). */
-  model: (routeKey: string) => `${TAG_PREFIX}:${routeKey}`,
+  model: modelTag,
   /** Reads of one entry by its ID. */
-  entry: (routeKey: string, entryId: string) => `${TAG_PREFIX}:${routeKey}:${entryId}`,
+  entry: entryTag,
+  /**
+   * Everything to revalidate when an entry of `routeKey` changes (a webhook's or a snapshot diff's
+   * `routeKey`): the model and entry tags of its route key and of every ancestor's, since a Guide is also
+   * in the Posts list and readable as `posts/<id>`. `shapioTags.changed('posts/guides', id)` gives
+   * `shapio:posts`, `shapio:posts:<id>`, `shapio:posts/guides` and `shapio:posts/guides:<id>`. Without an
+   * entry ID, the model tags only.
+   */
+  changed: (routeKey: string, entryId?: string): string[] =>
+    routeKeyPrefixes(routeKey).flatMap((prefix) =>
+      entryId === undefined ? [modelTag(prefix)] : [modelTag(prefix), entryTag(prefix, entryId)],
+    ),
 } as const;
 
 /** Spelled out so bundlers that inline `process.env.NEXT_RUNTIME` see it; guarded for browsers. */

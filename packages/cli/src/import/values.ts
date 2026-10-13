@@ -1,11 +1,13 @@
-import type { FieldDefinition, SchemaDefinition } from '@shapio/schema';
+import { createDefinitionIndex, type FieldDefinition, type SchemaDefinition } from '@shapio/schema';
 import type { ImportMap } from './importMap.js';
 import type { ConversionWarning, SourceFields, SourceValue, ValueResolver } from './types.js';
 
 /**
  * Entry data for the admin content API (keyed by API ID) from source values. Fields are found by the stable
  * IDs the plan assigned, through the live schema: renaming an API ID before applying is fine, and a planned
- * field the person deleted (or deprecated) is simply not imported.
+ * field the person deleted (or deprecated) is simply not imported. A model that extends another is read with
+ * its effective fields (its parent's, then its own), so a planned field the person moved up to a parent type
+ * keeps being imported.
  */
 export type DefinitionView = { definition: SchemaDefinition; fields: Map<string, FieldDefinition> };
 
@@ -20,6 +22,7 @@ export type LiveSchema = {
 
 export const resolveLiveSchema = (map: ImportMap, definitions: readonly SchemaDefinition[]): LiveSchema => {
   const live = new Map(definitions.map((definition) => [definition.id, definition]));
+  const index = createDefinitionIndex(definitions);
   const byKey = new Map<string, DefinitionView>();
   const byId = new Map<string, DefinitionView>();
   const missing: string[] = [];
@@ -29,7 +32,8 @@ export const resolveLiveSchema = (map: ImportMap, definitions: readonly SchemaDe
       missing.push(planned.apiKey);
       continue;
     }
-    const fieldsById = new Map(definition.fields.map((field) => [field.id, field]));
+    const effective = index.resolve(definition.id)?.fields ?? definition.fields;
+    const fieldsById = new Map<string, FieldDefinition>(effective.map((field) => [field.id, field]));
     const fields = new Map<string, FieldDefinition>();
     for (const [fieldKey, fieldId] of Object.entries(planned.fields)) {
       const field = fieldsById.get(fieldId);

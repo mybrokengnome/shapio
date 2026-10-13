@@ -6,6 +6,43 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Types that extend a type.** A collection can now extend another: Products holds the shared fields (name,
+  price, images), and Digital and Physical add their own. Pick the parent under **Extends** when you create a
+  type, or set `extends` in its schema file. A kind inherits every field of its parent, locked, and a field you
+  add to the parent is on every kind at once, live. Kinds can have kinds, up to 8 levels. A kind has its
+  parent's Localized and Draft & publish settings and lives where its parent does (shared, or on one site).
+  See [Modelling](documentation/modelling.md#types-that-extend-a-type).
+- **Nested routes and mixed lists.** A kind is read under its parent: `/api/content/products` lists every
+  product, of every kind, filtered and sorted on the shared fields, and paged together, each row in its own
+  shape; `/api/content/products/digital` lists one kind. A relation to Products accepts any kind, and
+  `populate` returns each in its own shape. `@shapio/client` sends nested route keys as nested paths.
+- **GraphQL interfaces.** A type with kinds gets `ProductInterface`, which it and every kind implement.
+  `products`, `product(id)`, and relations to Products return the interface; ask for a kind's own fields with a
+  fragment (`... on DigitalProduct`). A type without kinds keeps exactly the schema it had.
+- **Grants flow down.** A grant on a parent covers its kinds. A kind can get grants of its own, which only
+  add access. The roles matrix shows kinds under their parent, with the inherited grant beside their own.
+- **Change kind.** An entry can move to another kind in its family from the Settings panel's danger zone
+  (`POST /api/admin/content/<API ID>/<id>/kind`). Shapio lists the fields the new kind lacks and drops their
+  values once you confirm; history keeps them, and older snapshots keep serving the entry under its old kind.
+  Webhooks receive the new `entry.kind_changed` event.
+- Entry webhook payloads carry `routeKey` (nested for a kind) and `ancestors` (the API IDs of the types the
+  entry's type extends). `shapioTags.changed(routeKey, id)` in `@shapio/client` gives the Next.js cache tags of
+  a route key and every ancestor prefix, so a changed Guide refreshes the Posts list too.
+- `shapio schema diff` and `apply` name parents (`model guide (extends post)`, `~ extends: article → post`)
+  and explain each new refusal. Moving a type under another parent needs `--allow-breaking`.
+- The MCP server lists inherited fields and each type's parent, and drafts accept `extends` as an API ID.
+- Extensions: `content.models()` now returns each type's `routeKey` and its fields, inherited ones first with
+  `inheritedFrom`, and hooks' `model` carries `extends` (the parent's API ID). A hook keyed by a type also runs
+  for every type that extends it.
+
+### Changed
+
+- **Every delivery entry carries `__model`**, the singular API ID of its own type, in lists, single reads and
+  populated relations, so a site can tell the kinds in a mixed list apart. It is additive: it is not a field,
+  `fields=` can't name it, and writes ignore it.
+
 ## [0.5.7] - 2026-10-12
 
 ### Changed
