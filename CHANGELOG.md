@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-10-13
+
 ### Added
 
 - **Types that extend a type.** A collection can now extend another: Products holds the shared fields (name,
