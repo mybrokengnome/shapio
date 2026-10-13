@@ -24,7 +24,7 @@ import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
-import { MODEL_KEY } from './validator/index.js';
+import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
 /**
  * The read side shared by the admin and delivery APIs: fetching heads under a policy, deciding which
@@ -312,14 +312,23 @@ export const toDeliveryAsset = (view: MediaAssetView) => ({
 
 export type ProjectedEntry = Record<string, unknown>;
 
+/** The singular API IDs of a model's lineage, root first, the model last. */
+export const kindLineage = (snapshot: ReadEnvironment['snapshot'], modelId: string): string[] =>
+  [...snapshot.ancestors(modelId), modelId].flatMap((id) => {
+    const apiKey = snapshot.byId.get(id)?.definition.apiKey;
+    return apiKey === undefined ? [] : [apiKey];
+  });
+
 /**
  * System attributes first, then the readable, selected fields by API key. `__model` is the API ID of the
  * entry's own model, on every entry (plan polymorphic-types): a family read mixes kinds, and a client can rely
- * on it everywhere, as it does on `__component` in dynamic zones.
+ * on it everywhere, as it does on `__component` in dynamic zones. `__kinds` is the kind's lineage, root first,
+ * so a client can tell a Physical row from its Apparel kind without knowing the schema.
  */
 export const systemAttributes = (env: ReadEnvironment, row: HeadRow): Record<string, unknown> => ({
   id: row.entry_id,
   [MODEL_KEY]: env.snapshot.byId.get(row.model_id)?.definition.apiKey ?? null,
+  [KINDS_KEY]: kindLineage(env.snapshot, row.model_id),
   locale: row.locale,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),

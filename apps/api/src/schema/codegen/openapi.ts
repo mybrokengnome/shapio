@@ -259,6 +259,17 @@ const COMMON_SCHEMAS: Record<string, JsonSchema> = {
       variants: { type: 'array', items: { type: 'object' } },
     },
   },
+  Kind: {
+    type: 'object',
+    description: 'One kind of a family list (plan polymorphic-types)',
+    properties: {
+      apiKey: { type: 'string', description: 'The singular API ID' },
+      label: { type: 'string' },
+      parent: { type: ['string', 'null'], description: "The parent's singular API ID; null for the root" },
+      routeKey: { type: 'string' },
+    },
+    required: ['apiKey', 'label', 'parent', 'routeKey'],
+  },
   Pagination: {
     type: 'object',
     properties: {
@@ -413,7 +424,12 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
       publicationState: { type: 'string', enum: ['draft'], description: 'Present on draft reads only' },
     },
   };
-  const listMeta = { allOf: [meta, { type: 'object', properties: { pagination: ref('Pagination') } }] };
+  // A model with kinds lists its family; `kinds` names the kinds the caller may read, in tree order.
+  const kinds =
+    snapshot.childrenOf(model.id).length > 0 ? { kinds: { type: 'array', items: ref('Kind') } } : {};
+  const listMeta = {
+    allOf: [meta, { type: 'object', properties: { pagination: ref('Pagination'), ...kinds } }],
+  };
   const single = model.kind === 'singleton';
   const adminEntry = {
     type: 'object',
@@ -466,7 +482,11 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
         responses: {
           '200': json({
             type: 'object',
-            properties: { items: { type: 'array', items: adminEntry }, pagination: ref('Pagination') },
+            properties: {
+              items: { type: 'array', items: adminEntry },
+              pagination: ref('Pagination'),
+              ...kinds,
+            },
           }),
           ...errorResponses,
         },
@@ -600,6 +620,13 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
 
 export type OpenApiOptions = { serverUrl: string; version: string };
 
+/** The singular API IDs of a model's lineage, root first. */
+const kindLineageOf = (snapshot: SchemaSnapshot, modelId: string): string[] =>
+  [...snapshot.ancestors(modelId), modelId].flatMap((id) => {
+    const apiKey = snapshot.byId.get(id)?.definition.apiKey;
+    return apiKey === undefined ? [] : [apiKey];
+  });
+
 /** The OpenAPI document for a schema snapshot. */
 export const generateOpenApi = (
   snapshot: SchemaSnapshot,
@@ -623,6 +650,12 @@ export const generateOpenApi = (
               type: 'string',
               const: definition.apiKey,
               description: "The API ID of the entry's type",
+            },
+            __kinds: {
+              type: 'array',
+              items: { type: 'string' },
+              const: kindLineageOf(snapshot, definition.id),
+              description: "The API IDs of the entry's type and the types it extends, root first",
             },
           }
         : {},

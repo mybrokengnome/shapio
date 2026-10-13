@@ -1,6 +1,6 @@
 import type { Policy } from '../permissions/types.js';
 import type { SchemaById } from '../schema/snapshot.js';
-import { resolveModelById, type ContentModel } from './model.js';
+import { modelRouteOf, resolveModelById, type ContentModel } from './model.js';
 
 /**
  * Families (plan polymorphic-types): a model and every model that extends it, directly or not. Reading a
@@ -63,4 +63,30 @@ export const groupByMember = <T extends { model_id: string }>(
     group.rows.push(row);
   }
   return [...groups.values()];
+};
+
+/** One kind of a family list, for `meta.kinds`. */
+export type KindMeta = { apiKey: string; label: string; parent: string | null; routeKey: string };
+
+/**
+ * The kinds a family list covers, in tree order (the route's model, then each kind before its own kinds):
+ * the members the caller may read. Undefined for a model without kinds, so its responses do not change.
+ */
+export const kindsMetaOf = (
+  snapshot: SchemaById,
+  route: ContentModel,
+  members: readonly ReadMember[],
+): KindMeta[] | undefined => {
+  if (snapshot.childrenOf(route.definition.id).length === 0) {
+    return undefined;
+  }
+  return members.map(({ model }) => {
+    const parentId = model.definition.extends;
+    return {
+      apiKey: model.definition.apiKey,
+      label: model.definition.label,
+      parent: parentId === undefined ? null : (snapshot.byId.get(parentId)?.definition.apiKey ?? null),
+      routeKey: model.route?.key ?? modelRouteOf(snapshot, model.definition).key,
+    };
+  });
 };

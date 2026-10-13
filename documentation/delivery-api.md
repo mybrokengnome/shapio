@@ -109,9 +109,11 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
 ```
 
 - Entries are flat: system attributes, then every readable field by API ID, `null` (or `[]`) when empty.
-- Every entry carries `__model`: the singular API ID of its own type. In a list of a type with kinds, it tells
-  you which kind each row is. It is not a field: `fields=` and `sort` can't name it, and a write that sends it
-  is refused.
+- Every entry carries `__model` and `__kinds`. `__model` is the singular API ID of its own type: in a list of a
+  type with kinds, it tells you which kind each row is. `__kinds` is that type's lineage, root first and its
+  own type last (`["product", "physical", "apparel"]`; a plain product has `["product"]`), so you can match a
+  row at any level without knowing the schema. Neither is a field: `fields=` and `sort` can't name them, and a
+  write that sends one is refused.
 - **Rich text** is the stored JSON document by default. Ask for `richText=html` to get
   `{ format, version, html }` instead, or `richText=both` for the document and `html` together. The HTML is
   rendered on the server from the JSON with an allow-list sanitiser (safe link protocols only, images resolved
@@ -162,6 +164,9 @@ A parent's list holds every kind, in one page, sorted and counted together:
 - Kinds your token may not read are left out of the list, never refused with a 403. Reading the route itself
   needs `read` on its type, and a grant on a parent covers its kinds ([End users](end-users.md)).
 - With no `sort`, the list follows the parent's default sort.
+- `meta.kinds` lists the type and its kinds as a flat tree (each kind after its parent), with each kind's
+  label, parent and route key, so a site can build a kind filter or a menu without reading the schema. Only
+  kinds your token may read are in it, and a type without kinds has no `meta.kinds` at all.
 
 A relation to a type with kinds can point at an entry of any kind. Populated, each target comes in its own
 shape with its own `__model`, under the same rules.
@@ -173,14 +178,31 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 ```json
 {
   "data": [
-    { "id": "1a…", "__model": "guide", "title": "Pin your builds", "timeToComplete": 12 },
-    { "id": "2b…", "__model": "post", "title": "Release notes" },
-    { "id": "3c…", "__model": "opinion", "title": "Why models are data", "stance": "for" }
+    {
+      "id": "1a…",
+      "__model": "guide",
+      "__kinds": ["post", "guide"],
+      "title": "Pin your builds",
+      "timeToComplete": 12
+    },
+    { "id": "2b…", "__model": "post", "__kinds": ["post"], "title": "Release notes" },
+    {
+      "id": "3c…",
+      "__model": "opinion",
+      "__kinds": ["post", "opinion"],
+      "title": "Why models are data",
+      "stance": "for"
+    }
   ],
   "meta": {
     "locale": "en",
     "snapshot": 41,
-    "pagination": { "page": 1, "pageSize": 10, "total": 3, "pageCount": 1 }
+    "pagination": { "page": 1, "pageSize": 10, "total": 3, "pageCount": 1 },
+    "kinds": [
+      { "apiKey": "post", "label": "Post", "parent": null, "routeKey": "posts" },
+      { "apiKey": "guide", "label": "Guide", "parent": "post", "routeKey": "posts/guides" },
+      { "apiKey": "opinion", "label": "Opinion", "parent": "post", "routeKey": "posts/opinions" }
+    ]
   }
 }
 ```

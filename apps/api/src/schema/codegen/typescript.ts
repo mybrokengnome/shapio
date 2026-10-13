@@ -16,7 +16,8 @@ import type { SchemaSnapshot } from '../snapshot.js';
  *
  * A model that extends another (plan polymorphic-types) builds on its parent: `<Name>Fields` holds the
  * system fields and every field (the parent's `<Parent>Fields` and its own), `<Name>` adds the `__model`
- * literal every delivery entry carries, and a model with children gets `<Name>Any`, the union of its
+ * literal and the `__kinds` lineage tuple every delivery entry carries, and a model with children gets
+ * `<Name>Any`, the union of its
  * family, which its list, its single-entry route and relations to it return.
  */
 type Mode = 'output' | 'input';
@@ -163,6 +164,10 @@ const ancestorsOf = (snapshot: SchemaSnapshot, id: string): ModelDefinition[] =>
 const routeKeyIn = (snapshot: SchemaSnapshot, model: ModelDefinition) =>
   routePathOf(model, ancestorsOf(snapshot, model.id));
 
+/** The kind lineage as a readonly tuple literal, root first: `readonly ['product', 'physical']`. */
+const kindsTuple = (snapshot: SchemaSnapshot, model: ModelDefinition): string =>
+  `readonly [${[...ancestorsOf(snapshot, model.id), model].map((member) => quote(member.apiKey)).join(', ')}]`;
+
 const modelDeclarations = (model: ModelDefinition, snapshot: SchemaSnapshot): string[] => {
   const name = toTypeName(model.apiKey);
   const resolved = snapshot.resolve(model.id);
@@ -177,7 +182,7 @@ const modelDeclarations = (model: ModelDefinition, snapshot: SchemaSnapshot): st
   const input = objectType(fieldLines(own, snapshot, 'input'));
   const declarations = [
     `/** ${model.label}: every field (${ids}) */\nexport type ${name}Fields = ${parentName ? `${parentName}Fields` : 'EntrySystemFields'} & ${fields};\n`,
-    `/** ${model.label} (${ids}) */\nexport type ${name} = ${name}Fields & { __model: ${quote(model.apiKey)} };\n`,
+    `/** ${model.label} (${ids}) */\nexport type ${name} = ${name}Fields & { __model: ${quote(model.apiKey)}; __kinds: ${kindsTuple(snapshot, model)} };\n`,
     `/** ${model.label}, as written (${ids}) */\nexport type ${name}Input = ${parentName ? `${parentName}Input & ` : ''}${input};\n`,
   ];
   const family = snapshot.family(model.id);

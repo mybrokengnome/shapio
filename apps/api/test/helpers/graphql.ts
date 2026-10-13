@@ -102,8 +102,9 @@ export const toRestShape = (value: unknown, shape: Shape = {}): unknown => {
 };
 
 /**
- * REST delivery data without `__model` (every delivery entry's own model API ID, plan polymorphic-types): GraphQL
- * has no such field (clients use `__typename`), so twins compare everything else.
+ * REST delivery data without `__model` and `__kinds` (every delivery entry's own model API ID and its kind
+ * lineage, plan polymorphic-types): GraphQL has no such fields (clients use `__typename`), so twins compare
+ * everything else.
  */
 export const withoutModelKey = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -114,7 +115,7 @@ export const withoutModelKey = (value: unknown): unknown => {
   }
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== '__model')
+      .filter(([key]) => key !== '__model' && key !== '__kinds')
       .map(([key, item]) => [key, withoutModelKey(item)]),
   );
 };

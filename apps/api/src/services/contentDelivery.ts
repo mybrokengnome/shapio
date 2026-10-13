@@ -2,7 +2,7 @@ import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
-import type { ReadMember } from '../content/family.js';
+import { kindsMetaOf, type KindMeta, type ReadMember } from '../content/family.js';
 import { resolveModel, type ContentModel } from '../content/model.js';
 import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
@@ -33,7 +33,8 @@ export type DeliveryMeta = {
 
 export type DeliveryList = {
   data: Array<Record<string, unknown>>;
-  meta: DeliveryMeta & { pagination: Pagination };
+  /** `kinds`: a model with kinds lists its family; the kinds the caller may read (plan polymorphic-types). */
+  meta: DeliveryMeta & { pagination: Pagination; kinds?: KindMeta[] };
 };
 export type DeliveryItem = { data: Record<string, unknown>; meta: DeliveryMeta };
 
@@ -222,9 +223,14 @@ export const listDelivery = async (
     }
     result = { data: entry, meta: metaOf(locale, snapshot, drafts) };
   } else {
+    const kinds = kindsMetaOf(context.snapshot, model, members);
     result = {
       data: entries,
-      meta: { ...metaOf(locale, snapshot, drafts), pagination: paginationMeta(query.page, limit, total) },
+      meta: {
+        ...metaOf(locale, snapshot, drafts),
+        pagination: paginationMeta(query.page, limit, total),
+        ...(kinds ? { kinds } : {}),
+      },
     };
   }
   await afterRead(options, () => recordUsage(context, options, members, query, kindsOf(entries)));

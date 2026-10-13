@@ -17,7 +17,13 @@ import { parseQueryTree } from '../content/compiler/querystring.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryLocaleNotFound, revisionNotFound } from '../content/errors.js';
-import { familyIdsOf, readableMembers, type ReadMember } from '../content/family.js';
+import {
+  familyIdsOf,
+  kindsMetaOf,
+  readableMembers,
+  type KindMeta,
+  type ReadMember,
+} from '../content/family.js';
 import { outdatedSharedLocales, readScopeFor } from '../content/locales.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
 import { planMembers, projectMemberRows, projectRows, type ReadEnvironment } from '../content/read.js';
@@ -377,7 +383,7 @@ export const listAdminEntries = async (
   context: ContentServiceContext,
   modelKey: string,
   rawQuery: string,
-): Promise<{ items: AdminListItem[]; pagination: Pagination; locale: string }> => {
+): Promise<{ items: AdminListItem[]; pagination: Pagination; locale: string; kinds?: KindMeta[] }> => {
   const { model, policy } = await modelWithPolicy(context, modelKey, 'read');
   const members = await familyMembersFor(context, model, policy);
   const parsed = parseQueryFor(context, model, policy, rawQuery, {
@@ -391,6 +397,7 @@ export const listAdminEntries = async (
     filter: await visibleReferenceFilter(environment, parsed.filter),
   };
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
+  const kinds = kindsMetaOf(context.snapshot, model, members);
   const compiled = compileHeadQuery({
     siteId: context.site.id,
     ...familyQueryPlan(context, query, members),
@@ -427,6 +434,7 @@ export const listAdminEntries = async (
       })),
       pagination: paginationMeta(query.page, limit, total),
       locale: query.locale ?? context.snapshot.defaultLocale,
+      ...(kinds ? { kinds } : {}),
     };
   }, context.db);
 };

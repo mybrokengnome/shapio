@@ -84,6 +84,14 @@ export const PaginationSchema = Type.Object({
   pageCount: Type.Integer(),
 });
 
+/** One kind of a family list (plan polymorphic-types). */
+export const KindMetaSchema = Type.Object({
+  apiKey: Type.String(),
+  label: Type.String(),
+  parent: Type.Union([Type.String(), Type.Null()]),
+  routeKey: Type.String(),
+});
+
 export const AdminListSchema = Type.Object({
   items: Type.Array(
     Type.Object({
@@ -105,6 +113,8 @@ export const AdminListSchema = Type.Object({
   ),
   pagination: PaginationSchema,
   locale: Type.String(),
+  /** A model with kinds: its family's kinds the caller may read, in tree order (as delivery's `meta.kinds`). */
+  kinds: Type.Optional(Type.Array(KindMetaSchema)),
 });
 
 export const RevisionSummarySchema = Type.Object({

@@ -38,6 +38,11 @@ export const COMPONENT_KEY = '__component';
  * never a field (API IDs may not start with `__`), so a write naming it fails as an unknown field.
  */
 export const MODEL_KEY = '__model';
+/**
+ * The singular API IDs of an entry's kind lineage on every delivered entry, root first and its own kind last
+ * (plan polymorphic-types). A system attribute like `MODEL_KEY`: never a field, never written.
+ */
+export const KINDS_KEY = '__kinds';
 
 /**
  * A relation value to check: `targetModelIds` is the target's family at the validator's snapshot (the target

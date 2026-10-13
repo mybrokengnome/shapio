@@ -39,9 +39,12 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Changed
 
-- **Every delivery entry carries `__model`**, the singular API ID of its own type, in lists, single reads and
-  populated relations, so a site can tell the kinds in a mixed list apart. It is additive: it is not a field,
-  `fields=` can't name it, and writes refuse it.
+- **Every delivery entry carries `__model` and `__kinds`**: the singular API ID of its own type, and that
+  type's lineage, root first (`["product", "physical", "apparel"]`), in lists, single reads and populated
+  relations, so a site can tell the kinds in a mixed list apart at any level. A list of a type with kinds also
+  has `meta.kinds`, the kinds you may read as a flat tree with labels, parents and route keys. It is all
+  additive: neither key is a field, `fields=` and `sort` can't name them, writes refuse them, and a type
+  without kinds has no `meta.kinds`.
 
 ## [0.5.8] - 2026-10-12
 

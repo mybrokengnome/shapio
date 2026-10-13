@@ -160,6 +160,49 @@ describe('model inheritance: reading a family', () => {
     ]);
   });
 
+  it("carries each row's kind lineage in __kinds and the family's kinds in meta.kinds", async () => {
+    const page = await list('/api/content/products?sort=price&pageSize=100');
+    const kindsOf = (id: string | undefined) => page.data.find((row) => row.id === id)?.__kinds;
+    expect(kindsOf(ids.a)).toEqual(['product']);
+    expect(kindsOf(ids.b)).toEqual(['product', 'digitalProduct']);
+    expect(kindsOf(ids.c)).toEqual(['product', 'physicalProduct']);
+    expect(kindsOf(ids.d)).toEqual(['product', 'physicalProduct', 'apparelItem']);
+    const meta = (page.meta as { kinds?: unknown }).kinds;
+    expect(meta).toEqual([
+      { apiKey: 'product', label: 'Product', parent: null, routeKey: 'products' },
+      { apiKey: 'digitalProduct', label: 'Digital', parent: 'product', routeKey: 'products/digital' },
+      { apiKey: 'physicalProduct', label: 'Physical', parent: 'product', routeKey: 'products/physical' },
+      {
+        apiKey: 'apparelItem',
+        label: 'Apparel',
+        parent: 'physicalProduct',
+        routeKey: 'products/physical/apparel',
+      },
+    ]);
+    // A kind's own route lists its own subtree; a kind without kinds has no meta.kinds.
+    expect((await list('/api/content/products/physical')).meta).toMatchObject({
+      kinds: [
+        { apiKey: 'physicalProduct', parent: 'product' },
+        { apiKey: 'apparelItem', parent: 'physicalProduct' },
+      ],
+    });
+    expect((await list('/api/content/products/digital')).meta).not.toHaveProperty('kinds');
+    // The admin list reports the same kinds.
+    const adminList = expectStatus(await admin.get('/api/admin/content/product?pageSize=1'), 200).json<{
+      kinds?: unknown;
+    }>();
+    expect(adminList.kinds).toEqual(meta);
+    // Never a field: not selectable, sortable or filterable, and a write naming it is refused.
+    expect((await deliver('/api/content/products?fields=__kinds')).statusCode).toBe(400);
+    expect((await deliver('/api/content/products?sort=__kinds')).statusCode).toBe(400);
+    expect((await deliver('/api/content/products?filters[__kinds][$eq]=product')).statusCode).toBe(400);
+    const write = await admin.post('/api/admin/content/product', {
+      data: { name: 'K', __kinds: ['product'] },
+    });
+    expect(write.statusCode).toBe(422);
+    expect(write.json()).toMatchObject({ error: { details: { issues: [{ code: 'UNKNOWN_FIELD' }] } } });
+  });
+
   it('lists a kind and its own kinds under its nested route; a flat child route does not resolve', async () => {
     const digitals = await list('/api/content/products/digital?sort=price');
     expect(digitals.data.map((row) => row.name)).toEqual(['B', 'F']);
@@ -202,6 +245,7 @@ describe('model inheritance: reading a family', () => {
     const page = await list('/api/content/products?fields=name&sort=price&pageSize=3');
     expect(page.data.map((row) => Object.keys(row).sort())).toEqual(
       Array.from({ length: 3 }, () => [
+        '__kinds',
         '__model',
         'createdAt',
         'id',
@@ -238,8 +282,19 @@ describe('model inheritance: reading a family', () => {
       200,
     ).json<{ data: { related: Array<Record<string, unknown>> } }>();
     expect(item.data.related).toEqual([
-      expect.objectContaining({ id: ids.b, __model: 'digitalProduct', url: 'b.pdf' }),
-      expect.objectContaining({ id: ids.d, __model: 'apparelItem', size: 'M', weight: 3 }),
+      expect.objectContaining({
+        id: ids.b,
+        __model: 'digitalProduct',
+        __kinds: ['product', 'digitalProduct'],
+        url: 'b.pdf',
+      }),
+      expect.objectContaining({
+        id: ids.d,
+        __model: 'apparelItem',
+        __kinds: ['product', 'physicalProduct', 'apparelItem'],
+        size: 'M',
+        weight: 3,
+      }),
     ]);
     // Unpopulated, the IDs of every visible kind stay.
     const plain = expectStatus(await deliver(`/api/content/products/${holder.id}`), 200).json<{

@@ -58,8 +58,12 @@ describe('TypeScript for a family', () => {
   it('builds a child on its parent’s fields and tags every type with its __model', () => {
     expect(output).toContain('export type PostFields = EntrySystemFields & {');
     expect(output).toMatch(/export type GuideFields = PostFields & \{\n.*\n {2}level: number \| null;\n\};/);
-    expect(output).toContain(`export type Guide = GuideFields & { __model: "guide" };`);
-    expect(output).toContain(`export type Post = PostFields & { __model: "post" };`);
+    expect(output).toContain(
+      `export type Guide = GuideFields & { __model: "guide"; __kinds: readonly ["post", "guide"] };`,
+    );
+    expect(output).toContain(
+      `export type Post = PostFields & { __model: "post"; __kinds: readonly ["post"] };`,
+    );
     expect(output).toContain('export type GuideInput = PostInput & {');
     // The child's own type does not repeat inherited fields.
     expect(
@@ -108,6 +112,22 @@ describe('OpenAPI for a family', () => {
     );
     expect(schemas.Guide?.properties?.__model).toMatchObject({ type: 'string', const: 'guide' });
     expect(schemas.Post?.properties?.__model).toMatchObject({ const: 'post' });
+    expect(schemas.Guide?.properties?.__kinds).toMatchObject({
+      type: 'array',
+      items: { type: 'string' },
+      const: ['post', 'guide'],
+    });
+  });
+
+  it('describes meta.kinds on the lists of a type with kinds only', () => {
+    const listSchema = (path: string) =>
+      JSON.stringify(document.paths[path]?.get?.responses['200']?.content['application/json']?.schema);
+    expect(listSchema('/api/content/posts')).toContain(
+      '"kinds":{"type":"array","items":{"$ref":"#/components/schemas/Kind"}}',
+    );
+    expect(listSchema('/api/content/posts/guides')).not.toContain('"kinds"');
+    expect(listSchema('/api/admin/content/post')).toContain('#/components/schemas/Kind');
+    expect(schemas.Kind?.properties).toHaveProperty('routeKey');
   });
 
   it('lists and reads a parent as one of its family, told apart by __model', () => {

@@ -4,7 +4,7 @@ import { paginationMeta } from '../content/compiler/paginate.js';
 import { everyRowReadMask } from '../content/compiler/policy.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
-import { familyIdsOf, type ReadMember } from '../content/family.js';
+import { familyIdsOf, kindsMetaOf, type ReadMember } from '../content/family.js';
 import { resolveRouteModel, type ContentModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
@@ -204,6 +204,12 @@ const metaOf = (scope: PreviewScope, query: ContentQuery) => ({
   expiresAt: scope.token.expires_at,
 });
 
+/** `meta.kinds` of a family list, as delivery reports it. */
+const kindsOf = (scope: PreviewScope) => {
+  const kinds = kindsMetaOf(scope.context.snapshot, scope.model, scope.members);
+  return kinds ? { kinds } : {};
+};
+
 export const listPreview = async (
   runtime: PublishingRuntime,
   base: ContentServiceContext,
@@ -215,7 +221,11 @@ export const listPreview = async (
   const { entries, limit, total } = await readEntryPage(readOf(scope, query));
   return {
     data: entries,
-    meta: { ...metaOf(scope, query), pagination: paginationMeta(query.page, limit, total) },
+    meta: {
+      ...metaOf(scope, query),
+      pagination: paginationMeta(query.page, limit, total),
+      ...kindsOf(scope),
+    },
   };
 };
 
