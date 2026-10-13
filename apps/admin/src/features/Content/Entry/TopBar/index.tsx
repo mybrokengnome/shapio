@@ -116,7 +116,8 @@ export const TopBar = ({
               onClick={onToggleSettings}
             >
               <PanelRight aria-hidden="true" />
-              <span className="max-sm:sr-only">{t('entry.settings.open')}</span>
+              {/* Icon only while the drawer is open: the bar is narrow then, and the open drawer says what it is. */}
+              <span className={settingsOpen ? 'sr-only' : 'max-sm:sr-only'}>{t('entry.settings.open')}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>

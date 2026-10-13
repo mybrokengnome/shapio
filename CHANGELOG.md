@@ -41,7 +41,16 @@ All notable changes to Shapio are listed here. The format follows
 
 - **Every delivery entry carries `__model`**, the singular API ID of its own type, in lists, single reads and
   populated relations, so a site can tell the kinds in a mixed list apart. It is additive: it is not a field,
-  `fields=` can't name it, and writes ignore it.
+  `fields=` can't name it, and writes refuse it.
+
+## [0.5.8] - 2026-10-12
+
+### Fixed
+
+- **The entry top bar fits on one row again with the settings drawer open.** At laptop width the actions
+  dropped under the save state once the drawer had slid in. While the drawer is open, Settings now shows its
+  icon only, and a change saved elsewhere reads "Changed elsewhere" with an icon-only Reload, so the place
+  name, the save state, and the actions share one row.
 
 ## [0.5.7] - 2026-10-12
 

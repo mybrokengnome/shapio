@@ -303,11 +303,14 @@ jobs:
         run: cat /tmp/shapio.log /tmp/astro.log /tmp/next.log /tmp/next-in-process.log /tmp/next-drafts.log /tmp/sveltekit.log 2>/dev/null || true
 
   admin-e2e:
-    name: Admin end to end on ${{ matrix.database }} (Playwright; axe and keyboard checks in light and dark)
+    name: Admin end to end on ${{ matrix.database }}, shard ${{ matrix.shard }}/3 (Playwright; axe and keyboard checks in light and dark)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        database: [PostgreSQL, SQLite, MySQL]
+        # The split is by file, in apps/admin/e2e/support/shards.ts; shard 3 runs every spec not listed there.
+        shard: [1, 2, 3]
         include:
           - database: PostgreSQL
             test-database-url: postgres://postgres:postgres@localhost:5432/postgres
@@ -333,6 +336,7 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       TEST_DATABASE_URL: ${{ matrix.test-database-url }}
+      SHAPIO_E2E_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -346,9 +350,16 @@ jobs:
       - name: Install Chromium for Playwright
         working-directory: apps/admin
         run: pnpm exec playwright install --with-deps chromium
-      - name: Run the admin e2e suite
+      - name: Run this shard of the admin e2e suite
         working-directory: apps/admin
         run: pnpm e2e
+      - name: Keep the traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: admin-e2e-${{ matrix.database }}-shard-${{ matrix.shard }}
+          path: apps/admin/test-results
+          retention-days: 7
 
   docker:
     name: Docker image and compose
