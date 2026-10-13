@@ -1,5 +1,5 @@
 import type { AdminEntryListItem, PresencePerson } from '@shapio/client';
-import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import type { FieldDefinition, ResolvedModelDefinition } from '@shapio/schema';
 import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,7 +19,12 @@ import { RowActions } from '../RowActions';
 import { Updated } from '../Updated';
 
 export type RowContext = {
-  model: ModelDefinition;
+  /** The place's type: its fields are the columns (every kind has them). */
+  model: ResolvedModelDefinition;
+  /** A row's own kind, by its singular API ID (`item.model`): its link, label, actions and quick edit. */
+  kindOf: (modelKey: string) => ResolvedModelDefinition;
+  /** The place's type has kinds: each row shows its kind. */
+  showKind: boolean;
   columns: readonly FieldDefinition[];
   /** The title field, when it is one of the columns (it then carries the link). */
   titleColumn: FieldDefinition | undefined;
@@ -28,7 +33,8 @@ export type RowContext = {
   localeLabelOf: (code: string) => string;
   permissions: ReturnType<typeof usePlacePermissions>;
   actions: ReturnType<typeof useRowActions>;
-  onPreview: (entryId: string) => void;
+  /** Opens the row's draft on the site, under its own kind. */
+  onPreview: (entryId: string, modelKey: string) => void;
   /** The row whose quick edit is open, and its switches; null where quick edit isn't offered. */
   quickEdit: {
     schema: ContentSchema;
@@ -52,9 +58,10 @@ export type RowProps = {
 /** One entry: tick box, title link with presence, field columns, status, author, locales, updated, actions. */
 export const Row = ({ context, item, label, selected, people, onSelectChange }: RowProps) => {
   const { t } = useTranslation();
-  const { model, columns, titleColumn, locale, quickEdit } = context;
+  const { columns, titleColumn, locale, quickEdit } = context;
+  const kind = context.kindOf(item.model);
   const title = (
-    <EntryTitle modelKey={model.apiKey} entryId={item.id} label={label} locale={locale} people={people} />
+    <EntryTitle modelKey={kind.apiKey} entryId={item.id} label={label} locale={locale} people={people} />
   );
   return (
     <Fragment>
@@ -72,6 +79,7 @@ export const Row = ({ context, item, label, selected, people, onSelectChange }: 
             {field === titleColumn ? title : <Cell field={field} value={item.data[field.apiKey]} />}
           </TableCell>
         ))}
+        {context.showKind ? <TableCell className="max-w-48 truncate">{kind.label}</TableCell> : null}
         <TableCell>
           <EntryStatusChip status={item.status} />
         </TableCell>
@@ -98,7 +106,7 @@ export const Row = ({ context, item, label, selected, people, onSelectChange }: 
           >
             <QuickEdit
               quickEdit={quickEdit}
-              model={model}
+              model={kind}
               entryId={item.id}
               label={label}
               locale={locale}

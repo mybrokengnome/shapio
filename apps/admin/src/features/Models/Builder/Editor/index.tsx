@@ -13,6 +13,9 @@ import { logError } from '@/helpers/reportError';
 import { useSaveShortcut } from '@/hooks/useSaveShortcut';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { draftKeyOf, useDefinitionDraftStore } from '@/stores/definitionDraft';
+import { inheritedFieldsOf } from '../../helpers/inheritance';
+import { useModelIndex } from '../../hooks/useModelIndex';
+import { useParentChoices } from '../../hooks/useParentChoices';
 import { useSchemaLock } from '../../hooks/useSchemaLock';
 import { useSharedReadOnly } from '../../hooks/useSharedReadOnly';
 import { LockNotice } from '../../LockNotice';
@@ -29,6 +32,7 @@ import { useIsDraftDirty } from '../hooks/useIsDraftDirty';
 import { useNewField } from '../hooks/useNewField';
 import { useReloadDraft } from '../hooks/useReloadDraft';
 import { useRemoteChangeNotice } from '../hooks/useRemoteChangeNotice';
+import { useResolvedDraftAndParent } from '../hooks/useResolvedDraftAndParent';
 import { useSaveFlow } from '../hooks/useSaveFlow';
 import { useSelectedField } from '../hooks/useSelectedField';
 import { ModelSettings } from '../ModelSettings';
@@ -54,6 +58,10 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const dirty = useIsDraftDirty();
   const { issues } = useDraftIssues();
   const { field, index } = useSelectedField();
+  const selection = useDefinitionDraftStore((state) => state.selection);
+  const { index: models } = useModelIndex();
+  const { resolved, parent } = useResolvedDraftAndParent();
+  const { parentChoices } = useParentChoices(detail, category === 'model' ? id : undefined);
   const { locked, reason } = useSchemaLock();
   const sharedReadOnly = useSharedReadOnly(detail.scope);
   const { multiSite } = useSchemaScopeAccess();
@@ -93,6 +101,21 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       toast.error(describeError(error));
     });
   const editingDisabled = locked || sharedReadOnly;
+  const isModel = category === 'model';
+  // Kinds: the types that extend this one directly (they block deleting it) and all below it (they move
+  // with it to another scope).
+  const kindCount = isModel ? models.childrenOf(id).length : 0;
+  const descendantCount = isModel ? models.descendants(id).length : 0;
+  const parentLabel = parent?.label;
+  const inherited = inheritedFieldsOf(parent);
+  // An inherited field opens read-only; it changes on the type that declares it.
+  const inheritedField =
+    field === undefined && selection.type === 'field'
+      ? inherited.find((candidate) => candidate.id === selection.fieldId)
+      : undefined;
+  const definitionName = (modelId: string) => models.get(modelId)?.label;
+  // The active definition resolved the same way, so a re-parent's sentences can name inherited fields.
+  const resolvedBase = base && isModel ? (models.resolve(base.id) ?? base) : base;
 
   const scopeSection = multiSite ? (
     <Scope
@@ -103,6 +126,8 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       blocked={dirty || changeRunning || flow.applying}
       locked={locked}
       onConflict={() => setScopeConflict(true)}
+      parentLabel={parentLabel}
+      kindCount={descendantCount}
     />
   ) : null;
 
@@ -128,6 +153,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
         dirty={dirty}
         issueCount={issues.length}
         deleteBlocked={saveBlocked}
+        kindCount={kindCount}
         onDelete={() => setConfirmingDelete(true)}
       />
       {locked ? <LockNotice reason={reason} /> : null}
@@ -172,15 +198,37 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
       */}
       <div className="grid min-w-0 gap-6 xl:grid-cols-[22.5rem_minmax(0,1fr)] xl:items-start">
         <div className="min-w-0 space-y-6">
-          <ModelSettings issues={issues} disabled={editingDisabled} scopeSection={scopeSection} />
+          <ModelSettings
+            issues={issues}
+            disabled={editingDisabled}
+            scopeSection={scopeSection}
+            parentChoices={parentChoices}
+            kindCount={kindCount}
+          />
           <FieldList
             issues={issues}
             disabled={editingDisabled}
             onAdd={newField.add}
             seo={draft.kind === 'component' ? undefined : seoField}
+            parent={parent}
+            inherited={inherited}
           />
         </div>
-        {field ? (
+        {inheritedField ? (
+          <FieldPanel
+            key={inheritedField.id}
+            field={inheritedField}
+            index={-1}
+            issues={issues}
+            disabled
+            untouched={false}
+            onDiscard={() => undefined}
+            inheritedFrom={{
+              id: inheritedField.inheritedFrom ?? '',
+              label: definitionName(inheritedField.inheritedFrom ?? '') ?? parentLabel ?? '',
+            }}
+          />
+        ) : field ? (
           <FieldPanel
             key={field.id}
             field={field}
@@ -191,7 +239,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
             onDiscard={() => newField.discard(field.id)}
           />
         ) : (
-          <NoFieldSelected hasFields={draft.fields.length > 0} />
+          <NoFieldSelected hasFields={draft.fields.length + inherited.length > 0} />
         )}
       </div>
       <ActionFooter {...saveActions} />
@@ -199,6 +247,9 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
         preview={flow.state.step === 'review' ? flow.state.preview : undefined}
         before={base}
         after={draft}
+        resolvedBefore={resolvedBase}
+        resolvedAfter={resolved}
+        definitionName={definitionName}
         applying={flow.applying}
         error={flow.applyError}
         onApply={(acknowledgement) => void flow.confirm(acknowledgement)}

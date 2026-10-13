@@ -14,6 +14,7 @@ import {
 } from '@shapio/schema';
 import { newStableId } from '@/helpers/stableId';
 import { withoutGroupField } from './groupFields';
+import { resolveDraft, type DraftParent } from './inheritance';
 
 /** Required settings a new field starts with; the user fills them in (inline errors until then). */
 const INITIAL_SETTINGS: Partial<Record<DataType, Record<string, JsonValue>>> = {
@@ -81,8 +82,15 @@ export const moveItem = <T>(items: readonly T[], from: number, to: number): T[] 
   return next;
 };
 
-/** Removes a field and every reference to it (display settings, slug sources), so the draft stays valid. */
-export const removeField = (definition: SchemaDefinition, fieldId: string): SchemaDefinition => {
+/**
+ * Removes a field and every reference to it (display settings, slug sources), so the draft stays valid.
+ * `parent`: the collection the draft extends (see `pruneLayout`).
+ */
+export const removeField = (
+  definition: SchemaDefinition,
+  fieldId: string,
+  parent?: DraftParent,
+): SchemaDefinition => {
   const fields = definition.fields
     .filter((field) => field.id !== fieldId)
     .map((field) =>
@@ -108,16 +116,17 @@ export const removeField = (definition: SchemaDefinition, fieldId: string): Sche
       delete display.groups;
     }
   }
-  return pruneLayout({ ...definition, fields, display });
+  return pruneLayout({ ...definition, fields, display }, parent);
 };
 
 /**
  * Drops document-layout references (`canvasFieldIds`, `coverFieldId`, `stripFieldIds`) that no longer
  * point at an eligible field, after a field is removed, changes type or settings, moves, or becomes the
  * title (the title is the document's heading, never a field in it). Keeps the draft valid without a trip to
- * Display.
+ * Display. A draft that extends `parent` is judged over its resolved fields and title, so its references
+ * to inherited fields stay; only the values the draft sets itself are pruned.
  */
-export const pruneLayout = (definition: SchemaDefinition): SchemaDefinition => {
+export const pruneLayout = (definition: SchemaDefinition, parent?: DraftParent): SchemaDefinition => {
   if (definition.kind === 'component') {
     return definition;
   }
@@ -125,12 +134,13 @@ export const pruneLayout = (definition: SchemaDefinition): SchemaDefinition => {
   if (canvasFieldIds === undefined && coverFieldId === undefined && stripFieldIds === undefined) {
     return definition;
   }
-  const fields = new Map(definition.fields.map((field) => [field.id, field]));
+  const view = resolveDraft(definition, parent);
+  const fields = new Map(view.fields.map((field) => [field.id, field]));
   const eligible = (id: string, test: (field: FieldDefinition) => boolean) => {
     const field = fields.get(id);
     return field !== undefined && test(field);
   };
-  const title = effectiveTitleField(definition);
+  const title = effectiveTitleField(view);
   const canvas = canvasFieldIds?.filter((id) => eligible(id, (field) => isDocumentPlaceable(field, title)));
   const cover =
     coverFieldId !== undefined && eligible(coverFieldId, isCoverEligible) && !canvas?.includes(coverFieldId)

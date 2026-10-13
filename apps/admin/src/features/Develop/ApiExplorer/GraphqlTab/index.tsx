@@ -1,4 +1,4 @@
-import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
+import { createDefinitionIndex, isModelDefinition, type ModelDefinition } from '@shapio/schema';
 import { Link } from '@tanstack/react-router';
 import { Braces } from 'lucide-react';
 import { useMemo } from 'react';
@@ -28,6 +28,11 @@ type GraphqlTabProps = {
 export const GraphqlTab = ({ selected, restOperations, draftOf }: GraphqlTabProps) => {
   const { t } = useTranslation();
   const { definitions } = useAllDefinitions();
+  // Kinds: inherited fields, nested REST paths and fragments per kind (plan polymorphic-types D9).
+  const index = useMemo(
+    () => createDefinitionIndex((definitions ?? []).map(({ definition }) => definition)),
+    [definitions],
+  );
   const groups = useMemo(
     () =>
       (definitions ?? [])
@@ -46,9 +51,9 @@ export const GraphqlTab = ({ selected, restOperations, draftOf }: GraphqlTabProp
     if (!current) {
       return undefined;
     }
-    const rest = restOperationFor(current.model, current.operation, restOperations);
-    return graphqlQuery(current.model, current.operation, draftOf(rest?.id));
-  }, [current, restOperations, draftOf]);
+    const rest = restOperationFor(current.model, current.operation, restOperations, index);
+    return graphqlQuery(current.model, current.operation, draftOf(rest?.id), index);
+  }, [current, restOperations, draftOf, index]);
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       {groups.length > 0 ? (

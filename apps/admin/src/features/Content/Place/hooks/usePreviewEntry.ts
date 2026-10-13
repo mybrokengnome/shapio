@@ -8,34 +8,38 @@ import { logError } from '@/helpers/reportError';
 
 /**
  * Opens an entry's draft on the site (the first connection with a preview URL template). The tab opens on
- * the click, so browsers don't block it, and is pointed at the preview once the token exists.
+ * the click, so browsers don't block it, and is pointed at the preview once the token exists. `modelKey` is
+ * the place's type; a row of one of its kinds passes its own.
  */
 export const usePreviewEntry = (modelKey: string, locale: string | null) => {
   const { t } = useTranslation();
   const open = useMutation({
     mutationKey: ['preview', 'open', modelKey],
     meta: { silent: true },
-    mutationFn: (entryId: string) =>
-      withCsrf(() => adminApi.preview.open({ modelKey, entryId, ...(locale ? { locale } : {}) })),
+    mutationFn: ({ entryId, key }: { entryId: string; key: string }) =>
+      withCsrf(() => adminApi.preview.open({ modelKey: key, entryId, ...(locale ? { locale } : {}) })),
   });
-  const preview = (entryId: string) => {
+  const preview = (entryId: string, key = modelKey) => {
     const tab = window.open('about:blank', '_blank');
-    open.mutate(entryId, {
-      onSuccess: (result) => {
-        if (result.url && tab) {
-          tab.opener = null;
-          tab.location.href = result.url;
-          return;
-        }
-        tab?.close();
-        toast.info(t('place.actions.previewUnavailable'));
+    open.mutate(
+      { entryId, key },
+      {
+        onSuccess: (result) => {
+          if (result.url && tab) {
+            tab.opener = null;
+            tab.location.href = result.url;
+            return;
+          }
+          tab?.close();
+          toast.info(t('place.actions.previewUnavailable'));
+        },
+        onError: (error) => {
+          tab?.close();
+          logError(error, `preview of ${key}/${entryId}`);
+          toast.error(describeError(error));
+        },
       },
-      onError: (error) => {
-        tab?.close();
-        logError(error, `preview of ${modelKey}/${entryId}`);
-        toast.error(describeError(error));
-      },
-    });
+    );
   };
   return { preview, pending: open.isPending };
 };

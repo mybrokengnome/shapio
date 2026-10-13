@@ -1,5 +1,7 @@
 import type { DefinitionListItem } from '@shapio/client';
-import { routeKeyOf } from '@shapio/schema';
+import { isModelDefinition, routeKeyOf } from '@shapio/schema';
+import { CornerDownRight } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SharedGlyph } from '@/components/SharedGlyph';
 import { TableCard } from '@/components/TableCard';
@@ -15,11 +17,12 @@ import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { KIND_LABEL_KEYS } from '../constants';
 import { DefinitionLink } from '../DefinitionLink';
+import { orderAsTree } from '../helpers/tree';
 import { PendingChip } from '../PendingChip';
 
 type ListProps = {
   items: DefinitionListItem[];
-  /** A Kind column, for lists that mix content types and components. */
+  /** A Shape column (collection, singleton, component), for lists that mix content types and components. */
   showKind?: boolean;
   /** Mark shared definitions with a globe (where there is more than one site); off where all are shared. */
   markShared?: boolean;
@@ -29,6 +32,13 @@ type ListProps = {
 const apiIdsOf = (definition: DefinitionListItem['definition']) =>
   definition.kind === 'collection' ? `${definition.apiKey} · ${routeKeyOf(definition)}` : definition.apiKey;
 
+const parentOf = ({ definition }: DefinitionListItem) =>
+  isModelDefinition(definition) ? definition.extends : undefined;
+
+/**
+ * Definitions with each kind indented under the type it extends (plan polymorphic-types D13), in the given
+ * order otherwise.
+ */
 export const List = ({ items, showKind = false, markShared = true }: ListProps) => {
   const { t } = useTranslation();
   const { multiSite } = useSchemaScopeAccess();
@@ -39,7 +49,7 @@ export const List = ({ items, showKind = false, markShared = true }: ListProps) 
         <TableHeader>
           <TableRow>
             <TableHead>{t('models.columns.label')}</TableHead>
-            {showKind ? <TableHead>{t('models.columns.kind')}</TableHead> : null}
+            {showKind ? <TableHead>{t('models.columns.shape')}</TableHead> : null}
             <TableHead>{t('models.columns.apiKey')}</TableHead>
             <TableHead className="text-right">{t('models.columns.fields')}</TableHead>
             <TableHead className="text-right">{t('models.columns.version')}</TableHead>
@@ -47,30 +57,42 @@ export const List = ({ items, showKind = false, markShared = true }: ListProps) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map(({ definition, scope, version, activatedAt, pendingChange }) => (
-            <TableRow key={definition.id}>
-              <TableCell>
-                <span className="flex items-center gap-2">
-                  <DefinitionLink definition={definition} />
-                  {showShared && scope === 'network' ? <SharedGlyph /> : null}
-                  {pendingChange ? <PendingChip changeId={pendingChange.id} /> : null}
-                </span>
-              </TableCell>
-              {showKind ? (
-                <TableCell className="text-muted-foreground">{t(KIND_LABEL_KEYS[definition.kind])}</TableCell>
-              ) : null}
-              <TableCell className="font-mono text-meta text-muted-foreground">
-                {apiIdsOf(definition)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{definition.fields.length}</TableCell>
-              <TableCell className="text-right text-muted-foreground tabular-nums">
-                {t('models.versionNumber', { version })}
-              </TableCell>
-              <TableCell className="text-muted-foreground" title={formatDateTime(activatedAt)}>
-                {formatRelativeTime(activatedAt)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {orderAsTree(items, (item) => item.definition.id, parentOf).map(({ item, depth }) => {
+            const { definition, scope, version, activatedAt, pendingChange } = item;
+            return (
+              <TableRow key={definition.id}>
+                <TableCell>
+                  <span
+                    className="flex items-center gap-2 pl-[calc(var(--depth)*1.25rem)]"
+                    // The depth is data: a kind sits one step further in than its parent.
+                    style={{ '--depth': Math.max(depth - 1, 0) } as CSSProperties}
+                  >
+                    {depth > 0 ? (
+                      <CornerDownRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                    ) : null}
+                    <DefinitionLink definition={definition} />
+                    {showShared && scope === 'network' ? <SharedGlyph /> : null}
+                    {pendingChange ? <PendingChip changeId={pendingChange.id} /> : null}
+                  </span>
+                </TableCell>
+                {showKind ? (
+                  <TableCell className="text-muted-foreground">
+                    {t(KIND_LABEL_KEYS[definition.kind])}
+                  </TableCell>
+                ) : null}
+                <TableCell className="font-mono text-meta text-muted-foreground">
+                  {apiIdsOf(definition)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{definition.fields.length}</TableCell>
+                <TableCell className="text-right text-muted-foreground tabular-nums">
+                  {t('models.versionNumber', { version })}
+                </TableCell>
+                <TableCell className="text-muted-foreground" title={formatDateTime(activatedAt)}>
+                  {formatRelativeTime(activatedAt)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </TableRoot>
     </TableCard>

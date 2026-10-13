@@ -8,6 +8,7 @@ import {
 import { deriveApiKey } from './deriveApiKey';
 import { titleFieldCandidates } from './display';
 import { createField } from './draft';
+import { resolveDraft, type DraftParent } from './inheritance';
 
 const RESERVED: ReadonlySet<string> = new Set(RESERVED_FIELD_API_KEYS.map(foldApiKey));
 
@@ -34,13 +35,14 @@ export const uniqueNewFieldName = (
 /**
  * Changes a field's data type: its type-specific settings, editor and default value start over with the new
  * type's defaults; its ID, position, names, help text and options are kept. A title field that can no
- * longer label entries is unset, and the title-field rule of `withAddedField` applies again. Other
- * references that no longer fit show as draft issues.
+ * longer label entries is unset, and the title-field rule of `withAddedField` applies again (a child's
+ * inherited title or title candidates count). Other references that no longer fit show as draft issues.
  */
 export const withFieldType = (
   definition: SchemaDefinition,
   fieldId: string,
   type: DataType,
+  parent?: DraftParent,
 ): SchemaDefinition => {
   const current = definition.fields.find((field) => field.id === fieldId);
   if (!current || current.type === type) {
@@ -54,9 +56,14 @@ export const withFieldType = (
   const display: Record<string, unknown> = { ...definition.display };
   const placed = { ...definition, fields, display };
   const isCandidate = titleFieldCandidates(placed).some((candidate) => candidate.id === fieldId);
+  const othersView = resolveDraft(others, parent);
   if (display.titleFieldId === fieldId && !isCandidate) {
     delete display.titleFieldId;
-  } else if (display.titleFieldId === undefined && isCandidate && titleFieldCandidates(others).length === 0) {
+  } else if (
+    othersView.display.titleFieldId === undefined &&
+    isCandidate &&
+    titleFieldCandidates(othersView).length === 0
+  ) {
     display.titleFieldId = fieldId;
   }
   return placed;
@@ -71,8 +78,9 @@ export const withFieldTypeOrSaved = (
   fieldId: string,
   type: DataType,
   saved: FieldDefinition | undefined,
+  parent?: DraftParent,
 ): SchemaDefinition => {
-  const next = withFieldType(definition, fieldId, type);
+  const next = withFieldType(definition, fieldId, type, parent);
   if (saved?.type !== type) {
     return next;
   }

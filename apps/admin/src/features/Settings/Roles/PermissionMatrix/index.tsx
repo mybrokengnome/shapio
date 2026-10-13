@@ -1,13 +1,16 @@
 import type { ContentAction } from '@shapio/client';
-import { Fragment, useState } from 'react';
+import { createDefinitionIndex } from '@shapio/schema';
+import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SiteModel } from '@/api/schema';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { orderAsTree } from '@/features/Models/helpers/tree';
 import { ACTION_COLUMN_KEYS, ALL_MODELS } from './constants';
 import {
   columnState,
   hasOptions,
+  inheritedGrantsOf,
   setColumn,
   setGranted,
   updateGrant,
@@ -35,7 +38,9 @@ type PermissionMatrixProps<A extends ContentAction> = {
 /**
  * Models × actions. The first row grants on every model, including ones created later; each column's header
  * checkbox grants or revokes that action on every row. The model column stays put while the table scrolls.
- * Grants on models no site has any more are listed under the table, to remove.
+ * Kinds sit under the type they extend and show what they inherit from it, read-only, beside their own
+ * grants (which can only add to it). Grants on models no site has any more are listed under the table, to
+ * remove.
  */
 export const PermissionMatrix = <A extends ContentAction>({
   matrix,
@@ -56,6 +61,18 @@ export const PermissionMatrix = <A extends ContentAction>({
       }
       return next;
     });
+  // Every site's models together: shared parents and their kinds are on the same site or both shared.
+  const index = useMemo(() => createDefinitionIndex(models.map(({ definition }) => definition)), [models]);
+  const tree = useMemo(
+    () =>
+      orderAsTree(
+        models,
+        ({ definition }) => definition.id,
+        ({ definition }) => definition.extends,
+      ),
+    [models],
+  );
+  const nameOf = (modelId: string) => index.get(modelId)?.label ?? modelId;
   const rows = [
     {
       key: ALL_MODELS,
@@ -64,16 +81,24 @@ export const PermissionMatrix = <A extends ContentAction>({
       shared: false,
       siteName: undefined,
       fields: undefined,
+      depth: 0,
+      parentLabel: undefined,
+      ancestorIds: [] as readonly string[],
     },
-    ...models.map(({ definition, site }) => ({
+    ...tree.map(({ item: { definition, site }, depth, parentId }) => ({
       key: definition.id,
       label: definition.label,
       detail: definition.apiKey,
       shared: site === null,
       siteName: showSites ? site?.name : undefined,
-      fields: definition.fields,
+      // A kind's grants can name its inherited fields too (their IDs are the parent's).
+      fields: index.resolve(definition.id)?.fields ?? definition.fields,
+      depth,
+      parentLabel: parentId === undefined ? undefined : nameOf(parentId),
+      ancestorIds: index.ancestors(definition.id),
     })),
   ];
+  const hasKinds = rows.some((row) => row.parentLabel !== undefined);
   const keys = rows.map((row) => row.key);
   // The panel's width: options stay in view (sticky, as wide as the panel) when the table scrolls sideways.
   return (
@@ -108,7 +133,9 @@ export const PermissionMatrix = <A extends ContentAction>({
         <TableBody>
           {rows.map((row) => {
             const grants = matrix[row.key] ?? {};
-            const canExpand = hasOptions(row.key, grants, rules);
+            const inherited = inheritedGrantsOf(matrix, row.ancestorIds, rules);
+            const inheritsAny = Object.keys(inherited).length > 0;
+            const canExpand = hasOptions(row.key, grants, rules) || inheritsAny;
             const isExpanded = canExpand && expanded.has(row.key);
             const optionsId = `permission-options-${row.key === ALL_MODELS ? 'all' : row.key}`;
             return (
@@ -121,6 +148,10 @@ export const PermissionMatrix = <A extends ContentAction>({
                   siteName={row.siteName}
                   readOnly={readOnly}
                   grants={grants}
+                  depth={row.depth}
+                  parentLabel={row.parentLabel}
+                  inherited={inherited}
+                  nameOf={nameOf}
                   optionsId={optionsId}
                   expanded={isExpanded}
                   canExpand={canExpand}
@@ -136,6 +167,8 @@ export const PermissionMatrix = <A extends ContentAction>({
                         rowKey={row.key}
                         fields={row.fields}
                         grants={grants}
+                        inherited={inherited}
+                        nameOf={nameOf}
                         audience={audience}
                         readOnly={readOnly}
                         onChange={(action, changes) =>
@@ -150,6 +183,11 @@ export const PermissionMatrix = <A extends ContentAction>({
           })}
         </TableBody>
       </Table>
+      {hasKinds ? (
+        <p className="sticky left-0 max-w-[100cqw] border-t px-5 py-3 text-meta text-muted-foreground">
+          {t('roles.matrix.inheritanceNote')}
+        </p>
+      ) : null}
       <Unlisted
         matrix={matrix}
         listedKeys={new Set(keys)}

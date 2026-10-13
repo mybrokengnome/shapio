@@ -7,6 +7,7 @@ import { Panel } from '@/components/Panel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { FileAnalysis } from '../helpers/analyze';
 import type { SchemaFile } from '../helpers/files';
+import { effectiveDefinition } from '../helpers/shapes';
 import { FormPreview } from './FormPreview';
 import { GraphqlShape } from './GraphqlShape';
 import { Plan } from './Plan';
@@ -65,7 +66,12 @@ export const Preview = ({ file, analysis, edited, definitions }: PreviewProps) =
           ))}
         </TabsList>
         <TabsContent value="form" className="pt-4">
-          {definition ? <FormPreview definition={definition} definitions={definitions} /> : invalid}
+          {definition ? (
+            // A kind's form has its inherited fields first, as the entry editor shows it.
+            <FormPreview definition={effectiveDefinition(definition, lookup)} definitions={definitions} />
+          ) : (
+            invalid
+          )}
         </TabsContent>
         <TabsContent value="rest" className="pt-4">
           {definition ? <RestShape definition={definition} lookup={lookup} /> : invalid}

@@ -27,8 +27,17 @@ import { StepList } from './StepList';
 
 type ReviewSheetProps = {
   preview: PlanPreview | undefined;
+  /** The active definition and the draft, as stored: what a change set receives. */
   before: SchemaDefinition | null;
   after: SchemaDefinition | null;
+  /**
+   * Both resolved over their parents, so sentences can name inherited fields (a re-parent adds and removes
+   * them). Default: `before` and `after`.
+   */
+  resolvedBefore?: SchemaDefinition | null;
+  resolvedAfter?: SchemaDefinition | null;
+  /** A model's name by ID: parents in "Move under Products", kinds a change also applies to. */
+  definitionName?: (id: string) => string | undefined;
   applying: boolean;
   error: unknown;
   onApply: (acknowledgement: Acknowledgement) => void;
@@ -53,6 +62,9 @@ export const ReviewSheet = ({
   preview,
   before,
   after,
+  resolvedBefore = before,
+  resolvedAfter = after,
+  definitionName,
   applying,
   error,
   onApply,
@@ -78,6 +90,12 @@ export const ReviewSheet = ({
   const needsDestructive = summary?.destructive ?? false;
   // A check the preview already knows fails would only fail the ship; a change set can still be reviewed.
   const failingCheck = previewShown ? hasFailingCheck(previewShown.impact.steps) : false;
+  // A model's change reaches every kind below it (the plan's affected models are its family).
+  const kindIds =
+    plan && plan.kind !== 'component'
+      ? plan.affectedModelIds.filter((modelId) => modelId !== plan.definitionId)
+      : [];
+  const kindNames = kindIds.flatMap((modelId) => definitionName?.(modelId) ?? []);
   const canApply =
     !failingCheck &&
     (!needsBreaking || acknowledgedBreaking) &&
@@ -107,12 +125,27 @@ export const ReviewSheet = ({
                 <span className="text-meta text-muted-foreground">
                   {t('models.plan.affected', { count: previewShown.impact.affectedHeads })}
                 </span>
+                {kindIds.length > 0 ? (
+                  <span className="text-meta text-muted-foreground">
+                    {kindNames.length === kindIds.length
+                      ? t('models.inheritance.appliesToKindsNamed', {
+                          count: kindIds.length,
+                          names: kindNames.join(', '),
+                        })
+                      : t('models.inheritance.appliesToKinds', { count: kindIds.length })}
+                  </span>
+                ) : null}
               </div>
               <section className="space-y-3" aria-labelledby="plan-changes">
                 <h3 id="plan-changes" className="text-sm font-semibold">
                   {t('models.plan.changes', { count: plan.changes.length })}
                 </h3>
-                <ChangeList changes={plan.changes} before={before} after={after} />
+                <ChangeList
+                  changes={plan.changes}
+                  before={resolvedBefore}
+                  after={resolvedAfter}
+                  definitionName={definitionName}
+                />
               </section>
               {plan.prerequisites.length > 0 ? (
                 <section className="space-y-3" aria-labelledby="plan-prerequisites">
@@ -128,8 +161,9 @@ export const ReviewSheet = ({
                     phase="before"
                     steps={plan.prerequisites}
                     impacts={previewShown.impact.steps}
-                    before={before}
-                    after={after}
+                    before={resolvedBefore}
+                    after={resolvedAfter}
+                    definitionName={definitionName}
                   />
                 </section>
               ) : null}
@@ -138,7 +172,13 @@ export const ReviewSheet = ({
                   <h3 id="plan-follow-ups" className="text-sm font-semibold">
                     {t('models.plan.followUps')}
                   </h3>
-                  <StepList phase="after" steps={plan.followUps} before={before} after={after} />
+                  <StepList
+                    phase="after"
+                    steps={plan.followUps}
+                    before={resolvedBefore}
+                    after={resolvedAfter}
+                    definitionName={definitionName}
+                  />
                 </section>
               ) : null}
               {needsBreaking || needsDestructive ? (

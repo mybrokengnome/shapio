@@ -69,7 +69,10 @@ export const queryKeys = {
     everySiteModels: ['schema', 'everySiteModels'] as const,
     change: (changeId: string) => ['schema', 'changes', changeId] as const,
   },
-  /** Entries per model; invalidate `content.model(key)` after any write to that model. */
+  /**
+   * Entries per model; after any write to a model, invalidate its lists and its ancestors' (a type's list holds
+   * its kinds' entries): `invalidateEntryLists` in `api/content.ts`.
+   */
   content: {
     all: ['content'] as const,
     model: (modelKey: string) => ['content', modelKey] as const,
@@ -80,6 +83,14 @@ export const queryKeys = {
       ['content', modelKey, 'revisions', id, locale ?? null] as const,
     revision: (modelKey: string, id: string, revisionId: string) =>
       ['content', modelKey, 'revision', id, revisionId] as const,
+    /** A kind change's dry run (the fields it would drop) at the draft version the editor saw. */
+    kindChange: (
+      modelKey: string,
+      id: string,
+      targetModelKey: string,
+      version: number,
+      locale: string | null,
+    ) => ['content', modelKey, 'kindChange', id, targetModelKey, version, locale] as const,
   },
   /** Change sets, the snapshot ledger and delivery usage (developer pages, plan developer-face). */
   develop: {

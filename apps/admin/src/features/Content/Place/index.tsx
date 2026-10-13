@@ -1,4 +1,4 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { useEntryList } from '@/api/content';
@@ -14,6 +14,7 @@ import type { PlaceTab } from './constants';
 import { Entries } from './Entries';
 import { Header } from './Header';
 import { usePlaceCount } from './hooks/usePlaceCount';
+import { usePlaceKinds } from './hooks/usePlaceKinds';
 import { usePlacePermissions } from './hooks/usePlacePermissions';
 import { usePlaceSearch } from './hooks/usePlaceSearch';
 import { Singleton } from './Singleton';
@@ -24,7 +25,7 @@ const Structure = lazy(() => import('./Structure').then((module) => ({ default: 
 
 type PlaceScreenProps = {
   schema: ContentSchema;
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   locales: ReturnType<typeof useContentLocales>;
   /** The place's key as it appears in the URL. */
   modelKey: string;
@@ -33,13 +34,15 @@ type PlaceScreenProps = {
 const PlaceScreen = ({ schema, model, locales, modelKey }: PlaceScreenProps) => {
   const navigate = useNavigate({ from: '/content/$modelKey' });
   const permissions = usePlacePermissions(model);
-  const placeSearch = usePlaceSearch(model, locales.current);
+  const kinds = usePlaceKinds(schema, model);
+  const placeSearch = usePlaceSearch(model, locales.current, kinds.kinds);
   const requested = placeSearch.search.tab ?? 'entries';
   const tab: PlaceTab = permissions.canSeeStructure ? requested : 'entries';
   const collection = model.kind === 'collection';
   const list = useEntryList(model.apiKey, placeSearch.query, collection && tab === 'entries');
   const search = placeSearch.search;
-  const unfiltered = !search.q && !search.status && !search.author && !(search.filters?.length ?? 0);
+  const unfiltered =
+    !search.q && !search.status && !search.author && !placeSearch.kind && !(search.filters?.length ?? 0);
   const { count } = usePlaceCount(model, unfiltered ? list.data?.pagination.total : undefined);
   const onLocaleChange = (code: string) => placeSearch.setSearch({ locale: code });
   const content = () => {
@@ -65,7 +68,7 @@ const PlaceScreen = ({ schema, model, locales, modelKey }: PlaceScreenProps) => 
               locales={locales.locales}
               locale={locales.current}
               onLocaleChange={onLocaleChange}
-              canCreate={permissions.canCreate}
+              creatable={kinds.creatable}
             />
             <Entries
               schema={schema}
@@ -75,6 +78,7 @@ const PlaceScreen = ({ schema, model, locales, modelKey }: PlaceScreenProps) => 
               placeSearch={placeSearch}
               list={list}
               permissions={permissions}
+              kinds={kinds}
             />
           </Page>
         ) : (

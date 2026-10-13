@@ -39,7 +39,7 @@ const Group = ({ group, activeKey }: GroupProps) => {
       <SidebarGroupContent>
         <SidebarMenu className="gap-1" aria-labelledby={group.label ? labelId : undefined}>
           {group.items.map((item) => (
-            <NavItem key={item.key} item={item} isActive={item.key === activeKey} />
+            <NavItem key={item.key} item={item} activeKey={activeKey} />
           ))}
         </SidebarMenu>
       </SidebarGroupContent>

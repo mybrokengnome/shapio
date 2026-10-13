@@ -8,7 +8,7 @@ import {
 } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import en from '@/locales/en/translation.json';
-import { fieldLabelOf } from './describeChange';
+import { fieldLabelOf, type DescribeContext } from './describeChange';
 
 type StepKind = keyof typeof en.models.steps;
 
@@ -60,27 +60,47 @@ export const stepsToShow = (
 const typeName = (type: DataType) => i18next.t(`models.dataTypes.${type}.name`);
 
 /**
+ * The other kind of the family a step runs on, by name: a parent's change runs on each kind's entries and
+ * indexes (`modelId`, or the content step's `ownerId`). Nothing for the definition being described, or
+ * without a name for it.
+ */
+const otherKindOf = (
+  step: PlanStep,
+  before: SchemaDefinition | null,
+  after: SchemaDefinition | null,
+  context: DescribeContext,
+): string | undefined => {
+  const modelId = step.modelId ?? step.ownerId;
+  const subject = after?.id ?? before?.id;
+  return modelId === undefined || modelId === subject ? undefined : context.definitionName?.(modelId);
+};
+
+/**
  * A sentence for a prerequisite or follow-up step, e.g. "Check that every entry has a Title". A conversion
  * that drops values names the field, both types and how many entries lose their value (the dry run's
- * `droppedEntries`, else the step's entry count).
+ * `droppedEntries`, else the step's entry count). A step on another kind of the family starts with its
+ * name ("Digital: Build the filter and sort index for Price").
  */
 export const describeStep = (
   step: PlanStep,
   before: SchemaDefinition | null,
   after: SchemaDefinition | null,
   impact?: PlanStepImpact,
+  context: DescribeContext = {},
 ): string => {
   const dropped = droppedTypeChange(step);
-  if (dropped) {
-    return i18next.t('models.plan.stepDropped', {
-      field: fieldLabelOf(dropped.fieldId, before, after),
-      from: typeName(dropped.from),
-      to: typeName(dropped.to),
-      count: impact?.droppedEntries ?? impact?.affectedHeads ?? 0,
-    });
-  }
-  const field = fieldLabelOf(step.fieldId, before, after);
-  return isKnownStep(step.kind) ? i18next.t(`models.steps.${step.kind}`, { field }) : step.kind;
+  const sentence = dropped
+    ? i18next.t('models.plan.stepDropped', {
+        field: fieldLabelOf(dropped.fieldId, before, after),
+        from: typeName(dropped.from),
+        to: typeName(dropped.to),
+        count: impact?.droppedEntries ?? impact?.affectedHeads ?? 0,
+      })
+    : isKnownStep(step.kind)
+      ? i18next.t(`models.steps.${step.kind}`, { field: fieldLabelOf(step.fieldId, before, after) })
+      : step.kind;
+  const kind = otherKindOf(step, before, after, context);
+  return kind === undefined ? sentence : i18next.t('models.inheritance.stepOnKind', { kind, sentence });
 };
 
 /**

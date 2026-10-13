@@ -5,13 +5,15 @@ import {
   isModelDefinition,
   routeKeyOf,
   type DefinitionInput,
+  type ModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import { useMe } from '@/api/auth';
 import { schemaIssuesOf } from '@/api/errors';
 import { useAllDefinitions, useCreateDefinition } from '@/api/schema';
 import { i18next } from '@/app/i18n';
@@ -21,7 +23,11 @@ import { categoryOfKind } from '../constants';
 import { apiKeyField, pluralApiKeyMessage } from '../helpers/apiKeyField';
 import { describeIssue } from '../helpers/describeIssue';
 import { useApiKeyFromLabel } from './useApiKeyFromLabel';
+import { useParentChoices } from './useParentChoices';
 import { usePluralFromApiKey } from './usePluralFromApiKey';
+
+/** The "Extends" choice for a type of its own (a select can't hold an empty value). */
+export const NO_PARENT = '__none__';
 
 const createSchema = z
   .object({
@@ -32,6 +38,10 @@ const createSchema = z
     pluralApiKey: z.string().trim(),
     description: z.string().trim(),
     localized: z.boolean(),
+    /** Sent only for a kind (its parent's value); otherwise the server's default applies. */
+    draftAndPublish: z.boolean(),
+    /** Collections only: the collection it extends, or NO_PARENT. */
+    extends: z.string(),
     /** Where it lives: this site (the default) or shared with all sites. */
     scope: z.enum(['site', 'network']),
   })
@@ -52,19 +62,34 @@ const blank = (kind: CreateDefinitionValues['kind'], scope: DefinitionScope): Cr
   pluralApiKey: '',
   description: '',
   localized: false,
+  draftAndPublish: true,
+  extends: NO_PARENT,
   scope,
 });
 
-const toDefinition = ({
-  kind,
-  label,
-  apiKey,
-  pluralApiKey,
-  description,
-  localized,
-}: CreateDefinitionValues): DefinitionInput => {
+/**
+ * The definition to create. A kind (a collection that extends `parent`) carries the parent's ID and, sent
+ * explicitly, the parent's localization and drafts (they must be equal).
+ */
+const toDefinition = (
+  { kind, label, apiKey, pluralApiKey, description, localized }: CreateDefinitionValues,
+  parent: ModelDefinition | undefined,
+): DefinitionInput => {
   if (kind === 'component') {
     return { kind, label, apiKey, description, fields: [] };
+  }
+  if (kind === 'collection' && parent) {
+    return {
+      kind,
+      label,
+      apiKey,
+      pluralApiKey,
+      description,
+      extends: parent.id,
+      localized: parent.localized,
+      draftAndPublish: parent.draftAndPublish,
+      fields: [],
+    };
   }
   return kind === 'collection'
     ? { kind, label, apiKey, pluralApiKey, description, localized, fields: [] }
@@ -80,7 +105,7 @@ const takenKeys = (definitions: ReadonlyArray<{ definition: SchemaDefinition }> 
   );
 
 /** Server issues shown on a form field, by the definition property they point at. */
-const ISSUE_FIELDS = ['label', 'apiKey', 'pluralApiKey'] as const;
+const ISSUE_FIELDS = ['label', 'apiKey', 'pluralApiKey', 'extends'] as const;
 
 const ISSUE_PATHS: ReadonlySet<string> = new Set(ISSUE_FIELDS.map((name) => `/${name}`));
 
@@ -100,7 +125,8 @@ const unplacedIssuesMessage = (error: unknown): string | undefined => {
  * Creates an empty model or component, live (a new definition has no content, so it activates at once),
  * then opens it in the builder. The API key follows the label, and a collection's plural API ID follows
  * the API key, until the user edits them. It belongs to this site unless `scope` says otherwise (the
- * network view creates shared definitions only).
+ * network view creates shared definitions only). A collection may extend another in the same scope
+ * (`parentChoices`): its localization and drafts then follow that parent.
  */
 export const useCreateDefinitionForm = (
   initialKind: CreateDefinitionValues['kind'],
@@ -127,6 +153,24 @@ export const useCreateDefinitionForm = (
     useCallback((plural: string) => setValue('pluralApiKey', plural, { shouldValidate: false }), [setValue]),
   );
 
+  const [kind, scope, parentId] = useWatch({ control: form.control, name: ['kind', 'scope', 'extends'] });
+  const siteId = useMe().data?.site.id ?? null;
+  const { parentChoices } = useParentChoices({ scope, siteId });
+  const offered = kind === 'collection' ? parentChoices : [];
+  const parent = offered.find((choice) => choice.id === parentId);
+  // A parent that is no longer offered (another shape or scope) is dropped; a kind's flags are its parent's.
+  useEffect(() => {
+    if (parentId !== NO_PARENT && !parent) {
+      setValue('extends', NO_PARENT);
+    }
+  }, [parentId, parent, setValue]);
+  useEffect(() => {
+    if (parent) {
+      setValue('localized', parent.localized);
+      setValue('draftAndPublish', parent.draftAndPublish);
+    }
+  }, [parent, setValue]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     const taken = takenKeys(definitions);
     if (taken.has(foldApiKey(values.apiKey))) {
@@ -141,7 +185,7 @@ export const useCreateDefinitionForm = (
     const created = await settle(
       createDefinition.mutateAsync({
         category,
-        input: { definition: toDefinition(values), scope: values.scope },
+        input: { definition: toDefinition(values, parent), scope: values.scope },
       }),
     );
     if (!created.ok) {
@@ -164,6 +208,10 @@ export const useCreateDefinitionForm = (
   return {
     form,
     onSubmit,
+    /** The collections it may extend (none unless it is a collection). */
+    parentChoices: offered,
+    /** The collection chosen in "Extends", if any. */
+    parent,
     pending: createDefinition.isPending,
     error: createDefinition.error,
     errorMessage: unplacedIssuesMessage(createDefinition.error),

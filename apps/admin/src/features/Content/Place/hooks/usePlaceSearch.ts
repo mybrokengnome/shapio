@@ -1,9 +1,10 @@
 import type { ContentListQuery, ContentSort } from '@shapio/client';
-import type { ModelDefinition } from '@shapio/schema';
+import type { ModelDefinition, ResolvedModelDefinition } from '@shapio/schema';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ContentListSearch } from '@/app/searchSchemas';
 import { DEFAULT_CONTENT_PAGE_SIZE } from '../../constants';
 import { toContentFilter } from '../../helpers/filterOperators';
+import { kindFilterOf, withKindFilter } from '../helpers/kindFilter';
 
 const parseSort = (sort: string | undefined): ContentSort | undefined => {
   const [field, direction] = sort?.split(':') ?? [];
@@ -24,8 +25,16 @@ export type SetPlaceSearch = (
   options?: { resetPage?: boolean; replace?: boolean },
 ) => void;
 
-/** The list's search, filters, sort, page and locale live in the URL (bookmarkable, back-button friendly). */
-export const usePlaceSearch = (model: ModelDefinition, locale: string | null) => {
+/**
+ * The list's search, filters, sort, page, locale and kind live in the URL (bookmarkable, back-button
+ * friendly). A picked kind (`?kind=`, one of `kinds`, the place's type first) narrows the family read with
+ * `filters[__model]` (helpers/kindFilter).
+ */
+export const usePlaceSearch = (
+  model: ModelDefinition,
+  locale: string | null,
+  kinds: readonly ResolvedModelDefinition[] = [],
+) => {
   const search = useSearch({ from: '/app/content/$modelKey' });
   const navigate = useNavigate({ from: '/content/$modelKey' });
   const setSearch: SetPlaceSearch = (changes, { resetPage = true, replace = false } = {}) =>
@@ -34,7 +43,7 @@ export const usePlaceSearch = (model: ModelDefinition, locale: string | null) =>
       replace,
     });
   const sort = parseSort(search.sort) ?? defaultSortOf(model);
-  const filter = toContentFilter(search.filters ?? []);
+  const filter = withKindFilter(toContentFilter(search.filters ?? []), kindFilterOf(kinds, search.kind));
   const query: ContentListQuery = {
     page: search.page ?? 1,
     pageSize: search.pageSize ?? DEFAULT_CONTENT_PAGE_SIZE,
@@ -45,5 +54,6 @@ export const usePlaceSearch = (model: ModelDefinition, locale: string | null) =>
     ...(search.status ? { status: search.status } : {}),
     ...(search.author ? { author: search.author } : {}),
   };
-  return { search, setSearch, query, sort };
+  const kind = kinds.find((candidate) => candidate.apiKey === search.kind);
+  return { search, setSearch, query, sort, kind };
 };

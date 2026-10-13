@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { graphqlSdl, restEndpoints, restResponseSample } from './shapes';
+import { effectiveDefinition, graphqlSdl, restEndpoints, restResponseSample } from './shapes';
 import { ARTICLE, AUTHOR, SEO } from './testDefinitions';
 
 const lookup = new Map([ARTICLE, AUTHOR, SEO].map((definition) => [definition.id, definition]));
@@ -35,5 +35,50 @@ describe('API shapes from the naming helpers', () => {
     expect(sdl).toContain('stage: ArticleStageEnum');
     expect(sdl).toContain('articles(filter: ArticleFilter');
     expect(sdl).toContain('createArticle');
+  });
+
+  it('previews a kind with its inherited fields, its nested path and the interfaces it implements', () => {
+    const digital = {
+      ...ARTICLE,
+      id: 'digital',
+      apiKey: 'digitalArticle',
+      pluralApiKey: 'digital',
+      label: 'Digital',
+      extends: ARTICLE.id,
+      fields: [{ ...ARTICLE.fields[0], id: 'download', apiKey: 'downloadUrl', label: 'Download' }],
+      display: {},
+    } as typeof ARTICLE;
+    const family = new Map([...lookup, [digital.id, digital]]);
+    const paths = restEndpoints(digital, family).map((endpoint) => endpoint.path);
+    expect(paths).toContain('/api/content/articles/digital');
+    const sample = JSON.parse(restResponseSample(digital, family)) as {
+      data: Array<Record<string, unknown>>;
+    };
+    expect(sample.data[0]).toMatchObject({
+      __model: 'digitalArticle',
+      title: '<string>',
+      downloadUrl: '<string>',
+    });
+    const sdl = graphqlSdl(digital, family);
+    expect(sdl).toContain('type DigitalArticle implements ArticleInterface {');
+    // The inherited enum keeps the declaring model's type name.
+    expect(sdl).toContain('stage: ArticleStageEnum');
+  });
+
+  it('resolves a kind once: an already resolved definition keeps its field list', () => {
+    const digital = {
+      ...ARTICLE,
+      id: 'digital',
+      apiKey: 'digitalArticle',
+      label: 'Digital',
+      extends: ARTICLE.id,
+      fields: [{ ...ARTICLE.fields[0], id: 'download', apiKey: 'downloadUrl', label: 'Download' }],
+      display: {},
+    } as typeof ARTICLE;
+    const family = new Map([...lookup, [digital.id, digital]]);
+    const once = effectiveDefinition(digital, family);
+    const twice = effectiveDefinition(once, family);
+    expect(twice.fields.map((field) => field.id)).toEqual(once.fields.map((field) => field.id));
+    expect(graphqlSdl(once, family)).toBe(graphqlSdl(digital, family));
   });
 });

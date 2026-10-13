@@ -12,6 +12,8 @@ type StepListProps = {
   after: SchemaDefinition | null;
   /** Prerequisites run before activation (clock, or a warning when entries would fail); follow-ups after. */
   phase: 'before' | 'after';
+  /** A model's name by ID: a step on another kind of the family names it. */
+  definitionName?: (id: string) => string | undefined;
 };
 
 const STATUS_CLASSES = {
@@ -26,7 +28,7 @@ const STATUS_ICONS = { waiting: Clock, failing: AlertTriangle, later: CircleDash
  * Steps as a vertical timeline: a status icon per step, joined by a line. A value check on a field whose
  * values are dropped is not listed (see `stepsToShow`).
  */
-export const StepList = ({ steps, impacts, before, after, phase }: StepListProps) => {
+export const StepList = ({ steps, impacts, before, after, phase, definitionName }: StepListProps) => {
   const shown = stepsToShow(steps, impacts);
   return (
     <ol className="space-y-0">
@@ -50,7 +52,7 @@ export const StepList = ({ steps, impacts, before, after, phase }: StepListProps
               ) : null}
             </span>
             <div className="min-w-0 pt-0.5 pb-4 text-sm">
-              {describeStep(step, before, after, impact)}
+              {describeStep(step, before, after, impact, { definitionName })}
               {detail ? <span className="block text-meta text-muted-foreground">{detail}</span> : null}
             </div>
           </li>

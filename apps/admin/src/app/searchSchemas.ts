@@ -88,6 +88,12 @@ export const contentListSearchSchema = z.object({
   status: z.enum(ENTRY_STATUSES).optional().catch(undefined),
   /** Only entries created by this admin (user ID). */
   author: z.uuid().optional().catch(undefined),
+  /** Only entries of this kind of the place (singular API ID): the type alone, or a kind and its own kinds. */
+  kind: z
+    .string()
+    .regex(/^[_A-Za-z][_0-9A-Za-z]*$/)
+    .optional()
+    .catch(undefined),
   /** The place's tab (Structure and API need the schema permission; Entries when absent). */
   tab: z.enum(PLACE_TABS).optional().catch(undefined),
 });

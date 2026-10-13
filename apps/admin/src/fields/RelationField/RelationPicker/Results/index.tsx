@@ -16,6 +16,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 type ResultsProps = {
   target: ModelDefinition;
+  /** An entry's own kind's label, when the target has kinds (shown after its title). */
+  kindLabelOf: (modelKey: string | undefined) => string | undefined;
   locale: string | null;
   multiple: boolean;
   /** Linked now: shown as selected. */
@@ -38,6 +40,7 @@ type ResultsProps = {
  */
 export const Results = ({
   target,
+  kindLabelOf,
   locale,
   multiple,
   selected,
@@ -140,6 +143,7 @@ export const Results = ({
         {items.map((item) => {
           const isSelected = selected.includes(item.id);
           const disabled = multiple && full && !isSelected;
+          const kind = kindLabelOf(item.model);
           return (
             <li
               key={item.id}
@@ -158,7 +162,8 @@ export const Results = ({
               onClick={() => choose(item.id)}
             >
               <Check aria-hidden="true" className={cn('size-4 shrink-0', !isSelected && 'invisible')} />
-              <span className="min-w-0 truncate">{labelOf(target, item, t('content.untitled'))}</span>
+              <span className="min-w-0 flex-1 truncate">{labelOf(target, item, t('content.untitled'))}</span>
+              {kind ? <span className="shrink-0 text-meta text-muted-foreground">{kind}</span> : null}
             </li>
           );
         })}

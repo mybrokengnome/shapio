@@ -131,3 +131,39 @@ describe('a type change Shapio cannot convert', () => {
     expect(stepsToShow([toText, check(price.id)])).toHaveLength(2);
   });
 });
+
+describe('a family of types', () => {
+  const names: Record<string, string> = { [before.id]: 'Products', digital: 'Digital', media: 'Media' };
+  const context = { definitionName: (id: string) => names[id] };
+  const extendsChange = (from: string | null, to: string | null) =>
+    classifyChange({ kind: 'model.extends', definitionId: 'digital', from, to }, { before, after });
+
+  it('names the parents of a re-parent, never their IDs', () => {
+    expect(describeChange(extendsChange(null, before.id), before, after, context)).toBe(
+      'Make this a kind of Products',
+    );
+    expect(describeChange(extendsChange(before.id, 'media'), before, after, context)).toBe(
+      'Move this from Products to Media',
+    );
+    expect(describeChange(extendsChange(before.id, null), before, after, context)).toBe(
+      'Stop being a kind of Products: it becomes a type of its own',
+    );
+    expect(describeChange(extendsChange(before.id, 'unknown'), before, after, context)).toBe(
+      'Change the type this extends',
+    );
+    expect(describeChange(extendsChange(null, before.id), before, after)).toBe(
+      'Change the type this extends',
+    );
+  });
+
+  it('names the kind a step of the family runs on', () => {
+    const index: PlanStep = { kind: 'buildIndex', modelId: 'digital', fieldId: price.id };
+    expect(describeStep(index, before, after, undefined, context)).toBe(
+      'Digital: Build the filter and sort index for Price',
+    );
+    const own: PlanStep = { kind: 'buildIndex', modelId: before.id, fieldId: price.id };
+    expect(describeStep(own, before, after, undefined, context)).toBe(
+      'Build the filter and sort index for Price',
+    );
+  });
+});

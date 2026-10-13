@@ -4,6 +4,7 @@ import { StatusChip } from '@/components/StatusChip';
 import { Badge } from '@/components/ui/badge';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { KIND_ICONS, KIND_LABEL_KEYS } from '../../../constants';
+import { useModelIndex } from '../../../hooks/useModelIndex';
 
 type SummaryProps = { hasIssues: boolean };
 
@@ -11,16 +12,23 @@ type SummaryProps = { hasIssues: boolean };
 export const Summary = ({ hasIssues }: SummaryProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
+  const { index } = useModelIndex();
   if (!draft) {
     return null;
   }
   const KindIcon = KIND_ICONS[draft.kind];
+  const parentId = draft.kind === 'collection' ? draft.extends : undefined;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Badge variant="outline">
         <KindIcon aria-hidden="true" />
         {t(KIND_LABEL_KEYS[draft.kind])}
       </Badge>
+      {parentId === undefined ? null : (
+        <Badge variant="outline">
+          {t('models.inheritance.extendsSummary', { model: index.get(parentId)?.label ?? parentId })}
+        </Badge>
+      )}
       {draft.kind === 'component' ? null : (
         <>
           <Badge variant="outline">

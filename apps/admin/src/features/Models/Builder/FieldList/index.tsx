@@ -1,15 +1,17 @@
-import type { FieldDefinition, ValidationIssue } from '@shapio/schema';
+import type { FieldDefinition, ResolvedField, ValidationIssue } from '@shapio/schema';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Badge } from '@/components/ui/badge';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { moveItem, pruneLayout } from '../../helpers/draft';
+import type { DraftParent } from '../../helpers/inheritance';
 import { fieldPath, issuesUnder } from '../../helpers/issues';
 import { IssueList } from '../controls/IssueList';
 import type { useAddSeoField } from '../hooks/useAddSeoField';
 import { AddFieldButton } from './AddFieldButton';
 import { handleIdOf } from './handleId';
+import { Inherited } from './Inherited';
 import { Row } from './Row';
 
 type FieldListProps = {
@@ -18,12 +20,27 @@ type FieldListProps = {
   onAdd: () => void;
   /** "Add field → SEO fields" (models only). */
   seo?: ReturnType<typeof useAddSeoField>;
+  /** The collection the draft extends: its fields are listed above the draft's own, locked. */
+  parent?: DraftParent;
+  /** The inherited fields (resolved, ancestors' first). */
+  inherited?: readonly ResolvedField[];
 };
 
 const NO_FIELDS: FieldDefinition[] = [];
+const NO_INHERITED: readonly ResolvedField[] = [];
 
-/** The draft's fields in order: select one to edit it, reorder by drag, arrow keys or chevrons. */
-export const FieldList = ({ issues, disabled, onAdd, seo }: FieldListProps) => {
+/**
+ * The draft's fields in order: select one to edit it, reorder by drag, arrow keys or chevrons. A kind lists
+ * the fields it inherits first, locked; positions and issue paths count its own fields only.
+ */
+export const FieldList = ({
+  issues,
+  disabled,
+  onAdd,
+  seo,
+  parent,
+  inherited = NO_INHERITED,
+}: FieldListProps) => {
   const { t } = useTranslation();
   const fields = useDefinitionDraftStore((state) => state.draft?.fields ?? NO_FIELDS);
   const localized = useDefinitionDraftStore(
@@ -42,7 +59,7 @@ export const FieldList = ({ issues, disabled, onAdd, seo }: FieldListProps) => {
       return;
     }
     // A move can change the automatic title field, which then leaves the document (`pruneLayout`).
-    update((draft) => pruneLayout({ ...draft, fields: moveItem(draft.fields, from, to) }));
+    update((draft) => pruneLayout({ ...draft, fields: moveItem(draft.fields, from, to) }, parent));
     setAnnouncement(
       t('models.builder.moved', { label: moved.label, position: to + 1, total: fields.length }),
     );
@@ -75,9 +92,15 @@ export const FieldList = ({ issues, disabled, onAdd, seo }: FieldListProps) => {
           <IssueList issues={definitionIssues} />
         </div>
       ) : null}
+      <Inherited fields={inherited} showLocalized={localized} />
+      {inherited.length > 0 ? (
+        <h3 className="px-3 pt-2 pb-1 text-meta text-muted-foreground">
+          {t('models.inheritance.ownFields')}
+        </h3>
+      ) : null}
       {fields.length === 0 ? (
         <p className="px-3 py-6 text-center text-meta text-muted-foreground">
-          {t('models.builder.noFields')}
+          {inherited.length > 0 ? t('models.inheritance.noOwnFields') : t('models.builder.noFields')}
         </p>
       ) : (
         <ol className="space-y-0.5" aria-label={count}>

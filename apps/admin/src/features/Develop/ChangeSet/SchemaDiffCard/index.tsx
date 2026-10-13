@@ -6,6 +6,7 @@ import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { describeChange } from '@/features/Models/helpers/describeChange';
+import { useDefinitionName } from '@/features/Models/hooks/useDefinitionName';
 import { cn } from '@/helpers/cn';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { ClassificationChip } from '../ClassificationChip';
@@ -34,6 +35,7 @@ export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
   const { t } = useTranslation();
   const { before, after, shared } = useSchemaItemDefinitions(changeSetId, item);
   const { multiSite } = useSchemaScopeAccess();
+  const { definitionName } = useDefinitionName();
   const changes = item.plan?.changes ?? [];
   const title = after?.label ?? before?.label ?? item.apiKey;
   return (
@@ -101,7 +103,9 @@ export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
                 >
                   {sign}
                 </span>
-                <span className="min-w-0 flex-1">{describeChange(change, before, after)}</span>
+                <span className="min-w-0 flex-1">
+                  {describeChange(change, before, after, { definitionName })}
+                </span>
                 <ClassificationChip changeClass={classOfChange(change)} size="sm" />
               </li>
             );

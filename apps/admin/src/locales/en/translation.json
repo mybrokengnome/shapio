@@ -651,6 +651,12 @@
       "fixedFields": "Only these fields (set through the API): {{fields}}",
       "unlistedTitle": "Grants on models that no longer exist",
       "removeGrant": "Remove {{action}} on {{model}}",
+      "inheritedFrom": "Inherited from {{model}}",
+      "inheritedAction": "{{action}} inherited from {{model}}",
+      "inheritedGrant": "Inherited from {{model}}: {{fields}}",
+      "inheritedGrantOwnOnly": "Inherited from {{model}}: {{fields}}, only their own entries",
+      "widenOnly": "A grant here can only add to what it inherits.",
+      "inheritanceNote": "Kinds get every grant of the type they extend. A grant on a kind can only add access; it never takes away what the kind inherits.",
       "actions": {
         "read": "Read",
         "create": "Create",
@@ -755,6 +761,7 @@
       "changeSetShipping": "Started shipping change set",
       "changeSetUnschedule": "Unscheduled change set",
       "changeSetUpdate": "Updated change set",
+      "contentChangeKind": "Changed entry kind",
       "contentDelete": "Deleted entry",
       "contentPublish": "Published entry",
       "contentRestore": "Restored entry version",
@@ -893,7 +900,7 @@
     "created": "Created — no restart needed.",
     "updated": "Model updated — no restart needed",
     "deleted": "Deleted. Its entries are kept and come back if it is restored.",
-    "kind": "Kind",
+    "shape": "Shape",
     "label": "Label",
     "apiKey": "API ID",
     "apiKeyHint": "Renaming it later breaks API clients.",
@@ -918,7 +925,7 @@
       "fields": "Fields",
       "version": "Version",
       "activated": "Active since",
-      "kind": "Kind"
+      "shape": "Shape"
     },
     "kinds": {
       "collection": "Collection",
@@ -1216,6 +1223,10 @@
       "modelLocalized_off": "Stop localizing: only the default locale's values are kept",
       "modelDraftAndPublish_on": "Turn on drafts and publishing",
       "modelDraftAndPublish_off": "Turn off drafts and publishing: unpublished drafts are discarded",
+      "modelExtends": "Change the type this extends",
+      "modelExtends_added": "Make this a kind of {{to}}",
+      "modelExtends_removed": "Stop being a kind of {{from}}: it becomes a type of its own",
+      "modelExtends_moved": "Move this from {{from}} to {{to}}",
       "fieldAdded": "Add the field {{field}} ({{type}})",
       "fieldRemoved": "Remove the field {{field}} (stored values are kept)",
       "fieldOrder": "Reorder the fields",
@@ -1395,6 +1406,13 @@
       "COMPONENT_CYCLE": "Components can't contain themselves, directly or through others.",
       "COMPONENT_TOO_DEEP": "Components are nested too deeply.",
       "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first.",
+      "UNKNOWN_PARENT": "The type it extends doesn't exist.",
+      "INVALID_PARENT": "Only a collection can extend another, and only one available in the same place (this site or all sites).",
+      "INHERITANCE_CYCLE": "Types can't extend each other in a circle.",
+      "INHERITANCE_TOO_DEEP": "A family can have at most 8 levels of types.",
+      "INHERITED_FLAG_MISMATCH": "A kind must match the type it extends here.",
+      "INHERITED_FIELD_COLLISION": "The type it extends already has a field with this API ID (IDs are case-insensitive).",
+      "HAS_CHILDREN": "Other types extend this one. Delete them or move them under another type first.",
       "apiKeyTakenOnSite": "Already used on {{site}}.",
       "choicesEmpty": "Add at least one choice.",
       "choiceValue": "Give every choice a value of up to 64 characters.",
@@ -1412,6 +1430,33 @@
       "shared": "Shared with all sites.",
       "kept": "Now only on this site.",
       "readOnly": "Shared with all sites: changing it needs a role on every site."
+    },
+    "inheritance": {
+      "extends": "Extends",
+      "extendsHint": "Makes it a kind of another collection: it gets that type's fields, locked, and adds its own. Its API path nests under the parent's, as in /api/content/products/digital.",
+      "noParent": "Nothing (a type of its own)",
+      "noCollections": "No collection here to extend yet.",
+      "reparentWarning": "Moving it under another type changes its API: reviewed as a breaking change.",
+      "flagsFollowParent": "Same as {{model}}: a kind follows the type it extends.",
+      "flagsSharedWithKinds_one": "Its kind has the same setting, so it can't change here.",
+      "flagsSharedWithKinds_other": "Its {{count}} kinds have the same setting, so it can't change here.",
+      "extendsSummary": "Kind of {{model}}",
+      "locked": "Inherited: locked",
+      "inheritedFrom": "Inherited from {{model}}",
+      "inheritedFromLink": "Inherited from <modelLink>{{model}}</modelLink>",
+      "fieldLocked": "Inherited from <modelLink>{{model}}</modelLink>. Change it there: a kind adds fields, it never changes inherited ones.",
+      "ownFields": "Its own fields",
+      "noOwnFields": "No fields of its own yet.",
+      "hasKinds_one": "Has {{count}} kind",
+      "hasKinds_other": "Has {{count}} kinds",
+      "scopeFollowsParent": "A kind is available where its family is. Change it on {{model}}.",
+      "scopeCascades_one": "Its kind moves with it.",
+      "scopeCascades_other": "Its {{count}} kinds move with it.",
+      "appliesToKinds_one": "Also applies to {{count}} kind",
+      "appliesToKinds_other": "Also applies to {{count}} kinds",
+      "appliesToKindsNamed_one": "Also applies to {{names}}",
+      "appliesToKindsNamed_other": "Also applies to {{count}} kinds: {{names}}",
+      "stepOnKind": "{{kind}}: {{sentence}}"
     }
   },
   "media": {
@@ -1673,6 +1718,26 @@
       "unpublishTitle": "Unpublish this locale?",
       "unpublishDescription": "It stops being served by the API. The draft stays."
     },
+    "changeKind": {
+      "title": "Change kind",
+      "hint": "Moves the entry to another kind of the same type. Its API path changes, and the values of fields the new kind doesn't have are removed from every locale. History keeps the old versions.",
+      "placeholder": "Choose a kind",
+      "saveFirst": "Save your changes first.",
+      "noTargets": "You can't create entries of the other kinds.",
+      "drops_one": "Removes the value of {{fields}}.",
+      "drops_other": "Removes the values of {{fields}}.",
+      "dropsNothing": "Every value is kept.",
+      "action": "Change to {{kind}}",
+      "confirmTitle": "Change “{{entry}}” to {{kind}}?",
+      "confirmDrops_one": "Its API path changes, and the value of {{fields}} is removed from every locale. History keeps the old versions.",
+      "confirmDrops_other": "Its API path changes, and the values of {{fields}} are removed from every locale. History keeps the old versions.",
+      "confirmKeeps": "Its API path changes. Every value is kept.",
+      "acknowledge_one": "Remove this field's value",
+      "acknowledge_other": "Remove these {{count}} fields' values",
+      "confirm": "Change kind",
+      "pending": "Changing…",
+      "done": "Changed to {{kind}}."
+    },
     "preflight": {
       "title": "Ready to publish?",
       "description": "It goes live as soon as you publish.",
@@ -1876,7 +1941,8 @@
         "publish": "Published",
         "restore": "Restored",
         "duplicate": "Duplicated",
-        "localize": "Locale created"
+        "localize": "Locale created",
+        "conversion": "Converted"
       },
       "live": "Live",
       "events": {
@@ -2027,7 +2093,8 @@
       "createNew": "Create a new {{model}}",
       "done": "Done",
       "createTitle": "New {{model}}",
-      "createAndLink": "Create and link"
+      "createAndLink": "Create and link",
+      "kind": "Kind"
     },
     "richText": {
       "toolbar": "Text formatting",
@@ -2076,6 +2143,8 @@
   },
   "place": {
     "new": "New",
+    "newKind": "New {{kind}}",
+    "newMenu": "Choose a kind",
     "count_one": "{{count}} entry",
     "count_other": "{{count}} entries",
     "tabs": {
@@ -2110,7 +2179,8 @@
       "author": "Created by",
       "localesOf": "Locales",
       "localeState": "{{locale}}: {{status}}",
-      "rowsLabel": "{{place}} entries"
+      "rowsLabel": "{{place}} entries",
+      "kind": "Kind"
     },
     "view": {
       "label": "View",
@@ -2170,7 +2240,9 @@
       "author": "Created by",
       "createdBy": "Created by",
       "authors": "People",
-      "you": "{{name}} (you)"
+      "you": "{{name}} (you)",
+      "kind": "Kind",
+      "kindIs": "Kind is"
     },
     "bulk": {
       "label": "Bulk actions",
@@ -2693,7 +2765,8 @@
         "localization_changed": "Its model's localization changed.",
         "locale_missing": "The locale no longer exists.",
         "invalid": "That version doesn't fit the current schema.",
-        "unique_conflict": "A unique value is now taken by another entry."
+        "unique_conflict": "A unique value is now taken by another entry.",
+        "kind_changed": "The entry has changed kind since."
       },
       "healthTitle": "Content health",
       "noHealthFindings": "No open health findings on these entries.",
@@ -2785,6 +2858,7 @@
       "schema": "Schema",
       "conversion": "Conversion",
       "import": "Import",
+      "kind_change": "Kind change",
       "legacy": "Before the ledger"
     },
     "tabs": {

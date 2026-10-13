@@ -17,7 +17,8 @@ import { Updated } from '../../Updated';
  */
 export const Item = ({ context, item, label, selected, people, onSelectChange }: RowProps) => {
   const { t } = useTranslation();
-  const { model, locale, quickEdit } = context;
+  const { locale, quickEdit } = context;
+  const kind = context.kindOf(item.model);
   return (
     <li className={cn('border-b last:border-b-0', selected && 'bg-accent/40')}>
       <div className="flex items-start gap-3 px-4 py-3">
@@ -29,7 +30,7 @@ export const Item = ({ context, item, label, selected, people, onSelectChange }:
         />
         <div className="min-w-0 flex-1 space-y-1.5">
           <EntryTitle
-            modelKey={model.apiKey}
+            modelKey={kind.apiKey}
             entryId={item.id}
             label={label}
             locale={locale}
@@ -37,6 +38,7 @@ export const Item = ({ context, item, label, selected, people, onSelectChange }:
           />
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-meta">
             <EntryStatusChip status={item.status} size="sm" />
+            {context.showKind ? <span className="text-muted-foreground">{kind.label}</span> : null}
             <Author author={item.author} className="max-w-40" />
             {locale ? <LocaleFlags item={item} current={locale} labelOf={context.localeLabelOf} /> : null}
             <Updated at={item.updatedAt} />
@@ -48,7 +50,7 @@ export const Item = ({ context, item, label, selected, people, onSelectChange }:
         <div className="border-t px-4 py-5">
           <QuickEdit
             quickEdit={quickEdit}
-            model={model}
+            model={kind}
             entryId={item.id}
             label={label}
             locale={locale}

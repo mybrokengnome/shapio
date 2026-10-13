@@ -4,8 +4,10 @@ import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { documentPlacementOf, withDocumentPlacement, type PlacementLock } from '../../../helpers/display';
 import { issuesUnder } from '../../../helpers/issues';
 import { SwitchControl } from '../../controls/SwitchControl';
+import { useDraftParent } from '../../hooks/useDraftParent';
 
 type PlacementProps = {
+  /** The draft, resolved over its parent when it extends one. */
   model: ModelDefinition;
   field: FieldDefinition;
   /** All of the draft's issues; the switch shows the ones on this field's `canvasFieldIds` entry. */
@@ -26,8 +28,13 @@ const LOCK_KEYS = {
 export const Placement = ({ model, field, issues, disabled }: PlacementProps) => {
   const { t } = useTranslation();
   const update = useDefinitionDraftStore((state) => state.update);
+  // Issue paths point into the draft's own display, not the merged one.
+  const ownCanvas = useDefinitionDraftStore((state) =>
+    state.draft?.kind === 'component' ? undefined : state.draft?.display.canvasFieldIds,
+  );
+  const { parent } = useDraftParent();
   const { inDocument, lock } = documentPlacementOf(model, field);
-  const index = model.display.canvasFieldIds?.indexOf(field.id) ?? -1;
+  const index = ownCanvas?.indexOf(field.id) ?? -1;
   return (
     <SwitchControl
       id={`field-${field.id}-in-document`}
@@ -39,7 +46,7 @@ export const Placement = ({ model, field, issues, disabled }: PlacementProps) =>
       disabled={disabled || lock !== undefined}
       onChange={(checked) =>
         update((current) =>
-          current.kind === 'component' ? current : withDocumentPlacement(current, field.id, checked),
+          current.kind === 'component' ? current : withDocumentPlacement(current, field.id, checked, parent),
         )
       }
     />

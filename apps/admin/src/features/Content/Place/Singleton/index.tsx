@@ -1,4 +1,4 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import { useEntryList } from '@/api/content';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
@@ -10,7 +10,7 @@ const CREATE = { kind: 'create' } as const;
 
 type SingletonProps = {
   schema: ContentSchema;
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   locale: string | null;
   onLocaleChange: (code: string) => void;
 };

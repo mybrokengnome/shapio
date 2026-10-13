@@ -540,7 +540,10 @@ focus): Layout (a `Switch` between the words Document and Form, on for Form, eit
 side; the whole type, for schema managers only; ships at once, the toast offers Undo), Status (current state,
 live since, locales with "Start French"), Properties (all non-canvas fields as compact rows that expand to
 their editor), Cover (alt text, focal point), History, Danger (unpublish, delete via `InlineConfirm`).
-Esc closes it.
+Esc closes it. For a type with kinds, Danger also holds **Change kind**: a select of the family's other kinds,
+the server's dry run naming the fields whose values would be dropped, then the blocking confirm (see Dialogs).
+It waits for a save while the entry has unsaved edits, and a success opens the entry under its new kind (a
+toast, no Undo: the values are in History).
 
 **Publish pre-flight.** Publish opens a checklist anchored to the button, one plain sentence per check
 with a fix link that takes you to the spot: required field empty, alt text missing, locale not started,
@@ -589,6 +592,10 @@ opens at Status only as a fallback, when the field can't be found on the page.
 
 A content type is a place (Articles, Authors). The word "Models" never appears to editors.
 
+- **Kinds**: a type that extends another nests under it in the sidebar (`SidebarMenuSub`, any depth, roots
+  only while collapsed to icons); a parent's count includes its kinds'. Its list holds every kind's entries:
+  columns and filters over the parent's fields, a Kind column and a Kind filter chip, rows that open and act
+  under their own kind, and New as a menu of the kinds the person may create (the type first).
 - **Header**: `PageHeader` with the place name, count in `meta`, locale, New (primary). Tabs: Entries, and
   Structure / API with the schema permission. The same tabs sit above each entry of a collection, as they do
   above a single type's document; there Entries goes back to the list. Display settings are a section inside
@@ -658,7 +665,8 @@ raises the conflict banner instead.
 
 `ConfirmDialog` is kept only for: leaving with unsaved changes (`UnsavedChangesGuard`, `useDiscardGuard`),
 deleting a model, force-deleting a file that content uses, deleting a locale that has content, changing the
-default locale, deleting an admin role. `src/test/conventions.test.ts` checks that `ui/dialog` isn't used
+default locale, deleting an admin role, changing an entry's kind (the values of fields the new kind lacks are
+dropped; the acknowledgement checkbox shows when any are). `src/test/conventions.test.ts` checks that `ui/dialog` isn't used
 and that `AlertDialogContent` appears only in `ConfirmDialog`.
 
 ## Do and don't

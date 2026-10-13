@@ -48,6 +48,7 @@ export const AUDIT_ACTION_LABEL_KEYS = {
   'change_set.shipping': 'audit.actions.changeSetShipping',
   'change_set.unschedule': 'audit.actions.changeSetUnschedule',
   'change_set.update': 'audit.actions.changeSetUpdate',
+  'content.change_kind': 'audit.actions.contentChangeKind',
   'content.delete': 'audit.actions.contentDelete',
   'content.publish': 'audit.actions.contentPublish',
   'content.restore': 'audit.actions.contentRestore',

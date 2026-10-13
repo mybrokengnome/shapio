@@ -244,3 +244,30 @@ export const fieldChoices = (
   const visible = audience === 'admin' ? live : live.filter((field) => field.public);
   return { choices, defaultSelection: visible.map((field) => field.id) };
 };
+
+/** A grant a model gets from an ancestor (plan polymorphic-types D8: a parent's grant flows down to its kinds). */
+export type InheritedGrant = { modelId: string; grant: ActionGrant };
+
+export type InheritedGrants<A extends ContentAction> = Partial<Record<A, InheritedGrant[]>>;
+
+/**
+ * What a kind inherits per action: each ancestor's grant (root first). Grants union on the server, so a
+ * kind's own grant can only add to these; the matrix shows them read-only beside the kind's own.
+ */
+export const inheritedGrantsOf = <A extends ContentAction>(
+  matrix: PermissionMatrix<A>,
+  ancestorIds: readonly string[],
+  rules: Pick<MatrixRules<A>, 'actions'>,
+): InheritedGrants<A> => {
+  const inherited: InheritedGrants<A> = {};
+  for (const action of rules.actions) {
+    const grants = ancestorIds.flatMap((modelId) => {
+      const grant = matrix[modelId]?.[action];
+      return grant ? [{ modelId, grant }] : [];
+    });
+    if (grants.length > 0) {
+      inherited[action] = grants;
+    }
+  }
+  return inherited;
+};

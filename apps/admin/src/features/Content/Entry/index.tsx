@@ -1,4 +1,4 @@
-import { effectiveLayout, entryLayoutOf, type ModelDefinition } from '@shapio/schema';
+import { effectiveLayout, entryLayoutOf, type ResolvedModelDefinition } from '@shapio/schema';
 import { useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,12 +15,14 @@ import { useSaveShortcut } from '@/hooks/useSaveShortcut';
 import { useContentLocales } from '../hooks/useContentLocales';
 import type { ContentSchema } from '../hooks/useContentSchema';
 import { LocaleSelect } from '../LocaleSelect';
+import { ChangeKind } from './ChangeKind';
 import { CoverSettings } from './CoverSettings';
 import { DangerZone } from './DangerZone';
 import { DocumentBody } from './Document';
 import { FormBody } from './Form';
 import { HistorySheet } from './HistorySheet';
 import { AssistDocumentContext, useAssistDocument } from './hooks/useAssistTarget';
+import { useChangeKind } from './hooks/useChangeKind';
 import { useDocumentPaletteActions } from './hooks/useDocumentPaletteActions';
 import { useDocumentShortcuts } from './hooks/useDocumentShortcuts';
 import { useEntryDocument } from './hooks/useEntryDocument';
@@ -46,7 +48,7 @@ import type { EntryMode, ReloadEntry } from './types';
 
 type EntryDocumentProps = {
   schema: ContentSchema;
-  model: ModelDefinition;
+  model: ResolvedModelDefinition;
   mode: EntryMode;
   locale: string | null;
   /** Local values to reapply over the loaded ones (after "reload and keep my changes"). */
@@ -96,6 +98,14 @@ export const EntryDocument = ({
   const assistDocument = useAssistDocument({ model, mode, store, save: saver.save });
   const drawer = useSettingsDrawer();
   const preflight = usePreflightFlow(saver.save);
+  const changeKind = useChangeKind({
+    schema,
+    model,
+    entry: mode.kind === 'edit' ? mode.entry : null,
+    locale,
+    dirty,
+    canUpdate: permissions.canUpdate,
+  });
   // `?revision=` (Snapshots → Timeline, "Open this version") opens the history at that revision.
   const { revision: linkedRevision } = useSearch({ strict: false });
   const [historyOpen, setHistoryOpen] = useState(linkedRevision !== undefined);
@@ -351,6 +361,11 @@ export const EntryDocument = ({
                       : undefined
                   }
                   onDelete={permissions.canDelete ? lifecycle.remove : undefined}
+                  changeKind={
+                    changeKind.available ? (
+                      <ChangeKind changeKind={changeKind} title={heading} dirty={dirty} />
+                    ) : undefined
+                  }
                 />
               ) : null
             }

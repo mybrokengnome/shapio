@@ -4,16 +4,18 @@ import { SharedGlyph } from '@/components/SharedGlyph';
 import { SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { cn } from '@/helpers/cn';
 import type { ShellNavItem } from '../hooks/useShellNavGroups';
+import { Kinds } from './Kinds';
 
-type NavItemProps = { item: ShellNavItem; isActive: boolean };
+type NavItemProps = { item: ShellNavItem; activeKey: string | undefined };
 
 /**
- * A sidebar destination (active state from the router), with a place's entry count on the right and a
- * small globe after a place shared with all sites.
+ * A sidebar destination (active state from the router), with a place's entry count on the right, a small
+ * globe after a place shared with all sites, and the kinds that extend it nested underneath.
  */
-export const NavItem = ({ item, isActive }: NavItemProps) => {
+export const NavItem = ({ item, activeKey }: NavItemProps) => {
   const { t } = useTranslation();
   const Icon = item.icon;
+  const isActive = item.key === activeKey;
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -39,6 +41,7 @@ export const NavItem = ({ item, isActive }: NavItemProps) => {
           {item.count.toLocaleString()}
         </SidebarMenuBadge>
       ) : null}
+      {item.children ? <Kinds items={item.children} activeKey={activeKey} /> : null}
     </SidebarMenuItem>
   );
 };

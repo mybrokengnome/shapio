@@ -30,6 +30,8 @@ export type ShellNavItem = {
   variant?: 'add';
   /** A place shared with all sites (marked only where there is more than one site). */
   shared?: boolean;
+  /** The kinds that extend a place, nested under it (hidden while the sidebar is collapsed to icons). */
+  children?: ShellNavItem[];
 };
 
 export type ShellNavGroup = {
@@ -37,6 +39,10 @@ export type ShellNavGroup = {
   label?: string;
   items: ShellNavItem[];
 };
+
+/** A group's items with every nested kind, each parent before its kinds. */
+export const flattenNavItems = (items: readonly ShellNavItem[]): ShellNavItem[] =>
+  items.flatMap((item) => [item, ...flattenNavItems(item.children ?? [])]);
 
 const PLACE_ICONS = { collection: FileStack, singleton: FileText } as const;
 
@@ -62,6 +68,9 @@ const placeItem = (place: Place, multiSite: boolean): ShellNavItem => ({
   link: linkOptions({ to: '/content/$modelKey', params: { modelKey: place.apiKey } }),
   ...(place.count === undefined ? {} : { count: place.count }),
   ...(multiSite && place.shared ? { shared: true } : {}),
+  ...(place.children.length > 0
+    ? { children: place.children.map((child) => placeItem(child, multiSite)) }
+    : {}),
 });
 
 /** The network view's one group: sites, admin users, roles and the audit log, as permitted. */

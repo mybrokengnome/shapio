@@ -18,11 +18,13 @@ import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
 import { useCreateDefinitionForm } from '@/features/Models/hooks/useCreateDefinitionForm';
+import { useModelIndex } from '@/features/Models/hooks/useModelIndex';
 import { useSchemaLock } from '@/features/Models/hooks/useSchemaLock';
 import { LockNotice } from '@/features/Models/LockNotice';
 import { cn } from '@/helpers/cn';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { EndpointPreview } from '../EndpointPreview';
+import { ExtendsPicker } from '../ExtendsPicker';
 import { KindPicker } from '../KindPicker';
 import { ScopePicker } from '../ScopePicker';
 
@@ -50,12 +52,24 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
   const canCreate = useHasGlobalPermission('schema.create');
   const { locked, reason } = useSchemaLock();
   const { multiSite, canShare } = useSchemaScopeAccess();
-  const { form, onSubmit, pending, error, errorMessage } = useCreateDefinitionForm(kinds[0], scope);
+  const { form, onSubmit, parentChoices, parent, pending, error, errorMessage } = useCreateDefinitionForm(
+    kinds[0],
+    scope,
+  );
+  const { index } = useModelIndex();
   const [kind, apiKey, pluralApiKey] = useWatch({
     control: form.control,
     name: ['kind', 'apiKey', 'pluralApiKey'],
   });
   const isCollection = kind === 'collection';
+  // The new kind's API path nests under its parent's ancestors and the parent.
+  const ancestors = parent
+    ? [...index.ancestors(parent.id), parent.id].flatMap((id) => {
+        const ancestor = index.get(id);
+        return ancestor?.kind === 'collection' ? [ancestor] : [];
+      })
+    : [];
+  const flagsHint = parent ? t('models.inheritance.flagsFollowParent', { model: parent.label }) : undefined;
   if (!canCreate) {
     return (
       <Page width="narrow">
@@ -77,6 +91,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
             {scope === undefined && multiSite ? (
               <ScopePicker control={form.control} canShare={canShare} />
             ) : null}
+            {isCollection ? <ExtendsPicker control={form.control} choices={parentChoices} /> : null}
             <FormTextField control={form.control} name="label" label={t('models.label')} autoComplete="off" />
             {/* A collection's two API IDs sit side by side, with the names they produce below both. */}
             <div className={cn('grid items-start gap-5', isCollection && 'sm:grid-cols-2')}>
@@ -101,7 +116,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
                 />
               ) : null}
             </div>
-            <EndpointPreview apiKey={apiKey} pluralApiKey={pluralApiKey} kind={kind} />
+            <EndpointPreview apiKey={apiKey} pluralApiKey={pluralApiKey} kind={kind} ancestors={ancestors} />
             <FormTextareaField
               control={form.control}
               name="description"
@@ -114,9 +129,22 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
                 name="localized"
                 label={t('models.localized')}
                 hint={t('models.localizedHint')}
+                description={flagsHint}
+                disabled={parent !== undefined}
                 variant="bordered"
               />
             )}
+            {parent ? (
+              <FormSwitchField
+                control={form.control}
+                name="draftAndPublish"
+                label={t('models.builder.draftAndPublish')}
+                hint={t('models.builder.draftAndPublishHint')}
+                description={flagsHint}
+                disabled
+                variant="bordered"
+              />
+            ) : null}
             <FormError error={error} message={errorMessage} />
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" asChild>

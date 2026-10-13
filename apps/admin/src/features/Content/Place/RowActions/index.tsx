@@ -17,6 +17,7 @@ import type { usePlacePermissions } from '../hooks/usePlacePermissions';
 import type { useRowActions } from '../hooks/useRowActions';
 
 type RowActionsProps = {
+  /** The row's own kind: its link and its actions use it (a type's list holds its kinds' entries). */
   modelKey: string;
   entry: { id: string; status: EntryStatus; locale: string; version: number };
   /** The entry's title, for the buttons' names and the confirmations. */
@@ -26,7 +27,7 @@ type RowActionsProps = {
   localeLabel: string | null;
   permissions: ReturnType<typeof usePlacePermissions>;
   actions: ReturnType<typeof useRowActions>;
-  onPreview: (entryId: string) => void;
+  onPreview: (entryId: string, modelKey: string) => void;
   /** Opens the row's quick edit (models with properties, with the update permission). */
   onQuickEdit?: () => void;
   /** DOM id of the menu button (focus returns there when the row's quick edit closes). */
@@ -75,6 +76,7 @@ export const RowActions = ({
     run();
   };
   const inline = layout === 'inline';
+  const target = { id: entry.id, modelKey };
   const live = entry.status === 'published';
   const publishConfirm = {
     tone: 'default' as const,
@@ -86,14 +88,15 @@ export const RowActions = ({
       : t(live ? 'place.actions.unpublishDescription' : 'place.actions.publishDescription'),
     confirmLabel: t(live ? 'content.actions.unpublish' : 'content.actions.publish'),
     pendingLabel: t(live ? 'place.actions.unpublishing' : 'place.actions.publishing'),
-    onConfirm: () => (live ? actions.unpublish(entry.id, label) : actions.publish(entry, label)),
+    onConfirm: () =>
+      live ? actions.unpublish(target, label) : actions.publish({ ...entry, modelKey }, label),
   };
   const deleteConfirm = {
     tone: 'danger' as const,
     title: t('place.actions.deleteTitle', { entry: label }),
     description: t('place.actions.deleteDescription'),
     confirmLabel: t('common.delete'),
-    onConfirm: () => actions.remove(entry.id, label),
+    onConfirm: () => actions.remove(target, label),
   };
   const editLink = {
     to: '/content/$modelKey/$entryId',
@@ -177,14 +180,14 @@ export const RowActions = ({
               {t('place.actions.quickEdit')}
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem onSelect={() => onPreview(entry.id)}>
+          <DropdownMenuItem onSelect={() => onPreview(entry.id, modelKey)}>
             <Eye aria-hidden="true" />
             {t('place.actions.preview')}
           </DropdownMenuItem>
           {permissions.canCreate ? (
             <DropdownMenuItem
               disabled={actions.duplicating}
-              onSelect={() => actions.duplicate(entry.id, label)}
+              onSelect={() => actions.duplicate(target, label)}
             >
               <Copy aria-hidden="true" />
               {t('content.actions.duplicate')}

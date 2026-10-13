@@ -32,7 +32,7 @@ export const Stacked = ({ context, items, selected, presence, onSelectChange }: 
             key={item.id}
             context={context}
             item={item}
-            label={labelOf(context.model, item, t('content.untitled'))}
+            label={labelOf(context.kindOf(item.model), item, t('content.untitled'))}
             selected={selected.has(item.id)}
             people={presence.get(item.id) ?? NOBODY}
             onSelectChange={(checked) => onSelectChange([item.id], checked)}

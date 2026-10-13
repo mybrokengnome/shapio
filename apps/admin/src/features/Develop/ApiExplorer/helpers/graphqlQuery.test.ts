@@ -1,4 +1,4 @@
-import { normalizeDefinition, type ModelDefinition } from '@shapio/schema';
+import { createDefinitionIndex, normalizeDefinition, type ModelDefinition } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import {
   counterpartOperationId,
@@ -171,5 +171,70 @@ describe('restOperationFor', () => {
     expect(counterpartOperationId('rest', 'graphql:article', models, operations)).toBe('getArticle');
     expect(counterpartOperationId('rest', 'graphql:nope', models, operations)).toBeUndefined();
     expect(counterpartOperationId('graphql', undefined, models, operations)).toBeUndefined();
+  });
+});
+
+describe('a type with kinds', () => {
+  const product = normalizeDefinition({
+    id: uuid(3),
+    kind: 'collection',
+    apiKey: 'product',
+    pluralApiKey: 'products',
+    label: 'Product',
+    fields: [{ id: uuid(31), apiKey: 'price', label: 'Price', type: 'integer', sortable: true }],
+  }) as ModelDefinition;
+  const kindOf = (n: number, apiKey: string, pluralApiKey: string, parent: number, field: string) =>
+    normalizeDefinition({
+      id: uuid(n),
+      kind: 'collection',
+      apiKey,
+      pluralApiKey,
+      label: apiKey,
+      extends: uuid(parent),
+      fields: [{ id: uuid(n * 10 + 1), apiKey: field, label: field, type: 'string' }],
+    }) as ModelDefinition;
+  const physical = kindOf(4, 'physicalProduct', 'physical', 3, 'weight');
+  const apparel = kindOf(5, 'apparel', 'apparels', 4, 'size');
+  const digital = kindOf(6, 'digitalProduct', 'digital', 3, 'downloadUrl');
+  const index = createDefinitionIndex([product, physical, apparel, digital]);
+
+  it('selects __typename and a fragment per kind, on the interface of a kind that has kinds', () => {
+    const [list] = graphqlOperations(product);
+    expect(list && graphqlQuery(product, list, EMPTY_DRAFT, index).query).toBe(
+      [
+        'query {',
+        '  products {',
+        '    totalCount',
+        '    nodes {',
+        '      __typename',
+        '      id',
+        '      price',
+        '      ... on PhysicalProductInterface {',
+        '        weight',
+        '      }',
+        '      ... on Apparel {',
+        '        size',
+        '      }',
+        '      ... on DigitalProduct {',
+        '        downloadUrl',
+        '      }',
+        '    }',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('reads a kind with its inherited fields and pairs it with its nested REST path', () => {
+    const [list] = graphqlOperations(digital);
+    expect(list && graphqlQuery(digital, list, draft({ sort: 'price:desc' }), index).query).toBe(
+      'query {\n  digital(sort: [{ price: DESC }]) {\n    totalCount\n    nodes {\n      id\n      price\n      downloadUrl\n    }\n  }\n}\n',
+    );
+    const operations = [rest({ id: 'listDigital', routeKey: 'products/digital' })];
+    expect(list && restOperationFor(digital, list, operations, index)?.id).toBe('listDigital');
+    expect(counterpartOperationId('graphql', 'listDigital', [product, digital], operations, index)).toBe(
+      'graphql:digital',
+    );
   });
 });
