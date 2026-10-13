@@ -78,7 +78,7 @@ const compileQuery = (search: string) => {
   ];
   return compileHeadQuery({
     siteId: SITE_ID,
-    modelId: MODEL_ID,
+    members: [{ modelId: MODEL_ID }],
     source: query.snapshot
       ? { kind: 'snapshot', seq: query.snapshot }
       : { kind: 'heads', state: 'published' },
@@ -297,7 +297,7 @@ describe('content query compiler', () => {
   it('reads a page, its total and the site sequence in one statement', () => {
     const plan = {
       siteId: SITE_ID,
-      modelId: MODEL_ID,
+      members: [{ modelId: MODEL_ID }],
       source: { kind: 'heads', state: 'published' } as const,
       locales: { kind: 'any' } as const,
       conditions: [],
@@ -324,7 +324,7 @@ describe('content query compiler', () => {
       const query = parseContentQuery(parseQueryTree(search), context);
       return compileHeadQuery({
         siteId: SITE_ID,
-        modelId: MODEL_ID,
+        members: [{ modelId: MODEL_ID }],
         source: { kind: 'heads', state: 'published' },
         locales: { kind: 'any' },
         conditions: query.filter ? [compileFilter(query.filter)] : [],

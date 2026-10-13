@@ -137,13 +137,15 @@ const toFieldUsage = (row: {
 
 /**
  * Reads of one model's fields on one site since `sinceDay` (inclusive), per field path, principal and
- * selection.
+ * selection. `inherited`: the model's kinds (plan polymorphic-types), whose reads of the fields they inherit
+ * from it (`fieldIds`, the first path segment) count towards it too.
  */
 export const fieldUsageForModel = async (
   siteId: string,
   modelId: string,
   sinceDay: string,
   trx: Executor = db,
+  inherited?: { modelIds: readonly string[]; fieldIds: readonly string[] },
 ) =>
   (
     await trx
@@ -160,7 +162,17 @@ export const fieldUsageForModel = async (
         (eb) => asTimestamp(eb.fn.max('fr.last_read_at')).as('last_read_at'),
       ])
       .where('fr.site_id', '=', siteId)
-      .where('fr.model_id', '=', modelId)
+      .where((eb) =>
+        inherited && inherited.modelIds.length > 0 && inherited.fieldIds.length > 0
+          ? eb.or([
+              eb('fr.model_id', '=', modelId),
+              eb.and([
+                eb('fr.model_id', 'in', inherited.modelIds),
+                anyOf(pathSegment(eb.ref('fr.field_path'), 1), inherited.fieldIds, 'text'),
+              ]),
+            ])
+          : eb('fr.model_id', '=', modelId),
+      )
       .where('fr.day', '>=', dateParam(sinceDay))
       .groupBy(['fr.site_id', 's.key', 'fr.field_path', 'fr.principal_key', 'fr.selection'])
       .orderBy('fr.field_path')

@@ -70,3 +70,11 @@ export const listActiveForModel = (modelId: string, since: Date, executor: Execu
   activeQuery(executor, since).where('p.model_id', '=', modelId).execute();
 
 export type ActivePresenceRow = Awaited<ReturnType<typeof listActiveForEntry>>[number];
+
+/** Moves an entry's presence rows to another model of its family (change kind). */
+export const moveEntryToModel = (entryId: string, modelId: string, executor: Executor = db) =>
+  executor
+    .updateTable('editor_presence')
+    .set({ model_id: modelId })
+    .where('entry_id', '=', entryId)
+    .execute();

@@ -1,10 +1,10 @@
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
-import { sql, type RawBuilder } from 'kysely';
+import { sql } from 'kysely';
 import { contentDialect } from './currentDialect.js';
 import type { ContentSqlDialect } from './dialect/types.js';
 import { fieldValueExpression } from './expressions.js';
 import { isSortable } from './operators.js';
-import type { SortTerm } from './types.js';
+import type { OrderTerm, SortTerm } from './types.js';
 
 /**
  * ORDER BY for a content query. Field sorts use the same expression as the field's index (so the index can
@@ -21,18 +21,15 @@ const SYSTEM_SORT_COLUMNS = {
   updatedAt: 'h.updated_at',
 } as const;
 
-const termSql = (term: SortTerm, dialect: ContentSqlDialect): RawBuilder<unknown> => {
-  // System columns are never null; field values may be missing.
-  const nullable = term.target.kind === 'field';
-  const expression =
+const termOf = (term: SortTerm, dialect: ContentSqlDialect): OrderTerm => ({
+  expression:
     term.target.kind === 'system'
       ? sql.ref(SYSTEM_SORT_COLUMNS[term.target.name])
-      : fieldValueExpression(term.target.field.id, term.target.field.type, dialect);
-  if (dialect.sortTerm) {
-    return dialect.sortTerm(expression, term.direction, nullable);
-  }
-  return sql`${expression} ${dialect.sortDirection(term.direction, nullable)}`;
-};
+      : fieldValueExpression(term.target.field.id, term.target.field.type, dialect),
+  direction: term.direction,
+  // System columns are never null; field values may be missing.
+  nullable: term.target.kind === 'field',
+});
 
 export const defaultSortTerms = (
   model: ModelDefinition,
@@ -46,7 +43,14 @@ export const defaultSortTerms = (
   return [{ target: { kind: 'system', name: 'createdAt' }, direction: 'desc' }];
 };
 
+/**
+ * The ORDER BY of a head query, as terms the compiler renders (`compile.ts`): a family read orders each arm by
+ * them and the union by their projected aliases.
+ */
 export const compileOrderBy = (
   terms: readonly SortTerm[],
   dialect: ContentSqlDialect = contentDialect(),
-): RawBuilder<unknown>[] => [...terms.map((term) => termSql(term, dialect)), sql`h.entry_id asc`];
+): OrderTerm[] => [
+  ...terms.map((term) => termOf(term, dialect)),
+  { expression: sql`h.entry_id`, direction: 'asc', nullable: false },
+];

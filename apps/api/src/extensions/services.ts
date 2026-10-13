@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config/index.js';
 import { EXTENSION_JOB_PREFIX, EXTENSION_SYSTEM_COMPONENT } from '../constants/extensions.js';
 import { PRIMARY_SITE_ID } from '../constants/sites.js';
-import { resolveModel } from '../content/model.js';
+import { modelRouteOf, resolveModel } from '../content/model.js';
 import type { Database } from '../db/index.js';
 import { describeError } from '../helpers/errors.js';
 import { enqueueJob } from '../jobs/queue.js';
@@ -15,7 +15,6 @@ import type { ContentServiceContext } from '../services/contentAccess.js';
 import { buildContentContext } from '../services/contentContext.js';
 import { getAdminEntry, listAdminEntries } from '../services/contentReads.js';
 import { listUsagesOnSite } from '../services/mediaReferences.js';
-import { toHookModel } from './hooks.js';
 import type {
   ContentReadEntry,
   ExtensionHostConfig,
@@ -24,6 +23,7 @@ import type {
   ServiceFactory,
   ShapioServices,
 } from './public.js';
+import { toServiceModel } from './serviceModels.js';
 
 /**
  * The services extensions get (ADR 0009): a small, safe subset of Shapio (content reads, media reference
@@ -81,11 +81,17 @@ const createShapioServices = (environment: ServiceEnvironment, site: SiteRef): S
       );
       return { items: result.items.map(toReadEntry), total: result.pagination.total };
     },
-    models: async () =>
-      [...(await environment.registry.getSnapshot()).forSite(site.id).byId.values()]
+    models: async () => {
+      const view = (await environment.registry.getSnapshot()).forSite(site.id);
+      const apiKeyOf = (id: string) => view.byId.get(id)?.definition.apiKey;
+      return [...view.byId.values()]
         .map((active) => active.definition)
         .filter((definition): definition is ModelDefinition => !isComponentDefinition(definition))
-        .map(toHookModel),
+        .flatMap((definition) => {
+          const resolved = view.resolve(definition.id);
+          return resolved ? [toServiceModel(resolved, modelRouteOf(view, definition), apiKeyOf)] : [];
+        });
+    },
     count: async (modelKey) => {
       const model = resolveModel((await environment.registry.getSnapshot()).forSite(site.id), modelKey);
       return entriesRepository.countLive(model.definition.id, site.id, environment.db);

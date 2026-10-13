@@ -54,8 +54,13 @@ export type FieldIndexDefinition = {
   numericString: boolean;
 };
 
-/** The snapshot CTE's inputs (`compile.ts`). */
-export type SnapshotSource = { name: string; siteId: string; modelId: RawBuilder<unknown>; seq: number };
+/** The snapshot CTE's inputs (`compile.ts`): one model, or every member of a family read (as literals). */
+export type SnapshotSource = {
+  name: string;
+  siteId: string;
+  modelIds: readonly RawBuilder<unknown>[];
+  seq: number;
+};
 
 /**
  * The IDs a reference field (relation or media) stores: `from` is a FROM item aliased `v` that reads the head
@@ -117,7 +122,7 @@ export type ContentSqlDialect = {
     direction: 'asc' | 'desc',
     nullable: boolean,
   ) => RawBuilder<unknown>;
-  /** `with <name> as (published revisions of the model as of the sequence) ` (note the trailing space). */
+  /** `with <name> as (published revisions of the models as of the sequence) ` (note the trailing space). */
   snapshotCte: (source: SnapshotSource) => RawBuilder<unknown>;
   /** The SELECT of `snapshotCte`, for a FROM item (a relation's target model, read as of the same sequence). */
   snapshotRows: (source: Omit<SnapshotSource, 'name'>) => RawBuilder<unknown>;

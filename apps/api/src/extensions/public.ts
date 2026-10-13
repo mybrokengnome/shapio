@@ -60,6 +60,28 @@ export type HookModel = {
   kind: 'collection' | 'singleton';
   localized: boolean;
   draftAndPublish: boolean;
+  /** The API ID of the model this one extends; absent for a model that extends nothing. */
+  extends?: string;
+};
+
+/** A field of a model as `content.models()` describes it (its effective fields, inherited ones first). */
+export type ServiceField = {
+  /** Stable field ID (never changes; an inherited field keeps the declaring model's ID). */
+  id: string;
+  apiKey: string;
+  label: string;
+  type: string;
+  required: boolean;
+  localized: boolean;
+  /** The API ID of the model that declares the field, when it is inherited; absent for the model's own. */
+  inheritedFrom?: string;
+};
+
+/** A content model with its effective fields and where the delivery API serves it. */
+export type ServiceModel = HookModel & {
+  /** The delivery route key: the plural API ID, nested under the models it extends (`products/digital`). */
+  routeKey: string;
+  fields: ServiceField[];
 };
 
 export type HookEntry = {
@@ -93,8 +115,11 @@ export type ContentReadService = {
   ) => Promise<{ items: ContentReadEntry[]; total: number }>;
   /** Number of (non-deleted) entries of a model. */
   count: (modelKey: string) => Promise<number>;
-  /** The active content models (collections and singletons) of this site: shared ones and its own. */
-  models: () => Promise<HookModel[]>;
+  /**
+   * The active content models (collections and singletons) of this site: shared ones and its own, each with
+   * its effective fields (a model that extends another lists the inherited fields first) and route key.
+   */
+  models: () => Promise<ServiceModel[]>;
 };
 
 export type MediaUsage = {

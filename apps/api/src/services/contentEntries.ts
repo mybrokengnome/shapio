@@ -44,6 +44,7 @@ import { actorColumns } from '../schema/planner/actor.js';
 import {
   assertEntryVisible,
   auditEntry,
+  entryModelWithPolicy,
   modelWithCreatePolicy,
   modelWithPolicy,
   writeEntryEvent,
@@ -75,6 +76,12 @@ const defaultsOf = (model: ModelDefinition, onlyLocalized = false): ContentData 
       .filter((field) => !onlyLocalized || (model.localized && field.localized))
       .map((field) => [field.id, field.defaultValue]),
   );
+
+/** The values of `data` under the model's current (effective) fields; keys of any other field are left out. */
+const currentFieldsOf = (model: ContentModel, data: Readonly<ContentData>): ContentData => {
+  const known = new Set(model.definition.fields.map((field) => field.id));
+  return Object.fromEntries(Object.entries(data).filter(([key]) => known.has(key)));
+};
 
 /** A patch over a document: null clears a field, any other value replaces it. */
 const applyPatch = (base: Readonly<ContentData>, patch: Readonly<ContentData>): ContentData => {
@@ -314,7 +321,7 @@ export const updateEntry = async (
   id: string,
   input: UpdateEntryInput,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'update');
+  const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const autosave = Boolean(input.autosave) && model.definition.draftAndPublish;
   const validator = buildValidator(context.snapshot, model);
@@ -402,7 +409,7 @@ export const restoreRevision = async (
   revisionId: string,
   input: { expectedVersion: number },
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'update');
+  const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const revision = await contentRevisionsRepository.findById(revisionId, context.db);
   if (!revision || revision.entry_id !== id) {
     throw revisionNotFound(revisionId);
@@ -437,10 +444,14 @@ export const restoreRevision = async (
     }
     // Restored values must still satisfy the current schema (it may have changed since); values saved under
     // an earlier field type come back empty, as the revision's view shows them.
-    const outcome = validateRevisionData(validator, revision.data);
-    if (outcome.issues.length > 0) {
-      throw contentInvalid(outcome.issues);
+    const validated = validateRevisionData(validator, revision.data);
+    if (validated.issues.length > 0) {
+      throw contentInvalid(validated.issues);
     }
+    // Only the entry's current fields come back: a revision written under another kind (or before a field
+    // was removed) holds keys this kind lacks, which must not hide in the draft and reappear after a later
+    // change of kind (plan polymorphic-types, decision 6).
+    const outcome = { ...validated, data: currentFieldsOf(model, validated.data) };
     // Every field the restore changes in this locale (shared ones fan out from it), issue #103.
     assertWritable(
       rowWriteMask(policy, context.actor, entry),
@@ -473,7 +484,7 @@ export const deleteEntry = async (
   modelKey: string,
   id: string,
 ): Promise<void> => {
-  const { model, policy } = await modelWithPolicy(context, modelKey, 'delete');
+  const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'delete');
   await runEntryWrite(context.db, model, context.site.id, [], async (trx) => {
     const now = new Date();
     assertEntryVisible(
@@ -522,13 +533,15 @@ export const deleteEntry = async (
  */
 export const duplicateEntry = async (
   context: ContentServiceContext,
-  modelKey: string,
+  routeKey: string,
   id: string,
 ): Promise<AdminEntryView> => {
-  const { model, policy } = await modelWithCreatePolicy(context, modelKey);
-  const read = await modelWithPolicy(context, modelKey, 'read');
+  // A copy is of the entry's own kind, whichever family route asked for it (plan polymorphic-types).
+  const kindKey = (await entryModelWithPolicy(context, routeKey, id, 'read')).model.definition.apiKey;
+  const { model, policy } = await modelWithCreatePolicy(context, kindKey);
+  const read = await modelWithPolicy(context, kindKey, 'read');
   if (model.definition.kind === 'singleton') {
-    throw singletonExists(modelKey);
+    throw singletonExists(kindKey);
   }
   const validator = buildValidator(context.snapshot, model);
   const unique = new Set(uniqueFields(model.definition).map((field) => field.id));

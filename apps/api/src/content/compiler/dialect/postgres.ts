@@ -1,5 +1,6 @@
 import { sql, type RawBuilder } from 'kysely';
 import { CONTENT_HEADS_COLUMNS } from '../heads.js';
+import { modelIdMatches } from './modelMatch.js';
 import type {
   ContentSqlDialect,
   ReferenceIds,
@@ -72,15 +73,15 @@ const castParameter = (value: unknown, cast: ValueCast): RawBuilder<unknown> => 
 export const containment = (document: Readonly<Record<string, unknown>>): RawBuilder<unknown> =>
   sql`(${DATA} @> ${JSON.stringify(document)}::jsonb)`;
 
-/** Published revisions of a model as of a publication sequence (`snapshotCte`, relation targets). */
-const snapshotRows = ({ siteId, modelId, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
+/** Published revisions of a model (or a family) as of a publication sequence (`snapshotCte`, relation targets). */
+const snapshotRows = ({ siteId, modelIds, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
     select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
       r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
       en.created_at as entry_created_at
     from publication_log pl
     join content_revisions r on r.id = pl.revision_id
     join entries en on en.id = pl.entry_id
-    where pl.site_id = ${siteId}::uuid and pl.model_id = ${modelId}
+    where pl.site_id = ${siteId}::uuid and ${modelIdMatches(sql`pl.model_id`, modelIds)}
       and pl.from_seq <= ${seq}::bigint
       and (pl.to_seq is null or pl.to_seq > ${seq}::bigint)`;
 

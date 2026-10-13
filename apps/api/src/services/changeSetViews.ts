@@ -183,7 +183,8 @@ export const titleOf = (
   heads: ReadonlyArray<Pick<EntryHeadRow, 'locale' | 'state' | 'data'>>,
   locale: string,
 ): string | null => {
-  const definition = snapshot.byId.get(modelId)?.definition;
+  // Effective fields: a kind's title may be inherited (plan polymorphic-types).
+  const definition = snapshot.resolve(modelId);
   const field = definition ? effectiveTitleField(definition) : undefined;
   if (!field) {
     return null;

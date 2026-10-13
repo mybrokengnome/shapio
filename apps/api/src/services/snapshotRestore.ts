@@ -31,7 +31,8 @@ type Reason =
   | 'localization_changed'
   | 'locale_missing'
   | 'invalid'
-  | 'unique_conflict';
+  | 'unique_conflict'
+  | 'kind_changed';
 
 export type NotRestorable = {
   entryId: string;
@@ -100,11 +101,14 @@ const blockedBy = (
 });
 
 /** Checks that restoring this locale can work against the current schema and content. */
+/** What the restore knows about each changed entry: its model now (live entries only) and at the snapshot. */
+type EntryKinds = { now: ReadonlyMap<string, string>; then: ReadonlyMap<string, string> };
+
 const checkLocale = async (
   context: ChangeSetServiceContext,
   change: SnapshotEntryChange,
   localeChange: SnapshotLocaleChange,
-  liveEntries: ReadonlySet<string>,
+  kinds: EntryKinds,
 ): Promise<Check> => {
   const { locale } = localeChange;
   const model = resolveModelById(context.snapshot, change.modelId);
@@ -120,7 +124,8 @@ const checkLocale = async (
       'The model no longer has drafts and publishing',
     );
   }
-  if (!liveEntries.has(change.entryId)) {
+  const modelNow = kinds.now.get(change.entryId);
+  if (modelNow === undefined) {
     return blockedBy(change, locale, model, 'entry_deleted', 'The entry was deleted since');
   }
   if (localeChange.change === 'published') {
@@ -133,6 +138,19 @@ const checkLocale = async (
         sourceRevisionId: null,
       },
     };
+  }
+  const modelThen = kinds.then.get(change.entryId);
+  if (modelThen !== undefined && modelThen !== modelNow) {
+    // The revision served then was written under another kind (plan polymorphic-types): its values belong to
+    // that kind's fields. Changing the kind back is an explicit editor action, not part of a restore.
+    const then = context.snapshot.byId.get(modelThen)?.definition.apiKey;
+    return blockedBy(
+      change,
+      locale,
+      model,
+      'kind_changed',
+      then ? `The entry was a ${then} then; its kind changed since` : 'Its kind changed since',
+    );
   }
   if (!context.snapshot.locales.some((candidate) => candidate.code === locale)) {
     return blockedBy(change, locale, model, 'locale_missing', `The locale ${locale} was removed`);
@@ -206,17 +224,25 @@ export const restoreSnapshot = async (
     );
   }
   const changes = await collectChanges(context, seq, current);
-  const liveEntries = new Set(
-    await changeSetItemsRepository.findLiveEntryIds(
-      changes.map((change) => change.entryId),
-      context.db,
+  const entryIds = changes.map((change) => change.entryId);
+  const kinds: EntryKinds = {
+    now: new Map(
+      (await changeSetItemsRepository.findLiveEntryModels(entryIds, context.db)).map((row) => [
+        row.id,
+        row.model_id,
+      ]),
     ),
-  );
+    then: new Map(
+      (await publicationsRepository.findModelsLiveAt(context.site.id, entryIds, seq, context.db)).map(
+        (row) => [row.entry_id, row.model_id],
+      ),
+    ),
+  };
   const items: RestoreItem[] = [];
   const blocked: NotRestorable[] = [];
   for (const change of changes) {
     for (const localeChange of change.locales) {
-      const check = await checkLocale(context, change, localeChange, liveEntries);
+      const check = await checkLocale(context, change, localeChange, kinds);
       if (check.item) {
         items.push(check.item);
       }

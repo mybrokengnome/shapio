@@ -31,23 +31,27 @@ export const mediaIdsOf = (model: ContentModel, documents: readonly Readonly<Con
 
 /**
  * Relation values must point at live entries of the field's target model on the same site (brief §4:
- * invalid relation targets are rejected). The target may be a draft.
+ * invalid relation targets are rejected), or of any kind of it (plan polymorphic-types). The target may be a
+ * draft.
  */
 const findRelationIssues = async (
   executor: Executor,
   references: readonly RelationReference[],
   siteId: string,
 ): Promise<ContentIssue[]> => {
-  const byModel = new Map<string, Set<string>>();
+  const byTarget = new Map<string, { modelIds: readonly string[]; ids: Set<string> }>();
   for (const reference of references) {
-    const ids = byModel.get(reference.targetModelId) ?? new Set<string>();
-    reference.entryIds.forEach((id) => ids.add(id));
-    byModel.set(reference.targetModelId, ids);
+    const known = byTarget.get(reference.targetModelId) ?? {
+      modelIds: reference.targetModelIds,
+      ids: new Set<string>(),
+    };
+    reference.entryIds.forEach((id) => known.ids.add(id));
+    byTarget.set(reference.targetModelId, known);
   }
   const live = new Set<string>();
-  for (const [modelId, ids] of byModel) {
-    (await entriesRepository.findLiveIds(modelId, [...ids], siteId, executor)).forEach((id) =>
-      live.add(`${modelId}:${id}`),
+  for (const [targetModelId, { modelIds, ids }] of byTarget) {
+    (await entriesRepository.findLiveIds(modelIds, [...ids], siteId, executor)).forEach((id) =>
+      live.add(`${targetModelId}:${id}`),
     );
   }
   return references.flatMap((reference) =>

@@ -119,7 +119,7 @@ export const compileFixtureQuery = (
   return compileHeadQuery(
     {
       siteId: FIXTURE_SITE_ID,
-      modelId: FIXTURE_MODEL_ID,
+      members: [{ modelId: FIXTURE_MODEL_ID }],
       source,
       locales,
       conditions: [...(filter ? [filter] : []), ...extraConditions],

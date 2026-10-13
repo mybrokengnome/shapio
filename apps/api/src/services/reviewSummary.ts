@@ -206,7 +206,8 @@ const readableTargets = async (
 ) => {
   const readable: string[] = [];
   for (const modelId of modelIds) {
-    const definition = snapshot.byId.get(modelId)?.definition;
+    // Effective fields: a kind's title may be inherited (plan polymorphic-types).
+    const definition = snapshot.resolve(modelId);
     const titleField = definition ? effectiveTitleField(definition) : undefined;
     if (!titleField) {
       continue;

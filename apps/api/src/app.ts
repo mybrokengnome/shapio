@@ -17,6 +17,7 @@ import { setDb, type Database } from './db/index.js';
 import { buildEditorManifest, type EditorManifest } from './extensions/editorManifest.js';
 import { loadExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
 import { buildThemeCatalogue } from './extensions/themeStylesheet.js';
+import { MAX_ROUTE_PARAM_LENGTH, rewriteContentUrl } from './helpers/contentRoutes.js';
 import { createUrlBuilder } from './helpers/publicUrl.js';
 import { createLoggerOptions } from './logger.js';
 import { resolveMediaOrigins } from './media/origins.js';
@@ -153,6 +154,10 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     // plugins/requestLog.ts writes one line per request instead of Fastify's two.
     logController: new LogController({ disableRequestLogging: true }),
     ajv: { customOptions: { removeAdditional: false } },
+    // Nested route keys (`/api/content/products/digital/:id`) arrive as one encoded `:modelKey` segment
+    // (helpers/contentRoutes.ts), which may be longer than Fastify's default limit of 100 characters.
+    rewriteUrl: (request: { url?: string }) => rewriteContentUrl(request.url ?? '/', urls.basePath),
+    routerOptions: { maxParamLength: MAX_ROUTE_PARAM_LENGTH },
   } as FastifyHttpOptions<HttpServer, FastifyBaseLogger>;
   const app = Fastify(options).withTypeProvider<TypeBoxTypeProvider>();
   // Created before the evaluator, which reads field visibility from the active schema.

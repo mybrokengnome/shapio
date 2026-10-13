@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as contentEntriesService from '../services/contentEntries.js';
+import * as contentKindService from '../services/contentKind.js';
 import * as contentPublishingService from '../services/contentPublishing.js';
 import * as contentReadsService from '../services/contentReads.js';
 import { contentContextFor, rawQueryOf } from './contentContext.js';
@@ -146,4 +147,19 @@ export const restoreRevision = async (request: RestoreRequest) =>
     request.params.id,
     request.params.revisionId,
     request.body,
+  );
+
+type ChangeKindRequest = FastifyRequest<{
+  Params: EntryParams;
+  Querystring: { dryRun?: '1' | 'true' | '0' };
+  Body: contentKindService.ChangeKindInput;
+}>;
+
+export const changeKind = async (request: ChangeKindRequest) =>
+  contentKindService.changeEntryKind(
+    await contentContextFor(request),
+    request.params.modelKey,
+    request.params.id,
+    request.body,
+    { dryRun: request.query.dryRun === '1' || request.query.dryRun === 'true' },
   );

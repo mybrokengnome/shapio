@@ -435,6 +435,7 @@ describe('delivery API', () => {
       data: Record<string, unknown>;
     }>();
     expect(Object.keys(body.data).sort()).toEqual([
+      '__model',
       'body',
       'createdAt',
       'id',

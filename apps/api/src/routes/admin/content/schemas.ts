@@ -1,3 +1,4 @@
+import { API_KEY_PATTERN } from '@shapio/schema';
 import { Type } from 'typebox';
 import {
   AdminEntrySchema,
@@ -99,4 +100,36 @@ export const restoreRevisionSchema = {
   params: RevisionParamsSchema,
   body: Type.Object({ expectedVersion: Type.Integer({ minimum: 1 }) }, closed),
   response: entry,
+};
+
+/** Change kind (plan polymorphic-types, D11): the entry's new kind, within its family. */
+export const changeKindSchema = {
+  params: EntryParamsSchema,
+  querystring: Type.Object(
+    { dryRun: Type.Optional(Type.Union([Type.Literal('1'), Type.Literal('true'), Type.Literal('0')])) },
+    closed,
+  ),
+  body: Type.Object(
+    {
+      /** The API ID of the kind the entry becomes. */
+      targetModelKey: Type.String({ pattern: API_KEY_PATTERN.source, maxLength: 64 }),
+      /** The draft version the editor saw (of `locale`'s draft); 409 when it moved. */
+      expectedVersion: Type.Integer({ minimum: 1 }),
+      /** The locale the editor has open; the default locale when absent. */
+      locale: Type.Optional(LocaleCodeSchema),
+      /** Required (true) on a change that drops fields; optional on a dry run. */
+      acknowledgeDroppedFields: Type.Optional(Type.Literal(true)),
+    },
+    closed,
+  ),
+  response: {
+    200: Type.Object({
+      droppedFields: Type.Array(
+        Type.Object({ id: Type.String(), apiKey: Type.String(), label: Type.String() }),
+      ),
+      target: Type.Object({ modelId: Type.String(), modelKey: Type.String(), routeKey: Type.String() }),
+      /** The entry as its new kind; absent on a dry run. */
+      entry: Type.Optional(AdminEntrySchema),
+    }),
+  },
 };

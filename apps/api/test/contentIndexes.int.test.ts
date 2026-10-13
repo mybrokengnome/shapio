@@ -111,7 +111,7 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
     });
     const compiled = compileHeadQuery({
       siteId: PRIMARY_SITE_ID,
-      modelId: model.definition.id,
+      members: [{ modelId: model.definition.id }],
       source: { kind: 'heads', state: 'published' },
       locales: readScopeFor(snapshot, model.definition, 'en', { fallback: false }),
       conditions: query.filter ? [compileFilter(query.filter)] : [],

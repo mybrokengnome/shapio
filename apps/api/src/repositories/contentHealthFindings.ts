@@ -158,3 +158,32 @@ export const countOpenByRule = (siteId: string, modelIds: readonly string[], exe
         .where('f.model_id', 'in', modelIds)
         .groupBy(['f.rule', 'f.model_id'])
         .execute();
+
+/**
+ * Moves an entry's findings to another model of its family (change kind), dropping those whose path is under
+ * one of `droppedApiKeys` (the values they were about are gone). Paths are JSON pointers by API key.
+ */
+export const moveEntryToModel = async (
+  entryId: string,
+  modelId: string,
+  droppedApiKeys: readonly string[],
+  trx: Executor = db,
+) => {
+  const dropped = new Set(droppedApiKeys);
+  const rows = await trx
+    .selectFrom('content_health_findings')
+    .select(['id', 'path'])
+    .where('entry_id', '=', entryId)
+    .execute();
+  const gone = rows
+    .filter((row) => row.path !== null && dropped.has(row.path.split('/')[1] ?? ''))
+    .map((row) => row.id);
+  if (gone.length > 0) {
+    await trx.deleteFrom('content_health_findings').where('id', 'in', gone).execute();
+  }
+  await trx
+    .updateTable('content_health_findings')
+    .set({ model_id: modelId })
+    .where('entry_id', '=', entryId)
+    .execute();
+};

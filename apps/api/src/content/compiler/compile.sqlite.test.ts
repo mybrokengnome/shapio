@@ -114,7 +114,7 @@ describe('content query compiler on SQLite', () => {
     expect(filterOf(search)).toEqual({ sql, parameters });
   });
 
-  const select = `select h.entry_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
+  const select = `select h.entry_id, h.model_id, h.locale, h.data, h.version, h.revision_id, h.updated_at,
       h.autosaved_at, e.created_at, e.updated_at as entry_updated_at, e.created_by_admin_id, e.owner_app_user_id
       `;
   const from = (table: string) =>

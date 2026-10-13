@@ -25,10 +25,9 @@ const actor = { kind: 'appUser', appUserId: APP_USER, siteId: SITE, roleIds: [] 
 const relation = (overrides: Partial<Extract<ShownTargets, { kind: 'relation' }>> = {}): ShownTargets => ({
   kind: 'relation',
   siteId: SITE,
-  modelId: MODEL,
+  members: [{ modelId: MODEL, rowFilter: { kind: 'ownedByPrincipal' } }],
   source: { kind: 'heads', state: 'published' },
   locales: { kind: 'chain', chain: ['fr', 'en'] },
-  rowFilter: { kind: 'ownedByPrincipal' },
   actor,
   ...overrides,
 });
@@ -108,7 +107,11 @@ describe.each(CASES)('$null and $notNull on references on $name', ({ dialect, co
 
   it('a read without a row filter or locale chain adds neither', () => {
     const { sql } = sqlOf(
-      authorCondition('$notNull', 'true', relation({ rowFilter: null, locales: { kind: 'any' } })),
+      authorCondition(
+        '$notNull',
+        'true',
+        relation({ members: [{ modelId: MODEL, rowFilter: null }], locales: { kind: 'any' } }),
+      ),
     );
     expect(sql).not.toContain('owner_app_user_id');
     expect(sql).not.toContain('h2');

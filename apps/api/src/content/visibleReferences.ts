@@ -3,7 +3,7 @@ import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import { queryForbidden, type FilterNode, type FilterOperator, type ShownTargets } from './compiler/types.js';
 import { readScopeFor } from './locales.js';
 import { resolveModelById } from './model.js';
-import { fetchHeadsByIds, readPolicy, type ReadEnvironment } from './read.js';
+import { fetchFamilyHeadsByIds, readPolicy, type ReadEnvironment } from './read.js';
 
 /**
  * Relation and media filters see the IDs the response shows (delivery-api.md: "a filter can never reveal a
@@ -85,17 +85,20 @@ const visibleIds = async (
       visible.set(field.id, { ids: new Set(), shown: { kind: 'none' } });
       continue;
     }
-    const rows = await fetchHeadsByIds(env, target, policy, ids);
+    const heads = await fetchFamilyHeadsByIds(env, target, ids);
     visible.set(field.id, {
-      ids: new Set(rows.map((row) => row.entry_id)),
-      // The same heads `fetchHeadsByIds` reads, so filters and projection agree.
+      ids: new Set(heads.rows.map((row) => row.entry_id)),
+      // The same heads `fetchFamilyHeadsByIds` reads (every kind of the target the caller may read, each
+      // under its own row filter), so filters and projection agree.
       shown: {
         kind: 'relation',
         siteId: env.siteId,
-        modelId: target.definition.id,
+        members: heads.members.map((member) => ({
+          modelId: member.model.definition.id,
+          rowFilter: member.policy.rowFilter,
+        })),
         source: env.source,
         locales: readScopeFor(env.snapshot, target.definition, env.locale, { fallback: true }),
-        rowFilter: policy.rowFilter,
         actor: env.actor,
       },
     });

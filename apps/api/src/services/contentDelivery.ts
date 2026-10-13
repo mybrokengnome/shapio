@@ -2,15 +2,16 @@ import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
+import type { ReadMember } from '../content/family.js';
 import { resolveModel, type ContentModel } from '../content/model.js';
+import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
-import type { Policy } from '../permissions/types.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { restFieldReads } from '../usage/restFieldReads.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import { readEntryPage, readOneEntry } from './contentDeliveryReads.js';
-import { parseQueryFor } from './contentReads.js';
+import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { assertMayReadDrafts } from './draftAccess.js';
 
 /**
@@ -57,6 +58,10 @@ export type DeliveryReadOptions = {
   defer?: (task: () => Promise<void>) => void;
 };
 
+/**
+ * The route's model and the caller's read policy (401/403 when it may not read it), and the kinds a read of
+ * the route covers: every member of the model's family the caller may read (plan polymorphic-types).
+ */
 const readableModel = async (context: ContentServiceContext, modelKey: string) => {
   const model = resolveModel(context.snapshot, modelKey);
   const policy = await context.permissions.evaluate(context.actor, {
@@ -68,7 +73,7 @@ const readableModel = async (context: ContentServiceContext, modelKey: string) =
       ? new AppError(401, 'UNAUTHENTICATED', 'This content needs a delivery token')
       : new AppError(403, 'FORBIDDEN', `Your token may not read "${modelKey}"`);
   }
-  return { model, policy };
+  return { model, policy, members: await familyMembersFor(context, model, policy) };
 };
 
 /** Whether a read asks for drafts: GraphQL's option, or `?publicationState=draft`. */
@@ -113,29 +118,39 @@ const snapshotCheck =
 
 /**
  * Counts a successful REST read for field usage (plan developer-face §5): once per request, after the
- * projection, by principal. Admin users and draft reads are never counted.
+ * projection, by principal. Admin users and draft reads are never counted. A family read counts each kind's
+ * fields under that kind, for the kinds the response carried (`shown`, by API ID); a read of one model
+ * counts under it as always.
  */
 const recordUsage = async (
   context: ContentServiceContext,
   options: DeliveryReadOptions,
-  model: ContentModel,
-  policy: Policy,
+  members: readonly ReadMember[],
   query: ContentQuery,
+  shown: ReadonlySet<unknown>,
 ) => {
   const principalKey = usagePrincipalKey(context.actor);
   if (!options.usage || readsDrafts(query, options) || principalKey === null) {
     return;
   }
-  const reads = await restFieldReads({
-    snapshot: context.snapshot,
-    model,
-    policy,
-    query,
-    policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
-  });
   options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null);
-  options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
+  const counted =
+    members.length === 1 ? members : members.filter((member) => shown.has(member.model.definition.apiKey));
+  for (const { model, policy } of counted) {
+    const reads = await restFieldReads({
+      snapshot: context.snapshot,
+      model,
+      policy,
+      query,
+      policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
+    });
+    options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
+  }
 };
+
+/** The kinds (API IDs) among delivered entries. */
+const kindsOf = (entries: ReadonlyArray<Record<string, unknown>>): Set<unknown> =>
+  new Set(entries.map((entry) => entry[MODEL_KEY]));
 
 /** Records usage after the response when the caller can defer it (REST), else before returning. */
 const afterRead = async (options: DeliveryReadOptions, task: () => Promise<void>) => {
@@ -187,15 +202,15 @@ export const listDelivery = async (
   rawQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
-  const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, DELIVERY_PARSE);
+  const { model, policy, members } = await readableModel(context, modelKey);
+  const query = parseQueryFor(context, model, policy, rawQuery, { ...DELIVERY_PARSE, members });
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);
   await authorizeDrafts(context, model, modelKey, drafts);
   const locale = query.locale ?? context.snapshot.defaultLocale;
   const singleton = model.definition.kind === 'singleton';
   const { entries, limit, total, seq } = await readEntryPage(
-    { context, source, model, policy, query, fallback: options.fallback ?? true },
+    { context, source, model, policy, members, query, fallback: options.fallback ?? true },
     { total: !singleton, check: snapshotCheck(query) },
   );
   const snapshot = query.snapshot ?? seq;
@@ -212,7 +227,7 @@ export const listDelivery = async (
       meta: { ...metaOf(locale, snapshot, drafts), pagination: paginationMeta(query.page, limit, total) },
     };
   }
-  await afterRead(options, () => recordUsage(context, options, model, policy, query));
+  await afterRead(options, () => recordUsage(context, options, members, query, kindsOf(entries)));
   return result;
 };
 
@@ -228,20 +243,20 @@ export const getDelivery = async (
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryItem> => {
   assertItemParameters(rawQuery, ITEM_PARAMETERS);
-  const { model, policy } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, DELIVERY_PARSE);
+  const { model, policy, members } = await readableModel(context, modelKey);
+  const query = parseQueryFor(context, model, policy, rawQuery, { ...DELIVERY_PARSE, members });
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);
   await authorizeDrafts(context, model, modelKey, drafts);
   const { entry, seq } = await readOneEntry(
-    { context, source, model, policy, query, fallback: options.fallback ?? true },
+    { context, source, model, policy, members, query, fallback: options.fallback ?? true },
     id,
     { check: snapshotCheck(query) },
   );
   if (!entry) {
     throw entryNotFound(id);
   }
-  await afterRead(options, () => recordUsage(context, options, model, policy, query));
+  await afterRead(options, () => recordUsage(context, options, members, query, kindsOf([entry])));
   return {
     data: entry,
     meta: metaOf(query.locale ?? context.snapshot.defaultLocale, query.snapshot ?? seq, drafts),

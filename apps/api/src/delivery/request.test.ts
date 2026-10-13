@@ -20,6 +20,25 @@ describe('matchDeliveryRequest', () => {
     });
   });
 
+  it('matches nested route keys, as the server rewrites them (plan polymorphic-types)', () => {
+    const id = '0b2f4c1e-7d3a-4f5b-9c8d-1e2f3a4b5c6d';
+    expect(matchDeliveryRequest('GET', '/api/content/products/digital?sort=price')).toMatchObject({
+      route: { kind: 'list', routeKey: 'products/digital' },
+      query: 'sort=price',
+    });
+    expect(matchDeliveryRequest('GET', `/api/content/products/physical/apparel/${id}`)?.route).toEqual({
+      kind: 'item',
+      routeKey: 'products/physical/apparel',
+      id,
+    });
+    expect(matchDeliveryRequest('GET', `/api/content/products%2Fdigital/${id}`)?.route).toEqual({
+      kind: 'item',
+      routeKey: 'products/digital',
+      id,
+    });
+    expect(matchDeliveryRequest('GET', `/api/content/products/digital/${id}/extra`)).toBeUndefined();
+  });
+
   it('takes `site` out of the query, as site resolution does over HTTP', () => {
     expect(matchDeliveryRequest('GET', '/api/content/articles?locale=fr&site=blog&page=2')).toMatchObject({
       query: 'locale=fr&page=2',

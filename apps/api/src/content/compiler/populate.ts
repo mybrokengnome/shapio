@@ -1,22 +1,20 @@
 import type { FieldDefinition } from '@shapio/schema';
 import type { Policy } from '../../permissions/types.js';
+import { groupByMember } from '../family.js';
 import { resolveModelById, type ContentModel } from '../model.js';
-import type { ReadEnvironment } from '../read.js';
+import type { FamilyHeads, ReadEnvironment } from '../read.js';
 import type { HeadRow } from './compile.js';
 import type { PopulateTree } from './types.js';
 
 /**
  * Relation expansion (`populate`). Depth is bounded by the parser (QUERY_LIMITS.maxPopulateDepth); each
  * level applies the *target* model's read policy (row filter and read mask) and, for delivery, reads only
- * published targets. A target the caller may not read is left out, never shown partially.
+ * published targets. A target the caller may not read is left out, never shown partially. A relation to a
+ * model with kinds reads the targets over its family in one query and projects each with its own kind's
+ * policy and fields (plan polymorphic-types).
  */
 export type PopulateEnvironment = ReadEnvironment & {
-  fetch: (
-    env: ReadEnvironment,
-    model: ContentModel,
-    policy: Policy,
-    ids: readonly string[],
-  ) => Promise<HeadRow[]>;
+  fetch: (env: ReadEnvironment, model: ContentModel, ids: readonly string[]) => Promise<FamilyHeads>;
   project: (
     env: ReadEnvironment,
     model: ContentModel,
@@ -24,7 +22,6 @@ export type PopulateEnvironment = ReadEnvironment & {
     rows: readonly HeadRow[],
     query: { fields: null; populate: PopulateTree },
   ) => Promise<Array<{ row: HeadRow; data: Record<string, unknown> }>>;
-  policyFor: (env: ReadEnvironment, modelId: string) => Promise<Policy>;
   system: (env: ReadEnvironment, row: HeadRow) => Record<string, unknown>;
 };
 
@@ -60,13 +57,15 @@ export const populateRelations = async (
     if (!target) {
       continue;
     }
-    const policy = await env.policyFor(env, target.definition.id);
-    const targetRows = await env.fetch(env, target, policy, idsOf(rows, fieldId));
-    for (const { row, data } of await env.project(env, target, policy, targetRows, {
-      fields: null,
-      populate: subtree,
-    })) {
-      byId.set(row.entry_id, { ...env.system(env, row), ...data });
+    const heads = await env.fetch(env, target, idsOf(rows, fieldId));
+    for (const group of groupByMember(heads.members, heads.rows)) {
+      const { model, policy } = group.member;
+      for (const { row, data } of await env.project(env, model, policy, group.rows, {
+        fields: null,
+        populate: subtree,
+      })) {
+        byId.set(row.entry_id, { ...env.system(env, row), ...data });
+      }
     }
   }
   return populated;

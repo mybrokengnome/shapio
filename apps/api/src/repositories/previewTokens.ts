@@ -83,3 +83,7 @@ export const touchLastUsed = (id: string, now: Date, olderThan: Date, trx: Execu
     .where('id', '=', id)
     .where((eb) => eb.or([eb('last_used_at', 'is', null), eb('last_used_at', '<', olderThan)]))
     .execute();
+
+/** Moves an entry's preview tokens to another model of its family (change kind): the links keep working. */
+export const moveEntryToModel = (entryId: string, modelId: string, trx: Executor = db) =>
+  trx.updateTable('preview_tokens').set({ model_id: modelId }).where('entry_id', '=', entryId).execute();

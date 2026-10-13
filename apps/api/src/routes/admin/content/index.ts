@@ -55,6 +55,13 @@ export const adminContentRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { ...admin, schema: schemas.unpublishEntrySchema, config: { audit: { action: 'content.unpublish' } } },
     handlers.unpublishEntry,
   );
+  // POST /:modelKey/:id/kind?dryRun=1 { targetModelKey, expectedVersion, acknowledgeDroppedFields }: move the
+  // entry to another kind of its family (dry run: the fields it would drop, nothing written)
+  app.post(
+    '/:modelKey/:id/kind',
+    { ...admin, schema: schemas.changeKindSchema, config: { audit: { action: 'content.change_kind' } } },
+    handlers.changeKind,
+  );
   // GET /:modelKey/:id/revisions?locale=
   app.get(
     '/:modelKey/:id/revisions',

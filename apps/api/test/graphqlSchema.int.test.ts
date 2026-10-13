@@ -11,7 +11,7 @@ import {
   type EntryBody,
 } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
-import { dataOf, errorCodes, graphql, GRAPHQL_ENV, toRestShape } from './helpers/graphql.js';
+import { dataOf, errorCodes, graphql, GRAPHQL_ENV, toRestShape, withoutModelKey } from './helpers/graphql.js';
 import { createPng, uploadAsset } from './helpers/media.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { spawnTsProcess, type SpawnedProcess } from './helpers/spawnProcess.js';
@@ -515,7 +515,7 @@ describe('GraphQL schema and runtime', () => {
     expect(
       dataOf(await gql('{ notes { nodes { id locale createdAt updatedAt publishedAt title body } } }')),
     ).toEqual({
-      notes: { nodes: delivered },
+      notes: { nodes: withoutModelKey(delivered) },
     });
     // Validation errors come back with REST's code and details.
     const invalid = await gql(
@@ -577,7 +577,7 @@ describe('GraphQL schema and runtime', () => {
           { l: locale },
         ),
       ).products;
-      expect(viaGraphql.nodes, locale).toEqual(rest.data);
+      expect(viaGraphql.nodes, locale).toEqual(withoutModelKey(rest.data));
       expect(viaGraphql.locale).toBe(locale);
     }
     expect(
@@ -729,7 +729,7 @@ describe('GraphQL schema and runtime', () => {
         { id: created.id },
       ),
     ).landing;
-    expect(toRestShape(viaGraphql)).toEqual(rest.data);
+    expect(toRestShape(viaGraphql)).toEqual(withoutModelKey(rest.data));
     const [heroSection, quoteSection] = rest.data.sections as Array<Record<string, unknown>>;
     expect(heroSection).toMatchObject({ __component: 'hero', heading: 'Welcome', image: { id: image.id } });
     expect(quoteSection).toEqual({ __component: 'quote', text: 'Ship it' });

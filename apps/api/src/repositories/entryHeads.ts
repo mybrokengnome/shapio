@@ -327,3 +327,28 @@ export const findDraftsWithAuthors = (entryId: string, executor: Executor = db) 
     .where('h.state', '=', 'draft')
     .orderBy('h.locale')
     .execute();
+
+/**
+ * Moves a head to another model of its family (change kind, plan polymorphic-types): the new model, its data
+ * and revision, version + 1 and a fresh change sequence number, so open editors see it as moved.
+ */
+export const changeModel = (
+  head: { entryId: string; locale: string; state: HeadState },
+  change: { modelId: string; data: ContentData; revisionId: string; autosavedAt: Date | null; now: Date },
+  trx: Executor = db,
+) =>
+  trx
+    .updateTable('entry_heads')
+    .set((eb) => ({
+      model_id: change.modelId,
+      revision_id: change.revisionId,
+      data: change.data,
+      autosaved_at: change.autosavedAt,
+      version: eb('version', '+', eb.lit(1)),
+      change_seq: nextSequenceValue('entry_heads_change_seq'),
+      updated_at: change.now,
+    }))
+    .where('entry_id', '=', head.entryId)
+    .where('locale', '=', head.locale)
+    .where('state', '=', head.state)
+    .execute();

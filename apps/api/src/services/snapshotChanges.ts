@@ -2,13 +2,13 @@ import {
   effectiveLayout,
   effectiveTitleField,
   isModelDefinition,
-  routeKeyOf,
   type ModelDefinition,
 } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import { compileModelRowFilters, everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { queryInvalid } from '../content/compiler/types.js';
 import { snapshotInvalid } from '../content/errors.js';
+import { modelRouteOf } from '../content/model.js';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import type { FieldMask, RowFilter } from '../permissions/types.js';
@@ -102,7 +102,12 @@ const readableModels = async (context: ContentServiceContext): Promise<ReadableM
       modelId: definition.id,
     });
     if (policy.allowed) {
-      readable.push({ definition, rowFilter: policy.rowFilter, readMask: everyRowReadMask(policy) });
+      // Effective fields: an inherited title field describes a kind's entries too (plan polymorphic-types).
+      readable.push({
+        definition: context.snapshot.resolve(definition.id) ?? definition,
+        rowFilter: policy.rowFilter,
+        readMask: everyRowReadMask(policy),
+      });
     }
   }
   if (readable.length === 0 && context.actor.kind === 'anonymous') {
@@ -217,7 +222,7 @@ export const listSnapshotChanges = async (
                 id: item.entryId,
                 modelId: item.modelId,
                 modelKey: model.apiKey,
-                routeKey: routeKeyOf(model),
+                routeKey: modelRouteOf(context.snapshot, model).key,
                 ...describe(item),
                 locales: item.locales.map(({ locale, change, fromRevisionId, toRevisionId }) => ({
                   locale,

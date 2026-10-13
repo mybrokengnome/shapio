@@ -1,4 +1,5 @@
 import type { FieldDefinition } from '@shapio/schema';
+import type { RawBuilder } from 'kysely';
 import { AppError } from '../../helpers/appError.js';
 import type { Principal, RowFilter } from '../../permissions/types.js';
 import type { HeadSource, LocaleScope } from './compile.js';
@@ -49,22 +50,26 @@ export type FilterNode =
 
 /**
  * Which stored references a read shows: relation targets with a head in the read's source and locale chain
- * that the target's row filter lets through, live media assets, or none at all (a target model that is gone).
+ * that their model's row filter lets through, live media assets, or none at all (a target model that is
+ * gone). A relation to a model with kinds lists every readable member of its family (plan
+ * polymorphic-types), each with its own row filter.
  */
 export type ShownTargets =
   | {
       kind: 'relation';
       siteId: string;
-      modelId: string;
+      members: ReadonlyArray<{ modelId: string; rowFilter: RowFilter | null }>;
       source: HeadSource;
       locales: LocaleScope;
-      rowFilter: RowFilter | null;
       actor: Principal;
     }
   | { kind: 'media'; siteId: string }
   | { kind: 'none' };
 
 export type SortTerm = { target: FilterTarget; direction: 'asc' | 'desc' };
+
+/** One compiled ORDER BY term: the sort expression over the head `h`, its direction and whether it may be null. */
+export type OrderTerm = { expression: RawBuilder<unknown>; direction: 'asc' | 'desc'; nullable: boolean };
 
 /** Relation fields to expand, with what to expand inside each target. */
 export type PopulateTree = ReadonlyMap<string, PopulateTree>;
@@ -92,6 +97,11 @@ export type ContentQuery = {
   status?: EntryListStatus;
   /** Admin list only: entries created by this admin user. */
   author?: string;
+  /**
+   * `filters[__model]`: the kinds (model IDs) of the route's family to read (plan polymorphic-types). Narrows
+   * the read's members; absent: every kind.
+   */
+  kinds?: readonly string[];
 };
 
 /**

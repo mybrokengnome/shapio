@@ -8,16 +8,16 @@ import {
 } from '../content/compiler/compile.js';
 import { entryIdIs } from '../content/compiler/conditions.js';
 import { toLimitOffset } from '../content/compiler/paginate.js';
-import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { selectFields } from '../content/compiler/select.js';
-import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
+import { compileOrderBy } from '../content/compiler/sort.js';
 import type { ContentQuery, RichTextMode } from '../content/compiler/types.js';
+import { groupByMember, type ReadMember } from '../content/family.js';
 import { readScopeFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
 import {
   needsFollowUpReads,
   needsMediaReads,
-  projectRows,
+  projectMemberRows,
   systemAttributes,
   type ReadEnvironment,
 } from '../content/read.js';
@@ -25,7 +25,7 @@ import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { queryConditions, queryReadsEntries } from './contentReads.js';
+import { familyQueryPlan, sortOf } from './contentReads.js';
 import { loadSeoDefaults } from './siteSeo.js';
 
 /**
@@ -73,7 +73,16 @@ export type DeliveryRead = {
   conditions?: readonly RawBuilder<unknown>[];
   /** `?seo=resolved`: the site's SEO defaults (loaded by `withSeoDefaults`). */
   seo?: SeoDefaults;
+  /**
+   * A family read (plan polymorphic-types): every kind of the model the caller may read, the model included,
+   * each with its own policy. Absent: the model alone, under `policy`.
+   */
+  members?: readonly ReadMember[];
 };
+
+/** The kinds a read covers: its members, or the model alone. */
+const membersOf = (read: DeliveryRead): readonly ReadMember[] =>
+  read.members ?? [{ model: read.model, policy: read.policy }];
 
 /** What a read saw: its environment (for projection), the rows, the page total and the publication sequence. */
 type ConsistentHeads = {
@@ -93,11 +102,30 @@ const environmentOf = (read: DeliveryRead, executor: ReadEnvironment['executor']
  */
 const followsUp = (read: DeliveryRead): boolean =>
   read.query.populate.size > 0 ||
-  selectFields(read.model, read.policy.readMask, read.query.fields).some(
-    (field) =>
-      field.type === 'relation' ||
-      field.type === 'media' ||
-      (Boolean(read.seo?.imageId) && isSeoField(field)),
+  membersOf(read).some(({ model, policy }) =>
+    selectFields(model, policy.readMask, read.query.fields).some(
+      (field) =>
+        field.type === 'relation' ||
+        field.type === 'media' ||
+        (Boolean(read.seo?.imageId) && isSeoField(field)),
+    ),
+  );
+
+/** `needsFollowUpReads` over every kind among the rows. */
+const rowsNeedFollowUp = (env: ReadEnvironment, read: DeliveryRead, rows: readonly HeadRow[]): boolean =>
+  groupByMember(membersOf(read), rows).some(({ member, rows: memberRows }) =>
+    needsFollowUpReads(env, member.model, memberRows, read.query, member.policy),
+  );
+
+/** `needsMediaReads` over every kind among the rows. */
+const rowsNeedMedia = (env: ReadEnvironment, read: DeliveryRead, rows: readonly HeadRow[]): boolean =>
+  groupByMember(membersOf(read), rows).some(({ member, rows: memberRows }) =>
+    needsMediaReads(
+      env,
+      member.model,
+      memberRows,
+      selectFields(member.model, member.policy.readMask, read.query.fields),
+    ),
   );
 
 /**
@@ -144,9 +172,8 @@ const readConsistently = async <T>(
   if (!followsUp(read) || live) {
     const env = environmentOf(read, db);
     const { rows, meta } = await contentQueriesRepository.runHeadPage(compiled.rows, db);
-    const fields = selectFields(read.model, read.policy.readMask, read.query.fields);
     // An empty page carries no meta row; the transaction below reads it consistently.
-    if (meta && !needsFollowUpReads(env, read.model, rows, read.query, read.policy)) {
+    if (meta && !rowsNeedFollowUp(env, read, rows)) {
       return finish({ env, rows, total: meta.total, seq: seqOf(meta.seq) });
     }
     // Relation visibility on the pool, without BEGIN … REPEATABLE READ … COMMIT (plan delivery-perf-2, step
@@ -156,7 +183,7 @@ const readConsistently = async <T>(
     // between is hidden, and one published in between is shown although the snapshot named predates it. It
     // never shows an unpublished target (rule 7). Pinned (`?snapshot=N`), preview and draft reads, populate and
     // asset views keep the transaction, so their responses are exactly the moment they name.
-    if (meta && live && !needsMediaReads(env, read.model, rows, fields)) {
+    if (meta && live && !rowsNeedMedia(env, read, rows)) {
       return finish({ env, rows, total: meta.total, seq: seqOf(meta.seq) });
     }
   }
@@ -172,7 +199,7 @@ const localesOf = (read: DeliveryRead) =>
   readScopeFor(read.context.snapshot, read.model.definition, read.query.locale, { fallback: read.fallback });
 
 const toEntries = async (read: DeliveryRead, env: ReadEnvironment, rows: readonly HeadRow[]) =>
-  (await projectRows(env, read.model, read.policy, rows, read.query)).map(({ row, data }) => ({
+  (await projectMemberRows(env, membersOf(read), rows, read.query)).map(({ row, data }) => ({
     ...systemAttributes(env, row),
     ...data,
   }));
@@ -195,25 +222,23 @@ export const readEntryPage = async (
   options: { total: boolean; check?: (seq: number) => void } = { total: true },
 ): Promise<EntryPage> => {
   const read = await withSeoDefaults(unloaded);
-  const { context, model, policy } = read;
+  const { context, model } = read;
   const query = {
     ...read.query,
     filter: await visibleReferenceFilter(environmentOf(read, context.db), read.query.filter),
   };
   const { limit, offset } = toLimitOffset(query.page, query.pageSize);
-  const sort =
-    query.sort.length > 0
-      ? query.sort
-      : defaultSortTerms(model.definition, (field) => maskAllows(everyRowReadMask(policy), field));
+  const members = membersOf(read);
+  const family = familyQueryPlan(context, query, members);
   const plan: HeadQueryPlan = {
     siteId: context.site.id,
-    modelId: model.definition.id,
+    members: family.members,
     source: read.source,
     locales: localesOf(read),
-    conditions: [...queryConditions(context, query, policy), ...(read.conditions ?? [])],
+    conditions: [...family.conditions, ...(read.conditions ?? [])],
     // A caller's extra conditions (a preview token's entry scope) are not inspected: they keep the join.
-    conditionsReadEntries: queryReadsEntries(query, policy) || (read.conditions?.length ?? 0) > 0,
-    orderBy: compileOrderBy(sort),
+    conditionsReadEntries: Boolean(family.conditionsReadEntries) || (read.conditions?.length ?? 0) > 0,
+    orderBy: compileOrderBy(sortOf(query, model, members)),
     limit,
     offset,
   };
@@ -230,17 +255,16 @@ export const readOneEntry = async (
   options: { check?: (seq: number) => void } = {},
 ): Promise<{ entry: Record<string, unknown> | undefined; seq: number }> => {
   const read = await withSeoDefaults(unloaded);
-  const { context, model, policy, query } = read;
+  const { context } = read;
+  // An entry by ID: no filter, search or kind narrowing applies.
+  const { kinds: _kinds, ...query } = read.query;
+  const family = familyQueryPlan(context, { ...query, filter: null, search: null }, membersOf(read));
   const plan: HeadQueryPlan = {
     siteId: context.site.id,
-    modelId: model.definition.id,
+    members: family.members,
     source: read.source,
     locales: localesOf(read),
-    conditions: [
-      ...queryConditions(context, { ...query, filter: null, search: null }, policy),
-      ...(read.conditions ?? []),
-      entryIdIs(id),
-    ],
+    conditions: [...family.conditions, ...(read.conditions ?? []), entryIdIs(id)],
     orderBy: [],
     limit: 1,
   };
