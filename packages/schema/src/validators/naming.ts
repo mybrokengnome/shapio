@@ -19,6 +19,11 @@ export const MODEL_TYPE_SUFFIXES = [
   'Sort',
 ] as const;
 export const COMPONENT_TYPE_SUFFIXES = ['', 'Input'] as const;
+/**
+ * Suffix of the GraphQL interface a model with children gets (`ProductInterface`, plan polymorphic-types).
+ * Claimed only by models that have children, so existing schemas keep validating.
+ */
+export const INTERFACE_TYPE_SUFFIX = 'Interface';
 export const MUTATION_PREFIXES = ['create', 'update', 'delete', 'publish', 'unpublish'] as const;
 
 /**
@@ -151,11 +156,21 @@ export type GeneratedName = {
   property?: 'pluralApiKey';
 };
 
-/** Every name a definition contributes to the GraphQL schema. */
-export const generatedNames = (definition: SchemaDefinition): GeneratedName[] => {
+/**
+ * Every name a definition contributes to the GraphQL schema. Fields are its own: a model that extends another
+ * reuses the enum and zone types of inherited fields, which belong to the declaring model. `hasChildren` adds
+ * the interface name of a model other models extend.
+ */
+export const generatedNames = (
+  definition: SchemaDefinition,
+  options: { hasChildren?: boolean } = {},
+): GeneratedName[] => {
   const typeName = toTypeName(definition.apiKey);
   const definitionId = definition.id;
-  const suffixes = definition.kind === 'component' ? COMPONENT_TYPE_SUFFIXES : MODEL_TYPE_SUFFIXES;
+  const suffixes = [
+    ...(definition.kind === 'component' ? COMPONENT_TYPE_SUFFIXES : MODEL_TYPE_SUFFIXES),
+    ...(options.hasChildren && definition.kind !== 'component' ? [INTERFACE_TYPE_SUFFIX] : []),
+  ];
   const names: GeneratedName[] = suffixes.map((suffix) => ({
     namespace: 'type',
     name: `${typeName}${suffix}`,

@@ -4,6 +4,7 @@ import {
   isModelDefinition,
   type FieldDefinition,
   type ModelDefinition,
+  type ResolvedModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { liveFields } from '../../../content/model.js';
@@ -25,6 +26,8 @@ import type { SchemaSnapshot } from '../../snapshot.js';
  *
  * Masks are the per-model unions `Policy.readMask` and `Policy.writeMask`: a field one grant shows on some rows
  * only is in the schema and resolves to null on the other rows (the resolve-time check in outputTypes.ts).
+ * A model that extends another is evaluated over its effective fields (inherited first), with its ancestors'
+ * grants applying to it (plan polymorphic-types D8).
  */
 export type ModelVisibility = {
   /** Read queries and the entry type exist only when the caller may read the model. */
@@ -112,6 +115,8 @@ export const resolveSchemaVisibility = async (
   const models = view.definitions
     .map((active) => active.definition)
     .filter((definition): definition is ModelDefinition => isModelDefinition(definition))
+    .map((definition) => view.resolve(definition.id))
+    .filter((model): model is ResolvedModelDefinition => model !== undefined)
     .sort((a, b) => a.id.localeCompare(b.id));
   const evaluated = await Promise.all(
     models.map(async (model) => {

@@ -20,6 +20,7 @@ import { COMPONENT_KEY } from '../../../content/validator/index.js';
 import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
 import { describeField } from './descriptions.js';
+import { declaringOwner } from './entryKinds.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 import { enumType } from './outputTypes.js';
 import { writableFields } from './visibility.js';
@@ -109,18 +110,26 @@ export const componentInput = (build: SchemaBuild, component: ComponentDefinitio
     inputFields(build, component),
   );
 
-const zoneInput = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) =>
-  inputObject(build, `zone:${owner.id}:${field.id}`, fieldTypeName(owner, field, 'ZoneInput'), () => {
-    const fields: GraphQLInputFieldConfigMap = {};
-    for (const id of field.settings.components) {
-      const component = componentById(build, id);
-      const type = component ? componentInput(build, component) : null;
-      if (component && type) {
-        fields[component.apiKey] = { type, description: `A ${component.label} item` };
+/** A zone's input, keyed and named by the model that declares the field (shared down a family). */
+const zoneInput = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) => {
+  const declaring = declaringOwner(build, owner, field);
+  return inputObject(
+    build,
+    `zone:${declaring.id}:${field.id}`,
+    fieldTypeName(declaring, field, 'ZoneInput'),
+    () => {
+      const fields: GraphQLInputFieldConfigMap = {};
+      for (const id of field.settings.components) {
+        const component = componentById(build, id);
+        const type = component ? componentInput(build, component) : null;
+        if (component && type) {
+          fields[component.apiKey] = { type, description: `A ${component.label} item` };
+        }
       }
-    }
-    return fields;
-  });
+      return fields;
+    },
+  );
+};
 
 export const modelInput = (build: SchemaBuild, model: SchemaDefinition) =>
   inputObject(build, `model:${model.id}`, modelTypeName(model, 'Input'), () => inputFields(build, model));

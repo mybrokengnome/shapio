@@ -54,6 +54,15 @@ export type FieldVisibilityLookup = {
     executor?: PermissionExecutor,
     versions?: KnownVersions,
   ) => Promise<string | null>;
+  /**
+   * The models a model extends, root first ([] for a root or an unknown model), at the request's schema
+   * version: a grant on an ancestor applies to its descendants (plan polymorphic-types D8).
+   */
+  getAncestors: (
+    modelId: string,
+    executor?: PermissionExecutor,
+    versions?: KnownVersions,
+  ) => Promise<readonly string[]>;
 };
 
 /** Used until the schema registry is wired in: no model is known, so delivery principals see nothing. */
@@ -61,6 +70,7 @@ export const NO_FIELD_VISIBILITY: FieldVisibilityLookup = {
   getModelFields: () => Promise.resolve(undefined),
   hasModel: () => Promise.resolve(false),
   getModelSite: () => Promise.resolve(null),
+  getAncestors: () => Promise.resolve([]),
 };
 
 const EMPTY_MASK: FieldMask = { mode: 'only', fieldIds: [], componentFields: 'public' };
@@ -76,8 +86,21 @@ export const ALLOW_ALL_POLICY: Policy = Object.freeze<Policy>({
 
 const WRITE_ACTIONS: ReadonlySet<ModelAction> = new Set<ModelAction>(['create', 'update']);
 
-const grantsFor = (grants: readonly Grant[], action: ModelAction, modelId: string) =>
-  grants.filter((grant) => grant.action === action && (grant.modelId === null || grant.modelId === modelId));
+/**
+ * Grants of `action` that apply to a model: on every model, on the model itself, or on one of the models it
+ * extends (`ancestors`), so a grant on Products covers Digital products (plan polymorphic-types D8).
+ */
+const grantsFor = (
+  grants: readonly Grant[],
+  action: ModelAction,
+  modelId: string,
+  ancestors: readonly string[],
+) =>
+  grants.filter(
+    (grant) =>
+      grant.action === action &&
+      (grant.modelId === null || grant.modelId === modelId || ancestors.includes(grant.modelId)),
+  );
 
 /** Rows: the union of what each grant allows. Any unconditional grant means no restriction. */
 export const combineRowFilters = (grants: readonly Grant[]): RowFilter | null => {
@@ -196,16 +219,19 @@ export const buildPolicy = (
   request: PolicyRequest,
   audience: Audience,
   fields: readonly ModelField[] | undefined,
+  /** The models the requested model extends, root first: their grants apply to it too. */
+  ancestors: readonly string[] = [],
 ): Policy => {
   if (audience === 'delivery' && fields === undefined) {
     // Unknown model: without its field definitions no delivery mask can be computed safely.
     return DENIED_POLICY;
   }
-  const matching = grantsFor(grants, request.action, request.modelId);
+  const matching = grantsFor(grants, request.action, request.modelId, ancestors);
   if (matching.length === 0) {
     return DENIED_POLICY;
   }
-  const readGrants = request.action === 'read' ? matching : grantsFor(grants, 'read', request.modelId);
+  const readGrants =
+    request.action === 'read' ? matching : grantsFor(grants, 'read', request.modelId, ancestors);
   const writes = WRITE_ACTIONS.has(request.action);
   return {
     allowed: true,
@@ -230,10 +256,18 @@ export const createStaticFieldVisibility = (
   {
     knownModelsOnly = false,
     modelSites = {},
-  }: { knownModelsOnly?: boolean; modelSites?: Readonly<Record<string, string>> } = {},
+    modelAncestors = {},
+  }: {
+    knownModelsOnly?: boolean;
+    modelSites?: Readonly<Record<string, string>>;
+    /** Model ID → the models it extends, root first. */
+    modelAncestors?: Readonly<Record<string, readonly string[]>>;
+  } = {},
 ): FieldVisibilityLookup => ({
   getModelFields: (modelId) => Promise.resolve(Object.hasOwn(models, modelId) ? models[modelId] : undefined),
   hasModel: (modelId) => Promise.resolve(!knownModelsOnly || Object.hasOwn(models, modelId)),
   getModelSite: (modelId) =>
     Promise.resolve(Object.hasOwn(modelSites, modelId) ? (modelSites[modelId] ?? null) : null),
+  getAncestors: (modelId) =>
+    Promise.resolve(Object.hasOwn(modelAncestors, modelId) ? (modelAncestors[modelId] ?? []) : []),
 });

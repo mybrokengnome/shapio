@@ -48,6 +48,40 @@ export const schemaReadOnly = (reason: string | null) =>
     { reason },
   );
 
+/** Deleting a type others extend (plan polymorphic-types): its kinds would lose their parent. */
+export const definitionHasChildren = (apiKey: string, children: readonly { id: string; apiKey: string }[]) =>
+  new AppError(
+    409,
+    'HAS_CHILDREN',
+    `"${apiKey}" has kinds that extend it (${children.map((child) => child.apiKey).join(', ')}). Delete them or move them under another type first.`,
+    { children },
+  );
+
+/**
+ * Localization and drafts must be the same across a family (plan polymorphic-types D3), so a parent's flag
+ * cannot change alone: the parent and its kinds change together, in one change set.
+ */
+export const familyFlagChange = (
+  apiKey: string,
+  flags: readonly string[],
+  children: readonly { id: string; apiKey: string }[],
+) =>
+  new AppError(
+    409,
+    'FAMILY_FLAG_CHANGE',
+    `"${apiKey}" has kinds that extend it (${children.map((child) => child.apiKey).join(', ')}), and a type and its kinds share ${flags.map((flag) => `"${flag}"`).join(' and ')}. Change "${apiKey}" and its kinds together in one change set.`,
+    { flags, children },
+  );
+
+/** A scope change of a type that extends another: the family moves together, from its root. */
+export const scopeOfChildType = (apiKey: string, rootApiKey: string) =>
+  new AppError(
+    409,
+    'SCOPE_OF_CHILD_TYPE',
+    `"${apiKey}" extends "${rootApiKey}" and is available where it is. Change the scope of "${rootApiKey}" instead; its kinds move with it.`,
+    { rootApiKey },
+  );
+
 export const definitionNotFound = (id: string) =>
   new AppError(404, 'NOT_FOUND', `No definition with ID ${id}`, { id });
 

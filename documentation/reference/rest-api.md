@@ -29,6 +29,7 @@ What delivery returns for one entry (system attributes first, then every readabl
 | `createdAt` | string (date-time) |  |
 | `updatedAt` | string (date-time) |  |
 | `publishedAt` | string (date-time) |  |
+| `__model` | string | The API ID of the entry's type |
 | `title` | string or null |  |
 | `slug` | string or null |  |
 | `excerpt` | string or null |  |

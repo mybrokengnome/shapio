@@ -3,8 +3,12 @@ import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as sitesRepository from '../repositories/sites.js';
-import { schemaInvalid, schemaVersionConflict } from '../schema/errors.js';
-import { activateDefinition } from '../schema/planner/activate.js';
+import { schemaInvalid, schemaVersionConflict, scopeOfChildType } from '../schema/errors.js';
+import {
+  activateDefinitions,
+  type ActivationItem,
+  type ActivationResult,
+} from '../schema/planner/activate.js';
 import { buildChangePlan } from '../schema/planner/plan.js';
 import { validateScoped, type ScopedDefinition } from '../schema/scopedValidation.js';
 import { recordAudit } from './audit.js';
@@ -107,9 +111,16 @@ export const changeScope = async (
       schemaVersion: context.snapshot.version,
     };
   }
+  // A family moves together (plan polymorphic-types D3): from its root, every kind with it.
+  const network = context.snapshot.network;
+  const [rootId] = network.ancestors(input.id);
+  if (rootId !== undefined) {
+    throw scopeOfChildType(active.definition.apiKey, network.byId.get(rootId)?.definition.apiKey ?? rootId);
+  }
+  const family = new Set(network.family(input.id));
   const { active: all, siteKeys } = await plannerInputOf(context);
   const proposed: ScopedDefinition[] = all.map((entry) =>
-    entry.definition.id === input.id ? { definition: entry.definition, siteId: target } : entry,
+    family.has(entry.definition.id) ? { definition: entry.definition, siteId: target } : entry,
   );
   // Both scopes' views: the one it leaves (references to it) and the one it joins (collisions there).
   const issues = validateScoped(proposed, [active.siteId, target], { siteKeys });
@@ -117,53 +128,65 @@ export const changeScope = async (
     throw schemaInvalid(issues);
   }
   const detailed = seesEverySite(context.actor);
-  if (target !== null && active.definition.kind !== 'component') {
-    const elsewhere = await entriesElsewhere(context.db, input.id, target, siteKeys);
-    if (elsewhere.length > 0) {
-      throw scopeInUse(elsewhere, detailed);
-    }
-  }
-  const plan = buildChangePlan({
-    before: active.definition,
-    after: active.definition,
-    fromVersion: active.version,
-    active: all,
-    siteId: target,
-    hasContent: true,
-    siteKeys,
+  const members = [...family].flatMap((id) => {
+    const member = network.byId.get(id);
+    return member ? [member] : [];
   });
-  const recheck = async (trx: Transaction<DB>) => {
-    if (target !== null && active.definition.kind !== 'component') {
-      const elsewhere = await entriesElsewhere(trx, input.id, target, siteKeys);
+  /** No other site may hold an entry of any member of the family. */
+  const assertNoEntriesElsewhere = async (executor: Parameters<typeof entriesElsewhere>[0]) => {
+    if (target === null || active.definition.kind === 'component') {
+      return;
+    }
+    for (const member of members) {
+      const elsewhere = await entriesElsewhere(executor, member.definition.id, target, siteKeys);
       if (elsewhere.length > 0) {
         throw scopeInUse(elsewhere, detailed);
       }
     }
   };
-  const result = await activateDefinition(
-    context.db,
-    { plan, after: active.definition, expectedVersion: active.version, moveScope: true, recheck },
-    {
-      actor: context.actor,
-      ...(context.requestId ? { requestId: context.requestId } : {}),
-      ...(context.ip ? { ip: context.ip } : {}),
-      afterFlip: async (trx, flipped) => {
-        await recordAudit(trx, {
-          actor: context.actor,
-          action: 'schema.scope',
-          target: { type: input.category, id: input.id },
-          metadata: {
-            apiKey: active.definition.apiKey,
-            from: active.siteId === null ? 'network' : { siteId: active.siteId },
-            to: target === null ? 'network' : { siteId: target },
-            schemaVersion: flipped.schemaVersion,
-          },
-          ...(context.requestId ? { requestId: context.requestId } : {}),
-          ...(context.ip ? { ip: context.ip } : {}),
-        });
-      },
+  await assertNoEntriesElsewhere(context.db);
+  // Each member is planned against the schema with the whole family moved, so no view sees a kind apart
+  // from its parent; the root's plan affects the whole family.
+  const items: ActivationItem[] = members.map((member) => ({
+    plan: buildChangePlan({
+      before: member.definition,
+      after: member.definition,
+      fromVersion: member.version,
+      active: proposed,
+      siteId: target,
+      hasContent: true,
+      siteKeys,
+    }),
+    after: member.definition,
+    expectedVersion: member.version,
+    moveScope: true,
+  }));
+  const [first, ...others] = items;
+  const recheck = (trx: Transaction<DB>) => assertNoEntriesElsewhere(trx);
+  const results = await activateDefinitions(context.db, {
+    items: [{ ...(first as ActivationItem), recheck }, ...others],
+    actor: context.actor,
+    ...(context.requestId ? { requestId: context.requestId } : {}),
+    ...(context.ip ? { ip: context.ip } : {}),
+    afterFlip: async (trx, flipped) => {
+      await recordAudit(trx, {
+        actor: context.actor,
+        action: 'schema.scope',
+        target: { type: input.category, id: input.id },
+        metadata: {
+          apiKey: active.definition.apiKey,
+          from: active.siteId === null ? 'network' : { siteId: active.siteId },
+          to: target === null ? 'network' : { siteId: target },
+          schemaVersion: flipped.schemaVersion,
+          // A family moves with its root.
+          family: [...family],
+        },
+        ...(context.requestId ? { requestId: context.requestId } : {}),
+        ...(context.ip ? { ip: context.ip } : {}),
+      });
     },
-  );
+  });
+  const result = results.find((entry) => entry.definitionId === input.id) as ActivationResult;
   return {
     status: 'activated',
     definitionId: input.id,

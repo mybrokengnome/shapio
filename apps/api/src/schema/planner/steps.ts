@@ -3,13 +3,21 @@ import type { JsonValue, PlannedChange, SchemaDefinition, DataType } from '@shap
 /**
  * Where a definition's values live inside entries: for a model, its own heads at the root; for a
  * component, every model that embeds it, with the field-ID path from the entry root down to the component
- * or dynamic-zone field that holds it.
+ * or dynamic-zone field that holds it. A change to a model that others extend has one location per family
+ * member holding the field (plan polymorphic-types), all at the root.
  */
 export type ValueLocation = { modelId: string; path: string[] };
 
 /** Prerequisite work that reads or rewrites content. Run by the content ports (package E). */
 export type ContentStep =
-  | { kind: 'validateRequired'; ownerId: string; fieldId: string; locations: ValueLocation[] }
+  | {
+      kind: 'validateRequired';
+      ownerId: string;
+      fieldId: string;
+      locations: ValueLocation[];
+      /** The field's API ID, to name it when the check fails. Absent in older plans. */
+      fieldApiKey?: string;
+    }
   | { kind: 'backfill'; ownerId: string; fieldId: string; value: JsonValue; locations: ValueLocation[] }
   | {
       kind: 'validateValues';
@@ -20,8 +28,14 @@ export type ContentStep =
     }
   | {
       kind: 'checkUnique';
+      /** The model whose entries are checked: one step per family member holding the field. */
       modelId: string;
       fieldId: string;
+      /**
+       * The definition the change is for (the model a family's steps come from), when it is not `modelId`;
+       * the content ports load the proposed schema through it. Absent in plans made before inheritance.
+       */
+      ownerId?: string;
       /**
        * The field is already unique under the active schema (its type changes): its live registry rows stay in
        * force until activation, so the dry run stages its claims under a separate registry key and the
@@ -47,7 +61,15 @@ export type PrerequisiteStep = ContentStep | IndexStep;
 export type FollowUpStep =
   | IndexStep
   | { kind: 'dropIndex'; indexName: string }
-  | { kind: 'releaseUnique'; fieldId: string }
+  | {
+      kind: 'releaseUnique';
+      fieldId: string;
+      /**
+       * The models whose registry rows go: the family members that lose the field (a parent keeps its own
+       * when a child moves away). Absent in plans made before inheritance: every model's.
+       */
+      modelIds?: string[];
+    }
   /**
    * Deletes a removed locale's heads, revisions and unique-registry rows, and moves non-localized entries stored
    * in it to the default locale (content ports).
@@ -75,7 +97,10 @@ export const stepKey = (step: PrerequisiteStep | FollowUpStep): string => {
   }
 };
 
-/** Value locations of a definition's fields across the given (proposed) schema. */
+/**
+ * Value locations of a definition's fields across the given (proposed) schema. Pass resolved definitions
+ * (effective fields): a component embedded through an inherited field is found in every family member.
+ */
 export const findValueLocations = (
   definitions: readonly SchemaDefinition[],
   ownerId: string,

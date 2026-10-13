@@ -139,6 +139,11 @@ export const ModelDefinitionInputSchema = Type.Object(
     localized: Type.Optional(Type.Boolean()),
     /** Entries have separate draft and published states. Default true. */
     draftAndPublish: Type.Optional(Type.Boolean()),
+    /**
+     * Collections only: the stable ID of the collection this one extends (its parent). The model inherits
+     * the parent's fields, locked, and adds its own (plan polymorphic-types).
+     */
+    extends: Type.Optional(Type.String()),
     display: Type.Optional(ModelDisplayInputSchema),
   },
   closed,
@@ -216,8 +221,27 @@ export type ModelDefinition = {
   description?: string;
   localized: boolean;
   draftAndPublish: boolean;
+  /**
+   * The stable ID of the collection this one extends. The stored definition holds its own fields only;
+   * `resolveModelDefinition` adds the inherited ones (ancestors' first).
+   */
+  extends?: string;
   fields: FieldDefinition[];
   display: ModelDisplay;
+};
+
+/** A field as a model sees it after inheritance: `inheritedFrom` names the declaring ancestor's ID. */
+export type ResolvedField = FieldDefinition & { inheritedFrom?: string };
+
+/**
+ * A model with its effective fields: every ancestor's fields (root first), then its own, and its display
+ * merged with its ancestors' (`resolveModelDefinition`). `ancestorIds` is required so code that needs
+ * effective fields can demand this type; a stored definition does not satisfy it.
+ */
+export type ResolvedModelDefinition = Omit<ModelDefinition, 'fields'> & {
+  fields: ResolvedField[];
+  /** Ancestors' stable IDs, root first; empty for a model that extends nothing. */
+  ancestorIds: readonly string[];
 };
 
 export type ComponentDefinition = {

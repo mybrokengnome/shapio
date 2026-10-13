@@ -126,6 +126,16 @@ export const diffDefinitions = (
     }
   }
   if (before.kind !== 'component' && after.kind !== 'component') {
+    // Re-parenting (or gaining or losing a parent) is a contract change of its own; the fields gained or
+    // lost show up in a diff of the resolved definitions (plan polymorphic-types).
+    if ((before.extends ?? null) !== (after.extends ?? null)) {
+      changes.push({
+        kind: 'model.extends',
+        definitionId,
+        from: before.extends ?? null,
+        to: after.extends ?? null,
+      });
+    }
     if (before.localized !== after.localized) {
       changes.push({ kind: 'model.localized', definitionId, from: before.localized, to: after.localized });
     }

@@ -1,4 +1,10 @@
-import { API_KEY_PATTERN, LOCALE_CODE_PATTERN, STABLE_ID_PATTERN } from '@shapio/schema';
+import {
+  API_KEY_PATTERN,
+  LOCALE_CODE_PATTERN,
+  MAX_ROUTE_KEY_LENGTH,
+  ROUTE_KEY_PATTERN,
+  STABLE_ID_PATTERN,
+} from '@shapio/schema';
 import { Type } from 'typebox';
 
 /**
@@ -16,12 +22,13 @@ export const ModelKeySchema = Type.String({
 });
 /**
  * Delivery and preview APIs: the model's route key, the plural API ID of a collection (`articles`) or the API
- * ID of a singleton (`homepage`).
+ * ID of a singleton (`homepage`); a model that extends another is under its ancestors' (`products/digital`).
  */
 export const RouteKeySchema = Type.String({
-  pattern: API_KEY_PATTERN.source,
-  maxLength: 64,
-  description: 'The plural API ID of a collection, or the API ID of a singleton',
+  pattern: ROUTE_KEY_PATTERN.source,
+  maxLength: MAX_ROUTE_KEY_LENGTH,
+  description:
+    "The plural API ID of a collection (under its ancestors' for a type that extends another, products/digital), or the API ID of a singleton",
 });
 export const EntryIdSchema = Type.String({ pattern: STABLE_ID_PATTERN.source });
 export const LocaleCodeSchema = Type.String({ pattern: LOCALE_CODE_PATTERN.source, maxLength: 35 });
@@ -81,6 +88,8 @@ export const AdminListSchema = Type.Object({
   items: Type.Array(
     Type.Object({
       id: Type.String(),
+      /** The API ID of the entry's own model: a model with kinds lists its whole family. */
+      model: Type.String(),
       locale: Type.String(),
       version: Type.Integer(),
       status: EntryStatusSchema,

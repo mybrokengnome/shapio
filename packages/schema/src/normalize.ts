@@ -37,6 +37,7 @@ const OPTIONAL_TEXT_KEYS: ReadonlySet<string> = new Set([
   'titleFieldId',
   'coverFieldId',
   'pluralApiKey',
+  'extends',
 ]);
 /** Optional list properties where an empty list means "not set". `fields` is never optional. */
 const OPTIONAL_LIST_KEYS: ReadonlySet<string> = new Set([
@@ -126,6 +127,8 @@ export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefini
     description: input.description,
     localized: input.localized ?? false,
     draftAndPublish: input.draftAndPublish ?? true,
+    // Kept on any model kind so a singleton that extends something is reported, never silently dropped.
+    extends: input.extends,
     fields,
     display: normalizeModelDisplay(input.display),
   });

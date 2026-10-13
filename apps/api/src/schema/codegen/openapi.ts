@@ -4,7 +4,7 @@ import {
   isComponentDefinition,
   isModelDefinition,
   isSeoField,
-  routeKeyOf,
+  routePathOf,
   TIME_PATTERN,
   toTypeName,
   type CodeLanguage,
@@ -28,7 +28,10 @@ import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
  * OpenAPI 3.1 for the active schema (build plan §3.10): generated in memory from the registry, never from
  * route source files, so a model change shows up in the document at once. Covers the delivery API and the
  * admin content API per model, with each model's entry, input and component schemas, plus the snapshot
- * routes (openapiSnapshots.ts).
+ * routes (openapiSnapshots.ts). Models are described with their effective fields (plan polymorphic-types):
+ * a model that extends another is served under its ancestors' route key (`/api/content/products/digital`),
+ * and a model with children reads, lists and is related to as `<Name>Any`, one of its family's schemas told
+ * apart by `__model`, which every delivered entry carries.
  */
 type JsonSchema = Record<string, unknown>;
 type Mode = 'output' | 'input';
@@ -107,6 +110,34 @@ const scalarSchema = (field: FieldDefinition): JsonSchema => {
   }
 };
 
+/** The schema an entry of a model is delivered as: the family's `<Name>Any` when other models extend it. */
+const entrySchemaName = (snapshot: SchemaSnapshot, id: string): string | undefined => {
+  const definition = snapshot.byId.get(id)?.definition;
+  if (!definition) {
+    return undefined;
+  }
+  return snapshot.childrenOf(id).length > 0
+    ? `${toTypeName(definition.apiKey)}Any`
+    : toTypeName(definition.apiKey);
+};
+
+/** One of a family's entry schemas, told apart by `__model` (the singular API ID). */
+const familySchema = (snapshot: SchemaSnapshot, id: string): JsonSchema => {
+  const members = snapshot.family(id).flatMap((memberId) => {
+    const member = snapshot.byId.get(memberId)?.definition;
+    return member ? [{ apiKey: member.apiKey, name: toTypeName(member.apiKey) }] : [];
+  });
+  return {
+    oneOf: members.map((member) => ref(member.name)),
+    discriminator: {
+      propertyName: '__model',
+      mapping: Object.fromEntries(
+        members.map((member) => [member.apiKey, `#/components/schemas/${member.name}`]),
+      ),
+    },
+  };
+};
+
 const listOr = (many: boolean, schema: JsonSchema): JsonSchema =>
   many ? { type: 'array', items: schema } : schema;
 
@@ -123,11 +154,11 @@ const fieldSchema = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mod
     case 'media':
       return listOr(field.settings.multiple, mode === 'output' ? ref('MediaAsset') : uuid);
     case 'relation': {
-      const target = snapshot.byId.get(field.settings.target)?.definition;
+      const target = entrySchemaName(snapshot, field.settings.target);
       const item =
         mode === 'output' && target
           ? {
-              anyOf: [uuid, ref(toTypeName(target.apiKey))],
+              anyOf: [uuid, ref(target)],
               description: 'An entry ID, or the entry when populated',
             }
           : uuid;
@@ -357,13 +388,22 @@ const json = (schema: JsonSchema, description = 'OK') => ({
   content: { 'application/json': { schema } },
 });
 
+const ancestorsOf = (snapshot: SchemaSnapshot, id: string): ModelDefinition[] =>
+  snapshot.ancestors(id).flatMap((ancestorId) => {
+    const ancestor = snapshot.byId.get(ancestorId)?.definition;
+    return ancestor && isModelDefinition(ancestor) ? [ancestor] : [];
+  });
+
 /**
  * Delivery paths use the model's route key (`/api/content/articles`: the plural API ID of a collection, the
- * API ID of a singleton); admin paths use the API ID (`/api/admin/content/article`).
+ * API ID of a singleton, under its ancestors' for a model that extends another: `/api/content/products/digital`);
+ * admin paths use the API ID (`/api/admin/content/article`). A model with children lists and reads any kind
+ * of its family (`<Name>Any`).
  */
-const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
+const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<string, unknown> => {
   const name = toTypeName(model.apiKey);
-  const routeKey = routeKeyOf(model);
+  const routeKey = routePathOf(model, ancestorsOf(snapshot, model.id));
+  const delivered = entrySchemaName(snapshot, model.id) ?? name;
   const tag = model.label;
   const meta = {
     type: 'object',
@@ -396,8 +436,8 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
           '200': json({
             type: 'object',
             properties: single
-              ? { data: ref(name), meta }
-              : { data: { type: 'array', items: ref(name) }, meta: listMeta },
+              ? { data: ref(delivered), meta }
+              : { data: { type: 'array', items: ref(delivered) }, meta: listMeta },
           }),
           '304': { description: 'Not modified (If-None-Match)' },
           ...errorResponses,
@@ -411,7 +451,7 @@ const modelPaths = (model: ModelDefinition): Record<string, unknown> => {
         operationId: `get${name}`,
         parameters: [idParameter, ...itemParameters(model, true)],
         responses: {
-          '200': json({ type: 'object', properties: { data: ref(name), meta } }),
+          '200': json({ type: 'object', properties: { data: ref(delivered), meta } }),
           '304': { description: 'Not modified' },
           ...errorResponses,
         },
@@ -565,7 +605,10 @@ export const generateOpenApi = (
   snapshot: SchemaSnapshot,
   options: OpenApiOptions,
 ): Record<string, unknown> => {
-  const definitions = snapshot.definitions.map((active) => active.definition);
+  // Models with their effective fields (inherited first); components as they are.
+  const definitions = snapshot.definitions.map(
+    (active): SchemaDefinition => snapshot.resolve(active.definition.id) ?? active.definition,
+  );
   const schemas: Record<string, JsonSchema> = { ...COMMON_SCHEMAS };
   for (const definition of definitions) {
     const name = toTypeName(definition.apiKey);
@@ -573,9 +616,21 @@ export const generateOpenApi = (
       definition,
       snapshot,
       'output',
-      isModelDefinition(definition) ? SYSTEM_PROPERTIES : {},
+      isModelDefinition(definition)
+        ? {
+            ...SYSTEM_PROPERTIES,
+            __model: {
+              type: 'string',
+              const: definition.apiKey,
+              description: "The API ID of the entry's type",
+            },
+          }
+        : {},
     );
     schemas[`${name}Input`] = objectSchema(definition, snapshot, 'input');
+    if (isModelDefinition(definition) && snapshot.childrenOf(definition.id).length > 0) {
+      schemas[`${name}Any`] = familySchema(snapshot, definition.id);
+    }
   }
   const models = definitions.filter(isModelDefinition);
   return {
@@ -595,7 +650,12 @@ export const generateOpenApi = (
       SNAPSHOTS_TAG,
       SITE_TAG,
     ],
-    paths: Object.assign({}, ...models.map(modelPaths), snapshotPaths(), sitePaths()),
+    paths: Object.assign(
+      {},
+      ...models.map((model) => modelPaths(model, snapshot)),
+      snapshotPaths(),
+      sitePaths(),
+    ),
     components: {
       schemas,
       securitySchemes: {

@@ -229,6 +229,8 @@ const recordActivation = async (
     breaking: plan.summary.breaking,
     destructive: plan.summary.destructive,
     categories: [...new Set(plan.changes.map((change) => change.category))],
+    // Every model whose entries change shape: the model's family, or the models embedding a component.
+    affectedModelIds: plan.affectedModelIds,
   };
   await recordAudit(trx, {
     actor: request.actor,

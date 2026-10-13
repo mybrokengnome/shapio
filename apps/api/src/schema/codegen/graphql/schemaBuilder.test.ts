@@ -258,6 +258,10 @@ describe('buildGraphqlSchema', () => {
     );
   });
 
+  it('prints exactly the schema it printed before model inheritance existed (no model has children)', () => {
+    expect(printSchema(schema)).toMatchSnapshot();
+  });
+
   it('builds an empty schema before the first model exists', () => {
     const empty = buildGraphqlSchema(buildSnapshot(0, [], [])).schema;
     expect(() => assertValidSchema(empty)).not.toThrow();

@@ -45,6 +45,14 @@ export const ensureHealthSweepScheduled = (db: Kysely<DB>, now = new Date()) =>
   );
 
 type SweepPayload = { daily?: boolean; modelIds?: string[] };
+
+/** The models an activation reshaped (`affectedModelIds`, plan polymorphic-types), or the model alone. */
+const familyOf = (event: { aggregate_id: string; payload: unknown }): string[] => {
+  const affected = (event.payload as { affectedModelIds?: unknown } | null)?.affectedModelIds;
+  return Array.isArray(affected) && affected.every((id) => typeof id === 'string') && affected.length > 0
+    ? [...new Set([event.aggregate_id, ...affected])]
+    : [event.aggregate_id];
+};
 type SweepCheckpoint = { after: string | null };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -151,9 +159,10 @@ export const contentHealthOutboxSubscriber: OutboxSubscriber = async (event, trx
     await enqueueEntryHealth(trx, entryIds, `health:${event.event_id}`);
     return;
   }
-  // A model's activation re-checks its entries; a component's (embedded anywhere) or a locale change, all.
+  // A model's activation re-checks its family's entries (a parent change reshapes its descendants); a
+  // component's (embedded anywhere) or a locale change, all.
   if (event.type === 'schema.activated' || event.aggregate_type === 'locale') {
-    const modelIds = event.aggregate_type === 'model' ? [event.aggregate_id] : undefined;
+    const modelIds = event.aggregate_type === 'model' ? familyOf(event) : undefined;
     await enqueueJob(
       {
         type: CONTENT_HEALTH_JOBS.sweep,

@@ -1,4 +1,4 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { ResolvedModelDefinition } from '@shapio/schema';
 import {
   GraphQLBoolean,
   GraphQLID,
@@ -36,7 +36,7 @@ const fromAdminView = (view: AdminEntryView): EntryResult => ({
   publishedAt: view.publishedAt,
 });
 
-const writeData = (build: SchemaBuild, model: ModelDefinition, args: Record<string, unknown>) =>
+const writeData = (build: SchemaBuild, model: ResolvedModelDefinition, args: Record<string, unknown>) =>
   args.data ? toWriteData(build, model, args.data as Record<string, unknown>) : {};
 
 const missingExpectedVersion = () =>
@@ -48,7 +48,7 @@ const missingExpectedVersion = () =>
 
 export const mutationFields = (
   build: SchemaBuild,
-  model: ModelDefinition,
+  model: ResolvedModelDefinition,
 ): GraphQLFieldConfigMap<unknown, GraphqlContext> => {
   const input = modelInput(build, model);
   const data: GraphQLFieldConfigArgumentMap = input ? { data: { type: input } } : {};

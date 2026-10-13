@@ -93,8 +93,21 @@ export const replaceField = async (stagingFieldId: string, fieldId: string, trx:
     .execute();
 };
 
-export const removeForField = (fieldId: string, trx: Executor = db) =>
-  trx.deleteFrom('unique_values').where('field_id', '=', fieldId).executeTakeFirst();
+/**
+ * A field's registry rows on the given models; null: on every model. An inherited field keeps its ID in every
+ * member of a family (plan polymorphic-types), so dropping it from some members must not release the
+ * others' claims.
+ */
+export const removeForField = (fieldId: string, modelIds: readonly string[] | null, trx: Executor = db) => {
+  if (modelIds !== null && modelIds.length === 0) {
+    return Promise.resolve(undefined);
+  }
+  let query = trx.deleteFrom('unique_values').where('field_id', '=', fieldId);
+  if (modelIds !== null) {
+    query = query.where('model_id', 'in', modelIds);
+  }
+  return query.executeTakeFirst();
+};
 
 export const removeForLocale = (locale: string, trx: Executor = db) =>
   trx.deleteFrom('unique_values').where('locale', '=', locale).executeTakeFirst();
@@ -124,3 +137,7 @@ export const findOtherOwners = (entryId: string, keys: readonly UniqueKey[], exe
           ),
         )
         .execute();
+
+/** Moves an entry's registry rows to another model of its family (change kind). */
+export const moveEntryToModel = (entryId: string, modelId: string, trx: Executor = db) =>
+  trx.updateTable('unique_values').set({ model_id: modelId }).where('entry_id', '=', entryId).execute();

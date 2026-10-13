@@ -18,6 +18,8 @@ export const WEBHOOK_EVENT_CATALOGUE: readonly WebhookEventType[] = [
     'entry.published',
     'entry.unpublished',
     'entry.restored',
+    // An entry moved to another kind of its family (plan polymorphic-types).
+    'entry.kind_changed',
   ]),
   ...group('media', Object.values(MEDIA_EVENTS)),
   ...group('schema', ['schema.activated', 'schema.deleted']),

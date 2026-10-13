@@ -1,9 +1,11 @@
 import {
   isModelDefinition,
-  routeKeyOf,
+  ownFields,
+  routePathOf,
   toTypeName,
+  type ComponentDefinition,
   type FieldDefinition,
-  type SchemaDefinition,
+  type ModelDefinition,
 } from '@shapio/schema';
 import type { SchemaSnapshot } from '../snapshot.js';
 
@@ -11,6 +13,11 @@ import type { SchemaSnapshot } from '../snapshot.js';
  * TypeScript declarations for the active schema (`shapio types generate`). Derived in memory from the
  * registry like OpenAPI, never committed into Shapio itself: the project that consumes the API writes them
  * to its own source tree. Output types describe delivery responses; `<Name>Input` types describe writes.
+ *
+ * A model that extends another (plan polymorphic-types) builds on its parent: `<Name>Fields` holds the
+ * system fields and every field (the parent's `<Parent>Fields` and its own), `<Name>` adds the `__model`
+ * literal every delivery entry carries, and a model with children gets `<Name>Any`, the union of its
+ * family, which its list, its single-entry route and relations to it return.
  */
 type Mode = 'output' | 'input';
 
@@ -90,6 +97,16 @@ const scalarType = (field: FieldDefinition): string => {
 
 const many = (isList: boolean, type: string) => (isList ? `Array<${type}>` : type);
 
+/** The entry type a relation to a model, or its list, returns: the family's union when it has children. */
+const entryTypeName = (snapshot: SchemaSnapshot, id: string): string | undefined => {
+  const definition = snapshot.byId.get(id)?.definition;
+  if (!definition) {
+    return undefined;
+  }
+  const name = toTypeName(definition.apiKey);
+  return snapshot.childrenOf(id).length > 0 ? `${name}Any` : name;
+};
+
 const fieldType = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mode): string => {
   const nameOf = (id: string) => {
     const definition = snapshot.byId.get(id)?.definition;
@@ -101,9 +118,8 @@ const fieldType = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mode)
     case 'media':
       return many(field.settings.multiple, mode === 'output' ? 'MediaAsset' : 'string');
     case 'relation': {
-      const target = snapshot.byId.get(field.settings.target)?.definition;
-      const item = mode === 'output' && target ? `Related<${toTypeName(target.apiKey)}>` : 'string';
-      return many(field.settings.cardinality === 'many', item);
+      const target = mode === 'output' ? entryTypeName(snapshot, field.settings.target) : undefined;
+      return many(field.settings.cardinality === 'many', target ? `Related<${target}>` : 'string');
     }
     case 'component':
       return many(field.settings.repeatable, nameOf(field.settings.component));
@@ -119,9 +135,8 @@ const fieldType = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mode)
   }
 };
 
-const declaration = (definition: SchemaDefinition, snapshot: SchemaSnapshot, mode: Mode): string => {
-  const name = `${toTypeName(definition.apiKey)}${mode === 'input' ? 'Input' : ''}`;
-  const lines = definition.fields
+const fieldLines = (fields: readonly FieldDefinition[], snapshot: SchemaSnapshot, mode: Mode): string[] =>
+  fields
     .filter((field) => !field.deprecated)
     .map((field) => {
       const type = fieldType(field, snapshot, mode);
@@ -130,32 +145,77 @@ const declaration = (definition: SchemaDefinition, snapshot: SchemaSnapshot, mod
         ? `${fieldComment(field)}  ${field.apiKey}: ${type} | null;`
         : `${fieldComment(field)}  ${field.apiKey}?: ${type} | null;`;
     });
-  const base = mode === 'output' && isModelDefinition(definition) ? 'EntrySystemFields & ' : '';
+
+const objectType = (lines: readonly string[]) => (lines.length > 0 ? `{\n${lines.join('\n')}\n}` : '{}');
+
+const componentDeclaration = (definition: ComponentDefinition, snapshot: SchemaSnapshot, mode: Mode) => {
+  const name = `${toTypeName(definition.apiKey)}${mode === 'input' ? 'Input' : ''}`;
+  return `/** ${definition.label} (component \`${definition.apiKey}\`) */\nexport type ${name} = ${objectType(fieldLines(definition.fields, snapshot, mode))};\n`;
+};
+
+const ancestorsOf = (snapshot: SchemaSnapshot, id: string): ModelDefinition[] =>
+  snapshot.ancestors(id).flatMap((ancestorId) => {
+    const ancestor = snapshot.byId.get(ancestorId)?.definition;
+    return ancestor && isModelDefinition(ancestor) ? [ancestor] : [];
+  });
+
+/** A model's route key: under its ancestors' for a model that extends another (`products/digital`). */
+const routeKeyIn = (snapshot: SchemaSnapshot, model: ModelDefinition) =>
+  routePathOf(model, ancestorsOf(snapshot, model.id));
+
+const modelDeclarations = (model: ModelDefinition, snapshot: SchemaSnapshot): string[] => {
+  const name = toTypeName(model.apiKey);
+  const resolved = snapshot.resolve(model.id);
+  const own = resolved ? ownFields(resolved) : model.fields;
+  const parent = model.extends ? snapshot.byId.get(model.extends)?.definition : undefined;
+  const parentName = parent ? toTypeName(parent.apiKey) : undefined;
   const ids =
-    definition.kind === 'collection'
-      ? `${definition.kind} \`${definition.apiKey}\`, delivery route \`${routeKeyOf(definition)}\``
-      : `${definition.kind} \`${definition.apiKey}\``;
-  return `/** ${definition.label} (${ids}) */\nexport type ${name} = ${base}{\n${lines.join('\n')}\n};\n`;
+    model.kind === 'collection'
+      ? `${model.kind} \`${model.apiKey}\`, delivery route \`${routeKeyIn(snapshot, model)}\`${parent ? `, extends \`${parent.apiKey}\`` : ''}`
+      : `${model.kind} \`${model.apiKey}\``;
+  const fields = objectType(fieldLines(own, snapshot, 'output'));
+  const input = objectType(fieldLines(own, snapshot, 'input'));
+  const declarations = [
+    `/** ${model.label}: every field (${ids}) */\nexport type ${name}Fields = ${parentName ? `${parentName}Fields` : 'EntrySystemFields'} & ${fields};\n`,
+    `/** ${model.label} (${ids}) */\nexport type ${name} = ${name}Fields & { __model: ${quote(model.apiKey)} };\n`,
+    `/** ${model.label}, as written (${ids}) */\nexport type ${name}Input = ${parentName ? `${parentName}Input & ` : ''}${input};\n`,
+  ];
+  const family = snapshot.family(model.id);
+  if (family.length > 1) {
+    const members = family.flatMap((id) => {
+      const member = snapshot.byId.get(id)?.definition;
+      return member ? [toTypeName(member.apiKey)] : [];
+    });
+    declarations.push(
+      `/** Any kind of ${model.label}: what its list, its entries' route and relations to it return. */\nexport type ${name}Any = ${members.join(' | ')};\n`,
+    );
+  }
+  return declarations;
 };
 
 /**
  * The declarations for every model and component of a snapshot, plus two maps keyed by API ID: the entry
- * type (`ShapioModels`) and the delivery route key (`ShapioRouteKeys`, `{ article: 'articles' }`).
+ * type (`ShapioModels`: a model with children maps to its family's union) and the delivery route key
+ * (`ShapioRouteKeys`, `{ article: 'articles', digitalProduct: 'products/digital' }`).
  */
 export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
   const definitions = [...snapshot.definitions]
     .map((active) => active.definition)
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
-  const body = definitions.flatMap((definition) => [
-    declaration(definition, snapshot, 'output'),
-    declaration(definition, snapshot, 'input'),
-  ]);
+  const body = definitions.flatMap((definition) =>
+    isModelDefinition(definition)
+      ? modelDeclarations(definition, snapshot)
+      : [
+          componentDeclaration(definition, snapshot, 'output'),
+          componentDeclaration(definition, snapshot, 'input'),
+        ],
+  );
   const models = definitions.filter(isModelDefinition);
   const map = `/** Delivery entry type by model API ID. */\nexport type ShapioModels = {\n${models
-    .map((model) => `  ${model.apiKey}: ${toTypeName(model.apiKey)};`)
+    .map((model) => `  ${model.apiKey}: ${entryTypeName(snapshot, model.id) ?? toTypeName(model.apiKey)};`)
     .join('\n')}\n};\n`;
   const routeKeys = `/** Delivery route key (\`/api/content/:routeKey\`) by model API ID. */\nexport type ShapioRouteKeys = {\n${models
-    .map((model) => `  ${model.apiKey}: '${routeKeyOf(model)}';`)
+    .map((model) => `  ${model.apiKey}: '${routeKeyIn(snapshot, model)}';`)
     .join('\n')}\n};\n`;
   return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${body.join('\n')}\n${map}\n${routeKeys}`;
 };

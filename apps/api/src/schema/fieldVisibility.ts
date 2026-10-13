@@ -7,17 +7,16 @@ import type { SchemaRegistry } from './registry.js';
  * Uses the durable version check on every call (or the version the request read once, `versions`), so a
  * field made non-public is hidden on every instance from the next request, whether or not it got the
  * notification. Deprecated fields are reported as non-public: they are hidden from the API unless a role
- * names them explicitly. Components are not delivery models.
+ * names them explicitly. Components are not delivery models. Fields are the effective ones (inherited first).
  */
 export const createSchemaFieldVisibility = (registry: SchemaRegistry): FieldVisibilityLookup => {
+  // The effective definition: a model that extends another sees its inherited fields with their own `public`
+  // flags, so a wildcard grant shows them on the child as on the parent (plan polymorphic-types).
   const activeModel = async (
     modelId: string,
     executor: PermissionExecutor | undefined,
     versions: KnownVersions | undefined,
-  ) => {
-    const active = (await registry.getSnapshot(executor, versions)).byId.get(modelId);
-    return active && active.definition.kind !== 'component' ? active.definition : undefined;
-  };
+  ) => (await registry.getSnapshot(executor, versions)).resolve(modelId);
   return {
     getModelFields: async (modelId, executor, versions) =>
       (await activeModel(modelId, executor, versions))?.fields.map((field): ModelField => ({
@@ -29,5 +28,7 @@ export const createSchemaFieldVisibility = (registry: SchemaRegistry): FieldVisi
     // Components too: managing a site's component is a site's schema permission like its models'.
     getModelSite: async (modelId, executor, versions) =>
       (await registry.getSnapshot(executor, versions)).scopeOf(modelId) ?? null,
+    getAncestors: async (modelId, executor, versions) =>
+      (await registry.getSnapshot(executor, versions)).ancestors(modelId),
   };
 };
