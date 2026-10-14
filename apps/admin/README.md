@@ -32,14 +32,14 @@ keeps its filters and cursor in the URL), `beforeLoad` guards share the TanStack
 for the session), `useBlocker` gives dirty-state protection, and `to` paths are type-checked. It is used
 code-based, so there is no route-generation step.
 
-Initialising shadcn: `shadcn init` is interactive, so `components.json` was written by hand (style `new-york`,
+Initializing shadcn: `shadcn init` is interactive, so `components.json` was written by hand (style `new-york`,
 Tailwind 4 CSS-variable theme, `utils` alias `@/helpers/cn`) and components added with
 `pnpm dlx shadcn@4 add <name>`. Review what the CLI adds to `package.json`: it tried to add `next-themes` and
 an unrelated npm package called `cn`, both removed. Local edits to generated files are marked `Shapio:`.
 
 ## Theming
 
-- Brand colours (`cobalt`, `periwinkle`, `ink`, `ivory`) and the semantic shadcn tokens (`background`,
+- Brand colors (`cobalt`, `periwinkle`, `ink`, `ivory`) and the semantic shadcn tokens (`background`,
   `primary`, `muted-foreground`, `link`, `success`...) are defined once in `src/styles/index.css`, each with a
   light value (`:root`) and a dark value (`.dark`). Components use the tokens, never hex values.
 - Dark mode is the `dark` class on `<html>`. The preference (`system` | `light` | `dark`) lives in the theme
@@ -103,8 +103,8 @@ values (`sharedOutdatedLocales`), offers to publish them too. A 409 (`CONTENT_VE
 `SCHEMA_CHANGED`) opens a dialog to reload and keep one's changes, or discard them. Server issues (422
 `CONTENT_INVALID`) are JSON pointers in API keys and land on the field with the same path.
 
-Built-in editors live in `src/fields/<Name>/`, keyed by catalogue ID in `src/fields/registry.ts` (the catalogue
-itself, with option schemas, is `EDITOR_CATALOGUE` in `@shapio/schema`). Every editor gets the public contract
+Built-in editors live in `src/fields/<Name>/`, keyed by catalog ID in `src/fields/registry.ts` (the catalog
+itself, with option schemas, is `EDITOR_CATALOG` in `@shapio/schema`). Every editor gets the public contract
 from `@shapio/editor-sdk` (`FieldEditorProps`); built-ins also get the field definition and the value's path.
 Rich text is Tiptap's open-source core, configured to produce exactly the `shapio-richtext` v1 document the server
 validates (`packages/schema/src/richtext/spec.ts`); `src/fields/RichTextField/richTextContract.test.ts` checks the
@@ -141,7 +141,7 @@ A project adds editors without rebuilding Shapio: **build, copy, list, restart.*
    `editors` and `jobs`; an unknown key fails startup with a message naming it.
 
 4. Restart Shapio. Then choose the editor for a field in the model builder (editor ID `acme.starRating`, with any
-   options); choosing and configuring it is live, like any modelling change.
+   options); choosing and configuring it is live, like any modeling change.
 
 The contract (`EDITOR_CONTRACT_VERSION`): the value (`null` when empty) and `onChange`, `onBlur`, the validation
 messages, `readOnly`/`disabled`, the field's metadata (ID, API key, label, type, settings, editor options) and its
@@ -162,7 +162,7 @@ back to its built-in editor, as does a field whose custom editor throws while re
 ## Conventions enforced by tests
 
 `src/test/conventions.test.ts` fails on hard-coded user-facing text in JSX (text, `aria-label`, `title`,
-`placeholder`, `alt`, `label`), raw hex colours, interpolated class names and default exports.
+`placeholder`, `alt`, `label`), raw hex colors, interpolated class names and default exports.
 `src/test/translations.test.ts` fails on empty or unused translation keys. Translation keys are type-checked
 (`src/app/i18next.d.ts`).
 

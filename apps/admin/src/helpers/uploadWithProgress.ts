@@ -20,7 +20,7 @@ type UploadWithProgressInput = {
 
 /**
  * POSTs a multipart form with upload progress (fetch cannot report it, so this uses XMLHttpRequest).
- * No credentials are sent: the grant's fields authorise the upload, whether it goes to a bucket or to Shapio.
+ * No credentials are sent: the grant's fields authorize the upload, whether it goes to a bucket or to Shapio.
  */
 export const uploadWithProgress = ({ url, form, onProgress, signal }: UploadWithProgressInput) =>
   new Promise<void>((resolve, reject) => {
@@ -41,7 +41,7 @@ export const uploadWithProgress = ({ url, form, onProgress, signal }: UploadWith
       reject(new UploadTransferError(request.status, request.responseText));
     };
     request.onerror = () => reject(new UploadTransferError(0, ''));
-    request.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'));
+    request.onabort = () => reject(new DOMException('Upload canceled', 'AbortError'));
     signal?.addEventListener('abort', () => request.abort(), { once: true });
     request.send(form);
   });

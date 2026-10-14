@@ -136,7 +136,7 @@ describe('scheduled publications', () => {
     expect(listed.items).toEqual([expect.objectContaining({ id: created.id, status: 'done' })]);
   });
 
-  it('unpublishes at the scheduled time and cancelled schedules do nothing', async () => {
+  it('unpublishes at the scheduled time and canceled schedules do nothing', async () => {
     const entry = await createEntry('Goes offline');
     expectStatus(await admin.post(`/api/admin/content/article/${entry.id}/publish`, {}), 200);
     const unpublish = expectStatus(
@@ -144,15 +144,15 @@ describe('scheduled publications', () => {
       201,
     ).json<Schedule>();
     const other = await createEntry('Never published');
-    const cancelled = expectStatus(await schedule(admin, other.id, new Date()), 201).json<Schedule>();
-    expect((await admin.delete(`/api/admin/publishing/schedules/${cancelled.id}`)).statusCode).toBe(204);
+    const canceled = expectStatus(await schedule(admin, other.id, new Date()), 201).json<Schedule>();
+    expect((await admin.delete(`/api/admin/publishing/schedules/${canceled.id}`)).statusCode).toBe(204);
 
     await drainJobs(worker(), database.current.db, { types: [PUBLISHING_JOBS.scheduledPublication] });
     expect((await deliver(entry.id)).statusCode).toBe(404);
     expect((await scheduleRow(unpublish.id)).status).toBe('done');
-    expect((await scheduleRow(cancelled.id)).status).toBe('cancelled');
+    expect((await scheduleRow(canceled.id)).status).toBe('canceled');
     expect(await publicationsOf(other.id)).toHaveLength(0);
-    expect((await admin.delete(`/api/admin/publishing/schedules/${cancelled.id}`)).statusCode).toBe(409);
+    expect((await admin.delete(`/api/admin/publishing/schedules/${canceled.id}`)).statusCode).toBe(409);
   });
 
   it('a scheduled publish of a draft that is already live completes without a new publication', async () => {

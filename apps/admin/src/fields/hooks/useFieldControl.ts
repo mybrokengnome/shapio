@@ -41,7 +41,7 @@ const useFieldMessages = (field: FieldDefinition, value: unknown, path: string):
 };
 
 /**
- * Everything a field's chrome needs, whatever it looks like (a labelled form row, a canvas block, a
+ * Everything a field's chrome needs, whatever it looks like (a labeled form row, a canvas block, a
  * property chip): which editor renders it (a project's custom editor or a built-in), the props for it, the
  * DOM ids that tie label, description and errors together, and the messages to show (server issues for this
  * path, plus client-side checks once the field was left or a save was attempted).
@@ -96,7 +96,7 @@ export const useFieldControl = ({
     builtInProps,
     contractProps: contractProps as FieldEditorProps,
     /** How the label points at the editor: `<label for>` (one input) or `aria-labelledby` (a group). */
-    labelling: resolved.kind === 'runtime' ? ('input' as const) : builtIn.labelling,
+    labeling: resolved.kind === 'runtime' ? ('input' as const) : builtIn.labeling,
     inputId,
     labelId,
     descriptionId,

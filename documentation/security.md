@@ -47,7 +47,7 @@ see [SECURITY.md](../SECURITY.md).
   never be refused a kind of a type it is granted. Review a parent's grants with all its kinds in mind. In a
   parent's list, the fields you may filter or sort on are those you may read on every kind in it, so a filter
   can't reveal a value of a kind you can't read
-  ([Modelling](modelling.md#types-that-extend-a-type)).
+  ([Modeling](modeling.md#types-that-extend-a-type)).
 - The server enforces everything (validation, permissions, schema consistency); the admin UI is never the only
   check.
 - [Sites](sites.md) are a tenancy boundary in every query: another site's entries, assets, change sets and tokens
@@ -60,7 +60,7 @@ see [SECURITY.md](../SECURITY.md).
 ## Content and files
 
 - Rich text is stored as a validated JSON document, never HTML; the HTML in delivery responses is rendered
-  from it with an allow-list sanitiser (only `http`, `https`, `mailto`, `tel` and relative links).
+  from it with an allow-list sanitizer (only `http`, `https`, `mailto`, `tel` and relative links).
 - Uploads are limited in size and type, and the type is checked from the file's bytes. Files Shapio serves carry
   `X-Content-Type-Options: nosniff` and a sandboxing `Content-Security-Policy`, so an uploaded SVG or HTML file
   cannot run scripts on the admin's origin.

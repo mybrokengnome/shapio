@@ -80,9 +80,9 @@ const themed = (theme: 'light' | 'dark') =>
   THEMED.map((selector) => `body.graphiql-${theme} ${selector}`).join(',\n');
 
 /**
- * Page layout, and GraphiQL's palette adjusted to WCAG AA: every text colour (syntax highlighting, links,
+ * Page layout, and GraphiQL's palette adjusted to WCAG AA: every text color (syntax highlighting, links,
  * secondary text) reaches 4.5:1 on the backgrounds it is drawn on, in both themes (GraphiQL's own light
- * palette is 2.3–4.3:1 there), and links in the docs are underlined so they don't rely on colour alone.
+ * palette is 2.3–4.3:1 there), and links in the docs are underlined so they don't rely on color alone.
  */
 const STYLE = `html, body, #graphiql { height: 100%; margin: 0; }
 ${themed('light')} {

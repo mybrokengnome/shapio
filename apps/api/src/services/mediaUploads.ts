@@ -106,7 +106,7 @@ const uploadInstructions = async (
     });
     return { method: 'POST', url, fields, fileField: 'file' };
   }
-  // Without direct uploads the bytes go to Shapio, authorised by a signature in the form (like an S3
+  // Without direct uploads the bytes go to Shapio, authorized by a signature in the form (like an S3
   // policy), so the client flow is identical and no cookie or CSRF token is involved.
   const expires = toUnixSeconds(grant.expires_at);
   return {
@@ -232,7 +232,7 @@ const goneGrant = () =>
 
 /**
  * Local driver only: receives the bytes of a grant (the S3 driver's browser uploads go to the bucket).
- * Authorised by the grant's signature, not by a session. `readUpload` parses the request with the grant's
+ * Authorized by the grant's signature, not by a session. `readUpload` parses the request with the grant's
  * size limit; the bytes stream to disk and are re-checked on confirm.
  */
 export const receiveLocalUpload = async (

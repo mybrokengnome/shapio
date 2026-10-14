@@ -43,12 +43,12 @@ const jsonInstruction = (request: CompletionRequest) =>
  */
 export const createChatCompletionsProvider = (
   transport: ProviderTransport,
-  flavour: 'openai' | 'openai-compatible',
+  flavor: 'openai' | 'openai-compatible',
 ): AssistProvider => ({
-  id: flavour,
+  id: flavor,
   model: transport.config.model,
   complete: async (request) => {
-    const native = flavour === 'openai';
+    const native = flavor === 'openai';
     const system = native ? request.system : `${request.system}${jsonInstruction(request)}`;
     // Compatible servers differ in which `response_format` types they accept, so none is sent to them.
     const responseFormat =

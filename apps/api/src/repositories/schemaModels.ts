@@ -103,7 +103,7 @@ export const purgeDefinitions = async (ids: readonly string[], trx: Executor = d
 };
 
 /**
- * Keeps the denormalised kind, API key and scope in step with the active revision; also undeletes. The scope
+ * Keeps the denormalized kind, API key and scope in step with the active revision; also undeletes. The scope
  * only differs from the stored one for a scope change (`ActivationItem.moveScope`).
  */
 export const markModelActive = (

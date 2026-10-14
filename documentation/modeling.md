@@ -1,4 +1,4 @@
-# Modelling
+# Modeling
 
 A content model describes the shape of some content: a page, an article, a product. In Shapio models are
 **data**, versioned in the database, not code. You create and change them in the admin (Models) or from schema
@@ -53,14 +53,14 @@ may each have a `post`, but a shared definition cannot take an API ID that any s
 ## Field types
 
 The stored **data type** and the **editor** that renders it are separate choices: you can switch a boolean from
-a toggle to a checkbox, or a string to a colour picker, live, without touching data.
+a toggle to a checkbox, or a string to a color picker, live, without touching data.
 
 | Data type                  | Stored as                          | Editors                                         | Notes                                                                                                                                                                                                             |
 | -------------------------- | ---------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `string`                   | text                               | `textInput`, `textarea`, `color`                | min/max length, pattern                                                                                                                                                                                           |
 | `text`                     | text                               | `textarea`                                      | long plain text                                                                                                                                                                                                   |
 | `code`                     | text, exactly as written           | `codeEditor`                                    | head snippets, embed codes, JSON configs, template fragments; `language` (plain, html, css, javascript, json, yaml, markdown), min/max length, `validate` (JSON must parse); never unique, filterable or sortable |
-| `richtext`                 | versioned JSON document            | `richText`                                      | headings, lists, links, quotes, code, images, tables; delivered as JSON, or sanitised HTML with `richText=html`                                                                                                   |
+| `richtext`                 | versioned JSON document            | `richText`                                      | headings, lists, links, quotes, code, images, tables; delivered as JSON, or sanitized HTML with `richText=html`                                                                                                   |
 | `number`, `integer`        | JSON number                        | `numberInput`                                   | min/max                                                                                                                                                                                                           |
 | `decimal`, `biginteger`    | string (exact)                     | `numberInput`                                   | precision/scale; no floating-point loss                                                                                                                                                                           |
 | `boolean`                  | true/false                         | `toggle`, `checkbox`, `segmented`               |                                                                                                                                                                                                                   |
@@ -229,7 +229,7 @@ undoes a data conversion that already ran.
 
 A model's history (`GET /api/admin/models/{id}/revisions`, and `/api/admin/components/{id}/revisions`) lists
 every version with `status`, the outcome of the change that wrote it (`activated`, `pending`, `running`,
-`failed` or `cancelled`), and `active`, true for the version in use. A `failed` or `cancelled` version never
+`failed` or `canceled`), and `active`, true for the version in use. A `failed` or `canceled` version never
 went live, so rolling back to it would repeat a change that already failed its checks.
 
 Checks never touch stored content: they run on the values as they would be, and the conversion or backfill is

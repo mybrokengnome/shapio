@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isSecretEnvAllowed, parseEnvReference, resolveSecretValues } from './secretRefs.js';
 
 describe('environment secret references', () => {
-  it('recognises ${ENV:NAME} and nothing else', () => {
+  it('recognizes ${ENV:NAME} and nothing else', () => {
     expect(parseEnvReference('${ENV:CF_API_TOKEN}')).toBe('CF_API_TOKEN');
     expect(parseEnvReference(' ${ENV:_X1} ')).toBe('_X1');
     expect(parseEnvReference('${ENV:1BAD}')).toBeUndefined();

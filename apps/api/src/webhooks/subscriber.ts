@@ -1,7 +1,7 @@
 import type { OutboxSubscriber } from '../jobs/types.js';
 import * as sitesRepository from '../repositories/sites.js';
 import * as webhooksRepository from '../repositories/webhooks.js';
-import { matchesEvent } from './catalogue.js';
+import { matchesEvent } from './catalog.js';
 import { enqueueDelivery } from './enqueue.js';
 
 /** The site an event is about, as the body names it (`null` for a network event). */

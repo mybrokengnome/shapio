@@ -52,7 +52,7 @@ const targetOf = (conflict: OnConflictNode): readonly string[] | undefined =>
 
 /**
  * `ON CONFLICT … DO UPDATE` as `ON DUPLICATE KEY UPDATE`, and `ON CONFLICT … DO NOTHING` without RETURNING
- * as `ON DUPLICATE KEY UPDATE <key> = <key>` (a no-op), when MySQL's any-key behaviour equals the target's
+ * as `ON DUPLICATE KEY UPDATE <key> = <key>` (a no-op), when MySQL's any-key behavior equals the target's
  * (`duplicateKeyMatchesTarget`). Any other conflict clause (another unique key could fire, a `WHERE` on the
  * update, RETURNING) is left for the compiler's plan: each row inserted under a savepoint, and a duplicate
  * on the target either skipped or turned into an UPDATE of the row it found.

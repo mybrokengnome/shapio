@@ -21,7 +21,7 @@ type SecurityPluginOptions = {
 /**
  * Baseline HTTP hardening: security headers, CORS (off unless origins are configured; the admin and API
  * share one origin, so CORS is only for the user's own sites and apps), a global rate limit keyed by the
- * client IP (which honours TRUST_PROXY), and @fastify/sensible's httpErrors.
+ * client IP (which honors TRUST_PROXY), and @fastify/sensible's httpErrors.
  * The rate-limit store is in memory, so with several instances each counts on its own (documented: put a
  * shared limiter in front for strict limits; ADR 0008).
  */

@@ -134,7 +134,7 @@ describe('row primitives', () => {
 });
 
 describe('error classification', () => {
-  it('recognises constraint violations by SQLSTATE and constraint name', () => {
+  it('recognizes constraint violations by SQLSTATE and constraint name', () => {
     const unique = { code: '23505', constraint: 'media_folders_sibling_name_uq' };
     expect(isUniqueViolation(unique)).toBe(true);
     expect(isUniqueViolation(unique, 'media_folders_sibling_name_uq')).toBe(true);
@@ -201,7 +201,7 @@ describe('SQLite forms', () => {
     });
   });
 
-  it('recognises SQLite constraint errors', () => {
+  it('recognizes SQLite constraint errors', () => {
     const unique = { code: 'SQLITE_CONSTRAINT_UNIQUE', constraint: 'media_folders_sibling_name_uq' };
     expect(isUniqueViolation(unique, 'media_folders_sibling_name_uq')).toBe(true);
     expect(isUniqueViolation({ code: 'SQLITE_CONSTRAINT_PRIMARYKEY' })).toBe(true);

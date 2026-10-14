@@ -24,7 +24,7 @@ describe('createSeoField', () => {
 });
 
 describe('hasSeoField', () => {
-  it('recognises the SEO component by stable ID, whatever the API ID', () => {
+  it('recognizes the SEO component by stable ID, whatever the API ID', () => {
     const withSeo = model({
       fields: [field({ apiKey: 'meta', type: 'component', settings: { component: SEO_COMPONENT_ID } })],
     });

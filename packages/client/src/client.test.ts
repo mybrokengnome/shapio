@@ -48,7 +48,7 @@ describe('createClient', () => {
 });
 
 describe('admin api', () => {
-  it('sends per-request headers and credentials, and serialises queries', async () => {
+  it('sends per-request headers and credentials, and serializes queries', async () => {
     const fetch = vi.fn(async () => jsonResponse(200, { items: [], nextCursor: null }));
     const client = createClient({
       baseUrl: 'https://cms.test/cms/',

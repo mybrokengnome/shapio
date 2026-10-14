@@ -26,7 +26,7 @@ const waitForChanges = async (
         item.outcome = 'activated';
         break;
       }
-      if (change.status === 'failed' || change.status === 'cancelled') {
+      if (change.status === 'failed' || change.status === 'canceled') {
         io.stderr(`${item.apiKey}: change ${change.status}: ${JSON.stringify(change.error)}\n`);
         failed.push(item);
         break;

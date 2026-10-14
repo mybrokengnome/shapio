@@ -4,10 +4,10 @@ import { acquireXactLock, lockKeyFromId } from '../../db/advisoryLocks.js';
 import type { DB } from '../../db/types.js';
 
 /**
- * Serialises every schema activation (and the start of every planned change) instance-wide. Activations are
+ * Serializes every schema activation (and the start of every planned change) instance-wide. Activations are
  * rare, and holding this lock while re-validating the whole schema closes races between changes to
  * *different* definitions (e.g. two renames to colliding GraphQL names). It lives in the model namespace;
- * a collision with a model's hash only costs extra serialisation.
+ * a collision with a model's hash only costs extra serialization.
  */
 export const SCHEMA_ACTIVATION_LOCK_KEY = lockKeyFromId('shapio:schema-activation');
 

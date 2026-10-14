@@ -168,7 +168,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* The logo (components/Logo, Wordmark) and the signed-out brand panel: set per theme, never UI colours. */
+  /* The logo (components/Logo, Wordmark) and the signed-out brand panel: set per theme, never UI colors. */
   --color-brand-logo: var(--brand-logo);
   --color-brand-logo-foreground: var(--brand-logo-foreground);
   --color-brand-letters: var(--brand-letters);

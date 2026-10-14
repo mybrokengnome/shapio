@@ -3,7 +3,7 @@ import { field, model } from '../testing/fixtures.js';
 import { DATA_TYPES } from '../types/dataTypes.js';
 import type { FieldInput } from '../types/definitions.js';
 import { validateDefinition } from '../validators/definition.js';
-import { DEFAULT_EDITORS, EDITOR_CATALOGUE, isCustomEditorId, listCompatibleEditors } from './catalogue.js';
+import { DEFAULT_EDITORS, EDITOR_CATALOG, isCustomEditorId, listCompatibleEditors } from './catalog.js';
 
 const SETTINGS: Partial<Record<FieldInput['type'], FieldInput['settings']>> = {
   enum: { values: [{ value: 'a', label: 'A' }] },
@@ -12,9 +12,9 @@ const SETTINGS: Partial<Record<FieldInput['type'], FieldInput['settings']>> = {
   dynamiczone: { components: ['00000000-0000-4000-8000-000000000002'] },
 };
 
-describe('editor catalogue', () => {
+describe('editor catalog', () => {
   it.each(DATA_TYPES)('the default editor for %s exists and is compatible', (type) => {
-    expect(EDITOR_CATALOGUE.has(DEFAULT_EDITORS[type])).toBe(true);
+    expect(EDITOR_CATALOG.has(DEFAULT_EDITORS[type])).toBe(true);
     const definition = model({
       fields: [field({ apiKey: 'f', type, ...(SETTINGS[type] ? { settings: SETTINGS[type] } : {}) })],
     });
@@ -40,7 +40,7 @@ describe('editor catalogue', () => {
     ]);
   });
 
-  it('recognises namespaced custom editor IDs', () => {
+  it('recognizes namespaced custom editor IDs', () => {
     expect(isCustomEditorId('acme.colorWheel')).toBe(true);
     expect(isCustomEditorId('textInput')).toBe(false);
     expect(isCustomEditorId('.bad')).toBe(false);

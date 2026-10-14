@@ -183,7 +183,7 @@ const imageNodes = (images: readonly PickedImage[]): JSONContent[] =>
 /**
  * Inserts a block at a document position (between top-level blocks), or in place of a range (an empty
  * paragraph it replaces), and puts the cursor inside it. Images come from `pickImages` (the library sheet);
- * nothing is inserted when it is cancelled.
+ * nothing is inserted when it is canceled.
  */
 export const insertBlockAt = async (
   editor: Editor,

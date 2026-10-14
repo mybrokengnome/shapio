@@ -42,7 +42,7 @@ export type JobSummary = { counts: Record<JobStatus, number>; types: string[] };
 export const PUBLICATION_ACTIONS = ['publish', 'unpublish'] as const;
 export type PublicationAction = (typeof PUBLICATION_ACTIONS)[number];
 
-export const SCHEDULE_STATUSES = ['scheduled', 'done', 'failed', 'cancelled'] as const;
+export const SCHEDULE_STATUSES = ['scheduled', 'done', 'failed', 'canceled'] as const;
 export type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
 
 export type ScheduledPublication = {

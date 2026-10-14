@@ -126,7 +126,7 @@ export const SITE_GRANTABLE_ACTIONS: ReadonlySet<GlobalAction> = new Set<GlobalA
 
 export const SITE_ACTIONS = [
   'tokens.manage',
-  // Media library (package G): browse; upload, edit and organise; delete and change visibility.
+  // Media library (package G): browse; upload, edit and organize; delete and change visibility.
   'media.read',
   'media.write',
   'media.manage',

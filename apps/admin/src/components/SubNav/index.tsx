@@ -28,7 +28,7 @@ export const SubNav = ({ label, className, children }: SubNavProps) => (
 );
 
 type SubNavGroupProps = {
-  /** 12px uppercase group label; omit for a single unlabelled group. */
+  /** 12px uppercase group label; omit for a single unlabeled group. */
   label?: string;
   /** `SubNavLink`s (each is wrapped in a list item). */
   children: ReactNode;

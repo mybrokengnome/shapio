@@ -20,7 +20,7 @@ export const MEDIA_RELOCATE_JOB = 'media.relocate';
 export const MEDIA_GRANT_EXPIRE_JOB = 'media.grant.expire';
 export const MEDIA_JOB_MAX_ATTEMPTS = 5;
 
-/** Outbox event types (webhook catalogue `media.*`, package H). */
+/** Outbox event types (webhook catalog `media.*`, package H). */
 export const MEDIA_EVENTS = {
   created: 'media.created',
   updated: 'media.updated',

@@ -75,7 +75,7 @@ describe('shapio.config validation', () => {
     const tokens = Object.fromEntries(THEME_SEMANTIC_TOKENS.map((token) => [token, '#123456']));
     const theme = { key: 'harbour', name: 'Harbour', dark: tokens };
 
-    it('accepts a theme with one or both variants, brand tokens optional, any colour syntax', () => {
+    it('accepts a theme with one or both variants, brand tokens optional, any color syntax', () => {
       expect(
         findConfigProblems({
           themes: [
@@ -92,7 +92,7 @@ describe('shapio.config validation', () => {
       ).toEqual([]);
     });
 
-    it('names an unknown token, a missing token and a value that is not a colour', () => {
+    it('names an unknown token, a missing token and a value that is not a color', () => {
       const { foreground: _missing, ...withoutForeground } = tokens;
       const problems = findConfigProblems({
         themes: [
@@ -109,7 +109,7 @@ describe('shapio.config validation', () => {
       expect(problems).toContainEqual({
         path: '/themes/2/dark/card',
         message:
-          '"red; } body { display: none" is not a colour: use #rrggbb, rgb(), hsl(), oklch() or oklab()',
+          '"red; } body { display: none" is not a color: use #rrggbb, rgb(), hsl(), oklch() or oklab()',
       });
     });
 

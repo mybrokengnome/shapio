@@ -152,7 +152,7 @@ export const createMysqlNotificationListener = (options: MysqlNotificationListen
     current.on('error', (error) => dropConnection(current, error));
     try {
       await query(current, SESSION_SETUP);
-      // Rows already in the window predate this connection: `onConnect` resynchronises for them.
+      // Rows already in the window predate this connection: `onConnect` resynchronizes for them.
       for (const row of await recentRows(current)) {
         delivered.set(row.id, Date.now());
       }

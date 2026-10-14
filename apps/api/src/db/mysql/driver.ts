@@ -283,7 +283,7 @@ export class MysqlDriver implements Driver {
 
   #pooled(): Pool {
     if (!this.#pool) {
-      throw new Error('The MySQL driver is not initialised');
+      throw new Error('The MySQL driver is not initialized');
     }
     return this.#pool;
   }

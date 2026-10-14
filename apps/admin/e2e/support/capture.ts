@@ -47,7 +47,7 @@ export const captureScreen = async (page: Page, name: string, { viewports }: Cap
 };
 
 const captureSchemes = async (page: Page, name: string) => {
-  // No stray hover state (tooltips, hover colours) in screenshots.
+  // No stray hover state (tooltips, hover colors) in screenshots.
   await page.mouse.move(0, 0);
   for (const scheme of SCHEMES) {
     const restore = await renderScheme(page, scheme);
@@ -68,7 +68,7 @@ type RenderedOptions = {
 
 /**
  * Screenshots the screen as it is rendered now (`{name}.png`) and runs axe: no serious or critical
- * violations allowed. `captureScreen` calls it once per colour scheme; the theme suite once per theme.
+ * violations allowed. `captureScreen` calls it once per color scheme; the theme suite once per theme.
  */
 export const captureRendered = async (
   page: Page,
@@ -77,7 +77,7 @@ export const captureRendered = async (
 ) => {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   // Let transitions and animations (theme switch, sheets, dialogs) finish before the screenshot and the
-  // contrast checks, which would otherwise see half-faded colours.
+  // contrast checks, which would otherwise see half-faded colors.
   await page.waitForTimeout(100);
   await waitForAnimationsToSettle(page);
   const path = join(SCREENSHOT_DIR, `${name}.png`);
@@ -85,7 +85,7 @@ export const captureRendered = async (
   capturedScreenshots.push(path);
   await waitForToastsToClear(page);
   let axe = new AxeBuilder({ page })
-    // Toasts are transient and coloured by the library; a fading one fails contrast mid-transition.
+    // Toasts are transient and colored by the library; a fading one fails contrast mid-transition.
     .exclude(TOASTER_SELECTOR);
   for (const selector of exclude) {
     axe = axe.exclude(selector);
@@ -110,7 +110,7 @@ const waitForAnimationsToSettle = (page: Page) =>
     document.getAnimations().every((animation) => animation.playState !== 'running'),
   );
 
-/** No toast in the DOM and nothing mid-transition, so axe never sees half-faded colours. */
+/** No toast in the DOM and nothing mid-transition, so axe never sees half-faded colors. */
 const waitForToastsToClear = async (page: Page) => {
   await expect(page.locator(TOAST_SELECTOR)).toHaveCount(0, { timeout: TOAST_SETTLE_TIMEOUT_MS });
   await waitForAnimationsToSettle(page);

@@ -39,7 +39,7 @@ import { tableInfo } from './tables.js';
  * Adapts Kysely queries written for PostgreSQL to MySQL (dialect boundary, ADR 0001, "MySQL"). Rewrites that
  * stay one statement happen here; statements MySQL cannot run as one (`RETURNING`, most `ON CONFLICT`) are
  * planned by the compiler (`plans.ts`). This plugin:
- * - fills the columns PostgreSQL defaults that MySQL cannot, and normalises ISO text bound to timestamp
+ * - fills the columns PostgreSQL defaults that MySQL cannot, and normalizes ISO text bound to timestamp
  *   columns (`insertValues.ts`);
  * - spells casts MySQL's way (`text` → `char`, `bigint`/`integer` → `signed`) and maps row locks MySQL lacks;
  * - keeps PostgreSQL's NULL placement in ORDER BY (`nullOrdering.ts`);

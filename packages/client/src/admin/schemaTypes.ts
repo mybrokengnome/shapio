@@ -35,7 +35,7 @@ export type DefinitionListItem = ActiveDefinition & {
   pendingChange: { id: string; status: SchemaChangeStatus } | null;
 };
 
-export type SchemaChangeStatus = 'pending' | 'running' | 'activated' | 'failed' | 'cancelled';
+export type SchemaChangeStatus = 'pending' | 'running' | 'activated' | 'failed' | 'canceled';
 
 /** A planned change whose prerequisites run as jobs before the new revision activates. */
 export type SchemaChangeJob = {
@@ -150,7 +150,7 @@ export type DefinitionRevision = {
   createdByType: string;
   createdById: string | null;
   createdAt: string;
-  /** The change that wrote this version: `failed` and `cancelled` versions never went live. */
+  /** The change that wrote this version: `failed` and `canceled` versions never went live. */
   status: SchemaChangeStatus;
   /** The version the model serves now. */
   active: boolean;

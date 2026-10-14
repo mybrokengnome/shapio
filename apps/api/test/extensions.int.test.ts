@@ -500,7 +500,7 @@ describe('extension points', () => {
       ).toEqual({ items: [] });
     });
 
-    it('fails startup on an unknown theme token or a value that is not a colour, naming it', async () => {
+    it('fails startup on an unknown theme token or a value that is not a color, naming it', async () => {
       const project = mkdtempSync(join(tmpdir(), 'shapio-bad-theme-'));
       const sepia = resolve(REPO_ROOT, 'examples/extension/extensions/sepiaTheme.ts');
       writeFileSync(
@@ -512,7 +512,7 @@ describe('extension points', () => {
         const startup = createTestApp(database.current, { schemaListen: false, projectDir: project });
         await expect(startup).rejects.toBeInstanceOf(ExtensionConfigError);
         await expect(startup).rejects.toThrow('/themes/0/light/backgrund: unknown theme token "backgrund"');
-        await expect(startup).rejects.toThrow('/themes/0/light/card: "url(x)" is not a colour');
+        await expect(startup).rejects.toThrow('/themes/0/light/card: "url(x)" is not a color');
       } finally {
         rmSync(project, { recursive: true, force: true });
       }

@@ -1,6 +1,6 @@
 /**
  * An in-process mutex per key: SQLite's stand-in for PostgreSQL session advisory locks (migrations, index
- * builds). It serialises holders inside one process only; SQLite deployments are single-process.
+ * builds). It serializes holders inside one process only; SQLite deployments are single-process.
  */
 const TAILS = new Map<string, Promise<void>>();
 

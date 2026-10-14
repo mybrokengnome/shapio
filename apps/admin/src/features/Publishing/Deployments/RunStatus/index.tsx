@@ -9,7 +9,7 @@ type RunStatusProps = {
   live?: boolean;
 };
 
-/** A run's status, labelled honestly (see `runDisplay`). */
+/** A run's status, labeled honestly (see `runDisplay`). */
 export const RunStatus = ({ run, live = true }: RunStatusProps) => {
   const { t } = useTranslation();
   const display = runDisplay(run);

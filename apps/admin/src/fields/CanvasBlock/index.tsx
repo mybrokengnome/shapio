@@ -29,7 +29,7 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
   const { t } = useTranslation();
   const control = useFieldControl({ field, owner, value, onChange, path, appearance: 'canvas' });
   const custom = control.resolved.kind === 'runtime';
-  const LabelElement = control.labelling === 'input' ? Label : 'span';
+  const LabelElement = control.labeling === 'input' ? Label : 'span';
   return (
     <div
       role="group"
@@ -45,7 +45,7 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
       >
         <LabelElement
           id={control.labelId}
-          {...(control.labelling === 'input' ? { htmlFor: control.inputId } : {})}
+          {...(control.labeling === 'input' ? { htmlFor: control.inputId } : {})}
           className="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
         >
           {field.label}

@@ -48,7 +48,7 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
 
     await app.register(graphqlRoutes, { prefix: urls.withBasePath('/api/graphql') });
 
-    // NOTIFY optimisation: sites already served get their new schema before their next request needs it.
+    // NOTIFY optimization: sites already served get their new schema before their next request needs it.
     const unsubscribe = app.schemaRegistry.onChange((network) => schemas.refresh(network));
     app.addHook('onClose', async () => {
       unsubscribe();

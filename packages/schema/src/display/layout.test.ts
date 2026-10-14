@@ -205,7 +205,7 @@ describe('effectiveFormLayout', () => {
   const sections = (display: ModelDefinition['display'] = {}) =>
     sectionsOf(article({ layout: 'form', ...display }));
 
-  it('without groups: one unlabelled section of every live field, the title included, in field order', () => {
+  it('without groups: one unlabeled section of every live field, the title included, in field order', () => {
     const layout = effectiveFormLayout(article({ layout: 'form' }));
     expect(layout.title?.apiKey).toBe('title');
     expect(sections()).toEqual([

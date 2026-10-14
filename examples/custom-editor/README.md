@@ -20,12 +20,12 @@ publishes an import map that resolves them to its own copies, so the editor shar
    `editors: ['star-rating.js']`.
 3. Restart Shapio (`npm run start`, or restart the PM2/systemd service).
 4. In the admin's model builder, set an integer field's editor to `acme.starRating`. The editor option `stars`
-   sets how many stars it shows (default 5). Choosing the editor is a live modelling change.
+   sets how many stars it shows (default 5). Choosing the editor is a live modeling change.
 
 ## What it shows
 
 - The contract from `@shapio/editor-sdk`: `value`/`onChange`, `onBlur`, validation messages, `readOnly`/`disabled`,
-  field metadata (`field.options.stars`), `labelId`/`describedBy` for accessible labelling, and `context.translate`.
+  field metadata (`field.options.stars`), `labelId`/`describedBy` for accessible labeling, and `context.translate`.
 - Accessibility: radio-group semantics, arrow keys, a clear button, visible focus.
 - Theming: inline styles that use the admin's CSS variables (`var(--primary)`, `var(--border)`…), so light and dark
   mode just work.

@@ -83,7 +83,7 @@ export const createContentApi = (request: RequestFn) => ({
   extensions: {
     /** Custom field editors the project installed (`shapio.config` + `extensions/editors/*.js`). */
     editors: () => request<EditorManifest>(ADMIN_PATHS.editorManifest),
-    /** Admin colour themes the project declares (`shapio.config` `themes`). Public: no session needed. */
+    /** Admin color themes the project declares (`shapio.config` `themes`). Public: no session needed. */
     themes: () => request<ExtensionThemeList>(ADMIN_PATHS.extensionThemes),
   },
 });

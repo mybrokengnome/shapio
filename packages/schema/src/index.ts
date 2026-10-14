@@ -5,7 +5,7 @@ export * from './types/json.js';
 export * from './types/locales.js';
 export * from './types/settings.js';
 export * from './types/valueFormats.js';
-export * from './editors/catalogue.js';
+export * from './editors/catalog.js';
 export * from './display/layout.js';
 export * from './display/titleField.js';
 export * from './naming/plural.js';

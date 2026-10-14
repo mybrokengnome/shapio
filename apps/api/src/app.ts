@@ -16,7 +16,7 @@ import { createContentPorts } from './content/ports.js';
 import { setDb, type Database } from './db/index.js';
 import { buildEditorManifest, type EditorManifest } from './extensions/editorManifest.js';
 import { loadExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
-import { buildThemeCatalogue } from './extensions/themeStylesheet.js';
+import { buildThemeCatalog } from './extensions/themeStylesheet.js';
 import { MAX_ROUTE_PARAM_LENGTH, rewriteContentUrl } from './helpers/contentRoutes.js';
 import { createUrlBuilder } from './helpers/publicUrl.js';
 import { createLoggerOptions } from './logger.js';
@@ -46,7 +46,7 @@ import { servicesPlugin } from './plugins/services.js';
 import { siteResolutionPlugin } from './plugins/siteResolution.js';
 import { adminPrefixFor, staticAdminPlugin } from './plugins/staticAdmin.js';
 import { textInputPlugin } from './plugins/textInput.js';
-import { themeCataloguePlugin } from './plugins/themeCatalogue.js';
+import { themeCatalogPlugin } from './plugins/themeCatalog.js';
 import { usagePlugin } from './plugins/usage.js';
 import type { HostResolver } from './publishing/outbound/ssrf.js';
 import { createPublishingRuntime } from './publishing/runtime.js';
@@ -253,8 +253,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
         app.log.child({ component: 'extensions' }),
       ),
   });
-  await app.register(themeCataloguePlugin, {
-    catalogue: buildThemeCatalogue(extensions.loaded.config.themes ?? []),
+  await app.register(themeCatalogPlugin, {
+    catalog: buildThemeCatalog(extensions.loaded.config.themes ?? []),
   });
   await app.register(adminExtensionsRoutes, { prefix: urls.withBasePath('/api/admin/extensions') });
   await app.register(deliveryRoutes, { prefix: urls.withBasePath('/api/content') });

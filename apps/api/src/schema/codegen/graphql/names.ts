@@ -10,7 +10,7 @@ import {
 
 /**
  * Every per-definition GraphQL name, derived only from `@shapio/schema` `validators/naming.ts` (ADR 0002:
- * the registry validator rejects collisions against exactly these names at modelling time).
+ * the registry validator rejects collisions against exactly these names at modeling time).
  */
 /** `<Type>Interface` exists only for a model with children (plan polymorphic-types D9). */
 type ModelSuffix = (typeof MODEL_TYPE_SUFFIXES)[number] | typeof INTERFACE_TYPE_SUFFIX;

@@ -11,7 +11,7 @@ import { connectAdmin } from './lib/admin.js';
  * `--url` is the running dev server's origin (default: SMOKE_URL, then http://localhost:3000).
  */
 const DRAFT_TITLE = 'Coming soon: our winter projects';
-const ARTICLE = 'modelling-without-a-deploy';
+const ARTICLE = 'modeling-without-a-deploy';
 const BADGE = 'data-shapio-drafts';
 /** How long a saved draft may take to show: the dev server reads fresh, so this only absorbs a slow render. */
 const SHOW_WITHIN_MS = 30_000;

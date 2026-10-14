@@ -8,7 +8,7 @@ export const PUBLISHING_JOBS = {
   deploymentPoll: 'deployment.poll',
 } as const;
 
-/** Change set events (also in the webhook catalogue). `shipped` carries the snapshot it went live in. */
+/** Change set events (also in the webhook catalog). `shipped` carries the snapshot it went live in. */
 export const CHANGE_SET_EVENTS = {
   scheduled: 'change_set.scheduled',
   shipping: 'change_set.shipping',

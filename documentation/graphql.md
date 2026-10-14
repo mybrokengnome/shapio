@@ -72,7 +72,7 @@ For a collection `article` (plural API ID `articles`) Shapio generates:
 | `createArticle`, `updateArticle`, `deleteArticle`, `publishArticle`, `unpublishArticle`        | mutations, for principals allowed to write          |
 
 The list query takes the collection's plural API ID; everything else is named after the singular API ID
-([Modelling](modelling.md#kinds-of-definitions)).
+([Modeling](modeling.md#kinds-of-definitions)).
 
 `updateArticle` takes the `expectedVersion` you read; `publishArticle` takes it optionally, for a publish of one
 locale, and refuses with `CONTENT_VERSION_CONFLICT` when the draft has moved since, as REST does.
@@ -86,7 +86,7 @@ introspection tells a site how to treat it.
 
 ### Types that extend a type
 
-A type with kinds ([Modelling](modelling.md#types-that-extend-a-type)) gets an **interface** named after it:
+A type with kinds ([Modeling](modeling.md#types-that-extend-a-type)) gets an **interface** named after it:
 Post, with Guide and Opinion as kinds, gets `PostInterface`. It holds the system fields and every field the
 whole family shares (the post's fields), as your role may read them. `Post`, `Guide`, and `Opinion` all
 implement it, and a kind of a kind implements every ancestor's interface.

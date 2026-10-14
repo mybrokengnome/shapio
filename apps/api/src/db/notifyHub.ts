@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 /**
- * In-process notification delivery (ADR 0002 notes notifications are an optimisation; consumers also check
+ * In-process notification delivery (ADR 0002 notes notifications are an optimization; consumers also check
  * a durable version): an event bus per database. Every handle on the same database in this process shares
  * one bus, so two app instances in one test process still hear each other.
  * - SQLite: the only delivery (SQLite deployments are single-process).

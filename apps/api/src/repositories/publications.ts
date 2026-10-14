@@ -27,7 +27,7 @@ export type SnapshotMeta = {
 /**
  * The publication sequence and log behind `?snapshot=N` (ADR 0001). The sequence is one row incremented
  * inside each publishing transaction: its row lock orders publications by commit, so a reader that sees N
- * also sees every publication before N. Take it as late as possible in the transaction (it serialises every
+ * also sees every publication before N. Take it as late as possible in the transaction (it serializes every
  * publication instance-wide until commit), and never ahead of the transaction that uses it.
  *
  * Every number also gets a `publication_snapshots` ledger row (why, who, the schema version live with it),

@@ -6,11 +6,11 @@ import type { FieldDefinition } from '../types/definitions.js';
 
 /**
  * Built-in editors (ADR 0009): which data types each can edit and the schema of its options. The server
- * validates every field's editor choice against this catalogue, so selecting and configuring an editor is
+ * validates every field's editor choice against this catalog, so selecting and configuring an editor is
  * runtime metadata. Custom editors (loaded at runtime from the project) use namespaced IDs containing a dot,
  * e.g. `acme.colorWheel`; their options are free-form JSON here because their schema lives in the project.
  */
-export type EditorCatalogueEntry = {
+export type EditorCatalogEntry = {
   id: string;
   dataTypes: readonly DataType[];
   optionsSchema: TSchema;
@@ -22,7 +22,7 @@ const closed = { additionalProperties: false } as const;
 const Placeholder = Type.Optional(Type.String({ maxLength: 200 }));
 const isMultipleEnum = (field: FieldDefinition) => field.type === 'enum' && field.settings.multiple;
 
-const entries: EditorCatalogueEntry[] = [
+const entries: EditorCatalogEntry[] = [
   {
     id: 'textInput',
     dataTypes: ['string', 'email', 'url', 'uid'],
@@ -161,7 +161,7 @@ const entries: EditorCatalogueEntry[] = [
   },
 ];
 
-export const EDITOR_CATALOGUE: ReadonlyMap<string, EditorCatalogueEntry> = new Map(
+export const EDITOR_CATALOG: ReadonlyMap<string, EditorCatalogEntry> = new Map(
   entries.map((entry) => [entry.id, entry]),
 );
 
@@ -197,5 +197,5 @@ export const CUSTOM_EDITOR_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za
 export const isCustomEditorId = (id: string): boolean => CUSTOM_EDITOR_ID_PATTERN.test(id);
 
 /** Built-in editors that can edit this field (for the admin's editor picker). */
-export const listCompatibleEditors = (field: FieldDefinition): EditorCatalogueEntry[] =>
+export const listCompatibleEditors = (field: FieldDefinition): EditorCatalogEntry[] =>
   entries.filter((entry) => entry.dataTypes.includes(field.type) && (entry.supports?.(field) ?? true));

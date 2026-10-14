@@ -460,7 +460,7 @@ const sidebarMenuButtonVariants = cva(
         default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         /**
          * A main-navigation destination: 18px icon. Active is one signal: the `sidebar-accent` fill, with the
-         * label at its normal weight and colour and only the icon in the accent (`sidebar-primary`).
+         * label at its normal weight and color and only the icon in the accent (`sidebar-primary`).
          */
         nav: 'gap-3 font-medium hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:hover:bg-sidebar-accent data-[active=true]:hover:text-sidebar-foreground [&>svg]:size-[18px] data-[active=true]:[&>svg]:text-sidebar-primary',
         outline:

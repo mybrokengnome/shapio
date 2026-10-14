@@ -21,7 +21,7 @@ type FormTextFieldProps<TValues extends FieldValues> = InputProps & {
 };
 
 /**
- * A labelled text input bound to react-hook-form: visible label, optional hint, inline translated error,
+ * A labeled text input bound to react-hook-form: visible label, optional hint, inline translated error,
  * `aria-invalid` and `aria-describedby` wired for screen readers.
  */
 export const FormTextField = <TValues extends FieldValues>({

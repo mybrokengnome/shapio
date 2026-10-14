@@ -1,6 +1,6 @@
 # Contributing to Shapio
 
-Thanks for helping. This page covers how the code is organised, the rules every change follows, how tests run
+Thanks for helping. This page covers how the code is organized, the rules every change follows, how tests run
 and how to add a migration. Setting up a development environment: [local development](documentation/local-development.md).
 
 ## The rules that matter most
@@ -19,7 +19,7 @@ These are why Shapio exists; a change that breaks one is wrong however clean it 
 6. **Public delivery never leaks** drafts, private media or unreadable fields.
 7. **No mandatory telemetry or hosted account.** Anything that sends data off the server is opt-in.
 
-## Code organisation
+## Code organization
 
 ```text
 apps/api/src
@@ -60,14 +60,14 @@ audit row) happen in **one** transaction.
 
 Admin (`apps/admin`): React function components, one per file (`ComponentName/index.tsx`), props types declared
 above the component, logic in hooks (`hooks/useX.ts`) and helpers. Tailwind only, with the semantic tokens
-(`bg-background`, `text-muted-foreground`), never raw colours; `cn()` for conditional classes; every screen
+(`bg-background`, `text-muted-foreground`), never raw colors; `cn()` for conditional classes; every screen
 works in light and dark mode. Every user-facing string goes through react-i18next; only
 `src/locales/en/translation.json` is edited by hand. TanStack Query for server state, Zustand for client
 state. Field editors need keyboard support, visible focus, labels, inline errors and loading/empty states.
 
 ## Features and refactors are separate pull requests
 
-A pull request either adds or changes behaviour, or restructures code without changing behaviour. Not both:
+A pull request either adds or changes behavior, or restructures code without changing behavior. Not both:
 each is easier to review, test and revert on its own.
 
 ## Tests
@@ -127,7 +127,7 @@ Indexes on large tables are built `CONCURRENTLY` by jobs, not in migrations that
 ## Dependencies
 
 Versions are pinned in the pnpm catalog (`pnpm-workspace.yaml`). A new dependency needs a reason, a
-permissive licence compatible with redistribution, and, if it runs install scripts, review and an entry in
+permissive license compatible with redistribution, and, if it runs install scripts, review and an entry in
 `allowBuilds`.
 
 ## Documentation

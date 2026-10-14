@@ -165,7 +165,7 @@ Paths are relative to the project; the model files and the seed are the same in 
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `shapio/models/*.json`, `shapio/components/*.json`   | the content models, as `shapio schema pull` writes them (after a pull, under `shapio/sites/<site>/`)                        |
 | `src/lib/shapio.ts`                                  | reads the delivery API with `@shapio/client`, pinned to one snapshot                                                        |
-| `src/lib/render.ts`                                  | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitised `html`, read with `richText=html`) |
+| `src/lib/render.ts`                                  | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitized `html`, read with `richText=html`) |
 | `src/layouts/Base.astro`                             | the header and footer, from the `siteSettings` singleton                                                                    |
 | `src/pages/[locale]/…`                               | one static page per published page and article, per locale, and the colophon (the singleton)                                |
 | `src/pages/preview.astro`, `src/lib/preview.ts`      | the preview page                                                                                                            |

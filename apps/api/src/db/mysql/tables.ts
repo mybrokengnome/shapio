@@ -18,7 +18,7 @@ export type MysqlTableInfo = {
   generated?: Readonly<Record<string, GeneratedValue>>;
   columns: readonly string[];
   nullable: readonly string[];
-  /** `DATETIME(6)` columns (PostgreSQL timestamptz): text bound to them is normalised to UTC DATETIME text. */
+  /** `DATETIME(6)` columns (PostgreSQL timestamptz): text bound to them is normalized to UTC DATETIME text. */
   timestamps?: readonly string[];
   uniqueKeys: readonly UniqueKey[];
 };

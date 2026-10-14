@@ -19,7 +19,7 @@ import { collectMarkers } from '../sql/markers.js';
 import type { ResultType } from '../sql/typed.js';
 import { indexExpressionSql, nullsNotDistinctIndexFor } from './nullsNotDistinct.js';
 
-/** Row-lock modifiers PostgreSQL needs and SQLite rejects; its write transactions are already serialised. */
+/** Row-lock modifiers PostgreSQL needs and SQLite rejects; its write transactions are already serialized. */
 const ROW_LOCKS = new Set(['ForUpdate', 'ForNoKeyUpdate', 'ForShare', 'ForKeyShare', 'NoWait', 'SkipLocked']);
 
 const MARKERS = new WeakMap<QueryId, ReadonlyMap<string, ResultType>>();

@@ -26,7 +26,7 @@ import { resolvePreviewToken } from './previewTokens.js';
 
 /**
  * `/api/preview/content/:modelKey[/:id]` (brief §7): DRAFT content for a site's preview, in the delivery
- * shape, authorised by a preview token. Reads are evaluated with the token creator's CURRENT permissions
+ * shape, authorized by a preview token. Reads are evaluated with the token creator's CURRENT permissions
  * (so revoking their role ends the preview), limited to read, to the token's model, entry and locale, and to
  * fields a delivery reader would see (`public` fields within the creator's read mask), so a shared preview
  * link never shows more than the published site would.

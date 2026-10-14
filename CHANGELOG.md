@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The `cancelled` status of schema changes and scheduled publications is now `canceled`. A migration rewrites
+  existing rows. Scripts that check for `cancelled` should check for `canceled`.
+
 ## [0.5.9] - 2026-10-13
 
 ### Added
@@ -15,7 +20,7 @@ All notable changes to Shapio are listed here. The format follows
   type, or set `extends` in its schema file. A kind inherits every field of its parent, locked, and a field you
   add to the parent is on every kind at once, live. Kinds can have kinds, up to 8 levels. A kind has its
   parent's Localized and Draft & publish settings and lives where its parent does (shared, or on one site).
-  See [Modelling](documentation/modelling.md#types-that-extend-a-type).
+  See [Modeling](documentation/modeling.md#types-that-extend-a-type).
 - **Nested routes and mixed lists.** A kind is read under its parent: `/api/content/products` lists every
   product, of every kind, filtered and sorted on the shared fields, and paged together, each row in its own
   shape; `/api/content/posts/guides` lists one kind. A relation to Products accepts any kind, and
@@ -97,7 +102,7 @@ All notable changes to Shapio are listed here. The format follows
   type and links to it in that locale, instead of a raw entry ID. Entries in types you can't read say so,
   without a link. `GET /api/admin/media/assets/:id/usage` returns each entry's `title`.
 - **The GraphQL playground passes accessibility checks.** GraphiQL's query, variables, headers, and response
-  editors now have names for screen readers, its colours reach WCAG AA contrast in both themes, and links in
+  editors now have names for screen readers, its colors reach WCAG AA contrast in both themes, and links in
   its docs are underlined.
 - **Asking for a hidden field in `fields=` says so.** The 403 `FORBIDDEN_FIELD` now reads "You may not read the
   field …" instead of "You may not filter, sort or search on …", which the request never did.
@@ -232,7 +237,7 @@ All notable changes to Shapio are listed here. The format follows
   in.
 - **A model's version history says which versions never went live.** `GET /api/admin/models/{id}/revisions`
   listed versions whose change failed its checks like any other. Each version now carries `status` (the outcome
-  of its change: `activated`, `failed`, `cancelled`, `pending`, or `running`) and `active`.
+  of its change: `activated`, `failed`, `canceled`, `pending`, or `running`) and `active`.
 - **On SQLite, a second server or a worker can no longer run on a file another process serves.**
   `shapio worker` is refused on SQLite (its jobs run inside `shapio start`), and a second `shapio start` on the
   same file stops with "Another Shapio process already serves …". The server holds an operating-system lock on
@@ -302,7 +307,7 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Changed
 
-- **Any field can change to any type.** A saved field's type tiles are no longer greyed out where Shapio can't
+- **Any field can change to any type.** A saved field's type tiles are no longer grayed out where Shapio can't
   convert the stored values (Media to Number, Date to Media, Relation to Boolean). Picking one says, in red,
   that every stored value in the field will be dropped and old API clients will see it empty. The review counts
   the entries that lose their value and asks you to confirm a destructive change, then the field keeps its ID
@@ -337,7 +342,7 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Changed
 
-- **Sidebar active item** is one quiet pill with the icon in the accent colour; the bar and shadow are gone.
+- **Sidebar active item** is one quiet pill with the icon in the accent color; the bar and shadow are gone.
 - **Entry top bar** never overlaps at laptop width with the settings drawer open: the breadcrumb stays readable,
   the save state drops its date while the drawer or preview is open, and the actions wrap when they must.
 - **Changing a field's type** now reads as an answer: "You can change this.", then what happens to stored
@@ -587,9 +592,9 @@ All notable changes to Shapio are listed here. The format follows
 
 - **Admin themes are looks: pick one, nothing follows the OS.** Settings → Appearance and the account menu
   list six looks: **Shapio**, **Cobalt**, **Murdered out** and **Forest** (dark), **Snowed** and **Butter**
-  (light). The colour-mode setting (System, Light, Dark) and the light ⇄ dark button beside the account menu
-  are gone. Classic is renamed **Cobalt** and keeps its original dark colours; Shapio is the plum dark look.
-  Forest (deep green and lime) and Butter (butter yellow and ink) are new. Murdered out is all dark: grey
+  (light). The color-mode setting (System, Light, Dark) and the light ⇄ dark button beside the account menu
+  are gone. Classic is renamed **Cobalt** and keeps its original dark colors; Shapio is the plum dark look.
+  Forest (deep green and lime) and Butter (butter yellow and ink) are new. Murdered out is all dark: gray
   actions, no white buttons. An extension theme with both variants is listed twice, as "Name Light" and "Name
   Dark". **Upgrading:** a saved Classic or pre-theme setting becomes Cobalt; Shapio light becomes Shapio; with
   nothing saved the admin opens in Shapio. The keys `forest` and `butter` are now built in, so an extension
@@ -624,14 +629,14 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Added
 
-- **Named admin themes.** Each person picks a theme and a colour mode (System, Light or Dark) from the account
+- **Named admin themes.** Each person picks a theme and a color mode (System, Light or Dark) from the account
   menu, Settings → Appearance or the sign-in screen; the choice is saved in that browser and applied before
   first paint. Four are built in: **Shapio** (the new brand: plum, cream and acid yellow; light and dark, the
-  default), **Classic** (the previous cobalt look, colours unchanged; light and dark), **Murdered out** (dark
-  only) and **Snowed** (light only). A theme with one variant ignores the colour mode. Every built-in theme is
+  default), **Classic** (the previous cobalt look, colors unchanged; light and dark), **Murdered out** (dark
+  only) and **Snowed** (light only). A theme with one variant ignores the color mode. Every built-in theme is
   checked for WCAG 2.1 AA contrast. See [First admin: appearance](documentation/first-admin.md#appearance).
 - **Extension themes.** `shapio.config` takes `themes: ThemeDefinition[]`: token values for a light and/or dark
-  variant. Startup validates the keys, tokens and colour values; `shapio extensions check` lists themes and warns
+  variant. Startup validates the keys, tokens and color values; `shapio extensions check` lists themes and warns
   about contrast below AA. The admin reads them from two public routes, `GET /api/admin/extensions/themes` and
   `GET /api/admin/extensions/themes.css`. The token list is exported from `@shapio/schema` (`THEME_TOKENS`).
   `examples/extension` adds a Sepia theme. See [Extensions: admin themes](documentation/extensions.md#admin-themes).
@@ -641,7 +646,7 @@ All notable changes to Shapio are listed here. The format follows
 - **New brand: acid yellow and plum.** The logo is an acid-yellow tile with a plum S; the letters are plum on
   light grounds and cream on dark. It is used in every theme, Classic included, and in the favicon and touch
   icon. The previous blue logo files stay in `brand/` as `classic-*`.
-- **Upgrading:** anyone who had chosen System, Light or Dark keeps that colour mode and moves to the **Classic**
+- **Upgrading:** anyone who had chosen System, Light or Dark keeps that color mode and moves to the **Classic**
   theme, so the admin looks as before (apart from the logo) until they pick another theme. People who never chose
   one, and new installs, get **Shapio** following the operating system. Settings → Theme is now Settings →
   Appearance.
@@ -736,7 +741,7 @@ release of these changes.
   and the admin e2e run on MySQL in CI; `docker-compose.mysql.yml` starts Shapio with MySQL. See
   [MySQL](documentation/mysql.md).
 - **SQLite as a second database** (`DATABASE_URL=sqlite:./shapio.db`) for single-process installs, on Node's
-  built-in `node:sqlite` with no native dependency; the same admin, APIs, live modelling and change sets.
+  built-in `node:sqlite` with no native dependency; the same admin, APIs, live modeling and change sets.
   `shapio backup <file>` copies a running SQLite database (`VACUUM INTO`). `WORKER_MODE=dedicated` is refused
   on SQLite. The integration suite and the admin e2e run on SQLite in CI. See [SQLite](documentation/sqlite.md).
 - **MCP server** (`@shapio/mcp`, `npx -y @shapio/mcp`): an agent in any MCP client can read and draft the
@@ -770,7 +775,7 @@ release of these changes.
   source. Re-running `--map` resumes. See [Moving from WordPress or Strapi](documentation/importers.md).
 - `@shapio/schema` now holds the rich-text spec, validator and renderer, and adds `@shapio/schema/html`
   (HTML → rich text).
-- Docs: an [extension points catalogue](documentation/extensions-catalogue.md) covering server extensions,
+- Docs: an [extension points catalog](documentation/extensions-catalog.md) covering server extensions,
   custom editors, webhooks, deployment providers, the client, CLI, export/import bundles and the MCP server.
 - **Assist**: editor assists with your own model provider (`AI_PROVIDER` = `anthropic`, `openai`, or
   `openai-compatible` for Ollama, LM Studio and vLLM): alt text, summaries, translation, rewrites, content-type
@@ -818,7 +823,7 @@ The first release.
 
 ### Added
 
-- **Live content modelling**: collections, single types, reusable components and dynamic zones, 21 field
+- **Live content modeling**: collections, single types, reusable components and dynamic zones, 21 field
   types with interchangeable editors, versioned in the database and changed while the server runs, through a
   change planner that validates, backfills, builds indexes and activates atomically, with no restart.
 - **Schema sync**: `shapio schema pull | diff | apply` with canonical JSON files, a lock file and per-model

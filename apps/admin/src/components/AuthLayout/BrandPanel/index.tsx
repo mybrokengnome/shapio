@@ -9,7 +9,7 @@ const PITCHES = [
 ] as const;
 
 /**
- * The brand column of the signed-out screens (lg and up), in the theme's brand-panel colours: panel logo,
+ * The brand column of the signed-out screens (lg and up), in the theme's brand-panel colors: panel logo,
  * tagline, three-line pitch.
  */
 export const BrandPanel = () => {

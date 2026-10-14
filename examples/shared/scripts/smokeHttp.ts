@@ -21,7 +21,7 @@ import { parseArgs } from 'node:util';
  * `diff -r`, e.g. the Next.js starter reading over HTTP and in process.
  */
 const DRAFT_TITLE = 'Coming soon: our winter projects';
-const ARTICLE = 'modelling-without-a-deploy';
+const ARTICLE = 'modeling-without-a-deploy';
 
 type PageCheck = { path: string; expect: Array<[needle: string, label: string]> };
 
@@ -52,7 +52,7 @@ const PAGES: readonly PageCheck[] = [
   {
     path: '/en/articles/',
     expect: [
-      ['Modelling content without a deploy', 'article list'],
+      ['Modeling content without a deploy', 'article list'],
       ['Why our builds pin a snapshot', 'second article'],
       ['<title>Journal · Northwind Studio</title>', 'a page without an entry: title through the template'],
     ],
@@ -60,14 +60,14 @@ const PAGES: readonly PageCheck[] = [
   {
     path: `/en/articles/${ARTICLE}/`,
     expect: [
-      ['Modelling content without a deploy', 'title'],
+      ['Modeling content without a deploy', 'title'],
       ['<table', 'rich-text table'],
       ['With Shapio', 'rich-text table cell'],
       ['Ada Moreau', 'populated author'],
       ['data-shapio-entry="', 'visual-editing entry attribute'],
       ['data-shapio-path="title"', 'visual-editing attribute on the title'],
       ['data-shapio-path="body"', 'visual-editing attribute on the body'],
-      ['<title>Modelling content without a deploy · Northwind Studio</title>', 'SEO title (resolved)'],
+      ['<title>Modeling content without a deploy · Northwind Studio</title>', 'SEO title (resolved)'],
       ['property="og:type" content="article"', 'og:type article'],
       ['Nothing restarted.', 'SEO description from the entry'],
       ['name="twitter:card" content="summary_large_image"', 'twitter:card with the cover image'],

@@ -97,7 +97,7 @@ export type ContentFilterOperator =
 export type ContentFilterValue = string | number | boolean | ReadonlyArray<string | number | boolean>;
 
 /**
- * A filter tree, serialised with brackets: `{ title: { $eq: 'A' } }` → `filters[title][$eq]=A`. Field keys are
+ * A filter tree, serialized with brackets: `{ title: { $eq: 'A' } }` → `filters[title][$eq]=A`. Field keys are
  * API keys (or `id`, `createdAt`, `updatedAt`); `$and`/`$or` take lists of trees, `$not` one tree.
  */
 export type ContentFilter = {
@@ -238,7 +238,7 @@ export type EditorManifestItem = {
 
 export type EditorManifest = { items: EditorManifestItem[] };
 
-/** An admin colour theme a project declares in `shapio.config` (its CSS is served as `themes.css`). */
+/** An admin color theme a project declares in `shapio.config` (its CSS is served as `themes.css`). */
 export type ExtensionTheme = {
   key: string;
   name: string;

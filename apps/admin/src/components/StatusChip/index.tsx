@@ -4,7 +4,7 @@ import { cn } from '@/helpers/cn';
 
 /**
  * What a state means, not what it's called: draft → neutral, changed → warning, published → success,
- * scheduled → scheduled, failed → danger, running → progress, cancelled/archived → muted.
+ * scheduled → scheduled, failed → danger, running → progress, canceled/archived → muted.
  */
 export type StatusTone = 'neutral' | 'progress' | 'scheduled' | 'success' | 'warning' | 'danger' | 'muted';
 
@@ -42,7 +42,7 @@ const DOT_CLASSES = {
 
 type StatusChipProps = {
   tone: StatusTone;
-  /** Always shown: the colour is never the only signal. */
+  /** Always shown: the color is never the only signal. */
   label: string;
   /** `progress` spins while the work runs; false for states that are over (a timeline's past entries). */
   live?: boolean;

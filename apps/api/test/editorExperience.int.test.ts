@@ -349,7 +349,7 @@ describe('editor experience: pre-flight, content health, presence, counts, model
       expect((await findings()).filter((finding) => finding.entryId === entry.id)).toEqual([]);
     });
 
-    it('lists findings only for models the caller may read, and honours row filters', async () => {
+    it('lists findings only for models the caller may read, and honors row filters', async () => {
       const entry = expectStatus(
         await admin.post('/api/admin/content/article', { data: { title: 'Lonely' } }),
         201,

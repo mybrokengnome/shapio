@@ -6,7 +6,7 @@ import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 /**
  * A model that is not localized has no locale to publish: the admin must leave `locales` out of the
  * publish request (the API rejects an empty list). The model also has no title field configured, so the
- * entry is labelled by its first text field instead of "Untitled".
+ * entry is labeled by its first text field instead of "Untitled".
  */
 test.describe.configure({ mode: 'serial' });
 

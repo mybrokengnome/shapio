@@ -1,7 +1,7 @@
 # Extensions
 
 Extensions are your own code running inside Shapio: lifecycle hooks, custom routes, shared services, background
-jobs, custom field editors and admin colour themes. They are configured in the project's `shapio.config.ts` and its `extensions/`
+jobs, custom field editors and admin color themes. They are configured in the project's `shapio.config.ts` and its `extensions/`
 folder.
 
 Shapio has two kinds of change, and they behave differently:
@@ -11,7 +11,7 @@ Shapio has two kinds of change, and they behave differently:
 | Content models, fields, editors chosen per field, permissions                         | Admin UI or `shapio schema apply`    | **No**   | **No**   |
 | Extensions: hooks, custom routes, services, jobs, custom editor modules, admin themes | `shapio.config.ts` and `extensions/` | **Yes**  | **No**   |
 
-Extensions are code you run inside Shapio, so they load once at startup. Changing them means restarting Shapio (`pm2 restart`, `docker compose restart`, `systemctl restart`). You never rebuild Shapio or its admin. Modelling never needs a restart.
+Extensions are code you run inside Shapio, so they load once at startup. Changing them means restarting Shapio (`pm2 restart`, `docker compose restart`, `systemctl restart`). You never rebuild Shapio or its admin. Modeling never needs a restart.
 
 ## The config file
 
@@ -26,7 +26,7 @@ export const config = defineConfig({
   services: {}, // shared objects, constructed once
   jobs: {}, // background job handlers
   editors: [], // custom field editor modules in extensions/editors/
-  themes: [], // admin colour themes
+  themes: [], // admin color themes
 });
 ```
 
@@ -205,7 +205,7 @@ content and media. Extensions are configured once for the whole instance, and ea
 working on:
 
 - **Hooks:** `context.site` (`{ id, key }`) is the site of the entry that changed, and `context.services` read
-  that site. Branch on `context.site.key` when a site needs different behaviour.
+  that site. Branch on `context.site.key` when a site needs different behavior.
 - **Custom routes** are site routes. `request.site` is the request's site: the token's site, else the one the
   request names (`Shapio-Site` header or `?site=`), else the primary site. A request naming a different site
   than its token's is refused with `403 SITE_MISMATCH`. Declare `config: { site: 'network' }` on a route that is
@@ -264,7 +264,7 @@ admin at runtime. Installing one is **build, copy, list, restart**; Shapio's adm
    ```
 
 4. Restart Shapio. In the model builder, choose the editor (`acme.starRating`) for a compatible field and set
-   its options; that choice is a live modelling change.
+   its options; that choice is a live modeling change.
 
 What an editor receives (`EDITOR_CONTRACT_VERSION`): the value (`null` when empty), `onChange` and `onBlur`,
 the validation messages, `readOnly`/`disabled`, the field's and its model's metadata (including the editor
@@ -280,9 +280,9 @@ editor throws while rendering. `npx shapio extensions check` reports missing edi
 
 ## Admin themes
 
-`themes` adds colour themes to the admin. They appear after the built-in looks (Shapio, Cobalt, Murdered out,
+`themes` adds color themes to the admin. They appear after the built-in looks (Shapio, Cobalt, Murdered out,
 Forest, Snowed, Butter) in the account menu, in Settings → Appearance and on the sign-in screen. A theme is a
-set of values for the admin's colour tokens, for a light variant, a dark variant, or both:
+set of values for the admin's color tokens, for a light variant, a dark variant, or both:
 
 ```ts
 import { defineConfig, type ThemeDefinition } from '@shapio/cms/config';
@@ -316,14 +316,14 @@ theme. Changing a theme needs a restart, like the rest of the config.
   `sidebar-primary-foreground`, `sidebar-accent`, `sidebar-accent-foreground`, `sidebar-border`,
   `sidebar-ring`). The brand tokens (`THEME_BRAND_TOKENS`: `brand-logo`, `brand-logo-foreground`,
   `brand-letters`, `brand-panel-from`, `brand-panel-to`, `brand-panel-foreground`, `brand-panel-mark`) are
-  optional; without them the logo and the sign-in brand panel use Shapio's colours. What each token is for:
+  optional; without them the logo and the sign-in brand panel use Shapio's colors. What each token is for:
   the admin's design notes, [`apps/admin/DESIGN.md`](../apps/admin/DESIGN.md#tokens).
 - **Variants:** each variant is a look the person can pick. A theme with only `light` or only `dark` is listed
   once, by its name; one with both is listed twice, as "Sepia Light" and "Sepia Dark".
 - **Validation** (startup and `shapio extensions check` stop with the path of each problem): the key must match
   `^[a-z][a-z0-9-]{0,40}$`, may not be a built-in theme's key (`shapio`, `classic`, `murdered-out`, `forest`,
   `snowed`, `butter`) and may not repeat; a theme needs at least one variant; a missing or unknown token is named
-  (`/themes/0/light/backgrund: unknown theme token "backgrund"`); and every value must be a colour: `#rgb`,
+  (`/themes/0/light/backgrund: unknown theme token "backgrund"`); and every value must be a color: `#rgb`,
   `#rrggbb`, `#rrggbbaa`, or `rgb()`, `hsl()`, `oklch()`, `oklab()` with plain arguments. Nothing else is
   accepted, so a value can't inject CSS.
 - **Contrast:** `npx shapio extensions check` measures the pairs the built-in themes are held to (WCAG 2.1 AA:
@@ -331,7 +331,7 @@ theme. Changing a theme needs a restart, like the rest of the config.
   example `sepia (light): --muted-foreground on --muted is 3.90:1, needs 4.5:1`. Warnings don't fail the check.
   Only `#rrggbb` values can be measured; a variant using other formats is reported as not fully checked.
 - **How the admin gets them:** two public routes (no session, since the sign-in screen uses them; they hold
-  colours only). `GET /api/admin/extensions/themes` lists `{ key, name, description, variants }`, and
+  colors only). `GET /api/admin/extensions/themes` lists `{ key, name, description, variants }`, and
   `GET /api/admin/extensions/themes.css` is the stylesheet (empty without themes, revalidated on each load
   with an `ETag`). The admin links the stylesheet render-blocking from its page and remembers the chosen
   theme's variants in the browser, so a custom theme applies before first paint like a built-in one. If a

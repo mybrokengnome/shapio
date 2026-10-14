@@ -98,7 +98,7 @@ See how Shapio compares to [Strapi](https://shapio.dev/compare/strapi/),
 Start with the [documentation index](documentation/README.md). The most useful pages:
 
 - [Install with npm](documentation/install-npm.md) or [Docker](documentation/install-docker.md)
-- [Modelling content](documentation/modelling.md)
+- [Modeling content](documentation/modeling.md)
 - [Delivery API](documentation/delivery-api.md) and [GraphQL](documentation/graphql.md)
 - [Change sets and snapshots](documentation/change-sets.md)
 - [Site starters](documentation/starters.md)

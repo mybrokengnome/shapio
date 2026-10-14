@@ -16,7 +16,7 @@ import { runInTransactionScope } from './writeLock.js';
 
 /**
  * SQLite runs DDL inside transactions, so each migration commits or rolls back whole. The driver handles
- * concurrency itself (one writer, several readers), so Kysely must not serialise connections on top.
+ * concurrency itself (one writer, several readers), so Kysely must not serialize connections on top.
  */
 class ShapioSqliteAdapter extends SqliteAdapter {
   override get supportsTransactionalDdl(): boolean {

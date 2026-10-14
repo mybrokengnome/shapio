@@ -83,7 +83,7 @@ export const config = defineConfig({
   // ['star-rating.js']. The admin loads them at runtime; installing one is a file copy plus a restart.
   editors: [],
 
-  // Admin colour themes, listed after the built-in ones. Each variant sets every UI token; see
+  // Admin color themes, listed after the built-in ones. Each variant sets every UI token; see
   // documentation/extensions.md (Admin themes) and examples/extension/extensions/sepiaTheme.ts.
   // themes: [{ key: 'acme', name: 'Acme', dark: { background: '#101014', foreground: '#f4f4f5', ... } }],
 
@@ -135,7 +135,7 @@ A [Shapio](https://github.com/mybrokengnome/shapio) project.
    \`/admin/\`; the first person to complete Setup becomes the owner.
 3. Under PM2: \`pm2 start ecosystem.config.cjs\`.
 
-Content models are edited live in the admin; no restart is needed for modelling. Changing \`shapio.config.ts\`
+Content models are edited live in the admin; no restart is needed for modeling. Changing \`shapio.config.ts\`
 or \`extensions/\` (code) needs a restart; \`npx shapio extensions check\` validates them.
 `;
 

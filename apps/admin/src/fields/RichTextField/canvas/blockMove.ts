@@ -38,14 +38,14 @@ export const moveBlock = (
   if (!block) {
     return false;
   }
-  const neighbourIndex = direction === 'up' ? block.index - 1 : block.index + 1;
-  const neighbour = doc.maybeChild(neighbourIndex);
-  if (!neighbour) {
+  const neighborIndex = direction === 'up' ? block.index - 1 : block.index + 1;
+  const neighbor = doc.maybeChild(neighborIndex);
+  if (!neighbor) {
     return false;
   }
   if (dispatch) {
     const offset = selection.from - block.pos;
-    const target = direction === 'up' ? block.pos - neighbour.nodeSize : block.pos + neighbour.nodeSize;
+    const target = direction === 'up' ? block.pos - neighbor.nodeSize : block.pos + neighbor.nodeSize;
     const tr = state.tr.delete(block.pos, block.pos + block.node.nodeSize);
     tr.insert(target, block.node);
     const inside = tr.doc.resolve(Math.min(target + offset, tr.doc.content.size));

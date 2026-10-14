@@ -2,7 +2,7 @@
 
 Shapio runs on PostgreSQL or on SQLite. SQLite keeps the whole instance in one file next to your project. You
 need no database server, backups are one command, and a small site or a local trial is running in a minute.
-Everything works the same way on both: modelling live, drafts and publishing, snapshots, change sets, sites,
+Everything works the same way on both: modeling live, drafts and publishing, snapshots, change sets, sites,
 end users, REST and GraphQL.
 
 The difference is scale. A SQLite instance is **one process** on one machine. Use PostgreSQL when you want
@@ -58,7 +58,7 @@ you use SQLite.
   coordination. The server holds a lock on `<database>-shapio.lock` beside the file while it runs; the
   operating system releases it when the process ends, even after a crash. Short `shapio` commands that open
   the file while the server runs (`shapio migrate`, `shapio admin create`, `shapio backup`) are fine.
-- **One writer at a time.** Writes are serialised inside the process, and reads run alongside them. Each SQL
+- **One writer at a time.** Writes are serialized inside the process, and reads run alongside them. Each SQL
   statement runs synchronously on Node's event loop, so a very large export or import makes other requests
   wait while it runs.
 - **Timestamps have millisecond precision** (PostgreSQL keeps microseconds). They are stored as UTC text,

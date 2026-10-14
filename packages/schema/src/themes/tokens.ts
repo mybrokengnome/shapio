@@ -82,9 +82,9 @@ export const BUILT_IN_THEME_KEYS = [
 export type BuiltInThemeKey = (typeof BUILT_IN_THEME_KEYS)[number];
 
 /**
- * A token value an extension may use: a hex colour or a colour function whose arguments are numbers, units
+ * A token value an extension may use: a hex color or a color function whose arguments are numbers, units
  * and separators only (no `;`, quotes, braces or nested functions such as `url()` or `var()`), so a value
  * can never escape its declaration.
  */
-export const THEME_COLOUR_PATTERN =
+export const THEME_COLOR_PATTERN =
   /^(?:#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgba?|hsla?|oklch|oklab)\([0-9a-z.,%\s/+-]{1,80}\))$/;

@@ -7,7 +7,7 @@
   let { value, visual }: Props = $props();
 </script>
 
-<!-- Shapio's rich text arrives with a sanitised `html` rendering next to the JSON document. -->
+<!-- Shapio's rich text arrives with a sanitized `html` rendering next to the JSON document. -->
 {#if value}
   <div class="prose" {...visual}>{@html value.html}</div>
 {/if}

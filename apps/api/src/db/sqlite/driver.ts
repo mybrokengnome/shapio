@@ -81,7 +81,7 @@ const OPTIMIZE = { full: 'pragma optimize=0x10002', refresh: 'pragma optimize' }
 
 /**
  * A Kysely driver over Node's built-in `node:sqlite` (no native dependency). One writer connection runs
- * every write, serialised by an in-process lock (`writeLock.ts`, `BEGIN IMMEDIATE`); reader connections
+ * every write, serialized by an in-process lock (`writeLock.ts`, `BEGIN IMMEDIATE`); reader connections
  * serve read-only transactions and autocommit reads concurrently (WAL). An in-memory database has the
  * writer only, and every statement takes the lock.
  */

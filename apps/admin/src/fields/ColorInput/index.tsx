@@ -5,7 +5,7 @@ import { cn } from '@/helpers/cn';
 import { inputAria, textValue } from '../helpers/props';
 import type { BuiltInEditorProps } from '../types';
 
-const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 /** The native picker needs some value when the field is empty or not hex; black, built so no hex literal appears. */
 const EMPTY_PICKER_VALUE = `#${'0'.repeat(6)}`;
 
@@ -16,10 +16,10 @@ const presetsOf = (props: BuiltInEditorProps): string[] => {
     : [];
 };
 
-/** A swatch shows a user-chosen colour: the one dynamic value, passed through a CSS variable. */
-const swatchStyle = (colour: string) => ({ '--swatch': colour }) as CSSProperties;
+/** A swatch shows a user-chosen color: the one dynamic value, passed through a CSS variable. */
+const swatchStyle = (color: string) => ({ '--swatch': color }) as CSSProperties;
 
-/** `color`: a colour stored as text (hex or `rgb(…)`), with a picker and the field's preset swatches. */
+/** `color`: a color stored as text (hex or `rgb(…)`), with a picker and the field's preset swatches. */
 export const ColorInput = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
   const { value, onChange, onBlur, readOnly, disabled, field } = props;
@@ -31,7 +31,7 @@ export const ColorInput = (props: BuiltInEditorProps) => {
         <input
           type="color"
           aria-label={t('content.fields.color.picker', { field: field.label })}
-          value={HEX_COLOUR.test(text) ? text.toLowerCase() : EMPTY_PICKER_VALUE}
+          value={HEX_COLOR.test(text) ? text.toLowerCase() : EMPTY_PICKER_VALUE}
           disabled={disabled || readOnly}
           className="size-10 shrink-0 cursor-pointer rounded-lg border border-input bg-transparent p-1 disabled:cursor-not-allowed"
           onChange={(event) => onChange(event.target.value)}

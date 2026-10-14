@@ -2,7 +2,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * Font sizes added in styles/index.css (`--text-*`). tailwind-merge treats an unknown `text-*` as a colour,
+ * Font sizes added in styles/index.css (`--text-*`). tailwind-merge treats an unknown `text-*` as a color,
  * so without this `cn('text-title', 'text-muted-foreground')` would drop one of them.
  */
 const CUSTOM_FONT_SIZES = ['display', 'title', 'canvas', 'meta', '2xs'];

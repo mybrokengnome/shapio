@@ -20,7 +20,7 @@ export const PASSWORD_MAX_LENGTH = 256;
 /** An admin's display name. */
 export const PERSON_NAME_MAX_LENGTH = 200;
 
-/** API tokens carry a recognisable prefix (secret scanners, and telling them apart from app-user JWTs). */
+/** API tokens carry a recognizable prefix (secret scanners, and telling them apart from app-user JWTs). */
 export const API_TOKEN_PREFIX = 'shp_';
 /** Characters of the token kept in plain text for display (`shp_` + 6). */
 export const API_TOKEN_DISPLAY_LENGTH = 10;

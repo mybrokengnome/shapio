@@ -5,7 +5,7 @@ import type { Article, Author, Media, Section } from './types.js';
 /**
  * HTML for the site's content, as plain functions: the static pages render with them at build time and the
  * preview page renders drafts with the same functions in the browser, so a preview looks exactly like the
- * published page. Every string from the CMS is escaped; rich text arrives as Shapio's sanitised `html`.
+ * published page. Every string from the CMS is escaped; rich text arrives as Shapio's sanitized `html`.
  */
 export type RenderContext = { locale: string; strings: Strings };
 

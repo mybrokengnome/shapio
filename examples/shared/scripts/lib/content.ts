@@ -49,7 +49,7 @@ export const IMAGES = {
     to: [234, 88, 12],
   },
   coverOne: {
-    filename: 'cover-modelling.png',
+    filename: 'cover-modeling.png',
     alt: 'Blocks arranged into a grid',
     width: 1600,
     height: 900,
@@ -229,7 +229,7 @@ const about = (): Localized<Record<string, unknown>> => ({
       {
         __component: 'callToAction',
         heading: 'Read our journal',
-        text: 'Notes on modelling, publishing and building.',
+        text: 'Notes on modeling, publishing and building.',
         buttonLabel: 'Open the journal',
         buttonUrl: '/en/articles/',
       },
@@ -261,10 +261,10 @@ const about = (): Localized<Record<string, unknown>> => ({
   },
 });
 
-const modelling = (media: MediaIds, authorId: string): Localized<Record<string, unknown>> => ({
+const modeling = (media: MediaIds, authorId: string): Localized<Record<string, unknown>> => ({
   en: {
-    title: 'Modelling content without a deploy',
-    slug: 'modelling-without-a-deploy',
+    title: 'Modeling content without a deploy',
+    slug: 'modeling-without-a-deploy',
     excerpt: 'We added a field to our article model on a Tuesday afternoon. Nothing restarted.',
     publishedOn: '2026-09-01',
     cover: media.coverOne,
@@ -468,8 +468,8 @@ export const entries = (media: MediaIds, authorId: string): EntrySpec[] => [
   { model: 'page', slug: 'about', content: withSeo(about()), publish: true },
   {
     model: 'article',
-    slug: 'modelling-without-a-deploy',
-    content: withSeo(modelling(media, authorId)),
+    slug: 'modeling-without-a-deploy',
+    content: withSeo(modeling(media, authorId)),
     publish: true,
   },
   {

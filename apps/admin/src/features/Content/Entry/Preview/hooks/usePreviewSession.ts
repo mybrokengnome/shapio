@@ -38,7 +38,7 @@ export const usePreviewSession = (input: PreviewSessionInput, enabled: boolean):
     if (!enabled) {
       return undefined;
     }
-    let cancelled = false;
+    let canceled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let tokenId: string | undefined;
     const mint = async () => {
@@ -49,7 +49,7 @@ export const usePreviewSession = (input: PreviewSessionInput, enabled: boolean):
           ...(locale ? { locale } : {}),
           ...(connectionId ? { connectionId } : {}),
         });
-        if (cancelled) {
+        if (canceled) {
           release(opened.id);
           return;
         }
@@ -61,7 +61,7 @@ export const usePreviewSession = (input: PreviewSessionInput, enabled: boolean):
         const delay = Date.parse(opened.expiresAt) - Date.now() - PREVIEW_TOKEN_REFRESH_MARGIN_MS;
         timer = setTimeout(() => void mint(), Math.max(MIN_REFRESH_DELAY_MS, delay));
       } catch (error) {
-        if (!cancelled) {
+        if (!canceled) {
           logError(error, 'preview.open');
           setState({
             key,
@@ -72,7 +72,7 @@ export const usePreviewSession = (input: PreviewSessionInput, enabled: boolean):
     };
     void mint();
     return () => {
-      cancelled = true;
+      canceled = true;
       clearTimeout(timer);
       if (tokenId) {
         release(tokenId);

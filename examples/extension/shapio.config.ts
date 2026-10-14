@@ -24,6 +24,6 @@ export const config = defineConfig({
   jobs: { statsReport: statsReportJob },
   // Custom field editors built into ./extensions/editors/*.js (see examples/custom-editor).
   editors: [],
-  // Admin colour themes, listed after the built-in ones in the theme menu.
+  // Admin color themes, listed after the built-in ones in the theme menu.
   themes: [sepiaTheme],
 });

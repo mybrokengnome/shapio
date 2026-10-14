@@ -11,7 +11,7 @@ type FieldGridProps = {
 
 /**
  * Short values sit two to a row when the form column itself is wide (title + slug, like the mockup); the
- * rest span the row. A container query, not a viewport breakpoint: the entry form's centre column sits
+ * rest span the row. A container query, not a viewport breakpoint: the entry form's center column sits
  * between two side panels, and splitting it on a wide screen left inputs a third of the column wide.
  */
 const COMPACT_TYPES: ReadonlySet<string> = new Set([

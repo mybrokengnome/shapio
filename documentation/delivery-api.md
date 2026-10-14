@@ -13,7 +13,7 @@ A type that extends another is read under its parent's route, by its own plural 
 
 A collection is addressed by its **plural API ID** (`/api/content/articles`), a single type by its **API ID**
 (`/api/content/homepage`). The singular API ID of a collection is not a delivery route: `/api/content/article`
-is a 404. Both IDs are set on the model ([Modelling](modelling.md#kinds-of-definitions)). The admin content API
+is a 404. Both IDs are set on the model ([Modeling](modeling.md#kinds-of-definitions)). The admin content API
 (`/api/admin/content/<API ID>`) always uses the singular.
 
 There is no generated code per model: a model created a minute ago is served by the same routes at once.
@@ -88,7 +88,7 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
       "updatedAt": "2026-10-01T09:30:02.104Z",
       "publishedAt": "2026-10-01T09:30:02.104Z",
       "title": "Modéliser du contenu sans déploiement",
-      "slug": "modelling-without-a-deploy",
+      "slug": "modeling-without-a-deploy",
       "excerpt": "…",
       "body": {
         "format": "shapio-richtext",
@@ -116,7 +116,7 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
   write that sends one is refused.
 - **Rich text** is the stored JSON document by default. Ask for `richText=html` to get
   `{ format, version, html }` instead, or `richText=both` for the document and `html` together. The HTML is
-  rendered on the server from the JSON with an allow-list sanitiser (safe link protocols only, images resolved
+  rendered on the server from the JSON with an allow-list sanitizer (safe link protocols only, images resolved
   through the media library), on the request that asks for it; it is never stored.
 - **Media** fields are asset objects with URLs and ready [variants](media.md#image-variants); private assets
   carry an expiring signed URL.
@@ -135,7 +135,7 @@ unknown model or entry.
 
 ## Types that extend a type
 
-A collection can extend another ([Modelling](modelling.md#types-that-extend-a-type)): Post, with Guide and
+A collection can extend another ([Modeling](modeling.md#types-that-extend-a-type)): Post, with Guide and
 Opinion as its kinds. A kind is read under its parent, by its **route key**, the plural API IDs of its
 ancestors and its own joined by `/`:
 
@@ -233,7 +233,7 @@ it as nested path segments.
 curl -G "$SHAPIO_URL/api/content/articles" -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
   --data-urlencode 'filters[publishedOn][$gte]=2026-09-10' \
   --data-urlencode 'filters[$or][0][slug][$eq]=why-builds-pin-a-snapshot' \
-  --data-urlencode 'filters[$or][1][slug][$eq]=modelling-without-a-deploy'
+  --data-urlencode 'filters[$or][1][slug][$eq]=modeling-without-a-deploy'
 ```
 
 | Operators                                                             | Field types                                                                                                                                                              |

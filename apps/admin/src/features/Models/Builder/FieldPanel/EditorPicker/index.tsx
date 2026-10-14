@@ -1,5 +1,5 @@
 import {
-  EDITOR_CATALOGUE,
+  EDITOR_CATALOG,
   isCustomEditorId,
   listCompatibleEditors,
   type FieldDefinition,
@@ -22,7 +22,7 @@ type EditorPickerProps = {
 };
 
 /**
- * The editor (input control) for a field, from the catalogue's editors compatible with its data type, and
+ * The editor (input control) for a field, from the catalog's editors compatible with its data type, and
  * that editor's options, rendered from its option schema. Changing it never changes stored data.
  */
 export const EditorPicker = ({ field, path, issues, disabled, onChange }: EditorPickerProps) => {
@@ -30,7 +30,7 @@ export const EditorPicker = ({ field, path, issues, disabled, onChange }: Editor
   const { id, options } = field.editor;
   const compatible = listCompatibleEditors(field).map((entry) => entry.id);
   const choices = isCustomEditorId(id) || !compatible.includes(id) ? [...compatible, id] : compatible;
-  const entry = EDITOR_CATALOGUE.get(id);
+  const entry = EDITOR_CATALOG.get(id);
   const properties = entry ? describeProperties(entry.optionsSchema) : [];
   return (
     <>

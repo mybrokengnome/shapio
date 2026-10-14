@@ -3,7 +3,7 @@ import type { SeoResolved } from '@shapio/client';
 /**
  * Content as the Shapio delivery API returns it for the starter's models (shapio/). Delivery
  * entries are flat: system attributes next to the fields, keyed by API key. Media fields are asset views,
- * rich text carries the JSON document plus a sanitised `html` rendering, populated relations are entries.
+ * rich text carries the JSON document plus a sanitized `html` rendering, populated relations are entries.
  */
 export type MediaVariant = {
   name: string;

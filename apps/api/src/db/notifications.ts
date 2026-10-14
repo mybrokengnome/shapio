@@ -9,9 +9,9 @@ import { notificationKeyOf } from './sqlite/driver.js';
 import type { DB } from './types.js';
 
 /**
- * LISTEN/NOTIFY primitives (ADR 0002). Notifications are an optimisation only: a listener can miss
+ * LISTEN/NOTIFY primitives (ADR 0002). Notifications are an optimization only: a listener can miss
  * messages while disconnected, so every consumer must also check a durable version. Callers get an
- * `onConnect` callback after every (re)connect to resynchronise for anything missed in between.
+ * `onConnect` callback after every (re)connect to resynchronize for anything missed in between.
  *
  * SQLite: `shapio_notify()` queues on the connection and an in-process bus delivers on commit
  * (`notifyHub.ts`); only listeners in the same process hear it.

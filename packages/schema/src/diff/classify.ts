@@ -269,7 +269,7 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
     case 'pattern':
       return validation(to !== undefined);
     case 'values':
-      // Removing an enum value invalidates entries using it; adding values or relabelling does not.
+      // Removing an enum value invalidates entries using it; adding values or relabeling does not.
       return validation(removesAny(from, to));
     case 'components':
     case 'allowedKinds':

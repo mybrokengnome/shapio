@@ -109,7 +109,7 @@ use it.
 - **Snapshots**: every publication number, to pin a site build to one ([Change sets](change-sets.md)).
 - **Schema as code**: the files `shapio schema pull` writes, edited and checked in the browser
   ([Schema sync](schema-sync.md)).
-- **Components**: the reusable groups of fields content types are built from ([Modelling](modelling.md)).
+- **Components**: the reusable groups of fields content types are built from ([Modeling](modeling.md)).
 - **API explorer**: every delivery endpoint, sent as a site would send it, with curl and fetch snippets.
 - **GraphQL**: GraphiQL on this site's schema, with the docs for every type and field
   ([GraphQL](graphql.md#playground)).

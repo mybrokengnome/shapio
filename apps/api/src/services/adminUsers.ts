@@ -73,7 +73,7 @@ type NewAdminUserInput = { email: string; name: string; passwordHash: string } &
 
 /**
  * Inserts an admin user with role assignments (`roleIds`: those roles on every site). Shared by setup,
- * invitations and `shapio admin create`; the caller owns the transaction, validation, authorisation and
+ * invitations and `shapio admin create`; the caller owns the transaction, validation, authorization and
  * audit.
  */
 export const insertAdminUser = async (input: NewAdminUserInput, trx: Transaction<DB>): Promise<string> => {
@@ -109,7 +109,7 @@ export const getAdminUser = async (id: string): Promise<AdminUserView> => {
   return toAdminUserView(row);
 };
 
-/** Fails when no active owner other than `exceptUserId` would remain. Locks owners to serialise checks. */
+/** Fails when no active owner other than `exceptUserId` would remain. Locks owners to serialize checks. */
 const assertAnotherOwnerRemains = async (exceptUserId: string, trx: Transaction<DB>) => {
   const owners = await adminUsersRepository.lockActiveHoldersOfRoleKey(SYSTEM_ROLE_KEYS.owner, trx);
   if (!owners.some((owner) => owner.id !== exceptUserId)) {

@@ -31,7 +31,7 @@ export const createPng = (width: number, height: number): Buffer => {
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
   header.writeUInt8(8, 8); // bit depth
-  header.writeUInt8(2, 9); // colour type: RGB
+  header.writeUInt8(2, 9); // color type: RGB
   const rows = Buffer.alloc((width * 3 + 1) * height);
   for (let y = 0; y < height; y += 1) {
     const offset = y * (width * 3 + 1);

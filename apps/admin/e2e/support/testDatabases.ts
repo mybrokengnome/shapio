@@ -98,7 +98,7 @@ export const createDatabase = async (name: string): Promise<void> => {
 };
 
 /**
- * One statement on a SQLite file, outside the server process (SQLite's file locks serialise it with the
+ * One statement on a SQLite file, outside the server process (SQLite's file locks serialize it with the
  * server's writes). The schema's defaults call Shapio's functions, so they are registered here too; a
  * fixture write has no transaction and sends no notifications.
  */

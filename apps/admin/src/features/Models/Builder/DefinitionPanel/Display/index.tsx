@@ -32,7 +32,7 @@ const DIRECTION_LABEL_KEYS = {
 const DOCUMENT_ONLY_KEYS = ['coverFieldId', 'canvasFieldIds', 'stripFieldIds'] as const;
 
 /**
- * How entries are labelled, listed, and laid out: document or form, title, order, list columns, the entry
+ * How entries are labeled, listed, and laid out: document or form, title, order, list columns, the entry
  * document, and groups. A kind shows the values it inherits until it sets its own, and may pick inherited
  * fields.
  */

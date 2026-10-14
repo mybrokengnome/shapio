@@ -147,7 +147,7 @@ you ship it. Every delivery read (REST and GraphQL) adds to a counter per day, p
 each API token by name, app users as one group, anonymous callers as one group. Admin users, admin API tokens and
 previews are not counted. Counters are kept per [site](sites.md). **Develop → Live** shows who reads what; the change set review shows the readers of
 the fields a breaking change touches: for a site's own content type that site's readers, for a shared one the
-readers on every site (each labelled with its site, or the other sites as totals for admins of one site).
+readers on every site (each labeled with its site, or the other sites as totals for admins of one site).
 
 Ask for the fields you use (`fields=` in REST, a selection in GraphQL). A REST read without `fields=` counts
 every field as used, shown as "reads the whole model", which hides what a site really depends on.
@@ -228,7 +228,7 @@ schema draft endpoints) when you want a git-style apply to wait for review and s
 ## Coming from releases
 
 Releases became change sets with only entry items. Upgrading moves them over: open releases become open sets,
-published ones shipped sets, cancelled ones discarded sets, and scheduled ones keep their time. The
+published ones shipped sets, canceled ones discarded sets, and scheduled ones keep their time. The
 `releases.manage` permission is now `changes.manage`, webhook subscriptions to `release.*` become `change_set.*`
 (`release.published` is `change_set.shipped`), and the deployment trigger **on release** is now **Shipping a change set** (`change_set`).
 `/api/admin/releases` is gone; use `/api/admin/change-sets`.

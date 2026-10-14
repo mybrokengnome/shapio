@@ -5,7 +5,7 @@ const userMessage = (text: string) => ({
   messages: [{ role: 'user' as const, content: { type: 'text' as const, text } }],
 });
 
-/** Starting points for the two jobs agents do most: modelling and reviewing a change set. */
+/** Starting points for the two jobs agents do most: modeling and reviewing a change set. */
 export const registerPrompts = ({ server }: ToolContext) => {
   server.registerPrompt(
     'model_content_type',
@@ -26,7 +26,7 @@ export const registerPrompts = ({ server }: ToolContext) => {
           '(extends), listing only its own fields.\n' +
           '3. Draft each type with schema_draft (one change set for the whole design: pass the changeSetId ' +
           'from the first call to the rest).\n' +
-          '4. Read change_sets_review, fix every blocking issue, and summarise the design and the review for ' +
+          '4. Read change_sets_review, fix every blocking issue, and summarize the design and the review for ' +
           'me. Do not ship: I review and ship the change set myself.',
       ),
   );

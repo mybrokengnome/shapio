@@ -41,13 +41,13 @@ const readsOf = (seq: number, places: readonly PlaceWithLocales[]) =>
 
 /**
  * The content system at snapshot `seq`: each place's live entries (read through delivery, per locale),
- * marked against `previous` with the snapshot diff. The neighbours are prefetched so dragging is smooth;
+ * marked against `previous` with the snapshot diff. The neighbors are prefetched so dragging is smooth;
  * every read is cached per snapshot (a snapshot never changes).
  */
 export const useStateAt = (
   seq: number,
   previous: number | undefined,
-  neighbours: readonly number[],
+  neighbors: readonly number[],
   places: readonly PlaceWithLocales[],
 ) => {
   const queryClient = useQueryClient();
@@ -64,12 +64,12 @@ export const useStateAt = (
   });
 
   useEffect(() => {
-    for (const neighbour of neighbours) {
-      for (const read of readsOf(neighbour, places)) {
-        void queryClient.prefetchQuery(snapshotPlaceQueryOptions(neighbour, read.place, read.locale));
+    for (const neighbor of neighbors) {
+      for (const read of readsOf(neighbor, places)) {
+        void queryClient.prefetchQuery(snapshotPlaceQueryOptions(neighbor, read.place, read.locale));
       }
     }
-  }, [neighbours, places, queryClient]);
+  }, [neighbors, places, queryClient]);
 
   const diff = changes.data?.items ?? [];
   const states: PlaceState[] = places.map((place) => {

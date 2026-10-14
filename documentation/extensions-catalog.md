@@ -1,4 +1,4 @@
-# Extension points catalogue
+# Extension points catalog
 
 Every way to extend Shapio or connect it to something else, in one place: what each one is, where it runs, its
 contract and where that contract lives in the source, a minimal example, how it is versioned, and its limits.
@@ -60,7 +60,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
     services?: Record<string, ServiceFactory>;
     editors?: string[]; // file names in extensions/editors/
     jobs?: Record<string, ExtensionJobHandler>;
-    themes?: ThemeDefinition[]; // admin colour themes
+    themes?: ThemeDefinition[]; // admin color themes
   };
   ```
 
@@ -129,7 +129,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   One rejected item fails a whole change set. `data` is the full, unmasked document (hooks are trusted code).
   Changing a model's API ID stops hooks keyed by the old one from matching; key by the stable model ID if that
   matters. On a multi-site instance, hooks are configured once for every site: branch on `context.site` when a
-  site needs different behaviour.
+  site needs different behavior.
 
 ### Custom routes
 
@@ -298,20 +298,20 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Lifecycle:** installing is build, copy, list, restart; the admin is never rebuilt. The admin's import map
   resolves `react`, `react/jsx-runtime`, `react-dom`, `react-dom/client` and `@shapio/editor-sdk` to its own
   copies, so an editor shares the admin's React. Choosing the editor for a field (and its options) is a live
-  modelling change.
+  modeling change.
 - **Versioning:** `defineEditor` stamps `EDITOR_CONTRACT_VERSION`. The admin skips an editor built for another
   version, a module with no editor export, a duplicate editor ID or a module that fails to load, logs why, and
   shows the field's built-in editor instead; it does the same for an editor that throws while rendering.
 - **Limits:** editor IDs are namespaced (`vendor.name`); built-in IDs never contain a dot. An editor gets the
   value, `onChange`/`onBlur`, validation messages, field and model metadata (including its options), DOM ids for
-  labelling, and a limited context (`locale`, `entryId`, `uiLanguage`, `pickMedia()`, `translate()`). It gets no
+  labeling, and a limited context (`locale`, `entryId`, `uiLanguage`, `pickMedia()`, `translate()`). It gets no
   network client, session, token or secret. The server validates the value exactly as for the built-in editor.
   Style with the admin's CSS variables so it follows light and dark mode. Guide:
   [Extensions: custom field editors](extensions.md#custom-field-editors).
 
 ### Admin themes
 
-- **What:** colour themes for the admin, listed after the built-in looks (Shapio, Cobalt, Murdered out,
+- **What:** color themes for the admin, listed after the built-in looks (Shapio, Cobalt, Murdered out,
   Forest, Snowed, Butter) in the theme menu, in Settings → Appearance and on the sign-in screen.
 - **Where it runs:** declared in `shapio.config` (server); applied in the admin, in the browser.
 - **Contract:** `ThemeDefinition` and `ThemeTokens` from `@shapio/cms/config`; the token names are
@@ -320,7 +320,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   [`extensions/configSchema.ts`](../apps/api/src/extensions/configSchema.ts); stylesheet:
   [`extensions/themeStylesheet.ts`](../apps/api/src/extensions/themeStylesheet.ts), served at
   `GET /api/admin/extensions/themes.css` with the list at `GET /api/admin/extensions/themes` (both public:
-  colours only, and the sign-in screen needs them).
+  colors only, and the sign-in screen needs them).
 - **Example:**
 
   ```ts
@@ -340,7 +340,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Versioning:** part of `@shapio/cms/config` (`EXTENSION_CONTRACT_VERSION` 1). Making a new token required
   would be a breaking change, released as one.
 - **Limits:** keys match `^[a-z][a-z0-9-]{0,40}$` and can't reuse a built-in key; a missing or unknown token, or
-  a value that isn't a colour (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `hsl()`, `oklch()`, `oklab()`), stops
+  a value that isn't a color (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `hsl()`, `oklch()`, `oklab()`), stops
   startup naming it. `npx shapio extensions check` warns, without failing, on any text pair below 4.5:1 or
   control/focus pair below 3:1 (WCAG 2.1 AA); only `#rrggbb` values are measured. Guide:
   [Extensions: admin themes](extensions.md#admin-themes).
@@ -357,7 +357,7 @@ queue (retries, logs) and refuses private, loopback and link-local addresses unl
 - **Where it runs:** Shapio's worker sends; your receiver runs anywhere.
 - **Contract:** body `{ id, type, createdAt, data }`; headers `X-Shapio-Event`, `X-Shapio-Delivery` (same on
   every retry), `X-Shapio-Timestamp`, `X-Shapio-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>`.
-  Events (exact names or `group.*`), from [`apps/api/src/webhooks/catalogue.ts`](../apps/api/src/webhooks/catalogue.ts):
+  Events (exact names or `group.*`), from [`apps/api/src/webhooks/catalog.ts`](../apps/api/src/webhooks/catalog.ts):
 
   | Group        | Events                                                                  |
   | ------------ | ----------------------------------------------------------------------- |
@@ -382,7 +382,7 @@ queue (retries, logs) and refuses private, loopback and link-local addresses unl
     secret: process.env.SHAPIO_WEBHOOK_SECRET!,
     signature: request.headers.get('x-shapio-signature'),
     timestamp: request.headers.get('x-shapio-timestamp'),
-    body: await request.text(), // the raw body, never re-serialised JSON
+    body: await request.text(), // the raw body, never re-serialized JSON
   });
   if (!check.ok) return new Response(check.reason, { status: 401 });
   ```

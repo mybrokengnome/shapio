@@ -5,7 +5,7 @@ import type { DB, SchemaChangeJobs } from '../db/types.js';
 type Executor = Kysely<DB> | Transaction<DB>;
 
 export type SchemaChangeJobRow = Selectable<SchemaChangeJobs>;
-export type SchemaChangeStatus = 'pending' | 'running' | 'activated' | 'failed' | 'cancelled';
+export type SchemaChangeStatus = 'pending' | 'running' | 'activated' | 'failed' | 'canceled';
 export type SchemaChangeTarget = { type: 'model' | 'locale'; id: string };
 
 export type NewSchemaChangeJob = {

@@ -9,9 +9,9 @@ import { getMediaFileSchema, receiveUploadSchema } from './schemas.js';
 export const mediaFilesRoutes: FastifyPluginAsyncTypebox = async (app) => {
   // Network, not site (sites plan §H, G4). Files are fetched by storage key, whose asset ID is unique across
   // sites, from <img> tags on other origins that send no Shapio-Site header and no session, so a site route
-  // would resolve every file to the primary site. Private files are authorised by their signature, not by a
+  // would resolve every file to the primary site. Private files are authorized by their signature, not by a
   // principal; signed URLs are only minted by site-scoped reads of the asset, so the site boundary is
-  // enforced where the signature is issued. Uploads are authorised by the grant, which carries its site.
+  // enforced where the signature is issued. Uploads are authorized by the grant, which carries its site.
   declareSiteScope(app, 'network');
   // Scoped to this plugin: only the upload route parses multipart bodies.
   await app.register(multipart);
@@ -34,7 +34,7 @@ export const mediaFilesRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { schema: getMediaFileSchema, config: { rateLimit: false }, preHandler: fileRateLimit },
     getMediaFile,
   );
-  // POST /uploads/:grantId: multipart form (fields from the grant, then `file`); authorised by the
+  // POST /uploads/:grantId: multipart form (fields from the grant, then `file`); authorized by the
   // grant's signature, never by a session, so it needs no CSRF token and works like an S3 presigned POST.
   app.post(
     '/uploads/:grantId',

@@ -11,7 +11,7 @@ import { waitFor } from './helpers/waitFor.js';
  * Load measurements for package M (build plan §4.M, §8): latency of live schema changes under sustained
  * traffic, and the cost of many per-field partial indexes on `entry_heads`. They take about a minute and
  * measure rather than gate, so they run only with LOAD_TEST=1; numbers are printed as `[measure]` lines
- * and recorded in documentation/modelling.md and the acceptance report.
+ * and recorded in documentation/modeling.md and the acceptance report.
  */
 const enabled = process.env.LOAD_TEST === '1';
 const suiteName = (name: string) => (enabled ? name : `${name} [skipped: set LOAD_TEST=1]`);

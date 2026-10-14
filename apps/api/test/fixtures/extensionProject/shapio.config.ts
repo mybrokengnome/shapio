@@ -1,6 +1,6 @@
 // Test project for the extension-point tests (package K). Every hook records itself in `ext_hook_log`
 // through its transaction (the test creates the table), so tests can see what ran, when, and whether it was
-// rolled back. Titles drive behaviour: `reject…` makes before* hooks reject after writing their row,
+// rolled back. Titles drive behavior: `reject…` makes before* hooks reject after writing their row,
 // `unpublishable…` only beforePublish.
 import { defineConfig, HookError, type AfterHookContext, type BeforeHookContext } from '@shapio/cms/config';
 import { sql } from 'kysely';

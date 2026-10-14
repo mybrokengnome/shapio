@@ -155,7 +155,7 @@ describe('content export and import of app users, roles and owners', () => {
     const login = expectStatus(await loginAppUser(instance.testApp.app, userEmail), 200).json<{
       accessToken: string;
     }>();
-    // The owner-only grant still recognises the owner after the move.
+    // The owner-only grant still recognizes the owner after the move.
     const update = await instance.testApp.app.inject({
       method: 'PUT',
       url: `/api/content/notes/${ownedId}`,

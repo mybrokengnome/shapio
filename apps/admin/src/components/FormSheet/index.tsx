@@ -38,7 +38,7 @@ type FormSheetProps = {
 };
 
 /**
- * A form in a right-hand sheet: create or edit a record while the list stays in view. Labelled,
+ * A form in a right-hand sheet: create or edit a record while the list stays in view. Labeled,
  * keyboard-closable and protected against losing unsaved edits; the header and the footer (Cancel, then the
  * primary action) stay put while a long body scrolls.
  */

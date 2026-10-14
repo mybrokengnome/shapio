@@ -9,7 +9,7 @@ const Body = lazy(() => import('./Body').then((module) => ({ default: module.Bod
 
 /**
  * ⌘K: go anywhere (places, entries, media, settings), create, and act on the current page. The one
- * centred overlay the admin allows (DESIGN.md): a transient launcher with nothing to lose, so it never
+ * centered overlay the admin allows (DESIGN.md): a transient launcher with nothing to lose, so it never
  * holds a form. Modal for assistive technology (focus trapped, page inert); Escape or a click outside
  * closes it and focus returns to where it was. Mounted once by the Shell.
  */

@@ -92,7 +92,7 @@ test.beforeAll(async ({ browser }) => {
       ],
     },
   });
-  // No canvas fields: the document is the property grid, where a single component is a labelled line.
+  // No canvas fields: the document is the property grid, where a single component is a labeled line.
   await adminRequest(page.request, 'POST', '/models', {
     definition: {
       id: ids.plain,
@@ -226,7 +226,7 @@ test('a single component property opens on click and offers "Add …" when empty
   );
 });
 
-test('in a property-only document, an empty single component is labelled and offers "Add …"', async () => {
+test('in a property-only document, an empty single component is labeled and offers "Add …"', async () => {
   const created = await adminRequest(page.request, 'POST', '/content/promoSlot', {
     data: { name: 'Sidebar' },
   });

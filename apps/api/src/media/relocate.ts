@@ -16,7 +16,7 @@ export class AssetBusyError extends Error {
 /**
  * The `media.relocate` job: after a visibility change, copies the original and its variants under the
  * new visibility prefix (verified by checksum), points the rows at them, and purges the old objects.
- * Shapio's own routes honour the new visibility before this runs; the move matters for a CDN or bucket
+ * Shapio's own routes honor the new visibility before this runs; the move matters for a CDN or bucket
  * policy that exposes only `public/`.
  */
 export const relocateAsset = async (

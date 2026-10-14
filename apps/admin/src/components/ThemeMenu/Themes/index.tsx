@@ -3,7 +3,7 @@ import { DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/d
 import { ThemeSwatches } from '../../ThemeSwatches';
 import { useLookSelection } from '../hooks/useLookSelection';
 
-/** The looks as radio items with their colours, for any dropdown menu (the theme menu, the account menu). */
+/** The looks as radio items with their colors, for any dropdown menu (the theme menu, the account menu). */
 export const ThemeMenuThemes = () => {
   const { t } = useTranslation();
   const { looks, selectedLook, selectLook } = useLookSelection();

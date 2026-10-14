@@ -8,7 +8,7 @@ import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 /**
  * Field placement (plan field-placement): the entry's Settings panel is open by default on wide screens and
  * remembers being closed; "Show in document" in the builder puts a string and the SEO group in the
- * document, where they are labelled sections, edited and saved, and leave the strip; a model without block
+ * document, where they are labeled sections, edited and saved, and leave the strip; a model without block
  * fields keeps its property grid under the field placed in the document. Captured in Shapio and Snowed
  * with axe.
  */

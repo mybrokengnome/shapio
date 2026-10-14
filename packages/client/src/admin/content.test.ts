@@ -23,7 +23,7 @@ const setup = (status = 200, body: unknown = {}) => {
 const BASE = 'https://cms.test/cms/api/admin/content';
 
 describe('toContentQueryString', () => {
-  it('serialises filters, sort, paging, search, locale, fields and populate in bracket syntax', () => {
+  it('serializes filters, sort, paging, search, locale, fields and populate in bracket syntax', () => {
     const query = toContentQueryString({
       filters: {
         title: { $containsi: 'Hello' },
@@ -49,7 +49,7 @@ describe('toContentQueryString', () => {
     );
   });
 
-  it('serialises the admin list filters status and author', () => {
+  it('serializes the admin list filters status and author', () => {
     expect(toContentQueryString({ status: 'modified', author: 'u1' })).toBe('?status=modified&author=u1');
   });
 

@@ -35,7 +35,7 @@ export const ChangeProgress = ({ changeId, onFinished, onDismiss }: ChangeProgre
   if (status === 'activated') {
     return null;
   }
-  if (status === 'failed' || status === 'cancelled') {
+  if (status === 'failed' || status === 'canceled') {
     const failure = failureOf(change.data?.error);
     return (
       <Alert variant="destructive">

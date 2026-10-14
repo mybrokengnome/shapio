@@ -5,7 +5,7 @@ export type EventGroup = { group: string; types: string[] };
 /** `content.*`: every event of a group, including ones added in later Shapio versions. */
 export const groupPattern = (group: string) => `${group}.*`;
 
-/** The catalogue grouped for display, in the server's order. */
+/** The catalog grouped for display, in the server's order. */
 export const groupEvents = (events: readonly WebhookEventType[]): EventGroup[] => {
   const groups = new Map<string, string[]>();
   for (const { type, group } of events) {

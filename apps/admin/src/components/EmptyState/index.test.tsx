@@ -19,7 +19,7 @@ describe('EmptyState', () => {
     );
   });
 
-  it('default: the centred block', () => {
+  it('default: the centered block', () => {
     const { container } = render(<EmptyState size="panel" title="No media yet" />);
     expect(container.firstElementChild?.className).toContain('flex-col');
   });

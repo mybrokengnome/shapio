@@ -4,7 +4,7 @@
  * test/contrast.test.ts.
  */
 [data-theme='classic'] {
-  /* Warm-neutral near-black (red >= green >= blue): no blue in the surfaces. Cobalt is the one colour,
+  /* Warm-neutral near-black (red >= green >= blue): no blue in the surfaces. Cobalt is the one color,
      periwinkle marks selection, focus and links. */
   --background: #0f0f0e;
   --foreground: #f2f1ee;

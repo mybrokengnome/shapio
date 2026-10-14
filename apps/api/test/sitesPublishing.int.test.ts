@@ -425,7 +425,7 @@ describe('publishing per site (plan §H, G5)', () => {
     expect(keysOf(await usageOn(siteA))).toEqual(['reader-0']);
     expect(keysOf(await usageOn(siteB))).toEqual(['reader-1']);
 
-    // A change-set review spans sites: a network viewer sees every site's readers labelled with the site,
+    // A change-set review spans sites: a network viewer sees every site's readers labeled with the site,
     // anyone else their own site's plus anonymous totals for the others.
     const [everySite] = await consumersOf([titleId], 7, { siteId: other.id, network: true });
     expect(

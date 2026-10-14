@@ -2,7 +2,7 @@ import { useId, type ReactNode } from 'react';
 import { cn } from '@/helpers/cn';
 
 type PanelProps = {
-  /** Header title (16/600). With a title the panel is a labelled region. */
+  /** Header title (16/600). With a title the panel is a labeled region. */
   title?: string;
   /** Heading level of the title in the page outline. */
   titleAs?: 'h2' | 'h3';

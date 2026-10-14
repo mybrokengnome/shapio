@@ -16,7 +16,7 @@ import { createLocale, setDefaultLocale, updateLocale } from '../../services/loc
 import { createRole, updateRole, type PermissionInput } from '../../services/roles.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
 import { applySchema } from '../../services/schemaSync.js';
-import { isValidEventPattern } from '../../webhooks/catalogue.js';
+import { isValidEventPattern } from '../../webhooks/catalog.js';
 import type { ConnectionRecord, MediaFolderRecord, WebhookRecord } from './format.js';
 import { samePermissions } from './permissions.js';
 import { EMPTY_LOCK, type ImportPlan } from './plan.js';

@@ -14,7 +14,7 @@ type FocalPointProps = {
 };
 
 const PERCENT = 100;
-const CENTRE: MediaFocalPoint = { x: 0.5, y: 0.5 };
+const CENTER: MediaFocalPoint = { x: 0.5, y: 0.5 };
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 
@@ -26,7 +26,7 @@ export const FocalPoint = ({ imageUrl, value, onChange }: FocalPointProps) => {
   const { t } = useTranslation();
   // Unique per instance: the media details sheet and the entry's settings drawer can both show one.
   const id = useId();
-  const point = value ?? CENTRE;
+  const point = value ?? CENTER;
   const place = (event: MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     onChange({

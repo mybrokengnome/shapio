@@ -17,7 +17,7 @@ import { createDatabase, databaseUrlOf, dropDatabase } from '../support/testData
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 const API_DIR = join(REPO_ROOT, 'apps', 'api');
 const EXAMPLE_DIR = join(REPO_ROOT, 'examples', 'custom-editor');
-/** An extension colour theme (light only), installed beside the editor. */
+/** An extension color theme (light only), installed beside the editor. */
 const THEME_FILE = join(REPO_ROOT, 'examples', 'extension', 'extensions', 'sepiaTheme.ts');
 const TSX_LOADER = pathToFileURL(join(API_DIR, 'node_modules', 'tsx', 'dist', 'loader.mjs')).href;
 const POLL_MS = 200;

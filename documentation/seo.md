@@ -15,7 +15,7 @@ Schema as code, pulled by `shapio schema pull` as `components/seo.json`. Nothing
 | Canonical URL            | `canonical`   | URL (`https`, `http`) | Only when the page's canonical URL is not its own         |
 | Hide from search engines | `noindex`     | boolean               | `<meta name="robots" content="noindex">`                  |
 
-Shapio recognises the component by its fixed stable ID (`SEO_COMPONENT_ID` in `@shapio/client`), never by its
+Shapio recognizes the component by its fixed stable ID (`SEO_COMPONENT_ID` in `@shapio/client`), never by its
 API ID. You can relabel it, rename its API IDs or add fields of your own: the resolved values still find
 the five fields by their stable IDs, and fields you add pass through untouched. The component is always
 **shared with all sites**: one shared copy serves every site's content types.

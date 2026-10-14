@@ -77,7 +77,7 @@ test.afterEach(() => {
 
 /**
  * Leave the shared server as it was for later specs: media.spec expects an empty library (the asset is
- * still used, hence `force`). No schedule is seeded: publishing.spec expects none, cancelled ones included.
+ * still used, hence `force`). No schedule is seeded: publishing.spec expects none, canceled ones included.
  */
 test.afterAll(async () => {
   if (coverId) {
@@ -102,7 +102,7 @@ const waitForFinding = async (on: Page, group: string) => {
 
 const row = (group: Locator, title: string) => group.getByRole('listitem').filter({ hasText: title });
 
-test('before anything is modelled, the shared server shows only the steps to get started', async () => {
+test('before anything is modeled, the shared server shows only the steps to get started', async () => {
   await owner.goto(ADMIN_URL);
   await expect(owner.getByRole('heading', { level: 1, name: `Welcome, ${OWNER.name}` })).toBeVisible();
   // Earlier specs may already have added content types; only an empty workspace is checked here.

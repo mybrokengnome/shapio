@@ -23,7 +23,7 @@ type ThemeSwatchesProps = {
 };
 
 /**
- * A look's colours, drawn from its own tokens: the subtree carries `data-theme` (and `dark` for a dark
+ * A look's colors, drawn from its own tokens: the subtree carries `data-theme` (and `dark` for a dark
  * look). Swatches only, never live components: `dark:` variants
  * match ancestors, so a component inside a light preview on a dark page would mix both. Decorative.
  */

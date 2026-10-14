@@ -8,4 +8,4 @@ export const SCHEMA_VERSION_STALE_MS = 60_000;
 export const SCHEMA_CHANGE_POLL_INTERVAL_MS = 1_000;
 
 /** Final states of a planned schema change. */
-export const FINAL_CHANGE_STATUSES: ReadonlySet<string> = new Set(['activated', 'failed', 'cancelled']);
+export const FINAL_CHANGE_STATUSES: ReadonlySet<string> = new Set(['activated', 'failed', 'canceled']);

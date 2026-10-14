@@ -85,7 +85,7 @@ const luminance = (hex: string) => {
   return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 };
 
-/** The WCAG contrast ratio of two `#rrggbb` colours. */
+/** The WCAG contrast ratio of two `#rrggbb` colors. */
 export const contrastRatio = (a: string, b: string): number => {
   const [high = 0, low = 0] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (high + 0.05) / (low + 0.05);
@@ -96,7 +96,7 @@ export type ContrastCheck = {
   background: string;
   /** 4.5 for text, 3 for controls. */
   required: number;
-  /** Undefined when a value is not a `#rrggbb` colour (functions such as `oklch()` are not checked). */
+  /** Undefined when a value is not a `#rrggbb` color (functions such as `oklch()` are not checked). */
   ratio: number | undefined;
 };
 

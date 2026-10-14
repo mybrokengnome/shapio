@@ -37,7 +37,7 @@ const summarizeResponse = (response: OutboundResponse) => {
  * network errors are retried by the queue with exponential backoff up to the webhook's max attempts; then
  * the delivery is dead (dead-lettered). A destination refused by the network policy, or a signing secret that
  * can no longer be decrypted (SESSION_SECRET changed; rotate it to repair), is dead at once.
- * Every attempt is summarised in the delivery log, with the signature redacted and the body truncated.
+ * Every attempt is summarized in the delivery log, with the signature redacted and the body truncated.
  */
 export const createWebhookDeliveryHandler =
   (runtime: PublishingRuntime): JobHandler =>

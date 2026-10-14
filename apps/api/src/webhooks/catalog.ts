@@ -10,7 +10,7 @@ export type WebhookEventType = { type: string; group: string };
 const group = (name: string, types: readonly string[]): WebhookEventType[] =>
   types.map((type) => ({ type, group: name }));
 
-export const WEBHOOK_EVENT_CATALOGUE: readonly WebhookEventType[] = [
+export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventType[] = [
   ...group('entry', [
     'entry.created',
     'entry.updated',
@@ -33,8 +33,8 @@ export const WEBHOOK_EVENT_CATALOGUE: readonly WebhookEventType[] = [
 /** Sent by "Send test"; never produced by the outbox. */
 export const WEBHOOK_TEST_EVENT = 'webhook.test';
 
-const TYPES = new Set(WEBHOOK_EVENT_CATALOGUE.map((event) => event.type));
-const GROUPS = new Set(WEBHOOK_EVENT_CATALOGUE.map((event) => event.group));
+const TYPES = new Set(WEBHOOK_EVENT_CATALOG.map((event) => event.type));
+const GROUPS = new Set(WEBHOOK_EVENT_CATALOG.map((event) => event.group));
 
 export const isValidEventPattern = (pattern: string): boolean =>
   TYPES.has(pattern) || (pattern.endsWith('.*') && GROUPS.has(pattern.slice(0, -2)));

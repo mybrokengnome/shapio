@@ -18,7 +18,7 @@ describe('migrateThemeState', () => {
     expect(migrateThemeState(null, 0)).toMatchObject({ theme: 'classic', appearance: 'dark' });
   });
 
-  it('moves a version 2 built-in theme to its one look, whatever the colour mode was', () => {
+  it('moves a version 2 built-in theme to its one look, whatever the color mode was', () => {
     for (const appearance of ['system', 'light', 'dark']) {
       expect(migrateThemeState({ theme: 'shapio', appearance, variants: ['light', 'dark'] }, 2)).toEqual({
         theme: 'shapio',

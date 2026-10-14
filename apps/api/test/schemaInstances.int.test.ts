@@ -148,7 +148,7 @@ describe('schema change notifications', () => {
     if (isSqliteRun()) {
       return;
     }
-    // Kill the listening connection: the listener reconnects and resynchronises.
+    // Kill the listening connection: the listener reconnects and resynchronizes.
     const [pid] = await listenerPids();
     await terminateConnection(database.current.db, pid!);
     await waitFor(

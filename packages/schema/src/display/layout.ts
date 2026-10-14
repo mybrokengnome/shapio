@@ -170,7 +170,7 @@ const ungroupedSectionId = (first: FieldDefinition, groupIds: ReadonlySet<string
 /**
  * The entry form's layout (`display.layout: 'form'`): every live field, the title included, in sections.
  * Field order decides everything: a group's section sits where its first field appears, with its fields in
- * field order, and every run of consecutive ungrouped fields is an unlabelled section of its own at its
+ * field order, and every run of consecutive ungrouped fields is an unlabeled section of its own at its
  * place. So name, price, sku, description with a Pricing group (price, sku) reads [name], Pricing [price,
  * sku], [description]. Unknown and deprecated ids are skipped. Pure: no values, no I/O.
  */

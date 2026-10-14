@@ -300,7 +300,7 @@ export const activateDefinitions = async (
  * with the schema version it activated. The ledger row of the change set's own site is `change_set`; other
  * sites' rows are `conversion` and name the change set; without a change set every row is `schema`. Each
  * site's number is taken on first use (a change set's publications, an entry-level conversion) or at the
- * end, under the schema lock, and that site's deferred work then runs with it. Activations are serialised
+ * end, under the schema lock, and that site's deferred work then runs with it. Activations are serialized
  * by the schema lock and every other publisher holds one site's sequence row at most, so taking several
  * sites' rows in first-use order cannot deadlock. A metadata-only activation (a label rename) takes no
  * number anywhere: live content and every API response stay exactly as they were (brief §10).

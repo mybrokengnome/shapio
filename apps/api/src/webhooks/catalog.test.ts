@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEventPattern, matchesEvent } from './catalogue.js';
+import { isValidEventPattern, matchesEvent } from './catalog.js';
 
-describe('webhook event catalogue', () => {
-  it('accepts catalogue events and group wildcards only', () => {
+describe('webhook event catalog', () => {
+  it('accepts catalog events and group wildcards only', () => {
     expect(isValidEventPattern('entry.published')).toBe(true);
     expect(isValidEventPattern('media.*')).toBe(true);
     expect(isValidEventPattern('deployment.deployed')).toBe(true);

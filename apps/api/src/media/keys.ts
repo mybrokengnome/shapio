@@ -18,7 +18,7 @@ const splitExtension = (name: string): { stem: string; extension: string } => {
 };
 
 /**
- * The display name kept for an upload: the last path segment, NFC-normalised, without control or
+ * The display name kept for an upload: the last path segment, NFC-normalized, without control or
  * path characters, at most 200 characters with the extension preserved. Never used as a storage path.
  */
 export const sanitizeFilename = (input: string): string => {

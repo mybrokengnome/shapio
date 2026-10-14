@@ -4,7 +4,7 @@ import { cn } from '@/helpers/cn';
 
 type SectionProps = {
   section: FieldSection;
-  /** An unlabelled section after a group: extra space above, so its fields don't read as part of the group. */
+  /** An unlabeled section after a group: extra space above, so its fields don't read as part of the group. */
   spaced?: boolean;
 };
 
@@ -18,7 +18,7 @@ export const Section = ({ section, spaced = false }: SectionProps) => {
   return (
     <section
       aria-labelledby={section.label ? headingId : undefined}
-      // pt-8: a heading row and its gap, so the rhythm matches a labelled section without a line.
+      // pt-8: a heading row and its gap, so the rhythm matches a labeled section without a line.
       className={cn('space-y-4', spaced && 'pt-8')}
       data-form-section={section.id}
     >

@@ -62,7 +62,7 @@ describe('a relation to a content type this role cannot read', () => {
     expect(screen.queryByText(/no longer exists/)).toBeNull();
   });
 
-  it('summarises the linked entries without pretending they are untitled', () => {
+  it('summarizes the linked entries without pretending they are untitled', () => {
     renderWith(<PropertyValue field={writer} value={id(7)} />);
     expect(screen.getByText("1 linked entry you can't read")).toBeTruthy();
     expect(screen.queryByText(/Untitled/)).toBeNull();

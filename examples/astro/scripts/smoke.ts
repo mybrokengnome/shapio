@@ -56,14 +56,14 @@ const checkBuild = async () => {
   );
   check(homeFr.includes('Un contenu qui évolue aussi vite que votre produit'), 'FR home: hero heading');
   check(homeFr.includes('<html lang="fr"'), 'FR home: lang="fr"');
-  const articleEn = await html('en/articles/modelling-without-a-deploy/index.html');
-  const articleFr = await html('fr/articles/modelling-without-a-deploy/index.html');
-  check(articleEn.includes('Modelling content without a deploy'), 'EN article: title');
+  const articleEn = await html('en/articles/modeling-without-a-deploy/index.html');
+  const articleFr = await html('fr/articles/modeling-without-a-deploy/index.html');
+  check(articleEn.includes('Modeling content without a deploy'), 'EN article: title');
   check(articleEn.includes('<table>') && articleEn.includes('With Shapio'), 'EN article: rich-text table');
   check(articleEn.includes('Ada Moreau'), 'EN article: populated author');
   check(articleFr.includes('Modéliser du contenu sans déploiement'), 'FR article: title');
   check(
-    articleEn.includes('<title>Modelling content without a deploy · Northwind Studio</title>'),
+    articleEn.includes('<title>Modeling content without a deploy · Northwind Studio</title>'),
     'EN article: SEO title through the site template',
   );
   check(

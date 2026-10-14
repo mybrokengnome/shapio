@@ -17,7 +17,7 @@ type CanvasExtensionOptions = {
 };
 
 /**
- * The canvas's editor: the same stored schema as the form editor (`richTextExtensions`), plus behaviour
+ * The canvas's editor: the same stored schema as the form editor (`richTextExtensions`), plus behavior
  * that never reaches the document: `/` menu, ⌥↑↓ block moves, upload placeholders and file drop/paste.
  */
 export const canvasExtensions = ({

@@ -43,7 +43,7 @@ export const currentTimestamp = (): RawBuilder<Date> => {
 
 /**
  * A bound value read as a timestamp (ISO-8601 text or a Date; null stays null).
- * PostgreSQL: `cast($1 as timestamptz)`. SQLite: the value normalised by `toStoredTimestamp` and bound.
+ * PostgreSQL: `cast($1 as timestamptz)`. SQLite: the value normalized by `toStoredTimestamp` and bound.
  * MySQL: `cast($1 as datetime(6))` with UTC `DATETIME` text (ISO text keeps its microseconds).
  * Contract: compares and sorts against timestamp columns as an instant, at the precision the text carries
  * (microseconds from `timestampCursorText` on PostgreSQL, milliseconds on SQLite).

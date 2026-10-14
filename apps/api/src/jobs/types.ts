@@ -26,7 +26,7 @@ export type JobContext = {
   log: JobLogger;
 };
 
-/** Returns an optional JSON-serialisable result. Throw to fail the attempt; the queue retries with backoff. */
+/** Returns an optional JSON-serializable result. Throw to fail the attempt; the queue retries with backoff. */
 export type JobHandler = (context: JobContext) => Promise<unknown>;
 
 export type JobHandlers = ReadonlyMap<string, JobHandler>;

@@ -214,7 +214,7 @@ describe('htmlToRichText', () => {
       [
         'heading:Title & more',
         'paragraph:Loose text before a block',
-        'paragraph:Line one|Line two with underline, strike, colour and code.',
+        'paragraph:Line one|Line two with underline, strike, color and code.',
         'orderedList[listItem[paragraph:Third] listItem[paragraph:Fourth both]]',
         'paragraph:Links: bad, relative, mail, bare.',
         'paragraph:Inline',

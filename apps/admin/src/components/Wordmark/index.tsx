@@ -19,9 +19,9 @@ const wordmarkVariants = cva('inline-flex shrink-0 items-center [&>svg]:w-auto',
       lg: 'gap-2 [&>svg]:h-13',
     },
     variant: {
-      /** The mark, letters in the theme's brand-letters colour (plum on light grounds, cream on dark). */
+      /** The mark, letters in the theme's brand-letters color (plum on light grounds, cream on dark). */
       default: 'text-brand-letters',
-      /** For the brand panel: the panel mark, letters in the surface's text colour. */
+      /** For the brand panel: the panel mark, letters in the surface's text color. */
       reverse: '',
     },
   },

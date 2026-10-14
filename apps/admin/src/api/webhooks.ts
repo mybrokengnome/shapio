@@ -18,7 +18,7 @@ export const useWebhooks = () =>
     meta: silent,
   });
 
-/** The event types a webhook can subscribe to (a fixed catalogue: cached for the session). */
+/** The event types a webhook can subscribe to (a fixed catalog: cached for the session). */
 export const useWebhookEvents = () =>
   useQuery({
     queryKey: queryKeys.publishing.webhooks.events,

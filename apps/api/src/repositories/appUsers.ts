@@ -129,7 +129,7 @@ export const findByIdWithHash = (id: string, trx: Executor = db) =>
     .where('deleted_at', 'is', null)
     .executeTakeFirst();
 
-/** Locks the live account row (status changes, deletion and credential changes serialise on it). */
+/** Locks the live account row (status changes, deletion and credential changes serialize on it). */
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx
     .selectFrom('app_users')

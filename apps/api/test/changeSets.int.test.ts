@@ -398,7 +398,7 @@ describe('change sets (content)', () => {
     expect(back.status).toBe('open');
   });
 
-  it('summarises rich text, media, relations and components in the review, within what the reviewer may read', async () => {
+  it('summarizes rich text, media, relations and components in the review, within what the reviewer may read', async () => {
     const headers = { authorization: `Bearer ${await createRoleToken(database.current.db)}` };
     const hero = await uploadAsset(testApp.app, headers, {
       file: await createPng(8, 8),

@@ -23,7 +23,7 @@ export const isSetupRequired = async (database: Kysely<DB> = db): Promise<boolea
 /**
  * At boot, while no admin exists: supersedes any earlier setup token and issues a new one. Returns the
  * token for the caller to show exactly once (it is stored only as a hash), or undefined when setup is done.
- * Serialised with setup itself by the setup advisory lock.
+ * Serialized with setup itself by the setup advisory lock.
  */
 export const issueSetupToken = async (database: Kysely<DB>): Promise<string | undefined> =>
   database.transaction().execute(async (trx) => {

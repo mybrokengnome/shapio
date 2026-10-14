@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import { describe, expect, it } from 'vitest';
-import { listCompatibleEditors } from '../editors/catalogue.js';
+import { listCompatibleEditors } from '../editors/catalog.js';
 import { field, model } from '../testing/fixtures.js';
 import { validateDefinition } from '../validators/definition.js';
 import { parseDefinition } from '../validators/parse.js';
@@ -40,7 +40,7 @@ describe('the built-in SEO component', () => {
     expect(parsed).toEqual({ ok: true, definition });
   });
 
-  it('is recognised by stable ID only, single, and is the only field the SEO editor supports', () => {
+  it('is recognized by stable ID only, single, and is the only field the SEO editor supports', () => {
     expect(isSeoField(seoField())).toBe(true);
     expect(isSeoField(seoField({ repeatable: true }))).toBe(false);
     const other = seoField({ component: '00000000-0000-4000-8000-000000000009' });

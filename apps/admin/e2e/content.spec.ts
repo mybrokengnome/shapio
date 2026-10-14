@@ -132,7 +132,7 @@ test('a place: its name, New, an empty state, and Structure and API tabs for sch
   await expect(page.getByText('No Page entries yet')).toBeVisible();
 });
 
-test("the project's colour theme is in the theme menu on sign-in and applies before first paint", async ({
+test("the project's color theme is in the theme menu on sign-in and applies before first paint", async ({
   browser,
 }) => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -707,13 +707,11 @@ test('an entry other entries link to cannot be deleted, and the admin says which
   await expect(explanation).toBeHidden();
 });
 
-test('a single type opens its document directly, with its properties as a grid; colour, date-time, segmented and JSON editors', async () => {
+test('a single type opens its document directly, with its properties as a grid; color, date-time, segmented and JSON editors', async () => {
   await page.goto(`${server.adminUrl}content/siteSettings`);
   await expect(page.getByRole('heading', { level: 1, name: 'New Site settings' })).toBeVisible();
   await field('/siteName').getByRole('textbox').fill('ForgeStack');
-  await field('/accent')
-    .getByRole('textbox', { name: 'Accent colour', exact: true })
-    .fill('rgb(37, 99, 235)');
+  await field('/accent').getByRole('textbox', { name: 'Accent color', exact: true }).fill('rgb(37, 99, 235)');
   await field('/launch').locator('input[type="datetime-local"]').fill('2026-11-01T09:30');
   await field('/tone').getByRole('radio', { name: 'Bold' }).click();
   await field('/meta').getByRole('textbox').fill('{ "twitter": ');

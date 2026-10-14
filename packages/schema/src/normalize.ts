@@ -1,4 +1,4 @@
-import { DEFAULT_EDITORS } from './editors/catalogue.js';
+import { DEFAULT_EDITORS } from './editors/catalog.js';
 import { suggestPlural } from './naming/plural.js';
 import type {
   ComponentDefinition,

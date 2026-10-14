@@ -14,7 +14,7 @@ export type BuiltInEditorProps = Omit<FieldEditorProps, 'value' | 'onChange'> & 
   definition: FieldDefinition;
   path: string;
   /**
-   * `form` (default): a labelled control in a form, the settings drawer or the property grid.
+   * `form` (default): a labeled control in a form, the settings drawer or the property grid.
    * `canvas`: a block of the entry document's writing surface (borderless, no field chrome of its own).
    * Built-ins only: custom editors keep the public contract and render inside `CanvasBlock`.
    */
@@ -27,7 +27,7 @@ export type BuiltInEditor = {
   component: ComponentType<BuiltInEditorProps>;
   /**
    * `input`: one focusable control that the field's `<label for>` points at.
-   * `group`: several controls (radio buttons, items) labelled with `aria-labelledby`.
+   * `group`: several controls (radio buttons, items) labeled with `aria-labelledby`.
    */
-  labelling: 'input' | 'group';
+  labeling: 'input' | 'group';
 };

@@ -110,7 +110,7 @@ npx @shapio/cms import wordpress --map ./import [--media-dir ./wp-content/upload
 - **Bodies** are converted from HTML to Shapio rich text. Classic-editor content gets paragraphs the way
   WordPress renders them. Block-editor content keeps its markup and its block comments are dropped.
   `[caption]` becomes an image followed by its caption. Other shortcodes (`[gallery]`, `[embed]`, plugin
-  shortcodes) stay as literal text and are counted in the summary. Underline, strike-through, colours and
+  shortcodes) stay as literal text and are counted in the summary. Underline, strike-through, colors and
   inline styles are dropped (the text stays). Iframes, video and audio embeds are dropped and counted.
 - **Images** in a body are matched to their attachment, including WordPress's resized copies
   (`photo-300x200.jpg` → `photo.jpg`). Images on other hosts are downloaded and imported too. An image that

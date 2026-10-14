@@ -125,19 +125,19 @@ describe('parseDefinition with extends', () => {
 
 describe('generated names', () => {
   it('a child emits no names for inherited fields', () => {
-    const colour = model({
+    const color = model({
       ...product,
       fields: [
         field({
           id: id(14),
-          apiKey: 'colour',
+          apiKey: 'color',
           type: 'enum',
           settings: { values: [{ value: 'red', label: 'Red' }] },
         }),
       ],
     });
-    expect(generatedNames(digital).map((name) => name.name)).not.toContain('DigitalProductColourEnum');
-    expect(codes([colour, digital])).toEqual([]);
+    expect(generatedNames(digital).map((name) => name.name)).not.toContain('DigitalProductColorEnum');
+    expect(codes([color, digital])).toEqual([]);
   });
 
   it('reserves <Type>Interface only for a model with children', () => {

@@ -342,10 +342,10 @@ describe('GraphQL schema and runtime', () => {
     // A schema change shows up at once: the new public field is in the role's schema, built again.
     await updateModel(shelf.definition.id, (definition) => ({
       ...definition,
-      fields: [...definition.fields, { apiKey: 'colour', label: 'Colour', type: 'string' }],
+      fields: [...definition.fields, { apiKey: 'color', label: 'Color', type: 'string' }],
     }));
-    expect(await shelfFields(first)).toContain('colour');
-    expect(await shelfFields(other)).not.toContain('colour');
+    expect(await shelfFields(first)).toContain('color');
+    expect(await shelfFields(other)).not.toContain('color');
   });
 
   it('enforces the depth and complexity limits (introspection is exempt)', async () => {

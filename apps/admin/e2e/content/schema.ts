@@ -127,7 +127,7 @@ export const siteSettings = {
     {
       id: id(),
       apiKey: 'accent',
-      label: 'Accent colour',
+      label: 'Accent color',
       type: 'string',
       editor: { id: 'color', options: {} },
     },

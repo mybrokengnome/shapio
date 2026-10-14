@@ -16,7 +16,7 @@ import type { ContentServiceContext } from './contentAccess.js';
 
 /**
  * Readable one-line summaries of stored field values for the change set review (rich text as its text, media
- * as file names, relations as titles, components and zones as labelled outlines), so the admin never shows
+ * as file names, relations as titles, components and zones as labeled outlines), so the admin never shows
  * raw JSON for structured values. Values are in storage form (keyed by field IDs; zone items carry the
  * component ID in `__component`). A value whose shape does not match its field (a `before` value the set
  * converts on ship) falls back to compact JSON rather than failing the review.
@@ -86,7 +86,7 @@ export const summarizeItem = (
   return '';
 };
 
-const labelled = (label: string, summary: string) => (summary ? `${label} (${summary})` : label);
+const labeled = (label: string, summary: string) => (summary ? `${label} (${summary})` : label);
 
 const componentSummary = (
   field: Extract<FieldDefinition, { type: 'component' }>,
@@ -113,7 +113,7 @@ const zoneSummary = (value: unknown, lookups: SummaryLookups) => {
   const blocks = value.map((item) => {
     const id = item[COMPONENT_KEY];
     const component = typeof id === 'string' ? lookups.component(id) : undefined;
-    return component ? labelled(component.label, summarizeItem(component, item, lookups)) : String(id);
+    return component ? labeled(component.label, summarizeItem(component, item, lookups)) : String(id);
   });
   return `${plural(value.length, 'block', 'blocks')}: ${blocks.join(', ')}`;
 };

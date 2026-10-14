@@ -72,7 +72,7 @@ describe('summarizeValue', () => {
     expect(summary('component', {}, { component: 'c-link' })).toBeNull();
   });
 
-  it('dynamic zone: block count and labelled blocks', () => {
+  it('dynamic zone: block count and labeled blocks', () => {
     expect(
       summary('dynamiczone', [
         { __component: 'c-hero', 'f-heading': 'Welcome' },

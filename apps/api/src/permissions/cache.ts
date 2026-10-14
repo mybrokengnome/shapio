@@ -94,7 +94,7 @@ const groupByRole = (grants: readonly Grant[]): Map<string, Grant[]> => {
  * Every role's grants, held in memory and reloaded when `system_versions.permissions_version` moves.
  * The version is checked on every lookup: read here, or read once by the request (`versions`, see
  * `KnownVersions`). That durable check is what makes a permission change visible to every instance from the
- * next request (NOTIFY would only be an optimisation). Lookups on the pool share one reload; a
+ * next request (NOTIFY would only be an optimization). Lookups on the pool share one reload; a
  * lookup inside a transaction reads (and, when stale, reloads) through that transaction alone, never
  * through a reload running on another request's transaction.
  */

@@ -14,19 +14,19 @@ const USER_FACING_ATTRIBUTES = new Set([
 
 const HAS_LETTERS = /\p{L}/u;
 
-/** Utilities that take a colour. */
-const COLOUR_UTILITY =
+/** Utilities that take a color. */
+const COLOR_UTILITY =
   '(?:bg|text|border(?:-[xytrbl])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|shadow|decoration|caret|accent|divide|placeholder)';
 /**
- * A literal colour in an arbitrary value (`bg-[#fff]`, `text-[rgb(0_0_0)]`). `var(--x)` stays allowed: it is
- * how a truly dynamic colour (a user-picked swatch) reaches a class (DESIGN.md, tokens).
+ * A literal color in an arbitrary value (`bg-[#fff]`, `text-[rgb(0_0_0)]`). `var(--x)` stays allowed: it is
+ * how a truly dynamic color (a user-picked swatch) reaches a class (DESIGN.md, tokens).
  */
-const ARBITRARY_COLOUR = new RegExp(
-  `(?<![\\w-])${COLOUR_UTILITY}-\\[(?:#|rgba?\\(|hsla?\\(|oklch\\(|oklab\\(|lab\\(|lch\\(|color\\()`,
+const ARBITRARY_COLOR = new RegExp(
+  `(?<![\\w-])${COLOR_UTILITY}-\\[(?:#|rgba?\\(|hsla?\\(|oklch\\(|oklab\\(|lab\\(|lch\\(|color\\()`,
 );
 /** Tailwind's default palette (`bg-green-100`, `text-white`): components use the theme tokens instead. */
 const DEFAULT_PALETTE = new RegExp(
-  `(?<![\\w-])${COLOUR_UTILITY}-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\\d{2,3}\\b|(?<![\\w-])${COLOUR_UTILITY}-(?:white|black)\\b`,
+  `(?<![\\w-])${COLOR_UTILITY}-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\\d{2,3}\\b|(?<![\\w-])${COLOR_UTILITY}-(?:white|black)\\b`,
 );
 
 const findLines = (pattern: RegExp) =>
@@ -80,7 +80,7 @@ describe('admin source conventions', () => {
     expect(findings).toEqual([]);
   });
 
-  it('uses no raw hex colours outside the Tailwind theme (DESIGN.md: design tokens only)', () => {
+  it('uses no raw hex colors outside the Tailwind theme (DESIGN.md: design tokens only)', () => {
     const findings = readSourceFiles(['.ts', '.tsx']).flatMap(({ path, text }) =>
       text
         .split('\n')
@@ -90,11 +90,11 @@ describe('admin source conventions', () => {
     expect(findings).toEqual([]);
   });
 
-  it('uses no literal colours in arbitrary values (bg-[#fff], text-[rgb(...)])', () => {
-    expect(findLines(ARBITRARY_COLOUR)).toEqual([]);
+  it('uses no literal colors in arbitrary values (bg-[#fff], text-[rgb(...)])', () => {
+    expect(findLines(ARBITRARY_COLOR)).toEqual([]);
   });
 
-  it("uses no colours from Tailwind's default palette (bg-green-100, text-white): theme tokens only", () => {
+  it("uses no colors from Tailwind's default palette (bg-green-100, text-white): theme tokens only", () => {
     expect(findLines(DEFAULT_PALETTE)).toEqual([]);
   });
 
@@ -108,7 +108,7 @@ describe('admin source conventions', () => {
     expect(findings).toEqual([]);
   });
 
-  it('opens no centred dialogs: ui/dialog stays unused and AlertDialogContent lives only in ConfirmDialog', () => {
+  it('opens no centered dialogs: ui/dialog stays unused and AlertDialogContent lives only in ConfirmDialog', () => {
     const findings = readSourceFiles(['.ts', '.tsx']).flatMap(({ path, text }) => {
       if (path.startsWith('components/ui/')) {
         return [];
@@ -158,12 +158,12 @@ describe('admin source conventions', () => {
   });
 });
 
-describe('the colour checks', () => {
-  it('catch literal arbitrary colours and default-palette colours, not tokens or variables', () => {
-    expect(ARBITRARY_COLOUR.test('bg-[#2563eb]')).toBe(true);
-    expect(ARBITRARY_COLOUR.test('hover:text-[rgb(0_0_0)]')).toBe(true);
-    expect(ARBITRARY_COLOUR.test('bg-[var(--swatch)]')).toBe(false);
-    expect(ARBITRARY_COLOUR.test('transition-[color,box-shadow]')).toBe(false);
+describe('the color checks', () => {
+  it('catch literal arbitrary colors and default-palette colors, not tokens or variables', () => {
+    expect(ARBITRARY_COLOR.test('bg-[#2563eb]')).toBe(true);
+    expect(ARBITRARY_COLOR.test('hover:text-[rgb(0_0_0)]')).toBe(true);
+    expect(ARBITRARY_COLOR.test('bg-[var(--swatch)]')).toBe(false);
+    expect(ARBITRARY_COLOR.test('transition-[color,box-shadow]')).toBe(false);
     expect(DEFAULT_PALETTE.test('bg-green-100')).toBe(true);
     expect(DEFAULT_PALETTE.test('dark:text-white')).toBe(true);
     expect(DEFAULT_PALETTE.test('bg-black/50')).toBe(true);

@@ -11,7 +11,7 @@ publishing. Three things are kept apart on purpose:
 ## The entry document
 
 An entry opens as a document: the cover, the title, a strip of properties, then its blocks and any field the
-model places in the document ([Document or property](modelling.md#field-types)). The **Settings** panel
+model places in the document ([Document or property](modeling.md#field-types)). The **Settings** panel
 beside it holds the status and locales, every property, history and the danger zone. On a wide screen it is open
 when an entry opens; close it and it stays closed in that browser until you open it again. Opening the preview
 makes room by closing it.
@@ -58,7 +58,7 @@ with the same version and sends no `entry.updated` event.
 
 ## Changing an entry's kind
 
-In a type with kinds ([Modelling](modelling.md#types-that-extend-a-type)), one list shows the whole family: the
+In a type with kinds ([Modeling](modeling.md#types-that-extend-a-type)), one list shows the whole family: the
 Posts list has plain posts, guides, and opinions, with a **Kind** column, a Kind filter, and a **New** menu to
 pick which kind to create. Each entry opens in the form of its own kind.
 

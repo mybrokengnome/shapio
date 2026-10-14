@@ -25,7 +25,7 @@ type EmptyStateProps = {
   action?: ReactNode;
   size?: 'panel' | 'page';
   /**
-   * One row (about 56px) instead of a centred block: a small icon tile, the title and the description
+   * One row (about 56px) instead of a centered block: a small icon tile, the title and the description
    * inline. For panels that sit beside others and must stay as short as their content. Ignores `size`.
    */
   compact?: boolean;

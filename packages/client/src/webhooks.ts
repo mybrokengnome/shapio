@@ -20,7 +20,7 @@ export type WebhookSignatureInput = {
   signature: string | null | undefined;
   /** The `X-Shapio-Timestamp` header. */
   timestamp: string | null | undefined;
-  /** The raw request body, exactly as received (not re-serialised JSON). */
+  /** The raw request body, exactly as received (not re-serialized JSON). */
   body: string;
   /** Defaults to the current time. */
   now?: Date;

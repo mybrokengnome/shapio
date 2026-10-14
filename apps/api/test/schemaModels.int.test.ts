@@ -277,7 +277,7 @@ describe('admin model API', () => {
     expect(wrongKind.statusCode).toBe(400);
   });
 
-  it('honours the opt-in read-only lock for admin changes', async () => {
+  it('honors the opt-in read-only lock for admin changes', async () => {
     const { definitionId } = await createModel({ apiKey: 'locked', label: 'Locked' });
     const current = await getModel(definitionId);
     expect(

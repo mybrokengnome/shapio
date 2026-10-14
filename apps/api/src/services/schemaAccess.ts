@@ -4,7 +4,7 @@ import type { PermissionEvaluator, PermissionExecutor, Principal } from '../perm
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 
-/** Everything a schema service call needs: no HTTP objects (CONTRIBUTING.md, code organisation). */
+/** Everything a schema service call needs: no HTTP objects (CONTRIBUTING.md, code organization). */
 export type SchemaServiceContext = {
   db: Database;
   /** The request's pinned snapshot. */

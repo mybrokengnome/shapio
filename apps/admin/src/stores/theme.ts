@@ -32,7 +32,7 @@ export const DEFAULT_THEME_STATE: PersistedTheme = {
   variants: DEFAULT_THEME_VARIANTS,
 };
 
-/** Version 1 (the original palette, any colour mode) becomes Cobalt, the original dark look. */
+/** Version 1 (the original palette, any color mode) becomes Cobalt, the original dark look. */
 const LEGACY_THEME_STATE: PersistedTheme = { theme: 'classic', appearance: 'dark', variants: ['dark'] };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

@@ -283,7 +283,7 @@ export type JobHandlerContext = {
 export type ExtensionJobHandler = (context: JobHandlerContext) => Promise<unknown>;
 
 /**
- * A colour theme for the admin: token values for a light variant, a dark variant, or both. Every UI token is
+ * A color theme for the admin: token values for a light variant, a dark variant, or both. Every UI token is
  * required in a variant; the `brand-*` tokens may be left out (Shapio's are used). Values are `#rrggbb`
  * (contrast is checked by `shapio extensions check`), `#rgb`, `#rrggbbaa`, or `rgb()`, `hsl()`, `oklch()`,
  * `oklab()` with plain arguments.
@@ -310,7 +310,7 @@ export type ShapioConfig = {
   editors?: string[];
   /** Job handlers by name; registered as `ext.<name>`. */
   jobs?: Record<string, ExtensionJobHandler>;
-  /** Admin colour themes, listed after the built-in ones in the theme menu. */
+  /** Admin color themes, listed after the built-in ones in the theme menu. */
   themes?: ThemeDefinition[];
 };
 
@@ -321,7 +321,7 @@ const HOOK_ERROR_BRAND = Symbol.for('shapio.HookError');
 
 /**
  * Thrown by a `before*` hook to reject a write: the API answers 422 with code `HOOK_REJECTED`, this message
- * and the details. Recognised by a brand, not `instanceof`, so a copy of this class loaded from another
+ * and the details. Recognized by a brand, not `instanceof`, so a copy of this class loaded from another
  * path (a project's own `node_modules`) works the same.
  */
 export class HookError extends Error {

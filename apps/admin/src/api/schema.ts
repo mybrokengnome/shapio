@@ -169,7 +169,7 @@ export const useSchemaSettings = () =>
     meta: silent,
   });
 
-/** A planned change's status, polled until it activates, fails or is cancelled. */
+/** A planned change's status, polled until it activates, fails or is canceled. */
 export const useSchemaChange = (changeId: string | undefined) =>
   useQuery({
     queryKey: queryKeys.schema.change(changeId ?? ''),

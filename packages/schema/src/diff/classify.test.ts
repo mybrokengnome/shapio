@@ -590,7 +590,7 @@ describe('classifyChange: validation settings', () => {
     );
   });
 
-  it('removing an enum value validates; adding or relabelling is additive', () => {
+  it('removing an enum value validates; adding or relabeling is additive', () => {
     const values = [
       { value: 'a', label: 'A' },
       { value: 'b', label: 'B' },

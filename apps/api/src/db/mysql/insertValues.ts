@@ -30,7 +30,7 @@ const timestampText = (value: unknown): unknown =>
 export const isTimestampColumn = (table: string | undefined, column: string): boolean =>
   table !== undefined && (tableInfo(table)?.timestamps ?? []).includes(column);
 
-/** A value node (or primitive list) bound to a timestamp column, with ISO text normalised. */
+/** A value node (or primitive list) bound to a timestamp column, with ISO text normalized. */
 export const timestampValue = (node: OperationNode): OperationNode => {
   if (ValueNode.is(node)) {
     const value = timestampText(node.value);
@@ -42,7 +42,7 @@ export const timestampValue = (node: OperationNode): OperationNode => {
   return node;
 };
 
-/** Insert rows with ISO text for timestamp columns normalised. */
+/** Insert rows with ISO text for timestamp columns normalized. */
 export const withTimestampValues = (node: InsertQueryNode): InsertQueryNode => {
   const table = node.into?.table.identifier.name;
   const columns = node.columns?.map((column) => column.column.name) ?? [];

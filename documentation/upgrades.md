@@ -10,7 +10,7 @@
 | Extensions: `shapio.config.ts`, hooks, routes, services, jobs, custom editor files               | yes      | no (never a rebuild of Shapio or its admin) |
 | Upgrading Shapio itself                                                                          | yes      | install the new version                     |
 
-Modelling is data, so it never needs any of this, in any environment, production included.
+Modeling is data, so it never needs any of this, in any environment, production included.
 
 ## Upgrading Shapio
 

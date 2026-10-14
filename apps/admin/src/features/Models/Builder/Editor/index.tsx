@@ -70,7 +70,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const seoField = useAddSeoField();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dismissedChangeId, setDismissedChangeId] = useState<string | undefined>(undefined);
-  // A change that failed or was cancelled stays on screen until dismissed, but no longer blocks editing.
+  // A change that failed or was canceled stays on screen until dismissed, but no longer blocks editing.
   const [endedChangeId, setEndedChangeId] = useState<string | undefined>(undefined);
   const [scopeConflict, setScopeConflict] = useState(false);
 

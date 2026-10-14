@@ -84,7 +84,7 @@ export const markFailed = (id: string, error: string, now: Date, trx: Executor =
 export const cancel = (id: string, now: Date, trx: Executor = db) =>
   trx
     .updateTable('scheduled_publications')
-    .set({ status: 'cancelled', updated_at: now })
+    .set({ status: 'canceled', updated_at: now })
     .where('id', '=', id)
     .where('status', 'in', ['scheduled', 'failed'])
     .returningAll()

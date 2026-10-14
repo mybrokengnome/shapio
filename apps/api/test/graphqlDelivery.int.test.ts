@@ -42,7 +42,7 @@ const ID_RELATIONS = { idRelations: ['author', 'related'] };
 
 /**
  * GraphQL twins of the delivery API tests (contentDelivery.int.test.ts): each scenario runs through REST and
- * GraphQL and asserts identical results after shape normalisation (test/helpers/graphql.ts).
+ * GraphQL and asserts identical results after shape normalization (test/helpers/graphql.ts).
  */
 describe('GraphQL delivery (twins of the REST delivery tests)', () => {
   const database = useTestDatabase();

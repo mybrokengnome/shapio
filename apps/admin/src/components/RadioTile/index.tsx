@@ -12,7 +12,7 @@ const tileVariants = cva(
       variant: {
         /** A selectable card: icon on top, name and one-line description (a few side by side). */
         card: 'flex-col items-start gap-2.5 rounded-xl border bg-card p-3.5 hover:border-primary/40 hover:bg-muted/40 data-[state=checked]:border-primary data-[state=checked]:bg-accent data-[state=checked]:hover:bg-accent dark:data-[state=checked]:bg-primary/5 dark:data-[state=checked]:hover:bg-primary/5',
-        /** A compact square tile for dense grids: icon over the name, centred; the description is announced only. */
+        /** A compact square tile for dense grids: icon over the name, centered; the description is announced only. */
         tile: 'flex-col items-center justify-center gap-1.5 rounded-lg border bg-card px-2 py-2.5 text-center hover:border-primary/40 hover:bg-muted/40 data-[state=checked]:border-primary data-[state=checked]:bg-accent data-[state=checked]:hover:bg-accent dark:data-[state=checked]:bg-primary/5 dark:data-[state=checked]:hover:bg-primary/5',
         /** A compact list row with a left accent bar when selected. */
         row: 'items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-foreground/85 before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary before:opacity-0 hover:bg-muted data-[state=checked]:bg-accent data-[state=checked]:font-medium data-[state=checked]:text-foreground data-[state=checked]:before:opacity-100 dark:data-[state=checked]:bg-primary/10',

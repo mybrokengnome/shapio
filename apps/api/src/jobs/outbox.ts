@@ -5,7 +5,7 @@ import * as outboxEventsRepository from '../repositories/outboxEvents.js';
 import type { JobLogger, OutboxSubscriber } from './types.js';
 
 export type OutboxEventInput = {
-  /** Catalogue name, e.g. `entry.published`, `schema.activated`. */
+  /** Catalog name, e.g. `entry.published`, `schema.activated`. */
   type: string;
   aggregateType: string;
   aggregateId: string;

@@ -11,7 +11,7 @@ import { ErrorResponseSchema } from '../schemas/error.js';
 
 /**
  * /api/preview/content/:modelKey[/:id]: draft content for site previews, addressed by route key like
- * delivery (plural API ID of a collection), authorised by a preview token in
+ * delivery (plural API ID of a collection), authorized by a preview token in
  * `Authorization: Bearer shpv_…` (never a query parameter, so tokens stay out of access logs).
  */
 export const previewRoutes: FastifyPluginAsyncTypebox = async (app) => {

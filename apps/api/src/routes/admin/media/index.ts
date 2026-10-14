@@ -18,7 +18,7 @@ import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import * as schemas from './schemas.js';
 
 const NOT_AUDITED =
-  'media library organisation (folders, metadata, moves) is recorded by media.* outbox events, not audited';
+  'media library organization (folders, metadata, moves) is recorded by media.* outbox events, not audited';
 const GRANT_ONLY =
   'issues an upload grant only; the change is audited on confirm (media.upload / media.replace)';
 

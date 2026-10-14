@@ -7,7 +7,7 @@ import * as schemas from './schemas.js';
 /**
  * /api/admin/transfer: content export and import (`shapio export` / `shapio import`). Bundles and media
  * files travel as raw streams (never buffered whole), so this scope passes those bodies through unparsed.
- * The service authorises every call as an instance administrator.
+ * The service authorizes every call as an instance administrator.
  */
 export const adminTransferRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');

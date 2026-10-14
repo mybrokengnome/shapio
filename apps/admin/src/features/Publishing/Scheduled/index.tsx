@@ -31,7 +31,7 @@ export const Scheduled = () => {
   const [creating, setCreating] = useState(false);
   const cancelSchedule = (schedule: ScheduledPublication) =>
     cancel.mutateAsync(schedule.id, {
-      onSuccess: () => toast.success(t('publishing.scheduled.cancelled')),
+      onSuccess: () => toast.success(t('publishing.scheduled.canceled')),
     });
   const statusOptions = SCHEDULE_STATUSES.map((status) => ({
     value: status,

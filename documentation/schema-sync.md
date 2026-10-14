@@ -48,7 +48,7 @@ model article: update
 Applied 1 definition(s) at schema version 13.
 ```
 
-Apply goes through the same change planner as the admin ([Modelling](modelling.md#what-a-change-does)): checks,
+Apply goes through the same change planner as the admin ([Modeling](modeling.md#what-a-change-does)): checks,
 background index builds, atomic activation, no restart. It waits for planned changes to activate
 (`--no-wait` to return at once, `--wait-timeout <seconds>`, default 600), then updates the lock file and the
 files it applied.
@@ -87,7 +87,7 @@ the new base), use `git diff` to bring your change back on top of the target's, 
 
 ### Types that extend a type
 
-A type that extends another ([Modelling](modelling.md#types-that-extend-a-type)) has `extends` in its file:
+A type that extends another ([Modeling](modeling.md#types-that-extend-a-type)) has `extends` in its file:
 the parent's stable ID, the way a relation names its target. Its file holds only its own fields; the fields it
 inherits stay in the parent's file, and pull never copies them in. The CLI prints names, not IDs:
 
@@ -114,7 +114,7 @@ model opinion (extends post): update [BREAKING]
   (`HAS_CHILDREN`). Delete its kinds' files, or move them under another type, and apply that first.
 
 The other refusals (`UNKNOWN_PARENT`, `INHERITANCE_CYCLE`, `INHERITANCE_TOO_DEEP`, `INHERITED_FIELD_COLLISION`)
-are listed in [Modelling](modelling.md#types-that-extend-a-type). Each prints the file and the property to fix,
+are listed in [Modeling](modeling.md#types-that-extend-a-type). Each prints the file and the property to fix,
 and a hint.
 
 ### Pull again after upgrading

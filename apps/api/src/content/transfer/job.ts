@@ -92,7 +92,7 @@ const readPayload = (payload: unknown): ImportPayload => {
   };
 };
 
-/** The import acts as Shapio itself: the request that started it was authorised as an instance admin. */
+/** The import acts as Shapio itself: the request that started it was authorized as an instance admin. */
 const SYSTEM_ACTOR: Principal = { kind: 'system', component: 'transfer' };
 const SYSTEM_PERMISSIONS: PermissionEvaluator = {
   evaluate: async () => ALLOW_ALL_POLICY,
@@ -158,7 +158,7 @@ const forEachBatch = async <T extends BundleRecord>(
 
 const waitForSchema = async (run: Run) => {
   const changes = await transferImportRepository.findSchemaChangeStatuses(run.payload.pendingChangeIds);
-  const failed = changes.find((change) => change.status === 'failed' || change.status === 'cancelled');
+  const failed = changes.find((change) => change.status === 'failed' || change.status === 'canceled');
   if (failed) {
     throw new PermanentJobError(`Schema change ${failed.id} failed: ${JSON.stringify(failed.error)}`);
   }

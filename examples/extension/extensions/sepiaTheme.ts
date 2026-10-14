@@ -1,8 +1,8 @@
 import type { ThemeDefinition } from '@shapio/cms/config';
 
 /**
- * An admin colour theme (light only): warm paper and walnut. It appears in the theme menu after the built-in
- * themes. Every UI token is set; the brand tokens are left out, so the Shapio logo colours are used.
+ * An admin color theme (light only): warm paper and walnut. It appears in the theme menu after the built-in
+ * themes. Every UI token is set; the brand tokens are left out, so the Shapio logo colors are used.
  * `shapio extensions check` warns about any pair below WCAG AA contrast.
  */
 export const sepiaTheme: ThemeDefinition = {

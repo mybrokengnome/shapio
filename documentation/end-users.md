@@ -21,7 +21,7 @@ Network → Roles → App roles sets each role's grants per model: `read`, `crea
 optionally limited to **own entries** (`ownedByPrincipal`) and to some fields. "Read on all models" is one
 click for `public` or `authenticated`. App users see `public` fields only, unless a grant names hidden ones.
 
-A grant on a type covers the types that extend it ([Modelling](modelling.md#types-that-extend-a-type)):
+A grant on a type covers the types that extend it ([Modeling](modeling.md#types-that-extend-a-type)):
 `read` on Post lets a role read Guides and Opinions too, and "every field" includes their own fields. A kind can
 have grants of its own, which only add to its parent's: `create` on Guide alone lets a member write guides
 without writing plain posts. A grant can't take away what a parent's grant allows, so to keep a kind from a

@@ -23,7 +23,7 @@ const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist');
 const CACHE_DIR = join(ROOT, 'node_modules', '.astro');
 const MANIFEST = join(CACHE_DIR, 'incremental-build.json');
-const ARTICLE = 'modelling-without-a-deploy';
+const ARTICLE = 'modeling-without-a-deploy';
 const EDITED_PAGE = `en/articles/${ARTICLE}/index.html`;
 /** Always rendered, and carries the build time: the only file two builds of one snapshot may differ in. */
 const TIMESTAMPED = new Set(['build.json']);

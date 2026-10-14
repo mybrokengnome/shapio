@@ -284,7 +284,7 @@ describe('validateDefinition', () => {
     expect(codesFor({ apiKey: 'a', type: 'string', defaultValue: '' })).toEqual([]);
   });
 
-  it('validates the editor choice against the catalogue', () => {
+  it('validates the editor choice against the catalog', () => {
     expect(codesFor({ apiKey: 'a', editor: { id: 'nope' } })).toEqual(['/fields/0/editor/id UNKNOWN_EDITOR']);
     expect(codesFor({ apiKey: 'a', editor: { id: 'toggle' } })).toEqual([
       '/fields/0/editor/id INCOMPATIBLE_EDITOR',

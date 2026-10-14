@@ -6,8 +6,8 @@ Rules from `CONTRIBUTING.md` (Tailwind only, `cn()`, semantic tokens, dark mode,
 
 ## Tokens
 
-Components use semantic tokens, exposed to Tailwind as colours (`bg-card`, `text-muted-foreground`, ...),
-never hex, arbitrary colours (`bg-[#…]`) or Tailwind's default palette (`bg-green-100`, `text-white`).
+Components use semantic tokens, exposed to Tailwind as colors (`bg-card`, `text-muted-foreground`, ...),
+never hex, arbitrary colors (`bg-[#…]`) or Tailwind's default palette (`bg-green-100`, `text-white`).
 `src/test/conventions.test.ts` fails on all three.
 
 ### Themes
@@ -19,13 +19,13 @@ API, which validates extension themes). Each built-in theme is one file, `src/st
 imported by `src/styles/index.css` and scoped to `[data-theme='<key>']`; an extension theme with both variants
 adds `[data-theme='<key>'].dark`. Shapio's values also sit on a zero-specificity `:where(:root)` block: the
 fallback before the theme script runs or when a saved theme's CSS is gone. `index.css` maps the tokens to
-Tailwind (`@theme inline`) and holds no colour values.
+Tailwind (`@theme inline`) and holds no color values.
 
 - `public/theme-init.js` sets `data-theme` and `dark` on `<html>` before first paint from the theme store
   (`stores/theme.ts`: `theme`, `appearance` = the look's variant, and the theme's cached `variants`), so there
   is no flash; `hooks/useApplyTheme.ts` keeps them in step afterwards. `dark` is set for every dark look, so
   `dark:` variants and `color-scheme` follow. With nothing stored the look is Shapio. A pre-theme (version 1)
-  setting becomes Cobalt; a version 2 colour mode becomes the theme's look. `src/test/themeInit.test.ts` keeps
+  setting becomes Cobalt; a version 2 color mode becomes the theme's look. `src/test/themeInit.test.ts` keeps
   the script, the store's migration and `helpers/theme.ts` in step.
 - `src/test/contrast.test.ts` checks every built-in look: exactly `THEME_TOKENS`, `#rrggbb` values, every text
   pair at 4.5:1 and every control/focus pair at 3:1 (pairs in `@shapio/schema` `themes/contrast.ts`).
@@ -40,9 +40,9 @@ Tailwind (`@theme inline`) and holds no colour values.
 | ---------------- | ------- | ----------------------------------------------------------------------------------------- |
 | **Shapio**       | dark    | the default: plum grounds, cream text, acid-yellow actions                                |
 | **Cobalt**       | dark    | the original dark cobalt look, values unchanged (the logo is the new mark); key `classic` |
-| **Murdered out** | dark    | blacked out: pure black, dark grey actions, nothing light but text and icons              |
+| **Murdered out** | dark    | blacked out: pure black, dark gray actions, nothing light but text and icons              |
 | **Forest**       | dark    | deep green grounds, mint text, lime actions, links and focus                              |
-| **Snowed**       | light   | white and snow grey, ink actions, ice-blue selection                                      |
+| **Snowed**       | light   | white and snow gray, ink actions, ice-blue selection                                      |
 | **Butter**       | light   | butter-yellow ground, cream surfaces, ink actions, ochre focus                            |
 
 Final values (every pair checked by the contrast test):
@@ -79,29 +79,29 @@ The remaining tokens (`*-foreground` on cards and popovers, `destructive-foregro
 `sidebar-*`) are in the theme files. `brand-logo` (`#e9f26e`) and `brand-logo-foreground` (`#231527`) are the
 same in every theme; `brand-panel-mark` is the logo yellow except on Butter's pale panel, where it is plum.
 
-Murdered out's actions are the darkest grey that still reads at 3:1 on every surface (`#626262`), and its
-control borders the darkest that does on the selection surface (`#6a6a6a`); darker greys fail the
+Murdered out's actions are the darkest gray that still reads at 3:1 on every surface (`#626262`), and its
+control borders the darkest that does on the selection surface (`#6a6a6a`); darker grays fail the
 control-contrast pairs.
 
-| Token                                                   | Use                                                                                         |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `background`                                            | the page                                                                                    |
-| `card`, `popover`                                       | cards, panels, tables, dialogs, sheets, menus                                               |
-| `foreground`                                            | text                                                                                        |
-| `muted`, `muted-foreground`                             | subtle fills (table header, hover, icon tiles, info alert), secondary text                  |
-| `primary` (+ `primary-hover`, `primary-foreground`)     | the one accent: primary buttons, active tab bar, icons on tiles; never a surface            |
-| `accent`, `accent-foreground`                           | selection and menu focus (selected tiles add a `primary` border)                            |
-| `border`                                                | 1px borders everywhere; cards have no shadow                                                |
-| `input`                                                 | control borders and unchecked switches (3:1 on every surface, WCAG 1.4.11)                  |
-| `ring`                                                  | focus rings, always `ring-[3px] ring-ring/50`                                               |
-| `link`                                                  | text links, and the dark blockquote rule in rich text                                       |
-| `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds                                                |
-| `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                                |
-| `sidebar*`                                              | the sidebar column; the active item's fill (`sidebar-accent`) and icon (`sidebar-primary`)  |
-| `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): the yellow tile and plum S; never UI                                |
-| `brand-letters`                                         | the wordmark letters (`Wordmark`)                                                           |
-| `brand-panel-from`, `-to`, `-foreground`, `-mark`       | the signed-out brand panel (`AuthLayout/BrandPanel`): gradient, its text, the panel's mark  |
-| `cobalt`, `periwinkle`, `ink`, `ivory`                  | the original brand palette, kept as fixed `@theme` colours for now; unused by any component |
+| Token                                                   | Use                                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `background`                                            | the page                                                                                   |
+| `card`, `popover`                                       | cards, panels, tables, dialogs, sheets, menus                                              |
+| `foreground`                                            | text                                                                                       |
+| `muted`, `muted-foreground`                             | subtle fills (table header, hover, icon tiles, info alert), secondary text                 |
+| `primary` (+ `primary-hover`, `primary-foreground`)     | the one accent: primary buttons, active tab bar, icons on tiles; never a surface           |
+| `accent`, `accent-foreground`                           | selection and menu focus (selected tiles add a `primary` border)                           |
+| `border`                                                | 1px borders everywhere; cards have no shadow                                               |
+| `input`                                                 | control borders and unchecked switches (3:1 on every surface, WCAG 1.4.11)                 |
+| `ring`                                                  | focus rings, always `ring-[3px] ring-ring/50`                                              |
+| `link`                                                  | text links, and the dark blockquote rule in rich text                                      |
+| `success`, `warning`, `info`, `destructive` + `*-muted` | status text/dots on their tinted backgrounds                                               |
+| `overlay`                                               | sheet and dialog backdrops (`bg-overlay/40`)                                               |
+| `sidebar*`                                              | the sidebar column; the active item's fill (`sidebar-accent`) and icon (`sidebar-primary`) |
+| `brand-logo`, `brand-logo-foreground`                   | the mark only (`Logo`): the yellow tile and plum S; never UI                               |
+| `brand-letters`                                         | the wordmark letters (`Wordmark`)                                                          |
+| `brand-panel-from`, `-to`, `-foreground`, `-mark`       | the signed-out brand panel (`AuthLayout/BrandPanel`): gradient, its text, the panel's mark |
+| `cobalt`, `periwinkle`, `ink`, `ivory`                  | the original brand palette, kept as fixed `@theme` colors for now; unused by any component |
 
 Radius: `--radius` is 8px. Controls and buttons `rounded-lg` (8px), cards/panels/dialogs `rounded-xl`
 (12px), chips `rounded-full`.
@@ -117,7 +117,7 @@ toasts already do.
 Both faces are variable, self-hosted from `public/fonts` (latin + latin-ext subsets, `font-display: swap`,
 no runtime request to a font service), declared in `src/styles/index.css`.
 
-| Face                                                     | Token        | Use                                                          | Licence                                          |
+| Face                                                     | Token        | Use                                                          | License                                          |
 | -------------------------------------------------------- | ------------ | ------------------------------------------------------------ | ------------------------------------------------ |
 | Manrope (wght 200–800, roman)                            | `font-sans`  | the whole UI, the default on `body`                          | SIL OFL 1.1, `public/fonts/OFL.txt`              |
 | Source Serif 4 (wght 200–900, roman + italic, no `opsz`) | `font-serif` | the reading face: rich-text body in the document canvas only | SIL OFL 1.1, `public/fonts/OFL-SourceSerif4.txt` |
@@ -177,7 +177,7 @@ is written by the model's author and stays visible (13px meta).
 - Below lg (1024px) the sidebar is a sheet, opened from a 48px sticky row (trigger, wordmark, avatar
   menu). `useIsMobile()` is true below lg.
 - Theme is in the account menu (Profile, Theme ▸ the looks with their swatches, Sign out; the same body is
-  the signed-out screens' `ThemeMenu`). There is no colour-mode setting and no light ⇄ dark switch: each look
+  the signed-out screens' `ThemeMenu`). There is no color-mode setting and no light ⇄ dark switch: each look
   is fixed. Settings → Appearance shows the looks as cards (`RadioTile` with `ThemeSwatches`: the logo, a
   surface and the primary on the look's ground).
 - A screen renders only its content: start with `Page` and `PageHeader`; don't add headers, gutters or
@@ -204,7 +204,7 @@ is written by the model's author and stays visible (13px meta).
 - Show a site only where there is more than one: assignment forms are a role alone on a single-site
   instance, rows of site + role otherwise.
 
-## Component catalogue
+## Component catalog
 
 Shared components live in `src/components/<Name>` (Shapio's) and `src/components/ui` (shadcn primitives,
 restyled to the tokens). Check here before building something.
@@ -231,7 +231,7 @@ top of editors while the form scrolls.
 
 **`Panel`** `{ title?; titleAs?: 'h2' | 'h3'; description?; actions?; flush?; 'aria-label'?; className?; bodyClassName?; children }`
 A card with a header row (16/600 title, one-line description, actions on the right). With a title it is
-a labelled region (`role=region`, named by the title). `flush` removes the body padding and puts a border
+a labeled region (`role=region`, named by the title). `flush` removes the body padding and puts a border
 under the header: use it for tables, lists, rails. `bodyClassName` is for layout inside the body (grid,
 gap), not for restyling the panel.
 
@@ -291,11 +291,11 @@ the others `ghost`, with `aria-pressed`; pressing the chosen one does nothing. T
 `StatusTone = 'neutral' | 'progress' | 'scheduled' | 'success' | 'warning' | 'danger' | 'muted'`.
 A dot + label pill; `progress` shows a spinner while `live` (default true). Map states to tones:
 draft → `neutral`, changed/modified → `warning`, published/ready/delivered → `success`, scheduled →
-`scheduled`, failed/dead → `danger`, pending/running/processing → `progress`, cancelled/archived →
+`scheduled`, failed/dead → `danger`, pending/running/processing → `progress`, canceled/archived →
 `muted`.
 
 - Do: every state indicator (entries, jobs, change sets, assets, deliveries, pending schema change).
-- Don't: use `Badge` colours for state; don't rely on colour alone (the label is required).
+- Don't: use `Badge` colors for state; don't rely on color alone (the label is required).
 
 **`EmptyState`** `{ title; description?; icon?; action?; size?: 'panel' | 'page'; className? }`
 Icon tile, 16/600 title, one line, one primary action. `page` (default) sits on its own card surface
@@ -305,7 +305,7 @@ with 64px padding; `panel` has no surface and 40px padding, for inside a `Panel`
 **`IconTile`** `{ icon; size?: 'sm' | 'md' | 'lg'; tone?: 'accent' | 'muted' | 'success' | 'warning' | 'danger'; className? }`
 32/36/40px tinted square with the icon (decorative, `aria-hidden`). Cards, pickers, list rows, empty
 states, dashboard stats. The `accent` tone is a neutral `muted` tile with a cobalt icon (periwinkle in
-dark), so `accent` stays a selection colour.
+dark), so `accent` stays a selection color.
 
 ### Forms
 
@@ -382,7 +382,7 @@ Use anchored mode for menu items: open it from the item's `onSelect`, wrap the m
 
 **`SecretReveal`** `{ title; description; label; secret; dismissLabel?; onDismiss; hint?; className? }`
 A one-time secret (API token, signing secret) shown inline at the top of the page where it was created,
-never in a URL: a labelled panel with the read-only secret, a copy button, optional `hint` and the
+never in a URL: a labeled panel with the read-only secret, a copy button, optional `hint` and the
 dismiss button ("I've saved it"). It focuses its copy button when it appears, and leaving the page before
 dismissing it asks first (`UnsavedChangesGuard`).
 
@@ -434,7 +434,7 @@ message.
   You, roles, kinds, counts). State is a `StatusChip`.
 - Sidebar `SidebarMenuButton` gained `variant="nav"` / `size="nav"` (the main navigation's 40px rows);
   only the Shell uses them. Active is one signal: the `sidebar-accent` fill, the label at its normal weight
-  and colour, only the icon in `sidebar-primary`; no bar, no shadow. The collapsed sidebar shows the same.
+  and color, only the icon in `sidebar-primary`; no bar, no shadow. The collapsed sidebar shows the same.
 - Overlays, menus, popovers, tooltips and toasts are on the tokens; toasts sit above the status bar.
 
 ### Brand
@@ -444,7 +444,7 @@ The mark, decorative (`aria-hidden`), 32px by default. `default`: the acid-yello
 `#E9F26E`) with a plum S (`brand-logo-foreground`, `#231527`), in every theme, light and dark. On dark grounds
 the S stays plum, never white: the S is a cut-out in the source, so the mark always draws its plum backing
 underneath. `reverse`: for the auth brand panel, the tile in `brand-panel-mark` with the same plum S drawn
-underneath (no cut-out), so the mark reads the same on every panel colour. Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
+underneath (no cut-out), so the mark reads the same on every panel color. Geometry from `src/assets/brand/mark.svg` (`Logo/paths.ts`).
 
 **`Wordmark`** `{ size?: 'default' | 'sm' | 'lg'; variant?: 'default' | 'reverse'; className? }`: the logo,
 mark + the outlined "shapio" letters (`src/assets/brand/wordmark.svg`, `Wordmark/letters.ts`), announced as
@@ -452,12 +452,12 @@ mark + the outlined "shapio" letters (`src/assets/brand/wordmark.svg`, `Wordmark
 (sidebar, the auth screens' compact header; the collapsed sidebar shows the mark alone at 32px), `sm` 24px
 (status bar, phone bar), `lg` 52px (auth brand panel, with `variant="reverse"`). The letters take
 `currentColor` from `brand-letters`: plum `#231527` on light grounds, cream `#F5EBD8` on dark ones (`reverse`:
-the panel's text colour). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
+the panel's text color). They carry `data-slot="wordmark-letters"`, which the collapsed sidebar hides to show
 the mark alone. Never set "shapio" as text for the brand.
 
 Brand files live in `src/assets/brand/` (`mark.svg`, `wordmark.svg`, `logo-horizontal.svg`, generated by
 `node brand/build.mjs` in the Shapio palette; the letters are `currentColor`, plum by default and cream under a
-dark colour scheme). The original blue logo is kept in the repo-root `brand/` as `classic-*` and is not used by
+dark color scheme). The original blue logo is kept in the repo-root `brand/` as `classic-*` and is not used by
 the admin; the Cobalt UI theme shows the Shapio logo too. `pnpm --filter @shapio/admin brand:icons` regenerates
 `public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (plum S on full-bleed yellow) from
 `mark.svg`; `Logo/brandAssets.test.ts` keeps the components, the files, the favicon and the `classic-*` set on
@@ -484,7 +484,7 @@ A whole-screen message on brand (not found, a route that failed): mark, title, o
 ## Patterns
 
 How the editor-facing screens are put together. Each pattern names what it is made of and the rules that
-keep it consistent; components are listed in the catalogue once they exist.
+keep it consistent; components are listed in the catalog once they exist.
 
 ### Document
 
@@ -572,7 +572,7 @@ as a form: records such as a product, a redirect, or a job listing, where every 
 4. **Groups as sections**: the model's `display.groups` (named "Groups" in the builder), each a section
    opening with its label in the group-label style (`text-xs font-semibold uppercase tracking-wide
 text-muted-foreground`) and a hairline. A group sits where its first field is, and each run of consecutive
-   ungrouped fields is its own unlabelled section at its position. An unlabelled section after a group gets
+   ungrouped fields is its own unlabeled section at its position. An unlabeled section after a group gets
    extra space above it (`pt-8`, a heading row and its gap) and no hairline, so its fields don't read as part
    of the group; the first section never gets it. Field order decides everything; the builder has no group ordering.
 5. **Fields**: every live field, the title included, through `EntryFields` in `widths` mode: `TopLevelField`
@@ -634,7 +634,7 @@ Home for everyone: what needs you, then what's coming and what just happened.
 
 ### Command palette
 
-The ⌘K palette (`components/CommandPalette`) is the one allowed centred overlay: a transient launcher (go
+The ⌘K palette (`components/CommandPalette`) is the one allowed centered overlay: a transient launcher (go
 to, search entries and media, create, actions on the current page) that never holds a form or unsaved
 input. It opens with ⌘K/Ctrl+K or the sidebar's Search button, is a modal dialog with a combobox and a
 grouped listbox (↑↓, Enter, Esc, focus returns where it was), and screens add their actions with
@@ -642,8 +642,8 @@ grouped listbox (↑↓, Enter, Esc, focus returns where it was), and screens ad
 
 ## Dialogs
 
-No centred dialogs for creating, editing, picking or routine confirmation. Sheets are still modal for
-assistive technology (focus trap, inert dimmed page), which keeps keyboard, screen-reader behaviour and
+No centered dialogs for creating, editing, picking or routine confirmation. Sheets are still modal for
+assistive technology (focus trap, inert dimmed page), which keeps keyboard, screen-reader behavior and
 the dirty-close guard working. Two exceptions are non-modal: the document's settings drawer, so the
 document stays interactive beside it (see Patterns → Document), and the Shell's `ResumeSession`, so the
 unsaved edits stay readable and editable while the person signs in again (see Shell).
@@ -659,7 +659,7 @@ unsaved edits stay readable and editable while the person signs in again (see Sh
 | Show a one-time secret                                          | inline panel at the top of the page where it was created              | `SecretReveal`                  |
 | Notice after an action (other locales, remote change, conflict) | banner (`Alert`), toast with an action, or the top bar's save state   | `Alert`, `toast(…, { action })` |
 | Irreversible acknowledgement                                    | blocking dialog, the only kind left                                   | `ConfirmDialog`                 |
-| Go anywhere, run a command                                      | the command palette, the one centred overlay (see Patterns)           | `CommandPalette`                |
+| Go anywhere, run a command                                      | the command palette, the one centered overlay (see Patterns)          | `CommandPalette`                |
 
 A remote change (another tab saved the entry) while the document has no edits of its own replaces the save
 state in the document's top bar ("Changed by … Reload to see it." with a Reload button); with unsaved edits it
@@ -674,7 +674,7 @@ and that `AlertDialogContent` appears only in `ConfirmDialog`.
 ## Do and don't
 
 - Do restyle through a component's props and variants. If a shared component can't express what a
-  screen needs, ask for a variant; don't override it from outside with `className` colour or spacing
+  screen needs, ask for a variant; don't override it from outside with `className` color or spacing
   hacks, and don't fork it inside a feature.
 - Do check both themes and phone width (390px) before reporting.
 - Do use `StatusChip` for state, `Badge` only for neutral labels (Built-in, a count).

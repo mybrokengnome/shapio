@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { groupEvents, groupPattern, toggleEvent, toggleGroup } from './webhookEvents';
 
-const CATALOGUE = [
+const CATALOG = [
   { type: 'entry.published', group: 'entry' },
   { type: 'change_set.shipped', group: 'change_set' },
   { type: 'entry.unpublished', group: 'entry' },
 ];
 
 describe('webhook event selection', () => {
-  it('groups the catalogue in order', () => {
-    expect(groupEvents(CATALOGUE)).toEqual([
+  it('groups the catalog in order', () => {
+    expect(groupEvents(CATALOG)).toEqual([
       { group: 'entry', types: ['entry.published', 'entry.unpublished'] },
       { group: 'change_set', types: ['change_set.shipped'] },
     ]);
   });
 
   it('replaces a group’s types with its pattern, and removes it again', () => {
-    const [entry] = groupEvents(CATALOGUE);
+    const [entry] = groupEvents(CATALOG);
     if (!entry) {
       throw new Error('missing group');
     }

@@ -159,7 +159,7 @@ const waitForChange = async (client: ShapioClient, item: SchemaSyncResult) => {
     if (change.status === 'activated') {
       return;
     }
-    if (change.status === 'failed' || change.status === 'cancelled') {
+    if (change.status === 'failed' || change.status === 'canceled') {
       throw new Error(`The ${item.apiKey} change ${change.status}: ${JSON.stringify(change.error)}`);
     }
     if (Date.now() > deadline) {

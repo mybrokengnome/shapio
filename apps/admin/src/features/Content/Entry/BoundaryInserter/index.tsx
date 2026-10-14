@@ -33,7 +33,7 @@ const GroupLabel = ({ children }: { children: string }) => (
 
 /**
  * The `+` between two canvas fields (and after the last): offers exactly what can be stored there, the
- * block types of a rich-text field and the components of a zone or list, labelled by field when both meet.
+ * block types of a rich-text field and the components of a zone or list, labeled by field when both meet.
  */
 export const BoundaryInserter = ({ targets, actions, final }: BoundaryInserterProps) => {
   const { t } = useTranslation();

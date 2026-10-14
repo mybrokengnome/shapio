@@ -106,7 +106,7 @@ const chooseFromAccountMenu = async (name: string) => {
   await page.getByRole('group', { name: 'Theme' }).getByRole('menuitemradio', { name, exact: true }).click();
 };
 
-test('stored values: pre-theme becomes Cobalt, colour modes become the look, nothing follows the OS', async () => {
+test('stored values: pre-theme becomes Cobalt, color modes become the look, nothing follows the OS', async () => {
   await page.goto(ADMIN_URL);
   await applyStored(page, { preference: 'light' }, 1);
   await expectRendered(page, 'classic', 'dark');
@@ -132,7 +132,7 @@ test('each look is picked from the account menu and kept across a reload', async
     await page.reload();
     await expectRendered(page, theme.key, theme.variant);
   }
-  // One list of looks, nothing else: no colour mode, no quick switch.
+  // One list of looks, nothing else: no color mode, no quick switch.
   await expect(page.getByRole('button', { name: /Switch to (light|dark) theme/ })).toHaveCount(0);
   await openThemeMenu();
   await expect(page.getByRole('menuitemradio')).toHaveCount(THEMES.length);
@@ -195,7 +195,7 @@ for (const theme of THEMES) {
       await expect(screen.ready(page)).toBeVisible();
       await captureRendered(page, `theme-${theme.key}-${screen.name}`);
     }
-    // Signed out: the brand panel in the look's colours.
+    // Signed out: the brand panel in the look's colors.
     const signedOut = await openPage(browser);
     await signedOut.goto(ADMIN_URL);
     await applyStoredLook(signedOut, theme.key, theme.variant);

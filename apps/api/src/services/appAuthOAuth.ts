@@ -147,7 +147,7 @@ const linkToExisting = async (
     trx,
   );
   if (user.confirmed_at === null) {
-    // Pre-hijack defence: whoever registered this unconfirmed address with a password never proved they own
+    // Pre-hijack defense: whoever registered this unconfirmed address with a password never proved they own
     // it; the provider just proved the caller does. Their password and sign-ins go.
     const now = new Date();
     await appUsersRepository.update(user.id, { confirmed_at: now, password_hash: null }, trx);

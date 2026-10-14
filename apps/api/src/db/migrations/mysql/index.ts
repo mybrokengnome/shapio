@@ -5,6 +5,7 @@ import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
 import * as modelsSiteScope from './20261004120000_models_site_scope.js';
 import * as siteSeoSettings from './20261004130000_site_seo_settings.js';
 import * as entryHeadsEntryCreatedAt from './20261005120000_entry_heads_entry_created_at.js';
+import * as canceledStatus from './20261014120000_canceled_status.js';
 
 /**
  * MySQL migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -21,4 +22,5 @@ export const MYSQL_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261004130000_site_seo_settings': siteSeoSettings,
   '20261005120000_entry_heads_entry_created_at': entryHeadsEntryCreatedAt,
   '20261006120000_system_versions_release': systemVersionsRelease,
+  '20261014120000_canceled_status': canceledStatus,
 };

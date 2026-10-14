@@ -120,7 +120,7 @@ export const withoutModelKey = (value: unknown): unknown => {
   );
 };
 
-/** Asserts the GraphQL entries equal the REST entries after shape normalisation (order and values). */
+/** Asserts the GraphQL entries equal the REST entries after shape normalization (order and values). */
 export const expectSameEntries = (graphqlEntries: unknown, restEntries: unknown, shape: Shape = {}) => {
   expect(toRestShape(graphqlEntries, shape)).toEqual(withoutModelKey(restEntries));
 };

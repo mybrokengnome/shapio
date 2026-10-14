@@ -7,7 +7,7 @@ type PendingPick = { options: MediaPickOptions; resolve: (assets: PickedMedia[] 
 
 /**
  * `pickMedia` for editors (the editor contract's media capability): opens the library in a sheet and resolves
- * with the chosen assets, or null when cancelled. Render `dialog` once in the form.
+ * with the chosen assets, or null when canceled. Render `dialog` once in the form.
  */
 export const useMediaPickerDialog = () => {
   const [pending, setPending] = useState<PendingPick | null>(null);

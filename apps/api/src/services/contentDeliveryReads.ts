@@ -59,7 +59,7 @@ export const deliveryEnvironment = (
 });
 
 /**
- * A delivery-shaped read of one model, once the caller is authorised and the query parsed. `source` is
+ * A delivery-shaped read of one model, once the caller is authorized and the query parsed. `source` is
  * published heads, a snapshot, or drafts (previews); `conditions` adds row restrictions on top of the query's
  * own (a preview token's entry scope).
  */

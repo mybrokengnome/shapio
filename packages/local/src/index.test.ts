@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe('createLocalClient', () => {
-  it('refuses SQLite with an error users can recognise', () => {
+  it('refuses SQLite with an error users can recognize', () => {
     const create = () => createLocalClient({ databaseUrl: 'sqlite:./shapio.db' });
     expect(create).toThrow(DeliveryRuntimeError);
     expect(create).toThrow(/PostgreSQL or MySQL/);

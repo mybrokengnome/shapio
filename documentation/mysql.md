@@ -1,6 +1,6 @@
 # MySQL
 
-Shapio runs on PostgreSQL, MySQL or SQLite. On MySQL everything works as on PostgreSQL: modelling live, drafts
+Shapio runs on PostgreSQL, MySQL or SQLite. On MySQL everything works as on PostgreSQL: modeling live, drafts
 and publishing, snapshots, change sets, sites, end users, REST and GraphQL. You can run several Shapio
 instances on one MySQL database, and a separate worker process (`WORKER_MODE=dedicated`).
 

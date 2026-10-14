@@ -24,7 +24,7 @@ export type ScheduleView = {
   locale: string;
   action: 'publish' | 'unpublish';
   runAt: Date;
-  status: 'scheduled' | 'done' | 'failed' | 'cancelled';
+  status: 'scheduled' | 'done' | 'failed' | 'canceled';
   error: string | null;
   snapshot: number | null;
   createdBy: string | null;
@@ -119,9 +119,9 @@ export const cancelSchedule = async (context: ContentServiceContext, id: string)
     await modelWithPolicy(context, modelKey, 'publish');
   }
   await context.db.transaction().execute(async (trx) => {
-    const cancelled = await scheduledPublicationsRepository.cancel(id, new Date(), trx);
-    if (!cancelled) {
-      throw new AppError(409, 'SCHEDULE_NOT_PENDING', 'Only schedules that have not run can be cancelled', {
+    const canceled = await scheduledPublicationsRepository.cancel(id, new Date(), trx);
+    if (!canceled) {
+      throw new AppError(409, 'SCHEDULE_NOT_PENDING', 'Only schedules that have not run can be canceled', {
         id,
         status: existing.status,
       });

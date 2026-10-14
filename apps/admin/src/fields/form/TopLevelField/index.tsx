@@ -10,7 +10,7 @@ type TopLevelFieldProps = {
   className?: string;
 };
 
-/** A field of the entry itself, as a labelled control: subscribes to its own value only. */
+/** A field of the entry itself, as a labeled control: subscribes to its own value only. */
 export const TopLevelField = memo(({ field, layout, className }: TopLevelFieldProps) => {
   const { model } = useFieldsEnvironment();
   const { value, onChange } = useTopLevelValue(field);

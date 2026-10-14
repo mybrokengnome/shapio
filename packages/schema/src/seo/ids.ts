@@ -1,7 +1,7 @@
 /**
  * The built-in SEO component (plan seo-fields). It is ordinary schema data, created through the change planner
  * and always shared with every site; what makes it "the" SEO component is its stable ID, never its API ID, so
- * a renamed or extended copy is still recognised and an unrelated `seo` component (an import) never is.
+ * a renamed or extended copy is still recognized and an unrelated `seo` component (an import) never is.
  */
 export const SEO_COMPONENT_ID = 'f3905a00-d2a3-4c62-899a-c894bfd6cb9b';
 

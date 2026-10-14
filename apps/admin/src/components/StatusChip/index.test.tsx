@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { StatusChip } from '.';
 
 describe('StatusChip', () => {
-  it('shows the label with a dot whose colour follows the tone', () => {
+  it('shows the label with a dot whose color follows the tone', () => {
     const html = renderToStaticMarkup(<StatusChip tone="success" label="Published" />);
     expect(html).toContain('Published');
     expect(html).toContain('data-tone="success"');

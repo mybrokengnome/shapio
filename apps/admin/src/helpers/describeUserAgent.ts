@@ -19,7 +19,7 @@ const firstMatch = (value: string, table: readonly [RegExp, string][]) =>
 
 /**
  * "Chrome on macOS" from a user-agent string (product names are not translated). `undefined` when nothing
- * is recognised, so the caller can show its own "unknown device" label.
+ * is recognized, so the caller can show its own "unknown device" label.
  */
 export const describeUserAgent = (userAgent: string | null): string | undefined => {
   if (!userAgent) {

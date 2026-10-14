@@ -6,7 +6,7 @@ type LogoVariant = 'default' | 'reverse';
 type LogoProps = {
   /**
    * `default`: the brand tile with its S, on any ground. `reverse`: for the auth brand panel, the tile in the
-   * theme's brand-panel-mark colour (the S stays the brand's, so the mark reads the same in every theme).
+   * theme's brand-panel-mark color (the S stays the brand's, so the mark reads the same in every theme).
    */
   variant?: LogoVariant;
   className?: string;

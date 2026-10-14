@@ -8,6 +8,6 @@ type RichTextProps = {
   visual?: ShapioAttributes;
 };
 
-/** Shapio's rich text arrives with a sanitised `html` rendering next to the JSON document. */
+/** Shapio's rich text arrives with a sanitized `html` rendering next to the JSON document. */
 export const RichText = ({ value, className = 'prose', visual }: RichTextProps) =>
   value ? <div className={className} {...visual} dangerouslySetInnerHTML={{ __html: value.html }} /> : null;

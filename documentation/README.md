@@ -18,7 +18,7 @@ model never needs a rebuild, a restart or a deploy.
 
 ## Build with it
 
-- [Modelling](modelling.md): models, components, dynamic zones, field types, editors, what changes live.
+- [Modeling](modeling.md): models, components, dynamic zones, field types, editors, what changes live.
 - [Localization](localization.md): locales, localized and shared fields, fallbacks, per-locale publishing.
 - [Schema sync](schema-sync.md): `shapio schema pull | diff | apply`, the lock file, git write-back.
 - [Content](content.md): drafts, autosave, revisions, publishing and scheduling.
@@ -41,7 +41,7 @@ model never needs a rebuild, a restart or a deploy.
 - [Visual editing](visual-editing.md): preview drafts beside the document and click a part of the page to edit
   its field.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.
-- [Extension points catalogue](extensions-catalogue.md): every way to extend or integrate Shapio, with its
+- [Extension points catalog](extensions-catalog.md): every way to extend or integrate Shapio, with its
   contract, where it runs, versioning and limits.
 - [MCP server for coding agents](mcp.md): Claude Code, Cursor and Claude Desktop model content, write drafts
   and open change sets; people ship them.

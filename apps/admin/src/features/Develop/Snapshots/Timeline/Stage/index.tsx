@@ -23,11 +23,11 @@ export const Stage = ({ seq, seqs, previous, places, createdAt }: StageProps) =>
   const index = seqs.indexOf(seq);
   const before = seqs[index - 1];
   const after = seqs[index + 1];
-  const neighbours = useMemo(
-    () => [before, after].filter((neighbour): neighbour is number => neighbour !== undefined),
+  const neighbors = useMemo(
+    () => [before, after].filter((neighbor): neighbor is number => neighbor !== undefined),
     [before, after],
   );
-  const state = useStateAt(seq, previous, neighbours, places);
+  const state = useStateAt(seq, previous, neighbors, places);
   if (state.error) {
     return <ErrorState error={state.error} onRetry={() => void state.refetch()} />;
   }

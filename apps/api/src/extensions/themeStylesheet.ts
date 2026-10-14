@@ -3,7 +3,7 @@ import type { ThemeDefinition, ThemeTokens } from './public.js';
 
 /**
  * Extension themes for the admin (docs/plans/themes.md): built once at startup from `shapio.config`
- * `themes`, already validated (keys match THEME_KEY_PATTERN, values THEME_COLOUR_PATTERN, so nothing here
+ * `themes`, already validated (keys match THEME_KEY_PATTERN, values THEME_COLOR_PATTERN, so nothing here
  * can escape a declaration). The stylesheet uses the selectors of the built-in theme files:
  * `[data-theme='<key>']` for the light (or only) variant and `[data-theme='<key>'].dark` for the dark one.
  */
@@ -14,7 +14,7 @@ export type ThemeSummary = {
   variants: ThemeVariant[];
 };
 
-export type ThemeCatalogue = { items: ThemeSummary[]; stylesheet: string };
+export type ThemeCatalog = { items: ThemeSummary[]; stylesheet: string };
 
 const block = (selector: string, tokens: ThemeTokens) =>
   `${selector} {\n${Object.entries(tokens)
@@ -38,7 +38,7 @@ const themeCss = (theme: ThemeDefinition) => {
     .join('\n');
 };
 
-export const buildThemeCatalogue = (themes: readonly ThemeDefinition[]): ThemeCatalogue => ({
+export const buildThemeCatalog = (themes: readonly ThemeDefinition[]): ThemeCatalog => ({
   items: themes.map((theme) => ({
     key: theme.key,
     name: theme.name,

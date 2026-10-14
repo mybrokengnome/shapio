@@ -522,7 +522,7 @@
       },
       "murdered-out": {
         "name": "Murdered out",
-        "description": "Blacked out, no colour."
+        "description": "Blacked out, no color."
       },
       "forest": {
         "name": "Forest",
@@ -789,7 +789,7 @@
       "publishingSchedule": "Scheduled publication",
       "publishingSchedulePublish": "Scheduled publishing",
       "publishingScheduleUnpublish": "Scheduled unpublishing",
-      "publishingScheduleCancel": "Cancelled scheduled publication",
+      "publishingScheduleCancel": "Canceled scheduled publication",
       "publishingScheduleExecute": "Ran scheduled publication",
       "roleCreate": "Created role",
       "roleDelete": "Deleted role",
@@ -1564,7 +1564,7 @@
       "hint": "The part of the image that crops keep in view. Click the image to set it.",
       "x": "Horizontal (%)",
       "y": "Vertical (%)",
-      "unset": "Centre",
+      "unset": "Center",
       "clear": "Clear"
     },
     "visibility": {
@@ -2009,8 +2009,8 @@
         "summary_other": "{{language}}, {{count}} lines"
       },
       "color": {
-        "picker": "Pick a colour for {{field}}",
-        "presets": "Preset colours"
+        "picker": "Pick a color for {{field}}",
+        "presets": "Preset colors"
       }
     },
     "issues": {
@@ -2330,12 +2330,12 @@
       "cancelTitle": "Cancel this scheduled change?",
       "cancelDescription": "Entry {{entryId}} stays as it is.",
       "keep": "Keep it",
-      "cancelled": "Scheduled change cancelled",
+      "canceled": "Scheduled change canceled",
       "statuses": {
         "scheduled": "Scheduled",
         "done": "Done",
         "failed": "Failed",
-        "cancelled": "Cancelled"
+        "canceled": "Canceled"
       }
     },
     "webhooks": {

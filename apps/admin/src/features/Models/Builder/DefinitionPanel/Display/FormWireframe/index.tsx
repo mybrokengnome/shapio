@@ -17,7 +17,7 @@ const SPAN_CLASSES = {
 
 /**
  * A wireframe of a form-layout entry (`effectiveFormLayout`): each section's name, then its fields as
- * labelled boxes at their widths, so rows form as widths and field order change. Decorative: screen readers
+ * labeled boxes at their widths, so rows form as widths and field order change. Decorative: screen readers
  * get a one-line summary.
  */
 export const FormWireframe = ({ model }: FormWireframeProps) => {

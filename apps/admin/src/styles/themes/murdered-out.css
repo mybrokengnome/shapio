@@ -1,6 +1,6 @@
 /*
- * Murdered out: dark only, blacked out. Pure black ground, near-black surfaces, grey actions (the darkest
- * grey that still reads at 3:1 on every surface): nothing light but text and icons, no hue anywhere except
+ * Murdered out: dark only, blacked out. Pure black ground, near-black surfaces, gray actions (the darkest
+ * gray that still reads at 3:1 on every surface): nothing light but text and icons, no hue anywhere except
  * the status tones and the logo. Every pair is checked by test/contrast.test.ts.
  */
 [data-theme='murdered-out'] {

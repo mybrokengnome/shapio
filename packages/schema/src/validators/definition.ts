@@ -1,6 +1,6 @@
 import { isCoverEligible, isDocumentPlaceable } from '../display/layout.js';
 import { effectiveTitleField, TITLE_FIELD_TYPES } from '../display/titleField.js';
-import { EDITOR_CATALOGUE, isCustomEditorId } from '../editors/catalogue.js';
+import { EDITOR_CATALOG, isCustomEditorId } from '../editors/catalog.js';
 import { isStableId } from '../ids.js';
 import { SCALAR_DATA_TYPES, UNIQUE_CAPABLE_DATA_TYPES } from '../types/dataTypes.js';
 import type { FieldDefinition, FieldGroup, ModelDefinition, SchemaDefinition } from '../types/definitions.js';
@@ -199,7 +199,7 @@ const checkEditor = (field: FieldDefinition, path: string): ValidationIssue[] =>
   if (isCustomEditorId(id)) {
     return [];
   }
-  const entry = EDITOR_CATALOGUE.get(id);
+  const entry = EDITOR_CATALOG.get(id);
   if (!entry) {
     return [
       issue(

@@ -109,13 +109,13 @@ export const RevisionSummarySchema = Type.Object({
 export const RevisionListItemSchema = Type.Intersect([
   RevisionSummarySchema,
   Type.Object({
-    /** The change that wrote it: `failed` and `cancelled` revisions never went live. */
+    /** The change that wrote it: `failed` and `canceled` revisions never went live. */
     status: Type.Union([
       Type.Literal('pending'),
       Type.Literal('running'),
       Type.Literal('activated'),
       Type.Literal('failed'),
-      Type.Literal('cancelled'),
+      Type.Literal('canceled'),
     ]),
     active: Type.Boolean(),
   }),

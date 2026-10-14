@@ -10,7 +10,7 @@ import type { ContentServiceContext } from './contentAccess.js';
 
 /**
  * The Inbox's reads of health findings. Only models the caller may read are included, rows outside the
- * caller's row filter are left out (no existence oracle), and titles honour the read mask.
+ * caller's row filter are left out (no existence oracle), and titles honor the read mask.
  */
 export type FindingView = {
   id: string;

@@ -6,7 +6,7 @@ describe('cn', () => {
     expect(cn('p-4', 'p-2')).toBe('p-2');
   });
 
-  it('keeps the custom font sizes apart from text colours', () => {
+  it('keeps the custom font sizes apart from text colors', () => {
     expect(cn('text-title', 'text-muted-foreground')).toBe('text-title text-muted-foreground');
     expect(cn('text-meta', 'text-foreground')).toBe('text-meta text-foreground');
     expect(cn('text-2xs', 'text-primary')).toBe('text-2xs text-primary');

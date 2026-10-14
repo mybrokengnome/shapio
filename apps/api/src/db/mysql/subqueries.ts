@@ -21,7 +21,7 @@ import {
 /**
  * Subquery shapes MySQL rejects, rewritten (ADR 0001, "MySQL"): `IN (… LIMIT n)` (error 1235) and a subquery
  * reading the table an UPDATE, DELETE or INSERT writes (error 1093) read a derived table instead, which MySQL
- * materialises first; PostgreSQL's `UPDATE … FROM` becomes a multi-table UPDATE.
+ * materializes first; PostgreSQL's `UPDATE … FROM` becomes a multi-table UPDATE.
  */
 
 /** The alias of a derived table wrapped around a subquery. */
@@ -42,7 +42,7 @@ const needsDerivedTable = (node: SelectQueryNode, table: string | undefined): bo
         (join) => tableNameOf(AliasNode.is(join.table) ? join.table.node : join.table) === table,
       )));
 
-/** `(select * from (<subquery>) as shapio_derived)`: MySQL materialises it first. */
+/** `(select * from (<subquery>) as shapio_derived)`: MySQL materializes it first. */
 const derived = (node: SelectQueryNode): SelectQueryNode =>
   Object.freeze({
     ...SelectQueryNode.createFrom([AliasNode.create(node, IdentifierNode.create(DERIVED_ALIAS))]),
@@ -83,7 +83,7 @@ export const wrapSubqueries = (
 
 /**
  * An INSERT whose VALUES read the target table in a scalar subquery (`coalesce(max(position) + 1, 0)`):
- * MySQL rejects that (error 1093) unless the subquery reads a derived table, which it materialises first.
+ * MySQL rejects that (error 1093) unless the subquery reads a derived table, which it materializes first.
  */
 export const withDerivedValueSubqueries = (node: InsertQueryNode): InsertQueryNode => {
   const table = node.into?.table.identifier.name;

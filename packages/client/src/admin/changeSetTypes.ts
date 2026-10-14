@@ -151,7 +151,7 @@ export type PutSchemaDraftInput = {
 
 /**
  * One changed field. `summary` is the server's readable form of each side (rich text as its text, media as
- * filenames, relations as titles, components as labelled items); null when that side is empty.
+ * filenames, relations as titles, components as labeled items); null when that side is empty.
  */
 export type FieldDiff = {
   fieldId: string;

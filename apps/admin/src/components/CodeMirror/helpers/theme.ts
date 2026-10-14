@@ -56,7 +56,7 @@ export const codeMirrorTheme = EditorView.theme({
 });
 
 /**
- * Token colours, from the text tokens only (`link`, the status colours, `muted-foreground`), so every look
+ * Token colors, from the text tokens only (`link`, the status colors, `muted-foreground`), so every look
  * keeps its contrast. JSON uses the first four rules; the rest cover HTML, CSS, JavaScript, YAML, Markdown.
  */
 export const codeHighlightStyle = HighlightStyle.define([

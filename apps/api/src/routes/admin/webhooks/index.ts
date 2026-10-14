@@ -10,7 +10,7 @@ export const adminWebhooksRoutes: FastifyPluginAsyncTypebox = async (app) => {
   const audited = (action: string) => ({ config: { audit: { action } }, ...manage });
 
   app.get('/', { schema: schemas.listWebhooksSchema, ...manage }, handlers.listWebhooks);
-  // GET /events: the event catalogue
+  // GET /events: the event catalog
   app.get('/events', { schema: schemas.listEventTypesSchema, ...manage }, handlers.listEventTypes);
   app.post(
     '/',

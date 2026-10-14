@@ -4,7 +4,7 @@ import { declareSiteScope } from '../../../../plugins/siteResolution.js';
 import { cancelScheduleSchema, createScheduleSchema, listSchedulesSchema } from './schemas.js';
 
 /**
- * /api/admin/publishing/schedules: publish-at / unpublish-at per entry and locale. Creating and cancelling
+ * /api/admin/publishing/schedules: publish-at / unpublish-at per entry and locale. Creating and canceling
  * need publish permission on the model (checked by the service through the evaluator); listing everything
  * needs `publishing.manage`, listing one entry's schedules needs read permission on its model.
  */

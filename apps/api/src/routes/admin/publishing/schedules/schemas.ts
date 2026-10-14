@@ -17,7 +17,7 @@ import {
   PublicationActionSchema,
 } from '../../../schemas/publishing.js';
 
-const ScheduleStatusSchema = Type.Enum(['scheduled', 'done', 'failed', 'cancelled']);
+const ScheduleStatusSchema = Type.Enum(['scheduled', 'done', 'failed', 'canceled']);
 
 export const ScheduleSchema = Type.Object({
   id: UuidSchema,

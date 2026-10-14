@@ -30,7 +30,7 @@ type SidebarProps = {
 
 type GroupProps = { group: ShellNavGroup; activeKey: string | undefined };
 
-/** One labelled list of destinations (Content, Develop, Workspace) or an unlabelled one. */
+/** One labeled list of destinations (Content, Develop, Workspace) or an unlabeled one. */
 const Group = ({ group, activeKey }: GroupProps) => {
   const labelId = useId();
   return (

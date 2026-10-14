@@ -1,7 +1,7 @@
 import type { ContentFilter, ContentListQuery } from './contentTypes.js';
 
 /**
- * Serialises a content list query into the bracket querystring the content compiler parses
+ * Serializes a content list query into the bracket querystring the content compiler parses
  * (`filters[title][$eq]=A&sort=title:asc&page=2`). Lists repeat the key (`filters[id][$in]=a&filters[id][$in]=b`).
  */
 const appendFilter = (params: URLSearchParams, prefix: string, value: unknown) => {
@@ -61,6 +61,6 @@ export const toContentQueryString = (query: ContentListQuery = {}): string => {
   if (query.author) {
     params.set('author', query.author);
   }
-  const serialised = params.toString();
-  return serialised ? `?${serialised}` : '';
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : '';
 };

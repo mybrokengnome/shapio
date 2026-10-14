@@ -3,8 +3,8 @@
  *
  * The source is the original blue logo. It has one blue path (the rounded tile; its later subpaths cut the S
  * out of it) and seven navy paths (the "shapio" letters); those two fills are how the paths are found. Paths
- * are copied exactly; only viewBoxes and fills change. Every generated colour mark draws the S again
- * underneath the tile, so the S keeps its colour on any background (README.md).
+ * are copied exactly; only viewBoxes and fills change. Every generated color mark draws the S again
+ * underneath the tile, so the S keeps its color on any background (README.md).
  *
  * Two palettes (PALETTES below): `shapio` (acid yellow and plum, the current brand) and `classic` (the
  * original blue, kept for reference). Writes brand/shapio-logo.svg, shapio-mark.svg, shapio-mark-mono.svg,
@@ -23,9 +23,9 @@ const SOURCE_FILE = 'classic-logo.svg';
 const SOURCE_TILE_FILL = '#2F5BFF';
 const SOURCE_LETTERS_FILL = '#0F1B3D';
 /**
- * Output fills per palette. `letters` is the letters' colour on light grounds, `lettersOnDark` under a dark
- * colour scheme (the letters are `currentColor`, so an embedding page can set its own); `mono` is the
- * single-colour mark with the S cut out.
+ * Output fills per palette. `letters` is the letters' color on light grounds, `lettersOnDark` under a dark
+ * color scheme (the letters are `currentColor`, so an embedding page can set its own); `mono` is the
+ * single-color mark with the S cut out.
  */
 const PALETTES = {
   shapio: {
@@ -43,7 +43,7 @@ const PALETTES = {
     mono: '#0F1B3D',
   },
 };
-/** Tight boxes around the source geometry; the mark's is widened to a square, centred. */
+/** Tight boxes around the source geometry; the mark's is widened to a square, centered. */
 const MARK_VIEWBOX = '165.9 188.4 391.6 391.6';
 const WORDMARK_VIEWBOX = '616.1 280.1 737.1 240.5';
 const LOGO_VIEWBOX = '182.6 188.4 1170.6 391.6';
@@ -72,7 +72,7 @@ const letterBody = `  <g fill="currentColor">\n${letters.map((d) => `    <path d
 /** The files of one palette, keyed by role. */
 const renderPalette = (palette) => {
   const markBody = `  <path fill="${palette.s}" d="${sCounters}"/>\n  <path fill="${palette.tile}" d="${tile}"/>\n`;
-  // The letters take currentColor: the light-ground colour by default, the dark-ground one under a dark scheme.
+  // The letters take currentColor: the light-ground color by default, the dark-ground one under a dark scheme.
   const lettersColor = ` color="${palette.letters}"`;
   const darkStyle = `  <style>@media (prefers-color-scheme: dark) { svg { color: ${palette.lettersOnDark}; } }</style>\n`;
   const lockupBody = darkStyle + markBody + letterBody;

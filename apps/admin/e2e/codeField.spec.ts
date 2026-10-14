@@ -87,7 +87,7 @@ test('valid JSON typed into the editor is saved and comes back unchanged after a
 
   const field = await doc.property('config');
   const editor = codeContent(field);
-  // Labelled by the field's label; a monospaced editor with line numbers.
+  // Labeled by the field's label; a monospaced editor with line numbers.
   await expect(field.getByRole('textbox', { name: 'Config' })).toBeVisible();
   await expect(field.locator('.cm-lineNumbers')).toBeVisible();
   await editor.click();

@@ -2,7 +2,7 @@ import { crc32, deflateSync } from 'node:zlib';
 
 /**
  * A dependency-free PNG encoder for the seed's placeholder images: an RGB diagonal gradient between two
- * colours with a soft circle, so variants and galleries have something to show.
+ * colors with a soft circle, so variants and galleries have something to show.
  */
 export type Rgb = readonly [number, number, number];
 
@@ -22,7 +22,7 @@ export const createPng = (width: number, height: number, from: Rgb, to: Rgb): Bu
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
   header[8] = 8; // bit depth
-  header[9] = 2; // colour type: RGB
+  header[9] = 2; // color type: RGB
   const stride = width * 3 + 1;
   const pixels = Buffer.alloc(stride * height);
   const radius = Math.min(width, height) / 4;

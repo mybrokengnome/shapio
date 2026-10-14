@@ -25,7 +25,7 @@ On SQLite there is no database server to set up: skip this step and pass the fil
 `--database-url sqlite:./shapio.db` in step 2. Shapio creates the file on start ([SQLite](sqlite.md)).
 
 Shapio creates and migrates its own tables on start. Your content models never get tables of their own, so
-modelling never runs a migration.
+modeling never runs a migration.
 
 ## 2. Create the project
 
@@ -63,7 +63,7 @@ production; look for this `msg`:
 No admin account yet. Open http://localhost:4300/admin/ to create the owner account.
 ```
 
-The last startup line summarises the instance, e.g. `Shapio 0.1.0 running at http://localhost:4300/ (mode
+The last startup line summarizes the instance, e.g. `Shapio 0.1.0 running at http://localhost:4300/ (mode
 production, storage local, worker inline, tls off)`.
 
 Open that address and create the first owner ([First admin](first-admin.md)). The first person to complete
@@ -93,7 +93,7 @@ pm2 startup
 The process file runs one instance in fork mode; a commented cluster variant runs two (see
 [Several instances](#several-instances)). `pm2 startup` prints the command that starts PM2 at boot.
 
-To apply a configuration change or install a new extension: `pm2 restart my-cms`. Modelling never needs it.
+To apply a configuration change or install a new extension: `pm2 restart my-cms`. Modeling never needs it.
 
 ## Or with systemd
 
@@ -145,7 +145,7 @@ With PM2, add a second app to `ecosystem.config.cjs` with `args: 'worker'`. SQLi
 ## Next
 
 - [Networking](networking.md): your domain and HTTPS without nginx.
-- [Modelling](modelling.md): your first model.
+- [Modeling](modeling.md): your first model.
 - [Backup and restore](backup-restore.md) and [Upgrades](upgrades.md).
 
 ## Several instances

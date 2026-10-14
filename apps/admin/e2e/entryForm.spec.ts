@@ -27,7 +27,7 @@ const fieldRow = (label: string) => fieldList().getByRole('button', { name: new 
 const properties = () => page.getByRole('region', { name: / properties$/ });
 const entryForm = () => page.locator('[data-entry-layout="form"]');
 
-/** The form's sections in page order: the heading (null when unlabelled) and the top-level fields in each. */
+/** The form's sections in page order: the heading (null when unlabeled) and the top-level fields in each. */
 const formSections = () =>
   page.locator('section[data-form-section]').evaluateAll((sections) =>
     sections.map((section) => ({
@@ -175,7 +175,7 @@ test('a Product type set to Form opens its entries as a form', async () => {
     await expect(page.getByRole('group', { name: 'Properties' })).toHaveCount(0);
     await expect(page.locator('[data-canvas]')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Pricing' })).toBeVisible();
-    // Field order decides the sections: each run of ungrouped fields is its own unlabelled section.
+    // Field order decides the sections: each run of ungrouped fields is its own unlabeled section.
     expect(await formSections()).toEqual([
       { label: null, fields: ['/name'] },
       { label: 'Pricing', fields: ['/price', '/sku'] },

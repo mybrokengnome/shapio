@@ -22,7 +22,7 @@ const tileFill = [...markSvg.matchAll(/fill="([^"]+)"/g)].at(-1)?.[1];
 if (!viewBox || !body || !tileFill) throw new Error(`${MARK_FILE}: viewBox, paths or tile fill not found`);
 const [minX, minY, size] = viewBox.split(' ').map(Number);
 
-/** The mark centred on a square canvas of `size` units, optionally on a full-bleed background. */
+/** The mark centered on a square canvas of `size` units, optionally on a full-bleed background. */
 const markOnCanvas = (scale, background) => {
   const canvas = size / scale;
   const offset = (canvas - size) / 2;

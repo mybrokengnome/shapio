@@ -160,7 +160,7 @@ On an instance with several sites, `SHAPIO_SITE` names the site to read; it is p
 `site` option, which sends it with every request. Without it the delivery token's site is used, else the
 primary site. A token bound to one site never reads another (`403 SITE_MISMATCH`).
 
-The seed honours `SHAPIO_SITE` too: it creates the models, content and tokens on that site (else the admin
+The seed honors `SHAPIO_SITE` too: it creates the models, content and tokens on that site (else the admin
 token's site, else the primary) and writes `SHAPIO_SITE` to `.env`. The models become **that site's own**
 content types: a starter's schema belongs to the first site it is seeded on. Seeding the same starter onto a
 second site of the instance is refused (`DUPLICATE_ID`: its model files carry the same stable IDs). To use it

@@ -4,7 +4,7 @@
 
 Shapio reads all of its configuration from environment variables, validated at startup: an invalid value stops
 the server with a message naming the variable. The `shapio` command also reads a `.env` file in its working
-directory; variables already set in the environment win. Changing a variable needs a restart (modelling never
+directory; variables already set in the environment win. Changing a variable needs a restart (modeling never
 does).
 
 Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWORD`) are in the

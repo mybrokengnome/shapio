@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
  * contained change.
  *
  * Kysely's row locks (`forUpdate`, `forShare`, `skipLocked`) are allowed everywhere: a single-writer dialect
- * (SQLite) drops them with a Kysely plugin, because its transactions are already serialised. `onConflict`
+ * (SQLite) drops them with a Kysely plugin, because its transactions are already serialized. `onConflict`
  * with a column target is portable; a named-constraint target is not.
  */
 const SOURCE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

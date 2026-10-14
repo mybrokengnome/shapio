@@ -171,7 +171,7 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
     if (site.is_primary) {
       throw new AppError(409, 'SITE_IS_PRIMARY', 'The primary site cannot be deleted');
     }
-    // Serialised with schema changes, so no definition can be created on the site meanwhile.
+    // Serialized with schema changes, so no definition can be created on the site meanwhile.
     await lockSchema(trx);
     const contents = {
       ...(await sitesRepository.countContents(id, trx)),

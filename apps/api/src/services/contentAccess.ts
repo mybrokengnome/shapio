@@ -21,7 +21,7 @@ import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
 
-/** Everything a content service call needs: no HTTP objects (CONTRIBUTING.md, code organisation). */
+/** Everything a content service call needs: no HTTP objects (CONTRIBUTING.md, code organization). */
 export type ContentServiceContext = {
   db: Database;
   /** The request's pinned schema snapshot. */

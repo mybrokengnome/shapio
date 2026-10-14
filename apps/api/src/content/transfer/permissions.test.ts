@@ -43,7 +43,7 @@ describe('mergeWithTargetGrants', () => {
     ]);
   });
 
-  it('drops the bundle’s grants on models outside it in favour of the target’s', () => {
+  it('drops the bundle’s grants on models outside it in favor of the target’s', () => {
     const fromBundle = { key: 'site', permissions: [grant('story'), grant('secret')] };
     expect(mergeWithTargetGrants(fromBundle, [], known).permissions).toEqual([grant('story')]);
   });

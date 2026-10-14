@@ -1,7 +1,7 @@
 import {
   BUILT_IN_THEME_KEYS,
   THEME_BRAND_TOKENS,
-  THEME_COLOUR_PATTERN,
+  THEME_COLOR_PATTERN,
   THEME_KEY_PATTERN,
   THEME_SEMANTIC_TOKENS,
   THEME_VARIANTS,
@@ -140,7 +140,7 @@ const findNamingProblems = (config: Record<string, unknown>): ConfigProblem[] =>
 
 const BUILT_IN_THEMES: ReadonlySet<string> = new Set(BUILT_IN_THEME_KEYS);
 
-/** Theme keys (pattern, built-in, unique), at least one variant, and colour values (no CSS injection). */
+/** Theme keys (pattern, built-in, unique), at least one variant, and color values (no CSS injection). */
 const findThemeProblems = (themes: unknown): ConfigProblem[] => {
   const problems: ConfigProblem[] = [];
   const keys = new Set<string>();
@@ -169,10 +169,10 @@ const findThemeProblems = (themes: unknown): ConfigProblem[] => {
     for (const variant of THEME_VARIANTS) {
       const tokens = theme[variant];
       for (const [token, value] of Object.entries(isRecord(tokens) ? tokens : {})) {
-        if (typeof value === 'string' && !THEME_COLOUR_PATTERN.test(value)) {
+        if (typeof value === 'string' && !THEME_COLOR_PATTERN.test(value)) {
           problems.push({
             path: `${path}/${variant}/${token}`,
-            message: `"${value}" is not a colour: use #rrggbb, rgb(), hsl(), oklch() or oklab()`,
+            message: `"${value}" is not a color: use #rrggbb, rgb(), hsl(), oklch() or oklab()`,
           });
         }
       }

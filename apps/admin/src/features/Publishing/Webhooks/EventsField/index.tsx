@@ -15,14 +15,14 @@ type EventsFieldProps = { control: Control<WebhookFormValues> };
 /** The events a webhook receives, grouped; "all <group> events" subscribes to future ones too. */
 export const EventsField = ({ control }: EventsFieldProps) => {
   const { t } = useTranslation();
-  const catalogue = useWebhookEvents();
+  const catalog = useWebhookEvents();
   const { field, fieldState } = useController({ control, name: 'events' });
   const selected = field.value;
-  if (catalogue.isPending) {
+  if (catalog.isPending) {
     return <LoadingState rows={2} />;
   }
-  if (catalogue.isError) {
-    return <ErrorState error={catalogue.error} onRetry={() => void catalogue.refetch()} />;
+  if (catalog.isError) {
+    return <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />;
   }
   return (
     <FieldSet data-invalid={fieldState.invalid || undefined} aria-labelledby="webhook-events-title">
@@ -31,7 +31,7 @@ export const EventsField = ({ control }: EventsFieldProps) => {
         <InfoHint about={t('publishing.webhooks.events')}>{t('publishing.webhooks.eventsHint')}</InfoHint>
       </FieldLegend>
       <div className="space-y-4">
-        {groupEvents(catalogue.data).map((group) => {
+        {groupEvents(catalog.data).map((group) => {
           const groupSelected = selected.includes(groupPattern(group.group));
           const groupId = `webhook-events-${group.group}`;
           return (

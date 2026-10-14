@@ -30,7 +30,7 @@ const check = await verifyWebhookSignature({
   secret: process.env.SHAPIO_WEBHOOK_SECRET,
   signature: request.headers.get('x-shapio-signature'),
   timestamp: request.headers.get('x-shapio-timestamp'),
-  body: rawBody, // the body exactly as received, not re-serialised JSON
+  body: rawBody, // the body exactly as received, not re-serialized JSON
 });
 if (!check.ok) return new Response(check.reason, { status: 401 });
 ```

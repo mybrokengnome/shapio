@@ -7,7 +7,7 @@ export const SCHEDULE_STATUS_DISPLAY = {
   scheduled: { labelKey: 'publishing.scheduled.statuses.scheduled', tone: 'scheduled' },
   done: { labelKey: 'publishing.scheduled.statuses.done', tone: 'success' },
   failed: { labelKey: 'publishing.scheduled.statuses.failed', tone: 'danger' },
-  cancelled: { labelKey: 'publishing.scheduled.statuses.cancelled', tone: 'muted' },
+  canceled: { labelKey: 'publishing.scheduled.statuses.canceled', tone: 'muted' },
 } as const satisfies Record<ScheduleStatus, Display>;
 
 export const DELIVERY_STATUS_DISPLAY = {

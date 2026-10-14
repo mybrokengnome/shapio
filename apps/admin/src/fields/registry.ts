@@ -1,7 +1,7 @@
 import type { EditorDefinition } from '@shapio/editor-sdk';
 import {
   DEFAULT_EDITORS,
-  EDITOR_CATALOGUE,
+  EDITOR_CATALOG,
   isCustomEditorId,
   SEO_EDITOR_ID,
   type FieldDefinition,
@@ -37,36 +37,36 @@ const RichTextField = lazy(() =>
 /** CodeMirror and its language packs: loaded only when a form has a code field. */
 const CodeEditor = lazy(() => import('./CodeEditor').then((module) => ({ default: module.CodeEditor })));
 
-/** Built-in editors by catalogue ID (`EDITOR_CATALOGUE` in @shapio/schema). */
+/** Built-in editors by catalog ID (`EDITOR_CATALOG` in @shapio/schema). */
 export const BUILT_IN_EDITORS: Readonly<Record<string, BuiltInEditor>> = {
-  textInput: { component: TextInput, labelling: 'input' },
-  textarea: { component: Textarea, labelling: 'input' },
-  color: { component: ColorInput, labelling: 'input' },
-  richText: { component: RichTextField, labelling: 'group' },
-  numberInput: { component: NumberInput, labelling: 'input' },
-  toggle: { component: Toggle, labelling: 'input' },
-  checkbox: { component: CheckboxInput, labelling: 'input' },
-  segmented: { component: Segmented, labelling: 'group' },
-  select: { component: SelectInput, labelling: 'input' },
-  radio: { component: RadioInput, labelling: 'group' },
-  checkboxGroup: { component: CheckboxGroup, labelling: 'group' },
-  datePicker: { component: DateInput, labelling: 'input' },
-  dateTimePicker: { component: DateTimeInput, labelling: 'input' },
-  timePicker: { component: TimeInput, labelling: 'input' },
-  slugInput: { component: SlugInput, labelling: 'input' },
-  jsonEditor: { component: JsonEditor, labelling: 'input' },
-  codeEditor: { component: CodeEditor, labelling: 'group' },
-  mediaPicker: { component: MediaField, labelling: 'group' },
-  relationPicker: { component: RelationField, labelling: 'group' },
-  componentEditor: { component: ComponentField, labelling: 'group' },
-  dynamicZoneEditor: { component: DynamicZoneField, labelling: 'group' },
-  [SEO_EDITOR_ID]: { component: SeoField, labelling: 'group' },
+  textInput: { component: TextInput, labeling: 'input' },
+  textarea: { component: Textarea, labeling: 'input' },
+  color: { component: ColorInput, labeling: 'input' },
+  richText: { component: RichTextField, labeling: 'group' },
+  numberInput: { component: NumberInput, labeling: 'input' },
+  toggle: { component: Toggle, labeling: 'input' },
+  checkbox: { component: CheckboxInput, labeling: 'input' },
+  segmented: { component: Segmented, labeling: 'group' },
+  select: { component: SelectInput, labeling: 'input' },
+  radio: { component: RadioInput, labeling: 'group' },
+  checkboxGroup: { component: CheckboxGroup, labeling: 'group' },
+  datePicker: { component: DateInput, labeling: 'input' },
+  dateTimePicker: { component: DateTimeInput, labeling: 'input' },
+  timePicker: { component: TimeInput, labeling: 'input' },
+  slugInput: { component: SlugInput, labeling: 'input' },
+  jsonEditor: { component: JsonEditor, labeling: 'input' },
+  codeEditor: { component: CodeEditor, labeling: 'group' },
+  mediaPicker: { component: MediaField, labeling: 'group' },
+  relationPicker: { component: RelationField, labeling: 'group' },
+  componentEditor: { component: ComponentField, labeling: 'group' },
+  dynamicZoneEditor: { component: DynamicZoneField, labeling: 'group' },
+  [SEO_EDITOR_ID]: { component: SeoField, labeling: 'group' },
 };
 
 /** The built-in editor for a field: its chosen one when compatible, otherwise its data type's default. */
 export const builtInEditorFor = (field: FieldDefinition): BuiltInEditor => {
   const chosen = BUILT_IN_EDITORS[field.editor.id];
-  const compatible = EDITOR_CATALOGUE.get(field.editor.id)?.dataTypes.includes(field.type) ?? false;
+  const compatible = EDITOR_CATALOG.get(field.editor.id)?.dataTypes.includes(field.type) ?? false;
   const fallback = BUILT_IN_EDITORS[DEFAULT_EDITORS[field.type]];
   if (!fallback) {
     throw new Error(`No built-in editor for data type ${field.type}`);

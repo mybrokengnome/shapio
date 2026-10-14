@@ -12,7 +12,7 @@ type OptionProps = {
 
 /**
  * One result row (`role="option"`). Focus stays in the search input; the active row is announced through
- * `aria-activedescendant`, highlighted with the selection colour and shows the Enter hint.
+ * `aria-activedescendant`, highlighted with the selection color and shows the Enter hint.
  */
 export const Option = ({ id, item, active, onHover, onSelect }: OptionProps) => {
   const Icon = item.icon;

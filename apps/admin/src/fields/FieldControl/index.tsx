@@ -40,7 +40,7 @@ export const FieldControl = memo(
     const { t } = useTranslation();
     const environment = useFieldsEnvironment();
     const control = useFieldControl({ field, owner, value, onChange, path });
-    const LabelElement = control.labelling === 'input' ? Label : 'span';
+    const LabelElement = control.labeling === 'input' ? Label : 'span';
     const inline = layout === 'inline';
     return (
       <div
@@ -61,7 +61,7 @@ export const FieldControl = memo(
         >
           <LabelElement
             id={control.labelId}
-            {...(control.labelling === 'input' ? { htmlFor: control.inputId } : {})}
+            {...(control.labeling === 'input' ? { htmlFor: control.inputId } : {})}
             className={cn(
               'leading-5',
               inline ? 'text-meta font-medium text-muted-foreground' : 'text-sm font-semibold',

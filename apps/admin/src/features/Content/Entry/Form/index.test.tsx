@@ -57,7 +57,7 @@ describe('FormBody', () => {
     expect(screen.getByRole('textbox', { name: /Name/ })).toBeTruthy();
   });
 
-  it('lays the fields out in sections, labelled groups under their heading', () => {
+  it('lays the fields out in sections, labeled groups under their heading', () => {
     renderForm();
     const pricing = screen.getByRole('region', { name: 'Pricing' });
     expect(within(pricing).getByText('Price')).toBeTruthy();
@@ -71,7 +71,7 @@ describe('FormBody', () => {
       null,
     ]);
     expect(within(sections[2] as HTMLElement).getByText('Notes')).toBeTruthy();
-    // Only the unlabelled section after the group gets extra space above; no section has a line without text.
+    // Only the unlabeled section after the group gets extra space above; no section has a line without text.
     expect(sections.map((section) => section.classList.contains('pt-8'))).toEqual([false, false, true]);
     expect(sections[2]?.querySelector('[aria-hidden="true"].h-px')).toBeNull();
   });

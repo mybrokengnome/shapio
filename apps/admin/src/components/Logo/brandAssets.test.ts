@@ -48,7 +48,7 @@ describe('brand assets', () => {
     expect(viewBox(classicWordmarkSvg)).toBe(viewBox(brandWordmarkSvg));
   });
 
-  it('colours the Shapio mark yellow with a plum S, and keeps the classic mark blue with a white S', () => {
+  it('colors the Shapio mark yellow with a plum S, and keeps the classic mark blue with a white S', () => {
     expect(fills(brandMarkSvg)).toEqual(['#231527', '#E9F26E']);
     expect(fills(brandMarkMonoSvg)).toEqual(['#231527']);
     expect(fills(classicMarkSvg)).toEqual(['#FFFFFF', '#2F5BFF']);

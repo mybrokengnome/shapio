@@ -1,4 +1,4 @@
-import { EDITOR_CATALOGUE, SETTINGS_SCHEMAS } from '@shapio/schema';
+import { EDITOR_CATALOG, SETTINGS_SCHEMAS } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import { describeProperties } from './schemaControls';
 
@@ -27,7 +27,7 @@ describe('describeProperties', () => {
   });
 
   it('describes editor options', () => {
-    expect(describeProperties(EDITOR_CATALOGUE.get('color')?.optionsSchema)).toEqual([
+    expect(describeProperties(EDITOR_CATALOG.get('color')?.optionsSchema)).toEqual([
       { key: 'format', control: { kind: 'choice', options: ['hex', 'rgb'] }, required: false },
       { key: 'presets', control: { kind: 'textList' }, required: false },
     ]);

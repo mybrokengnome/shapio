@@ -125,7 +125,7 @@ export const EXPIRING_CREDENTIAL_TABLES = [
 export type ExpiringCredentialTable = (typeof EXPIRING_CREDENTIAL_TABLES)[number];
 
 /**
- * Credentials that expired before the cutoff: they no longer authorise anything, and the retention period
+ * Credentials that expired before the cutoff: they no longer authorize anything, and the retention period
  * keeps recently expired ones for looking into an incident.
  */
 export const pruneExpiredCredentials =

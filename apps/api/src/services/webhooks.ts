@@ -9,7 +9,7 @@ import type { PublishingRuntime } from '../publishing/runtime.js';
 import { decryptIfReadable } from '../publishing/secretBox.js';
 import * as webhooksRepository from '../repositories/webhooks.js';
 import type { WebhookDeliveryRow, WebhookSummaryRow } from '../repositories/webhooks.js';
-import { isValidEventPattern, WEBHOOK_EVENT_CATALOGUE, WEBHOOK_TEST_EVENT } from '../webhooks/catalogue.js';
+import { isValidEventPattern, WEBHOOK_EVENT_CATALOG, WEBHOOK_TEST_EVENT } from '../webhooks/catalog.js';
 import { enqueueDelivery, type WebhookBody } from '../webhooks/enqueue.js';
 import type { SiteActorContext, SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
@@ -112,7 +112,7 @@ const assertEvents = (events: readonly string[]) => {
   }
 };
 
-export const listEventTypes = () => WEBHOOK_EVENT_CATALOGUE;
+export const listEventTypes = () => WEBHOOK_EVENT_CATALOG;
 
 export const listWebhooks = async (runtime: PublishingRuntime, site: SiteRef) =>
   (await webhooksRepository.list(site.id, runtime.db)).map((row) => toView(runtime, row));

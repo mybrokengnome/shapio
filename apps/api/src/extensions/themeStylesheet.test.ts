@@ -1,17 +1,17 @@
 import { THEME_SEMANTIC_TOKENS } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import { themeContrastWarnings } from './themeContrast.js';
-import { buildThemeCatalogue } from './themeStylesheet.js';
+import { buildThemeCatalog } from './themeStylesheet.js';
 
 const tokens = (value: string) => Object.fromEntries(THEME_SEMANTIC_TOKENS.map((token) => [token, value]));
 
-describe('buildThemeCatalogue', () => {
+describe('buildThemeCatalog', () => {
   it('is empty without themes', () => {
-    expect(buildThemeCatalogue([])).toEqual({ items: [], stylesheet: '' });
+    expect(buildThemeCatalog([])).toEqual({ items: [], stylesheet: '' });
   });
 
   it('uses the built-in selectors: [data-theme] for the light or only variant, .dark for the second', () => {
-    const { items, stylesheet } = buildThemeCatalogue([
+    const { items, stylesheet } = buildThemeCatalog([
       { key: 'night', name: 'Night', dark: { background: '#000000' } },
       { key: 'duo', name: 'Duo', description: 'Both', light: { card: '#ffffff' }, dark: { card: '#111111' } },
     ]);
