@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-10-14
+
 ### Changed
 
 - The `cancelled` status of schema changes and scheduled publications is now `canceled`. A migration rewrites
