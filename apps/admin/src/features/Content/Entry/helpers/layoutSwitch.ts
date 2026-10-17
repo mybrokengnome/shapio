@@ -1,11 +1,15 @@
 import type { PlanPreview } from '@shapio/client';
-import type { EntryLayout, ModelDefinition } from '@shapio/schema';
+import { storedEntryLayout, type EntryLayout, type ModelDefinition } from '@shapio/schema';
 
-/** The definition with `display.layout` set; Document is the default, so it is written as unset. */
+/**
+ * The definition with `display.layout` set (`storedEntryLayout`): Document is the default, so a model that
+ * extends nothing leaves it unset, while a kind spells it out (unset would inherit its parent's layout).
+ */
 export const withEntryLayout = (definition: ModelDefinition, layout: EntryLayout): ModelDefinition => {
   const display = { ...definition.display };
   delete display.layout;
-  return { ...definition, display: layout === 'form' ? { ...display, layout } : display };
+  const stored = storedEntryLayout(definition, layout);
+  return { ...definition, display: stored === undefined ? display : { ...display, layout: stored } };
 };
 
 /**

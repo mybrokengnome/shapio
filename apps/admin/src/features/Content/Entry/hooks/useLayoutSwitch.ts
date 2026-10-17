@@ -6,6 +6,7 @@ import { useShipDraftNow } from '@/api/changeSets';
 import { hasErrorCode } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
 import { definitionQueryOptions, usePlanChange } from '@/api/schema';
+import { isDraftDirty } from '@/features/Models/helpers/draft';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { isQuietPlan, withEntryLayout } from '../helpers/layoutSwitch';
@@ -22,7 +23,8 @@ class NeedsReviewError extends Error {}
  * Switches how the model's entries open (`display.layout`) from the entry's Settings, at once: loads the
  * active definition, plans the change (it must be metadata only), and ships it as a one-item change set,
  * like the builder's Ship now without the review. The toast offers Undo, which ships the previous layout
- * the same way. The schema queries refresh, so the open entry re-renders in the new layout.
+ * the same way. The schema queries refresh, so the open entry re-renders in the new layout. `model` is the
+ * effective (resolved) definition, so a kind shows and undoes the layout it inherits.
  */
 export const useLayoutSwitch = (model: ModelDefinition) => {
   const { t } = useTranslation();
@@ -30,14 +32,18 @@ export const useLayoutSwitch = (model: ModelDefinition) => {
   const plan = usePlanChange();
   const ship = useShipDraftNow();
 
-  /** Ships `layout`; resolves with the layout it replaced. */
+  /** Ships `layout`; resolves with the layout it replaced. Nothing ships when the definition already says so. */
   const shipLayout = async (layout: EntryLayout): Promise<EntryLayout> => {
+    const previous = entryLayoutOf(model);
     const detail = await queryClient.fetchQuery({
       ...definitionQueryOptions('model', model.id),
       staleTime: 0,
     });
     const current = detail.definition as ModelDefinition;
     const definition = withEntryLayout(current, layout);
+    if (!isDraftDirty(definition, current)) {
+      return previous;
+    }
     const preview = await plan.mutateAsync({
       category: 'model',
       id: model.id,
@@ -56,7 +62,7 @@ export const useLayoutSwitch = (model: ModelDefinition) => {
     // The detail fetched above is the old version, and nothing observes it to refetch after the ship's
     // invalidation: drop it, so the builder (which starts from the cached detail) loads the new one.
     queryClient.removeQueries({ queryKey: queryKeys.schema.definition('model', model.id), exact: true });
-    return entryLayoutOf(current);
+    return previous;
   };
 
   const notifyFailure = (error: unknown) => {

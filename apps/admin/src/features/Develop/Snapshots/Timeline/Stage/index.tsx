@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
+import type { PlaceWithLocales } from '../helpers/places';
 import { useStateAt } from '../hooks/useStateAt';
-import type { PlaceWithLocales } from '../hooks/useTimelinePlaces';
 import { PlaceSection } from '../PlaceSection';
 
 type StageProps = {

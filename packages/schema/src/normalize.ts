@@ -1,3 +1,4 @@
+import { storedEntryLayout } from './display/layout.js';
 import { DEFAULT_EDITORS } from './editors/catalog.js';
 import { suggestPlural } from './naming/plural.js';
 import type {
@@ -86,9 +87,12 @@ const normalizeField = (field: FieldInputWithId): FieldDefinition => {
   return withoutEmpty(normalized) as FieldDefinition;
 };
 
-// The default layout has one spelling: absent.
-const normalizeModelDisplay = (display: ModelDefinitionInput['display']): ModelDisplay =>
-  withoutEmpty({ ...display, layout: display?.layout === 'document' ? undefined : display?.layout });
+// The default layout has one spelling: absent. A kind keeps an explicit `document`: absent inherits.
+const normalizeModelDisplay = (
+  display: ModelDefinitionInput['display'],
+  extendsId: string | undefined,
+): ModelDisplay =>
+  withoutEmpty({ ...display, layout: storedEntryLayout({ extends: extendsId }, display?.layout) });
 
 const normalizeComponentDisplay = (display: ComponentDefinitionInput['display']): ComponentDisplay =>
   withoutEmpty({ ...display });
@@ -97,8 +101,9 @@ const normalizeComponentDisplay = (display: ComponentDefinitionInput['display'])
  * Applies defaults so that two definitions meaning the same thing are byte-identical once serialized
  * canonically: a hand-written file that omits `public` hashes the same as one that says `public: true`.
  * Empty optional strings and arrays are dropped, and so are the defaults of keys added after definitions
- * were first hashed (`width: 'full'`, `display.layout: 'document'`). A collection without a plural API ID
- * gets the suggested one (`suggestPlural`), so files and definitions from before plural API IDs keep working.
+ * were first hashed (`width: 'full'`, and `display.layout: 'document'` on a model that extends nothing). A
+ * collection without a plural API ID gets the suggested one (`suggestPlural`), so files and definitions from
+ * before plural API IDs keep working.
  */
 export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefinition => {
   const fields = input.fields.map(normalizeField);
@@ -130,7 +135,7 @@ export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefini
     // Kept on any model kind so a singleton that extends something is reported, never silently dropped.
     extends: input.extends,
     fields,
-    display: normalizeModelDisplay(input.display),
+    display: normalizeModelDisplay(input.display, input.extends),
   });
   return model;
 };

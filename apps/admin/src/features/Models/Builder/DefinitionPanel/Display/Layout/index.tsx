@@ -1,6 +1,7 @@
 import {
   ENTRY_LAYOUTS,
   entryLayoutOf,
+  storedEntryLayout,
   type EntryLayout,
   type ModelDefinition,
   type ValidationIssue,
@@ -10,6 +11,7 @@ import { SelectControl } from '../../../controls/SelectControl';
 import { FormWireframe } from '../FormWireframe';
 
 type LayoutProps = {
+  /** The draft resolved over its parent: a kind shows the layout it inherits until it sets its own. */
   model: ModelDefinition;
   /** Issues under `/display/layout`. */
   issues: readonly ValidationIssue[];
@@ -34,8 +36,11 @@ export const Layout = ({ model, issues, disabled, onChange }: LayoutProps) => {
         hint={t('models.builder.layoutHint')}
         value={layout}
         options={ENTRY_LAYOUTS.map((value) => ({ value, label: t(LAYOUT_LABEL_KEYS[value]) }))}
-        // Document is the default, so it is written as unset and the definition stays minimal.
-        onChange={(value) => onChange(value === 'form' ? value : undefined)}
+        // Document is the default, so a model that extends nothing leaves it unset; a kind spells it out.
+        onChange={(value) => {
+          const chosen = ENTRY_LAYOUTS.find((option) => option === value);
+          onChange(chosen && storedEntryLayout(model, chosen));
+        }}
         issues={issues}
         disabled={disabled}
       />

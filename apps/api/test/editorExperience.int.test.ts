@@ -349,6 +349,36 @@ describe('editor experience: pre-flight, content health, presence, counts, model
       expect((await findings()).filter((finding) => finding.entryId === entry.id)).toEqual([]);
     });
 
+    it('titles a finding on a kind’s entry with the title field it inherits', async () => {
+      const guide = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'guide',
+        label: 'Guide',
+        localized: true,
+        fields: [{ apiKey: 'heading', label: 'Heading', type: 'string', localized: true }],
+        display: { layout: 'form' },
+      });
+      // Like a kind made in the builder: its own title setting points at the inherited field.
+      const howTo = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'howTo',
+        label: 'How-to',
+        localized: true,
+        extends: guide.definition.id,
+        fields: [{ apiKey: 'steps', label: 'Steps', type: 'richtext', localized: true }],
+        display: { titleFieldId: fieldIdOf(guide, 'heading') },
+      });
+      const entry = expectStatus(
+        await admin.post('/api/admin/content/howTo', { data: { heading: 'Brew coffee' } }),
+        201,
+      ).json<EntryBody>();
+      await drain();
+      expect((await findings(admin, '?modelKey=howTo')).filter((f) => f.entryId === entry.id)).toEqual([
+        expect.objectContaining({ rule: 'localeMissing', locale: 'fr', entryTitle: 'Brew coffee' }),
+      ]);
+      expect(howTo.definition.extends).toBe(guide.definition.id);
+    });
+
     it('lists findings only for models the caller may read, and honors row filters', async () => {
       const entry = expectStatus(
         await admin.post('/api/admin/content/article', { data: { title: 'Lonely' } }),
