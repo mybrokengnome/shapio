@@ -18,26 +18,32 @@ const elementFor = (path: string) => {
   return null;
 };
 
+/** The control to focus inside a field's block: an image's alt input, a linked entry's row, or none. */
+const itemIn = (block: HTMLElement, assetId: string | undefined, linkedEntryId: string | undefined) =>
+  assetId
+    ? block.querySelector<HTMLElement>(`[data-media-id="${CSS.escape(assetId)}"] [data-alt-input]`)
+    : linkedEntryId
+      ? block.querySelector<HTMLElement>(`[data-linked-entry="${CSS.escape(linkedEntryId)}"]`)
+      : null;
+
 /**
- * Takes a person to a value (a pre-flight "Fix" link): opens the settings drawer when the field is a
- * property that isn't on the page, then scrolls to it and focuses its control. An image without alt text
- * focuses that image's alt input.
+ * Takes a person to a value (a pre-flight "Fix" link, an Inbox link): opens the settings drawer when the
+ * field is a property that isn't on the page, then scrolls to it and focuses its control. An image without
+ * alt text focuses that image's alt input; a relation's linked entry focuses that entry's row.
  */
 export const useRevealField = (idPrefix: string, openProperty: (apiKey: string) => void) =>
   useCallback(
-    (path: string, assetId?: string) => {
+    (path: string, assetId?: string, linkedEntryId?: string) => {
       const apiKey = path.split('/')[1] ?? '';
       const focus = () => {
         const target = elementFor(path);
         if (!target) {
           return false;
         }
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const image = assetId
-          ? target.querySelector<HTMLElement>(`[data-media-id="${CSS.escape(assetId)}"] [data-alt-input]`)
-          : null;
+        const item = itemIn(target, assetId, linkedEntryId);
+        (item ?? target).scrollIntoView({ behavior: 'smooth', block: 'center' });
         const control =
-          image ??
+          item ??
           document.getElementById(fieldDomId(idPrefix, path)) ??
           target.querySelector<HTMLElement>(FOCUSABLE);
         control?.focus({ preventScroll: true });

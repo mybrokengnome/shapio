@@ -5,9 +5,9 @@ import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RULE_FIX_KEYS, RULE_SENTENCE_KEYS } from '../../constants';
+import { RULE_FIX_KEYS } from '../../constants';
 import { entryLink } from '../../helpers/entryLink';
-import { findingParams } from '../../helpers/findingParams';
+import { findingParams, linkedEntryOf, sentenceKeyOf } from '../../helpers/findingParams';
 
 type FindingProps = {
   finding: ContentHealthFinding;
@@ -23,6 +23,8 @@ export const Finding = ({ finding, model, localeLabel, showLocale }: FindingProp
   const titleId = useId();
   const params = findingParams(finding, model, localeLabel, t('inbox.aField'));
   const title = finding.entryTitle ?? t('content.untitled');
+  const sentence = t(sentenceKeyOf(finding), params);
+  const linkedEntry = linkedEntryOf(finding);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 sm:flex-nowrap">
       <div className="min-w-0 flex-1 space-y-0.5">
@@ -30,12 +32,7 @@ export const Finding = ({ finding, model, localeLabel, showLocale }: FindingProp
           {title}
         </p>
         <p className="text-meta text-muted-foreground">
-          {model
-            ? t('inbox.findingMeta', {
-                place: model.label,
-                sentence: t(RULE_SENTENCE_KEYS[finding.rule], params),
-              })
-            : t(RULE_SENTENCE_KEYS[finding.rule], params)}
+          {model ? t('inbox.findingMeta', { place: model.label, sentence }) : sentence}
         </p>
       </div>
       {showLocale && finding.locale !== '*' ? (
@@ -48,6 +45,7 @@ export const Finding = ({ finding, model, localeLabel, showLocale }: FindingProp
           {...entryLink(finding.modelKey, finding.entryId, model?.kind, {
             locale: finding.locale,
             ...(finding.path ? { path: finding.path } : {}),
+            ...(linkedEntry ? { target: linkedEntry } : {}),
           })}
           aria-describedby={titleId}
         >

@@ -27,8 +27,10 @@ import { useDocumentPaletteActions } from './hooks/useDocumentPaletteActions';
 import { useDocumentShortcuts } from './hooks/useDocumentShortcuts';
 import { useEntryDocument } from './hooks/useEntryDocument';
 import { useEntryHeartbeat } from './hooks/useEntryHeartbeat';
+import { useLinkedValue } from './hooks/useLinkedValue';
 import { usePreflightFlow } from './hooks/usePreflightFlow';
 import { useRevealField } from './hooks/useRevealField';
+import { useRevealLinkedValue } from './hooks/useRevealLinkedValue';
 import { useSettingsDrawer } from './hooks/useSettingsDrawer';
 import { LayoutSection } from './LayoutSection';
 import { NoFields } from './NoFields';
@@ -80,6 +82,8 @@ export const EntryDocument = ({
     mode.kind === 'edit' ? mode.entry.id : null,
     locale,
   );
+  // `#path` and `?target=` (Inbox, "Review link"): the value to go to and point out.
+  const { linkedValue } = useLinkedValue();
   const entryDocument = useEntryDocument({
     schema,
     model,
@@ -89,6 +93,7 @@ export const EntryDocument = ({
     carry,
     onReload,
     drafts,
+    linkedValue,
   });
   const { setup, saver, lifecycle, publishing, permissions, conflict, dirty } = entryDocument;
   const { store, entry, entryId, environment } = setup;
@@ -112,6 +117,7 @@ export const EntryDocument = ({
   const reveal = useRevealField(environment.idPrefix, (apiKey) =>
     drawer.openAt(form ? { section: 'status' } : { section: 'properties', property: apiKey }),
   );
+  useRevealLinkedValue(linkedValue, reveal, mode.kind === 'edit');
   const preview = useEntryPreview({
     model,
     components: schema.components,

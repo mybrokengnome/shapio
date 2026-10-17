@@ -33,7 +33,15 @@ type Check = {
   params: Record<string, unknown>;
 };
 type Preflight = { locales: { locale: string; ready: boolean; checks: Check[] }[]; entry: Check[] };
-type Finding = { entryId: string; rule: string; locale: string; entryTitle: string | null; path?: string };
+type Finding = {
+  entryId: string;
+  rule: string;
+  locale: string;
+  entryTitle: string | null;
+  path?: string;
+  params: Record<string, unknown>;
+  targetTitle?: string;
+};
 type Person = { userId: string; name: string; you: boolean; locale: string | null };
 type DraftState = {
   locale: string;
@@ -377,6 +385,57 @@ describe('editor experience: pre-flight, content health, presence, counts, model
         expect.objectContaining({ rule: 'localeMissing', locale: 'fr', entryTitle: 'Brew coffee' }),
       ]);
       expect(howTo.definition.extends).toBe(guide.definition.id);
+    });
+
+    it('names the linked entry of a relation finding only for callers who may read it', async () => {
+      const draftTag = expectStatus(
+        await admin.post('/api/admin/content/tag', { data: { name: 'Unreleased tag' } }),
+        201,
+      ).json<EntryBody>();
+      const entry = expectStatus(
+        await admin.post('/api/admin/content/article', {
+          data: { title: 'Linked', tag: draftTag.id },
+        }),
+        201,
+      ).json<EntryBody>();
+      await drain();
+      const linkFindings = async (client: SchemaClient) =>
+        (await findings(client, '?rule=relationUnpublished')).filter((f) => f.entryId === entry.id);
+      expect(await linkFindings(admin)).toEqual([
+        expect.objectContaining({
+          path: '/tag',
+          entryTitle: 'Linked',
+          targetTitle: 'Unreleased tag',
+          params: expect.objectContaining({ targetEntryId: draftTag.id }) as unknown,
+        }),
+      ]);
+      // May read articles but not tags: the finding is listed, the linked entry stays unnamed.
+      const articleReader = schemaClient(
+        testApp.app,
+        await createTokenForRole(
+          database.current.db,
+          await createRole(database.current.db, 'admin', [
+            { action: 'read', modelId: article.definition.id },
+          ]),
+        ),
+      );
+      const [withoutTags] = await linkFindings(articleReader);
+      expect(withoutTags).toMatchObject({ entryTitle: 'Linked' });
+      expect(withoutTags).not.toHaveProperty('targetTitle');
+      // May read only the tags it owns (none): the linked entry stays unnamed too.
+      const ownTagsReader = schemaClient(
+        testApp.app,
+        await createTokenForRole(
+          database.current.db,
+          await createRole(database.current.db, 'admin', [
+            { action: 'read', modelId: article.definition.id },
+            { action: 'read', modelId: tag.definition.id, condition: 'ownedByPrincipal' },
+          ]),
+        ),
+      );
+      const [ownTagsOnly] = await linkFindings(ownTagsReader);
+      expect(ownTagsOnly).toMatchObject({ entryTitle: 'Linked' });
+      expect(ownTagsOnly).not.toHaveProperty('targetTitle');
     });
 
     it('lists findings only for models the caller may read, and honors row filters', async () => {

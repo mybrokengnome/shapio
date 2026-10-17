@@ -68,6 +68,10 @@ export type ContentHealthFinding = {
   severity: CheckSeverity;
   path?: string;
   params: CheckParams;
+  /**
+   * A relation finding's linked entry's title (`params.targetEntryId`), only when the caller may read it.
+   */
+  targetTitle?: string;
   firstSeenAt: string;
   lastSeenAt: string;
 };

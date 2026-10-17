@@ -49,6 +49,8 @@ const FindingSchema = Type.Object({
   severity: Type.Enum(['error', 'warning']),
   path: Type.Optional(Type.String()),
   params: ParamsSchema,
+  /** A relation finding's linked entry's title, when the caller may read it. */
+  targetTitle: Type.Optional(Type.String()),
   firstSeenAt: DateTime,
   lastSeenAt: DateTime,
 });

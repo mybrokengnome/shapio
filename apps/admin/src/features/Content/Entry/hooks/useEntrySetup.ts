@@ -3,7 +3,7 @@ import type { ModelDefinition } from '@shapio/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { queryKeys } from '@/api/queryKeys';
-import type { FieldsEnvironment } from '@/fields/form/context';
+import type { FieldsEnvironment, LinkedValue } from '@/fields/form/context';
 import { createEntryFormStore } from '@/fields/form/store';
 import { defaultFormValues, toFormValues } from '@/fields/helpers/formValues';
 import type { FormValues } from '@/fields/helpers/values';
@@ -24,6 +24,8 @@ type SetupOptions = {
   disabled: boolean;
   /** The admin may not change this entry (no `update`, or no `create` for a new one). */
   readOnly: boolean;
+  /** The value the URL opened the entry at, if any. */
+  linkedValue?: LinkedValue;
 };
 
 /**
@@ -31,7 +33,16 @@ type SetupOptions = {
  * shared values, or defaults), the server's latest view of the entry and its version, and the environment
  * every field editor sees (schema, locale, custom editors, the media picker).
  */
-export const useEntrySetup = ({ schema, model, mode, locale, carry, disabled, readOnly }: SetupOptions) => {
+export const useEntrySetup = ({
+  schema,
+  model,
+  mode,
+  locale,
+  carry,
+  disabled,
+  readOnly,
+  linkedValue,
+}: SetupOptions) => {
   const queryClient = useQueryClient();
   const runtime = useRuntimeEditors();
   const { pickMedia, dialog: mediaDialog } = useMediaPickerDialog();
@@ -70,8 +81,21 @@ export const useEntrySetup = ({ schema, model, mode, locale, carry, disabled, re
       runtimeEditors: runtime.editors,
       pickMedia,
       ...(canUpload && !readOnly ? { uploadMedia: uploadOne } : {}),
+      ...(linkedValue ? { linkedValue } : {}),
     }),
-    [model, schema, locale, entryId, readOnly, disabled, runtime.editors, pickMedia, canUpload, uploadOne],
+    [
+      model,
+      schema,
+      locale,
+      entryId,
+      readOnly,
+      disabled,
+      runtime.editors,
+      pickMedia,
+      canUpload,
+      uploadOne,
+      linkedValue,
+    ],
   );
   return {
     store,

@@ -361,6 +361,7 @@
       "relationUnpublished": {
         "title": "Links to unpublished entries",
         "sentence": "{{field}} links to an entry that isn’t live, so readers won’t see it",
+        "sentenceTarget": "{{field}} links to “{{target}}”, which isn’t live, so readers won’t see it",
         "fix": "Review link"
       },
       "uniqueConflict": {

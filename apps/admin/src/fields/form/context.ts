@@ -5,6 +5,12 @@ import { useStore } from 'zustand';
 import type { UploadedMedia } from '@/hooks/useMediaUploader';
 import type { EntryFormState, EntryFormStore } from './store';
 
+/**
+ * The value a link opened the entry at (the URL's `#path`): the field to go to and, for a relation, the
+ * linked entry to point out (`?target=`).
+ */
+export type LinkedValue = { path: string; entryId?: string };
+
 /** What every field editor in a form shares: the schema, the entry, and capabilities. */
 export type FieldsEnvironment = {
   /** Prefix for DOM ids, unique per form on the page (the page's form and an inline-create drawer). */
@@ -29,6 +35,8 @@ export type FieldsEnvironment = {
    * dropped or pasted into rich text. Absent without `media.write`: editors then don't accept files.
    */
   uploadMedia?: (file: File) => Promise<UploadedMedia>;
+  /** The value the page was opened at, shown highlighted by the editor that holds it. */
+  linkedValue?: LinkedValue;
 };
 
 export const FieldsEnvironmentContext = createContext<FieldsEnvironment | null>(null);

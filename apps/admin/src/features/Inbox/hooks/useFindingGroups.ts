@@ -1,31 +1,30 @@
-import type { ContentHealthFinding, HealthRule } from '@shapio/client';
+import type { ContentHealthSummary, HealthRule } from '@shapio/client';
 import { useMemo } from 'react';
-import { useContentHealthFindings, useContentHealthSummary } from '@/api/contentHealth';
-import { FINDINGS_PAGE_SIZE, RULE_ORDER } from '../constants';
+import { useContentHealthSummary } from '@/api/contentHealth';
+import { RULE_ORDER } from '../constants';
 
 export type FindingGroup = {
   rule: HealthRule;
-  /** Open findings of the rule (from the summary; at least the loaded ones). */
+  /** Open findings of the rule the admin may see (from the summary). */
   count: number;
-  findings: ContentHealthFinding[];
 };
 
-/** Open findings grouped by rule, in RULE_ORDER, with the query state the Inbox needs. */
+/** The groups to show, in RULE_ORDER: every rule the summary counts findings for. */
+export const groupsOf = (summary: ContentHealthSummary | undefined): FindingGroup[] => {
+  const counts = new Map(summary?.rules.map(({ rule, count }) => [rule, count]));
+  return RULE_ORDER.flatMap((rule) => {
+    const count = counts.get(rule) ?? 0;
+    return count > 0 ? [{ rule, count }] : [];
+  });
+};
+
+/**
+ * The Inbox's "Needs you" groups, listed from the per-rule summary (one request), so a rule shows even when
+ * none of its findings are among the newest. Each group then reads its own findings (`useRuleFindings`).
+ */
 export const useFindingGroups = () => {
-  const findings = useContentHealthFindings({ limit: FINDINGS_PAGE_SIZE });
   const summary = useContentHealthSummary();
-  const groups = useMemo((): FindingGroup[] => {
-    const byRule = new Map<HealthRule, ContentHealthFinding[]>();
-    for (const finding of findings.data?.pages.flatMap((page) => page.items) ?? []) {
-      byRule.set(finding.rule, [...(byRule.get(finding.rule) ?? []), finding]);
-    }
-    const counts = new Map(summary.data?.rules.map(({ rule, count }) => [rule, count]));
-    return RULE_ORDER.flatMap((rule) => {
-      const items = byRule.get(rule) ?? [];
-      const count = Math.max(counts.get(rule) ?? 0, items.length);
-      return items.length > 0 ? [{ rule, count, findings: items }] : [];
-    });
-  }, [findings.data, summary.data]);
+  const groups = useMemo(() => groupsOf(summary.data), [summary.data]);
   const total = summary.data?.rules.reduce((sum, { count }) => sum + count, 0);
-  return { findings, groups, total };
+  return { summary, groups, total };
 };
