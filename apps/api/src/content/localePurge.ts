@@ -1,4 +1,4 @@
-import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
+import { isModelDefinition, type ResolvedModelDefinition } from '@shapio/schema';
 import type { Kysely, Transaction } from 'kysely';
 import type { Database } from '../db/index.js';
 import type { DB } from '../db/types.js';
@@ -22,8 +22,12 @@ import { releaseUnheldUniqueValues, uniqueFields } from './unique.js';
  * to the default locale instead.
  */
 
-const modelsOf = (schema: SchemaById): ModelDefinition[] =>
-  schema.definitions.map((active) => active.definition).filter(isModelDefinition);
+/** Effective definitions: a kind's fields (unique ones included) may be inherited (plan polymorphic-types). */
+const modelsOf = (schema: SchemaById): ResolvedModelDefinition[] =>
+  schema.definitions
+    .map((active) => active.definition)
+    .filter(isModelDefinition)
+    .flatMap((definition) => schema.resolve(definition.id) ?? []);
 
 const nonLocalizedModelIds = (schema: SchemaById) =>
   modelsOf(schema)

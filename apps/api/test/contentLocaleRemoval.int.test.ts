@@ -180,4 +180,46 @@ describe('deleting a locale', () => {
     expect((await admin.get(`/api/admin/content/product/${both.id}?locale=en`)).statusCode).toBe(200);
     expect(await publishedSku()).toEqual([]);
   });
+
+  it('releases the shared unique values a kind inherits, like its parent’s own', async () => {
+    const furniture = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'furniture',
+      label: 'Furniture',
+      localized: true,
+      extends: product.definition.id,
+      fields: [{ apiKey: 'material', label: 'Material', type: 'string', localized: true }],
+    });
+    expect(furniture.definition.fields.some((field) => field.unique)).toBe(false);
+    expectStatus(await admin.post('/api/admin/locales', { code: 'de', label: 'German' }), 201);
+    const chair = await create('furniture', { locale: 'en', data: { name: 'Chair', sku: 'CHAIR-1' } });
+    expectStatus(
+      await admin.put(`/api/admin/content/furniture/${chair.id}`, {
+        locale: 'de',
+        expectedVersion: null,
+        data: { name: 'Stuhl' },
+      }),
+      200,
+    );
+    expectStatus(
+      await admin.post(`/api/admin/content/furniture/${chair.id}/publish`, { locales: ['de'] }),
+      200,
+    );
+    const publishedSku = () =>
+      database.current.db
+        .selectFrom('unique_values')
+        .select('locale')
+        .where('field_id', '=', fieldIdOf(product, 'sku'))
+        .where('state', '=', 'published')
+        .where('entry_id', '=', chair.id)
+        .execute();
+    expect(await publishedSku()).toEqual([{ locale: '*' }]);
+
+    expectStatus(await admin.delete('/api/admin/locales/de?acknowledgeDestructive=true'), 200);
+    await runContentSchemaJobs(database.current.db);
+
+    // The English draft stays; the published SKU was held only through German, so it is released.
+    expect((await admin.get(`/api/admin/content/furniture/${chair.id}?locale=en`)).statusCode).toBe(200);
+    expect(await publishedSku()).toEqual([]);
+  });
 });
