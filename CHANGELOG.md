@@ -6,6 +6,17 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-10-17
+
+### Fixed
+
+- Needs you: a link to an unpublished entry names that entry, when you can read it, so two links from the same
+  field no longer look like the same row.
+- Needs you: each row opens the entry at the field it names, with the linked entry highlighted. Before, the
+  links never scrolled to the field.
+- Needs you: each group pages on its own ("Show all", then "Load more" inside the group). The panel-wide
+  "Load more" is gone, and a group whose findings are all older than the newest page now shows up.
+
 ## [0.5.11] - 2026-10-17
 
 ### Added
