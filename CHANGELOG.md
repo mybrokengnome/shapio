@@ -6,6 +6,21 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-10-17
+
+### Added
+
+- On a type that extends another, the builder's Layout setting offers "Same as <parent>", so the type follows
+  its parent's layout again, including later changes.
+
+### Fixed
+
+- Needs you showed "Untitled" for entries whose title field is inherited from a parent type.
+- Switching a type that extends a Form type to Document did nothing and failed with "Add at least one entry or
+  schema change to the change set first", from the entry's settings and from the builder.
+- The snapshot timeline missed titles inherited from a parent type.
+- Removing a language now releases published unique values that a type inherits from its parent.
+
 ## [0.5.10] - 2026-10-14
 
 ### Changed
