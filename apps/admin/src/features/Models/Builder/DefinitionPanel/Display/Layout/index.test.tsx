@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@/test/dom';
-import { createDefinitionIndex, type ModelDefinition } from '@shapio/schema';
+import { createDefinitionIndex, entryLayoutOf, type ModelDefinition } from '@shapio/schema';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { field, id, model } from '../../../../../../../../../packages/schema/src/testing/fixtures';
@@ -10,21 +10,23 @@ import { Layout } from '.';
 const page = model({
   id: id(1),
   apiKey: 'page',
+  label: 'Page',
   fields: [field({ id: id(2), apiKey: 'title', label: 'Title' })],
   display: { layout: 'form' },
 });
-const article = model({ id: id(3), apiKey: 'article', extends: page.id });
+const article = (display: ModelDefinition['display'] = {}) =>
+  model({ id: id(3), apiKey: 'article', extends: page.id, display });
 const note = model({ id: id(4), apiKey: 'note', display: { layout: 'form' } });
 
-const parentOf = (draft: ModelDefinition) =>
-  draft.extends ? createDefinitionIndex([page]).resolve(draft.extends) : undefined;
-
-/** Renders the builder's Layout for the draft resolved over its parent, as the Display panel does. */
+/** Renders the builder's Layout as the Display panel does: the resolved draft, its own value, its parent. */
 const renderLayout = (draft: ModelDefinition) => {
   const onChange = vi.fn();
+  const parent = draft.extends ? createDefinitionIndex([page]).resolve(draft.extends) : undefined;
   render(
     <Layout
-      model={resolveDraft(draft, parentOf(draft)) as ModelDefinition}
+      model={resolveDraft(draft, parent) as ModelDefinition}
+      ownLayout={draft.display.layout}
+      inherited={parent ? { parentLabel: parent.label, layout: entryLayoutOf(parent) } : undefined}
       issues={[]}
       disabled={false}
       onChange={onChange}
@@ -33,26 +35,46 @@ const renderLayout = (draft: ModelDefinition) => {
   return { onChange };
 };
 
-const choose = async (label: string) => {
+const open = async () => {
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-  fireEvent.click(await screen.findByRole('option', { name: label }));
+  return screen.findAllByRole('option');
+};
+const choose = async (label: string) => {
+  await open();
+  fireEvent.click(screen.getByRole('option', { name: label }));
 };
 
 describe('Layout', () => {
-  it('shows the layout a kind inherits while it sets none', () => {
-    renderLayout(article);
-    expect(screen.getByRole('combobox').textContent).toBe('Form');
+  it('selects "Same as" on a kind without its own layout, naming the parent and its layout', async () => {
+    renderLayout(article());
+    expect(screen.getByRole('combobox').textContent).toBe('Same as Page (Form)');
+    expect((await open()).map((option) => option.textContent)).toEqual([
+      'Same as Page (Form)',
+      'Document',
+      'Form',
+    ]);
+    // The form preview follows the effective layout.
+    expect(screen.getByText(/Form preview/)).toBeTruthy();
   });
 
-  it('writes Document explicitly on a kind, so it overrides the inherited Form', async () => {
-    const { onChange } = renderLayout(article);
+  it('selects a kind’s own layout, even when it matches the parent’s, and writes Document explicitly', async () => {
+    const { onChange } = renderLayout(article({ layout: 'form' }));
+    expect(screen.getByRole('combobox').textContent).toBe('Form');
     await choose('Document');
     expect(onChange).toHaveBeenCalledWith('document');
   });
 
-  it('writes Document as unset on a model that extends nothing', async () => {
+  it('clears a kind’s own layout when "Same as" is chosen', async () => {
+    const { onChange } = renderLayout(article({ layout: 'document' }));
+    await choose('Same as Page (Form)');
+    expect(onChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it('offers a model that extends nothing Document and Form only, Document written as unset', async () => {
     const { onChange } = renderLayout(note);
-    await choose('Document');
+    expect(screen.getByRole('combobox').textContent).toBe('Form');
+    expect((await open()).map((option) => option.textContent)).toEqual(['Document', 'Form']);
+    fireEvent.click(screen.getByRole('option', { name: 'Document' }));
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
 });

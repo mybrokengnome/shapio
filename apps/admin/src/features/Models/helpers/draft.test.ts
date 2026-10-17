@@ -58,6 +58,18 @@ describe('isDraftDirty', () => {
   });
 });
 
+describe('isDraftDirty: a kind’s own layout', () => {
+  const kind: ModelDefinition = { ...model, extends: '00000000-0000-4000-8000-000000000009' };
+
+  it('is dirty when a kind clears its own layout to follow its parent again', () => {
+    for (const layout of ['document', 'form'] as const) {
+      const base = { ...kind, display: { layout } };
+      expect(isDraftDirty({ ...kind, display: {} }, base)).toBe(true);
+    }
+    expect(isDraftDirty({ ...kind, display: {} }, { ...kind, display: {} })).toBe(false);
+  });
+});
+
 describe('moveItem', () => {
   it('moves items and ignores out-of-range moves', () => {
     expect(moveItem(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a']);

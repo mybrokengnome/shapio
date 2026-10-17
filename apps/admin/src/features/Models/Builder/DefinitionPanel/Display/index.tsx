@@ -67,6 +67,8 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
     <>
       <Layout
         model={definition}
+        ownLayout={own.kind === 'component' ? undefined : own.display.layout}
+        inherited={parent ? { parentLabel: parent.label, layout: entryLayoutOf(parent) } : undefined}
         issues={at('layout')}
         disabled={disabled}
         onChange={(value) => setDisplay('layout', value)}
