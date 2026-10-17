@@ -145,6 +145,15 @@ export const stripFieldsOf = (
 export const entryLayoutOf = (model: ModelDefinition): EntryLayout => model.display.layout ?? 'document';
 
 /**
+ * How `layout` is stored on a model (`display.layout`). Document is the default, so a model that extends
+ * nothing leaves it unset. A model that extends another spells it out: unset would inherit the parent's.
+ */
+export const storedEntryLayout = (
+  model: Pick<ModelDefinition, 'extends'>,
+  layout: EntryLayout | undefined,
+): EntryLayout | undefined => (layout === 'document' && !model.extends ? undefined : layout);
+
+/**
  * One section of a form-layout entry: a `display.groups` group (its `id` and `label`), or a run of
  * consecutive ungrouped fields (`label` undefined). A run's `id` is `ungrouped-<ID of its first field>`:
  * stable while that field stays first, and unique because a field starts one run at most. Should a group

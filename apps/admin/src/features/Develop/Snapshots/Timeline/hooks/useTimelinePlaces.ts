@@ -1,44 +1,26 @@
-import { effectiveLayout, effectiveTitleField, routeKeyOf, type ModelDefinition } from '@shapio/schema';
 import { useMemo } from 'react';
 import { useLocales } from '@/api/locales';
-import { useDefinitions } from '@/api/schema';
-import type { TimelinePlace } from '@/api/snapshots';
-
-export type PlaceWithLocales = TimelinePlace & { locales: string[] };
-
-const placeOf = (model: ModelDefinition, locales: string[]): PlaceWithLocales => {
-  const title = effectiveTitleField(model);
-  const cover = effectiveLayout(model).cover;
-  return {
-    modelId: model.id,
-    modelKey: model.apiKey,
-    routeKey: routeKeyOf(model),
-    label: model.label,
-    singleton: model.kind === 'singleton',
-    titleKey: title?.apiKey ?? null,
-    coverKey: cover?.apiKey ?? null,
-    locales,
-  };
-};
+import { useResolvedDefinitions } from '@/hooks/useResolvedDefinitions';
+import { placeOf } from '../helpers/places';
 
 /**
  * The places the timeline reads, with the locales to read each in: every locale for localized models
- * (delivery reports the locale it actually served, so fallbacks merge), the default one otherwise.
+ * (delivery reports the locale it actually served, so fallbacks merge), the default one otherwise. Models are
+ * resolved, so a kind's title and cover may be inherited (plan polymorphic-types).
  */
 export const useTimelinePlaces = () => {
-  const models = useDefinitions('model');
+  const { resolved, error } = useResolvedDefinitions();
   const locales = useLocales();
   const places = useMemo(() => {
-    if (!models.data || !locales.data) {
+    if (!resolved || !locales.data) {
       return undefined;
     }
     const codes = locales.data.map((locale) => locale.code);
     const defaultLocale = locales.data.find((locale) => locale.isDefault)?.code ?? codes[0] ?? 'en';
-    return models.data.flatMap(({ definition }) =>
-      definition.kind === 'component'
-        ? []
-        : [placeOf(definition, definition.localized ? codes : [defaultLocale])],
-    );
-  }, [models.data, locales.data]);
-  return { places, error: models.error ?? locales.error };
+    return resolved.definitions.flatMap(({ definition }) => {
+      const model = resolved.byId.get(definition.id);
+      return model ? [placeOf(model, model.localized ? codes : [defaultLocale])] : [];
+    });
+  }, [resolved, locales.data]);
+  return { places, error: error ?? locales.error };
 };

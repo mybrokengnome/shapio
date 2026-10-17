@@ -1154,6 +1154,7 @@
       "layoutHint": "Document: an entry opens as a page to write in, with the title as its heading, blocks in the body, and the other fields as properties. Form: every field is on the page at its width, with groups as sections.",
       "layoutDocument": "Document",
       "layoutForm": "Form",
+      "layoutInherited": "Same as {{parent}} ({{layout}})",
       "formWireframe_one": "Form preview: {{count}} field",
       "formWireframe_other": "Form preview: {{count}} fields",
       "width": "Width",

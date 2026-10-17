@@ -2,7 +2,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { snapshotPlaceQueryOptions, useSnapshotChanges } from '@/api/snapshots';
 import { buildCards, type LiveItem, type TimelineCard } from '../helpers/cards';
-import type { PlaceWithLocales } from './useTimelinePlaces';
+import type { PlaceWithLocales } from '../helpers/places';
 
 type CoverValue = { url?: unknown; variants?: Array<{ name?: unknown; url?: unknown }> };
 

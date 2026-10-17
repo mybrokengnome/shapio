@@ -1,4 +1,4 @@
-import { effectiveTitleField, isComponentDefinition, type ModelDefinition } from '@shapio/schema';
+import { effectiveTitleField, isModelDefinition, type ResolvedModelDefinition } from '@shapio/schema';
 import { everyRowReadMask, maskAllows, matchesRowFilter } from '../content/compiler/policy.js';
 import type { HealthRule } from '../content/health/rules.js';
 import { AppError } from '../helpers/appError.js';
@@ -32,14 +32,18 @@ export type FindingsQuery = { rule?: HealthRule; modelKey?: string; cursor?: str
 
 const DEFAULT_LIMIT = 50;
 
-type Readable = { definition: ModelDefinition; policy: Policy };
+type Readable = { definition: ResolvedModelDefinition; policy: Policy };
 
-/** The models the caller may read, with their read policies, by model ID. */
+/**
+ * The models the caller may read, with their read policies, by model ID. Effective definitions: a kind's
+ * title may be inherited (plan polymorphic-types).
+ */
 const readableModels = async (context: ContentServiceContext, modelKey?: string) => {
   const models = context.snapshot.definitions
     .map((active) => active.definition)
-    .filter((definition): definition is ModelDefinition => !isComponentDefinition(definition))
-    .filter((definition) => modelKey === undefined || definition.apiKey === modelKey);
+    .filter(isModelDefinition)
+    .filter((definition) => modelKey === undefined || definition.apiKey === modelKey)
+    .flatMap((definition) => context.snapshot.resolve(definition.id) ?? []);
   const policies = await Promise.all(
     models.map((definition) =>
       context.permissions.evaluate(context.actor, { action: 'read', modelId: definition.id }),

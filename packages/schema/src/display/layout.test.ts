@@ -7,6 +7,7 @@ import {
   effectiveLayout,
   entryLayoutOf,
   richTextBodyOf,
+  storedEntryLayout,
   stripFieldsOf,
 } from './layout.js';
 
@@ -191,6 +192,16 @@ describe('entryLayoutOf', () => {
   it('is document unless the model says form', () => {
     expect(entryLayoutOf(article())).toBe('document');
     expect(entryLayoutOf(article({ layout: 'form' }))).toBe('form');
+  });
+});
+
+describe('storedEntryLayout', () => {
+  it('leaves document unset on a model that extends nothing, and spells it out on a kind', () => {
+    expect(storedEntryLayout({}, 'document')).toBeUndefined();
+    expect(storedEntryLayout({}, 'form')).toBe('form');
+    expect(storedEntryLayout({ extends: id(1) }, 'document')).toBe('document');
+    expect(storedEntryLayout({ extends: id(1) }, 'form')).toBe('form');
+    expect(storedEntryLayout({ extends: id(1) }, undefined)).toBeUndefined();
   });
 });
 

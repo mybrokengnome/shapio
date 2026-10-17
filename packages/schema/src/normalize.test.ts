@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hashDefinition } from './fileFormat/hash.js';
+import { createDefinitionIndex } from './inheritance/resolve.js';
 import { renormalizeDefinition } from './normalize.js';
 import { component, field, id, model } from './testing/fixtures.js';
 import type { SchemaDefinition } from './types/definitions.js';
@@ -51,5 +52,20 @@ describe('normalizeDefinition: form layout and widths', () => {
     expect(spelled.display).toEqual({});
     expect(spelled.fields[0]).not.toHaveProperty('width');
     expect(await hashDefinition(spelled)).toBe(await hashDefinition(product({})));
+  });
+
+  it('keeps an explicit document layout on a kind, where leaving it out would inherit the parent’s', () => {
+    const page = model({ id: id(10), apiKey: 'page', display: { layout: 'form' } });
+    const article = model({
+      id: id(11),
+      apiKey: 'article',
+      extends: page.id,
+      display: { layout: 'document' },
+    });
+    expect(article.display).toEqual({ layout: 'document' });
+    const inheriting = model({ id: id(12), apiKey: 'news', extends: page.id });
+    const index = createDefinitionIndex([page, article, inheriting]);
+    expect(index.resolve(article.id)?.display.layout).toBe('document');
+    expect(index.resolve(inheriting.id)?.display.layout).toBe('form');
   });
 });
