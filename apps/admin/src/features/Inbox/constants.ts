@@ -70,6 +70,11 @@ export const RULE_SENTENCE_KEYS = {
   unpublishedChanges: 'inbox.rules.unpublishedChanges.sentence',
 } as const satisfies Record<HealthRule, string>;
 
+/** Sentences that name the linked entry, used when the finding carries its title (`targetTitle`). */
+export const RULE_TARGET_SENTENCE_KEYS = {
+  relationUnpublished: 'inbox.rules.relationUnpublished.sentenceTarget',
+} as const satisfies Partial<Record<HealthRule, string>>;
+
 export const RULE_FIX_KEYS = {
   requiredEmpty: 'inbox.rules.requiredEmpty.fix',
   altMissing: 'inbox.rules.altMissing.fix',

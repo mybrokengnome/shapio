@@ -5,6 +5,7 @@ import { AppError } from '../helpers/appError.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentHealthFindingsRepository from '../repositories/contentHealthFindings.js';
 import type { OpenFindingRow } from '../repositories/contentHealthFindings.js';
+import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { ContentServiceContext } from './contentAccess.js';
 
@@ -24,6 +25,11 @@ export type FindingView = {
   severity: 'error' | 'warning';
   path?: string;
   params: Record<string, string | number | null>;
+  /**
+   * A relation finding's linked entry's title, only when the caller may read that entry and its title field
+   * (left out otherwise, so it never tells whether a hidden entry exists).
+   */
+  targetTitle?: string;
   firstSeenAt: string;
   lastSeenAt: string;
 };
@@ -35,14 +41,13 @@ const DEFAULT_LIMIT = 50;
 type Readable = { definition: ResolvedModelDefinition; policy: Policy };
 
 /**
- * The models the caller may read, with their read policies, by model ID. Effective definitions: a kind's
+ * Every model the caller may read, with its read policy, by model ID. Effective definitions: a kind's
  * title may be inherited (plan polymorphic-types).
  */
-const readableModels = async (context: ContentServiceContext, modelKey?: string) => {
+const readableModels = async (context: ContentServiceContext) => {
   const models = context.snapshot.definitions
     .map((active) => active.definition)
     .filter(isModelDefinition)
-    .filter((definition) => modelKey === undefined || definition.apiKey === modelKey)
     .flatMap((definition) => context.snapshot.resolve(definition.id) ?? []);
   const policies = await Promise.all(
     models.map((definition) =>
@@ -58,6 +63,12 @@ const readableModels = async (context: ContentServiceContext, modelKey?: string)
   });
   return readable;
 };
+
+/** The readable models with the given API ID (all of them without one). */
+const withModelKey = (readable: Map<string, Readable>, modelKey: string | undefined) =>
+  modelKey === undefined
+    ? readable
+    : new Map([...readable].filter(([, model]) => model.definition.apiKey === modelKey));
 
 const encodeCursor = (row: OpenFindingRow) =>
   Buffer.from(JSON.stringify([row.last_seen_at.toISOString(), row.id])).toString('base64url');
@@ -77,35 +88,76 @@ const decodeCursor = (cursor: string | undefined) => {
   }
 };
 
-/** The entry's title in the finding's locale, else the default locale, when the read mask shows it. */
+type DraftRow = Awaited<ReturnType<typeof entryHeadsRepository.findDraftsForEntries>>[number];
+
+/** Rules whose findings name a linked entry (`targetEntryId` in their details). */
+const LINK_RULES: ReadonlySet<string> = new Set<HealthRule>(['relationUnpublished', 'relationMissing']);
+
+const targetIdOf = (row: OpenFindingRow): string | undefined => {
+  const id = (row.details as FindingView['params']).targetEntryId;
+  return LINK_RULES.has(row.rule) && typeof id === 'string' ? id : undefined;
+};
+
+/**
+ * Titles for the page in two queries: the drafts of the findings' entries and of the entries they link to,
+ * and the linked entries' rows (for the row filter). A title is the title field's value in the finding's
+ * locale, else the default locale, else any, and only when the read mask shows that field.
+ */
 const titlesFor = async (
   context: ContentServiceContext,
   rows: readonly OpenFindingRow[],
   readable: Map<string, Readable>,
 ) => {
-  const drafts = await entryHeadsRepository.findDraftsForEntries(
-    [...new Set(rows.map((row) => row.entry_id))],
-    context.db,
-  );
-  return (row: OpenFindingRow): string | null => {
-    const model = readable.get(row.model_id);
+  const targetIds = [...new Set(rows.flatMap((row) => targetIdOf(row) ?? []))];
+  const [drafts, targets] = await Promise.all([
+    entryHeadsRepository.findDraftsForEntries(
+      [...new Set([...rows.map((row) => row.entry_id), ...targetIds])],
+      context.db,
+    ),
+    entriesRepository.findByIds(targetIds, context.db),
+  ]);
+  const draftsByEntry = new Map<string, DraftRow[]>();
+  for (const draft of drafts) {
+    draftsByEntry.set(draft.entry_id, [...(draftsByEntry.get(draft.entry_id) ?? []), draft]);
+  }
+  const targetById = new Map(targets.map((entry) => [entry.id, entry]));
+  const titleOf = (entryId: string, model: Readable | undefined, locale: string): string | null => {
     const field = model ? effectiveTitleField(model.definition) : undefined;
     if (!model || !field || !maskAllows(everyRowReadMask(model.policy), field)) {
       return null;
     }
-    const ofEntry = drafts.filter((draft) => draft.entry_id === row.entry_id);
+    const ofEntry = draftsByEntry.get(entryId) ?? [];
     const head =
-      ofEntry.find((draft) => draft.locale === row.locale) ??
+      ofEntry.find((draft) => draft.locale === locale) ??
       ofEntry.find((draft) => draft.locale === context.snapshot.defaultLocale) ??
       ofEntry[0];
     const value = head?.data?.[field.id];
     return typeof value === 'string' && value.trim() !== '' ? value : null;
   };
+  return {
+    entryTitle: (row: OpenFindingRow) => titleOf(row.entry_id, readable.get(row.model_id), row.locale),
+    /** The linked entry's title, when it is a live entry of this site the caller may read. */
+    targetTitle: (row: OpenFindingRow): string | null => {
+      const target = targetById.get(targetIdOf(row) ?? '');
+      const model = target ? readable.get(target.model_id) : undefined;
+      if (
+        !target ||
+        !model ||
+        target.deleted_at !== null ||
+        target.site_id !== context.site.id ||
+        !matchesRowFilter(model.policy.rowFilter, context.actor, target)
+      ) {
+        return null;
+      }
+      return titleOf(target.id, model, row.locale);
+    },
+  };
 };
 
 /** Open findings, newest first, one page at a time. */
 export const listFindings = async (context: ContentServiceContext, query: FindingsQuery) => {
-  const readable = await readableModels(context, query.modelKey);
+  const everyReadable = await readableModels(context);
+  const readable = withModelKey(everyReadable, query.modelKey);
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_LIMIT, 1), 200);
   const after = decodeCursor(query.cursor);
   const rows = await contentHealthFindingsRepository.listOpen(
@@ -122,24 +174,28 @@ export const listFindings = async (context: ContentServiceContext, query: Findin
     const model = readable.get(row.model_id);
     return model !== undefined && matchesRowFilter(model.policy.rowFilter, context.actor, row);
   });
-  const titleOf = await titlesFor(context, visible, readable);
+  const titles = await titlesFor(context, visible, everyReadable);
   const last = rows.at(-1);
   return {
-    items: visible.map((row): FindingView => ({
-      id: row.id,
-      entryId: row.entry_id,
-      modelId: row.model_id,
-      modelKey: readable.get(row.model_id)?.definition.apiKey ?? '',
-      entryTitle: titleOf(row),
-      locale: row.locale,
-      rule: row.rule as HealthRule,
-      subject: row.subject,
-      severity: row.severity as FindingView['severity'],
-      ...(row.path ? { path: row.path } : {}),
-      params: row.details as FindingView['params'],
-      firstSeenAt: row.first_seen_at.toISOString(),
-      lastSeenAt: row.last_seen_at.toISOString(),
-    })),
+    items: visible.map((row): FindingView => {
+      const targetTitle = titles.targetTitle(row);
+      return {
+        id: row.id,
+        entryId: row.entry_id,
+        modelId: row.model_id,
+        modelKey: readable.get(row.model_id)?.definition.apiKey ?? '',
+        entryTitle: titles.entryTitle(row),
+        locale: row.locale,
+        rule: row.rule as HealthRule,
+        subject: row.subject,
+        severity: row.severity as FindingView['severity'],
+        ...(row.path ? { path: row.path } : {}),
+        params: row.details as FindingView['params'],
+        ...(targetTitle === null ? {} : { targetTitle }),
+        firstSeenAt: row.first_seen_at.toISOString(),
+        lastSeenAt: row.last_seen_at.toISOString(),
+      };
+    }),
     nextCursor: rows.length === limit && last ? encodeCursor(last) : null,
   };
 };

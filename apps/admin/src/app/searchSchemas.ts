@@ -105,4 +105,6 @@ export const entrySearchSchema = z.object({
   locale: z.string().max(35).optional().catch(undefined),
   /** Opens the document's history at this revision (Snapshots → Timeline, "Open this version"). */
   revision: z.uuid().optional().catch(undefined),
+  /** With a `#path` hash: the linked entry to point out in that relation (Inbox, "Review link"). */
+  target: z.uuid().optional().catch(undefined),
 });

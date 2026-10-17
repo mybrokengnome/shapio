@@ -2,6 +2,7 @@ import type { DraftState } from '@shapio/client';
 import type { ModelDefinition } from '@shapio/schema';
 import { useState } from 'react';
 import { useStore } from 'zustand';
+import type { LinkedValue } from '@/fields/form/context';
 import { selectDirtyKeys } from '@/fields/form/store';
 import { isEmptyValue, type FormValues } from '@/fields/helpers/values';
 import { useFollowingSlugs } from '@/fields/hooks/useFollowingSlugs';
@@ -25,6 +26,8 @@ type EntryDocumentOptions = {
   onReload: ReloadEntry;
   /** Every locale's draft as the presence heartbeat last saw it (saves made elsewhere). */
   drafts: readonly DraftState[];
+  /** The value the URL opened the entry at, if any. */
+  linkedValue?: LinkedValue;
 };
 
 /**
@@ -41,6 +44,7 @@ export const useEntryDocument = ({
   carry,
   onReload,
   drafts,
+  linkedValue,
 }: EntryDocumentOptions) => {
   const permissions = useEntryPermissions(model);
   const [conflict, setConflict] = useState<string | undefined>();
@@ -53,6 +57,7 @@ export const useEntryDocument = ({
     carry,
     disabled: conflict !== undefined || reloading,
     readOnly: mode.kind === 'create' ? !permissions.canCreate : !permissions.canUpdate,
+    linkedValue,
   });
   const { store, entry, setEntry, versionRef, entryId } = setup;
   const dirty = useStore(store, (state) => selectDirtyKeys(state).length > 0);

@@ -68,3 +68,49 @@ describe('a relation to a content type this role cannot read', () => {
     expect(screen.queryByText(/Untitled/)).toBeNull();
   });
 });
+
+describe('a relation opened at one of its linked entries (Inbox, "Review link")', () => {
+  const GUIDE = id(20);
+  const guide = model({ id: GUIDE, apiKey: 'guide', label: 'Guide', fields: [field({ apiKey: 'name' })] });
+  const page = model({
+    display: { layout: 'form' },
+    fields: [
+      field({
+        id: id(22),
+        apiKey: 'related',
+        label: 'Related guides',
+        type: 'relation',
+        settings: { target: GUIDE, cardinality: 'many' },
+      }),
+    ],
+  });
+
+  it('marks that entry’s row as current, and only that one', () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FieldsProvider
+          environment={{
+            ...environment,
+            model: page,
+            models: new Map([
+              [page.id, page],
+              [GUIDE, guide],
+            ]),
+            // Read-only keeps the picker (and its media query) out; the rows are the same.
+            readOnly: true,
+            linkedValue: { path: '/related', entryId: id(31) },
+          }}
+          store={createEntryFormStore({ related: [id(30), id(31)] })}
+        >
+          <FormBody model={page} heading="Page" />
+        </FieldsProvider>
+      </QueryClientProvider>,
+    );
+    const rows = document.querySelectorAll<HTMLElement>('[data-linked-entry]');
+    expect([...rows].map((row) => [row.dataset.linkedEntry, row.getAttribute('aria-current')])).toEqual([
+      [id(30), null],
+      [id(31), 'true'],
+    ]);
+    expect(rows[1]?.tabIndex).toBe(-1);
+  });
+});

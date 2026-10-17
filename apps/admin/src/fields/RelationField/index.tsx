@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { IconTile } from '@/components/IconTile';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/helpers/cn';
 import { useFieldsEnvironment } from '../form/context';
 import { entryTitle, shortId } from '../helpers/titles';
 import { moveItem, toList } from '../helpers/values';
@@ -21,8 +22,19 @@ import { RelationPicker } from './RelationPicker';
 export const RelationField = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
   const environment = useFieldsEnvironment();
-  const { value, onChange, onBlur, readOnly, disabled, definition, field, inputId, labelId, describedBy } =
-    props;
+  const {
+    value,
+    onChange,
+    onBlur,
+    readOnly,
+    disabled,
+    definition,
+    field,
+    path,
+    inputId,
+    labelId,
+    describedBy,
+  } = props;
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
@@ -32,6 +44,8 @@ export const RelationField = (props: BuiltInEditorProps) => {
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
   const labels = useEntryLabels(target, ids, environment.locale);
   const relationKinds = useRelationKinds(target);
+  // The linked entry a link opened the page at (Inbox, "Review link"): pointed out until the page changes.
+  const linkedId = environment.linkedValue?.path === path ? environment.linkedValue.entryId : undefined;
   if (!settings || !target) {
     // The schema refuses to delete a model a relation targets, so a target missing from the readable
     // registry is one this role can't read. Its links are kept on save; there is nothing to show or edit.
@@ -58,8 +72,18 @@ export const RelationField = (props: BuiltInEditorProps) => {
         <ul ref={listRef} className="space-y-2">
           {ids.map((id, index) => {
             const label = labelFor(id);
+            const linked = id === linkedId;
             return (
-              <li key={id} className="flex items-center gap-3 rounded-lg border bg-card p-2 pl-3">
+              <li
+                key={id}
+                data-linked-entry={id}
+                aria-current={linked ? 'true' : undefined}
+                tabIndex={linked ? -1 : undefined}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border bg-card p-2 pl-3 outline-none',
+                  linked && 'border-primary bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                )}
+              >
                 <IconTile icon={Layers} />
                 <span className="min-w-0 flex-1">
                   {label !== undefined ? (
