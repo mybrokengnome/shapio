@@ -209,6 +209,36 @@ describe('preview tokens and draft reads', () => {
     ).toBe('Draft title');
   });
 
+  it('addresses a kind’s preview under its family, in the URL and the preview API', async () => {
+    // The connection from the previous test renders `{path}`: the route key, then the entry ID.
+    const guide = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'guide',
+      label: 'Guide',
+      extends: article.definition.id,
+      fields: [{ apiKey: 'level', label: 'Level', type: 'string' }],
+    });
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/guide', { data: { title: 'Guide draft', level: 'easy' } }),
+      201,
+    ).json<EntryBody>();
+    const opened = expectStatus(
+      await asAdmin({
+        method: 'POST',
+        url: '/api/admin/preview/open',
+        payload: { modelKey: 'guide', entryId: entry.id },
+      }),
+      200,
+    ).json<{ url: string; apiUrl: string; token: string }>();
+    expect(guide.definition.extends).toBe(article.definition.id);
+    expect(opened.url).toBe(
+      `https://preview.example.test/articles%2Fguides/${entry.id}?token=${encodeURIComponent(opened.token)}`,
+    );
+    expect(opened.apiUrl).toContain(`/api/preview/content/articles%2Fguides/${entry.id}`);
+    const read = expectStatus(await preview(`articles%2Fguides/${entry.id}`, opened.token), 200);
+    expect(read.json<PreviewItem>().data).toMatchObject({ title: 'Guide draft', level: 'easy' });
+  });
+
   it('a token bound to a delivery role shows exactly what that role reads, within the creator’s access', async () => {
     const titleId = fieldIdOf(article, 'title');
     const notesId = fieldIdOf(article, 'notes');

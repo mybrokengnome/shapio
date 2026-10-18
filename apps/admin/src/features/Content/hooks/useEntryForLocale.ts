@@ -1,6 +1,6 @@
 import { ShapioApiError } from '@shapio/client';
 import type { ModelDefinition } from '@shapio/schema';
-import { useEntry } from '@/api/content';
+import { useEntry, useFreshEntry } from '@/api/content';
 import { isRecord } from '@/fields/helpers/values';
 import type { EntryMode } from '../Entry/types';
 
@@ -22,7 +22,8 @@ const existingLocalesOf = (error: unknown): string[] => {
  * version to start one from (its shared fields carry over).
  */
 export const useEntryForLocale = (model: ModelDefinition, entryId: string, locale: string | null) => {
-  const entry = useEntry(model.apiKey, entryId, locale ?? undefined);
+  // The form takes its values once: never from a copy that went stale (another tab, a save elsewhere).
+  const entry = useFreshEntry(model.apiKey, entryId, locale ?? undefined);
   const existing = existingLocalesOf(entry.error);
   const sourceLocale = model.localized ? existing[0] : undefined;
   const sourceEnabled = sourceLocale !== undefined;
