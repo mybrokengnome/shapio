@@ -6,6 +6,15 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-10-18
+
+### Fixed
+
+- API tokens: the Status column shows when a token expires, warns in its last 14 days ("Expires in 5 days"),
+  and says "Expired" once it has passed. Before, an expired token still showed "Active".
+- API tokens: revoked tokens are no longer listed, and the table fits a laptop screen with Revoke visible.
+  Before, the expiry date and the Revoke button were cut off on the right.
+
 ## [0.5.12] - 2026-10-17
 
 ### Fixed
