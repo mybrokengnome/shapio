@@ -5,7 +5,7 @@ import {
   PREVIEW_TOKEN_PREFIX,
 } from '../constants/publishing.js';
 import { writeLocaleFor } from '../content/locales.js';
-import { resolveModel } from '../content/model.js';
+import { resolveModel, type ContentModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { generateToken, hashToken, safeEqual } from '../helpers/tokens.js';
 import { previewTemplateOrigin, renderPreviewUrl } from '../publishing/previewUrl.js';
@@ -129,6 +129,9 @@ const findPreviewConnection = async (
   return connection;
 };
 
+/** The key delivery and preview serve a model at: its nested route key, or its plural for one built by hand. */
+const routeKeyOfModel = (model: ContentModel) => model.route?.key ?? routeKeyOf(model.definition);
+
 /** Creates a token for content the caller may read; returns it once, with the rendered preview URL. */
 export const createPreviewToken = async (
   context: ContentServiceContext,
@@ -195,7 +198,8 @@ export const createPreviewToken = async (
   const url = connection?.preview_url_template
     ? renderPreviewUrl(connection.preview_url_template, {
         token,
-        modelKey: routeKeyOf(model.definition),
+        // Where delivery and preview serve the model: a kind's path is under its family (`pages/articles`).
+        modelKey: routeKeyOfModel(model),
         entryId: input.entryId,
         locale: locale ?? context.snapshot.defaultLocale,
       })
@@ -217,8 +221,9 @@ export const openPreview = async (
   const created = await createPreviewToken(context, runtime, input);
   const locale = created.previewToken.locale;
   const query = locale ? `?locale=${encodeURIComponent(locale)}` : '';
-  // The preview route, like delivery, is addressed by the route key (plural API ID of a collection).
-  const routeKey = routeKeyOf(resolveModel(context.snapshot, input.modelKey).definition);
+  // The preview route, like delivery, is addressed by the route key (plural API ID of a collection; a kind's
+  // is under its family's, `pages/articles`).
+  const routeKey = routeKeyOfModel(resolveModel(context.snapshot, input.modelKey));
   return {
     id: created.previewToken.id,
     url: created.url,
