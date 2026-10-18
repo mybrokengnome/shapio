@@ -2,23 +2,32 @@ import { i18next } from '@/app/i18n';
 
 const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
 
-const formatterFor = (language: string) => {
-  let formatter = dateTimeFormats.get(language);
+const formatterFor = (language: string, withTime: boolean) => {
+  const key = `${language}|${withTime ? 'time' : 'date'}`;
+  let formatter = dateTimeFormats.get(key);
   if (!formatter) {
-    formatter = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' });
-    dateTimeFormats.set(language, formatter);
+    formatter = new Intl.DateTimeFormat(
+      language,
+      withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' },
+    );
+    dateTimeFormats.set(key, formatter);
   }
   return formatter;
 };
 
-/** Locale-aware date and time for tables; `null` and invalid input give an empty string. */
-export const formatDateTime = (value: string | null | undefined): string => {
+const format = (value: string | null | undefined, withTime: boolean): string => {
   if (!value) {
     return '';
   }
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : formatterFor(i18next.language).format(date);
+  return Number.isNaN(date.getTime()) ? '' : formatterFor(i18next.language, withTime).format(date);
 };
+
+/** Locale-aware date and time for tables; `null` and invalid input give an empty string. */
+export const formatDateTime = (value: string | null | undefined): string => format(value, true);
+
+/** Locale-aware date without the time ("Jan 16, 2027"); `null` and invalid input give an empty string. */
+export const formatDate = (value: string | null | undefined): string => format(value, false);
 
 const relativeTimeFormats = new Map<string, Intl.RelativeTimeFormat>();
 

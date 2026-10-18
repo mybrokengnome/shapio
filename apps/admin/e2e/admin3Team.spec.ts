@@ -212,7 +212,7 @@ test('settings → API tokens: created, shown once, listed, revoked', async () =
   await expect(secret.getByRole('button', { name: /Copy/ })).toBeFocused();
   expect(page.url()).not.toContain('shp_');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('cell', { name: 'Marketing site build', exact: true })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Marketing site build/ })).toBeVisible();
   await captureScreen(page, 'team-12-settings-api-token-secret', BOTH);
   await secret.getByRole('button', { name: "I've copied it" }).click();
   await expect(secret).toHaveCount(0);
@@ -222,7 +222,9 @@ test('settings → API tokens: created, shown once, listed, revoked', async () =
   const confirm = page.getByRole('alertdialog', { name: 'Revoke Marketing site build?' });
   await confirm.getByRole('button', { name: 'Revoke' }).click();
   await expect(page.getByText('Token revoked.')).toBeVisible();
-  await expect(page.getByRole('row', { name: /Marketing site build/ })).toContainText('Revoked');
+  // Revoked tokens leave the list; it was the only one, so the list is empty again.
+  await expect(page.getByRole('row', { name: /Marketing site build/ })).toHaveCount(0);
+  await expect(page.getByText('No API tokens yet.')).toBeVisible();
 });
 
 test('settings → a delivery role may read drafts, and its tokens say so', async () => {
@@ -261,7 +263,8 @@ test('settings → a delivery role may read drafts, and its tokens say so', asyn
     .getByRole('button', { name: "I've copied it" })
     .click();
   await expect(page.getByRole('row', { name: /Local dev server/ })).toContainText('Drafts');
-  await expect(page.getByRole('row', { name: /Marketing site build/ })).not.toContainText('Drafts');
+  // Only the draft-reading token says so (the revoked one is no longer listed).
+  await expect(page.getByRole('table').getByText('Drafts', { exact: true })).toHaveCount(1);
   await captureScreen(page, 'team-16-settings-api-tokens-drafts', BOTH);
 });
 

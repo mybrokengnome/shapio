@@ -13,6 +13,7 @@ import { QueryView } from '@/components/QueryView';
 import { SecretReveal } from '@/components/SecretReveal';
 import { Button } from '@/components/ui/button';
 import { CreateSheet } from '../CreateSheet';
+import { listedTokens } from '../helpers/tokenState';
 import { Table } from '../Table';
 
 /** API tokens for admins with `tokens.manage`: the list, New token, and the one-time secret. */
@@ -51,7 +52,8 @@ export const Manage = () => {
       ) : null}
       <QueryView
         query={tokens}
-        isEmpty={(data) => data.length === 0}
+        // Revoked tokens are gone for good: the list leaves them out, so revoking one removes its row.
+        isEmpty={(data) => listedTokens(data).length === 0}
         empty={
           <EmptyState
             icon={KeyRound}
@@ -63,7 +65,7 @@ export const Manage = () => {
       >
         {(data) => (
           <Table
-            tokens={data}
+            tokens={listedTokens(data)}
             roleNames={roleNames}
             draftRoleIds={draftRoleIds}
             siteName={siteName}
