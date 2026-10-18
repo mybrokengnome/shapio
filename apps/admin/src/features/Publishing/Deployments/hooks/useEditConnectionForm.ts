@@ -17,8 +17,8 @@ import {
 const editSchema = connectionSchema('edit');
 
 /**
- * Edits one version of a connection (the form is re-created when the version changes). Saves send the
- * version they started from; a 409 goes to `onConflict`. `onSaved` receives any secret the server generated
+ * Edits one version of a connection (the form is re-created when the version changes). Saves send only the
+ * fields that changed and the version they started from; a 409 goes to `onConflict`. `onSaved` receives any secret the server generated
  * (replacing one it could no longer read), for the page to show once.
  */
 export const useEditConnectionForm = (
@@ -37,7 +37,11 @@ export const useEditConnectionForm = (
       update.mutateAsync(
         {
           id: connection.id,
-          input: toUpdateConnectionInput(values, connection.version, regenerableSecrets(connection)),
+          input: toUpdateConnectionInput(values, {
+            initial: toConnectionValues(connection),
+            expectedVersion: connection.version,
+            regenerable: regenerableSecrets(connection),
+          }),
         },
         { onError: onConflict },
       ),
@@ -47,5 +51,7 @@ export const useEditConnectionForm = (
       onSaved(saved.value.generatedSecrets);
     }
   });
-  return { form, onSubmit, update, error: isConflict(update.error) ? undefined : update.error };
+  // Nothing to save until something changes, unless a secret the server can't read needs replacing.
+  const canSave = form.formState.isDirty || regenerableSecrets(connection).length > 0;
+  return { form, onSubmit, update, canSave, error: isConflict(update.error) ? undefined : update.error };
 };

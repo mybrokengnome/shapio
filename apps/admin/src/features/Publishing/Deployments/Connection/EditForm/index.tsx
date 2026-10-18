@@ -16,7 +16,7 @@ type EditFormProps = {
 
 export const EditForm = ({ connection, onSaved, onConflict }: EditFormProps) => {
   const { t } = useTranslation();
-  const { form, onSubmit, update, error } = useEditConnectionForm(connection, onSaved, onConflict);
+  const { form, onSubmit, update, canSave, error } = useEditConnectionForm(connection, onSaved, onConflict);
   return (
     <form noValidate onSubmit={(event) => void onSubmit(event)}>
       <UnsavedChangesGuard when={form.formState.isDirty && !update.isPending} />
@@ -29,7 +29,7 @@ export const EditForm = ({ connection, onSaved, onConflict }: EditFormProps) => 
         />
         <FormError error={error} />
         <div>
-          <SubmitButton pending={update.isPending} pendingLabel={t('common.saving')}>
+          <SubmitButton pending={update.isPending} pendingLabel={t('common.saving')} disabled={!canSave}>
             {t('common.saveChanges')}
           </SubmitButton>
         </div>
