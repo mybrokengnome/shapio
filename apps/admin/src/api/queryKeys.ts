@@ -138,6 +138,8 @@ export const queryKeys = {
     summary: ['contentHealth', 'summary'] as const,
   },
   contentCounts: ['contentCounts'] as const,
+  /** The running Shapio and Node versions (the status bar). */
+  serverVersion: ['serverVersion'] as const,
   /** The live snapshot number (delivery route; the Inbox's "Recently published" diffs back from it). */
   currentSnapshot: ['snapshots', 'current'] as const,
   /**

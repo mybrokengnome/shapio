@@ -439,7 +439,9 @@
     "signedInAs": "Signed in as"
   },
   "statusBar": {
-    "schema": "Schema v{{version}} · live, no restart needed"
+    "schema": "Schema v{{version}} · live, no restart needed",
+    "shapio": "Shapio {{version}}",
+    "versionTitle": "Running on Node {{node}}. Opens the changelog."
   },
   "home": {
     "models": "Content types",
