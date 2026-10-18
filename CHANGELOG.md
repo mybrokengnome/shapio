@@ -6,6 +6,22 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-10-18
+
+### Added
+
+- The status bar shows the running Shapio version, linked to the changelog, with the Node version on hover.
+
+### Fixed
+
+- After saving or publishing an entry, reopening it from a list or the palette showed the old values until a
+  page reload, and the next edit could fail with a conflict, so the preview kept showing the last saved
+  version. Saves now mark every cached copy of the entry stale, and change-set ships and translation runs
+  refresh content too.
+- Preview of a type that extends another (for example Article under Page) returned 404: its preview link
+  used the type's own route instead of the family's nested one.
+- Snapshots → Timeline failed on sites with a type that extends another.
+
 ## [0.5.14] - 2026-10-18
 
 ### Fixed
