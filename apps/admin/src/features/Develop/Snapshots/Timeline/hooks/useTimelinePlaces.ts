@@ -19,7 +19,11 @@ export const useTimelinePlaces = () => {
     const defaultLocale = locales.data.find((locale) => locale.isDefault)?.code ?? codes[0] ?? 'en';
     return resolved.definitions.flatMap(({ definition }) => {
       const model = resolved.byId.get(definition.id);
-      return model ? [placeOf(model, model.localized ? codes : [defaultLocale])] : [];
+      if (!model) {
+        return [];
+      }
+      const ancestors = model.ancestorIds.flatMap((id) => resolved.byId.get(id) ?? []);
+      return [placeOf(model, ancestors, model.localized ? codes : [defaultLocale])];
     });
   }, [resolved, locales.data]);
   return { places, error: error ?? locales.error };

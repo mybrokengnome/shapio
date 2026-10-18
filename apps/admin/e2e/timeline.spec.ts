@@ -45,13 +45,26 @@ const createPublished = async (title: string) => {
 
 test.beforeAll(async ({ browser }) => {
   page = await openSession(browser);
-  await adminRequest(page.request, 'POST', '/models', {
+  const created = await adminRequest(page.request, 'POST', '/models', {
     definition: {
       kind: 'collection',
       apiKey: MODEL_KEY,
       pluralApiKey: 'tlNotes',
       label: 'Field note',
       fields: [{ apiKey: 'title', label: 'Title', type: 'string', required: true }],
+    },
+  });
+  // A kind of the place, without entries: the timeline reads it where delivery serves it, under its family
+  // (`tlNotes/tlSketches`); read by its own plural, the whole timeline failed to load.
+  const { definitionId: noteId } = (await created.json()) as { definitionId: string };
+  await adminRequest(page.request, 'POST', '/models', {
+    definition: {
+      kind: 'collection',
+      apiKey: 'tlSketch',
+      pluralApiKey: 'tlSketches',
+      label: 'Field sketch',
+      extends: noteId,
+      fields: [{ apiKey: 'medium', label: 'Medium', type: 'string' }],
     },
   });
   alphaId = await createPublished('Alpha');
