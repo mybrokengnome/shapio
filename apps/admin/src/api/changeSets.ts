@@ -9,10 +9,11 @@ import type {
 } from '@shapio/client';
 import { ShapioApiError } from '@shapio/client';
 import type { SchemaDefinition } from '@shapio/schema';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { PUBLISHING_POLL_INTERVAL_MS } from '@/constants/publishing';
 import { logError } from '@/helpers/reportError';
 import { adminApi } from './client';
+import { invalidateAllEntries } from './content';
 import { withCsrf } from './csrf';
 import { queryKeys } from './queryKeys';
 
@@ -34,13 +35,32 @@ const pollWhileShipping = (set: ChangeSet | undefined) =>
   set?.status === 'shipping' ? PUBLISHING_POLL_INTERVAL_MS : false;
 
 /** One set, polled while it ships in the background (prerequisites running). */
-export const useChangeSet = (id: string) =>
-  useQuery({
+/** A ship publishes entries: once a set has shipped, every list and cached entry is out of date. */
+const refreshEntriesIfShipped = (
+  queryClient: QueryClient,
+  set: ChangeSet,
+  before: Pick<ChangeSet, 'status'> | undefined,
+) =>
+  set.status === 'shipped' && before?.status !== 'shipped' ? invalidateAllEntries(queryClient) : undefined;
+
+/** Polled while it ships; the entries it published are refreshed when it finishes. */
+export const useChangeSet = (id: string) => {
+  const queryClient = useQueryClient();
+  return useQuery({
     queryKey: queryKeys.develop.changeSets.set(id),
-    queryFn: () => changeSetsApi.get(id),
+    queryFn: async () => {
+      const before = queryClient.getQueryData<ChangeSet>(queryKeys.develop.changeSets.set(id));
+      const set = await changeSetsApi.get(id);
+      // Only a ship seen running here: a set first loaded as shipped changed nothing just now.
+      if (before?.status === 'shipping') {
+        void refreshEntriesIfShipped(queryClient, set, before);
+      }
+      return set;
+    },
     refetchInterval: (query) => pollWhileShipping(query.state.data),
     meta: silent,
   });
+};
 
 /**
  * The review (diffs, planner results, consumers, checks). Not refetched on focus: a strict ship needs a stable
@@ -85,8 +105,12 @@ const useChangeSetWrite = <TVariables>(
     meta: silent,
     mutationFn: (variables: TVariables) => withCsrf(() => call(variables)),
     onSuccess: (set) => {
+      const before = queryClient.getQueryData<ChangeSet>(queryKeys.develop.changeSets.set(set.id));
       queryClient.setQueryData(queryKeys.develop.changeSets.set(set.id), set);
-      return queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all }),
+        refreshEntriesIfShipped(queryClient, set, before),
+      ]);
     },
   });
 };

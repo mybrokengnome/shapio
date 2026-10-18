@@ -1,6 +1,6 @@
 import type { ModelDefinition } from '@shapio/schema';
 import { useMemo } from 'react';
-import { useEntry } from '@/api/content';
+import { useFreshEntry } from '@/api/content';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { quickEditFieldsOf } from '../helpers/quickEditFields';
@@ -21,13 +21,14 @@ type QuickEditProps = {
  * the document's field editors, without opening the document.
  */
 export const QuickEdit = ({ quickEdit, model, entryId, label, locale, onClose }: QuickEditProps) => {
-  const entry = useEntry(model.apiKey, entryId, locale ?? undefined);
+  // The form takes its values once: never from a copy that went stale since it was cached.
+  const entry = useFreshEntry(model.apiKey, entryId, locale ?? undefined);
   const fields = useMemo(() => quickEditFieldsOf(model), [model]);
-  if (entry.isPending) {
-    return <LoadingState rows={2} />;
-  }
-  if (entry.isError) {
+  if (entry.error) {
     return <ErrorState size="panel" error={entry.error} onRetry={() => void entry.refetch()} />;
+  }
+  if (!entry.data) {
+    return <LoadingState rows={2} />;
   }
   return (
     <Form

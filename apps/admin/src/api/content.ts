@@ -14,6 +14,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
+import { useState } from 'react';
 import { adminApi } from './client';
 import { withCsrf } from './csrf';
 import { queryKeys } from './queryKeys';
@@ -35,17 +36,40 @@ export const entryListQueryOptions = (modelKey: string, query: ContentListQuery)
 export const useEntryList = (modelKey: string, query: ContentListQuery, enabled = true) =>
   useQuery({ ...entryListQueryOptions(modelKey, query), enabled });
 
+/**
+ * One entry in one locale (`undefined`: the request's default). Fresh for the default 30 seconds: a form
+ * opened on an older copy reads it again first (`useFreshEntry`), so it never starts from a stale one.
+ */
 export const entryQueryOptions = (modelKey: string, id: string, locale: string | undefined) =>
   queryOptions({
     queryKey: queryKeys.content.entry(modelKey, id, locale),
     queryFn: () => adminApi.content.get(modelKey, id, locale ? { locale } : {}),
-    // The form owns the values once loaded; it is refreshed explicitly (conflicts, restores, locales).
-    staleTime: Infinity,
     meta: silent,
   });
 
 export const useEntry = (modelKey: string, id: string, locale: string | undefined, enabled = true) =>
   useQuery({ ...entryQueryOptions(modelKey, id, locale), enabled });
+
+/**
+ * The entry for a form, which takes its values once, as it opens. A cached copy that is stale at that moment
+ * (older than the stale time, or marked stale by a write elsewhere) is not handed out: `data` stays undefined
+ * until the read that opening starts comes back. Later reads never take a loaded form away.
+ */
+export const useFreshEntry = (modelKey: string, id: string, locale: string | undefined) => {
+  const query = useEntry(modelKey, id, locale);
+  const key = `${modelKey}|${id}|${locale ?? ''}`;
+  const staleNow = query.data !== undefined && query.isStale;
+  const [opened, setOpened] = useState({ key, stale: staleNow });
+  if (opened.key !== key) {
+    setOpened({ key, stale: staleNow });
+  }
+  const waiting = opened.key === key ? opened.stale && !query.isFetchedAfterMount : staleNow;
+  return {
+    data: waiting ? undefined : query.data,
+    error: query.error,
+    refetch: query.refetch,
+  };
+};
 
 /**
  * The model's API key after its ancestors' (root first), from the cached registry: a type's list holds its
@@ -88,11 +112,49 @@ export const invalidateEntryLists = (
 };
 
 /**
- * Remembers a write's result as the entry's latest state and refreshes its model's lists (the route's and the
- * entry's own, when it was written through a parent type) and their ancestors'.
+ * Marks every cached copy of these entries stale (any model key it was read under, any locale, the default
+ * locale's `null` key included; their histories too) without reading them again now: a form that opens one
+ * next reads it first (`useFreshEntry`). An open form is never refetched under its editor.
+ */
+export const forgetEntries = (queryClient: QueryClient, entryIds: readonly string[]) => {
+  const ids = new Set(entryIds);
+  return queryClient.invalidateQueries({
+    predicate: ({ queryKey: [scope, , part, id] }) =>
+      scope === 'content' &&
+      (part === 'entry' || part === 'revisions') &&
+      typeof id === 'string' &&
+      ids.has(id),
+    refetchType: 'none',
+  });
+};
+
+/**
+ * After writes the server made to entries it doesn't name (a change set shipped, an assist run applied):
+ * every list refreshes when shown and every cached entry goes stale, with the counts.
+ */
+export const invalidateAllEntries = (queryClient: QueryClient) =>
+  Promise.all([
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [scope, , part] }) => scope === 'content' && part === 'list',
+    }),
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [scope, , part] }) =>
+        scope === 'content' && (part === 'entry' || part === 'revisions'),
+      refetchType: 'none',
+    }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.contentCounts }),
+  ]);
+
+/**
+ * Remembers a write's result as the entry's latest state, under the route's model key and the entry's own
+ * kind (they differ when it was written through a parent type), after marking every other cached copy of it
+ * stale (another locale key, another route); then refreshes the lists of both models and their ancestors'.
  */
 const rememberEntry = (queryClient: QueryClient, modelKey: string, entry: AdminEntry) => {
-  queryClient.setQueryData(queryKeys.content.entry(modelKey, entry.id, entry.locale), entry);
+  void forgetEntries(queryClient, [entry.id]);
+  for (const key of new Set([modelKey, entry.model])) {
+    queryClient.setQueryData(queryKeys.content.entry(key, entry.id, entry.locale), entry);
+  }
   return invalidateEntryLists(queryClient, [modelKey, entry.model]);
 };
 
@@ -175,11 +237,8 @@ export const useDeleteEntry = (modelKey: string) => {
     meta: silent,
     mutationFn: ({ id, modelKey: key = modelKey }: EntryTarget) =>
       withCsrf(() => adminApi.content.remove(key, id)),
-    onSuccess: (_, { modelKey: key = modelKey }) =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.content.model(key) }),
-        invalidateEntryLists(queryClient, [modelKey, key]),
-      ]),
+    onSuccess: (_, { id, modelKey: key = modelKey }) =>
+      Promise.all([forgetEntries(queryClient, [id]), invalidateEntryLists(queryClient, [modelKey, key])]),
   });
 };
 
@@ -275,16 +334,11 @@ export const useChangeEntryKind = (modelKey: string) => {
     mutationFn: (variables: KindChangeVariables) =>
       withCsrf(() => adminApi.content.changeKind(modelKey, variables.id, kindChangeBody(variables))),
     onSuccess: ({ entry, target }, { id }) => {
+      void forgetEntries(queryClient, [id]);
       if (entry) {
         queryClient.setQueryData(queryKeys.content.entry(entry.model, entry.id, entry.locale), entry);
       }
-      return Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.content.model(modelKey), 'entry', id],
-          refetchType: 'none',
-        }),
-        invalidateEntryLists(queryClient, [modelKey, target.modelKey], { counts: true }),
-      ]);
+      return invalidateEntryLists(queryClient, [modelKey, target.modelKey], { counts: true });
     },
   });
 };

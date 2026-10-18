@@ -77,11 +77,13 @@ test.afterAll(async () => {
 const place = () => page.getByRole('region', { name: 'Field note' });
 const card = (title: string, state: string) => place().getByRole('listitem', { name: `${title}, ${state}` });
 const slider = () => page.getByRole('slider', { name: 'Snapshot' });
+const scrubber = () => page.getByRole('region', { name: 'Time scrubber' });
 
 test('the timeline shows the place at the newest snapshot: an unpublished entry is marked removed', async () => {
   await page.goto(`${ADMIN_URL}snapshots/${latest}?tab=timeline`);
   await expect(slider()).toHaveAttribute('aria-valuetext', `v${latest}`);
-  await expect(page.getByText(`v${latest} ·`, { exact: false })).toBeVisible();
+  // The scrubber's caption, not the status bar's "Schema vN ·" (the schema version can match the snapshot's).
+  await expect(scrubber().getByText(`v${latest} ·`, { exact: false })).toBeVisible();
   await expect(card('Bravo', 'Removed')).toBeVisible();
   await expect(card('Alpha, revised', 'Live')).toBeVisible();
   await captureScreen(page, 'timeline-01-latest', BOTH);
@@ -92,7 +94,7 @@ test('stepping back one snapshot shows the update as changed; the URL keeps the 
   await page.keyboard.press('ArrowLeft');
   await expect(slider()).toHaveAttribute('aria-valuetext', `v${latest - 1}`);
   await expect(card('Alpha, revised', 'Changed')).toBeVisible();
-  await expect(page.getByText(`1 entry changed since v${latest - 2}`, { exact: false })).toBeVisible();
+  await expect(scrubber().getByText(`1 entry changed since v${latest - 2}`, { exact: false })).toBeVisible();
   await expect(card('Bravo', 'Live')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`at=${latest - 1}`));
   await captureScreen(page, 'timeline-02-changed', BOTH);
