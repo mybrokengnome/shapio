@@ -217,19 +217,39 @@ export const regenerableSecrets = (
         .map(({ name }) => name)
     : [];
 
+/** Compares two sent values; trigger lists compare as sets (ticking a box again may reorder them). */
+const canonical = (value: unknown) =>
+  JSON.stringify(Array.isArray(value) ? (value as unknown[]).map(String).sort() : value);
+
+const sameSent = (a: unknown, b: unknown) => canonical(a) === canonical(b);
+
+type UpdateOptions = {
+  /** The loaded connection's values (`toConnectionValues`): only what differs from them is sent. */
+  initial: ConnectionFormValues;
+  expectedVersion: number;
+  /** Generated secrets the server can't read: sent empty when left empty, so a new one is minted. */
+  regenerable?: readonly SecretName[];
+};
+
 /**
- * Only secrets typed in are sent: an omitted secret keeps its stored value. A `regenerable` secret left
- * empty is sent as '' so the server generates a new one (and returns it once).
+ * The PATCH for a saved connection: only the fields that changed, so an edit never resends values it didn't
+ * touch (a firewall in front of the server may refuse a body holding a private-network URL). `settings` goes
+ * whole, and only when a setting changed (the server replaces them together). Only secrets typed in are sent:
+ * an omitted secret keeps its stored value. A `regenerable` secret left empty is sent as '' so the server
+ * generates a new one (and returns it once).
  */
 export const toUpdateConnectionInput = (
   values: ConnectionFormValues,
-  expectedVersion: number,
-  regenerable: readonly SecretName[] = [],
+  { initial, expectedVersion, regenerable = [] }: UpdateOptions,
 ): UpdateDeploymentConnectionInput => {
-  const { secrets: typed, ...rest } = commonInput(values);
+  const { secrets: typed, ...next } = commonInput(values);
+  const { secrets: _stored, ...before } = commonInput(initial);
+  const changed = Object.fromEntries(
+    Object.entries(next).filter(([key, value]) => !sameSent(value, before[key as keyof typeof before])),
+  ) as Partial<typeof next>;
   const secrets = {
     ...Object.fromEntries(regenerable.filter((name) => !(name in typed)).map((name) => [name, ''])),
     ...typed,
   };
-  return { ...rest, ...(Object.keys(secrets).length > 0 ? { secrets } : {}), expectedVersion };
+  return { ...changed, ...(Object.keys(secrets).length > 0 ? { secrets } : {}), expectedVersion };
 };

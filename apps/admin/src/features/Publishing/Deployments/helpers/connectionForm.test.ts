@@ -4,6 +4,7 @@ import {
   EMPTY_CONNECTION,
   regenerableSecrets,
   toCreateConnectionInput,
+  toConnectionValues,
   toUpdateConnectionInput,
   type ConnectionFormValues,
 } from './connectionForm';
@@ -16,6 +17,12 @@ const github: ConnectionFormValues = {
   secrets: { ...EMPTY_CONNECTION.secrets, token: 'ghp_x' },
   triggerPolicy: ['schema', 'manual'],
 };
+
+/** The values a saved connection loads with: secrets are never prefilled. */
+const loaded = (values: ConnectionFormValues): ConnectionFormValues => ({
+  ...values,
+  secrets: EMPTY_CONNECTION.secrets,
+});
 
 const messagesOf = (mode: 'create' | 'edit', values: ConnectionFormValues) => {
   const result = connectionSchema(mode).safeParse(values);
@@ -45,13 +52,16 @@ describe('connection form', () => {
   });
 
   it('keeps stored secrets on update unless a new value is typed', () => {
+    const initial = loaded(github);
     const untouched = { ...github, secrets: { ...github.secrets, token: '' } };
-    expect(toUpdateConnectionInput(untouched, 4)).not.toHaveProperty('secrets');
-    expect(toUpdateConnectionInput(github, 4)).toMatchObject({
+    expect(toUpdateConnectionInput(untouched, { initial, expectedVersion: 4 })).toEqual({
+      expectedVersion: 4,
+    });
+    expect(toUpdateConnectionInput(github, { initial, expectedVersion: 4 })).toEqual({
       secrets: { token: 'ghp_x' },
       expectedVersion: 4,
     });
-    expect(toUpdateConnectionInput(github, 4)).not.toHaveProperty('provider');
+    expect(toUpdateConnectionInput(github, { initial, expectedVersion: 4 })).not.toHaveProperty('provider');
   });
 
   it('asks for a new generated secret when an unreadable one is left empty', () => {
@@ -78,14 +88,73 @@ describe('connection form', () => {
     // Required secrets are never generated.
     expect(regenerableSecrets({ provider: 'github', secrets: {}, secretsUnreadable: true })).toEqual([]);
 
-    expect(toUpdateConnectionInput(generic, 2, ['signingSecret'])).toMatchObject({
+    const update = (values: ConnectionFormValues, regenerable?: ['signingSecret']) =>
+      toUpdateConnectionInput(values, { initial: generic, expectedVersion: 2, regenerable });
+    expect(update(generic, ['signingSecret'])).toEqual({
       secrets: { signingSecret: '' },
+      expectedVersion: 2,
     });
     const typed = { ...generic, secrets: { ...generic.secrets, signingSecret: 'mine' } };
-    expect(toUpdateConnectionInput(typed, 2, ['signingSecret'])).toMatchObject({
-      secrets: { signingSecret: 'mine' },
+    expect(update(typed, ['signingSecret'])).toMatchObject({ secrets: { signingSecret: 'mine' } });
+    expect(update(generic)).not.toHaveProperty('secrets');
+  });
+
+  describe('editing a saved connection sends only what changed', () => {
+    // A webhook on the server's own loopback, like a build hook behind a firewall that refuses such URLs.
+    const saved = toConnectionValues({
+      id: 'c1',
+      name: 'Rebuild',
+      provider: 'generic_webhook',
+      settings: { url: 'http://127.0.0.1:4321/shapio' },
+      secrets: { signingSecret: { set: true, envVar: null } },
+      secretsUnreadable: false,
+      previewUrlTemplate: 'http://127.0.0.1:4321/preview/{slug}',
+      triggerPolicy: ['publish', 'change_set', 'manual'],
+      debounceSeconds: 30,
+      allowPrivateNetwork: true,
+      enabled: true,
+      deliveryRoleId: null,
+      version: 7,
+    } as unknown as Parameters<typeof toConnectionValues>[0]);
+    const update = (values: ConnectionFormValues) =>
+      toUpdateConnectionInput(values, { initial: saved, expectedVersion: 7 });
+
+    it('a trigger unticked: the triggers and the version, no settings or URLs', () => {
+      const body = update({ ...saved, triggerPolicy: ['change_set', 'manual'] });
+      expect(body).toEqual({ triggerPolicy: ['change_set', 'manual'], expectedVersion: 7 });
+      expect(JSON.stringify(body)).not.toContain('127.0.0.1');
     });
-    expect(toUpdateConnectionInput(generic, 2)).not.toHaveProperty('secrets');
+
+    it('a trigger ticked again in another order is no change', () => {
+      expect(update({ ...saved, triggerPolicy: ['manual', 'publish', 'change_set'] })).toEqual({
+        expectedVersion: 7,
+      });
+    });
+
+    it('a setting changed: the settings, whole (the server replaces them together)', () => {
+      expect(
+        update({ ...saved, settings: { ...saved.settings, url: 'https://hooks.example.com/build' } }),
+      ).toEqual({ settings: { url: 'https://hooks.example.com/build' }, expectedVersion: 7 });
+    });
+
+    it('several fields changed: each of them, and nothing else', () => {
+      expect(update({ ...saved, name: ' Rebuild site ', enabled: false, debounceSeconds: '60' })).toEqual({
+        name: 'Rebuild site',
+        enabled: false,
+        debounceSeconds: 60,
+        expectedVersion: 7,
+      });
+    });
+
+    it('creating still sends everything', () => {
+      expect(toCreateConnectionInput(saved)).toMatchObject({
+        provider: 'generic_webhook',
+        settings: { url: 'http://127.0.0.1:4321/shapio' },
+        previewUrlTemplate: 'http://127.0.0.1:4321/preview/{slug}',
+        triggerPolicy: ['publish', 'change_set', 'manual'],
+        allowPrivateNetwork: true,
+      });
+    });
   });
 
   it('requires the provider’s settings, and its secrets only when creating', () => {
