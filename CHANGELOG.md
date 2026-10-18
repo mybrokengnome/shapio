@@ -6,6 +6,14 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-10-18
+
+### Fixed
+
+- Editing a deployment connection sends only the fields you changed. Before, every save sent the build hook
+  URL again, so a firewall in front of Shapio (such as AWS WAF's metadata rule) could refuse even a trigger
+  change when the hook URL is on the same machine.
+
 ## [0.5.13] - 2026-10-18
 
 ### Fixed
