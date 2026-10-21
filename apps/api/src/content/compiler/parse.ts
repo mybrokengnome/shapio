@@ -81,6 +81,8 @@ export type ParseContext = {
    * (GraphQL, where `__` names are reserved).
    */
   kinds?: ReadonlyMap<string, string>;
+  /** `kinds` are an interface's members (plan interfaces): a refusal says "member", not "kind". */
+  kindsAreMembers?: boolean;
 };
 
 /** The system attribute naming an entry's kind; it filters by kind, never as a field. */
@@ -450,7 +452,7 @@ const parseKinds = (value: QueryValue, context: ParseContext): string[] => {
     const modelId = typeof item === 'string' ? kinds.get(item) : undefined;
     if (modelId === undefined) {
       throw queryInvalid(
-        `"${typeof item === 'string' ? item : JSON.stringify(item)}" is not a kind of this model`,
+        `"${typeof item === 'string' ? item : JSON.stringify(item)}" ${context.kindsAreMembers ? 'is not a member of this interface' : 'is not a kind of this model'}`,
         {
           field: KIND_KEY,
         },

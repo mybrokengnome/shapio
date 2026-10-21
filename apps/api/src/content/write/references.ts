@@ -71,7 +71,9 @@ const findRelationIssues = async (
       .map((id) => ({
         path: reference.path,
         code: 'RELATION_TARGET_MISSING' as const,
-        message: `entry ${id} does not exist in the target model on this site`,
+        message: reference.accepts
+          ? `entry ${id} is not ${reference.accepts}`
+          : `entry ${id} does not exist in the target model on this site`,
       })),
   );
 };

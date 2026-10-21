@@ -91,6 +91,7 @@ export const parseInterfaceQuery = (
     allowPublicationState: options.allowPublicationState ?? false,
     resolveModel: (id) => queryDefinitionOf(snapshot, id),
     kinds: memberKinds(snapshot, route.definition),
+    kindsAreMembers: true,
     hasSeoField: anyMemberHasSeo(route),
   });
 };

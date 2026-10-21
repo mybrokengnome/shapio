@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { apiKeyOfRoute } from '../content/model.js';
+import { refuseInterfaceWrite } from '../services/contentAccess.js';
 import * as deliveryWritesService from '../services/contentDeliveryWrites.js';
 import { contentContextFor } from './contentContext.js';
 
@@ -15,6 +16,18 @@ type UpdateRequest = FastifyRequest<{
   Params: EntryParams;
   Body: deliveryWritesService.DeliveryUpdateInput;
 }>;
+
+/**
+ * `preValidation` of the write routes: an interface's route has no entries of its own (plan interfaces), so a
+ * write there is refused with 405 before its body is validated, whatever the body holds.
+ */
+export const refuseInterfaceRouteWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => {
+  const context = await contentContextFor(request);
+  const contract = context.snapshot.interfacesByRouteKey.get(request.params.modelKey);
+  if (contract && !context.snapshot.modelsByRouteKey.has(request.params.modelKey)) {
+    refuseInterfaceWrite(context.snapshot, contract.definition.apiKey, 'update');
+  }
+};
 
 export const createDeliveryEntry = async (request: CreateRequest, reply: FastifyReply) => {
   const context = await contentContextFor(request);

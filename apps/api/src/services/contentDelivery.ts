@@ -1,3 +1,4 @@
+import { isModelDefinition } from '@shapio/schema';
 import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
@@ -81,10 +82,12 @@ const readRefused = (context: ContentServiceContext, modelKey: string) =>
 const readableRoute = async (context: ContentServiceContext, modelKey: string): Promise<ReadableRoute> => {
   const route = resolveContentRoute(context.snapshot, modelKey);
   if (route.kind === 'interface') {
-    const members = await readableMembers(context.snapshot, route.memberIds, (modelId) =>
-      context.permissions.evaluate(context.actor, { action: 'read', modelId }),
-    );
-    const [first] = members;
+    const policyFor = (modelId: string) =>
+      context.permissions.evaluate(context.actor, { action: 'read', modelId });
+    const members = await readableMembers(context.snapshot, route.memberIds, policyFor);
+    // No type implements the interface yet: an empty list for anyone who may read some type of the site;
+    // with members, a caller who may read none of them is refused (plan interfaces, D6).
+    const [first] = route.memberIds.length === 0 ? await someReadableModel(context, policyFor) : members;
     if (!first) {
       throw readRefused(context, modelKey);
     }
@@ -104,6 +107,22 @@ const readableRoute = async (context: ContentServiceContext, modelKey: string): 
     throw readRefused(context, modelKey);
   }
   return { model, policy, members: await familyMembersFor(context, model, policy) };
+};
+
+/** The first collection or singleton of the view the caller may read, if any. */
+const someReadableModel = async (
+  context: ContentServiceContext,
+  policyFor: (modelId: string) => Promise<Policy>,
+): Promise<ReadMember[]> => {
+  for (const { definition } of context.snapshot.definitions) {
+    if (isModelDefinition(definition)) {
+      const [readable] = await readableMembers(context.snapshot, [definition.id], policyFor);
+      if (readable) {
+        return [readable];
+      }
+    }
+  }
+  return [];
 };
 
 type ReadableRoute = {

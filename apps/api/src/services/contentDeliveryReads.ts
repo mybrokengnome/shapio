@@ -24,6 +24,7 @@ import {
 import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
+import * as publicationsRepository from '../repositories/publications.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import {
   interfaceArms,
@@ -328,6 +329,12 @@ const readInterfacePage = async (
   options: { total: boolean; check?: (seq: number) => void },
 ): Promise<EntryPage> => {
   const { limit, offset } = toLimitOffset(read.query.page, read.query.pageSize);
+  if (contract.route.members.length === 0) {
+    // No type implements the interface yet: an empty page at the site's current sequence.
+    const seq = await publicationsRepository.currentSeq(read.context.site.id, read.context.db);
+    options.check?.(seq);
+    return { entries: [], limit, total: 0, seq };
+  }
   const plan: HeadQueryPlan = {
     ...(await interfacePlan(read, contract, contract.members, true)),
     limit,
@@ -346,6 +353,11 @@ const readInterfaceEntry = async (
   id: string,
   options: { check?: (seq: number) => void },
 ): Promise<{ entry: Record<string, unknown> | undefined; seq: number }> => {
+  if (contract.route.members.length === 0) {
+    const seq = await publicationsRepository.currentSeq(read.context.site.id, read.context.db);
+    options.check?.(seq);
+    return { entry: undefined, seq };
+  }
   const base = await interfacePlan(read, contract, contract.members, false);
   const plan: HeadQueryPlan = { ...base, conditions: [...base.conditions, entryIdIs(id)], limit: 1 };
   return readConsistently(read, plan, { total: false }, async ({ env, rows, seq }) => {

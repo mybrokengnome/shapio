@@ -255,6 +255,11 @@ describe('interfaces: delivery reads and relation values', () => {
     );
     expect(Object.keys(selected.data[0] ?? {})).not.toContain('body');
     expect(selected.data[0]).toMatchObject({ title: 'Gamma web sign' });
+    const notMember = await deliver('/api/content/featurables?filters[__model][$eq]=digital');
+    expect(notMember.statusCode).toBe(400);
+    expect(notMember.json<{ error: { message: string } }>().error.message).toBe(
+      '"digital" is not a member of this interface',
+    );
     expect((await deliver('/api/content/featurables?fields=body')).statusCode).toBe(400);
     expect((await deliver('/api/content/featurables?filters[body][$eq]=g')).statusCode).toBe(400);
   });
@@ -293,6 +298,24 @@ describe('interfaces: delivery reads and relation values', () => {
     expect(blogOnly.meta.members).toEqual([{ apiKey: 'blogPost', label: 'blogPost', routeKey: 'blogPosts' }]);
     expect((await deliver('/api/content/featurables', await tokenFor('digital'))).statusCode).toBe(403);
     expect((await deliver('/api/content/featurables', null)).statusCode).toBe(401);
+  });
+
+  it('an interface no type implements lists nothing to a reader of some type; others are still refused', async () => {
+    expectStatus(
+      await admin.post('/api/admin/interfaces', {
+        definition: { kind: 'interface', apiKey: 'listable', label: 'Listable', fields: [title] },
+      }),
+      201,
+    );
+    const empty = await list('/api/content/listables', await tokenFor('blogPost'));
+    expect(empty.data).toEqual([]);
+    expect(empty.meta).toMatchObject({ members: [], pagination: { total: 0 } });
+    expect(typeof empty.meta.snapshot).toBe('number');
+    expect(
+      (await deliver(`/api/content/listables/${ids.gamma}`, await tokenFor('blogPost'))).statusCode,
+    ).toBe(404);
+    expect((await deliver('/api/content/listables', await tokenFor())).statusCode).toBe(403);
+    expect((await deliver('/api/content/listables', null)).statusCode).toBe(401);
   });
 
   it('reads a pinned snapshot across members', async () => {
@@ -367,6 +390,20 @@ describe('interfaces: delivery reads and relation values', () => {
     const write = await admin.post('/api/admin/content/featurable', { data: { title: 'x' } });
     expect(write.statusCode).toBe(405);
     expect(write.body).toContain('/api/content/blogPosts');
+    // Through the delivery route the 405 wins over body validation (no expectedVersion here).
+    for (const [method, url] of [
+      ['POST', '/api/content/featurables'],
+      ['PUT', `/api/content/featurables/${ids.gamma}`],
+      ['DELETE', `/api/content/featurables/${ids.gamma}`],
+    ] as const) {
+      const refused = await testApp.app.inject({
+        method,
+        url,
+        payload: method === 'DELETE' ? undefined : { data: { title: 'x' } },
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(refused.statusCode, `${method} ${url}`).toBe(405);
+    }
   });
 
   it('a relation to the interface accepts members and kinds, refuses others; any entry accepts a singleton', async () => {
@@ -375,6 +412,11 @@ describe('interfaces: delivery reads and relation values', () => {
     const refused = await save({ featured: [ids.beta, ids.digital] });
     expect(refused.statusCode).toBe(422);
     expect(refused.body).toContain('RELATION_TARGET_MISSING');
+    expect(refused.body).toContain(
+      `entry ${ids.digital} is not a Featurable (a post, guide, blogPost, or about)`,
+    );
+    const nowhere = await save({ spotlight: '00000000-0000-4000-8000-0000000000ff' });
+    expect(nowhere.body).toContain('entry 00000000-0000-4000-8000-0000000000ff is not an entry of this site');
     expectStatus(await save({ featured: [ids.beta, ids.gamma, ids.epsilon], spotlight: ids.epsilon }), 201);
     const home = await list('/api/content/homepage?populate=featured,spotlight');
     const data = home.data as unknown as { featured: Row[]; spotlight: Row };

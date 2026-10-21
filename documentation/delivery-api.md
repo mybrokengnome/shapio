@@ -241,7 +241,8 @@ The list holds every member's entries in one page, sorted and counted together:
   can build a type filter without reading the schema.
 
 **Permissions.** An interface has no grants. Members your token may not read are left out of the list. Reading
-the route needs `read` on at least one member: with none, it is a `403`, as reading a type without `read` is.
+the route needs `read` on at least one member: with none, it is a `403`, as reading a type without `read` is. An
+interface no type implements yet returns an empty list (`meta.members: []`) to any token that may read some type.
 A contract field your token may not read on some member can't be used in `filters`, `sort`, `q`, or `fields=`
 (a `403`, as for any hidden field). Reading one entry by ID finds it among the members you may read and returns
 it as its own type would; the member's own route keeps serving it too.
