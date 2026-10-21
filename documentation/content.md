@@ -89,7 +89,7 @@ entries still point at cannot be deleted until those references are removed; the
 
 ## Scheduling
 
-Publishing → Scheduled publishes or unpublishes one entry (one locale) at a set time. The job queue runs it
+Deployments → Scheduled publishes or unpublishes one entry (one locale) at a set time. The job queue runs it
 exactly once, even across restarts, and the list shows how each run went. It publishes the draft as it is at
 run time, including edits saved after it was scheduled.
 

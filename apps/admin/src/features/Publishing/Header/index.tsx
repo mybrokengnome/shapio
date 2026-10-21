@@ -10,7 +10,7 @@ type HeaderProps = {
   actions?: ReactNode;
 };
 
-/** The header of every Publishing list: "Publishing", the section tabs the admin may open, and actions. */
+/** The header of every Deployments list: "Deployments", the section tabs the admin may open, and actions. */
 export const Header = ({ actions }: HeaderProps) => {
   const { t } = useTranslation();
   const { permissions } = usePublishingPermissions();

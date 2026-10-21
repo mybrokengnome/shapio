@@ -250,7 +250,7 @@
   },
   "nav": {
     "content": "Content",
-    "publishing": "Publishing"
+    "publishing": "Deployments"
   },
   "shell": {
     "mainNavigation": "Main navigation",
@@ -265,7 +265,7 @@
     "nav": {
       "inbox": "Inbox",
       "media": "Media",
-      "publishing": "Publishing",
+      "publishing": "Deployments",
       "newType": "New content type",
       "changes": "Changes",
       "snapshots": "Snapshots",
@@ -2286,10 +2286,10 @@
     }
   },
   "publishing": {
-    "sections": "Publishing sections",
+    "sections": "Deployments sections",
     "nav": {
       "scheduled": "Scheduled",
-      "deployments": "Deployments",
+      "deployments": "Connections",
       "webhooks": "Webhooks"
     },
     "actions": {

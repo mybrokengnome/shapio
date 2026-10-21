@@ -98,7 +98,7 @@ pick images, publish, rebuild.
 
 1. Allow the site's origin to call the API from the browser: `CORS_ORIGINS=http://localhost:4321` in Shapio's
    environment (restart Shapio after changing it).
-2. The seed created a deployment connection named **Preview** (Publishing → Deployments) whose **preview URL
+2. The seed created a deployment connection named **Preview** (Deployments → Connections) whose **preview URL
    template** is `http://localhost:4321/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`.
    If `preview` printed another address, change the template (or run the seed again with `SITE_URL` set).
 3. Open the article _Coming soon: our winter projects_ and click **Preview**: the draft opens beside the
@@ -126,7 +126,7 @@ through Cloudflare's API. Your Shapio must be reachable from the internet for th
 3. Settings → Builds → **Deploy hooks** → Add deploy hook (production branch). Copy its URL.
 4. **My Profile → API Tokens → Create Token → Custom token**: permission _Account → Cloudflare Pages → Read_,
    for your account. Copy the token. Note the **account ID** and the project name.
-5. In Shapio, Publishing → Deployments → New connection → **Cloudflare Pages**: account ID, project name,
+5. In Shapio, Deployments → New connection → **Cloudflare Pages**: account ID, project name,
    deploy hook URL, API token (or `${ENV:SHAPIO_SECRET_CF_PAGES_TOKEN}` with that variable set for Shapio), triggers **On
    publish** and **Manual**. Set the preview URL template to your site:
    `https://<project>.pages.dev/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`, and add

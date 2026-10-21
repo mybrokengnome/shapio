@@ -36,6 +36,8 @@ declare module 'fastify' {
     requireAdminSession: preHandlerAsyncHookHandler;
     /** An admin principal whose roles grant the instance-level action. */
     requireGlobalPermission: (action: GlobalAction) => preHandlerAsyncHookHandler;
+    /** An admin whose role allows at least one of `actions`. */
+    requireAnyGlobalPermission: (actions: readonly GlobalAction[]) => preHandlerAsyncHookHandler;
   }
 }
 
@@ -146,6 +148,20 @@ export const adminSessionPlugin = fp<AdminSessionOptions>(
         }
       };
     });
+    app.decorate(
+      'requireAnyGlobalPermission',
+      (actions: readonly GlobalAction[]): preHandlerAsyncHookHandler =>
+        async function requireAnyGlobalPermission(this: FastifyInstance, request, reply) {
+          await requireAdmin.call(this, request, reply);
+          const permissions = getRequestPermissions(request);
+          for (const action of actions) {
+            if (await permissions.canPerform(request.principal, action)) {
+              return;
+            }
+          }
+          throw new AppError(403, 'FORBIDDEN', `Your role does not allow ${actions.join(' or ')}`);
+        },
+    );
   },
   { name: 'shapio-admin-session', dependencies: ['shapio-services'] },
 );

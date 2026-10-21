@@ -90,7 +90,7 @@ The write holds one pooled database connection while your hook runs. Do every da
 
 - In the write's transaction Shapio records an outbox event (only when some after-hook matches). The worker turns it into one job per hook (`extensions.afterHook`).
 - A crash never loses an after-hook, and an after-hook can never undo the write.
-- A throwing hook is retried with backoff, up to 10 attempts. Its job then shows as dead in Admin, Publishing, Jobs.
+- A throwing hook is retried with backoff, up to 10 attempts. Its job then shows as dead in the admin, under Develop → Live.
 - **Exactly once for the database:** the job runs your hook in a transaction that also records `(event ID, hook name)` in `extension_hook_runs`. Work you do through `context.trx` commits together with that record. A retry or a re-run after a worker crash finds the record and skips the hook.
 - **At least once for everything else:** an HTTP call can repeat if the worker dies at the wrong moment. Pass `context.idempotencyKey` (`<eventId>:<hook name>`, stable across retries) to the remote system.
 - `afterUpdate` fires for saves, not for autosaves; `beforeUpdate` runs for both (an autosave can be rejected too).

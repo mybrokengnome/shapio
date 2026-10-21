@@ -2,11 +2,11 @@
 
 Publishing makes content live in the delivery API. Getting it onto a website is a separate step that can fail
 on its own, and Shapio shows both honestly: _published_ is not _deployed_. Everything here is set up under
-**Publishing** in the admin; outbound requests go through Shapio's job queue, with retries and logs.
+**Deployments** in the admin; outbound requests go through Shapio's job queue, with retries and logs.
 
 ## Webhooks
 
-Publishing → Webhooks → New webhook: a URL and the events to send (`entry.*`, `media.*`, `schema.*`,
+Deployments → Webhooks → New webhook: a URL and the events to send (`entry.*`, `media.*`, `schema.*`,
 `locale.*`, `change_set.*`, `deployment.*`, or single events such as `entry.published`). The signing secret is
 shown once. The change set events (`change_set.scheduled`, `.shipping`, `.shipped`, `.failed`, `.discarded`) are
 described in [Change sets](change-sets.md#webhooks).
@@ -105,7 +105,7 @@ is the event's site (`{ "id", "key" }`), or `null` for a network event.
 
 ## Deployment connections
 
-Publishing → Deployments → New connection. A connection says how to start a site build and when:
+Deployments → New connection. A connection says how to start a site build and when:
 
 - **Triggers** (`triggerPolicy`): publishing an entry (`publish`), shipping a [change set](change-sets.md)
   (`change_set`), manually (`manual`), or (GitHub write-back) schema changes (`schema`). Bursts of publishes are
@@ -171,7 +171,7 @@ builds from your Git repository:
    limited to your account. Copy the token.
 3. Note your **account ID** (Workers & Pages overview, right-hand column, or the 32-character hex string in the
    dashboard URL) and the **project name**.
-4. In Shapio: Publishing → Deployments → New connection → **Cloudflare Pages**: account ID, project name, the
+4. In Shapio: Deployments → New connection → **Cloudflare Pages**: account ID, project name, the
    deploy hook URL and the API token (for example as `${ENV:SHAPIO_SECRET_CF_PAGES_TOKEN}`), and the triggers you want.
    **Test connection** checks the token can read the project.
 
@@ -192,7 +192,7 @@ project that builds from your Git repository:
 2. **Account Settings → Tokens → Create**, scoped to the team that owns the project. Copy the token.
 3. Note the **project ID** (project → Settings → General, `prj_…`) and, for a team project, the **team ID**
    (team → Settings → General, `team_…`). Leave the team ID empty for a project in your personal account.
-4. In Shapio: Publishing → Deployments → New connection → **Vercel**: project ID, team ID, the deploy hook URL
+4. In Shapio: Deployments → New connection → **Vercel**: project ID, team ID, the deploy hook URL
    and the API token (for example as `${ENV:SHAPIO_SECRET_VERCEL_TOKEN}`), and the triggers you want.
    **Test connection** checks the token can read the project.
 
@@ -210,7 +210,7 @@ processing, published, error, or skipped, with a link to the deploy log). There 
    Netlify tokens cannot be limited to one site; a token from an account with access to only this site's team
    keeps the reach small.
 2. Note the **site ID** (site → Site configuration → General → Site details → Site ID, a UUID).
-3. In Shapio: Publishing → Deployments → New connection → **Netlify**: site ID and the API token (for example as
+3. In Shapio: Deployments → New connection → **Netlify**: site ID and the API token (for example as
    `${ENV:SHAPIO_SECRET_NETLIFY_TOKEN}`), and the triggers you want. **Test connection** checks the token can
    read the site.
 

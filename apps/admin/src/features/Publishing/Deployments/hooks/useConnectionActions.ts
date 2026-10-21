@@ -1,4 +1,4 @@
-import type { DeploymentConnection } from '@shapio/client';
+import type { DeploymentConnectionSummary } from '@shapio/client';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ import {
 } from '@/api/deployments';
 
 /** Test the connection (result shown inline), trigger a manual run (opens it) and delete (a promise, for its confirmation). */
-export const useConnectionActions = (connection: DeploymentConnection) => {
+export const useConnectionActions = (connection: Pick<DeploymentConnectionSummary, 'id' | 'name'>) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const test = useTestDeploymentConnection();

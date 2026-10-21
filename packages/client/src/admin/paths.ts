@@ -41,6 +41,7 @@ export const ADMIN_PATHS = {
   snapshots: '/api/admin/snapshots',
   webhooks: '/api/admin/webhooks',
   deploymentConnections: '/api/admin/deployments/connections',
+  deploymentConnectionSummaries: '/api/admin/deployments/connection-summaries',
   deploymentRuns: '/api/admin/deployments/runs',
   preview: '/api/admin/preview',
   previewTokens: '/api/admin/preview/tokens',

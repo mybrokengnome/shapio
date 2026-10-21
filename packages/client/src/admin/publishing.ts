@@ -8,6 +8,7 @@ import type {
   CreateWebhookInput,
   DeploymentConnection,
   DeploymentConnectionCreated,
+  DeploymentConnectionSummary,
   DeploymentConnectionUpdated,
   DeploymentRun,
   DeploymentRunQuery,
@@ -72,6 +73,12 @@ export const createPublishingApi = (request: RequestFn) => ({
       ),
   },
   deployments: {
+    /** What Deploy now needs, for admins who may trigger but not manage (`deployments.trigger`). */
+    connectionSummaries: {
+      list: () => request<DeploymentConnectionSummary[]>(ADMIN_PATHS.deploymentConnectionSummaries),
+      get: (id: string) =>
+        request<DeploymentConnectionSummary>(withId(ADMIN_PATHS.deploymentConnectionSummaries, id)),
+    },
     connections: {
       list: () => request<DeploymentConnection[]>(ADMIN_PATHS.deploymentConnections),
       get: (id: string) => request<DeploymentConnection>(withId(ADMIN_PATHS.deploymentConnections, id)),

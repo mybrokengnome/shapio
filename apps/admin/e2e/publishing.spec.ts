@@ -40,7 +40,7 @@ test.afterAll(async () => {
 });
 
 const toast = (text: string | RegExp) => page.getByText(text).first();
-const subNav = () => page.getByRole('navigation', { name: 'Publishing sections' });
+const subNav = () => page.getByRole('navigation', { name: 'Deployments sections' });
 /** Detail pages have a breadcrumb instead of the tabs. */
 const crumb = (name: string) =>
   page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name, exact: true });
@@ -49,16 +49,16 @@ const BOTH = { viewports: ['desktop', 'phone'] } as const;
 const expectTab = (name: string) =>
   expect(subNav().getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
 
-test('Publishing is in the sidebar and opens the first section', async () => {
+test('Deployments is in the sidebar and opens on its connections, then Scheduled and Webhooks', async () => {
   await page.goto(ADMIN_URL);
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Publishing' })
+    .getByRole('link', { name: 'Deployments' })
     .click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Publishing' })).toBeVisible();
-  for (const section of ['Scheduled', 'Webhooks', 'Deployments']) {
-    await expect(subNav().getByRole('link', { name: section })).toBeVisible();
-  }
+  await expect(page.getByRole('heading', { level: 1, name: 'Deployments' })).toBeVisible();
+  await expect(subNav().getByRole('link')).toHaveText(['Connections', 'Scheduled', 'Webhooks']);
+  await expectTab('Connections');
+  await subNav().getByRole('link', { name: 'Scheduled' }).click();
   await expectTab('Scheduled');
   await expect(page.getByText('Nothing scheduled')).toBeVisible();
   await captureScreen(page, 'publishing-02-scheduled-empty', DESKTOP);
@@ -116,7 +116,7 @@ test('a webhook sends a signed test delivery and logs the attempt', async () => 
 });
 
 test('a build hook run shows "Deployed" only after the signed callback', async () => {
-  await subNav().getByRole('link', { name: 'Deployments' }).click();
+  await subNav().getByRole('link', { name: 'Connections' }).click();
   await page.getByRole('button', { name: 'New connection' }).click();
   const create = page.getByRole('dialog', { name: 'New deployment connection' });
   await create.getByLabel('Name').fill('Marketing site');
@@ -171,7 +171,7 @@ test('a build hook run shows "Deployed" only after the signed callback', async (
   await captureScreen(page, 'publishing-14-run-deployed', DESKTOP);
 
   // The Deployments tab: the connection as a card with its latest run, and the runs of every connection.
-  await crumb('Deployments').click();
+  await crumb('Connections').click();
   const card = page.getByRole('region', { name: 'Marketing site' });
   await expect(card.getByText('Deployed')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Recent runs' }).getByText('Deployed')).toBeVisible();
@@ -220,7 +220,7 @@ test('a connection whose secret cannot be read is flagged and repaired by enteri
   await reveal.getByRole('button', { name: "I've copied it" }).click();
   await expect(reveal).toBeHidden();
 
-  await crumb('Deployments').click();
+  await crumb('Connections').click();
   await expect(card.getByText(WARNING)).toBeHidden();
   await expect(card.getByRole('button', { name: 'Deploy now' })).toBeEnabled();
 });

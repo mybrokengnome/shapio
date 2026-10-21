@@ -215,6 +215,32 @@ export const getConnection = async (
   return view as ConnectionView;
 };
 
+/**
+ * A connection as someone who may trigger deployments but not manage them sees it: its state, triggers and
+ * runs, so they can deploy. No settings, secrets, URLs (hook, callback, preview) or other configuration.
+ */
+export type ConnectionSummary = Pick<
+  ConnectionView,
+  'id' | 'name' | 'provider' | 'enabled' | 'triggerPolicy' | 'secretsUnreadable' | 'latestRun' | 'currentRun'
+>;
+
+const toConnectionSummary = (view: ConnectionView): ConnectionSummary => ({
+  id: view.id,
+  name: view.name,
+  provider: view.provider,
+  enabled: view.enabled,
+  triggerPolicy: view.triggerPolicy,
+  secretsUnreadable: view.secretsUnreadable,
+  latestRun: view.latestRun,
+  currentRun: view.currentRun,
+});
+
+export const listConnectionSummaries = async (runtime: PublishingRuntime, site: SiteRef) =>
+  (await listConnections(runtime, site)).map(toConnectionSummary);
+
+export const getConnectionSummary = async (runtime: PublishingRuntime, site: SiteRef, id: string) =>
+  toConnectionSummary(await getConnection(runtime, site, id));
+
 const invalid = (message: string, field: string) =>
   new AppError(400, 'INVALID_CONNECTION', message, { field });
 

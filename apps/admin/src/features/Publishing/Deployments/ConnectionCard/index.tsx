@@ -1,4 +1,4 @@
-import type { DeploymentConnection } from '@shapio/client';
+import type { DeploymentConnectionSummary } from '@shapio/client';
 import { Link } from '@tanstack/react-router';
 import { Rocket } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -13,15 +13,17 @@ import { useConnectionActions } from '../hooks/useConnectionActions';
 import { RunStatus } from '../RunStatus';
 import { SecretsUnreadableChip } from '../SecretsUnreadableChip';
 
-type ConnectionCardProps = { connection: DeploymentConnection };
+/** A summary is enough: a manager's full connection is one too. */
+type ConnectionCardProps = { connection: DeploymentConnectionSummary };
 
 /**
- * One deployment connection: provider, state, latest run and live snapshot, with Open and Deploy now. A
- * connection whose secret can't be read says so and can't deploy until the secret is entered again.
+ * One deployment connection: provider, state, latest run and live snapshot, with Deploy now (for those who
+ * may trigger) and Open (for those who manage, who see its settings). A connection whose secret can't be read
+ * says so and can't deploy until the secret is entered again.
  */
 export const ConnectionCard = ({ connection }: ConnectionCardProps) => {
   const { t } = useTranslation();
-  const { canTriggerDeployments } = usePublishingPermissions();
+  const { canTriggerDeployments, canManageDeployments } = usePublishingPermissions();
   const actions = useConnectionActions(connection);
   return (
     <Panel
@@ -49,11 +51,13 @@ export const ConnectionCard = ({ connection }: ConnectionCardProps) => {
         className="grid-cols-2"
       />
       <div className="flex flex-wrap justify-end gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/publishing/deployments/$connectionId" params={{ connectionId: connection.id }}>
-            {t('publishing.deployments.open')}
-          </Link>
-        </Button>
+        {canManageDeployments ? (
+          <Button asChild variant="outline" size="sm">
+            <Link to="/publishing/deployments/$connectionId" params={{ connectionId: connection.id }}>
+              {t('publishing.deployments.open')}
+            </Link>
+          </Button>
+        ) : null}
         {canTriggerDeployments ? (
           <Button
             size="sm"
