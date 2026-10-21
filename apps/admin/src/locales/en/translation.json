@@ -1055,6 +1055,8 @@
       "deleteDescription": "It leaves the API at once (a breaking change). Its entries are kept and return if it's restored.",
       "changeStarted": "Checking existing content. The change goes live when the checks pass.",
       "definitionSettings": "Model settings",
+      "componentSettings": "Component settings",
+      "interfaceSettings": "Interface settings",
       "summaryLocalized": "Localized",
       "summaryNotLocalized": "Not localized",
       "summaryDrafts": "Drafts",
