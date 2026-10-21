@@ -203,7 +203,7 @@ describe('interfaces: planner', () => {
       expect.objectContaining({
         code: 'INTERFACE_FIELD_MISSING',
         definitionId: roadmapItem.definition.id,
-        message: expect.stringContaining('"image"'),
+        message: expect.stringContaining('"image"') as unknown,
       }),
     );
   });
@@ -281,7 +281,9 @@ describe('interfaces: planner', () => {
       expect.objectContaining({
         code: 'RELATION_VALUES_EXIST',
         definitionId: roadmapItem.definition.id,
-        message: expect.stringMatching(/^1 entry still relates to "roadmapItem" entries through "page.pick"/),
+        message: expect.stringMatching(
+          /^1 entry still relates to "roadmapItem" entries through "page.pick"/,
+        ) as unknown,
       }),
     ]);
     // Nothing changed.
@@ -307,7 +309,7 @@ describe('interfaces: planner', () => {
       expect.objectContaining({
         code: 'RELATION_VALUES_EXIST',
         definitionId: digital.definition.id,
-        message: expect.stringContaining('"page.product" (a relation to "product")'),
+        message: expect.stringContaining('"page.product" (a relation to "product")') as unknown,
       }),
     ]);
   });
@@ -393,7 +395,7 @@ describe('interfaces: planner', () => {
         }),
         201,
       );
-      expect(member.json()).toMatchObject({ definitionId: expect.any(String) });
+      expect(member.json()).toMatchObject({ definitionId: expect.any(String) as unknown });
     });
 
     const changeScope = (body: Record<string, unknown>) =>
