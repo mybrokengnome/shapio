@@ -20,11 +20,11 @@ export type RelationTarget =
   | { kind: 'interface'; id: string; modelIds: readonly string[] }
   | { kind: 'any' };
 
-export const relationTargetOf = (
-  snapshot: SchemaById,
-  field: FieldDefinition<'relation'>,
-): RelationTarget => {
-  const { target } = field.settings;
+export const relationTargetOf = (snapshot: SchemaById, field: FieldDefinition<'relation'>): RelationTarget =>
+  relationTargetFor(snapshot, field.settings.target);
+
+/** `relationTargetOf` from a relation's stored `settings.target` (a model ID, an interface ID, or `*`). */
+export const relationTargetFor = (snapshot: SchemaById, target: string): RelationTarget => {
   if (target === ANY_TARGET) {
     return { kind: 'any' };
   }

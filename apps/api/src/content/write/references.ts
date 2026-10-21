@@ -30,16 +30,25 @@ export const mediaIdsOf = (model: ContentModel, documents: readonly Readonly<Con
   new Set(documents.flatMap((data) => imageUsesOf(model, data).map((use) => use.assetId)));
 
 /**
+ * Live entries on the site among `ids`, whatever their model: a relation to any entry (plan interfaces,
+ * decision 8). Entries belong to collections and singletons only, so no model predicate is needed.
+ */
+const liveIdsOfAnyModel = async (ids: readonly string[], siteId: string, executor: Executor) =>
+  (await entriesRepository.findByIds(ids, executor))
+    .filter((entry) => entry.deleted_at === null && entry.site_id === siteId)
+    .map((entry) => entry.id);
+
+/**
  * Relation values must point at live entries of the field's target model on the same site (brief §4:
- * invalid relation targets are rejected), or of any kind of it (plan polymorphic-types). The target may be a
- * draft.
+ * invalid relation targets are rejected), or of any kind of it (plan polymorphic-types), of a member of an
+ * interface or of any model (plan interfaces). The target may be a draft.
  */
 const findRelationIssues = async (
   executor: Executor,
   references: readonly RelationReference[],
   siteId: string,
 ): Promise<ContentIssue[]> => {
-  const byTarget = new Map<string, { modelIds: readonly string[]; ids: Set<string> }>();
+  const byTarget = new Map<string, { modelIds: readonly string[] | null; ids: Set<string> }>();
   for (const reference of references) {
     const known = byTarget.get(reference.targetModelId) ?? {
       modelIds: reference.targetModelIds,
@@ -50,9 +59,11 @@ const findRelationIssues = async (
   }
   const live = new Set<string>();
   for (const [targetModelId, { modelIds, ids }] of byTarget) {
-    (await entriesRepository.findLiveIds(modelIds, [...ids], siteId, executor)).forEach((id) =>
-      live.add(`${targetModelId}:${id}`),
-    );
+    const found =
+      modelIds === null
+        ? await liveIdsOfAnyModel([...ids], siteId, executor)
+        : await entriesRepository.findLiveIds(modelIds, [...ids], siteId, executor);
+    found.forEach((id) => live.add(`${targetModelId}:${id}`));
   }
   return references.flatMap((reference) =>
     reference.entryIds

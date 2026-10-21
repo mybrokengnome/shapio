@@ -58,7 +58,11 @@ export type ShownTargets =
   | {
       kind: 'relation';
       siteId: string;
-      members: ReadonlyArray<{ modelId: string; rowFilter: RowFilter | null }>;
+      /**
+       * The readable models whose heads count, each with its row filter; `locales` per member for a target
+       * whose members differ in localization (an interface or any entry, plan interfaces), else `locales`.
+       */
+      members: ReadonlyArray<{ modelId: string; rowFilter: RowFilter | null; locales?: LocaleScope }>;
       source: HeadSource;
       locales: LocaleScope;
       actor: Principal;
@@ -85,6 +89,11 @@ export type ContentQuery = {
   fields: FieldDefinition[] | null;
   /** Keyed by relation field ID. */
   populate: PopulateTree;
+  /**
+   * `populate=*` was asked for. On a model read it is already expanded into `populate`; an interface read
+   * (plan interfaces, Q-c) expands it per member, to each row's own relation fields.
+   */
+  populateAll?: boolean;
   locale: string | undefined;
   snapshot: number | undefined;
   /** Delivery and preview only: how rich-text values are returned (`?richText=`); undefined on admin reads. */

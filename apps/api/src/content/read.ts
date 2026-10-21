@@ -24,7 +24,7 @@ import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
-import { targetAcceptsModel, type RelationTarget } from './relationTarget.js';
+import { relationTargetFor, targetAcceptsModel, type RelationTarget } from './relationTarget.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
 import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
@@ -250,14 +250,11 @@ const relationTargets = async (
     rows.map((row) => row.data),
     fields,
   );
-  for (const [targetModelId, ids] of targets) {
-    const target = resolveModelById(env.snapshot, targetModelId);
-    if (!target) {
-      continue;
-    }
-    const heads = await fetchFamilyHeadsByIds(env, target, [...ids]);
+  // Keyed by the relation's stored target: a model, an interface or any entry (plan interfaces, D4).
+  for (const [targetKey, ids] of targets) {
+    const heads = await fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), [...ids]);
     heads.rows.forEach((row) => visible.add(row.entry_id));
-    fetched.set(targetModelId, { ids, heads });
+    fetched.set(targetKey, { ids, heads });
   }
   return { visible, fetched };
 };
@@ -269,8 +266,8 @@ const relationTargets = async (
  */
 const fetchReusing =
   (fetched: FetchedTargets): PopulateEnvironment['fetch'] =>
-  async (env, model, ids) => {
-    const known = fetched.get(model.definition.id);
+  async (env, targetKey, ids) => {
+    const known = fetched.get(targetKey);
     if (known && ids.every((id) => known.ids.has(id))) {
       const wanted = new Set(ids);
       return {
@@ -278,7 +275,7 @@ const fetchReusing =
         rows: known.heads.rows.filter((row) => wanted.has(row.entry_id)),
       };
     }
-    return fetchFamilyHeadsByIds(env, model, ids);
+    return fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), ids);
   };
 
 /**
@@ -485,17 +482,21 @@ export const projectRows = async (
   });
 };
 
+/** What a projection takes from a query: the selected fields and what to populate. */
+export type ProjectionQuery = { fields: readonly FieldDefinition[] | null; populate: PopulateTree };
+
 /**
  * Rows of a family read projected each through its own member (plan polymorphic-types): the member's
  * effective fields, read mask, components and SEO fields. Without `fields=` a row carries every field its kind
  * has and the caller may read; with it, the named (shared) fields. Rows keep their order; a row of a model
- * that is not a member is left out.
+ * that is not a member is left out. An interface read (plan interfaces) passes each member's own query
+ * (`memberQuery`): its `fields` and `populate` name the member's field IDs.
  */
 export const projectMemberRows = async (
   env: ReadEnvironment,
   members: readonly ReadMember[],
   rows: readonly HeadRow[],
-  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+  query: ProjectionQuery | ((member: ReadMember) => ProjectionQuery),
 ): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
   const projected = new Map<HeadRow, ProjectedEntry>();
   for (const group of groupByMember(members, rows)) {
@@ -504,7 +505,7 @@ export const projectMemberRows = async (
       group.member.model,
       group.member.policy,
       group.rows,
-      query,
+      typeof query === 'function' ? query(group.member) : query,
     )) {
       projected.set(row, data);
     }

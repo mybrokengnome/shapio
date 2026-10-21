@@ -142,13 +142,14 @@ export type EntryEvent =
   | 'entry.kind_changed';
 
 /**
- * Where a model is served: its route key (`products/digital`) and its ancestors' API IDs, root first (plan
- * polymorphic-types), so a subscriber can revalidate every list the entry appears in. A model built by hand
- * (no `route`) is a root at its plural.
+ * Where a model is served: its route key (`products/digital`), its ancestors' API IDs, root first (plan
+ * polymorphic-types), and the route keys of the interfaces it implements (plan interfaces), so a subscriber
+ * can revalidate every list the entry appears in. A model built by hand (no `route`) is a root at its plural.
  */
 export const routeFieldsOf = (model: Pick<ContentModel, 'definition' | 'route'>) => ({
   routeKey: model.route?.key ?? routeKeyOf(model.definition),
   ancestors: model.route?.ancestors ?? [],
+  interfaces: model.route?.interfaces ?? [],
 });
 
 /** The outbox event of a content change on a site, in the change's transaction (ADR 0007). */

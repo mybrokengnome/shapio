@@ -12,8 +12,8 @@ import {
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { SchemaById } from '../../schema/snapshot.js';
-import { familyIdsOf } from '../family.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
+import { relationTargetFor, relationTargetKey, type RelationTarget } from '../relationTarget.js';
 import { pointer, type ContentIssue } from './issues.js';
 import { checkLength, checkScalar, isReferenceId } from './scalars.js';
 
@@ -45,14 +45,16 @@ export const MODEL_KEY = '__model';
 export const KINDS_KEY = '__kinds';
 
 /**
- * A relation value to check: `targetModelIds` is the target's family at the validator's snapshot (the target
- * and every kind of it, plan polymorphic-types), any of which an entry may be.
+ * A relation value to check: `targetModelIds` are the models an entry may be of at the validator's snapshot:
+ * the target's family (plan polymorphic-types) or an interface's members (plan interfaces); null for a
+ * relation to any entry (`*`), which accepts a live entry of any model on the site. `targetModelId` is the
+ * stored target (a model ID, an interface ID, or `*`).
  */
 export type RelationReference = {
   path: string;
   fieldId: string;
   targetModelId: string;
-  targetModelIds: readonly string[];
+  targetModelIds: readonly string[] | null;
   entryIds: string[];
 };
 
@@ -83,13 +85,17 @@ export type ModelValidator = {
   validate: (data: Readonly<ContentData>, options?: ValidateOptions) => ValidationOutcome;
 };
 
-/** Relation target → its family (the target first). */
-type TargetFamilies = ReadonlyMap<string, readonly string[]>;
+/** Relation target (as stored) → what it accepts at the snapshot. */
+type TargetFamilies = ReadonlyMap<string, RelationTarget>;
 
 type Walk = ValidationOutcome & { options: ValidateOptions; families: TargetFamilies };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The models a relation value's entries may be of; null for any entry. */
+const acceptedModelIds = (target: RelationTarget | undefined, stored: string): readonly string[] | null =>
+  target === undefined ? [stored] : target.kind === 'any' ? null : target.modelIds;
 
 export const isMissingValue = (value: unknown): boolean =>
   value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
@@ -255,7 +261,7 @@ const checkStructured = (
         path,
         fieldId: field.id,
         targetModelId: target,
-        targetModelIds: walk.families.get(target) ?? [target],
+        targetModelIds: acceptedModelIds(walk.families.get(target), target),
         entryIds: ids,
       });
       return value;
@@ -438,14 +444,17 @@ const relationTargetsOf = (model: ContentModel): string[] => {
   ].sort();
 };
 
-/** Each relation target's family at the snapshot: a relation to a model accepts any of its kinds. */
+/**
+ * What each relation target accepts at the snapshot: a model's kinds, an interface's members (plan
+ * interfaces), or any entry.
+ */
 const targetFamiliesOf = (snapshot: SchemaById, model: ContentModel): TargetFamilies =>
-  new Map(relationTargetsOf(model).map((target) => [target, familyIdsOf(snapshot, target)] as const));
+  new Map(relationTargetsOf(model).map((target) => [target, relationTargetFor(snapshot, target)] as const));
 
 /**
  * The cache key: the model's revision, every ancestor's (in chain order: a parent edit changes the effective
- * fields), every embedded component's, and the family of every relation target (a new kind of a target
- * widens what its relations accept).
+ * fields), every embedded component's, and what every relation target accepts (a new kind of a target, or a
+ * type joining an interface, widens it; any entry is a constant).
  */
 const cacheKey = (snapshot: SchemaById, model: ContentModel, families: TargetFamilies) =>
   [
@@ -454,7 +463,7 @@ const cacheKey = (snapshot: SchemaById, model: ContentModel, families: TargetFam
     '',
     ...[...model.components.keys()].sort().map((id) => snapshot.byId.get(id)?.revisionId ?? id),
     '',
-    ...[...families].map(([target, family]) => `${target}=${family.join(',')}`),
+    ...[...families.values()].map(relationTargetKey),
   ].join(':');
 
 /** The compiled validator for a model at the pinned snapshot, cached by schema revision IDs. */

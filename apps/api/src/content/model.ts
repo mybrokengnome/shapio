@@ -3,6 +3,7 @@ import {
   isComponentDefinition,
   isInterfaceDefinition,
   isModelDefinition,
+  routeKeyOf,
   routePathOf,
   type ComponentDefinition,
   type FieldDefinition,
@@ -41,15 +42,27 @@ export type ContentModel = {
   route?: ModelRoute;
 };
 
-export type ModelRoute = { key: string; ancestors: readonly string[] };
+/**
+ * `interfaces`: the route keys (plurals) of the interfaces the model implements, its ancestors' included
+ * (plan interfaces), so an entry event can revalidate every interface list the entry appears in.
+ */
+export type ModelRoute = { key: string; ancestors: readonly string[]; interfaces?: readonly string[] };
 
-/** Where a model is served: its nested route key and its ancestors' API IDs, root first. */
+/** Where a model is served: its nested route key, its ancestors' API IDs (root first), its interfaces' routes. */
 export const modelRouteOf = (snapshot: SchemaById, definition: ModelDefinition): ModelRoute => {
   const ancestorIds = snapshot.ancestors(definition.id);
   const ancestors = ancestorIds
     .map((id) => snapshot.byId.get(id)?.definition)
     .filter((ancestor): ancestor is ModelDefinition => ancestor !== undefined && isModelDefinition(ancestor));
-  return { key: routePathOf(definition, ancestors), ancestors: ancestors.map((ancestor) => ancestor.apiKey) };
+  const interfaces = snapshot.interfacesOf(definition.id).flatMap((id) => {
+    const contract = snapshot.byId.get(id)?.definition;
+    return contract && isInterfaceDefinition(contract) ? [routeKeyOf(contract)] : [];
+  });
+  return {
+    key: routePathOf(definition, ancestors),
+    ancestors: ancestors.map((ancestor) => ancestor.apiKey),
+    interfaces,
+  };
 };
 
 export const modelNotFound = (key: string) =>

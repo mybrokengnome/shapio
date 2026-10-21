@@ -133,10 +133,17 @@ const showsReference = (
     shown.source.kind === 'heads'
       ? sql.table('entry_heads')
       : sql`(${dialect.snapshotRows({ siteId: shown.siteId, modelIds: shown.members.map((member) => modelIdLiteral(member.modelId)), seq: shown.source.seq })})`;
+  // A member with its own locale scope carries the scope's conditions with its row filter, inside its arm of
+  // the OR; the shared scope is then `any` (plan interfaces, decision 7).
+  const ownLocales = shown.members.some((member) => member.locales !== undefined);
   const members = shown.members.map((member) => {
     const rowFilter = compileRowFilter(member.rowFilter, shown.actor, dialect);
-    return { modelId: member.modelId, conditions: rowFilter ? [rowFilter] : [] };
+    const locales = ownLocales
+      ? localeConditions(member.locales ?? shown.locales, table, shown.source, dialect)
+      : [];
+    return { modelId: member.modelId, conditions: [...locales, ...(rowFilter ? [rowFilter] : [])] };
   });
+  const sharedLocales: LocaleScope = ownLocales ? { kind: 'any' } : shown.locales;
   const [single] = members;
   const matches = ids.matches(sql`h.entry_id`);
   const where = whereOf(
@@ -145,14 +152,14 @@ const showsReference = (
           siteId: shown.siteId,
           model: modelIs(single.modelId),
           source: shown.source,
-          locales: shown.locales,
+          locales: sharedLocales,
           conditions: [matches, ...single.conditions],
         }
       : {
           siteId: shown.siteId,
           model: anyMember(members),
           source: shown.source,
-          locales: shown.locales,
+          locales: sharedLocales,
           conditions: [matches],
         },
     table,
