@@ -377,7 +377,9 @@ describe('interfaces: planner', () => {
   it('narrowing a relation target clears its values; then implements can be removed', async () => {
     const narrowed = withTarget(page, 'pick', blogPost.definition.id);
     const planned = await preview('models', page, narrowed);
-    expect(planned.plan.changes).toMatchObject([{ category: 'conversion', destructive: true }]);
+    expect(planned.plan.changes).toMatchObject([
+      { category: 'conversion', destructive: true, dropsValues: true },
+    ]);
     expectStatus(await save('models', page, narrowed), 202);
     await runContentSchemaJobs(database.current.db);
     page = await reload('models', page.definition.id);
@@ -386,9 +388,26 @@ describe('interfaces: planner', () => {
   });
 
   it('an interface with members, or targeted by a relation, cannot be deleted', async () => {
+    const pointing = {
+      ...page.definition,
+      fields: [
+        ...page.definition.fields,
+        {
+          apiKey: 'featured',
+          label: 'Featured',
+          type: 'relation',
+          settings: { target: featurable.definition.id, cardinality: 'many' },
+        },
+      ],
+    };
+    expectStatus(await save('models', page, pointing), 200);
+    page = await reload('models', page.definition.id);
+    // Every reason at once: the members and the relation.
     const withMembers = await remove('interfaces', featurable);
     expect(withMembers.statusCode).toBe(422);
-    expect(issuesOf(withMembers).map((found) => found.code)).toContain('HAS_MEMBERS');
+    const codes = issuesOf(withMembers).map((found) => found.code);
+    expect(codes).toContain('HAS_MEMBERS');
+    expect(codes).toContain('REFERENCED_DEFINITION');
 
     const listable = await createInterface({ apiKey: 'listable', label: 'Listable', fields: [] });
     const linked = {

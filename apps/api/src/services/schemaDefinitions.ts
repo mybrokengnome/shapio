@@ -1,6 +1,5 @@
 import {
   categoryOfKind,
-  interfaceDeletionIssues,
   isModelDefinition,
   parseDefinition,
   type DefinitionCategory,
@@ -368,14 +367,8 @@ export const deleteDefinition = async (
   if (children.length > 0) {
     throw definitionHasChildren(active.definition.apiKey, children);
   }
-  // An interface with members on any site (plan interfaces): each member must stop implementing it first.
-  const members = interfaceDeletionIssues(
-    context.snapshot.network.definitions.map((entry) => entry.definition),
-    input.id,
-  );
-  if (members.length > 0) {
-    throw schemaInvalid(members);
-  }
+  // Every reason at once (plan interfaces): an interface's members (HAS_MEMBERS) and the relations that
+  // target it (REFERENCED_DEFINITION), so the person sees all there is to undo.
   if (plan.issues.length > 0) {
     throw schemaInvalid(plan.issues);
   }

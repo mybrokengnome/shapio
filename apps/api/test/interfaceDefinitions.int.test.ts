@@ -169,7 +169,12 @@ describe('interface definitions', () => {
       `/api/admin/interfaces/${FEATURABLE_ID}?expectedVersion=${contract.version}&acknowledgeBreaking=true`,
     );
     expect(response.statusCode).toBe(422);
-    expect(response.json()).toMatchObject({ error: { details: { issues: [{ code: 'HAS_MEMBERS' }] } } });
+    // Every reason at once: the member, and the homepage's relation to it.
+    const codes = response
+      .json<{ error: { details: { issues: Array<{ code: string }> } } }>()
+      .error.details.issues.map((found) => found.code)
+      .sort();
+    expect(codes).toEqual(['HAS_MEMBERS', 'REFERENCED_DEFINITION']);
   });
 
   it('round-trips through schema files: pull writes interfaces/, apply after pull changes nothing', async () => {
