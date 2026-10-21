@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createDefinition,
   createDeliveryToken,
+  createRole,
+  createTokenForRole,
+  fieldIdOf,
   expectStatus,
   runContentSchemaJobs,
   type EntryBody,
@@ -131,6 +134,23 @@ describe('interfaces: delivery reads and relation values', () => {
         },
       ],
     });
+    models.card = await createDefinition(
+      admin,
+      {
+        kind: 'component',
+        apiKey: 'card',
+        label: 'Card',
+        fields: [
+          {
+            apiKey: 'item',
+            label: 'Item',
+            type: 'relation',
+            settings: { target: featurable.definition.id, cardinality: 'one' },
+          },
+        ],
+      },
+      'components',
+    );
     await runContentSchemaJobs(database.current.db);
     ids.alpha = (await publishNew('post', { title: 'Alpha web sign', summary: 'a' })).id;
     // A French version of the Post only: Post is localized, every other member is not.
@@ -254,5 +274,77 @@ describe('interfaces: delivery reads and relation values', () => {
     // A member the caller may not read is left out of the value.
     const hidden = await list('/api/content/homepage', await tokenFor('homepage', 'blogPost'));
     expect((hidden.data as unknown as { featured: string[] }).featured).toEqual([ids.gamma]);
+  });
+
+  describe('content targets (the admin relation picker)', () => {
+    type Targets = {
+      target: { kind: string; label: string | null };
+      members: Array<{ apiKey: string }>;
+      items: Array<{ id: string; model: string; title: string | null; status: string }>;
+      total: number;
+    };
+    const featured = () => fieldIdOf(models.homepage as ModelBody, 'featured');
+    const spotlight = () => fieldIdOf(models.homepage as ModelBody, 'spotlight');
+    const targets = async (query: string, client: SchemaClient = admin, status = 200) =>
+      expectStatus(await client.get(`/api/admin/content-targets?${query}`), status).json<Targets>();
+    const adminWith = async (grants: Parameters<typeof createRole>[2]) =>
+      schemaClient(
+        testApp.app,
+        await createTokenForRole(database.current.db, await createRole(database.current.db, 'admin', grants)),
+      );
+
+    it("lists an interface's members' drafts, searched on each one's own title, narrowed by type", async () => {
+      const found = await targets(`field=${featured()}&q=sign`);
+      expect(found.target).toEqual({ kind: 'interface', label: 'Featurable' });
+      expect(found.members.map((member) => member.apiKey)).toEqual(['post', 'guide', 'blogPost', 'about']);
+      expect(found.total).toBe(4);
+      expect(found.items.map((item) => [item.title, item.model]).sort()).toEqual([
+        ['Alpha web sign', 'post'],
+        ['Beta web sign', 'guide'],
+        ['Epsilon web sign', 'about'],
+        ['Gamma web sign', 'blogPost'],
+      ]);
+      const blogPosts = await targets(`field=${featured()}&types=blogPost&pageSize=1`);
+      expect(blogPosts.total).toBe(2);
+      expect(blogPosts.items).toHaveLength(1);
+      expect(blogPosts.items[0]?.model).toBe('blogPost');
+      await targets(`field=${featured()}&types=digital`, admin, 400);
+    });
+
+    it('labels a stored value by ID: members only for an interface, any model for any entry', async () => {
+      const asked = `ids=${ids.digital},${ids.gamma},${ids.beta}`;
+      const featuredItems = await targets(`field=${featured()}&${asked}`);
+      expect(featuredItems.items.map((item) => [item.id, item.model])).toEqual([
+        [ids.gamma, 'blogPost'],
+        [ids.beta, 'guide'],
+      ]);
+      expect(featuredItems.total).toBe(2);
+      const anyItems = await targets(`field=${spotlight()}&${asked}`);
+      expect(anyItems.target).toEqual({ kind: 'any', label: null });
+      expect(anyItems.items.map((item) => item.model)).toEqual(['digital', 'blogPost', 'guide']);
+      await targets(`field=${spotlight()}&ids=not-an-id`, admin, 400);
+    });
+
+    it('resolves a relation field inside a component', async () => {
+      const found = await targets(`field=${fieldIdOf(models.card as ModelBody, 'item')}&types=about`);
+      expect(found.items.map((item) => item.title)).toEqual(['Epsilon web sign']);
+    });
+
+    it('skips a model whose title the caller may not search, masks it, and refuses when nothing is readable', async () => {
+      const limited = await adminWith([
+        {
+          action: 'read',
+          modelId: models.blogPost?.definition.id ?? null,
+          fieldIds: [fieldIdOf(models.blogPost as ModelBody, 'body')],
+        },
+        { action: 'read', modelId: models.about?.definition.id ?? null },
+      ]);
+      const searched = await targets(`field=${featured()}&q=sign`, limited);
+      expect(searched.items.map((item) => item.model)).toEqual(['about']);
+      const listed = await targets(`field=${featured()}&types=blogPost`, limited);
+      expect(listed.items.map((item) => item.title)).toEqual([null, null]);
+      const none = await adminWith([{ action: 'read', modelId: models.digital?.definition.id ?? null }]);
+      await targets(`field=${featured()}`, none, 403);
+    });
   });
 });

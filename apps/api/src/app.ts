@@ -55,6 +55,7 @@ import { adminAppUsersRoutes } from './routes/admin/appUsers/index.js';
 import { adminAssistRoutes } from './routes/admin/assist/index.js';
 import { componentsRoutes } from './routes/admin/components/index.js';
 import { adminContentRoutes } from './routes/admin/content/index.js';
+import { contentTargetsRoutes } from './routes/admin/contentTargets/index.js';
 import { adminExtensionsRoutes } from './routes/admin/extensions/index.js';
 import { adminIdentityRoutes } from './routes/admin/index.js';
 import { interfacesRoutes } from './routes/admin/interfaces/index.js';
@@ -246,6 +247,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   }
   await app.register(contentHooksPlugin, { hooks: deps.contentHooks ?? extensions.hooks });
   await app.register(adminContentRoutes, { prefix: urls.withBasePath('/api/admin/content') });
+  await app.register(contentTargetsRoutes, { prefix: urls.withBasePath('/api/admin/content-targets') });
   await app.register(editorManifestPlugin, {
     manifest:
       deps.editorManifest ??
