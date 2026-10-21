@@ -2,7 +2,7 @@
 
 exports[`GraphQL schema visibility > prints the same masked schema as before model inheritance existed (no model has children) 1`] = `
 """"Article"""
-type Article {
+type Article implements Entry {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -33,6 +33,19 @@ type Card {
 }
 
 union ArticleSectionsZone = Card
+
+"""
+Any entry, of any type: its system fields. Select its fields with \`... on <Type>\`.
+"""
+interface Entry {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+}
 
 type Query {
   """One Article entry by ID (null when not found)"""
@@ -404,41 +417,42 @@ type MediaVariant {
 
 type Mutation {
   """Creates a Article entry (a draft unless \`publish\` is true)"""
-  createArticle(locale: String, publish: Boolean): Entry
+  createArticle(locale: String, publish: Boolean): EntryState
 
   """
   Changes the given fields of the draft (a patch: omitted fields keep their values)
   """
-  updateArticle(id: ID!, locale: String, expectedVersion: Int): Entry
+  updateArticle(id: ID!, locale: String, expectedVersion: Int): EntryState
   deleteArticle(id: ID!): ID!
 
   """
   Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
   """
-  publishArticle(id: ID!, locales: [String!], expectedVersion: Int): Entry
+  publishArticle(id: ID!, locales: [String!], expectedVersion: Int): EntryState
 
   """Unpublishes the given locales (default: the default locale)"""
-  unpublishArticle(id: ID!, locales: [String!]): Entry
+  unpublishArticle(id: ID!, locales: [String!]): EntryState
 
   """Creates a Submission entry (a draft unless \`publish\` is true)"""
-  createSubmission(data: SubmissionInput, locale: String, publish: Boolean): Entry
+  createSubmission(data: SubmissionInput, locale: String, publish: Boolean): EntryState
 
   """
   Changes the given fields of the draft (a patch: omitted fields keep their values)
   """
-  updateSubmission(id: ID!, data: SubmissionInput, locale: String, expectedVersion: Int): Entry
+  updateSubmission(id: ID!, data: SubmissionInput, locale: String, expectedVersion: Int): EntryState
   deleteSubmission(id: ID!): ID!
 
   """
   Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
   """
-  publishSubmission(id: ID!, locales: [String!], expectedVersion: Int): Entry
+  publishSubmission(id: ID!, locales: [String!], expectedVersion: Int): EntryState
 
   """Unpublishes the given locales (default: the default locale)"""
-  unpublishSubmission(id: ID!, locales: [String!]): Entry
+  unpublishSubmission(id: ID!, locales: [String!]): EntryState
 }
 
-type Entry {
+"""An entry's identity and state after a write"""
+type EntryState {
   id: ID!
   locale: String!
   version: Int!

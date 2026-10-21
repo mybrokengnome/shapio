@@ -213,12 +213,20 @@ describe('GraphQL interfaces for models with children', () => {
   it('gives each model with children an interface that every kind implements, transitively', () => {
     expect(schema.getType('DigitalProductInterface')).toBeUndefined();
     expect(schema.getType('ApparelInterface')).toBeUndefined();
-    expect(interfacesOf(schema, 'Product')).toEqual(['ProductInterface']);
-    expect(interfacesOf(schema, 'DigitalProduct')).toEqual(['ProductInterface']);
-    expect(interfacesOf(schema, 'PhysicalProduct')).toEqual(['ProductInterface', 'PhysicalProductInterface']);
-    expect(interfacesOf(schema, 'Apparel')).toEqual(['ProductInterface', 'PhysicalProductInterface']);
-    expect(interfacesOf(schema, 'PhysicalProductInterface')).toEqual(['ProductInterface']);
-    expect(interfacesOf(schema, 'Order')).toEqual([]);
+    expect(interfacesOf(schema, 'Product')).toEqual(['Entry', 'ProductInterface']);
+    expect(interfacesOf(schema, 'DigitalProduct')).toEqual(['Entry', 'ProductInterface']);
+    expect(interfacesOf(schema, 'PhysicalProduct')).toEqual([
+      'Entry',
+      'ProductInterface',
+      'PhysicalProductInterface',
+    ]);
+    expect(interfacesOf(schema, 'Apparel')).toEqual([
+      'Entry',
+      'ProductInterface',
+      'PhysicalProductInterface',
+    ]);
+    expect(interfacesOf(schema, 'PhysicalProductInterface')).toEqual(['Entry', 'ProductInterface']);
+    expect(interfacesOf(schema, 'Order')).toEqual(['Entry']);
   });
 
   it('puts the system fields and the effective fields on the interface, inherited first on each kind', () => {
@@ -323,7 +331,7 @@ describe('GraphQL interfaces under a delivery caller', () => {
     expect(masked.getType('ProductInterface')).toBeUndefined();
     expect(masked.getType('Product')).toBeUndefined();
     expect(masked.getType('PhysicalProduct')).toBeUndefined();
-    expect(interfacesOf(masked, 'DigitalProduct')).toEqual([]);
+    expect(interfacesOf(masked, 'DigitalProduct')).toEqual(['Entry']);
     expect(fieldNames(masked, 'DigitalProduct')).toEqual(
       expect.arrayContaining(['id', 'localizations', 'name', 'fileSize']),
     );
@@ -355,7 +363,7 @@ describe('GraphQL interfaces under a delivery caller', () => {
     });
     expect(() => assertValidSchema(masked)).not.toThrow();
     expect(masked.getType('PhysicalProductInterface')).toBeUndefined();
-    expect(interfacesOf(masked, 'Apparel')).toEqual(['ProductInterface']);
+    expect(interfacesOf(masked, 'Apparel')).toEqual(['Entry', 'ProductInterface']);
     expect(masked.getType('DigitalProduct')).toBeUndefined();
   });
 });

@@ -1,7 +1,14 @@
 import type { HeadSource } from '../content/compiler/compile.js';
-import { readScopeFor } from '../content/locales.js';
+import { groupByMember } from '../content/family.js';
 import { resolveModelById } from '../content/model.js';
-import { fetchHeadsByIds, projectRows, readPolicy, systemAttributes } from '../content/read.js';
+import {
+  fetchHeadsByIds,
+  fetchTargetHeadsByIds,
+  projectRows,
+  readPolicy,
+  systemAttributes,
+} from '../content/read.js';
+import type { RelationTarget } from '../content/relationTarget.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import { deliveryEnvironment } from './contentDeliveryReads.js';
 
@@ -9,8 +16,9 @@ import { deliveryEnvironment } from './contentDeliveryReads.js';
  * Batched delivery reads by entry ID, for GraphQL's per-request DataLoaders (relation targets and
  * `localizations`). The projection is REST's `populate` projection: the target model's policy (row filter
  * and read mask), published heads only unless an admin asked for drafts, relation IDs limited to visible
- * targets, media as asset views, rich text with sanitized HTML. A model that others extend is read over its
- * family (plan polymorphic-types D7): each entry is projected as its own kind, under that kind's policy.
+ * targets, media as asset views, rich text with sanitized HTML. A relation target is read over every model it
+ * accepts (a family, plan polymorphic-types D7; an interface's members or any entry, plan interfaces D4): each
+ * entry is projected as its own model, under that model's policy.
  */
 export type BatchReadOptions = {
   /** Requested locale; the default locale when absent. */
@@ -35,37 +43,29 @@ const sourceOf = (options: BatchReadOptions): HeadSource => {
 };
 
 /**
- * Entries of a model and its descendants by ID, keyed by entry ID, each projected as its own kind under that
- * kind's policy. Entries the caller may not read (a kind it may not read included) are simply absent. One
- * read per family member that may hold a wanted ID; a model without children is one read, as before.
+ * Entries a relation's target accepts by ID (plan interfaces D4), keyed by entry ID, each projected as its own
+ * model under that model's policy: a model and its kinds, an interface's members, or any entry (the models the
+ * IDs belong to are looked up first, so only those are read). Entries the caller may not read (a model it may
+ * not read included) are simply absent. One head query per batch, whatever the number of models.
  */
 export const loadDeliveryEntries = async (
   context: ContentServiceContext,
-  modelId: string,
+  target: RelationTarget,
   ids: readonly string[],
   options: BatchReadOptions,
 ): Promise<Map<string, DeliveryEntry>> => {
   const found = new Map<string, DeliveryEntry>();
-  if (ids.length === 0 || !resolveModelById(context.snapshot, modelId)) {
+  if (ids.length === 0) {
     return found;
   }
   const env = deliveryEnvironment(context, context.db, sourceOf(options), options.locale);
-  for (const memberId of context.snapshot.family(modelId)) {
-    const pending = ids.filter((id) => !found.has(id));
-    const member = resolveModelById(context.snapshot, memberId);
-    if (pending.length === 0) {
-      break;
-    }
-    if (!member) {
-      continue;
-    }
-    // Sequential on purpose: one pool connection per batch, however large the family.
-    const policy = await readPolicy(env, memberId);
-    const scope = readScopeFor(context.snapshot, member.definition, options.locale, {
-      fallback: options.fallback,
+  const heads = await fetchTargetHeadsByIds(env, target, ids, { fallback: options.fallback });
+  // Sequential on purpose: one pool connection per batch, however many models appear.
+  for (const { member, rows } of groupByMember(heads.members, heads.rows)) {
+    const projected = await projectRows(env, member.model, member.policy, rows, {
+      fields: null,
+      populate: new Map(),
     });
-    const rows = await fetchHeadsByIds(env, member, policy, pending, scope);
-    const projected = await projectRows(env, member, policy, rows, { fields: null, populate: new Map() });
     for (const { row, data } of projected) {
       found.set(row.entry_id, { ...systemAttributes(env, row), ...data });
     }

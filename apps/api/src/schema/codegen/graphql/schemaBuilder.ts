@@ -1,7 +1,13 @@
-import { RESERVED_QUERY_NAMES, type ResolvedModelDefinition } from '@shapio/schema';
+import {
+  isInterfaceDefinition,
+  RESERVED_QUERY_NAMES,
+  type InterfaceDefinition,
+  type ResolvedModelDefinition,
+} from '@shapio/schema';
 import {
   GraphQLInt,
   GraphQLNonNull,
+  type GraphQLInterfaceType,
   GraphQLObjectType,
   GraphQLSchema,
   type GraphQLFieldConfigMap,
@@ -11,8 +17,9 @@ import { createBuild } from './build.js';
 import type { GraphqlContext } from './context.js';
 import { hasChildren, resolvedModelById } from './entryKinds.js';
 import { createFixedTypes } from './fixedTypes.js';
+import { entryInterface } from './interfaceTypes.js';
 import { mutationFields } from './mutations.js';
-import { queryFields } from './operations.js';
+import { interfaceQueryFields, queryFields } from './operations.js';
 import { entryType } from './outputTypes.js';
 import { siteQueryFields } from './siteFields.js';
 import { snapshotQueryFields } from './snapshotFields.js';
@@ -54,6 +61,14 @@ export const buildGraphqlSchema = (
     }
     Object.assign(mutation, mutationFields(build, model));
   }
+  // Interface definitions with a readable member (plan interfaces D8): their interface and two queries.
+  const interfaces = snapshot.definitions
+    .map((active) => active.definition)
+    .filter((definition): definition is InterfaceDefinition => isInterfaceDefinition(definition))
+    .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
+  for (const definition of interfaces) {
+    Object.assign(query, interfaceQueryFields(build, definition));
+  }
   // Reserved in naming.ts (RESERVED_QUERY_NAMES), so no model can take it.
   query[SCHEMA_VERSION_FIELD] = {
     type: new GraphQLNonNull(GraphQLInt),
@@ -61,14 +76,19 @@ export const buildGraphqlSchema = (
     resolve: () => snapshot.version,
   };
   Object.assign(query, snapshotQueryFields(snapshot), siteQueryFields(snapshot, build.fixed));
+  const entry = entryInterface(build);
+  // `Entry` is in `contracts` too, under `ANY_TARGET`.
+  const contracts = [...build.contracts.values()].filter(
+    (type): type is GraphQLInterfaceType => type !== null && type !== entry,
+  );
   const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: query }),
     ...(models.length > 0 ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) } : {}),
     // Every generated object type, including those reachable only as dynamic-zone union members or as an
-    // interface's implementations, and every interface.
-    types: [...build.objects.values(), ...build.interfaces.values()],
+    // interface's implementations, and every interface; `Entry` always.
+    types: [...build.objects.values(), ...build.interfaces.values(), entry, ...contracts],
     // Entry type → model and fields, for counting field usage per operation (usageSelection.ts).
-    extensions: { [USAGE_MAP_EXTENSION]: buildUsageMap(snapshot) },
+    extensions: { [USAGE_MAP_EXTENSION]: buildUsageMap(snapshot, visibility) },
   });
   return { version: snapshot.version, schema };
 };

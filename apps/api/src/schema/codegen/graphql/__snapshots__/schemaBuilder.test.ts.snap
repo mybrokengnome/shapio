@@ -2,7 +2,7 @@
 
 exports[`buildGraphqlSchema > prints exactly the schema it printed before model inheritance existed (no model has children) 1`] = `
 """"Author"""
-type Author {
+type Author implements Entry {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -21,7 +21,7 @@ type Author {
 }
 
 """Home"""
-type Home {
+type Home implements Entry {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -44,7 +44,7 @@ Page
 
 A page of the site
 """
-type Page {
+type Page implements Entry {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -203,6 +203,19 @@ type Quote {
 }
 
 union PageSectionsZone = Hero | Quote
+
+"""
+Any entry, of any type: its system fields. Select its fields with \`... on <Type>\`.
+"""
+interface Entry {
+  id: ID!
+
+  """The locale that served this entry (fallback aware)"""
+  locale: String!
+  createdAt: String!
+  updatedAt: String!
+  publishedAt: String
+}
 
 type Query {
   """One Author entry by ID (null when not found)"""
@@ -919,58 +932,59 @@ type SiteSeoLocale {
 
 type Mutation {
   """Creates a Author entry (a draft unless \`publish\` is true)"""
-  createAuthor(data: AuthorInput, locale: String, publish: Boolean): Entry
+  createAuthor(data: AuthorInput, locale: String, publish: Boolean): EntryState
 
   """
   Changes the given fields of the draft (a patch: omitted fields keep their values)
   """
-  updateAuthor(id: ID!, data: AuthorInput, locale: String, expectedVersion: Int): Entry
+  updateAuthor(id: ID!, data: AuthorInput, locale: String, expectedVersion: Int): EntryState
   deleteAuthor(id: ID!): ID!
 
   """
   Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
   """
-  publishAuthor(id: ID!, locales: [String!], expectedVersion: Int): Entry
+  publishAuthor(id: ID!, locales: [String!], expectedVersion: Int): EntryState
 
   """Unpublishes the given locales (default: the default locale)"""
-  unpublishAuthor(id: ID!, locales: [String!]): Entry
+  unpublishAuthor(id: ID!, locales: [String!]): EntryState
 
   """Creates a Home entry (a draft unless \`publish\` is true)"""
-  createHome(data: HomeInput, locale: String, publish: Boolean): Entry
+  createHome(data: HomeInput, locale: String, publish: Boolean): EntryState
 
   """
   Changes the given fields of the draft (a patch: omitted fields keep their values)
   """
-  updateHome(id: ID!, data: HomeInput, locale: String, expectedVersion: Int): Entry
+  updateHome(id: ID!, data: HomeInput, locale: String, expectedVersion: Int): EntryState
   deleteHome(id: ID!): ID!
 
   """
   Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
   """
-  publishHome(id: ID!, locales: [String!], expectedVersion: Int): Entry
+  publishHome(id: ID!, locales: [String!], expectedVersion: Int): EntryState
 
   """Unpublishes the given locales (default: the default locale)"""
-  unpublishHome(id: ID!, locales: [String!]): Entry
+  unpublishHome(id: ID!, locales: [String!]): EntryState
 
   """Creates a Page entry (a draft unless \`publish\` is true)"""
-  createPage(data: PageInput, locale: String, publish: Boolean): Entry
+  createPage(data: PageInput, locale: String, publish: Boolean): EntryState
 
   """
   Changes the given fields of the draft (a patch: omitted fields keep their values)
   """
-  updatePage(id: ID!, data: PageInput, locale: String, expectedVersion: Int): Entry
+  updatePage(id: ID!, data: PageInput, locale: String, expectedVersion: Int): EntryState
   deletePage(id: ID!): ID!
 
   """
   Publishes the given locales (default: the default locale); with \`expectedVersion\`, only if that one locale's draft is still at it
   """
-  publishPage(id: ID!, locales: [String!], expectedVersion: Int): Entry
+  publishPage(id: ID!, locales: [String!], expectedVersion: Int): EntryState
 
   """Unpublishes the given locales (default: the default locale)"""
-  unpublishPage(id: ID!, locales: [String!]): Entry
+  unpublishPage(id: ID!, locales: [String!]): EntryState
 }
 
-type Entry {
+"""An entry's identity and state after a write"""
+type EntryState {
   id: ID!
   locale: String!
   version: Int!

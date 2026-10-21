@@ -5,6 +5,8 @@ import {
   type ResolvedModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
+import { familyIdsOf } from '../../../content/family.js';
+import { targetAcceptsModel, type RelationTarget } from '../../../content/relationTarget.js';
 import { MODEL_KEY } from '../../../content/validator/index.js';
 import type { SchemaById } from '../../snapshot.js';
 import type { SchemaBuild } from './build.js';
@@ -16,7 +18,8 @@ import { modelReadable } from './visibility.js';
  * Model inheritance in GraphQL (plan polymorphic-types D9). A model with children is served as
  * `<Type>Interface`; each row is resolved to its own kind's object type through `__model`, the row's singular
  * API ID that every delivery entry carries (like `__component` on dynamic-zone items). `__model` is never a
- * GraphQL field: clients use `__typename`.
+ * GraphQL field: clients use `__typename`. Interface definitions and `Entry` (plan interfaces D8) resolve their
+ * rows the same way, over their members and over every model.
  */
 /** A collection or singleton by ID with its effective fields (inherited first); undefined for anything else. */
 export const resolvedModelById = (snapshot: SchemaById, id: string): ResolvedModelDefinition | undefined => {
@@ -41,14 +44,33 @@ export const declaringOwner = (
   return (from !== undefined ? build.snapshot.byId.get(from)?.definition : undefined) ?? owner;
 };
 
+/** What a model's own queries serve: the model and its kinds (its family in the view). */
+export const familyTarget = (build: SchemaBuild, modelId: string): RelationTarget => ({
+  kind: 'model',
+  id: modelId,
+  modelIds: familyIdsOf(build.snapshot, modelId),
+});
+
 /**
- * The object type name of a row served as `model` (a model with children): its own kind's type, when that kind
- * is `model` or one of its descendants and the caller's schema has its type. Undefined otherwise; such rows
- * are left out of lists and resolve to null as single values (rule 7: never served as another kind).
+ * The members of an interface definition the caller may read and whose entry type the schema has (plan
+ * interfaces D8). The interface is in the caller's schema exactly when this is not empty.
  */
-export const kindTypeName = (
+export const readableMemberIds = (build: SchemaBuild, interfaceId: string): string[] =>
+  build.snapshot
+    .implementedBy(interfaceId)
+    .filter(
+      (id) => resolvedModelById(build.snapshot, id) !== undefined && modelReadable(build.visibility, id),
+    );
+
+/**
+ * The object type name of a row served as `target` (a model with children, an interface, any entry): its own
+ * kind's type, when that model is one the target accepts and the caller's schema has its type. Undefined
+ * otherwise; such rows are left out of lists and resolve to null as single values (rule 7: never served as
+ * another kind).
+ */
+export const rowTypeName = (
   build: SchemaBuild,
-  model: SchemaDefinition,
+  target: RelationTarget,
   node: ValueNode,
 ): string | undefined => {
   const apiKey = node.data[MODEL_KEY];
@@ -56,19 +78,18 @@ export const kindTypeName = (
   if (!kind || !isModelDefinition(kind) || !modelReadable(build.visibility, kind.id)) {
     return undefined;
   }
-  const inFamily = kind.id === model.id || build.snapshot.ancestors(kind.id).includes(model.id);
-  return inFamily ? modelTypeName(kind) : undefined;
+  return targetAcceptsModel(build.snapshot, target, kind.id) ? modelTypeName(kind) : undefined;
 };
 
 /**
- * Keeps the nodes a field typed as `model` can serve: every node for a model without children (its own object
- * type), the nodes of a kind in the caller's schema for a model with children (its interface).
+ * Keeps the nodes a field typed as `target` can serve: every node for a model without children (its own
+ * object type), the nodes of a model the caller's schema has a type for otherwise (an interface).
  */
 export const servableNodes = <T extends ValueNode>(
   build: SchemaBuild,
-  model: SchemaDefinition,
+  target: RelationTarget,
   nodes: readonly T[],
 ): T[] =>
-  hasChildren(build, model.id)
-    ? nodes.filter((node) => kindTypeName(build, model, node) !== undefined)
-    : [...nodes];
+  target.kind === 'model' && !hasChildren(build, target.id)
+    ? [...nodes]
+    : nodes.filter((node) => rowTypeName(build, target, node) !== undefined);

@@ -22,7 +22,7 @@ import { assertId, type RootField } from './operations.js';
 /**
  * `createPage`, `updatePage`, `deletePage`, `publishPage`, `unpublishPage` (names from naming.ts). They call
  * the content services REST's delivery writes and publish endpoints call, under the same evaluator, and
- * return the entry's identity and state (`Entry`), never values: writes create drafts.
+ * return the entry's identity and state (`EntryState`), never values: writes create drafts.
  */
 type EntryResult = deliveryWritesService.DeliveryWriteResult['data'];
 
@@ -52,7 +52,7 @@ export const mutationFields = (
 ): GraphQLFieldConfigMap<unknown, GraphqlContext> => {
   const input = modelInput(build, model);
   const data: GraphQLFieldConfigArgumentMap = input ? { data: { type: input } } : {};
-  const entry = build.fixed.entry;
+  const entry = build.fixed.entryState;
   const id = { id: { type: new GraphQLNonNull(GraphQLID) } };
   const locales = { locales: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) } };
   const fields: Record<string, RootField> = {
