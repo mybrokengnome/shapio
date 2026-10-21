@@ -307,10 +307,14 @@ export const familyMembersFor = (
   model: ContentModel,
   policy: Policy,
 ): Promise<ReadMember[]> =>
-  readableMembers(context.snapshot, model, (modelId) =>
-    modelId === model.definition.id
-      ? Promise.resolve(policy)
-      : context.permissions.evaluate(context.actor, { action: 'read', modelId }),
+  readableMembers(
+    context.snapshot,
+    familyIdsOf(context.snapshot, model.definition.id),
+    (modelId) =>
+      modelId === model.definition.id
+        ? Promise.resolve(policy)
+        : context.permissions.evaluate(context.actor, { action: 'read', modelId }),
+    model,
   );
 
 /**

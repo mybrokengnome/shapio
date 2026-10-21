@@ -1,4 +1,4 @@
-import { parseDefinition, type SchemaDefinition } from '@shapio/schema';
+import { parseDefinition, type DefinitionCategory, type SchemaDefinition } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
@@ -31,7 +31,7 @@ import { assertWritable } from './schemaDefinitions.js';
  * the set's other drafts applied, and must be based on the active version (the review flags drafts that
  * become stale later; shipping refuses them).
  */
-export type DefinitionCategory = 'model' | 'component';
+export type { DefinitionCategory } from '@shapio/schema';
 
 export type SchemaDraftView = {
   id: string;

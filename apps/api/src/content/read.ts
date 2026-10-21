@@ -18,11 +18,12 @@ import { compileRowFilter, hidesPrivateComponentFields, maskAllows, rowReadMask 
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
-import { groupByMember, readableMembers, type ReadMember } from './family.js';
+import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
+import type { RelationTarget } from './relationTarget.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
 import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
@@ -122,7 +123,12 @@ export const fetchFamilyHeadsByIds = async (
   ids: readonly string[],
   locales?: LocaleScope,
 ): Promise<FamilyHeads> => {
-  const members = await readableMembers(env.snapshot, model, (modelId) => readPolicy(env, modelId));
+  const members = await readableMembers(
+    env.snapshot,
+    familyIdsOf(env.snapshot, model.definition.id),
+    (modelId) => readPolicy(env, modelId),
+    model,
+  );
   if (ids.length === 0 || members.length === 0) {
     return { members, rows: [] };
   }
@@ -137,6 +143,29 @@ export const fetchFamilyHeadsByIds = async (
     orderBy: [],
   });
   return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
+};
+
+/**
+ * Heads of the given entries over everything a relation's target accepts (plan interfaces, D4): a model's
+ * family, an interface's members, or any entry. Each member is read under its own policy; members the caller
+ * may not read are left out.
+ *
+ * WP1 contract, implemented for `model` targets (the family fetch). For `interface` and `any` targets WP2
+ * looks up the models the IDs belong to first (one `entries` primary-key query), builds arms only for the
+ * readable accepted models that appear, and serves each arm in its own locale scope (decisions 7 and 8).
+ * Until then those targets read nothing, which is what a read shows for a target it cannot resolve.
+ */
+export const fetchTargetHeadsByIds = async (
+  env: ReadEnvironment,
+  target: RelationTarget,
+  ids: readonly string[],
+  locales?: LocaleScope,
+): Promise<FamilyHeads> => {
+  if (target.kind !== 'model') {
+    return { members: [], rows: [] };
+  }
+  const model = resolveModelById(env.snapshot, target.id);
+  return model ? fetchFamilyHeadsByIds(env, model, ids, locales) : { members: [], rows: [] };
 };
 
 /** Target heads read for relation visibility, by target model, for populate to reuse (same policy and locales). */

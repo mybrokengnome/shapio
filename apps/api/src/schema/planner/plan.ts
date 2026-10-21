@@ -1,4 +1,5 @@
 import {
+  isModelDefinition,
   classifyChanges,
   diffDefinitions,
   findChildDefinitions,
@@ -70,7 +71,7 @@ export type PlanInput = {
 
 /** The field indexes a definition needs (filterable or sortable, not deprecated), in the current layout. */
 export const indexStepsOf = (definition: SchemaDefinition | null): IndexStep[] =>
-  definition && definition.kind !== 'component'
+  definition && isModelDefinition(definition)
     ? definition.fields
         .filter((field: FieldDefinition) => hasFieldIndex(field))
         .map((field) => {

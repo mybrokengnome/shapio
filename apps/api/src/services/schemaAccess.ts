@@ -1,3 +1,4 @@
+import { isInterfaceDefinition } from '@shapio/schema';
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import type { PermissionEvaluator, PermissionExecutor, Principal } from '../permissions/types.js';
@@ -72,11 +73,8 @@ export const assertCanChangeNetworkSchema = async (context: SchemaServiceContext
   }
 };
 
-/** Admins see a definition if they may manage it or read its content (editors need the shape to edit). */
-export const canReadDefinition = async (
-  context: SchemaServiceContext,
-  definitionId: string,
-): Promise<boolean> => {
+/** Whether the caller may manage the definition or read its content, by its own grants. */
+const mayReadOwn = async (context: SchemaServiceContext, definitionId: string): Promise<boolean> => {
   for (const action of ['schemaManage', 'read'] as const) {
     if ((await context.permissions.evaluate(context.actor, { action, modelId: definitionId })).allowed) {
       return true;
@@ -85,10 +83,53 @@ export const canReadDefinition = async (
   return false;
 };
 
+/**
+ * Whether the caller may read some definition of the view that is not an interface (an interface's own
+ * readability, plan interfaces Q-a). Stops at the first one.
+ */
+const mayReadSomeDefinition = async (context: SchemaServiceContext): Promise<boolean> => {
+  for (const active of context.snapshot.definitions) {
+    if (!isInterfaceDefinition(active.definition) && (await mayReadOwn(context, active.definition.id))) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const isInterfaceId = (context: SchemaServiceContext, definitionId: string): boolean => {
+  const definition = context.snapshot.byId.get(definitionId)?.definition;
+  return definition !== undefined && isInterfaceDefinition(definition);
+};
+
+/**
+ * Admins see a definition if they may manage it or read its content (editors need the shape to edit). An
+ * interface holds no content and names only fields, so anyone who may read some definition may read every
+ * interface (an editor filling a relation to one needs its name); managing one needs a wildcard
+ * `schemaManage`, as for components (plan interfaces, Q-a).
+ */
+export const canReadDefinition = async (
+  context: SchemaServiceContext,
+  definitionId: string,
+): Promise<boolean> =>
+  (await mayReadOwn(context, definitionId)) ||
+  (isInterfaceId(context, definitionId) && (await mayReadSomeDefinition(context)));
+
 export const filterReadable = async <T extends { definition: { id: string } }>(
   context: SchemaServiceContext,
   items: readonly T[],
 ): Promise<T[]> => {
-  const allowed = await Promise.all(items.map((item) => canReadDefinition(context, item.definition.id)));
+  let readsSome: Promise<boolean> | undefined;
+  const allowed = await Promise.all(
+    items.map(async (item) => {
+      if (await mayReadOwn(context, item.definition.id)) {
+        return true;
+      }
+      if (!isInterfaceId(context, item.definition.id)) {
+        return false;
+      }
+      readsSome ??= mayReadSomeDefinition(context);
+      return readsSome;
+    }),
+  );
   return items.filter((_item, index) => allowed[index]);
 };

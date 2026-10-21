@@ -1,4 +1,5 @@
 import {
+  isComponentDefinition,
   isModelDefinition,
   ownFields,
   routePathOf,
@@ -210,10 +211,12 @@ export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
   const body = definitions.flatMap((definition) =>
     isModelDefinition(definition)
       ? modelDeclarations(definition, snapshot)
-      : [
-          componentDeclaration(definition, snapshot, 'output'),
-          componentDeclaration(definition, snapshot, 'input'),
-        ],
+      : isComponentDefinition(definition)
+        ? [
+            componentDeclaration(definition, snapshot, 'output'),
+            componentDeclaration(definition, snapshot, 'input'),
+          ]
+        : [],
   );
   const models = definitions.filter(isModelDefinition);
   const map = `/** Delivery entry type by model API ID. */\nexport type ShapioModels = {\n${models

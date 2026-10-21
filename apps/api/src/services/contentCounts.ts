@@ -1,4 +1,4 @@
-import { isComponentDefinition, type ModelDefinition } from '@shapio/schema';
+import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
 import { compileHeadQuery } from '../content/compiler/compile.js';
 import { compileRowFilter } from '../content/compiler/policy.js';
 import { familyIdsOf } from '../content/family.js';
@@ -35,9 +35,7 @@ const countFiltered = async (context: ContentServiceContext, { definition, polic
 export const countContent = async (
   context: ContentServiceContext,
 ): Promise<{ counts: ContentCountView[] }> => {
-  const models = context.snapshot.definitions
-    .map((active) => active.definition)
-    .filter((definition): definition is ModelDefinition => !isComponentDefinition(definition));
+  const models = context.snapshot.definitions.map((active) => active.definition).filter(isModelDefinition);
   const policies = await Promise.all(
     models.map((definition) =>
       context.permissions.evaluate(context.actor, { action: 'read', modelId: definition.id }),

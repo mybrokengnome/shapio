@@ -1,14 +1,16 @@
 import {
   ComponentDefinitionInputSchema,
   DefinitionInputSchema,
+  InterfaceDefinitionInputSchema,
   LockFileSchema,
   ModelDefinitionInputSchema,
   STABLE_ID_PATTERN,
+  type DefinitionCategory,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { Type, type TSchema } from 'typebox';
 
-/** TypeBox schemas shared by the schema admin routes (models, components, schema sync, locales). */
+/** TypeBox schemas shared by the schema admin routes (models, components, interfaces, schema sync, locales). */
 
 export const StableIdSchema = Type.String({ pattern: STABLE_ID_PATTERN.source });
 export const IdParamsSchema = Type.Object({ id: StableIdSchema });
@@ -24,8 +26,13 @@ export const AcknowledgementSchema = {
   acknowledgeDestructive: Type.Optional(Type.Boolean()),
 };
 
-export const definitionInputFor = (category: 'model' | 'component'): TSchema =>
-  category === 'model' ? ModelDefinitionInputSchema : ComponentDefinitionInputSchema;
+const DEFINITION_INPUTS: Readonly<Record<DefinitionCategory, TSchema>> = {
+  model: ModelDefinitionInputSchema,
+  component: ComponentDefinitionInputSchema,
+  interface: InterfaceDefinitionInputSchema,
+};
+
+export const definitionInputFor = (category: DefinitionCategory): TSchema => DEFINITION_INPUTS[category];
 
 /** A normalized definition: serialized against the input schema (every normalized one satisfies it). */
 export const DefinitionSchema = Type.Unsafe<SchemaDefinition>(DefinitionInputSchema);

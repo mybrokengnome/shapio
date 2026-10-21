@@ -1,4 +1,11 @@
-import { isModelDefinition, parseDefinition, type SchemaDefinition } from '@shapio/schema';
+import {
+  categoryOfKind,
+  interfaceDeletionIssues,
+  isModelDefinition,
+  parseDefinition,
+  type DefinitionCategory,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
 import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
@@ -29,11 +36,14 @@ import {
   type SchemaServiceContext,
 } from './schemaAccess.js';
 
-/** Models (collections and singletons) and components share the machinery; routes are per kind. */
-export type DefinitionCategory = 'model' | 'component';
+/**
+ * Models (collections and singletons), components and interfaces share the machinery; routes are per
+ * category (`@shapio/schema`'s `DefinitionCategory`).
+ */
+export type { DefinitionCategory };
 
 const categoryOf = (definition: Pick<SchemaDefinition, 'kind'>): DefinitionCategory =>
-  definition.kind === 'component' ? 'component' : 'model';
+  categoryOfKind(definition.kind);
 
 export type Acknowledgement = { acknowledgeBreaking?: boolean; acknowledgeDestructive?: boolean };
 
@@ -343,6 +353,14 @@ export const deleteDefinition = async (
   const children = childrenOf(context, input.id);
   if (children.length > 0) {
     throw definitionHasChildren(active.definition.apiKey, children);
+  }
+  // An interface with members on any site (plan interfaces): each member must stop implementing it first.
+  const members = interfaceDeletionIssues(
+    context.snapshot.network.definitions.map((entry) => entry.definition),
+    input.id,
+  );
+  if (members.length > 0) {
+    throw schemaInvalid(members);
   }
   if (plan.issues.length > 0) {
     throw schemaInvalid(plan.issues);

@@ -1,5 +1,10 @@
 import { suggestPlural } from '../naming/plural.js';
-import type { InterfaceDefinition, ModelDefinition, SchemaDefinition } from '../types/definitions.js';
+import {
+  isModelDefinition,
+  type InterfaceDefinition,
+  type ModelDefinition,
+  type SchemaDefinition,
+} from '../types/definitions.js';
 
 /**
  * The names GraphQL (package J) and other generated contracts derive from API keys. Defined here, with the
@@ -196,7 +201,7 @@ export const generatedNames = (
   }
   const suffixes = [
     ...(definition.kind === 'component' ? COMPONENT_TYPE_SUFFIXES : MODEL_TYPE_SUFFIXES),
-    ...(options.hasChildren && definition.kind !== 'component' ? [INTERFACE_TYPE_SUFFIX] : []),
+    ...(options.hasChildren && isModelDefinition(definition) ? [INTERFACE_TYPE_SUFFIX] : []),
   ];
   const names: GeneratedName[] = suffixes.map((suffix) => ({
     namespace: 'type',
@@ -213,7 +218,7 @@ export const generatedNames = (
       names.push({ namespace: 'type', name: `${fieldType}ZoneInput`, definitionId, fieldId: field.id });
     }
   }
-  if (definition.kind !== 'component') {
+  if (isModelDefinition(definition)) {
     names.push({ namespace: 'query', name: definition.apiKey, definitionId });
     // Only collections have a list query, so switching a singleton to a collection adds a name; the
     // switch is validated against the whole schema like any other change.
