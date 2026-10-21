@@ -96,6 +96,7 @@ export const RESERVED_TYPE_NAMES: readonly string[] = [
   'SortDirection',
   'Node',
   'Entry',
+  'EntryState',
   'Upload',
   'StringFilter',
   'IntFilter',
