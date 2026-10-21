@@ -133,6 +133,16 @@ describe('interfaces: delivery reads and relation values', () => {
     });
     await runContentSchemaJobs(database.current.db);
     ids.alpha = (await publishNew('post', { title: 'Alpha web sign', summary: 'a' })).id;
+    // A French version of the Post only: Post is localized, every other member is not.
+    expectStatus(
+      await admin.put(`/api/admin/content/post/${ids.alpha}`, {
+        locale: 'fr',
+        expectedVersion: null,
+        data: { title: 'Alpha FR web sign' },
+      }),
+      200,
+    );
+    expectStatus(await admin.post(`/api/admin/content/post/${ids.alpha}/publish`, { locales: ['fr'] }), 200);
     ids.beta = (await publishNew('guide', { title: 'Beta web sign', summary: 'b', level: 2 })).id;
     ids.gamma = (await publishNew('blogPost', { title: 'Gamma web sign', body: 'g' })).id;
     ids.delta = (await publishNew('blogPost', { title: 'Delta web', body: 'd' })).id;
@@ -183,6 +193,19 @@ describe('interfaces: delivery reads and relation values', () => {
     expect(selected.data[0]).toMatchObject({ title: 'Gamma web sign' });
     expect((await deliver('/api/content/featurables?fields=body')).statusCode).toBe(400);
     expect((await deliver('/api/content/featurables?filters[body][$eq]=g')).statusCode).toBe(400);
+  });
+
+  it('serves each member in its own locale scope: the localized one in French, the others as they are', async () => {
+    const french = await list('/api/content/featurables?locale=fr&filters[title][$contains]=Alpha');
+    expect(french.data.map((row) => [row.title, row.locale])).toEqual([['Alpha FR web sign', 'fr']]);
+    const all = await list('/api/content/featurables?locale=fr');
+    expect(all.data.map((row) => row.title)).toEqual([
+      'Alpha FR web sign',
+      'Beta web sign',
+      'Delta web',
+      'Epsilon web sign',
+      'Gamma web sign',
+    ]);
   });
 
   it('reads one entry of any member by ID; a non-member entry is not found', async () => {
