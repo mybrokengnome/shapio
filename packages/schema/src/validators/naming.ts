@@ -119,6 +119,12 @@ export const RESERVED_TYPE_NAMES: readonly string[] = [
   'SiteInfo',
   'SiteSeoDefaults',
   'SiteSeoLocale',
+  // The OpenAPI document's shared schemas (and `AnyEntry`, also a TypeScript type).
+  'AnyEntry',
+  'InterfaceMember',
+  'Kind',
+  'Pagination',
+  'Error',
 ];
 
 /**
