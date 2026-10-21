@@ -110,13 +110,23 @@ describe('interfaces: delivery reads and relation values', () => {
       extends: models.post?.definition.id,
       fields: [{ apiKey: 'level', label: 'Level', type: 'integer' }],
     });
+    await model('digital', { kind: 'collection', pluralApiKey: 'digitals', fields: [title] });
     await model('blogPost', {
       kind: 'collection',
       implements: implementsFeaturable,
-      fields: [title, summary, { apiKey: 'body', label: 'Body', type: 'text' }],
+      fields: [
+        title,
+        summary,
+        { apiKey: 'body', label: 'Body', type: 'text' },
+        {
+          apiKey: 'related',
+          label: 'Related',
+          type: 'relation',
+          settings: { target: models.digital?.definition.id, cardinality: 'many' },
+        },
+      ],
     });
     await model('about', { kind: 'singleton', implements: implementsFeaturable, fields: [title, summary] });
-    await model('digital', { kind: 'collection', pluralApiKey: 'digitals', fields: [title] });
     await model('homepage', {
       kind: 'singleton',
       fields: [
@@ -164,10 +174,13 @@ describe('interfaces: delivery reads and relation values', () => {
     );
     expectStatus(await admin.post(`/api/admin/content/post/${ids.alpha}/publish`, { locales: ['fr'] }), 200);
     ids.beta = (await publishNew('guide', { title: 'Beta web sign', summary: 'b', level: 2 })).id;
-    ids.gamma = (await publishNew('blogPost', { title: 'Gamma web sign', body: 'g' })).id;
+
     ids.delta = (await publishNew('blogPost', { title: 'Delta web', body: 'd' })).id;
     ids.epsilon = (await publishNew('about', { title: 'Epsilon web sign' })).id;
     ids.digital = (await publishNew('digital', { title: 'Web sign digital' })).id;
+    ids.gamma = (
+      await publishNew('blogPost', { title: 'Gamma web sign', body: 'g', related: [ids.digital] })
+    ).id;
     token = await tokenFor('post', 'blogPost', 'about', 'digital', 'homepage');
   });
   afterAll(async () => {
@@ -228,6 +241,13 @@ describe('interfaces: delivery reads and relation values', () => {
     ]);
   });
 
+  it("populate=* expands each member's own relations", async () => {
+    const page = await list('/api/content/featurables?populate=*&filters[__model][$in]=blogPost,post');
+    const gamma = page.data.find((row) => row.id === ids.gamma) as { related: Row[] } | undefined;
+    expect(gamma?.related.map((row) => [row.id, row.__model])).toEqual([[ids.digital, 'digital']]);
+    expect(page.data.find((row) => row.id === ids.alpha)).not.toHaveProperty('related');
+  });
+
   it('reads one entry of any member by ID; a non-member entry is not found', async () => {
     const one = expectStatus(await deliver(`/api/content/featurables/${ids.beta}`), 200).json<{
       data: Row;
@@ -248,6 +268,27 @@ describe('interfaces: delivery reads and relation values', () => {
     const live = await list('/api/content/featurables');
     const pinned = await list(`/api/content/featurables?snapshot=${live.meta.snapshot}`);
     expect(pinned.data.map((row) => row.id)).toEqual(live.data.map((row) => row.id));
+  });
+
+  it("entry events carry the routes of the member's interfaces, a kind's included", async () => {
+    const payloadOf = async (entryId: string | undefined) => {
+      const event = await database.current.db
+        .selectFrom('outbox_events')
+        .select(['payload'])
+        .where('aggregate_id', '=', entryId ?? '')
+        .where('type', '=', 'entry.published')
+        .executeTakeFirstOrThrow();
+      return (typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload) as Record<
+        string,
+        unknown
+      >;
+    };
+    expect(await payloadOf(ids.gamma)).toMatchObject({ routeKey: 'blogPosts', interfaces: ['featurables'] });
+    expect(await payloadOf(ids.beta)).toMatchObject({
+      routeKey: 'posts/guides',
+      interfaces: ['featurables'],
+    });
+    expect(await payloadOf(ids.digital)).toMatchObject({ interfaces: [] });
   });
 
   it('refuses writes through the interface, naming the member routes', async () => {
