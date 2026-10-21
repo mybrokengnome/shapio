@@ -7,14 +7,16 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionCard } from '.';
 
-const mocks = vi.hoisted(() => ({ trigger: vi.fn() }));
+const MANAGER = ['deployments.manage', 'deployments.trigger'];
+
+const mocks = vi.hoisted(() => ({ trigger: vi.fn(), permissions: [] as string[] }));
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/connection">{children}</a>,
   useNavigate: () => vi.fn(),
 }));
 vi.mock('@/api/auth', () => ({
-  useMe: () => ({ data: { globalPermissions: ['deployments.manage', 'deployments.trigger'] } }),
+  useMe: () => ({ data: { globalPermissions: mocks.permissions } }),
 }));
 vi.mock('@/api/deployments', () => {
   const idle = { isPending: false, mutate: vi.fn(), mutateAsync: vi.fn(), data: undefined };
@@ -54,6 +56,7 @@ const deployNow = () => screen.getByRole<HTMLButtonElement>('button', { name: 'D
 describe('ConnectionCard', () => {
   beforeEach(() => {
     mocks.trigger.mockReset();
+    mocks.permissions = MANAGER;
   });
 
   it('deploys a readable, enabled connection without a warning', async () => {
@@ -77,5 +80,40 @@ describe('ConnectionCard', () => {
     render(<ConnectionCard connection={connection({ enabled: false })} />);
     expect(screen.queryByText(WARNING)).toBeNull();
     expect(deployNow().disabled).toBe(true);
+  });
+
+  it('offers a manager Open and Deploy now', () => {
+    render(<ConnectionCard connection={connection()} />);
+    expect(screen.getByRole('link', { name: 'Open' })).toBeTruthy();
+    expect(deployNow().disabled).toBe(false);
+  });
+
+  it('offers someone who may only trigger Deploy now on a summary, and no Open', async () => {
+    mocks.permissions = ['deployments.trigger'];
+    const { settings: _settings, secrets: _secrets, callbackUrl: _callback, ...rest } = connection();
+    render(
+      <ConnectionCard
+        connection={{
+          id: rest.id,
+          name: rest.name,
+          provider: rest.provider,
+          enabled: rest.enabled,
+          triggerPolicy: rest.triggerPolicy,
+          secretsUnreadable: rest.secretsUnreadable,
+          latestRun: null,
+          currentRun: null,
+        }}
+      />,
+    );
+    expect(screen.queryByRole('link', { name: 'Open' })).toBeNull();
+    await userEvent.click(deployNow());
+    expect(mocks.trigger).toHaveBeenCalledWith('c1', expect.anything());
+  });
+
+  it('offers someone who may neither trigger nor manage nothing to press', () => {
+    mocks.permissions = [];
+    render(<ConnectionCard connection={connection()} />);
+    expect(screen.queryByRole('link', { name: 'Open' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deploy now' })).toBeNull();
   });
 });

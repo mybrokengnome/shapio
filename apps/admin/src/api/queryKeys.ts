@@ -179,6 +179,9 @@ export const queryKeys = {
       all: ['publishing', 'deployments'] as const,
       connections: ['publishing', 'deployments', 'connections'] as const,
       connection: (id: string) => ['publishing', 'deployments', 'connections', id] as const,
+      /** Connection summaries (admins who may trigger but not manage): under `deployments`, so runs refresh them. */
+      summaries: ['publishing', 'deployments', 'summaries'] as const,
+      summary: (id: string) => ['publishing', 'deployments', 'summaries', id] as const,
       runs: (query: DeploymentRunQuery) => ['publishing', 'deployments', 'runs', 'list', query] as const,
       run: (id: string) => ['publishing', 'deployments', 'runs', 'run', id] as const,
       /** The connections previews open on: under `deployments`, so connection changes refresh it. */

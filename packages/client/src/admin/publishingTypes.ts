@@ -256,6 +256,15 @@ export type DeploymentConnection = {
   secretsUnreadable: boolean;
 };
 
+/**
+ * A connection as someone who may trigger deployments but not manage them sees it (`deployments.trigger`):
+ * its state, triggers and runs, so they can deploy. No settings, secrets, URLs or other configuration.
+ */
+export type DeploymentConnectionSummary = Pick<
+  DeploymentConnection,
+  'id' | 'name' | 'provider' | 'enabled' | 'triggerPolicy' | 'secretsUnreadable' | 'latestRun' | 'currentRun'
+>;
+
 export type CreateDeploymentConnectionInput = {
   name: string;
   provider: DeploymentProvider;

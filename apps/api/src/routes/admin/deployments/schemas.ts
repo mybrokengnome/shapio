@@ -77,7 +77,28 @@ const UpdatedConnectionSchema = Type.Object({
 
 const errors = { 400: ErrorResponseSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema };
 
+/**
+ * A connection for those who may trigger deployments (not manage them): no settings, secrets, URLs or
+ * configuration, enforced here so nothing else can be serialized.
+ */
+const ConnectionSummarySchema = Type.Object({
+  id: UuidSchema,
+  name: Type.String(),
+  provider: ProviderSchema,
+  enabled: Type.Boolean(),
+  triggerPolicy: Type.Array(TriggerPolicySchema),
+  /** Deploy now can't work until a manager enters the secrets again. */
+  secretsUnreadable: Type.Boolean(),
+  latestRun: Type.Union([RunSchema, Type.Null()]),
+  currentRun: Type.Union([RunSchema, Type.Null()]),
+});
+
 export const listConnectionsSchema = { response: { 200: Type.Array(ConnectionSchema) } };
+export const listConnectionSummariesSchema = { response: { 200: Type.Array(ConnectionSummarySchema) } };
+export const getConnectionSummarySchema = {
+  params: IdParamsSchema,
+  response: { 200: ConnectionSummarySchema, ...errors },
+};
 export const getConnectionSchema = { params: IdParamsSchema, response: { 200: ConnectionSchema, ...errors } };
 
 const connectionFields = {

@@ -14,6 +14,16 @@ type ById = FastifyRequest<{ Params: IdParams }>;
 export const listConnections = async (request: FastifyRequest) =>
   deploymentsService.listConnections(request.server.publishing, getRequestSite(request));
 
+export const listConnectionSummaries = async (request: FastifyRequest) =>
+  deploymentsService.listConnectionSummaries(request.server.publishing, getRequestSite(request));
+
+export const getConnectionSummary = async (request: ById) =>
+  deploymentsService.getConnectionSummary(
+    request.server.publishing,
+    getRequestSite(request),
+    request.params.id,
+  );
+
 export const getConnection = async (request: ById) =>
   deploymentsService.getConnection(request.server.publishing, getRequestSite(request), request.params.id);
 

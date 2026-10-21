@@ -1,5 +1,6 @@
 import type {
   CreateDeploymentConnectionInput,
+  DeploymentConnectionSummary,
   DeploymentConnectionUpdated,
   DeploymentRunQuery,
   UpdateDeploymentConnectionInput,
@@ -15,27 +16,47 @@ const silent = { silent: true } as const;
 /** Polls while the latest runs are still in progress, so statuses move on screen without a reload. */
 const pollWhileActive = (active: boolean) => (active ? PUBLISHING_POLL_INTERVAL_MS : false);
 
-export const useDeploymentConnections = () =>
+/** Whether any of these connections' latest runs is still in progress. */
+const hasActiveRun = (connections: readonly Pick<DeploymentConnectionSummary, 'latestRun'>[] | undefined) =>
+  connections?.some((connection) =>
+    connection.latestRun ? ACTIVE_RUN_STATUSES.has(connection.latestRun.status) : false,
+  ) ?? false;
+
+/** The full connections (`deployments.manage`). */
+export const useDeploymentConnections = (enabled = true) =>
   useQuery({
     queryKey: queryKeys.publishing.deployments.connections,
     queryFn: () => adminApi.deployments.connections.list(),
-    refetchInterval: (query) =>
-      pollWhileActive(
-        query.state.data?.some((connection) =>
-          connection.latestRun ? ACTIVE_RUN_STATUSES.has(connection.latestRun.status) : false,
-        ) ?? false,
-      ),
+    refetchInterval: (query) => pollWhileActive(hasActiveRun(query.state.data)),
+    enabled,
     meta: silent,
   });
 
-export const useDeploymentConnection = (id: string) =>
+/** What Deploy now needs, without settings or URLs (admins who may trigger but not manage). */
+export const useDeploymentConnectionSummaries = (enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.publishing.deployments.summaries,
+    queryFn: () => adminApi.deployments.connectionSummaries.list(),
+    refetchInterval: (query) => pollWhileActive(hasActiveRun(query.state.data)),
+    enabled,
+    meta: silent,
+  });
+
+export const useDeploymentConnectionSummary = (id: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.publishing.deployments.summary(id),
+    queryFn: () => adminApi.deployments.connectionSummaries.get(id),
+    refetchInterval: (query) => pollWhileActive(hasActiveRun(query.state.data ? [query.state.data] : [])),
+    enabled,
+    meta: silent,
+  });
+
+export const useDeploymentConnection = (id: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.publishing.deployments.connection(id),
     queryFn: () => adminApi.deployments.connections.get(id),
-    refetchInterval: (query) =>
-      pollWhileActive(
-        query.state.data?.latestRun ? ACTIVE_RUN_STATUSES.has(query.state.data.latestRun.status) : false,
-      ),
+    refetchInterval: (query) => pollWhileActive(hasActiveRun(query.state.data ? [query.state.data] : [])),
+    enabled,
     meta: silent,
   });
 

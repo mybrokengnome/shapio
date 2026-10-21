@@ -2,7 +2,6 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Plus, Rocket } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDeploymentConnections } from '@/api/deployments';
 import { EmptyState } from '@/components/EmptyState';
 import { Page } from '@/components/Page';
 import { Panel } from '@/components/Panel';
@@ -14,15 +13,19 @@ import { useSecretReveal } from '../hooks/useSecretReveal';
 import { ConnectionCard } from './ConnectionCard';
 import { CreateSheet } from './CreateSheet';
 import { GeneratedSecretReveal } from './GeneratedSecretReveal';
+import { useConnectionCards } from './hooks/useConnectionCards';
 import { RunsList } from './RunsList';
 
-/** Deployment connections as cards (managers) and the latest runs across all of them (everyone). */
+/**
+ * Deployment connections as cards (managers, and admins who may trigger, who see each one's state and Deploy
+ * now without its settings) and the latest runs across all of them (everyone).
+ */
 export const Deployments = () => {
   const { t } = useTranslation();
   const navigate = useNavigate({ from: '/publishing/deployments' });
   const { cursor } = useSearch({ from: '/app/publishing/deployments' });
   const { canManageDeployments } = usePublishingPermissions();
-  const connections = useDeploymentConnections();
+  const { connections, shown } = useConnectionCards();
   const [creating, setCreating] = useState(false);
   const openConnection = (connectionId: string) =>
     void navigate({ to: '/publishing/deployments/$connectionId', params: { connectionId } });
@@ -43,7 +46,7 @@ export const Deployments = () => {
       {secret.revealed ? (
         <GeneratedSecretReveal secret={secret.revealed.secret} onDismiss={secret.dismiss} />
       ) : null}
-      {canManageDeployments ? (
+      {shown ? (
         <section aria-labelledby="deployment-connections" className="space-y-3">
           <h2 id="deployment-connections" className="text-base font-semibold">
             {t('publishing.deployments.connections')}

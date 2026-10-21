@@ -151,6 +151,108 @@ describe('deployments', () => {
     await testApp.app.close();
   });
 
+  describe('who may deploy: editors trigger from summaries, only managers see configuration', () => {
+    const SUMMARY_KEYS = [
+      'currentRun',
+      'enabled',
+      'id',
+      'latestRun',
+      'name',
+      'provider',
+      'secretsUnreadable',
+      'triggerPolicy',
+    ];
+
+    it('an editor lists and reads connection summaries, without settings, secrets or URLs', async () => {
+      const { connection } = await genericConnection();
+      const editor = schemaClient(testApp.app, await createRoleToken(database.current.db, 'editor'));
+      const listed = expectStatus(await editor.get('/api/admin/deployments/connection-summaries'), 200);
+      const [summary] = listed.json<Record<string, unknown>[]>();
+      expect(Object.keys(summary ?? {}).sort()).toEqual(SUMMARY_KEYS);
+      expect(summary).toMatchObject({
+        id: connection.id,
+        name: 'Example site',
+        provider: 'generic_webhook',
+        enabled: true,
+        triggerPolicy: ['publish', 'change_set', 'manual'],
+        secretsUnreadable: false,
+        latestRun: null,
+        currentRun: null,
+      });
+      const one = expectStatus(
+        await editor.get(`/api/admin/deployments/connection-summaries/${connection.id}`),
+        200,
+      );
+      for (const body of [listed.body, one.body]) {
+        expect(body).not.toContain(site.url);
+        expect(body).not.toContain('preview.example.test');
+        expect(body).not.toContain(new URL(connection.callbackUrl).pathname);
+        expect(body).not.toMatch(/settings|secrets"|envVar|allowPrivateNetwork|deliveryRoleId|callbackUrl/);
+      }
+      // The configuration itself stays with managers.
+      expectStatus(await editor.get('/api/admin/deployments/connections'), 403);
+      expectStatus(await editor.get(`/api/admin/deployments/connections/${connection.id}`), 403);
+    });
+
+    it('an editor still cannot create, change, delete or test a connection', async () => {
+      const { connection } = await genericConnection();
+      const editor = schemaClient(testApp.app, await createRoleToken(database.current.db, 'editor'));
+      const base = '/api/admin/deployments/connections';
+      expectStatus(
+        await editor.post(base, {
+          name: 'Mine',
+          provider: 'generic_webhook',
+          settings: { url: 'https://hooks.example.test/build' },
+          secrets: {},
+          triggerPolicy: ['manual'],
+        }),
+        403,
+      );
+      expectStatus(
+        await editor.request({
+          method: 'PATCH',
+          url: `${base}/${connection.id}`,
+          payload: { enabled: false, expectedVersion: connection.version },
+        }),
+        403,
+      );
+      expectStatus(await editor.delete(`${base}/${connection.id}`), 403);
+      expectStatus(await editor.post(`${base}/${connection.id}/test`, {}), 403);
+    });
+
+    it('an editor triggers a run, and sees it on the summary', async () => {
+      const { connection } = await genericConnection();
+      const editor = schemaClient(testApp.app, await createRoleToken(database.current.db, 'editor'));
+      const run = expectStatus(
+        await editor.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}),
+        201,
+      ).json<Run>();
+      expect(run).toMatchObject({ connectionId: connection.id, trigger: 'manual' });
+      const summary = expectStatus(
+        await editor.get(`/api/admin/deployments/connection-summaries/${connection.id}`),
+        200,
+      ).json<{ latestRun: Run | null }>();
+      expect(summary.latestRun?.id).toBe(run.id);
+    });
+
+    it('someone who may neither trigger nor manage gets neither summaries nor runs started', async () => {
+      const { connection } = await genericConnection();
+      const reader = schemaClient(testApp.app, await createRoleToken(database.current.db, 'read-only'));
+      expectStatus(await reader.get('/api/admin/deployments/connection-summaries'), 403);
+      expectStatus(await reader.get(`/api/admin/deployments/connection-summaries/${connection.id}`), 403);
+      expectStatus(await reader.post(`/api/admin/deployments/connections/${connection.id}/runs`, {}), 403);
+    });
+
+    it('a manager reads summaries too, and the full connections as before', async () => {
+      await genericConnection();
+      expectStatus(await admin.get('/api/admin/deployments/connection-summaries'), 200);
+      const [full] = expectStatus(await admin.get('/api/admin/deployments/connections'), 200).json<
+        Connection[]
+      >();
+      expect(full).toHaveProperty('settings');
+    });
+  });
+
   describe('generic signed build webhook', () => {
     it('triggers on publish with the snapshot, then follows signed callbacks and ignores a late older state', async () => {
       const { connection, generatedSecrets } = await genericConnection();

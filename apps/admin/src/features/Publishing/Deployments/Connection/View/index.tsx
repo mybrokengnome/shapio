@@ -9,7 +9,6 @@ import { PageHeader } from '@/components/PageHeader';
 import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { PROVIDER_LABELS } from '../../../constants';
 import { EnabledChip } from '../../../EnabledChip';
 import { useConflictReload } from '../../../hooks/useConflictReload';
 import { usePublishingPermissions } from '../../../hooks/usePublishingPermissions';
@@ -18,6 +17,7 @@ import { CallbackHelp } from '../../CallbackHelp';
 import { GeneratedSecretReveal } from '../../GeneratedSecretReveal';
 import { canDeployConnection } from '../../helpers/connectionState';
 import { useConnectionActions } from '../../hooks/useConnectionActions';
+import { useConnectionMeta } from '../../hooks/useConnectionMeta';
 import { RunsList } from '../../RunsList';
 import { SecretsUnreadableChip } from '../../SecretsUnreadableChip';
 import { EditForm } from '../EditForm';
@@ -49,15 +49,7 @@ export const View = ({ connection }: ViewProps) => {
     }
   };
   const busy = actions.testing || actions.triggering || actions.deleting;
-  const snapshot = connection.currentRun?.snapshot;
-  const meta = [
-    t(PROVIDER_LABELS[connection.provider]),
-    snapshot != null
-      ? t('publishing.deployments.liveSnapshot', { snapshot: t('publishing.snapshotNumber', { snapshot }) })
-      : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const { meta } = useConnectionMeta(connection);
   return (
     <Page>
       <PageHeader

@@ -6,16 +6,31 @@ import * as schemas from './schemas.js';
 /**
  * /api/admin/deployments: connections (`deployments.manage`) and runs. Every admin may see runs (an editor
  * who published needs to see whether the site build failed, brief §7); triggering and retrying need
- * `deployments.trigger` (editors have it).
+ * `deployments.trigger` (editors have it). Those who may trigger or manage read connection summaries (state
+ * and runs, no settings or URLs), so they can deploy without seeing a connection's configuration.
  */
 export const adminDeploymentsRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
   const manage = { preHandler: app.requireGlobalPermission('deployments.manage') };
   const admin = { preHandler: app.requireAdmin };
   const trigger = { preHandler: app.requireGlobalPermission('deployments.trigger') };
+  const deploy = {
+    preHandler: app.requireAnyGlobalPermission(['deployments.trigger', 'deployments.manage']),
+  };
   const audited = (action: string) => ({ config: { audit: { action } }, ...manage });
 
   app.get('/connections', { schema: schemas.listConnectionsSchema, ...manage }, handlers.listConnections);
+  // GET /connection-summaries[/:id]: what Deploy now needs, for those who may trigger
+  app.get(
+    '/connection-summaries',
+    { schema: schemas.listConnectionSummariesSchema, ...deploy },
+    handlers.listConnectionSummaries,
+  );
+  app.get(
+    '/connection-summaries/:id',
+    { schema: schemas.getConnectionSummarySchema, ...deploy },
+    handlers.getConnectionSummary,
+  );
   app.post(
     '/connections',
     { schema: schemas.createConnectionSchema, ...audited('deployment_connection.create') },
