@@ -18,6 +18,7 @@ export const ADMIN_PATHS = {
   audit: '/api/admin/audit',
   models: '/api/admin/models',
   components: '/api/admin/components',
+  interfaces: '/api/admin/interfaces',
   schema: '/api/admin/schema',
   schemaChanges: '/api/admin/schema/changes',
   schemaExport: '/api/admin/schema/export',

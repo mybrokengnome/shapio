@@ -34,6 +34,16 @@ describe('schema api: definitions', () => {
     expect(call(1).url).toBe('https://cms.test/cms/api/admin/components');
   });
 
+  it('lists and creates interfaces at their own endpoint', async () => {
+    const { client, call } = setup(200, { items: [] });
+    await client.admin.interfaces.list();
+    await client.admin.interfaces.create({
+      definition: { kind: 'interface', apiKey: 'featurable', label: 'Featurable', fields: [] },
+    });
+    expect(call(0).url).toBe('https://cms.test/cms/api/admin/interfaces');
+    expect(call(1)).toMatchObject({ url: 'https://cms.test/cms/api/admin/interfaces', method: 'POST' });
+  });
+
   it('plans and applies an update with the expected version and acknowledgements', async () => {
     const { client, call } = setup();
     await client.admin.models.planUpdate('m/1', { definition: DEFINITION, expectedVersion: 3 });

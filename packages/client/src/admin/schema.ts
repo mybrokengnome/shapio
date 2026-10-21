@@ -31,9 +31,10 @@ import type {
 const DEFINITION_PATHS = {
   model: ADMIN_PATHS.models,
   component: ADMIN_PATHS.components,
+  interface: ADMIN_PATHS.interfaces,
 } as const satisfies Record<DefinitionCategory, string>;
 
-/** Models (collections and singletons) and components share one set of endpoints under their own base. */
+/** Models (collections and singletons), components and interfaces share one set of endpoints, each under its own base. */
 export const createDefinitionApi = (request: RequestFn, category: DefinitionCategory) => {
   const base = DEFINITION_PATHS[category];
   return {
@@ -79,6 +80,7 @@ export const createDefinitionApi = (request: RequestFn, category: DefinitionCate
 export const createSchemaApi = (request: RequestFn) => ({
   models: createDefinitionApi(request, 'model'),
   components: createDefinitionApi(request, 'component'),
+  interfaces: createDefinitionApi(request, 'interface'),
   schema: {
     /** The global schema version and every visible definition's version (cheap; poll it for changes). */
     summary: () => request<SchemaSummary>(ADMIN_PATHS.schema),
