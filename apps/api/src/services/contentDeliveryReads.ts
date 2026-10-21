@@ -25,6 +25,12 @@ import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import type { ContentServiceContext } from './contentAccess.js';
+import {
+  interfaceArms,
+  interfaceOrderBy,
+  type InterfaceRoute,
+  type QueryMember,
+} from './contentInterfaceReads.js';
 import { familyQueryPlan, sortOf } from './contentReads.js';
 import { loadSeoDefaults } from './siteSeo.js';
 
@@ -78,11 +84,24 @@ export type DeliveryRead = {
    * each with its own policy. Absent: the model alone, under `policy`.
    */
   members?: readonly ReadMember[];
+  /**
+   * An interface read (plan interfaces): the interface, and the members the read covers, each with the query
+   * on its own fields (`queryMembers`). `model` and `policy` are then the first member's, and unused.
+   */
+  contract?: { route: InterfaceRoute; members: readonly QueryMember[] };
 };
 
 /** The kinds a read covers: its members, or the model alone. */
 const membersOf = (read: DeliveryRead): readonly ReadMember[] =>
-  read.members ?? [{ model: read.model, policy: read.policy }];
+  read.contract?.members ?? read.members ?? [{ model: read.model, policy: read.policy }];
+
+/** The query a member is read with: its own on an interface read, the read's otherwise. */
+const queryOf = (read: DeliveryRead, member: ReadMember): ContentQuery =>
+  read.contract?.members.find((candidate) => candidate.model === member.model)?.query ?? read.query;
+
+/** Whether any member's query populates. */
+const populates = (read: DeliveryRead): boolean =>
+  membersOf(read).some((member) => queryOf(read, member).populate.size > 0);
 
 /** What a read saw: its environment (for projection), the rows, the page total and the publication sequence. */
 type ConsistentHeads = {
@@ -101,9 +120,9 @@ const environmentOf = (read: DeliveryRead, executor: ReadEnvironment['executor']
  * follow-up statement.
  */
 const followsUp = (read: DeliveryRead): boolean =>
-  read.query.populate.size > 0 ||
-  membersOf(read).some(({ model, policy }) =>
-    selectFields(model, policy.readMask, read.query.fields).some(
+  populates(read) ||
+  membersOf(read).some((member) =>
+    selectFields(member.model, member.policy.readMask, queryOf(read, member).fields).some(
       (field) =>
         field.type === 'relation' ||
         field.type === 'media' ||
@@ -114,7 +133,7 @@ const followsUp = (read: DeliveryRead): boolean =>
 /** `needsFollowUpReads` over every kind among the rows. */
 const rowsNeedFollowUp = (env: ReadEnvironment, read: DeliveryRead, rows: readonly HeadRow[]): boolean =>
   groupByMember(membersOf(read), rows).some(({ member, rows: memberRows }) =>
-    needsFollowUpReads(env, member.model, memberRows, read.query, member.policy),
+    needsFollowUpReads(env, member.model, memberRows, queryOf(read, member), member.policy),
   );
 
 /** `needsMediaReads` over every kind among the rows. */
@@ -124,7 +143,7 @@ const rowsNeedMedia = (env: ReadEnvironment, read: DeliveryRead, rows: readonly 
       env,
       member.model,
       memberRows,
-      selectFields(member.model, member.policy.readMask, read.query.fields),
+      selectFields(member.model, member.policy.readMask, queryOf(read, member).fields),
     ),
   );
 
@@ -135,7 +154,7 @@ const rowsNeedMedia = (env: ReadEnvironment, read: DeliveryRead, rows: readonly 
 const isLiveVisibilityRead = (read: DeliveryRead): boolean =>
   read.source.kind === 'heads' &&
   read.source.state === 'published' &&
-  read.query.populate.size === 0 &&
+  !populates(read) &&
   (read.conditions?.length ?? 0) === 0;
 
 /**
@@ -199,10 +218,12 @@ const localesOf = (read: DeliveryRead) =>
   readScopeFor(read.context.snapshot, read.model.definition, read.query.locale, { fallback: read.fallback });
 
 const toEntries = async (read: DeliveryRead, env: ReadEnvironment, rows: readonly HeadRow[]) =>
-  (await projectMemberRows(env, membersOf(read), rows, read.query)).map(({ row, data }) => ({
-    ...systemAttributes(env, row),
-    ...data,
-  }));
+  (await projectMemberRows(env, membersOf(read), rows, (member) => queryOf(read, member))).map(
+    ({ row, data }) => ({
+      ...systemAttributes(env, row),
+      ...data,
+    }),
+  );
 
 export type EntryPage = {
   entries: Array<Record<string, unknown>>;
@@ -223,6 +244,9 @@ export const readEntryPage = async (
 ): Promise<EntryPage> => {
   const read = await withSeoDefaults(unloaded);
   const { context, model } = read;
+  if (read.contract) {
+    return readInterfacePage(read, read.contract, options);
+  }
   const query = {
     ...read.query,
     filter: await visibleReferenceFilter(environmentOf(read, context.db), read.query.filter),
@@ -256,6 +280,9 @@ export const readOneEntry = async (
 ): Promise<{ entry: Record<string, unknown> | undefined; seq: number }> => {
   const read = await withSeoDefaults(unloaded);
   const { context } = read;
+  if (read.contract) {
+    return readInterfaceEntry(read, read.contract, id, options);
+  }
   // An entry by ID: no filter, search or kind narrowing applies.
   const { kinds: _kinds, ...query } = read.query;
   const family = familyQueryPlan(context, { ...query, filter: null, search: null }, membersOf(read));
@@ -268,6 +295,59 @@ export const readOneEntry = async (
     orderBy: [],
     limit: 1,
   };
+  return readConsistently(read, plan, { total: false }, async ({ env, rows, seq }) => {
+    options.check?.(seq);
+    const [entry] = await toEntries(read, env, rows);
+    return { entry, seq };
+  });
+};
+
+/** The plan of an interface read: one arm per member, each with its own conditions, sort and locales. */
+const interfacePlan = async (
+  read: DeliveryRead,
+  contract: NonNullable<DeliveryRead['contract']>,
+  members: readonly QueryMember[],
+  filtered: boolean,
+): Promise<Omit<HeadQueryPlan, 'limit' | 'offset'>> => {
+  const env = environmentOf(read, read.context.db);
+  return {
+    siteId: read.context.site.id,
+    members: await interfaceArms(env, contract.route, members, { fallback: read.fallback, filtered }),
+    source: read.source,
+    locales: { kind: 'any' },
+    conditions: [...(read.conditions ?? [])],
+    conditionsReadEntries: (read.conditions?.length ?? 0) > 0,
+    orderBy: filtered ? interfaceOrderBy(members) : [],
+  };
+};
+
+/** A page of an interface read (plan interfaces, D6). */
+const readInterfacePage = async (
+  read: DeliveryRead,
+  contract: NonNullable<DeliveryRead['contract']>,
+  options: { total: boolean; check?: (seq: number) => void },
+): Promise<EntryPage> => {
+  const { limit, offset } = toLimitOffset(read.query.page, read.query.pageSize);
+  const plan: HeadQueryPlan = {
+    ...(await interfacePlan(read, contract, contract.members, true)),
+    limit,
+    offset,
+  };
+  return readConsistently(read, plan, { total: options.total }, async ({ env, rows, total, seq }) => {
+    options.check?.(seq);
+    return { entries: await toEntries(read, env, rows), limit, total: total ?? 0, seq };
+  });
+};
+
+/** One entry of an interface read by ID: every readable member, no filter, search or kind narrowing. */
+const readInterfaceEntry = async (
+  read: DeliveryRead,
+  contract: NonNullable<DeliveryRead['contract']>,
+  id: string,
+  options: { check?: (seq: number) => void },
+): Promise<{ entry: Record<string, unknown> | undefined; seq: number }> => {
+  const base = await interfacePlan(read, contract, contract.members, false);
+  const plan: HeadQueryPlan = { ...base, conditions: [...base.conditions, entryIdIs(id)], limit: 1 };
   return readConsistently(read, plan, { total: false }, async ({ env, rows, seq }) => {
     options.check?.(seq);
     const [entry] = await toEntries(read, env, rows);

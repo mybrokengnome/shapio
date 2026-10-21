@@ -5,7 +5,7 @@ import { everyRowReadMask } from '../content/compiler/policy.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
 import { familyIdsOf, kindsMetaOf, type ReadMember } from '../content/family.js';
-import { resolveRouteModel, type ContentModel } from '../content/model.js';
+import { resolveModelById, resolveRouteModel, type ContentModel } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
 import {
@@ -18,6 +18,7 @@ import {
 import { loadAdminPrincipal } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
 import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
+import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
@@ -128,6 +129,24 @@ type PreviewScope = {
   members: ReadMember[];
 };
 
+/**
+ * The model a preview route reads: the route's model, or on an interface's route (plan interfaces) the
+ * token's own model when it is a member, read like a list of that model (the token reads its one entry).
+ */
+const previewModelOf = (snapshot: SchemaSnapshot, routeKey: string, tokenModelId: string): ContentModel => {
+  const contract = snapshot.interfacesByRouteKey.get(routeKey);
+  if (!contract || snapshot.modelsByRouteKey.has(routeKey)) {
+    return resolveRouteModel(snapshot, routeKey);
+  }
+  const member = snapshot.implementedBy(contract.definition.id).includes(tokenModelId)
+    ? resolveModelById(snapshot, tokenModelId)
+    : undefined;
+  if (!member) {
+    throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another model');
+  }
+  return member;
+};
+
 /** Resolves the token and builds a content context that reads as the preview principal. */
 const authorize = async (
   runtime: PublishingRuntime,
@@ -139,7 +158,7 @@ const authorize = async (
   if (!token) {
     throw unauthenticated();
   }
-  const model = resolveRouteModel(base.snapshot, request.modelKey);
+  const model = previewModelOf(base.snapshot, request.modelKey, token.model_id);
   // The token is for its entry's own kind; any ancestor's route reads it too (plan polymorphic-types).
   if (!familyIdsOf(base.snapshot, model.definition.id).includes(token.model_id)) {
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another model');

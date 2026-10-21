@@ -1,4 +1,4 @@
-import { routeKeyOf } from '@shapio/schema';
+import { isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
@@ -7,6 +7,7 @@ import { resolveModel, resolveModelById, type ContentModel } from '../content/mo
 import type { ReadEnvironment } from '../content/read.js';
 import type { Database } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { AppError } from '../helpers/appError.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import type {
   ContentAction,
@@ -50,12 +51,43 @@ const ACTION_LABELS: Readonly<Record<ContentAction, string>> = {
  * Resolves the model and the caller's policy for one action; 403 when not allowed (CONTRIBUTING.md rule 5).
  * `executor`: the caller's open transaction, when there is one.
  */
+/**
+ * An interface has no entries of its own (plan interfaces, D6): writing through its route is refused (405),
+ * naming the members' routes, where entries are created and changed. Reads keep their own handling.
+ */
+export const refuseInterfaceWrite = (snapshot: SchemaSnapshot, modelKey: string, action: ContentAction) => {
+  const contract = snapshot.interfacesByApiKey.get(modelKey)?.definition;
+  if (
+    action === 'read' ||
+    !contract ||
+    !isInterfaceDefinition(contract) ||
+    snapshot.modelsByApiKey.has(modelKey)
+  ) {
+    return;
+  }
+  const routes = snapshot.implementedBy(contract.id).flatMap((id) => {
+    const member = resolveModelById(snapshot, id);
+    return member?.route ? [`/api/content/${member.route.key}`] : [];
+  });
+  throw new AppError(
+    405,
+    'METHOD_NOT_ALLOWED',
+    `"${routeKeyOf(contract)}" is an interface and has no entries of its own; ${
+      routes.length > 0
+        ? `write to a member's route instead: ${routes.join(', ')}`
+        : 'no type implements it yet'
+    }`,
+    { interface: contract.apiKey, memberRoutes: routes },
+  );
+};
+
 export const modelWithPolicy = async (
   context: ContentServiceContext,
   modelKey: string,
   action: ContentAction,
   executor?: PermissionExecutor,
 ): Promise<{ model: ContentModel; policy: Policy }> => {
+  refuseInterfaceWrite(context.snapshot, modelKey, action);
   const model = resolveModel(context.snapshot, modelKey);
   const policy = await context.permissions.evaluate(
     context.actor,
@@ -80,6 +112,7 @@ export const entryModelWithPolicy = async (
   action: ContentAction,
   executor?: PermissionExecutor,
 ): Promise<{ model: ContentModel; policy: Policy }> => {
+  refuseInterfaceWrite(context.snapshot, modelKey, action);
   const route = resolveModel(context.snapshot, modelKey);
   const family = context.snapshot.family(route.definition.id);
   if (family.length <= 1) {
