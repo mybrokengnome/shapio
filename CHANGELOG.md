@@ -37,6 +37,10 @@ All notable changes to Shapio are listed here. The format follows
   called `Entry`, is now `EntryState` with the same fields: queries that select its fields keep working, but a
   fragment on it (`fragment state on Entry { version status }`) must name `EntryState`. `EntryState` is a
   reserved type name, next to `Entry` and `Node`.
+- `AnyEntry`, `InterfaceMember`, `Kind`, `Pagination`, and `Error` are now reserved generated type names,
+  compared ignoring case: a model whose API ID is `anyEntry`, `interfaceMember`, `kind`, `pagination`, or
+  `error` is refused with `API_KEY_RESERVED`. A field called `kind` is unaffected. Such a model already broke
+  the generated OpenAPI document; the refusal makes the failure explicit. Rename it before upgrading.
 - On SQLite, the upgrade rebuilds the `models` and `schema_drafts` tables to accept the new kind, and
   migrations now run with foreign keys off, checking every reference afterwards. Back up the database file
   first, as before any upgrade.

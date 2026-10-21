@@ -47,7 +47,10 @@ characters. The same rules apply to the plural API ID, which must differ from th
 when you save the model, IDs that would collide in GraphQL (`Query`, `String`, `Media`…, a model called
 `pageFilter` next to a model `page`, a model `posts` next to a collection whose plural API ID is `posts`) and
 field IDs that clash with system
-attributes (`id`, `locale`, `status`, `version`, `createdAt`, `updatedAt`, `publishedAt`, …).
+attributes (`id`, `locale`, `status`, `version`, `createdAt`, `updatedAt`, `publishedAt`, …). The names of
+Shapio's generated types are reserved too, compared ignoring case: a model can't be called `entry`,
+`entryState`, `node`, `anyEntry`, `interfaceMember`, `kind`, `pagination`, or `error` (`API_KEY_RESERVED`). A
+field may still be called `kind`.
 With several sites these checks run in each site's view (its own definitions and the shared ones): two sites
 may each have a `post`, but a shared definition cannot take an API ID that any site uses.
 
