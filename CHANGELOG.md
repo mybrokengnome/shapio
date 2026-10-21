@@ -6,6 +6,13 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.16] - 2026-10-21
+
+### Fixed
+
+- Typing in the middle of an image's alt text (or its caption on the canvas) moved the cursor to the end
+  after the first character. The cursor now stays where you type.
+
 ## [0.5.15] - 2026-10-18
 
 ### Added
