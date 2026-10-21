@@ -310,6 +310,14 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
     case 'formatVersion':
       return result('conversion', { prerequisites: ['convert', 'validateValues'] });
     case 'target':
+      // Existing values point at entries of the old target; the conversion clears every one of them (a target
+      // that widens keeps them instead, see `targetWidens`).
+      return result('conversion', {
+        breaking: true,
+        destructive: true,
+        dropsValues: true,
+        prerequisites: ['convert'],
+      });
     case 'component':
       // Existing values point at entries of the old target; they are cleared by the conversion.
       return result('conversion', { breaking: true, destructive: true, prerequisites: ['convert'] });

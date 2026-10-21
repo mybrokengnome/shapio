@@ -126,21 +126,27 @@ describe('relation target widening', () => {
       before: holder(from),
       after: holder(to),
       ...(withIndex ? { index } : {}),
-    }).map(({ category, breaking, destructive }) => ({ category, breaking, destructive }));
+    }).map(({ category, breaking, destructive, dropsValues }) => ({
+      category,
+      breaking,
+      destructive,
+      dropsValues,
+    }));
 
   it('keeps values when the new target accepts every entry the old one did', () => {
-    const kept = [{ category: 'contract', breaking: true, destructive: false }];
+    const kept = [{ category: 'contract', breaking: true, destructive: false, dropsValues: false }];
     expect(targetChange(id(2), id(1))).toEqual(kept);
     expect(targetChange(id(2), ANY_TARGET)).toEqual(kept);
     expect(targetChange(id(1), ANY_TARGET)).toEqual(kept);
   });
 
   it('clears values when it narrows, and without the schema index', () => {
-    const cleared = [{ category: 'conversion', breaking: true, destructive: true }];
+    // Every value is cleared by the conversion, and the plan says so.
+    const cleared = [{ category: 'conversion', breaking: true, destructive: true, dropsValues: true }];
     expect(targetChange(id(1), id(2))).toEqual(cleared);
     expect(targetChange(ANY_TARGET, id(1))).toEqual(cleared);
     expect(targetChange(id(3), id(1))).toEqual([
-      { category: 'contract', breaking: true, destructive: false },
+      { category: 'contract', breaking: true, destructive: false, dropsValues: false },
     ]);
     expect(targetChange(id(2), id(1), false)).toEqual(cleared);
   });
