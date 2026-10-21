@@ -404,6 +404,14 @@ describe('interfaces: delivery reads and relation values', () => {
       });
       expect(refused.statusCode, `${method} ${url}`).toBe(405);
     }
+    // An anonymous writer learns nothing of the interface: the 401 an anonymous reader gets.
+    const anonymous = await testApp.app.inject({
+      method: 'PUT',
+      url: `/api/content/featurables/${ids.gamma}`,
+      payload: { data: { title: 'x' } },
+    });
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.body).not.toContain('blogPosts');
   });
 
   it('a relation to the interface accepts members and kinds, refuses others; any entry accepts a singleton', async () => {
