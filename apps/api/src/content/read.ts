@@ -3,6 +3,7 @@ import type { Kysely, RawBuilder, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
+import * as entriesRepository from '../repositories/entries.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
@@ -23,7 +24,7 @@ import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
-import type { RelationTarget } from './relationTarget.js';
+import { targetAcceptsModel, type RelationTarget } from './relationTarget.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
 import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
@@ -145,27 +146,83 @@ export const fetchFamilyHeadsByIds = async (
   return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
 };
 
+/** How `fetchTargetHeadsByIds` serves locales: `fallback: false` serves the requested locale only (ADR 0004). */
+export type TargetFetchOptions = { fallback?: boolean };
+
+/**
+ * The models among an interface's members (or any model, for any entry) that hold the given live entries on
+ * the read's site, in the target's member order: one primary-key read of `entries` first, so an interface or
+ * any-entry fetch plans arms only for the models that appear (plan interfaces, decision 8).
+ */
+const modelsHolding = async (
+  env: ReadEnvironment,
+  target: Exclude<RelationTarget, { kind: 'model' }>,
+  ids: readonly string[],
+): Promise<string[]> => {
+  const entries = await entriesRepository.findByIds(ids, env.executor);
+  const present = new Set(
+    entries
+      .filter((entry) => entry.deleted_at === null && entry.site_id === env.siteId)
+      .map((entry) => entry.model_id),
+  );
+  const ordered = target.kind === 'interface' ? target.modelIds : [...present];
+  return ordered.filter(
+    (modelId) => present.has(modelId) && targetAcceptsModel(env.snapshot, target, modelId),
+  );
+};
+
 /**
  * Heads of the given entries over everything a relation's target accepts (plan interfaces, D4): a model's
- * family, an interface's members, or any entry. Each member is read under its own policy; members the caller
- * may not read are left out.
- *
- * WP1 contract, implemented for `model` targets (the family fetch). For `interface` and `any` targets WP2
- * looks up the models the IDs belong to first (one `entries` primary-key query), builds arms only for the
- * readable accepted models that appear, and serves each arm in its own locale scope (decisions 7 and 8).
- * Until then those targets read nothing, which is what a read shows for a target it cannot resolve.
+ * family, an interface's members, or any entry. Each member is read under its own read policy, in its own
+ * locale scope (`readScopeFor` with `fallback`: a non-localized member serves its one head, a localized one
+ * the chain, or the requested locale alone when `fallback` is false). Members the caller may not read, and
+ * models holding none of the IDs, are left out.
  */
 export const fetchTargetHeadsByIds = async (
   env: ReadEnvironment,
   target: RelationTarget,
   ids: readonly string[],
-  locales?: LocaleScope,
+  options: TargetFetchOptions = {},
 ): Promise<FamilyHeads> => {
-  if (target.kind !== 'model') {
+  const fallback = options.fallback ?? true;
+  if (target.kind === 'model') {
+    const model = resolveModelById(env.snapshot, target.id);
+    if (!model) {
+      return { members: [], rows: [] };
+    }
+    // Every kind shares the root's localization (plan polymorphic-types, D3): one scope serves the family.
+    const locales = fallback
+      ? undefined
+      : readScopeFor(env.snapshot, model.definition, env.locale, { fallback });
+    return fetchFamilyHeadsByIds(env, model, ids, locales);
+  }
+  if (ids.length === 0) {
     return { members: [], rows: [] };
   }
-  const model = resolveModelById(env.snapshot, target.id);
-  return model ? fetchFamilyHeadsByIds(env, model, ids, locales) : { members: [], rows: [] };
+  const members = await readableMembers(env.snapshot, await modelsHolding(env, target, ids), (modelId) =>
+    readPolicy(env, modelId),
+  );
+  if (members.length === 0) {
+    return { members, rows: [] };
+  }
+  const { rows } = compileHeadQuery({
+    siteId: env.siteId,
+    members: members.map(({ model, policy }) => {
+      const rowFilter = compileRowFilter(policy.rowFilter, env.actor);
+      return {
+        modelId: model.definition.id,
+        conditions: rowFilter ? [rowFilter] : [],
+        conditionsReadEntries: rowFilter !== null,
+        locales: readScopeFor(env.snapshot, model.definition, env.locale, { fallback }),
+      };
+    }),
+    source: env.source,
+    locales: { kind: 'any' },
+    conditions: [entryIdIn(ids)],
+    conditionsReadEntries: false,
+    orderBy: [],
+  });
+  return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
 };
 
 /** Target heads read for relation visibility, by target model, for populate to reuse (same policy and locales). */
