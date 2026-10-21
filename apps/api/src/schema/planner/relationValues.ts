@@ -122,3 +122,20 @@ export const relationValueIssues = async (
   }
   return issues;
 };
+
+/**
+ * The `RELATION_VALUES_EXIST` issues of one definition's change (`after` null: its deletion) against a whole
+ * schema, counted on the database: what the admin's plan preview and a change set's review show before the
+ * activation refuses it under the lock.
+ */
+export const changeRelationValueIssues = (
+  schema: readonly SchemaDefinition[],
+  definitionId: string,
+  after: SchemaDefinition | null,
+  count: (query: RelationValueQuery) => Promise<number>,
+): Promise<ValidationIssue[]> =>
+  relationValueIssues(
+    schema,
+    [...schema.filter((definition) => definition.id !== definitionId), ...(after ? [after] : [])],
+    count,
+  );

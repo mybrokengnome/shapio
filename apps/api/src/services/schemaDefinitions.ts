@@ -7,6 +7,7 @@ import {
   type SchemaDefinition,
 } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
+import * as relationEdgeCountsRepository from '../repositories/relationEdgeCounts.js';
 import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import * as schemaSettingsRepository from '../repositories/schemaSettings.js';
@@ -23,6 +24,7 @@ import {
 import { activateDefinition } from '../schema/planner/activate.js';
 import { computeImpact, type PlanImpact } from '../schema/planner/impact.js';
 import { buildChangePlan, type ChangePlan } from '../schema/planner/plan.js';
+import { changeRelationValueIssues } from '../schema/planner/relationValues.js';
 import { requestChange } from '../schema/planner/request.js';
 import { scopedDefinitionsOf } from '../schema/scopedValidation.js';
 import { loadSiteKeys } from '../schema/siteKeys.js';
@@ -226,16 +228,28 @@ export const prepareChange = async (
     ]);
   }
   assertFamilyFlagsKept(context, before, after);
+  const plannerInput = await plannerInputOf(context);
   const plan = buildChangePlan({
     before,
     after,
     fromVersion: currentVersion,
-    ...(await plannerInputOf(context)),
+    ...plannerInput,
     siteId,
     hasContent: before !== null,
   });
   if (plan.issues.length > 0) {
     throw schemaInvalid(plan.issues);
+  }
+  // Relation values the change would strand (plan interfaces, decision 9), shown on the preview too;
+  // activation refuses them again under the lock.
+  const stranded = await changeRelationValueIssues(
+    plannerInput.active.map((entry) => entry.definition),
+    after.id,
+    after,
+    (query) => relationEdgeCountsRepository.countReferringEntries(query, context.db),
+  );
+  if (stranded.length > 0) {
+    throw schemaInvalid(stranded);
   }
   if (!plan.summary.supported) {
     throw schemaChangeUnsupported(plan.changes.filter((change) => !change.supported));

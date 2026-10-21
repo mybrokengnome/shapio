@@ -290,6 +290,66 @@ describe('interfaces: planner', () => {
     expect((await reload('models', roadmapItem.definition.id)).version).toBe(roadmapItem.version);
   });
 
+  it('the plan preview shows the refusal before anything is applied', async () => {
+    const response = await admin.post(`/api/admin/models/${roadmapItem.definition.id}/plan`, {
+      definition: { ...roadmapItem.definition, implements: [] },
+      expectedVersion: roadmapItem.version,
+    });
+    expect(response.statusCode).toBe(422);
+    expect(issuesOf(response)).toEqual([
+      expect.objectContaining({ code: 'RELATION_VALUES_EXIST', definitionId: roadmapItem.definition.id }),
+    ]);
+  });
+
+  it('a change set’s review shows the refusal, and a draft that would strand values is not saved', async () => {
+    const set = expectStatus(
+      await admin.post('/api/admin/change-sets', { title: 'Leave' }),
+      201,
+    ).json<ChangeSet>();
+    const leave = (model: ModelBody) =>
+      admin.put(`/api/admin/change-sets/${set.id}/schema/${model.definition.id}`, {
+        category: 'model',
+        definition: { ...model.definition, implements: [] },
+        baseVersion: model.version,
+      });
+    const refused = await leave(roadmapItem);
+    expect(refused.statusCode).toBe(422);
+    expect(issuesOf(refused).map((found) => found.code)).toEqual(['RELATION_VALUES_EXIST']);
+
+    // Saved while nothing points at a blog post; a value added afterwards blocks the set in its review.
+    expectStatus(await leave(blogPost), 200);
+    const post = await entry('blogPost', { title: 'Pinned' });
+    const pickId = fieldIdOf(page, 'pick');
+    const editPick = async (ids: string[]) => {
+      const current = expectStatus(
+        await admin.get(`/api/admin/content/page/${pageEntry.id}`),
+        200,
+      ).json<EntryBody>();
+      expectStatus(
+        await admin.put(`/api/admin/content/page/${pageEntry.id}`, {
+          expectedVersion: current.version,
+          data: { pick: ids },
+        }),
+        200,
+      );
+    };
+    await editPick([roadmapEntry.id, post.id]);
+    expect((await headData(pageEntry.id))[pickId]).toEqual([roadmapEntry.id, post.id]);
+    const review = expectStatus(await admin.get(`/api/admin/change-sets/${set.id}/review`), 200).json<{
+      schema: Array<{ definitionId: string; issues: Issue[] }>;
+      checks: { blocking: Issue[] };
+    }>();
+    expect(review.schema).toEqual([
+      expect.objectContaining({
+        definitionId: blogPost.definition.id,
+        issues: [expect.objectContaining({ code: 'RELATION_VALUES_EXIST' })],
+      }),
+    ]);
+    expect(review.checks.blocking.map((found) => found.code)).toContain('RELATION_VALUES_EXIST');
+    expectStatus(await admin.post(`/api/admin/change-sets/${set.id}/discard`, {}), 200);
+    await editPick([roadmapEntry.id]);
+  });
+
   it('widening to any entry keeps the values; deleting a member they point at is refused', async () => {
     const anyEntry = withTarget(page, 'pick', '*');
     expectStatus(await save('models', page, anyEntry), 200);
