@@ -45,6 +45,7 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
       "modelId": "5c1e0c9b-8f0e-4a51-b6a5-3e9a2f8d7c10",
       "modelKey": "article",
       "routeKey": "articles",
+      "interfaces": [],
       "title": "Why builds pin a snapshot",
       "coverMediaId": "9a4e7c21-6b3d-4f0a-8e15-2c7d9b0f4e63",
       "locales": [
@@ -96,6 +97,10 @@ Things to know:
   under its kind at `to` (at `from` when it was unpublished). Older snapshots keep it under its old kind, so a
   site that routes by kind should refresh the old route too, and every ancestor's list
   ([cache tags](delivery-api.md#nextjs-cache-tags)).
+- **Interfaces.** `interfaces` lists the plural API IDs of the [interfaces](modeling.md#interfaces) the
+  entry's type implements, its parents' included (`["featurables"]`; `[]` for none). The entry is also in each
+  of those lists, so refresh them too: `shapioTags.changed(entry.routeKey, entry.id, entry.interfaces)` gives
+  their [cache tags](delivery-api.md#nextjs-cache-tags).
 - **Deleting a locale** removes its history, so later diffs no longer mention it.
 - `to` beyond the current snapshot is `400 SNAPSHOT_INVALID`; a token or signed-in user who may read no
   model (or an instance with no models yet) gets an empty list; anonymous callers get 401 unless the

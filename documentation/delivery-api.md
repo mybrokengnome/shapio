@@ -403,8 +403,8 @@ its own route key and of every ancestor's. `shapioTags.changed(routeKey, id)` gi
 
 An entry is also in the list of every [interface](#interfaces) its type implements, and readable as
 `featurables/<id>`. Interface reads are tagged with the interface's plural API ID (`shapio:featurables`), so
-pass the plural API IDs of the type's interfaces as the third argument: webhook payloads carry them in
-`interfaces`. `shapioTags.changed(data.routeKey, data.entryId, data.interfaces)` adds `shapio:featurables` and
+pass the plural API IDs of the type's interfaces as the third argument: webhook payloads and snapshot diff
+items carry them in `interfaces`. `shapioTags.changed(data.routeKey, data.entryId, data.interfaces)` adds `shapio:featurables` and
 `shapio:featurables:<id>` to the tags above.
 
 ```ts
