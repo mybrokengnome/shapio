@@ -1,5 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
-import type { SchemaDefinition } from '@shapio/schema';
+import { categoryOfKind, isModelDefinition, type SchemaDefinition } from '@shapio/schema';
 import { PLAN_LOCK_FILE, PLAN_SCHEMA_DIR } from './planner.js';
 import type { PlanSite } from './planSite.js';
 import type { ImportSource } from './types.js';
@@ -24,8 +24,8 @@ export const formatPlanSummary = (
     const entries = source.entries.filter((entry) => entry.definition === keyOf.get(definition.apiKey));
     const published = entries.filter((entry) => entry.locales.some((locale) => locale.published)).length;
     lines.push(
-      `  ${definition.kind === 'component' ? 'component' : 'model'} ${definition.apiKey}: ${definition.fields.length} field(s)` +
-        (definition.kind === 'component'
+      `  ${categoryOfKind(definition.kind)} ${definition.apiKey}: ${definition.fields.length} field(s)` +
+        (!isModelDefinition(definition)
           ? ''
           : `, ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (${published} published, ${entries.length - published} draft(s))`),
     );

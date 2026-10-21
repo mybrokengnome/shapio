@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { categoryOfKind } from '@shapio/schema';
 import type { CliCommand, CliIo } from '../../types.js';
 import { CONNECTION_FLAGS, resolveConnection, UsageError } from './options.js';
 import { clientFor } from './sync.js';
@@ -21,7 +22,7 @@ const parseScopeOptions = (args: readonly string[], io: CliIo): ScopeOptions => 
   });
   const [apiKey, ...extra] = positionals;
   if (!apiKey || extra.length > 0) {
-    throw new UsageError('Name one model or component by its API ID');
+    throw new UsageError('Name one model, component, or interface by its API ID');
   }
   if (!values.shared && !values.site) {
     throw new UsageError('Pass --site <key> to keep it on that site, or --shared to share it with all sites');
@@ -40,7 +41,7 @@ const parseScopeOptions = (args: readonly string[], io: CliIo): ScopeOptions => 
  */
 export const schemaScopeCommand: CliCommand = {
   summary:
-    'Keep a shared model or component on one site (--site), or share a site’s with all sites (--shared)',
+    'Keep a shared model, component, or interface on one site (--site), or share a site’s with all sites (--shared)',
   usage:
     'shapio schema scope <apiKey> (--site <key> | --shared [--site <key>]) [--url <origin>] [--token <admin token>] [--version <n>]',
   run: async (args, io) => {
@@ -50,10 +51,14 @@ export const schemaScopeCommand: CliCommand = {
     const siteKey = options.site ?? exported.site?.key ?? '(default)';
     const found = exported.definitions.find(({ definition }) => definition.apiKey === options.apiKey);
     if (!found) {
-      io.stderr(`Site "${siteKey}" has no model or component with API ID "${options.apiKey}".\n`);
+      io.stderr(`Site "${siteKey}" has no model, component, or interface with API ID "${options.apiKey}".\n`);
       return 1;
     }
-    const api = found.definition.kind === 'component' ? client.admin.components : client.admin.models;
+    const api = {
+      model: client.admin.models,
+      component: client.admin.components,
+      interface: client.admin.interfaces,
+    }[categoryOfKind(found.definition.kind)];
     const outcome = await api.changeScope(found.definition.id, {
       scope: options.shared ? 'network' : 'site',
       version: options.version ?? found.version,

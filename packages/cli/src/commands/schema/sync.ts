@@ -2,7 +2,7 @@ import { createClient, ShapioApiError, type SchemaApplyResult } from '@shapio/cl
 import { LOCK_FILE_FORMAT_VERSION, lockCoversSite, type LockFile } from '@shapio/schema';
 import type { CliIo } from '../../types.js';
 import { displayPath, readLocalFiles, readLockFile, type LocalFile } from './files.js';
-import { formatApiError, formatItem, parentKeyOf, type ParentIds } from './format.js';
+import { formatApiError, formatItem, parentKeyOf, type ImplementedIds, type ParentIds } from './format.js';
 import type { ConnectionOptions, SchemaCommandOptions } from './options.js';
 import { baseForSite, filesForSite, scopesOf } from './siteTree.js';
 
@@ -20,6 +20,8 @@ export type LocalState = {
   names: Map<string, string>;
   /** Each model's parent (`extends`) by stable ID. */
   parents: ParentIds;
+  /** The interfaces each model implements itself (`implements`) by stable ID. */
+  implemented: ImplementedIds;
 };
 
 /** One site's part of the local tree: what an apply for `siteKey` sends. */
@@ -29,11 +31,13 @@ type RawDefinition = {
   id?: string;
   apiKey?: string;
   extends?: string;
+  implements?: unknown;
   fields?: Array<{ id?: string; apiKey?: string }>;
 };
 
 /**
- * Field and definition names by ID from every local file (all sites' folders too), for readable diffs. A type
+ * Field and definition names by ID from every local file (all sites' folders too, and interfaces/ like the
+ * other kinds' folders), for readable diffs. A type
  * that extends another stores only its own fields, and an inherited field keeps its parent's ID, so the
  * parent's file names it: the whole file set is read, never one site's part, and inherited fields resolve.
  */
@@ -74,6 +78,31 @@ export const collectParents = (files: readonly LocalFile[]): Map<string, string>
   return parents;
 };
 
+/**
+ * The interfaces each model declares in `implements` (stable IDs, like `extends`) from the local files, keyed
+ * like `collectParents`. What a model inherits from its parent's `implements` is not listed: the header shows
+ * what its own file says.
+ */
+export const collectImplemented = (files: readonly LocalFile[]): Map<string, readonly string[]> => {
+  const implemented = new Map<string, readonly string[]>();
+  for (const file of files) {
+    const raw = file.raw as RawDefinition;
+    const ids = Array.isArray(raw.implements)
+      ? raw.implements.filter((id): id is string => typeof id === 'string' && id !== '')
+      : [];
+    if (ids.length === 0) {
+      continue;
+    }
+    if (raw.id) {
+      implemented.set(raw.id, ids);
+    }
+    if (raw.apiKey) {
+      implemented.set(parentKeyOf(raw.apiKey), ids);
+    }
+  }
+  return implemented;
+};
+
 export const readLocalState = async (options: SchemaCommandOptions): Promise<LocalState> => {
   const files = await readLocalFiles(options.dir);
   return {
@@ -81,6 +110,7 @@ export const readLocalState = async (options: SchemaCommandOptions): Promise<Loc
     lock: (await readLockFile(options.lockPath)) ?? EMPTY_LOCK,
     names: collectNames(files),
     parents: collectParents(files),
+    implemented: collectImplemented(files),
   };
 };
 
@@ -152,6 +182,7 @@ export const sendApply = async (
           state.sent.map((file) => displayPath(file.path)),
           state.names,
           state.parents,
+          state.implemented,
         ),
       );
       return undefined;
@@ -163,7 +194,7 @@ export const sendApply = async (
 export const printResults = (response: SchemaApplyResult, state: LocalState, io: CliIo, verbose: boolean) => {
   for (const item of response.results) {
     if (verbose || item.decision.action !== 'skip' || item.decision.reason !== 'unchangedLocally') {
-      io.stdout(`${formatItem(item, state.names, state.parents)}\n`);
+      io.stdout(`${formatItem(item, state.names, state.parents, state.implemented)}\n`);
     }
   }
 };
