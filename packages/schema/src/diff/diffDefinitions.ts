@@ -1,5 +1,10 @@
 import { canonicalJson } from '../fileFormat/canonical.js';
-import type { FieldDefinition, SchemaDefinition } from '../types/definitions.js';
+import {
+  isModelDefinition,
+  type FieldDefinition,
+  type ModelDefinition,
+  type SchemaDefinition,
+} from '../types/definitions.js';
 import type { JsonValue } from '../types/json.js';
 import { routeKeyOf } from '../validators/naming.js';
 import type { SchemaChange } from './types.js';
@@ -73,6 +78,26 @@ const diffField = (definitionId: string, before: FieldDefinition, after: FieldDe
   return changes;
 };
 
+/** One `model.implements` change per interface the model starts or stops implementing, in ID order. */
+const diffImplements = (
+  definitionId: string,
+  before: ModelDefinition,
+  after: ModelDefinition,
+): SchemaChange[] => {
+  const from = new Set(before.implements ?? []);
+  const to = new Set(after.implements ?? []);
+  return [...new Set([...from, ...to])]
+    .sort()
+    .filter((id) => from.has(id) !== to.has(id))
+    .map((id) => ({
+      kind: 'model.implements',
+      definitionId,
+      property: id,
+      from: from.has(id) ? id : null,
+      to: to.has(id) ? id : null,
+    }));
+};
+
 /**
  * Every difference between two versions of a definition, matched by stable IDs (so a renamed field is a
  * rename, not a removal plus an addition). Pass `null` for a side that does not exist. The order is
@@ -118,14 +143,19 @@ export const diffDefinitions = (
   if (before.kind !== after.kind) {
     changes.push({ kind: 'model.kind', definitionId, from: before.kind, to: after.kind });
   }
-  // Only between two collections: a kind switch is its own (breaking) change and adds or drops the plural.
-  if (before.kind === 'collection' && after.kind === 'collection') {
+  // Only between two collections (or two interfaces): a kind switch is its own (breaking) change and adds or
+  // drops the plural.
+  if (
+    (before.kind === 'collection' && after.kind === 'collection') ||
+    (before.kind === 'interface' && after.kind === 'interface')
+  ) {
     const [from, to] = [routeKeyOf(before), routeKeyOf(after)];
     if (from !== to) {
       changes.push({ kind: 'definition.pluralApiKey', definitionId, from, to });
     }
   }
-  if (before.kind !== 'component' && after.kind !== 'component') {
+  if (isModelDefinition(before) && isModelDefinition(after)) {
+    changes.push(...diffImplements(definitionId, before, after));
     // Re-parenting (or gaining or losing a parent) is a contract change of its own; the fields gained or
     // lost show up in a diff of the resolved definitions (plan polymorphic-types).
     if ((before.extends ?? null) !== (after.extends ?? null)) {

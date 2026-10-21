@@ -1,7 +1,8 @@
 import { createDefinitionIndex } from '../inheritance/resolve.js';
-import { isModelDefinition, type SchemaDefinition } from '../types/definitions.js';
+import { ANY_TARGET, isModelDefinition, type SchemaDefinition } from '../types/definitions.js';
 import { foldApiKey } from './apiKey.js';
 import { checkInheritance } from './inheritance.js';
+import { checkInterfaces } from './interfaces.js';
 import { issue, type ValidationIssue } from './issues.js';
 import {
   generatedNames,
@@ -33,7 +34,8 @@ const describeOrigin = (name: GeneratedName, byId: ReadonlyMap<string, SchemaDef
 /** The API IDs a definition claims in the shared case-insensitive namespace, with their issue paths. */
 const claimedKeys = (definition: SchemaDefinition): Array<{ key: string; path: string; plural: boolean }> => {
   const keys = [{ key: definition.apiKey, path: '/apiKey', plural: false }];
-  const plural = definition.kind === 'collection' ? routeKeyOf(definition) : '';
+  const plural =
+    definition.kind === 'collection' || definition.kind === 'interface' ? routeKeyOf(definition) : '';
   if (plural) {
     keys.push({ key: plural, path: '/pluralApiKey', plural: true });
   }
@@ -174,25 +176,31 @@ const checkReferences = (definitions: readonly SchemaDefinition[]): ValidationIs
           issues.push(
             withDefinition(
               definition,
-              issue(at, 'INVALID_REFERENCE_TARGET', `"${target.apiKey}" is a model, not a component`),
+              issue(
+                at,
+                'INVALID_REFERENCE_TARGET',
+                `"${target.apiKey}" is a ${target.kind}, not a component`,
+              ),
             ),
           );
         }
       };
-      if (field.type === 'relation') {
+      // A relation targets a collection (and its kinds), an interface (its members, singletons included), or
+      // any entry (`*`). A singleton is reached through an interface it implements (plan interfaces).
+      if (field.type === 'relation' && field.settings.target !== ANY_TARGET) {
         const target = byId.get(field.settings.target);
         if (!target) {
           issues.push(
             withDefinition(definition, issue(`${path}/target`, 'UNKNOWN_REFERENCE', 'refers to no model')),
           );
-        } else if (target.kind !== 'collection') {
+        } else if (target.kind !== 'collection' && target.kind !== 'interface') {
           issues.push(
             withDefinition(
               definition,
               issue(
                 `${path}/target`,
                 'INVALID_REFERENCE_TARGET',
-                `relations must target a collection model; "${target.apiKey}" is a ${target.kind}`,
+                `relations must target a collection or an interface; "${target.apiKey}" is a ${target.kind}`,
               ),
             ),
           );
@@ -263,7 +271,7 @@ const checkNesting = (definitions: readonly SchemaDefinition[]): ValidationIssue
 
   for (const definition of definitions) {
     const depth = visit(definition.id, []);
-    if (Number.isFinite(depth) && depth > MAX_COMPONENT_DEPTH && definition.kind !== 'component') {
+    if (Number.isFinite(depth) && depth > MAX_COMPONENT_DEPTH && isModelDefinition(definition)) {
       issues.push(
         withDefinition(
           definition,
@@ -281,12 +289,13 @@ const checkNesting = (definitions: readonly SchemaDefinition[]): ValidationIssue
 
 /**
  * Cross-definition checks over a whole schema (every active definition with the proposed change applied):
- * unique IDs and API keys, model inheritance, GraphQL name collisions, relation and component targets,
+ * unique IDs and API keys, model inheritance, interfaces, GraphQL name collisions, relation and component targets,
  * component cycles and nesting depth. Each definition must already pass `validateDefinition`.
  */
 export const validateSchema = (definitions: readonly SchemaDefinition[]): ValidationIssue[] => [
   ...checkIdentity(definitions),
   ...checkInheritance(definitions),
+  ...checkInterfaces(definitions),
   ...checkGeneratedNames(definitions),
   ...checkReferences(definitions),
   ...checkNesting(definitions),
@@ -336,7 +345,7 @@ export const findDependentModels = (
     for (const parent of embeddedBy.get(current) ?? []) {
       if (parent.kind === 'component') {
         queue.push(parent.id);
-      } else {
+      } else if (isModelDefinition(parent)) {
         // Models that extend an embedding model inherit the field, so their entries hold the component too.
         for (const id of index.family(parent.id)) {
           const model = index.get(id);

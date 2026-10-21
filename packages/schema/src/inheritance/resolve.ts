@@ -1,7 +1,9 @@
 import { isCanvasEligible } from '../display/layout.js';
 import {
+  isInterfaceDefinition,
   isModelDefinition,
   type FieldDefinition,
+  type InterfaceDefinition,
   type ModelDefinition,
   type ModelDisplay,
   type ResolvedField,
@@ -188,6 +190,23 @@ export type DefinitionIndex = {
   family: (id: string) => readonly string[];
   /** The family's root (the model itself when it extends nothing). */
   rootOf: (id: string) => string;
+  /**
+   * The interfaces a collection or singleton implements (plan interfaces): its ancestors' (root first), then
+   * its own, without duplicates; only IDs of interfaces in this set. [] for anything else.
+   */
+  interfacesOf: (id: string) => readonly string[];
+  /** Every model that implements the interface, directly or through an ancestor, in definition order. */
+  implementedBy: (interfaceId: string) => readonly string[];
+  /**
+   * The member's field that satisfies one of the interface's contract fields: the member's live effective
+   * field with the same API ID (exact match). Undefined when the field, the interface or the model is unknown.
+   */
+  memberFieldOf: (interfaceId: string, contractFieldId: string, modelId: string) => ResolvedField | undefined;
+  /**
+   * A model's fields that satisfy some contract, by the model's field ID, with the IDs of the interfaces that
+   * require them (the builder's "Required by" badge; validation names the interface).
+   */
+  contractFieldsOf: (modelId: string) => ReadonlyMap<string, readonly string[]>;
 };
 
 const memo = <T>(compute: (id: string) => T): ((id: string) => T) => {
@@ -233,14 +252,68 @@ export const createDefinitionIndex = (definitions: readonly SchemaDefinition[]):
     walk(id);
     return found;
   });
+  const resolve = memo((id): ResolvedModelDefinition | undefined => {
+    const definition = byId.get(id);
+    return definition && isModelDefinition(definition)
+      ? resolveModelDefinition(definition, lookup)
+      : undefined;
+  });
+  const interfaceById = (id: string): InterfaceDefinition | undefined => {
+    const definition = byId.get(id);
+    return definition && isInterfaceDefinition(definition) ? definition : undefined;
+  };
+  const interfacesOf = memo((id): readonly string[] => {
+    const definition = byId.get(id);
+    if (!definition || !isModelDefinition(definition)) {
+      return [];
+    }
+    const chain = [...ancestors(id), id].map((member) => byId.get(member));
+    const declared = chain.flatMap((member) =>
+      member && isModelDefinition(member) ? (member.implements ?? []) : [],
+    );
+    return [...new Set(declared)].filter((interfaceId) => interfaceById(interfaceId) !== undefined);
+  });
+  let members: Map<string, string[]> | undefined;
+  const implementedBy = (interfaceId: string): readonly string[] => {
+    if (!members) {
+      members = new Map();
+      for (const definition of definitions) {
+        for (const implemented of interfacesOf(definition.id)) {
+          members.set(implemented, [...(members.get(implemented) ?? []), definition.id]);
+        }
+      }
+    }
+    return members.get(interfaceId) ?? [];
+  };
+  const memberFieldOf = (
+    interfaceId: string,
+    contractFieldId: string,
+    modelId: string,
+  ): ResolvedField | undefined => {
+    const contract = interfaceById(interfaceId)?.fields.find((field) => field.id === contractFieldId);
+    return contract === undefined
+      ? undefined
+      : resolve(modelId)?.fields.find((field) => field.apiKey === contract.apiKey && !field.deprecated);
+  };
+  const contractFieldsOf = memo((modelId): ReadonlyMap<string, readonly string[]> => {
+    const required = new Map<string, string[]>();
+    for (const interfaceId of interfacesOf(modelId)) {
+      for (const contract of interfaceById(interfaceId)?.fields ?? []) {
+        const field = memberFieldOf(interfaceId, contract.id, modelId);
+        if (field) {
+          required.set(field.id, [...(required.get(field.id) ?? []), interfaceId]);
+        }
+      }
+    }
+    return required;
+  });
   return {
     get: lookup,
-    resolve: memo((id) => {
-      const definition = byId.get(id);
-      return definition && isModelDefinition(definition)
-        ? resolveModelDefinition(definition, lookup)
-        : undefined;
-    }),
+    resolve,
+    interfacesOf,
+    implementedBy,
+    memberFieldOf,
+    contractFieldsOf,
     ancestors,
     childrenOf,
     descendants,

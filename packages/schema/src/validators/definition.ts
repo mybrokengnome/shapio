@@ -3,7 +3,14 @@ import { effectiveTitleField, TITLE_FIELD_TYPES } from '../display/titleField.js
 import { EDITOR_CATALOG, isCustomEditorId } from '../editors/catalog.js';
 import { isStableId } from '../ids.js';
 import { SCALAR_DATA_TYPES, UNIQUE_CAPABLE_DATA_TYPES } from '../types/dataTypes.js';
-import type { FieldDefinition, FieldGroup, ModelDefinition, SchemaDefinition } from '../types/definitions.js';
+import {
+  ANY_TARGET,
+  isModelDefinition,
+  type FieldDefinition,
+  type FieldGroup,
+  type ModelDefinition,
+  type SchemaDefinition,
+} from '../types/definitions.js';
 import { checkApiKeySyntax, foldApiKey, isApiKeySyntaxValid } from './apiKey.js';
 import { checkDefaultValue } from './defaultValue.js';
 import { issue, type ValidationIssue } from './issues.js';
@@ -113,7 +120,11 @@ const checkSettings = (
       seen.add(entry.value);
     });
   }
-  if (field.type === 'slug' && field.settings.sourceFieldId !== undefined) {
+  if (
+    field.type === 'slug' &&
+    field.settings.sourceFieldId !== undefined &&
+    definition.kind !== 'interface'
+  ) {
     const source = definition.fields.find((candidate) => candidate.id === field.settings.sourceFieldId);
     if (!source) {
       issues.push(
@@ -143,8 +154,18 @@ const checkSettings = (
       issue(`${path}/settings/formatVersion`, 'INVALID_SETTINGS', 'unsupported rich-text format version'),
     );
   }
-  if (field.type === 'relation' && !isStableId(field.settings.target)) {
-    issues.push(issue(`${path}/settings/target`, 'INVALID_ID', 'must be the ID of a model'));
+  if (
+    field.type === 'relation' &&
+    !isStableId(field.settings.target) &&
+    field.settings.target !== ANY_TARGET
+  ) {
+    issues.push(
+      issue(
+        `${path}/settings/target`,
+        'INVALID_ID',
+        `must be the ID of a collection or an interface, or "${ANY_TARGET}" for any entry`,
+      ),
+    );
   }
   if (field.type === 'component' && !isStableId(field.settings.component)) {
     issues.push(issue(`${path}/settings/component`, 'INVALID_ID', 'must be the ID of a component'));
@@ -157,6 +178,41 @@ const checkSettings = (
         );
       }
     });
+  }
+  return issues;
+};
+
+/** Data types a contract field may not have: their values live in components, which interfaces cannot name. */
+const NON_CONTRACT_TYPES: ReadonlySet<string> = new Set(['component', 'dynamiczone']);
+
+/**
+ * What an interface's field may not be (plan interfaces): a component or dynamic zone, unique (uniqueness is
+ * per type, never across types), or a slug derived from another field (members derive their own).
+ */
+const checkContractField = (field: FieldDefinition, path: string): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [];
+  if (NON_CONTRACT_TYPES.has(field.type)) {
+    issues.push(
+      issue(`${path}/type`, 'INVALID_INTERFACE_FIELD', `an interface's field cannot be a ${field.type}`),
+    );
+  }
+  if (field.unique) {
+    issues.push(
+      issue(
+        `${path}/unique`,
+        'UNSUPPORTED_FLAG',
+        "an interface's field cannot be unique: uniqueness is per type",
+      ),
+    );
+  }
+  if (field.type === 'slug' && field.settings.sourceFieldId !== undefined) {
+    issues.push(
+      issue(
+        `${path}/settings/sourceFieldId`,
+        'INVALID_INTERFACE_FIELD',
+        "an interface's slug field has no source field: each type derives its own",
+      ),
+    );
   }
   return issues;
 };
@@ -241,6 +297,9 @@ const checkField = (
   }
   issues.push(...checkSettings(field, path, definition));
   issues.push(...checkFlags(field, path, definition.kind === 'component'));
+  if (definition.kind === 'interface') {
+    issues.push(...checkContractField(field, path));
+  }
   const defaultProblem = checkDefaultValue(field);
   if (defaultProblem) {
     issues.push(issue(`${path}/defaultValue`, 'INVALID_DEFAULT_VALUE', defaultProblem));
@@ -376,6 +435,35 @@ const checkDocumentLayout = (
   return issues;
 };
 
+/** A default sort names a sortable field of the definition (models and interfaces). */
+const checkDefaultSort = (
+  sort: { fieldId: string } | undefined,
+  fields: ReadonlyMap<string, FieldDefinition>,
+): ValidationIssue[] => {
+  if (!sort) {
+    return [];
+  }
+  const field = fields.get(sort.fieldId);
+  if (!field) {
+    return [
+      issue(
+        '/display/defaultSort/fieldId',
+        'UNKNOWN_FIELD_REFERENCE',
+        'refers to no field of this definition',
+      ),
+    ];
+  }
+  return field.sortable
+    ? []
+    : [
+        issue(
+          '/display/defaultSort/fieldId',
+          'INVALID_FIELD_REFERENCE',
+          'the default sort field must be sortable',
+        ),
+      ];
+};
+
 /**
  * The display's references to fields. Also run by the inheritance check on a child's resolved definition,
  * whose display may name inherited fields.
@@ -401,7 +489,10 @@ export const checkDisplay = (definition: SchemaDefinition): ValidationIssue[] =>
       );
     }
   }
-  if (definition.kind !== 'component') {
+  if (definition.kind === 'interface') {
+    issues.push(...checkDefaultSort(definition.display.defaultSort, fields));
+  }
+  if (isModelDefinition(definition)) {
     definition.display.listFieldIds?.forEach((fieldId, index) => {
       if (!fieldIds.has(fieldId)) {
         issues.push(
@@ -413,39 +504,24 @@ export const checkDisplay = (definition: SchemaDefinition): ValidationIssue[] =>
         );
       }
     });
-    const sort = definition.display.defaultSort;
-    if (sort) {
-      const field = fields.get(sort.fieldId);
-      if (!field) {
-        issues.push(
-          issue(
-            '/display/defaultSort/fieldId',
-            'UNKNOWN_FIELD_REFERENCE',
-            'refers to no field of this definition',
-          ),
-        );
-      } else if (!field.sortable) {
-        issues.push(
-          issue(
-            '/display/defaultSort/fieldId',
-            'INVALID_FIELD_REFERENCE',
-            'the default sort field must be sortable',
-          ),
-        );
-      }
-    }
+    issues.push(...checkDefaultSort(definition.display.defaultSort, fields));
     issues.push(...checkDocumentLayout(definition, fields));
   }
-  issues.push(...checkGroups(definition.display.groups, fieldIds));
+  if (definition.kind !== 'interface') {
+    issues.push(...checkGroups(definition.display.groups, fieldIds));
+  }
   return issues;
 };
 
 /**
- * A collection's plural API ID follows the API ID rules and must differ from its singular. Singletons and
- * components have none (normalizing drops it).
+ * A collection's or an interface's plural API ID follows the API ID rules and must differ from its
+ * singular. Singletons and components have none (normalizing drops it).
  */
 const checkPluralApiKey = (definition: SchemaDefinition): ValidationIssue[] => {
-  if (definition.kind !== 'collection' || definition.pluralApiKey === undefined) {
+  if (
+    (definition.kind !== 'collection' && definition.kind !== 'interface') ||
+    definition.pluralApiKey === undefined
+  ) {
     return [];
   }
   const syntax = checkApiKeySyntax(definition.pluralApiKey, 'plural API ID');
@@ -488,7 +564,7 @@ export const validateDefinition = (definition: SchemaDefinition): ValidationIssu
   issues.push(...checkFieldUniqueness(definition));
   // A model that extends another may name inherited fields in its display, which this definition alone
   // cannot see: the schema-level inheritance check validates its display against the resolved fields.
-  if (definition.kind === 'component' || definition.extends === undefined) {
+  if (!isModelDefinition(definition) || definition.extends === undefined) {
     issues.push(...checkDisplay(definition));
   }
   return issues;

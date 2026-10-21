@@ -7,6 +7,9 @@ import type {
   ComponentDisplay,
   FieldDefinition,
   FieldInput,
+  InterfaceDefinition,
+  InterfaceDefinitionInput,
+  InterfaceDisplay,
   ModelDefinition,
   ModelDefinitionInput,
   ModelDisplay,
@@ -20,7 +23,8 @@ type WithIds<T extends { id?: string }> = T & { id: string };
 export type FieldInputWithId = WithIds<FieldInput>;
 export type DefinitionInputWithIds =
   | (WithIds<ModelDefinitionInput> & { fields: FieldInputWithId[] })
-  | (WithIds<ComponentDefinitionInput> & { fields: FieldInputWithId[] });
+  | (WithIds<ComponentDefinitionInput> & { fields: FieldInputWithId[] })
+  | (WithIds<InterfaceDefinitionInput> & { fields: FieldInputWithId[] });
 
 const SETTINGS_DEFAULTS: Partial<Record<FieldDefinition['type'], Record<string, unknown>>> = {
   code: { language: 'plain' },
@@ -46,6 +50,7 @@ const OPTIONAL_LIST_KEYS: ReadonlySet<string> = new Set([
   'groups',
   'canvasFieldIds',
   'stripFieldIds',
+  'implements',
 ]);
 
 const withoutEmpty = <T extends Record<string, unknown>>(value: T): T => {
@@ -97,6 +102,28 @@ const normalizeModelDisplay = (
 const normalizeComponentDisplay = (display: ComponentDefinitionInput['display']): ComponentDisplay =>
   withoutEmpty({ ...display });
 
+const normalizeInterfaceDisplay = (display: InterfaceDefinitionInput['display']): InterfaceDisplay =>
+  withoutEmpty({ ...display });
+
+/**
+ * A contract field (plan interfaces): editor, width, default value and deprecation mean nothing on an
+ * interface, so they have one spelling: the default editor, nothing else. `parseDefinition` refuses input
+ * that sets them (`INVALID_INTERFACE_FIELD`); this keeps stored definitions canonical.
+ */
+const normalizeContractField = (field: FieldInputWithId): FieldDefinition => {
+  const normalized = normalizeField({
+    ...field,
+    editor: undefined,
+    width: undefined,
+    defaultValue: undefined,
+  });
+  return { ...normalized, deprecated: false };
+};
+
+/** Interface IDs sorted, without duplicates: the order means nothing, so it never shows in a diff or hash. */
+const normalizeImplements = (ids: readonly string[] | undefined): string[] | undefined =>
+  ids === undefined ? undefined : [...new Set(ids)].sort();
+
 /**
  * Applies defaults so that two definitions meaning the same thing are byte-identical once serialized
  * canonically: a hand-written file that omits `public` hashes the same as one that says `public: true`.
@@ -106,6 +133,19 @@ const normalizeComponentDisplay = (display: ComponentDefinitionInput['display'])
  * before plural API IDs keep working.
  */
 export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefinition => {
+  if (input.kind === 'interface') {
+    const contract: InterfaceDefinition = withoutEmpty({
+      id: input.id,
+      kind: 'interface',
+      apiKey: input.apiKey,
+      pluralApiKey: input.pluralApiKey || suggestPlural(input.apiKey),
+      label: input.label,
+      description: input.description,
+      fields: input.fields.map(normalizeContractField),
+      display: normalizeInterfaceDisplay(input.display),
+    });
+    return contract;
+  }
   const fields = input.fields.map(normalizeField);
   if (input.kind === 'component') {
     const component: ComponentDefinition = withoutEmpty({
@@ -134,6 +174,7 @@ export const normalizeDefinition = (input: DefinitionInputWithIds): SchemaDefini
     draftAndPublish: input.draftAndPublish ?? true,
     // Kept on any model kind so a singleton that extends something is reported, never silently dropped.
     extends: input.extends,
+    implements: normalizeImplements(input.implements),
     fields,
     display: normalizeModelDisplay(input.display, input.extends),
   });

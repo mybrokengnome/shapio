@@ -16,6 +16,7 @@ export * from './validators/apiKey.js';
 export * from './validators/defaultValue.js';
 export * from './validators/definition.js';
 export * from './validators/inheritance.js';
+export * from './validators/interfaces.js';
 export * from './validators/issues.js';
 export * from './validators/naming.js';
 export * from './validators/parse.js';

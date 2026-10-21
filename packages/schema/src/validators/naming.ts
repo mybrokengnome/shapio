@@ -1,5 +1,5 @@
 import { suggestPlural } from '../naming/plural.js';
-import type { ModelDefinition, SchemaDefinition } from '../types/definitions.js';
+import type { InterfaceDefinition, ModelDefinition, SchemaDefinition } from '../types/definitions.js';
 
 /**
  * The names GraphQL (package J) and other generated contracts derive from API keys. Defined here, with the
@@ -20,6 +20,11 @@ export const MODEL_TYPE_SUFFIXES = [
 ] as const;
 export const COMPONENT_TYPE_SUFFIXES = ['', 'Input'] as const;
 /**
+ * Suffixes of the types generated for an interface definition (plan interfaces): the GraphQL interface
+ * itself, its list's filter, sort, connection and edge. No input, no localizations, no mutations.
+ */
+export const INTERFACE_DEFINITION_TYPE_SUFFIXES = ['', 'Filter', 'Connection', 'Edge', 'Sort'] as const;
+/**
  * Suffix of the GraphQL interface a model with children gets (`ProductInterface`, plan polymorphic-types).
  * Claimed only by models that have children, so existing schemas keep validating.
  */
@@ -28,11 +33,11 @@ export const MUTATION_PREFIXES = ['create', 'update', 'delete', 'publish', 'unpu
 
 /**
  * The key a model is addressed by in the delivery API (`/api/content/:routeKey`, preview routes): the
- * plural API ID of a collection, the API ID of a singleton. A collection stored before plural API IDs
- * existed gets the same derived value normalizing would fill, so this never returns undefined.
+ * plural API ID of a collection or an interface, the API ID of a singleton. A collection stored before plural
+ * API IDs existed gets the same derived value normalizing would fill, so this never returns undefined.
  */
-export const routeKeyOf = (definition: ModelDefinition): string =>
-  definition.kind === 'collection'
+export const routeKeyOf = (definition: ModelDefinition | InterfaceDefinition): string =>
+  definition.kind === 'collection' || definition.kind === 'interface'
     ? definition.pluralApiKey || suggestPlural(definition.apiKey)
     : definition.apiKey;
 
@@ -157,6 +162,25 @@ export type GeneratedName = {
 };
 
 /**
+ * The names an interface definition claims: its types, its single query (the API ID) and its list query (the
+ * plural). Its fields claim none: an enum contract field is left out of the GraphQL interface (enum types
+ * are named per declaring model), and contracts hold no zones.
+ */
+const interfaceNames = (definition: InterfaceDefinition): GeneratedName[] => {
+  const typeName = toTypeName(definition.apiKey);
+  const definitionId = definition.id;
+  return [
+    ...INTERFACE_DEFINITION_TYPE_SUFFIXES.map((suffix): GeneratedName => ({
+      namespace: 'type',
+      name: `${typeName}${suffix}`,
+      definitionId,
+    })),
+    { namespace: 'query', name: definition.apiKey, definitionId },
+    { namespace: 'query', name: routeKeyOf(definition), definitionId, property: 'pluralApiKey' },
+  ];
+};
+
+/**
  * Every name a definition contributes to the GraphQL schema. Fields are its own: a model that extends another
  * reuses the enum and zone types of inherited fields, which belong to the declaring model. `hasChildren` adds
  * the interface name of a model other models extend.
@@ -167,6 +191,9 @@ export const generatedNames = (
 ): GeneratedName[] => {
   const typeName = toTypeName(definition.apiKey);
   const definitionId = definition.id;
+  if (definition.kind === 'interface') {
+    return interfaceNames(definition);
+  }
   const suffixes = [
     ...(definition.kind === 'component' ? COMPONENT_TYPE_SUFFIXES : MODEL_TYPE_SUFFIXES),
     ...(options.hasChildren && definition.kind !== 'component' ? [INTERFACE_TYPE_SUFFIX] : []),
