@@ -1,4 +1,4 @@
-import { Braces, Lock, Puzzle } from 'lucide-react';
+import { Braces, Lock, Puzzle, Shapes } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SubNav, SubNavGroup } from '@/components/SubNav';
 import { SubNavLink } from '@/components/SubNavLink';
@@ -30,11 +30,12 @@ type FileNavProps = {
   isDirty: (file: SchemaFile) => boolean;
 };
 
-/** The schema directory as `shapio schema pull` writes it: models, components and the lock file. */
+/** The schema directory as `shapio schema pull` writes it: models, components, interfaces and the lock file. */
 export const FileNav = ({ files, openPath, isDirty }: FileNavProps) => {
   const { t } = useTranslation();
   const models = files.filter((file) => file.category === 'model');
   const components = files.filter((file) => file.category === 'component');
+  const interfaces = files.filter((file) => file.category === 'interface');
   return (
     <SubNav label={t('develop.schema.files')}>
       {models.length > 0 ? (
@@ -59,6 +60,19 @@ export const FileNav = ({ files, openPath, isDirty }: FileNavProps) => {
               dirty={isDirty(file)}
               open={file.path === openPath}
               icon={Puzzle}
+            />
+          ))}
+        </SubNavGroup>
+      ) : null}
+      {interfaces.length > 0 ? (
+        <SubNavGroup label={t('interfaces.schemaDir')}>
+          {interfaces.map((file) => (
+            <FileLink
+              key={file.definitionId}
+              path={file.path}
+              dirty={isDirty(file)}
+              open={file.path === openPath}
+              icon={Shapes}
             />
           ))}
         </SubNavGroup>

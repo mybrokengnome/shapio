@@ -9,6 +9,7 @@ import { FINAL_CHANGE_STATUSES } from '@/constants/schema';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
+import { describeIssue } from '../../helpers/describeIssue';
 import { missingContractIssues, type MissingContractIssue } from '../../helpers/interfaces';
 import type { useReloadDraft } from './useReloadDraft';
 
@@ -20,6 +21,9 @@ export type SaveFlowState =
   | { step: 'conflict' }
   /** An interface's new contract field that some members lack (plan interfaces decision 4). */
   | { step: 'missing'; issues: MissingContractIssue[] };
+
+/** Plan refusals the builder's own validators can't see (they read content). */
+const SERVER_ONLY_CODES: ReadonlySet<string> = new Set(['RELATION_VALUES_EXIST']);
 
 const isVersionConflict = (error: unknown) => hasErrorCode(error, 'SCHEMA_VERSION_CONFLICT');
 
@@ -42,10 +46,18 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
       setState({ step: 'conflict' });
       return;
     }
+    const issues = schemaIssuesOf(error);
     // Members that lack a contract field are refused on the members, not the interface: offer the fix.
-    const missing = category === 'interface' ? missingContractIssues(schemaIssuesOf(error)) : [];
+    const missing = category === 'interface' ? missingContractIssues(issues) : [];
     if (missing.length > 0) {
       setState({ step: 'missing', issues: missing });
+      return;
+    }
+    // Refusals only the server can find (content still relating to entries that would leave a relation's
+    // targets) say why, with the server's counts and relation names as the detail.
+    const contentIssue = issues.find((found) => SERVER_ONLY_CODES.has(found.code));
+    if (contentIssue) {
+      toast.error(describeIssue(contentIssue), { description: contentIssue.message });
       return;
     }
     toast.error(describeError(error));
