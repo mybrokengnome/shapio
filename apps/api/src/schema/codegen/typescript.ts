@@ -1,13 +1,16 @@
 import {
   isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
   ownFields,
   routePathOf,
   toTypeName,
   type ComponentDefinition,
   type FieldDefinition,
+  type InterfaceDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
+import { relationTargetOf } from '../../content/relationTarget.js';
 import type { SchemaSnapshot } from '../snapshot.js';
 
 /**
@@ -20,6 +23,10 @@ import type { SchemaSnapshot } from '../snapshot.js';
  * literal and the `__kinds` lineage tuple every delivery entry carries, and a model with children gets
  * `<Name>Any`, the union of its
  * family, which its list, its single-entry route and relations to it return.
+ *
+ * An interface (plan interfaces) gets `<Name>` (the system fields and its contract fields, what every member
+ * has) and `<Name>Any`, the union of its members (kinds included), which its list, its route and relations
+ * to it return. `AnyEntry` is the union of every collection and singleton: what a relation to any entry holds.
  */
 type Mode = 'output' | 'input';
 
@@ -109,6 +116,22 @@ const entryTypeName = (snapshot: SchemaSnapshot, id: string): string | undefined
   return snapshot.childrenOf(id).length > 0 ? `${name}Any` : name;
 };
 
+/** The entry type a relation's value is, populated: its target model's, its interface's members', or any. */
+const relatedTypeName = (
+  snapshot: SchemaSnapshot,
+  field: FieldDefinition<'relation'>,
+): string | undefined => {
+  const target = relationTargetOf(snapshot, field);
+  if (target.kind === 'any') {
+    return 'AnyEntry';
+  }
+  if (target.kind === 'interface') {
+    const definition = snapshot.byId.get(target.id)?.definition;
+    return definition ? `${toTypeName(definition.apiKey)}Any` : undefined;
+  }
+  return entryTypeName(snapshot, target.id);
+};
+
 const fieldType = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mode): string => {
   const nameOf = (id: string) => {
     const definition = snapshot.byId.get(id)?.definition;
@@ -120,7 +143,7 @@ const fieldType = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mode)
     case 'media':
       return many(field.settings.multiple, mode === 'output' ? 'MediaAsset' : 'string');
     case 'relation': {
-      const target = mode === 'output' ? entryTypeName(snapshot, field.settings.target) : undefined;
+      const target = mode === 'output' ? relatedTypeName(snapshot, field) : undefined;
       return many(field.settings.cardinality === 'many', target ? `Related<${target}>` : 'string');
     }
     case 'component':
@@ -199,10 +222,31 @@ const modelDeclarations = (model: ModelDefinition, snapshot: SchemaSnapshot): st
   return declarations;
 };
 
+/** Type names of models, sorted, as a union (`never` when there is none). */
+const unionOf = (snapshot: SchemaSnapshot, modelIds: readonly string[]) =>
+  modelIds
+    .flatMap((id) => {
+      const definition = snapshot.byId.get(id)?.definition;
+      return definition && isModelDefinition(definition) ? [toTypeName(definition.apiKey)] : [];
+    })
+    .sort((a, b) => a.localeCompare(b))
+    .join(' | ') || 'never';
+
+const interfaceDeclarations = (definition: InterfaceDefinition, snapshot: SchemaSnapshot): string[] => {
+  const name = toTypeName(definition.apiKey);
+  const members = snapshot.implementedBy(definition.id);
+  const ids = `interface \`${definition.apiKey}\`, delivery route \`${definition.pluralApiKey}\``;
+  return [
+    `/** ${definition.label}: what every member has (${ids}) */\nexport type ${name} = EntrySystemFields & ${objectType(fieldLines(definition.fields, snapshot, 'output'))} & { __model: string; __kinds: readonly string[] };\n`,
+    `/** Any ${definition.label} (${ids}): what its list, its entries' route and relations to it return. */\nexport type ${name}Any = ${unionOf(snapshot, members)};\n`,
+  ];
+};
+
 /**
- * The declarations for every model and component of a snapshot, plus two maps keyed by API ID: the entry
- * type (`ShapioModels`: a model with children maps to its family's union) and the delivery route key
- * (`ShapioRouteKeys`, `{ article: 'articles', digitalProduct: 'products/digital' }`).
+ * The declarations for every model, component and interface of a snapshot, plus two maps keyed by API ID: the entry
+ * type (`ShapioModels`: a model with children maps to its family's union, an interface to its members')
+ * and the delivery route key (`ShapioRouteKeys`, `{ article: 'articles', digitalProduct: 'products/digital',
+ * featurable: 'featurables' }`).
  */
 export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
   const definitions = [...snapshot.definitions]
@@ -216,14 +260,23 @@ export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
             componentDeclaration(definition, snapshot, 'output'),
             componentDeclaration(definition, snapshot, 'input'),
           ]
-        : [],
+        : interfaceDeclarations(definition, snapshot),
   );
   const models = definitions.filter(isModelDefinition);
-  const map = `/** Delivery entry type by model API ID. */\nexport type ShapioModels = {\n${models
-    .map((model) => `  ${model.apiKey}: ${entryTypeName(snapshot, model.id) ?? toTypeName(model.apiKey)};`)
-    .join('\n')}\n};\n`;
-  const routeKeys = `/** Delivery route key (\`/api/content/:routeKey\`) by model API ID. */\nexport type ShapioRouteKeys = {\n${models
-    .map((model) => `  ${model.apiKey}: '${routeKeyIn(snapshot, model)}';`)
-    .join('\n')}\n};\n`;
-  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${body.join('\n')}\n${map}\n${routeKeys}`;
+  const interfaces = definitions.filter(isInterfaceDefinition);
+  const anyEntry = `/** Any entry: what a relation to any entry holds. */\nexport type AnyEntry = ${unionOf(
+    snapshot,
+    models.map((model) => model.id),
+  )};\n`;
+  const map = `/** Delivery entry type by API ID (models and interfaces): what \`/api/content/:routeKey\` returns. */\nexport type ShapioModels = {\n${[
+    ...models.map(
+      (model) => `  ${model.apiKey}: ${entryTypeName(snapshot, model.id) ?? toTypeName(model.apiKey)};`,
+    ),
+    ...interfaces.map((contract) => `  ${contract.apiKey}: ${toTypeName(contract.apiKey)}Any;`),
+  ].join('\n')}\n};\n`;
+  const routeKeys = `/** Delivery route key (\`/api/content/:routeKey\`) by API ID (models and interfaces). */\nexport type ShapioRouteKeys = {\n${[
+    ...models.map((model) => `  ${model.apiKey}: '${routeKeyIn(snapshot, model)}';`),
+    ...interfaces.map((contract) => `  ${contract.apiKey}: '${contract.pluralApiKey}';`),
+  ].join('\n')}\n};\n`;
+  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${body.join('\n')}\n${anyEntry}\n${map}\n${routeKeys}`;
 };

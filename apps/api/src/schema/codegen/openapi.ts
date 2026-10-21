@@ -2,6 +2,7 @@ import {
   BIGINTEGER_PATTERN,
   DECIMAL_PATTERN,
   isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
   isSeoField,
   routePathOf,
@@ -9,6 +10,7 @@ import {
   toTypeName,
   type CodeLanguage,
   type FieldDefinition,
+  type InterfaceDefinition,
   type ModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
@@ -20,6 +22,7 @@ import {
   RICH_TEXT_MODES,
   SEO_MODES,
 } from '../../content/compiler/types.js';
+import { relationTargetOf } from '../../content/relationTarget.js';
 import type { SchemaSnapshot } from '../snapshot.js';
 import { sitePaths, SITE_TAG } from './openapiSite.js';
 import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
@@ -31,7 +34,9 @@ import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
  * routes (openapiSnapshots.ts). Models are described with their effective fields (plan polymorphic-types):
  * a model that extends another is served under its ancestors' route key (`/api/content/products/digital`),
  * and a model with children reads, lists and is related to as `<Name>Any`, one of its family's schemas told
- * apart by `__model`, which every delivered entry carries.
+ * apart by `__model`, which every delivered entry carries. An interface (plan interfaces) has `<Name>` (its
+ * contract), `<Name>Any` (one of its members' schemas) and a read-only list route under its plural; a relation
+ * to any entry holds `AnyEntry`, one of every model's schemas.
  */
 type JsonSchema = Record<string, unknown>;
 type Mode = 'output' | 'input';
@@ -121,12 +126,20 @@ const entrySchemaName = (snapshot: SchemaSnapshot, id: string): string | undefin
     : toTypeName(definition.apiKey);
 };
 
-/** One of a family's entry schemas, told apart by `__model` (the singular API ID). */
-const familySchema = (snapshot: SchemaSnapshot, id: string): JsonSchema => {
-  const members = snapshot.family(id).flatMap((memberId) => {
+/**
+ * One of some models' entry schemas, told apart by `__model` (the singular API ID): a family, an interface's
+ * members, or every model. With no models it matches nothing (an interface nothing implements yet).
+ */
+const unionSchema = (snapshot: SchemaSnapshot, modelIds: readonly string[]): JsonSchema => {
+  const members = modelIds.flatMap((memberId) => {
     const member = snapshot.byId.get(memberId)?.definition;
-    return member ? [{ apiKey: member.apiKey, name: toTypeName(member.apiKey) }] : [];
+    return member && isModelDefinition(member)
+      ? [{ apiKey: member.apiKey, name: toTypeName(member.apiKey) }]
+      : [];
   });
+  if (members.length === 0) {
+    return { not: {}, description: 'No type implements it yet' };
+  }
   return {
     oneOf: members.map((member) => ref(member.name)),
     discriminator: {
@@ -136,6 +149,22 @@ const familySchema = (snapshot: SchemaSnapshot, id: string): JsonSchema => {
       ),
     },
   };
+};
+
+/** The schema a populated relation value is: its target model's, its interface's members', or any entry. */
+const relatedSchemaName = (
+  snapshot: SchemaSnapshot,
+  field: FieldDefinition<'relation'>,
+): string | undefined => {
+  const target = relationTargetOf(snapshot, field);
+  if (target.kind === 'any') {
+    return 'AnyEntry';
+  }
+  if (target.kind === 'interface') {
+    const definition = snapshot.byId.get(target.id)?.definition;
+    return definition ? `${toTypeName(definition.apiKey)}Any` : undefined;
+  }
+  return entrySchemaName(snapshot, target.id);
 };
 
 const listOr = (many: boolean, schema: JsonSchema): JsonSchema =>
@@ -154,7 +183,7 @@ const fieldSchema = (field: FieldDefinition, snapshot: SchemaSnapshot, mode: Mod
     case 'media':
       return listOr(field.settings.multiple, mode === 'output' ? ref('MediaAsset') : uuid);
     case 'relation': {
-      const target = entrySchemaName(snapshot, field.settings.target);
+      const target = relatedSchemaName(snapshot, field);
       const item =
         mode === 'output' && target
           ? {
@@ -270,6 +299,16 @@ const COMMON_SCHEMAS: Record<string, JsonSchema> = {
     },
     required: ['apiKey', 'label', 'parent', 'routeKey'],
   },
+  InterfaceMember: {
+    type: 'object',
+    description: 'One member type of an interface list (plan interfaces)',
+    properties: {
+      apiKey: { type: 'string', description: 'The singular API ID' },
+      label: { type: 'string' },
+      routeKey: { type: 'string', description: "The type's own delivery route key" },
+    },
+    required: ['apiKey', 'label', 'routeKey'],
+  },
   Pagination: {
     type: 'object',
     properties: {
@@ -301,7 +340,10 @@ const errorResponses = {
   '404': { description: 'Unknown model or entry', content: { 'application/json': { schema: ref('Error') } } },
 };
 
-const filterDescription = (model: ModelDefinition): string => {
+/** What a list route's parameters are built from: a model, or an interface's contract. */
+type Listed = ModelDefinition | InterfaceDefinition;
+
+const filterDescription = (model: Listed): string => {
   const lines = liveFields(model).flatMap((field) => {
     const operators = operatorsFor(field);
     return operators.length > 0 ? [`- \`${field.apiKey}\`: ${operators.join(' ')}`] : [];
@@ -309,7 +351,7 @@ const filterDescription = (model: ModelDefinition): string => {
   return `Filter with \`filters[field][$op]=value\`; combine with \`$and\`, \`$or\`, \`$not\`. Ranges need a filterable or sortable field; text matches (\`$contains\`, \`$containsi\`, \`$startsWith\`, \`$endsWith\`) a filterable one.\n\n${lines.join('\n')}`;
 };
 
-const listParameters = (model: ModelDefinition, delivery: boolean) => [
+const listParameters = (model: Listed, delivery: boolean, seo = hasSeoField(model)) => [
   {
     name: 'filters',
     in: 'query',
@@ -331,12 +373,15 @@ const listParameters = (model: ModelDefinition, delivery: boolean) => [
     schema: { type: 'integer', minimum: 1, maximum: QUERY_LIMITS.maxPageSize },
   },
   { name: 'q', in: 'query', schema: { type: 'string' }, description: 'Search the title field' },
-  ...itemParameters(model, delivery),
+  ...itemParameters(delivery, seo),
 ];
 
-/** `?seo=` is offered where it works: delivery reads of a model with an SEO field. */
-const seoParameters = (model: ModelDefinition) =>
-  model.fields.some((field) => !field.deprecated && isSeoField(field))
+const hasSeoField = (definition: SchemaDefinition) =>
+  definition.fields.some((field) => !field.deprecated && isSeoField(field));
+
+/** `?seo=` is offered where it works: delivery reads of a model with an SEO field (or a member with one). */
+const seoParameters = (seo: boolean) =>
+  seo
     ? [
         {
           name: 'seo',
@@ -348,7 +393,7 @@ const seoParameters = (model: ModelDefinition) =>
       ]
     : [];
 
-const itemParameters = (model: ModelDefinition, delivery: boolean) => [
+const itemParameters = (delivery: boolean, seo: boolean) => [
   {
     name: 'fields',
     in: 'query',
@@ -388,7 +433,7 @@ const itemParameters = (model: ModelDefinition, delivery: boolean) => [
           description:
             'Drafts mode: `draft` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with `snapshot`.',
         },
-        ...seoParameters(model),
+        ...seoParameters(seo),
       ]
     : []),
 ];
@@ -447,7 +492,7 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
         tags: [tag],
         summary: single ? `Read the published ${model.label}` : `List published ${model.label} entries`,
         operationId: `list${name}`,
-        parameters: single ? itemParameters(model, true) : listParameters(model, true),
+        parameters: single ? itemParameters(true, hasSeoField(model)) : listParameters(model, true),
         responses: {
           '200': json({
             type: 'object',
@@ -465,7 +510,7 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
         tags: [tag],
         summary: `Read one published ${model.label} entry`,
         operationId: `get${name}`,
-        parameters: [idParameter, ...itemParameters(model, true)],
+        parameters: [idParameter, ...itemParameters(true, hasSeoField(model))],
         responses: {
           '200': json({ type: 'object', properties: { data: ref(delivered), meta } }),
           '304': { description: 'Not modified' },
@@ -618,6 +663,78 @@ const modelPaths = (model: ModelDefinition, snapshot: SchemaSnapshot): Record<st
   };
 };
 
+/**
+ * An interface's delivery routes (plan interfaces, D6): its list over every member the caller may read
+ * (`meta.members` names them) and one entry by ID, each entry in its own type's shape. Read-only: an entry is
+ * written through its own type's route.
+ */
+const interfacePaths = (
+  definition: InterfaceDefinition,
+  snapshot: SchemaSnapshot,
+): Record<string, unknown> => {
+  const name = toTypeName(definition.apiKey);
+  const tag = definition.label;
+  const seo = snapshot.implementedBy(definition.id).some((memberId) => {
+    const member = snapshot.resolve(memberId);
+    return member !== undefined && hasSeoField(member);
+  });
+  const meta = {
+    type: 'object',
+    properties: {
+      locale: { type: 'string' },
+      snapshot: { type: ['integer', 'null'], description: 'null on draft reads, which cannot be pinned' },
+      publicationState: { type: 'string', enum: ['draft'], description: 'Present on draft reads only' },
+    },
+  };
+  const listMeta = {
+    allOf: [
+      meta,
+      {
+        type: 'object',
+        properties: {
+          pagination: ref('Pagination'),
+          members: {
+            type: 'array',
+            items: ref('InterfaceMember'),
+            description: 'The member types the caller may read',
+          },
+        },
+      },
+    ],
+  };
+  return {
+    [`/api/content/${definition.pluralApiKey}`]: {
+      get: {
+        tags: [tag],
+        summary: `List published entries of every ${definition.label} type`,
+        operationId: `list${name}`,
+        parameters: listParameters(definition, true, seo),
+        responses: {
+          '200': json({
+            type: 'object',
+            properties: { data: { type: 'array', items: ref(`${name}Any`) }, meta: listMeta },
+          }),
+          '304': { description: 'Not modified (If-None-Match)' },
+          ...errorResponses,
+        },
+      },
+    },
+    [`/api/content/${definition.pluralApiKey}/{id}`]: {
+      get: {
+        tags: [tag],
+        summary: `Read one published entry of any ${definition.label} type`,
+        operationId: `get${name}`,
+        parameters: [idParameter, ...itemParameters(true, seo)],
+        responses: {
+          '200': json({ type: 'object', properties: { data: ref(`${name}Any`), meta } }),
+          '304': { description: 'Not modified' },
+          ...errorResponses,
+        },
+      },
+    },
+  };
+};
+
 export type OpenApiOptions = { serverUrl: string; version: string };
 
 /** The singular API IDs of a model's lineage, root first. */
@@ -632,13 +749,27 @@ export const generateOpenApi = (
   snapshot: SchemaSnapshot,
   options: OpenApiOptions,
 ): Record<string, unknown> => {
-  // Models with their effective fields (inherited first); components as they are.
+  // Models with their effective fields (inherited first); components and interfaces as they are.
   const definitions = snapshot.definitions.map(
     (active): SchemaDefinition => snapshot.resolve(active.definition.id) ?? active.definition,
   );
   const schemas: Record<string, JsonSchema> = { ...COMMON_SCHEMAS };
   for (const definition of definitions) {
     const name = toTypeName(definition.apiKey);
+    if (isInterfaceDefinition(definition)) {
+      // The contract (what every member has) and one of the members' own schemas; nothing is written as it.
+      schemas[name] = objectSchema(definition, snapshot, 'output', {
+        ...SYSTEM_PROPERTIES,
+        __model: { type: 'string', description: "The API ID of the entry's type" },
+        __kinds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "The API IDs of the entry's type and the types it extends, root first",
+        },
+      });
+      schemas[`${name}Any`] = unionSchema(snapshot, snapshot.implementedBy(definition.id));
+      continue;
+    }
     schemas[name] = objectSchema(
       definition,
       snapshot,
@@ -662,10 +793,15 @@ export const generateOpenApi = (
     );
     schemas[`${name}Input`] = objectSchema(definition, snapshot, 'input');
     if (isModelDefinition(definition) && snapshot.childrenOf(definition.id).length > 0) {
-      schemas[`${name}Any`] = familySchema(snapshot, definition.id);
+      schemas[`${name}Any`] = unionSchema(snapshot, snapshot.family(definition.id));
     }
   }
   const models = definitions.filter(isModelDefinition);
+  const interfaces = definitions.filter(isInterfaceDefinition);
+  schemas.AnyEntry = unionSchema(
+    snapshot,
+    models.map((model) => model.id),
+  );
   return {
     openapi: '3.1.0',
     info: {
@@ -680,12 +816,17 @@ export const generateOpenApi = (
         name: model.label,
         description: model.description ?? `${model.kind} \`${model.apiKey}\``,
       })),
+      ...interfaces.map((contract) => ({
+        name: contract.label,
+        description: contract.description ?? `interface \`${contract.apiKey}\``,
+      })),
       SNAPSHOTS_TAG,
       SITE_TAG,
     ],
     paths: Object.assign(
       {},
       ...models.map((model) => modelPaths(model, snapshot)),
+      ...interfaces.map((contract) => interfacePaths(contract, snapshot)),
       snapshotPaths(),
       sitePaths(),
     ),
