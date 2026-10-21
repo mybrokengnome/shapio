@@ -1,4 +1,6 @@
+import { SEO_COMPONENT_ID } from '@shapio/schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAdmin, login } from './helpers/adminIdentity.js';
 import {
   createDefinition,
   createDeliveryToken,
@@ -126,7 +128,16 @@ describe('interfaces: delivery reads and relation values', () => {
         },
       ],
     });
-    await model('about', { kind: 'singleton', implements: implementsFeaturable, fields: [title, summary] });
+    expectStatus(await admin.post('/api/admin/components/builtin/seo/ensure', {}), 201);
+    await model('about', {
+      kind: 'singleton',
+      implements: implementsFeaturable,
+      fields: [
+        title,
+        summary,
+        { apiKey: 'seo', label: 'SEO', type: 'component', settings: { component: SEO_COMPONENT_ID } },
+      ],
+    });
     await model('homepage', {
       kind: 'singleton',
       fields: [
@@ -289,6 +300,47 @@ describe('interfaces: delivery reads and relation values', () => {
       interfaces: ['featurables'],
     });
     expect(await payloadOf(ids.digital)).toMatchObject({ interfaces: [] });
+  });
+
+  it("?seo=resolved resolves each member's own SEO fields; members without one are as they were", async () => {
+    const raw = await list('/api/content/featurables?filters[__model][$in]=about,blogPost');
+    expect(raw.data.find((row) => row.id === ids.epsilon)).toMatchObject({ seo: null });
+    const resolved = await list('/api/content/featurables?seo=resolved&filters[__model][$in]=about,blogPost');
+    const about = resolved.data.find((row) => row.id === ids.epsilon) as
+      { seo: { title: string } } | undefined;
+    expect(about?.seo.title).toContain('Epsilon web sign');
+    expect(resolved.data.find((row) => row.id === ids.gamma)).not.toHaveProperty('seo');
+    // Only BlogPost readable: no member has an SEO field to resolve.
+    const blogOnly = await deliver('/api/content/featurables?seo=resolved', await tokenFor('blogPost'));
+    expect(blogOnly.statusCode).toBe(400);
+  });
+
+  it("previews a member's entry through the interface route, read as its own type", async () => {
+    const session = await login(testApp.app, await createAdmin(database.current.db));
+    const tokenOf = async (modelKey: string, entryId: string | undefined) =>
+      expectStatus(
+        await testApp.app.inject({
+          method: 'POST',
+          url: '/api/admin/preview/tokens',
+          payload: { modelKey, entryId },
+          headers: session.headers,
+        }),
+        201,
+      ).json<{ token: string }>().token;
+    const preview = (path: string, previewToken: string) =>
+      testApp.app.inject({
+        method: 'GET',
+        url: `/api/preview/content/${path}`,
+        headers: { authorization: `Bearer ${previewToken}` },
+      });
+    const guideToken = await tokenOf('guide', ids.beta);
+    const one = expectStatus(await preview(`featurables/${ids.beta}`, guideToken), 200).json<{ data: Row }>();
+    expect(one.data).toMatchObject({ id: ids.beta, __model: 'guide', level: 2 });
+    const page = expectStatus(await preview('featurables', guideToken), 200).json<DeliveryList>();
+    expect(page.data.map((row) => [row.id, row.__model])).toEqual([[ids.beta, 'guide']]);
+    // A token for a type that does not implement the interface is not served through it.
+    const digitalToken = await tokenOf('digital', ids.digital);
+    expect((await preview('featurables', digitalToken)).statusCode).toBe(403);
   });
 
   it('refuses writes through the interface, naming the member routes', async () => {
