@@ -29,6 +29,8 @@ export type SnapshotChange = {
   title: string | null;
   /** The cover image's media asset ID, when the model has a readable cover. */
   coverMediaId: string | null;
+  /** The plurals of the interfaces the entry's type implements, inherited ones included (`[]` when none). */
+  interfaces: string[];
   locales: Array<{
     locale: string;
     change: SnapshotChangeKind;

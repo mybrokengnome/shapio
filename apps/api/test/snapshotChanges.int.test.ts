@@ -197,6 +197,7 @@ describe('snapshot changes', () => {
           routeKey: 'pages',
           title: 'API page',
           coverMediaId: null,
+          interfaces: [],
           locales: [{ locale: 'en', change: 'published', revisionId: pageEntry.revisionId }],
         },
       ]);

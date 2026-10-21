@@ -352,6 +352,15 @@ describe('interfaces: planner', () => {
     ]);
   });
 
+  it('a snapshot change names the plurals of the interfaces its entry’s type implements', async () => {
+    const post = await entry('blogPost', { title: 'Hello' });
+    expectStatus(await admin.post(`/api/admin/content/blogPost/${post.id}/publish`, {}), 200);
+    const changes = expectStatus(await admin.get('/api/snapshots/changes?recent=1'), 200).json<{
+      items: Array<{ id: string; interfaces: string[] }>;
+    }>();
+    expect(changes.items).toEqual([expect.objectContaining({ id: post.id, interfaces: ['featurables'] })]);
+  });
+
   it('a grant never names an interface', async () => {
     const response = await admin.post('/api/admin/roles', {
       key: 'featurable-reader',

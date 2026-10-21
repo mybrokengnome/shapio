@@ -1,6 +1,7 @@
 import {
   effectiveLayout,
   effectiveTitleField,
+  isInterfaceDefinition,
   isModelDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
@@ -50,6 +51,11 @@ export type SnapshotChangeView = {
   title: string | null;
   /** The cover image's media asset ID from the same revision, when the model has a readable cover. */
   coverMediaId: string | null;
+  /**
+   * The plurals of the interfaces the entry's model implements, inherited ones included (`[]` when none), so
+   * a build can revalidate the interface lists the entry appears in (plan interfaces).
+   */
+  interfaces: string[];
   locales: Array<{
     locale: string;
     change: SnapshotChangeKind;
@@ -160,6 +166,13 @@ const describeEntries = async (
   };
 };
 
+/** The route keys (plurals) of the interfaces a model implements in the view, its ancestors' included. */
+const interfacePluralsOf = (context: ContentServiceContext, modelId: string): string[] =>
+  context.snapshot.interfacesOf(modelId).flatMap((interfaceId) => {
+    const definition = context.snapshot.byId.get(interfaceId)?.definition;
+    return definition && isInterfaceDefinition(definition) ? [definition.pluralApiKey] : [];
+  });
+
 const boundedLimit = (limit: number | undefined) =>
   Math.min(Math.max(limit ?? SNAPSHOT_CHANGES_DEFAULT_LIMIT, 1), SNAPSHOT_CHANGES_MAX_LIMIT);
 
@@ -224,6 +237,7 @@ export const listSnapshotChanges = async (
                 modelKey: model.apiKey,
                 routeKey: modelRouteOf(context.snapshot, model).key,
                 ...describe(item),
+                interfaces: interfacePluralsOf(context, item.modelId),
                 locales: item.locales.map(({ locale, change, fromRevisionId, toRevisionId }) => ({
                   locale,
                   change,

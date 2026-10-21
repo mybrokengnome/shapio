@@ -31,6 +31,8 @@ export const SnapshotChangeSchema = Type.Object({
   title: Type.Union([Type.String(), Type.Null()]),
   /** The cover image's media asset ID, when the model has a readable cover. */
   coverMediaId: Type.Union([UuidSchema, Type.Null()]),
+  /** The plurals of the interfaces the entry's type implements, inherited ones included (cache tags). */
+  interfaces: Type.Array(Type.String()),
   locales: Type.Array(
     Type.Object({
       locale: Type.String(),
