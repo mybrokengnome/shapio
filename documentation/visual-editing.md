@@ -44,7 +44,7 @@ How it fits together:
 
 ### 1. A connection with a preview URL
 
-Publishing → Deployments → a connection's **Preview URL**, for example
+Deployments → a connection's **Preview URL**, for example
 `https://www.example.com/preview/?model={modelKey}&id={entryId}&locale={locale}#token={token}`. Put the token
 after `#`: it then never reaches a server log or a Referer header. The starters' seed creates a connection named
 **Preview** that points at the starter's `/preview/` page and triggers no builds.

@@ -14,7 +14,7 @@ import {
   Inbox,
   KeyRound,
   ScrollText,
-  Send,
+  Rocket,
   Settings,
   ShieldCheck,
   SquareTerminal,
@@ -97,8 +97,9 @@ export const INBOX_ITEM = {
 /** Below the places. */
 export const CONTENT_ITEMS: readonly NavItemDefinition[] = [
   { key: 'media', labelKey: 'shell.nav.media', icon: Image, to: '/media', permission: 'media.read' },
-  { key: 'publishing', labelKey: 'shell.nav.publishing', icon: Send, to: '/publishing' },
-  // Change sets are how editors and developers ship together, so they sit with Publishing.
+  // Deployments (its URLs keep the older `/publishing` name): connections and runs, scheduled, webhooks.
+  { key: 'publishing', labelKey: 'shell.nav.publishing', icon: Rocket, to: '/publishing' },
+  // Change sets are how editors and developers ship together, so they sit with Deployments.
   {
     key: 'changes',
     labelKey: 'shell.nav.changes',

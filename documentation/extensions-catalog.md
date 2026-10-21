@@ -347,7 +347,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 
 ## Outbound integrations
 
-Configured under **Publishing** in the admin, live, with no restart. Every outbound request goes through the job
+Configured under **Deployments** in the admin, live, with no restart. Every outbound request goes through the job
 queue (retries, logs) and refuses private, loopback and link-local addresses unless they are listed in
 `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST` and the webhook or connection allows private networks.
 

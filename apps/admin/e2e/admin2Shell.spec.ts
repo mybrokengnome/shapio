@@ -34,12 +34,12 @@ test.afterAll(async () => {
   await page.context().close();
 });
 
-test('the sidebar: Inbox, places, Media, Publishing, Develop and Workspace; never "Models"', async () => {
+test('the sidebar: Inbox, places, Media, Deployments, Develop and Workspace; never "Models"', async () => {
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByRole('link', { name: 'Inbox' })).toHaveAttribute('aria-current', 'page');
   // No content types yet: the places list is only the "+ New" row (the owner may create types).
   await expect(nav.getByRole('list', { name: 'Content' }).getByRole('link')).toHaveText(['New content type']);
-  for (const name of ['Media', 'Publishing', 'Changes', 'Settings']) {
+  for (const name of ['Media', 'Deployments', 'Changes', 'Settings']) {
     await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
   }
   const develop = nav.getByRole('list', { name: 'Develop' });

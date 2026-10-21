@@ -215,8 +215,8 @@ edited there and files pulled with the CLI round-trip.
 
 ## Git as a mirror (GitHub write-back)
 
-To get production's live changes into git automatically, add a **GitHub** connection under Publishing →
-Deployments: owner, repository, branch, `commit` or `pull_request` mode, the directory (`schema` by default)
+To get production's live changes into git automatically, add a **GitHub** connection under Deployments →
+New connection: owner, repository, branch, `commit` or `pull_request` mode, the directory (`schema` by default)
 and a token that can write contents (and pull requests). After each schema change Shapio commits the same files
 `schema pull` writes, plus the lock file, to that branch, or opens a pull request from `shapio/schema-sync`.
 Bursts of changes coalesce into one commit. Git mirrors production; it never locks it.

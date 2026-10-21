@@ -276,8 +276,8 @@ test('an editor gets the Inbox and places only: no Develop, no workspace managem
     await expect(editor.getByRole('heading', { level: 1, name: `Welcome, ${EDITOR.name}` })).toBeVisible();
 
     const nav = editor.getByRole('navigation', { name: 'Main navigation' });
-    // Editors ship change sets, so Changes sits with Publishing for them too.
-    for (const name of ['Inbox', 'Field note', 'Media', 'Publishing', 'Changes', 'Settings']) {
+    // Editors ship change sets, so Changes sits with Deployments for them too.
+    for (const name of ['Inbox', 'Field note', 'Media', 'Deployments', 'Changes', 'Settings']) {
       await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
     }
     for (const name of ['New content type', 'Components', 'API tokens', 'Users', 'Roles', 'Locales']) {
