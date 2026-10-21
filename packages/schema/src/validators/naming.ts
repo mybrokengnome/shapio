@@ -121,10 +121,10 @@ export const RESERVED_TYPE_NAMES: readonly string[] = [
 ];
 
 /**
- * Model and component API keys the admin uses as static URL segments (`/content/new`,
- * `/develop/components`), so a type with one of these keys could not be opened. Compared case-folded.
+ * Definition API keys the admin uses as static URL segments (`/content/new`, `/develop/components`,
+ * `/develop/interfaces`), so a definition with one of these keys could not be opened. Compared case-folded.
  */
-export const RESERVED_DEFINITION_API_KEYS: readonly string[] = ['new', 'components'];
+export const RESERVED_DEFINITION_API_KEYS: readonly string[] = ['new', 'components', 'interfaces'];
 
 /**
  * Field API keys that collide with the system fields every entry exposes in REST and GraphQL.

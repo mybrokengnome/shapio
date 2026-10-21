@@ -6,6 +6,12 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `interfaces` is now a reserved API ID, like `new` and `components`: the admin serves interfaces at
+  `/develop/interfaces`. A content type or component whose API ID is `interfaces` keeps working, but a
+  change to it is refused until it is renamed.
+
 ## [0.5.17] - 2026-10-21
 
 ### Changed
