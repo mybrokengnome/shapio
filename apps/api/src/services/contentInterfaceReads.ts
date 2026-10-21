@@ -1,9 +1,4 @@
-import {
-  isInterfaceDefinition,
-  isSeoField,
-  type FieldDefinition,
-  type InterfaceDefinition,
-} from '@shapio/schema';
+import { isSeoField, type FieldDefinition, type InterfaceDefinition } from '@shapio/schema';
 import {
   compileFilter,
   compileSearch,
@@ -19,11 +14,11 @@ import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
 import type { ContentQuery, PopulateTree } from '../content/compiler/types.js';
 import type { ReadMember } from '../content/family.js';
 import { readScopeFor } from '../content/locales.js';
-import { resolveModelById } from '../content/model.js';
 import type { ReadEnvironment } from '../content/read.js';
 import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { SchemaById } from '../schema/snapshot.js';
 import type { ContentServiceContext } from './contentAccess.js';
+import { queryDefinitionOf } from './contentReads.js';
 
 /**
  * Reads through an interface (plan interfaces, D6 and decision 2). The query is parsed against the
@@ -94,12 +89,7 @@ export const parseInterfaceQuery = (
     allowRichText: options.allowRichText ?? false,
     allowSeo: options.allowSeo ?? false,
     allowPublicationState: options.allowPublicationState ?? false,
-    resolveModel: (id) => {
-      const definition = snapshot.byId.get(id)?.definition;
-      return definition && isInterfaceDefinition(definition)
-        ? definition
-        : resolveModelById(snapshot, id)?.definition;
-    },
+    resolveModel: (id) => queryDefinitionOf(snapshot, id),
     kinds: memberKinds(snapshot, route.definition),
     hasSeoField: anyMemberHasSeo(route),
   });

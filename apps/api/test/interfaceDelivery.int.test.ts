@@ -73,13 +73,25 @@ describe('interfaces: delivery reads and relation values', () => {
     testApp = await createTestApp(database.current, { schemaListen: false });
     admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
     expectStatus(await admin.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
+    // Every member has an author: the contract names the relation, so a path may run through it.
+    await model('person', {
+      kind: 'collection',
+      pluralApiKey: 'people',
+      fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
+    });
+    const author = {
+      apiKey: 'author',
+      label: 'Author',
+      type: 'relation',
+      settings: { target: models.person?.definition.id, cardinality: 'one' },
+    };
     const created = expectStatus(
       await admin.post('/api/admin/interfaces', {
         definition: {
           kind: 'interface',
           apiKey: 'featurable',
           label: 'Featurable',
-          fields: [title, summary],
+          fields: [title, summary, author],
         },
       }),
       201,
@@ -104,7 +116,7 @@ describe('interfaces: delivery reads and relation values', () => {
       kind: 'collection',
       localized: true,
       implements: implementsFeaturable,
-      fields: [{ ...title, localized: true }, summary],
+      fields: [{ ...title, localized: true }, summary, author],
     });
     await model('guide', {
       kind: 'collection',
@@ -119,6 +131,7 @@ describe('interfaces: delivery reads and relation values', () => {
       fields: [
         title,
         summary,
+        author,
         { apiKey: 'body', label: 'Body', type: 'text' },
         {
           apiKey: 'related',
@@ -135,6 +148,7 @@ describe('interfaces: delivery reads and relation values', () => {
       fields: [
         title,
         summary,
+        author,
         { apiKey: 'seo', label: 'SEO', type: 'component', settings: { component: SEO_COMPONENT_ID } },
       ],
     });
@@ -189,10 +203,16 @@ describe('interfaces: delivery reads and relation values', () => {
     ids.delta = (await publishNew('blogPost', { title: 'Delta web', body: 'd' })).id;
     ids.epsilon = (await publishNew('about', { title: 'Epsilon web sign' })).id;
     ids.digital = (await publishNew('digital', { title: 'Web sign digital' })).id;
+    ids.ada = (await publishNew('person', { name: 'Ada' })).id;
     ids.gamma = (
-      await publishNew('blogPost', { title: 'Gamma web sign', body: 'g', related: [ids.digital] })
+      await publishNew('blogPost', {
+        title: 'Gamma web sign',
+        body: 'g',
+        related: [ids.digital],
+        author: ids.ada,
+      })
     ).id;
-    token = await tokenFor('post', 'blogPost', 'about', 'digital', 'homepage');
+    token = await tokenFor('post', 'blogPost', 'about', 'digital', 'homepage', 'person');
   });
   afterAll(async () => {
     await testApp.app.close();
@@ -367,6 +387,22 @@ describe('interfaces: delivery reads and relation values', () => {
     // A member the caller may not read is left out of the value.
     const hidden = await list('/api/content/homepage', await tokenFor('homepage', 'blogPost'));
     expect((hidden.data as unknown as { featured: string[] }).featured).toEqual([ids.gamma]);
+  });
+
+  it('populates a path below a relation to an interface from a model route; none below any entry', async () => {
+    // The Homepage the test above saved: featured Beta, Gamma, Epsilon.
+    const home = await list('/api/content/homepage?populate=featured.author');
+    const featured = (home.data as unknown as { featured: Array<Row & { author: unknown }> }).featured;
+    expect(featured.map((row) => [row.id, row.__model])).toEqual([
+      [ids.beta, 'guide'],
+      [ids.gamma, 'blogPost'],
+      [ids.epsilon, 'about'],
+    ]);
+    expect(featured[1]?.author).toMatchObject({ id: ids.ada, __model: 'person', name: 'Ada' });
+    expect(featured[0]?.author).toBeNull();
+    const refused = await deliver('/api/content/homepage?populate=spotlight.author');
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toContain('Cannot populate');
   });
 
   describe('content targets (the admin relation picker)', () => {

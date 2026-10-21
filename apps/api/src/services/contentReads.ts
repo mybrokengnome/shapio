@@ -1,4 +1,4 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { isInterfaceDefinition, type FieldDefinition } from '@shapio/schema';
 import {
   compileAuthorCondition,
   compileFilter,
@@ -11,7 +11,7 @@ import {
 } from '../content/compiler/compile.js';
 import { matchesNothing } from '../content/compiler/conditions.js';
 import { paginationMeta, toLimitOffset, type Pagination } from '../content/compiler/paginate.js';
-import { parseContentQuery } from '../content/compiler/parse.js';
+import { parseContentQuery, type QueryDefinition } from '../content/compiler/parse.js';
 import { compileRowFilter, everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { parseQueryTree } from '../content/compiler/querystring.js';
 import { compileOrderBy, defaultSortTerms } from '../content/compiler/sort.js';
@@ -38,6 +38,7 @@ import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import type { HeadRecord } from '../repositories/entryHeads.js';
 import * as publicationsRepository from '../repositories/publications.js';
 import type { EntryPublicationRow } from '../repositories/publications.js';
+import type { SchemaById } from '../schema/snapshot.js';
 import {
   assertEntryVisible,
   entryModelWithPolicy,
@@ -327,6 +328,18 @@ const readableOnEveryRow =
   (field: FieldDefinition): boolean =>
     members.every((member) => maskAllows(everyRowReadMask(member.policy), field));
 
+/**
+ * What a nested populate path below a relation names fields of: the target model's effective definition, or
+ * an interface's contract (plan interfaces; each member then populates its own field). Undefined for a
+ * relation to any entry (`*`): its targets have no fields in common, so nothing can be named below it.
+ */
+export const queryDefinitionOf = (snapshot: SchemaById, id: string): QueryDefinition | undefined => {
+  const definition = snapshot.byId.get(id)?.definition;
+  return definition && isInterfaceDefinition(definition)
+    ? definition
+    : resolveModelById(snapshot, id)?.definition;
+};
+
 export const parseQueryFor = (
   context: ContentServiceContext,
   model: ContentModel,
@@ -355,7 +368,7 @@ export const parseQueryFor = (
     allowRichText: options.allowRichText ?? false,
     allowSeo: options.allowSeo ?? false,
     allowPublicationState: options.allowPublicationState ?? false,
-    resolveModel: (modelId) => resolveModelById(context.snapshot, modelId)?.definition,
+    resolveModel: (id) => queryDefinitionOf(context.snapshot, id),
     kinds: kindsOf(context, model),
   });
 };
