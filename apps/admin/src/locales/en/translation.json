@@ -1247,6 +1247,8 @@
       "contractFieldAdded_one": "{{name}} now requires {{field}} on {{count}} type",
       "contractFieldAdded_other": "{{name}} now requires {{field}} on {{count}} types",
       "contractFieldRemoved": "{{name}} no longer requires {{field}}",
+      "relationTargetDropped": "Change what {{field}} relates to and clear its stored values",
+      "relationTargetDropped_named": "Point {{field}} at {{to}} instead of {{from}} and clear its stored values",
       "modelExtends_added": "Make this a kind of {{to}}",
       "modelExtends_removed": "Stop being a kind of {{from}}: it becomes a type of its own",
       "modelExtends_moved": "Move this from {{from}} to {{to}}",

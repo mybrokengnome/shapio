@@ -1,4 +1,10 @@
-import type { ChangeKind, ClassifiedChange, DataType, SchemaDefinition } from '@shapio/schema';
+import {
+  ANY_TARGET,
+  type ChangeKind,
+  type ClassifiedChange,
+  type DataType,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import { propertyLabel } from './labels';
 
@@ -136,6 +142,23 @@ const describeContractField = (
   });
 };
 
+/** A relation target by name: a type's or interface's label, or "Any entry" for `*`. */
+const targetName = (target: unknown, context: DescribeContext): string | undefined =>
+  target === ANY_TARGET ? i18next.t('models.builder.anyEntry') : nameOf(target, context);
+
+/**
+ * A relation's target narrowed to one that may not accept its stored values (BlogPost from Featurable):
+ * "Point Featured at Blog posts instead of Featurable and clear its stored values", by the targets' names;
+ * without them, a sentence that names neither.
+ */
+const describeNarrowedTarget = (change: ClassifiedChange, field: string, context: DescribeContext) => {
+  const from = targetName(change.from, context);
+  const to = targetName(change.to, context);
+  return from === undefined || to === undefined
+    ? i18next.t('models.changes.relationTargetDropped', { field })
+    : i18next.t('models.changes.relationTargetDropped', { context: 'named', field, from, to });
+};
+
 /** One sentence describing a planned change, e.g. "Rename the API key of Title from title to headline". */
 export const describeChange = (
   change: ClassifiedChange,
@@ -154,6 +177,9 @@ export const describeChange = (
     return describeContractField(change, contractKey, before, after, context);
   }
   const field = fieldLabelOf(change.fieldId, before, after);
+  if (change.kind === 'field.settings' && change.property === 'target' && change.dropsValues) {
+    return describeNarrowedTarget(change, field, context);
+  }
   const addedType =
     change.kind === 'field.added' && typeof change.to === 'object' && change.to !== null
       ? (change.to as { type?: unknown }).type

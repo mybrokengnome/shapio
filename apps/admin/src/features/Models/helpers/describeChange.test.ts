@@ -38,4 +38,35 @@ describe('describeChange for interfaces', () => {
       describeChange(change({ kind: 'field.added', fieldId: 'f1' }), null, featurable, { memberCount: 3 }),
     ).toBe('Featurable now requires image on 3 types');
   });
+
+  it('names both targets of a narrowed relation and says its values are cleared', () => {
+    const blogPosts = (id: string) => (id === 'i1' ? 'Featurable' : id === 'm1' ? 'Blog posts' : undefined);
+    const narrowed = change({
+      kind: 'field.settings',
+      property: 'target',
+      fieldId: 'f9',
+      from: 'i1',
+      to: 'm1',
+      dropsValues: true,
+    });
+    expect(describeChange(narrowed, null, null, { definitionName: blogPosts })).toBe(
+      'Point f9 at Blog posts instead of Featurable and clear its stored values',
+    );
+    expect(describeChange({ ...narrowed, from: '*' }, null, null, { definitionName: blogPosts })).toBe(
+      'Point f9 at Blog posts instead of Any entry and clear its stored values',
+    );
+    expect(describeChange(narrowed, null, null)).toBe(
+      'Change what f9 relates to and clear its stored values',
+    );
+  });
+
+  it('keeps the settings sentence for a widened target', () => {
+    expect(
+      describeChange(
+        change({ kind: 'field.settings', property: 'target', fieldId: 'f9', from: 'm1', to: 'i1' }),
+        null,
+        null,
+      ),
+    ).not.toContain('clear');
+  });
 });
