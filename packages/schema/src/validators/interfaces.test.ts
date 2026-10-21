@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { serializeDefinition } from '../fileFormat/canonical.js';
+import { hashDefinition } from '../fileFormat/hash.js';
 import { schemaFilePath, scopeOfSchemaFilePath } from '../fileFormat/layout.js';
 import { parseLockFile, serializeLockFile } from '../fileFormat/lockFile.js';
 import { createDefinitionIndex } from '../inheritance/resolve.js';
@@ -114,6 +115,25 @@ describe('interface definitions', () => {
       },
     };
     expect(parseLockFile(serializeLockFile(lock))).toEqual(lock);
+  });
+
+  it("writes a contract's fields without editor, width, deprecation or default, and reads them back the same", async () => {
+    const written = serializeDefinition(featurable);
+    const fields = (JSON.parse(written) as { fields: Array<Record<string, unknown>> }).fields;
+    for (const field of fields) {
+      expect(field).not.toHaveProperty('editor');
+      expect(field).not.toHaveProperty('deprecated');
+      expect(field).not.toHaveProperty('width');
+      expect(field).not.toHaveProperty('defaultValue');
+    }
+    const parsed = parseDefinition(JSON.parse(written));
+    expect(parsed).toEqual({ ok: true, definition: featurable });
+    expect(parsed.ok && (await hashDefinition(parsed.definition))).toBe(await hashDefinition(featurable));
+    // A model's fields keep their editor.
+    const modelFields = (
+      JSON.parse(serializeDefinition(blogPost)) as { fields: Array<Record<string, unknown>> }
+    ).fields;
+    expect(modelFields[0]).toHaveProperty('editor');
   });
 
   it('claims its plural in the shared namespace and GraphQL names with no mutations', () => {

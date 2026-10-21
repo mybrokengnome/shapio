@@ -24,8 +24,31 @@ const sortKeys = (value: unknown): unknown => {
 
 export const canonicalJson = (value: unknown): string => `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 
+/** Field properties that mean nothing on an interface's contract field (plan interfaces). */
+const CONTRACT_FIELD_OMITTED = ['editor', 'width', 'deprecated', 'defaultValue'] as const;
+
+/**
+ * A definition as written: an interface's contract fields leave out what means nothing on them (the default
+ * editor and `deprecated: false` that normalizing stores), so a pulled `interfaces/*.json` holds only the
+ * contract. Parsing the file normalizes them back, so it hashes the same.
+ */
+const writtenForm = (definition: SchemaDefinition): unknown =>
+  definition.kind === 'interface'
+    ? {
+        ...definition,
+        fields: definition.fields.map((field) => {
+          const written: Record<string, unknown> = { ...field };
+          for (const key of CONTRACT_FIELD_OMITTED) {
+            delete written[key];
+          }
+          return written;
+        }),
+      }
+    : definition;
+
 /**
  * The bytes Shapio hashes and writes for a definition. The definition must be normalized
  * (`normalizeDefinition`), so defaults are explicit and the same meaning has one spelling.
  */
-export const serializeDefinition = (definition: SchemaDefinition): string => canonicalJson(definition);
+export const serializeDefinition = (definition: SchemaDefinition): string =>
+  canonicalJson(writtenForm(definition));
