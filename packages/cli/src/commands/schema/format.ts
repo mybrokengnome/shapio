@@ -1,5 +1,6 @@
 import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
 import {
+  ANY_TARGET,
   categoryOfKind,
   isDataType,
   typeChangeDropsValues,
@@ -103,6 +104,21 @@ const dropsValues = (change: PlannedChange) => {
   );
 };
 
+/** A relation target by name: a type or an interface by API ID from the files (else its ID), `*` as any entry. */
+const targetName = (target: unknown, names: ReadonlyMap<string, string>): string =>
+  target === ANY_TARGET ? 'any entry' : target === undefined ? '(unset)' : definitionName(target, names);
+
+/** Any other change: the property and both values, one line per part that differs. */
+const otherChange = (change: PlannedChange, field: string): string[] => {
+  const subject = change.kind.startsWith('field.') ? `${field} ` : '';
+  const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
+  const dropped = dropsValues(change) ? ' (values dropped)' : '';
+  const parts = differences(change.from, change.to);
+  return (parts.length > 0 ? parts : [{ path: '', from: change.from, to: change.to }]).map(
+    (part) => `~ ${subject}${property}${part.path}: ${show(part.from)} → ${show(part.to)}${dropped}`,
+  );
+};
+
 type FormatChangeOptions = {
   /** The change is on an interface: its fields are contract fields. */
   contract?: boolean;
@@ -138,15 +154,13 @@ export const formatChange = (
         `${added ? '+' : '-'} implements ${definitionName(change.property ?? (added ? change.to : change.from), names)}`,
       ];
     }
-    default: {
-      const subject = change.kind.startsWith('field.') ? `${field} ` : '';
-      const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
-      const dropped = dropsValues(change) ? ' (values dropped)' : '';
-      const parts = differences(change.from, change.to);
-      return (parts.length > 0 ? parts : [{ path: '', from: change.from, to: change.to }]).map(
-        (part) => `~ ${subject}${property}${part.path}: ${show(part.from)} → ${show(part.to)}${dropped}`,
-      );
-    }
+    case 'field.settings':
+      if (change.property === 'target') {
+        return [`~ ${field} target: ${targetName(change.from, names)} → ${targetName(change.to, names)}`];
+      }
+      return otherChange(change, field);
+    default:
+      return otherChange(change, field);
   }
 };
 

@@ -131,7 +131,7 @@ model roadmapItem (implements featurable): update
     + implements featurable
     + field image
 model homepage: update [BREAKING]
-    ~ field spotlight target: "<blogPost id>" → "*"
+    ~ field spotlight target: blogPost → any entry
 ```
 
 - **Order doesn't matter.** Apply plans every file together, so a new interface, the types that implement it,

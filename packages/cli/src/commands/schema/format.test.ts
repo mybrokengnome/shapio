@@ -238,6 +238,30 @@ describe('interfaces', () => {
     ]);
   });
 
+  it('names both sides of a relation target change: a type, an interface, or any entry', () => {
+    const names = new Map([...interfaceNames, ['f-featured', 'featured']]);
+    const retarget: SchemaChange = {
+      kind: 'field.settings',
+      definitionId: 'home-id',
+      fieldId: 'f-featured',
+      property: 'target',
+      from: 'post-id',
+      to: 'featurable-id',
+    };
+    expect(formatChange(retarget, names)).toEqual(['~ field featured target: post → featurable']);
+    expect(formatChange({ ...retarget, from: 'featurable-id', to: '*' }, names)).toEqual([
+      '~ field featured target: featurable → any entry',
+    ]);
+    // A target the files do not hold falls back to its ID.
+    expect(formatChange({ ...retarget, to: 'remote-id' }, names)).toEqual([
+      '~ field featured target: post → remote-id',
+    ]);
+    // Other settings still print their values.
+    expect(formatChange({ ...retarget, property: 'cardinality', from: 'one', to: 'many' }, names)).toEqual([
+      '~ field featured cardinality: "one" → "many"',
+    ]);
+  });
+
   it('adds a hint for each interface problem in the refused files', () => {
     const issue = (code: string) => ({ path: '/definitions/0/implements/0', code, message: code });
     const error = new ShapioApiError(422, {
