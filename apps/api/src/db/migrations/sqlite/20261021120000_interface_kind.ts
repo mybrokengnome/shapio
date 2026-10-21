@@ -3,10 +3,12 @@ import { assertNoInterfaces, TABLES } from '../20261021120000_interface_kind.js'
 
 /**
  * SQLite twin of `../20261021120000_interface_kind.ts`. SQLite cannot change a check constraint, so each table
- * is rebuilt from its own stored `create table` statement with the kind list swapped: renamed aside (with
- * `legacy_alter_table` on, so the references other tables hold keep naming the real table), recreated,
- * refilled, and its indexes recreated from `sqlite_master`. Dropping the renamed table deletes nothing the
- * other tables reference.
+ * is rebuilt from its own stored `create table` statement with the kind list swapped: renamed aside, recreated,
+ * refilled, and its indexes recreated from `sqlite_master`. Other tables reference both (`models` from
+ * revisions, entries and jobs; `schema_drafts` from change-set items), so this relies on the migrator running
+ * SQLite migrations with foreign keys off (`SqliteDriver.withForeignKeysOff`): with `legacy_alter_table` on,
+ * the rename then rewrites none of their references, dropping the renamed table deletes nothing, and the
+ * migrator checks every reference afterwards.
  */
 const BEFORE = `'singleton', 'component')`;
 const AFTER = `'singleton', 'component', 'interface')`;

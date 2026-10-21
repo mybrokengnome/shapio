@@ -46,7 +46,10 @@ export const createMigrator = (db: Kysely<DB>): Migrator =>
  */
 const runMigrations = (db: Kysely<DB>, log: MigrationLogger): Promise<MigrationResult[]> =>
   withSessionAdvisoryLock(db, LOCK_NAMESPACE.migrations, MIGRATION_LOCK_KEY, async () => {
-    const { error, results = [] } = await createMigrator(db).migrateToLatest();
+    // SQLite migrations that rebuild a referenced table need foreign keys off (sqlite/driver.ts).
+    const migrate = () => createMigrator(db).migrateToLatest();
+    const sqlite = sqliteDriverOf(db);
+    const { error, results = [] } = await (sqlite ? sqlite.withForeignKeysOff(migrate) : migrate());
     for (const result of results) {
       log.info({ migration: result.migrationName, status: result.status }, 'migration');
     }
