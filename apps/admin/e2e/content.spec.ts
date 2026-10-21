@@ -122,7 +122,7 @@ test('a place: its name, New, an empty state, and Structure and API tabs for sch
   await tabs.getByRole('tab', { name: 'API' }).click();
   await expect(page).toHaveURL(/tab=api/);
   await expect(page.getByText('/api/content/pages', { exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'GraphQL' })).toContainText('type Page {');
+  await expect(page.getByRole('region', { name: 'GraphQL' })).toContainText('type Page implements Entry {');
   await captureScreen(page, 'place-01-api', BOTH);
   await tabs.getByRole('tab', { name: 'Structure' }).click();
   await expect(page).toHaveURL(/tab=structure/);
