@@ -1,10 +1,13 @@
 import {
+  isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
   classifyChanges,
   diffDefinitions,
   findChildDefinitions,
   findDependentModels,
   findReferencingDefinitions,
+  interfaceDeletionIssues,
   summarizeChanges,
   type ChangeSummary,
   type ClassifiedChange,
@@ -45,7 +48,10 @@ export type ChangePlan = {
   fromVersion: number | null;
   changes: ClassifiedChange[];
   summary: ChangeSummary;
-  /** Models whose entries are affected: the model itself, or every model embedding a component. */
+  /**
+   * Models whose entries or API shape are affected: the model's family, every model embedding a component,
+   * or an interface's members (plan interfaces: their lists and GraphQL types change with the contract).
+   */
   affectedModelIds: string[];
   prerequisites: PrerequisiteStep[];
   followUps: FollowUpStep[];
@@ -215,23 +221,35 @@ const proposedSchema = (
 ];
 
 /**
- * Models whose entries a change affects: a model's family (it and every model extending it, before and
- * after the change), or every model embedding a component, directly, through components or by inheritance.
+ * Models a change affects: a model's family (it and every model extending it, before and after the change),
+ * every model embedding a component, directly, through components or by inheritance, or every member of an
+ * interface (plan interfaces: their entries do not change, but the API shape they are served in does, so
+ * activation locks, events, deployments and webhooks cover them).
  */
 const affectedModelsOf = (
   definition: SchemaDefinition,
   active: ResolvedSchema,
   proposed: ResolvedSchema,
-): string[] =>
-  definition.kind === 'component'
-    ? [
-        ...new Set(
-          [active, proposed].flatMap((schema) =>
-            findDependentModels(schema.stored, definition.id).map((model) => model.id),
-          ),
+): string[] => {
+  if (isComponentDefinition(definition)) {
+    return [
+      ...new Set(
+        [active, proposed].flatMap((schema) =>
+          findDependentModels(schema.stored, definition.id).map((model) => model.id),
         ),
-      ]
-    : [...new Set([...active.index.family(definition.id), ...proposed.index.family(definition.id)])];
+      ),
+    ];
+  }
+  if (isInterfaceDefinition(definition)) {
+    return [
+      ...new Set([
+        ...active.index.implementedBy(definition.id),
+        ...proposed.index.implementedBy(definition.id),
+      ]),
+    ];
+  }
+  return [...new Set([...active.index.family(definition.id), ...proposed.index.family(definition.id)])];
+};
 
 /**
  * MySQL indexes every filterable or sortable field on one table, which allows a fixed number of indexes
@@ -280,6 +298,8 @@ const deletionIssues = (
     message: `"${child.apiKey}" extends "${definition.apiKey}"; delete it or move it under another type first`,
     definitionId: definition.id,
   })),
+  // An interface with members (plan interfaces): each member must stop implementing it first.
+  ...interfaceDeletionIssues(active, definition.id),
 ];
 
 /** Steps of several family members for one field: one step whose locations cover every member. */
@@ -388,32 +408,32 @@ export const buildChangePlan = ({
   const scopedProposed = proposedSchema(scopedActive, subject.id, after, siteId);
   const active = resolveSchema(scopedActive.map((entry) => entry.definition));
   const proposed = resolveSchema(scopedProposed.map((entry) => entry.definition));
-  const changes = classifyChanges(diffDefinitions(before, after), { before, after });
+  // The network-wide indexes let a relation target that widens keep its values (plan interfaces, D9).
+  const index = { before: active.index, after: proposed.index };
+  const changes = classifyChanges(diffDefinitions(before, after), { before, after, index });
   const issues = after
     ? validateScoped(scopedProposed, [siteId], siteKeys ? { siteKeys } : {})
     : deletionIssues(subject, active.stored);
   const affectedModelIds = affectedModelsOf(subject, active, proposed);
 
-  // A component is one definition; a model is planned for its whole family.
-  const members: MemberChange[] =
-    subject.kind === 'component'
-      ? []
-      : memberChanges({ subjectId: subject.id, before, after, hasContent, active, proposed });
-  const contentSteps =
-    subject.kind === 'component'
-      ? after && hasContent
-        ? byPhase(changes.flatMap((change) => contentStepsFor(change, before, after, proposed.resolved)))
-        : []
-      : familyContentSteps(members, subject.id, proposed.resolved);
+  // A component is one definition; a model is planned for its whole family; an interface stores nothing, so
+  // it has no content or index work (plan interfaces, D9).
+  const members: MemberChange[] = isModelDefinition(subject)
+    ? memberChanges({ subjectId: subject.id, before, after, hasContent, active, proposed })
+    : [];
+  const contentSteps = isComponentDefinition(subject)
+    ? after && hasContent
+      ? byPhase(changes.flatMap((change) => contentStepsFor(change, before, after, proposed.resolved)))
+      : []
+    : familyContentSteps(members, subject.id, proposed.resolved);
   const indexes = indexWorkOf(members);
   issues.push(...fieldIndexLimitIssues(after, indexes.created, proposed.resolved));
-  const released =
-    subject.kind === 'component'
-      ? releasedUniqueOf([{ modelId: subject.id, changes }]).map((step) => ({
-          ...step,
-          modelIds: affectedModelIds,
-        }))
-      : releasedUniqueOf(members);
+  const released = isComponentDefinition(subject)
+    ? releasedUniqueOf([{ modelId: subject.id, changes }]).map((step) => ({
+        ...step,
+        modelIds: affectedModelIds,
+      }))
+    : releasedUniqueOf(members);
   const prerequisites = dedupe<PrerequisiteStep>([...contentSteps, ...indexes.prerequisites]);
   const followUps = dedupe<FollowUpStep>([...indexes.followUps, ...released]);
 

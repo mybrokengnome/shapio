@@ -1,4 +1,11 @@
-import type { JsonValue, PlannedChange, SchemaDefinition, DataType } from '@shapio/schema';
+import {
+  isComponentDefinition,
+  isModelDefinition,
+  type DataType,
+  type JsonValue,
+  type PlannedChange,
+  type SchemaDefinition,
+} from '@shapio/schema';
 
 /**
  * Where a definition's values live inside entries: for a model, its own heads at the root; for a
@@ -110,8 +117,12 @@ export const findValueLocations = (
   if (!owner) {
     return [];
   }
-  if (owner.kind !== 'component') {
+  if (isModelDefinition(owner)) {
     return [{ modelId: owner.id, path: [] }];
+  }
+  // An interface stores nothing: no entry holds its values (plan interfaces).
+  if (!isComponentDefinition(owner)) {
+    return [];
   }
   const locations: ValueLocation[] = [];
   // Walk down from every model; components cannot cycle (validated), so this terminates.
@@ -136,7 +147,7 @@ export const findValueLocations = (
     }
   };
   for (const definition of definitions) {
-    if (definition.kind !== 'component') {
+    if (isModelDefinition(definition)) {
       walk(definition, definition.id, []);
     }
   }
