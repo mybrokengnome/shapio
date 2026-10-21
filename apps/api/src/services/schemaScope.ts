@@ -1,3 +1,4 @@
+import { isModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
@@ -134,7 +135,9 @@ export const changeScope = async (
   });
   /** No other site may hold an entry of any member of the family. */
   const assertNoEntriesElsewhere = async (executor: Parameters<typeof entriesElsewhere>[0]) => {
-    if (target === null || active.definition.kind === 'component') {
+    // Components and interfaces hold no entries of their own (an interface's members are checked by
+    // validation: a site's interface may only have that site's members, plan interfaces D3).
+    if (target === null || !isModelDefinition(active.definition)) {
       return;
     }
     for (const member of members) {

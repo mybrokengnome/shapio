@@ -7,7 +7,9 @@ import {
   type FieldDefinition,
 } from '@shapio/schema';
 import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
+import { relationTargetOf } from '../content/relationTarget.js';
 import { COMPONENT_KEY } from '../content/validator/index.js';
+import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
@@ -230,19 +232,30 @@ export const loadSummaryLookups = async (
   snapshots: readonly [SchemaSnapshot, ...SchemaSnapshot[]],
   fields: readonly SummarizedValues[],
 ): Promise<(locale: string) => SummaryLookups> => {
+  const [snapshot] = snapshots;
   const mediaIds = new Set<string>();
   const entryIds = new Set<string>();
   const targetModels = new Set<string>();
+  // Values of "any entry" relations: their models are looked up by ID (plan interfaces, decision 8).
+  const anyEntryIds = new Set<string>();
   for (const { field, values } of fields) {
     const ids = values.flatMap((value) => referencesOf(field, value));
     if (field.type === 'media') {
       ids.forEach((id) => mediaIds.add(id));
     } else if (field.type === 'relation' && ids.length > 0) {
       ids.forEach((id) => entryIds.add(id));
-      targetModels.add(field.settings.target);
+      const target = relationTargetOf(snapshot, field);
+      if (target.kind === 'any') {
+        ids.forEach((id) => anyEntryIds.add(id));
+      } else {
+        target.modelIds.forEach((modelId) => targetModels.add(modelId));
+      }
     }
   }
-  const [snapshot] = snapshots;
+  if (anyEntryIds.size > 0) {
+    const rows = await entriesRepository.findByIds([...anyEntryIds], context.db);
+    rows.forEach((row) => targetModels.add(row.model_id));
+  }
   const [mediaNames, heads] = await Promise.all([
     loadMediaNames(context, [...mediaIds]),
     entryIds.size === 0
