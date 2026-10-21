@@ -167,6 +167,14 @@ const relatedSchemaName = (
   return entrySchemaName(snapshot, target.id);
 };
 
+/** Model IDs in API ID order: an interface's members and every model have no tree order of their own. */
+const byApiKey = (snapshot: SchemaSnapshot, ids: readonly string[]): string[] =>
+  [...ids].sort((a, b) =>
+    (snapshot.byId.get(a)?.definition.apiKey ?? a).localeCompare(
+      snapshot.byId.get(b)?.definition.apiKey ?? b,
+    ),
+  );
+
 const listOr = (many: boolean, schema: JsonSchema): JsonSchema =>
   many ? { type: 'array', items: schema } : schema;
 
@@ -767,7 +775,10 @@ export const generateOpenApi = (
           description: "The API IDs of the entry's type and the types it extends, root first",
         },
       });
-      schemas[`${name}Any`] = unionSchema(snapshot, snapshot.implementedBy(definition.id));
+      schemas[`${name}Any`] = unionSchema(
+        snapshot,
+        byApiKey(snapshot, snapshot.implementedBy(definition.id)),
+      );
       continue;
     }
     schemas[name] = objectSchema(
@@ -800,7 +811,10 @@ export const generateOpenApi = (
   const interfaces = definitions.filter(isInterfaceDefinition);
   schemas.AnyEntry = unionSchema(
     snapshot,
-    models.map((model) => model.id),
+    byApiKey(
+      snapshot,
+      models.map((model) => model.id),
+    ),
   );
   return {
     openapi: '3.1.0',

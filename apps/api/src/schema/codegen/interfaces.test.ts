@@ -105,16 +105,16 @@ describe('OpenAPI for interfaces', () => {
     expect(schemas.FeaturableInput).toBeUndefined();
     expect(schemas.FeaturableAny).toEqual({
       oneOf: [
-        { $ref: '#/components/schemas/Post' },
-        { $ref: '#/components/schemas/Guide' },
         { $ref: '#/components/schemas/About' },
+        { $ref: '#/components/schemas/Guide' },
+        { $ref: '#/components/schemas/Post' },
       ],
       discriminator: {
         propertyName: '__model',
         mapping: {
-          post: '#/components/schemas/Post',
-          guide: '#/components/schemas/Guide',
           about: '#/components/schemas/About',
+          guide: '#/components/schemas/Guide',
+          post: '#/components/schemas/Post',
         },
       },
     });
