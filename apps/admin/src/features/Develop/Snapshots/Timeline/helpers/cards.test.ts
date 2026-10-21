@@ -19,6 +19,7 @@ const change = (
   routeKey: 'articles',
   title: `${id} title`,
   coverMediaId: null,
+  interfaces: [],
   locales: locales.map(([locale, kind]) => ({ locale, change: kind, revisionId: `${id}-${locale}` })),
 });
 

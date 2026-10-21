@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
 import {
+  hasPlural,
   useCreateDefinitionForm,
   type CreateDefinitionValues,
 } from '@/features/Models/hooks/useCreateDefinitionForm';
@@ -27,6 +28,7 @@ import { cn } from '@/helpers/cn';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { EndpointPreview } from '../EndpointPreview';
 import { ExtendsPicker } from '../ExtendsPicker';
+import { ImplementsPicker } from '../ImplementsPicker';
 import { KindPicker } from '../KindPicker';
 import { ScopePicker } from '../ScopePicker';
 
@@ -44,9 +46,10 @@ type FormProps = {
 };
 
 /**
- * Creates a content type (collection or single type) or a component, live, then opens it for editing.
- * Shared by `/content/new`, `/develop/components/new` and `/network/content-types/new`. Where there is more
- * than one site, it asks where the definition is available (this site unless "All sites" is chosen).
+ * Creates a content type (collection or single type), a component or an interface, live, then opens it for
+ * editing. Shared by `/content/new`, `/develop/components/new`, `/develop/interfaces/new` and
+ * `/network/content-types/new`. Where there is more than one site, it asks where the definition is available
+ * (this site unless "All sites" is chosen).
  */
 export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps) => {
   const { t } = useTranslation();
@@ -54,16 +57,16 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
   const canCreate = useHasGlobalPermission('schema.create');
   const { locked, reason } = useSchemaLock();
   const { multiSite, canShare } = useSchemaScopeAccess();
-  const { form, onSubmit, parentChoices, parent, pending, error, errorMessage } = useCreateDefinitionForm(
-    kinds[0],
-    scope,
-  );
+  const { form, onSubmit, parentChoices, parent, interfaceChoices, pending, error, errorMessage } =
+    useCreateDefinitionForm(kinds[0], scope);
   const { index } = useModelIndex();
   const [kind, apiKey, pluralApiKey] = useWatch({
     control: form.control,
     name: ['kind', 'apiKey', 'pluralApiKey'],
   });
   const isCollection = kind === 'collection';
+  const withPlural = hasPlural(kind);
+  const isContentType = kind === 'collection' || kind === 'singleton';
   // The new kind's API path nests under its parent's ancestors and the parent.
   const ancestors = parent
     ? [...index.ancestors(parent.id), parent.id].flatMap((id) => {
@@ -94,9 +97,10 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
               <ScopePicker control={form.control} canShare={canShare} />
             ) : null}
             {isCollection ? <ExtendsPicker control={form.control} choices={parentChoices} /> : null}
+            {isContentType ? <ImplementsPicker control={form.control} choices={interfaceChoices} /> : null}
             <FormTextField control={form.control} name="label" label={t('models.label')} autoComplete="off" />
-            {/* A collection's two API IDs sit side by side, with the names they produce below both. */}
-            <div className={cn('grid items-start gap-5', isCollection && 'sm:grid-cols-2')}>
+            {/* A collection's (or interface's) two API IDs sit side by side, with the names they produce below both. */}
+            <div className={cn('grid items-start gap-5', withPlural && 'sm:grid-cols-2')}>
               <FormTextField
                 control={form.control}
                 name="apiKey"
@@ -106,7 +110,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
                 spellCheck={false}
                 className="font-mono"
               />
-              {isCollection ? (
+              {withPlural ? (
                 <FormTextField
                   control={form.control}
                   name="pluralApiKey"
@@ -125,7 +129,7 @@ export const Form = ({ title, kinds, back, backLabel, intro, scope }: FormProps)
               label={t('common.optionalLabel', { label: t('models.descriptionLabel') })}
               rows={2}
             />
-            {kind === 'component' ? null : (
+            {!isContentType ? null : (
               <FormSwitchField
                 control={form.control}
                 name="localized"

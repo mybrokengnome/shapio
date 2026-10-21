@@ -32,7 +32,8 @@ const PreviewRow = ({ label, names }: PreviewRowProps) => (
  * is clear there is nothing else to configure. A collection is listed under its plural API ID
  * (`/api/content/articles`, `articles`) and read one by one under the singular (`article`); a kind's path
  * nests under its ancestors' (`/api/content/posts/guides`, as `routePathOf` builds it), while its
- * GraphQL names stay its own. Nothing for components or while the ID is empty.
+ * GraphQL names stay its own. An interface lists its members under its plural, like a collection. Nothing
+ * for components or while the ID is empty.
  */
 export const EndpointPreview = ({ apiKey, pluralApiKey, kind, ancestors = [] }: EndpointPreviewProps) => {
   const { t } = useTranslation();
@@ -43,8 +44,8 @@ export const EndpointPreview = ({ apiKey, pluralApiKey, kind, ancestors = [] }: 
   const plural = pluralApiKey.trim() || suggestPlural(id);
   // Only the naming fields matter to the path: the rest of the definition doesn't exist yet.
   const named = { kind, apiKey: id, pluralApiKey: plural } as ModelDefinition;
-  const routeKey = routePathOf(named, ancestors);
-  const graphqlNames = kind === 'collection' ? [id, plural] : [id];
+  const routeKey = kind === 'interface' ? plural : routePathOf(named, ancestors);
+  const graphqlNames = kind === 'collection' || kind === 'interface' ? [id, plural] : [id];
   return (
     <dl className="flex flex-col gap-1 text-xs text-muted-foreground">
       <PreviewRow label={t('models.restLabel')} names={[t('models.endpointPath', { routeKey })]} />

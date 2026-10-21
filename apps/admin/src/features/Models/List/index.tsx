@@ -26,11 +26,15 @@ type ListProps = {
   showKind?: boolean;
   /** Mark shared definitions with a globe (where there is more than one site); off where all are shared. */
   markShared?: boolean;
+  /** A Members column (interfaces): how many types implement each definition. */
+  memberCount?: (definitionId: string) => number;
 };
 
-/** "article · articles" for a collection (singular and list names), the API ID alone otherwise. */
+/** "article · articles" for a collection or interface (singular and list names), the API ID alone otherwise. */
 const apiIdsOf = (definition: DefinitionListItem['definition']) =>
-  definition.kind === 'collection' ? `${definition.apiKey} · ${routeKeyOf(definition)}` : definition.apiKey;
+  definition.kind === 'collection' || definition.kind === 'interface'
+    ? `${definition.apiKey} · ${routeKeyOf(definition)}`
+    : definition.apiKey;
 
 const parentOf = ({ definition }: DefinitionListItem) =>
   isModelDefinition(definition) ? definition.extends : undefined;
@@ -39,7 +43,7 @@ const parentOf = ({ definition }: DefinitionListItem) =>
  * Definitions with each kind indented under the type it extends (plan polymorphic-types D13), in the given
  * order otherwise.
  */
-export const List = ({ items, showKind = false, markShared = true }: ListProps) => {
+export const List = ({ items, showKind = false, markShared = true, memberCount }: ListProps) => {
   const { t } = useTranslation();
   const { multiSite } = useSchemaScopeAccess();
   const showShared = markShared && multiSite;
@@ -52,6 +56,7 @@ export const List = ({ items, showKind = false, markShared = true }: ListProps) 
             {showKind ? <TableHead>{t('models.columns.shape')}</TableHead> : null}
             <TableHead>{t('models.columns.apiKey')}</TableHead>
             <TableHead className="text-right">{t('models.columns.fields')}</TableHead>
+            {memberCount ? <TableHead className="text-right">{t('models.columns.members')}</TableHead> : null}
             <TableHead className="text-right">{t('models.columns.version')}</TableHead>
             <TableHead>{t('models.columns.activated')}</TableHead>
           </TableRow>
@@ -84,6 +89,9 @@ export const List = ({ items, showKind = false, markShared = true }: ListProps) 
                   {apiIdsOf(definition)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{definition.fields.length}</TableCell>
+                {memberCount ? (
+                  <TableCell className="text-right tabular-nums">{memberCount(definition.id)}</TableCell>
+                ) : null}
                 <TableCell className="text-right text-muted-foreground tabular-nums">
                   {t('models.versionNumber', { version })}
                 </TableCell>

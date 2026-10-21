@@ -17,14 +17,14 @@ export const toEditorField = (field: FieldDefinition): EditorField => ({
 });
 
 /**
- * The definition an editor edits a field of. An interface has no entries, so no editor edits its fields; the
- * SDK's kinds predate interfaces, and one previewed in the admin is reported like a component (WP5 decides).
+ * The definition an editor edits a field of. An interface has no entries, so no editor edits its fields for
+ * real; its contract can be previewed in the admin (Develop → Schema), reported with its own kind.
  */
 export const toEditorModel = (definition: SchemaDefinition): EditorModel => ({
   id: definition.id,
   apiKey: definition.apiKey,
   label: definition.label,
-  kind: definition.kind === 'interface' ? 'component' : definition.kind,
+  kind: definition.kind,
   localized: isModelDefinition(definition) && definition.localized,
 });
 

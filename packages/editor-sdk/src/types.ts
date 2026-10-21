@@ -76,12 +76,12 @@ export type EditorField<T extends DataType = DataType> = {
   options: Readonly<Record<string, JsonValue>>;
 };
 
-/** The model (or component) the field belongs to. */
+/** The model (or component, or interface: its contract fields are previewed in the admin) the field belongs to. */
 export type EditorModel = {
   id: string;
   apiKey: string;
   label: string;
-  kind: 'collection' | 'singleton' | 'component';
+  kind: 'collection' | 'singleton' | 'component' | 'interface';
   localized: boolean;
 };
 
