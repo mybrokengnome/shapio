@@ -52,6 +52,38 @@ describe('shapioTags', () => {
     expect(shapioTags.changed('articles', 'e1')).toEqual(['shapio:articles', 'shapio:articles:e1']);
   });
 
+  it("revalidates the lists of the interfaces a changed entry's type implements", () => {
+    expect(shapioTags.changed('posts/guides', 'e1', ['featurables', 'listables'])).toEqual([
+      'shapio:posts',
+      'shapio:posts:e1',
+      'shapio:posts/guides',
+      'shapio:posts/guides:e1',
+      'shapio:featurables',
+      'shapio:featurables:e1',
+      'shapio:listables',
+      'shapio:listables:e1',
+    ]);
+    expect(shapioTags.changed('about', undefined, ['featurables'])).toEqual([
+      'shapio:about',
+      'shapio:featurables',
+    ]);
+    expect(shapioTags.changed('articles', 'e1', [])).toEqual(['shapio:articles', 'shapio:articles:e1']);
+  });
+
+  it('tags an interface read with its plural, which a member change revalidates', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    const { client, cacheInit } = setup();
+    await client.delivery.list('featurables');
+    await client.delivery.get('featurables', 'e1');
+    const changed = shapioTags.changed('posts', 'e1', ['featurables']);
+    const [list, item] = cacheInit() as Array<{ next: { tags: string[] } }>;
+    expect(list?.next.tags).toContain('shapio:featurables');
+    expect(item?.next.tags).toEqual(expect.arrayContaining(['shapio:featurables', 'shapio:featurables:e1']));
+    expect(changed).toEqual(
+      expect.arrayContaining(item?.next.tags.filter((tag) => tag !== 'shapio:site') ?? []),
+    );
+  });
+
   it('tags a nested read with its own route key', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     const { client, cacheInit } = setup();

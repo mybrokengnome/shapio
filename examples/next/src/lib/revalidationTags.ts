@@ -5,7 +5,13 @@ import { shapioTags, type SnapshotChange } from '@shapio/client';
  * tags `@shapio/client` puts on every delivery read (`shapioTags`). Pure, so the mapping is unit-tested;
  * src/lib/revalidation.ts feeds it from the snapshot diff, which names each changed entry by its route key.
  */
-export type ChangedEntryRef = Pick<SnapshotChange, 'routeKey' | 'id'>;
+export type ChangedEntryRef = Pick<SnapshotChange, 'routeKey' | 'id'> & {
+  /**
+   * The plural API IDs of the interfaces the entry's type implements (a webhook's `interfaces`): the entry is
+   * also in those lists (`/api/content/featurables`). Absent: none.
+   */
+  interfaces?: readonly string[];
+};
 
 /** Every delivery read of the site carries this tag: the site's settings, and everything after a schema change. */
 export const siteTags = (siteKey: string | undefined): string[] => [shapioTags.site(siteKey)];
@@ -13,7 +19,7 @@ export const siteTags = (siteKey: string | undefined): string[] => [shapioTags.s
 /**
  * The tags to revalidate for the entries that changed between two snapshots: each entry's model and the entry
  * itself, under its route key and every ancestor's (a Guide that extends Post is also in the Posts list, so
- * `posts/guides` revalidates `posts` too). A schema change (fields added, converted or removed) can change any
+ * `posts/guides` revalidates `posts` too), and under each interface its type implements. A schema change (fields added, converted or removed) can change any
  * read, so it revalidates the site tag, which every read carries.
  */
 export const changeTags = (
@@ -24,6 +30,8 @@ export const changeTags = (
   if (schemaChanged) {
     return siteTags(siteKey);
   }
-  const tags = new Set(changes.flatMap(({ routeKey, id }) => shapioTags.changed(routeKey, id)));
+  const tags = new Set(
+    changes.flatMap(({ routeKey, id, interfaces }) => shapioTags.changed(routeKey, id, interfaces)),
+  );
   return [...tags].sort();
 };
