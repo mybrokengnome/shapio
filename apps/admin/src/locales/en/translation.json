@@ -2100,7 +2100,15 @@
       "done": "Done",
       "createTitle": "New {{model}}",
       "createAndLink": "Create and link",
-      "kind": "Kind"
+      "kind": "Kind",
+      "type": "Type",
+      "anyEntry": "Any entry",
+      "typeFilter": "Type",
+      "allTypes": "All types",
+      "addEntry": "Add entry",
+      "chooseEntry": "Choose entry",
+      "createEntry": "Create a new entry",
+      "newEntry": "New entry"
     },
     "richText": {
       "toolbar": "Text formatting",

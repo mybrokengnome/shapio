@@ -1,6 +1,7 @@
 import type {
   AdminEntry,
   ContentListQuery,
+  ContentTargetsQuery,
   CreateEntryInput,
   DefinitionListItem,
   UpdateEntryInput,
@@ -35,6 +36,24 @@ export const entryListQueryOptions = (modelKey: string, query: ContentListQuery)
 
 export const useEntryList = (modelKey: string, query: ContentListQuery, enabled = true) =>
   useQuery({ ...entryListQueryOptions(modelKey, query), enabled });
+
+/**
+ * The entries a relation to an interface or to any entry may link (`/api/admin/content-targets`, plan
+ * interfaces D6): searched across the field's member types, or exactly `ids` (labels for a stored value). Keyed
+ * under `contentTargets` so every entry write refreshes it (`invalidateEntryLists`).
+ */
+const CONTENT_TARGETS_KEY = 'contentTargets';
+
+export const contentTargetsQueryOptions = (query: ContentTargetsQuery) =>
+  queryOptions({
+    queryKey: [CONTENT_TARGETS_KEY, query] as const,
+    queryFn: () => adminApi.content.targets(query),
+    placeholderData: keepPreviousData,
+    meta: silent,
+  });
+
+export const useContentTargets = (query: ContentTargetsQuery, enabled = true) =>
+  useQuery({ ...contentTargetsQueryOptions(query), enabled });
 
 /**
  * One entry in one locale (`undefined`: the request's default). Fresh for the default 30 seconds: a form
@@ -107,6 +126,8 @@ export const invalidateEntryLists = (
         typeof modelKey === 'string' &&
         ((listed.has(modelKey) && part === 'list') || (written.has(modelKey) && part === 'revisions')),
     }),
+    // A cross-type picker may list any model's entries.
+    queryClient.invalidateQueries({ queryKey: [CONTENT_TARGETS_KEY] }),
     counts ? queryClient.invalidateQueries({ queryKey: queryKeys.contentCounts }) : undefined,
   ]);
 };
@@ -137,6 +158,7 @@ export const invalidateAllEntries = (queryClient: QueryClient) =>
     queryClient.invalidateQueries({
       predicate: ({ queryKey: [scope, , part] }) => scope === 'content' && part === 'list',
     }),
+    queryClient.invalidateQueries({ queryKey: [CONTENT_TARGETS_KEY] }),
     queryClient.invalidateQueries({
       predicate: ({ queryKey: [scope, , part] }) =>
         scope === 'content' && (part === 'entry' || part === 'revisions'),
