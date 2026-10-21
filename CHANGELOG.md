@@ -6,6 +6,20 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.17] - 2026-10-21
+
+### Changed
+
+- The admin's Publishing area is now called Deployments, with Connections, Scheduled, and Webhooks tabs. It
+  opens on Connections. URLs and permission names are unchanged.
+
+### Fixed
+
+- Editors can deploy. They had permission to trigger deploys, but the Deployments page needed the full
+  connection list, which only managers can read, so Editors saw no connections and no Deploy now button.
+  People who may trigger deploys now get each connection's name, status, and runs, with no settings, secrets,
+  or URLs.
+
 ## [0.5.16] - 2026-10-21
 
 ### Fixed
