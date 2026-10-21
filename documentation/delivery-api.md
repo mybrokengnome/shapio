@@ -210,6 +210,84 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 With `@shapio/client`, pass the nested route key as it is: `delivery.list('posts/guides')`. The client sends
 it as nested path segments.
 
+## Interfaces
+
+An interface ([Modeling](modeling.md#interfaces)) is read by its plural API ID. With Featurable implemented by
+Post, BlogPost, RoadmapItem, and the About page:
+
+```text
+GET /api/content/featurables              # every Featurable entry, of every member type
+GET /api/content/featurables/<entry id>   # one, of any member type
+```
+
+The list holds every member's entries in one page, sorted and counted together:
+
+- Each row comes in its own shape, with `__model` naming its type (and `__kinds`, as on every entry). Kinds of a
+  member are members too, so a Guide that extends Post is in the list.
+- Filters, `sort`, and `fields=` take the interface's contract fields and the system fields (`id`, `createdAt`,
+  `updatedAt`). Each is applied to each member's own field of that API ID, so `sort=title` sorts BlogPosts and
+  RoadmapItems together by their titles. A contract field marked filterable or sortable is filterable or
+  sortable on every member, which the contract guarantees.
+- `q` searches the interface's title field (Display → Title field) on every member.
+- Without `fields=`, each row carries every field its own type has that you may read. With `fields=`, every row
+  carries only the contract fields you named.
+- To read only some types, filter on `__model` with their singular API IDs:
+  `?filters[__model][$in]=blogPost,roadmapItem`.
+- With no `sort`, the list follows the interface's default sort when every member you may read can sort on that
+  field, else `createdAt` newest first.
+- `populate` works per row: `populate=*` expands each row's own relations, whatever its type. `?seo=resolved`
+  resolves the SEO fields of each row whose type has them ([SEO fields](seo.md)).
+- `meta.members` lists the member types you may read, with each one's API ID, label, and route key, so a site
+  can build a type filter without reading the schema.
+
+**Permissions.** An interface has no grants. Members your token may not read are left out of the list. Reading
+the route needs `read` on at least one member: with none, it is a `403`, as reading a type without `read` is.
+A contract field your token may not read on some member can't be used in `filters`, `sort`, `q`, or `fields=`
+(a `403`, as for any hidden field). Reading one entry by ID finds it among the members you may read and returns
+it as its own type would; the member's own route keeps serving it too.
+
+**Writes.** An interface route is read-only: `POST`, `PUT`, and `DELETE` on `/api/content/featurables` are
+refused with `405 METHOD_NOT_ALLOWED`, and the message names the member routes to write to.
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/featurables?sort=title:asc&pageSize=10"
+```
+
+```json
+{
+  "data": [
+    { "id": "1a…", "__model": "blogPost", "__kinds": ["blogPost"], "title": "Ask the API", "readingTime": 4 },
+    {
+      "id": "2b…",
+      "__model": "roadmapItem",
+      "__kinds": ["roadmapItem"],
+      "title": "Interfaces",
+      "status": "shipped"
+    },
+    { "id": "3c…", "__model": "about", "__kinds": ["about"], "title": "About Shapio" }
+  ],
+  "meta": {
+    "locale": "en",
+    "snapshot": 42,
+    "pagination": { "page": 1, "pageSize": 10, "total": 3, "pageCount": 1 },
+    "members": [
+      { "apiKey": "about", "label": "About", "routeKey": "about" },
+      { "apiKey": "blogPost", "label": "Blog post", "routeKey": "blogPosts" },
+      { "apiKey": "roadmapItem", "label": "Roadmap item", "routeKey": "roadmapItems" }
+    ]
+  }
+}
+```
+
+With `@shapio/client`, `delivery.list('featurables')` and `delivery.get('featurables', id)`; type the rows with
+the generated `FeaturableAny` and switch on `__model`.
+
+**Relations to an interface or to any entry.** A relation whose target is Featurable holds entries of any member;
+one whose target is Any entry holds entries of any collection or single type. Populated, each target comes in
+its own shape with its own `__model`, under the same rules as any populated relation: a target your token may
+not read, or one that is not published in the read's locales, is left out. Any entry has no list route of its
+own.
+
 ## Query parameters
 
 | Parameter          | Example                               | Notes                                                                             |
@@ -322,6 +400,12 @@ its own route key and of every ancestor's. `shapioTags.changed(routeKey, id)` gi
 `shapioTags.changed('posts/guides', id)` is `shapio:posts`, `shapio:posts:<id>`, `shapio:posts/guides` and
 `shapio:posts/guides:<id>`. Webhook payloads carry the same `routeKey`
 ([Webhooks](publishing.md#entry-events)), so any framework can do the same.
+
+An entry is also in the list of every [interface](#interfaces) its type implements, and readable as
+`featurables/<id>`. Interface reads are tagged with the interface's plural API ID (`shapio:featurables`), so
+pass the plural API IDs of the type's interfaces as the third argument: webhook payloads carry them in
+`interfaces`. `shapioTags.changed(data.routeKey, data.entryId, data.interfaces)` adds `shapio:featurables` and
+`shapio:featurables:<id>` to the tags above.
 
 ```ts
 for (const entry of diff.items) {

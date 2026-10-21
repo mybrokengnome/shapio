@@ -77,6 +77,11 @@ The list query takes the collection's plural API ID; everything else is named af
 `updateArticle` takes the `expectedVersion` you read; `publishArticle` takes it optionally, for a publish of one
 locale, and refuses with `CONTENT_VERSION_CONFLICT` when the draft has moved since, as REST does.
 
+Mutations return the entry's state, never its values (writes create drafts): `EntryState { id locale version
+status createdAt updatedAt publishedAt }`. Until 0.5.17 this type was called `Entry`; that name now belongs to
+the interface every entry type implements ([Interfaces](#interfaces)). Selecting fields keeps working, but a
+fragment on the mutation result (`fragment state on Entry { version status }`) must now name `EntryState`.
+
 A single type `home` is `home(locale, …)`. Field types: rich text is `RichText { json html }` (`html` is rendered only when selected), media is
 `Media { id url width height alt variants { name width url } … }`, a relation is the target type (or a list of
 it), a component is its own type, and a dynamic zone is a list of a union of its components (ask for
@@ -126,6 +131,56 @@ kinds keeps exactly the schema it had. When it gains its first kind, `posts` and
 returning `PostInterface`: queries that ask for the post's fields keep working, but regenerate your client
 types. `PostInterface` is only generated once Post has a kind; a type whose own names would collide with it is
 refused when you save it.
+
+### Interfaces
+
+A Shapio [interface](modeling.md#interfaces) is a GraphQL interface named after its API ID: Featurable is
+`Featurable`. It holds the system fields and the contract fields, and every member's type implements it (a kind
+of a member too, through its parent).
+
+| Name                                                                                              | Returns                                                       |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `featurables(filter, sort, search, page, pageSize, locale, fallback, snapshot, publicationState)` | `FeaturableConnection`: every member's entries, as Featurable |
+| `featurable(id: ID!, …)`                                                                          | one entry of any member, as `Featurable`, or null             |
+| `FeaturableFilter`, `FeaturableSort`, `FeaturableConnection`                                      | the types behind them, over the contract fields               |
+| a relation to Featurable, in any type                                                             | `Featurable` (or a list of it)                                |
+| a relation to any entry                                                                           | `Entry` (or a list of it)                                     |
+
+An interface has no mutations: write through its members' types. Ask for a member's own fields with inline
+fragments, and for its type with `__typename`:
+
+```graphql
+query Featured {
+  featurables(sort: [{ title: ASC }], pageSize: 10) {
+    nodes {
+      __typename
+      id
+      title
+      ... on BlogPost {
+        readingTime
+      }
+      ... on RoadmapItem {
+        status
+      }
+    }
+  }
+}
+```
+
+**`Entry`.** Every schema has an interface `Entry` with the system fields (`id`, `locale`, `createdAt`,
+`updatedAt`, `publishedAt`, and the rest every entry type has), and every entry type and every generated
+interface implements it. A relation whose target is Any entry returns `Entry`; read its fields with fragments
+on the types you expect. `Entry` has no `localizations`.
+
+**What your role sees.** An interface is in your schema when you may read at least one of its members; its
+entries come only from the members you may read. Its fields are the contract fields you may read on every member
+you may read, so the interface is always valid for the types in your schema. A contract `enum` field is left
+out of the GraphQL interface and its filter and sort inputs, because each type names its own enum type; read it
+with a fragment on the member (REST lists, filters, and sorts on it as usual).
+
+**Names.** An interface claims its type name, its `Filter`, `Sort`, `Connection`, and `Edge` types, and its two
+queries, in the same namespace as types: a type and an interface can't share a name, and an interface called
+`Entry` is refused.
 
 ### Reading drafts
 
@@ -216,8 +271,9 @@ query Since($from: Int!) {
 schema versions differ, rebuild the affected models. See [Snapshots and the changes API](snapshots.md).
 
 These names are reserved: `_changes`, `_snapshot` and `_schemaVersion` as query names, and `SnapshotChange`,
-`SnapshotChangeKind`, `SnapshotChangeLocale`, `SnapshotChangePage` and `SnapshotInfo` as type names. A model
-whose generated names would collide with them is refused when you save it.
+`SnapshotChangeKind`, `SnapshotChangeLocale`, `SnapshotChangePage`, `SnapshotInfo`, `Entry`, `EntryState`,
+and `Node` as type names. A model or interface whose generated names would collide with them is refused when
+you save it.
 
 ## Limits
 

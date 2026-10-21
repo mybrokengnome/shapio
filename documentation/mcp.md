@@ -103,28 +103,31 @@ whichever site you name ([Sites](sites.md#api-tokens)). `shapio mcp --site
 
 Tools (names are stable):
 
-| Tool                                                              | What it does                                                                                                                                                            |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_list`, `schema_get`                                       | The site's content types (its own and the shared ones): API IDs, kinds, scope, fields (inherited ones marked, with `extends`); one definition in full with its version. |
-| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given). `shared: true` shares a new one.                                                  |
-| `change_sets_add_schema_draft`                                    | The same, into a given change set.                                                                                                                                      |
-| `content_query`, `content_get`                                    | Entries: drafts by default; `published: true` or `snapshot: N` reads what the delivery API serves. Filters, sort, locale, paging.                                       |
-| `content_create`, `content_update`                                | Saves drafts (never publishes). Updates send the version they read; a stale version is refused (`CONTENT_VERSION_CONFLICT`).                                            |
-| `media_list`, `media_upload`                                      | The media library; uploads a file from the media root, optionally with alt text.                                                                                        |
-| `preflight_run`                                                   | What publishing an entry would run into, without publishing.                                                                                                            |
-| `change_sets_list`, `change_sets_create`, `change_sets_add_entry` | Change sets: list, create, propose publishing (or unpublishing) an entry locale.                                                                                        |
-| `change_sets_review`                                              | The set and its review: field diffs, the schema plan (breaking, destructive), blocking issues, consumers of affected fields.                                            |
-| `change_sets_ship`                                                | Only with `--allow-ship` and a role holding `changes.ship`.                                                                                                             |
-| `snapshots_list`, `snapshots_changes`, `snapshots_restore`        | The publication ledger, what changed between two snapshots, and a restore proposed as an open change set.                                                               |
-| `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                                                           |
+| Tool                                                              | What it does                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_list`, `schema_get`                                       | The site's content types, components, and interfaces (its own and the shared ones): API IDs, kinds, scope, fields (inherited ones marked, with `extends`), the interfaces each type implements, and each interface's members; one definition in full with its version. |
+| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given). `shared: true` shares a new one.                                                                                                                                                 |
+| `change_sets_add_schema_draft`                                    | The same, into a given change set.                                                                                                                                                                                                                                     |
+| `content_query`, `content_get`                                    | Entries: drafts by default; `published: true` or `snapshot: N` reads what the delivery API serves. Filters, sort, locale, paging. With an interface's API ID and `published: true`, every member's entries.                                                            |
+| `content_create`, `content_update`                                | Saves drafts (never publishes). Updates send the version they read; a stale version is refused (`CONTENT_VERSION_CONFLICT`).                                                                                                                                           |
+| `media_list`, `media_upload`                                      | The media library; uploads a file from the media root, optionally with alt text.                                                                                                                                                                                       |
+| `preflight_run`                                                   | What publishing an entry would run into, without publishing.                                                                                                                                                                                                           |
+| `change_sets_list`, `change_sets_create`, `change_sets_add_entry` | Change sets: list, create, propose publishing (or unpublishing) an entry locale.                                                                                                                                                                                       |
+| `change_sets_review`                                              | The set and its review: field diffs, the schema plan (breaking, destructive), blocking issues, consumers of affected fields.                                                                                                                                           |
+| `change_sets_ship`                                                | Only with `--allow-ship` and a role holding `changes.ship`.                                                                                                                                                                                                            |
+| `snapshots_list`, `snapshots_changes`, `snapshots_restore`        | The publication ledger, what changed between two snapshots, and a restore proposed as an open change set.                                                                                                                                                              |
+| `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                                                                                                                                                          |
 
 Definitions use the authored format of [schema files](schema-sync.md). IDs are optional: an existing type keeps
-its IDs (matched by API ID), and relation targets and component references may be given as API IDs. A new
+its IDs (matched by API ID), and relation targets, component references, `extends`, and `implements` may be
+given as API IDs. A relation target may name an interface, or be `*` (or the word `any`) for any entry. An
+interface is drafted like a type, with `kind: "interface"` and its contract `fields`
+([Modeling](modeling.md#interfaces)). A new
 definition belongs to the agent's site; `shared: true` (on `schema_draft` and `change_sets_add_schema_draft`)
 creates it shared with all sites instead, which needs schema permission on every site. An existing definition
 keeps its scope: change it with [`shapio schema scope`](schema-sync.md#several-sites) or in the admin.
 
-Resources: `shapio://schema/{apiKey}` (a definition of the site's view in the schema file format, with stable IDs) and
+Resources: `shapio://schema/{apiKey}` (a definition of the site's view, interfaces included, in the schema file format, with stable IDs) and
 `shapio://docs/delivery-api` (the [delivery API guide](delivery-api.md)).
 
 Prompts: **Model a content type for …** (`model_content_type`) and **Review change set N**

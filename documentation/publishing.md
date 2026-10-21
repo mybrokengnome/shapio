@@ -70,17 +70,22 @@ sent. Rotate the secret, give the new one to the receiver, and redeliver anythin
 `entry.kind_changed` name the entry and its type in `data`, with the event's own details (such as `locale`,
 `revisionId` and `snapshot`) beside them:
 
-| Field       | Value                                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------------ |
-| `entryId`   | the entry's ID                                                                                         |
-| `modelId`   | the stable ID of the entry's type                                                                      |
-| `modelKey`  | its API ID (`guide`)                                                                                   |
-| `routeKey`  | its delivery route key: the plural API ID, nested under the types it extends (`posts/guides`)          |
-| `ancestors` | the API IDs of the types it extends, the root first (`["post"]`); `[]` for a type that extends nothing |
+| Field        | Value                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `entryId`    | the entry's ID                                                                                                     |
+| `modelId`    | the stable ID of the entry's type                                                                                  |
+| `modelKey`   | its API ID (`guide`)                                                                                               |
+| `routeKey`   | its delivery route key: the plural API ID, nested under the types it extends (`posts/guides`)                      |
+| `ancestors`  | the API IDs of the types it extends, the root first (`["post"]`); `[]` for a type that extends nothing             |
+| `interfaces` | the plural API IDs of the interfaces its type implements, its parents' included (`["featurables"]`); `[]` for none |
 
 A guide is also in the posts list, so a site that caches by route revalidates the guide's route key and every
 prefix of it (`posts`, then `posts/guides`). With `@shapio/client`, `shapioTags.changed(data.routeKey,
 data.entryId)` gives the Next.js cache tags for all of them ([Delivery API](delivery-api.md#nextjs-cache-tags)).
+
+An entry of a type that implements an [interface](modeling.md#interfaces) is also in the interface's list
+(`/api/content/featurables`), so a site that caches interface lists revalidates each route in `interfaces`
+too. With `@shapio/client`, `shapioTags.changed(data.routeKey, data.entryId, data.interfaces)` includes them.
 
 `entry.kind_changed` is sent when an entry moves to another kind in its family
 ([Content](content.md#changing-an-entrys-kind)). `from` and `to` are the API IDs of the old and the new kind,

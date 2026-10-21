@@ -13,6 +13,7 @@ saved. No rebuild, no restart, no deploy.
 | **Collection**  | Many entries: articles, products, authors                                | `/api/content/<pluralApiKey>` lists, `/api/content/<pluralApiKey>/<id>` reads one |
 | **Single type** | Exactly one entry: the home page, site settings                          | `/api/content/<apiKey>` reads it                                                  |
 | **Component**   | A reusable group of fields embedded in models, never addressed by itself | inside the entries that use it                                                    |
+| **Interface**   | Fields that unrelated types share; it stores nothing                     | `/api/content/<pluralApiKey>` lists every member's entries                        |
 
 On an instance with several [sites](sites.md), each definition belongs to the site it was created on, or is
 shared with all sites ([Content types per site](sites.md#content-types-per-site)). A site's own definitions may use
@@ -199,8 +200,115 @@ to acknowledge a **breaking** change. If it loses fields that hold values, their
 | `INHERITED_FIELD_COLLISION` | a kind's own field has the API ID of a field it inherits                                                     |
 | `HAS_CHILDREN`              | you deleted a type that others extend: delete its kinds, or move them under another type, first              |
 
-A relation always points at one type and its kinds. A relation to unrelated types (a link that can be an
-Author or a Product) is a different feature, and Shapio doesn't have it yet.
+A relation to a type points at that type and its kinds. To point at unrelated types (a link that can be a
+Post, a Roadmap item, or the About page), make them implement an [interface](#interfaces) and target it, or
+target [any entry](#relations-to-an-interface-or-to-any-entry).
+
+## Interfaces
+
+Extending a type gives kinds of one thing. An **interface** is for unrelated types that play one role: a blog
+post, a roadmap item, and a guide can all be **featured** on a homepage, with a title, a summary, and an image,
+but they are not kinds of each other. Make an interface, Featurable, with those three fields, and have each
+type **implement** it. Featurable is then something you can list, filter, sort, and relate to, across all of
+its types.
+
+An interface stores nothing. It has a label, an API ID (`featurable`), a plural API ID (`featurables`), and a
+**contract**: the fields every type that implements it must have. The types that implement it are its
+**members**. Each member keeps its own fields and its own entries; the interface only says which fields they
+share.
+
+Create one under **Develop → Interfaces**, or as a file in `interfaces/`
+([Schema sync](schema-sync.md#interfaces)). A type implements it from **Implements** in its builder (next to
+Extends), or with `implements` in its schema file: the stable IDs of its interfaces. A type can implement any
+number of interfaces, whatever it extends.
+
+**The contract.** A member satisfies a contract field when it has a field with the same API ID (exactly, case
+included) and a compatible definition:
+
+- the same data type;
+- for an `enum`, every value the contract lists (it may have more), and the same `multiple`;
+- for `media`, allowed kinds within the contract's (a contract field with no allowed kinds takes any), and the
+  same `multiple`;
+- for a `relation`, the same target and the same `one` or `many`;
+- every flag the contract field sets among `required`, `public`, `filterable`, and `sortable`. A member may set
+  flags the contract leaves off.
+
+Other settings (lengths, ranges, precision) are not compared. A contract field can be any data type except
+`component` and `dynamiczone`. It can't be `unique` (uniqueness never spans types), and a contract `slug` can't
+name a source field. `localized` is accepted on a contract field and imposes nothing: each member decides what
+it localizes. The member's field keeps its own field ID: BlogPost's `title` and Guide's `title` are different
+fields that both satisfy Featurable's `title`. A deprecated field does not satisfy a contract.
+
+An interface's display settings pick the **title field** (what its list searches with `q` and what the
+relation picker shows) and the **default sort**, both among its contract fields.
+
+**What is locked.** While a type implements Featurable, a change that would break the contract (renaming,
+deleting, or changing the type of its `title`, or turning off a flag the contract needs) is refused, and the
+refusal names Featurable. The builder badges each field that satisfies a contract ("Required by Featurable").
+Removing Featurable from **Implements** in the same change unblocks it.
+
+**Adding a contract field.** When you add a field to Featurable that some members lack, the review names those
+members and offers to **add it to them** in the same change set: the interface change plus one new field per
+member, a copy of the contract field with its own ID. Ship the change set and every member has the field,
+live. A member on another site is listed with "add it on site B first": a change set belongs to one site, so
+add the field on that site yourself, then come back.
+
+**Kinds and single types.**
+
+- A kind implements what its parent implements: if Products implements Featurable, Digital and Physical are
+  Featurable too. A kind may implement more interfaces of its own.
+- A single type can be a member: the About page can be featured.
+- A component can't implement an interface, and an interface can't implement or extend anything.
+
+**Sites.** An interface is shared with all sites or belongs to one site, like a type
+([Sites](sites.md#interfaces-across-sites)). A site's type may implement a shared interface or one on its own
+site; a shared type may implement shared interfaces only. An interface on one site may only have members on
+that site. An interface's list is always one site's view: the members on that site.
+
+**In the APIs.** `GET /api/content/featurables` lists every member's entries in one page, each row in its own
+shape with `__model`, filterable and sortable on the contract fields
+([Delivery API](delivery-api.md#interfaces)). In GraphQL, Featurable is a GraphQL interface that every member
+implements ([GraphQL](graphql.md#interfaces)). Generated TypeScript types get `Featurable` (the contract) and
+`FeaturableAny` (the union of its members).
+
+**Permissions.** An interface has no grants of its own. Reading it is reading its members: each member's
+grants decide whether its entries are in the list and which of their fields you see.
+
+### Relations to an interface or to any entry
+
+A relation field's target can be a type, an interface, or **Any entry**:
+
+| Target       | Accepts                                                                              | In schema files           |
+| ------------ | ------------------------------------------------------------------------------------ | ------------------------- |
+| A type       | an entry of that type or of one of its kinds                                         | the type's stable ID      |
+| An interface | an entry of any member, kinds of members included (`featured`: many Featurable)      | the interface's stable ID |
+| Any entry    | an entry of any collection or single type on the site (`spotlight`: one of anything) | `*`                       |
+
+Populated, each target comes in its own shape with its own `__model`, so a site renders a BlogPost, a Guide,
+and the About page side by side. In the admin, the picker searches across the member types, with a filter by
+type and the type shown on each result.
+
+Widening a relation's target keeps its values: from a type to an interface the type implements, from an
+interface to a wider one, or from anything to Any entry. It is still a **breaking** change, because the API
+returns a different shape. Narrowing a target (Featurable back to BlogPost) clears the field's values, a
+**destructive** change you acknowledge.
+
+**Leaving an interface never drops values.** While a relation to Featurable holds an entry of RoadmapItem,
+removing Featurable from RoadmapItem's **Implements**, or deleting RoadmapItem, is refused with the number of
+references. Remove those references first (or keep the interface), then apply.
+
+**What Shapio refuses, and why.**
+
+| Refusal                    | Why                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_INTERFACE`        | `implements` names an interface that doesn't exist                                                                                                    |
+| `INVALID_INTERFACE`        | `implements` names something that is not an interface, a component or an interface implements one, or a site's interface has a member on another site |
+| `INTERFACE_FIELD_MISSING`  | a member lacks a contract field; the message names the field and the interface (`"title" is required by Featurable`)                                  |
+| `INTERFACE_FIELD_MISMATCH` | a member's field doesn't match the contract field; the message says what differs                                                                      |
+| `INVALID_INTERFACE_FIELD`  | a contract field is a component or a dynamic zone, is unique, or is a slug that names a source field                                                  |
+| `HAS_MEMBERS`              | you deleted an interface that types still implement: remove it from their **Implements** first                                                        |
+
+An interface that a relation targets can't be deleted either: point the relation somewhere else first.
 
 ## What a change does
 
@@ -222,6 +330,9 @@ new version, atomically. If a check fails, the old version stays active and cont
 | Turn off `localized` on a field or model, or turn off drafts                                          | **destructive** conversion: you must acknowledge that values in other locales (or drafts) are dropped                                                                                                                                                                                                                                                                                                                                                                       |
 | Add or change a field on a type with kinds                                                            | applies to every kind: checks run over every kind's entries, and indexes are built for each kind                                                                                                                                                                                                                                                                                                                                                                            |
 | Give a type a parent, move it under another one, or take its parent away                              | **breaking**, like an API ID change; fields it loses that hold values are dropped (**destructive**)                                                                                                                                                                                                                                                                                                                                                                         |
+| Implement an interface                                                                                | live at once: the type joins the interface's list and GraphQL interface                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Stop implementing an interface                                                                        | **breaking**: clients reading the interface lose the type; refused while a relation to the interface holds its entries                                                                                                                                                                                                                                                                                                                                                      |
+| Add a field to an interface, or turn on one of its flags                                              | accepted only when every member complies; the review offers to add a missing field to the members                                                                                                                                                                                                                                                                                                                                                                           |
 
 Deleting a field keeps its stored values (they are no longer returned); deleting a model hides its entries,
 which come back if you restore it. Rolling a model back to an earlier version is a metadata change: it never
