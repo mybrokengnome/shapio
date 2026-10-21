@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/helpers/cn';
 import { FieldsEnvironmentContext } from '../../form/context';
 import type { EditorAppearance } from '../../types';
+import { useNodeTextInput } from '../hooks/useNodeTextInput';
 
 const PREVIEW_VARIANTS = ['w1280', 'w640'];
 
@@ -45,6 +46,8 @@ export const ImageView = ({
   const locale = useContext(FieldsEnvironmentContext)?.locale;
   const setText = (name: 'alt' | 'title', text: string) =>
     updateAttributes({ [name]: text === '' ? null : text });
+  const altInput = useNodeTextInput(alt, (text) => setText('alt', text));
+  const captionInput = useNodeTextInput(caption, (text) => setText('title', text));
   return (
     <NodeViewWrapper
       as="figure"
@@ -77,10 +80,9 @@ export const ImageView = ({
           </label>
           <input
             id={captionId}
-            value={caption}
+            {...captionInput}
             readOnly={!editable}
             placeholder={asset.data?.caption || t('entry.image.captionPlaceholder')}
-            onChange={(event) => setText('title', event.target.value)}
             className="w-full rounded-md bg-transparent px-1 text-meta text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           />
         </figcaption>
@@ -91,12 +93,11 @@ export const ImageView = ({
         </label>
         <Input
           id={altId}
-          value={alt}
+          {...altInput}
           readOnly={!editable}
           placeholder={asset.data?.alt || t('content.richText.altPlaceholder')}
           inputSize="sm"
           data-alt-input
-          onChange={(event) => setText('alt', event.target.value)}
         />
         {editable ? (
           <SuggestAltButton
