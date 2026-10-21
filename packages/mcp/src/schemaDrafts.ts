@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ChangeSet, ChangeSetSchemaItem, ShapioClient } from '@shapio/client';
-import { isStableId, type DefinitionInput } from '@shapio/schema';
+import { ANY_TARGET, categoryOfKind, isStableId, type DefinitionInput } from '@shapio/schema';
 import { readSchema } from './definitions.js';
 
 /** A definition as an agent writes it: the authored format, IDs optional, references by API ID allowed. */
@@ -11,25 +11,35 @@ type FieldLike = { type?: unknown; settings?: Record<string, unknown> };
 const schemaItemsOf = (set: ChangeSet) =>
   set.items.filter((item): item is ChangeSetSchemaItem => item.kind === 'schema');
 
+/** The word agents may use for "any entry" as a relation target, besides `*` itself. */
+const ANY_TARGET_WORD = 'any';
+
 /**
- * Relation targets, component references and `extends` (the parent type) are stable IDs. Agents think in API
- * IDs, so a reference that is not an ID is looked up among the active definitions and the set's drafts (and
- * this definition itself, for a self-relation); anything unknown is left for the server to report.
+ * Relation targets, component references, `extends` (the parent type) and `implements` (interfaces) are
+ * stable IDs. Agents think in API IDs, so a reference that is not an ID is looked up among the active
+ * definitions and the set's drafts (and this definition itself, for a self-relation); anything unknown is left
+ * for the server to report. A relation target may also be `*` (any entry), kept as it is, or the word `any`,
+ * which means `*` unless a definition has the API ID `any`.
  */
-const resolveReferences = (definition: DraftDefinition, idsByApiKey: ReadonlyMap<string, string>) => {
+export const resolveReferences = (definition: DraftDefinition, idsByApiKey: ReadonlyMap<string, string>) => {
   const resolve = (value: unknown) =>
     typeof value === 'string' && !isStableId(value) ? (idsByApiKey.get(value) ?? value) : value;
+  const resolveTarget = (value: unknown) =>
+    value === ANY_TARGET || (value === ANY_TARGET_WORD && !idsByApiKey.has(ANY_TARGET_WORD))
+      ? ANY_TARGET
+      : resolve(value);
   const fields = Array.isArray(definition.fields) ? (definition.fields as FieldLike[]) : [];
   return {
     ...definition,
     ...(definition.extends === undefined ? {} : { extends: resolve(definition.extends) }),
+    ...(Array.isArray(definition.implements) ? { implements: definition.implements.map(resolve) } : {}),
     fields: fields.map((field) => {
       const settings = field.settings;
       if (!settings) {
         return field;
       }
       if (field.type === 'relation') {
-        return { ...field, settings: { ...settings, target: resolve(settings.target) } };
+        return { ...field, settings: { ...settings, target: resolveTarget(settings.target) } };
       }
       if (field.type === 'component') {
         return { ...field, settings: { ...settings, component: resolve(settings.component) } };
@@ -56,7 +66,9 @@ export const putDefinitionDraft = async (
   { shared = false }: { shared?: boolean } = {},
 ) => {
   if (typeof definition.apiKey !== 'string' || typeof definition.kind !== 'string') {
-    throw new Error('A definition needs at least "kind" (collection, singleton or component) and "apiKey"');
+    throw new Error(
+      'A definition needs at least "kind" (collection, singleton, component, or interface) and "apiKey"',
+    );
   }
   const [schema, set] = await Promise.all([readSchema(client), client.admin.changeSets.get(changeSetId)]);
   const drafts = schemaItemsOf(set);
@@ -77,7 +89,7 @@ export const putDefinitionDraft = async (
   ]);
   const payload = resolveReferences({ ...definition, id }, idsByApiKey) as unknown as DefinitionInput;
   const draft = await client.admin.changeSets.putSchemaDraft(changeSetId, id, {
-    category: definition.kind === 'component' ? 'component' : 'model',
+    category: categoryOfKind(definition.kind),
     definition: payload,
     baseVersion: active?.version ?? null,
     ...(!active && shared ? { shared: true } : {}),

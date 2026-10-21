@@ -41,6 +41,31 @@ const FAMILY = [
   },
 ];
 
+const FEATURABLE_ID = '66666666-6666-4666-8666-666666666666';
+
+/** The family above, with Featurable (title) implemented by Post, so Guide is a member too. */
+const FEATURED = [
+  {
+    definition: {
+      id: FEATURABLE_ID,
+      kind: 'interface',
+      apiKey: 'featurable',
+      pluralApiKey: 'featurables',
+      label: 'Featurable',
+      display: {},
+      fields: [field('88888888-8888-4888-8888-888888888888', 'title')],
+    },
+    version: 1,
+    hash: 'f',
+    site: null,
+  },
+  ...FAMILY.map((entry) =>
+    entry.definition.id === POST_ID
+      ? { ...entry, definition: { ...entry.definition, implements: [FEATURABLE_ID] } }
+      : entry,
+  ),
+];
+
 /** Only the client calls these tests make; anything else would throw. */
 const fakeClient = (extra: unknown[] = []) => {
   const putSchemaDraft = vi.fn(async (_set: string, definitionId: string) => ({
@@ -181,6 +206,67 @@ describe('the Shapio MCP server', () => {
     });
     const [, , body] = putSchemaDraft.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
     expect(body).toMatchObject({ definition: { extends: POST_ID } });
+  });
+
+  it('lists an interface with its route and members, and a member with what it implements', async () => {
+    const mcp = await connect(false, fakeClient(FEATURED).client);
+    const { definitions } = textOf(await mcp.callTool({ name: 'schema_list', arguments: {} })) as {
+      definitions: Array<Record<string, unknown>>;
+    };
+    expect(definitions.find((definition) => definition.apiKey === 'featurable')).toMatchObject({
+      kind: 'interface',
+      pluralApiKey: 'featurables',
+      routeKey: 'featurables',
+      members: ['post', 'guide'],
+      fields: [{ apiKey: 'title', type: 'string' }],
+    });
+    // A kind implements what its parent implements.
+    expect(definitions.find((definition) => definition.apiKey === 'guide')).toMatchObject({
+      implements: ['featurable'],
+    });
+    expect(definitions.find((definition) => definition.apiKey === 'author')).not.toHaveProperty('implements');
+  });
+
+  it('reads an interface with its members, and a member with the interfaces it implements', async () => {
+    const mcp = await connect(false, fakeClient(FEATURED).client);
+    expect(
+      textOf(await mcp.callTool({ name: 'schema_get', arguments: { apiKey: 'featurable' } })),
+    ).toMatchObject({
+      definition: { kind: 'interface' },
+      routeKey: 'featurables',
+      members: ['post', 'guide'],
+    });
+    expect(textOf(await mcp.callTool({ name: 'schema_get', arguments: { apiKey: 'post' } }))).toMatchObject({
+      implementsApiKeys: ['featurable'],
+    });
+  });
+
+  it('drafts an interface in the interface category, and a type implementing it by API ID', async () => {
+    const { client, putSchemaDraft } = fakeClient(FEATURED);
+    const mcp = await connect(false, client);
+    await mcp.callTool({
+      name: 'schema_draft',
+      arguments: { definition: { kind: 'interface', apiKey: 'listable', label: 'Listable', fields: [] } },
+    });
+    await mcp.callTool({
+      name: 'schema_draft',
+      arguments: {
+        definition: {
+          kind: 'singleton',
+          apiKey: 'homepage',
+          implements: ['featurable'],
+          fields: [
+            { apiKey: 'spotlight', label: 'Spotlight', type: 'relation', settings: { target: 'any' } },
+          ],
+        },
+      },
+    });
+    const bodies = putSchemaDraft.mock.calls.map((call) => (call as unknown as [string, string, object])[2]);
+    expect(bodies[0]).toMatchObject({ category: 'interface' });
+    expect(bodies[1]).toMatchObject({
+      category: 'model',
+      definition: { implements: [FEATURABLE_ID], fields: [{ settings: { target: '*' } }] },
+    });
   });
 
   it('turns API refusals into tool errors with the code', async () => {

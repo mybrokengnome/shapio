@@ -11,13 +11,16 @@ const SHARED_DESCRIPTION =
   "Default false: it belongs to this server's site. An existing definition keeps its scope.";
 
 const DEFINITION_DESCRIPTION =
-  'A whole definition in Shapio\'s authored format: { kind: "collection" | "singleton" | "component", apiKey, ' +
-  'label, pluralApiKey? (collections), extends? (collections), localized?, draftAndPublish?, fields: [{ apiKey, ' +
-  'label, type, required?, localized?, settings? }] }. IDs are optional: an existing definition keeps its IDs ' +
-  '(matched by API ID). Relation targets, component references and extends may be given as API IDs. A ' +
-  'collection with extends inherits every field of that collection: list only its own fields, never an ' +
-  "inherited one, and give it the parent's localized and draftAndPublish. Read shapio://schema/{apiKey} to " +
-  'see the format of an existing one.';
+  'A whole definition in Shapio\'s authored format: { kind: "collection" | "singleton" | "component" | ' +
+  '"interface", apiKey, label, pluralApiKey? (collections, interfaces), extends? (collections), implements? ' +
+  '(collections, singletons), localized?, draftAndPublish?, fields: [{ apiKey, label, type, required?, ' +
+  'localized?, settings? }] }. IDs are optional: an existing definition keeps its IDs (matched by API ID). ' +
+  'Relation targets, component references, extends and implements may be given as API IDs; a relation target ' +
+  'may also be an interface, or "*" for any entry. A collection with extends inherits every field of that ' +
+  "collection: list only its own fields, never an inherited one, and give it the parent's localized and " +
+  'draftAndPublish. An interface stores nothing: its fields are a contract every type that implements it ' +
+  'must have, with the same API ID, type and flags (no component, dynamic zone or unique fields). Read ' +
+  'shapio://schema/{apiKey} to see the format of an existing one.';
 
 /** The schema: list and read definitions, and draft changes into a change set (never activated here). */
 export const registerSchemaTools = ({ server, client }: ToolContext) => {
@@ -26,10 +29,13 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
     {
       title: 'List content types',
       description:
-        "Every model (collection, singleton) and component of this server's site (its own and the ones shared " +
-        'with all sites) with its API IDs, scope, version and fields (types only). A collection that extends ' +
-        'another names it in extends and lists the inherited fields first, each with inheritedFrom. Delivery ' +
-        "reads use routeKey for collections (the plural API ID, nested under the parent's: posts/guides).",
+        "Every model (collection, singleton), component and interface of this server's site (its own and the " +
+        'ones shared with all sites) with its kind, API IDs, scope, version and fields (types only). A ' +
+        'collection that extends another names it in extends and lists the inherited fields first, each with ' +
+        "inheritedFrom. A type lists the interfaces it implements (its parents' too) in implements. An " +
+        "interface's fields are its contract, and members lists the types that implement it. Delivery reads use " +
+        "routeKey for collections (the plural API ID, nested under the parent's: posts/guides) and interfaces " +
+        "(the plural API ID: its list holds every member's entries).",
       inputSchema: z.object({}),
       annotations: READ_ONLY,
     },
@@ -50,7 +56,8 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
       description:
         'One definition in full (fields with settings), by API ID or stable ID, with its version. A collection ' +
         'that extends another holds only its own fields; extendsApiKey, routeKey and inheritedFields describe ' +
-        'what it inherits.',
+        "what it inherits. A type that implements interfaces names them in implementsApiKeys (its parents' " +
+        "too). An interface's fields are its contract; routeKey and members describe its list.",
       inputSchema: z.object({
         apiKey: z.string().min(1).describe('API ID (or stable ID) of the definition'),
       }),

@@ -1,6 +1,7 @@
 import type { ShapioClient } from '@shapio/client';
 import {
   createDefinitionIndex,
+  isInterfaceDefinition,
   isModelDefinition,
   routeKeyOf as modelRouteKeyOf,
   routePathOf,
@@ -25,7 +26,7 @@ export const findDefinition = (schema: Exported, key: string): ExportedDefinitio
   );
   if (!found) {
     const known = schema.definitions.map(({ definition }) => definition.apiKey).join(', ') || '(none)';
-    throw new Error(`No model or component with API ID "${key}". Known: ${known}`);
+    throw new Error(`No model, component, or interface with API ID "${key}". Known: ${known}`);
   }
   return found;
 };
@@ -42,10 +43,14 @@ const apiKeyIn = (index: DefinitionIndex, id: string) => index.get(id)?.apiKey ?
 
 /**
  * The delivery route key: a collection's plural API ID (`articles`), a singleton's API ID, and for a type that
- * extends another its ancestors' plural API IDs and its own (`posts/guides`). The admin content API uses
- * the singular API ID instead. Components have no route.
+ * extends another its ancestors' plural API IDs and its own (`posts/guides`). An interface's is its plural API
+ * ID (`featurables`): its list holds every member's entries. The admin content API uses the singular API ID
+ * instead. Components have no route.
  */
 export const routeKeyOf = (schema: Exported, definition: SchemaDefinition): string => {
+  if (isInterfaceDefinition(definition)) {
+    return modelRouteKeyOf(definition);
+  }
   if (!isModelDefinition(definition)) {
     throw new Error(
       `"${definition.apiKey}" is a component: components are read through the models that use them`,
@@ -58,6 +63,16 @@ export const routeKeyOf = (schema: Exported, definition: SchemaDefinition): stri
     .filter((ancestor): ancestor is ModelDefinition => ancestor !== undefined && isModelDefinition(ancestor));
   return routePathOf(definition, ancestors);
 };
+
+/** The API IDs of the interfaces a model implements, its ancestors' included; none for other kinds. */
+const implementedApiKeys = (index: DefinitionIndex, definition: SchemaDefinition): string[] =>
+  isModelDefinition(definition) ? index.interfacesOf(definition.id).map((id) => apiKeyIn(index, id)) : [];
+
+/** The API IDs of an interface's members (kinds of a member included); none for other kinds. */
+const memberApiKeys = (index: DefinitionIndex, definition: SchemaDefinition): string[] =>
+  isInterfaceDefinition(definition)
+    ? index.implementedBy(definition.id).map((id) => apiKeyIn(index, id))
+    : [];
 
 /**
  * The fields a model has from the types it extends (none for a root or a component), each naming the type
@@ -79,41 +94,59 @@ export const inheritedFieldsOf = (index: DefinitionIndex, definition: SchemaDefi
   );
 
 /**
- * One definition as `schema_get` returns it: the stored definition (send it back to draft a change), and for a
- * type that extends another the parent's API ID, its delivery route and the fields it inherits.
+ * One definition as `schema_get` returns it: the stored definition (send it back to draft a change); for a type
+ * that extends another the parent's API ID, its delivery route and the fields it inherits; for a type that
+ * implements interfaces their API IDs (inherited ones too); for an interface its route and its members.
  */
 export const describeDefinition = (schema: Exported, found: ExportedDefinition) => {
   const { definition } = found;
-  if (!isModelDefinition(definition) || definition.extends === undefined) {
+  const index = indexSchema(schema);
+  if (isInterfaceDefinition(definition)) {
+    return {
+      ...found,
+      routeKey: routeKeyOf(schema, definition),
+      members: memberApiKeys(index, definition),
+    };
+  }
+  if (!isModelDefinition(definition)) {
     return found;
   }
-  const index = indexSchema(schema);
+  const implemented = implementedApiKeys(index, definition);
   return {
     ...found,
-    extendsApiKey: apiKeyIn(index, definition.extends),
-    routeKey: routeKeyOf(schema, definition),
-    inheritedFields: inheritedFieldsOf(index, definition),
+    ...(definition.extends === undefined
+      ? {}
+      : {
+          extendsApiKey: apiKeyIn(index, definition.extends),
+          routeKey: routeKeyOf(schema, definition),
+          inheritedFields: inheritedFieldsOf(index, definition),
+        }),
+    ...(implemented.length === 0 ? {} : { implementsApiKeys: implemented }),
   };
 };
 
 /**
  * A one-line summary per definition, for listings that should not carry every field's settings. Fields are
- * the effective ones: a type that extends another lists its parent's first, each with `inheritedFrom`.
+ * the effective ones: a type that extends another lists its parent's first, each with `inheritedFrom`. An
+ * interface's fields are its contract; it lists its members, and a type the interfaces it implements.
  */
 export const summarizer = (schema: Exported) => {
   const index = indexSchema(schema);
   return ({ definition, version, site }: ExportedDefinition) => {
     const parent = isModelDefinition(definition) ? definition.extends : undefined;
+    const implemented = implementedApiKeys(index, definition);
     return {
       id: definition.id,
       /** `shared` (every site), or the key of the site it belongs to. */
       scope: site === null ? 'shared' : site,
       kind: definition.kind,
       apiKey: definition.apiKey,
-      ...(definition.kind === 'collection'
+      ...(definition.kind === 'collection' || isInterfaceDefinition(definition)
         ? { pluralApiKey: modelRouteKeyOf(definition), routeKey: routeKeyOf(schema, definition) }
         : {}),
       ...(parent === undefined ? {} : { extends: apiKeyIn(index, parent) }),
+      ...(implemented.length === 0 ? {} : { implements: implemented }),
+      ...(isInterfaceDefinition(definition) ? { members: memberApiKeys(index, definition) } : {}),
       label: definition.label,
       version,
       fields: [

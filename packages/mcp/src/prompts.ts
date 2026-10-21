@@ -23,7 +23,10 @@ export const registerPrompts = ({ server }: ToolContext) => {
           '2. Design the types: API IDs are camelCase GraphQL names, labels are for people; prefer components ' +
           'for repeated groups and relations for shared entities. When several kinds of one thing share ' +
           'fields (products that are digital or physical), make one collection and let each kind extend it ' +
-          '(extends), listing only its own fields.\n' +
+          '(extends), listing only its own fields. When unrelated types play one role (a blog post, a guide ' +
+          'and a roadmap item that can all be featured), make an interface with the fields they share and ' +
+          'have each type implement it (implements); a relation can then target the interface, or any entry ' +
+          '(target "*").\n' +
           '3. Draft each type with schema_draft (one change set for the whole design: pass the changeSetId ' +
           'from the first call to the rest).\n' +
           '4. Read change_sets_review, fix every blocking issue, and summarize the design and the review for ' +
