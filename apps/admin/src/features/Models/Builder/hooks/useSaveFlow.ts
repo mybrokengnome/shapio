@@ -3,18 +3,23 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useShipDraftNow } from '@/api/changeSets';
-import { hasErrorCode } from '@/api/errors';
+import { hasErrorCode, schemaIssuesOf } from '@/api/errors';
 import { fetchLatestDefinitionChange, usePlanChange } from '@/api/schema';
 import { FINAL_CHANGE_STATUSES } from '@/constants/schema';
 import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
+import { missingContractIssues, type MissingContractIssue } from '../../helpers/interfaces';
 import type { useReloadDraft } from './useReloadDraft';
 
 type ReloadDraft = ReturnType<typeof useReloadDraft>;
 
 export type SaveFlowState =
-  { step: 'idle' } | { step: 'review'; preview: PlanPreview } | { step: 'conflict' };
+  | { step: 'idle' }
+  | { step: 'review'; preview: PlanPreview }
+  | { step: 'conflict' }
+  /** An interface's new contract field that some members lack (plan interfaces decision 4). */
+  | { step: 'missing'; issues: MissingContractIssue[] };
 
 const isVersionConflict = (error: unknown) => hasErrorCode(error, 'SCHEMA_VERSION_CONFLICT');
 
@@ -35,6 +40,12 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
   const notifyFailure = (error: unknown) => {
     if (isVersionConflict(error)) {
       setState({ step: 'conflict' });
+      return;
+    }
+    // Members that lack a contract field are refused on the members, not the interface: offer the fix.
+    const missing = category === 'interface' ? missingContractIssues(schemaIssuesOf(error)) : [];
+    if (missing.length > 0) {
+      setState({ step: 'missing', issues: missing });
       return;
     }
     toast.error(describeError(error));

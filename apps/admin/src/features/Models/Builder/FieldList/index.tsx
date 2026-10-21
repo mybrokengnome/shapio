@@ -29,10 +29,13 @@ type FieldListProps = {
   parent?: DraftParent;
   /** The inherited fields (resolved, ancestors' first). */
   inherited?: readonly ResolvedField[];
+  /** Fields an interface requires, by ID, with the interfaces' names (the "Required by" badge). */
+  contractFields?: ReadonlyMap<string, readonly string[]>;
 };
 
 const NO_FIELDS: FieldDefinition[] = [];
 const NO_INHERITED: readonly ResolvedField[] = [];
+const NO_CONTRACT_FIELDS: ReadonlyMap<string, readonly string[]> = new Map();
 
 /**
  * The draft's fields in order: select one to edit it, reorder by drag, arrow keys or chevrons. A kind lists
@@ -45,6 +48,7 @@ export const FieldList = ({
   seo,
   parent,
   inherited = NO_INHERITED,
+  contractFields = NO_CONTRACT_FIELDS,
 }: FieldListProps) => {
   const { t } = useTranslation();
   const fields = useDefinitionDraftStore((state) => state.draft?.fields ?? NO_FIELDS);
@@ -122,6 +126,7 @@ export const FieldList = ({
               selected={selection.type === 'field' && selection.fieldId === field.id}
               hasIssues={issuesUnder(issues, fieldPath(index)).length > 0}
               showLocalized={localized}
+              requiredBy={contractFields.get(field.id)}
               dropTarget={dropIndex === index}
               disabled={disabled}
               onSelect={() => select({ type: 'field', fieldId: field.id })}

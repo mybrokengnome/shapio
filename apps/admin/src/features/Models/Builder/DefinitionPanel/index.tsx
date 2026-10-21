@@ -1,4 +1,11 @@
-import { isModelDefinition, routeKeyOf, type ModelDefinition, type ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  routeKeyOf,
+  type InterfaceDefinition,
+  type ModelDefinition,
+  type SchemaDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
@@ -11,6 +18,7 @@ import { TextControl } from '../controls/TextControl';
 import { useResolvedDraftAndParent } from '../hooks/useResolvedDraftAndParent';
 import { PanelSection } from '../PanelSection';
 import { Display } from './Display';
+import { Implements } from './Implements';
 
 type DefinitionPanelProps = {
   issues: readonly ValidationIssue[];
@@ -21,7 +29,13 @@ type DefinitionPanelProps = {
   parentChoices: readonly ModelDefinition[];
   /** How many kinds extend this one directly: their flags must stay equal to its own. */
   kindCount: number;
+  /** The interfaces this type may implement (collections and singletons; same scope rules as `extends`). */
+  interfaceChoices: readonly InterfaceDefinition[];
 };
+
+/** Collections and interfaces have a plural API ID (their list route and query). */
+const withPlural = (definition: SchemaDefinition): definition is ModelDefinition | InterfaceDefinition =>
+  definition.kind === 'collection' || definition.kind === 'interface';
 
 /** The definition's own settings (the expanded Model settings panel): naming, content and display. */
 export const DefinitionPanel = ({
@@ -30,6 +44,7 @@ export const DefinitionPanel = ({
   scopeSection,
   parentChoices,
   kindCount,
+  interfaceChoices,
 }: DefinitionPanelProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
@@ -44,11 +59,11 @@ export const DefinitionPanel = ({
   const at = (property: string) => issuesUnder(issues, `/${property}`);
   const renamed = base !== null && base.apiKey !== draft.apiKey;
   const pluralRenamed =
-    base?.kind === 'collection' && draft.kind === 'collection' && routeKeyOf(base) !== routeKeyOf(draft);
-  // A collection's plural follows the API ID until it has been edited by hand (decision 8).
+    base !== null && withPlural(base) && withPlural(draft) && routeKeyOf(base) !== routeKeyOf(draft);
+  // A collection's (or interface's) plural follows the API ID until it has been edited by hand (decision 8).
   const setApiKey = (apiKey: string) =>
     update((current) =>
-      current.kind === 'collection'
+      current.kind === 'collection' || current.kind === 'interface'
         ? { ...current, apiKey, pluralApiKey: followPlural(current.apiKey, apiKey, current.pluralApiKey) }
         : { ...current, apiKey },
     );
@@ -108,7 +123,7 @@ export const DefinitionPanel = ({
           disabled={disabled}
           monospace
         />
-        {draft.kind === 'collection' ? (
+        {withPlural(draft) ? (
           <TextControl
             id="definition-pluralApiKey"
             label={t('models.pluralApiKey')}
@@ -133,6 +148,14 @@ export const DefinitionPanel = ({
             unsetLabel={t('models.inheritance.noParent')}
             onChange={setParent}
             issues={at('extends')}
+            disabled={disabled}
+          />
+        ) : null}
+        {isModelDefinition(draft) ? (
+          <Implements
+            model={draft}
+            choices={interfaceChoices}
+            issues={at('implements')}
             disabled={disabled}
           />
         ) : null}

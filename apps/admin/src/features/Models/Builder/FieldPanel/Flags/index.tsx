@@ -33,12 +33,36 @@ const FLAG_KEYS = {
 /** A component's fields are hidden from delivery whatever a role grants (roles name model fields only). */
 const PUBLIC_COMPONENT_HINT = 'models.builder.publicComponentHint';
 
-/** The on/off options a field of this type supports here (components have no indexes or uniqueness). */
+/** What a contract field's flag means: each member's field must set it too. */
+const CONTRACT_HINT_KEYS = {
+  required: 'models.implements.flagRequiredHint',
+  public: 'models.implements.flagPublicHint',
+  filterable: 'models.implements.flagIndexHint',
+  sortable: 'models.implements.flagIndexHint',
+} as const;
+
+/** The flags a contract field has (plan interfaces D1): those every member's field must match. */
+const CONTRACT_FLAGS = ['required', 'public', 'filterable', 'sortable'] as const;
+
+const hintKeyOf = (flag: FlagKey, draft: SchemaDefinition) => {
+  if (draft.kind === 'interface' && flag in CONTRACT_HINT_KEYS) {
+    return CONTRACT_HINT_KEYS[flag as keyof typeof CONTRACT_HINT_KEYS];
+  }
+  return flag === 'public' && draft.kind === 'component' ? PUBLIC_COMPONENT_HINT : FLAG_KEYS[flag].hint;
+};
+
+/**
+ * The on/off options a field of this type supports here (components have no indexes or uniqueness; an
+ * interface's contract fields have the four flags its members must match).
+ */
 const availableFlags = (field: FieldDefinition, draft: SchemaDefinition): FlagKey[] => {
   const isComponent = draft.kind === 'component';
   const modelLocalized = isModelDefinition(draft) && draft.localized;
   const indexable =
     !isComponent && SCALAR_DATA_TYPES.has(field.type) && !(field.type === 'enum' && field.settings.multiple);
+  if (draft.kind === 'interface') {
+    return CONTRACT_FLAGS.filter((flag) => indexable || (flag !== 'filterable' && flag !== 'sortable'));
+  }
   return [
     'required',
     ...(UNIQUE_CAPABLE_DATA_TYPES.has(field.type) && !isComponent ? (['unique'] as const) : []),
@@ -60,9 +84,7 @@ export const Flags = ({ field, draft, at, disabled, onChange }: FlagsProps) => {
           id={`field-${field.id}-${flag}`}
           layout="compact"
           label={t(FLAG_KEYS[flag].label)}
-          hint={t(
-            flag === 'public' && draft.kind === 'component' ? PUBLIC_COMPONENT_HINT : FLAG_KEYS[flag].hint,
-          )}
+          hint={t(hintKeyOf(flag, draft))}
           checked={field[flag]}
           onChange={(checked) => onChange({ [flag]: checked })}
           issues={at(flag)}

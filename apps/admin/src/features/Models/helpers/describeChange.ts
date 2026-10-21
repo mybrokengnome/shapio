@@ -68,6 +68,8 @@ export const fieldLabelOf = (
 export type DescribeContext = {
   /** A model's name by stable ID (e.g. from the definitions cache); IDs are never shown in its place. */
   definitionName?: (id: string) => string | undefined;
+  /** For an interface: how many types implement it (its contract changes apply to each of them). */
+  memberCount?: number;
 };
 
 const nameOf = (id: unknown, context: DescribeContext): string | undefined =>
@@ -89,6 +91,51 @@ const describeExtends = (change: ClassifiedChange, context: DescribeContext): st
   return i18next.t('models.changes.modelExtends', { context: move, from, to });
 };
 
+/**
+ * "Implement Featurable", "Stop implementing Featurable" (one change per interface: `property` is its ID,
+ * `to` set when added); without its name, a sentence that names none.
+ */
+const describeImplements = (change: ClassifiedChange, context: DescribeContext): string => {
+  const name = nameOf(change.property, context);
+  if (name === undefined) {
+    return i18next.t('models.changes.modelImplements');
+  }
+  return i18next.t('models.changes.modelImplements', {
+    context: change.to === null || change.to === undefined ? 'removed' : 'added',
+    name,
+  });
+};
+
+/** Field changes on an interface that change what every member must have, by sentence key. */
+const CONTRACT_KEYS = {
+  'field.added': 'models.changes.contractFieldAdded',
+  'field.removed': 'models.changes.contractFieldRemoved',
+} as const satisfies Partial<Record<ChangeKind, string>>;
+
+type ContractKey = (typeof CONTRACT_KEYS)[keyof typeof CONTRACT_KEYS];
+
+const contractKeyOf = (kind: ChangeKind): ContractKey | undefined =>
+  kind === 'field.added' || kind === 'field.removed' ? CONTRACT_KEYS[kind] : undefined;
+
+/** "Featurable now requires image on 3 types", "Featurable no longer requires image". */
+const describeContractField = (
+  change: ClassifiedChange,
+  key: ContractKey,
+  before: SchemaDefinition | null,
+  after: SchemaDefinition | null,
+  context: DescribeContext,
+): string => {
+  const field =
+    after?.fields.find((candidate) => candidate.id === change.fieldId)?.apiKey ??
+    before?.fields.find((candidate) => candidate.id === change.fieldId)?.apiKey ??
+    fieldLabelOf(change.fieldId, before, after);
+  return i18next.t(key, {
+    name: after?.label ?? before?.label ?? '',
+    field,
+    count: context.memberCount ?? 0,
+  });
+};
+
 /** One sentence describing a planned change, e.g. "Rename the API key of Title from title to headline". */
 export const describeChange = (
   change: ClassifiedChange,
@@ -98,6 +145,13 @@ export const describeChange = (
 ): string => {
   if (change.kind === 'model.extends') {
     return describeExtends(change, context);
+  }
+  if (change.kind === 'model.implements') {
+    return describeImplements(change, context);
+  }
+  const contractKey = (after ?? before)?.kind === 'interface' ? contractKeyOf(change.kind) : undefined;
+  if (contractKey) {
+    return describeContractField(change, contractKey, before, after, context);
   }
   const field = fieldLabelOf(change.fieldId, before, after);
   const addedType =

@@ -8,7 +8,7 @@ import type {
   UpdateChangeSetInput,
 } from '@shapio/client';
 import { ShapioApiError } from '@shapio/client';
-import type { SchemaDefinition } from '@shapio/schema';
+import { categoryOfKind, type SchemaDefinition } from '@shapio/schema';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { PUBLISHING_POLL_INTERVAL_MS } from '@/constants/publishing';
 import { logError } from '@/helpers/reportError';
@@ -213,12 +213,58 @@ export const useSaveNewDefinitionsToChangeSet = () => {
         for (const definition of definitions) {
           // One at a time: a later definition may reference an earlier one.
           await changeSetsApi.putSchemaDraft(set.id, definition.id, {
-            category: definition.kind === 'component' ? 'component' : 'model',
+            category: categoryOfKind(definition.kind),
             definition,
             baseVersion: null,
           });
         }
         return set.id;
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all }),
+  });
+};
+
+/** One definition's proposed state in a change set, based on its active version (null: a new one). */
+export type ProposedDefinition = { definition: SchemaDefinition; baseVersion: number | null };
+
+/**
+ * "Add "image" to these 3 types" (plan interfaces decision 4): a new change set holding the interface's
+ * draft and each member's draft with the missing contract field added, so they ship together. The members
+ * go in first: the interface's draft is validated against the set's other drafts, and only passes once
+ * every member has the field. A refused draft discards the set it just created, so nothing is left
+ * behind. Resolves with the set's ID.
+ */
+export const useSaveContractFixToChangeSet = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['changeSets', 'saveContractFix'],
+    meta: silent,
+    mutationFn: ({
+      title,
+      contract,
+      members,
+    }: {
+      title: string;
+      contract: ProposedDefinition;
+      members: readonly ProposedDefinition[];
+    }) =>
+      withCsrf(async () => {
+        const created = await changeSetsApi.create({ title, source: 'builder' });
+        try {
+          for (const { definition, baseVersion } of [...members, contract]) {
+            await changeSetsApi.putSchemaDraft(created.id, definition.id, {
+              category: categoryOfKind(definition.kind),
+              definition,
+              baseVersion,
+            });
+          }
+        } catch (error) {
+          await changeSetsApi
+            .discard(created.id)
+            .catch((cause: unknown) => logError(cause, 'discarding a change set the builder could not fill'));
+          throw error;
+        }
+        return created.id;
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.develop.changeSets.all }),
   });

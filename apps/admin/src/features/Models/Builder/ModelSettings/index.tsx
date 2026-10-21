@@ -1,4 +1,4 @@
-import type { ModelDefinition, ValidationIssue } from '@shapio/schema';
+import type { InterfaceDefinition, ModelDefinition, ValidationIssue } from '@shapio/schema';
 import { ChevronDown } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,8 @@ type ModelSettingsProps = {
   parentChoices: readonly ModelDefinition[];
   /** Passed to `DefinitionPanel`. */
   kindCount: number;
+  /** Passed to `DefinitionPanel`. */
+  interfaceChoices: readonly InterfaceDefinition[];
 };
 
 /** Issues about the definition itself, not one of its fields (those show on the field). */
@@ -29,6 +31,7 @@ export const ModelSettings = ({
   scopeSection,
   parentChoices,
   kindCount,
+  interfaceChoices,
 }: ModelSettingsProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -58,6 +61,7 @@ export const ModelSettings = ({
             scopeSection={scopeSection}
             parentChoices={parentChoices}
             kindCount={kindCount}
+            interfaceChoices={interfaceChoices}
           />
         ) : (
           <Summary hasIssues={issues.some(isDefinitionIssue)} />

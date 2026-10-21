@@ -1,9 +1,10 @@
 import type { DefinitionCategory, DefinitionDetail } from '@shapio/client';
+import { isModelDefinition } from '@shapio/schema';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { useDeleteDefinition } from '@/api/schema';
+import { useAllDefinitions, useDeleteDefinition } from '@/api/schema';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { LoadingState } from '@/components/LoadingState';
 import { Page } from '@/components/Page';
@@ -14,6 +15,7 @@ import { useSaveShortcut } from '@/hooks/useSaveShortcut';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { draftKeyOf, useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { inheritedFieldsOf } from '../../helpers/inheritance';
+import { useInterfaceChoices } from '../../hooks/useInterfaceChoices';
 import { useModelIndex } from '../../hooks/useModelIndex';
 import { useParentChoices } from '../../hooks/useParentChoices';
 import { useSchemaLock } from '../../hooks/useSchemaLock';
@@ -22,11 +24,14 @@ import { LockNotice } from '../../LockNotice';
 import { SharedNotice } from '../../SharedNotice';
 import { ActionFooter } from '../ActionFooter';
 import { ChangeProgress } from '../ChangeProgress';
+import { ContractFixSheet } from '../ContractFixSheet';
+import { DefinitionNamesContext } from '../definitionNames';
 import { Scope } from '../DefinitionPanel/Scope';
 import { FieldList } from '../FieldList';
 import { FieldPanel } from '../FieldPanel';
 import { Header } from '../Header';
 import { useAddSeoField } from '../hooks/useAddSeoField';
+import { useContractFields } from '../hooks/useContractFields';
 import { useDraftIssues } from '../hooks/useDraftIssues';
 import { useIsDraftDirty } from '../hooks/useIsDraftDirty';
 import { useNewField } from '../hooks/useNewField';
@@ -35,6 +40,7 @@ import { useRemoteChangeNotice } from '../hooks/useRemoteChangeNotice';
 import { useResolvedDraftAndParent } from '../hooks/useResolvedDraftAndParent';
 import { useSaveFlow } from '../hooks/useSaveFlow';
 import { useSelectedField } from '../hooks/useSelectedField';
+import { Members } from '../Members';
 import { ModelSettings } from '../ModelSettings';
 import { NoFieldSelected } from '../NoFieldSelected';
 import { RemoteChangeBanner } from '../RemoteChangeBanner';
@@ -62,6 +68,9 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const { index: models } = useModelIndex();
   const { resolved, parent } = useResolvedDraftAndParent();
   const { parentChoices } = useParentChoices(detail, category === 'model' ? id : undefined);
+  const { interfaceChoices } = useInterfaceChoices(detail);
+  const { contractFields } = useContractFields();
+  const { definitions: allDefinitions } = useAllDefinitions();
   const { locked, reason } = useSchemaLock();
   const sharedReadOnly = useSharedReadOnly(detail.scope);
   const { multiSite } = useSchemaScopeAccess();
@@ -91,6 +100,9 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   const conflict = flow.state.step === 'conflict' || scopeConflict;
   useSaveShortcut(() => void flow.review(), canReview && !planOpen);
 
+  // Names of other definitions (parents, interfaces) by stable ID, for sentences and issues.
+  const definitionName = useCallback((definitionId: string) => models.get(definitionId)?.label, [models]);
+
   if (loadedKey !== key || !draft) {
     return <LoadingState />;
   }
@@ -102,10 +114,31 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
     });
   const editingDisabled = locked || sharedReadOnly;
   const isModel = category === 'model';
+  const isInterface = category === 'interface';
   // Kinds: the types that extend this one directly (they block deleting it) and all below it (they move
   // with it to another scope).
   const kindCount = isModel ? models.childrenOf(id).length : 0;
   const descendantCount = isModel ? models.descendants(id).length : 0;
+  // An interface can't be deleted while a type implements it or a relation targets it.
+  const memberIds = isInterface ? models.implementedBy(id) : [];
+  const targetingCount = isInterface
+    ? (allDefinitions ?? []).reduce(
+        (count, { definition }) =>
+          count +
+          definition.fields.filter(
+            (candidate) => candidate.type === 'relation' && candidate.settings.target === id,
+          ).length,
+        0,
+      )
+    : 0;
+  const deleteBlocker =
+    kindCount > 0
+      ? t('models.inheritance.hasKinds', { count: kindCount })
+      : memberIds.length > 0
+        ? t('interfaces.hasMembers', { count: memberIds.length })
+        : targetingCount > 0
+          ? t('interfaces.targeted', { count: targetingCount })
+          : undefined;
   const parentLabel = parent?.label;
   const inherited = inheritedFieldsOf(parent);
   // An inherited field opens read-only; it changes on the type that declares it.
@@ -113,7 +146,6 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
     field === undefined && selection.type === 'field'
       ? inherited.find((candidate) => candidate.id === selection.fieldId)
       : undefined;
-  const definitionName = (modelId: string) => models.get(modelId)?.label;
   // The active definition resolved the same way, so a re-parent's sentences can name inherited fields.
   const resolvedBase = base && isModel ? (models.resolve(base.id) ?? base) : base;
 
@@ -144,137 +176,150 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
   };
 
   return (
-    <Page width="full">
-      <UnsavedChangesGuard when={dirty} />
-      <Header
-        {...saveActions}
-        draft={draft}
-        version={baseVersion}
-        dirty={dirty}
-        issueCount={issues.length}
-        deleteBlocked={saveBlocked}
-        kindCount={kindCount}
-        onDelete={() => setConfirmingDelete(true)}
-      />
-      {locked ? <LockNotice reason={reason} /> : null}
-      {sharedReadOnly ? <SharedNotice /> : null}
-      {changedElsewhere || conflict ? (
-        <RemoteChangeBanner
-          key={conflict ? 'conflict' : 'remote'}
-          reason={conflict ? 'conflict' : 'remote'}
+    <DefinitionNamesContext.Provider value={definitionName}>
+      <Page width="full">
+        <UnsavedChangesGuard when={dirty} />
+        <Header
+          {...saveActions}
+          draft={draft}
+          version={baseVersion}
           dirty={dirty}
-          onReload={() => {
-            flow.resetStep();
-            setScopeConflict(false);
-            reload('replace');
-          }}
-          onKeepEdits={() => {
-            flow.resetStep();
-            setScopeConflict(false);
-            reload('rebase');
-          }}
+          issueCount={issues.length}
+          deleteBlocked={saveBlocked}
+          deleteBlocker={deleteBlocker}
+          onDelete={() => setConfirmingDelete(true)}
         />
-      ) : null}
-      {visibleChangeId ? (
-        <ChangeProgress
-          key={visibleChangeId}
-          changeId={visibleChangeId}
-          onFinished={(status) => {
-            if (status !== 'activated') {
-              setEndedChangeId(visibleChangeId);
-            }
-            void flow.onChangeFinished(status);
-          }}
-          onDismiss={() => {
-            setDismissedChangeId(visibleChangeId);
-            flow.dismissChange();
-          }}
-        />
-      ) : null}
-      {/*
+        {locked ? <LockNotice reason={reason} /> : null}
+        {sharedReadOnly ? <SharedNotice /> : null}
+        {changedElsewhere || conflict ? (
+          <RemoteChangeBanner
+            key={conflict ? 'conflict' : 'remote'}
+            reason={conflict ? 'conflict' : 'remote'}
+            dirty={dirty}
+            onReload={() => {
+              flow.resetStep();
+              setScopeConflict(false);
+              reload('replace');
+            }}
+            onKeepEdits={() => {
+              flow.resetStep();
+              setScopeConflict(false);
+              reload('rebase');
+            }}
+          />
+        ) : null}
+        {visibleChangeId ? (
+          <ChangeProgress
+            key={visibleChangeId}
+            changeId={visibleChangeId}
+            onFinished={(status) => {
+              if (status !== 'activated') {
+                setEndedChangeId(visibleChangeId);
+              }
+              void flow.onChangeFinished(status);
+            }}
+            onDismiss={() => {
+              setDismissedChangeId(visibleChangeId);
+              flow.dismissChange();
+            }}
+          />
+        ) : null}
+        {/*
         One column below xl: settings, fields, then the properties pane (shown for a selected field).
         Locked (or shared and not ours to change): every control is disabled individually, so fields can
         still be selected and read.
       */}
-      <div className="grid min-w-0 gap-6 xl:grid-cols-[22.5rem_minmax(0,1fr)] xl:items-start">
-        <div className="min-w-0 space-y-6">
-          <ModelSettings
-            issues={issues}
-            disabled={editingDisabled}
-            scopeSection={scopeSection}
-            parentChoices={parentChoices}
-            kindCount={kindCount}
-          />
-          <FieldList
-            issues={issues}
-            disabled={editingDisabled}
-            onAdd={newField.add}
-            seo={draft.kind === 'component' ? undefined : seoField}
-            parent={parent}
-            inherited={inherited}
-          />
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[22.5rem_minmax(0,1fr)] xl:items-start">
+          <div className="min-w-0 space-y-6">
+            <ModelSettings
+              issues={issues}
+              disabled={editingDisabled}
+              scopeSection={scopeSection}
+              parentChoices={parentChoices}
+              kindCount={kindCount}
+              interfaceChoices={interfaceChoices}
+            />
+            <FieldList
+              issues={issues}
+              disabled={editingDisabled}
+              onAdd={newField.add}
+              // SEO fields belong on content types only.
+              seo={isModelDefinition(draft) ? seoField : undefined}
+              parent={parent}
+              inherited={inherited}
+              contractFields={contractFields}
+            />
+            {isInterface ? <Members interfaceId={id} /> : null}
+          </div>
+          {inheritedField ? (
+            <FieldPanel
+              key={inheritedField.id}
+              field={inheritedField}
+              index={-1}
+              issues={issues}
+              disabled
+              untouched={false}
+              onDiscard={() => undefined}
+              inheritedFrom={{
+                id: inheritedField.inheritedFrom ?? '',
+                label: definitionName(inheritedField.inheritedFrom ?? '') ?? parentLabel ?? '',
+              }}
+            />
+          ) : field ? (
+            <FieldPanel
+              key={field.id}
+              field={field}
+              index={index}
+              issues={issues}
+              disabled={editingDisabled}
+              untouched={newField.isUntouched(field)}
+              onDiscard={() => newField.discard(field.id)}
+              requiredBy={contractFields.get(field.id)}
+            />
+          ) : (
+            <NoFieldSelected hasFields={draft.fields.length + inherited.length > 0} />
+          )}
         </div>
-        {inheritedField ? (
-          <FieldPanel
-            key={inheritedField.id}
-            field={inheritedField}
-            index={-1}
-            issues={issues}
-            disabled
-            untouched={false}
-            onDiscard={() => undefined}
-            inheritedFrom={{
-              id: inheritedField.inheritedFrom ?? '',
-              label: definitionName(inheritedField.inheritedFrom ?? '') ?? parentLabel ?? '',
-            }}
-          />
-        ) : field ? (
-          <FieldPanel
-            key={field.id}
-            field={field}
-            index={index}
-            issues={issues}
-            disabled={editingDisabled}
-            untouched={newField.isUntouched(field)}
-            onDiscard={() => newField.discard(field.id)}
-          />
-        ) : (
-          <NoFieldSelected hasFields={draft.fields.length + inherited.length > 0} />
-        )}
-      </div>
-      <ActionFooter {...saveActions} />
-      <ReviewSheet
-        preview={flow.state.step === 'review' ? flow.state.preview : undefined}
-        before={base}
-        after={draft}
-        resolvedBefore={resolvedBase}
-        resolvedAfter={resolved}
-        definitionName={definitionName}
-        applying={flow.applying}
-        error={flow.applyError}
-        onApply={(acknowledgement) => void flow.confirm(acknowledgement)}
-        onClose={flow.resetStep}
-      />
-      <ConfirmDialog
-        open={confirmingDelete}
-        onOpenChange={setConfirmingDelete}
-        title={t('models.builder.deleteTitle', { label: draft.label })}
-        description={t('models.builder.deleteDescription')}
-        confirmLabel={t('common.delete')}
-        destructive
-        onConfirm={() =>
-          deleteDefinition.mutate(
-            { category, id, expectedVersion: baseVersion },
-            {
-              onSuccess: () => {
-                reset();
-                toast.success(t('models.deleted'));
-                void navigate({ to: '/models' });
+        <ActionFooter {...saveActions} />
+        <ReviewSheet
+          preview={flow.state.step === 'review' ? flow.state.preview : undefined}
+          before={base}
+          after={draft}
+          resolvedBefore={resolvedBase}
+          resolvedAfter={resolved}
+          definitionName={definitionName}
+          memberIds={memberIds}
+          applying={flow.applying}
+          error={flow.applyError}
+          onApply={(acknowledgement) => void flow.confirm(acknowledgement)}
+          onClose={flow.resetStep}
+        />
+        <ContractFixSheet
+          issues={flow.state.step === 'missing' ? flow.state.issues : undefined}
+          name={draft.label}
+          onClose={flow.resetStep}
+        />
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title={t('models.builder.deleteTitle', { label: draft.label })}
+          description={t('models.builder.deleteDescription')}
+          confirmLabel={t('common.delete')}
+          destructive
+          onConfirm={() =>
+            deleteDefinition.mutate(
+              { category, id, expectedVersion: baseVersion },
+              {
+                onSuccess: () => {
+                  reset();
+                  toast.success(t('models.deleted'));
+                  void navigate({ to: isInterface ? '/develop/interfaces' : '/models' });
+                },
               },
-            },
-          )
-        }
-      />
-    </Page>
+            )
+          }
+        />
+      </Page>
+    </DefinitionNamesContext.Provider>
   );
 };

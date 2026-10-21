@@ -40,7 +40,7 @@ const DOCUMENT_ONLY_KEYS = ['coverFieldId', 'canvasFieldIds', 'stripFieldIds'] a
 /**
  * How entries are labeled, listed, and laid out: document or form, title, order, list columns, the entry
  * document, and groups. A kind shows the values it inherits until it sets its own, and may pick inherited
- * fields.
+ * fields. A component has a title only; an interface a title and an order (its list's search and sort).
  */
 export const Display = ({ definition, own, parent, issues, disabled }: DisplayProps) => {
   const { t } = useTranslation();
@@ -63,23 +63,14 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
       disabled={disabled}
     />
   );
-  if (!isModelDefinition(definition)) {
+  if (definition.kind === 'component') {
     return titleField;
   }
+  // Models and interfaces have a default order (an interface's list sorts on a contract field).
   const sort = definition.display.defaultSort;
   const sortable = definition.fields.filter((field) => field.sortable);
-  const layout = entryLayoutOf(definition);
-  return (
+  const sortControls = (
     <>
-      <Layout
-        model={definition}
-        ownLayout={!isModelDefinition(own) ? undefined : own.display.layout}
-        inherited={parent ? { parentLabel: parent.label, layout: entryLayoutOf(parent) } : undefined}
-        issues={at('layout')}
-        disabled={disabled}
-        onChange={(value) => setDisplay('layout', value)}
-      />
-      {titleField}
       <SelectControl
         id="definition-sort-field"
         label={t('models.builder.sortField')}
@@ -106,6 +97,29 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
           disabled={disabled}
         />
       ) : null}
+    </>
+  );
+  if (!isModelDefinition(definition)) {
+    return (
+      <>
+        {titleField}
+        {sortControls}
+      </>
+    );
+  }
+  const layout = entryLayoutOf(definition);
+  return (
+    <>
+      <Layout
+        model={definition}
+        ownLayout={!isModelDefinition(own) ? undefined : own.display.layout}
+        inherited={parent ? { parentLabel: parent.label, layout: entryLayoutOf(parent) } : undefined}
+        issues={at('layout')}
+        disabled={disabled}
+        onChange={(value) => setDisplay('layout', value)}
+      />
+      {titleField}
+      {sortControls}
       <ChoicesControl
         id="definition-list-fields"
         label={t('models.builder.listColumns')}

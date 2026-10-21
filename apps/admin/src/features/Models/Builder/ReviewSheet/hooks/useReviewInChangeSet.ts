@@ -1,5 +1,5 @@
 import type { PlanPreview } from '@shapio/client';
-import type { SchemaDefinition } from '@shapio/schema';
+import { categoryOfKind, type SchemaDefinition } from '@shapio/schema';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useSaveDraftToChangeSet } from '@/api/changeSets';
@@ -21,7 +21,7 @@ export const useReviewInChangeSet = () => {
         definitionId: plan.definitionId,
         newSetTitle: t('changes.builderSetTitle', { label: draft.label }),
         input: {
-          category: plan.kind === 'component' ? 'component' : 'model',
+          category: categoryOfKind(plan.kind),
           definition: draft,
           baseVersion: plan.fromVersion,
         },
