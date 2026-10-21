@@ -166,6 +166,8 @@ describe('deleting a locale', () => {
         // A root model's route key is its plural; it has no ancestors (plan polymorphic-types).
         routeKey: 'products',
         ancestors: [],
+        // The routes of the interfaces it implements (plan interfaces): none.
+        interfaces: [],
         entryId: onlyItalian.id,
         wasPublished: true,
         snapshot: null,
