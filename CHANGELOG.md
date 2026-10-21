@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-21
+
 ### Added
 
 - **Interfaces.** Unrelated types that play one role (a blog post, a roadmap item, and the About page that can
