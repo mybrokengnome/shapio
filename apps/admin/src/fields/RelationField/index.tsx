@@ -6,18 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/helpers/cn';
 import { useFieldsEnvironment } from '../form/context';
-import { entryTitle, shortId } from '../helpers/titles';
+import { relationTargetLabel } from '../helpers/relationTargetLabel';
+import { shortId } from '../helpers/titles';
 import { moveItem, toList } from '../helpers/values';
 import { useEntryLabels } from '../hooks/useEntryLabels';
+import { useRelationTarget } from '../hooks/useRelationTarget';
 import type { BuiltInEditorProps } from '../types';
-import { useRelationKinds } from './hooks/useRelationKinds';
+import { useRelationCopy } from './hooks/useRelationCopy';
+import { useRelationTypes } from './hooks/useRelationTypes';
 import { InlineCreateSheet } from './InlineCreateSheet';
 import { RelationPicker } from './RelationPicker';
 
 /**
  * `relationPicker`: links to entries of another model, one or many (ordered). Entries are found by their
  * title in a picker anchored to the field; with `allowInlineCreate`, a new one can be created in a sheet
- * without leaving the form. A relation to a type with kinds links any kind's entries and names each one's kind.
+ * without leaving the form. A relation to a type with kinds links any kind's entries and names each one's kind;
+ * a relation to an interface or to any entry links entries of every member type and names each one's type.
  */
 export const RelationField = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
@@ -39,14 +43,16 @@ export const RelationField = (props: BuiltInEditorProps) => {
   const [creating, setCreating] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const settings = definition.type === 'relation' ? definition.settings : undefined;
-  const target = settings ? environment.models.get(settings.target) : undefined;
+  const target = useRelationTarget(settings?.target);
   const multiple = settings?.cardinality === 'many';
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
-  const labels = useEntryLabels(target, ids, environment.locale);
-  const relationKinds = useRelationKinds(target);
+  const labels = useEntryLabels(target, definition.id, ids, environment.locale);
+  const types = useRelationTypes(target, labels.members);
+  const targetLabel = relationTargetLabel(target, t);
+  const copy = useRelationCopy(target, targetLabel ?? '');
   // The linked entry a link opened the page at (Inbox, "Review link"): pointed out until the page changes.
   const linkedId = environment.linkedValue?.path === path ? environment.linkedValue.entryId : undefined;
-  if (!settings || !target) {
+  if (!settings || targetLabel === undefined) {
     // The schema refuses to delete a model a relation targets, so a target missing from the readable
     // registry is one this role can't read. Its links are kept on save; there is nothing to show or edit.
     return (
@@ -64,8 +70,9 @@ export const RelationField = (props: BuiltInEditorProps) => {
   const canAddMore = !multiple || settings.max === undefined || ids.length < settings.max;
   const labelFor = (id: string) => {
     const item = labels.byId.get(id);
-    return item ? (entryTitle(target, item.data) ?? `${t('content.untitled')} · ${shortId(id)}`) : undefined;
+    return item ? (item.title ?? `${t('content.untitled')} · ${shortId(id)}`) : undefined;
   };
+  const [firstType, ...otherTypes] = types.creatable;
   return (
     <div role="group" aria-labelledby={labelId} aria-describedby={describedBy} className="space-y-2">
       {ids.length > 0 ? (
@@ -96,7 +103,7 @@ export const RelationField = (props: BuiltInEditorProps) => {
                     </span>
                   )}
                   <span className="block text-meta text-muted-foreground">
-                    {relationKinds.kindLabelOf(labels.byId.get(id)?.model) ?? target.label}
+                    {types.typeLabelOf(labels.byId.get(id)?.model) ?? targetLabel}
                   </span>
                 </span>
                 {editable && multiple ? (
@@ -150,27 +157,25 @@ export const RelationField = (props: BuiltInEditorProps) => {
             canAddMore || searching ? (
               <Button id={inputId} type="button" variant="outline" size="sm">
                 <Plus aria-hidden="true" />
-                {multiple
-                  ? t('content.relation.add', { model: target.label })
-                  : ids.length > 0
-                    ? t('content.relation.change')
-                    : t('content.relation.choose', { model: target.label })}
+                {multiple ? copy.add : ids.length > 0 ? t('content.relation.change') : copy.choose}
               </Button>
             ) : null
           }
           target={target}
-          kindLabelOf={relationKinds.kindLabelOf}
+          fieldId={definition.id}
+          targetLabel={targetLabel}
+          title={copy.pickerTitle}
+          createLabel={copy.createNew}
+          typeLabelOf={types.typeLabelOf}
           multiple={multiple}
           selected={ids}
-          // An entry never links to itself, whichever kind of the target's family it is.
-          exclude={
-            environment.entryId && relationKinds.covers(environment.model.id) ? [environment.entryId] : []
-          }
+          // An entry never links to itself, whichever type of the target's family or members it is.
+          exclude={environment.entryId && types.covers(environment.model.id) ? [environment.entryId] : []}
           locale={environment.locale}
           full={!canAddMore}
           // TODO(per-model permissions in `me`): also require `create` on the target model. Until `me` carries
           // per-model permissions, a refusal shows as the server's 403 in the sheet.
-          canCreate={field.options.allowInlineCreate === true}
+          canCreate={field.options.allowInlineCreate === true && firstType !== undefined}
           onPick={add}
           onUnpick={(id) => commit(ids.filter((item) => item !== id))}
           onCreate={() => setCreating(true)}
@@ -180,10 +185,11 @@ export const RelationField = (props: BuiltInEditorProps) => {
           }
         />
       ) : null}
-      {creating ? (
+      {creating && firstType ? (
         <InlineCreateSheet
-          target={target}
-          kinds={relationKinds.kinds}
+          title={copy.createTitle}
+          types={[firstType, ...otherTypes]}
+          typeLabel={target.kind === 'model' ? t('content.relation.kind') : t('content.relation.type')}
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false);

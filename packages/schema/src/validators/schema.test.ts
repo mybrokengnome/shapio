@@ -53,6 +53,12 @@ describe('validateSchema: identity and names', () => {
     'mediaAsset',
     'int53',
     'entry',
+    // OpenAPI's shared schemas and the TypeScript `AnyEntry`.
+    'anyEntry',
+    'interfaceMember',
+    'kind',
+    'pagination',
+    'error',
   ])('rejects a model whose GraphQL type is reserved: %s', (apiKey) => {
     expect(codes(validateSchema([model({ id: id(3), apiKey })]))).toContain(
       `${id(3)} /apiKey API_KEY_RESERVED`,

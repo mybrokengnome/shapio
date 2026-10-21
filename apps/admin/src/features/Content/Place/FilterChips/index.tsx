@@ -2,6 +2,7 @@ import type { AdminEntryListItem, EntryStatus } from '@shapio/client';
 import type { ModelDefinition, ResolvedModelDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { relationTargetInfoOf } from '@/fields/helpers/relationTargetLabel';
 import { shortId } from '@/fields/helpers/titles';
 import { ENTRY_STATUS_LABEL_KEYS } from '../../helpers/entryStatus';
 import type { ListFilter } from '../../helpers/filterOperators';
@@ -114,7 +115,7 @@ export const FilterChips = ({
             <RelationFilter
               key={field.id}
               field={field}
-              target={schema.models.get(field.settings.target)}
+              target={relationTargetInfoOf(field.settings.target, schema.models, schema.index)}
               onPick={(entryId) =>
                 onSearchChange({
                   filters: [...filters, { field: field.apiKey, operator: '$eq', value: entryId }],

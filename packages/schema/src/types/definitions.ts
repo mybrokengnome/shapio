@@ -4,8 +4,9 @@ import type { JsonValue } from './json.js';
 import type { DataTypeSettings } from './settings.js';
 
 /**
- * Model and component definitions. Both kinds share one table (`models`, with a `kind` discriminator) but
- * have distinct TypeScript types: a component cannot be published, localised or addressed by a route.
+ * Model, component and interface definitions. All share one table (`models`, with a `kind` discriminator)
+ * but have distinct TypeScript types: a component cannot be published, localized or addressed by a route;
+ * an interface is a contract of fields that collections and singletons implement, and stores nothing.
  *
  * The `*InputSchema` TypeBox schemas describe what callers send and what schema files contain: IDs and
  * defaulted properties may be omitted. `normalizeDefinition` turns input into the normalized types below,
@@ -15,7 +16,7 @@ const closed = { additionalProperties: false } as const;
 
 export const MODEL_KINDS = ['collection', 'singleton'] as const;
 export type ModelKind = (typeof MODEL_KINDS)[number];
-export const DEFINITION_KINDS = [...MODEL_KINDS, 'component'] as const;
+export const DEFINITION_KINDS = [...MODEL_KINDS, 'component', 'interface'] as const;
 export type DefinitionKind = (typeof DEFINITION_KINDS)[number];
 
 export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
@@ -37,6 +38,8 @@ export const FIELD_WIDTHS = ['full', 'two-thirds', 'half', 'third'] as const;
 export type FieldWidth = (typeof FIELD_WIDTHS)[number];
 
 export const MAX_FIELDS_PER_DEFINITION = 500;
+/** Most interfaces one model may implement directly. */
+export const MAX_IMPLEMENTS = 50;
 export const MAX_LABEL_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 2000;
 
@@ -144,6 +147,11 @@ export const ModelDefinitionInputSchema = Type.Object(
      * the parent's fields, locked, and adds its own (plan polymorphic-types).
      */
     extends: Type.Optional(Type.String()),
+    /**
+     * The stable IDs of the interfaces this collection or singleton implements (plan interfaces). Normalizing
+     * sorts them and drops duplicates. A model also implements what its ancestors implement.
+     */
+    implements: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_IMPLEMENTS })),
     display: Type.Optional(ModelDisplayInputSchema),
   },
   closed,
@@ -160,12 +168,44 @@ export const ComponentDefinitionInputSchema = Type.Object(
   closed,
 );
 
-export const DefinitionInputSchema = Type.Union([ModelDefinitionInputSchema, ComponentDefinitionInputSchema]);
+export const InterfaceDisplayInputSchema = Type.Object(
+  {
+    /** The contract field the interface's list searches and pickers show. */
+    titleFieldId: Type.Optional(Type.String()),
+    defaultSort: Type.Optional(
+      Type.Object({ fieldId: Type.String(), direction: Type.Enum(SORT_DIRECTIONS) }, closed),
+    ),
+  },
+  closed,
+);
+
+/**
+ * An interface (plan interfaces): a name, an API ID, a plural (its list route and query), and a contract of
+ * fields every member must have. Contract fields are full fields with stable IDs of their own; editor,
+ * width, default value and deprecation mean nothing on them and are refused (`INVALID_INTERFACE_FIELD`).
+ */
+export const InterfaceDefinitionInputSchema = Type.Object(
+  {
+    ...definitionBase,
+    kind: Type.Literal('interface'),
+    /** Names the list route and query (`/api/content/featurables`); normalizing fills it when missing. */
+    pluralApiKey: Type.Optional(Type.String()),
+    display: Type.Optional(InterfaceDisplayInputSchema),
+  },
+  closed,
+);
+
+export const DefinitionInputSchema = Type.Union([
+  ModelDefinitionInputSchema,
+  ComponentDefinitionInputSchema,
+  InterfaceDefinitionInputSchema,
+]);
 
 export type FieldInput = Static<typeof FieldInputSchema>;
 export type ModelDefinitionInput = Static<typeof ModelDefinitionInputSchema>;
 export type ComponentDefinitionInput = Static<typeof ComponentDefinitionInputSchema>;
-export type DefinitionInput = ModelDefinitionInput | ComponentDefinitionInput;
+export type InterfaceDefinitionInput = Static<typeof InterfaceDefinitionInputSchema>;
+export type DefinitionInput = ModelDefinitionInput | ComponentDefinitionInput | InterfaceDefinitionInput;
 
 export type EditorChoice = { id: string; options: Record<string, JsonValue> };
 
@@ -226,6 +266,11 @@ export type ModelDefinition = {
    * `resolveModelDefinition` adds the inherited ones (ancestors' first).
    */
   extends?: string;
+  /**
+   * The stable IDs of the interfaces the model implements itself, sorted, without duplicates; absent when
+   * none. `DefinitionIndex.interfacesOf` adds the ones inherited from ancestors.
+   */
+  implements?: string[];
   fields: FieldDefinition[];
   display: ModelDisplay;
 };
@@ -256,11 +301,43 @@ export type ComponentDefinition = {
   display: ComponentDisplay;
 };
 
-/** Either kind. Most schema machinery (diff, file format, registry) works on both. */
-export type SchemaDefinition = ModelDefinition | ComponentDefinition;
+export type InterfaceDisplay = {
+  titleFieldId?: string;
+  defaultSort?: { fieldId: string; direction: SortDirection };
+};
+
+/** An interface (plan interfaces): a contract of fields. It has no entries, routes of its own aside. */
+export type InterfaceDefinition = {
+  id: string;
+  kind: 'interface';
+  apiKey: string;
+  /** Always present (filled by normalizing): the list route and query. */
+  pluralApiKey: string;
+  label: string;
+  description?: string;
+  fields: FieldDefinition[];
+  display: InterfaceDisplay;
+};
+
+/** Any kind. Most schema machinery (diff, file format, registry) works on all of them. */
+export type SchemaDefinition = ModelDefinition | ComponentDefinition | InterfaceDefinition;
 
 export const isComponentDefinition = (definition: SchemaDefinition): definition is ComponentDefinition =>
   definition.kind === 'component';
 
+export const isInterfaceDefinition = (definition: SchemaDefinition): definition is InterfaceDefinition =>
+  definition.kind === 'interface';
+
+/** A collection or singleton: a definition that has entries. Never a component or an interface. */
 export const isModelDefinition = (definition: SchemaDefinition): definition is ModelDefinition =>
-  definition.kind !== 'component';
+  definition.kind === 'collection' || definition.kind === 'singleton';
+
+/** Model, component or interface: which admin area and API path a definition belongs to. */
+export const DEFINITION_CATEGORIES = ['model', 'component', 'interface'] as const;
+export type DefinitionCategory = (typeof DEFINITION_CATEGORIES)[number];
+
+export const categoryOfKind = (kind: string): DefinitionCategory =>
+  kind === 'component' ? 'component' : kind === 'interface' ? 'interface' : 'model';
+
+/** The relation target that accepts an entry of any collection or singleton ("Any entry"). */
+export const ANY_TARGET = '*';

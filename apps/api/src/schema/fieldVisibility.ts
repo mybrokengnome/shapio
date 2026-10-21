@@ -23,6 +23,8 @@ export const createSchemaFieldVisibility = (registry: SchemaRegistry): FieldVisi
         id: field.id,
         public: field.public && !field.deprecated,
       })),
+    // Collections and singletons only (`resolve`): a grant naming a component or an interface is refused
+    // (plan interfaces, D7: an interface read is governed by each member's policy).
     hasModel: async (modelId, executor, versions) =>
       (await activeModel(modelId, executor, versions)) !== undefined,
     // Components too: managing a site's component is a site's schema permission like its models'.

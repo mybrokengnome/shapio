@@ -20,8 +20,11 @@ type HeaderProps = SaveActionsProps & {
   issueCount: number;
   /** Deleting is not possible right now (locked, a change running). */
   deleteBlocked: boolean;
-  /** Kinds that extend this type: it can't be deleted while it has any (they go first). */
-  kindCount: number;
+  /**
+   * Why it can't be deleted while this holds ("Has 2 kinds", "Has 3 members"): what has to go first. Shown
+   * beside the disabled Delete.
+   */
+  deleteBlocker?: string;
   onDelete: () => void;
 };
 
@@ -32,20 +35,23 @@ export const Header = ({
   dirty,
   issueCount,
   deleteBlocked,
-  kindCount,
+  deleteBlocker,
   onDelete,
   ...saveActions
 }: HeaderProps) => {
   const { t } = useTranslation();
-  // The place this builder is the Structure tab of (its saved API ID, from the URL), or Components.
+  // The place this builder is the Structure tab of (its saved API ID, from the URL), or Components, or
+  // Interfaces.
   const { modelKey = draft.apiKey } = useParams({ strict: false });
   const breadcrumb =
     draft.kind === 'component'
       ? [{ label: t('shell.nav.components'), link: linkOptions({ to: '/develop/components' }) }]
-      : [
-          { label: draft.label, link: linkOptions({ to: '/content/$modelKey', params: { modelKey } }) },
-          { label: t('place.tabs.structure') },
-        ];
+      : draft.kind === 'interface'
+        ? [{ label: t('interfaces.title'), link: linkOptions({ to: '/develop/interfaces' }) }]
+        : [
+            { label: draft.label, link: linkOptions({ to: '/content/$modelKey', params: { modelKey } }) },
+            { label: t('place.tabs.structure') },
+          ];
   return (
     <PageHeader
       sticky
@@ -62,7 +68,7 @@ export const Header = ({
         ) : null
       }
       meta={
-        draft.kind === 'collection'
+        draft.kind === 'collection' || draft.kind === 'interface'
           ? t('models.builder.subtitleCollection', {
               apiKey: draft.apiKey,
               pluralApiKey: routeKeyOf(draft),
@@ -84,15 +90,13 @@ export const Header = ({
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 variant="destructive"
-                disabled={deleteBlocked || kindCount > 0}
+                disabled={deleteBlocked || deleteBlocker !== undefined}
                 onSelect={onDelete}
               >
                 <Trash2 aria-hidden="true" />
                 {t('models.builder.delete')}
-                {kindCount > 0 ? (
-                  <span className="ml-auto pl-3 text-xs text-muted-foreground">
-                    {t('models.inheritance.hasKinds', { count: kindCount })}
-                  </span>
+                {deleteBlocker !== undefined ? (
+                  <span className="ml-auto pl-3 text-xs text-muted-foreground">{deleteBlocker}</span>
                 ) : null}
               </DropdownMenuItem>
             </DropdownMenuContent>

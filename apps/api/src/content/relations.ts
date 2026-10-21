@@ -75,7 +75,10 @@ export const edgesOf = (model: ContentModel, data: Readonly<ContentData>): Relat
   return edges;
 };
 
-/** Every target a set of documents mentions, grouped by target model. */
+/**
+ * Every target a set of documents mentions, grouped by the relation's stored target: a model ID, an interface
+ * ID or `*` (plan interfaces). `relationTargetFor` says what each accepts.
+ */
 export const targetsByModel = (
   model: ContentModel,
   documents: readonly Readonly<ContentData>[],

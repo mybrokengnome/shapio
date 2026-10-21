@@ -3,6 +3,7 @@ import type { Kysely, RawBuilder, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
+import * as entriesRepository from '../repositories/entries.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { toAssetViews, type MediaAssetView } from '../services/mediaViews.js';
@@ -18,11 +19,12 @@ import { compileRowFilter, hidesPrivateComponentFields, maskAllows, rowReadMask 
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
-import { groupByMember, readableMembers, type ReadMember } from './family.js';
+import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
 import { targetsByModel } from './relations.js';
+import { relationTargetFor, targetAcceptsModel, type RelationTarget } from './relationTarget.js';
 import { resolveSeoFields, seoFieldsOf } from './seo.js';
 import { KINDS_KEY, MODEL_KEY } from './validator/index.js';
 
@@ -122,7 +124,12 @@ export const fetchFamilyHeadsByIds = async (
   ids: readonly string[],
   locales?: LocaleScope,
 ): Promise<FamilyHeads> => {
-  const members = await readableMembers(env.snapshot, model, (modelId) => readPolicy(env, modelId));
+  const members = await readableMembers(
+    env.snapshot,
+    familyIdsOf(env.snapshot, model.definition.id),
+    (modelId) => readPolicy(env, modelId),
+    model,
+  );
   if (ids.length === 0 || members.length === 0) {
     return { members, rows: [] };
   }
@@ -134,6 +141,85 @@ export const fetchFamilyHeadsByIds = async (
     // Every member shares the root's localization (plan polymorphic-types, D3).
     locales: locales ?? readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
     conditions: [entryIdIn(ids), ...plan.conditions],
+    orderBy: [],
+  });
+  return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
+};
+
+/** How `fetchTargetHeadsByIds` serves locales: `fallback: false` serves the requested locale only (ADR 0004). */
+export type TargetFetchOptions = { fallback?: boolean };
+
+/**
+ * The models among an interface's members (or any model, for any entry) that hold the given live entries on
+ * the read's site, in the target's member order: one primary-key read of `entries` first, so an interface or
+ * any-entry fetch plans arms only for the models that appear (plan interfaces, decision 8).
+ */
+const modelsHolding = async (
+  env: ReadEnvironment,
+  target: Exclude<RelationTarget, { kind: 'model' }>,
+  ids: readonly string[],
+): Promise<string[]> => {
+  const entries = await entriesRepository.findByIds(ids, env.executor);
+  const present = new Set(
+    entries
+      .filter((entry) => entry.deleted_at === null && entry.site_id === env.siteId)
+      .map((entry) => entry.model_id),
+  );
+  const ordered = target.kind === 'interface' ? target.modelIds : [...present];
+  return ordered.filter(
+    (modelId) => present.has(modelId) && targetAcceptsModel(env.snapshot, target, modelId),
+  );
+};
+
+/**
+ * Heads of the given entries over everything a relation's target accepts (plan interfaces, D4): a model's
+ * family, an interface's members, or any entry. Each member is read under its own read policy, in its own
+ * locale scope (`readScopeFor` with `fallback`: a non-localized member serves its one head, a localized one
+ * the chain, or the requested locale alone when `fallback` is false). Members the caller may not read, and
+ * models holding none of the IDs, are left out.
+ */
+export const fetchTargetHeadsByIds = async (
+  env: ReadEnvironment,
+  target: RelationTarget,
+  ids: readonly string[],
+  options: TargetFetchOptions = {},
+): Promise<FamilyHeads> => {
+  const fallback = options.fallback ?? true;
+  if (target.kind === 'model') {
+    const model = resolveModelById(env.snapshot, target.id);
+    if (!model) {
+      return { members: [], rows: [] };
+    }
+    // Every kind shares the root's localization (plan polymorphic-types, D3): one scope serves the family.
+    const locales = fallback
+      ? undefined
+      : readScopeFor(env.snapshot, model.definition, env.locale, { fallback });
+    return fetchFamilyHeadsByIds(env, model, ids, locales);
+  }
+  if (ids.length === 0) {
+    return { members: [], rows: [] };
+  }
+  const members = await readableMembers(env.snapshot, await modelsHolding(env, target, ids), (modelId) =>
+    readPolicy(env, modelId),
+  );
+  if (members.length === 0) {
+    return { members, rows: [] };
+  }
+  const { rows } = compileHeadQuery({
+    siteId: env.siteId,
+    members: members.map(({ model, policy }) => {
+      const rowFilter = compileRowFilter(policy.rowFilter, env.actor);
+      return {
+        modelId: model.definition.id,
+        conditions: rowFilter ? [rowFilter] : [],
+        conditionsReadEntries: rowFilter !== null,
+        locales: readScopeFor(env.snapshot, model.definition, env.locale, { fallback }),
+      };
+    }),
+    source: env.source,
+    locales: { kind: 'any' },
+    conditions: [entryIdIn(ids)],
+    conditionsReadEntries: false,
     orderBy: [],
   });
   return { members, rows: await contentQueriesRepository.runHeadQuery(rows, env.executor) };
@@ -164,14 +250,11 @@ const relationTargets = async (
     rows.map((row) => row.data),
     fields,
   );
-  for (const [targetModelId, ids] of targets) {
-    const target = resolveModelById(env.snapshot, targetModelId);
-    if (!target) {
-      continue;
-    }
-    const heads = await fetchFamilyHeadsByIds(env, target, [...ids]);
+  // Keyed by the relation's stored target: a model, an interface or any entry (plan interfaces, D4).
+  for (const [targetKey, ids] of targets) {
+    const heads = await fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), [...ids]);
     heads.rows.forEach((row) => visible.add(row.entry_id));
-    fetched.set(targetModelId, { ids, heads });
+    fetched.set(targetKey, { ids, heads });
   }
   return { visible, fetched };
 };
@@ -183,8 +266,8 @@ const relationTargets = async (
  */
 const fetchReusing =
   (fetched: FetchedTargets): PopulateEnvironment['fetch'] =>
-  async (env, model, ids) => {
-    const known = fetched.get(model.definition.id);
+  async (env, targetKey, ids) => {
+    const known = fetched.get(targetKey);
     if (known && ids.every((id) => known.ids.has(id))) {
       const wanted = new Set(ids);
       return {
@@ -192,7 +275,7 @@ const fetchReusing =
         rows: known.heads.rows.filter((row) => wanted.has(row.entry_id)),
       };
     }
-    return fetchFamilyHeadsByIds(env, model, ids);
+    return fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), ids);
   };
 
 /**
@@ -399,17 +482,21 @@ export const projectRows = async (
   });
 };
 
+/** What a projection takes from a query: the selected fields and what to populate. */
+export type ProjectionQuery = { fields: readonly FieldDefinition[] | null; populate: PopulateTree };
+
 /**
  * Rows of a family read projected each through its own member (plan polymorphic-types): the member's
  * effective fields, read mask, components and SEO fields. Without `fields=` a row carries every field its kind
  * has and the caller may read; with it, the named (shared) fields. Rows keep their order; a row of a model
- * that is not a member is left out.
+ * that is not a member is left out. An interface read (plan interfaces) passes each member's own query
+ * (`memberQuery`): its `fields` and `populate` name the member's field IDs.
  */
 export const projectMemberRows = async (
   env: ReadEnvironment,
   members: readonly ReadMember[],
   rows: readonly HeadRow[],
-  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+  query: ProjectionQuery | ((member: ReadMember) => ProjectionQuery),
 ): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
   const projected = new Map<HeadRow, ProjectedEntry>();
   for (const group of groupByMember(members, rows)) {
@@ -418,7 +505,7 @@ export const projectMemberRows = async (
       group.member.model,
       group.member.policy,
       group.rows,
-      query,
+      typeof query === 'function' ? query(group.member) : query,
     )) {
       projected.set(row, data);
     }

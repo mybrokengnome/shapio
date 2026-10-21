@@ -101,9 +101,29 @@ A scope change is metadata: the definition itself does not change, but it gets a
 builder opened before the change is refused as a conflict), the schema version moves, and no snapshot is taken
 on any site. It is recorded in the audit log as `schema.scope`.
 
+### Interfaces across sites
+
+An [interface](modeling.md#interfaces) has a scope like a content type. The common case is one shared
+interface, Featurable, with members that each belong to one site: the blog's BlogPost on the blog site, the
+shop's Product on the shop site. Each site's view holds the interface and that site's members, so
+`/api/content/featurables` on the blog lists BlogPosts and never the shop's products. An interface's list is
+always one site's view; there is no list across sites.
+
+- A site's type may implement a shared interface or an interface on its own site.
+- A shared type may implement shared interfaces only.
+- An interface on one site may only be implemented by types on that site (`INVALID_INTERFACE`, naming both
+  scopes).
+- Sharing an interface with all sites is always allowed. Keeping a shared interface on one site is refused
+  while a type on another site implements it.
+
+**Adding a contract field to a shared interface.** The admin offers to add the new field to every member that
+lacks it, in one change set. A change set belongs to one site, so the offer covers the members on the site you
+are working on. A member on another site is listed with "add it on site B first": open that site, add the
+field to its type, ship that change, then come back and ship the interface change.
+
 ### In the API
 
-`/api/admin/models` and `/api/admin/components` answer for the request's site (`Shapio-Site` or `?site=`):
+`/api/admin/models`, `/api/admin/components`, and `/api/admin/interfaces` answer for the request's site (`Shapio-Site` or `?site=`):
 
 - `GET` lists the site's view; every item carries `scope` (`site` or `network`) and `siteId` (null when
   shared). `?scope=network` lists the shared definitions only.

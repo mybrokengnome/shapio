@@ -1,4 +1,4 @@
-import { createDefinitionIndex, isModelDefinition } from '@shapio/schema';
+import { createDefinitionIndex, isInterfaceDefinition, isModelDefinition } from '@shapio/schema';
 import { getRouteApi } from '@tanstack/react-router';
 import { useAllDefinitions } from '@/api/schema';
 import { counterpartOperationId } from '../helpers/graphqlQuery';
@@ -19,7 +19,8 @@ export const useSwitchTab = (
   const { definitions } = useAllDefinitions();
   return (tab: ExplorerTab) => {
     const all = (definitions ?? []).map(({ definition }) => definition);
-    const models = all.filter(isModelDefinition);
+    // Interfaces have list and read operations too.
+    const models = [...all.filter(isModelDefinition), ...all.filter(isInterfaceDefinition)];
     const op = counterpartOperationId(tab, operationId, models, restOperations, createDefinitionIndex(all));
     void navigate({ search: { tab, ...(op ? { op } : {}) }, replace: true });
   };

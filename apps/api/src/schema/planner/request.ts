@@ -1,4 +1,4 @@
-import { hashDefinition, type SchemaDefinition } from '@shapio/schema';
+import { categoryOfKind, hashDefinition, type SchemaDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../db/index.js';
 import type { DB } from '../../db/types.js';
@@ -93,7 +93,7 @@ export const requestChange = (db: Database, request: ChangeRequest): Promise<Sch
     await recordAudit(trx, {
       actor,
       action: 'schema.change.request',
-      target: { type: plan.kind === 'component' ? 'component' : 'model', id: after.id },
+      target: { type: categoryOfKind(plan.kind), id: after.id },
       metadata: {
         changeId: change.id,
         fromVersion: request.expectedVersion,

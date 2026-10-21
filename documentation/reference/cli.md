@@ -140,7 +140,7 @@ shapio status [--url <origin>]   (defaults to $SHAPIO_URL or http://localhost:43
 
 ### shapio schema
 
-Sync models and components with schema files: pull | diff | apply | scope.
+Sync models, components, and interfaces with schema files: pull | diff | apply | scope.
 
 ```text
 shapio schema <pull|diff|apply|scope> [options]
@@ -149,13 +149,13 @@ shapio schema <pull|diff|apply|scope> [options]
 ```text
 Usage:
   shapio schema pull [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--force]
-      Write a site’s models and components (shared and its own) to schema files and the lock file
+      Write a site’s models, components, and interfaces (shared and its own) to schema files and the lock file
   shapio schema diff [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune]
       Show what `shapio schema apply` would change on the instance (dry run)
   shapio schema apply [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]
       Apply local schema files to the instance live (three-way, per model; refuses on conflicts)
   shapio schema scope <apiKey> (--site <key> | --shared [--site <key>]) [--url <origin>] [--token <admin token>] [--version <n>]
-      Keep a shared model or component on one site (--site), or share a site’s with all sites (--shared)
+      Keep a shared model, component, or interface on one site (--site), or share a site’s with all sites (--shared)
 ```
 
 ### shapio types

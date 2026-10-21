@@ -21,10 +21,10 @@ npx @shapio/cms schema pull
 Pulled 8 definition(s) of site "default" at schema version 12 into schema
 ```
 
-This writes one canonical JSON file per model and component (sorted keys, stable IDs, every default spelled
-out, so diffs are clean): the ones shared with all sites in `schema/models/<apiKey>.json` and
-`schema/components/<apiKey>.json`, the site's own in `schema/sites/<siteKey>/models/` and
-`schema/sites/<siteKey>/components/` (see [Several sites](#several-sites)). It also writes
+This writes one canonical JSON file per model, component, and interface (sorted keys, stable IDs, every default
+spelled out, so diffs are clean): the ones shared with all sites in `schema/models/<apiKey>.json`,
+`schema/components/<apiKey>.json`, and `schema/interfaces/<apiKey>.json`, the site's own in the same three
+folders under `schema/sites/<siteKey>/` (see [Several sites](#several-sites)). It also writes
 `.shapio/schema-lock.json`, which records the version, hash and site of every definition as pulled. Commit
 both.
 `--dir` and `--lock` change the paths. Pull refuses to overwrite files you edited and have not applied, unless
@@ -117,6 +117,44 @@ The other refusals (`UNKNOWN_PARENT`, `INHERITANCE_CYCLE`, `INHERITANCE_TOO_DEEP
 are listed in [Modeling](modeling.md#types-that-extend-a-type). Each prints the file and the property to fix,
 and a hint.
 
+### Interfaces
+
+An [interface](modeling.md#interfaces) has its own file in `interfaces/`, with `kind: "interface"`, its
+`pluralApiKey`, its contract `fields`, and `display` (`titleFieldId`, `defaultSort`). A type that implements it
+lists it in `implements`: the interface's stable ID, the way `extends` names a parent. A relation field's
+`settings.target` can be an interface's stable ID, or `*` for any entry. The CLI prints names, not IDs:
+
+```text
+interface featurable: update
+    + contract field image
+model roadmapItem (implements featurable): update
+    + implements featurable
+    + field image
+model homepage: update [BREAKING]
+    ~ field spotlight target: blogPost → any entry
+```
+
+- **Order doesn't matter.** Apply plans every file together, so a new interface, the types that implement it,
+  and the fields they need can go in one apply. Adding a contract field and adding it to every member in the
+  same apply is how a contract grows without a refusal.
+- **A member must match.** A type that lacks a contract field, or has one that doesn't match, is refused with
+  `INTERFACE_FIELD_MISSING` or `INTERFACE_FIELD_MISMATCH`; the message names the field and the interface.
+  Renaming or deleting a member's contract field in a file is refused the same way, unless the same apply
+  removes the interface from its `implements`.
+- **Same place, or shared.** A type in a site's folder may implement a shared interface or one in the same
+  site's `interfaces/`. A shared type may implement shared interfaces only. An interface in a site's folder
+  can't have a member in another site's folder (`INVALID_INTERFACE`).
+- **Breaking.** Removing an interface from `implements` is breaking (`--allow-breaking`), and refused while a
+  relation to the interface holds entries of that type (`RELATION_VALUES_EXIST`). Widening a relation's target (to an interface its type
+  implements, or to `*`) is breaking and keeps the values; narrowing it is also destructive
+  (`--allow-destructive`) and clears them.
+- **Deleting an interface.** With `--prune`, deleting the file of an interface that types still implement is
+  refused (`HAS_MEMBERS`), and so is one that a relation targets. Remove it from their `implements` and point
+  the relations elsewhere, and apply that first.
+
+The other refusals (`UNKNOWN_INTERFACE`, `INVALID_INTERFACE_FIELD`) are listed in
+[Modeling](modeling.md#interfaces). Each prints the file and the property to fix, and a hint.
+
 ### Pull again after upgrading
 
 A newer Shapio can add a property to model definitions and fill it on existing models when it reads them (for
@@ -137,8 +175,10 @@ site.
 schema/
   models/                 shared with all sites
   components/
+  interfaces/
   sites/
     blog/models/          the blog site's own
+    blog/interfaces/
     shop/models/          the shop site's own
 .shapio/schema-lock.json  every definition's version, hash and site, and the sites the tree covers
 ```

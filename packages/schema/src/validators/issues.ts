@@ -8,6 +8,12 @@ export type ValidationIssue = {
   message: string;
   /** Set by cross-definition checks so a multi-definition apply can say which file is wrong. */
   definitionId?: string;
+  /**
+   * Interface issues on a member (`INTERFACE_FIELD_MISSING`, `INTERFACE_FIELD_MISMATCH`): the interface whose
+   * contract is not met and the contract field's API ID, so the admin can offer to add the field.
+   */
+  interfaceId?: string;
+  fieldApiKey?: string;
 };
 
 export type IssueCode =
@@ -46,7 +52,18 @@ export type IssueCode =
   | 'INHERITANCE_TOO_DEEP'
   | 'INHERITED_FIELD_COLLISION'
   | 'INHERITED_FLAG_MISMATCH'
-  | 'HAS_CHILDREN';
+  | 'HAS_CHILDREN'
+  | 'UNKNOWN_INTERFACE'
+  | 'INVALID_INTERFACE'
+  | 'INTERFACE_FIELD_MISSING'
+  | 'INTERFACE_FIELD_MISMATCH'
+  | 'INVALID_INTERFACE_FIELD'
+  | 'HAS_MEMBERS'
+  /**
+   * A change would leave relation values pointing at entries their relation no longer accepts (a type stops
+   * implementing an interface, or a member or kind is deleted, while relations hold its entries).
+   */
+  | 'RELATION_VALUES_EXIST';
 
 export class SchemaValidationError extends Error {
   readonly issues: readonly ValidationIssue[];

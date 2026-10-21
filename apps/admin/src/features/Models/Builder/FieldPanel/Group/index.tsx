@@ -1,4 +1,4 @@
-import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import { isModelDefinition, type FieldDefinition, type ModelDefinition } from '@shapio/schema';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { newStableId } from '@/helpers/stableId';
@@ -22,7 +22,7 @@ export const Group = ({ model, field, disabled }: GroupProps) => {
   const [creating, setCreating] = useState(false);
   const id = `field-${field.id}-group`;
   const apply = (change: (current: ModelDefinition) => ModelDefinition) =>
-    update((current) => (current.kind === 'component' ? current : change(current)));
+    update((current) => (!isModelDefinition(current) ? current : change(current)));
   const options = [
     ...(model.display.groups ?? []).map((group) => ({ value: group.id, label: group.label })),
     { value: NEW_GROUP, label: t('models.builder.groupNew') },

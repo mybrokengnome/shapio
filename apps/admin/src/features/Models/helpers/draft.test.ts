@@ -116,11 +116,13 @@ describe('removeField', () => {
       },
     };
     const withoutName = removeField(definition, name.id);
-    expect(withoutName.display.groups).toEqual([
+    expect('groups' in withoutName.display && withoutName.display.groups).toEqual([
       { id: 'pricing', label: 'Pricing', fieldIds: [price.id, sku.id] },
     ]);
     const withoutPrice = removeField(withoutName, price.id);
-    expect(withoutPrice.display.groups).toEqual([{ id: 'pricing', label: 'Pricing', fieldIds: [sku.id] }]);
+    expect('groups' in withoutPrice.display && withoutPrice.display.groups).toEqual([
+      { id: 'pricing', label: 'Pricing', fieldIds: [sku.id] },
+    ]);
     expect(removeField(withoutPrice, sku.id).display).toEqual({});
   });
 });

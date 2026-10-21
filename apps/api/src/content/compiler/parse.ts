@@ -4,6 +4,7 @@ import {
   isStableId,
   TEXT_TITLE_FIELD_TYPES,
   type FieldDefinition,
+  type InterfaceDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
 import { findFieldByApiKey } from '../model.js';
@@ -39,8 +40,11 @@ import {
  * outside the caller's read mask are rejected with 403 so filters, sorts and searches can never be used as
  * an oracle for hidden values (ADR 0005). Unknown parameters, fields and operators are 400s.
  */
+/** What a query is parsed against: a model, or an interface's contract (plan interfaces). */
+export type QueryDefinition = ModelDefinition | InterfaceDefinition;
+
 export type ParseContext = {
-  model: ModelDefinition;
+  model: QueryDefinition;
   /** Locale codes the instance has. */
   locales: readonly string[];
   /** The read mask, per field: what `populate` may expand, and what `fields` may select unless `isSelectable` says. */
@@ -65,13 +69,20 @@ export type ParseContext = {
   allowSeo?: boolean;
   /** `?publicationState=` is a delivery feature. */
   allowPublicationState?: boolean;
-  /** Target models of relation fields, for nested populate paths. */
-  resolveModel: (modelId: string) => ModelDefinition | undefined;
+  /** Target models (or interfaces) of relation fields, for nested populate paths. */
+  resolveModel: (modelId: string) => QueryDefinition | undefined;
+  /**
+   * Whether `?seo=resolved` has an SEO field to resolve, when the definition's own fields cannot say: an
+   * interface read resolves each member's SEO fields (plan interfaces, Q-d). Absent: the definition decides.
+   */
+  hasSeoField?: boolean;
   /**
    * The route model's family by API ID (model ID values), for `filters[__model]`. Absent: the filter is refused
    * (GraphQL, where `__` names are reserved).
    */
   kinds?: ReadonlyMap<string, string>;
+  /** `kinds` are an interface's members (plan interfaces): a refusal says "member", not "kind". */
+  kindsAreMembers?: boolean;
 };
 
 /** The system attribute naming an entry's kind; it filters by kind, never as a field. */
@@ -264,7 +275,7 @@ const parseFields = (context: ParseContext, value: QueryValue | undefined): Fiel
   });
 };
 
-const relationField = (context: ParseContext, model: ModelDefinition, key: string): FieldDefinition => {
+const relationField = (context: ParseContext, model: QueryDefinition, key: string): FieldDefinition => {
   const field = findFieldByApiKey(model.fields, key);
   if (!field || field.type !== 'relation') {
     throw queryInvalid(`"${key}" is not a relation of "${model.apiKey}" and cannot be populated`);
@@ -277,13 +288,18 @@ const relationField = (context: ParseContext, model: ModelDefinition, key: strin
 
 type MutablePopulate = Map<string, MutablePopulate>;
 
-const parsePopulate = (context: ParseContext, value: QueryValue | undefined): PopulateTree => {
+const parsePopulate = (
+  context: ParseContext,
+  value: QueryValue | undefined,
+): { populate: PopulateTree; populateAll: boolean } => {
   const root: MutablePopulate = new Map();
+  let all = false;
   for (const item of toList(value)) {
     if (typeof item !== 'string') {
       throw queryInvalid('populate needs a list of relation paths');
     }
     if (item === '*') {
+      all = true;
       for (const field of context.model.fields) {
         if (field.type === 'relation' && !field.deprecated && context.isReadable(field)) {
           root.set(field.id, root.get(field.id) ?? new Map<string, MutablePopulate>());
@@ -295,7 +311,7 @@ const parsePopulate = (context: ParseContext, value: QueryValue | undefined): Po
     if (segments.length > QUERY_LIMITS.maxPopulateDepth) {
       throw queryInvalid(`populate is limited to ${QUERY_LIMITS.maxPopulateDepth} levels`);
     }
-    let model: ModelDefinition | undefined = context.model;
+    let model: QueryDefinition | undefined = context.model;
     let node = root;
     for (const segment of segments) {
       if (!model) {
@@ -305,10 +321,11 @@ const parsePopulate = (context: ParseContext, value: QueryValue | undefined): Po
       const next: MutablePopulate = node.get(field.id) ?? new Map<string, MutablePopulate>();
       node.set(field.id, next);
       node = next;
+      // A relation to any entry (`*`) has no fields to name below it: its targets are of every model.
       model = field.type === 'relation' ? context.resolveModel(field.settings.target) : undefined;
     }
   }
-  return root;
+  return { populate: root, populateAll: all };
 };
 
 const parseSearch = (context: ParseContext, value: QueryValue | undefined): ContentQuery['search'] => {
@@ -379,10 +396,10 @@ const parseSeo = (tree: QueryTree, context: ParseContext): { seo?: SeoMode } => 
   if (!SEO_MODE_SET.has(value)) {
     throw queryInvalid(`"seo" must be one of ${SEO_MODES.join(', ')}`);
   }
-  if (
-    value === 'resolved' &&
-    !context.model.fields.some((field) => !field.deprecated && isSeoField(field) && context.isReadable(field))
-  ) {
+  const hasSeoField =
+    context.hasSeoField ??
+    context.model.fields.some((field) => !field.deprecated && isSeoField(field) && context.isReadable(field));
+  if (value === 'resolved' && !hasSeoField) {
     throw queryInvalid(`"${context.model.apiKey}" has no SEO field to resolve`);
   }
   return { seo: value as SeoMode };
@@ -435,7 +452,7 @@ const parseKinds = (value: QueryValue, context: ParseContext): string[] => {
     const modelId = typeof item === 'string' ? kinds.get(item) : undefined;
     if (modelId === undefined) {
       throw queryInvalid(
-        `"${typeof item === 'string' ? item : JSON.stringify(item)}" is not a kind of this model`,
+        `"${typeof item === 'string' ? item : JSON.stringify(item)}" ${context.kindsAreMembers ? 'is not a member of this interface' : 'is not a kind of this model'}`,
         {
           field: KIND_KEY,
         },
@@ -452,6 +469,11 @@ const splitKindFilter = (filters: QueryTree, context: ParseContext) => {
     filters: Object.keys(rest).length > 0 ? rest : null,
     kinds: kindFilter !== undefined ? parseKinds(kindFilter, context) : undefined,
   };
+};
+
+const populateOf = (context: ParseContext, value: QueryValue | undefined) => {
+  const { populate, populateAll } = parsePopulate(context, value);
+  return populateAll ? { populate, populateAll } : { populate };
 };
 
 export const parseContentQuery = (tree: QueryTree, context: ParseContext): ContentQuery => {
@@ -480,7 +502,7 @@ export const parseContentQuery = (tree: QueryTree, context: ParseContext): Conte
     pageSize:
       positiveInteger(tree.pageSize, 'pageSize', QUERY_LIMITS.maxPageSize) ?? QUERY_LIMITS.defaultPageSize,
     fields: parseFields(context, tree.fields),
-    populate: parsePopulate(context, tree.populate),
+    ...populateOf(context, tree.populate),
     locale,
     snapshot,
     ...parseRichText(tree, context),

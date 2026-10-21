@@ -21,7 +21,7 @@ const help = () =>
 
 /** `shapio schema <pull|diff|apply|scope>`: git-like schema sync over HTTP with an admin API token. */
 export const schemaCommand: CliCommand = {
-  summary: 'Sync models and components with schema files: pull | diff | apply | scope',
+  summary: 'Sync models, components, and interfaces with schema files: pull | diff | apply | scope',
   usage: 'shapio schema <pull|diff|apply|scope> [options]',
   run: async (args: readonly string[], io: CliIo) => {
     const [name, ...rest] = args;

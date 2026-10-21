@@ -20,9 +20,15 @@ import { buildCreateData, defaultFormValues, liveFields } from '../../helpers/fo
 import { fieldGridModeOf } from '../../helpers/widthClasses';
 
 type InlineCreateSheetProps = {
-  target: ModelDefinition;
-  /** The target type and its kinds in tree order, when it has kinds: the new entry's kind is chosen first. */
-  kinds: readonly ModelDefinition[];
+  /** The sheet's title ("New Author", "New Featurable"). */
+  title: string;
+  /**
+   * The types the new entry can be (at least one; the first is chosen at first): a model target and its kinds,
+   * or an interface's or any entry's creatable types. With more than one, the type is chosen first.
+   */
+  types: readonly [ModelDefinition, ...ModelDefinition[]];
+  /** The type select's label ("Kind" for a type's kinds, "Type" across types). */
+  typeLabel: string;
   onClose: () => void;
   onCreated: (id: string) => void;
 };
@@ -41,20 +47,28 @@ const storeForKind = (kind: ModelDefinition, previous?: EntryFormStore) => {
 };
 
 /**
- * Creates an entry of a relation's target model without leaving the form (the relation editor's
- * `allowInlineCreate` option). A target with kinds asks which kind first (a small select above the form);
- * switching keeps the shared fields' values. The server checks the create permission; a refusal shows here.
+ * Creates an entry of a relation's target without leaving the form (the relation editor's
+ * `allowInlineCreate` option). A target with several types (a type's kinds, an interface's members, any
+ * entry) asks which type first (a small select above the form); switching keeps the shared fields' values.
+ * The server checks the create permission; a refusal shows here.
  */
-export const InlineCreateSheet = ({ target: type, kinds, onClose, onCreated }: InlineCreateSheetProps) => {
+export const InlineCreateSheet = ({
+  title,
+  types,
+  typeLabel,
+  onClose,
+  onCreated,
+}: InlineCreateSheetProps) => {
   const { t } = useTranslation();
   const kindId = useId();
   const outer = useFieldsEnvironment();
-  const [target, setTarget] = useState(type);
-  const [store, setStore] = useState(() => storeForKind(type));
+  const [first] = types;
+  const [target, setTarget] = useState(first);
+  const [store, setStore] = useState(() => storeForKind(first));
   const dirty = useStore(store, (state) => selectDirtyKeys(state).length > 0);
   const create = useCreateEntry(target.apiKey);
   const changeKind = (apiKey: string) => {
-    const next = kinds.find((kind) => kind.apiKey === apiKey);
+    const next = types.find((kind) => kind.apiKey === apiKey);
     if (next && next.id !== target.id) {
       setStore(storeForKind(next, store));
       setTarget(next);
@@ -101,7 +115,7 @@ export const InlineCreateSheet = ({ target: type, kinds, onClose, onCreated }: I
       <Sheet open onOpenChange={requestOpenChange}>
         <SheetContent size="md" aria-describedby={undefined}>
           <SheetHeader>
-            <SheetTitle>{t('content.relation.createTitle', { model: type.label })}</SheetTitle>
+            <SheetTitle>{title}</SheetTitle>
           </SheetHeader>
           <form
             noValidate
@@ -112,15 +126,15 @@ export const InlineCreateSheet = ({ target: type, kinds, onClose, onCreated }: I
             }}
           >
             <SheetBody className="space-y-5">
-              {kinds.length > 1 ? (
+              {types.length > 1 ? (
                 <div className="space-y-2">
-                  <Label htmlFor={kindId}>{t('content.relation.kind')}</Label>
+                  <Label htmlFor={kindId}>{typeLabel}</Label>
                   <Select value={target.apiKey} onValueChange={changeKind} disabled={create.isPending}>
                     <SelectTrigger id={kindId} size="sm" className="w-full sm:w-64">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {kinds.map((kind) => (
+                      {types.map((kind) => (
                         <SelectItem key={kind.id} value={kind.apiKey}>
                           {kind.label}
                         </SelectItem>

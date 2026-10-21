@@ -38,7 +38,7 @@ export const scanBundleFile = (path: string, range?: { start: number; end: numbe
 
 const COUNT_LABELS: ReadonlyArray<[string, string]> = [
   ['locale', 'locales'],
-  ['definition', 'models and components'],
+  ['definition', 'models, components, and interfaces'],
   ['appRole', 'app roles'],
   ['deliveryRole', 'delivery roles'],
   ['appUser', 'app users'],
@@ -50,7 +50,7 @@ const COUNT_LABELS: ReadonlyArray<[string, string]> = [
   ['revision', 'revisions'],
 ];
 
-/** The end record's counts as a sentence: `2 locales, 8 models and components, ...`. */
+/** The end record's counts as a sentence: `2 locales, 8 models, components, and interfaces, ...`. */
 export const formatCounts = (counts: Record<string, number>) =>
   COUNT_LABELS.filter(([type]) => (counts[type] ?? 0) > 0)
     .map(([type, label]) => `${counts[type]} ${label}`)

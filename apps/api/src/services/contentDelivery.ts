@@ -1,16 +1,19 @@
+import { isModelDefinition } from '@shapio/schema';
 import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
-import { kindsMetaOf, type KindMeta, type ReadMember } from '../content/family.js';
-import { resolveModel, type ContentModel } from '../content/model.js';
+import { kindsMetaOf, readableMembers, type KindMeta, type ReadMember } from '../content/family.js';
+import { modelRouteOf, resolveContentRoute, type ContentModel } from '../content/model.js';
 import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
+import type { Policy } from '../permissions/types.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { restFieldReads } from '../usage/restFieldReads.js';
 import type { ContentServiceContext } from './contentAccess.js';
-import { readEntryPage, readOneEntry } from './contentDeliveryReads.js';
+import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
+import { parseInterfaceQuery, queryMembers, type InterfaceRoute } from './contentInterfaceReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { assertMayReadDrafts } from './draftAccess.js';
 
@@ -31,10 +34,16 @@ export type DeliveryMeta = {
   publicationState?: 'draft';
 };
 
+/** One member of an interface list, for `meta.members` (plan interfaces). */
+export type MemberMeta = { apiKey: string; label: string; routeKey: string };
+
 export type DeliveryList = {
   data: Array<Record<string, unknown>>;
-  /** `kinds`: a model with kinds lists its family; the kinds the caller may read (plan polymorphic-types). */
-  meta: DeliveryMeta & { pagination: Pagination; kinds?: KindMeta[] };
+  /**
+   * `kinds`: a model with kinds lists its family; the kinds the caller may read (plan polymorphic-types).
+   * `members`: an interface lists its members; the members the caller may read (plan interfaces).
+   */
+  meta: DeliveryMeta & { pagination: Pagination; kinds?: KindMeta[]; members?: MemberMeta[] };
 };
 export type DeliveryItem = { data: Record<string, unknown>; meta: DeliveryMeta };
 
@@ -59,23 +68,112 @@ export type DeliveryReadOptions = {
   defer?: (task: () => Promise<void>) => void;
 };
 
+const readRefused = (context: ContentServiceContext, modelKey: string) =>
+  context.actor.kind === 'anonymous'
+    ? new AppError(401, 'UNAUTHENTICATED', 'This content needs a delivery token')
+    : new AppError(403, 'FORBIDDEN', `Your token may not read "${modelKey}"`);
+
 /**
- * The route's model and the caller's read policy (401/403 when it may not read it), and the kinds a read of
- * the route covers: every member of the model's family the caller may read (plan polymorphic-types).
+ * What a route reads and the caller's read policies (401/403 when it may not read it). A model's route covers
+ * every member of its family the caller may read (plan polymorphic-types). An interface's route covers the
+ * members the caller may read, and is refused only when it may read none; no policy is evaluated on the
+ * interface itself (plan interfaces, D6).
  */
-const readableModel = async (context: ContentServiceContext, modelKey: string) => {
-  const model = resolveModel(context.snapshot, modelKey);
+const readableRoute = async (context: ContentServiceContext, modelKey: string): Promise<ReadableRoute> => {
+  const route = resolveContentRoute(context.snapshot, modelKey);
+  if (route.kind === 'interface') {
+    const policyFor = (modelId: string) =>
+      context.permissions.evaluate(context.actor, { action: 'read', modelId });
+    const members = await readableMembers(context.snapshot, route.memberIds, policyFor);
+    // No type implements the interface yet: an empty list for anyone who may read some type of the site;
+    // with members, a caller who may read none of them is refused (plan interfaces, D6).
+    const [first] = route.memberIds.length === 0 ? await someReadableModel(context, policyFor) : members;
+    if (!first) {
+      throw readRefused(context, modelKey);
+    }
+    return {
+      model: first.model,
+      policy: first.policy,
+      members,
+      contract: { definition: route.definition, members },
+    };
+  }
+  const { model } = route;
   const policy = await context.permissions.evaluate(context.actor, {
     action: 'read',
     modelId: model.definition.id,
   });
   if (!policy.allowed) {
-    throw context.actor.kind === 'anonymous'
-      ? new AppError(401, 'UNAUTHENTICATED', 'This content needs a delivery token')
-      : new AppError(403, 'FORBIDDEN', `Your token may not read "${modelKey}"`);
+    throw readRefused(context, modelKey);
   }
   return { model, policy, members: await familyMembersFor(context, model, policy) };
 };
+
+/** The first collection or singleton of the view the caller may read, if any. */
+const someReadableModel = async (
+  context: ContentServiceContext,
+  policyFor: (modelId: string) => Promise<Policy>,
+): Promise<ReadMember[]> => {
+  for (const { definition } of context.snapshot.definitions) {
+    if (isModelDefinition(definition)) {
+      const [readable] = await readableMembers(context.snapshot, [definition.id], policyFor);
+      if (readable) {
+        return [readable];
+      }
+    }
+  }
+  return [];
+};
+
+type ReadableRoute = {
+  /** The route's model; on an interface route the first readable member (drafts are checked on it). */
+  model: ContentModel;
+  policy: Policy;
+  members: ReadMember[];
+  contract?: InterfaceRoute;
+};
+
+/** The query of a route: parsed against the model, or against the interface's contract. */
+const parseRouteQuery = (context: ContentServiceContext, route: ReadableRoute, rawQuery: string) =>
+  route.contract
+    ? parseInterfaceQuery(context, route.contract, rawQuery, DELIVERY_PARSE)
+    : parseQueryFor(context, route.model, route.policy, rawQuery, {
+        ...DELIVERY_PARSE,
+        members: route.members,
+      });
+
+/** The read of a route: an interface read carries its members' own queries. */
+const routeRead = (
+  context: ContentServiceContext,
+  route: ReadableRoute,
+  query: ContentQuery,
+  source: HeadSource,
+  fallback: boolean,
+): DeliveryRead => ({
+  context,
+  source,
+  model: route.model,
+  policy: route.policy,
+  members: route.members,
+  query,
+  fallback,
+  ...(route.contract
+    ? {
+        contract: {
+          route: route.contract,
+          members: queryMembers(context.snapshot, route.contract, query),
+        },
+      }
+    : {}),
+});
+
+/** `meta.members` of an interface list: the members the caller may read. */
+const membersMetaOf = (context: ContentServiceContext, route: ReadableRoute): MemberMeta[] | undefined =>
+  route.contract?.members.map(({ model }) => ({
+    apiKey: model.definition.apiKey,
+    label: model.definition.label,
+    routeKey: model.route?.key ?? modelRouteOf(context.snapshot, model.definition).key,
+  }));
 
 /** Whether a read asks for drafts: GraphQL's option, or `?publicationState=draft`. */
 const readsDrafts = (query: ContentQuery, options: DeliveryReadOptions): boolean =>
@@ -126,23 +224,28 @@ const snapshotCheck =
 const recordUsage = async (
   context: ContentServiceContext,
   options: DeliveryReadOptions,
-  members: readonly ReadMember[],
-  query: ContentQuery,
+  read: DeliveryRead,
   shown: ReadonlySet<unknown>,
 ) => {
+  const { query } = read;
   const principalKey = usagePrincipalKey(context.actor);
   if (!options.usage || readsDrafts(query, options) || principalKey === null) {
     return;
   }
   options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null);
+  // An interface read counts each member's own fields under that member (plan interfaces).
+  const members: readonly (ReadMember & { query?: ContentQuery })[] = read.contract?.members ??
+    read.members ?? [{ model: read.model, policy: read.policy }];
   const counted =
-    members.length === 1 ? members : members.filter((member) => shown.has(member.model.definition.apiKey));
-  for (const { model, policy } of counted) {
+    members.length === 1 && !read.contract
+      ? members
+      : members.filter((member) => shown.has(member.model.definition.apiKey));
+  for (const { model, policy, query: own } of counted) {
     const reads = await restFieldReads({
       snapshot: context.snapshot,
       model,
       policy,
-      query,
+      query: own ?? query,
       policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
     });
     options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
@@ -203,17 +306,20 @@ export const listDelivery = async (
   rawQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
-  const { model, policy, members } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { ...DELIVERY_PARSE, members });
+  const route = await readableRoute(context, modelKey);
+  const { model } = route;
+  const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);
   await authorizeDrafts(context, model, modelKey, drafts);
   const locale = query.locale ?? context.snapshot.defaultLocale;
-  const singleton = model.definition.kind === 'singleton';
-  const { entries, limit, total, seq } = await readEntryPage(
-    { context, source, model, policy, members, query, fallback: options.fallback ?? true },
-    { total: !singleton, check: snapshotCheck(query) },
-  );
+  // An interface route is always a list, whichever its members are (plan interfaces).
+  const singleton = !route.contract && model.definition.kind === 'singleton';
+  const read = routeRead(context, route, query, source, options.fallback ?? true);
+  const { entries, limit, total, seq } = await readEntryPage(read, {
+    total: !singleton,
+    check: snapshotCheck(query),
+  });
   const snapshot = query.snapshot ?? seq;
   let result: DeliveryList | DeliveryItem;
   if (singleton) {
@@ -223,17 +329,19 @@ export const listDelivery = async (
     }
     result = { data: entry, meta: metaOf(locale, snapshot, drafts) };
   } else {
-    const kinds = kindsMetaOf(context.snapshot, model, members);
+    const kinds = route.contract ? undefined : kindsMetaOf(context.snapshot, model, route.members);
+    const members = membersMetaOf(context, route);
     result = {
       data: entries,
       meta: {
         ...metaOf(locale, snapshot, drafts),
         pagination: paginationMeta(query.page, limit, total),
         ...(kinds ? { kinds } : {}),
+        ...(members ? { members } : {}),
       },
     };
   }
-  await afterRead(options, () => recordUsage(context, options, members, query, kindsOf(entries)));
+  await afterRead(options, () => recordUsage(context, options, read, kindsOf(entries)));
   return result;
 };
 
@@ -249,20 +357,17 @@ export const getDelivery = async (
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryItem> => {
   assertItemParameters(rawQuery, ITEM_PARAMETERS);
-  const { model, policy, members } = await readableModel(context, modelKey);
-  const query = parseQueryFor(context, model, policy, rawQuery, { ...DELIVERY_PARSE, members });
+  const route = await readableRoute(context, modelKey);
+  const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);
-  await authorizeDrafts(context, model, modelKey, drafts);
-  const { entry, seq } = await readOneEntry(
-    { context, source, model, policy, members, query, fallback: options.fallback ?? true },
-    id,
-    { check: snapshotCheck(query) },
-  );
+  await authorizeDrafts(context, route.model, modelKey, drafts);
+  const read = routeRead(context, route, query, source, options.fallback ?? true);
+  const { entry, seq } = await readOneEntry(read, id, { check: snapshotCheck(query) });
   if (!entry) {
     throw entryNotFound(id);
   }
-  await afterRead(options, () => recordUsage(context, options, members, query, kindsOf([entry])));
+  await afterRead(options, () => recordUsage(context, options, read, kindsOf([entry])));
   return {
     data: entry,
     meta: metaOf(query.locale ?? context.snapshot.defaultLocale, query.snapshot ?? seq, drafts),

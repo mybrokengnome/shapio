@@ -1,4 +1,4 @@
-import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import type { FieldDefinition, SchemaDefinition } from '@shapio/schema';
 import {
   GraphQLInputObjectType,
   GraphQLList,
@@ -10,13 +10,13 @@ import { FILTER_OPERATORS, queryInvalid, type FilterOperator } from '../../../co
 import { describeDefinition } from './descriptions.js';
 import { operatorFieldName, type FilterTypeName, type FixedTypes } from './fixedTypes.js';
 import { modelTypeName } from './names.js';
-import { readableFields, type SchemaVisibility } from './visibility.js';
 
 /**
  * `XFilter` and `XSort` inputs, and their translation to the REST querystring the content compiler parses
  * (`filters[title][$eq]=…`, `sort=title:asc`). GraphQL queries go through exactly the same parser, allowlist,
  * read-mask checks and limits as REST, so the same request gets the same rows, errors and 403s. They name only
- * the fields of the caller's read mask (visibility.ts).
+ * the fields they are given: a model's read mask (visibility.ts), or the contract fields every readable member
+ * of an interface exposes (interfaceTypes.ts).
  */
 const FILTER_TYPE_BY_DATA_TYPE: Partial<Record<FieldDefinition['type'], FilterTypeName>> = {
   string: 'StringFilter',
@@ -47,23 +47,20 @@ const SYSTEM_FILTERS: ReadonlyArray<[string, FilterTypeName]> = [
 /** `and`/`or`/`not` combine filters. They are reserved field API keys (naming.ts), so never shadowed. */
 const LOGICAL_KEYS = { and: '$and', or: '$or', not: '$not' } as const;
 
-const filterableFields = (visibility: SchemaVisibility, model: ModelDefinition) =>
-  readableFields(visibility, model).filter((field) => FILTER_TYPE_BY_DATA_TYPE[field.type] !== undefined);
-
 export const createFilterInput = (
-  model: ModelDefinition,
-  visibility: SchemaVisibility,
+  owner: SchemaDefinition,
+  readable: readonly FieldDefinition[],
   fixed: FixedTypes,
 ): GraphQLInputObjectType => {
   const type: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: modelTypeName(model, 'Filter'),
-    description: `Conditions on ${model.label} entries; every key given must hold (AND).`,
+    name: modelTypeName(owner, 'Filter'),
+    description: `Conditions on ${owner.label} entries; every key given must hold (AND).`,
     fields: () => {
       const fields: GraphQLInputFieldConfigMap = {};
       for (const [name, filter] of SYSTEM_FILTERS) {
         fields[name] = { type: fixed.filters[filter] };
       }
-      for (const field of filterableFields(visibility, model)) {
+      for (const field of readable.filter((item) => FILTER_TYPE_BY_DATA_TYPE[item.type] !== undefined)) {
         fields[field.apiKey] = {
           type: fixed.filters[FILTER_TYPE_BY_DATA_TYPE[field.type] as FilterTypeName],
           description: describeDefinition(field),
@@ -80,20 +77,20 @@ export const createFilterInput = (
 
 /** `XSort`: one key per item, e.g. `sort: [{ title: ASC }, { createdAt: DESC }]`. */
 export const createSortInput = (
-  model: ModelDefinition,
-  visibility: SchemaVisibility,
+  owner: SchemaDefinition,
+  readable: readonly FieldDefinition[],
   fixed: FixedTypes,
 ): GraphQLInputObjectType =>
   new GraphQLInputObjectType({
-    name: modelTypeName(model, 'Sort'),
-    description: `One sort key of ${model.label} entries (set exactly one field per item).`,
+    name: modelTypeName(owner, 'Sort'),
+    description: `One sort key of ${owner.label} entries (set exactly one field per item).`,
     fields: () => {
       const fields: GraphQLInputFieldConfigMap = {
         id: { type: fixed.sortDirection },
         createdAt: { type: fixed.sortDirection },
         updatedAt: { type: fixed.sortDirection },
       };
-      for (const field of readableFields(visibility, model).filter(isSortable)) {
+      for (const field of readable.filter(isSortable)) {
         fields[field.apiKey] = { type: fixed.sortDirection };
       }
       return fields;

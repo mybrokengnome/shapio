@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @shapio/cms --filter @shapio/admin dev",
     "build": "pnpm -r --filter \"!example-*\" build",
-    "lint": "eslint .",
+    "lint": "node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",

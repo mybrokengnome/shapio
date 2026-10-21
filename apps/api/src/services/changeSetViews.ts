@@ -1,4 +1,4 @@
-import { effectiveTitleField } from '@shapio/schema';
+import { categoryOfKind, effectiveTitleField, type DefinitionCategory } from '@shapio/schema';
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
@@ -46,7 +46,7 @@ export type SchemaItemView = {
   position: number;
   draftId: string;
   definitionId: string;
-  category: 'model' | 'component';
+  category: DefinitionCategory;
   apiKey: string;
   operation: SchemaOperation;
   baseVersion: number | null;
@@ -101,8 +101,8 @@ export const EDITABLE_STATUSES: ReadonlySet<string> = new Set(['open', 'schedule
 
 const toNumber = (value: string | null): number | null => (value === null ? null : Number(value));
 
-export const categoryOfKind = (kind: string): 'model' | 'component' =>
-  kind === 'component' ? 'component' : 'model';
+/** Model, component or interface, by stored kind (one rule, in `@shapio/schema`). */
+export { categoryOfKind };
 
 export const operationOf = (draft: Pick<SchemaDraftRow, 'base_version' | 'definition'>): SchemaOperation => {
   if (draft.definition === null) {

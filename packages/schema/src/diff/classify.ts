@@ -1,5 +1,11 @@
+import type { DefinitionIndex } from '../inheritance/resolve.js';
 import { storageFamilyOf, type DataType, type StoredFieldShape } from '../types/dataTypes.js';
-import type { FieldDefinition, SchemaDefinition } from '../types/definitions.js';
+import {
+  ANY_TARGET,
+  isModelDefinition,
+  type FieldDefinition,
+  type SchemaDefinition,
+} from '../types/definitions.js';
 import type { SchemaChange } from './types.js';
 import { uniqueFieldsChangingLocalization } from './uniqueLocalization.js';
 
@@ -56,7 +62,16 @@ export type ClassifiedChange = SchemaChange & {
   cleanup: CleanupKind[];
 };
 
-export type ClassifyContext = { before: SchemaDefinition | null; after: SchemaDefinition | null };
+export type ClassifyContext = {
+  before: SchemaDefinition | null;
+  after: SchemaDefinition | null;
+  /**
+   * The whole schema before and after the change (network-wide), when the caller has it: a relation whose
+   * target widens (the new target accepts every entry the old one did) keeps its values. Without it a target
+   * change is the conservative destructive conversion.
+   */
+  index?: { before: DefinitionIndex; after: DefinitionIndex };
+};
 
 type Classification = Omit<ClassifiedChange, keyof SchemaChange>;
 
@@ -295,6 +310,14 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
     case 'formatVersion':
       return result('conversion', { prerequisites: ['convert', 'validateValues'] });
     case 'target':
+      // Existing values point at entries of the old target; the conversion clears every one of them (a target
+      // that widens keeps them instead, see `targetWidens`).
+      return result('conversion', {
+        breaking: true,
+        destructive: true,
+        dropsValues: true,
+        prerequisites: ['convert'],
+      });
     case 'component':
       // Existing values point at entries of the old target; they are cleared by the conversion.
       return result('conversion', { breaking: true, destructive: true, prerequisites: ['convert'] });
@@ -304,7 +327,8 @@ const classifySettingsChange = (change: SchemaChange): Classification => {
   }
 };
 
-const classifyFieldChange = (change: SchemaChange, { before, after }: ClassifyContext): Classification => {
+const classifyFieldChange = (change: SchemaChange, context: ClassifyContext): Classification => {
+  const { before, after } = context;
   const previous = findField(before, change.fieldId);
   const field = findField(after, change.fieldId);
   switch (change.kind) {
@@ -358,7 +382,7 @@ const classifyFieldChange = (change: SchemaChange, { before, after }: ClassifyCo
         prerequisites: [field?.defaultValue !== undefined ? 'backfill' : 'validateRequired'],
       });
     case 'field.localized': {
-      const modelLocalized = after?.kind !== 'component' && after?.localized === true;
+      const modelLocalized = after !== null && isModelDefinition(after) && after.localized === true;
       if (!modelLocalized) {
         return result('metadata');
       }
@@ -395,14 +419,80 @@ const classifyFieldChange = (change: SchemaChange, { before, after }: ClassifyCo
       return result('metadata');
     }
     case 'field.settings':
-      return classifySettingsChange(change);
+      return change.property === 'target' && targetWidens(change, context)
+        ? // Every value still points at an accepted entry; the output type changes (plan interfaces).
+          result('contract', { breaking: true })
+        : classifySettingsChange(change);
     default:
       return result('metadata');
   }
 };
 
+/** The models a relation target accepts in a schema: a collection's family or an interface's members. */
+const acceptedBy = (index: DefinitionIndex, target: string): ReadonlySet<string> =>
+  new Set(index.get(target)?.kind === 'interface' ? index.implementedBy(target) : index.family(target));
+
+/**
+ * Whether a relation's new target accepts every entry the old one did: anything to any entry, a collection
+ * to an interface it (or an ancestor) implements, an interface to a wider one. Needs the schema index.
+ */
+const targetWidens = (change: SchemaChange, { index }: ClassifyContext): boolean => {
+  if (!index || typeof change.from !== 'string' || typeof change.to !== 'string') {
+    return false;
+  }
+  if (change.to === ANY_TARGET) {
+    return true;
+  }
+  if (change.from === ANY_TARGET) {
+    return false;
+  }
+  const after = acceptedBy(index.after, change.to);
+  return [...acceptedBy(index.before, change.from)].every((id) => after.has(id));
+};
+
+/** Settings whose change changes an interface field's API type (list or single, the target's type). */
+const CONTRACT_SHAPE_SETTINGS: ReadonlySet<string> = new Set(['target', 'cardinality', 'multiple']);
+
+/**
+ * A change to an interface's definition (plan interfaces). An interface stores nothing, so nothing needs
+ * content work: every change is metadata or a contract change. Adding to the contract only widens what
+ * callers may rely on (members must already comply, which validation checks); removing a field, renaming
+ * one, changing its type or shape, or turning a flag off narrows it, and is breaking.
+ */
+const classifyInterfaceChange = (change: SchemaChange): Classification => {
+  switch (change.kind) {
+    case 'definition.added':
+      return result('additive');
+    case 'definition.removed':
+      return result('removal', { breaking: true });
+    case 'definition.apiKey':
+    case 'definition.pluralApiKey':
+    case 'field.apiKey':
+    case 'field.type':
+    case 'field.removed':
+      return result('contract', { breaking: true });
+    case 'field.added':
+      return result('contract');
+    case 'field.required':
+    case 'field.public':
+    case 'field.filterable':
+    case 'field.sortable':
+      return result('contract', { breaking: change.to !== true });
+    case 'field.settings':
+      return result('contract', { breaking: CONTRACT_SHAPE_SETTINGS.has(change.property ?? '') });
+    default:
+      return result('metadata');
+  }
+};
+
+const isInterfaceChange = ({ before, after }: ClassifyContext): boolean =>
+  before?.kind === 'interface' || after?.kind === 'interface';
+
 /** Classifies one change in the context of the definitions it was diffed from. */
 export const classifyChange = (change: SchemaChange, context: ClassifyContext): ClassifiedChange => {
+  if (isInterfaceChange(context)) {
+    return { ...change, ...classifyInterfaceChange(change) };
+  }
   let classification: Classification;
   switch (change.kind) {
     case 'definition.added':
@@ -438,6 +528,10 @@ export const classifyChange = (change: SchemaChange, context: ClassifyContext): 
     case 'model.extends':
       // A marker: the content work comes from diffing the resolved definitions of the family.
       classification = result('contract', { breaking: true });
+      break;
+    case 'model.implements':
+      // Joining an interface adds the type to its list and GraphQL interface; leaving one removes it.
+      classification = result('contract', { breaking: change.to === null });
       break;
     case 'model.draftAndPublish':
       classification =

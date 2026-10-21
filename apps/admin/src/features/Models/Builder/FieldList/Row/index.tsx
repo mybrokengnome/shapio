@@ -15,6 +15,8 @@ type RowProps = {
   selected: boolean;
   hasIssues: boolean;
   showLocalized: boolean;
+  /** The interfaces whose contract this field satisfies, by name. */
+  requiredBy?: readonly string[];
   dropTarget: boolean;
   disabled: boolean;
   onSelect: () => void;
@@ -37,6 +39,7 @@ export const Row = ({
   selected,
   hasIssues,
   showLocalized,
+  requiredBy,
   dropTarget,
   disabled,
   onSelect,
@@ -96,6 +99,13 @@ export const Row = ({
           <span className="block truncate font-mono text-2xs text-muted-foreground">{field.apiKey}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
+          {requiredBy && requiredBy.length > 0 ? (
+            <Badge variant="secondary" className="max-w-40">
+              <span className="truncate">
+                {t('models.implements.requiredBy', { names: requiredBy.join(', ') })}
+              </span>
+            </Badge>
+          ) : null}
           {field.required ? <Badge variant="outline">{t('models.builder.requiredBadge')}</Badge> : null}
           {showLocalized && field.localized ? (
             <Badge variant="outline">{t('models.builder.localizedBadge')}</Badge>

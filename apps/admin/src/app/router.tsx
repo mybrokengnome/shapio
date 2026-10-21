@@ -21,6 +21,7 @@ import { routerBasePath } from './basePath';
 import { currentSite } from './currentSite';
 import {
   redirectComponentBuilder,
+  redirectInterfaceBuilder,
   redirectModelBuilder,
   redirectModelsIndex,
   redirectNewModel,
@@ -147,7 +148,13 @@ const componentBuilderRoute = createRoute({
   beforeLoad: ({ params }) => redirectComponentBuilder(params.componentId),
 });
 
-// New content types and components, and Develop → Components.
+const interfaceBuilderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'models/interfaces/$interfaceId',
+  beforeLoad: ({ params }) => redirectInterfaceBuilder(params.interfaceId),
+});
+
+// New content types and components, and Develop → Components and Interfaces.
 const contentTypesLazy = () =>
   import('./lazyRoutes/contentTypes').then((module) => module.contentTypesLazyRoutes);
 
@@ -168,6 +175,20 @@ const componentRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'develop/components/$componentId',
 }).lazy(() => contentTypesLazy().then((routes) => routes.component));
+
+const interfacesRoute = createRoute({ getParentRoute: () => appRoute, path: 'develop/interfaces' }).lazy(() =>
+  contentTypesLazy().then((routes) => routes.interfaces),
+);
+
+const newInterfaceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'develop/interfaces/new',
+}).lazy(() => contentTypesLazy().then((routes) => routes.newInterface));
+
+const interfaceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'develop/interfaces/$interfaceId',
+}).lazy(() => contentTypesLazy().then((routes) => routes.interface));
 
 const mediaRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -431,10 +452,14 @@ const routeTree = rootRoute.addChildren([
     newModelRoute,
     modelBuilderRoute,
     componentBuilderRoute,
+    interfaceBuilderRoute,
     newContentTypeRoute,
     componentsRoute,
     newComponentRoute,
     componentRoute,
+    interfacesRoute,
+    newInterfaceRoute,
+    interfaceRoute,
     mediaRoute,
     contentRoute,
     modelContentRoute,

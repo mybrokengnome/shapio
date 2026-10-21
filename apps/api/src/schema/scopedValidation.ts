@@ -24,8 +24,12 @@ export type ScopedValidationOptions = {
   siteKeys?: ReadonlyMap<string, string>;
 };
 
-const referencedIds = (definition: SchemaDefinition) =>
-  definition.fields.flatMap((field, index) => {
+const referencedIds = (definition: SchemaDefinition) => [
+  ...(isModelDefinition(definition) ? (definition.implements ?? []) : []).map((id, position) => ({
+    id,
+    path: `/implements/${position}`,
+  })),
+  ...definition.fields.flatMap((field, index) => {
     switch (field.type) {
       case 'relation':
         return [{ id: field.settings.target, path: `/fields/${index}/settings/target` }];
@@ -39,7 +43,8 @@ const referencedIds = (definition: SchemaDefinition) =>
       default:
         return [];
     }
-  });
+  }),
+];
 
 /** Rule 3: a shared definition references shared definitions only (a site's are not on the other sites). */
 const sharedReferenceIssues = (proposed: readonly ScopedDefinition[]): ValidationIssue[] => {
@@ -92,6 +97,36 @@ const inheritanceScopeIssues = (
       },
     ];
   });
+};
+
+/**
+ * An interface on a site may be implemented only by that site's models (plan interfaces, D3): another site's
+ * model would hold it in a view where the interface does not exist. A shared model implementing a site's
+ * interface is the shared-reference rule's (`sharedReferenceIssues`); a shared interface may have members on
+ * any site.
+ */
+const interfaceScopeIssues = (
+  proposed: readonly ScopedDefinition[],
+  siteKeys: ReadonlyMap<string, string> | undefined,
+): ValidationIssue[] => {
+  const scopes = new Map(proposed.map((entry) => [entry.definition.id, entry]));
+  return proposed.flatMap(({ definition, siteId }) =>
+    !isModelDefinition(definition) || siteId === null
+      ? []
+      : (definition.implements ?? []).flatMap((interfaceId, position) => {
+          const target = scopes.get(interfaceId);
+          return target && target.siteId !== null && target.siteId !== siteId
+            ? [
+                {
+                  path: `/implements/${position}`,
+                  code: 'INVALID_INTERFACE' as const,
+                  message: `"${target.definition.apiKey}" is ${describeScope(target.siteId, siteKeys)} and this type is ${describeScope(siteId, siteKeys)}; a site's interface can only be implemented by that site's types`,
+                  definitionId: definition.id,
+                },
+              ]
+            : [];
+        }),
+  );
 };
 
 /** Definition and field IDs are stable identities: unique across every site, not only within a view. */
@@ -168,17 +203,31 @@ export const validateScoped = (
     issues.set(key, siteKey ? { ...found, siteKey } : found);
   };
   const scopeIssues = inheritanceScopeIssues(proposed, options.siteKeys);
-  for (const found of [...globalIdIssues(proposed), ...sharedReferenceIssues(proposed), ...scopeIssues]) {
+  const sharedIssues = sharedReferenceIssues(proposed);
+  const contractScopeIssues = interfaceScopeIssues(proposed, options.siteKeys);
+  for (const found of [
+    ...globalIdIssues(proposed),
+    ...sharedIssues,
+    ...scopeIssues,
+    ...contractScopeIssues,
+  ]) {
     add(found, null);
   }
-  // A parent in another scope is missing from the child's view; the scope issue already says why.
+  // A parent or an interface in another scope is missing from the view; the scope issue already says why.
   const misplaced = new Set(scopeIssues.map((found) => found.definitionId));
+  const misplacedContract = new Set(
+    [...sharedIssues, ...contractScopeIssues].map((found) => `${found.definitionId ?? ''} ${found.path}`),
+  );
+  const explained = (found: ValidationIssue) =>
+    (found.code === 'UNKNOWN_PARENT' && misplaced.has(found.definitionId)) ||
+    (found.code === 'UNKNOWN_INTERFACE' &&
+      misplacedContract.has(`${found.definitionId ?? ''} ${found.path}`));
   for (const siteId of touchedViews(proposed, touched)) {
     const view = proposed
       .filter((entry) => entry.siteId === null || entry.siteId === siteId)
       .map((entry) => entry.definition);
     for (const found of validateSchema(view)) {
-      if (!(found.code === 'UNKNOWN_PARENT' && misplaced.has(found.definitionId))) {
+      if (!explained(found)) {
         add(found, siteId);
       }
     }

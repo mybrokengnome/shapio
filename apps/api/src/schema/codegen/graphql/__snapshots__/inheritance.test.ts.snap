@@ -2,7 +2,7 @@
 
 exports[`GraphQL interfaces for models with children > prints the family (the SDL reviewed in the plan) 1`] = `
 """"Product"""
-interface ProductInterface {
+interface ProductInterface implements Entry {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -36,7 +36,7 @@ interface ProductInterface {
 }
 
 """Physical product"""
-interface PhysicalProductInterface implements ProductInterface {
+interface PhysicalProductInterface implements Entry & ProductInterface {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -73,7 +73,7 @@ interface PhysicalProductInterface implements ProductInterface {
 }
 
 """Product"""
-type Product implements ProductInterface {
+type Product implements Entry & ProductInterface {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -107,7 +107,7 @@ type Product implements ProductInterface {
 }
 
 """Digital product"""
-type DigitalProduct implements ProductInterface {
+type DigitalProduct implements Entry & ProductInterface {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""
@@ -144,7 +144,7 @@ type DigitalProduct implements ProductInterface {
 }
 
 """Apparel"""
-type Apparel implements ProductInterface & PhysicalProductInterface {
+type Apparel implements Entry & ProductInterface & PhysicalProductInterface {
   id: ID!
 
   """The locale that served this entry (fallback aware)"""

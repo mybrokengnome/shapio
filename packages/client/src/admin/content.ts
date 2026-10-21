@@ -5,6 +5,8 @@ import type {
   AdminEntryPage,
   ChangeEntryKindInput,
   ContentListQuery,
+  ContentTargets,
+  ContentTargetsQuery,
   CreateEntryInput,
   EditorManifest,
   EntryHistory,
@@ -79,6 +81,19 @@ export const createContentApi = (request: RequestFn) => ({
         method: 'POST',
         body: { expectedVersion },
       }),
+    /**
+     * Entries a relation field to an interface or any entry may point at, across the models the caller may
+     * read (plan interfaces), or with `ids` the labels and models of a stored value. 403 when no model is
+     * readable.
+     */
+    targets: ({ types, ids, ...query }: ContentTargetsQuery) =>
+      request<ContentTargets>(
+        `${ADMIN_PATHS.contentTargets}${toQueryString({
+          ...query,
+          types: types && types.length > 0 ? types.join(',') : undefined,
+          ids: ids && ids.length > 0 ? ids.join(',') : undefined,
+        })}`,
+      ),
   },
   extensions: {
     /** Custom field editors the project installed (`shapio.config` + `extensions/editors/*.js`). */

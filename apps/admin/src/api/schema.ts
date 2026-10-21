@@ -21,10 +21,15 @@ import { queryKeys } from './queryKeys';
 
 const silent = { silent: true } as const;
 
-const definitionApi = (category: DefinitionCategory) =>
-  category === 'model' ? adminApi.models : adminApi.components;
+const DEFINITION_APIS = {
+  model: adminApi.models,
+  component: adminApi.components,
+  interface: adminApi.interfaces,
+} as const satisfies Record<DefinitionCategory, unknown>;
 
-/** Every active model or component (the registry), also read by route guards. */
+const definitionApi = (category: DefinitionCategory) => DEFINITION_APIS[category];
+
+/** Every active model, component or interface of one category (the registry), also read by route guards. */
 export const definitionsQueryOptions = (category: DefinitionCategory) =>
   queryOptions({
     queryKey: queryKeys.schema.definitions(category),
@@ -34,25 +39,28 @@ export const definitionsQueryOptions = (category: DefinitionCategory) =>
 
 export const useDefinitions = (category: DefinitionCategory) => useQuery(definitionsQueryOptions(category));
 
-const KIND_ORDER = { collection: 0, singleton: 1, component: 2 } as const;
+const KIND_ORDER = { collection: 0, singleton: 1, component: 2, interface: 3 } as const;
 
 /**
- * The models and components shared with all sites (`?scope=network`), for the network view: collections,
- * single types, then components, each by label.
+ * The models, components and interfaces shared with all sites (`?scope=network`), for the network view:
+ * collections, single types, components, then interfaces, each by label.
  */
 export const useSharedDefinitions = () =>
   useQuery({
     queryKey: queryKeys.schema.sharedDefinitions,
     queryFn: async () => {
-      const [models, components] = await Promise.all([
+      const lists = await Promise.all([
         adminApi.models.list({ scope: 'network' }),
         adminApi.components.list({ scope: 'network' }),
+        adminApi.interfaces.list({ scope: 'network' }),
       ]);
-      return [...models, ...components].sort(
-        (a, b) =>
-          KIND_ORDER[a.definition.kind] - KIND_ORDER[b.definition.kind] ||
-          a.definition.label.localeCompare(b.definition.label),
-      );
+      return lists
+        .flat()
+        .sort(
+          (a, b) =>
+            KIND_ORDER[a.definition.kind] - KIND_ORDER[b.definition.kind] ||
+            a.definition.label.localeCompare(b.definition.label),
+        );
     },
     meta: silent,
   });
@@ -93,15 +101,22 @@ export const useEverySiteModels = () =>
     meta: silent,
   });
 
-/** Models and components together (relation targets, component pickers, cross-definition validation). */
+/**
+ * Models, components and interfaces together (relation targets, component pickers, cross-definition
+ * validation: `implements` resolves against the interfaces).
+ */
 export const useAllDefinitions = () => {
   const models = useDefinitions('model');
   const components = useDefinitions('component');
+  const interfaces = useDefinitions('interface');
   const definitions = useMemo<DefinitionListItem[] | undefined>(
-    () => (models.data && components.data ? [...models.data, ...components.data] : undefined),
-    [models.data, components.data],
+    () =>
+      models.data && components.data && interfaces.data
+        ? [...models.data, ...components.data, ...interfaces.data]
+        : undefined,
+    [models.data, components.data, interfaces.data],
   );
-  return { definitions, error: models.error ?? components.error };
+  return { definitions, error: models.error ?? components.error ?? interfaces.error };
 };
 
 /** One definition with its active version and any change still running for it. */

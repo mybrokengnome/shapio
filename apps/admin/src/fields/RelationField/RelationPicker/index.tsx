@@ -1,4 +1,3 @@
-import type { ModelDefinition } from '@shapio/schema';
 import { Plus } from 'lucide-react';
 import { useId, useRef, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import type { RelationTargetInfo } from '../../helpers/relationTargetLabel';
 import { useIsMdUp } from '../../hooks/useIsMdUp';
 import { Results } from './Results';
 
@@ -21,9 +21,16 @@ type RelationPickerProps = {
   onOpenChange: (open: boolean) => void;
   /** The field's button that opens the picker; absent while nothing more can be linked. */
   trigger: ReactElement | null;
-  target: ModelDefinition;
-  /** An entry's own kind's label, when the target has kinds. */
-  kindLabelOf: (modelKey: string | undefined) => string | undefined;
+  target: RelationTargetInfo;
+  /** The relation field's stable ID. */
+  fieldId: string;
+  /** The target's name ("Author", "Featurable", "Any entry"). */
+  targetLabel: string;
+  /** The picker's title ("Choose Author") and its create button ("Create a new Author"). */
+  title: string;
+  createLabel: string;
+  /** An entry's own type's label, when worth naming. */
+  typeLabelOf: (modelKey: string | undefined) => string | undefined;
   multiple: boolean;
   /** Linked now. */
   selected: readonly string[];
@@ -43,16 +50,21 @@ type RelationPickerProps = {
 };
 
 /**
- * Finds and links entries of a relation's target model (DESIGN.md "Dialogs": pickers). From `md` up it is a
- * modal popover anchored to the field; below, the same body in a bottom sheet. In multi mode every pick
- * links at once and the picker stays open; "Create new" closes it before the create sheet opens.
+ * Finds and links entries of a relation's target: a model, an interface's members, or any entry (DESIGN.md
+ * "Dialogs": pickers). From `md` up it is a modal popover anchored to the field; below, the same body in a
+ * bottom sheet. In multi mode every pick links at once and the picker stays open; "Create new" closes it
+ * before the create sheet opens.
  */
 export const RelationPicker = ({
   open,
   onOpenChange,
   trigger,
   target,
-  kindLabelOf,
+  fieldId,
+  targetLabel,
+  title,
+  createLabel,
+  typeLabelOf,
   multiple,
   selected,
   exclude,
@@ -69,7 +81,6 @@ export const RelationPicker = ({
   const titleId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const creatingRef = useRef(false);
-  const title = t('content.relation.chooseTitle', { model: target.label });
 
   const pick = (id: string) => {
     onPick(id);
@@ -103,7 +114,9 @@ export const RelationPicker = ({
   const results = (listClassName?: string) => (
     <Results
       target={target}
-      kindLabelOf={kindLabelOf}
+      fieldId={fieldId}
+      targetLabel={targetLabel}
+      typeLabelOf={typeLabelOf}
       locale={locale}
       multiple={multiple}
       selected={selected}
@@ -121,7 +134,7 @@ export const RelationPicker = ({
         {canCreate ? (
           <Button type="button" variant="ghost" size="sm" className="mr-auto" onClick={startCreate}>
             <Plus aria-hidden="true" />
-            {t('content.relation.createNew', { model: target.label })}
+            {createLabel}
           </Button>
         ) : null}
         {multiple ? (

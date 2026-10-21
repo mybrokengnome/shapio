@@ -16,6 +16,7 @@ import {
   ScrollText,
   Rocket,
   Settings,
+  Shapes,
   ShieldCheck,
   SquareTerminal,
   Users,
@@ -41,6 +42,7 @@ export type NavPath =
   | '/publishing'
   | '/publishing/webhooks'
   | '/develop/components'
+  | '/develop/interfaces'
   | '/changes'
   | '/snapshots'
   | '/schema'
@@ -127,6 +129,13 @@ export const DEVELOP_ITEMS: readonly NavItemDefinition[] = [
     labelKey: 'shell.nav.components',
     icon: Blocks,
     to: '/develop/components',
+    schema: true,
+  },
+  {
+    key: 'interfaces',
+    labelKey: 'interfaces.title',
+    icon: Shapes,
+    to: '/develop/interfaces',
     schema: true,
   },
   { key: 'apiExplorer', labelKey: 'shell.nav.apiExplorer', icon: SquareTerminal, to: '/api-explorer' },

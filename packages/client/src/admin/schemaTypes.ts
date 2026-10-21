@@ -1,6 +1,7 @@
 import type {
   ChangeSummary,
   ClassifiedChange,
+  DefinitionCategory,
   DefinitionInput,
   LocaleDefinition,
   SchemaDefinition,
@@ -9,11 +10,14 @@ import type {
 
 /**
  * Schema registry API shapes (package D), mirroring the TypeBox route schemas in
- * apps/api/src/routes/admin/{models,components,schema,locales}/** and routes/schemas/schemaRegistry.ts.
+ * apps/api/src/routes/admin/{models,components,interfaces,schema,locales}/** and routes/schemas/schemaRegistry.ts.
  */
 
-/** `/api/admin/models` serves collections and singletons; `/api/admin/components` serves components. */
-export type DefinitionCategory = 'model' | 'component';
+/**
+ * `/api/admin/models` serves collections and singletons, `/api/admin/components` components and
+ * `/api/admin/interfaces` interfaces (plan interfaces).
+ */
+export type { DefinitionCategory };
 
 /** Where a definition lives: one site (`site`), or shared with every site (`network`). */
 export type DefinitionScope = 'network' | 'site';

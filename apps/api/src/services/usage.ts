@@ -1,5 +1,6 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { isModelDefinition, type FieldDefinition } from '@shapio/schema';
 import { modelNotFound, resolveModelById } from '../content/model.js';
+import { relationTargetFor } from '../content/relationTarget.js';
 import type { Database } from '../db/index.js';
 import * as usageRepository from '../repositories/usage.js';
 import type { FieldUsageRow, UsageSelection } from '../repositories/usage.js';
@@ -167,11 +168,29 @@ const apiKeyPathOf = (snapshot: SchemaSnapshot, modelId: string, fieldPath: stri
   if (second === undefined) {
     return field.apiKey;
   }
-  const targetId = field.type === 'relation' ? field.settings.target : undefined;
-  const target = targetId
-    ? fieldsOf(snapshot, targetId).find((candidate) => candidate.id === second)
-    : undefined;
+  const target =
+    field.type === 'relation'
+      ? targetFieldsOf(snapshot, field.settings.target).find((candidate) => candidate.id === second)
+      : undefined;
   return target ? `${field.apiKey}.${target.apiKey}` : null;
+};
+
+/**
+ * The fields a relation's targets may have: the target model's, or (a relation to an interface or to any
+ * entry, plan interfaces) every model's it accepts, since a read counts a target's field under its own ID.
+ */
+const targetFieldsOf = (snapshot: SchemaSnapshot, target: string): readonly FieldDefinition[] => {
+  const accepted = relationTargetFor(snapshot, target);
+  if (accepted.kind === 'model') {
+    return fieldsOf(snapshot, target);
+  }
+  const modelIds =
+    accepted.kind === 'interface'
+      ? accepted.modelIds
+      : snapshot.definitions.flatMap(({ definition }) =>
+          isModelDefinition(definition) ? [definition.id] : [],
+        );
+  return modelIds.flatMap((modelId) => fieldsOf(snapshot, modelId));
 };
 
 /**

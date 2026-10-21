@@ -1,3 +1,4 @@
+import type { DefinitionCategory } from '@shapio/schema';
 import { Type } from 'typebox';
 import {
   AcknowledgementSchema,
@@ -17,8 +18,8 @@ import {
 const closed = { additionalProperties: false } as const;
 const ExpectedVersion = Type.Integer({ minimum: 1 });
 
-/** Route schemas for one definition category (models: collections + singletons; components). */
-export const definitionRouteSchemas = (category: 'model' | 'component') => {
+/** Route schemas for one definition category (models: collections + singletons; components; interfaces). */
+export const definitionRouteSchemas = (category: DefinitionCategory) => {
   const definition = definitionInputFor(category);
   const outcome = { 200: ChangeOutcomeSchema, 201: ChangeOutcomeSchema, 202: ChangeOutcomeSchema };
   const preview = { 200: Type.Object({ plan: ChangePlanSchema, impact: ImpactSchema }) };

@@ -7,8 +7,9 @@ import { definitionRouteSchemas } from './schemas.js';
 const PREVIEW = { exempt: 'plan preview; writes nothing' } as const;
 
 /**
- * The definition routes, mounted once for models (/api/admin/models) and once for components
- * (/api/admin/components). Generic: no route exists per model (CONTRIBUTING.md rule 2).
+ * The definition routes, mounted once per category: models (/api/admin/models), components
+ * (/api/admin/components) and interfaces (/api/admin/interfaces). Generic: no route exists per model
+ * (CONTRIBUTING.md rule 2).
  */
 export const createDefinitionRoutes =
   (category: DefinitionCategory): FastifyPluginAsyncTypebox =>

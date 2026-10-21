@@ -4,7 +4,13 @@ import type { ToolContext } from '../context.js';
 import { findDefinition, readSchema, routeKeyOf } from '../definitions.js';
 import { runTool } from './results.js';
 
-const MODEL = z.string().min(1).describe('The model\'s API ID (singular, e.g. "article")');
+const MODEL = z
+  .string()
+  .min(1)
+  .describe(
+    'The model\'s API ID (singular, e.g. "article"). An interface\'s API ID (e.g. "featurable") reads its ' +
+      "members' published entries (published=true or snapshot=N only)",
+  );
 const LOCALE = z.string().min(1).optional().describe('Locale code; the default locale when omitted');
 const PUBLISHED = z
   .boolean()
@@ -52,7 +58,8 @@ export const registerContentTools = ({ server, client }: ToolContext) => {
       title: 'Query entries',
       description:
         "A page of a model's entries. Drafts by default (what editors see); published=true or snapshot=N reads " +
-        'what the delivery API serves.',
+        "what the delivery API serves. With an interface's API ID and published=true, a page of every member's " +
+        'entries (each row names its type in __model), filtered and sorted on the contract fields.',
       inputSchema: QUERY,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

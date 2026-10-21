@@ -24,6 +24,11 @@ export type SchemaBuild = {
    * object type and every descendant's implement it.
    */
   interfaces: Map<string, GraphQLInterfaceType>;
+  /**
+   * GraphQL interfaces of interface definitions by ID (plan interfaces D8), null when no member is readable by
+   * the caller, and `Entry` under `ANY_TARGET` (every entry type implements it).
+   */
+  contracts: Map<string, GraphQLInterfaceType | null>;
   /** Component types by ID; null when the caller sees none of the component's fields. */
   components: Map<string, GraphQLObjectType<ValueNode, GraphqlContext> | null>;
   enums: Map<string, GraphQLEnumType>;
@@ -41,6 +46,7 @@ export const createBuild = (
   fixed,
   objects: new Map(),
   interfaces: new Map(),
+  contracts: new Map(),
   components: new Map(),
   enums: new Map(),
   zones: new Map(),

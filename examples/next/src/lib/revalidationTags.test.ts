@@ -42,6 +42,27 @@ describe('changeTags', () => {
     ]);
   });
 
+  it("revalidates the lists of the interfaces an entry's type implements", () => {
+    expect(
+      changeTags(
+        [
+          { routeKey: 'posts', id: 'p1', interfaces: ['featurables'] },
+          { routeKey: 'roadmapItems', id: 'r1', interfaces: ['featurables'] },
+        ],
+        false,
+        undefined,
+      ),
+    ).toEqual([
+      'shapio:featurables',
+      'shapio:featurables:p1',
+      'shapio:featurables:r1',
+      'shapio:posts',
+      'shapio:posts:p1',
+      'shapio:roadmapItems',
+      'shapio:roadmapItems:r1',
+    ]);
+  });
+
   it('revalidates the site tag (every read) after a schema change', () => {
     expect(changeTags([{ routeKey: 'articles', id: 'a1' }], true, 'marketing')).toEqual([
       'shapio:site:marketing',

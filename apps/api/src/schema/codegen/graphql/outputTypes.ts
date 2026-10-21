@@ -20,13 +20,22 @@ import {
   type GraphQLFieldConfigMap,
   type GraphQLOutputType,
 } from 'graphql';
+import { relationTargetOf, type RelationTarget } from '../../../content/relationTarget.js';
 import { COMPONENT_KEY } from '../../../content/validator/index.js';
 import { AppError } from '../../../helpers/appError.js';
 import { memoType, type SchemaBuild } from './build.js';
 import { RELATION_LIST_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ValueNode } from './context.js';
 import { describeDefinition, describeField } from './descriptions.js';
-import { declaringOwner, hasChildren, kindTypeName, resolvedModelById, servableNodes } from './entryKinds.js';
+import {
+  declaringOwner,
+  familyTarget,
+  hasChildren,
+  resolvedModelById,
+  rowTypeName,
+  servableNodes,
+} from './entryKinds.js';
+import { contractType, entryInterface, interfaceById, memberContractTypes } from './interfaceTypes.js';
 import { componentTypeName, fieldTypeName, modelTypeName } from './names.js';
 import { modelReadable, readableFields } from './visibility.js';
 
@@ -40,7 +49,7 @@ import { modelReadable, readableFields } from './visibility.js';
  */
 type FieldConfig = GraphQLFieldConfig<ValueNode, GraphqlContext>;
 
-const list = (type: GraphQLOutputType) => new GraphQLList(new GraphQLNonNull(type));
+export const list = (type: GraphQLOutputType) => new GraphQLList(new GraphQLNonNull(type));
 
 export const maskedFieldError = (field: FieldDefinition) =>
   new AppError(403, 'FORBIDDEN_FIELD', `Your role may not read "${field.apiKey}"`, { field: field.apiKey });
@@ -72,20 +81,44 @@ const componentById = (build: SchemaBuild, id: string): ComponentDefinition | un
   return definition && isComponentDefinition(definition) ? definition : undefined;
 };
 
+/**
+ * The output type of a relation's targets (plan interfaces D8): a model's type (its interface when it has
+ * children), an interface definition's interface, or `Entry` for any entry. Undefined when the caller's
+ * schema has no type for them: a relation to a model the caller cannot read, or to an interface none of whose
+ * members it can read, is left out (it could only ever resolve empty, and its type would name the target;
+ * REST keeps the key, with null or []).
+ */
+const targetOutputType = (
+  build: SchemaBuild,
+  target: RelationTarget,
+): GraphQLObjectType<ValueNode, GraphqlContext> | GraphQLInterfaceType | undefined => {
+  switch (target.kind) {
+    case 'model': {
+      const model = resolvedModelById(build.snapshot, target.id);
+      return model && modelReadable(build.visibility, model.id) ? entryOutputType(build, model) : undefined;
+    }
+    case 'interface': {
+      const definition = interfaceById(build, target.id);
+      return (definition && contractType(build, definition)) ?? undefined;
+    }
+    case 'any':
+      return entryInterface(build);
+  }
+};
+
 const relationField = (build: SchemaBuild, field: FieldDefinition<'relation'>): FieldConfig | undefined => {
-  const target = resolvedModelById(build.snapshot, field.settings.target);
-  // A relation to a model the caller cannot read is left out: it could only ever resolve empty, and its type
-  // would name the model (REST keeps the key, with null or []).
-  if (!target || !modelReadable(build.visibility, target.id)) {
+  const target = relationTargetOf(build.snapshot, field);
+  const targetType = targetOutputType(build, target);
+  if (!targetType) {
     return undefined;
   }
-  // A target with children is its interface: the loader reads its whole family, each row as its own kind.
-  const targetType = entryOutputType(build, target);
+  // The loader reads every model the target accepts, each row as its own kind (a family, an interface's
+  // members, any entry).
   const load = async (id: unknown, node: ValueNode, context: GraphqlContext) => {
     if (typeof id !== 'string') {
       return null;
     }
-    const entry = await context.loaders.entries(build.snapshot, target.id, node.scope).load(id);
+    const entry = await context.loaders.entries(build.snapshot, target, node.scope).load(id);
     const [loaded] = entry ? servableNodes(build, target, [entryNode(entry, node.scope)]) : [];
     return loaded ?? null;
   };
@@ -226,18 +259,24 @@ const valueField = (
 };
 
 /**
- * Fields of a model or component. When `masked`, a field missing from the projection is outside the caller's
- * read mask (the projection always emits every visible field, null when empty).
+ * Field configs of the given fields of a model, component or interface definition. When `masked`, a field
+ * missing from the projection is outside the caller's read mask (the projection always emits every visible
+ * field, null when empty).
  */
-const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: boolean) => {
-  const fields: GraphQLFieldConfigMap<ValueNode, GraphqlContext> = {};
-  for (const field of readableFields(build.visibility, owner)) {
+export const fieldConfigs = (
+  build: SchemaBuild,
+  owner: SchemaDefinition,
+  fields: readonly FieldDefinition[],
+  masked: boolean,
+) => {
+  const configs: GraphQLFieldConfigMap<ValueNode, GraphqlContext> = {};
+  for (const field of fields) {
     const config = valueField(build, owner, field);
     if (!config) {
       continue;
     }
     const resolve = config.resolve;
-    fields[field.apiKey] = {
+    configs[field.apiKey] = {
       ...config,
       description: describeField(field),
       resolve: (node, args, context, info) => {
@@ -251,8 +290,12 @@ const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: b
       },
     };
   }
-  return fields;
+  return configs;
 };
+
+/** Fields of a model or component as the caller may read them (visibility.ts). */
+const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: boolean) =>
+  fieldConfigs(build, owner, readableFields(build.visibility, owner), masked);
 
 /**
  * A component's type, or null when the caller sees none of its fields (GraphQL forbids empty object types).
@@ -283,10 +326,14 @@ const SYSTEM_STRING = (name: 'locale' | 'createdAt' | 'updatedAt') => ({
   resolve: (node: ValueNode) => node.data[name],
 });
 
-const LOCALIZATIONS_DESCRIPTION = 'This entry in its other locales, read the same way (published or draft)';
+export const LOCALIZATIONS_DESCRIPTION =
+  'This entry in its other locales, read the same way (published or draft)';
 
-/** The system fields every entry type and entry interface has, before `localizations` and the model's own. */
-const systemFields = (): GraphQLFieldConfigMap<ValueNode, GraphqlContext> => ({
+/**
+ * The system fields every entry type and entry interface has, before `localizations` and the model's own;
+ * `Entry` has exactly these.
+ */
+export const systemFields = (): GraphQLFieldConfigMap<ValueNode, GraphqlContext> => ({
   id: { type: new GraphQLNonNull(GraphQLID), resolve: (node) => node.data.id },
   locale: {
     ...SYSTEM_STRING('locale'),
@@ -297,7 +344,7 @@ const systemFields = (): GraphQLFieldConfigMap<ValueNode, GraphqlContext> => ({
   publishedAt: { type: GraphQLString, resolve: (node) => node.data.publishedAt ?? null },
 });
 
-const localizationsCost = (build: SchemaBuild) => ({
+export const localizationsCost = (build: SchemaBuild) => ({
   cost: { list: Math.max(1, build.snapshot.locales.length - 1) },
 });
 
@@ -314,7 +361,11 @@ export const interfaceType = (build: SchemaBuild, model: ResolvedModelDefinition
     const type: GraphQLInterfaceType = new GraphQLInterfaceType({
       name: modelTypeName(model, 'Interface'),
       description: describeDefinition(model),
-      interfaces: () => ancestorInterfaces(build, model),
+      interfaces: () => [
+        entryInterface(build),
+        ...ancestorInterfaces(build, model),
+        ...memberContractTypes(build, model.id),
+      ],
       fields: () => ({
         ...systemFields(),
         localizations: {
@@ -324,7 +375,7 @@ export const interfaceType = (build: SchemaBuild, model: ResolvedModelDefinition
         },
         ...definitionFields(build, model, true),
       }),
-      resolveType: (node: ValueNode) => kindTypeName(build, model, node),
+      resolveType: (node: ValueNode) => rowTypeName(build, familyTarget(build, model.id), node),
     });
     return type;
   });
@@ -336,13 +387,19 @@ const ancestorInterfaces = (build: SchemaBuild, model: ResolvedModelDefinition):
     return ancestor ? [interfaceType(build, ancestor)] : [];
   });
 
-/** The interfaces a model's object type implements: its readable ancestors', then its own when it has children. */
+/**
+ * The interfaces a model's object type implements, every transitive one listed (GraphQL requires it): `Entry`,
+ * its readable ancestors' family interfaces, its own when it has children, then the interface definitions it
+ * implements (its own and its ancestors', plan interfaces D8).
+ */
 const implementedInterfaces = (
   build: SchemaBuild,
   model: ResolvedModelDefinition,
 ): GraphQLInterfaceType[] => [
+  entryInterface(build),
   ...ancestorInterfaces(build, model),
   ...(hasChildren(build, model.id) ? [interfaceType(build, model)] : []),
+  ...memberContractTypes(build, model.id),
 ];
 
 export const entryType = (

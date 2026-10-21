@@ -6,7 +6,7 @@ import type { ResponseEntry } from '../../helpers/entries';
 
 type EntryLinksProps = { entries: readonly ResponseEntry[]; modelKey: string };
 
-/** One row per returned entry with a link to edit it in the admin. */
+/** One row per returned entry with a link to edit it in the admin, under its own type (`__model`) when known. */
 export const EntryLinks = ({ entries, modelKey }: EntryLinksProps) => {
   const { t } = useTranslation();
   return (
@@ -24,7 +24,7 @@ export const EntryLinks = ({ entries, modelKey }: EntryLinksProps) => {
           <Button asChild variant="outline" size="sm">
             <Link
               to="/content/$modelKey/$entryId"
-              params={{ modelKey, entryId: entry.id }}
+              params={{ modelKey: entry.model ?? modelKey, entryId: entry.id }}
               search={entry.locale ? { locale: entry.locale } : {}}
               aria-label={t('develop.api.response.editEntryLabel', { entry: entry.label ?? entry.id })}
             >

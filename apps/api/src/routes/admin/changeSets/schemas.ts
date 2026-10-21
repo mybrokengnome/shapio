@@ -1,4 +1,4 @@
-import { DATA_TYPES } from '@shapio/schema';
+import { DATA_TYPES, DEFINITION_CATEGORIES } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
 import {
   DateTimeInputSchema,
@@ -45,7 +45,7 @@ export const ChangeSetStatusSchema = Type.Enum(CHANGE_SET_STATUSES);
 export const ShipPhaseSchema = Nullable(Type.Enum(['preparing', 'activating']));
 export const ChangeSetSourceSchema = Type.Enum(['manual', 'release', 'restore', 'builder', 'assist']);
 export const ItemStatusSchema = Type.Enum(['pending', 'done', 'failed']);
-export const DefinitionCategorySchema = Type.Enum(['model', 'component']);
+export const DefinitionCategorySchema = Type.Enum(DEFINITION_CATEGORIES);
 export const SchemaOperationSchema = Type.Enum(['create', 'update', 'delete']);
 
 const ActorSchema = Type.Object({
@@ -300,6 +300,9 @@ export const ReviewIssueSchema = Type.Object({
   path: Type.String(),
   code: Type.String(),
   message: Type.String(),
+  /** Interface issues on a member (plan interfaces): the interface and the contract field's API ID. */
+  interfaceId: Type.Optional(Type.String()),
+  fieldApiKey: Type.Optional(Type.String()),
 });
 
 export const ReviewEntryItemSchema = Type.Object({

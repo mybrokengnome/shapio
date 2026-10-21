@@ -210,10 +210,14 @@ const createMedia = (focalPoint: GraphQLObjectType, variant: GraphQLObjectType) 
     },
   });
 
-/** What a mutation returns: identity and state only, never values (writes create drafts). */
-const createEntry = () =>
+/**
+ * What a mutation returns: identity and state only, never values (writes create drafts). It is not an
+ * `Entry` (the interface every entry type implements): it carries no field values and is never read.
+ */
+const createEntryState = () =>
   new GraphQLObjectType({
-    name: 'Entry',
+    name: 'EntryState',
+    description: "An entry's identity and state after a write",
     fields: {
       id: { type: nonNull(GraphQLID) },
       locale: { type: nonNull(GraphQLString) },
@@ -235,7 +239,7 @@ export const createFixedTypes = () => {
     pageInfo: createPageInfo(),
     richText: createRichText(json),
     media: createMedia(createFocalPoint(), createMediaVariant()),
-    entry: createEntry(),
+    entryState: createEntryState(),
     publicationState: new GraphQLEnumType({
       name: 'PublicationState',
       description:

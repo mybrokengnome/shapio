@@ -1,9 +1,11 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { ANY_TARGET, isInterfaceDefinition, isModelDefinition, type FieldDefinition } from '@shapio/schema';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
 import { queryForbidden, type FilterNode, type FilterOperator, type ShownTargets } from './compiler/types.js';
+import { readableMembers } from './family.js';
 import { readScopeFor } from './locales.js';
 import { resolveModelById } from './model.js';
-import { fetchFamilyHeadsByIds, readPolicy, type ReadEnvironment } from './read.js';
+import { fetchFamilyHeadsByIds, fetchTargetHeadsByIds, readPolicy, type ReadEnvironment } from './read.js';
+import { relationTargetFor } from './relationTarget.js';
 
 /**
  * Relation and media filters see the IDs the response shows (delivery-api.md: "a filter can never reveal a
@@ -44,6 +46,99 @@ const idsOf = (node: Condition): string[] =>
 /** Per reference field: which of the IDs the conditions name the read shows, and the rule for what it shows. */
 type FieldVisibility = { ids: ReadonlySet<string>; shown: ShownTargets };
 
+/**
+ * The readable models a relation's target accepts, each with its policy: a model's family, an interface's
+ * members, or every collection and singleton of the view (any entry). Delivery refuses a filter on a relation
+ * whose targets the caller may read none of (403, like a hidden field).
+ */
+const readableTargets = async (env: ReadEnvironment, field: ReferenceField & { type: 'relation' }) => {
+  const target = relationTargetFor(env.snapshot, field.settings.target);
+  const modelIds =
+    target.kind === 'any'
+      ? env.snapshot.definitions.flatMap(({ definition }) =>
+          isModelDefinition(definition) ? [definition.id] : [],
+        )
+      : target.modelIds;
+  const members = await readableMembers(env.snapshot, modelIds, (modelId) => readPolicy(env, modelId));
+  return { target, members };
+};
+
+/** What a delivery read shows of a relation field: which of `ids` it shows, and the rule for `$null`. */
+const relationVisibility = async (
+  env: ReadEnvironment,
+  field: ReferenceField & { type: 'relation' },
+  ids: readonly string[],
+): Promise<FieldVisibility> => {
+  if (field.settings.target !== ANY_TARGET && !isInterfaceTarget(env, field.settings.target)) {
+    return modelVisibility(env, field, ids);
+  }
+  const { target, members } = await readableTargets(env, field);
+  if (members.length === 0) {
+    throw forbiddenFilter(field);
+  }
+  const heads = await fetchTargetHeadsByIds(env, target, ids);
+  return {
+    ids: new Set(heads.rows.map((row) => row.entry_id)),
+    // Every readable model the target accepts, each under its own row filter and in its own locale scope,
+    // so `$null` agrees with what projection shows (plan interfaces, decision 7).
+    shown: {
+      kind: 'relation',
+      siteId: env.siteId,
+      members: members.map(({ model, policy }) => ({
+        modelId: model.definition.id,
+        rowFilter: policy.rowFilter,
+        locales: readScopeFor(env.snapshot, model.definition, env.locale, { fallback: true }),
+      })),
+      source: env.source,
+      locales: { kind: 'any' },
+      actor: env.actor,
+    },
+  };
+};
+
+const isInterfaceTarget = (env: ReadEnvironment, target: string): boolean => {
+  const definition = env.snapshot.byId.get(target)?.definition;
+  return definition !== undefined && isInterfaceDefinition(definition);
+};
+
+const forbiddenFilter = (field: ReferenceField) =>
+  queryForbidden(`You may not filter on "${field.apiKey}": you may not read the entries it links to`, {
+    field: field.apiKey,
+  });
+
+/** A relation to a model (and its kinds): the rule as it has always been. */
+const modelVisibility = async (
+  env: ReadEnvironment,
+  field: ReferenceField & { type: 'relation' },
+  ids: readonly string[],
+): Promise<FieldVisibility> => {
+  const policy = await readPolicy(env, field.settings.target);
+  if (!policy.allowed) {
+    throw forbiddenFilter(field);
+  }
+  const target = resolveModelById(env.snapshot, field.settings.target);
+  if (!target) {
+    return { ids: new Set(), shown: { kind: 'none' } };
+  }
+  const heads = await fetchFamilyHeadsByIds(env, target, ids);
+  return {
+    ids: new Set(heads.rows.map((row) => row.entry_id)),
+    // The same heads `fetchFamilyHeadsByIds` reads (every kind of the target the caller may read, each
+    // under its own row filter), so filters and projection agree.
+    shown: {
+      kind: 'relation',
+      siteId: env.siteId,
+      members: heads.members.map((member) => ({
+        modelId: member.model.definition.id,
+        rowFilter: member.policy.rowFilter,
+      })),
+      source: env.source,
+      locales: readScopeFor(env.snapshot, target.definition, env.locale, { fallback: true }),
+      actor: env.actor,
+    },
+  };
+};
+
 /** What the read shows of these conditions' fields: relation targets and live assets. */
 const visibleIds = async (
   env: ReadEnvironment,
@@ -71,37 +166,7 @@ const visibleIds = async (
     if (env.audience === 'admin') {
       continue;
     }
-    const policy = await readPolicy(env, field.settings.target);
-    if (!policy.allowed) {
-      throw queryForbidden(
-        `You may not filter on "${field.apiKey}": you may not read the entries it links to`,
-        {
-          field: field.apiKey,
-        },
-      );
-    }
-    const target = resolveModelById(env.snapshot, field.settings.target);
-    if (!target) {
-      visible.set(field.id, { ids: new Set(), shown: { kind: 'none' } });
-      continue;
-    }
-    const heads = await fetchFamilyHeadsByIds(env, target, ids);
-    visible.set(field.id, {
-      ids: new Set(heads.rows.map((row) => row.entry_id)),
-      // The same heads `fetchFamilyHeadsByIds` reads (every kind of the target the caller may read, each
-      // under its own row filter), so filters and projection agree.
-      shown: {
-        kind: 'relation',
-        siteId: env.siteId,
-        members: heads.members.map((member) => ({
-          modelId: member.model.definition.id,
-          rowFilter: member.policy.rowFilter,
-        })),
-        source: env.source,
-        locales: readScopeFor(env.snapshot, target.definition, env.locale, { fallback: true }),
-        actor: env.actor,
-      },
-    });
+    visible.set(field.id, await relationVisibility(env, field, ids));
   }
   return visible;
 };

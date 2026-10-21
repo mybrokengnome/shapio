@@ -1,4 +1,4 @@
-import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import type { FieldDefinition, InterfaceDefinition, ModelDefinition } from '@shapio/schema';
 import { sql } from 'kysely';
 import { contentDialect } from './currentDialect.js';
 import type { ContentSqlDialect } from './dialect/types.js';
@@ -32,7 +32,7 @@ const termOf = (term: SortTerm, dialect: ContentSqlDialect): OrderTerm => ({
 });
 
 export const defaultSortTerms = (
-  model: ModelDefinition,
+  model: Pick<ModelDefinition | InterfaceDefinition, 'fields' | 'display'>,
   isReadable: (field: FieldDefinition) => boolean,
 ): SortTerm[] => {
   const preferred = model.display.defaultSort;

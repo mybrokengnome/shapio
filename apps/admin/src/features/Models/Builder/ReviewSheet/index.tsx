@@ -38,11 +38,15 @@ type ReviewSheetProps = {
   resolvedAfter?: SchemaDefinition | null;
   /** A model's name by ID: parents in "Move under Products", kinds a change also applies to. */
   definitionName?: (id: string) => string | undefined;
+  /** For an interface: the types that implement it in this site's view (used when the plan names none). */
+  memberIds?: readonly string[];
   applying: boolean;
   error: unknown;
   onApply: (acknowledgement: Acknowledgement) => void;
   onClose: () => void;
 };
+
+const isModelKind = (kind: string) => kind === 'collection' || kind === 'singleton';
 
 const SUMMARY_KEYS = {
   breaking: 'models.plan.summary.breaking',
@@ -65,6 +69,7 @@ export const ReviewSheet = ({
   resolvedBefore = before,
   resolvedAfter = after,
   definitionName,
+  memberIds: knownMemberIds = [],
   applying,
   error,
   onApply,
@@ -90,12 +95,13 @@ export const ReviewSheet = ({
   const needsDestructive = summary?.destructive ?? false;
   // A check the preview already knows fails would only fail the ship; a change set can still be reviewed.
   const failingCheck = previewShown ? hasFailingCheck(previewShown.impact.steps) : false;
-  // A model's change reaches every kind below it (the plan's affected models are its family).
-  const kindIds =
-    plan && plan.kind !== 'component'
-      ? plan.affectedModelIds.filter((modelId) => modelId !== plan.definitionId)
-      : [];
+  // A model's change reaches every kind below it (the plan's affected models are its family); an
+  // interface's reaches its members.
+  const reachedIds = plan ? plan.affectedModelIds.filter((modelId) => modelId !== plan.definitionId) : [];
+  const kindIds = plan && isModelKind(plan.kind) ? reachedIds : [];
   const kindNames = kindIds.flatMap((modelId) => definitionName?.(modelId) ?? []);
+  const memberIds = plan?.kind === 'interface' ? (reachedIds.length > 0 ? reachedIds : knownMemberIds) : [];
+  const memberNames = memberIds.flatMap((modelId) => definitionName?.(modelId) ?? []);
   const canApply =
     !failingCheck &&
     (!needsBreaking || acknowledgedBreaking) &&
@@ -135,6 +141,16 @@ export const ReviewSheet = ({
                       : t('models.inheritance.appliesToKinds', { count: kindIds.length })}
                   </span>
                 ) : null}
+                {memberIds.length > 0 ? (
+                  <span className="text-meta text-muted-foreground">
+                    {memberNames.length === memberIds.length
+                      ? t('models.implements.appliesToMembersNamed', {
+                          count: memberIds.length,
+                          names: memberNames.join(', '),
+                        })
+                      : t('models.implements.appliesToMembers', { count: memberIds.length })}
+                  </span>
+                ) : null}
               </div>
               <section className="space-y-3" aria-labelledby="plan-changes">
                 <h3 id="plan-changes" className="text-sm font-semibold">
@@ -145,6 +161,7 @@ export const ReviewSheet = ({
                   before={resolvedBefore}
                   after={resolvedAfter}
                   definitionName={definitionName}
+                  memberCount={plan.kind === 'interface' ? memberIds.length : undefined}
                 />
               </section>
               {plan.prerequisites.length > 0 ? (

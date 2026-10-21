@@ -1,4 +1,4 @@
-import { entryLayoutOf, routeKeyOf } from '@shapio/schema';
+import { isModelDefinition, entryLayoutOf, routeKeyOf } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { StatusChip } from '@/components/StatusChip';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +29,7 @@ export const Summary = ({ hasIssues }: SummaryProps) => {
           {t('models.inheritance.extendsSummary', { model: index.get(parentId)?.label ?? parentId })}
         </Badge>
       )}
-      {draft.kind === 'component' ? null : (
+      {!isModelDefinition(draft) ? null : (
         <>
           <Badge variant="outline">
             {t(draft.localized ? 'models.builder.summaryLocalized' : 'models.builder.summaryNotLocalized')}

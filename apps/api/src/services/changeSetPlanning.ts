@@ -1,6 +1,8 @@
 import { parseDefinition, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
+import * as relationEdgeCountsRepository from '../repositories/relationEdgeCounts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import { buildChangePlan, type ChangePlan } from '../schema/planner/plan.js';
+import { changeRelationValueIssues } from '../schema/planner/relationValues.js';
 import { scopedDefinitionsOf, type ScopedDefinition } from '../schema/scopedValidation.js';
 import { readStoredDefinition } from '../schema/storedDefinition.js';
 import type { SchemaServiceContext } from './schemaAccess.js';
@@ -112,20 +114,32 @@ export const planDraft = async (
     };
   }
   const { siteKeys } = await plannerInputOf(context);
+  const withOthers = proposedDefinitions(
+    context,
+    scopedDefinitionsOf(context.snapshot.network.definitions),
+    others.filter((other) => other.id !== draft.id),
+  );
   const plan = buildChangePlan({
     before,
     after,
     fromVersion: activeVersion,
-    active: proposedDefinitions(
-      context,
-      scopedDefinitionsOf(context.snapshot.network.definitions),
-      others.filter((other) => other.id !== draft.id),
-    ),
+    active: withOthers,
     siteId,
     hasContent: before !== null,
     siteKeys,
   });
-  return { ...base, after, plan, issues: [...plan.issues, ...unsupportedIssues(plan)] };
+  // Relation values this draft would strand, given the set's other drafts (plan interfaces, decision 9);
+  // shipping refuses them again under the lock.
+  const stranded =
+    plan.issues.length > 0
+      ? []
+      : await changeRelationValueIssues(
+          withOthers.map((entry) => entry.definition),
+          draft.definition_id,
+          after,
+          (query) => relationEdgeCountsRepository.countReferringEntries(query, context.db),
+        );
+  return { ...base, after, plan, issues: [...plan.issues, ...stranded, ...unsupportedIssues(plan)] };
 };
 
 export const planDrafts = (context: SchemaServiceContext, drafts: readonly SchemaDraftRow[]) =>

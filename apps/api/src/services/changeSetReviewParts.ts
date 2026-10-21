@@ -1,4 +1,4 @@
-import type { DataType, FieldDefinition } from '@shapio/schema';
+import type { DataType, DefinitionCategory, FieldDefinition } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
 import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import type { ContentModel } from '../content/model.js';
@@ -49,7 +49,7 @@ export type ReviewSchemaItem = {
   itemId: string;
   draftId: string;
   definitionId: string;
-  category: 'model' | 'component';
+  category: DefinitionCategory;
   apiKey: string;
   operation: SchemaOperation;
   baseVersion: number | null;

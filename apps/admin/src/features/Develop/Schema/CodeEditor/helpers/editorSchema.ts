@@ -1,5 +1,10 @@
 import type { DefinitionCategory } from '@shapio/client';
-import { ComponentDefinitionInputSchema, ModelDefinitionInputSchema, SETTINGS_SCHEMAS } from '@shapio/schema';
+import {
+  ComponentDefinitionInputSchema,
+  InterfaceDefinitionInputSchema,
+  ModelDefinitionInputSchema,
+  SETTINGS_SCHEMAS,
+} from '@shapio/schema';
 
 /**
  * The JSON Schema behind the editor's completion and hover: the definition input schemas from
@@ -41,6 +46,7 @@ const withTypedSettings = (schema: JSONSchema7): JSONSchema7 => {
 const SCHEMAS: Record<DefinitionCategory, JSONSchema7> = {
   model: withTypedSettings(plain(ModelDefinitionInputSchema)),
   component: withTypedSettings(plain(ComponentDefinitionInputSchema)),
+  interface: withTypedSettings(plain(InterfaceDefinitionInputSchema)),
 };
 
 export const editorSchemaFor = (category: DefinitionCategory): JSONSchema7 => SCHEMAS[category];

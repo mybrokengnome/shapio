@@ -55,8 +55,10 @@ import { adminAppUsersRoutes } from './routes/admin/appUsers/index.js';
 import { adminAssistRoutes } from './routes/admin/assist/index.js';
 import { componentsRoutes } from './routes/admin/components/index.js';
 import { adminContentRoutes } from './routes/admin/content/index.js';
+import { contentTargetsRoutes } from './routes/admin/contentTargets/index.js';
 import { adminExtensionsRoutes } from './routes/admin/extensions/index.js';
 import { adminIdentityRoutes } from './routes/admin/index.js';
+import { interfacesRoutes } from './routes/admin/interfaces/index.js';
 import { localesRoutes } from './routes/admin/locales/index.js';
 import { adminMediaRoutes } from './routes/admin/media/index.js';
 import { modelsRoutes } from './routes/admin/models/index.js';
@@ -226,6 +228,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   await app.register(appAuthRoutes, { prefix: urls.withBasePath('/api/app-auth') });
   await app.register(modelsRoutes, { prefix: urls.withBasePath('/api/admin/models') });
   await app.register(componentsRoutes, { prefix: urls.withBasePath('/api/admin/components') });
+  await app.register(interfacesRoutes, { prefix: urls.withBasePath('/api/admin/interfaces') });
   await app.register(schemaRoutes, { prefix: urls.withBasePath('/api/admin/schema') });
   await app.register(localesRoutes, { prefix: urls.withBasePath('/api/admin/locales') });
   await app.register(adminMediaRoutes, { prefix: urls.withBasePath('/api/admin/media') });
@@ -244,6 +247,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   }
   await app.register(contentHooksPlugin, { hooks: deps.contentHooks ?? extensions.hooks });
   await app.register(adminContentRoutes, { prefix: urls.withBasePath('/api/admin/content') });
+  await app.register(contentTargetsRoutes, { prefix: urls.withBasePath('/api/admin/content-targets') });
   await app.register(editorManifestPlugin, {
     manifest:
       deps.editorManifest ??

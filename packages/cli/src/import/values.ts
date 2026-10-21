@@ -81,8 +81,11 @@ const resolveIds = (
 const listOrOne = (ids: readonly string[], many: boolean): unknown =>
   many ? (ids.length > 0 ? ids : undefined) : ids[0];
 
-const componentView = (field: FieldDefinition, context: BuildContext) =>
-  field.type === 'component' ? context.live.byId.get(field.settings.component) : undefined;
+/** The component a component field embeds; never another kind, whatever its ID names on the instance. */
+const componentView = (field: FieldDefinition, context: BuildContext) => {
+  const view = field.type === 'component' ? context.live.byId.get(field.settings.component) : undefined;
+  return view?.definition.kind === 'component' ? view : undefined;
+};
 
 const convertValue = (value: SourceValue, field: FieldDefinition, context: BuildContext): unknown => {
   switch (value.kind) {

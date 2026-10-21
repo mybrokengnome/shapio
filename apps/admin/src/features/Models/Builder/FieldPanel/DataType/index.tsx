@@ -14,6 +14,8 @@ type DataTypeProps = {
   notes: readonly string[];
   /** Saving drops every stored value (Shapio can't convert the saved type): the notes read as a danger. */
   dropsValues: boolean;
+  /** Types not offered here (an interface's contract can't hold components). */
+  excluded?: ReadonlySet<DataTypeName>;
   disabled: boolean;
   onChange: (type: DataTypeName) => void;
 };
@@ -28,7 +30,15 @@ const isDataType = (value: string): value is DataTypeName =>
  * where the panel is wide enough, then the selected type in one line and what changing a saved field's
  * type does. A radio group: Tab enters at the selected type, arrow keys choose another.
  */
-export const DataType = ({ labelledBy, value, notes, dropsValues, disabled, onChange }: DataTypeProps) => {
+export const DataType = ({
+  labelledBy,
+  value,
+  notes,
+  dropsValues,
+  excluded,
+  disabled,
+  onChange,
+}: DataTypeProps) => {
   const { t } = useTranslation();
   const descriptionId = useId();
   return (
@@ -41,7 +51,7 @@ export const DataType = ({ labelledBy, value, notes, dropsValues, disabled, onCh
         aria-describedby={descriptionId}
         className="grid-cols-4 gap-2 @xl:grid-cols-6"
       >
-        {TYPES.map((type) => (
+        {TYPES.filter((type) => type === value || !excluded?.has(type)).map((type) => (
           <RadioTile
             key={type}
             value={type}

@@ -173,6 +173,41 @@ export class SqliteDriver implements Driver {
     }
   }
 
+  /** Sets `foreign_keys` on the writer between write transactions (it cannot change inside one). */
+  async #setForeignKeys(on: boolean): Promise<void> {
+    const statement = `pragma foreign_keys = ${on ? 'on' : 'off'}`;
+    const release = await this.lockWriter(statement, false);
+    try {
+      this.writer.exec(statement);
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Runs `migrate` (the migrations) with foreign keys off on the writer, SQLite's own procedure for rebuilding a
+   * table other tables reference: renaming it aside then rewrites none of their references, and dropping the old
+   * copy deletes nothing. A migration cannot do it itself because each runs in a transaction, where
+   * `foreign_keys` cannot change. Every reference is then checked (`foreign_key_check`): a broken one fails the
+   * run. Migrations run before the instance serves anything, so no other write runs meanwhile.
+   */
+  async withForeignKeysOff<T>(migrate: () => Promise<T>): Promise<T> {
+    await this.#setForeignKeys(false);
+    try {
+      const result = await migrate();
+      const violations = this.writer.foreignKeyViolations();
+      const [first] = violations;
+      if (first) {
+        throw new Error(
+          `Migrations left ${violations.length} broken reference(s), the first from ${first.table} (row ${String(first.rowid)}) to ${first.parent}`,
+        );
+      }
+      return result;
+    } finally {
+      await this.#setForeignKeys(true);
+    }
+  }
+
   async init(): Promise<void> {
     // Opening the writer first creates the file and switches it to WAL before any reader opens it.
     void this.writer;

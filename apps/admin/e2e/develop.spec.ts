@@ -121,7 +121,7 @@ test('schema as code lists the pulled files and previews the open one', async ()
   await preview.getByRole('tab', { name: 'REST' }).click();
   await expect(preview.getByText(`/api/content/${ROUTE_KEY}/{id}`, { exact: true })).toBeVisible();
   await preview.getByRole('tab', { name: 'GraphQL' }).click();
-  await expect(preview.getByText(/type SchemaNote \{/)).toBeVisible();
+  await expect(preview.getByText(/type SchemaNote implements Entry \{/)).toBeVisible();
   await preview.getByRole('tab', { name: 'Types' }).click();
   await expect(preview.getByText(/export type SchemaNote = /)).toBeVisible();
   await captureScreen(page, 'develop-02-schema-types', { viewports: ['desktop'] });

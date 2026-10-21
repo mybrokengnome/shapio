@@ -269,6 +269,15 @@ export class SqliteConnection {
     this.#database.exec(sql);
   }
 
+  /** The references `pragma foreign_key_check` reports as broken: table, row and referenced table. */
+  foreignKeyViolations(): Array<{ table: string; rowid: number | null; parent: string }> {
+    return this.#database.prepare('pragma foreign_key_check').all() as Array<{
+      table: string;
+      rowid: number | null;
+      parent: string;
+    }>;
+  }
+
   close(): void {
     this.#statements.clear();
     if (this.#database.isOpen) {

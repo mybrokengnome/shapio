@@ -22,6 +22,7 @@ const SAVE = { exempt: 'content saves are recorded as revisions' } as const;
  * and anonymous callers go through the same evaluator (anonymous callers get what the `public` app role
  * grants, nothing by default). Writes (package I) run the content service under the caller's policy: the
  * owner is set server-side and `ownedByPrincipal` limits updates and deletes to the caller's own entries.
+ * An interface's route (plan interfaces) is read-only: writes are refused (405) before their body is checked.
  */
 export const deliveryRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
@@ -41,19 +42,31 @@ export const deliveryRoutes: FastifyPluginAsyncTypebox = async (app) => {
   // POST /:modelKey
   app.post(
     '/:modelKey',
-    { schema: createDeliveryEntrySchema, config: { audit: SAVE } },
+    {
+      schema: createDeliveryEntrySchema,
+      preValidation: writeHandlers.refuseInterfaceRouteWrite,
+      config: { audit: SAVE },
+    },
     writeHandlers.createDeliveryEntry,
   );
   // PUT /:modelKey/:id: save one locale's draft with the expected version (409 when stale)
   app.put(
     '/:modelKey/:id',
-    { schema: updateDeliveryEntrySchema, config: { audit: SAVE } },
+    {
+      schema: updateDeliveryEntrySchema,
+      preValidation: writeHandlers.refuseInterfaceRouteWrite,
+      config: { audit: SAVE },
+    },
     writeHandlers.updateDeliveryEntry,
   );
   // DELETE /:modelKey/:id
   app.delete(
     '/:modelKey/:id',
-    { schema: deleteDeliveryEntrySchema, config: { audit: { action: 'content.delete' } } },
+    {
+      schema: deleteDeliveryEntrySchema,
+      preValidation: writeHandlers.refuseInterfaceRouteWrite,
+      config: { audit: { action: 'content.delete' } },
+    },
     writeHandlers.deleteDeliveryEntry,
   );
 };

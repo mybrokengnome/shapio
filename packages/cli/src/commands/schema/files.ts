@@ -16,8 +16,8 @@ import {
 } from '@shapio/schema';
 
 /**
- * Schema files: one canonical JSON file per definition. Shared ones in `models/` and `components/`, a site's
- * own in `sites/<siteKey>/models/` and `sites/<siteKey>/components/` (the layout of `@shapio/schema`).
+ * Schema files: one canonical JSON file per definition. Shared ones in `models/`, `components/`, and
+ * `interfaces/`, a site's own in the same folders under `sites/<siteKey>/` (the layout of `@shapio/schema`).
  */
 export type LocalFile = {
   path: string;
@@ -66,7 +66,7 @@ const readLocalFile = async (path: string, site: string | null): Promise<LocalFi
     : { path, raw, site };
 };
 
-/** The files of one scope's folder (`models/` and `components/` under it). */
+/** The files of one scope's folder (`models/`, `components/`, and `interfaces/` under it). */
 const readScopeFiles = async (dir: string, site: string | null): Promise<LocalFile[]> => {
   const base = join(dir, ...scopeDirectory(site).split('/').filter(Boolean));
   const files: LocalFile[] = [];

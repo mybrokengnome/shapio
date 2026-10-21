@@ -1,5 +1,12 @@
 import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
-import { isDataType, typeChangeDropsValues, type PlannedChange, type SchemaChange } from '@shapio/schema';
+import {
+  ANY_TARGET,
+  categoryOfKind,
+  isDataType,
+  typeChangeDropsValues,
+  type PlannedChange,
+  type SchemaChange,
+} from '@shapio/schema';
 
 /**
  * Human-readable output for schema sync: decisions, per-definition diffs and server refusals. Definitions and
@@ -12,7 +19,13 @@ import { isDataType, typeChangeDropsValues, type PlannedChange, type SchemaChang
  */
 export type ParentIds = ReadonlyMap<string, string>;
 
-/** The `ParentIds` key of a model by API ID (a stable ID never contains `:`). */
+/**
+ * The interfaces each local model implements itself (`implements`, stable IDs), keyed like `ParentIds`: for
+ * `model post (implements featurable, listable)`.
+ */
+export type ImplementedIds = ReadonlyMap<string, readonly string[]>;
+
+/** The `ParentIds` (and `ImplementedIds`) key of a model by API ID (a stable ID never contains `:`). */
 export const parentKeyOf = (apiKey: string) => `apiKey:${apiKey}`;
 
 /** A definition's API ID from the files, else its ID; `(none)` for a model that extends nothing. */
@@ -91,34 +104,63 @@ const dropsValues = (change: PlannedChange) => {
   );
 };
 
+/** A relation target by name: a type or an interface by API ID from the files (else its ID), `*` as any entry. */
+const targetName = (target: unknown, names: ReadonlyMap<string, string>): string =>
+  target === ANY_TARGET ? 'any entry' : target === undefined ? '(unset)' : definitionName(target, names);
+
+/** Any other change: the property and both values, one line per part that differs. */
+const otherChange = (change: PlannedChange, field: string): string[] => {
+  const subject = change.kind.startsWith('field.') ? `${field} ` : '';
+  const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
+  const dropped = dropsValues(change) ? ' (values dropped)' : '';
+  const parts = differences(change.from, change.to);
+  return (parts.length > 0 ? parts : [{ path: '', from: change.from, to: change.to }]).map(
+    (part) => `~ ${subject}${property}${part.path}: ${show(part.from)} → ${show(part.to)}${dropped}`,
+  );
+};
+
+type FormatChangeOptions = {
+  /** The change is on an interface: its fields are contract fields. */
+  contract?: boolean;
+};
+
 /**
  * The lines for one change, `+` added, `-` removed, `~` changed. Values are printed in full; a change inside
  * an object prints one line per part that changed. A type change that drops values says so.
  */
-export const formatChange = (change: PlannedChange, names: ReadonlyMap<string, string>): string[] => {
-  const field = change.fieldId ? fieldName(change, names) : '';
+export const formatChange = (
+  change: PlannedChange,
+  names: ReadonlyMap<string, string>,
+  { contract = false }: FormatChangeOptions = {},
+): string[] => {
+  const field = change.fieldId ? `${contract ? 'contract field' : 'field'} ${fieldName(change, names)}` : '';
   switch (change.kind) {
     case 'definition.added':
       return [`+ definition ${show(change.to)}`];
     case 'definition.removed':
       return [`- definition ${show(change.from)}`];
     case 'field.added':
-      return [`+ field ${field}`];
+      return [`+ ${field}`];
     case 'field.removed':
-      return [`- field ${field}`];
+      return [`- ${field}`];
     case 'field.order':
-      return ['~ field order'];
+      return [contract ? '~ contract field order' : '~ field order'];
     case 'model.extends':
       return [`~ extends: ${definitionName(change.from, names)} → ${definitionName(change.to, names)}`];
-    default: {
-      const subject = change.kind.startsWith('field.') ? `field ${field} ` : '';
-      const property = change.property ?? change.kind.split('.')[1] ?? change.kind;
-      const dropped = dropsValues(change) ? ' (values dropped)' : '';
-      const parts = differences(change.from, change.to);
-      return (parts.length > 0 ? parts : [{ path: '', from: change.from, to: change.to }]).map(
-        (part) => `~ ${subject}${property}${part.path}: ${show(part.from)} → ${show(part.to)}${dropped}`,
-      );
+    case 'model.implements': {
+      // One change per interface: `to` names it when the type starts implementing it, `from` when it stops.
+      const added = typeof change.to === 'string' && change.to !== '';
+      return [
+        `${added ? '+' : '-'} implements ${definitionName(change.property ?? (added ? change.to : change.from), names)}`,
+      ];
     }
+    case 'field.settings':
+      if (change.property === 'target') {
+        return [`~ ${field} target: ${targetName(change.from, names)} → ${targetName(change.to, names)}`];
+      }
+      return otherChange(change, field);
+    default:
+      return otherChange(change, field);
   }
 };
 
@@ -151,10 +193,21 @@ const onMember = (change: PlannedChange, item: SchemaSyncResult, names: Readonly
     ? ` (on ${definitionName(change.definitionId, names)})`
     : '';
 
+/** ` (implements featurable, listable)` for a model whose files declare interfaces, else nothing. */
+const implementsNote = (
+  item: SchemaSyncResult,
+  names: ReadonlyMap<string, string>,
+  implemented: ImplementedIds,
+) => {
+  const ids = implemented.get(item.definitionId) ?? implemented.get(parentKeyOf(item.apiKey)) ?? [];
+  return ids.length === 0 ? '' : ` (implements ${ids.map((id) => definitionName(id, names)).join(', ')})`;
+};
+
 export const formatItem = (
   item: SchemaSyncResult,
   names: ReadonlyMap<string, string>,
   parents: ParentIds = new Map(),
+  implemented: ImplementedIds = new Map(),
 ): string => {
   const flags = [
     item.plan?.summary?.breaking ? 'BREAKING' : '',
@@ -163,10 +216,14 @@ export const formatItem = (
   ].filter(Boolean);
   const parent = parents.get(item.definitionId) ?? parents.get(parentKeyOf(item.apiKey));
   const extendsNote = parent === undefined ? '' : ` (extends ${definitionName(parent, names)})`;
-  const header = `${item.kind === 'component' ? 'component' : 'model'} ${item.apiKey}${extendsNote}: ${describeDecision(item)}${flags.length ? ` [${flags.join(', ')}]` : ''}`;
-  const lines = item.changes.flatMap((change) =>
-    formatChange(change, names).map((line) => `    ${line}${onMember(change, item, names)}`),
-  );
+  const category = categoryOfKind(item.kind);
+  const header = `${category} ${item.apiKey}${extendsNote}${implementsNote(item, names, implemented)}: ${describeDecision(item)}${flags.length ? ` [${flags.join(', ')}]` : ''}`;
+  const lines = item.changes.flatMap((change) => {
+    const member = onMember(change, item, names);
+    // A change the server reports on a member (a type implementing the interface) is about that type's fields.
+    const contract = category === 'interface' && member === '';
+    return formatChange(change, names, { contract }).map((line) => `    ${line}${member}`);
+  });
   return [header, ...lines].join('\n');
 };
 
@@ -213,7 +270,7 @@ const HINTS: Readonly<Record<string, string>> = {
   SCOPE_MISMATCH:
     'Sync never moves a definition between sites: run `shapio schema pull` to get the instance’s layout, or change the scope with `shapio schema scope`.',
   FORBIDDEN_SCOPE:
-    'Shared definitions (in models/ and components/) need schema permission on every site: apply with a network token, or leave those files unchanged.',
+    'Shared definitions (in models/, components/, and interfaces/) need schema permission on every site: apply with a network token, or leave those files unchanged.',
   UNKNOWN_PARENT:
     '"extends" holds the stable ID of the parent type: check the ID, or add the parent’s file (it can be in the same apply).',
   INVALID_PARENT:
@@ -226,6 +283,20 @@ const HINTS: Readonly<Record<string, string>> = {
   INHERITED_FIELD_COLLISION:
     'A type cannot declare a field its parent already has: rename its own field, or remove it and use the inherited one.',
   HAS_CHILDREN: 'Delete the types that extend it first, or make them extend another type, then apply again.',
+  UNKNOWN_INTERFACE:
+    '"implements" holds the stable IDs of interfaces: check the ID, or add the interface’s file (it can be in the same apply).',
+  INVALID_INTERFACE:
+    'Only a collection or a single type can implement an interface, "implements" can only name interfaces, and an interface on one site can only be implemented by types on that site.',
+  INTERFACE_FIELD_MISSING:
+    'Give the type the field the message names (the same API ID, a compatible type, and the flags the interface sets), or remove the interface from "implements" in the same apply.',
+  INTERFACE_FIELD_MISMATCH:
+    'Make the type’s field match the interface’s: the same type, every flag the interface sets, and the settings the message names.',
+  INVALID_INTERFACE_FIELD:
+    'An interface’s field can’t be a component or a dynamic zone, can’t be unique, and a slug in it can’t name a source field.',
+  RELATION_VALUES_EXIST:
+    'Remove the references the message counts (in the admin, or with the content API), or keep the type in the interface, then apply again.',
+  HAS_MEMBERS:
+    'Remove the interface from "implements" on every type that names it, then delete it. A relation that targets it must target something else first.',
 };
 
 const issueWhere = (found: Issue, filePaths: readonly string[]) => {
@@ -249,11 +320,12 @@ export const formatApiError = (
   filePaths: readonly string[],
   names: ReadonlyMap<string, string>,
   parents: ParentIds = new Map(),
+  implemented: ImplementedIds = new Map(),
 ): string => {
   const details = (error.details ?? {}) as ErrorDetails;
   const lines = [`${error.code}: ${error.message}`];
   for (const conflict of details.conflicts ?? []) {
-    lines.push(formatItem(conflict, names, parents));
+    lines.push(formatItem(conflict, names, parents, implemented));
   }
   for (const found of details.issues ?? []) {
     lines.push(`  ${issueWhere(found, filePaths)}: ${found.message ?? ''}`);

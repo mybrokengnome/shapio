@@ -54,4 +54,17 @@ describe('describeIssue', () => {
       expect(describeIssue({ code, message: 'server text' })).not.toBe('server text');
     }
   });
+
+  it('names the interface and field of a contract issue, or keeps the server text without the name', () => {
+    const issue = {
+      code: 'INTERFACE_FIELD_MISSING',
+      message: '"image" is required by Featurable',
+      interfaceId: 'i1',
+      fieldApiKey: 'image',
+    };
+    expect(describeIssue(issue, { definitionName: (id) => (id === 'i1' ? 'Featurable' : undefined) })).toBe(
+      '"image" is required by Featurable.',
+    );
+    expect(describeIssue(issue)).toBe('"image" is required by Featurable');
+  });
 });

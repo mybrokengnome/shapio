@@ -12,8 +12,8 @@ import {
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { SchemaById } from '../../schema/snapshot.js';
-import { familyIdsOf } from '../family.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
+import { relationTargetFor, relationTargetKey, type RelationTarget } from '../relationTarget.js';
 import { pointer, type ContentIssue } from './issues.js';
 import { checkLength, checkScalar, isReferenceId } from './scalars.js';
 
@@ -45,15 +45,22 @@ export const MODEL_KEY = '__model';
 export const KINDS_KEY = '__kinds';
 
 /**
- * A relation value to check: `targetModelIds` is the target's family at the validator's snapshot (the target
- * and every kind of it, plan polymorphic-types), any of which an entry may be.
+ * A relation value to check: `targetModelIds` are the models an entry may be of at the validator's snapshot:
+ * the target's family (plan polymorphic-types) or an interface's members (plan interfaces); null for a
+ * relation to any entry (`*`), which accepts a live entry of any model on the site. `targetModelId` is the
+ * stored target (a model ID, an interface ID, or `*`).
  */
 export type RelationReference = {
   path: string;
   fieldId: string;
   targetModelId: string;
-  targetModelIds: readonly string[];
+  targetModelIds: readonly string[] | null;
   entryIds: string[];
+  /**
+   * What the target accepts, in words, for a refusal (`entry … is not a Featurable (a Blog post or Guide)`);
+   * absent for a model target, whose refusal says the entry is not in it.
+   */
+  accepts?: string;
 };
 
 /** Media a document points at (media fields and rich-text images), checked against the library on write. */
@@ -83,13 +90,17 @@ export type ModelValidator = {
   validate: (data: Readonly<ContentData>, options?: ValidateOptions) => ValidationOutcome;
 };
 
-/** Relation target → its family (the target first). */
-type TargetFamilies = ReadonlyMap<string, readonly string[]>;
+/** Relation target (as stored) → what it accepts at the snapshot, and that in words for a refusal. */
+type TargetFamilies = ReadonlyMap<string, { target: RelationTarget; accepts?: string }>;
 
 type Walk = ValidationOutcome & { options: ValidateOptions; families: TargetFamilies };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The models a relation value's entries may be of; null for any entry. */
+const acceptedModelIds = (target: RelationTarget | undefined, stored: string): readonly string[] | null =>
+  target === undefined ? [stored] : target.kind === 'any' ? null : target.modelIds;
 
 export const isMissingValue = (value: unknown): boolean =>
   value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
@@ -255,7 +266,8 @@ const checkStructured = (
         path,
         fieldId: field.id,
         targetModelId: target,
-        targetModelIds: walk.families.get(target) ?? [target],
+        targetModelIds: acceptedModelIds(walk.families.get(target)?.target, target),
+        ...(walk.families.get(target)?.accepts ? { accepts: walk.families.get(target)?.accepts } : {}),
         entryIds: ids,
       });
       return value;
@@ -438,14 +450,43 @@ const relationTargetsOf = (model: ContentModel): string[] => {
   ].sort();
 };
 
-/** Each relation target's family at the snapshot: a relation to a model accepts any of its kinds. */
+/**
+ * What each relation target accepts at the snapshot: a model's kinds, an interface's members (plan
+ * interfaces), or any entry.
+ */
 const targetFamiliesOf = (snapshot: SchemaById, model: ContentModel): TargetFamilies =>
-  new Map(relationTargetsOf(model).map((target) => [target, familyIdsOf(snapshot, target)] as const));
+  new Map(
+    relationTargetsOf(model).map((stored) => {
+      const target = relationTargetFor(snapshot, stored);
+      const accepts = acceptsInWords(snapshot, target);
+      return [stored, accepts ? { target, accepts } : { target }] as const;
+    }),
+  );
+
+/** "a, b, or c" (the serial comma), "a or b", "a". */
+const orList = (items: readonly string[]): string =>
+  items.length <= 2 ? items.join(' or ') : `${items.slice(0, -1).join(', ')}, or ${items.at(-1) ?? ''}`;
+
+/** What an interface or any-entry relation accepts, in words; undefined for a model target. */
+const acceptsInWords = (snapshot: SchemaById, target: RelationTarget): string | undefined => {
+  if (target.kind === 'any') {
+    return 'an entry of this site';
+  }
+  if (target.kind === 'model') {
+    return undefined;
+  }
+  const label = snapshot.byId.get(target.id)?.definition.label ?? 'member of this interface';
+  const members = target.modelIds.flatMap((id) => {
+    const memberLabel = snapshot.byId.get(id)?.definition.label;
+    return memberLabel ? [memberLabel] : [];
+  });
+  return members.length > 0 ? `a ${label} (a ${orList(members)})` : `a ${label} (no type implements it)`;
+};
 
 /**
  * The cache key: the model's revision, every ancestor's (in chain order: a parent edit changes the effective
- * fields), every embedded component's, and the family of every relation target (a new kind of a target
- * widens what its relations accept).
+ * fields), every embedded component's, and what every relation target accepts (a new kind of a target, or a
+ * type joining an interface, widens it; any entry is a constant).
  */
 const cacheKey = (snapshot: SchemaById, model: ContentModel, families: TargetFamilies) =>
   [
@@ -454,7 +495,13 @@ const cacheKey = (snapshot: SchemaById, model: ContentModel, families: TargetFam
     '',
     ...[...model.components.keys()].sort().map((id) => snapshot.byId.get(id)?.revisionId ?? id),
     '',
-    ...[...families].map(([target, family]) => `${target}=${family.join(',')}`),
+    ...[...families.values()].map(({ target }) => relationTargetKey(target)),
+    // An interface's refusal names it and its members by label: a rename of any of them is a new revision.
+    ...[...families.values()].flatMap(({ target }) =>
+      target.kind === 'interface'
+        ? [target.id, ...target.modelIds].map((id) => snapshot.byId.get(id)?.revisionId ?? id)
+        : [],
+    ),
   ].join(':');
 
 /** The compiled validator for a model at the pinned snapshot, cached by schema revision IDs. */

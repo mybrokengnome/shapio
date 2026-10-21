@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useMediaAsset } from '@/api/media';
 import { useFieldsEnvironment } from '@/fields/form/context';
 import { summarizeValue } from '@/fields/helpers/summary';
-import { entryTitle, shortId } from '@/fields/helpers/titles';
+import { shortId } from '@/fields/helpers/titles';
 import { isEmptyValue, toList } from '@/fields/helpers/values';
 import { useEntryLabels } from '@/fields/hooks/useEntryLabels';
+import { useRelationTarget } from '@/fields/hooks/useRelationTarget';
 import { formatDateTime } from '@/helpers/formatDate';
 
 type PropertyValueProps = { field: FieldDefinition; value: unknown };
@@ -14,11 +15,11 @@ const SHOWN_LINKS = 2;
 
 const RelationValue = ({ field, value }: PropertyValueProps) => {
   const { t } = useTranslation();
-  const { models, locale } = useFieldsEnvironment();
-  const target = field.type === 'relation' ? models.get(field.settings.target) : undefined;
+  const { locale } = useFieldsEnvironment();
+  const target = useRelationTarget(field.type === 'relation' ? field.settings.target : undefined);
   const ids = toList<string>(value).filter((id): id is string => typeof id === 'string');
-  const labels = useEntryLabels(target, ids, locale);
-  if (!target) {
+  const labels = useEntryLabels(target, field.id, ids, locale);
+  if (target.kind === 'unreadable') {
     // A target missing from the readable registry is one this role can't read (see RelationField).
     return (
       <span className="text-muted-foreground">
@@ -28,7 +29,7 @@ const RelationValue = ({ field, value }: PropertyValueProps) => {
   }
   const names = ids.map((id) => {
     const item = labels.byId.get(id);
-    return (item ? entryTitle(target, item.data) : undefined) ?? `${t('content.untitled')} · ${shortId(id)}`;
+    return item?.title ?? `${t('content.untitled')} · ${shortId(id)}`;
   });
   const shown = names.slice(0, SHOWN_LINKS).join(', ');
   return (

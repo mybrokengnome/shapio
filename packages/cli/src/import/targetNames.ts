@@ -3,7 +3,7 @@ import { foldApiKey, generatedNames, routeKeyOf, suggestPlural, type SchemaDefin
 import { createRateLimitedFetch } from '../helpers/rateLimitRetry.js';
 import { withSuffix } from './naming.js';
 import { assignIds, buildDefinitions } from './planner.js';
-import type { ImportSource, PlannedDefinition } from './types.js';
+import type { ImportSource } from './types.js';
 
 /**
  * `--plan --url <instance>`: planned API IDs and the GraphQL names they generate are checked against the
@@ -74,10 +74,11 @@ const freeApiKey = (definition: SchemaDefinition, taken: ReadonlySet<string>): s
   }
 };
 
-const KIND_LABEL: Record<PlannedDefinition['kind'], string> = {
+const KIND_LABEL: Record<SchemaDefinition['kind'], string> = {
   collection: 'Model',
   singleton: 'Model',
   component: 'Component',
+  interface: 'Interface',
 };
 
 /**

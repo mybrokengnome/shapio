@@ -35,6 +35,8 @@ export const restFieldReads = async ({
     if (field.type !== 'relation' || !query.populate.has(field.id)) {
       continue;
     }
+    // A relation to an interface or to any entry (plan interfaces) populates targets of several models,
+    // whose fields are counted where they are read as their own model's; only a model target counts here.
     const target = resolveModelById(snapshot, field.settings.target);
     if (!target) {
       continue;

@@ -1,0 +1,761 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`interfaces: TypeScript and OpenAPI > generates OpenAPI with the contract, its members by __model, any entry and the list route 1`] = `
+{
+  "AnyEntry": {
+    "discriminator": {
+      "mapping": {
+        "about": "#/components/schemas/About",
+        "guide": "#/components/schemas/Guide",
+        "homepage": "#/components/schemas/Homepage",
+        "post": "#/components/schemas/Post",
+      },
+      "propertyName": "__model",
+    },
+    "oneOf": [
+      {
+        "$ref": "#/components/schemas/About",
+      },
+      {
+        "$ref": "#/components/schemas/Guide",
+      },
+      {
+        "$ref": "#/components/schemas/Homepage",
+      },
+      {
+        "$ref": "#/components/schemas/Post",
+      },
+    ],
+  },
+  "Featurable": {
+    "properties": {
+      "__kinds": {
+        "description": "The API IDs of the entry's type and the types it extends, root first",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "__model": {
+        "description": "The API ID of the entry's type",
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "format": "uuid",
+        "type": "string",
+      },
+      "locale": {
+        "type": "string",
+      },
+      "publishedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "summary": {
+        "anyOf": [
+          {
+            "description": "Summary",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "title": {
+        "anyOf": [
+          {
+            "description": "Title",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "locale",
+      "createdAt",
+      "updatedAt",
+      "publishedAt",
+      "__model",
+      "__kinds",
+      "title",
+      "summary",
+    ],
+    "title": "Featurable",
+    "type": "object",
+  },
+  "FeaturableAny": {
+    "discriminator": {
+      "mapping": {
+        "about": "#/components/schemas/About",
+        "guide": "#/components/schemas/Guide",
+        "post": "#/components/schemas/Post",
+      },
+      "propertyName": "__model",
+    },
+    "oneOf": [
+      {
+        "$ref": "#/components/schemas/About",
+      },
+      {
+        "$ref": "#/components/schemas/Guide",
+      },
+      {
+        "$ref": "#/components/schemas/Post",
+      },
+    ],
+  },
+  "InterfaceMember": {
+    "description": "One member type of an interface list (plan interfaces)",
+    "properties": {
+      "apiKey": {
+        "description": "The singular API ID",
+        "type": "string",
+      },
+      "label": {
+        "type": "string",
+      },
+      "routeKey": {
+        "description": "The type's own delivery route key",
+        "type": "string",
+      },
+    },
+    "required": [
+      "apiKey",
+      "label",
+      "routeKey",
+    ],
+    "type": "object",
+  },
+  "get": {
+    "get": {
+      "operationId": "getFeaturable",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "format": "uuid",
+            "type": "string",
+          },
+        },
+        {
+          "description": "Comma-separated fields to return",
+          "in": "query",
+          "name": "fields",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Relations to expand: \`author,tags.author\` or \`*\` (at most 3 levels)",
+          "in": "query",
+          "name": "populate",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Locale to serve; falls back along the locale chain",
+          "in": "query",
+          "name": "locale",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Read content as of this publication sequence number (\`meta.snapshot\`)",
+          "in": "query",
+          "name": "snapshot",
+          "schema": {
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        {
+          "description": "Rich-text shape: the JSON document, sanitized HTML rendered from it, or both",
+          "in": "query",
+          "name": "richText",
+          "schema": {
+            "default": "json",
+            "enum": [
+              "json",
+              "html",
+              "both",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "Drafts mode: \`draft\` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with \`snapshot\`.",
+          "in": "query",
+          "name": "publicationState",
+          "schema": {
+            "default": "published",
+            "enum": [
+              "published",
+              "draft",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "data": {
+                    "$ref": "#/components/schemas/FeaturableAny",
+                  },
+                  "meta": {
+                    "properties": {
+                      "locale": {
+                        "type": "string",
+                      },
+                      "publicationState": {
+                        "description": "Present on draft reads only",
+                        "enum": [
+                          "draft",
+                        ],
+                        "type": "string",
+                      },
+                      "snapshot": {
+                        "description": "null on draft reads, which cannot be pinned",
+                        "type": [
+                          "integer",
+                          "null",
+                        ],
+                      },
+                    },
+                    "type": "object",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "OK",
+        },
+        "304": {
+          "description": "Not modified",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Invalid query or body",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Not authenticated",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Not allowed (including filters on hidden fields)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Unknown model or entry",
+        },
+      },
+      "summary": "Read one published entry of any Featurable type",
+      "tags": [
+        "Featurable",
+      ],
+    },
+  },
+  "homepageRelations": {
+    "__kinds": {
+      "const": [
+        "homepage",
+      ],
+      "description": "The API IDs of the entry's type and the types it extends, root first",
+      "items": {
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "__model": {
+      "const": "homepage",
+      "description": "The API ID of the entry's type",
+      "type": "string",
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string",
+    },
+    "featured": {
+      "anyOf": [
+        {
+          "description": "Featured",
+          "items": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string",
+              },
+              {
+                "$ref": "#/components/schemas/FeaturableAny",
+              },
+            ],
+            "description": "An entry ID, or the entry when populated",
+          },
+          "type": "array",
+        },
+        {
+          "type": "null",
+        },
+      ],
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string",
+    },
+    "locale": {
+      "type": "string",
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": "string",
+    },
+    "spotlight": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string",
+            },
+            {
+              "$ref": "#/components/schemas/AnyEntry",
+            },
+          ],
+          "description": "Spotlight",
+        },
+        {
+          "type": "null",
+        },
+      ],
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string",
+    },
+  },
+  "list": {
+    "get": {
+      "operationId": "listFeaturable",
+      "parameters": [
+        {
+          "description": "Filter with \`filters[field][$op]=value\`; combine with \`$and\`, \`$or\`, \`$not\`. Ranges need a filterable or sortable field; text matches (\`$contains\`, \`$containsi\`, \`$startsWith\`, \`$endsWith\`) a filterable one.
+
+- \`title\`: $eq $ne $in $nin $null $notNull $lt $lte $gt $gte
+- \`summary\`: $eq $ne $in $nin $null $notNull",
+          "explode": true,
+          "in": "query",
+          "name": "filters",
+          "schema": {
+            "type": "object",
+          },
+          "style": "deepObject",
+        },
+        {
+          "description": "Comma-separated \`field:asc|desc\` (sortable fields, \`id\`, \`createdAt\`, \`updatedAt\`)",
+          "in": "query",
+          "name": "sort",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "schema": {
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        {
+          "in": "query",
+          "name": "pageSize",
+          "schema": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        {
+          "description": "Search the title field",
+          "in": "query",
+          "name": "q",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Comma-separated fields to return",
+          "in": "query",
+          "name": "fields",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Relations to expand: \`author,tags.author\` or \`*\` (at most 3 levels)",
+          "in": "query",
+          "name": "populate",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Locale to serve; falls back along the locale chain",
+          "in": "query",
+          "name": "locale",
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "Read content as of this publication sequence number (\`meta.snapshot\`)",
+          "in": "query",
+          "name": "snapshot",
+          "schema": {
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        {
+          "description": "Rich-text shape: the JSON document, sanitized HTML rendered from it, or both",
+          "in": "query",
+          "name": "richText",
+          "schema": {
+            "default": "json",
+            "enum": [
+              "json",
+              "html",
+              "both",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "Drafts mode: \`draft\` reads saved drafts instead of published content. Needs a delivery token whose role grants Read drafts (or an admin user); responses are never cached. Cannot be combined with \`snapshot\`.",
+          "in": "query",
+          "name": "publicationState",
+          "schema": {
+            "default": "published",
+            "enum": [
+              "published",
+              "draft",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/FeaturableAny",
+                    },
+                    "type": "array",
+                  },
+                  "meta": {
+                    "allOf": [
+                      {
+                        "properties": {
+                          "locale": {
+                            "type": "string",
+                          },
+                          "publicationState": {
+                            "description": "Present on draft reads only",
+                            "enum": [
+                              "draft",
+                            ],
+                            "type": "string",
+                          },
+                          "snapshot": {
+                            "description": "null on draft reads, which cannot be pinned",
+                            "type": [
+                              "integer",
+                              "null",
+                            ],
+                          },
+                        },
+                        "type": "object",
+                      },
+                      {
+                        "properties": {
+                          "members": {
+                            "description": "The member types the caller may read",
+                            "items": {
+                              "$ref": "#/components/schemas/InterfaceMember",
+                            },
+                            "type": "array",
+                          },
+                          "pagination": {
+                            "$ref": "#/components/schemas/Pagination",
+                          },
+                        },
+                        "type": "object",
+                      },
+                    ],
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "OK",
+        },
+        "304": {
+          "description": "Not modified (If-None-Match)",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Invalid query or body",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Not authenticated",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Not allowed (including filters on hidden fields)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error",
+              },
+            },
+          },
+          "description": "Unknown model or entry",
+        },
+      },
+      "summary": "List published entries of every Featurable type",
+      "tags": [
+        "Featurable",
+      ],
+    },
+  },
+}
+`;
+
+exports[`interfaces: TypeScript and OpenAPI > generates TypeScript with the contract, its members’ union and any entry 1`] = `
+"// Generated by \`shapio types generate\`. Do not edit: regenerate after changing models.
+
+export type RichTextNode = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: RichTextNode[];
+  text?: string;
+  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+};
+
+export type RichText = { format: 'shapio-richtext'; version: 1; doc: RichTextNode };
+
+/**
+ * Rich text as delivery returns it, per the request's \`richText\`: \`doc\` with \`json\` (the default), sanitized
+ * \`html\` rendered from the document with \`html\`, both with \`both\`.
+ */
+export type RichTextOutput = { format: 'shapio-richtext'; version: 1; doc?: RichTextNode; html?: string };
+
+export type MediaAsset = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  alt: string;
+  caption: string;
+  focalPoint: { x: number; y: number } | null;
+  /** Stable for public assets; signed and expiring for private ones. */
+  url: string;
+  urlExpiresAt: string | null;
+  variants: Array<{ name: string; width: number | null; height: number | null; format: string; mimeType: string; url: string }>;
+};
+
+/** A relation value: the target entry's ID, or the entry itself when populated. */
+export type Related<T> = string | T;
+
+export type EntrySystemFields = {
+  id: string;
+  locale: string;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+};
+
+// Schema version 5
+
+/** About: every field (singleton \`about\`) */
+export type AboutFields = EntrySystemFields & {
+  /** Title */
+  title: string | null;
+  /** Summary */
+  summary: string | null;
+};
+
+/** About (singleton \`about\`) */
+export type About = AboutFields & { __model: "about"; __kinds: readonly ["about"] };
+
+/** About, as written (singleton \`about\`) */
+export type AboutInput = {
+  /** Title */
+  title?: string | null;
+  /** Summary */
+  summary?: string | null;
+};
+
+/** Featurable: what every member has (interface \`featurable\`, delivery route \`featurables\`) */
+export type Featurable = EntrySystemFields & {
+  /** Title */
+  title: string | null;
+  /** Summary */
+  summary: string | null;
+} & { __model: string; __kinds: readonly string[] };
+
+/** Any Featurable (interface \`featurable\`, delivery route \`featurables\`): what its list, its entries' route and relations to it return. */
+export type FeaturableAny = About | Guide | Post;
+
+/** Guide: every field (collection \`guide\`, delivery route \`posts/guides\`, extends \`post\`) */
+export type GuideFields = PostFields & {
+  /** Level */
+  level: number | null;
+};
+
+/** Guide (collection \`guide\`, delivery route \`posts/guides\`, extends \`post\`) */
+export type Guide = GuideFields & { __model: "guide"; __kinds: readonly ["post", "guide"] };
+
+/** Guide, as written (collection \`guide\`, delivery route \`posts/guides\`, extends \`post\`) */
+export type GuideInput = PostInput & {
+  /** Level */
+  level?: number | null;
+};
+
+/** Homepage: every field (singleton \`homepage\`) */
+export type HomepageFields = EntrySystemFields & {
+  /** Featured */
+  featured: Array<Related<FeaturableAny>> | null;
+  /** Spotlight */
+  spotlight: Related<AnyEntry> | null;
+};
+
+/** Homepage (singleton \`homepage\`) */
+export type Homepage = HomepageFields & { __model: "homepage"; __kinds: readonly ["homepage"] };
+
+/** Homepage, as written (singleton \`homepage\`) */
+export type HomepageInput = {
+  /** Featured */
+  featured?: Array<string> | null;
+  /** Spotlight */
+  spotlight?: string | null;
+};
+
+/** Post: every field (collection \`post\`, delivery route \`posts\`) */
+export type PostFields = EntrySystemFields & {
+  /** Title */
+  title: string | null;
+  /** Summary */
+  summary: string | null;
+};
+
+/** Post (collection \`post\`, delivery route \`posts\`) */
+export type Post = PostFields & { __model: "post"; __kinds: readonly ["post"] };
+
+/** Post, as written (collection \`post\`, delivery route \`posts\`) */
+export type PostInput = {
+  /** Title */
+  title?: string | null;
+  /** Summary */
+  summary?: string | null;
+};
+
+/** Any kind of Post: what its list, its entries' route and relations to it return. */
+export type PostAny = Post | Guide;
+
+/** Any entry: what a relation to any entry holds. */
+export type AnyEntry = About | Guide | Homepage | Post;
+
+/** Delivery entry type by API ID (models and interfaces): what \`/api/content/:routeKey\` returns. */
+export type ShapioModels = {
+  about: About;
+  guide: Guide;
+  homepage: Homepage;
+  post: PostAny;
+  featurable: FeaturableAny;
+};
+
+/** Delivery route key (\`/api/content/:routeKey\`) by API ID (models and interfaces). */
+export type ShapioRouteKeys = {
+  about: 'about';
+  guide: 'posts/guides';
+  homepage: 'homepage';
+  post: 'posts';
+  featurable: 'featurables';
+};
+"
+`;

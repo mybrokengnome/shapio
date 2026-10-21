@@ -113,6 +113,7 @@ export const memberChanges = (input: {
     const changes = classifyChanges(diffDefinitions(memberBefore, memberAfter), {
       before: memberBefore,
       after: memberAfter,
+      index: { before: active.index, after: proposed.index },
     }).map((change) => stripLostInherited(change, memberBefore, proposed.declaredFieldIds));
     return {
       modelId,

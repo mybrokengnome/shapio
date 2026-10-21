@@ -1,4 +1,9 @@
-import { createDefinitionIndex, normalizeDefinition, type ModelDefinition } from '@shapio/schema';
+import {
+  createDefinitionIndex,
+  normalizeDefinition,
+  type InterfaceDefinition,
+  type ModelDefinition,
+} from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import {
   counterpartOperationId,
@@ -236,5 +241,74 @@ describe('a type with kinds', () => {
     expect(counterpartOperationId('graphql', 'listDigital', [product, digital], operations, index)).toBe(
       'graphql:digital',
     );
+  });
+});
+
+describe('graphqlQuery over interfaces', () => {
+  const featurable = normalizeDefinition({
+    id: uuid(30),
+    kind: 'interface',
+    apiKey: 'featurable',
+    label: 'Featurable',
+    fields: [{ id: uuid(31), apiKey: 'title', label: 'Title', type: 'string' }],
+  }) as InterfaceDefinition;
+  const post = normalizeDefinition({
+    id: uuid(40),
+    kind: 'collection',
+    apiKey: 'post',
+    label: 'Post',
+    implements: [uuid(30)],
+    display: { titleFieldId: uuid(41) },
+    fields: [
+      { id: uuid(41), apiKey: 'title', label: 'Title', type: 'string' },
+      { id: uuid(42), apiKey: 'body', label: 'Body', type: 'richtext' },
+    ],
+  }) as ModelDefinition;
+  const page = normalizeDefinition({
+    id: uuid(50),
+    kind: 'singleton',
+    apiKey: 'page',
+    label: 'Page',
+    fields: [
+      {
+        id: uuid(51),
+        apiKey: 'featured',
+        label: 'Featured',
+        type: 'relation',
+        settings: { target: uuid(30), cardinality: 'many' },
+      },
+      {
+        id: uuid(52),
+        apiKey: 'subject',
+        label: 'Subject',
+        type: 'relation',
+        settings: { target: '*', cardinality: 'one' },
+      },
+    ],
+  }) as ModelDefinition;
+  const index = createDefinitionIndex([featurable, post, page]);
+
+  it('lists an interface under its plural and reads one by ID', () => {
+    expect(graphqlOperations(featurable).map((operation) => operation.name)).toEqual([
+      'featurables',
+      'featurable',
+    ]);
+  });
+
+  it('selects the contract and a fragment per member with its other fields', () => {
+    const [list] = graphqlOperations(featurable);
+    const { query } = graphqlQuery(featurable, list!, EMPTY_DRAFT, index);
+    expect(query).toContain('featurables {');
+    expect(query).toContain('__typename');
+    expect(query).toContain('title');
+    expect(query).toContain('... on Post {');
+    expect(query).toContain('body { html }');
+  });
+
+  it('selects a fragment per possible type on relations to an interface or any entry', () => {
+    const [single] = graphqlOperations(page);
+    const { query } = graphqlQuery(page, single!, EMPTY_DRAFT, index, [post.id, page.id]);
+    expect(query).toContain('featured { id __typename ... on Post { title } }');
+    expect(query).toContain('subject { id __typename ... on Post { title } }');
   });
 });

@@ -1,10 +1,13 @@
 import {
   embeddedComponentIds,
   isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
+  routeKeyOf,
   routePathOf,
   type ComponentDefinition,
   type FieldDefinition,
+  type InterfaceDefinition,
   type ModelDefinition,
   type ResolvedModelDefinition,
 } from '@shapio/schema';
@@ -39,15 +42,27 @@ export type ContentModel = {
   route?: ModelRoute;
 };
 
-export type ModelRoute = { key: string; ancestors: readonly string[] };
+/**
+ * `interfaces`: the route keys (plurals) of the interfaces the model implements, its ancestors' included
+ * (plan interfaces), so an entry event can revalidate every interface list the entry appears in.
+ */
+export type ModelRoute = { key: string; ancestors: readonly string[]; interfaces?: readonly string[] };
 
-/** Where a model is served: its nested route key and its ancestors' API IDs, root first. */
+/** Where a model is served: its nested route key, its ancestors' API IDs (root first), its interfaces' routes. */
 export const modelRouteOf = (snapshot: SchemaById, definition: ModelDefinition): ModelRoute => {
   const ancestorIds = snapshot.ancestors(definition.id);
   const ancestors = ancestorIds
     .map((id) => snapshot.byId.get(id)?.definition)
     .filter((ancestor): ancestor is ModelDefinition => ancestor !== undefined && isModelDefinition(ancestor));
-  return { key: routePathOf(definition, ancestors), ancestors: ancestors.map((ancestor) => ancestor.apiKey) };
+  const interfaces = snapshot.interfacesOf(definition.id).flatMap((id) => {
+    const contract = snapshot.byId.get(id)?.definition;
+    return contract && isInterfaceDefinition(contract) ? [routeKeyOf(contract)] : [];
+  });
+  return {
+    key: routePathOf(definition, ancestors),
+    ancestors: ancestors.map((ancestor) => ancestor.apiKey),
+    interfaces,
+  };
 };
 
 export const modelNotFound = (key: string) =>
@@ -94,7 +109,7 @@ const toContentModel = (
 const isModel = (
   active: ActiveDefinition | undefined,
 ): active is ActiveDefinition & { definition: ModelDefinition } =>
-  active !== undefined && !isComponentDefinition(active.definition);
+  active !== undefined && isModelDefinition(active.definition);
 
 /**
  * Resolves `/api/…/content/:modelKey` through the registry at request time (CONTRIBUTING.md rule 2). Only a
@@ -114,15 +129,49 @@ export const resolveModel = (snapshot: SchemaSnapshot, modelKey: string): Conten
  */
 export const resolveRouteModel = (snapshot: SchemaSnapshot, routeKey: string): ContentModel => {
   const active = snapshot.modelsByRouteKey.get(routeKey);
-  if (!active || isComponentDefinition(active.definition)) {
+  if (!active || !isModelDefinition(active.definition)) {
     throw modelNotFound(routeKey);
   }
   return resolveModel(snapshot, active.definition.apiKey);
 };
 
-/** The API ID behind a route key: REST entry points translate with it, then call the services. */
-export const apiKeyOfRoute = (snapshot: SchemaSnapshot, routeKey: string): string =>
-  resolveRouteModel(snapshot, routeKey).definition.apiKey;
+/**
+ * The API ID behind a route key: REST entry points translate with it, then call the services. A model's
+ * route key or an interface's (its plural, plan interfaces); 404 for anything else.
+ */
+export const apiKeyOfRoute = (snapshot: SchemaSnapshot, routeKey: string): string => {
+  const contract = snapshot.interfacesByRouteKey.get(routeKey);
+  if (contract && !snapshot.modelsByRouteKey.has(routeKey)) {
+    return contract.definition.apiKey;
+  }
+  return resolveRouteModel(snapshot, routeKey).definition.apiKey;
+};
+
+/**
+ * What a content route reads (plan interfaces): one model (with its family, as always), or an interface
+ * with the IDs of its members in the view, directly or through an ancestor (kinds included, singletons
+ * too). An interface has no entries and no policy of its own: its reads are governed by each member's.
+ */
+export type ContentRoute =
+  | { kind: 'model'; model: ContentModel }
+  | { kind: 'interface'; definition: InterfaceDefinition; memberIds: readonly string[] };
+
+/**
+ * Resolves a content service's API ID (the delivery services and GraphQL are keyed by API ID; route keys are
+ * translated first, `apiKeyOfRoute`) to a model or an interface. Models and interfaces share one
+ * case-folded namespace, so at most one matches. 404 for anything else, a component included.
+ */
+export const resolveContentRoute = (snapshot: SchemaSnapshot, apiKey: string): ContentRoute => {
+  const contract = snapshot.interfacesByApiKey.get(apiKey);
+  if (contract && isInterfaceDefinition(contract.definition) && !snapshot.modelsByApiKey.has(apiKey)) {
+    return {
+      kind: 'interface',
+      definition: contract.definition,
+      memberIds: snapshot.implementedBy(contract.definition.id),
+    };
+  }
+  return { kind: 'model', model: resolveModel(snapshot, apiKey) };
+};
 
 /** By stable ID: works on a view and on the full set (jobs and conversions that already know the site). */
 export const resolveModelById = (snapshot: SchemaById, modelId: string): ContentModel | undefined => {

@@ -1,23 +1,28 @@
-import type { ModelDefinition } from '@shapio/schema';
 import { Check, Search } from 'lucide-react';
 import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useEntryList } from '@/api/content';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/helpers/cn';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { isSearchable, labelOf } from '../../../helpers/titles';
+import { readsContentTargets, type RelationTargetInfo } from '../../../helpers/relationTargetLabel';
+import { shortId } from '../../../helpers/titles';
+import { useRelationOptions } from '../../../hooks/useRelationOptions';
 import { useActiveOption } from '../hooks/useActiveOption';
+import { TypeFilter } from '../TypeFilter';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
 type ResultsProps = {
-  target: ModelDefinition;
-  /** An entry's own kind's label, when the target has kinds (shown after its title). */
-  kindLabelOf: (modelKey: string | undefined) => string | undefined;
+  target: RelationTargetInfo;
+  /** The relation field's stable ID (interface and any-entry targets are read through it). */
+  fieldId: string;
+  /** The target's name ("Author", "Featurable", "Any entry"). */
+  targetLabel: string;
+  /** An entry's own type's label, when worth naming (shown after its title). */
+  typeLabelOf: (modelKey: string | undefined) => string | undefined;
   locale: string | null;
   multiple: boolean;
   /** Linked now: shown as selected. */
@@ -35,12 +40,15 @@ type ResultsProps = {
 
 /**
  * The relation picker's body: a combobox search over the target's titles (when it has a searchable title)
- * and the matching entries as a listbox. Focus stays in the search box; ↑/↓ move the highlighted option
+ * and the matching entries as a listbox. A target spanning several types (an interface, any entry) adds a type
+ * filter and names each result's type. Focus stays in the search box; ↑/↓ move the highlighted option
  * (`aria-activedescendant`) and Enter picks it. Without a search box the listbox itself takes focus.
  */
 export const Results = ({
   target,
-  kindLabelOf,
+  fieldId,
+  targetLabel,
+  typeLabelOf,
   locale,
   multiple,
   selected,
@@ -55,13 +63,17 @@ export const Results = ({
   const listboxId = useId();
   const [text, setText] = useState('');
   const q = useDebouncedValue(text.trim(), SEARCH_DEBOUNCE_MS);
-  const searchable = isSearchable(target);
-  const list = useEntryList(target.apiKey, {
+  const [type, setType] = useState<string | undefined>();
+  const list = useRelationOptions({
+    target,
+    fieldId,
+    q,
+    types: type ? [type] : [],
+    locale,
     pageSize: PAGE_SIZE,
-    ...(q && searchable ? { q } : {}),
-    ...(locale && target.localized ? { locale } : {}),
   });
-  const items = (list.data?.items ?? []).filter((item) => !exclude.includes(item.id));
+  const searchable = list.searchable;
+  const items = list.items.filter((item) => !exclude.includes(item.id));
   const active = useActiveOption(items.map((item) => item.id));
   const optionId = (id: string) => `${listboxId}-${id}`;
   const activeDescendant = active.activeId ? optionId(active.activeId) : undefined;
@@ -118,13 +130,16 @@ export const Results = ({
             aria-autocomplete="list"
             aria-activedescendant={activeDescendant}
             value={text}
-            aria-label={t('content.relation.search', { model: target.label })}
+            aria-label={t('content.relation.search', { model: targetLabel })}
             placeholder={t('content.relation.searchPlaceholder')}
             className="pl-9"
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
           />
         </div>
+      ) : null}
+      {readsContentTargets(target) && list.members.length > 1 ? (
+        <TypeFilter members={list.members} value={type} onChange={setType} />
       ) : null}
       <ul
         id={listboxId}
@@ -143,7 +158,7 @@ export const Results = ({
         {items.map((item) => {
           const isSelected = selected.includes(item.id);
           const disabled = multiple && full && !isSelected;
-          const kind = kindLabelOf(item.model);
+          const kind = typeLabelOf(item.model);
           return (
             <li
               key={item.id}
@@ -162,7 +177,9 @@ export const Results = ({
               onClick={() => choose(item.id)}
             >
               <Check aria-hidden="true" className={cn('size-4 shrink-0', !isSelected && 'invisible')} />
-              <span className="min-w-0 flex-1 truncate">{labelOf(target, item, t('content.untitled'))}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {item.title ?? `${t('content.untitled')} · ${shortId(item.id)}`}
+              </span>
               {kind ? <span className="shrink-0 text-meta text-muted-foreground">{kind}</span> : null}
             </li>
           );

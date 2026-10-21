@@ -53,13 +53,22 @@ export type DeliveryEntryAttributes = { __model: string; __kinds: readonly strin
 /** One kind of a family list (`meta.kinds`): its API ID, label, parent's API ID and route key. */
 export type DeliveryKind = { apiKey: string; label: string; parent: string | null; routeKey: string };
 
+/**
+ * One member of an interface list (`meta.members`): a type that implements the interface and the caller may
+ * read, with its API ID, label and route key.
+ */
+export type DeliveryMember = { apiKey: string; label: string; routeKey: string };
+
 /** A delivery entry: the caller's type with the attributes every entry carries. */
 export type DeliveryEntry<T = Record<string, unknown>> = T & DeliveryEntryAttributes;
 
 export type DeliveryList<T = Record<string, unknown>> = {
   data: Array<DeliveryEntry<T>>;
-  /** `kinds`: present when the listed type has kinds; those the caller may read, in tree order. */
-  meta: DeliveryMeta & { pagination: DeliveryPagination; kinds?: DeliveryKind[] };
+  /**
+   * `kinds`: present when the listed type has kinds; those the caller may read, in tree order. `members`:
+   * present on an interface's list (`/api/content/featurables`); the member types the caller may read.
+   */
+  meta: DeliveryMeta & { pagination: DeliveryPagination; kinds?: DeliveryKind[]; members?: DeliveryMember[] };
 };
 
 export type DeliveryItem<T = Record<string, unknown>> = { data: DeliveryEntry<T>; meta: DeliveryMeta };

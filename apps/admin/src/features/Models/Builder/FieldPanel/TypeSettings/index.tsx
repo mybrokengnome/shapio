@@ -1,4 +1,5 @@
 import {
+  ANY_TARGET,
   SETTINGS_SCHEMAS,
   type FieldDefinition,
   type SchemaDefinition,
@@ -8,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useAllDefinitions } from '@/api/schema';
 import { issuesUnder } from '../../../helpers/issues';
 import { describeProperties, type DescribedProperty } from '../../../helpers/schemaControls';
+import { useModelIndex } from '../../../hooks/useModelIndex';
 import { ChoicesControl } from '../../controls/ChoicesControl';
 import { IssueList } from '../../controls/IssueList';
 import { SelectControl } from '../../controls/SelectControl';
@@ -25,6 +27,9 @@ type TypeSettingsProps = {
 
 /** Settings managed elsewhere or not user-facing. */
 const HIDDEN_SETTINGS: ReadonlySet<string> = new Set(['formatVersion']);
+
+/** Settings a contract field can't have (plan interfaces decision 4): a slug's source is per member. */
+const HIDDEN_CONTRACT_SETTINGS: ReadonlySet<string> = new Set(['sourceFieldId']);
 
 /** Types whose bounds are text in a canonical format (ADR 0001); the hint shows the format. */
 const FORMAT_HINT_KEYS = {
@@ -47,6 +52,7 @@ const VALIDATING_LANGUAGE = 'json';
 export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }: TypeSettingsProps) => {
   const { t } = useTranslation();
   const { definitions } = useAllDefinitions();
+  const { index } = useModelIndex();
   const settings = field.settings as Record<string, unknown>;
   const settingsPath = `${path}/settings`;
   const idPrefix = `field-${field.id}-settings`;
@@ -54,9 +60,32 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
     ...(definitions ?? []).map(({ definition }) => definition).filter((entry) => entry.id !== draft.id),
     draft,
   ];
-  const models = all.filter((entry) => entry.kind !== 'component');
+  const byLabel = (a: SchemaDefinition, b: SchemaDefinition) => a.label.localeCompare(b.label);
+  // A relation targets a collection (with its kinds), an interface (its members), or any entry.
+  const collections = all.filter((entry) => entry.kind === 'collection').sort(byLabel);
+  const interfaces = all.filter((entry) => entry.kind === 'interface' && entry.id !== draft.id).sort(byLabel);
   const components = all.filter((entry) => entry.kind === 'component' && entry.id !== draft.id);
   const toOption = (entry: SchemaDefinition) => ({ value: entry.id, label: entry.label });
+  const targetGroups = [
+    {
+      label: t('models.builder.targetTypes'),
+      options: collections.map((entry) => {
+        const kinds = index.descendants(entry.id).length;
+        return {
+          value: entry.id,
+          label:
+            kinds > 0
+              ? t('models.builder.targetWithKinds', { name: entry.label, count: kinds })
+              : entry.label,
+        };
+      }),
+    },
+    { label: t('models.builder.targetInterfaces'), options: interfaces.map(toOption) },
+    {
+      label: t('models.builder.targetAny'),
+      options: [{ value: ANY_TARGET, label: t('models.builder.anyEntry') }],
+    },
+  ];
   const at = (key: string) => issuesUnder(issues, `${settingsPath}/${key}`);
 
   const render = (property: DescribedProperty) => {
@@ -82,7 +111,7 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
           {...common}
           label={t('models.properties.target')}
           value={settings.target as string}
-          options={models.map(toOption)}
+          groups={targetGroups}
           onChange={(value) => onChange('target', value ?? '')}
           placeholder={t('models.builder.chooseModel')}
         />
@@ -164,7 +193,9 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
   };
 
   const properties = describeProperties(SETTINGS_SCHEMAS[field.type]).filter(
-    (property) => !HIDDEN_SETTINGS.has(property.key),
+    (property) =>
+      !HIDDEN_SETTINGS.has(property.key) &&
+      !(draft.kind === 'interface' && HIDDEN_CONTRACT_SETTINGS.has(property.key)),
   );
   const rendered = new Set(properties.map((property) => property.key));
   const otherIssues = issuesUnder(issues, settingsPath).filter(

@@ -106,6 +106,9 @@ describe('validateDefinition', () => {
     expect(codes(component({ apiKey: 'components' }))).toEqual([
       '/apiKey API_KEY_RESERVED "components" is reserved by the admin',
     ]);
+    expect(codes(model({ apiKey: 'interfaces', pluralApiKey: 'interfaceItems' }))).toEqual([
+      '/apiKey API_KEY_RESERVED "interfaces" is reserved by the admin',
+    ]);
     expect(codes(model({ apiKey: 'news' }))).toEqual([]);
   });
 

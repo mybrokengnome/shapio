@@ -1,11 +1,11 @@
-import type { FieldDefinition, SchemaDefinition } from '../types/definitions.js';
+import { isModelDefinition, type FieldDefinition, type SchemaDefinition } from '../types/definitions.js';
 
 /**
  * Whether a field's values are stored per locale: on a localized model only (ADR 0004). The unique registry
  * keys such a field by locale and a shared one by `*`.
  */
 const storedPerLocale = (definition: SchemaDefinition, field: FieldDefinition): boolean =>
-  definition.kind !== 'component' && definition.localized === true && field.localized === true;
+  isModelDefinition(definition) && definition.localized === true && field.localized === true;
 
 /**
  * Unique fields of a model whose values move between per-locale and shared storage in this change (the field's

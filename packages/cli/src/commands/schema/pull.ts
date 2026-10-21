@@ -6,13 +6,15 @@ import { editedFilesForSite, staleFilesAfterPull } from './siteTree.js';
 import { apiFor, readLocalState } from './sync.js';
 
 /**
- * `shapio schema pull`: writes one site's view of the instance (the shared definitions in `models/` and
- * `components/`, the site's own under `sites/<key>/`) as canonical JSON, one file per model or component,
+ * `shapio schema pull`: writes one site's view of the instance (the shared definitions in `models/`,
+ * `components/`, and `interfaces/`, the site's own under `sites/<key>/`) as canonical JSON, one file per
+ * definition,
  * and records what was pulled in the lock file. Another site's folder and lock entries are left alone, so one
  * tree can hold several sites. Refuses to overwrite local edits in the pulled folders unless --force.
  */
 export const schemaPullCommand: CliCommand = {
-  summary: 'Write a site’s models and components (shared and its own) to schema files and the lock file',
+  summary:
+    'Write a site’s models, components, and interfaces (shared and its own) to schema files and the lock file',
   usage: `shapio schema pull ${COMMON_USAGE} [--force]`,
   run: async (args, io) => {
     const options = parseSchemaOptions(args, io);

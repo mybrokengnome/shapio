@@ -1,10 +1,13 @@
 import {
   ancestorChain,
   collectionQueryName,
+  ANY_TARGET,
   INTERFACE_TYPE_SUFFIX,
+  isInterfaceDefinition,
   isModelDefinition,
   MUTATION_PREFIXES,
   resolveModelDefinition,
+  routeKeyOf,
   routePathOf,
   toTypeName,
   type FieldDefinition,
@@ -55,6 +58,14 @@ export const restEndpoints = (
   definition: SchemaDefinition,
   lookup: DefinitionLookup = new Map(),
 ): RestEndpoint[] => {
+  if (isInterfaceDefinition(definition)) {
+    // An interface lists and reads its members' entries; writes go through each member's own route.
+    const list = `/api/content/${routeKeyOf(definition)}`;
+    return [
+      { method: 'GET', path: list, scope: 'delivery' },
+      { method: 'GET', path: `${list}/{id}`, scope: 'delivery' },
+    ];
+  }
   if (!isModelDefinition(definition)) {
     return [];
   }
@@ -144,6 +155,16 @@ const SYSTEM_SAMPLE = {
 export const restResponseSample = (stored: SchemaDefinition, lookup: DefinitionLookup): string => {
   const definition = effectiveDefinition(stored, lookup);
   const item = { ...SYSTEM_SAMPLE, __model: definition.apiKey, ...sampleObject(definition, lookup, 0) };
+  if (isInterfaceDefinition(definition)) {
+    // Each row is a member entry in its own shape; the contract fields are what every row has.
+    const row = { ...SYSTEM_SAMPLE, ...sampleObject(definition, lookup, 0) };
+    const pagination = { page: 1, pageSize: 25, pageCount: 1, total: 1 };
+    return JSON.stringify(
+      { data: [row], meta: { locale: '<locale>', snapshot: 0, pagination, members: [] } },
+      null,
+      2,
+    );
+  }
   if (!isModelDefinition(definition)) {
     return JSON.stringify(sampleObject(definition, lookup, 0), null, 2);
   }
@@ -161,6 +182,9 @@ const graphqlFieldType = (subject: SchemaDefinition, field: ResolvedField, looku
   // Enum and zone types of an inherited field belong to the model that declares it.
   const owner = (field.inheritedFrom === undefined ? undefined : lookup.get(field.inheritedFrom)) ?? subject;
   const nameOf = (id: string) => {
+    if (id === ANY_TARGET) {
+      return 'Entry';
+    }
     const target = lookup.get(id);
     return target ? toTypeName(target.apiKey) : 'JSON';
   };
@@ -193,28 +217,59 @@ const graphqlFieldType = (subject: SchemaDefinition, field: ResolvedField, looku
 const READ_ARGS =
   'locale: String, fallback: Boolean = true, publicationState: PublicationState = PUBLISHED, snapshot: Int';
 
-/** The interfaces a kind's type implements: each ancestor's (every ancestor has kinds), root first. */
+/**
+ * The GraphQL interfaces an entry type implements: `Entry`, each ancestor's family interface (every ancestor
+ * has kinds), root first, then the Shapio interfaces it and its ancestors implement.
+ */
 const interfacesOf = (definition: SchemaDefinition, lookup: DefinitionLookup): string => {
-  const ancestors = isModelDefinition(definition) ? ancestorsOf(definition, lookup) : [];
-  return ancestors.length === 0
-    ? ''
-    : ` implements ${ancestors.map((ancestor) => `${toTypeName(ancestor.apiKey)}${INTERFACE_TYPE_SUFFIX}`).join(' & ')}`;
+  if (!isModelDefinition(definition)) {
+    return '';
+  }
+  const ancestors = ancestorsOf(definition, lookup);
+  const implemented = [
+    ...new Set([...ancestors, definition].flatMap((model) => model.implements ?? [])),
+  ].flatMap((id) => {
+    const target = lookup.get(id);
+    return target ? [toTypeName(target.apiKey)] : [];
+  });
+  const names = [
+    'Entry',
+    ...ancestors.map((ancestor) => `${toTypeName(ancestor.apiKey)}${INTERFACE_TYPE_SUFFIX}`),
+    ...implemented,
+  ];
+  return ` implements ${names.join(' & ')}`;
+};
+
+const ENTRY_SYSTEM_FIELDS = [
+  'id: ID!',
+  'locale: String!',
+  'createdAt: String!',
+  'updatedAt: String!',
+  'publishedAt: String',
+];
+
+/** An interface's GraphQL interface type (its contract) and its list and single queries, as SDL. */
+const interfaceSdl = (definition: SchemaDefinition & { kind: 'interface' }, lookup: DefinitionLookup) => {
+  const name = toTypeName(definition.apiKey);
+  const fields = liveFields(definition).map(
+    (field) => `${field.apiKey}: ${graphqlFieldType(definition, field, lookup)}`,
+  );
+  const body = [...ENTRY_SYSTEM_FIELDS, ...fields].map((line) => `  ${line}`).join('\n');
+  const queries = [
+    `${definition.apiKey}(id: ID!, ${READ_ARGS}): ${name}`,
+    `${routeKeyOf(definition)}(filter: ${name}Filter, sort: [${name}Sort!], search: String, page: Int, pageSize: Int, ${READ_ARGS}): ${name}Connection`,
+  ];
+  return `interface ${name} implements Entry {\n${body}\n}\n\ntype Query {\n${queries.map((line) => `  ${line}`).join('\n')}\n}\n`;
 };
 
 /** The definition's GraphQL type and (for models) its root queries and mutations, as SDL. */
 export const graphqlSdl = (stored: SchemaDefinition, lookup: DefinitionLookup): string => {
+  if (isInterfaceDefinition(stored)) {
+    return interfaceSdl(stored, lookup);
+  }
   const definition = effectiveDefinition(stored, lookup);
   const name = toTypeName(definition.apiKey);
-  const system = isModelDefinition(definition)
-    ? [
-        'id: ID!',
-        'locale: String!',
-        'createdAt: String!',
-        'updatedAt: String!',
-        'publishedAt: String',
-        `localizations: [${name}!]`,
-      ]
-    : [];
+  const system = isModelDefinition(definition) ? [...ENTRY_SYSTEM_FIELDS, `localizations: [${name}!]`] : [];
   const fields = liveFields(definition).map(
     (field) => `${field.apiKey}: ${graphqlFieldType(definition, field, lookup)}`,
   );

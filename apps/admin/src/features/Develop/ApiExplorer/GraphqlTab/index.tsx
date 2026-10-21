@@ -1,4 +1,4 @@
-import { createDefinitionIndex, isModelDefinition, type ModelDefinition } from '@shapio/schema';
+import { createDefinitionIndex, isInterfaceDefinition, isModelDefinition } from '@shapio/schema';
 import { Link } from '@tanstack/react-router';
 import { Braces } from 'lucide-react';
 import { useMemo } from 'react';
@@ -9,7 +9,12 @@ import { Panel } from '@/components/Panel';
 import { SubNav, SubNavGroup } from '@/components/SubNav';
 import { SubNavLink } from '@/components/SubNavLink';
 import { Button } from '@/components/ui/button';
-import { graphqlOperations, graphqlQuery, restOperationFor } from '../helpers/graphqlQuery';
+import {
+  graphqlOperations,
+  graphqlQuery,
+  restOperationFor,
+  type ReadableDefinition,
+} from '../helpers/graphqlQuery';
 import type { DeliveryOperation } from '../helpers/operations';
 import type { RequestDraft } from '../helpers/request';
 
@@ -33,13 +38,18 @@ export const GraphqlTab = ({ selected, restOperations, draftOf }: GraphqlTabProp
     () => createDefinitionIndex((definitions ?? []).map(({ definition }) => definition)),
     [definitions],
   );
-  const groups = useMemo(
+  // Collections and singletons, then interfaces (lists over their members), each by label.
+  const groups = useMemo(() => {
+    const all = (definitions ?? []).map(({ definition }) => definition);
+    const byLabel = (a: ReadableDefinition, b: ReadableDefinition) => a.label.localeCompare(b.label);
+    return [
+      ...all.filter(isModelDefinition).sort(byLabel),
+      ...all.filter(isInterfaceDefinition).sort(byLabel),
+    ].map((model: ReadableDefinition) => ({ model, operations: graphqlOperations(model) }));
+  }, [definitions]);
+  const modelIds = useMemo(
     () =>
-      (definitions ?? [])
-        .map(({ definition }) => definition)
-        .filter(isModelDefinition)
-        .sort((a, b) => a.label.localeCompare(b.label))
-        .map((model: ModelDefinition) => ({ model, operations: graphqlOperations(model) })),
+      (definitions ?? []).flatMap(({ definition }) => (isModelDefinition(definition) ? [definition.id] : [])),
     [definitions],
   );
   const pairs = useMemo(
@@ -52,8 +62,8 @@ export const GraphqlTab = ({ selected, restOperations, draftOf }: GraphqlTabProp
       return undefined;
     }
     const rest = restOperationFor(current.model, current.operation, restOperations, index);
-    return graphqlQuery(current.model, current.operation, draftOf(rest?.id), index);
-  }, [current, restOperations, draftOf, index]);
+    return graphqlQuery(current.model, current.operation, draftOf(rest?.id), index, modelIds);
+  }, [current, restOperations, draftOf, index, modelIds]);
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       {groups.length > 0 ? (

@@ -1,7 +1,9 @@
+import { DEFAULT_EDITORS } from '../editors/catalog.js';
 import { createStableId } from '../ids.js';
 import { normalizeDefinition, type DefinitionInputWithIds, type FieldInputWithId } from '../normalize.js';
 import {
   ComponentDefinitionInputSchema,
+  InterfaceDefinitionInputSchema,
   ModelDefinitionInputSchema,
   type DefinitionInput,
   type FieldInput,
@@ -28,8 +30,52 @@ export type ParseDefinitionOptions = {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const inputSchemaOf = (kind: unknown) =>
+  kind === 'component'
+    ? ComponentDefinitionInputSchema
+    : kind === 'interface'
+      ? InterfaceDefinitionInputSchema
+      : ModelDefinitionInputSchema;
+
+/** Field properties that mean nothing on a contract field (plan interfaces); normalizing would drop them. */
+const CONTRACT_FIELD_REFUSED = ['editor', 'width', 'defaultValue', 'deprecated'] as const;
+
+/** The value normalizing stores, which a pulled file or a stored definition sent back carries: accepted. */
+const isStoredDefault = (field: FieldInput, key: (typeof CONTRACT_FIELD_REFUSED)[number]): boolean => {
+  switch (key) {
+    case 'deprecated':
+      return field.deprecated === false;
+    case 'editor':
+      return (
+        field.editor?.id === DEFAULT_EDITORS[field.type] &&
+        Object.keys(field.editor.options ?? {}).length === 0
+      );
+    case 'width':
+      return field.width === 'full';
+    default:
+      return false;
+  }
+};
+
+/**
+ * An interface's contract fields set nothing an entry editor uses: refused here, on the input, because
+ * normalizing drops them (so a stored contract has one spelling). The stored defaults are accepted, so a
+ * definition read back (a pulled file, the admin's edit) parses again.
+ */
+const contractFieldIssues = (fields: readonly FieldInput[]): ValidationIssue[] =>
+  fields.flatMap((field, index) =>
+    CONTRACT_FIELD_REFUSED.filter((key) => field[key] !== undefined && !isStoredDefault(field, key)).map(
+      (key) =>
+        issue(
+          `/fields/${index}/${key}`,
+          'INVALID_INTERFACE_FIELD',
+          `an interface's field has no ${key === 'defaultValue' ? 'default value' : key}`,
+        ),
+    ),
+  );
+
 const structuralIssues = (raw: Record<string, unknown>): ValidationIssue[] => {
-  const schema = raw.kind === 'component' ? ComponentDefinitionInputSchema : ModelDefinitionInputSchema;
+  const schema = inputSchemaOf(raw.kind);
   const issues = collectSchemaErrors(schema, raw).map((error) =>
     issue(error.path, 'INVALID_STRUCTURE', error.message),
   );
@@ -47,6 +93,9 @@ const structuralIssues = (raw: Record<string, unknown>): ValidationIssue[] => {
       issues.push(issue(error.path, 'INVALID_SETTINGS', error.message));
     }
   });
+  if (raw.kind === 'interface') {
+    issues.push(...contractFieldIssues(fields));
+  }
   return issues;
 };
 

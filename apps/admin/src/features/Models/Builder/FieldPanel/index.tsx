@@ -1,5 +1,5 @@
-import { entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
-import { Lock, Trash2 } from 'lucide-react';
+import { isModelDefinition, entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
+import { Lock, Shapes, Trash2 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { IconTile } from '@/components/IconTile';
@@ -8,10 +8,11 @@ import { TextLink } from '@/components/TextLink';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
-import { DATA_TYPE_ICONS } from '../../constants';
+import { DATA_TYPE_ICONS, INTERFACE_EXCLUDED_DATA_TYPES } from '../../constants';
 import { supportsDefaultValue } from '../../helpers/defaultValue';
 import { deriveApiKey } from '../../helpers/deriveApiKey';
 import { pruneLayout, removeField, withCompatibleEditor, withSetting } from '../../helpers/draft';
+import { missingContractIssues } from '../../helpers/interfaces';
 import { fieldPath, issuesUnder } from '../../helpers/issues';
 import { withFieldTypeOrSaved } from '../../helpers/newField';
 import { IssueList } from '../controls/IssueList';
@@ -42,6 +43,8 @@ type FieldPanelProps = {
    * there (inherited fields are locked; plan polymorphic-types decision 5).
    */
   inheritedFrom?: { id: string; label: string };
+  /** The interfaces whose contract this field satisfies, by name: its API ID, type and flags are bound. */
+  requiredBy?: readonly string[];
 };
 
 /** Field properties that have their own control; issues anywhere else are listed at the top. */
@@ -75,6 +78,7 @@ export const FieldPanel = ({
   untouched,
   onDiscard,
   inheritedFrom,
+  requiredBy = [],
 }: FieldPanelProps) => {
   const { t } = useTranslation();
   const draft = useDefinitionDraftStore((state) => state.draft);
@@ -92,7 +96,7 @@ export const FieldPanel = ({
   const path = fieldPath(index);
   const at = (property: string) => (inheritedFrom ? [] : issuesUnder(issues, `${path}/${property}`));
   // Layout questions (document placement, form widths) are answered over the inherited fields too.
-  const model = resolved.kind === 'component' ? undefined : resolved;
+  const model = !isModelDefinition(resolved) ? undefined : resolved;
   const isForm = model !== undefined && entryLayoutOf(model) === 'form';
   // Width has a control on a form's live fields (and on any model field with a width problem); anywhere
   // else, such as a component's field, which may not have one, its issue is listed at the top.
@@ -101,6 +105,14 @@ export const FieldPanel = ({
     const property = found.path.slice(path.length + 1).split('/')[0] ?? '';
     return !CONTROLLED.has(property) || (property === 'width' && !showsWidth);
   });
+  const isContract = draft.kind === 'interface';
+  // A rename that breaks a contract is reported on Implements; it shows on this field's API ID too.
+  const contractIssues =
+    saved === undefined || inheritedFrom
+      ? []
+      : missingContractIssues(issues).filter((found) => found.fieldApiKey === saved.apiKey);
+  const required = requiredBy.length > 0;
+  const requiredNames = requiredBy.join(', ');
   const set = (patch: Partial<FieldDefinition>) =>
     updateField(field.id, (current) => ({ ...current, ...patch }) as FieldDefinition);
   const id = (name: string) => `field-${field.id}-${name}`;
@@ -163,6 +175,14 @@ export const FieldPanel = ({
               </span>
             </p>
           ) : null}
+          {required ? (
+            <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-meta text-muted-foreground">
+              <Shapes aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                {t('models.implements.fieldNote', { names: requiredNames, count: requiredBy.length })}
+              </span>
+            </p>
+          ) : null}
           <IssueList issues={otherIssues} />
 
           <PanelSection title={t('models.builder.dataType')} titleId={id('type-heading')}>
@@ -170,6 +190,7 @@ export const FieldPanel = ({
               labelledBy={id('type-heading')}
               value={field.type}
               {...typeChoices}
+              excluded={isContract ? INTERFACE_EXCLUDED_DATA_TYPES : undefined}
               disabled={disabled}
               onChange={(type) =>
                 update((current) =>
@@ -193,10 +214,16 @@ export const FieldPanel = ({
                 id={id('apiKey')}
                 label={t('models.apiKey')}
                 hint={t('models.fieldApiKeyHint')}
-                description={renamed ? t('models.builder.apiKeyRenameWarning') : undefined}
+                description={
+                  required
+                    ? t('models.implements.apiKeyRequired', { names: requiredNames })
+                    : renamed
+                      ? t('models.builder.apiKeyRenameWarning')
+                      : undefined
+                }
                 value={field.apiKey}
                 onChange={(apiKey) => set({ apiKey: apiKey ?? '' })}
-                issues={at('apiKey')}
+                issues={[...at('apiKey'), ...contractIssues]}
                 disabled={disabled}
                 monospace
               />
@@ -214,7 +241,7 @@ export const FieldPanel = ({
             {model && !field.deprecated && !isForm ? (
               <Placement model={model} field={field} issues={issues} disabled={disabled} />
             ) : null}
-            {model && draft.kind !== 'component' && !field.deprecated ? (
+            {model && isModelDefinition(draft) && !field.deprecated ? (
               <div className="grid items-start gap-5 @lg/field-group:grid-cols-2">
                 {/* A field joins one of the draft's own groups; inherited groups belong to their type. */}
                 <Group model={draft} field={field} disabled={disabled} />
@@ -250,7 +277,7 @@ export const FieldPanel = ({
                 )
               }
             />
-            {supportsDefaultValue(field) ? (
+            {!isContract && supportsDefaultValue(field) ? (
               <DefaultValue
                 field={field}
                 issues={at('defaultValue')}
@@ -268,15 +295,18 @@ export const FieldPanel = ({
             ) : null}
           </PanelSection>
 
-          <PanelSection title={t('models.builder.editorSection')}>
-            <EditorPicker
-              field={field}
-              path={path}
-              issues={issues}
-              disabled={disabled}
-              onChange={(editor) => set({ editor })}
-            />
-          </PanelSection>
+          {/* A contract field is edited on each member, never on the interface: it has no editor. */}
+          {isContract ? null : (
+            <PanelSection title={t('models.builder.editorSection')}>
+              <EditorPicker
+                field={field}
+                path={path}
+                issues={issues}
+                disabled={disabled}
+                onChange={(editor) => set({ editor })}
+              />
+            </PanelSection>
+          )}
         </div>
       </Panel>
     </div>

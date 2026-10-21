@@ -1,7 +1,7 @@
-import type { FieldDefinition } from '@shapio/schema';
+import { isInterfaceDefinition, type FieldDefinition } from '@shapio/schema';
 import type { Policy } from '../../permissions/types.js';
 import { groupByMember } from '../family.js';
-import { resolveModelById, type ContentModel } from '../model.js';
+import type { ContentModel } from '../model.js';
 import type { FamilyHeads, ReadEnvironment } from '../read.js';
 import type { HeadRow } from './compile.js';
 import type { PopulateTree } from './types.js';
@@ -14,7 +14,8 @@ import type { PopulateTree } from './types.js';
  * policy and fields (plan polymorphic-types).
  */
 export type PopulateEnvironment = ReadEnvironment & {
-  fetch: (env: ReadEnvironment, model: ContentModel, ids: readonly string[]) => Promise<FamilyHeads>;
+  /** Target heads by ID for a relation's stored target (a model, an interface, or `*`). */
+  fetch: (env: ReadEnvironment, target: string, ids: readonly string[]) => Promise<FamilyHeads>;
   project: (
     env: ReadEnvironment,
     model: ContentModel,
@@ -38,6 +39,20 @@ const idsOf = (rows: readonly HeadRow[], fieldId: string): string[] => {
   return [...ids];
 };
 
+/** A populate tree of contract field IDs as the member's own field IDs (one level; deeper is the target's). */
+const memberPopulate = (
+  env: ReadEnvironment,
+  interfaceId: string,
+  modelId: string,
+  tree: PopulateTree,
+): PopulateTree =>
+  new Map(
+    [...tree].flatMap(([fieldId, subtree]) => {
+      const field = env.snapshot.memberFieldOf(interfaceId, fieldId, modelId);
+      return field ? [[field.id, subtree] as const] : [];
+    }),
+  );
+
 /** relation field ID → target entry ID → projected target entry. */
 export const populateRelations = async (
   env: PopulateEnvironment,
@@ -53,16 +68,19 @@ export const populateRelations = async (
     }
     const byId = new Map<string, unknown>();
     populated.set(fieldId, byId);
-    const target = resolveModelById(env.snapshot, field.settings.target);
-    if (!target) {
-      continue;
-    }
+    const target = field.settings.target;
     const heads = await env.fetch(env, target, idsOf(rows, fieldId));
+    const contract = env.snapshot.byId.get(target)?.definition;
     for (const group of groupByMember(heads.members, heads.rows)) {
       const { model, policy } = group.member;
+      // Below a relation to an interface the paths name contract fields: each member populates its own.
+      const own =
+        contract && isInterfaceDefinition(contract)
+          ? memberPopulate(env, contract.id, model.definition.id, subtree)
+          : subtree;
       for (const { row, data } of await env.project(env, model, policy, group.rows, {
         fields: null,
-        populate: subtree,
+        populate: own,
       })) {
         byId.set(row.entry_id, { ...env.system(env, row), ...data });
       }

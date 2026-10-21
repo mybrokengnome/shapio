@@ -647,6 +647,7 @@ describe('classifyChange: validation settings', () => {
       category: 'conversion',
       breaking: true,
       destructive: true,
+      dropsValues: true,
       prerequisites: ['convert'],
     });
   });

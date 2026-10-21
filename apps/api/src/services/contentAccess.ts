@@ -1,4 +1,4 @@
-import { routeKeyOf } from '@shapio/schema';
+import { isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
@@ -7,6 +7,7 @@ import { resolveModel, resolveModelById, type ContentModel } from '../content/mo
 import type { ReadEnvironment } from '../content/read.js';
 import type { Database } from '../db/index.js';
 import type { DB } from '../db/types.js';
+import { AppError } from '../helpers/appError.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import type {
   ContentAction,
@@ -50,12 +51,43 @@ const ACTION_LABELS: Readonly<Record<ContentAction, string>> = {
  * Resolves the model and the caller's policy for one action; 403 when not allowed (CONTRIBUTING.md rule 5).
  * `executor`: the caller's open transaction, when there is one.
  */
+/**
+ * An interface has no entries of its own (plan interfaces, D6): writing through its route is refused (405),
+ * naming the members' routes, where entries are created and changed. Reads keep their own handling.
+ */
+export const refuseInterfaceWrite = (snapshot: SchemaSnapshot, modelKey: string, action: ContentAction) => {
+  const contract = snapshot.interfacesByApiKey.get(modelKey)?.definition;
+  if (
+    action === 'read' ||
+    !contract ||
+    !isInterfaceDefinition(contract) ||
+    snapshot.modelsByApiKey.has(modelKey)
+  ) {
+    return;
+  }
+  const routes = snapshot.implementedBy(contract.id).flatMap((id) => {
+    const member = resolveModelById(snapshot, id);
+    return member?.route ? [`/api/content/${member.route.key}`] : [];
+  });
+  throw new AppError(
+    405,
+    'METHOD_NOT_ALLOWED',
+    `"${routeKeyOf(contract)}" is an interface and has no entries of its own; ${
+      routes.length > 0
+        ? `write to a member's route instead: ${routes.join(', ')}`
+        : 'no type implements it yet'
+    }`,
+    { interface: contract.apiKey, memberRoutes: routes },
+  );
+};
+
 export const modelWithPolicy = async (
   context: ContentServiceContext,
   modelKey: string,
   action: ContentAction,
   executor?: PermissionExecutor,
 ): Promise<{ model: ContentModel; policy: Policy }> => {
+  refuseInterfaceWrite(context.snapshot, modelKey, action);
   const model = resolveModel(context.snapshot, modelKey);
   const policy = await context.permissions.evaluate(
     context.actor,
@@ -80,6 +112,7 @@ export const entryModelWithPolicy = async (
   action: ContentAction,
   executor?: PermissionExecutor,
 ): Promise<{ model: ContentModel; policy: Policy }> => {
+  refuseInterfaceWrite(context.snapshot, modelKey, action);
   const route = resolveModel(context.snapshot, modelKey);
   const family = context.snapshot.family(route.definition.id);
   if (family.length <= 1) {
@@ -142,13 +175,14 @@ export type EntryEvent =
   | 'entry.kind_changed';
 
 /**
- * Where a model is served: its route key (`products/digital`) and its ancestors' API IDs, root first (plan
- * polymorphic-types), so a subscriber can revalidate every list the entry appears in. A model built by hand
- * (no `route`) is a root at its plural.
+ * Where a model is served: its route key (`products/digital`), its ancestors' API IDs, root first (plan
+ * polymorphic-types), and the route keys of the interfaces it implements (plan interfaces), so a subscriber
+ * can revalidate every list the entry appears in. A model built by hand (no `route`) is a root at its plural.
  */
 export const routeFieldsOf = (model: Pick<ContentModel, 'definition' | 'route'>) => ({
   routeKey: model.route?.key ?? routeKeyOf(model.definition),
   ancestors: model.route?.ancestors ?? [],
+  interfaces: model.route?.interfaces ?? [],
 });
 
 /** The outbox event of a content change on a site, in the change's transaction (ADR 0007). */

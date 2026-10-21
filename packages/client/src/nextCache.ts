@@ -57,11 +57,13 @@ export const shapioTags = {
    * `routeKey`): the model and entry tags of its route key and of every ancestor's, since a Guide is also
    * in the Posts list and readable as `posts/<id>`. `shapioTags.changed('posts/guides', id)` gives
    * `shapio:posts`, `shapio:posts:<id>`, `shapio:posts/guides` and `shapio:posts/guides:<id>`. Without an
-   * entry ID, the model tags only.
+   * entry ID, the model tags only. `interfaces` (a webhook's `interfaces`: the plural API IDs of the interfaces
+   * the entry's type implements) adds each interface list's tags the same way, since the entry is also in
+   * `/api/content/featurables` and readable as `featurables/<id>`.
    */
-  changed: (routeKey: string, entryId?: string): string[] =>
-    routeKeyPrefixes(routeKey).flatMap((prefix) =>
-      entryId === undefined ? [modelTag(prefix)] : [modelTag(prefix), entryTag(prefix, entryId)],
+  changed: (routeKey: string, entryId?: string, interfaces: readonly string[] = []): string[] =>
+    [...routeKeyPrefixes(routeKey), ...interfaces].flatMap((key) =>
+      entryId === undefined ? [modelTag(key)] : [modelTag(key), entryTag(key, entryId)],
     ),
 } as const;
 

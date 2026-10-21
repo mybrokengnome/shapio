@@ -1,18 +1,18 @@
 import type { SchemaDefinition } from '../types/definitions.js';
 
 /**
- * Where schema files live in a repository (plan site-schema): shared definitions in `models/` and
- * `components/`, a site's own in `sites/<siteKey>/models/` and `sites/<siteKey>/components/`. Paths are
+ * Where schema files live in a repository (plan site-schema): shared definitions in `models/`,
+ * `components/` and `interfaces/`, a site's own under `sites/<siteKey>/` in the same three folders. Paths are
  * relative to the schema directory and always use `/` (git paths); callers join them for their file system.
  */
-export const SCHEMA_KIND_DIRECTORIES = ['models', 'components'] as const;
+export const SCHEMA_KIND_DIRECTORIES = ['models', 'components', 'interfaces'] as const;
 export type SchemaKindDirectory = (typeof SCHEMA_KIND_DIRECTORIES)[number];
 
 /** The folder that holds one directory per site key. */
 export const SITES_DIRECTORY = 'sites';
 
-const kindDirectoryOf = (definition: Pick<SchemaDefinition, 'kind'>): SchemaKindDirectory =>
-  definition.kind === 'component' ? 'components' : 'models';
+export const kindDirectoryOf = (definition: Pick<SchemaDefinition, 'kind'>): SchemaKindDirectory =>
+  definition.kind === 'component' ? 'components' : definition.kind === 'interface' ? 'interfaces' : 'models';
 
 /** The directory of a scope's files: `''` (shared) or `sites/<siteKey>`. */
 export const scopeDirectory = (siteKey: string | null): string =>
@@ -28,7 +28,8 @@ export const schemaFilePath = (
 };
 
 /**
- * The scope a schema file path is in: `{ site: null }` for `models/x.json` or `components/x.json`,
+ * The scope a schema file path is in: `{ site: null }` for `models/x.json`, `components/x.json` or
+ * `interfaces/x.json`,
  * `{ site: key }` under `sites/<key>/`, undefined for anything else (not a schema file).
  */
 export const scopeOfSchemaFilePath = (path: string): { site: string | null } | undefined => {

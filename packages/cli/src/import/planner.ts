@@ -76,7 +76,7 @@ const definitionInput = (definition: PlannedDefinition, ids: Ids) => {
   if (!planned) {
     throw new Error(`Import plan bug: unknown definition "${definition.key}"`);
   }
-  const isModel = definition.kind !== 'component';
+  const isModel = definition.kind === 'collection' || definition.kind === 'singleton';
   const fields = definition.fields.map((field) => ({
     id: planned.fields[field.key],
     apiKey: field.apiKey,

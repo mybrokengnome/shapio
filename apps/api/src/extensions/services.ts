@@ -1,4 +1,4 @@
-import { isComponentDefinition, type ModelDefinition } from '@shapio/schema';
+import { isModelDefinition } from '@shapio/schema';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config/index.js';
 import { EXTENSION_JOB_PREFIX, EXTENSION_SYSTEM_COMPONENT } from '../constants/extensions.js';
@@ -86,7 +86,7 @@ const createShapioServices = (environment: ServiceEnvironment, site: SiteRef): S
       const apiKeyOf = (id: string) => view.byId.get(id)?.definition.apiKey;
       return [...view.byId.values()]
         .map((active) => active.definition)
-        .filter((definition): definition is ModelDefinition => !isComponentDefinition(definition))
+        .filter(isModelDefinition)
         .flatMap((definition) => {
           const resolved = view.resolve(definition.id);
           return resolved ? [toServiceModel(resolved, modelRouteOf(view, definition), apiKeyOf)] : [];

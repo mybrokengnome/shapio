@@ -50,8 +50,8 @@ test('the network view lists shared content types and creates one, shared', asyn
   await expect(page).toHaveURL(/\/admin\/network\/content-types\/new$/);
   await expect(page.getByRole('heading', { level: 1, name: 'New shared content type' })).toBeVisible();
   const form = page.getByRole('main');
-  // All three kinds; where it lives isn't a choice here.
-  await expect(form.getByRole('radio')).toHaveCount(3);
+  // All four shapes (collection, singleton, component, interface); where it lives isn't a choice here.
+  await expect(form.getByRole('radio')).toHaveCount(4);
   await expect(form.getByRole('group', { name: 'Available on' })).toHaveCount(0);
   await form.getByLabel('Label', { exact: true }).fill(PROMO.label);
   await captureScreen(page, 'network-content-types-01-new', { viewports: ['desktop', 'phone'] });

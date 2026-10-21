@@ -1,4 +1,3 @@
-import type { DefinitionCategory } from '@shapio/client';
 import type { DataType, DefinitionKind } from '@shapio/schema';
 import {
   AlignLeft,
@@ -21,6 +20,7 @@ import {
   List,
   Mail,
   Percent,
+  Shapes,
   Sigma,
   TextCursorInput,
   ToggleLeft,
@@ -37,27 +37,28 @@ export const NEW_DEFINITION_KINDS = [
   'collection',
   'singleton',
   'component',
+  'interface',
 ] as const satisfies readonly DefinitionKind[];
-
-export const categoryOfKind = (kind: DefinitionKind): DefinitionCategory =>
-  kind === 'component' ? 'component' : 'model';
 
 export const KIND_LABEL_KEYS = {
   collection: 'models.kinds.collection',
   singleton: 'models.kinds.singleton',
   component: 'models.kinds.component',
+  interface: 'models.kinds.interface',
 } as const satisfies Record<DefinitionKind, string>;
 
 export const KIND_DESCRIPTION_KEYS = {
   collection: 'models.kinds.collectionDescription',
   singleton: 'models.kinds.singletonDescription',
   component: 'models.kinds.componentDescription',
+  interface: 'models.kinds.interfaceDescription',
 } as const satisfies Record<DefinitionKind, string>;
 
 export const KIND_ICONS: Readonly<Record<DefinitionKind, LucideIcon>> = {
   collection: LayoutList,
   singleton: FileText,
   component: Component,
+  interface: Shapes,
 };
 
 export const DATA_TYPE_ICONS: Readonly<Record<DataType, LucideIcon>> = {
@@ -85,7 +86,10 @@ export const DATA_TYPE_ICONS: Readonly<Record<DataType, LucideIcon>> = {
   dynamiczone: Blocks,
 };
 
-/** Data types offered for component definitions exclude nothing; models and components share the list. */
+/**
+ * Data types offered for component definitions exclude nothing; models and components share the list. An
+ * interface's contract leaves out the structure types that hold components (`INTERFACE_DATA_TYPES`).
+ */
 export const DATA_TYPE_GROUPS: readonly {
   key: 'text' | 'number' | 'choice' | 'time' | 'structure';
   types: readonly DataType[];
@@ -96,6 +100,9 @@ export const DATA_TYPE_GROUPS: readonly {
   { key: 'time', types: ['date', 'datetime', 'time'] },
   { key: 'structure', types: ['media', 'relation', 'component', 'dynamiczone'] },
 ];
+
+/** What a contract field may be: every data type but those holding components (plan interfaces D1). */
+export const INTERFACE_EXCLUDED_DATA_TYPES: ReadonlySet<DataType> = new Set(['component', 'dynamiczone']);
 
 /** How a plan change is applied (see helpers/planBuckets), as shown on its chip. */
 export const PLAN_BUCKET_LABEL_KEYS = {

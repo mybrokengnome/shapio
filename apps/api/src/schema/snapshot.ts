@@ -2,7 +2,9 @@ import {
   createDefinitionIndex,
   findDependentModels,
   isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
+  routeKeyOf,
   routePathOf,
   type DefinitionIndex,
   type LocaleDefinition,
@@ -23,7 +25,7 @@ export type ActiveDefinition = {
 };
 
 /**
- * Two models whose route keys are equal. The validator refuses this on save, but a collection stored before
+ * Two definitions (models or interfaces) whose route keys are equal. The validator refuses this on save, but a collection stored before
  * plural API IDs gets a derived plural on read, which can equal another model's API ID (`post` → `posts`).
  */
 export type RouteKeyCollision = { routeKey: string; servedApiKey: string; hiddenApiKey: string };
@@ -33,10 +35,21 @@ export type RouteKeyCollision = { routeKey: string; servedApiKey: string; hidden
  * `resolve` gives a model's effective definition (inherited fields first, `inheritedFrom` set), the others
  * walk the family. `byId` and `definitions` keep the stored definitions (own fields only), which the planner,
  * activation, sync and hashing need; everything that reads content uses `resolve` (or `ContentModel`).
+ * Interfaces (plan interfaces): `interfacesOf`, `implementedBy`, `memberFieldOf` and `contractFieldsOf`
+ * answer within the same set, so a site's view sees the members on that site and the shared ones.
  */
 export type SchemaInheritance = Pick<
   DefinitionIndex,
-  'resolve' | 'ancestors' | 'childrenOf' | 'descendants' | 'family' | 'rootOf'
+  | 'resolve'
+  | 'ancestors'
+  | 'childrenOf'
+  | 'descendants'
+  | 'family'
+  | 'rootOf'
+  | 'interfacesOf'
+  | 'implementedBy'
+  | 'memberFieldOf'
+  | 'contractFieldsOf'
 >;
 
 /**
@@ -77,12 +90,16 @@ export type SchemaSnapshot = SchemaById & {
   siteId: string | null;
   /** Collections and singletons by exact API key (the admin content API and GraphQL resolve here). */
   modelsByApiKey: ReadonlyMap<string, ActiveDefinition>;
+  /** Interfaces by exact API key (plan interfaces); never in `modelsByApiKey`. */
+  interfacesByApiKey: ReadonlyMap<string, ActiveDefinition>;
   /**
    * Collections by route key (`routePathOf`: the plural API ID, under the ancestors' for a model that extends
    * another, `products/digital`) and singletons by API ID: the delivery and preview routes resolve
    * `/api/content/:modelKey` here. A child is reachable only by its nested key.
    */
   modelsByRouteKey: ReadonlyMap<string, ActiveDefinition>;
+  /** Interfaces by route key (their plural API ID; interfaces never nest): `/api/content/featurables`. */
+  interfacesByRouteKey: ReadonlyMap<string, ActiveDefinition>;
   /** Route keys claimed twice; the registry logs them. Empty for any schema the validator accepted. */
   routeKeyCollisions: readonly RouteKeyCollision[];
   componentsByApiKey: ReadonlyMap<string, ActiveDefinition>;
@@ -92,7 +109,9 @@ export type SchemaSnapshot = SchemaById & {
 
 /**
  * On a collision the model whose API ID is the route key keeps it (a singleton keeps the URL it always
- * had); otherwise the first definition does. Deterministic, so every instance serves the same model.
+ * had); otherwise the first definition does. Deterministic, so every instance serves the same model. An
+ * interface never takes a route key a model holds: its plural is checked against models' on save, so a
+ * collision only comes from a stored collection's derived plural, whose URL keeps working.
  */
 const indexByRouteKey = (definitions: readonly ActiveDefinition[], inheritance: SchemaInheritance) => {
   const modelsByRouteKey = new Map<string, ActiveDefinition>();
@@ -123,7 +142,24 @@ const indexByRouteKey = (definitions: readonly ActiveDefinition[], inheritance: 
       hiddenApiKey: hidden.definition.apiKey,
     });
   }
-  return { modelsByRouteKey, routeKeyCollisions };
+  const interfacesByRouteKey = new Map<string, ActiveDefinition>();
+  for (const active of definitions) {
+    if (!isInterfaceDefinition(active.definition)) {
+      continue;
+    }
+    const routeKey = routeKeyOf(active.definition);
+    const holder = modelsByRouteKey.get(routeKey) ?? interfacesByRouteKey.get(routeKey);
+    if (holder) {
+      routeKeyCollisions.push({
+        routeKey,
+        servedApiKey: holder.definition.apiKey,
+        hiddenApiKey: active.definition.apiKey,
+      });
+      continue;
+    }
+    interfacesByRouteKey.set(routeKey, active);
+  }
+  return { modelsByRouteKey, interfacesByRouteKey, routeKeyCollisions };
 };
 
 const byIdPart = (
@@ -142,6 +178,10 @@ const byIdPart = (
     descendants: index.descendants,
     family: index.family,
     rootOf: index.rootOf,
+    interfacesOf: index.interfacesOf,
+    implementedBy: index.implementedBy,
+    memberFieldOf: index.memberFieldOf,
+    contractFieldsOf: index.contractFieldsOf,
     version,
     definitions,
     byId,
@@ -166,19 +206,24 @@ const buildView = (
 ): SchemaSnapshot => {
   const modelsByApiKey = new Map<string, ActiveDefinition>();
   const componentsByApiKey = new Map<string, ActiveDefinition>();
+  const interfacesByApiKey = new Map<string, ActiveDefinition>();
   for (const active of definitions) {
-    (isComponentDefinition(active.definition) ? componentsByApiKey : modelsByApiKey).set(
-      active.definition.apiKey,
-      active,
-    );
+    const byKey = isComponentDefinition(active.definition)
+      ? componentsByApiKey
+      : isInterfaceDefinition(active.definition)
+        ? interfacesByApiKey
+        : modelsByApiKey;
+    byKey.set(active.definition.apiKey, active);
   }
   const part = byIdPart(network.version, definitions, network.locales);
-  const { modelsByRouteKey, routeKeyCollisions } = indexByRouteKey(definitions, part);
+  const { modelsByRouteKey, interfacesByRouteKey, routeKeyCollisions } = indexByRouteKey(definitions, part);
   return Object.freeze({
     ...part,
     siteId,
     modelsByApiKey,
+    interfacesByApiKey,
     modelsByRouteKey,
+    interfacesByRouteKey,
     routeKeyCollisions,
     componentsByApiKey,
     network,

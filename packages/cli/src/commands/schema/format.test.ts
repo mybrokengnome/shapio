@@ -173,3 +173,122 @@ describe('types that extend a type', () => {
     expect(formatApiError(error, [], familyNames)).toContain('Delete the types that extend it first');
   });
 });
+
+describe('interfaces', () => {
+  const interfaceNames = new Map([
+    ['featurable-id', 'featurable'],
+    ['listable-id', 'listable'],
+    ['post-id', 'post'],
+    ['f-title', 'title'],
+    ['f-image', 'image'],
+  ]);
+  const implemented = new Map([['post-id', ['featurable-id', 'listable-id']]]);
+  const postItem = (changes: SchemaChange[]): SchemaSyncResult => ({
+    definitionId: 'post-id',
+    apiKey: 'post',
+    kind: 'collection',
+    decision: { action: 'update', expectedVersion: 2 },
+    changes,
+  });
+  const interfaceItem = (changes: SchemaChange[]): SchemaSyncResult => ({
+    definitionId: 'featurable-id',
+    apiKey: 'featurable',
+    kind: 'interface',
+    decision: { action: 'update', expectedVersion: 4 },
+    changes,
+  });
+
+  it('names what a type implements in its header, by API ID', () => {
+    expect(formatItem(postItem([]), interfaceNames, new Map(), implemented)).toBe(
+      'model post (implements featurable, listable): update',
+    );
+    // An interface the files do not hold falls back to its ID.
+    expect(formatItem(postItem([]), interfaceNames, new Map(), new Map([['post-id', ['remote-id']]]))).toBe(
+      'model post (implements remote-id): update',
+    );
+  });
+
+  it('prints an interface as an interface, its fields as contract fields', () => {
+    const added: SchemaChange = { kind: 'field.added', definitionId: 'featurable-id', fieldId: 'f-image' };
+    const required: SchemaChange = {
+      kind: 'field.required',
+      definitionId: 'featurable-id',
+      fieldId: 'f-title',
+      from: false,
+      to: true,
+    };
+    expect(formatItem(interfaceItem([added, required]), interfaceNames)).toBe(
+      'interface featurable: update\n' +
+        '    + contract field image\n' +
+        '    ~ contract field title required: false → true',
+    );
+  });
+
+  it('prints a type starting or stopping to implement an interface', () => {
+    const change: SchemaChange = {
+      kind: 'model.implements',
+      definitionId: 'post-id',
+      property: 'featurable-id',
+      from: null,
+      to: 'featurable-id',
+    };
+    expect(formatChange(change, interfaceNames)).toEqual(['+ implements featurable']);
+    expect(formatChange({ ...change, from: 'featurable-id', to: null }, interfaceNames)).toEqual([
+      '- implements featurable',
+    ]);
+  });
+
+  it('names both sides of a relation target change: a type, an interface, or any entry', () => {
+    const names = new Map([...interfaceNames, ['f-featured', 'featured']]);
+    const retarget: SchemaChange = {
+      kind: 'field.settings',
+      definitionId: 'home-id',
+      fieldId: 'f-featured',
+      property: 'target',
+      from: 'post-id',
+      to: 'featurable-id',
+    };
+    expect(formatChange(retarget, names)).toEqual(['~ field featured target: post → featurable']);
+    expect(formatChange({ ...retarget, from: 'featurable-id', to: '*' }, names)).toEqual([
+      '~ field featured target: featurable → any entry',
+    ]);
+    // A target the files do not hold falls back to its ID.
+    expect(formatChange({ ...retarget, to: 'remote-id' }, names)).toEqual([
+      '~ field featured target: post → remote-id',
+    ]);
+    // Other settings still print their values.
+    expect(formatChange({ ...retarget, property: 'cardinality', from: 'one', to: 'many' }, names)).toEqual([
+      '~ field featured cardinality: "one" → "many"',
+    ]);
+  });
+
+  it('adds a hint for each interface problem in the refused files', () => {
+    const issue = (code: string) => ({ path: '/definitions/0/implements/0', code, message: code });
+    const error = new ShapioApiError(422, {
+      error: {
+        code: 'SCHEMA_INVALID',
+        message: 'Invalid',
+        details: {
+          issues: [
+            'UNKNOWN_INTERFACE',
+            'INVALID_INTERFACE',
+            'INTERFACE_FIELD_MISSING',
+            'INTERFACE_FIELD_MISMATCH',
+            'INVALID_INTERFACE_FIELD',
+            'HAS_MEMBERS',
+            'RELATION_VALUES_EXIST',
+          ].map(issue),
+        },
+      },
+    });
+    const text = formatApiError(error, ['schema/models/post.json'], interfaceNames);
+    expect(text).toContain('  schema/models/post.json /implements/0: UNKNOWN_INTERFACE');
+    expect(text).toContain('"implements" holds the stable IDs of interfaces');
+    expect(text).toContain('Only a collection or a single type can implement an interface');
+    expect(text).toContain('Give the type the field the message names');
+    expect(text).toContain('Make the type’s field match the interface’s');
+    expect(text).toContain('An interface’s field can’t be a component or a dynamic zone');
+    expect(text).toContain('Remove the interface from "implements" on every type that names it');
+    expect(text).toContain('Remove the references the message counts');
+  });
+});

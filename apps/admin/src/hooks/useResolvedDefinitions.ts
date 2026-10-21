@@ -10,15 +10,21 @@ import { useDefinitions } from '@/api/schema';
 export type ResolvedDefinitions = {
   /** Collections and single types by stable ID, with their effective fields (inherited first). */
   byId: ReadonlyMap<string, ResolvedModelDefinition>;
-  /** Ancestors, children, descendants and families over the registry. */
+  /** Ancestors, children, descendants and families over the registry, and its interfaces' members. */
   index: DefinitionIndex;
-  /** The registry's items as the API sent them (stored definitions). */
+  /** The registry's items as the API sent them (stored definitions; models only, no interfaces). */
   definitions: readonly DefinitionListItem[];
 };
 
-/** Resolves every model of a registry once; components are not models and are left out. */
-export const resolveDefinitions = (definitions: readonly DefinitionListItem[]): ResolvedDefinitions => {
-  const index = createDefinitionIndex(definitions.map(({ definition }) => definition));
+/**
+ * Resolves every model of a registry once; components and interfaces are not models and are left out of
+ * `byId`. The interfaces (when given) join the index, so `implementedBy` and `interfacesOf` work.
+ */
+export const resolveDefinitions = (
+  definitions: readonly DefinitionListItem[],
+  interfaces: readonly DefinitionListItem[] = [],
+): ResolvedDefinitions => {
+  const index = createDefinitionIndex([...definitions, ...interfaces].map(({ definition }) => definition));
   const byId = new Map<string, ResolvedModelDefinition>();
   for (const { definition } of definitions) {
     const resolved = index.resolve(definition.id);
@@ -35,7 +41,13 @@ export const useResolvedDefinitions = (): {
   error: unknown;
 } => {
   const { data, error } = useDefinitions('model');
-  const resolved = useMemo(() => (data ? resolveDefinitions(data) : undefined), [data]);
+  const interfaces = useDefinitions('interface');
+  // Interfaces only add lookups: content screens still work (without them) when they fail to load.
+  const interfacesSettled = interfaces.data !== undefined || interfaces.error !== null;
+  const resolved = useMemo(
+    () => (data && interfacesSettled ? resolveDefinitions(data, interfaces.data) : undefined),
+    [data, interfacesSettled, interfaces.data],
+  );
   return { resolved, error };
 };
 

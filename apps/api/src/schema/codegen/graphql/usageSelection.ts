@@ -1,4 +1,4 @@
-import type { ResolvedModelDefinition } from '@shapio/schema';
+import { isInterfaceDefinition, type FieldDefinition, type ResolvedModelDefinition } from '@shapio/schema';
 import {
   getArgumentValues,
   getNamedType,
@@ -13,11 +13,14 @@ import {
   type SelectionSetNode,
 } from 'graphql';
 import { liveFields } from '../../../content/model.js';
+import { relationTargetOf } from '../../../content/relationTarget.js';
 import type { FieldRead } from '../../../usage/aggregator.js';
 import { relationFieldPath } from '../../../usage/keys.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
 import { resolvedModelById } from './entryKinds.js';
+import { ENTRY_TYPE_NAME } from './interfaceTypes.js';
 import { modelTypeName } from './names.js';
+import { FULL_VISIBILITY, modelReadable, type SchemaVisibility } from './visibility.js';
 
 /**
  * Field usage for GraphQL (plan developer-face §5): which model fields one operation selects, found by
@@ -29,37 +32,73 @@ import { modelTypeName } from './names.js';
  *
  * Model inheritance (plan polymorphic-types D9): `<Type>Interface` maps to the model that declares it, so a
  * field read through a parent's list counts against the parent; a fragment whose type condition is an entry
- * type or interface (`... on DigitalProduct`) counts against that type's model.
+ * type or interface (`... on DigitalProduct`) counts against that type's model. A field read through an
+ * interface definition (plan interfaces D8) counts against every member in the caller's schema, each on its
+ * own field; `Entry` counts nothing.
  *
  * Like the cost walk in complexity.ts, each fragment is expanded at most once per walk context, so
  * fragments spreading each other repeatedly cannot make the walk exponential.
  */
-type EntryFieldInfo = { id: string; targetType?: string };
-type EntryTypeInfo = { modelId: string; fields: ReadonlyMap<string, EntryFieldInfo> };
+/** A read of one stored field: the model it is counted against and its field ID there. */
+type FieldTarget = { modelId: string; fieldId: string };
+/**
+ * A field of an entry type or interface: the stored fields a read of it counts against (one for a model's
+ * type; one per member in the caller's schema for an interface definition), and its relation target's type.
+ */
+type EntryFieldInfo = { reads: readonly FieldTarget[]; targetType?: string };
+type EntryTypeInfo = { fields: ReadonlyMap<string, EntryFieldInfo> };
 
-/** Entry type name → its model and its fields by API key (stored on the schema's `extensions`). */
+/** Entry type name → its fields by API key (stored on the schema's `extensions`). */
 export type GraphqlUsageMap = ReadonlyMap<string, EntryTypeInfo>;
 
 export const USAGE_MAP_EXTENSION = 'shapioUsageMap';
 
-/** A model's entry type name as relations to it are typed: its interface when it has children. */
-const servedTypeName = (snapshot: SchemaSnapshot, model: ResolvedModelDefinition) =>
-  modelTypeName(model, snapshot.childrenOf(model.id).length > 0 ? 'Interface' : '');
+/** The type name relations to a target are typed as: a model's (its interface when it has children), an interface definition's, `Entry`. */
+const targetTypeName = (snapshot: SchemaSnapshot, field: FieldDefinition<'relation'>): string | undefined => {
+  const target = relationTargetOf(snapshot, field);
+  if (target.kind === 'any') {
+    return ENTRY_TYPE_NAME;
+  }
+  const definition = snapshot.byId.get(target.id)?.definition;
+  if (!definition) {
+    return undefined;
+  }
+  return modelTypeName(
+    definition,
+    target.kind === 'model' && snapshot.childrenOf(target.id).length > 0 ? 'Interface' : '',
+  );
+};
 
-export const buildUsageMap = (snapshot: SchemaSnapshot): GraphqlUsageMap => {
+const fieldInfo = (
+  snapshot: SchemaSnapshot,
+  field: FieldDefinition,
+  reads: readonly FieldTarget[],
+): EntryFieldInfo => {
+  const targetType = field.type === 'relation' ? targetTypeName(snapshot, field) : undefined;
+  return { reads, ...(targetType ? { targetType } : {}) };
+};
+
+/**
+ * Model types map their fields to themselves. An interface definition's type (plan interfaces D8) maps each
+ * contract field to the matching field of every member in the caller's schema (`memberFieldOf`), so a read
+ * through `Featurable` counts against each member's own field. `Entry` has system fields only and counts
+ * nothing; it is mapped so fragments inside it are recognized.
+ */
+export const buildUsageMap = (
+  snapshot: SchemaSnapshot,
+  visibility: SchemaVisibility = FULL_VISIBILITY,
+): GraphqlUsageMap => {
   const models = snapshot.definitions
     .map((active) => resolvedModelById(snapshot, active.definition.id))
     .filter((model): model is ResolvedModelDefinition => model !== undefined);
-  const typeOf = new Map(models.map((model) => [model.id, servedTypeName(snapshot, model)]));
   const map = new Map<string, EntryTypeInfo>();
   for (const model of models) {
     const info: EntryTypeInfo = {
-      modelId: model.id,
       fields: new Map(
-        liveFields(model.fields).map((field) => {
-          const targetType = field.type === 'relation' ? typeOf.get(field.settings.target) : undefined;
-          return [field.apiKey, { id: field.id, ...(targetType ? { targetType } : {}) }];
-        }),
+        liveFields(model.fields).map((field) => [
+          field.apiKey,
+          fieldInfo(snapshot, field, [{ modelId: model.id, fieldId: field.id }]),
+        ]),
       ),
     };
     map.set(modelTypeName(model), info);
@@ -67,6 +106,25 @@ export const buildUsageMap = (snapshot: SchemaSnapshot): GraphqlUsageMap => {
       map.set(modelTypeName(model, 'Interface'), info);
     }
   }
+  for (const { definition } of snapshot.definitions) {
+    if (!isInterfaceDefinition(definition)) {
+      continue;
+    }
+    const members = snapshot.implementedBy(definition.id).filter((id) => modelReadable(visibility, id));
+    const fields = liveFields(definition.fields).map((field): [string, EntryFieldInfo] => [
+      field.apiKey,
+      fieldInfo(
+        snapshot,
+        field,
+        members.flatMap((modelId) => {
+          const memberField = snapshot.memberFieldOf(definition.id, field.id, modelId);
+          return memberField ? [{ modelId, fieldId: memberField.id }] : [];
+        }),
+      ),
+    ]);
+    map.set(modelTypeName(definition), { fields: new Map(fields) });
+  }
+  map.set(ENTRY_TYPE_NAME, { fields: new Map() });
   return map;
 };
 
@@ -148,9 +206,8 @@ const walkTarget = (
     `target:${modelId}:${relationId}`,
     typeName,
   )) {
-    const field = walk.map.get(readOn)?.fields.get(node.name.value);
-    if (field) {
-      addPath(walk, modelId, relationFieldPath(relationId, field.id));
+    for (const read of walk.map.get(readOn)?.fields.get(node.name.value)?.reads ?? []) {
+      addPath(walk, modelId, relationFieldPath(relationId, read.fieldId));
     }
   }
 };
@@ -169,9 +226,11 @@ const walkEntry = (walk: Walk, typeName: string, selectionSet: SelectionSetNode)
     if (!field) {
       continue;
     }
-    addPath(walk, info.modelId, field.id);
-    if (field.targetType && node.selectionSet) {
-      walkTarget(walk, field.targetType, node.selectionSet, info.modelId, field.id);
+    for (const read of field.reads) {
+      addPath(walk, read.modelId, read.fieldId);
+      if (field.targetType && node.selectionSet) {
+        walkTarget(walk, field.targetType, node.selectionSet, read.modelId, read.fieldId);
+      }
     }
   }
 };

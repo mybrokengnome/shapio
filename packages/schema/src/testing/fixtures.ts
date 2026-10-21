@@ -4,6 +4,8 @@ import type {
   ComponentDefinitionInput,
   FieldDefinition,
   FieldInput,
+  InterfaceDefinition,
+  InterfaceDefinitionInput,
   ModelDefinition,
   ModelDefinitionInput,
 } from '../types/definitions.js';
@@ -50,6 +52,19 @@ export const component = (
     ...input,
     fields: (input.fields ?? []) as FieldInputWithId[],
   }) as ComponentDefinition;
+
+/** An interface (plan interfaces): a contract of fields. */
+export const contract = (
+  input: Partial<Omit<InterfaceDefinitionInput, 'fields' | 'kind'>> & { fields?: FixtureFields } = {},
+): InterfaceDefinition =>
+  normalizeDefinition({
+    id: input.id ?? nextId(),
+    kind: 'interface',
+    apiKey: input.apiKey ?? 'featurable',
+    label: input.label ?? 'Featurable',
+    ...input,
+    fields: (input.fields ?? []) as FieldInputWithId[],
+  }) as InterfaceDefinition;
 
 /** Returns a copy of the definition with one field replaced by `update(field)`. */
 export const withField = <T extends ModelDefinition | ComponentDefinition>(

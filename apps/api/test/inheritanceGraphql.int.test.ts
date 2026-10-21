@@ -148,8 +148,8 @@ describe('model inheritance: GraphQL', () => {
     const productInterface = await typeOf('ProductInterface');
     expect(productInterface?.kind).toBe('INTERFACE');
     expect(names(productInterface?.possibleTypes)).toEqual(['DigitalProduct', 'PhysicalProduct', 'Product']);
-    expect(names((await typeOf('DigitalProduct'))?.interfaces)).toEqual(['ProductInterface']);
-    expect(names((await typeOf('Product'))?.interfaces)).toEqual(['ProductInterface']);
+    expect(names((await typeOf('DigitalProduct'))?.interfaces)).toEqual(['Entry', 'ProductInterface']);
+    expect(names((await typeOf('Product'))?.interfaces)).toEqual(['Entry', 'ProductInterface']);
     expect(await typeOf('DigitalProductInterface')).toBeNull();
     expect(JSON.stringify((await queryFieldOf('product'))?.type)).toContain('"ProductInterface"');
     expect(JSON.stringify((await queryFieldOf('digitalProduct'))?.type)).toContain('"DigitalProduct"');
@@ -166,7 +166,7 @@ describe('model inheritance: GraphQL', () => {
   it('leaves the schema of a model without children unchanged', async () => {
     expect(await typeOf('Note')).toEqual(noteTypeBefore);
     expect(await queryFieldOf('notes')).toEqual(noteQueryBefore);
-    expect(noteTypeBefore.interfaces).toEqual([]);
+    expect(noteTypeBefore.interfaces).toEqual([{ name: 'Entry' }]);
   });
 
   it('reads a leaf kind with its inherited fields', async () => {
@@ -188,7 +188,7 @@ describe('model inheritance: GraphQL', () => {
     const digitalType = dataOf(
       await gql<{ __type: TypeInfo }>(TYPE_QUERY, token, { name: 'DigitalProduct' }),
     ).__type;
-    expect(digitalType.interfaces).toEqual([]);
+    expect(digitalType.interfaces).toEqual([{ name: 'Entry' }]);
     expect(digitalType.fields?.map((field) => field.name)).toEqual(
       expect.arrayContaining(['name', 'price', 'fileSize']),
     );

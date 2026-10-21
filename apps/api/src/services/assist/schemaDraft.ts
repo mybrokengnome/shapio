@@ -1,4 +1,5 @@
 import {
+  ANY_TARGET,
   createStableId,
   foldApiKey,
   parseDefinition,
@@ -69,7 +70,9 @@ const settingsOf = (
       };
     case 'relation':
       return {
-        target: resolve(field.target ?? '', `${where}/target`) ?? '',
+        // A collection or an interface by API ID, or any entry (plan interfaces).
+        target:
+          field.target === ANY_TARGET ? ANY_TARGET : (resolve(field.target ?? '', `${where}/target`) ?? ''),
         cardinality: field.cardinality ?? 'one',
       };
     case 'component':
@@ -94,7 +97,7 @@ const toDefinitionInput = (
   id: string,
   resolve: (apiKey: string, where: string) => string | undefined,
 ) => {
-  const isModel = draft.kind !== 'component';
+  const isModel = draft.kind === 'collection' || draft.kind === 'singleton';
   const localized = isModel && Boolean(draft.localized);
   const fields = draft.fields.map((field, index) => ({
     id: createStableId(),
@@ -124,7 +127,8 @@ const referencesOf = (definition: SchemaDefinition): string[] =>
   definition.fields.flatMap((field) => {
     switch (field.type) {
       case 'relation':
-        return [field.settings.target];
+        // Any entry (`*`) names no definition.
+        return field.settings.target === ANY_TARGET ? [] : [field.settings.target];
       case 'component':
         return [field.settings.component];
       case 'dynamiczone':
