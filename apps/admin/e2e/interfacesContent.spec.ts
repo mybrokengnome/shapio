@@ -158,6 +158,8 @@ test('a relation to an interface links entries of every member type and names ea
 
   // The type filter narrows to one member type.
   await picker.getByRole('combobox', { name: 'Type' }).click();
+  await expect(page.getByRole('option', { name: 'All types' })).toBeVisible();
+  await captureScreen(page, 'interfaces-relation-type-filter');
   await page.getByRole('option', { name: 'Blog posts' }).click();
   await expect(picker.getByRole('option', { name: /Spring roadmap/ })).toBeVisible();
   await expect(picker.getByRole('option', { name: /About the studio/ })).toHaveCount(0);
@@ -205,6 +207,7 @@ test('inline create offers the member types and links the new entry', async () =
   await expect(page.getByRole('option')).toHaveText(['Blog posts', 'Guides']);
   await page.getByRole('option', { name: 'Guides' }).click();
   await sheet.getByRole('textbox', { name: /^Title/ }).fill('Writing guide');
+  await captureScreen(page, 'interfaces-relation-create');
   const created = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().endsWith('/content/ifcGuide'),
   );
