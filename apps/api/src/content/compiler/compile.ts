@@ -279,11 +279,24 @@ const sourceOf = (
   return { cte, table: sql.id(SNAPSHOT_CTE) };
 };
 
-/** One model a head query reads, with the conditions that apply to its heads only (its row filter). */
+/**
+ * One model a head query reads, with what applies to its heads only. A family read sets `conditions` (its row
+ * filter); an interface read (plan interfaces) sets all four, because its members hold the contract's fields
+ * under their own field IDs and may differ in localization. Absent overrides compile exactly as before.
+ */
 export type HeadQueryMember = {
   modelId: string;
   /** ANDed after the plan's own conditions, on this member's heads only. */
   conditions?: readonly RawBuilder<unknown>[];
+  /**
+   * This member's sort expressions, term for term like `plan.orderBy` (same directions and nullability): an
+   * arm projects and sorts by these, the union orders by the plan's terms' aliases.
+   */
+  orderBy?: readonly OrderTerm[];
+  /** This member's locale scope; absent: the plan's. */
+  locales?: LocaleScope;
+  /** Whether this member's `conditions` name an `entries` column; absent: assumed whenever it has any. */
+  conditionsReadEntries?: boolean;
 };
 
 export type HeadQueryPlan = {
@@ -405,7 +418,7 @@ const countFrom = (
 ): RawBuilder<unknown> =>
   plan.source.kind === 'heads' &&
   !(plan.conditionsReadEntries ?? plan.conditions.length > 0) &&
-  (member.conditions?.length ?? 0) === 0
+  !(member.conditionsReadEntries ?? (member.conditions?.length ?? 0) > 0)
     ? sql`from ${table} h where ${where}`
     : joined;
 
@@ -436,7 +449,7 @@ const memberParts = (
       siteId: plan.siteId,
       model: modelIs(member.modelId),
       source: plan.source,
-      locales: plan.locales,
+      locales: member.locales ?? plan.locales,
       conditions: [...plan.conditions, ...(member.conditions ?? [])],
     },
     table,
@@ -465,7 +478,9 @@ const singleParts = (
   dialect: ContentSqlDialect,
 ): Omit<HeadQueryParts, 'prefix'> => {
   const { from, counted } = memberParts(plan, member, table, dialect);
-  const orderBy = orderByOf(plan.orderBy.map((term) => renderTerm(term.expression, term, dialect)));
+  const orderBy = orderByOf(
+    (member.orderBy ?? plan.orderBy).map((term) => renderTerm(term.expression, term, dialect)),
+  );
   const limit = plan.limit !== undefined ? sql` limit ${plan.limit}` : sql``;
   const offset = plan.offset ? sql` offset ${plan.offset}` : sql``;
   return {
@@ -490,15 +505,16 @@ const unionParts = (
 ): Omit<HeadQueryParts, 'prefix'> => {
   const pageEnd = plan.limit !== undefined ? plan.limit + (plan.offset ?? 0) : undefined;
   const aliases = plan.orderBy.map((_term, index) => `s${index}`);
-  const projected = plan.orderBy.map(
-    (term, index) => sql`${term.expression} as ${sql.id(aliases[index] as string)}`,
-  );
   const arms = plan.members.map((member, index) => {
+    const terms = member.orderBy ?? plan.orderBy;
+    const projected = terms.map(
+      (term, position) => sql`${term.expression} as ${sql.id(aliases[position] as string)}`,
+    );
     const { from, counted } = memberParts(plan, member, table, dialect);
     const columns = projected.length > 0 ? sql`${HEAD_COLUMNS}, ${sql.join(projected)}` : HEAD_COLUMNS;
     const orderBy =
       pageEnd !== undefined
-        ? orderByOf(plan.orderBy.map((term) => renderTerm(term.expression, term, dialect)))
+        ? orderByOf(terms.map((term) => renderTerm(term.expression, term, dialect)))
         : sql``;
     const limit = pageEnd !== undefined ? sql` limit ${pageEnd}` : sql``;
     return {
