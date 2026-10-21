@@ -1,5 +1,6 @@
 import {
   classifyChanges,
+  createDefinitionIndex,
   decideSync,
   diffDefinitions,
   foldApiKey,
@@ -8,16 +9,19 @@ import {
   parseDefinition,
   type ExportedDefinition,
   type ClassifiedChange,
+  type DefinitionIndex,
   type LockFile,
   type SchemaDefinition,
   type SyncDecision,
   type ValidationIssue,
 } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
+import * as relationEdgeCountsRepository from '../repositories/relationEdgeCounts.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import { schemaChangeUnsupported, schemaInvalid } from '../schema/errors.js';
 import { activateDefinitions } from '../schema/planner/activate.js';
 import { buildChangePlan, type ChangePlan } from '../schema/planner/plan.js';
+import { relationValueIssues } from '../schema/planner/relationValues.js';
 import { requestChange } from '../schema/planner/request.js';
 import { scopedDefinitionsOf, validateScoped, type ScopedDefinition } from '../schema/scopedValidation.js';
 import { loadSiteKeys } from '../schema/siteKeys.js';
@@ -158,11 +162,35 @@ const parseLocalDefinitions = async (
   return locals;
 };
 
+type SchemaIndexes = { before: DefinitionIndex; after: DefinitionIndex };
+
+/**
+ * The network-wide schema before and after the files (each file replacing its definition), so a relation
+ * target that widens keeps its values in the listing as in the plan (plan interfaces, D9).
+ */
+const indexesOf = (
+  context: SchemaServiceContext,
+  locals: ReadonlyMap<string, LocalDefinition>,
+): SchemaIndexes => {
+  const network = context.snapshot.network.definitions.map((entry) => entry.definition);
+  return {
+    before: createDefinitionIndex(network),
+    after: createDefinitionIndex([
+      ...network.filter((definition) => !locals.has(definition.id)),
+      ...[...locals.values()].map((local) => local.definition),
+    ]),
+  };
+};
+
 /** Remote → local changes, classified as the planner would classify them. */
-const classifiedDiff = (remote: SchemaDefinition | undefined, local: SchemaDefinition | undefined) => {
+const classifiedDiff = (
+  remote: SchemaDefinition | undefined,
+  local: SchemaDefinition | undefined,
+  index: SchemaIndexes,
+) => {
   const before = remote ?? null;
   const after = local ?? null;
-  return classifyChanges(diffDefinitions(before, after), { before, after });
+  return classifyChanges(diffDefinitions(before, after), { before, after, index });
 };
 
 /**
@@ -180,6 +208,7 @@ const decideAll = (
   input: SyncApplyInput,
 ) => {
   const ids = new Set([...locals.keys(), ...Object.keys(base), ...context.snapshot.byId.keys()]);
+  const indexes = indexesOf(context, locals);
   return [...ids].sort().map((id): SyncResultItem => {
     const local = locals.get(id);
     const base_ = base[id];
@@ -198,7 +227,8 @@ const decideAll = (
       apiKey: shown?.apiKey ?? base_?.apiKey ?? id,
       kind: shown?.kind ?? base_?.kind ?? 'collection',
       decision,
-      changes: decision.action === 'skip' ? [] : classifiedDiff(remote?.definition, local?.definition),
+      changes:
+        decision.action === 'skip' ? [] : classifiedDiff(remote?.definition, local?.definition, indexes),
     };
   });
 };
@@ -320,6 +350,15 @@ const planActions = async (
   const issues = validateScoped(proposed, [...scopes.values()], { siteKeys });
   if (issues.length > 0) {
     throw schemaInvalid(issues);
+  }
+  // Refused before anything is written, a dry run included; activation checks again under the lock.
+  const stranded = await relationValueIssues(
+    active.map((entry) => entry.definition),
+    proposed.map((entry) => entry.definition),
+    (query) => relationEdgeCountsRepository.countReferringEntries(query, context.db),
+  );
+  if (stranded.length > 0) {
+    throw schemaInvalid(stranded);
   }
   const plans = new Map<
     string,

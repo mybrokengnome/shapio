@@ -1,4 +1,5 @@
 import {
+  categoryOfKind,
   findReferencingDefinitions,
   hashDefinition,
   type SchemaDefinition,
@@ -16,6 +17,7 @@ import {
   type SeqAllocator,
   type SnapshotSource,
 } from '../../repositories/publications.js';
+import * as relationEdgeCountsRepository from '../../repositories/relationEdgeCounts.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import * as schemaVersionsRepository from '../../repositories/schemaVersions.js';
@@ -30,6 +32,7 @@ import type { ActivationContext } from './contentPorts.js';
 import { lockForActivation } from './locks.js';
 import { scopeOfPlan, type ChangePlan } from './plan.js';
 import { enqueueFollowUps } from './prerequisites.js';
+import { relationValueIssues } from './relationValues.js';
 
 export type ActivationItem = {
   plan: ChangePlan;
@@ -160,6 +163,15 @@ export const verifyChangesUnderLock = async (trx: Transaction<DB>, items: readon
   if (issues.length > 0) {
     throw schemaInvalid(issues);
   }
+  // Under the lock, so no change can strand relation values between the check and the flip (plan interfaces).
+  const stranded = await relationValueIssues(
+    active.map((entry) => entry.definition),
+    proposed.map((entry) => entry.definition),
+    (query) => relationEdgeCountsRepository.countReferringEntries(query, trx),
+  );
+  if (stranded.length > 0) {
+    throw schemaInvalid(stranded);
+  }
   return pointers;
 };
 
@@ -217,7 +229,7 @@ const recordActivation = async (
   eventSiteId: string | null,
 ) => {
   const { plan, after } = item;
-  const isComponent = plan.kind === 'component';
+  const category = categoryOfKind(plan.kind);
   const metadata = {
     operation: plan.operation,
     apiKey: plan.apiKey,
@@ -235,14 +247,16 @@ const recordActivation = async (
   await recordAudit(trx, {
     actor: request.actor,
     action: after ? 'schema.activate' : 'schema.delete',
-    target: { type: isComponent ? 'component' : 'model', id: plan.definitionId },
+    target: { type: category, id: plan.definitionId },
     metadata,
     ...(request.requestId ? { requestId: request.requestId } : {}),
     ...(request.ip ? { ip: request.ip } : {}),
   });
   await writeOutboxEvent(trx, {
     type: after ? 'schema.activated' : 'schema.deleted',
-    aggregateType: isComponent ? 'component' : 'model',
+    // An interface's event stays a `model` event: consumers (the content-health sweep, webhooks, deployments)
+    // read `affectedModelIds`, which are its members (plan interfaces).
+    aggregateType: category === 'component' ? 'component' : 'model',
     aggregateId: plan.definitionId,
     payload: { ...metadata, siteId: eventSiteId },
     // A site definition's change concerns its site only; a shared one's (or a scope change) every site.

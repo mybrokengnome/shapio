@@ -58,7 +58,12 @@ export type IssueCode =
   | 'INTERFACE_FIELD_MISSING'
   | 'INTERFACE_FIELD_MISMATCH'
   | 'INVALID_INTERFACE_FIELD'
-  | 'HAS_MEMBERS';
+  | 'HAS_MEMBERS'
+  /**
+   * A change would leave relation values pointing at entries their relation no longer accepts (a type stops
+   * implementing an interface, or a member or kind is deleted, while relations hold its entries).
+   */
+  | 'RELATION_VALUES_EXIST';
 
 export class SchemaValidationError extends Error {
   readonly issues: readonly ValidationIssue[];
