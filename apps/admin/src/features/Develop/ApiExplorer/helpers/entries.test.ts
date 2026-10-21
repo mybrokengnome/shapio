@@ -5,14 +5,18 @@ describe('responseEntries', () => {
   it('reads a list or a single entry, with a title-like label', () => {
     expect(
       responseEntries({
-        data: [{ id: 'a', locale: 'en', title: 'Hello' }, { id: 'b', name: 'Bob' }, { nope: 1 }],
+        data: [
+          { id: 'a', locale: 'en', title: 'Hello', __model: 'post' },
+          { id: 'b', name: 'Bob' },
+          { nope: 1 },
+        ],
       }),
     ).toEqual([
-      { id: 'a', locale: 'en', label: 'Hello' },
-      { id: 'b', locale: undefined, label: 'Bob' },
+      { id: 'a', locale: 'en', label: 'Hello', model: 'post' },
+      { id: 'b', locale: undefined, label: 'Bob', model: undefined },
     ]);
     expect(responseEntries({ data: { id: 'c' } })).toEqual([
-      { id: 'c', locale: undefined, label: undefined },
+      { id: 'c', locale: undefined, label: undefined, model: undefined },
     ]);
   });
 

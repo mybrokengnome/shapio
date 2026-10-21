@@ -1,4 +1,4 @@
-import { isModelDefinition, routeKeyOf } from '@shapio/schema';
+import { isInterfaceDefinition, isModelDefinition, routeKeyOf } from '@shapio/schema';
 import { useMemo } from 'react';
 import { useAllDefinitions } from '@/api/schema';
 import { withSiteParameter } from '@/helpers/sites';
@@ -30,7 +30,7 @@ export const RestTab = ({ groups, operation, draft, onDraftChange }: RestTabProp
     () =>
       definitions
         ?.map(({ definition }) => definition)
-        .filter(isModelDefinition)
+        .filter((candidate) => isModelDefinition(candidate) || isInterfaceDefinition(candidate))
         .find((candidate) => routeKeyOf(candidate) === operation.routeKey),
     [definitions, operation.routeKey],
   );

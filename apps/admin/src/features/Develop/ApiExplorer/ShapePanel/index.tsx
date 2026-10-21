@@ -1,10 +1,11 @@
 import type { FieldUsageResponse } from '@shapio/client';
-import type { DataType, ModelDefinition } from '@shapio/schema';
+import type { DataType, FieldDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { USAGE_DAYS } from '@/api/usage';
 import { Panel } from '@/components/Panel';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import type { ReadableDefinition } from '../helpers/graphqlQuery';
 import { useFieldUsage } from '../hooks/useFieldUsage';
 
 const FLAG_KEYS = {
@@ -18,7 +19,7 @@ const FLAG_KEYS = {
 
 type Flag = keyof typeof FLAG_KEYS;
 
-const flagsOf = (field: ModelDefinition['fields'][number]): Flag[] =>
+const flagsOf = (field: FieldDefinition): Flag[] =>
   [
     field.required && 'required',
     field.localized && 'localized',
@@ -34,7 +35,8 @@ const readsOf = (usage: FieldUsageResponse | undefined, apiKey: string) => {
   return field ? { reads: field.reads, readers: field.principals } : undefined;
 };
 
-type ShapePanelProps = { model: ModelDefinition };
+/** A model, or an interface (its contract: what every row of its list has). */
+type ShapePanelProps = { model: ReadableDefinition };
 
 /**
  * The fields the endpoint returns, with their types and flags from the registry and who reads them

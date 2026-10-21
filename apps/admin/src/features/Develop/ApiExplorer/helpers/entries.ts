@@ -1,8 +1,14 @@
 /**
  * The entries in a delivery response body (`data` is one entry or a list), with what an "Edit entry" link
- * needs: the ID, the locale it was served in, and a short label (a `title`-like field when present).
+ * needs: the ID, the locale it was served in, its type, and a short label (a `title`-like field when present).
  */
-export type ResponseEntry = { id: string; locale: string | undefined; label: string | undefined };
+export type ResponseEntry = {
+  id: string;
+  locale: string | undefined;
+  label: string | undefined;
+  /** The entry's own type (`__model`): an interface's list holds several. */
+  model: string | undefined;
+};
 
 const LABEL_KEYS = ['title', 'name', 'label', 'heading', 'slug'] as const;
 
@@ -19,6 +25,7 @@ const toEntry = (value: unknown): ResponseEntry[] => {
       id: value.id,
       locale: typeof value.locale === 'string' ? value.locale : undefined,
       label: labelKey ? String(value[labelKey]) : undefined,
+      model: typeof value.__model === 'string' ? value.__model : undefined,
     },
   ];
 };
