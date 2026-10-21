@@ -8,12 +8,12 @@ import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { Button } from '@/components/ui/button';
 import { useSchemaLock } from '@/features/Models/hooks/useSchemaLock';
-import { List } from '@/features/Models/List';
 import { LockNotice } from '@/features/Models/LockNotice';
+import { SharedLists } from './SharedLists';
 
 /**
- * Network → Content types: the content types and components shared with all sites (each site has them,
- * with its own content). Rows open the builder; New creates a shared one. The network route guard and the
+ * Network → Content types: the content types, components and interfaces shared with all sites (each site
+ * has them, with its own content). Rows open the builder; New creates a shared one. The network route guard and the
  * nav item need `schema.create` on every site; the server enforces it either way.
  */
 export const ContentTypes = () => {
@@ -48,7 +48,7 @@ export const ContentTypes = () => {
           />
         }
       >
-        {(data) => <List items={data} showKind markShared={false} />}
+        {(data) => <SharedLists items={data} />}
       </QueryView>
     </Page>
   );

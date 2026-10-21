@@ -25,7 +25,7 @@ export const KindPicker = ({ control, kinds }: KindPickerProps) => {
         ref={ref}
         value={value}
         onValueChange={onChange}
-        className={cn('gap-3 sm:grid-cols-2', kinds.length > 2 && 'sm:grid-cols-3')}
+        className={cn('gap-3 sm:grid-cols-2', kinds.length === 3 && 'sm:grid-cols-3')}
       >
         {kinds.map((kind) => (
           <RadioTile
