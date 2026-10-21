@@ -6,11 +6,40 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Interfaces.** Unrelated types that play one role (a blog post, a roadmap item, and the About page that can
+  all be featured) can implement an interface: a set of fields they must all have, matched by API ID. An
+  interface stores nothing. Create one under Develop → Interfaces and pick it under Implements in a type's
+  builder, or use `interfaces/` and `implements` in schema files. A kind implements what its parent implements,
+  and single types can be members. While a type implements an interface, a change that would break its fields
+  is refused with the interface named; adding a field to an interface offers to add it to every member in the
+  same change set. See [Modeling](documentation/modeling.md#interfaces).
+- `GET /api/content/<interface plural>` lists every member's entries in one page, each in its own shape with
+  `__model`, filterable and sortable on the interface's fields, searchable on its title field, with the
+  readable member types in `meta.members`. In GraphQL an interface is a GraphQL interface with its own list and
+  single queries.
+- A relation field can target an interface (an entry of any member) or any entry (`*` in schema files, Any
+  entry in the admin). Populated, each target comes in its own shape. Widening a relation's target keeps its
+  values. Removing an interface from a type, or deleting a type, while a relation to the interface holds its
+  entries is refused with the count.
+- Webhook entry events carry `interfaces`, the plural API IDs of the interfaces the entry's type implements,
+  and `shapioTags.changed(routeKey, id, interfaces)` in `@shapio/client` adds their cache tags. The CLI, the
+  MCP server, and the generated TypeScript and OpenAPI output know interfaces too.
+
 ### Changed
 
 - `interfaces` is now a reserved API ID, like `new` and `components`: the admin serves interfaces at
   `/develop/interfaces`. A content type or component whose API ID is `interfaces` keeps working, but a
   change to it is refused until it is renamed.
+- GraphQL: every schema now has an interface `Entry` with the system fields, which every entry type
+  implements; a relation to any entry returns it. This is additive. The type mutations return, which was
+  called `Entry`, is now `EntryState` with the same fields: queries that select its fields keep working, but a
+  fragment on it (`fragment state on Entry { version status }`) must name `EntryState`. `EntryState` is a
+  reserved type name, next to `Entry` and `Node`.
+- On SQLite, the upgrade rebuilds the `models` and `schema_drafts` tables to accept the new kind, and
+  migrations now run with foreign keys off, checking every reference afterwards. Back up the database file
+  first, as before any upgrade.
 
 ## [0.5.17] - 2026-10-21
 
