@@ -1,3 +1,4 @@
+import { isModelDefinition } from '@shapio/schema';
 import { useMemo } from 'react';
 import { useMe } from '@/api/auth';
 import { useContentCounts } from '@/api/contentCounts';
@@ -42,7 +43,7 @@ export const usePlaces = (): Place[] | undefined => {
       return undefined;
     }
     const sources = resolved.definitions.flatMap(({ definition, scope }): PlaceSource[] =>
-      definition.kind !== 'component' && canOnModel(me, definition.id, 'read')
+      isModelDefinition(definition) && canOnModel(me, definition.id, 'read')
         ? [
             {
               id: definition.id,

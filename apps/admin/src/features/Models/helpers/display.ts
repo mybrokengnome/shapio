@@ -2,6 +2,7 @@ import {
   effectiveLayout,
   isCanvasEligible,
   isCoverEligible,
+  isModelDefinition,
   validateDefinition,
   type FieldDefinition,
   type ModelDefinition,
@@ -46,11 +47,7 @@ export const withAddedField = (
     titleFieldCandidates(view).length === 0 &&
     titleFieldCandidates(next).some((candidate) => candidate.id === field.id);
   const titled = becomesTitle ? { ...next, display: { ...next.display, titleFieldId: field.id } } : next;
-  if (
-    titled.kind === 'component' ||
-    titled.display.canvasFieldIds === undefined ||
-    !isCanvasEligible(field)
-  ) {
+  if (!isModelDefinition(titled) || titled.display.canvasFieldIds === undefined || !isCanvasEligible(field)) {
     return titled;
   }
   return {

@@ -1,4 +1,4 @@
-import { SEO_COMPONENT_ID, SEO_EDITOR_ID, type SchemaDefinition } from '@shapio/schema';
+import { isModelDefinition, SEO_COMPONENT_ID, SEO_EDITOR_ID, type SchemaDefinition } from '@shapio/schema';
 import { createField } from './draft';
 import { uniqueNewFieldName } from './newField';
 
@@ -25,5 +25,5 @@ export const createSeoField = (definition: SchemaDefinition, taken: SchemaDefini
     ...uniqueNewFieldName(taken, SEO_FIELD_LABEL),
     settings: { component: SEO_COMPONENT_ID, repeatable: false },
     editorId: SEO_EDITOR_ID,
-    localized: definition.kind !== 'component' && definition.localized,
+    localized: isModelDefinition(definition) && definition.localized,
   });

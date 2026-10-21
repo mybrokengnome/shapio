@@ -34,7 +34,7 @@ export const definitionsQueryOptions = (category: DefinitionCategory) =>
 
 export const useDefinitions = (category: DefinitionCategory) => useQuery(definitionsQueryOptions(category));
 
-const KIND_ORDER = { collection: 0, singleton: 1, component: 2 } as const;
+const KIND_ORDER = { collection: 0, singleton: 1, component: 2, interface: 3 } as const;
 
 /**
  * The models and components shared with all sites (`?scope=network`), for the network view: collections,

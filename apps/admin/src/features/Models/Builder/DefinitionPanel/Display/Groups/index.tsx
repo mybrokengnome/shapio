@@ -1,4 +1,9 @@
-import { MAX_LABEL_LENGTH, type ModelDefinition, type ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  MAX_LABEL_LENGTH,
+  type ModelDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '@/components/InfoHint';
@@ -29,7 +34,7 @@ export const Groups = ({ model, issues, disabled }: GroupsProps) => {
   const groups = model.display.groups ?? [];
   const listIssues = issues.filter((found) => found.path === GROUPS_PATH);
   const apply = (change: (current: ModelDefinition) => ModelDefinition) =>
-    update((current) => (current.kind === 'component' ? current : change(current)));
+    update((current) => (!isModelDefinition(current) ? current : change(current)));
   return (
     <FieldSet className="gap-3" data-invalid={issues.length > 0 || undefined}>
       <FieldLegend variant="label" className="mb-0 flex items-center gap-1">

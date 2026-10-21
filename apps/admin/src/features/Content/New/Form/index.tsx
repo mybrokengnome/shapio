@@ -1,5 +1,4 @@
 import type { DefinitionScope } from '@shapio/client';
-import type { DefinitionKind } from '@shapio/schema';
 import { Link, type LinkOptions } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useWatch } from 'react-hook-form';
@@ -17,7 +16,10 @@ import { SubmitButton } from '@/components/SubmitButton';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
-import { useCreateDefinitionForm } from '@/features/Models/hooks/useCreateDefinitionForm';
+import {
+  useCreateDefinitionForm,
+  type CreateDefinitionValues,
+} from '@/features/Models/hooks/useCreateDefinitionForm';
 import { useModelIndex } from '@/features/Models/hooks/useModelIndex';
 import { useSchemaLock } from '@/features/Models/hooks/useSchemaLock';
 import { LockNotice } from '@/features/Models/LockNotice';
@@ -31,7 +33,7 @@ import { ScopePicker } from '../ScopePicker';
 type FormProps = {
   title: string;
   /** The kinds offered; the picker is hidden when there is only one. */
-  kinds: readonly [DefinitionKind, ...DefinitionKind[]];
+  kinds: readonly [CreateDefinitionValues['kind'], ...CreateDefinitionValues['kind'][]];
   /** Where Cancel and the breadcrumb go. */
   back: LinkOptions;
   backLabel: string;

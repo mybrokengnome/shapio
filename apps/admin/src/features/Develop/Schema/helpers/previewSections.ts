@@ -3,6 +3,7 @@ import {
   effectiveLayout,
   entryLayoutOf,
   type ComponentDefinition,
+  type InterfaceDefinition,
   type FieldDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
@@ -45,10 +46,10 @@ export const previewSections = (model: ModelDefinition): PreviewSection[] => {
 };
 
 /**
- * A component previewed on its own: its fields in a stand-in singleton (not localized, no drafts), so the
- * entry form's field editors can render it.
+ * A component (or an interface's contract) previewed on its own: its fields in a stand-in singleton (not
+ * localized, no drafts), so the entry form's field editors can render it.
  */
-export const previewHostOf = (component: ComponentDefinition): ModelDefinition => ({
+export const previewHostOf = (component: ComponentDefinition | InterfaceDefinition): ModelDefinition => ({
   id: component.id,
   kind: 'singleton',
   apiKey: component.apiKey,
@@ -56,5 +57,9 @@ export const previewHostOf = (component: ComponentDefinition): ModelDefinition =
   localized: false,
   draftAndPublish: false,
   fields: component.fields,
-  display: { ...(component.display.groups ? { groups: component.display.groups } : {}) },
+  display: {
+    ...('groups' in component.display && component.display.groups
+      ? { groups: component.display.groups }
+      : {}),
+  },
 });

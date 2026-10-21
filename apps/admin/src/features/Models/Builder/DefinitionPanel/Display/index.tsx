@@ -1,4 +1,10 @@
-import { entryLayoutOf, SORT_DIRECTIONS, type SchemaDefinition, type ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  entryLayoutOf,
+  SORT_DIRECTIONS,
+  type SchemaDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { titleFieldCandidates } from '../../../helpers/display';
@@ -57,7 +63,7 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
       disabled={disabled}
     />
   );
-  if (definition.kind === 'component') {
+  if (!isModelDefinition(definition)) {
     return titleField;
   }
   const sort = definition.display.defaultSort;
@@ -67,7 +73,7 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
     <>
       <Layout
         model={definition}
-        ownLayout={own.kind === 'component' ? undefined : own.display.layout}
+        ownLayout={!isModelDefinition(own) ? undefined : own.display.layout}
         inherited={parent ? { parentLabel: parent.label, layout: entryLayoutOf(parent) } : undefined}
         issues={at('layout')}
         disabled={disabled}
@@ -114,7 +120,7 @@ export const Display = ({ definition, own, parent, issues, disabled }: DisplayPr
       ) : (
         <IssueList issues={DOCUMENT_ONLY_KEYS.flatMap((key) => at(key))} />
       )}
-      {own.kind === 'component' ? null : <Groups model={own} issues={at('groups')} disabled={disabled} />}
+      {!isModelDefinition(own) ? null : <Groups model={own} issues={at('groups')} disabled={disabled} />}
     </>
   );
 };

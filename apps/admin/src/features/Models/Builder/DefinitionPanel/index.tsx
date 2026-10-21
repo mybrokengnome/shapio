@@ -1,4 +1,4 @@
-import { routeKeyOf, type ModelDefinition, type ValidationIssue } from '@shapio/schema';
+import { isModelDefinition, routeKeyOf, type ModelDefinition, type ValidationIssue } from '@shapio/schema';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
@@ -159,7 +159,7 @@ export const DefinitionPanel = ({
           />
         ) : null}
       </PanelSection>
-      {draft.kind === 'component' ? null : (
+      {!isModelDefinition(draft) ? null : (
         <PanelSection title={t('models.builder.content')}>
           <SwitchControl
             id="definition-localized"

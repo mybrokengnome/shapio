@@ -1,4 +1,5 @@
 import {
+  isModelDefinition,
   canonicalJson,
   DEFAULT_EDITORS,
   effectiveTitleField,
@@ -108,7 +109,7 @@ export const removeField = (
   if ('defaultSort' in definition.display && definition.display.defaultSort?.fieldId === fieldId) {
     delete display.defaultSort;
   }
-  if (definition.display.groups) {
+  if ('groups' in definition.display && definition.display.groups) {
     const groups = withoutGroupField(definition.display.groups, fieldId);
     if (groups.length > 0) {
       display.groups = groups;
@@ -127,7 +128,7 @@ export const removeField = (
  * to inherited fields stay; only the values the draft sets itself are pruned.
  */
 export const pruneLayout = (definition: SchemaDefinition, parent?: DraftParent): SchemaDefinition => {
-  if (definition.kind === 'component') {
+  if (!isModelDefinition(definition)) {
     return definition;
   }
   const { canvasFieldIds, coverFieldId, stripFieldIds } = definition.display;

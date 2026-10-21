@@ -1,5 +1,7 @@
 import type { DefinitionCategory } from '@shapio/client';
 import {
+  categoryOfKind,
+  kindDirectoryOf,
   LOCK_FILE_FORMAT_VERSION,
   LOCK_FILE_PATH,
   serializeDefinition,
@@ -28,12 +30,15 @@ export type SchemaFile = {
 };
 
 export const categoryOf = (definition: Pick<SchemaDefinition, 'kind'>): DefinitionCategory =>
-  definition.kind === 'component' ? 'component' : 'model';
+  categoryOfKind(definition.kind);
 
 export const definitionFilePath = (definition: Pick<SchemaDefinition, 'kind' | 'apiKey'>) =>
-  `${SCHEMA_DIR}/${definition.kind === 'component' ? 'components' : 'models'}/${definition.apiKey}.json`;
+  `${SCHEMA_DIR}/${kindDirectoryOf(definition)}/${definition.apiKey}.json`;
 
-const CATEGORY_ORDER = { model: 0, component: 1 } as const satisfies Record<DefinitionCategory, number>;
+const CATEGORY_ORDER = { model: 0, component: 1, interface: 2 } as const satisfies Record<
+  DefinitionCategory,
+  number
+>;
 
 /** One file per definition, models first, then components, each by path. */
 export const buildFiles = (exported: SchemaExport): SchemaFile[] =>

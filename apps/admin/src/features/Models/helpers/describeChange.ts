@@ -28,6 +28,7 @@ const CHANGE_KEYS = {
   'field.filterable': 'models.changes.fieldFilterable',
   'field.sortable': 'models.changes.fieldSortable',
   'field.settings': 'models.changes.fieldSettings',
+  'model.implements': 'models.changes.modelImplements',
 } as const satisfies Record<ChangeKind, string>;
 
 const TOGGLES: ReadonlySet<ChangeKind> = new Set([

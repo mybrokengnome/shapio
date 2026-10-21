@@ -1,4 +1,9 @@
-import type { FieldDefinition, ResolvedField, ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  type FieldDefinition,
+  type ResolvedField,
+  type ValidationIssue,
+} from '@shapio/schema';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
@@ -44,7 +49,11 @@ export const FieldList = ({
   const { t } = useTranslation();
   const fields = useDefinitionDraftStore((state) => state.draft?.fields ?? NO_FIELDS);
   const localized = useDefinitionDraftStore(
-    (state) => state.draft?.kind !== 'component' && state.draft?.localized === true,
+    (state) =>
+      state.draft !== null &&
+      state.draft !== undefined &&
+      isModelDefinition(state.draft) &&
+      state.draft.localized,
   );
   const selection = useDefinitionDraftStore((state) => state.selection);
   const select = useDefinitionDraftStore((state) => state.select);

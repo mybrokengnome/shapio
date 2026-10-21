@@ -1,5 +1,5 @@
 import type { EditorContext, EditorField, EditorModel } from '@shapio/editor-sdk';
-import type { FieldDefinition, SchemaDefinition } from '@shapio/schema';
+import { isModelDefinition, type FieldDefinition, type SchemaDefinition } from '@shapio/schema';
 import { i18next } from '@/app/i18n';
 import type { FieldsEnvironment } from '../form/context';
 
@@ -16,12 +16,16 @@ export const toEditorField = (field: FieldDefinition): EditorField => ({
   options: field.editor.options,
 });
 
+/**
+ * The definition an editor edits a field of. An interface has no entries, so no editor edits its fields; the
+ * SDK's kinds predate interfaces, and one previewed in the admin is reported like a component (WP5 decides).
+ */
 export const toEditorModel = (definition: SchemaDefinition): EditorModel => ({
   id: definition.id,
   apiKey: definition.apiKey,
   label: definition.label,
-  kind: definition.kind,
-  localized: definition.kind === 'component' ? false : definition.localized,
+  kind: definition.kind === 'interface' ? 'component' : definition.kind,
+  localized: isModelDefinition(definition) && definition.localized,
 });
 
 const interpolate = (text: string, values: Readonly<Record<string, string | number>> | undefined) =>

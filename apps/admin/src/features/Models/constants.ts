@@ -21,6 +21,7 @@ import {
   List,
   Mail,
   Percent,
+  Shapes,
   Sigma,
   TextCursorInput,
   ToggleLeft,
@@ -40,24 +41,27 @@ export const NEW_DEFINITION_KINDS = [
 ] as const satisfies readonly DefinitionKind[];
 
 export const categoryOfKind = (kind: DefinitionKind): DefinitionCategory =>
-  kind === 'component' ? 'component' : 'model';
+  kind === 'component' ? 'component' : kind === 'interface' ? 'interface' : 'model';
 
 export const KIND_LABEL_KEYS = {
   collection: 'models.kinds.collection',
   singleton: 'models.kinds.singleton',
   component: 'models.kinds.component',
+  interface: 'models.kinds.interface',
 } as const satisfies Record<DefinitionKind, string>;
 
 export const KIND_DESCRIPTION_KEYS = {
   collection: 'models.kinds.collectionDescription',
   singleton: 'models.kinds.singletonDescription',
   component: 'models.kinds.componentDescription',
+  interface: 'models.kinds.interfaceDescription',
 } as const satisfies Record<DefinitionKind, string>;
 
 export const KIND_ICONS: Readonly<Record<DefinitionKind, LucideIcon>> = {
   collection: LayoutList,
   singleton: FileText,
   component: Component,
+  interface: Shapes,
 };
 
 export const DATA_TYPE_ICONS: Readonly<Record<DataType, LucideIcon>> = {

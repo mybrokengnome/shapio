@@ -1,4 +1,4 @@
-import { entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
+import { isModelDefinition, entryLayoutOf, type FieldDefinition, type ValidationIssue } from '@shapio/schema';
 import { Lock, Trash2 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
@@ -92,7 +92,7 @@ export const FieldPanel = ({
   const path = fieldPath(index);
   const at = (property: string) => (inheritedFrom ? [] : issuesUnder(issues, `${path}/${property}`));
   // Layout questions (document placement, form widths) are answered over the inherited fields too.
-  const model = resolved.kind === 'component' ? undefined : resolved;
+  const model = !isModelDefinition(resolved) ? undefined : resolved;
   const isForm = model !== undefined && entryLayoutOf(model) === 'form';
   // Width has a control on a form's live fields (and on any model field with a width problem); anywhere
   // else, such as a component's field, which may not have one, its issue is listed at the top.
@@ -214,7 +214,7 @@ export const FieldPanel = ({
             {model && !field.deprecated && !isForm ? (
               <Placement model={model} field={field} issues={issues} disabled={disabled} />
             ) : null}
-            {model && draft.kind !== 'component' && !field.deprecated ? (
+            {model && isModelDefinition(draft) && !field.deprecated ? (
               <div className="grid items-start gap-5 @lg/field-group:grid-cols-2">
                 {/* A field joins one of the draft's own groups; inherited groups belong to their type. */}
                 <Group model={draft} field={field} disabled={disabled} />

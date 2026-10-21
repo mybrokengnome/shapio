@@ -1,4 +1,5 @@
 import {
+  isModelDefinition,
   SCALAR_DATA_TYPES,
   UNIQUE_CAPABLE_DATA_TYPES,
   type FieldDefinition,
@@ -35,7 +36,7 @@ const PUBLIC_COMPONENT_HINT = 'models.builder.publicComponentHint';
 /** The on/off options a field of this type supports here (components have no indexes or uniqueness). */
 const availableFlags = (field: FieldDefinition, draft: SchemaDefinition): FlagKey[] => {
   const isComponent = draft.kind === 'component';
-  const modelLocalized = draft.kind !== 'component' && draft.localized;
+  const modelLocalized = isModelDefinition(draft) && draft.localized;
   const indexable =
     !isComponent && SCALAR_DATA_TYPES.has(field.type) && !(field.type === 'enum' && field.settings.multiple);
   return [

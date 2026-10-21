@@ -1,4 +1,9 @@
-import type { FieldDefinition, ModelDefinition, ValidationIssue } from '@shapio/schema';
+import {
+  isModelDefinition,
+  type FieldDefinition,
+  type ModelDefinition,
+  type ValidationIssue,
+} from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { documentPlacementOf, withDocumentPlacement, type PlacementLock } from '../../../helpers/display';
@@ -30,7 +35,7 @@ export const Placement = ({ model, field, issues, disabled }: PlacementProps) =>
   const update = useDefinitionDraftStore((state) => state.update);
   // Issue paths point into the draft's own display, not the merged one.
   const ownCanvas = useDefinitionDraftStore((state) =>
-    state.draft?.kind === 'component' ? undefined : state.draft?.display.canvasFieldIds,
+    state.draft && isModelDefinition(state.draft) ? state.draft.display.canvasFieldIds : undefined,
   );
   const { parent } = useDraftParent();
   const { inDocument, lock } = documentPlacementOf(model, field);
@@ -46,7 +51,7 @@ export const Placement = ({ model, field, issues, disabled }: PlacementProps) =>
       disabled={disabled || lock !== undefined}
       onChange={(checked) =>
         update((current) =>
-          current.kind === 'component' ? current : withDocumentPlacement(current, field.id, checked, parent),
+          !isModelDefinition(current) ? current : withDocumentPlacement(current, field.id, checked, parent),
         )
       }
     />

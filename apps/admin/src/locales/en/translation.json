@@ -937,7 +937,9 @@
       "component": "Component",
       "collectionDescription": "Many entries, e.g. articles.",
       "singletonDescription": "One entry, e.g. the home page.",
-      "componentDescription": "Reusable fields embedded in models."
+      "componentDescription": "Reusable fields embedded in models.",
+      "interface": "Interface",
+      "interfaceDescription": "Fields several types share, e.g. anything that can be featured."
     },
     "lock": {
       "title": "Schema editing is locked",
@@ -1229,6 +1231,7 @@
       "modelDraftAndPublish_on": "Turn on drafts and publishing",
       "modelDraftAndPublish_off": "Turn off drafts and publishing: unpublished drafts are discarded",
       "modelExtends": "Change the type this extends",
+      "modelImplements": "Change the interfaces this implements",
       "modelExtends_added": "Make this a kind of {{to}}",
       "modelExtends_removed": "Stop being a kind of {{from}}: it becomes a type of its own",
       "modelExtends_moved": "Move this from {{from}} to {{to}}",
