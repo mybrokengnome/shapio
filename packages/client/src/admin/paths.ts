@@ -31,6 +31,7 @@ export const ADMIN_PATHS = {
   appUsers: '/api/admin/app-users',
   appRoles: '/api/admin/app-roles',
   content: '/api/admin/content',
+  contentTargets: '/api/admin/content-targets',
   contentCounts: '/api/admin/content-counts',
   contentHealth: '/api/admin/content-health',
   presence: '/api/admin/presence',

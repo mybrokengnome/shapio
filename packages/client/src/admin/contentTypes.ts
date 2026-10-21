@@ -248,3 +248,49 @@ export type ExtensionTheme = {
 };
 
 export type ExtensionThemeList = { items: ExtensionTheme[] };
+
+/**
+ * `GET /api/admin/content-targets`: what a relation field to an interface or to any entry may point at
+ * (plan interfaces). Keyed by the relation field (top level or inside a component; field IDs are global): the
+ * server resolves its target and the models the caller may read.
+ */
+export type ContentTargetsQuery = {
+  /** The relation field's stable ID. */
+  field: string;
+  /** Narrow to these models (singular API IDs); default every readable one. Ignored with `ids`. */
+  types?: readonly string[];
+  /** Searched on each model's own title field; models whose title the caller may not search are skipped. */
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  locale?: string;
+  /**
+   * Exactly these entries (at most 100), whatever their model, among the readable ones: labels a stored value.
+   * `q`, `types` and paging are ignored; `total` is the number of items returned.
+   */
+  ids?: readonly string[];
+};
+
+/** What the relation targets: its kind, and the label to show ("Featurable", "Any entry"; null for any). */
+export type ContentTargetKind = { kind: 'model' | 'interface' | 'any'; label: string | null };
+
+/** A model the field may point at that the caller may read: the type filter's choices. */
+export type ContentTargetMember = { apiKey: string; label: string };
+
+export type ContentTargetItem = {
+  id: string;
+  /** The entry's model (singular API ID). */
+  model: string;
+  /** The entry's title in its model's own title field; null when it has none or the caller may not read it. */
+  title: string | null;
+  status: EntryStatus;
+  locale: string;
+  updatedAt: string;
+};
+
+export type ContentTargets = {
+  target: ContentTargetKind;
+  members: ContentTargetMember[];
+  items: ContentTargetItem[];
+  total: number;
+};

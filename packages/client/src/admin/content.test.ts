@@ -157,3 +157,20 @@ describe('content api', () => {
     });
   });
 });
+
+describe('content targets', () => {
+  it('asks by field, with the type filter, search and paging, or for exact IDs', async () => {
+    const { client, call } = setup(200, {
+      target: { kind: 'any', label: null },
+      members: [],
+      items: [],
+      total: 0,
+    });
+    await client.admin.content.targets({ field: 'f1', types: ['post', 'about'], q: 'sign', page: 2 });
+    await client.admin.content.targets({ field: 'f1', ids: ['e1', 'e2'], types: [] });
+    expect(call(0).url).toBe(
+      'https://cms.test/cms/api/admin/content-targets?field=f1&q=sign&page=2&types=post,about',
+    );
+    expect(call(1).url).toBe('https://cms.test/cms/api/admin/content-targets?field=f1&ids=e1,e2');
+  });
+});
