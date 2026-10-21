@@ -252,6 +252,7 @@ describe('interfaces', () => {
             'INTERFACE_FIELD_MISMATCH',
             'INVALID_INTERFACE_FIELD',
             'HAS_MEMBERS',
+            'RELATION_VALUES_EXIST',
           ].map(issue),
         },
       },
@@ -264,5 +265,6 @@ describe('interfaces', () => {
     expect(text).toContain('Make the type’s field match the interface’s');
     expect(text).toContain('An interface’s field can’t be a component or a dynamic zone');
     expect(text).toContain('Remove the interface from "implements" on every type that names it');
+    expect(text).toContain('Remove the references the message counts');
   });
 });

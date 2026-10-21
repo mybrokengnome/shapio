@@ -295,7 +295,7 @@ returns a different shape. Narrowing a target (Featurable back to BlogPost) clea
 
 **Leaving an interface never drops values.** While a relation to Featurable holds an entry of RoadmapItem,
 removing Featurable from RoadmapItem's **Implements**, or deleting RoadmapItem, is refused with the number of
-references. Remove those references first (or keep the interface), then apply.
+references (`RELATION_VALUES_EXIST`). Remove those references first (or keep the interface), then apply.
 
 **What Shapio refuses, and why.**
 
@@ -307,6 +307,7 @@ references. Remove those references first (or keep the interface), then apply.
 | `INTERFACE_FIELD_MISMATCH` | a member's field doesn't match the contract field; the message says what differs                                                                      |
 | `INVALID_INTERFACE_FIELD`  | a contract field is a component or a dynamic zone, is unique, or is a slug that names a source field                                                  |
 | `HAS_MEMBERS`              | you deleted an interface that types still implement: remove it from their **Implements** first                                                        |
+| `RELATION_VALUES_EXIST`    | a type would leave an interface (or be deleted) while a relation to the interface holds its entries; the message counts them                          |
 
 An interface that a relation targets can't be deleted either: point the relation somewhere else first.
 

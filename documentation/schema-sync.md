@@ -145,7 +145,7 @@ model homepage: update [BREAKING]
   site's `interfaces/`. A shared type may implement shared interfaces only. An interface in a site's folder
   can't have a member in another site's folder (`INVALID_INTERFACE`).
 - **Breaking.** Removing an interface from `implements` is breaking (`--allow-breaking`), and refused while a
-  relation to the interface holds entries of that type. Widening a relation's target (to an interface its type
+  relation to the interface holds entries of that type (`RELATION_VALUES_EXIST`). Widening a relation's target (to an interface its type
   implements, or to `*`) is breaking and keeps the values; narrowing it is also destructive
   (`--allow-destructive`) and clears them.
 - **Deleting an interface.** With `--prune`, deleting the file of an interface that types still implement is

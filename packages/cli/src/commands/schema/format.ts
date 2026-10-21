@@ -279,6 +279,8 @@ const HINTS: Readonly<Record<string, string>> = {
     'Make the type’s field match the interface’s: the same type, every flag the interface sets, and the settings the message names.',
   INVALID_INTERFACE_FIELD:
     'An interface’s field can’t be a component or a dynamic zone, can’t be unique, and a slug in it can’t name a source field.',
+  RELATION_VALUES_EXIST:
+    'Remove the references the message counts (in the admin, or with the content API), or keep the type in the interface, then apply again.',
   HAS_MEMBERS:
     'Remove the interface from "implements" on every type that names it, then delete it. A relation that targets it must target something else first.',
 };
