@@ -86,7 +86,8 @@ const FormRichText = (props: BuiltInEditorProps) => {
     <div className="space-y-1">
       <div
         className={cn(
-          'overflow-hidden rounded-lg border border-input bg-card focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/20',
+          // `overflow-clip`, not hidden: hidden would make the box a scroll container and stop the toolbar sticking.
+          'overflow-clip rounded-lg border border-input bg-card focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/20',
           validation.invalid && 'border-destructive',
         )}
       >

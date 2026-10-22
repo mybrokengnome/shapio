@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The rich text toolbar stays at the top of the screen while you scroll a long document.
+- Alt text and captions on images are edited in a box that grows with the text.
+
 ## [0.6.0] - 2026-10-21
 
 ### Added

@@ -81,7 +81,9 @@ export const Toolbar = ({
     <div
       role="toolbar"
       aria-label={t('content.richText.toolbar')}
-      className="flex min-h-9 flex-wrap items-center gap-0.5 border-b bg-muted/40 px-1"
+      // Sticks under the screen's sticky chrome (`--field-sticky-top`, set by the entry) while the field is in
+      // view; opaque (the card under the muted tint) so the text scrolling beneath doesn't show through.
+      className="sticky top-[var(--field-sticky-top,0px)] z-10 flex min-h-9 flex-wrap items-center gap-0.5 border-b bg-card bg-linear-to-r from-muted/40 to-muted/40 px-1 dark:bg-background"
     >
       {!minimal ? (
         <>
