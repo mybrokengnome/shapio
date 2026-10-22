@@ -1,4 +1,10 @@
-import type { MEDIA_KINDS } from '@shapio/schema';
+import {
+  DOCUMENT_MIME_SUBTYPE,
+  DOCUMENT_MIME_SUBTYPE_WORDS,
+  DOCUMENT_MIME_TYPE,
+  MEDIA_KIND_TYPES,
+  type MediaKind,
+} from '@shapio/schema';
 import type {
   Expression,
   ExpressionBuilder,
@@ -9,12 +15,6 @@ import type {
   Transaction,
   Updateable,
 } from 'kysely';
-import {
-  DOCUMENT_MIME_SUBTYPE,
-  DOCUMENT_MIME_SUBTYPE_WORDS,
-  DOCUMENT_MIME_TYPE,
-  MEDIA_KIND_TYPES,
-} from '../constants/media.js';
 import { db } from '../db/index.js';
 import { containsInsensitive, endsWith, startsWith } from '../db/sql/text.js';
 import { timestampCursorText, timestampParam } from '../db/sql/time.js';
@@ -40,9 +40,7 @@ export type MediaAssetFilter = {
 /** Keyset cursor: (created_at, id) of the last row, created_at as ISO-8601 with microseconds. */
 export type MediaAssetCursor = { createdAt: string; id: string };
 
-type MediaKind = (typeof MEDIA_KINDS)[number];
-
-/** `mime_type` is of the given kind: the SQL form of `mediaKindOf` (constants/media.ts holds the rules). */
+/** `mime_type` is of the given kind: the SQL form of `mediaKindOf` (both read the rules in `@shapio/schema`). */
 const isOfKind = (eb: ExpressionBuilder<DB, 'media_assets'>, kind: MediaKind): Expression<SqlBool> => {
   const mimeType = eb.ref('mime_type');
   const ownKind = MEDIA_KIND_TYPES.find((type) => type === kind);

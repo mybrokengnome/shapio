@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { MEDIA_KINDS } from '@shapio/schema';
+import { MEDIA_KINDS, mediaKindOf } from '@shapio/schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
-import { mediaKindOf } from '../src/content/media.js';
 import { createAdmin, login, type TestSession } from './helpers/adminIdentity.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import type { MediaAssetBody } from './helpers/media.js';

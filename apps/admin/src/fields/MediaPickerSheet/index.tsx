@@ -1,5 +1,6 @@
 import type { MediaAsset } from '@shapio/client';
 import type { MediaPickOptions } from '@shapio/editor-sdk';
+import { mediaKindOf } from '@shapio/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,7 +25,7 @@ import { UploadQueue } from '@/features/Media/UploadQueue';
 import { reportError } from '@/helpers/reportError';
 import { useMediaPermissions } from '@/hooks/useMediaPermissions';
 import { useMediaUploader } from '@/hooks/useMediaUploader';
-import { kindFilterFor, mediaKindOf } from '../helpers/media';
+import { kindFilterFor } from '../helpers/media';
 
 type MediaPickerSheetProps = {
   open: boolean;
