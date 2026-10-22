@@ -32,6 +32,7 @@ import { usePreflightFlow } from './hooks/usePreflightFlow';
 import { useRevealField } from './hooks/useRevealField';
 import { useRevealLinkedValue } from './hooks/useRevealLinkedValue';
 import { useSettingsDrawer } from './hooks/useSettingsDrawer';
+import { useTopBarOffsetRef } from './hooks/useTopBarOffsetRef';
 import { LayoutSection } from './LayoutSection';
 import { NoFields } from './NoFields';
 import { Notices } from './Notices';
@@ -159,6 +160,8 @@ export const EntryDocument = ({
     onLocaleChange: model.localized && locales.length > 1 ? onLocaleChange : undefined,
   });
 
+  const topBarOffsetRef = useTopBarOffsetRef();
+
   if (setup.runtimeLoading) {
     return <LoadingState rows={6} />;
   }
@@ -275,7 +278,14 @@ export const EntryDocument = ({
               primary={primary}
             />
             {/* The preview takes the right half of the screen under the top bar on lg and up. */}
-            <div className={cn(preview.open && 'lg:pr-[calc(50vw-2rem)]')}>
+            {/* `--field-sticky-top`: the top bar's bottom edge, under the phone bar (48px) below lg. */}
+            <div
+              ref={topBarOffsetRef}
+              className={cn(
+                '[--field-sticky-top:calc(3rem+var(--entry-top-bar-h,0px))] lg:[--field-sticky-top:var(--entry-top-bar-h,0px)]',
+                preview.open && 'lg:pr-[calc(50vw-2rem)]',
+              )}
+            >
               <article
                 aria-label={heading}
                 className={cn(
