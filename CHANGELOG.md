@@ -6,6 +6,14 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Keyboard shortcut hints show the real key (⌘ on Mac, Ctrl elsewhere) instead of Mod.
+- Choosing a heading from the toolbar keeps the cursor in the text.
+- Inserting an image from the toolbar keeps the cursor in the text.
+- A 403 from a firewall or proxy in front of Shapio is reported as a blocked request, not as a missing
+  permission.
+
 ## [0.6.2] - 2026-10-22
 
 ### Fixed
