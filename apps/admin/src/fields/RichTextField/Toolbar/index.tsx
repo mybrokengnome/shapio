@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import { Bold, Code, Image, Italic, List, ListOrdered, Minus, Quote, Redo2, Undo2 } from 'lucide-react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -40,7 +41,7 @@ const blockTypeOf = (editor: Editor): BlockType => {
 };
 
 const setBlockType = (editor: Editor, type: BlockType) => {
-  const chain = editor.chain().focus();
+  const chain = editor.chain();
   if (type === 'paragraph') {
     chain.setParagraph().run();
   } else if (type === 'codeBlock') {
@@ -76,6 +77,9 @@ export const Toolbar = ({
       canRedo: current.can().redo(),
     }),
   });
+  // A block type was chosen: the select closes back to the text, not to its own trigger, so typing (and
+  // Mod+B) carries on where the cursor was. Escape without a choice leaves focus on the select as usual.
+  const blockChosen = useRef(false);
   const chain = () => editor.chain().focus();
   return (
     <div
@@ -90,7 +94,10 @@ export const Toolbar = ({
           <Select
             value={state.block}
             disabled={disabled}
-            onValueChange={(value) => setBlockType(editor, value as BlockType)}
+            onValueChange={(value) => {
+              blockChosen.current = true;
+              setBlockType(editor, value as BlockType);
+            }}
           >
             <SelectTrigger
               size="sm"
@@ -99,7 +106,15 @@ export const Toolbar = ({
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent
+              onCloseAutoFocus={(event) => {
+                if (blockChosen.current) {
+                  blockChosen.current = false;
+                  event.preventDefault();
+                  editor.commands.focus();
+                }
+              }}
+            >
               {(Object.keys(BLOCK_LABEL_KEYS) as BlockType[]).map((type) => (
                 <SelectItem key={type} value={type}>
                   {t(BLOCK_LABEL_KEYS[type])}
