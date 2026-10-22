@@ -64,13 +64,14 @@ describe('media api: assets', () => {
     const { client, call } = setup(200, { items: [], nextCursor: null });
     await client.admin.media.assets.list({
       folder: 'root',
-      mimeType: 'image/*',
+      kind: 'image',
+      mimeType: 'image/png',
       search: undefined,
       limit: 20,
     });
     await client.admin.media.assets.list();
     expect(call(0).url).toBe(
-      'https://cms.test/cms/api/admin/media/assets?folder=root&mimeType=image%2F*&limit=20',
+      'https://cms.test/cms/api/admin/media/assets?folder=root&kind=image&mimeType=image%2Fpng&limit=20',
     );
     expect(call(1).url).toBe('https://cms.test/cms/api/admin/media/assets');
   });

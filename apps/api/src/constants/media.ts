@@ -26,3 +26,19 @@ export const MEDIA_EVENTS = {
   updated: 'media.updated',
   deleted: 'media.deleted',
 } as const;
+
+/**
+ * How a MIME type maps to a media kind (`allowedKinds`, the library's `kind` filter): `image/`, `video/` and
+ * `audio/` are their own kinds; `text/`, a `pdf` subtype or a subtype containing one of these words is a
+ * document; anything else is `other`. `mediaKindOf` and the asset list's SQL filter both read these.
+ */
+export const MEDIA_KIND_TYPES = ['image', 'video', 'audio'] as const;
+export const DOCUMENT_MIME_TYPE = 'text';
+export const DOCUMENT_MIME_SUBTYPE = 'pdf';
+export const DOCUMENT_MIME_SUBTYPE_WORDS = [
+  'msword',
+  'officedocument',
+  'opendocument',
+  'rtf',
+  'epub',
+] as const;

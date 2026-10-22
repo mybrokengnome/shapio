@@ -1,3 +1,4 @@
+import { MEDIA_KINDS } from '@shapio/schema';
 import { Type, type Static, type TSchema } from 'typebox';
 import {
   DateTimeSchema,
@@ -127,6 +128,11 @@ export const ListAssetsQuerySchema = Type.Object(
     folder: Type.Optional(Type.Union([UuidSchema, Type.Literal('root')])),
     /** `image/png` or `image/*`. */
     mimeType: Type.Optional(MimeTypeSchema),
+    /**
+     * A media kind (`image`, `video`, `audio`, `document`, `other`), the same buckets as a media field's
+     * allowed kinds. Prefer it to a `type/*` pattern: firewalls can read `/*` as a SQL comment.
+     */
+    kind: Type.Optional(Type.Enum(MEDIA_KINDS)),
     search: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
     cursor: Type.Optional(Type.String({ maxLength: 500 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),

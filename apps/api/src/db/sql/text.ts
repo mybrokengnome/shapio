@@ -42,6 +42,18 @@ export const startsWith = (value: Expression<string | null>, prefix: string): Ra
       : sql<boolean>`${value} like ${`${escapeLike(prefix)}%`}`;
 
 /**
+ * `value` ends with `suffix` (case-sensitive).
+ * PostgreSQL: `value like '%suffix'` (escaped, bound). SQLite: `substr(value, -n) = suffix` (n in
+ * characters). MySQL: `value like '%suffix' escape '!'`. Contract: case-sensitive; false for null.
+ */
+export const endsWith = (value: Expression<string | null>, suffix: string): RawBuilder<boolean> =>
+  isMysql()
+    ? sql<boolean>`${value} like ${`%${escapeMysqlLike(suffix)}`} escape '!'`
+    : isSqlite()
+      ? sql<boolean>`substr(${value}, ${sql.lit(-[...suffix].length)}) = ${suffix}`
+      : sql<boolean>`${value} like ${`%${escapeLike(suffix)}`}`;
+
+/**
  * Text concatenation. Strings are bound as parameters; null in any part gives null.
  * PostgreSQL and SQLite: `a || b`. MySQL: `concat(a, b)` (`||` is OR there). Contract: the same null
  * propagation.

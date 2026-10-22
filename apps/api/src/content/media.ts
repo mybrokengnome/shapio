@@ -1,4 +1,10 @@
 import { richTextMediaIds, type FieldDefinition, type RichTextDocument } from '@shapio/schema';
+import {
+  DOCUMENT_MIME_SUBTYPE,
+  DOCUMENT_MIME_SUBTYPE_WORDS,
+  DOCUMENT_MIME_TYPE,
+  MEDIA_KIND_TYPES,
+} from '../constants/media.js';
 import type { ContentData } from '../db/contentData.js';
 import type { ContentModel } from './model.js';
 import { COMPONENT_KEY } from './validator/index.js';
@@ -84,10 +90,14 @@ export const mediaIdsOf = (
 /** The `allowedKinds` family of a MIME type. */
 export const mediaKindOf = (mimeType: string): string => {
   const [type = '', subtype = ''] = mimeType.toLowerCase().split('/');
-  if (type === 'image' || type === 'video' || type === 'audio') {
+  if ((MEDIA_KIND_TYPES as readonly string[]).includes(type)) {
     return type;
   }
-  if (type === 'text' || subtype === 'pdf' || /(msword|officedocument|opendocument|rtf|epub)/.test(subtype)) {
+  if (
+    type === DOCUMENT_MIME_TYPE ||
+    subtype === DOCUMENT_MIME_SUBTYPE ||
+    DOCUMENT_MIME_SUBTYPE_WORDS.some((word) => subtype.includes(word))
+  ) {
     return 'document';
   }
   return 'other';
