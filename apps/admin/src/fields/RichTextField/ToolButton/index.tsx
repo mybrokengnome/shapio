@@ -2,10 +2,12 @@ import type { LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatShortcut } from '@/helpers/formatShortcut';
 
 type ToolButtonProps = {
   icon: LucideIcon;
   label: string;
+  /** Tiptap's keys ("Mod+Shift+8"), shown in the platform's own words. */
   keys?: string;
   pressed?: boolean;
   disabled: boolean;
@@ -32,7 +34,7 @@ export const ToolButton = ({ icon: Icon, label, keys, pressed, disabled, onClick
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {keys ? t('content.richText.shortcut', { action: label, keys }) : label}
+        {keys ? t('content.richText.shortcut', { action: label, keys: formatShortcut(keys) }) : label}
       </TooltipContent>
     </Tooltip>
   );

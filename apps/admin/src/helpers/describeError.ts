@@ -1,4 +1,5 @@
 import { ShapioApiError } from '@shapio/client';
+import { isBlockedRequest } from '@/api/errors';
 import { i18next } from '@/app/i18n';
 import en from '@/locales/en/translation.json';
 
@@ -12,10 +13,13 @@ export const knownErrorMessage = (code: string): string | undefined =>
 
 /**
  * A human-readable, translated message for a failed request. Known server error codes have their own
- * translation (`errors.codes.<CODE>`); otherwise the server's message is shown, which is more useful than a
+ * translation (`errors.codes.<CODE>`), and a 403 from a firewall or proxy says so; otherwise the server's message is shown, which is more useful than a
  * generic one.
  */
 export const describeError = (error: unknown): string => {
+  if (isBlockedRequest(error)) {
+    return i18next.t('common.blockedRequest');
+  }
   if (error instanceof ShapioApiError) {
     return isKnownErrorCode(error.code) ? i18next.t(`errors.codes.${error.code}`) : error.message;
   }

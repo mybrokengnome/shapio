@@ -127,6 +127,10 @@ With Cloudflare's proxy on, Cloudflare terminates TLS for visitors. For the conn
 Cloudflare's SSL mode to **Full (strict)** and give Shapio a
 [Cloudflare origin certificate](#cloudflare-origin-certificate).
 
+A web application firewall in front of Shapio (AWS WAF, Cloudflare WAF) must allow request bodies up to
+`MEDIA_MAX_UPLOAD_BYTES` on `/api/media/uploads/`, where local storage receives uploads, or uploads fail with
+a 403 that the admin reports as a blocked request.
+
 ## Security headers and CORS
 
 - HSTS and `upgrade-insecure-requests` are sent only when `PUBLIC_URL` is `https://`, so a plain-HTTP install

@@ -23,7 +23,7 @@ const UPDATED = 'Model updated — no restart needed';
 let page: Page;
 let modelId = '';
 const pageErrors: string[] = [];
-/** What the long-document test made, removed after the suite (models before the component they use). */
+/** What the rich text tests made, removed after the suite (models before the component they use). */
 const longDocument = { models: [] as string[], components: [] as string[], assets: [] as string[] };
 
 const nav = () => page.getByRole('navigation', { name: 'Main navigation' });
@@ -561,5 +561,91 @@ test('a long rich text body keeps its toolbar in view; alt text grows as you typ
     await page.mouse.wheel(0, 400);
     await expectToolbarUnderTopBar(next.getByRole('toolbar', { name: 'Text formatting' }));
     await page.setViewportSize({ width: 1360, height: 900 });
+  });
+});
+
+test('choosing a heading keeps the cursor in the text; shortcut hints name the real key', async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const suffix = randomUUID().slice(0, 8);
+  const ids = { model: randomUUID(), title: randomUUID() };
+  const key = `headingNote${suffix}`;
+  await api.createDefinition('models', {
+    id: ids.model,
+    kind: 'collection',
+    apiKey: key,
+    label: 'Heading note',
+    display: { layout: 'form', titleFieldId: ids.title },
+    fields: [
+      { id: ids.title, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: randomUUID(), apiKey: 'body', label: 'Body', type: 'richtext' },
+    ],
+  });
+  longDocument.models.push(ids.model);
+  const entry = await api.send<{ id: string }>('POST', `/content/${key}`, {
+    data: { title: 'Harbor log', body: null },
+  });
+  await page.goto(`${ADMIN_URL}content/${key}/${entry.id}`);
+  await expect(entryForm()).toBeVisible();
+  const body = entryDocument(page).field('/body');
+  const editor = body.locator('.ProseMirror');
+  const toolbar = body.getByRole('toolbar', { name: 'Text formatting' });
+
+  await test.step('the Bold tooltip shows ⌘B or Ctrl+B, never Mod', async () => {
+    const tooltip = page.getByRole('tooltip');
+    for (const scheme of ['light', 'dark'] as const) {
+      const restore = await renderScheme(page, scheme);
+      await toolbar.getByRole('button', { name: 'Bold' }).hover();
+      await expect(tooltip).toHaveText(/^Bold \((⌘B|Ctrl\+B)\)$/);
+      await page.waitForFunction(() =>
+        document.getAnimations().every((animation) => animation.playState !== 'running'),
+      );
+      // The tooltip is portaled above the toolbar: capture both together.
+      const box = await toolbar.boundingBox();
+      if (box) {
+        const clip = { x: box.x, y: box.y - 48, width: box.width, height: box.height + 48 };
+        await page.screenshot({
+          path: join(SCREENSHOT_DIR, `richtext-shortcut-tooltip-${scheme}.png`),
+          clip,
+        });
+      }
+      await page.mouse.move(0, 0);
+      await restore();
+    }
+  });
+
+  await test.step('a heading chosen from the select takes the typing, and Mod+B still bolds', async () => {
+    await editor.click();
+    const blockType = toolbar.getByRole('combobox', { name: 'Text style' });
+    await blockType.click();
+    await page.getByRole('option', { name: 'Heading 2', exact: true }).click();
+    await expect(blockType).toHaveText('Heading 2');
+    await expect(editor).toBeFocused();
+    await page.keyboard.type('Tides');
+    await expect(editor.locator('h2')).toHaveText('Tides');
+    // Select the word with the keyboard only (a click would put the focus back by itself); the heading is
+    // the whole document.
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+b');
+    await expect(editor.locator('h2 strong')).toHaveText('Tides');
+    await editor.locator('h2').click();
+    await blockType.click();
+    await captureInBothLooks('richtext-heading-select', page.getByRole('listbox'));
+    await page.keyboard.press('Escape');
+    // Escape without a choice leaves the focus on the select, as for any select.
+    await expect(blockType).toBeFocused();
+  });
+
+  await test.step('an image chosen from the toolbar keeps the cursor in the text', async () => {
+    const image = await api.uploadPng(`buoy-${suffix}.png`, 64, 64);
+    longDocument.assets.push(image.id);
+    await editor.click();
+    await toolbar.getByRole('button', { name: 'Insert image' }).click();
+    const picker = page.getByRole('dialog', { name: /Choose (a file|files)/ });
+    await expect(picker).toBeVisible();
+    await picker.getByRole('checkbox', { name: `Select buoy-${suffix}.png` }).check();
+    await picker.getByRole('button', { name: 'Choose file', exact: true }).click();
+    await expect(picker).toBeHidden();
+    await expect(editor.locator(`figure[data-media-id="${image.id}"]`)).toBeVisible();
+    await expect(editor).toBeFocused();
   });
 });

@@ -1,13 +1,18 @@
-/** The storage (bucket or Shapio's upload route) refused the bytes; `status` 0 means the request never completed. */
+/**
+ * The storage (bucket or Shapio's upload route, at `url`) refused the bytes; `status` 0 means the request
+ * never completed.
+ */
 export class UploadTransferError extends Error {
   readonly status: number;
   readonly body: string;
+  readonly url: string;
 
-  constructor(status: number, body: string) {
+  constructor(status: number, body: string, url: string) {
     super(`Upload failed with status ${status}`);
     this.name = 'UploadTransferError';
     this.status = status;
     this.body = body;
+    this.url = url;
   }
 }
 
@@ -38,9 +43,9 @@ export const uploadWithProgress = ({ url, form, onProgress, signal }: UploadWith
         resolve();
         return;
       }
-      reject(new UploadTransferError(request.status, request.responseText));
+      reject(new UploadTransferError(request.status, request.responseText, url));
     };
-    request.onerror = () => reject(new UploadTransferError(0, ''));
+    request.onerror = () => reject(new UploadTransferError(0, '', url));
     request.onabort = () => reject(new DOMException('Upload canceled', 'AbortError'));
     signal?.addEventListener('abort', () => request.abort(), { once: true });
     request.send(form);
