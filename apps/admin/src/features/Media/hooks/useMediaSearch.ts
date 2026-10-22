@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { MediaSearch } from '@/app/searchSchemas';
-import { MIME_FILTER_BY_TYPE } from '../constants';
+import { assetTypeQuery } from '../helpers/assetQuery';
 
 /** Folder, filters, view and the open asset live in the URL (bookmarkable, back-button friendly). */
 export const useMediaSearch = () => {
@@ -15,7 +15,7 @@ export const useMediaSearch = () => {
     assetQuery: {
       ...(search.folder ? { folder: search.folder } : {}),
       ...(search.q ? { search: search.q } : {}),
-      ...(search.type ? { mimeType: MIME_FILTER_BY_TYPE[search.type] } : {}),
+      ...assetTypeQuery(search.type),
     },
   };
 };

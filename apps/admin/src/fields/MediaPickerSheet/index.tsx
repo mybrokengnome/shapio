@@ -15,7 +15,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { MIME_FILTER_BY_TYPE, type MediaTypeFilter, type MediaView } from '@/features/Media/constants';
+import type { MediaTypeFilter, MediaView } from '@/features/Media/constants';
+import { assetTypeQuery } from '@/features/Media/helpers/assetQuery';
 import { Library } from '@/features/Media/Library';
 import { Toolbar } from '@/features/Media/Toolbar';
 import { UploadButton } from '@/features/Media/UploadButton';
@@ -23,7 +24,7 @@ import { UploadQueue } from '@/features/Media/UploadQueue';
 import { reportError } from '@/helpers/reportError';
 import { useMediaPermissions } from '@/hooks/useMediaPermissions';
 import { useMediaUploader } from '@/hooks/useMediaUploader';
-import { mediaKindOf, mimeFilterFor } from '../helpers/media';
+import { kindFilterFor, mediaKindOf } from '../helpers/media';
 
 type MediaPickerSheetProps = {
   open: boolean;
@@ -48,10 +49,10 @@ export const MediaPickerSheet = ({ open, options, onPick, onCancel }: MediaPicke
   const [selected, setSelected] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
   const multiple = options.multiple === true;
-  const forcedMime = mimeFilterFor(options.allowedKinds);
+  const forcedKind = kindFilterFor(options.allowedKinds);
   const query = {
     ...(search ? { search } : {}),
-    ...(forcedMime ? { mimeType: forcedMime } : type ? { mimeType: MIME_FILTER_BY_TYPE[type] } : {}),
+    ...assetTypeQuery(type, forcedKind),
   };
   const select = (id: string, checked: boolean) =>
     setSelected((current) => {
@@ -104,7 +105,7 @@ export const MediaPickerSheet = ({ open, options, onPick, onCancel }: MediaPicke
             <div className="min-w-0 flex-1">
               <Toolbar
                 query={search}
-                type={forcedMime ? undefined : type}
+                type={forcedKind ? undefined : type}
                 view={view}
                 onQueryChange={setSearch}
                 onTypeChange={setType}
