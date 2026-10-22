@@ -8,6 +8,10 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- The media library and picker filter by kind (`kind=image`) instead of a mime pattern, so a web application
+  firewall no longer mistakes the request for SQL injection.
+- The media picker uses the server's rules for which files are documents, so RTF and EPUB files can be chosen
+  for a media field that allows documents.
 - Keyboard shortcut hints show the real key (⌘ on Mac, Ctrl elsewhere) instead of Mod.
 - Choosing a heading from the toolbar keeps the cursor in the text.
 - Inserting an image from the toolbar keeps the cursor in the text.

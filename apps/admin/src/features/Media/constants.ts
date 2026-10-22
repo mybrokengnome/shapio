@@ -1,13 +1,19 @@
-/** Type filter values (URL `type`) and the MIME filter each sends to the API. */
+import type { MediaAssetQuery } from '@shapio/client';
+
+/** Type filter values (URL `type`) and the asset query each sends to the API. */
 export const MEDIA_TYPE_FILTERS = ['image', 'video', 'audio', 'pdf'] as const;
 export type MediaTypeFilter = (typeof MEDIA_TYPE_FILTERS)[number];
 
-export const MIME_FILTER_BY_TYPE = {
-  image: 'image/*',
-  video: 'video/*',
-  audio: 'audio/*',
-  pdf: 'application/pdf',
-} as const satisfies Record<MediaTypeFilter, string>;
+/**
+ * Families go as `kind`, never as a `type/*` MIME pattern: web application firewalls read `/*` in a query
+ * string as the start of a SQL comment and block the request.
+ */
+export const ASSET_QUERY_BY_TYPE = {
+  image: { kind: 'image' },
+  video: { kind: 'video' },
+  audio: { kind: 'audio' },
+  pdf: { mimeType: 'application/pdf' },
+} as const satisfies Record<MediaTypeFilter, Pick<MediaAssetQuery, 'kind' | 'mimeType'>>;
 
 export const MEDIA_VIEWS = ['grid', 'list'] as const;
 export type MediaView = (typeof MEDIA_VIEWS)[number];

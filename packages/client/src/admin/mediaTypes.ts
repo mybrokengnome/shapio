@@ -1,5 +1,7 @@
 /** Media library types (package G, `apps/api/src/routes/admin/media/schemas.ts`). Dates are ISO-8601 strings. */
 
+import type { MEDIA_KINDS } from '@shapio/schema';
+
 export type MediaVisibility = 'public' | 'private';
 export type MediaAssetStatus = 'processing' | 'ready' | 'failed';
 export type MediaVariantStatus = 'pending' | 'ready' | 'failed';
@@ -49,8 +51,13 @@ export type MediaAsset = {
 export type MediaAssetQuery = {
   /** A folder ID, or `root` for assets in no folder. Omit for every folder. */
   folder?: string;
-  /** `image/png` or `image/*`. */
+  /** An exact type such as `application/pdf`; `image/*` also works, but prefer `kind` for a family. */
   mimeType?: string;
+  /**
+   * A media kind, by the same rules as a media field's allowed kinds. Use it rather than a `type/*` pattern:
+   * firewalls in front of a server can read `/*` in a query string as SQL injection.
+   */
+  kind?: (typeof MEDIA_KINDS)[number];
   search?: string;
   cursor?: string;
   limit?: number;

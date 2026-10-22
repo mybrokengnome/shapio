@@ -46,10 +46,11 @@ export const deleteFolder = async (request: FastifyRequest<{ Params: IdParams }>
 // Assets
 
 export const listAssets = async (request: FastifyRequest<{ Querystring: ListAssetsQuery }>) => {
-  const { folder, mimeType, search, cursor, limit } = request.query;
+  const { folder, mimeType, kind, search, cursor, limit } = request.query;
   return mediaAssetsService.listAssets(mediaContextFor(request), {
     ...(folder !== undefined ? { folderId: folder === 'root' ? null : folder } : {}),
     ...(mimeType !== undefined ? { mimeType } : {}),
+    ...(kind !== undefined ? { kind } : {}),
     ...(search !== undefined ? { search } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
     ...(limit !== undefined ? { limit } : {}),

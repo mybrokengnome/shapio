@@ -4,7 +4,7 @@ import { withDialect } from '../dialect.js';
 import { isForeignKeyViolation, isUniqueViolation } from './errors.js';
 import { emptyJsonArray, jsonAgg, jsonArrayAppend, jsonObject } from './json.js';
 import { rowLessThan } from './rows.js';
-import { concat, containsInsensitive, pathSegment, startsWith } from './text.js';
+import { concat, containsInsensitive, endsWith, pathSegment, startsWith } from './text.js';
 import {
   currentTimestamp,
   dateParam,
@@ -112,6 +112,10 @@ describe('text primitives', () => {
       sql: '"mime_type" like $1',
       parameters: ['image/%'],
     });
+    expect(compile(endsWith(sql.ref('mime_type'), '/x_y'))).toMatchObject({
+      sql: '"mime_type" like $1',
+      parameters: ['%/x\\_y'],
+    });
   });
 
   it('concatenates with bound strings and splits paths', () => {
@@ -198,6 +202,10 @@ describe('SQLite forms', () => {
     expect(onSqlite(() => startsWith(sql.ref('mime_type'), 'image/'))).toMatchObject({
       sql: 'substr("mime_type", 1, 6) = ?',
       parameters: ['image/'],
+    });
+    expect(onSqlite(() => endsWith(sql.ref('mime_type'), '/pdf'))).toMatchObject({
+      sql: 'substr("mime_type", -4) = ?',
+      parameters: ['/pdf'],
     });
   });
 

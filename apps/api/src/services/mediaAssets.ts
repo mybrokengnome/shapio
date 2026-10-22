@@ -60,6 +60,7 @@ export const listAssets = async (
     {
       ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType.toLowerCase() } : {}),
+      ...(input.kind !== undefined ? { kind: input.kind } : {}),
       ...(input.search !== undefined ? { search: input.search } : {}),
     },
     input.cursor ? decodeCursor(input.cursor) : undefined,

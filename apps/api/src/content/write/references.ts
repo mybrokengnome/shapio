@@ -1,10 +1,10 @@
+import { mediaKindOf } from '@shapio/schema';
 import type { Kysely, Transaction } from 'kysely';
 import type { ContentData } from '../../db/contentData.js';
 import type { DB } from '../../db/types.js';
 import * as contentGuardsRepository from '../../repositories/contentGuards.js';
 import * as entriesRepository from '../../repositories/entries.js';
 import { imageUsesOf } from '../health/imageUses.js';
-import { mediaKindOf } from '../media.js';
 import type { ContentModel } from '../model.js';
 import type { MediaReferenceCheck, RelationReference } from '../validator/index.js';
 import { contentInvalid, type ContentIssue } from '../validator/issues.js';

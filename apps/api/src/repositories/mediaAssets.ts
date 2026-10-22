@@ -1,6 +1,22 @@
-import type { Insertable, Kysely, Selectable, Transaction, Updateable } from 'kysely';
+import {
+  DOCUMENT_MIME_SUBTYPE,
+  DOCUMENT_MIME_SUBTYPE_WORDS,
+  DOCUMENT_MIME_TYPE,
+  MEDIA_KIND_TYPES,
+  type MediaKind,
+} from '@shapio/schema';
+import type {
+  Expression,
+  ExpressionBuilder,
+  Insertable,
+  Kysely,
+  Selectable,
+  SqlBool,
+  Transaction,
+  Updateable,
+} from 'kysely';
 import { db } from '../db/index.js';
-import { containsInsensitive, startsWith } from '../db/sql/text.js';
+import { containsInsensitive, endsWith, startsWith } from '../db/sql/text.js';
 import { timestampCursorText, timestampParam } from '../db/sql/time.js';
 import type { DB, MediaAssets } from '../db/types.js';
 
@@ -15,12 +31,32 @@ export type MediaAssetFilter = {
   folderId?: string | null;
   /** `image/png`, or a top-level type with a wildcard: `image/*`. */
   mimeType?: string;
+  /** A media kind, by the same MIME rules as `mediaKindOf`. Combines with `mimeType` (both must match). */
+  kind?: MediaKind;
   /** Matches the file name, alt text and caption, case-insensitively. */
   search?: string;
 };
 
 /** Keyset cursor: (created_at, id) of the last row, created_at as ISO-8601 with microseconds. */
 export type MediaAssetCursor = { createdAt: string; id: string };
+
+/** `mime_type` is of the given kind: the SQL form of `mediaKindOf` (both read the rules in `@shapio/schema`). */
+const isOfKind = (eb: ExpressionBuilder<DB, 'media_assets'>, kind: MediaKind): Expression<SqlBool> => {
+  const mimeType = eb.ref('mime_type');
+  const ownKind = MEDIA_KIND_TYPES.find((type) => type === kind);
+  if (ownKind) {
+    return startsWith(mimeType, `${ownKind}/`);
+  }
+  const ownKinds = eb.or(MEDIA_KIND_TYPES.map((type) => startsWith(mimeType, `${type}/`)));
+  const documentLike = eb.or([
+    startsWith(mimeType, `${DOCUMENT_MIME_TYPE}/`),
+    endsWith(mimeType, `/${DOCUMENT_MIME_SUBTYPE}`),
+    ...DOCUMENT_MIME_SUBTYPE_WORDS.map((word) => containsInsensitive(mimeType, word)),
+  ]);
+  return kind === 'document'
+    ? eb.and([eb.not(ownKinds), documentLike])
+    : eb.not(eb.or([ownKinds, documentLike]));
+};
 
 const live = (trx: Executor) => trx.selectFrom('media_assets').where('deleted_at', 'is', null);
 
@@ -132,6 +168,7 @@ export const list = (
         ? qb.where((eb) => startsWith(eb.ref('mime_type'), mimeType.slice(0, -1)))
         : qb.where('mime_type', '=', mimeType);
     })
+    .$if(filter.kind !== undefined, (qb) => qb.where((eb) => isOfKind(eb, filter.kind ?? 'other')))
     .$if(filter.search !== undefined, (qb) => {
       const search = filter.search ?? '';
       return qb.where((eb) =>

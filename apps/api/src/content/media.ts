@@ -80,15 +80,3 @@ export const mediaIdsOf = (
   }
   return ids;
 };
-
-/** The `allowedKinds` family of a MIME type. */
-export const mediaKindOf = (mimeType: string): string => {
-  const [type = '', subtype = ''] = mimeType.toLowerCase().split('/');
-  if (type === 'image' || type === 'video' || type === 'audio') {
-    return type;
-  }
-  if (type === 'text' || subtype === 'pdf' || /(msword|officedocument|opendocument|rtf|epub)/.test(subtype)) {
-    return 'document';
-  }
-  return 'other';
-};
