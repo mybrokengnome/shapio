@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-22
+
 ### Fixed
 
 - The media library and picker filter by kind (`kind=image`) instead of a mime pattern, so a web application
