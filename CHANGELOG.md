@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-22
+
 ### Fixed
 
 - The rich text toolbar stays at the top of the screen while you scroll a long document.
