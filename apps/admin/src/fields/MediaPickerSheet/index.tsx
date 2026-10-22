@@ -27,6 +27,21 @@ import { useMediaPermissions } from '@/hooks/useMediaPermissions';
 import { useMediaUploader } from '@/hooks/useMediaUploader';
 import { kindFilterFor } from '../helpers/media';
 
+/**
+ * The picker closes back to whatever opened it, unless the caller has already put the focus somewhere else
+ * (the rich text editor puts it back in the text after inserting an image): then it stays there.
+ */
+const keepFocusMovedByCaller = (event: Event) => {
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    !active.closest('[data-slot="sheet-content"]')
+  ) {
+    event.preventDefault();
+  }
+};
+
 type MediaPickerSheetProps = {
   open: boolean;
   options: MediaPickOptions;
@@ -90,7 +105,11 @@ export const MediaPickerSheet = ({ open, options, onPick, onCancel }: MediaPicke
   };
   return (
     <Sheet open={open} onOpenChange={(next) => (next ? undefined : close())}>
-      <SheetContent size="lg" {...(options.allowedKinds ? {} : { 'aria-describedby': undefined })}>
+      <SheetContent
+        size="lg"
+        onCloseAutoFocus={keepFocusMovedByCaller}
+        {...(options.allowedKinds ? {} : { 'aria-describedby': undefined })}
+      >
         <SheetHeader className="pr-14">
           <SheetTitle>
             {multiple ? t('content.media.pickTitleMultiple') : t('content.media.pickTitle')}

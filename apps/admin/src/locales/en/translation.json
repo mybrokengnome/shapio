@@ -6,6 +6,7 @@
   "common": {
     "noAccess": "You don't have access to this",
     "noAccessDescription": "Ask an owner for a role that includes it.",
+    "blockedRequest": "The request was blocked before it reached Shapio (HTTP 403). A firewall or proxy in front of the server refused it; check its rules for this request.",
     "cancel": "Cancel",
     "close": "Close",
     "saveChanges": "Save changes",

@@ -1,5 +1,5 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
-import { hasErrorCode, isForbidden, isNotFound, isUnauthorized } from '@/api/errors';
+import { hasErrorCode, isBlockedRequest, isForbidden, isNotFound, isUnauthorized } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
 import { logError, reportError } from '@/helpers/reportError';
 import { hasUnsavedEdits, useSessionStore } from '@/stores/session';
@@ -31,7 +31,11 @@ export const isSiteAccessError = (error: unknown) =>
 
 /** 4xx answers are final; only network and 5xx failures are worth retrying. */
 const shouldRetry = (failureCount: number, error: unknown) =>
-  failureCount < MAX_RETRIES && !isUnauthorized(error) && !isForbidden(error) && !isNotFound(error);
+  failureCount < MAX_RETRIES &&
+  !isUnauthorized(error) &&
+  !isForbidden(error) &&
+  !isBlockedRequest(error) &&
+  !isNotFound(error);
 
 export const createQueryClient = () => {
   /**

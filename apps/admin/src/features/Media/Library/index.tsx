@@ -37,7 +37,9 @@ export const Library = ({
   if (assets.isPending) {
     return <LoadingState rows={4} />;
   }
-  if (assets.isError) {
+  // A failed refetch keeps the files on screen (the failure is toasted); only a first load that fails
+  // takes the list's place.
+  if (assets.isError && assets.data === undefined) {
     return <ErrorState error={assets.error} onRetry={() => void assets.refetch()} />;
   }
   const items = assets.data.pages.flatMap((page) => page.items);

@@ -5,8 +5,8 @@ import { CodeMirror } from '@/components/CodeMirror';
 import { baseExtensions } from '@/components/CodeMirror/helpers/baseExtensions';
 import { InfoHint } from '@/components/InfoHint';
 import { valueLabel } from '@/features/Models/helpers/labels';
-import { useShortcutLabel } from '@/features/Shell/hooks/useShortcutLabel';
 import { cn } from '@/helpers/cn';
+import { formatShortcut } from '@/helpers/formatShortcut';
 import { numberOption, textValue } from '../helpers/props';
 import type { BuiltInEditorProps } from '../types';
 import { useLanguageExtension } from './hooks/useLanguageExtension';
@@ -25,8 +25,6 @@ export const CodeEditor = (props: BuiltInEditorProps) => {
   const language = props.definition.type === 'code' ? props.definition.settings.language : 'plain';
   const rows = numberOption(props, 'rows') ?? DEFAULT_ROWS;
   const hintId = `${inputId}-keys`;
-  const indent = useShortcutLabel(']');
-  const outdent = useShortcutLabel('[');
   const languageSupport = useLanguageExtension(language);
   const locked = readOnly || disabled;
   const extensions = useMemo(
@@ -64,7 +62,10 @@ export const CodeEditor = (props: BuiltInEditorProps) => {
       <div className="flex items-center gap-1 text-meta text-muted-foreground">
         <span>{valueLabel(language)}</span>
         <InfoHint about={field.label} id={hintId}>
-          {t('content.fields.code.keys', { indent, outdent })}
+          {t('content.fields.code.keys', {
+            indent: formatShortcut('Mod+]'),
+            outdent: formatShortcut('Mod+['),
+          })}
         </InfoHint>
       </div>
     </div>

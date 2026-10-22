@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatShortcut } from '@/helpers/formatShortcut';
 import { normalizeHref } from '../richTextDocument';
 import { selectionAnchor } from '../selectionAnchor';
 
@@ -77,7 +78,7 @@ export const LinkPopover = ({
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent>
-            {t('content.richText.shortcut', { action: label, keys: 'Mod+Shift+K' })}
+            {t('content.richText.shortcut', { action: label, keys: formatShortcut('Mod+Shift+K') })}
           </TooltipContent>
         </Tooltip>
       )}
