@@ -95,10 +95,12 @@ export const memberChanges = (input: {
   before: SchemaDefinition | null;
   after: SchemaDefinition | null;
   hasContent: boolean;
+  /** Definitions that exist now (`active` may include proposed ones); default: every one in `active`. */
+  existingIds?: ReadonlySet<string> | undefined;
   active: ResolvedSchema;
   proposed: ResolvedSchema;
 }): MemberChange[] => {
-  const { subjectId, before, after, active, proposed } = input;
+  const { subjectId, before, after, existingIds, active, proposed } = input;
   const ids = after
     ? [...new Set([...active.index.family(subjectId), ...proposed.index.family(subjectId)])]
     : [subjectId];
@@ -120,7 +122,9 @@ export const memberChanges = (input: {
       before: memberBefore,
       after: memberAfter,
       changes,
-      hasContent: isSubject ? input.hasContent : active.index.get(modelId) !== undefined,
+      hasContent: isSubject
+        ? input.hasContent
+        : (existingIds?.has(modelId) ?? active.index.get(modelId) !== undefined),
     };
   });
 };

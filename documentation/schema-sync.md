@@ -243,8 +243,10 @@ new definitions shared, as before.
 
 ## Apply, the admin and change sets
 
-`shapio schema apply` activates each changed definition directly, through the change planner, as soon as its
-checks pass. It does not create a [change set](change-sets.md).
+`shapio schema apply` activates the changed definitions directly, through the change planner, all together in
+one step: a type never goes live before the parent, interface, relation target or component it references,
+whatever the file order. When some change needs index builds or content checks first, every change of the apply
+waits for them and goes live with them. It does not create a [change set](change-sets.md).
 
 In the admin, every schema edit goes through a change set. The builder's **Review in a change set** and the
 **Schema as code** page (Develop → Schema) save your edits as drafts of an open change set; they go live when the

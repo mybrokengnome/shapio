@@ -22,7 +22,7 @@ import { schemaChangeUnsupported, schemaInvalid } from '../schema/errors.js';
 import { activateDefinitions } from '../schema/planner/activate.js';
 import { buildChangePlan, type ChangePlan } from '../schema/planner/plan.js';
 import { relationValueIssues } from '../schema/planner/relationValues.js';
-import { requestChange } from '../schema/planner/request.js';
+import { requestChanges, type GroupedChangeRequest } from '../schema/planner/request.js';
 import { scopedDefinitionsOf, validateScoped, type ScopedDefinition } from '../schema/scopedValidation.js';
 import { loadSiteKeys } from '../schema/siteKeys.js';
 import { readStoredDefinition } from '../schema/storedDefinition.js';
@@ -333,6 +333,8 @@ const planActions = async (
 > => {
   // Every site's definitions: a shared change must leave every site's view valid.
   const active = scopedDefinitionsOf(context.snapshot.network.definitions);
+  // Only these may hold content: another file's new definition joins a family with no entries.
+  const existingIds = new Set(active.map((entry) => entry.definition.id));
   const siteKeys = await loadSiteKeys(context.db);
   const acting = items.filter((item) => ['create', 'update', 'delete'].includes(item.decision.action));
   // The whole resulting schema must be valid (references between files resolve together).
@@ -381,6 +383,7 @@ const planActions = async (
         .concat(remote ? [{ definition: remote.definition, siteId: remote.siteId }] : []),
       siteId,
       hasContent: before !== null,
+      existingIds,
       siteKeys,
     });
     if (!plan.summary.supported) {
@@ -460,13 +463,27 @@ export const applySchema = async (
     ...(context.requestId ? { requestId: context.requestId } : {}),
     ...(context.ip ? { ip: context.ip } : {}),
   };
-  const immediate = [...plans.values()].filter(
-    (entry) => !entry.after || entry.plan.prerequisites.length === 0,
-  );
-  const planned = [...plans.values()].filter((entry) => entry.after && entry.plan.prerequisites.length > 0);
+  // One apply goes live as one unit, whatever the file order: a definition never activates before what it
+  // references (a parent, an interface, a relation target, a component) or what must change with it (an
+  // interface's members). When any change needs prerequisites (index builds, content checks), every change
+  // waits for them in one job and activates with them.
+  const entries = [...plans.values()];
+  const needsJob = entries.some((entry) => entry.after && entry.plan.prerequisites.length > 0);
   let schemaVersion = context.snapshot.version;
-  if (immediate.length > 0) {
-    const results = await activateDefinitions(context.db, { items: immediate, ...request });
+  if (needsJob) {
+    const changes = await requestChanges(
+      context.db,
+      entries.map((entry) => ({ ...entry, ...request })) as [GroupedChangeRequest, ...GroupedChangeRequest[]],
+    );
+    for (const change of changes) {
+      const item = items.find((candidate) => candidate.definitionId === change.model_id);
+      if (item) {
+        item.outcome = 'pending';
+        item.changeId = change.id;
+      }
+    }
+  } else if (entries.length > 0) {
+    const results = await activateDefinitions(context.db, { items: entries, ...request });
     for (const result of results) {
       const item = items.find((candidate) => candidate.definitionId === result.definitionId);
       if (item) {
@@ -474,18 +491,6 @@ export const applySchema = async (
         item.version = result.version;
       }
       schemaVersion = result.schemaVersion;
-    }
-  }
-  for (const entry of planned) {
-    const change = await requestChange(context.db, {
-      ...entry,
-      after: entry.after as SchemaDefinition,
-      ...request,
-    });
-    const item = items.find((candidate) => candidate.definitionId === entry.plan.definitionId);
-    if (item) {
-      item.outcome = 'pending';
-      item.changeId = change.id;
     }
   }
   for (const item of items.filter((candidate) => !candidate.outcome)) {

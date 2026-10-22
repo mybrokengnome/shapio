@@ -71,6 +71,12 @@ export type PlanInput = {
   siteId: string | null;
   /** True when content may exist for this definition (an existing or restored model). */
   hasContent: boolean;
+  /**
+   * IDs of the definitions that exist on the instance now, when `active` also holds proposed ones (a
+   * `schema apply`'s other files, a change set's other drafts): only those family members may hold content.
+   * Default: every definition in `active`.
+   */
+  existingIds?: ReadonlySet<string>;
   /** Site IDs to keys, to name the site in issues found in its view. */
   siteKeys?: ReadonlyMap<string, string>;
 };
@@ -402,6 +408,7 @@ export const buildChangePlan = ({
   active: scopedActive,
   siteId,
   hasContent,
+  existingIds,
   siteKeys,
 }: PlanInput): ChangePlan => {
   const subject = (after ?? before) as SchemaDefinition;
@@ -419,7 +426,7 @@ export const buildChangePlan = ({
   // A component is one definition; a model is planned for its whole family; an interface stores nothing, so
   // it has no content or index work (plan interfaces, D9).
   const members: MemberChange[] = isModelDefinition(subject)
-    ? memberChanges({ subjectId: subject.id, before, after, hasContent, active, proposed })
+    ? memberChanges({ subjectId: subject.id, before, after, hasContent, existingIds, active, proposed })
     : [];
   const contentSteps = isComponentDefinition(subject)
     ? after && hasContent

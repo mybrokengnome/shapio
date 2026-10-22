@@ -4,9 +4,10 @@ import type { DB } from '../../db/types.js';
 import { describeError } from '../../helpers/errors.js';
 import { type JobContext, type JobHandler, PermanentJobError } from '../../jobs/types.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
+import type { SchemaChangeJobRow } from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import { readStoredDefinition } from '../storedDefinition.js';
-import { activateDefinition } from './activate.js';
+import { activateDefinitions, type ActivationItem } from './activate.js';
 import { principalFromColumns } from './actor.js';
 import type {
   ActivationContext,
@@ -18,6 +19,7 @@ import { buildEntryOrderIndex, buildFieldIndex, dropFieldIndex, ENTRY_ORDER_INDE
 import { createFieldIndexLayoutHandler, FIELD_INDEX_LAYOUT_JOB } from './indexLayout.js';
 import type { ChangePlan } from './plan.js';
 import {
+  changeIdsOf,
   SCHEMA_CHANGE_JOB,
   SCHEMA_FOLLOW_UP_JOB,
   type SchemaChangeJobPayload,
@@ -145,6 +147,57 @@ export const applyContent =
 export const discardStaged = (deps: HandlerDeps, steps: readonly PrerequisiteStep[]) =>
   deps.ports.migration.discard(contentStepsOf(steps));
 
+/** One job checkpoint holding the prerequisite progress of several changes, keyed by change ID. */
+export const keyedCheckpointIo = (job: JobContext, changeId: string): StepsCheckpointIo => {
+  const all = () => (job.checkpoint ?? {}) as Record<string, unknown>;
+  return {
+    checkpoint: all()[changeId] ?? null,
+    saveCheckpoint: async (value: unknown) => {
+      const next = { ...all(), [changeId]: value };
+      job.checkpoint = next;
+      return job.saveCheckpoint(next);
+    },
+  };
+};
+
+/**
+ * Runs the prerequisites of in-flight changes that activate together (a change set, a `schema apply`) and
+ * returns their activation items; `ioFor` says where each change's checkpoint lives.
+ */
+export const prepareChanges = async (
+  deps: HandlerDeps,
+  changes: readonly SchemaChangeJobRow[],
+  job: JobContext,
+  ioFor: (changeId: string) => StepsCheckpointIo = (changeId) => keyedCheckpointIo(job, changeId),
+): Promise<ActivationItem[]> => {
+  const items: ActivationItem[] = [];
+  for (const change of changes) {
+    const plan = change.plan as unknown as ChangePlan;
+    await schemaChangeJobsRepository.markRunning(change.id, new Date(), deps.db);
+    const checkpoint = await runSteps(deps, plan.prerequisites, job, ioFor(change.id));
+    const revision = change.to_revision_id
+      ? await schemaModelsRepository.findRevisionById(change.to_revision_id, deps.db)
+      : undefined;
+    if (!revision && plan.operation !== 'delete') {
+      throw new PermanentJobError(
+        `Revision ${change.to_revision_id ?? '(none)'} of change ${change.id} not found`,
+      );
+    }
+    items.push({
+      plan,
+      after: revision ? readStoredDefinition(revision.definition) : null,
+      expectedVersion: plan.fromVersion,
+      pending: {
+        changeJobId: change.id,
+        revisionId: revision?.id ?? null,
+        version: revision?.version ?? null,
+      },
+      recheck: applyContent(deps, plan.prerequisites, checkpoint),
+    });
+  }
+  return items;
+};
+
 /** The change failed for good: staged work is released first, so a failed release is retried with the job. */
 const markFailed = async (
   deps: HandlerDeps,
@@ -164,55 +217,85 @@ const markFailed = async (
   );
 };
 
+/** The changes a `schema.change` job runs, if every one is still in flight (all finish together). */
+const loadInFlight = async (deps: HandlerDeps, changeIds: readonly string[], context: JobContext) => {
+  const changes = await Promise.all(changeIds.map((id) => schemaChangeJobsRepository.findById(id, deps.db)));
+  const open = changes.filter(
+    (change): change is SchemaChangeJobRow =>
+      change !== undefined && (change.status === 'pending' || change.status === 'running'),
+  );
+  if (open.length === changes.length) {
+    return { changes: open };
+  }
+  // Changes of one job activate or fail together; one finished without the rest can never activate them.
+  for (const change of open) {
+    await markFailed(
+      deps,
+      { id: change.id, plan: change.plan as unknown as ChangePlan },
+      { reason: 'Another change of the same request finished without this one' },
+      context,
+    );
+  }
+  return {
+    finished: changes.map((change, index) => ({
+      changeId: changeIds[index],
+      status: change?.status ?? 'missing',
+    })),
+  };
+};
+
 /**
- * `schema.change`: dry-runs the change's content steps and builds its indexes (resuming from the
- * checkpoint), then activates the pending revision; the activation re-checks content written after the
- * watermark and rewrites converted values in the same transaction. Content that fails a check fails the
- * change and leaves the previous revision active and stored content untouched (brief §5); the job itself
- * succeeds, since retrying cannot help.
+ * `schema.change`: dry-runs the content steps and builds the indexes of its changes (resuming from the
+ * checkpoint), then activates the pending revisions together; the activation re-checks content written
+ * after the watermark and rewrites converted values in the same transaction. Content that fails a check
+ * fails every change of the job and leaves the previous revisions active and stored content untouched
+ * (brief §5); the job itself succeeds, since retrying cannot help.
  */
 const createSchemaChangeHandler =
   (deps: HandlerDeps): JobHandler =>
   async (context) => {
-    const { changeId } = context.payload as SchemaChangeJobPayload;
-    const change = await schemaChangeJobsRepository.findById(changeId, deps.db);
-    if (!change || (change.status !== 'pending' && change.status !== 'running')) {
-      return { changeId, status: change?.status ?? 'missing' };
+    const payload = context.payload as SchemaChangeJobPayload;
+    const changeIds = changeIdsOf(payload);
+    const loaded = await loadInFlight(deps, changeIds, context);
+    if ('finished' in loaded) {
+      return { changeIds, changes: loaded.finished };
     }
-    if (!change.to_revision_id) {
-      throw new PermanentJobError(`Schema change ${changeId} has no target revision`);
-    }
-    await schemaChangeJobsRepository.markRunning(changeId, new Date(), deps.db);
-    const plan = change.plan as unknown as ChangePlan;
+    const { changes } = loaded;
+    const first = changes[0] as SchemaChangeJobRow;
     try {
-      const checkpoint = await runSteps(deps, plan.prerequisites, context);
-      const revision = await schemaModelsRepository.findRevisionById(change.to_revision_id, deps.db);
-      if (!revision) {
-        throw new PermanentJobError(`Revision ${change.to_revision_id} not found`);
-      }
-      const result = await activateDefinition(
-        deps.db,
-        {
-          plan,
-          after: readStoredDefinition(revision.definition),
-          expectedVersion: plan.fromVersion,
-          pending: { changeJobId: changeId, revisionId: revision.id, version: revision.version },
-          recheck: applyContent(deps, plan.prerequisites, checkpoint),
-        },
-        { actor: principalFromColumns(change.requested_by_type, change.requested_by_id) },
+      // A single change keeps its checkpoint at the root of the job's (jobs enqueued before groups existed).
+      const items = await prepareChanges(
+        deps,
+        changes,
+        context,
+        'changeId' in payload ? () => context : undefined,
       );
-      context.log.info({ changeId, ...result }, 'schema change activated');
-      return { changeId, status: 'activated', ...result };
+      const results = await activateDefinitions(deps.db, {
+        items,
+        actor: principalFromColumns(first.requested_by_type, first.requested_by_id),
+      });
+      context.log.info({ changeIds, results }, 'schema change activated');
+      return { changeIds, status: 'activated', results };
     } catch (error) {
+      const fail = async (failure: ChangeFailure) => {
+        for (const change of changes) {
+          await markFailed(
+            deps,
+            { id: change.id, plan: change.plan as unknown as ChangePlan },
+            failure,
+            context,
+          );
+        }
+      };
       if (error instanceof PrerequisiteFailure) {
-        await markFailed(deps, { id: changeId, plan }, error.failure, context);
-        return { changeId, status: 'failed', failure: error.failure };
+        await fail(error.failure);
+        return { changeIds, status: 'failed', failure: error.failure };
       }
       const permanent = error instanceof PermanentJobError || context.attempt >= context.maxAttempts;
       if (permanent || (error instanceof Error && 'statusCode' in error)) {
         // Out of attempts, or a rejection from activation (version conflict, invalid schema): final.
-        await markFailed(deps, { id: changeId, plan }, { reason: describeError(error) }, context);
-        return { changeId, status: 'failed' };
+        await fail({ reason: describeError(error) });
+        return { changeIds, status: 'failed' };
       }
       throw error;
     }
