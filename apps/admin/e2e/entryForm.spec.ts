@@ -1,7 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { adminApiFor } from './content/api';
 import { captureScreen } from './support/capture';
-import { ADMIN_URL } from './support/constants';
+import { ADMIN_URL, SCREENSHOT_DIR } from './support/constants';
 import { entryDocument } from './support/entryDocument';
+import { renderScheme } from './support/schemes';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
 
 /**
@@ -19,6 +23,8 @@ const UPDATED = 'Model updated — no restart needed';
 let page: Page;
 let modelId = '';
 const pageErrors: string[] = [];
+/** What the long-document test made, removed after the suite (models before the component they use). */
+const longDocument = { models: [] as string[], components: [] as string[], assets: [] as string[] };
 
 const nav = () => page.getByRole('navigation', { name: 'Main navigation' });
 const fieldList = () => page.getByRole('list', { name: /^\d+ fields?$/ });
@@ -84,7 +90,30 @@ test.afterEach(() => {
   expect(pageErrors.splice(0)).toEqual([]);
 });
 
+/** Deletes a definition at its current version (it may already be gone). */
+const deleteDefinition = async (category: 'models' | 'components', id: string) => {
+  const definition = await page.request.get(`${ADMIN_API}/${category}/${id}`);
+  if (definition.ok()) {
+    const { version } = (await definition.json()) as { version: number };
+    await adminRequest(
+      page.request,
+      'DELETE',
+      `/${category}/${id}?expectedVersion=${version}&acknowledgeBreaking=true`,
+    );
+  }
+};
+
 test.afterAll(async () => {
+  for (const id of longDocument.models) {
+    await deleteDefinition('models', id);
+  }
+  for (const id of longDocument.components) {
+    await deleteDefinition('components', id);
+  }
+  // Content used the image, so only a forced delete removes it (the media spec expects an empty library).
+  for (const assetId of longDocument.assets) {
+    await adminRequest(page.request, 'DELETE', `/media/assets/${assetId}?force=true`);
+  }
   // Later specs expect an empty model list.
   if (modelId) {
     const model = await page.request.get(`${ADMIN_API}/models/${modelId}`);
@@ -367,5 +396,170 @@ test('a Product type set to Form opens its entries as a form', async () => {
       .click();
     await expect(page).toHaveURL(/\/content\/product$/);
     await expect(page.getByRole('link', { name: 'Blue mug' }).first()).toBeVisible();
+  });
+});
+
+/** A rich text document of `count` paragraphs, with `image` (a library asset) after the second when given. */
+const longBody = (count: number, image?: string) => {
+  const paragraphs = Array.from({ length: count }, (_, index) => ({
+    type: 'paragraph',
+    content: [
+      {
+        type: 'text',
+        text: `Paragraph ${index + 1}. The tide came in over the flats while the boats waited at the quay for the morning light to reach the harbor wall.`,
+      },
+    ],
+  }));
+  const content = image
+    ? [
+        ...paragraphs.slice(0, 2),
+        { type: 'image', attrs: { mediaId: image, alt: null } },
+        ...paragraphs.slice(2),
+      ]
+    : paragraphs;
+  return { format: 'shapio-richtext', version: 1, doc: { type: 'doc', content } };
+};
+
+/**
+ * Screenshots `target` (the window when omitted: sticky chrome mid-scroll) in the light and the dark look,
+ * once the theme's color transitions have finished.
+ */
+const captureInBothLooks = async (name: string, target?: Locator) => {
+  await page.mouse.move(0, 0);
+  for (const scheme of ['light', 'dark'] as const) {
+    const restore = await renderScheme(page, scheme);
+    await page.waitForFunction(() =>
+      document.getAnimations().every((animation) => animation.playState !== 'running'),
+    );
+    const path = join(SCREENSHOT_DIR, `${name}-${scheme}.png`);
+    await (target ? target.screenshot({ path }) : page.screenshot({ path }));
+    await restore();
+  }
+};
+
+/** The toolbar is in the window, under the entry's top bar (not behind it), and its buttons take clicks. */
+const expectToolbarUnderTopBar = async (toolbar: Locator) => {
+  await expect(toolbar).toBeInViewport();
+  const bar = await page.locator('[data-slot="entry-top-bar"]').boundingBox();
+  const box = await toolbar.boundingBox();
+  expect(bar && box && box.y >= bar.y + bar.height - 1, `toolbar ${box?.y} under the top bar`).toBe(true);
+};
+
+test('a long rich text body keeps its toolbar in view; alt text grows as you type', async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const suffix = randomUUID().slice(0, 8);
+  const ids = { form: randomUUID(), title: randomUUID(), doc: randomUUID(), docTitle: randomUUID() };
+  const section = { id: randomUUID(), apiKey: `longSection${suffix}` };
+  const image = await api.uploadPng('tide.png', 640, 400);
+  longDocument.assets.push(image.id);
+  await api.createDefinition('components', {
+    id: section.id,
+    kind: 'component',
+    apiKey: section.apiKey,
+    label: 'Long section',
+    fields: [{ id: randomUUID(), apiKey: 'text', label: 'Text', type: 'richtext' }],
+  });
+  longDocument.components.push(section.id);
+  const formKey = `longRead${suffix}`;
+  await api.createDefinition('models', {
+    id: ids.form,
+    kind: 'collection',
+    apiKey: formKey,
+    label: 'Long read',
+    display: { layout: 'form', titleFieldId: ids.title },
+    fields: [
+      { id: ids.title, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: randomUUID(), apiKey: 'body', label: 'Body', type: 'richtext' },
+    ],
+  });
+  longDocument.models.push(ids.form);
+  const docKey = `longZone${suffix}`;
+  await api.createDefinition('models', {
+    id: ids.doc,
+    kind: 'collection',
+    apiKey: docKey,
+    label: 'Long zone',
+    display: { titleFieldId: ids.docTitle },
+    fields: [
+      { id: ids.docTitle, apiKey: 'title', label: 'Title', type: 'string' },
+      {
+        id: randomUUID(),
+        apiKey: 'sections',
+        label: 'Sections',
+        type: 'dynamiczone',
+        settings: { components: [section.id] },
+      },
+    ],
+  });
+  longDocument.models.push(ids.doc);
+  const formEntry = await api.send<{ id: string }>('POST', `/content/${formKey}`, {
+    data: { title: 'Tide tables', body: longBody(40, image.id) },
+  });
+  const docEntry = await api.send<{ id: string }>('POST', `/content/${docKey}`, {
+    data: {
+      title: 'Harbor notes',
+      sections: [
+        { __component: section.apiKey, text: longBody(40) },
+        { __component: section.apiKey, text: longBody(40) },
+      ],
+    },
+  });
+  const doc = entryDocument(page);
+
+  await test.step('form layout: the toolbar stays under the top bar at the end of the body', async () => {
+    await page.goto(`${ADMIN_URL}content/${formKey}/${formEntry.id}`);
+    await expect(entryForm()).toBeVisible();
+    const body = doc.field('/body');
+    const toolbar = body.getByRole('toolbar', { name: 'Text formatting' });
+    const last = body.locator('.ProseMirror p').last();
+    await last.click();
+    await page.keyboard.press('End');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await expectToolbarUnderTopBar(toolbar);
+    // Still usable: Bold from the toolbar applies to what is typed next, at the end of the body.
+    await toolbar.getByRole('button', { name: 'Bold' }).click();
+    // The editor takes focus back (on the next frame) before the typing goes in.
+    await expect(body.locator('.ProseMirror')).toBeFocused();
+    await page.keyboard.type(' Low water at noon.');
+    await expect(body.locator('.ProseMirror p').last().locator('strong')).toHaveText('Low water at noon.');
+    await captureInBothLooks('richtext-sticky-toolbar-form');
+  });
+
+  await test.step('form layout: the alt text box grows with a long description', async () => {
+    const alt = doc.field('/body').getByLabel('Alt text');
+    await alt.scrollIntoViewIfNeeded();
+    const before = (await alt.boundingBox())?.height ?? 0;
+    const description =
+      'Fishing boats tied up along the stone quay at low tide, nets drying on the rails, gulls on the harbor wall, and the lighthouse in morning fog behind them';
+    await alt.click();
+    await page.keyboard.type(description);
+    // Enter adds no line break: alt text is one line.
+    await page.keyboard.press('Enter');
+    await expect(alt).toHaveValue(description);
+    await expect.poll(async () => (await alt.boundingBox())?.height ?? 0).toBeGreaterThan(before * 1.8);
+    await captureInBothLooks('richtext-alt-text-grown', doc.field('/body').locator('figure[data-media-id]'));
+  });
+
+  await test.step('document layout: a rich text field in a zone component keeps its toolbar too', async () => {
+    await page.goto(`${ADMIN_URL}content/${docKey}/${docEntry.id}`);
+    await expect(page.locator('[data-entry-layout="document"]')).toBeVisible();
+    const text = doc.field('/sections/0/text');
+    const toolbar = text.getByRole('toolbar', { name: 'Text formatting' });
+    await text.locator('.ProseMirror p').last().click();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await expectToolbarUnderTopBar(toolbar);
+    await captureInBothLooks('richtext-sticky-toolbar-zone');
+    // Past the field the toolbar goes with it: at the end of the next section only that one's toolbar shows.
+    const next = doc.field('/sections/1/text');
+    await next.locator('.ProseMirror p').last().click();
+    await expectToolbarUnderTopBar(next.getByRole('toolbar', { name: 'Text formatting' }));
+    await expect(toolbar).not.toBeInViewport();
+
+    // On a phone the top bar sits under the phone bar and wraps; the toolbar stays under both.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await next.locator('.ProseMirror p').nth(-3).scrollIntoViewIfNeeded();
+    await page.mouse.wheel(0, 400);
+    await expectToolbarUnderTopBar(next.getByRole('toolbar', { name: 'Text formatting' }));
+    await page.setViewportSize({ width: 1360, height: 900 });
   });
 });

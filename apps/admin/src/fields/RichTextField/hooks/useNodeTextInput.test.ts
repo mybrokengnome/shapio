@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { useNodeTextInput } from './useNodeTextInput';
 
-const typed = (text: string) => ({ target: { value: text } }) as ChangeEvent<HTMLInputElement>;
+const typed = (text: string) => ({ target: { value: text } }) as ChangeEvent<HTMLTextAreaElement>;
+/** A key press and its `preventDefault` spy. */
+const pressed = (name: string) => {
+  const preventDefault = vi.fn();
+  return {
+    event: { key: name, preventDefault } as unknown as KeyboardEvent<HTMLTextAreaElement>,
+    preventDefault,
+  };
+};
 
 describe('useNodeTextInput', () => {
   it('keeps what was typed while the attribute catches up', () => {
@@ -40,5 +48,19 @@ describe('useNodeTextInput', () => {
     act(() => result.current.onBlur());
     rerender({ value: 'undone' });
     expect(result.current.value).toBe('undone');
+  });
+
+  it('keeps the attribute on one line: Enter adds nothing and a pasted break becomes a space', () => {
+    const commit = vi.fn();
+    const { result } = renderHook(() => useNodeTextInput('', commit));
+    const enter = pressed('Enter');
+    result.current.onKeyDown(enter.event);
+    expect(enter.preventDefault).toHaveBeenCalled();
+    const letter = pressed('a');
+    result.current.onKeyDown(letter.event);
+    expect(letter.preventDefault).not.toHaveBeenCalled();
+    act(() => result.current.onChange(typed('A dog \r\n  on a beach')));
+    expect(commit).toHaveBeenCalledWith('A dog on a beach');
+    expect(result.current.value).toBe('A dog on a beach');
   });
 });
