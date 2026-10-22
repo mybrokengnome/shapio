@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePaletteActions } from '@/components/CommandPalette/hooks/usePaletteActions';
 import type { PaletteItem } from '@/components/CommandPalette/types';
+import { formatShortcut } from '@/helpers/formatShortcut';
 
 type DocumentPaletteOptions = {
   onPublish: (() => void) | undefined;
@@ -38,7 +39,7 @@ export const useDocumentPaletteActions = ({
               id: 'publish',
               label: t('content.actions.publish'),
               icon: Send,
-              hint: '⌘⇧P',
+              hint: formatShortcut('Mod+Shift+P'),
               run: () => latest.current.onPublish?.(),
             },
           ]
@@ -47,7 +48,7 @@ export const useDocumentPaletteActions = ({
         id: 'settings',
         label: t('entry.settings.open'),
         icon: PanelRight,
-        hint: '⌘/',
+        hint: formatShortcut('Mod+/'),
         run: () => latest.current.onOpenSettings(),
       },
       ...(canSwitch && entry

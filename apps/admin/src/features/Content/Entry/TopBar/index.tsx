@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { formatShortcut } from '@/helpers/formatShortcut';
 import { EntryStatusChip } from '../../EntryStatusChip';
 
 /** The one primary action of the document, by state. */
@@ -121,7 +122,7 @@ export const TopBar = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {t('entry.shortcutHint', { action: t('entry.settings.open'), keys: '⌘/' })}
+            {t('entry.shortcutHint', { action: t('entry.settings.open'), keys: formatShortcut('Mod+/') })}
           </TooltipContent>
         </Tooltip>
         {primary.kind === 'publish' ? (
