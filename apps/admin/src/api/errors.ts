@@ -2,7 +2,34 @@ import { ShapioApiError } from '@shapio/client';
 
 export const isUnauthorized = (error: unknown) => error instanceof ShapioApiError && error.status === 401;
 
-export const isForbidden = (error: unknown) => error instanceof ShapioApiError && error.status === 403;
+/**
+ * A 403 whose body is not Shapio's error shape (`{ error: { code, message } }`): something in front of the
+ * server, a firewall or a proxy, refused the request before Shapio saw it. The client names such errors
+ * `HTTP_<status>`; Shapio's own 403s always carry a code of their own.
+ */
+export const isBlockedRequest = (error: unknown) =>
+  error instanceof ShapioApiError && error.status === 403 && error.code === 'HTTP_403';
+
+/** Whether a raw response body is Shapio's error shape, `{ error: { code, message } }`. */
+export const isShapioErrorText = (text: string) => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const error: unknown = typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'error') : null;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    typeof Reflect.get(error, 'code') === 'string' &&
+    typeof Reflect.get(error, 'message') === 'string'
+  );
+};
+
+/** Shapio refused the request: the admin's roles don't grant it (a blocked request is not that). */
+export const isForbidden = (error: unknown) =>
+  error instanceof ShapioApiError && error.status === 403 && !isBlockedRequest(error);
 
 export const isNotFound = (error: unknown) => error instanceof ShapioApiError && error.status === 404;
 
