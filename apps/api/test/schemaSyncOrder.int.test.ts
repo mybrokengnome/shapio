@@ -98,20 +98,34 @@ describe('schema apply: activation order', () => {
   it.each([
     ['parent first', 'first', true],
     ['kind first', 'second', false],
-  ])('creates a type and a kind that extends it in one apply (%s)', async (_, prefix, parentFirst) => {
-    const parentId = parentFirst
-      ? '00000000-0000-4000-8000-00000000b001'
-      : '00000000-0000-4000-8000-00000000b003';
-    const kindId = parentFirst
-      ? '00000000-0000-4000-8000-00000000b002'
-      : '00000000-0000-4000-8000-00000000b004';
-    const { parent, kind } = parentAndKind(prefix, parentId, kindId);
-    const applied = await apply(parentFirst ? [parent, kind] : [kind, parent]);
-    await settle(applied);
-    expect(await activeVersion('models', parentId)).toBe(1);
-    expect(await activeVersion('models', kindId)).toBe(1);
-    await entry(`${prefix}Guide`, { title: 'How to', summary: 'Short' });
-  });
+  ])(
+    'creates a type and a kind that extends it in one apply, at once (%s)',
+    async (_, prefix, parentFirst) => {
+      const parentId = parentFirst
+        ? '00000000-0000-4000-8000-00000000b001'
+        : '00000000-0000-4000-8000-00000000b003';
+      const kindId = parentFirst
+        ? '00000000-0000-4000-8000-00000000b002'
+        : '00000000-0000-4000-8000-00000000b004';
+      const { parent, kind } = parentAndKind(prefix, parentId, kindId);
+      const applied = await apply(parentFirst ? [parent, kind] : [kind, parent]);
+      // Neither holds entries yet, so nothing waits for an index build: both go live in the request.
+      const acted = applied.results.filter((item) => item.outcome !== 'skipped');
+      expect(acted.map((item) => [item.outcome, item.changeId])).toEqual([
+        ['activated', undefined],
+        ['activated', undefined],
+      ]);
+      const changeJobs = await database.current.db
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'schema.change')
+        .execute();
+      expect(changeJobs).toEqual([]);
+      expect(await activeVersion('models', parentId)).toBe(1);
+      expect(await activeVersion('models', kindId)).toBe(1);
+      await entry(`${prefix}Guide`, { title: 'How to', summary: 'Short' });
+    },
+  );
 
   it('changes an interface and a member that needs an index build in one apply', async () => {
     const listable = expectStatus(

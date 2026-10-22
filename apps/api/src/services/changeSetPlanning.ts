@@ -114,9 +114,10 @@ export const planDraft = async (
     };
   }
   const { siteKeys } = await plannerInputOf(context);
+  const network = scopedDefinitionsOf(context.snapshot.network.definitions);
   const withOthers = proposedDefinitions(
     context,
-    scopedDefinitionsOf(context.snapshot.network.definitions),
+    network,
     others.filter((other) => other.id !== draft.id),
   );
   const plan = buildChangePlan({
@@ -126,6 +127,8 @@ export const planDraft = async (
     active: withOthers,
     siteId,
     hasContent: before !== null,
+    // Only active definitions may hold content: another draft's new definition has no entries.
+    existingIds: new Set(network.map((entry) => entry.definition.id)),
     siteKeys,
   });
   // Relation values this draft would strand, given the set's other drafts (plan interfaces, decision 9);

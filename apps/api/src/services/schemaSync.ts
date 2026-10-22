@@ -333,6 +333,8 @@ const planActions = async (
 > => {
   // Every site's definitions: a shared change must leave every site's view valid.
   const active = scopedDefinitionsOf(context.snapshot.network.definitions);
+  // Only these may hold content: another file's new definition joins a family with no entries.
+  const existingIds = new Set(active.map((entry) => entry.definition.id));
   const siteKeys = await loadSiteKeys(context.db);
   const acting = items.filter((item) => ['create', 'update', 'delete'].includes(item.decision.action));
   // The whole resulting schema must be valid (references between files resolve together).
@@ -381,6 +383,7 @@ const planActions = async (
         .concat(remote ? [{ definition: remote.definition, siteId: remote.siteId }] : []),
       siteId,
       hasContent: before !== null,
+      existingIds,
       siteKeys,
     });
     if (!plan.summary.supported) {
