@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-22
+
 ### Fixed
 
 - Applying a type and a kind that extends it in one schema apply works regardless of file order; before, the
