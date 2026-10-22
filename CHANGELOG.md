@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The media library and picker filter by kind (`kind=image`) instead of a mime pattern, so a web application
+  firewall no longer mistakes the request for SQL injection.
+
 ## [0.6.2] - 2026-10-22
 
 ### Fixed
