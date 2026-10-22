@@ -72,36 +72,65 @@ export const insertPendingChange = async (
   );
 };
 
-/**
- * Starts a change that needs prerequisites (brief §5 step 6): writes the new revision (inactive), the
- * schema change row and its job in one transaction. The job runs the prerequisites and activates; until
- * then the current revision stays active and serves every read and write.
- */
-export const requestChange = (db: Database, request: ChangeRequest): Promise<SchemaChangeJobRow> =>
-  db.transaction().execute(async (trx) => {
-    const { plan, after, actor } = request;
-    await lockSchema(trx);
-    const pointers = await verifyChangesUnderLock(trx, [
-      { plan, after, expectedVersion: request.expectedVersion },
-    ]);
-    const change = await insertPendingChange(trx, request, pointers.get(after.id) ?? null);
-    const revision = change.to_revision_id
-      ? await schemaModelsRepository.findRevisionById(change.to_revision_id, trx)
-      : undefined;
-    const { job } = await enqueueSchemaChange(trx, change.id);
-    await schemaChangeJobsRepository.attachJob(change.id, job.id, trx);
-    await recordAudit(trx, {
-      actor,
-      action: 'schema.change.request',
-      target: { type: categoryOfKind(plan.kind), id: after.id },
-      metadata: {
-        changeId: change.id,
-        fromVersion: request.expectedVersion,
-        toVersion: revision?.version ?? null,
-        prerequisites: plan.prerequisites.map((step) => step.kind),
-      },
-      ...(request.requestId ? { requestId: request.requestId } : {}),
-      ...(request.ip ? { ip: request.ip } : {}),
-    });
-    return { ...change, job_id: job.id };
+/** A change of a group that activates together; null `after` deletes the definition. */
+export type GroupedChangeRequest = Omit<ChangeRequest, 'after'> & { after: SchemaDefinition | null };
+
+const recordRequest = async (
+  trx: Transaction<DB>,
+  request: GroupedChangeRequest,
+  change: SchemaChangeJobRow,
+) => {
+  const { plan, actor } = request;
+  const revision = change.to_revision_id
+    ? await schemaModelsRepository.findRevisionById(change.to_revision_id, trx)
+    : undefined;
+  await recordAudit(trx, {
+    actor,
+    action: 'schema.change.request',
+    target: { type: categoryOfKind(plan.kind), id: plan.definitionId },
+    metadata: {
+      changeId: change.id,
+      fromVersion: request.expectedVersion,
+      toVersion: revision?.version ?? null,
+      prerequisites: plan.prerequisites.map((step) => step.kind),
+    },
+    ...(request.requestId ? { requestId: request.requestId } : {}),
+    ...(request.ip ? { ip: request.ip } : {}),
   });
+};
+
+/**
+ * Starts changes that need prerequisites (brief §5 step 6) and activate together: writes the new revisions
+ * (inactive), the schema change rows and one job in one transaction, after validating the schema they form
+ * together. The job runs every change's prerequisites, then activates them all at once, so none goes live
+ * before the definitions it references (a parent, an interface, a relation target, a component). Until then
+ * the current revisions stay active and serve every read and write.
+ */
+export const requestChanges = (
+  db: Database,
+  requests: readonly [GroupedChangeRequest, ...GroupedChangeRequest[]],
+): Promise<SchemaChangeJobRow[]> =>
+  db.transaction().execute(async (trx) => {
+    await lockSchema(trx);
+    const pointers = await verifyChangesUnderLock(
+      trx,
+      requests.map(({ plan, after, expectedVersion }) => ({ plan, after, expectedVersion })),
+    );
+    const changes: SchemaChangeJobRow[] = [];
+    for (const request of requests) {
+      changes.push(await insertPendingChange(trx, request, pointers.get(request.plan.definitionId) ?? null));
+    }
+    const changeIds = changes.map((change) => change.id) as [string, ...string[]];
+    const { job } = await enqueueSchemaChange(trx, changeIds);
+    for (const [index, change] of changes.entries()) {
+      await schemaChangeJobsRepository.attachJob(change.id, job.id, trx);
+      await recordRequest(trx, requests[index] as GroupedChangeRequest, change);
+    }
+    return changes.map((change) => ({ ...change, job_id: job.id }));
+  });
+
+/** Starts one change that needs prerequisites (see `requestChanges`). */
+export const requestChange = async (db: Database, request: ChangeRequest): Promise<SchemaChangeJobRow> => {
+  const [change] = await requestChanges(db, [request]);
+  return change as SchemaChangeJobRow;
+};

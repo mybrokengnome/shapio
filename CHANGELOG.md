@@ -6,6 +6,13 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Applying a type and a kind that extends it in one schema apply works regardless of file order; before, the
+  kind could activate before its parent and fail with UNKNOWN_PARENT. One apply now goes live as one unit: when
+  any of its changes waits for index builds, the others wait and activate with it, so an interface and its
+  members, or a type and its relation target, also change together.
+
 ## [0.6.0] - 2026-10-21
 
 ### Added

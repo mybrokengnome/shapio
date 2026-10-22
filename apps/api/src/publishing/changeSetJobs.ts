@@ -5,16 +5,7 @@ import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
 import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
-import * as schemaModelsRepository from '../repositories/schemaModels.js';
-import type { ActivationItem } from '../schema/planner/activate.js';
-import {
-  applyContent,
-  PrerequisiteFailure,
-  runSteps,
-  type HandlerDeps,
-} from '../schema/planner/changeJob.js';
-import type { ChangePlan } from '../schema/planner/plan.js';
-import { readStoredDefinition } from '../schema/storedDefinition.js';
+import { PrerequisiteFailure, prepareChanges, type HandlerDeps } from '../schema/planner/changeJob.js';
 import type { ChangeSetServiceContext } from '../services/changeSets.js';
 import { activationItemsOf, planShip, storedDraftVersions, writePendingChanges } from './changeSetPrepare.js';
 import {
@@ -57,47 +48,9 @@ const actorFor = (environment: PublishingJobEnvironment, row: ChangeSetRow, sche
     row.site_id,
   );
 
-/** One job checkpoint holds each pending change's prerequisite progress, keyed by change ID. */
-const checkpointIo = (job: JobContext, changeId: string) => {
-  const all = () => (job.checkpoint ?? {}) as Record<string, unknown>;
-  return {
-    checkpoint: all()[changeId] ?? null,
-    saveCheckpoint: async (value: unknown) => {
-      const next = { ...all(), [changeId]: value };
-      job.checkpoint = next;
-      return job.saveCheckpoint(next);
-    },
-  };
-};
-
 /** Runs the prerequisites of every pending change of the set; returns their activation items. */
-const prepareSchema = async (
-  deps: HandlerDeps,
-  changeSetId: string,
-  job: JobContext,
-): Promise<ActivationItem[]> => {
-  const items: ActivationItem[] = [];
-  for (const change of await schemaChangeJobsRepository.listInFlightForChangeSet(changeSetId, deps.db)) {
-    const plan = change.plan as unknown as ChangePlan;
-    await schemaChangeJobsRepository.markRunning(change.id, new Date(), deps.db);
-    const checkpoint = await runSteps(deps, plan.prerequisites, job, checkpointIo(job, change.id));
-    const revision = change.to_revision_id
-      ? await schemaModelsRepository.findRevisionById(change.to_revision_id, deps.db)
-      : undefined;
-    items.push({
-      plan,
-      after: revision ? readStoredDefinition(revision.definition) : null,
-      expectedVersion: plan.fromVersion,
-      pending: {
-        changeJobId: change.id,
-        revisionId: revision?.id ?? null,
-        version: revision?.version ?? null,
-      },
-      recheck: applyContent(deps, plan.prerequisites, checkpoint),
-    });
-  }
-  return items;
-};
+const prepareSchema = async (deps: HandlerDeps, changeSetId: string, job: JobContext) =>
+  prepareChanges(deps, await schemaChangeJobsRepository.listInFlightForChangeSet(changeSetId, deps.db), job);
 
 const finishShipping = async (
   context: ChangeSetServiceContext,
