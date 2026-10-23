@@ -1297,7 +1297,11 @@
       "invalidCount_other": "{{count}} entry versions don't fit."
     },
     "remote": {
-      "title": "This model changed in another session",
+      "titles": {
+        "model": "This type changed in another session",
+        "component": "This component changed in another session",
+        "interface": "This interface changed in another session"
+      },
       "description": "A newer version is active. Reload to see it.",
       "chooseDescription": "A newer version is active. Take it, or keep your edits on top of it and review again.",
       "reload": "Reload",

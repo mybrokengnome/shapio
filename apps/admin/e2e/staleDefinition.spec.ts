@@ -148,7 +148,7 @@ test('a relation retargeted through the API shows its new target and help text w
   await expect(target()).toHaveText('Stale spotlight');
   await expect(properties().getByLabel('Help text', { exact: true })).toHaveValue('Where the card opens');
   await expect(page.getByText(`version ${before.version + 1}`).first()).toBeVisible();
-  await expect(page.getByText('This model changed in another session')).toHaveCount(0);
+  await expect(page.getByText('This component changed in another session')).toHaveCount(0);
   await target().click();
   await expect(
     page.getByRole('group', { name: 'Interfaces' }).getByRole('option', { name: 'Stale spotlight' }),

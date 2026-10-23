@@ -12,6 +12,8 @@ All notable changes to Shapio are listed here. The format follows
   changed through the schema API or in another tab still showed its old settings when you came back to it
   without reloading the page, for example a relation moved to an interface showed its old target and an
   empty help text, and the builder said it had changed in another session.
+- The builder's notice that a definition changed in another session says whether it was a type, a component,
+  or an interface, instead of always saying "model".
 
 ## [0.6.3] - 2026-10-22
 
