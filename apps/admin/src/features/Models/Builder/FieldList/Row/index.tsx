@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/helpers/cn';
 import { DATA_TYPE_ICONS } from '../../../constants';
 import { handleIdOf } from '../handleId';
+import { Target } from '../Target';
 
 type RowProps = {
   field: FieldDefinition;
@@ -101,9 +102,7 @@ export const Row = ({
           <span className="block truncate text-sm font-medium">{field.label}</span>
           <span className="flex min-w-0 gap-1.5 text-2xs text-muted-foreground">
             <span className="min-w-0 truncate font-mono">{field.apiKey}</span>
-            {target ? (
-              <span className="min-w-0 truncate">{t('models.builder.pointsTo', { target })}</span>
-            ) : null}
+            {target ? <Target label={target} /> : null}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1">

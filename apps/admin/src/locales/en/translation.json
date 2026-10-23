@@ -1105,7 +1105,7 @@
       "targetInterfaceLabel": "{{name}} (interface)",
       "targetAny": "No restriction",
       "anyEntry": "Any entry",
-      "pointsTo": "→ {{target}}",
+      "pointsAt": "points at {{target}}",
       "targetWithKinds_one": "{{name}} and {{count}} kind",
       "targetWithKinds_other": "{{name}} and {{count}} kinds",
       "chooseComponent": "Choose a component",
