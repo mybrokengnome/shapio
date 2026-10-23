@@ -11,12 +11,16 @@ import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
  * app, since a reload would empty the cache and hide the bug. API IDs carry an `sd` prefix.
  */
 test.describe.configure({ mode: 'serial' });
+// Room for background schema changes (see `settleChange`) on PostgreSQL and MySQL.
+test.setTimeout(240_000);
 
 const ids = {
   note: randomUUID(),
   noteTitle: randomUUID(),
   spotlight: randomUUID(),
   card: randomUUID(),
+  page: randomUUID(),
+  pageTitle: randomUUID(),
   opens: randomUUID(),
 };
 
@@ -31,7 +35,53 @@ type Detail = {
 const readCard = async () =>
   (await (await page.request.get(`${ADMIN_API}/components/${ids.card}`)).json()) as Detail;
 
-const removeDefinition = async (category: 'models' | 'components' | 'interfaces', definitionId: string) => {
+type Category = 'models' | 'components' | 'interfaces';
+
+const FINAL_STATUSES = new Set(['activated', 'failed', 'canceled']);
+/** A change with index work runs in the background on PostgreSQL and MySQL; allow it time to finish. */
+const CHANGE_SETTLE_TIMEOUT_MS = 90_000;
+
+/**
+ * Waits until the definition's newest schema change has ended (activated, failed or canceled) and returns
+ * its status, or undefined when it has none. On SQLite a change activates at once; elsewhere it may run as
+ * a background change, and the next write or delete is refused with SCHEMA_CHANGE_IN_PROGRESS until it ends.
+ */
+const settleChange = async (category: Category, definitionId: string) => {
+  let latest: { status: string; error: unknown } | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${ADMIN_API}/${category}/${definitionId}/changes`);
+        if (response.status() === 404) {
+          latest = undefined;
+          return true;
+        }
+        const { items } = (await response.json()) as { items: { status: string; error: unknown }[] };
+        latest = items[0];
+        return latest === undefined || FINAL_STATUSES.has(latest.status);
+      },
+      {
+        message: `the newest schema change of ${category}/${definitionId} did not end within ${CHANGE_SETTLE_TIMEOUT_MS / 1000} s`,
+        timeout: CHANGE_SETTLE_TIMEOUT_MS,
+      },
+    )
+    .toBe(true);
+  return latest;
+};
+
+/**
+ * Waits for the definition's newest change and fails, with the change's error, unless it activated. A write
+ * that activated at once leaves no change behind, which also passes.
+ */
+const expectActivated = async (category: Category, definitionId: string) => {
+  const latest = await settleChange(category, definitionId);
+  expect(latest?.status ?? 'activated', `${category}/${definitionId} change: ${JSON.stringify(latest)}`).toBe(
+    'activated',
+  );
+};
+
+const removeDefinition = async (category: Category, definitionId: string) => {
+  await settleChange(category, definitionId);
   const response = await page.request.get(`${ADMIN_API}/${category}/${definitionId}`);
   if (response.ok()) {
     const { version } = (await response.json()) as { version: number };
@@ -40,6 +90,8 @@ const removeDefinition = async (category: 'models' | 'components' | 'interfaces'
       'DELETE',
       `/${category}/${definitionId}?expectedVersion=${version}&acknowledgeBreaking=true`,
     );
+    // The next delete may depend on this one (an interface goes only once nothing targets it).
+    await settleChange(category, definitionId);
   }
 };
 
@@ -58,6 +110,7 @@ test.beforeAll(async ({ browser }) => {
       fields: [{ id: ids.noteTitle, apiKey: 'title', label: 'Title', type: 'string', required: true }],
     },
   });
+  await expectActivated('models', ids.note);
   await adminRequest(page.request, 'POST', '/components', {
     definition: {
       id: ids.card,
@@ -75,6 +128,28 @@ test.beforeAll(async ({ browser }) => {
       ],
     },
   });
+  await expectActivated('components', ids.card);
+  // Placed on a type, as a component is in use: retargeting `opens` then converts that type's entries.
+  await adminRequest(page.request, 'POST', '/models', {
+    definition: {
+      id: ids.page,
+      kind: 'collection',
+      apiKey: 'sdLanding',
+      label: 'Stale landings',
+      display: { titleFieldId: ids.pageTitle },
+      fields: [
+        { id: ids.pageTitle, apiKey: 'title', label: 'Title', type: 'string', required: true },
+        {
+          id: randomUUID(),
+          apiKey: 'cards',
+          label: 'Cards',
+          type: 'component',
+          settings: { component: ids.card, repeatable: true },
+        },
+      ],
+    },
+  });
+  await expectActivated('models', ids.page);
 });
 
 test.afterEach(() => {
@@ -82,7 +157,9 @@ test.afterEach(() => {
 });
 
 test.afterAll(async () => {
-  // Component first (its relation targets the interface), then the targets: other specs share this server.
+  // The type that uses the component first, then the component (its relation targets the interface), then
+  // the targets: other specs share this server.
+  await removeDefinition('models', ids.page);
   await removeDefinition('components', ids.card);
   await removeDefinition('interfaces', ids.spotlight);
   await removeDefinition('models', ids.note);
@@ -118,6 +195,7 @@ test('a relation retargeted through the API shows its new target and help text w
       fields: [],
     },
   });
+  await expectActivated('interfaces', ids.spotlight);
   const before = await readCard();
   const [opens] = before.definition.fields;
   await adminRequest(page.request, 'PUT', `/components/${ids.card}`, {
@@ -135,7 +213,8 @@ test('a relation retargeted through the API shows its new target and help text w
       ],
     },
   });
-  await expect.poll(async () => (await readCard()).version).toBe(before.version + 1);
+  await expectActivated('components', ids.card);
+  expect((await readCard()).version).toBe(before.version + 1);
 
   // Away to the inbox and back, inside the app.
   await page.getByRole('navigation').getByRole('link', { name: 'Inbox', exact: true }).click();
