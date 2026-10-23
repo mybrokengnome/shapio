@@ -6,6 +6,11 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Changing a field on a component that no type uses yet works on PostgreSQL and MySQL; before, the change failed
+  with a SQL error.
+
 ## [0.6.3] - 2026-10-22
 
 ### Fixed
