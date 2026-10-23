@@ -9,6 +9,8 @@ type InheritedProps = {
   /** The draft's inherited fields, ancestors' first, each with the model that declares it. */
   fields: readonly ResolvedField[];
   showLocalized: boolean;
+  /** What a field points at, for the row's "→ Page" (see `fieldTargetLabel`). */
+  targetOf: (field: ResolvedField) => string | undefined;
 };
 
 type Block = { ownerId: string; fields: ResolvedField[] };
@@ -30,7 +32,7 @@ const blocksOf = (fields: readonly ResolvedField[]): Block[] =>
  * The fields a kind inherits, above its own: one locked block per ancestor that declares them, headed
  * "Inherited from Products" with a link to that type's Structure tab, where they are edited.
  */
-export const Inherited = ({ fields, showLocalized }: InheritedProps) => {
+export const Inherited = ({ fields, showLocalized, targetOf }: InheritedProps) => {
   const { t } = useTranslation();
   const { index } = useModelIndex();
   const selection = useDefinitionDraftStore((state) => state.selection);
@@ -59,6 +61,7 @@ export const Inherited = ({ fields, showLocalized }: InheritedProps) => {
                   field={field}
                   selected={selection.type === 'field' && selection.fieldId === field.id}
                   showLocalized={showLocalized}
+                  target={targetOf(field)}
                   onSelect={() => select({ type: 'field', fieldId: field.id })}
                 />
               ))}

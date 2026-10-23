@@ -6,13 +6,14 @@ import {
   type ValidationIssue,
 } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
-import { useAllDefinitions } from '@/api/schema';
 import { issuesUnder } from '../../../helpers/issues';
+import { targetTypeLabel } from '../../../helpers/relationTargetLabel';
 import { describeProperties, type DescribedProperty } from '../../../helpers/schemaControls';
-import { useModelIndex } from '../../../hooks/useModelIndex';
+import { orderAsTree } from '../../../helpers/tree';
 import { ChoicesControl } from '../../controls/ChoicesControl';
 import { IssueList } from '../../controls/IssueList';
 import { SelectControl } from '../../controls/SelectControl';
+import { useDraftDefinitionIndex } from '../../hooks/useDraftDefinitionIndex';
 import { PropertyControl } from '../../PropertyControl';
 import { EnumValues } from '../EnumValues';
 
@@ -51,15 +52,10 @@ const VALIDATING_LANGUAGE = 'json';
  */
 export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }: TypeSettingsProps) => {
   const { t } = useTranslation();
-  const { definitions } = useAllDefinitions();
-  const { index } = useModelIndex();
+  const { index, definitions: all } = useDraftDefinitionIndex(draft);
   const settings = field.settings as Record<string, unknown>;
   const settingsPath = `${path}/settings`;
   const idPrefix = `field-${field.id}-settings`;
-  const all = [
-    ...(definitions ?? []).map(({ definition }) => definition).filter((entry) => entry.id !== draft.id),
-    draft,
-  ];
   const byLabel = (a: SchemaDefinition, b: SchemaDefinition) => a.label.localeCompare(b.label);
   // A relation targets a collection (with its kinds), an interface (its members), or any entry.
   const collections = all.filter((entry) => entry.kind === 'collection').sort(byLabel);
@@ -69,16 +65,12 @@ export const TypeSettings = ({ field, draft, path, issues, disabled, onChange }:
   const targetGroups = [
     {
       label: t('models.builder.targetTypes'),
-      options: collections.map((entry) => {
-        const kinds = index.descendants(entry.id).length;
-        return {
-          value: entry.id,
-          label:
-            kinds > 0
-              ? t('models.builder.targetWithKinds', { name: entry.label, count: kinds })
-              : entry.label,
-        };
-      }),
+      // Each kind under the type it extends, once; roots and siblings stay alphabetical.
+      options: orderAsTree(
+        collections,
+        (entry) => entry.id,
+        (entry) => (entry.kind === 'collection' ? entry.extends : undefined),
+      ).map(({ item, depth }) => ({ value: item.id, label: targetTypeLabel(item, index, t), depth })),
     },
     { label: t('models.builder.targetInterfaces'), options: interfaces.map(toOption) },
     {

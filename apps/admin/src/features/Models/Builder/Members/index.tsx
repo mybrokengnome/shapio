@@ -1,8 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { InfoHint } from '@/components/InfoHint';
 import { Panel } from '@/components/Panel';
 import { RowTitle } from '@/components/RowTitle';
 import { StatusChip } from '@/components/StatusChip';
+import { INTERFACES_DOCS_URL } from '@/constants/interfaces';
+import { ExternalLink } from '@/features/Publishing/ExternalLink';
 import { describeIssue } from '../../helpers/describeIssue';
 import { useModelIndex } from '../../hooks/useModelIndex';
 import { useMemberIssues } from '../hooks/useMemberIssues';
@@ -37,7 +40,17 @@ export const Members = ({ interfaceId }: MembersProps) => {
   return (
     <Panel
       title={t('interfaces.members.title')}
-      actions={<span className="text-meta text-muted-foreground tabular-nums">{members.length}</span>}
+      actions={
+        <>
+          <InfoHint about={t('interfaces.members.title')}>
+            <p>{t('interfaces.howItWorks')}</p>
+            <p className="mt-2">
+              <ExternalLink href={INTERFACES_DOCS_URL}>{t('interfaces.docsLink')}</ExternalLink>
+            </p>
+          </InfoHint>
+          <span className="text-meta text-muted-foreground tabular-nums">{members.length}</span>
+        </>
+      }
       flush
       bodyClassName="p-2"
     >

@@ -12,8 +12,10 @@ import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { moveItem, pruneLayout } from '../../helpers/draft';
 import type { DraftParent } from '../../helpers/inheritance';
 import { fieldPath, issuesUnder } from '../../helpers/issues';
+import { fieldTargetLabel } from '../../helpers/relationTargetLabel';
 import { IssueList } from '../controls/IssueList';
 import type { useAddSeoField } from '../hooks/useAddSeoField';
+import { useDraftDefinitionIndex } from '../hooks/useDraftDefinitionIndex';
 import { AddFieldButton } from './AddFieldButton';
 import { handleIdOf } from './handleId';
 import { Inherited } from './Inherited';
@@ -51,7 +53,10 @@ export const FieldList = ({
   contractFields = NO_CONTRACT_FIELDS,
 }: FieldListProps) => {
   const { t } = useTranslation();
-  const fields = useDefinitionDraftStore((state) => state.draft?.fields ?? NO_FIELDS);
+  const draft = useDefinitionDraftStore((state) => state.draft);
+  const fields = draft?.fields ?? NO_FIELDS;
+  const { index } = useDraftDefinitionIndex(draft);
+  const targetOf = (field: FieldDefinition) => fieldTargetLabel(field, index, t);
   const localized = useDefinitionDraftStore(
     (state) =>
       state.draft !== null &&
@@ -105,7 +110,7 @@ export const FieldList = ({
           <IssueList issues={definitionIssues} />
         </div>
       ) : null}
-      <Inherited fields={inherited} showLocalized={localized} />
+      <Inherited fields={inherited} showLocalized={localized} targetOf={targetOf} />
       {inherited.length > 0 ? (
         <h3 className="px-3 pt-2 pb-1 text-meta text-muted-foreground">
           {t('models.inheritance.ownFields')}
@@ -126,6 +131,7 @@ export const FieldList = ({
               selected={selection.type === 'field' && selection.fieldId === field.id}
               hasIssues={issuesUnder(issues, fieldPath(index)).length > 0}
               showLocalized={localized}
+              target={targetOf(field)}
               requiredBy={contractFields.get(field.id)}
               dropTarget={dropIndex === index}
               disabled={disabled}
