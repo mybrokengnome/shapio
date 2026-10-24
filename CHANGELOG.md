@@ -6,10 +6,26 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- In the type builder's field list, a relation says what it points at ("→ Page and 3 kinds", "→ Linkable
+  (interface)", "→ Any entry"), and component and dynamic zone fields name their components.
+- A relation's Target list shows each kind indented under its type instead of as a separate type.
+- The collapsed type settings say which interfaces the type implements, and which type it gets them from.
+- Develop → Interfaces and an interface's Members panel explain the three steps to set one up, with a link to
+  the guide.
+
 ### Fixed
 
 - Changing a field on a component that no type uses yet works on PostgreSQL and MySQL; before, the change failed
   with a SQL error.
+
+- Opening a type, component, or interface in the builder always shows it as it is now. Before, a definition
+  changed through the schema API or in another tab still showed its old settings when you came back to it
+  without reloading the page, for example a relation moved to an interface showed its old target and an
+  empty help text, and the builder said it had changed in another session.
+- The builder's notice that a definition changed in another session says whether it was a type, a component,
+  or an interface, instead of always saying "model".
 
 ## [0.6.3] - 2026-10-22
 

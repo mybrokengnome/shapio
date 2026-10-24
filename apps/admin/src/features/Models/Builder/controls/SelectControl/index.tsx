@@ -16,7 +16,13 @@ import { controlIds, type ControlBaseProps } from '../types';
 /** Radix Select can't hold an empty value; this stands for "not set". */
 const UNSET = '__unset__';
 
-type SelectOption = { value: string; label: string };
+/** `depth` indents an option under the one before it (a kind under its type); 0 or absent is a root. */
+type SelectOption = { value: string; label: string; depth?: number };
+
+/** Indentation by depth, as in the place's "New" menu; deeper levels share the last step. */
+const DEPTH_CLASSES = ['', 'pl-6', 'pl-9', 'pl-12'] as const;
+
+const depthClassOf = (depth = 0) => DEPTH_CLASSES[Math.min(Math.max(depth, 0), DEPTH_CLASSES.length - 1)];
 
 /** Options under a heading; empty groups are left out. */
 export type SelectOptionGroup = { label: string; options: readonly SelectOption[] };
@@ -52,7 +58,7 @@ export const SelectControl = ({
   const all = shownGroups ? shownGroups.flatMap((group) => group.options) : options;
   const known = value !== undefined && all.some((option) => option.value === value);
   const item = (option: SelectOption) => (
-    <SelectItem key={option.value} value={option.value}>
+    <SelectItem key={option.value} value={option.value} className={depthClassOf(option.depth)}>
       {option.label}
     </SelectItem>
   );

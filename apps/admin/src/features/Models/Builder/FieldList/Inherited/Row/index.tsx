@@ -4,11 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/helpers/cn';
 import { DATA_TYPE_ICONS } from '../../../../constants';
+import { Target } from '../../Target';
 
 type RowProps = {
   field: FieldDefinition;
   selected: boolean;
   showLocalized: boolean;
+  /** What the field points at ("Page and 3 kinds"), for relations, components, and dynamic zones. */
+  target?: string;
   onSelect: () => void;
 };
 
@@ -16,7 +19,7 @@ type RowProps = {
  * One inherited field (44px): locked, so no drag handle and no move buttons. Selecting it opens its
  * properties read-only; it changes on the type that declares it.
  */
-export const Row = ({ field, selected, showLocalized, onSelect }: RowProps) => {
+export const Row = ({ field, selected, showLocalized, target, onSelect }: RowProps) => {
   const { t } = useTranslation();
   const Icon = DATA_TYPE_ICONS[field.type];
   return (
@@ -36,7 +39,10 @@ export const Row = ({ field, selected, showLocalized, onSelect }: RowProps) => {
         />
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-sm font-medium">{field.label}</span>
-          <span className="block truncate font-mono text-2xs text-muted-foreground">{field.apiKey}</span>
+          <span className="flex min-w-0 gap-1.5 text-2xs text-muted-foreground">
+            <span className="min-w-0 truncate font-mono">{field.apiKey}</span>
+            {target ? <Target label={target} /> : null}
+          </span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {field.required ? <Badge variant="outline">{t('models.builder.requiredBadge')}</Badge> : null}

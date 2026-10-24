@@ -193,6 +193,7 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
         {sharedReadOnly ? <SharedNotice /> : null}
         {changedElsewhere || conflict ? (
           <RemoteChangeBanner
+            category={category}
             key={conflict ? 'conflict' : 'remote'}
             reason={conflict ? 'conflict' : 'remote'}
             dirty={dirty}

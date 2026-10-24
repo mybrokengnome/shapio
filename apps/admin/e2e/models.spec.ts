@@ -380,7 +380,7 @@ test('two sessions editing the same model: the second gets the conflict banner',
     await fieldRow('Featured', other).click();
     await other.getByLabel('Label', { exact: true }).fill('Promoted');
     await other.getByRole('button', { name: 'Review', exact: true }).click();
-    const conflict = other.getByRole('alert').filter({ hasText: 'This model changed in another session' });
+    const conflict = other.getByRole('alert').filter({ hasText: 'This type changed in another session' });
     await expect(conflict).toBeVisible();
     await expect(planDialog(other)).toBeHidden();
     await captureScreen(other, 'models-11-conflict-banner', { viewports: ['desktop', 'phone'] });
@@ -397,7 +397,7 @@ test('two sessions editing the same model: the second gets the conflict banner',
     await fieldRow('Author').click();
     await page.getByLabel('Label', { exact: true }).fill('Writer');
     await apply(await review());
-    const banner = other.getByRole('status').filter({ hasText: 'This model changed in another session' });
+    const banner = other.getByRole('status').filter({ hasText: 'This type changed in another session' });
     await expect(banner).toBeVisible({ timeout: 20_000 });
     await expect(fieldRow('Promoted', other)).toBeVisible();
     await captureScreen(other, 'models-12-remote-change-banner', { viewports: ['desktop', 'phone'] });

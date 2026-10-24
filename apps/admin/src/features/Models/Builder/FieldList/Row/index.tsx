@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/helpers/cn';
 import { DATA_TYPE_ICONS } from '../../../constants';
 import { handleIdOf } from '../handleId';
+import { Target } from '../Target';
 
 type RowProps = {
   field: FieldDefinition;
@@ -15,6 +16,8 @@ type RowProps = {
   selected: boolean;
   hasIssues: boolean;
   showLocalized: boolean;
+  /** What the field points at ("Page and 3 kinds"), for relations, components, and dynamic zones. */
+  target?: string;
   /** The interfaces whose contract this field satisfies, by name. */
   requiredBy?: readonly string[];
   dropTarget: boolean;
@@ -39,6 +42,7 @@ export const Row = ({
   selected,
   hasIssues,
   showLocalized,
+  target,
   requiredBy,
   dropTarget,
   disabled,
@@ -96,7 +100,10 @@ export const Row = ({
         />
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-sm font-medium">{field.label}</span>
-          <span className="block truncate font-mono text-2xs text-muted-foreground">{field.apiKey}</span>
+          <span className="flex min-w-0 gap-1.5 text-2xs text-muted-foreground">
+            <span className="min-w-0 truncate font-mono">{field.apiKey}</span>
+            {target ? <Target label={target} /> : null}
+          </span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {requiredBy && requiredBy.length > 0 ? (
