@@ -8,7 +8,7 @@ import type {
 } from '@shapio/client';
 import { isModelDefinition, type ModelDefinition } from '@shapio/schema';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   FINAL_CHANGE_STATUSES,
   SCHEMA_CHANGE_POLL_INTERVAL_MS,
@@ -148,8 +148,35 @@ export const definitionRevisionQueryOptions = (
     meta: silent,
   });
 
-export const useDefinition = (category: DefinitionCategory, id: string) =>
-  useQuery(definitionQueryOptions(category, id));
+const DEFINITION_CATEGORIES = Object.keys(DEFINITION_APIS) as DefinitionCategory[];
+
+/**
+ * The definition for the builder, which takes its draft from it once, as it opens. Another session or the
+ * schema API may have changed it since it was cached, so opening always reads it again, and `data` stays
+ * undefined until that read comes back; the lists of models, components and interfaces (relation targets,
+ * component pickers) are read again too, without waiting. Later reads never take a loaded builder away.
+ */
+export const useFreshDefinition = (category: DefinitionCategory, id: string) => {
+  const queryClient = useQueryClient();
+  const query = useQuery({ ...definitionQueryOptions(category, id), staleTime: 0 });
+  const key = `${category}|${id}`;
+  const freshNow = query.isFetchedAfterMount && query.isSuccess;
+  const [openedKey, setOpenedKey] = useState<string | undefined>(undefined);
+  if (freshNow && openedKey !== key) {
+    setOpenedKey(key);
+  }
+  const opened = freshNow || openedKey === key;
+  useEffect(() => {
+    for (const listed of DEFINITION_CATEGORIES) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schema.definitions(listed), exact: true });
+    }
+  }, [queryClient, key]);
+  return {
+    data: opened ? query.data : undefined,
+    error: opened ? null : query.error,
+    refetch: query.refetch,
+  };
+};
 
 /** The global schema version and each definition's version, polled so other sessions' changes show up. */
 export const useSchemaSummary = () =>
