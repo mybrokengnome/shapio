@@ -8,10 +8,12 @@ import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { Button } from '@/components/ui/button';
+import { INTERFACES_DOCS_URL } from '@/constants/interfaces';
 import { useModelIndex } from '@/features/Models/hooks/useModelIndex';
 import { useSchemaLock } from '@/features/Models/hooks/useSchemaLock';
 import { List } from '@/features/Models/List';
 import { LockNotice } from '@/features/Models/LockNotice';
+import { ExternalLink } from '@/features/Publishing/ExternalLink';
 
 /**
  * `/develop/interfaces`: contracts of fields that several types share, so a relation or a list can take any
@@ -43,8 +45,15 @@ export const Interfaces = () => {
           <EmptyState
             icon={Shapes}
             title={t('interfaces.empty')}
-            description={t('interfaces.emptyDescription')}
-            action={createAction}
+            description={t('interfaces.howItWorks')}
+            action={
+              <div className="flex flex-col items-center gap-3">
+                {createAction}
+                <span className="text-meta">
+                  <ExternalLink href={INTERFACES_DOCS_URL}>{t('interfaces.docsLink')}</ExternalLink>
+                </span>
+              </div>
+            }
           />
         }
       >

@@ -9,7 +9,9 @@ import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
  * in Develop → Interfaces with a contract field; a type implements it from its builder and its matching
  * field is badged; renaming that field is refused with the interface named; adding a contract field that
  * the members lack offers to add it to them in one change set, which ships; a relation targets the
- * interface, then any entry. Fixtures that aren't under test go through the admin API. API IDs carry an
+ * interface, then any entry, and the field list and the settings summary say what each points at or
+ * implements; the Target select lists a kind under its type. Fixtures that aren't under test go through the
+ * admin API. API IDs carry an
  * `ifs` prefix so they never meet another spec's. Captured light and dark with axe.
  */
 test.describe.configure({ mode: 'serial' });
@@ -39,13 +41,22 @@ let page: Page;
 let api: AdminApi;
 const pageErrors: string[] = [];
 /** Created here, removed in `afterAll`: members before the interface. */
-const created = { spotlight: '', note: '', changeSet: '' };
+const created = { spotlight: '', note: '', feature: '', changeSet: '' };
 
 const properties = () => page.getByRole('region', { name: / properties$/ });
 const reviewButton = () => page.getByRole('button', { name: 'Review', exact: true });
 
 const definitions = async (category: 'models' | 'interfaces') =>
   (await api.get<{ items: ListItem[] }>(`/${category}`)).items;
+
+/** The collapsed settings panel, where the summary shows. */
+const closeModelSettings = async () => {
+  const toggle = page.getByRole('button', { name: 'Model settings' });
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+};
 
 const openModelSettings = async (control: Locator) => {
   if (!(await control.isVisible())) {
@@ -102,6 +113,7 @@ test.afterAll(async () => {
   }
   // Members first: an interface can't be deleted while a type implements it.
   await removeDefinition('models', created.note);
+  await removeDefinition('models', created.feature);
   await removeDefinition('models', article.id);
   await removeDefinition('interfaces', created.spotlight);
   await page.context().close();
@@ -148,6 +160,9 @@ test('a type implements it from its builder and its title is badged', async () =
   await expect(page.getByText('· version 2')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Required by Spotlight')).toBeVisible();
   await captureScreen(page, 'interfaces-02-implements', { viewports: ['desktop'] });
+  // Collapsed, the settings say what the type implements.
+  await closeModelSettings();
+  await expect(page.getByText('Implements Spotlight', { exact: true })).toBeVisible();
 });
 
 test('renaming a field the interface requires is refused, naming the interface', async () => {
@@ -218,9 +233,29 @@ test('a contract field the members lack is offered to them in one change set', a
     .toEqual([true, true]);
 });
 
-test('a relation targets the interface, or any entry', async () => {
+test('a relation targets the interface, or any entry, and its row says which', async () => {
+  // A kind of Ifs articles: it implements Spotlight through its type, and is listed under it as a target.
+  const feature = {
+    id: id(),
+    kind: 'collection',
+    apiKey: 'ifsFeature',
+    label: 'Ifs features',
+    extends: article.id,
+    display: article.display,
+    fields: [],
+  };
+  await api.createDefinition('models', feature);
+  created.feature = feature.id;
+  await page.goto(`${ADMIN_URL}models/${feature.id}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Ifs features' })).toBeVisible();
+  await expect(page.getByText('Kind of Ifs articles', { exact: true })).toBeVisible();
+  await expect(page.getByText('Implements Spotlight (via Ifs articles)', { exact: true })).toBeVisible();
+
   await page.goto(`${ADMIN_URL}models/${created.note}`);
   await expect(page.getByRole('heading', { level: 1, name: 'Ifs notes' })).toBeVisible();
+  await closeModelSettings();
+  await expect(page.getByText('Implements Spotlight', { exact: true })).toBeVisible();
+  await captureScreen(page, 'interfaces-05-summary', { viewports: ['desktop'] });
   await page.getByRole('button', { name: 'Add field' }).click();
   await expect(properties().getByLabel('Label', { exact: true })).toBeFocused();
   await page.keyboard.type('Featured');
@@ -228,13 +263,33 @@ test('a relation targets the interface, or any entry', async () => {
     .getByRole('radio', { name: /^Relation/ })
     .check();
   const target = properties().getByRole('combobox', { name: 'Target model', exact: true });
+  const row = page.getByRole('button', { name: /^Featured/ }).first();
   await target.click();
   await expect(page.getByRole('group', { name: 'Interfaces' })).toBeVisible();
+  // The kind is listed once, right under its type, indented.
+  const types = page.getByRole('group', { name: 'Types' }).getByRole('option');
+  const labels = await types.allTextContents();
+  const parentAt = labels.indexOf('Ifs articles and 1 kind');
+  expect(parentAt).toBeGreaterThanOrEqual(0);
+  expect(labels[parentAt + 1]).toBe('Ifs features');
+  expect(labels.filter((label) => label === 'Ifs features')).toHaveLength(1);
+  await expect(page.getByRole('option', { name: 'Ifs features', exact: true })).toHaveClass(/\bpl-6\b/);
+  // Without a viewport change, so the list stays open for the capture; it may still close, so reopen it.
+  await captureScreen(page, 'interfaces-06-target-open');
+  if ((await target.getAttribute('aria-expanded')) !== 'true') {
+    await target.click();
+  }
   await page.getByRole('option', { name: 'Spotlight', exact: true }).click();
   await expect(target).toHaveText('Spotlight');
+  await expect(row).toContainText('→ Spotlight (interface)');
+  await captureScreen(page, 'interfaces-07-relation-row', { viewports: ['desktop'] });
+  await target.click();
+  await page.getByRole('option', { name: 'Ifs articles and 1 kind', exact: true }).click();
+  await expect(row).toContainText('→ Ifs articles and 1 kind');
   await target.click();
   await page.getByRole('option', { name: 'Any entry', exact: true }).click();
   await expect(target).toHaveText('Any entry');
+  await expect(row).toContainText('→ Any entry');
   await captureScreen(page, 'interfaces-04-relation-target', { viewports: ['desktop'] });
   await page.getByRole('button', { name: 'Discard changes' }).first().click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Discard changes' }).click();

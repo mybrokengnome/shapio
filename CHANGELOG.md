@@ -6,6 +6,15 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- In the type builder's field list, a relation says what it points at ("→ Page and 3 kinds", "→ Linkable
+  (interface)", "→ Any entry"), and component and dynamic zone fields name their components.
+- A relation's Target list shows each kind indented under its type instead of as a separate type.
+- The collapsed type settings say which interfaces the type implements, and which type it gets them from.
+- Develop → Interfaces and an interface's Members panel explain the three steps to set one up, with a link to
+  the guide.
+
 ### Fixed
 
 - Opening a type, component, or interface in the builder always shows it as it is now. Before, a definition
