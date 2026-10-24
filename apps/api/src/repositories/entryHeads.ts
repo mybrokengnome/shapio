@@ -208,8 +208,14 @@ export const countForLocale = async (locale: string, executor: Executor = db): P
   return Number(row.count);
 };
 
-/** The highest change sequence number among a model's heads ("0" when it has none). */
+/**
+ * The highest change sequence number among a model's heads ("0" when it has none, or no models are given: a
+ * component no type uses has no entries, and `in ()` is not valid SQL on PostgreSQL or MySQL).
+ */
 export const maxChangeSeq = async (modelIds: readonly string[], executor: Executor = db): Promise<string> => {
+  if (modelIds.length === 0) {
+    return '0';
+  }
   const row = await executor
     .selectFrom('entry_heads')
     .select(({ fn }) => asBigint<string | null>(fn.max('change_seq')).as('max'))
@@ -230,9 +236,13 @@ export type EntryBatchFilter = {
 
 /**
  * Every head of the next batch of entries, in key order, for resumable scans over large models. Schema
- * changes work per entry: a conversion can move values across an entry's locales and states.
+ * changes work per entry: a conversion can move values across an entry's locales and states. No models, no
+ * heads (without a query: `in ()` is not valid SQL on PostgreSQL or MySQL).
  */
-export const scanEntryBatch = (filter: EntryBatchFilter, executor: Executor = db) => {
+export const scanEntryBatch = async (filter: EntryBatchFilter, executor: Executor = db) => {
+  if (filter.modelIds.length === 0) {
+    return [];
+  }
   let entries = executor
     .selectFrom('entry_heads')
     .select('entry_id')

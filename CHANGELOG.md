@@ -17,6 +17,9 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Fixed
 
+- Changing a field on a component that no type uses yet works on PostgreSQL and MySQL; before, the change failed
+  with a SQL error.
+
 - Opening a type, component, or interface in the builder always shows it as it is now. Before, a definition
   changed through the schema API or in another tab still showed its old settings when you came back to it
   without reloading the page, for example a relation moved to an interface showed its old target and an
