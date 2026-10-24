@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-23
+
 ### Changed
 
 - In the type builder's field list, a relation says what it points at ("→ Page and 3 kinds", "→ Linkable
