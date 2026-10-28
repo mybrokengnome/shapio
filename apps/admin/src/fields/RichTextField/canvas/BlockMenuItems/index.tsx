@@ -16,6 +16,13 @@ const GROUP_KEYS = {
   media: 'entry.blocks.groupMedia',
 } as const satisfies Record<BlockGroup, string>;
 
+/** A second line under some entries: what the block needs, or how to work in it. */
+const HINT_KEYS: Partial<Record<BlockType, 'entry.blocks.imageHint' | 'content.richText.listJoinHint'>> = {
+  image: 'entry.blocks.imageHint',
+  bulletList: 'content.richText.listJoinHint',
+  orderedList: 'content.richText.listJoinHint',
+};
+
 /** The rich-text block types as `+` menu entries, grouped Write / Media (inside a `DropdownMenuContent`). */
 export const BlockMenuItems = ({ onSelect, canInsertImages = true, heading }: BlockMenuItemsProps) => {
   const { t } = useTranslation();
@@ -28,15 +35,18 @@ export const BlockMenuItems = ({ onSelect, canInsertImages = true, heading }: Bl
       </DropdownMenuLabel>
       {BLOCK_OPTIONS.filter((option) => option.group === group)
         .filter((option) => canInsertImages || option.type !== 'image')
-        .map((option) => (
-          <InsertMenuItem
-            key={option.type}
-            icon={option.icon}
-            label={t(option.labelKey)}
-            hint={option.type === 'image' ? t('entry.blocks.imageHint') : undefined}
-            onSelect={() => onSelect(option.type)}
-          />
-        ))}
+        .map((option) => {
+          const hintKey = HINT_KEYS[option.type];
+          return (
+            <InsertMenuItem
+              key={option.type}
+              icon={option.icon}
+              label={t(option.labelKey)}
+              hint={hintKey ? t(hintKey) : undefined}
+              onSelect={() => onSelect(option.type)}
+            />
+          );
+        })}
     </DropdownMenuGroup>
   ));
 };

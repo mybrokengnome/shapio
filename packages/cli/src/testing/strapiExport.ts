@@ -117,7 +117,7 @@ export const ARTICLE_BLOCKS = [
     children: [
       { type: 'text', text: 'Hello ' },
       { type: 'text', text: 'world', bold: true, underline: true },
-      { type: 'text', text: ' and ' },
+      { type: 'text', text: ' and ', strikethrough: true },
       { type: 'link', url: 'https://strapi.io', children: [{ type: 'text', text: 'a link' }] },
     ],
   },

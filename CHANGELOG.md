@@ -28,6 +28,19 @@ All notable changes to Shapio are listed here. The format follows
   `--allow-ship` only (approving is what lets a set go live), `change_sets_approve` and
   `change_sets_request_changes`.
 - `shapio import` says so when the site requires approval before the change sets it opened can ship.
+- Rich text has three new marks: underline, subscript, and superscript. The editor's toolbar and the floating
+  toolbar have a button for each (Mod+U, Mod+comma, Mod+period; the minimal toolbar shows Underline only),
+  delivery HTML renders them as `<u>`, `<sub>`, and `<sup>`, and pasted and imported HTML keeps them (tags
+  and the equivalent inline styles). Subscript and superscript replace each other. The stored format stays
+  version 1: existing documents are unchanged.
+- The Strapi importer keeps underline from Blocks fields.
+
+### Changed
+
+- Backspace at the start of a list item joins it to the item above as its next paragraph, so an item can hold
+  several paragraphs and the list keeps numbering straight through. It used to take the item out of the list
+  and restart the numbering of the items after it. The list buttons' tooltips and the `+` menu's list entries
+  say so.
 
 ### Fixed
 

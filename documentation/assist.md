@@ -181,7 +181,7 @@ multi-site instance). Every action except `status` and reading a run counts agai
   a rich-text body. The summary respects the field's maximum length: if the model's answer is too long it's
   asked once for a shorter one, then cut at a word boundary (`truncated: true`).
 - **Translate** proposes the target locale's values of the localized fields you can read and edit. Shared
-  fields are never part of it. Bold, italic, links and line breaks are kept. If a paragraph's formatting
+  fields are never part of it. Inline formatting (bold, italic, underline, subscript, superscript, code), links, and line breaks are kept. If a paragraph's formatting
   can't be restored, it comes back as plain text with a `FORMATTING_LOST` issue. Values over a field's limit
   come back as they are, with a `TOO_LONG` issue, so the editor can fix them before saving. The source
   locale must exist (`404 ENTRY_LOCALE_NOT_FOUND` otherwise).

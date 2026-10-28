@@ -1,6 +1,20 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Bold, Code, Image, Italic, List, ListOrdered, Minus, Quote, Redo2, Undo2 } from 'lucide-react';
+import {
+  Bold,
+  Code,
+  Image,
+  Italic,
+  List,
+  ListOrdered,
+  Minus,
+  Quote,
+  Redo2,
+  Subscript,
+  Superscript,
+  Underline,
+  Undo2,
+} from 'lucide-react';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -67,6 +81,9 @@ export const Toolbar = ({
       block: blockTypeOf(current),
       bold: current.isActive('bold'),
       italic: current.isActive('italic'),
+      underline: current.isActive('underline'),
+      subscript: current.isActive('subscript'),
+      superscript: current.isActive('superscript'),
       code: current.isActive('code'),
       link: current.isActive('link'),
       bulletList: current.isActive('bulletList'),
@@ -141,15 +158,41 @@ export const Toolbar = ({
         disabled={disabled}
         onClick={() => chain().toggleItalic().run()}
       />
+      <ToolButton
+        icon={Underline}
+        label={t('content.richText.underline')}
+        keys="Mod+U"
+        pressed={state.underline}
+        disabled={disabled}
+        onClick={() => chain().toggleUnderline().run()}
+      />
       {!minimal ? (
-        <ToolButton
-          icon={Code}
-          label={t('content.richText.code')}
-          keys="Mod+E"
-          pressed={state.code}
-          disabled={disabled}
-          onClick={() => chain().toggleCode().run()}
-        />
+        <>
+          <ToolButton
+            icon={Subscript}
+            label={t('content.richText.subscript')}
+            keys="Mod+,"
+            pressed={state.subscript}
+            disabled={disabled}
+            onClick={() => chain().toggleSubscript().run()}
+          />
+          <ToolButton
+            icon={Superscript}
+            label={t('content.richText.superscript')}
+            keys="Mod+."
+            pressed={state.superscript}
+            disabled={disabled}
+            onClick={() => chain().toggleSuperscript().run()}
+          />
+          <ToolButton
+            icon={Code}
+            label={t('content.richText.code')}
+            keys="Mod+E"
+            pressed={state.code}
+            disabled={disabled}
+            onClick={() => chain().toggleCode().run()}
+          />
+        </>
       ) : null}
       <LinkPopover
         editor={editor}
@@ -162,6 +205,7 @@ export const Toolbar = ({
       <ToolButton
         icon={List}
         label={t('content.richText.bulletList')}
+        hint={t('content.richText.listJoinHint')}
         keys="Mod+Shift+8"
         pressed={state.bulletList}
         disabled={disabled}
@@ -170,6 +214,7 @@ export const Toolbar = ({
       <ToolButton
         icon={ListOrdered}
         label={t('content.richText.orderedList')}
+        hint={t('content.richText.listJoinHint')}
         keys="Mod+Shift+7"
         pressed={state.orderedList}
         disabled={disabled}

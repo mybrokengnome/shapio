@@ -48,9 +48,51 @@ describe('htmlToRichText', () => {
     ]);
   });
 
-  it('unwraps unknown elements and drops underline and strike marks', () => {
+  it('unwraps unknown elements, keeps underline and drops strike', () => {
     expect(blocksOf('<p><span>a</span> <u>b</u> <s>c</s> <font>d</font></p>')).toEqual([
-      { type: 'paragraph', content: [text('a b c d')] },
+      {
+        type: 'paragraph',
+        content: [text('a '), text('b', [{ type: 'underline' }]), text(' c d')],
+      },
+    ]);
+  });
+
+  it('maps underline, subscript and superscript from tags and from span styles', () => {
+    expect(
+      blocksOf(
+        '<p><ins>a</ins><sub>b</sub><sup>c</sup>' +
+          '<span style="text-decoration: underline line-through">d</span>' +
+          '<span style="Vertical-Align: SUB; color: red">e</span><span style="vertical-align:super">f</span>' +
+          '<span style="text-decoration-line: underline; vertical-align: baseline">g</span>' +
+          '<span style="color: red">h</span></p>',
+      ),
+    ).toEqual([
+      {
+        type: 'paragraph',
+        content: [
+          text('a', [{ type: 'underline' }]),
+          text('b', [{ type: 'subscript' }]),
+          text('c', [{ type: 'superscript' }]),
+          text('d', [{ type: 'underline' }]),
+          text('e', [{ type: 'subscript' }]),
+          text('f', [{ type: 'superscript' }]),
+          text('g', [{ type: 'underline' }]),
+          text('h'),
+        ],
+      },
+    ]);
+  });
+
+  it('keeps only the innermost of subscript and superscript, as the editor does', () => {
+    expect(blocksOf('<p><sup>a<sub>b</sub></sup><u><sub>c</sub></u></p>')).toEqual([
+      {
+        type: 'paragraph',
+        content: [
+          text('a', [{ type: 'superscript' }]),
+          text('b', [{ type: 'subscript' }]),
+          text('c', [{ type: 'underline' }, { type: 'subscript' }]),
+        ],
+      },
     ]);
   });
 

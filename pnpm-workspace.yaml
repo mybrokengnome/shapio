@@ -111,6 +111,8 @@ catalog:
   '@tiptap/extension-link': 3.31.4
   '@tiptap/extension-table': 3.31.4
   '@tiptap/extensions': 3.31.4
+  '@tiptap/extension-subscript': 3.31.4
+  '@tiptap/extension-superscript': 3.31.4
   # Entry document canvas (E1): bubble toolbar, file drop/paste, `/` and `+` block menus
   '@tiptap/extension-bubble-menu': 3.31.4
   '@tiptap/extension-file-handler': 3.31.4
