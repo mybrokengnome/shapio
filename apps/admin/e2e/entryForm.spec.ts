@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import type { Editor } from '@tiptap/core';
 import { adminApiFor } from './content/api';
 import { captureScreen } from './support/capture';
-import { ADMIN_URL, SCREENSHOT_DIR } from './support/constants';
+import { ADMIN_URL, E2E_BASE_PATH, E2E_ORIGIN, SCREENSHOT_DIR } from './support/constants';
 import { entryDocument } from './support/entryDocument';
 import { renderScheme } from './support/schemes';
 import { ADMIN_API, adminRequest, signInAsOwner } from './support/session';
@@ -647,5 +648,169 @@ test('choosing a heading keeps the cursor in the text; shortcut hints name the r
     await expect(picker).toBeHidden();
     await expect(editor.locator(`figure[data-media-id="${image.id}"]`)).toBeVisible();
     await expect(editor).toBeFocused();
+  });
+});
+
+test('underline, subscript and superscript from the toolbar; Backspace joins a list item into the one above', async () => {
+  const api = adminApiFor(page.request, ADMIN_API);
+  const suffix = randomUUID().slice(0, 8);
+  const ids = { model: randomUUID(), title: randomUUID() };
+  const key = `markNote${suffix}`;
+  const route = `markNotes${suffix}`;
+  await api.createDefinition('models', {
+    id: ids.model,
+    kind: 'collection',
+    apiKey: key,
+    pluralApiKey: route,
+    label: 'Mark note',
+    display: { layout: 'form', titleFieldId: ids.title },
+    fields: [
+      { id: ids.title, apiKey: 'title', label: 'Title', type: 'string' },
+      { id: randomUUID(), apiKey: 'body', label: 'Body', type: 'richtext' },
+    ],
+  });
+  longDocument.models.push(ids.model);
+  const entry = await api.send<{ id: string }>('POST', `/content/${key}`, {
+    data: { title: 'Lab notes', body: null },
+  });
+  await page.goto(`${ADMIN_URL}content/${key}/${entry.id}`);
+  await expect(entryForm()).toBeVisible();
+  const body = entryDocument(page).field('/body');
+  const editor = body.locator('.ProseMirror');
+  const toolbar = body.getByRole('toolbar', { name: 'Text formatting' });
+  const tool = (name: string) => toolbar.getByRole('button', { name, exact: true });
+  /** Clicks a toolbar button; the editor takes focus back (on the next frame) before typing goes on. */
+  const press = async (name: string) => {
+    await tool(name).click();
+    await expect(editor).toBeFocused();
+  };
+
+  type TextNode = { type: string; text?: string; marks?: { type: string }[] };
+  type Block = { type: string; content?: (Block & TextNode)[] };
+  const storedBody = async () =>
+    ((await api.get<{ data: { body: { doc: Block } | null } }>(`/content/${key}/${entry.id}`)).data.body?.doc
+      .content ?? []) as Block[];
+  const expected: Block[] = [
+    {
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'H' },
+        { type: 'text', text: '2', marks: [{ type: 'subscript' }] },
+        { type: 'text', text: 'O is ' },
+        { type: 'text', text: 'wet', marks: [{ type: 'underline' }] },
+        { type: 'text', text: ', E = mc' },
+        { type: 'text', text: '2', marks: [{ type: 'superscript' }] },
+      ],
+    },
+    {
+      type: 'orderedList',
+      content: [
+        {
+          type: 'listItem',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'Mix' }] },
+            { type: 'paragraph', content: [{ type: 'text', text: 'Then wait' }] },
+          ],
+        },
+        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Pour' }] }] },
+      ],
+    },
+  ];
+
+  await test.step('the marks are applied from the toolbar and replace each other', async () => {
+    await editor.click();
+    await page.keyboard.type('H');
+    await press('Subscript');
+    await page.keyboard.type('2');
+    await press('Subscript');
+    await page.keyboard.type('O is ');
+    await press('Underline');
+    await page.keyboard.type('wet');
+    await press('Underline');
+    await page.keyboard.type(', E = mc');
+    await press('Subscript');
+    // Superscript replaces subscript at once: one press, one mark.
+    await press('Superscript');
+    await expect(tool('Subscript')).toHaveAttribute('aria-pressed', 'false');
+    await expect(tool('Superscript')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.type('2');
+    await expect(editor.locator('sub')).toHaveText('2');
+    await expect(editor.locator('u')).toHaveText('wet');
+    await expect(editor.locator('sup')).toHaveText('2');
+  });
+
+  await test.step('the list buttons say how to join items; Backspace joins one into the item above', async () => {
+    await tool('Numbered list').hover();
+    await expect(page.getByRole('tooltip')).toContainText(
+      'Backspace at the start of an item joins it to the item above',
+    );
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await press('Numbered list');
+    for (const [index, text] of ['Mix', 'Then wait', 'Pour'].entries()) {
+      if (index > 0) {
+        await page.keyboard.press('Enter');
+      }
+      await page.keyboard.type(text);
+    }
+    await expect(editor.locator('ol > li')).toHaveCount(3);
+    // To the start of "Then wait" with the keyboard: back over "Pour", into the item above, back over its text.
+    for (let step = 0; step < 'Pour'.length + 1 + 'Then wait'.length; step += 1) {
+      await page.keyboard.press('ArrowLeft');
+    }
+    // The editor reads the caret from the page's selection events; wait until it has the one the keys made.
+    await expect
+      .poll(() =>
+        editor.evaluate((element) => {
+          const { selection } = (element as HTMLElement & { editor: Editor }).editor.state;
+          return selection.empty && selection.$from.parentOffset === 0
+            ? selection.$from.parent.textContent
+            : null;
+        }),
+      )
+      .toBe('Then wait');
+    await page.keyboard.press('Backspace');
+    await expect(editor.locator('ol')).toHaveCount(1);
+    await expect(editor.locator('ol > li')).toHaveCount(2);
+    await expect(editor.locator('ol > li').first().locator('p')).toHaveText(['Mix', 'Then wait']);
+    await captureInBothLooks('richtext-marks-and-list-paragraphs', body);
+  });
+
+  await test.step('saved, reloaded and delivered as written', async () => {
+    await page.keyboard.press('ControlOrMeta+s');
+    // The editor keeps an empty paragraph at the end of the document; the blocks before it are what was written.
+    await expect
+      .poll(async () => (await storedBody()).slice(0, 2), { timeout: 15_000 })
+      .toMatchObject(expected);
+    await page.reload();
+    await expect(editor.locator('u')).toHaveText('wet');
+    await expect(editor.locator('sub')).toHaveText('2');
+    await expect(editor.locator('sup')).toHaveText('2');
+    await expect(editor.locator('ol > li').first().locator('p')).toHaveCount(2);
+
+    await api.send('POST', `/content/${key}/${entry.id}/publish`, { locales: ['en'] });
+    const role = await api.send<{ id: string }>('POST', '/roles', {
+      key: `mark-reader-${suffix}`,
+      name: `Mark reader ${suffix}`,
+      kind: 'delivery',
+      permissions: [{ action: 'read', modelId: ids.model, condition: null, fieldIds: null }],
+    });
+    const created = await api.send<{ token: string; apiToken: { id: string } }>('POST', '/tokens', {
+      name: `Mark site ${suffix}`,
+      roleId: role.id,
+    });
+    try {
+      const delivered = await page.request.get(
+        `${E2E_ORIGIN}${E2E_BASE_PATH}/api/content/${route}/${entry.id}?richText=html`,
+        { headers: { authorization: `Bearer ${created.token}` } },
+      );
+      expect(delivered.ok(), await delivered.text()).toBe(true);
+      const { html } = ((await delivered.json()) as { data: { body: { html: string } } }).data.body;
+      expect(html).toContain('<p>H<sub>2</sub>O is <u>wet</u>, E = mc<sup>2</sup></p>');
+      expect(html).toContain('<ol><li><p>Mix</p><p>Then wait</p></li><li><p>Pour</p></li></ol>');
+    } finally {
+      await api.send('DELETE', `/tokens/${created.apiToken.id}`);
+      await api.send('DELETE', `/roles/${role.id}`);
+    }
   });
 });

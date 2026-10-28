@@ -147,6 +147,7 @@ export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps)
         <ToolButton
           icon={List}
           label={t('content.richText.bulletList')}
+          hint={t('content.richText.listJoinHint')}
           keys="Mod+Shift+8"
           pressed={state.bulletList}
           disabled={false}

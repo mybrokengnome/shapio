@@ -6,6 +6,7 @@ import { TableCell, TableHeader, TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { StarterKit } from '@tiptap/starter-kit';
 import { MediaImage } from './imageNode';
+import { ListItemJoin } from './listItemJoin';
 import { SAFE_LINK_PATTERN } from './richTextDocument';
 
 /** Links: safe protocols only, no `title` attribute, and no target/rel/class unless set on purpose. */
@@ -54,6 +55,7 @@ export const richTextExtensions = ({
   SafeLink,
   ExclusiveSubscript,
   ExclusiveSuperscript,
+  ListItemJoin,
   TableKit.configure({
     table: { resizable: true, allowTableNodeSelection: true },
     tableCell: false,

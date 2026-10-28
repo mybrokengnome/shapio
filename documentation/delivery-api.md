@@ -117,7 +117,10 @@ the `Shapio-Site` header. Leave `site` out to read the token's site, or the prim
 - **Rich text** is the stored JSON document by default. Ask for `richText=html` to get
   `{ format, version, html }` instead, or `richText=both` for the document and `html` together. The HTML is
   rendered on the server from the JSON with an allow-list sanitizer (safe link protocols only, images resolved
-  through the media library), on the request that asks for it; it is never stored.
+  through the media library), on the request that asks for it; it is never stored. Text marks are `bold`,
+  `italic`, `underline`, `subscript`, `superscript`, `code`, and `link`, rendered as `<strong>`, `<em>`, `<u>`,
+  `<sub>`, `<sup>`, `<code>`, and `<a>`. A list item holds one or more blocks, so an item with two paragraphs
+  renders as `<li><p>…</p><p>…</p></li>`.
 - **Media** fields are asset objects with URLs and ready [variants](media.md#image-variants); private assets
   carry an expiring signed URL.
 - **Relations** are target IDs unless you `populate` them. A target that is not published, or that your token

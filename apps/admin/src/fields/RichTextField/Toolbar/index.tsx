@@ -205,6 +205,7 @@ export const Toolbar = ({
       <ToolButton
         icon={List}
         label={t('content.richText.bulletList')}
+        hint={t('content.richText.listJoinHint')}
         keys="Mod+Shift+8"
         pressed={state.bulletList}
         disabled={disabled}
@@ -213,6 +214,7 @@ export const Toolbar = ({
       <ToolButton
         icon={ListOrdered}
         label={t('content.richText.orderedList')}
+        hint={t('content.richText.listJoinHint')}
         keys="Mod+Shift+7"
         pressed={state.orderedList}
         disabled={disabled}
