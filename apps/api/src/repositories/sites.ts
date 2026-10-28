@@ -116,3 +116,30 @@ export const updateSeoDefaultsIfVersion = (
     .where('version', '=', expectedVersion)
     .returning(['id', 'key', 'name', 'version', 'seo_defaults'])
     .executeTakeFirst();
+
+/** Whether the site requires an approved change set before one ships or is scheduled (plan approval). */
+export const findApprovalSetting = (id: string, trx: Executor = db) =>
+  trx
+    .selectFrom('sites')
+    .select(['id', 'version', 'require_approval'])
+    .where('id', '=', id)
+    .executeTakeFirst();
+
+/** Optimistic update of the approval requirement: applies only at `expectedVersion`; bumps the version. */
+export const updateRequireApprovalIfVersion = (
+  id: string,
+  expectedVersion: number,
+  requireApproval: boolean,
+  trx: Executor = db,
+) =>
+  trx
+    .updateTable('sites')
+    .set((eb) => ({
+      require_approval: requireApproval,
+      version: eb('version', '+', 1),
+      updated_at: new Date(),
+    }))
+    .where('id', '=', id)
+    .where('version', '=', expectedVersion)
+    .returning(['id', 'version', 'require_approval'])
+    .executeTakeFirst();

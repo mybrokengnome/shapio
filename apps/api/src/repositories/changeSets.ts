@@ -51,6 +51,32 @@ export const update = (
     .returningAll()
     .executeTakeFirst();
 
+/** Approval states of a set (plan approval). */
+export type ApprovalStatus = 'none' | 'requested' | 'approved' | 'changes_requested';
+
+/**
+ * Writes approval columns WITHOUT bumping the version (plan approval): approving or asking for approval is
+ * not an edit of the set, so an editor's open page does not go stale because someone approved it.
+ */
+export const updateApproval = (
+  id: string,
+  changes: Pick<
+    Updateable<ChangeSets>,
+    | 'approval_status'
+    | 'approval_note'
+    | 'approval_requested_by'
+    | 'approval_requested_by_token'
+    | 'approval_requested_at'
+    | 'approved_by'
+    | 'approved_by_token'
+    | 'approved_at'
+    | 'approved_fingerprint'
+    | 'approved_at_ship'
+  >,
+  trx: Executor = db,
+) =>
+  trx.updateTable('change_sets').set(changes).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+
 export type ChangeSetListRow = ChangeSetRow & { entry_items: string | null; schema_items: string | null };
 
 /** One site's sets, newest first (keyset on created_at, id), with item counts. */
@@ -58,6 +84,8 @@ export const list = (
   filter: {
     siteId: string;
     statuses: readonly ChangeSetStatus[];
+    /** Only sets in these approval states (all without). */
+    approvalStatuses?: readonly ApprovalStatus[];
     after?: { createdAt: Date; id: string };
     limit: number;
   },
@@ -82,6 +110,9 @@ export const list = (
     ])
     .where('site_id', '=', filter.siteId)
     .where('status', 'in', filter.statuses)
+    .$if(filter.approvalStatuses !== undefined, (qb) =>
+      qb.where('approval_status', 'in', filter.approvalStatuses ?? []),
+    )
     .orderBy('created_at', 'desc')
     .orderBy('id', 'desc')
     .limit(filter.limit);

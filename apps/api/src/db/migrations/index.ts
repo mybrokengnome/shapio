@@ -27,6 +27,7 @@ import * as entryHeadsEntryCreatedAt from './20261005120000_entry_heads_entry_cr
 import * as systemVersionsRelease from './20261006120000_system_versions_release.js';
 import * as canceledStatus from './20261014120000_canceled_status.js';
 import * as interfaceKind from './20261021120000_interface_kind.js';
+import * as changeSetApproval from './20261028120000_change_set_approval.js';
 import { MYSQL_MIGRATIONS } from './mysql/index.js';
 import { SQLITE_MIGRATIONS } from './sqlite/index.js';
 
@@ -63,6 +64,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261006120000_system_versions_release': systemVersionsRelease,
   '20261014120000_canceled_status': canceledStatus,
   '20261021120000_interface_kind': interfaceKind,
+  '20261028120000_change_set_approval': changeSetApproval,
 };
 
 export const staticMigrationProvider: MigrationProvider = {

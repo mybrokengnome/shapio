@@ -44,9 +44,16 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     name: 'Editor',
     description: 'Creates, edits, publishes and deletes content in every model.',
     contentActions: ['read', 'create', 'update', 'delete', 'publish'],
-    // Editors group publications into change sets and (re)trigger site builds; webhooks, deployment
-    // connections and the jobs view stay with admins.
-    globalActions: ['media.read', 'media.write', 'changes.manage', 'changes.ship', 'deployments.trigger'],
+    // Editors group publications into change sets, approve and ship them, and (re)trigger site builds;
+    // webhooks, deployment connections and the jobs view stay with admins.
+    globalActions: [
+      'media.read',
+      'media.write',
+      'changes.manage',
+      'changes.ship',
+      'changes.approve',
+      'deployments.trigger',
+    ],
   },
   {
     key: SYSTEM_ROLE_KEYS.readOnly,

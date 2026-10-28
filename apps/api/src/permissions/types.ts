@@ -132,13 +132,15 @@ export const SITE_ACTIONS = [
   'media.manage',
   // Publishing (package H): the jobs view and scheduling overview; webhooks; deployment connections;
   // triggering and retrying deployment runs; change sets (schema + content shipped as one snapshot) and
-  // shipping them (`changes.ship`, split so an agent's role can prepare change sets but not make them live).
+  // shipping them (`changes.ship`, split so an agent's role can prepare change sets but not make them live),
+  // and approving them (`changes.approve`, plan approval: a site may require an approved set to ship).
   'publishing.manage',
   'webhooks.manage',
   'deployments.manage',
   'deployments.trigger',
   'changes.manage',
   'changes.ship',
+  'changes.approve',
   // The site's own settings (plan seo-fields): its SEO defaults.
   'site.settings',
 ] as const;

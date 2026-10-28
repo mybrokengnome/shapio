@@ -261,6 +261,16 @@ export interface ChangeSetItems {
 export interface ChangeSets {
   acknowledge_breaking: Generated<boolean>;
   acknowledge_destructive: Generated<boolean>;
+  approval_note: Generated<string>;
+  approval_requested_at: Timestamp | null;
+  approval_requested_by: string | null;
+  approval_requested_by_token: string | null;
+  approval_status: Generated<string>;
+  approved_at: Timestamp | null;
+  approved_at_ship: boolean | null;
+  approved_by: string | null;
+  approved_by_token: string | null;
+  approved_fingerprint: string | null;
   created_at: Generated<Timestamp>;
   created_by: string | null;
   created_by_token: string | null;
@@ -735,6 +745,7 @@ export interface Sites {
   is_primary: Generated<boolean>;
   key: string;
   name: string;
+  require_approval: Generated<boolean>;
   seo_defaults: Json | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
