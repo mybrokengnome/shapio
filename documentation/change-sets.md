@@ -9,7 +9,8 @@ older snapshot, which is itself a reviewed change set.
 These live under **Develop → Changes** and **Develop → Snapshots** in the admin, for roles with the
 `changes.manage` permission (owners, admins and editors by default). Shipping and scheduling a ship also need
 `changes.ship` (the same roles by default). A role with `changes.manage` but not `changes.ship` prepares change
-sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)).
+sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)). Approving a set
+needs `changes.approve` (every role that can ship has it by default; see [Approval](#approval)).
 Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
 On an instance with several [sites](sites.md), change sets and snapshot numbers are per site: a set holds its
@@ -58,7 +59,7 @@ Open a set to review it, shaped like a pull request:
   the ship; **warnings** do not.
 - **Consumers**: for breaking changes, the API tokens (and app users and anonymous callers, as groups) that read
   the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage).
-- **Timeline**: created, items added and removed, drafts saved, scheduled, entries changed after review (on a
+- **Timeline**: created, items added and removed, drafts saved, approval steps with their notes, scheduled, entries changed after review (on a
   scheduled ship), shipped (with a link to the snapshot) and the deployment run.
 
 A shipped set keeps its review, like a merged pull request: each entry's values before and after the ship
@@ -92,6 +93,29 @@ schedules made from the entry form stay separate and are listed read-only on the
 
 States: _open_ → _scheduled_ (optional) → _shipping_ → _shipped_, or _failed_ (editable and shippable again),
 or _discarded_.
+
+### Approval
+
+A site can require an approved change set before anything ships or is scheduled: **Settings → Change sets →
+Require an approved change set before shipping** (needs `site.settings`; off by default).
+
+- **Request approval** (needs `changes.manage`) sends an open set for approval, with an optional note.
+- **Review** (needs `changes.approve`) approves the set, or requests changes with a note saying what to change.
+  Anyone with `changes.approve` may approve, the author included. Upgrading gives `changes.approve` to every
+  role that holds `changes.ship`, so whoever could ship before can approve.
+- An approval is pinned to what the set holds: its items, the draft of each entry it publishes, and each
+  schema draft. An edit to any of them after the approval makes it _Approval outdated_; the set needs approving
+  again before it can ship. Renaming the set or scheduling it does not count as an edit, and approving never
+  changes the set's version, so nobody's open review goes stale because of it.
+- Where approval is required, **Ship** and **Schedule…** stay disabled until the set is approved and unchanged
+  since. A scheduled set whose draft moved after the approval fails at its time with the reason, and nothing
+  of it goes live. The check also runs inside the ship itself, after any background checks.
+- A shipped set can be approved afterwards, and that approval never goes stale (what shipped never changes).
+  The set view says whether the approval was current when the set shipped.
+- **Clear approval** takes the set back to no approval. The set's timeline lists every step with its note,
+  and the Inbox lists sets awaiting approval for people who may approve them.
+
+Without the requirement, approval is optional: the steps work the same way and nothing is blocked.
 
 ### Ship with deploy
 
@@ -182,7 +206,7 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 
 | Endpoint                                           | What                                                                                   |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET /api/admin/change-sets?status=open,scheduled` | sets, newest first (`cursor`, `limit`); discarded sets only when asked for             |
+| `GET /api/admin/change-sets?status=open,scheduled` | sets, newest first (`cursor`, `limit`, `approval=requested,…`); discarded only on ask  |
 | `POST /api/admin/change-sets`                      | `{ title, description? }`                                                              |
 | `GET`, `PATCH /api/admin/change-sets/:id`          | read; change `title`, `description`, `deploymentConnectionId` (with `expectedVersion`) |
 | `GET /api/admin/change-sets/unassigned`            | entry drafts no active set holds                                                       |
@@ -192,6 +216,11 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `POST …/:id/ship`                                  | `{ expectedVersion, acknowledgeBreaking?, acknowledgeDestructive?, itemVersions? }`    |
 | `POST …/:id/schedule`, `POST …/:id/unschedule`     | `{ at, expectedVersion, acknowledge… }`                                                |
 | `POST …/:id/discard`                               |                                                                                        |
+| `POST …/:id/approval/request`                      | `{ note? }`: send for approval (`changes.manage`)                                      |
+| `POST …/:id/approval/approve`                      | `{ note? }`: approve as the set is now (`changes.approve`)                             |
+| `POST …/:id/approval/request-changes`              | `{ note }`: send back with what to change (`changes.approve`)                          |
+| `POST …/:id/approval/clear`                        | back to no approval (`changes.manage`)                                                 |
+| `GET`, `PUT /api/admin/site/change-sets`           | whether the site requires approval: `{ expectedVersion, requireApproval }` to change   |
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
 | `GET /api/admin/usage/fields?modelId&days=7`       | reads per field and reader for one model (needs `tokens.manage`)                       |
@@ -201,6 +230,12 @@ in the background; poll the set until it is `shipped` or `failed`. `itemVersions
 as the review lists them) makes the ship refuse with `409 CHANGE_SET_STALE` when one of those drafts moved. A
 shipped set reports `shippedSnapshot` and, when it had schema items, `schemaVersionAfter`.
 
+Every set carries `approval`: `status` (`none`, `requested`, `approved`, `changes_requested`), the last `note`,
+`requestedBy`/`requestedAt`, `approvedBy`/`approvedAt` (who approved or requested changes), `outdated`, and
+`approvedAtShip`. Where the site requires approval, `ship` and `schedule` refuse with `409
+CHANGE_SET_NOT_APPROVED` or `409 CHANGE_SET_APPROVAL_STALE`; an approval step on a set that is scheduled,
+shipping, or discarded (or a step its status does not allow) answers `409 CHANGE_SET_STATE`.
+
 Other refusals: `409 VERSION_CONFLICT` (the set changed since you read it), `409 CHANGE_SET_LOCKED` (a set that
 is shipping, shipped or discarded cannot change), `409 CHANGE_SET_NOT_SHIPPABLE`, `409 CHANGE_SET_ITEM_EXISTS`,
 `409 SNAPSHOT_IS_CURRENT` (restoring the live snapshot).
@@ -209,13 +244,16 @@ is shipping, shipped or discarded cannot change), `409 CHANGE_SET_NOT_SHIPPABLE`
 
 Subscribe to `change_set.*` or single events ([Webhooks](publishing.md#webhooks)):
 
-| Event                  | When                                                                      |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `change_set.scheduled` | a set was scheduled (`at`)                                                |
-| `change_set.shipping`  | a ship started its background checks                                      |
-| `change_set.shipped`   | the set is live: `snapshot`, `schemaVersion`, `schemaItems` and the items |
-| `change_set.failed`    | the ship failed and nothing went live: `failedItemId`, `error`            |
-| `change_set.discarded` | the set was discarded                                                     |
+| Event                           | When                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `change_set.scheduled`          | a set was scheduled (`at`)                                                |
+| `change_set.shipping`           | a ship started its background checks                                      |
+| `change_set.shipped`            | the set is live: `snapshot`, `schemaVersion`, `schemaItems` and the items |
+| `change_set.failed`             | the ship failed and nothing went live: `failedItemId`, `error`            |
+| `change_set.discarded`          | the set was discarded                                                     |
+| `change_set.approval_requested` | someone asked for approval (`note`)                                       |
+| `change_set.approved`           | the set was approved (`note`)                                             |
+| `change_set.changes_requested`  | the set was sent back (`note`)                                            |
 
 Each entry item also sends its own `entry.published` or `entry.unpublished`.
 

@@ -102,8 +102,8 @@ shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|gene
   Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then
   PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else
   the primary site). --client generic prints the stdio server definition any MCP client takes.
-  Create an admin API token whose role has no "changes.ship" and paste it in place
-  of the placeholder: agents prepare change sets, people ship them.
+  Create an admin API token whose role has neither "changes.ship" nor "changes.approve" and paste it in
+  place of the placeholder: agents prepare change sets, people approve and ship them.
 ```
 
 ### shapio sites

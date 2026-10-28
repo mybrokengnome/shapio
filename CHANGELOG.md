@@ -6,6 +6,33 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Approval on change sets. A change set can be sent for approval with a note, approved, or sent back with a
+  note saying what to change; every step shows on the set's timeline and sends a webhook event
+  (`change_set.approval_requested`, `change_set.approved`, and `change_set.changes_requested`).
+- Settings → Change sets → "Require an approved change set before shipping". With it on, Ship and Schedule stay
+  off until the set is approved, and the server refuses to ship or schedule a set that is not
+  (`CHANGE_SET_NOT_APPROVED`).
+- An approval is pinned to what the set holds. An edit to an item, an entry draft it publishes, or a schema
+  draft after the approval marks it "Approval outdated", and a site that requires approval refuses the ship
+  until it is approved again (`CHANGE_SET_APPROVAL_STALE`). A scheduled set whose draft moved after approval
+  fails at its time with the reason, and nothing of it goes live.
+- A new permission, `changes.approve`. Upgrading gives it to every role that holds `changes.ship`, and the
+  built-in editor role has it.
+- The Inbox lists change sets awaiting your approval, and the Changes list shows each set's approval and
+  filters by it.
+- The API: `POST /api/admin/change-sets/:id/approval/request`, `…/approve`, `…/request-changes`, and `…/clear`;
+  `GET` and `PUT /api/admin/site/change-sets`; every change set carries `approval`; `?approval=` filters the list.
+  `@shapio/client` has the same calls. The MCP server offers `change_sets_request_approval`, and, with
+  `--allow-ship` only (approving is what lets a set go live), `change_sets_approve` and
+  `change_sets_request_changes`.
+- `shapio import` says so when the site requires approval before the change sets it opened can ship.
+
+### Fixed
+
+- On a phone, a page header with many actions wraps them instead of widening the page.
+
 ## [0.6.4] - 2026-10-23
 
 ### Changed
