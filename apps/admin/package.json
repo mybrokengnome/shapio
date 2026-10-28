@@ -38,6 +38,8 @@
     "@tiptap/extension-bubble-menu": "catalog:",
     "@tiptap/extension-file-handler": "catalog:",
     "@tiptap/extension-link": "catalog:",
+    "@tiptap/extension-subscript": "catalog:",
+    "@tiptap/extension-superscript": "catalog:",
     "@tiptap/extension-table": "catalog:",
     "@tiptap/extensions": "catalog:",
     "@tiptap/pm": "catalog:",

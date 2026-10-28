@@ -169,7 +169,7 @@ describe('Strapi 5 exports', () => {
     ]);
     expect(body.document.doc.content?.[0]?.content).toEqual([
       { type: 'text', text: 'Hello ' },
-      { type: 'text', text: 'world', marks: [{ type: 'bold' }] },
+      { type: 'text', text: 'world', marks: [{ type: 'bold' }, { type: 'underline' }] },
       { type: 'text', text: ' and ' },
       {
         type: 'text',

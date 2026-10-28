@@ -1,5 +1,7 @@
 import type { Extensions, NodeViewRenderer } from '@tiptap/core';
 import { Link } from '@tiptap/extension-link';
+import { Subscript } from '@tiptap/extension-subscript';
+import { Superscript } from '@tiptap/extension-superscript';
 import { TableCell, TableHeader, TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
 import { StarterKit } from '@tiptap/starter-kit';
@@ -30,9 +32,13 @@ const withoutAlign = <T extends typeof TableCell | typeof TableHeader>(extension
     },
   });
 
+/** Subscript and superscript replace each other (Tiptap's own extensions would stack them). */
+const ExclusiveSubscript = Subscript.extend({ excludes: 'superscript' });
+const ExclusiveSuperscript = Superscript.extend({ excludes: 'subscript' });
+
 /**
  * The editor's schema: exactly the nodes, marks and attributes the server stores (ADR 0003,
- * `packages/schema/src/richtext/spec.ts`). Anything else (strike, underline, colors, pasted styles) is
+ * `packages/schema/src/richtext/spec.ts`). Anything else (strike, colors, other pasted styles) is
  * not in the schema, so ProseMirror drops it on paste instead of the server rejecting the save. Link's
  * `title` attribute and table cells' `align` are removed for the same reason. `richTextContract.test.ts` checks the contract.
  */
@@ -42,11 +48,12 @@ export const richTextExtensions = ({
 }: { placeholder?: string; imageView?: NodeViewRenderer } = {}): Extensions => [
   StarterKit.configure({
     strike: false,
-    underline: false,
     link: false,
     heading: { levels: [1, 2, 3, 4, 5, 6] },
   }),
   SafeLink,
+  ExclusiveSubscript,
+  ExclusiveSuperscript,
   TableKit.configure({
     table: { resizable: true, allowTableNodeSelection: true },
     tableCell: false,

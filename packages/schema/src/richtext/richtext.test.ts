@@ -25,12 +25,21 @@ export const BASELINE_DOCUMENT = envelope([
           { type: 'link', attrs: { href: 'https://shapio.dev', target: null, rel: null, class: null } },
         ],
       },
+      { type: 'text', text: 'under', marks: [{ type: 'underline' }] },
+      { type: 'text', text: '2', marks: [{ type: 'subscript' }] },
+      { type: 'text', text: 'nd', marks: [{ type: 'superscript' }] },
     ],
   },
   {
     type: 'bulletList',
     content: [
-      { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] },
+      {
+        type: 'listItem',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'more' }] },
+        ],
+      },
     ],
   },
   {
@@ -106,6 +115,21 @@ describe('rich text', () => {
       '/doc/content/0/attrs/src',
     ],
     ['an empty list', envelope([{ type: 'bulletList', content: [] }]), '/doc/content/0/content'],
+    [
+      'an unknown mark',
+      envelope([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'strike' }] }] }]),
+      '/doc/content/0/content/0/marks/0',
+    ],
+    [
+      'an attribute on a new mark',
+      envelope([
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'x', marks: [{ type: 'underline', attrs: { color: 'red' } }] }],
+        },
+      ]),
+      '/doc/content/0/content/0/marks/0/attrs/color',
+    ],
   ])('rejects %s instead of stripping it', (_name, document, path) => {
     const result = validateRichText(document);
     expect(result.ok).toBe(false);
@@ -131,6 +155,8 @@ describe('rich text', () => {
     expect(html).toContain('<img src="https://cdn.example/chair.jpg" alt="A chair">');
     expect(html).toContain('<td colspan="2"><p>C</p></td>');
     expect(html).toContain('<ol start="3">');
+    expect(html).toContain('<u>under</u><sub>2</sub><sup>nd</sup>');
+    expect(html).toContain('<li><p>one</p><p>more</p></li>');
     expect(renderRichTextHtml(result.document)).not.toContain('<img');
   });
 

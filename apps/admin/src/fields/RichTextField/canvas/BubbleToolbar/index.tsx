@@ -2,7 +2,20 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { Bold, Code, Heading2, Heading3, Italic, Link, List, Quote, Sparkles } from 'lucide-react';
+import {
+  Bold,
+  Code,
+  Heading2,
+  Heading3,
+  Italic,
+  Link,
+  List,
+  Quote,
+  Sparkles,
+  Subscript,
+  Superscript,
+  Underline,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '@/components/ui/separator';
 import { ToolButton } from '../../ToolButton';
@@ -33,6 +46,9 @@ export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps)
     selector: ({ editor: current }) => ({
       bold: current.isActive('bold'),
       italic: current.isActive('italic'),
+      underline: current.isActive('underline'),
+      subscript: current.isActive('subscript'),
+      superscript: current.isActive('superscript'),
       code: current.isActive('code'),
       link: current.isActive('link'),
       heading2: current.isActive('heading', { level: 2 }),
@@ -64,6 +80,30 @@ export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps)
           pressed={state.italic}
           disabled={false}
           onClick={() => chain().toggleItalic().run()}
+        />
+        <ToolButton
+          icon={Underline}
+          label={t('content.richText.underline')}
+          keys="Mod+U"
+          pressed={state.underline}
+          disabled={false}
+          onClick={() => chain().toggleUnderline().run()}
+        />
+        <ToolButton
+          icon={Subscript}
+          label={t('content.richText.subscript')}
+          keys="Mod+,"
+          pressed={state.subscript}
+          disabled={false}
+          onClick={() => chain().toggleSubscript().run()}
+        />
+        <ToolButton
+          icon={Superscript}
+          label={t('content.richText.superscript')}
+          keys="Mod+."
+          pressed={state.superscript}
+          disabled={false}
+          onClick={() => chain().toggleSuperscript().run()}
         />
         <ToolButton
           icon={Code}

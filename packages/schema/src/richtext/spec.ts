@@ -107,6 +107,9 @@ export type MarkRule = { attrs?: Readonly<Record<string, AttrRule>> };
 export const MARK_RULES: Readonly<Record<string, MarkRule>> = {
   bold: {},
   italic: {},
+  underline: {},
+  subscript: {},
+  superscript: {},
   code: {},
   link: {
     attrs: {
