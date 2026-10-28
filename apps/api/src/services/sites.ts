@@ -13,6 +13,12 @@ import * as sitesRepository from '../repositories/sites.js';
 import type { SiteRow } from '../repositories/sites.js';
 import { lockSchema } from '../schema/planner/locks.js';
 import type { ActorContext, SiteRef } from './actorContext.js';
+import {
+  effectiveOf,
+  readInstanceDefault,
+  toSiteSetting,
+  type ApprovalWorkflow,
+} from './approvalWorkflows.js';
 import { recordAudit } from './audit.js';
 
 /**
@@ -25,7 +31,10 @@ export type SiteView = {
   key: string;
   name: string;
   isPrimary: boolean;
-  /** Ships and schedules approved change sets only (plan approval). */
+  /**
+   * Ships and schedules approved change sets only: the site has an effective approval workflow (its own, or
+   * the instance default it inherits; plan approval-workflows). Read-only here.
+   */
   requireApproval: boolean;
   version: number;
   createdAt: Date;
@@ -34,12 +43,12 @@ export type SiteView = {
 
 export type SiteSummaryView = Pick<SiteView, 'id' | 'key' | 'name' | 'isPrimary'>;
 
-export const toSiteView = (row: SiteRow): SiteView => ({
+export const toSiteView = (row: SiteRow, instanceWorkflow: ApprovalWorkflow | null): SiteView => ({
   id: row.id,
   key: row.key,
   name: row.name,
   isPrimary: row.is_primary,
-  requireApproval: row.require_approval,
+  requireApproval: effectiveOf(toSiteSetting(row), instanceWorkflow) !== null,
   version: row.version,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -90,20 +99,28 @@ export const listAccessibleSites = async (principal: AdminPrincipal | TokenPrinc
     : sitesRepository.findByIds(assignedSiteIdsOf(principal.assignments));
 };
 
+/** The instance's default approval workflow, which `requireApproval` of inheriting sites follows. */
+const instanceWorkflow = async (executor: Database = db) => (await readInstanceDefault(executor)).workflow;
+
+const toSiteViews = async (rows: readonly SiteRow[], executor: Database = db): Promise<SiteView[]> => {
+  const instance = await instanceWorkflow(executor);
+  return rows.map((row) => toSiteView(row, instance));
+};
+
 export const listSites = async (principal: AdminPrincipal | TokenPrincipal): Promise<SiteView[]> =>
-  (await listAccessibleSites(principal)).map(toSiteView);
+  toSiteViews(await listAccessibleSites(principal));
 
 export const getSite = async (principal: AdminPrincipal | TokenPrincipal, id: string): Promise<SiteView> => {
   const site = (await listAccessibleSites(principal)).find((row) => row.id === id);
   if (!site) {
     throw siteNotFound();
   }
-  return toSiteView(site);
+  return toSiteView(site, await instanceWorkflow());
 };
 
 /** Every site, primary first (`shapio sites list`, which runs on the server host without a principal). */
 export const listAllSites = async (database: Database = db): Promise<SiteView[]> =>
-  (await sitesRepository.list(database)).map(toSiteView);
+  toSiteViews(await sitesRepository.list(database), database);
 
 /** A new site starts empty: its own publication sequence at 0, and no app roles bound (deny by default). */
 export const createSite = async (
@@ -121,7 +138,7 @@ export const createSite = async (
         target: { type: 'site', id: site.id },
         metadata: { key: site.key, name: site.name },
       });
-      return toSiteView(site);
+      return toSiteView(site, await instanceWorkflow(trx));
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -157,7 +174,7 @@ export const renameSite = async (
       target: { type: 'site', id },
       metadata: { name: { from: current.name, to: updated.name } },
     });
-    return toSiteView(updated);
+    return toSiteView(updated, await instanceWorkflow(trx));
   });
 
 /**

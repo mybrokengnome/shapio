@@ -146,7 +146,8 @@ const checkApprovalAtShip = async (trx: Transaction<DB>, row: ChangeSetRow): Pro
 
 /**
  * Records whether the approval was current at ship; a current one is re-pinned to the shipped form of the
- * fingerprint (what shipped never changes), so the set stays approved afterwards.
+ * fingerprint (what shipped never changes), so the set stays approved afterwards. A set still in review
+ * (approval not required) leaves review: shipping ends it.
  */
 const recordApprovalAtShip = async (
   trx: Transaction<DB>,
@@ -157,9 +158,15 @@ const recordApprovalAtShip = async (
   const fingerprint = current
     ? (await loadFingerprints([{ id: row.id, status: 'shipped', shipped_seq: String(seq) }], trx)).get(row.id)
     : undefined;
+  // Ship ends a review still open (plan approval-workflows): the set is no longer waiting for sign-offs.
+  const endsReview = row.approval_status === 'requested';
   await changeSetsRepository.updateApproval(
     row.id,
-    { approved_at_ship: current, ...(fingerprint ? { approved_fingerprint: fingerprint } : {}) },
+    {
+      approved_at_ship: current,
+      ...(fingerprint ? { approval_fingerprint: fingerprint } : {}),
+      ...(endsReview ? { approval_status: 'none', approval_fingerprint: null } : {}),
+    },
     trx,
   );
 };

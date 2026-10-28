@@ -117,29 +117,32 @@ export const updateSeoDefaultsIfVersion = (
     .returning(['id', 'key', 'name', 'version', 'seo_defaults'])
     .executeTakeFirst();
 
-/** Whether the site requires an approved change set before one ships or is scheduled (plan approval). */
-export const findApprovalSetting = (id: string, trx: Executor = db) =>
-  trx
-    .selectFrom('sites')
-    .select(['id', 'version', 'require_approval'])
-    .where('id', '=', id)
-    .executeTakeFirst();
+const APPROVAL_COLUMNS = ['id', 'name', 'version', 'approval_mode', 'approval_workflow'] as const;
 
-/** Optimistic update of the approval requirement: applies only at `expectedVersion`; bumps the version. */
-export const updateRequireApprovalIfVersion = (
+/** A site's approval mode and custom workflow (plan approval-workflows), with the version an update must name. */
+export const findApprovalSetting = (id: string, trx: Executor = db) =>
+  trx.selectFrom('sites').select(APPROVAL_COLUMNS).where('id', '=', id).executeTakeFirst();
+
+/** Every site's approval mode and custom workflow (the network approval page, role deletion). */
+export const listApprovalSettings = (trx: Executor = db) =>
+  trx.selectFrom('sites').select(APPROVAL_COLUMNS).orderBy('is_primary', 'desc').orderBy('name').execute();
+
+/** Optimistic update of the approval mode and workflow: applies only at `expectedVersion`; bumps the version. */
+export const updateApprovalIfVersion = (
   id: string,
   expectedVersion: number,
-  requireApproval: boolean,
+  setting: { mode: string; workflow: unknown },
   trx: Executor = db,
 ) =>
   trx
     .updateTable('sites')
     .set((eb) => ({
-      require_approval: requireApproval,
+      approval_mode: setting.mode,
+      approval_workflow: setting.workflow === null ? null : JSON.stringify(setting.workflow),
       version: eb('version', '+', 1),
       updated_at: new Date(),
     }))
     .where('id', '=', id)
     .where('version', '=', expectedVersion)
-    .returning(['id', 'version', 'require_approval'])
+    .returning(APPROVAL_COLUMNS)
     .executeTakeFirst();

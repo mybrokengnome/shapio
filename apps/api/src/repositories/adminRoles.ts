@@ -25,6 +25,18 @@ export const findByIds = (ids: readonly string[], trx: Executor = db) =>
     ? Promise.resolve([])
     : trx.selectFrom('admin_roles').selectAll().where('id', 'in', ids).execute();
 
+/** Locks the roles (role deletion and workflows naming roles serialize on these rows). */
+export const lockByIds = (ids: readonly string[], trx: Transaction<DB>) =>
+  ids.length === 0
+    ? Promise.resolve([])
+    : trx
+        .selectFrom('admin_roles')
+        .select(['id', 'name', 'kind'])
+        .where('id', 'in', [...ids].sort())
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+
 export const findByKeys = (keys: readonly string[], trx: Executor = db) =>
   keys.length === 0
     ? Promise.resolve([])

@@ -240,6 +240,21 @@ export interface AuditEvents {
   target_type: string | null;
 }
 
+export interface ChangeSetApprovals {
+  admin_user_id: string | null;
+  api_token_id: string | null;
+  change_set_id: string;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  fingerprint: string;
+  id: Generated<string>;
+  note: Generated<string>;
+  round: number;
+  site_id: string;
+  stage_id: string;
+  stage_index: number;
+}
+
 export interface ChangeSetItems {
   action: string | null;
   change_set_id: string;
@@ -261,16 +276,16 @@ export interface ChangeSetItems {
 export interface ChangeSets {
   acknowledge_breaking: Generated<boolean>;
   acknowledge_destructive: Generated<boolean>;
+  approval_fingerprint: string | null;
   approval_note: Generated<string>;
   approval_requested_at: Timestamp | null;
   approval_requested_by: string | null;
   approval_requested_by_token: string | null;
+  approval_round: Generated<number>;
+  approval_stage: Generated<number>;
   approval_status: Generated<string>;
-  approved_at: Timestamp | null;
+  approval_workflow: Json | null;
   approved_at_ship: boolean | null;
-  approved_by: string | null;
-  approved_by_token: string | null;
-  approved_fingerprint: string | null;
   created_at: Generated<Timestamp>;
   created_by: string | null;
   created_by_token: string | null;
@@ -740,12 +755,13 @@ export interface SiteAppRoles {
 }
 
 export interface Sites {
+  approval_mode: Generated<string>;
+  approval_workflow: Json | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   is_primary: Generated<boolean>;
   key: string;
   name: string;
-  require_approval: Generated<boolean>;
   seo_defaults: Json | null;
   updated_at: Generated<Timestamp>;
   version: Generated<number>;
@@ -836,6 +852,7 @@ export interface DB {
   app_users: AppUsers;
   assist_runs: AssistRuns;
   audit_events: AuditEvents;
+  change_set_approvals: ChangeSetApprovals;
   change_set_items: ChangeSetItems;
   change_sets: ChangeSets;
   content_health_findings: ContentHealthFindings;

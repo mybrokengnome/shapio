@@ -1,6 +1,12 @@
 import { SeoDefaultsSchema } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
+import {
+  ApprovalModeSchema,
+  ApprovalWorkflowInputSchema,
+  ApprovalWorkflowSchema,
+} from '../../schemas/approvalWorkflow.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
+import { Nullable } from '../../schemas/publishing.js';
 
 /** The request's site's SEO defaults and the site version an update must name. */
 export const SiteSeoSchema = Type.Object({
@@ -28,11 +34,19 @@ export const updateSiteSeoSchema = {
   },
 };
 
-/** The request's site's change set settings (plan approval) and the site version an update must name. */
+/** The request's site's change set settings (plan approval-workflows) and the site version an update must name. */
 export const SiteChangeSetsSchema = Type.Object({
   version: Type.Integer(),
-  /** Change sets ship and are scheduled only when approved and unchanged since. */
-  requireApproval: Type.Boolean(),
+  /** `inherit` the instance default, `off`, or `custom` (the site's own workflow). */
+  mode: ApprovalModeSchema,
+  /** The site's own workflow, kept while another mode is chosen. */
+  workflow: Nullable(ApprovalWorkflowSchema),
+  /** The instance default the site would inherit. */
+  inherited: Nullable(ApprovalWorkflowSchema),
+  /** What applies now; null: change sets ship without approval. */
+  effective: Nullable(ApprovalWorkflowSchema),
+  /** Role IDs these workflows name that are no longer admin roles. */
+  unknownRoleIds: Type.Array(Type.String()),
 });
 
 export const getSiteChangeSetsSchema = {
@@ -40,7 +54,12 @@ export const getSiteChangeSetsSchema = {
 };
 
 export const UpdateSiteChangeSetsBodySchema = Type.Object(
-  { expectedVersion: Type.Integer({ minimum: 1 }), requireApproval: Type.Boolean() },
+  {
+    expectedVersion: Type.Integer({ minimum: 1 }),
+    mode: ApprovalModeSchema,
+    /** The site's own workflow; omitted: the stored one is kept (`custom` needs one). */
+    workflow: Type.Optional(ApprovalWorkflowInputSchema),
+  },
   { additionalProperties: false },
 );
 export type UpdateSiteChangeSetsBody = Static<typeof UpdateSiteChangeSetsBodySchema>;

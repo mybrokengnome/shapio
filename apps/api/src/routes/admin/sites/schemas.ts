@@ -11,7 +11,10 @@ export const SiteSchema = Type.Object({
   name: Type.String(),
   /** The site requests fall back to when nothing names one. Exactly one; it cannot be deleted. */
   isPrimary: Type.Boolean(),
-  /** Ships and schedules approved change sets only (plan approval); set on `PUT /api/admin/site/change-sets`. */
+  /**
+   * Ships and schedules approved change sets only: the site has an effective approval workflow (plan
+   * approval-workflows). Read-only; chosen with `PUT /api/admin/site/change-sets` and the network default.
+   */
   requireApproval: Type.Boolean(),
   version: Type.Integer(),
   createdAt: DateTimeSchema,

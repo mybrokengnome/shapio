@@ -67,10 +67,10 @@ export const updateApproval = (
     | 'approval_requested_by'
     | 'approval_requested_by_token'
     | 'approval_requested_at'
-    | 'approved_by'
-    | 'approved_by_token'
-    | 'approved_at'
-    | 'approved_fingerprint'
+    | 'approval_workflow'
+    | 'approval_round'
+    | 'approval_stage'
+    | 'approval_fingerprint'
     | 'approved_at_ship'
   >,
   trx: Executor = db,

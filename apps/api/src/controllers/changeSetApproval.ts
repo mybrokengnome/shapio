@@ -4,7 +4,7 @@ import type { IdParams } from '../routes/schemas/adminIdentity.js';
 import * as approvalService from '../services/changeSetApproval.js';
 import { contentContextFor } from './contentContext.js';
 
-/** Approval on change sets (plan approval): the routes under /api/admin/change-sets/:id/approval. */
+/** Approval workflows on change sets (plan approval-workflows): the routes under /api/admin/change-sets/:id/approval. */
 const contextFor = async (request: FastifyRequest) => ({
   ...(await contentContextFor(request)),
   ports: request.server.schemaContent,

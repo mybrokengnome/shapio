@@ -20,6 +20,7 @@ import type { AdminRoleRow, PermissionGrantRow } from '../repositories/adminRole
 import * as apiTokensRepository from '../repositories/apiTokens.js';
 import * as permissionsVersionRepository from '../repositories/permissionsVersion.js';
 import type { ActorContext } from './actorContext.js';
+import { workflowsNamingRole } from './approvalWorkflows.js';
 import { recordAudit } from './audit.js';
 
 export type RoleKind = 'admin' | 'delivery';
@@ -312,6 +313,18 @@ export const deleteRole = async (context: ActorContext, id: string): Promise<voi
         'ROLE_IN_USE',
         'Remove this role from every admin and API token first',
         holders,
+      );
+    }
+    // A role an approval workflow names cannot go (plan approval-workflows): the stage would lose its
+    // signers. The lock serializes this check with a workflow write naming the role.
+    await adminRolesRepository.lockByIds([id], trx);
+    const workflows = await workflowsNamingRole(id, trx);
+    if (workflows.instanceDefault || workflows.sites.length > 0) {
+      throw new AppError(
+        409,
+        'ROLE_IN_USE',
+        'Remove this role from the approval workflows that name it first',
+        { workflows },
       );
     }
     await apiTokensRepository.deleteRevokedForRole(id, trx);

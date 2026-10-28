@@ -114,21 +114,35 @@ export const loadFingerprints = async (
 export const loadFingerprint = async (row: FingerprintRow, executor: Executor): Promise<string> =>
   (await loadFingerprints([row], executor)).get(row.id) ?? '';
 
-type ApprovalRow = FingerprintRow & Pick<ChangeSetRow, 'approval_status' | 'approved_fingerprint'>;
+type ApprovalRow = FingerprintRow & Pick<ChangeSetRow, 'approval_status' | 'approval_fingerprint'>;
 
-const matches = (row: ApprovalRow, fingerprint: string | undefined) =>
-  row.approval_status === 'approved' && row.approved_fingerprint === fingerprint;
+/**
+ * A review pinned to a fingerprint (plan approval-workflows): a set in review once its round has a sign-off
+ * (every sign-off of a round carries the same fingerprint, so the set keeps it), or an approved set.
+ */
+const isPinned = (row: ApprovalRow) =>
+  (row.approval_status === 'requested' || row.approval_status === 'approved') &&
+  row.approval_fingerprint !== null;
 
-/** Approved sets whose approval no longer matches what they hold (the view's `outdated`), for a whole page. */
+/** A pinned review whose fingerprint no longer matches what the set holds (`fingerprint`: the current one). */
+export const isReviewOutdated = (row: ApprovalRow, fingerprint: string | undefined): boolean =>
+  isPinned(row) && row.approval_fingerprint !== fingerprint;
+
+/**
+ * Sets whose review no longer matches what they hold (the view's `outdated`), for a whole page: approved with
+ * a stale fingerprint, or in review with a sign-off in this round given for something else.
+ */
 export const findOutdated = async (
   rows: readonly ApprovalRow[],
   executor: Executor,
 ): Promise<Set<string>> => {
-  const approved = rows.filter((row) => row.approval_status === 'approved');
-  const fingerprints = await loadFingerprints(approved, executor);
-  return new Set(approved.filter((row) => !matches(row, fingerprints.get(row.id))).map((row) => row.id));
+  const pinned = rows.filter(isPinned);
+  const fingerprints = await loadFingerprints(pinned, executor);
+  return new Set(
+    pinned.filter((row) => isReviewOutdated(row, fingerprints.get(row.id))).map((row) => row.id),
+  );
 };
 
 /** Approved, and the fingerprint it was given for still matches what the set holds now. */
 export const isApprovalCurrent = async (row: ApprovalRow, executor: Executor): Promise<boolean> =>
-  row.approval_status === 'approved' && matches(row, await loadFingerprint(row, executor));
+  row.approval_status === 'approved' && row.approval_fingerprint === (await loadFingerprint(row, executor));

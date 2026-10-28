@@ -3,15 +3,16 @@ import * as handlers from '../../../controllers/changeSetApproval.js';
 import * as schemas from './schemas.js';
 
 /**
- * /api/admin/change-sets/:id/approval (plan approval). Asking for approval and clearing it need
- * `changes.manage`; approving and requesting changes also need `changes.approve`. Registered inside the
- * change-set routes' site scope.
+ * /api/admin/change-sets/:id/approval (plan approval-workflows). Asking for approval and clearing it need
+ * `changes.manage`; approving and requesting changes also need `changes.approve`, and the service checks the
+ * current stage's roles, self-approval and duplicate sign-offs. Registered inside the change-set routes' site
+ * scope.
  */
 export const registerApprovalRoutes = (app: Parameters<FastifyPluginAsyncTypebox>[0]) => {
   const manage = app.requireGlobalPermission('changes.manage');
   const approver = [manage, app.requireGlobalPermission('changes.approve')];
 
-  // POST /:id/approval/request { note? }
+  // POST /:id/approval/request { note? }: freezes the site's workflow and starts a new round
   app.post(
     '/:id/approval/request',
     {
@@ -21,7 +22,7 @@ export const registerApprovalRoutes = (app: Parameters<FastifyPluginAsyncTypebox
     },
     handlers.requestApproval,
   );
-  // POST /:id/approval/approve { note? }: pins the approval to what the set holds now
+  // POST /:id/approval/approve { note? }: signs off at the current stage; the last stage approves the set
   app.post(
     '/:id/approval/approve',
     {

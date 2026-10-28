@@ -14,7 +14,8 @@ import * as deploymentConnectionsRepository from '../repositories/deploymentConn
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import { recordAudit } from './audit.js';
-import { findOutdated } from './changeSetFingerprint.js';
+import { loadApprovalSummaries, type ChangeSetApprovalSummaryView } from './changeSetApprovalViews.js';
+import { listAwaitingMe } from './changeSetAwaiting.js';
 import {
   actorNamesFor,
   changeSetLocked,
@@ -128,35 +129,51 @@ export const listChangeSets = async (
   query: {
     status?: string | undefined;
     approval?: string | undefined;
+    awaitingMe?: boolean | undefined;
     cursor?: string | undefined;
     limit?: number | undefined;
   },
 ): Promise<{ items: ChangeSetSummaryView[]; nextCursor: string | null }> => {
   const limit = query.limit ?? 50;
   const after = decodeCursor(query.cursor);
+  const filter = {
+    siteId: context.site.id,
+    statuses: parseStatuses(query.status),
+    ...(query.approval ? { approvalStatuses: parseApprovalStatuses(query.approval) } : {}),
+  };
+  const toItems = (
+    rows: readonly changeSetsRepository.ChangeSetListRow[],
+    names: ReadonlyMap<string, string>,
+    approvals: ReadonlyMap<string, ChangeSetApprovalSummaryView>,
+  ) =>
+    rows.map((row) =>
+      toSummary(
+        row,
+        { entries: Number(row.entry_items ?? 0), schema: Number(row.schema_items ?? 0) },
+        names,
+        approvals.get(row.id) as ChangeSetApprovalSummaryView,
+      ),
+    );
+  if (query.awaitingMe) {
+    if (filter.approvalStatuses && !filter.approvalStatuses.includes('requested')) {
+      return { items: [], nextCursor: null };
+    }
+    const page = await listAwaitingMe(context, filter, limit, after);
+    return {
+      items: toItems(page.rows, page.names, page.approvals),
+      nextCursor: page.continueAfter ? encodeCursor(page.continueAfter) : null,
+    };
+  }
   const rows = await changeSetsRepository.list(
-    {
-      siteId: context.site.id,
-      statuses: parseStatuses(query.status),
-      ...(query.approval ? { approvalStatuses: parseApprovalStatuses(query.approval) } : {}),
-      limit: limit + 1,
-      ...(after ? { after } : {}),
-    },
+    { ...filter, limit: limit + 1, ...(after ? { after } : {}) },
     context.db,
   );
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   const names = await actorNamesFor(context.db, page);
-  const outdated = await findOutdated(page, context.db);
+  const approvals = await loadApprovalSummaries(context, page, names);
   return {
-    items: page.map((row) =>
-      toSummary(
-        row,
-        { entries: Number(row.entry_items ?? 0), schema: Number(row.schema_items ?? 0) },
-        names,
-        outdated.has(row.id),
-      ),
-    ),
+    items: toItems(page, names, approvals),
     nextCursor: rows.length > limit && last ? encodeCursor(last) : null,
   };
 };
