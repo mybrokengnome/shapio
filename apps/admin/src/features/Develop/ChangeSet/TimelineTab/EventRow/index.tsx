@@ -23,6 +23,10 @@ const EVENT_DISPLAY = {
   deploy_building: { labelKey: 'changes.timeline.deployBuilding', tone: 'progress' },
   deploy_deployed: { labelKey: 'changes.timeline.deployDeployed', tone: 'success' },
   deploy_failed: { labelKey: 'changes.timeline.deployFailed', tone: 'danger' },
+  'approval.requested': { labelKey: 'changes.timeline.approvalRequested', tone: 'scheduled' },
+  'approval.approved': { labelKey: 'changes.timeline.approved', tone: 'success' },
+  'approval.changesRequested': { labelKey: 'changes.timeline.changesRequested', tone: 'danger' },
+  'approval.cleared': { labelKey: 'changes.timeline.approvalCleared', tone: 'muted' },
 } as const satisfies Record<string, { labelKey: string; tone: StatusTone }>;
 
 const isKnownKind = (kind: string): kind is keyof typeof EVENT_DISPLAY => kind in EVENT_DISPLAY;

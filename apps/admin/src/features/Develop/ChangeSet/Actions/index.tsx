@@ -9,17 +9,24 @@ import { InlineConfirm } from '@/components/InlineConfirm';
 import { Button } from '@/components/ui/button';
 import { EDITABLE_STATUSES } from '../../Changes/constants';
 import { useDevelopPermissions } from '../../Changes/hooks/useDevelopPermissions';
+import { ApprovalActions } from '../Approval';
 import { DeployPopover } from '../DeployPopover';
 import type { ShipFlow } from '../hooks/useShipFlow';
 import { SchedulePopover } from '../SchedulePopover';
 
-type ActionsProps = { set: ChangeSet; flow: ShipFlow };
+type ActionsProps = {
+  set: ChangeSet;
+  flow: ShipFlow;
+  /** The site requires approval and this set isn't approved (or changed since): it can't ship yet. */
+  approvalBlocked: boolean;
+};
 
 /**
- * Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. The ship
- * actions need `changes.ship` (the server enforces it).
+ * Discard, the approval steps, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it
+ * was asked for. The ship actions need `changes.ship`, and an approved set where the site requires it (the
+ * server enforces both). A shipped set keeps the approval steps (it can be approved afterwards).
  */
-export const Actions = ({ set, flow }: ActionsProps) => {
+export const Actions = ({ set, flow, approvalBlocked }: ActionsProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const discard = useDiscardChangeSet();
@@ -28,9 +35,12 @@ export const Actions = ({ set, flow }: ActionsProps) => {
   const { canShipChanges } = useDevelopPermissions();
   const enabledConnections = (connections.data ?? []).filter((connection) => connection.enabled);
   const editable = EDITABLE_STATUSES.has(set.status);
-  const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping;
+  const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping || approvalBlocked;
   const itemCount = set.entryItemCount + set.schemaItemCount;
-  if (set.status === 'shipped' || set.status === 'discarded' || set.status === 'shipping') {
+  if (set.status === 'shipped') {
+    return <ApprovalActions set={set} />;
+  }
+  if (set.status === 'discarded' || set.status === 'shipping') {
     return null;
   }
   return (
@@ -67,6 +77,7 @@ export const Actions = ({ set, flow }: ActionsProps) => {
           {t('changes.review.unschedule')}
         </Button>
       ) : null}
+      <ApprovalActions set={set} />
       {editable && canShipChanges ? (
         <>
           <SchedulePopover flow={flow} disabled={shipDisabled} />

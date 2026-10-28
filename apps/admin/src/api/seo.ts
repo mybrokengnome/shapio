@@ -76,6 +76,10 @@ export const useUpdateSiteSeo = () => {
     meta: silent,
     mutationFn: (input: UpdateSiteSeoInput) =>
       withCsrf(() => apiClient.request<SiteSeo>(SEO_PATHS.siteSeo, { method: 'PUT', body: input })),
-    onSuccess: (saved) => queryClient.setQueryData(queryKeys.siteSeo, saved),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKeys.siteSeo, saved);
+      // The site version is shared with its change set settings (plan approval).
+      return queryClient.invalidateQueries({ queryKey: queryKeys.siteChangeSets });
+    },
   });
 };

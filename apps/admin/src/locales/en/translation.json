@@ -410,7 +410,11 @@
       },
       "waiting": "Nothing to write yet.",
       "waitingDescription": "An administrator adds the first content type; it appears in the sidebar."
-    }
+    },
+    "awaitingApproval": "Awaiting your approval",
+    "approvalMeta": "Requested by {{name}} {{at}}",
+    "reviewSet": "Review",
+    "showAllSets": "Show all"
   },
   "contentTypes": {
     "newTitle": "New content type",
@@ -480,7 +484,8 @@
     "locales": "Locales",
     "seo": "SEO",
     "apiTokens": "API tokens",
-    "assist": "Assist"
+    "assist": "Assist",
+    "changeSets": "Change sets"
   },
   "profile": {
     "title": "Profile",
@@ -624,6 +629,7 @@
       "deploymentsTrigger": "Trigger and retry site builds",
       "changesManage": "Create and review change sets",
       "changesShip": "Ship and schedule change sets",
+      "changesApprove": "Approve change sets",
       "siteSettings": "Site settings"
     },
     "contentPermissions": "Content",
@@ -820,7 +826,12 @@
       "assistSchemaDraft": "Proposed content types with assist",
       "assistSummarize": "Summarized with assist",
       "assistTranslate": "Translated with assist",
-      "schemaScope": "Changed where a model is available"
+      "schemaScope": "Changed where a model is available",
+      "changeSetApprovalClear": "Change set approval cleared",
+      "changeSetApprovalRequest": "Change set approval requested",
+      "changeSetApprovalRequestChanges": "Change set sent back",
+      "changeSetApprove": "Change set approved",
+      "siteChangeSetsUpdate": "Site change set settings changed"
     },
     "targets": {
       "adminInvitation": "Invitation",
@@ -2905,7 +2916,45 @@
       "deployBuilding": "Deploy building",
       "deployDeployed": "Deployed",
       "deployFailed": "Deploy failed",
-      "deployRun": "View run"
+      "deployRun": "View run",
+      "approvalRequested": "Approval requested",
+      "approved": "Approved",
+      "changesRequested": "Changes requested",
+      "approvalCleared": "Approval cleared"
+    },
+    "approval": {
+      "statuses": {
+        "requested": "Approval requested",
+        "approved": "Approved",
+        "changesRequested": "Changes requested",
+        "outdated": "Approval outdated"
+      },
+      "filter": {
+        "label": "Approval",
+        "none": "Not requested",
+        "empty": "No change sets in this approval state."
+      },
+      "request": "Request approval",
+      "requestTitle": "Ask for approval",
+      "review": "Review",
+      "reviewTitle": "Approve this change set, or say what to change",
+      "approve": "Approve",
+      "requestChanges": "Request changes",
+      "note": "Note",
+      "noteOptional": "Note (optional)",
+      "noteRequired": "Say what to change.",
+      "requested": "Approval requested.",
+      "approvedToast": "Change set approved.",
+      "changesRequestedToast": "Sent back with your note.",
+      "cleared": "Approval cleared.",
+      "clearFailed": "Could not clear the approval. Try again.",
+      "clear": "Clear approval",
+      "requestedBy": "{{name}} asked for approval {{at}}",
+      "changesRequestedBy": "{{name}} requested changes {{at}}",
+      "approvedBy": "Approved by {{name}} {{at}}",
+      "outdatedTitle": "Approval outdated: the set changed after {{name}} approved it {{at}}",
+      "requiredTitle": "This site requires approval",
+      "requiredDescription": "Ship and Schedule stay off until the change set is approved, and approved again after any edit."
     }
   },
   "snapshots": {
@@ -3395,5 +3444,12 @@
       "conflict": "Someone else changed the SEO settings. Reload to see their version, then make your changes again.",
       "reload": "Reload"
     }
+  },
+  "siteChangeSets": {
+    "changeSetsTitle": "Approval",
+    "requireApproval": "Require an approved change set before shipping",
+    "requireApprovalHint": "Ship and Schedule stay off until someone who may approve change sets approves the set. An edit after approval sends it back for approval.",
+    "saved": "Saved.",
+    "conflict": "Someone changed this site meanwhile. The page now shows the latest setting."
   }
 }

@@ -33,6 +33,8 @@ export const queryKeys = {
   tokens: ['tokens'] as const,
   /** The current site's SEO defaults (Settings → SEO, the SEO field's preview). */
   siteSeo: ['site', 'seo'] as const,
+  /** The current site's change set settings (Settings → Change sets; whether sets need approval). */
+  siteChangeSets: ['site', 'changeSets'] as const,
   /** Sites (network view) and each site's app role bindings. */
   sites: {
     all: ['sites'] as const,
@@ -96,7 +98,10 @@ export const queryKeys = {
   develop: {
     changeSets: {
       all: ['develop', 'changeSets'] as const,
-      list: (status: string) => ['develop', 'changeSets', 'list', status] as const,
+      list: (status: string, approval?: string) =>
+        ['develop', 'changeSets', 'list', status, approval ?? 'any'] as const,
+      awaitingApproval: (previewSize: number) =>
+        ['develop', 'changeSets', 'awaitingApproval', previewSize] as const,
       set: (id: string) => ['develop', 'changeSets', 'set', id] as const,
       /** Keyed by the set's status too: a set that finishes shipping in the background gets its shipped review. */
       review: (id: string, status: string) => ['develop', 'changeSets', 'review', id, status] as const,

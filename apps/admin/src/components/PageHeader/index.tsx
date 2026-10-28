@@ -84,7 +84,10 @@ export const PageHeader = ({
           </div>
           {meta ? <div className="text-meta text-muted-foreground">{meta}</div> : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          // max-w-full: on a phone a long row of actions wraps instead of widening the page.
+          <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
       </div>
       {tabs}
     </header>

@@ -248,6 +248,7 @@ const sessionsRoute = settingsChild('sessions', 'sessions');
 const appearanceRoute = settingsChild('theme', 'theme');
 const localesRoute = settingsChild('locales', 'locales');
 const seoRoute = settingsChild('seo', 'seo');
+const changeSetsSettingsRoute = settingsChild('change-sets', 'changeSets');
 const assistRoute = settingsChild('assist', 'assist');
 const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
 
@@ -489,6 +490,7 @@ const routeTree = rootRoute.addChildren([
       appearanceRoute,
       localesRoute,
       seoRoute,
+      changeSetsSettingsRoute,
       assistRoute,
       rolesRedirectRoute,
       appRolesRedirectRoute,

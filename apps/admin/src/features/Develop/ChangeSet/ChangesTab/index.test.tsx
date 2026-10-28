@@ -31,6 +31,16 @@ const SHIPPED_SET: ChangeSet = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   version: 3,
+  approval: {
+    status: 'none',
+    note: '',
+    requestedBy: null,
+    requestedAt: null,
+    approvedBy: null,
+    approvedAt: null,
+    outdated: false,
+    approvedAtShip: false,
+  },
   items: [],
   shippedBy: { type: 'admin', id: 'a2', name: 'Grace Shipper' },
 };

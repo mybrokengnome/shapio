@@ -2,15 +2,18 @@ import type { ChangeSet } from '@shapio/client';
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useChangeSetReview } from '@/api/changeSets';
+import { useSiteChangeSets } from '@/api/siteChangeSets';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
 import { QueryView } from '@/components/QueryView';
 import { StatusChip } from '@/components/StatusChip';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { ApprovalChip } from '../../Changes/ApprovalChip';
 import { CHANGE_SET_STATUS_DISPLAY, EDITABLE_STATUSES } from '../../Changes/constants';
 import { useActorLabel } from '../../Changes/hooks/useActorLabel';
 import { Actions } from '../Actions';
+import { ApprovalBanner } from '../Approval/Banner';
 import { Banners } from '../Banners';
 import { ChangesTab } from '../ChangesTab';
 import { ChecksTab } from '../ChecksTab';
@@ -37,6 +40,8 @@ export const View = ({ set }: ViewProps) => {
   const navigate = useNavigate({ from: '/changes/$changeSetId' });
   const review = useChangeSetReview(set);
   const flow = useShipFlow(set, review);
+  const requireApproval = useSiteChangeSets().data?.requireApproval ?? false;
+  const approvalCurrent = set.approval.status === 'approved' && !set.approval.outdated;
   const status = CHANGE_SET_STATUS_DISPLAY[set.status];
   const editable = EDITABLE_STATUSES.has(set.status);
   const itemCount = set.entryItemCount + set.schemaItemCount;
@@ -63,11 +68,12 @@ export const View = ({ set }: ViewProps) => {
           badge={
             <>
               <StatusChip tone={status.tone} label={t(status.labelKey)} />
+              <ApprovalChip approval={set.approval} />
               {editable ? <RenamePopover set={set} /> : null}
             </>
           }
           meta={meta}
-          actions={<Actions set={set} flow={flow} />}
+          actions={<Actions set={set} flow={flow} approvalBlocked={requireApproval && !approvalCurrent} />}
           tabs={
             <TabsList variant="underline" aria-label={t('changes.tabs.label')}>
               {CHANGE_SET_TABS.map((key) => (
@@ -78,6 +84,7 @@ export const View = ({ set }: ViewProps) => {
             </TabsList>
           }
         />
+        <ApprovalBanner set={set} requireApproval={requireApproval} />
         <Banners
           set={set}
           flow={flow}

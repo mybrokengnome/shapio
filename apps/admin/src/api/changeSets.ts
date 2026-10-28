@@ -1,8 +1,11 @@
 import type {
   AddChangeSetEntryInput,
+  ApprovalNoteInput,
+  ApprovalStatus,
   ChangeSet,
   CreateChangeSetInput,
   PutSchemaDraftInput,
+  RequestChangesInput,
   ScheduleChangeSetInput,
   ShipChangeSetInput,
   UpdateChangeSetInput,
@@ -24,10 +27,11 @@ const silent = { silent: true } as const;
 /** Every set that still matters on the Changes page (shipped and discarded ones live in the ledger). */
 export const ACTIVE_CHANGE_SET_STATUSES = 'open,scheduled,shipping,failed';
 
-export const useChangeSets = (status: string = ACTIVE_CHANGE_SET_STATUSES) =>
+/** Sets in these statuses, optionally only those in one approval state (plan approval). */
+export const useChangeSets = (status: string = ACTIVE_CHANGE_SET_STATUSES, approval?: ApprovalStatus) =>
   useQuery({
-    queryKey: queryKeys.develop.changeSets.list(status),
-    queryFn: () => changeSetsApi.list({ status, limit: 100 }),
+    queryKey: queryKeys.develop.changeSets.list(status, approval),
+    queryFn: () => changeSetsApi.list({ status, limit: 100, ...(approval ? { approval } : {}) }),
     meta: silent,
   });
 
@@ -150,6 +154,25 @@ export const useScheduleChangeSet = () =>
 
 export const useUnscheduleChangeSet = () =>
   useChangeSetWrite('unschedule', (id: string) => changeSetsApi.unschedule(id));
+
+/** Approval (plan approval): none of these change the set's version. */
+export const useRequestApproval = () =>
+  useChangeSetWrite('requestApproval', ({ id, input }: { id: string; input: ApprovalNoteInput }) =>
+    changeSetsApi.requestApproval(id, input),
+  );
+
+export const useApproveChangeSet = () =>
+  useChangeSetWrite('approve', ({ id, input }: { id: string; input: ApprovalNoteInput }) =>
+    changeSetsApi.approve(id, input),
+  );
+
+export const useRequestChanges = () =>
+  useChangeSetWrite('requestChanges', ({ id, input }: { id: string; input: RequestChangesInput }) =>
+    changeSetsApi.requestChanges(id, input),
+  );
+
+export const useClearApproval = () =>
+  useChangeSetWrite('clearApproval', (id: string) => changeSetsApi.clearApproval(id));
 
 /** The newest open change set (with its items), or a new one named `title` when none is open. */
 const openOrCreateChangeSet = async (title: string) => {

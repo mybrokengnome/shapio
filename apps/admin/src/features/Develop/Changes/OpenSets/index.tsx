@@ -1,4 +1,6 @@
+import { APPROVAL_STATUSES, type ApprovalStatus } from '@shapio/client';
 import { GitPullRequest } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChangeSets } from '@/api/changeSets';
 import { useDeploymentConnections } from '@/api/deployments';
@@ -6,27 +8,53 @@ import { EmptyState } from '@/components/EmptyState';
 import { Panel } from '@/components/Panel';
 import { QueryView } from '@/components/QueryView';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusFilter } from '@/features/Publishing/StatusFilter';
 import { Row } from './Row';
 
-/** Sets still in flight: open, scheduled, shipping or failed. */
+const APPROVAL_FILTER_KEYS = {
+  none: 'changes.approval.filter.none',
+  requested: 'changes.approval.statuses.requested',
+  approved: 'changes.approval.statuses.approved',
+  changes_requested: 'changes.approval.statuses.changesRequested',
+} as const satisfies Record<ApprovalStatus, string>;
+
+/** Sets still in flight: open, scheduled, shipping or failed; filtered by approval state on request. */
 export const OpenSets = () => {
   const { t } = useTranslation();
-  const sets = useChangeSets();
+  const filterId = useId();
+  const [approval, setApproval] = useState<ApprovalStatus | undefined>();
+  const sets = useChangeSets(undefined, approval);
   const connections = useDeploymentConnections();
   const connectionName = (id: string | null) =>
     id ? connections.data?.find((connection) => connection.id === id)?.name : undefined;
   return (
-    <Panel title={t('changes.openTitle')} flush>
+    <Panel
+      title={t('changes.openTitle')}
+      flush
+      actions={
+        <StatusFilter
+          id={filterId}
+          label={t('changes.approval.filter.label')}
+          value={approval}
+          options={APPROVAL_STATUSES.map((value) => ({ value, label: t(APPROVAL_FILTER_KEYS[value]) }))}
+          onChange={setApproval}
+        />
+      }
+    >
       <QueryView
         query={sets}
         isEmpty={(data) => data.items.length === 0}
         empty={
-          <EmptyState
-            icon={GitPullRequest}
-            size="panel"
-            title={t('changes.empty')}
-            description={t('changes.emptyDescription')}
-          />
+          approval ? (
+            <EmptyState icon={GitPullRequest} size="panel" title={t('changes.approval.filter.empty')} />
+          ) : (
+            <EmptyState
+              icon={GitPullRequest}
+              size="panel"
+              title={t('changes.empty')}
+              description={t('changes.emptyDescription')}
+            />
+          )
         }
       >
         {(data) => (
