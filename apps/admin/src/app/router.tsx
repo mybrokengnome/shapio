@@ -333,6 +333,13 @@ const networkNewContentTypeRoute = createRoute({
   path: 'new',
 }).lazy(() => networkLazy().then((routes) => routes.newContentType));
 
+// The default approval workflow is managed by whoever manages sites (plan approval-workflows).
+const networkApprovalRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'approval',
+  beforeLoad: ({ context }) => requireNetworkPermission(context.queryClient, 'sites.manage'),
+}).lazy(() => networkLazy().then((routes) => routes.approval));
+
 const networkAuditLogRoute = createRoute({
   getParentRoute: () => networkRoute,
   path: 'audit-log',
@@ -503,6 +510,7 @@ const routeTree = rootRoute.addChildren([
       sitesRoute,
       siteRoute,
       networkContentTypesRoute.addChildren([networkContentTypesIndexRoute, networkNewContentTypeRoute]),
+      networkApprovalRoute,
       networkUsersRoute,
       networkRolesRoute,
       networkRoleRoute,

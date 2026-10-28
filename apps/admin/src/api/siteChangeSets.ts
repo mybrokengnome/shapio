@@ -1,42 +1,42 @@
+import type { UpdateSiteChangeSetsInput } from '@shapio/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from './client';
+import { adminApi } from './client';
 import { withCsrf } from './csrf';
+import { isConflict } from './errors';
 import { queryKeys } from './queryKeys';
 
 const silent = { silent: true } as const;
 
-/** The site's change set settings (plan approval); the site is the request's (`Shapio-Site`). */
-export const SITE_CHANGE_SETS_PATH = '/api/admin/site/change-sets';
-
-/** Whether change sets need approval to ship, and the site version a save must name. */
-export type SiteChangeSets = { version: number; requireApproval: boolean };
-
-export type UpdateSiteChangeSetsInput = { expectedVersion: number; requireApproval: boolean };
-
-/** Read by every admin of the site: the change set screen says why Ship is disabled. */
+/**
+ * The site's approval mode and workflow (plan approval-workflows); the site is the request's (`Shapio-Site`).
+ * Read by every admin of the site: the change set screen needs `effective` to know whether sets need approval.
+ */
 export const useSiteChangeSets = () =>
   useQuery({
     queryKey: queryKeys.siteChangeSets,
-    queryFn: () => apiClient.request<SiteChangeSets>(SITE_CHANGE_SETS_PATH),
+    queryFn: () => adminApi.site.changeSets.get(),
     meta: silent,
   });
 
 /**
- * Saves the setting (`site.settings`); 409 when the site changed since `expectedVersion`. The site version is
- * shared with the SEO defaults, so their cached copy is read again.
+ * Saves the mode and workflow (`site.settings`); 409 when the site changed since `expectedVersion`, and the
+ * fresh settings are read again. The site version is shared with the SEO defaults, and the network default's
+ * list of sites that follow it changes too, so both cached copies are read again.
  */
 export const useUpdateSiteChangeSets = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ['site', 'changeSets', 'update'],
     meta: silent,
-    mutationFn: (input: UpdateSiteChangeSetsInput) =>
-      withCsrf(() =>
-        apiClient.request<SiteChangeSets>(SITE_CHANGE_SETS_PATH, { method: 'PUT', body: input }),
-      ),
+    mutationFn: (input: UpdateSiteChangeSetsInput) => withCsrf(() => adminApi.site.changeSets.update(input)),
     onSuccess: (saved) => {
       queryClient.setQueryData(queryKeys.siteChangeSets, saved);
-      return queryClient.invalidateQueries({ queryKey: queryKeys.siteSeo });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.siteSeo }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.networkApproval }),
+      ]);
     },
+    onError: (error) =>
+      isConflict(error) ? queryClient.invalidateQueries({ queryKey: queryKeys.siteChangeSets }) : undefined,
   });
 };

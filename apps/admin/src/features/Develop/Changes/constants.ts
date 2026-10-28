@@ -5,7 +5,7 @@ import type { StatusTone } from '@/components/StatusChip';
 export const CHANGES_MANAGE_PERMISSION = 'changes.manage';
 /** Shipping and scheduling a ship (split from `changes.manage`, agentic plan §I). */
 export const CHANGES_SHIP_PERMISSION = 'changes.ship';
-/** Approving change sets and sending them back (plan approval). */
+/** Signing off on change sets and sending them back (plan approval-workflows). */
 export const CHANGES_APPROVE_PERMISSION = 'changes.approve';
 export const TOKENS_MANAGE_PERMISSION = 'tokens.manage';
 
@@ -23,7 +23,10 @@ export const CHANGE_SET_STATUS_DISPLAY = {
 /** Sets whose items and title can still change. */
 export const EDITABLE_STATUSES: ReadonlySet<ChangeSetStatus> = new Set(['open', 'failed']);
 
-/** How an approval reads; `outdated` is an approved set that changed since. `none` shows nothing. */
+/**
+ * How an approval reads; `outdated` is a set that changed after a sign-off in this round or after it was
+ * approved. `none` shows nothing.
+ */
 export const APPROVAL_DISPLAY = {
   requested: { labelKey: 'changes.approval.statuses.requested', tone: 'scheduled' },
   approved: { labelKey: 'changes.approval.statuses.approved', tone: 'success' },

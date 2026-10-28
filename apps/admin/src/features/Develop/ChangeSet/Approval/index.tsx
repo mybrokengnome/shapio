@@ -1,57 +1,42 @@
-import type { ChangeSet } from '@shapio/client';
-import { BadgeCheck, MessageSquareMore } from 'lucide-react';
+import type { ApprovalWorkflow, ChangeSet } from '@shapio/client';
 import { useTranslation } from 'react-i18next';
+import { Panel } from '@/components/Panel';
+import { EDITABLE_STATUSES } from '../../Changes/constants';
 import { useDevelopPermissions } from '../../Changes/hooks/useDevelopPermissions';
+import { Actions } from './Actions';
+import { ApprovalBanner } from './Banner';
 import { approvalStateOf } from './helpers/approvalState';
-import { useApprovalWrites } from './hooks/useApprovalWrites';
-import { NotePopover, type NoteAction } from './NotePopover';
+import { Signoffs } from './Signoffs';
+import { StageStrip } from './StageStrip';
 
-type ApprovalActionsProps = { set: ChangeSet };
+type ApprovalPanelProps = {
+  set: ChangeSet;
+  /** The site's effective workflow: sets can be sent for approval and need it to ship. Null: approval is off. */
+  workflow: ApprovalWorkflow | null;
+};
 
 /**
- * The approval steps in the set's header (plan approval): "Request approval…" for those who prepare sets,
- * "Review…" (approve, or request changes with a note) for approvers. Each opens a note popover.
+ * The set's approval block (plan approval-workflows): where the review stands, the workflow's stages (frozen on
+ * the set once review starts; the site's before), every sign-off, and the steps this admin may take. Hidden
+ * on a site without approval for a set that was never sent for it.
  */
-export const ApprovalActions = ({ set }: ApprovalActionsProps) => {
+export const ApprovalPanel = ({ set, workflow }: ApprovalPanelProps) => {
   const { t } = useTranslation();
   const permissions = useDevelopPermissions();
-  const state = approvalStateOf(set, permissions);
-  const writes = useApprovalWrites(set.id);
-  const reviewActions: NoteAction[] = [
-    ...(state.canRequestChanges
-      ? [
-          {
-            key: 'requestChanges',
-            label: t('changes.approval.requestChanges'),
-            requiresNote: true,
-            run: writes.requestChanges,
-          },
-        ]
-      : []),
-    ...(state.canApprove
-      ? [{ key: 'approve', label: t('changes.approval.approve'), run: writes.approve }]
-      : []),
-  ];
+  const { approval } = set;
+  const state = approvalStateOf(set, permissions, workflow !== null);
+  const editable = EDITABLE_STATUSES.has(set.status);
+  const stripWorkflow = approval.status === 'none' ? (editable ? workflow : null) : approval.workflow;
+  if (approval.status === 'none' && approval.signoffs.length === 0 && !stripWorkflow) {
+    return null;
+  }
   return (
-    <>
-      {state.canRequest ? (
-        <NotePopover
-          triggerLabel={t('changes.approval.request')}
-          icon={MessageSquareMore}
-          title={t('changes.approval.requestTitle')}
-          noteLabel={t('changes.approval.noteOptional')}
-          actions={[{ key: 'request', label: t('changes.approval.request'), run: writes.request }]}
-        />
-      ) : null}
-      {reviewActions.length > 0 ? (
-        <NotePopover
-          triggerLabel={t('changes.approval.review')}
-          icon={BadgeCheck}
-          title={t('changes.approval.reviewTitle')}
-          noteLabel={t('changes.approval.note')}
-          actions={reviewActions}
-        />
-      ) : null}
-    </>
+    <Panel title={t('approval.title')} actions={<Actions set={set} state={state} />}>
+      <div className="space-y-4">
+        <ApprovalBanner set={set} blocked={workflow !== null && editable && !state.current} />
+        {stripWorkflow ? <StageStrip workflow={stripWorkflow} approval={approval} /> : null}
+        <Signoffs signoffs={approval.signoffs} round={approval.round} />
+      </div>
+    </Panel>
   );
 };

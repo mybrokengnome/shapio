@@ -8,7 +8,7 @@ import {
 } from '@/api/changeSets';
 
 /**
- * The four approval writes for one set, each with its confirmation toast (plan approval). Failures come back
+ * The four approval writes for one set, each with its confirmation toast (plan approval-workflows). Failures come back
  * to the caller (the popover shows them inline); `clear` has no form, so its failure is a toast.
  */
 export const useApprovalWrites = (setId: string) => {
@@ -23,8 +23,13 @@ export const useApprovalWrites = (setId: string) => {
       toast.success(t('changes.approval.requested'));
     },
     approve: async (note: string) => {
-      await approve.mutateAsync({ id: setId, input: note ? { note } : {} });
-      toast.success(t('changes.approval.approvedToast'));
+      const set = await approve.mutateAsync({ id: setId, input: note ? { note } : {} });
+      // A sign-off before the last stage's last one moves the review on; only the final one approves the set.
+      toast.success(
+        set.approval.status === 'approved'
+          ? t('changes.approval.approvedToast')
+          : t('changes.approval.signedToast'),
+      );
     },
     requestChanges: async (note: string) => {
       await requestChanges.mutateAsync({ id: setId, input: { note } });

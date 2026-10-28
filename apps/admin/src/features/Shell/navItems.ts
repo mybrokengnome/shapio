@@ -13,6 +13,7 @@ import {
   Image,
   Inbox,
   KeyRound,
+  ListChecks,
   ScrollText,
   Rocket,
   Settings,
@@ -56,6 +57,7 @@ export type NavPath =
   | '/network'
   | '/network/sites'
   | '/network/content-types'
+  | '/network/approval'
   | '/network/users'
   | '/network/roles'
   | '/network/audit-log';
@@ -205,6 +207,13 @@ export const NETWORK_ITEMS: readonly NavItemDefinition[] = [
     icon: Boxes,
     to: '/network/content-types',
     networkPermission: 'schema.create',
+  },
+  {
+    key: 'approval',
+    labelKey: 'shell.nav.approval',
+    icon: ListChecks,
+    to: '/network/approval',
+    networkPermission: 'sites.manage',
   },
   {
     key: 'users',

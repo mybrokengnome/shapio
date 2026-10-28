@@ -13,8 +13,8 @@ import type { AwaitingApprovalGroup } from '../../hooks/useAwaitingApprovalGroup
 type ApprovalGroupProps = { group: AwaitingApprovalGroup };
 
 /**
- * "Awaiting your approval": each set someone sent for approval, who asked and when, the note, and a link to
- * review it (plan approval). Shown first: a person is waiting.
+ * "Awaiting your approval": each set this admin can sign off now, who asked and when, the stage it is at, the
+ * note, and a link to review it (plan approval-workflows). Shown first: a person is waiting.
  */
 export const ApprovalGroup = ({ group }: ApprovalGroupProps) => {
   const { t } = useTranslation();
@@ -44,11 +44,22 @@ export const ApprovalGroup = ({ group }: ApprovalGroupProps) => {
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="truncate text-sm font-semibold">{set.title}</p>
               <p className="text-meta text-muted-foreground">
-                {t('inbox.approvalMeta', {
-                  name: actorLabel(set.approval.requestedBy),
-                  at: formatRelativeTime(set.approval.requestedAt ?? set.updatedAt),
-                })}
-                {set.approval.note ? ` · ${set.approval.note}` : ''}
+                {[
+                  t('inbox.approvalMeta', {
+                    name: actorLabel(set.approval.requestedBy),
+                    at: formatRelativeTime(set.approval.requestedAt ?? set.updatedAt),
+                  }),
+                  set.approval.stage
+                    ? t('changes.approval.stageProgress', {
+                        stage: set.approval.stage.name,
+                        signed: set.approval.stage.signed,
+                        required: set.approval.stage.required,
+                      })
+                    : '',
+                  set.approval.note,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </p>
             </div>
             <Button variant="outline" size="sm" asChild>

@@ -9,7 +9,6 @@ import { InlineConfirm } from '@/components/InlineConfirm';
 import { Button } from '@/components/ui/button';
 import { EDITABLE_STATUSES } from '../../Changes/constants';
 import { useDevelopPermissions } from '../../Changes/hooks/useDevelopPermissions';
-import { ApprovalActions } from '../Approval';
 import { DeployPopover } from '../DeployPopover';
 import type { ShipFlow } from '../hooks/useShipFlow';
 import { SchedulePopover } from '../SchedulePopover';
@@ -22,9 +21,9 @@ type ActionsProps = {
 };
 
 /**
- * Discard, the approval steps, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it
- * was asked for. The ship actions need `changes.ship`, and an approved set where the site requires it (the
- * server enforces both). A shipped set keeps the approval steps (it can be approved afterwards).
+ * Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. The
+ * ship actions need `changes.ship`, and an approved set where the site requires it (the server enforces both).
+ * The approval steps are in the set's approval block.
  */
 export const Actions = ({ set, flow, approvalBlocked }: ActionsProps) => {
   const { t } = useTranslation();
@@ -37,10 +36,7 @@ export const Actions = ({ set, flow, approvalBlocked }: ActionsProps) => {
   const editable = EDITABLE_STATUSES.has(set.status);
   const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping || approvalBlocked;
   const itemCount = set.entryItemCount + set.schemaItemCount;
-  if (set.status === 'shipped') {
-    return <ApprovalActions set={set} />;
-  }
-  if (set.status === 'discarded' || set.status === 'shipping') {
+  if (set.status === 'shipped' || set.status === 'discarded' || set.status === 'shipping') {
     return null;
   }
   return (
@@ -77,7 +73,6 @@ export const Actions = ({ set, flow, approvalBlocked }: ActionsProps) => {
           {t('changes.review.unschedule')}
         </Button>
       ) : null}
-      <ApprovalActions set={set} />
       {editable && canShipChanges ? (
         <>
           <SchedulePopover flow={flow} disabled={shipDisabled} />

@@ -16,14 +16,16 @@ const summary = (id: string, title: string, note: string): ChangeSetSummary =>
     approval: {
       status: 'requested',
       note,
+      round: 1,
       requestedBy: { type: 'admin', id: 'a1', name: 'Ada Writer' },
       requestedAt: '2026-10-01T00:00:00.000Z',
-      approvedBy: null,
-      approvedAt: null,
       outdated: false,
       approvedAtShip: null,
+      eligible: true,
+      eligibleReason: null,
+      stage: { index: 1, id: 'legal', name: 'Legal', required: 2, signed: 1 },
     },
-  }) as ChangeSetSummary;
+  }) as unknown as ChangeSetSummary;
 
 const groupOf = (sets: ChangeSetSummary[], extra: Partial<AwaitingApprovalGroup> = {}) =>
   ({
@@ -49,8 +51,8 @@ const renderGroup = (group: AwaitingApprovalGroup) => {
   render(<RouterProvider router={router} />);
 };
 
-describe('Awaiting your approval (plan approval)', () => {
-  it('lists each set with who asked, the note, and a link to review it', async () => {
+describe('Awaiting your approval (plan approval-workflows)', () => {
+  it('lists each set with who asked, the stage it is at, the note, and a link to review it', async () => {
     renderGroup(groupOf([summary('set-1', 'Spring launch', 'Check the hero copy')]));
     const section = (
       await screen.findByRole('heading', { level: 3, name: 'Awaiting your approval' })
@@ -58,6 +60,7 @@ describe('Awaiting your approval (plan approval)', () => {
     const row = within(section).getByRole('listitem');
     expect(row.textContent).toContain('Spring launch');
     expect(row.textContent).toContain('Requested by Ada Writer');
+    expect(row.textContent).toContain('Legal 1/2');
     expect(row.textContent).toContain('Check the hero copy');
     expect(within(row).getByRole('link', { name: 'Review' }).getAttribute('href')).toBe('/changes/set-1');
   });

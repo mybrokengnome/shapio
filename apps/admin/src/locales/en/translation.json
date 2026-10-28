@@ -67,7 +67,9 @@
     "siteTwice": "Each site can only be listed once.",
     "ownerAllSites": "The owner role can only be given on all sites.",
     "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
-    "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores."
+    "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores.",
+    "approvalRequired": "Enter a whole number from 1 to 20.",
+    "approvalDeletedRole": "Uncheck the deleted role before saving."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -126,7 +128,7 @@
       "FOLDER_NOT_FOUND": "That folder no longer exists.",
       "NOT_CONFIGURED": "This isn't configured on the server yet.",
       "ALREADY_CONFIRMED": "This email address is already confirmed.",
-      "ROLE_IN_USE": "Remove this role from everyone who holds it first.",
+      "ROLE_IN_USE": "Remove this role from everyone who holds it, and from the approval workflows that name it, first.",
       "UNKNOWN_MODEL": "Some permissions name models that no longer exist. Reload and try again.",
       "CONTENT_INVALID": "Some fields need attention. Check the highlighted fields and try again.",
       "CONTENT_VERSION_CONFLICT": "This entry changed since you opened it. Reload it and try again.",
@@ -160,7 +162,14 @@
       "ASSIST_NOTHING_TO_SUMMARIZE": "There is no saved body text to summarize yet.",
       "ASSIST_NOT_LOCALIZED": "This content type isn't localized.",
       "ASSIST_SAME_LOCALE": "Pick a different locale to translate from.",
-      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists."
+      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists.",
+      "APPROVAL_UNKNOWN_ROLE": "A role this workflow names was deleted. Uncheck it and save again.",
+      "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this site a workflow of its own.",
+      "CHANGE_SET_APPROVAL_NOT_ELIGIBLE": "You can't sign off on this change set at its current stage.",
+      "CHANGE_SET_APPROVAL_STALE": "The change set changed after it was signed off. Ask for approval again.",
+      "CHANGE_SET_APPROVAL_NOT_CONFIGURED": "This site has no approval workflow, so its change sets ship without approval.",
+      "CHANGE_SET_APPROVAL_NOT_REQUESTED": "This change set isn't waiting for approval anymore. Reload to see where it stands.",
+      "CHANGE_SET_NOT_APPROVED": "This site requires an approved change set before it ships or is scheduled."
     }
   },
   "notFound": {
@@ -285,7 +294,8 @@
       "appUsers": "App users",
       "sites": "Sites",
       "auditLog": "Audit log",
-      "sharedContentTypes": "Content types"
+      "sharedContentTypes": "Content types",
+      "approval": "Approval"
     }
   },
   "palette": {
@@ -831,7 +841,10 @@
       "changeSetApprovalRequest": "Change set approval requested",
       "changeSetApprovalRequestChanges": "Change set sent back",
       "changeSetApprove": "Change set approved",
-      "siteChangeSetsUpdate": "Site change set settings changed"
+      "siteChangeSetsUpdate": "Site change set settings changed",
+      "changeSetApprovalSign": "Change set signed off",
+      "changeSetApprovalStageComplete": "Change set approval stage completed",
+      "networkApprovalUpdate": "Default approval workflow changed"
     },
     "targets": {
       "adminInvitation": "Invitation",
@@ -2924,11 +2937,15 @@
       "approvalRequested": "Approval requested",
       "approved": "Approved",
       "changesRequested": "Changes requested",
-      "approvalCleared": "Approval cleared"
+      "approvalCleared": "Approval cleared",
+      "signed": "Signed off",
+      "signedAt": "Signed off · {{stage}} {{signed}} of {{required}}",
+      "stageCompleted": "Stage complete",
+      "stageCompletedAt": "Stage complete · {{stage}}"
     },
     "approval": {
       "statuses": {
-        "requested": "Approval requested",
+        "requested": "In review",
         "approved": "Approved",
         "changesRequested": "Changes requested",
         "outdated": "Approval outdated"
@@ -2949,6 +2966,7 @@
       "noteRequired": "Say what to change.",
       "requested": "Approval requested.",
       "approvedToast": "Change set approved.",
+      "signedToast": "Signed off.",
       "changesRequestedToast": "Sent back with your note.",
       "cleared": "Approval cleared.",
       "clearFailed": "Could not clear the approval. Try again.",
@@ -2958,7 +2976,19 @@
       "approvedBy": "Approved by {{name}} {{at}}",
       "outdatedTitle": "Approval outdated: the set changed after {{name}} approved it {{at}}",
       "requiredTitle": "This site requires approval",
-      "requiredDescription": "Ship and Schedule stay off until the change set is approved, and approved again after any edit."
+      "requiredDescription": "Ship and Schedule stay off until the change set is approved, and approved again after any edit.",
+      "inReviewAt": "In review · {{stage}} {{signed}}/{{required}}",
+      "stageProgress": "{{stage}} {{signed}}/{{required}}",
+      "requestChangesTitle": "Say what to change",
+      "outdatedReviewTitle": "The change set changed after it was signed off. Ask for approval again.",
+      "ineligible": {
+        "role": "Only {{roles}} may sign off at this stage.",
+        "roleAny": "Your roles may not sign off at this stage.",
+        "self": "You can't approve your own change set.",
+        "signed": "You already signed this stage.",
+        "outdated": "The change set changed since it was signed; ask for approval again.",
+        "rolesDeleted": "Every role this stage names was deleted; clear the approval and ask again."
+      }
     }
   },
   "snapshots": {
@@ -3449,11 +3479,60 @@
       "reload": "Reload"
     }
   },
-  "siteChangeSets": {
-    "changeSetsTitle": "Approval",
-    "requireApproval": "Require an approved change set before shipping",
-    "requireApprovalHint": "Ship and Schedule stay off until someone who may approve change sets approves the set. An edit after approval sends it back for approval.",
+  "approval": {
+    "title": "Approval",
+    "stages": "Stages",
+    "stageNumber": "Stage {{number}}",
+    "stageTitle": "{{number}}. {{name}}",
+    "stageName": "Name",
+    "required": "Sign-offs needed",
+    "whoMaySign": "Who may sign off",
+    "anyApprover": "Anyone who may approve change sets",
+    "deletedRole": "Deleted role",
+    "moveUp": "Move {{stage}} up",
+    "moveDown": "Move {{stage}} down",
+    "removeStage": "Remove {{stage}}",
+    "addStage": "Add stage",
+    "selfApproval": "People may approve their own change sets",
+    "selfApprovalHint": "When off, whoever created a change set or asked for its approval can't sign off on it.",
+    "selfApprovalOn": "People may approve their own change sets.",
+    "selfApprovalOff": "People can't approve their own change sets.",
+    "signoffsNeeded_one": "{{count}} sign-off needed",
+    "signoffsNeeded_other": "{{count}} sign-offs needed",
+    "stageDone": "complete",
+    "stageCount": "{{signed}}/{{required}}",
+    "stageCountLong": "{{signed}} of {{required}} signed",
+    "signoffs": "Sign-offs",
+    "signedStage": "{{name}} signed off at {{stage}}",
+    "signedOff": "{{name}} signed off",
+    "changesRequestedStage": "{{name}} requested changes at {{stage}}",
+    "changesRequestedOff": "{{name}} requested changes",
+    "earlierRound": "Earlier round",
+    "changedSince": "Set changed since",
     "saved": "Saved.",
-    "conflict": "Someone changed this site meanwhile. The page now shows the latest setting."
+    "conflict": "Someone changed these settings meanwhile. The page now shows the latest ones.",
+    "modes": {
+      "inherit": "Network default",
+      "off": "Off",
+      "custom": "Own workflow",
+      "workflow": "Workflow"
+    },
+    "network": {
+      "defaultTitle": "Default for every site",
+      "defaultDescription": "Sites use it unless they choose otherwise in their change set settings.",
+      "offDescription": "Change sets ship without approval.",
+      "workflowDescription": "Change sets go through these stages before they ship.",
+      "inheriting_one": "{{count}} site inherits this default.",
+      "inheriting_other": "{{count}} sites inherit this default.",
+      "customSites": "Own workflow: {{sites}}.",
+      "offSites": "Approval off: {{sites}}."
+    },
+    "site": {
+      "inheritDescription": "Use the network's default.",
+      "offDescription": "Change sets ship without approval.",
+      "customDescription": "Stages of this site's own.",
+      "inheritedOff": "The network default has no approval, so change sets ship without it.",
+      "readOnly": "Only admins who may change site settings can change this."
+    }
   }
 }

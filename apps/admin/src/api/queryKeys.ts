@@ -35,6 +35,8 @@ export const queryKeys = {
   siteSeo: ['site', 'seo'] as const,
   /** The current site's change set settings (Settings → Change sets; whether sets need approval). */
   siteChangeSets: ['site', 'changeSets'] as const,
+  /** The instance's default approval workflow (Network → Approval). */
+  networkApproval: ['network', 'approval'] as const,
   /** Sites (network view) and each site's app role bindings. */
   sites: {
     all: ['sites'] as const,

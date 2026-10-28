@@ -8,11 +8,15 @@ import { queryKeys } from './queryKeys';
  */
 const silent = { silent: true } as const;
 
-/** Sets that can still be approved and are waiting for it (the Inbox's "Awaiting your approval"). */
-const AWAITING_APPROVAL = { status: 'open,failed', approval: 'requested' } as const;
+/**
+ * Sets in review that the caller can sign off now (the Inbox's "Awaiting your approval", plan
+ * approval-workflows): the server keeps only those where the caller is eligible at the current stage.
+ */
+const AWAITING_APPROVAL = { status: 'open,failed', approval: 'requested', awaitingMe: true } as const;
 
 /**
- * Sets awaiting approval, a short first page for the Inbox group, then full pages (plan approval). Only for
+ * Sets awaiting the caller's approval, a short first page for the Inbox group, then full pages. A page can be
+ * short (even empty) and still have a next cursor: the server filters by eligibility after paging. Only for
  * admins who may approve (`enabled`).
  */
 export const useAwaitingApproval = (

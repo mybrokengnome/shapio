@@ -13,7 +13,7 @@ import { ApprovalChip } from '../../Changes/ApprovalChip';
 import { CHANGE_SET_STATUS_DISPLAY, EDITABLE_STATUSES } from '../../Changes/constants';
 import { useActorLabel } from '../../Changes/hooks/useActorLabel';
 import { Actions } from '../Actions';
-import { ApprovalBanner } from '../Approval/Banner';
+import { ApprovalPanel } from '../Approval';
 import { Banners } from '../Banners';
 import { ChangesTab } from '../ChangesTab';
 import { ChecksTab } from '../ChecksTab';
@@ -40,7 +40,8 @@ export const View = ({ set }: ViewProps) => {
   const navigate = useNavigate({ from: '/changes/$changeSetId' });
   const review = useChangeSetReview(set);
   const flow = useShipFlow(set, review);
-  const requireApproval = useSiteChangeSets().data?.requireApproval ?? false;
+  // The site's effective workflow (plan approval-workflows): with one, a set ships only once approved.
+  const workflow = useSiteChangeSets().data?.effective ?? null;
   const approvalCurrent = set.approval.status === 'approved' && !set.approval.outdated;
   const status = CHANGE_SET_STATUS_DISPLAY[set.status];
   const editable = EDITABLE_STATUSES.has(set.status);
@@ -73,7 +74,7 @@ export const View = ({ set }: ViewProps) => {
             </>
           }
           meta={meta}
-          actions={<Actions set={set} flow={flow} approvalBlocked={requireApproval && !approvalCurrent} />}
+          actions={<Actions set={set} flow={flow} approvalBlocked={workflow !== null && !approvalCurrent} />}
           tabs={
             <TabsList variant="underline" aria-label={t('changes.tabs.label')}>
               {CHANGE_SET_TABS.map((key) => (
@@ -84,7 +85,7 @@ export const View = ({ set }: ViewProps) => {
             </TabsList>
           }
         />
-        <ApprovalBanner set={set} requireApproval={requireApproval} />
+        <ApprovalPanel set={set} workflow={workflow} />
         <Banners
           set={set}
           flow={flow}
