@@ -58,10 +58,13 @@ export const createChangeSetsApi = (request: RequestFn) => ({
     schedule: (id: string, body: ScheduleChangeSetInput) =>
       request<ChangeSet>(`${setPath(id)}/schedule`, { method: 'POST', body }),
     unschedule: (id: string) => request<ChangeSet>(`${setPath(id)}/unschedule`, { method: 'POST' }),
-    /** Sends the set for approval (plan approval). */
+    /** Sends the set for approval: freezes the site's workflow and starts a new round (plan approval-workflows). */
     requestApproval: (id: string, body: ApprovalNoteInput = {}) =>
       request<ChangeSet>(`${setPath(id)}/approval/request`, { method: 'POST', body }),
-    /** Approves the set as it is now; an edit afterwards makes the approval outdated. Needs `changes.approve`. */
+    /**
+     * Signs off at the current stage (plan approval-workflows); after the last stage the set is approved. An
+     * edit afterwards makes the review outdated. Needs `changes.approve` and eligibility at the stage.
+     */
     approve: (id: string, body: ApprovalNoteInput = {}) =>
       request<ChangeSet>(`${setPath(id)}/approval/approve`, { method: 'POST', body }),
     /** Sends the set back with what to change. Needs `changes.approve`. */

@@ -100,8 +100,9 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
     {
       title: 'Ask for approval of a change set',
       description:
-        'Sends an open change set for approval, with an optional note for the approver. A site may require ' +
-        'an approved set before it ships.',
+        "Sends an open change set for approval under the site's approval workflow (one or more stages, each " +
+        'naming who may sign off and how many sign-offs it needs), with an optional note. Asking again starts a ' +
+        'new review round. A site with a workflow requires an approved set before it ships.',
       inputSchema: z.object({ changeSetId: SET_ID, note: z.string().max(2000).optional() }),
       annotations: { destructiveHint: false, openWorldHint: false },
     },
@@ -116,8 +117,10 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
       {
         title: 'Approve a change set',
         description:
-          'Approves the set as it is now; any later edit makes the approval outdated. Only when the person you ' +
-          "work for asked for it. Refused when the token's role lacks changes.approve.",
+          'Signs off on the set at its current review stage; the last stage approves it. Any later edit makes the ' +
+          'review outdated. Only when the person you work for asked for it. Refused when the token lacks ' +
+          "changes.approve, when the stage names roles the token's role is not one of, or when the token " +
+          'created or sent the set and the workflow forbids approving your own work.',
         inputSchema: z.object({ changeSetId: SET_ID, note: z.string().max(2000).optional() }),
         annotations: { destructiveHint: false, openWorldHint: false },
       },
@@ -130,8 +133,8 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
       {
         title: 'Request changes to a change set',
         description:
-          "Sends the set back with a note saying what to change. Refused when the token's role lacks " +
-          'changes.approve.',
+          'Sends the set back with a note saying what to change, at any review stage; the round ends. Refused when ' +
+          "the token lacks changes.approve or the stage's roles do not include the token's role.",
         inputSchema: z.object({ changeSetId: SET_ID, note: z.string().min(1).max(2000) }),
         annotations: { destructiveHint: false, openWorldHint: false },
       },

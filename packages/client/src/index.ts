@@ -15,6 +15,8 @@ export {
   SITE_ACTIONS,
   SITE_HEADER,
   SITES_PATHS,
+  APPROVAL_PATHS,
+  APPROVAL_MODES,
   HEALTH_RULES,
   DEPLOYMENT_PROVIDERS,
   DEPLOYMENT_RUN_STATUSES,
@@ -39,6 +41,7 @@ export type * from './admin/appUsersTypes.js';
 export type * from './admin/changeSetTypes.js';
 export type * from './admin/usageTypes.js';
 export type * from './admin/sitesTypes.js';
+export type * from './admin/approvalTypes.js';
 export type * from './admin/assistTypes.js';
 export type * from './snapshotTypes.js';
 export { DELIVERY_PATH, type DeliveryApi } from './delivery.js';

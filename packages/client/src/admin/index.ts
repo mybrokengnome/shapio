@@ -1,4 +1,5 @@
 import type { RequestFn } from '../request.js';
+import { createApprovalApi } from './approval.js';
 import { createAppUsersApi } from './appUsers.js';
 import { createAssistApi } from './assist.js';
 import { createChangeSetsApi } from './changeSets.js';
@@ -116,6 +117,7 @@ export const createAdminApi = (request: RequestFn) => ({
   ...createChangeSetsApi(request),
   ...createUsageApi(request),
   ...createSitesApi(request),
+  ...createApprovalApi(request),
   ...createAssistApi(request),
 });
 
@@ -131,6 +133,8 @@ export * from './appUsersTypes.js';
 export * from './changeSetTypes.js';
 export * from './usageTypes.js';
 export * from './sitesTypes.js';
+export * from './approvalTypes.js';
+export { APPROVAL_PATHS } from './approval.js';
 export { SITE_HEADER, SITES_PATHS } from './sites.js';
 export { toContentQueryString } from './contentQuery.js';
 export { buildUploadForm, resolveUploadUrl } from './media.js';
