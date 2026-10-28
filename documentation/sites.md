@@ -253,6 +253,10 @@ Someone can be Editor on the marketing site, Read-only on the docs site and noth
   that site's own content types and components ([Who can change them](#who-can-change-them)).
 - **Site permissions** are about one site: `tokens.manage`, `media.*`, `publishing.manage`, `webhooks.manage`,
   `deployments.*`, `changes.manage`, `changes.ship`, `changes.approve`, and `site.settings`.
+- **Approval workflows** follow the same split: the default every site inherits is a network setting
+  (`sites.manage`, Network → Approval), and each site chooses to inherit it, switch approval off, or keep its
+  own workflow (`site.settings`, Settings → Change sets). A stage's roles count when held on that site or on
+  every site ([Approval](change-sets.md#approval)).
 - The **Owner** role can only be held on all sites.
 - An admin who holds no role on a site gets `403 SITE_FORBIDDEN` there. `GET /api/admin/auth/me` still answers on
   every site, with `site`, `sites` (where they work), `siteCount`, `networkPermissions`, `sitePermissions` and the

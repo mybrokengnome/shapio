@@ -8,25 +8,34 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Added
 
-- Approval on change sets. A change set can be sent for approval with a note, approved, or sent back with a
-  note saying what to change; every step shows on the set's timeline and sends a webhook event
-  (`change_set.approval_requested`, `change_set.approved`, and `change_set.changes_requested`).
-- Settings → Change sets → "Require an approved change set before shipping". With it on, Ship and Schedule stay
-  off until the set is approved, and the server refuses to ship or schedule a set that is not
+- Approval workflows on change sets. A site's change sets go through an ordered list of stages before they ship;
+  each stage names the roles that may sign off (or anyone who may approve) and how many sign-offs it needs, and
+  the workflow says whether people may approve their own change sets. Asking for approval freezes the workflow
+  on the set, so editing a workflow never changes a review in flight; a stage completes when enough different
+  people sign off, and the set is approved after the last stage. Requesting changes at any stage ends the round.
+- Network → Approval sets the default workflow every site inherits (off until set; needs `sites.manage`).
+  Settings → Change sets lets a site use the network default, switch approval off, or keep a workflow of its own
+  (needs `site.settings`). A site with a workflow refuses to ship or schedule a set that is not approved
   (`CHANGE_SET_NOT_APPROVED`).
-- An approval is pinned to what the set holds. An edit to an item, an entry draft it publishes, or a schema
-  draft after the approval marks it "Approval outdated", and a site that requires approval refuses the ship
-  until it is approved again (`CHANGE_SET_APPROVAL_STALE`). A scheduled set whose draft moved after approval
-  fails at its time with the reason, and nothing of it goes live.
+- A review is pinned to what the set holds. An edit to an item, an entry draft it publishes, or a schema draft
+  after the first sign-off of a round, or after approval, marks it "Approval outdated": nobody can sign, and a
+  site with a workflow refuses the ship (`CHANGE_SET_APPROVAL_STALE`) until approval is asked for again, which
+  starts a new round. A scheduled set whose draft moved after approval fails at its time with the reason, and
+  nothing of it goes live. Shipping a set that is still in review ends the review.
 - A new permission, `changes.approve`. Upgrading gives it to every role that holds `changes.ship`, and the
-  built-in editor role has it.
-- The Inbox lists change sets awaiting your approval, and the Changes list shows each set's approval and
-  filters by it.
+  built-in editor role has it. A role an approval workflow names cannot be deleted (`ROLE_IN_USE`), and a stage
+  whose roles were all deleted during a review cannot be signed by anyone until the approval is cleared and asked
+  for again.
+- The change set page shows the frozen workflow as a stage strip, every sign-off, and why you cannot sign when
+  you cannot. The Changes list shows the stage a set is at; the Inbox lists only the sets you can sign off now.
+  Every step shows on the set's timeline and sends a webhook event (`change_set.approval_requested`,
+  `change_set.approval_stage_completed`, `change_set.approved`, and `change_set.changes_requested`).
 - The API: `POST /api/admin/change-sets/:id/approval/request`, `…/approve`, `…/request-changes`, and `…/clear`;
-  `GET` and `PUT /api/admin/site/change-sets`; every change set carries `approval`; `?approval=` filters the list.
-  `@shapio/client` has the same calls. The MCP server offers `change_sets_request_approval`, and, with
-  `--allow-ship` only (approving is what lets a set go live), `change_sets_approve` and
-  `change_sets_request_changes`.
+  `GET` and `PUT /api/admin/site/change-sets` and `/api/admin/network/approval`; every change set carries
+  `approval` with its round, stage, eligibility, and sign-offs; `?approval=` filters the list and
+  `?awaitingMe=true` keeps the sets you can sign now. `@shapio/client` has the same calls. The MCP server offers
+  `change_sets_request_approval`, and, with `--allow-ship` only (approving is what lets a set go live),
+  `change_sets_approve` and `change_sets_request_changes`.
 - `shapio import` says so when the site requires approval before the change sets it opened can ship.
 - Rich text has three new marks: underline, subscript, and superscript. The editor's toolbar and the floating
   toolbar have a button for each (Mod+U, Mod+comma, Mod+period; the minimal toolbar shows Underline only),
