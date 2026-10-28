@@ -6,8 +6,9 @@ const SET_ID = z.string().min(1).describe('Change set ID');
 
 /**
  * Change sets: the reviewable bundle of schema drafts and entry publications that ships as one snapshot.
- * Agents create and fill them; shipping is a person's call (`change_sets_ship` exists only with
- * --allow-ship, and the server also needs the token's role to hold changes.ship).
+ * Agents create and fill them and may ask for approval; shipping and approving are a person's call
+ * (`change_sets_ship`, `change_sets_approve`, and `change_sets_request_changes` exist only with --allow-ship, and
+ * the server also needs the token's role to hold changes.ship or changes.approve).
  */
 export const registerChangeSetTools = ({ server, client, options }: ToolContext) => {
   server.registerTool(
@@ -20,6 +21,10 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
           .string()
           .optional()
           .describe('Comma-separated: open, scheduled, shipping, shipped, failed, discarded'),
+        approval: z
+          .string()
+          .optional()
+          .describe('Comma-separated approval states: none, requested, approved, changes_requested'),
         cursor: z.string().optional(),
         limit: z.number().int().positive().max(100).optional(),
       }),
@@ -90,7 +95,49 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
       }),
   );
 
+  server.registerTool(
+    'change_sets_request_approval',
+    {
+      title: 'Ask for approval of a change set',
+      description:
+        'Sends an open change set for approval, with an optional note for the approver. A site may require ' +
+        'an approved set before it ships.',
+      inputSchema: z.object({ changeSetId: SET_ID, note: z.string().max(2000).optional() }),
+      annotations: { destructiveHint: false, openWorldHint: false },
+    },
+    ({ changeSetId, note }) =>
+      runTool(() => client.admin.changeSets.requestApproval(changeSetId, note ? { note } : {})),
+  );
+
   if (options.allowShip) {
+    // Where a site requires approval, approving is what lets a set go live: the same guard as shipping.
+    server.registerTool(
+      'change_sets_approve',
+      {
+        title: 'Approve a change set',
+        description:
+          'Approves the set as it is now; any later edit makes the approval outdated. Only when the person you ' +
+          "work for asked for it. Refused when the token's role lacks changes.approve.",
+        inputSchema: z.object({ changeSetId: SET_ID, note: z.string().max(2000).optional() }),
+        annotations: { destructiveHint: false, openWorldHint: false },
+      },
+      ({ changeSetId, note }) =>
+        runTool(() => client.admin.changeSets.approve(changeSetId, note ? { note } : {})),
+    );
+
+    server.registerTool(
+      'change_sets_request_changes',
+      {
+        title: 'Request changes to a change set',
+        description:
+          "Sends the set back with a note saying what to change. Refused when the token's role lacks " +
+          'changes.approve.',
+        inputSchema: z.object({ changeSetId: SET_ID, note: z.string().min(1).max(2000) }),
+        annotations: { destructiveHint: false, openWorldHint: false },
+      },
+      ({ changeSetId, note }) => runTool(() => client.admin.changeSets.requestChanges(changeSetId, { note })),
+    );
+
     server.registerTool(
       'change_sets_ship',
       {

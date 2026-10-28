@@ -25,6 +25,8 @@ export type SiteView = {
   key: string;
   name: string;
   isPrimary: boolean;
+  /** Ships and schedules approved change sets only (plan approval). */
+  requireApproval: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -37,6 +39,7 @@ export const toSiteView = (row: SiteRow): SiteView => ({
   key: row.key,
   name: row.name,
   isPrimary: row.is_primary,
+  requireApproval: row.require_approval,
   version: row.version,
   createdAt: row.created_at,
   updatedAt: row.updated_at,

@@ -19,6 +19,12 @@ import { activateDefinitions, type ActivationItem } from '../schema/planner/acti
 import { actorColumns } from '../schema/planner/actor.js';
 import { discardStaged, type HandlerDeps } from '../schema/planner/changeJob.js';
 import type { ChangePlan } from '../schema/planner/plan.js';
+import {
+  changeSetApprovalStale,
+  changeSetNotApproved,
+  siteRequiresApproval,
+} from '../services/changeSetApproval.js';
+import { isApprovalCurrent, loadFingerprints } from '../services/changeSetFingerprint.js';
 import { auditChangeSet, type ChangeSetServiceContext } from '../services/changeSets.js';
 import { changeSetNotFound } from '../services/changeSetViews.js';
 import { publicationItemsOf, type ShipPlan } from './changeSetPrepare.js';
@@ -125,11 +131,50 @@ const queueDeploy = async (trx: Transaction<DB>, row: ChangeSetRow, now: Date) =
   return run.id;
 };
 
+/**
+ * Whether the set's approval still matches what it holds, read before anything publishes (a publish can move
+ * a draft head). A site that requires approval refuses a stale or missing one here too: a job-run ship plans
+ * long before this transaction, and a draft may have moved meanwhile (plan approval).
+ */
+const checkApprovalAtShip = async (trx: Transaction<DB>, row: ChangeSetRow): Promise<boolean> => {
+  const current = await isApprovalCurrent(row, trx);
+  if (!current && (await siteRequiresApproval(row.site_id, trx))) {
+    throw row.approval_status === 'approved' ? changeSetApprovalStale() : changeSetNotApproved();
+  }
+  return current;
+};
+
+/**
+ * Records whether the approval was current at ship; a current one is re-pinned to the shipped form of the
+ * fingerprint (what shipped never changes), so the set stays approved afterwards.
+ */
+const recordApprovalAtShip = async (
+  trx: Transaction<DB>,
+  row: ChangeSetRow,
+  seq: number,
+  current: boolean,
+) => {
+  const fingerprint = current
+    ? (await loadFingerprints([{ id: row.id, status: 'shipped', shipped_seq: String(seq) }], trx)).get(row.id)
+    : undefined;
+  await changeSetsRepository.updateApproval(
+    row.id,
+    { approved_at_ship: current, ...(fingerprint ? { approved_fingerprint: fingerprint } : {}) },
+    trx,
+  );
+};
+
 const markShipped = async (
   context: ChangeSetServiceContext,
   trx: Transaction<DB>,
   row: ChangeSetRow,
-  outcome: { seq: number; schemaVersion: number | null; results: PublicationResult[]; schemaItems: number },
+  outcome: {
+    seq: number;
+    schemaVersion: number | null;
+    results: PublicationResult[];
+    schemaItems: number;
+    approvalCurrent: boolean;
+  },
 ) => {
   const now = new Date();
   await changeSetItemsRepository.setStatusAll(row.id, 'done', trx);
@@ -150,6 +195,7 @@ const markShipped = async (
     now,
     trx,
   );
+  await recordApprovalAtShip(trx, row, outcome.seq, outcome.approvalCurrent);
   await writeOutboxEvent(trx, {
     type: CHANGE_SET_EVENTS.shipped,
     aggregateType: 'change_set',
@@ -182,6 +228,7 @@ const shipContent = async (
   half: { seq: SeqAllocator; schemaVersion: number | null },
 ) => {
   const row = await lockShippable(trx, input);
+  const approvalCurrent = await checkApprovalAtShip(trx, row);
   if (input.logChangedAfterReview) {
     await logChangedAfterReview(context, trx, row.id, input.entryItems);
   }
@@ -204,6 +251,7 @@ const shipContent = async (
     schemaVersion: half.schemaVersion,
     results,
     schemaItems: input.activation.length,
+    approvalCurrent,
   });
 };
 
@@ -352,6 +400,8 @@ export const recordShipFailure = async (
 /** Errors an interactive ship reports as a refusal (409) instead of failing the set: nothing went wrong yet. */
 const REFUSALS: ReadonlySet<string> = new Set([
   'CHANGE_SET_STALE',
+  'CHANGE_SET_NOT_APPROVED',
+  'CHANGE_SET_APPROVAL_STALE',
   'SCHEMA_VERSION_CONFLICT',
   'SCHEMA_CHANGED',
   'SCHEMA_CHANGE_IN_PROGRESS',

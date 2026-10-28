@@ -1,10 +1,16 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
+import { getSiteChangeSets, updateSiteChangeSets } from '../../../controllers/siteChangeSets.js';
 import { getSiteSeo, updateSiteSeo } from '../../../controllers/siteSeo.js';
 import { declareSiteScope } from '../../../plugins/siteResolution.js';
-import { getSiteSeoSchema, updateSiteSeoSchema } from './schemas.js';
+import {
+  getSiteChangeSetsSchema,
+  getSiteSeoSchema,
+  updateSiteChangeSetsSchema,
+  updateSiteSeoSchema,
+} from './schemas.js';
 
 /**
- * /api/admin/site: the request's site's own settings (plan seo-fields), named by the `Shapio-Site` header.
+ * /api/admin/site: the request's site's own settings (plan seo-fields; change set settings, plan approval), named by the `Shapio-Site` header.
  * Reading them needs read access to some content of the site (checked by the service); changing them needs
  * `site.settings` on that site (a site admin needs no network role).
  */
@@ -18,5 +24,21 @@ export const adminSiteRoutes: FastifyPluginAsyncTypebox = async (app) => {
     '/seo',
     { schema: updateSiteSeoSchema, config: { audit: { action: 'site.seo_update' } }, ...settings },
     updateSiteSeo,
+  );
+  // GET /api/admin/site/change-sets: whether change sets need approval to ship (any admin of the site)
+  app.get(
+    '/change-sets',
+    { schema: getSiteChangeSetsSchema, preHandler: app.requireAdmin },
+    getSiteChangeSets,
+  );
+  // PUT /api/admin/site/change-sets { expectedVersion, requireApproval }: 409 when the site changed since read
+  app.put(
+    '/change-sets',
+    {
+      schema: updateSiteChangeSetsSchema,
+      config: { audit: { action: 'site.change_sets_update' } },
+      ...settings,
+    },
+    updateSiteChangeSets,
   );
 };

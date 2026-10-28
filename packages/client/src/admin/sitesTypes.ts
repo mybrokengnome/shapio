@@ -6,6 +6,8 @@ export type Site = {
   name: string;
   /** Requests that name no site go to the primary site. Exactly one; it cannot be deleted. */
   isPrimary: boolean;
+  /** Ships and schedules approved change sets only (plan approval); `PUT /api/admin/site/change-sets`. */
+  requireApproval: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;

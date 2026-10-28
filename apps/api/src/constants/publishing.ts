@@ -15,6 +15,10 @@ export const CHANGE_SET_EVENTS = {
   shipped: 'change_set.shipped',
   failed: 'change_set.failed',
   discarded: 'change_set.discarded',
+  // Approval (plan approval): someone asked for it, approved the set, or sent it back with a note.
+  approvalRequested: 'change_set.approval_requested',
+  approved: 'change_set.approved',
+  changesRequested: 'change_set.changes_requested',
 } as const;
 
 /** A restore change set holds at most this many items (it ships in one transaction). */

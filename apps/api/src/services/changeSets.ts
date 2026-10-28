@@ -9,11 +9,12 @@ import { adminIdOf, tokenIdOf } from '../publishing/principals.js';
 import { resolvePublicationTarget, type PublicationTargetInput } from '../publishing/targets.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
-import type { ChangeSetStatus } from '../repositories/changeSets.js';
+import type { ApprovalStatus, ChangeSetStatus } from '../repositories/changeSets.js';
 import * as deploymentConnectionsRepository from '../repositories/deploymentConnections.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaContentPorts } from '../schema/planner/contentPorts.js';
 import { recordAudit } from './audit.js';
+import { findOutdated } from './changeSetFingerprint.js';
 import {
   actorNamesFor,
   changeSetLocked,
@@ -93,6 +94,18 @@ const parseStatuses = (raw: string | undefined): ChangeSetStatus[] => {
   return statuses as ChangeSetStatus[];
 };
 
+const APPROVAL_FILTER: ReadonlySet<string> = new Set(['none', 'requested', 'approved', 'changes_requested']);
+
+/** `approval=requested,approved`: the approval states a list keeps (plan approval). */
+const parseApprovalStatuses = (raw: string): ApprovalStatus[] => {
+  const statuses = raw.split(',').filter((value) => value !== '');
+  const unknown = statuses.find((status) => !APPROVAL_FILTER.has(status));
+  if (unknown) {
+    throw new AppError(400, 'INVALID_APPROVAL', `Unknown approval state "${unknown}"`);
+  }
+  return statuses as ApprovalStatus[];
+};
+
 type ListCursor = { createdAt: string; id: string };
 
 const decodeCursor = (cursor: string | undefined): { createdAt: Date; id: string } | undefined => {
@@ -112,7 +125,12 @@ const encodeCursor = (row: { created_at: Date; id: string }) =>
 
 export const listChangeSets = async (
   context: ContentServiceContext,
-  query: { status?: string | undefined; cursor?: string | undefined; limit?: number | undefined },
+  query: {
+    status?: string | undefined;
+    approval?: string | undefined;
+    cursor?: string | undefined;
+    limit?: number | undefined;
+  },
 ): Promise<{ items: ChangeSetSummaryView[]; nextCursor: string | null }> => {
   const limit = query.limit ?? 50;
   const after = decodeCursor(query.cursor);
@@ -120,6 +138,7 @@ export const listChangeSets = async (
     {
       siteId: context.site.id,
       statuses: parseStatuses(query.status),
+      ...(query.approval ? { approvalStatuses: parseApprovalStatuses(query.approval) } : {}),
       limit: limit + 1,
       ...(after ? { after } : {}),
     },
@@ -128,9 +147,15 @@ export const listChangeSets = async (
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   const names = await actorNamesFor(context.db, page);
+  const outdated = await findOutdated(page, context.db);
   return {
     items: page.map((row) =>
-      toSummary(row, { entries: Number(row.entry_items ?? 0), schema: Number(row.schema_items ?? 0) }, names),
+      toSummary(
+        row,
+        { entries: Number(row.entry_items ?? 0), schema: Number(row.schema_items ?? 0) },
+        names,
+        outdated.has(row.id),
+      ),
     ),
     nextCursor: rows.length > limit && last ? encodeCursor(last) : null,
   };

@@ -62,6 +62,25 @@ export type ChangeSetSchemaItem = {
 
 export type ChangeSetItem = ChangeSetEntryItem | ChangeSetSchemaItem;
 
+export const APPROVAL_STATUSES = ['none', 'requested', 'approved', 'changes_requested'] as const;
+/** Approval (plan approval): not asked, asked, approved, or sent back with a note. */
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+export type ChangeSetApproval = {
+  status: ApprovalStatus;
+  /** The note of the last transition (a request, an approval, or what to change). */
+  note: string;
+  requestedBy: ChangeSetActor | null;
+  requestedAt: string | null;
+  /** Who decided (approved, or requested changes), and when. */
+  approvedBy: ChangeSetActor | null;
+  approvedAt: string | null;
+  /** Approved, but the set changed since: it must be approved again before it can ship where required. */
+  outdated: boolean;
+  /** Whether the approval was current when the set shipped; null until it ships. */
+  approvedAtShip: boolean | null;
+};
+
 export type ChangeSetSummary = {
   id: string;
   title: string;
@@ -85,6 +104,7 @@ export type ChangeSetSummary = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  approval: ChangeSetApproval;
 };
 
 export type ChangeSet = ChangeSetSummary & {
@@ -96,9 +116,16 @@ export type ChangeSet = ChangeSetSummary & {
 export type ChangeSetQuery = {
   /** Comma-separated statuses; default: everything except `discarded`. */
   status?: string;
+  /** Comma-separated approval states (`none`, `requested`, `approved`, `changes_requested`). */
+  approval?: string;
   cursor?: string;
   limit?: number;
 };
+
+/** `approval/request` and `approval/approve`: an optional note. */
+export type ApprovalNoteInput = { note?: string };
+/** `approval/request-changes`: what to change. */
+export type RequestChangesInput = { note: string };
 
 export type CreateChangeSetInput = {
   title: string;

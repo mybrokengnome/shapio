@@ -63,6 +63,7 @@ export const SITE_ACTIONS = [
   'deployments.trigger',
   'changes.manage',
   'changes.ship',
+  'changes.approve',
 ] as const;
 export type SiteAction = (typeof SITE_ACTIONS)[number];
 
@@ -83,6 +84,7 @@ export const GLOBAL_ACTIONS = [
   'deployments.trigger',
   'changes.manage',
   'changes.ship',
+  'changes.approve',
   'site.settings',
 ] as const;
 export type GlobalAction = (typeof GLOBAL_ACTIONS)[number];

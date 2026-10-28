@@ -6,6 +6,7 @@ export {
   buildUploadForm,
   resolveUploadUrl,
   toContentQueryString,
+  APPROVAL_STATUSES,
   CHANGE_SET_STATUSES,
   CONTENT_ACTIONS,
   DELIVERY_ACTIONS,

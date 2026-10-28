@@ -26,6 +26,11 @@ import {
   ImpactSchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
+import {
+  ApprovalNoteBodySchema,
+  ChangeSetApprovalSchema,
+  RequestChangesBodySchema,
+} from './approvalSchemas.js';
 
 /**
  * /api/admin/change-sets (developer-face plan §5): a named bundle of schema drafts and entry publications that
@@ -124,6 +129,8 @@ const summaryFields = {
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
   version: Type.Integer(),
+  /** Approval (plan approval): requested, approved or sent back, and whether the approval is outdated. */
+  approval: ChangeSetApprovalSchema,
 };
 
 export const ChangeSetSummarySchema = Type.Object(summaryFields);
@@ -148,6 +155,8 @@ export const ListChangeSetsQuerySchema = Type.Object(
   {
     /** Comma-separated statuses; default: every status except `discarded`. */
     status: Type.Optional(Type.String({ maxLength: 200, pattern: '^[a-z,]+$' })),
+    /** Comma-separated approval states (`none`, `requested`, `approved`, `changes_requested`). */
+    approval: Type.Optional(Type.String({ maxLength: 200, pattern: '^[a-z_,]+$' })),
     ...CursorQueryFields,
   },
   { additionalProperties: false },
@@ -159,6 +168,21 @@ export const listChangeSetsSchema = {
 };
 
 export const getChangeSetSchema = { params: IdParamsSchema, response: { 200: ChangeSetSchema, ...errors } };
+
+// Approval (plan approval) -------------------------------------------------------------------------
+
+/** `POST /:id/approval/request { note? }` and `POST /:id/approval/approve { note? }`. */
+export const approvalWithNoteSchema = {
+  params: IdParamsSchema,
+  body: ApprovalNoteBodySchema,
+  response: { 200: ChangeSetSchema, ...errors },
+};
+/** `POST /:id/approval/request-changes { note }`: what to change is required. */
+export const requestChangesSchema = {
+  params: IdParamsSchema,
+  body: RequestChangesBodySchema,
+  response: { 200: ChangeSetSchema, ...errors },
+};
 
 const TitleSchema = Type.String({ minLength: 1, maxLength: 200 });
 const DescriptionSchema = Type.String({ maxLength: 5000 });

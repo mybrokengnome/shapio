@@ -10,6 +10,7 @@ import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
+import { findOutdated } from './changeSetFingerprint.js';
 
 /**
  * Change set views (the shapes in routes/admin/changeSets/schemas.ts) and the errors every change-set
@@ -55,6 +56,20 @@ export type SchemaItemView = {
   error: string | null;
 };
 
+/** A set's approval (plan approval); `outdated` when it was approved and has changed since. */
+export type ChangeSetApprovalView = {
+  status: changeSetsRepository.ApprovalStatus;
+  note: string;
+  requestedBy: ChangeSetActorView | null;
+  requestedAt: Date | null;
+  /** Who decided (approved, or requested changes), and when. */
+  approvedBy: ChangeSetActorView | null;
+  approvedAt: Date | null;
+  outdated: boolean;
+  /** Whether the approval was current when the set shipped; null until it ships. */
+  approvedAtShip: boolean | null;
+};
+
 export type ChangeSetSummaryView = {
   id: string;
   title: string;
@@ -76,6 +91,7 @@ export type ChangeSetSummaryView = {
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  approval: ChangeSetApprovalView;
 };
 
 export type ChangeSetView = ChangeSetSummaryView & {
@@ -111,18 +127,52 @@ export const operationOf = (draft: Pick<SchemaDraftRow, 'base_version' | 'defini
   return draft.base_version === null ? 'create' : 'update';
 };
 
-const actorOf = (
-  row: Pick<ChangeSetRow, 'created_by' | 'created_by_token'>,
+const actorOfIds = (
+  adminId: string | null,
+  tokenId: string | null,
   names: ReadonlyMap<string, string>,
 ): ChangeSetActorView => {
-  if (row.created_by) {
-    return { type: 'admin', id: row.created_by, name: names.get(row.created_by) ?? null };
+  if (adminId) {
+    return { type: 'admin', id: adminId, name: names.get(adminId) ?? null };
   }
-  if (row.created_by_token) {
-    return { type: 'token', id: row.created_by_token, name: names.get(row.created_by_token) ?? null };
+  if (tokenId) {
+    return { type: 'token', id: tokenId, name: names.get(tokenId) ?? null };
   }
   return { type: 'system', id: null, name: null };
 };
+
+const actorOf = (
+  row: Pick<ChangeSetRow, 'created_by' | 'created_by_token'>,
+  names: ReadonlyMap<string, string>,
+): ChangeSetActorView => actorOfIds(row.created_by, row.created_by_token, names);
+
+/** An approval actor: null when nobody did that step yet (its time is unset). */
+const approvalActorOf = (
+  at: Date | null,
+  adminId: string | null,
+  tokenId: string | null,
+  names: ReadonlyMap<string, string>,
+): ChangeSetActorView | null => (at === null ? null : actorOfIds(adminId, tokenId, names));
+
+const approvalOf = (
+  row: ChangeSetRow,
+  outdated: boolean,
+  names: ReadonlyMap<string, string>,
+): ChangeSetApprovalView => ({
+  status: row.approval_status as ChangeSetApprovalView['status'],
+  note: row.approval_note,
+  requestedBy: approvalActorOf(
+    row.approval_requested_at,
+    row.approval_requested_by,
+    row.approval_requested_by_token,
+    names,
+  ),
+  requestedAt: row.approval_requested_at,
+  approvedBy: approvalActorOf(row.approved_at, row.approved_by, row.approved_by_token, names),
+  approvedAt: row.approved_at,
+  outdated,
+  approvedAtShip: row.approved_at_ship,
+});
 
 const errorOf = (value: unknown): ChangeSetErrorView | null => {
   if (!value || typeof value !== 'object') {
@@ -141,6 +191,7 @@ export const toSummary = (
   row: ChangeSetRow,
   counts: { entries: number; schema: number },
   names: ReadonlyMap<string, string>,
+  outdated: boolean,
 ): ChangeSetSummaryView => ({
   id: row.id,
   title: row.title,
@@ -162,16 +213,31 @@ export const toSummary = (
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   version: row.version,
+  approval: approvalOf(row, outdated, names),
 });
 
-export const actorNamesFor = (
-  database: Database,
-  rows: ReadonlyArray<Pick<ChangeSetRow, 'created_by' | 'created_by_token'>>,
-) =>
+type NamedRow = Pick<ChangeSetRow, 'created_by' | 'created_by_token'> &
+  Partial<
+    Pick<
+      ChangeSetRow,
+      'approval_requested_by' | 'approval_requested_by_token' | 'approved_by' | 'approved_by_token'
+    >
+  >;
+
+const presentIds = (values: ReadonlyArray<string | null | undefined>) => [
+  ...new Set(values.flatMap((value) => (value ? [value] : []))),
+];
+
+/** Names of everyone a page of sets names: creators and approval actors. */
+export const actorNamesFor = (database: Database, rows: readonly NamedRow[]) =>
   changeSetsRepository.findActorNames(
     {
-      adminIds: [...new Set(rows.flatMap((row) => (row.created_by ? [row.created_by] : [])))],
-      tokenIds: [...new Set(rows.flatMap((row) => (row.created_by_token ? [row.created_by_token] : [])))],
+      adminIds: presentIds(
+        rows.flatMap((row) => [row.created_by, row.approval_requested_by, row.approved_by]),
+      ),
+      tokenIds: presentIds(
+        rows.flatMap((row) => [row.created_by_token, row.approval_requested_by_token, row.approved_by_token]),
+      ),
     },
     database,
   );
@@ -284,8 +350,9 @@ export const loadChangeSetView = async (
   };
   const shipper = await shipperOf(context, row);
   const names = await actorNamesFor(database, shipper ? [row, shipper] : [row]);
+  const outdated = (await findOutdated([row], database)).has(row.id);
   return {
-    ...toSummary(row, counts, names),
+    ...toSummary(row, counts, names, outdated),
     items: views,
     shippedBy: shipper ? actorOf(shipper, names) : null,
   };

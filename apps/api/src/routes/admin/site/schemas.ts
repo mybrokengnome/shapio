@@ -27,3 +27,31 @@ export const updateSiteSeoSchema = {
     409: ErrorResponseSchema,
   },
 };
+
+/** The request's site's change set settings (plan approval) and the site version an update must name. */
+export const SiteChangeSetsSchema = Type.Object({
+  version: Type.Integer(),
+  /** Change sets ship and are scheduled only when approved and unchanged since. */
+  requireApproval: Type.Boolean(),
+});
+
+export const getSiteChangeSetsSchema = {
+  response: { 200: SiteChangeSetsSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema },
+};
+
+export const UpdateSiteChangeSetsBodySchema = Type.Object(
+  { expectedVersion: Type.Integer({ minimum: 1 }), requireApproval: Type.Boolean() },
+  { additionalProperties: false },
+);
+export type UpdateSiteChangeSetsBody = Static<typeof UpdateSiteChangeSetsBodySchema>;
+
+export const updateSiteChangeSetsSchema = {
+  body: UpdateSiteChangeSetsBodySchema,
+  response: {
+    200: SiteChangeSetsSchema,
+    400: ErrorResponseSchema,
+    403: ErrorResponseSchema,
+    404: ErrorResponseSchema,
+    409: ErrorResponseSchema,
+  },
+};

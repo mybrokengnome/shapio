@@ -35,6 +35,10 @@ const KIND_BY_ACTION: Readonly<Record<string, string>> = {
   'change_set.shipping': 'shipping',
   'change_set.discard': 'discarded',
   'change_set.item_changed_after_review': 'item.changedAfterReview',
+  'change_set.approval_request': 'approval.requested',
+  'change_set.approve': 'approval.approved',
+  'change_set.approval_request_changes': 'approval.changesRequested',
+  'change_set.approval_clear': 'approval.cleared',
 };
 
 const changedItemOf = (metadata: Record<string, unknown>): TimelineEventView['item'] =>
@@ -58,7 +62,8 @@ const kindOf = (action: string, outcome: string) => {
 };
 
 const messageOf = (metadata: Record<string, unknown>): string | null => {
-  for (const key of ['error', 'title', 'modelKey', 'apiKey', 'at']) {
+  // An approval row shows its note (plan approval); other rows their error, title or subject.
+  for (const key of ['note', 'error', 'title', 'modelKey', 'apiKey', 'at']) {
     const value = metadata[key];
     if (typeof value === 'string' && value !== '') {
       return value;

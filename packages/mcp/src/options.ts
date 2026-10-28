@@ -7,7 +7,10 @@ export type McpOptions = {
   baseUrl: string;
   /** An admin-scope API token (`SHAPIO_TOKEN`). Give its role no `changes.ship`: shipping stays with people. */
   token: string;
-  /** Registers `change_sets_ship` (`--allow-ship`). A client-side guard only: the token's role decides. */
+  /**
+   * Registers `change_sets_ship`, `change_sets_approve`, and `change_sets_request_changes` (`--allow-ship`). A
+   * client-side guard only: the token's role decides.
+   */
   allowShip: boolean;
   /** `media_upload` reads files only under this directory (`--media-root`, default: the working directory). */
   mediaRoot: string;
@@ -33,7 +36,8 @@ Environment:
                  token's site, else the primary site.
 
 Options:
-  --allow-ship         Offer the change_sets_ship tool (the token's role must also allow changes.ship)
+  --allow-ship         Offer change_sets_ship, change_sets_approve, and change_sets_request_changes (the
+                       token's role must also allow changes.ship or changes.approve)
   --media-root <dir>   Directory media_upload may read files from (default: the working directory)
   --site <key>         The site to work on (overrides SHAPIO_SITE)
   -h, --help           Show this help

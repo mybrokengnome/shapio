@@ -1,6 +1,7 @@
 import type { RequestFn } from '../request.js';
 import type {
   AddChangeSetEntryInput,
+  ApprovalNoteInput,
   ChangeSet,
   ChangeSetQuery,
   ChangeSetReview,
@@ -8,6 +9,7 @@ import type {
   ChangeSetTimelineEvent,
   CreateChangeSetInput,
   PutSchemaDraftInput,
+  RequestChangesInput,
   ScheduleChangeSetInput,
   SchemaDraft,
   ShipChangeSetInput,
@@ -56,6 +58,16 @@ export const createChangeSetsApi = (request: RequestFn) => ({
     schedule: (id: string, body: ScheduleChangeSetInput) =>
       request<ChangeSet>(`${setPath(id)}/schedule`, { method: 'POST', body }),
     unschedule: (id: string) => request<ChangeSet>(`${setPath(id)}/unschedule`, { method: 'POST' }),
+    /** Sends the set for approval (plan approval). */
+    requestApproval: (id: string, body: ApprovalNoteInput = {}) =>
+      request<ChangeSet>(`${setPath(id)}/approval/request`, { method: 'POST', body }),
+    /** Approves the set as it is now; an edit afterwards makes the approval outdated. Needs `changes.approve`. */
+    approve: (id: string, body: ApprovalNoteInput = {}) =>
+      request<ChangeSet>(`${setPath(id)}/approval/approve`, { method: 'POST', body }),
+    /** Sends the set back with what to change. Needs `changes.approve`. */
+    requestChanges: (id: string, body: RequestChangesInput) =>
+      request<ChangeSet>(`${setPath(id)}/approval/request-changes`, { method: 'POST', body }),
+    clearApproval: (id: string) => request<ChangeSet>(`${setPath(id)}/approval/clear`, { method: 'POST' }),
     timeline: async (id: string) =>
       (await request<{ items: ChangeSetTimelineEvent[] }>(`${setPath(id)}/timeline`)).items,
     unassigned: (query: { cursor?: string; limit?: number } = {}) =>
