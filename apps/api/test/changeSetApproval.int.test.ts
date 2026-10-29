@@ -571,4 +571,28 @@ describe('change set approval workflows', () => {
     expect(codeOf(await step(admin, set.id, 'approve'))).toBe('CHANGE_SET_STATE');
     await setDefault(null);
   });
+
+  it('refuses switching a site to its own workflow when that stored workflow names a deleted role', async () => {
+    await setDefault(null);
+    const gone = await createRole('stored-gone');
+    await setSiteMode('custom', { stages: [{ name: 'Stored', roleIds: [gone], required: 1 }] });
+    await setSiteMode('inherit');
+    // Allowed: no default and no custom site names it now; the site only keeps it stored.
+    expect((await admin.delete(`/api/admin/roles/${gone}`)).statusCode).toBe(204);
+    const current = expectStatus(await admin.get('/api/admin/site/change-sets'), 200).json<{
+      version: number;
+    }>();
+    const refused = await admin.put('/api/admin/site/change-sets', {
+      expectedVersion: current.version,
+      mode: 'custom',
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<ErrorBody>().error).toMatchObject({
+      code: 'APPROVAL_UNKNOWN_ROLE',
+      details: { roleIds: [gone] },
+    });
+    expect(
+      expectStatus(await admin.get('/api/admin/site/change-sets'), 200).json<{ mode: string }>().mode,
+    ).toBe('inherit');
+  });
 });

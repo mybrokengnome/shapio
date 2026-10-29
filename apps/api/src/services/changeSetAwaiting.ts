@@ -38,13 +38,13 @@ export const listAwaitingMe = async (
     );
     scanned += batch.length;
     const names = await actorNamesFor(context.db, batch);
+    names.forEach((name, id) => page.names.set(id, name));
     const approvals = await loadApprovalSummaries(context, batch, names);
     for (const [index, row] of batch.entries()) {
       const approval = approvals.get(row.id);
       if (approval?.eligible) {
         page.rows.push(row);
         page.approvals.set(row.id, approval);
-        names.forEach((name, id) => page.names.set(id, name));
       }
       if (page.rows.length === limit) {
         const more = index < batch.length - 1 || batch.length === batchSize;

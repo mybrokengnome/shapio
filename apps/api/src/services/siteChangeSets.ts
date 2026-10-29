@@ -74,7 +74,8 @@ export const updateSiteChangeSets = async (
     if (input.mode === 'custom' && workflow === null) {
       throw new AppError(400, 'APPROVAL_WORKFLOW_REQUIRED', 'A site with its own approval needs a workflow');
     }
-    if (input.workflow) {
+    // A stored workflow can name a role deleted while the site was not `custom`: check it before it applies.
+    if (input.workflow || input.mode === 'custom') {
       await assertAdminRoles(workflow, trx);
     }
     const updated = await sitesRepository.updateApprovalIfVersion(
