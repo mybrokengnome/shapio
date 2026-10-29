@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { adminAuditRoutes } from './audit/index.js';
 import { adminAuthRoutes } from './auth/index.js';
 import { adminEditingRoutes } from './editing/index.js';
+import { adminNetworkRoutes } from './network/index.js';
 import { adminRolesRoutes } from './roles/index.js';
 import { adminSetupRoutes } from './setup/index.js';
 import { adminSiteRoutes } from './site/index.js';
@@ -25,4 +26,5 @@ export const adminIdentityRoutes: FastifyPluginAsyncTypebox = async (app) => {
   await app.register(adminUsageRoutes, { prefix: '/usage' });
   await app.register(adminSitesRoutes, { prefix: '/sites' });
   await app.register(adminSiteRoutes, { prefix: '/site' });
+  await app.register(adminNetworkRoutes, { prefix: '/network' });
 };

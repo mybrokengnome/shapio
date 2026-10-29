@@ -4,7 +4,7 @@ import type { Kysely, Transaction } from 'kysely';
 import type { DB } from '../../db/types.js';
 import * as entriesRepository from '../../repositories/entries.js';
 import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
-import type { StepOutcome } from '../../schema/planner/contentPorts.js';
+import type { RequiredGap, StepOutcome } from '../../schema/planner/contentPorts.js';
 import { stepKey, type ContentStep } from '../../schema/planner/steps.js';
 import type { SchemaById } from '../../schema/snapshot.js';
 import { resolveModelById } from '../model.js';
@@ -16,6 +16,10 @@ import { isLenientDraft, isTransformStep, type EntryProposal, type ProposedHead 
 /**
  * The checks of a schema change, run on an entry's proposed heads (propose.ts): required values, the
  * change's validation steps, whole-entry validation of every head the change rewrites, and uniqueness.
+ * Missing required values never fail a change (ADR 0002 amendment 2026-10-29): they are counted as gaps,
+ * the change goes live, and the entries are listed in the Inbox until filled in. Whole-entry validation
+ * therefore skips required values too: an entry left with a gap by an earlier change must not fail a later,
+ * unrelated one.
  * Uniqueness claims the proposed values in the unique registry: the field is not unique under the active
  * schema yet, so no write reads or maintains those rows, and a failed change discards them.
  */
@@ -24,7 +28,11 @@ type Executor = Kysely<DB> | Transaction<DB>;
 /** Failing heads per step key. */
 export type StepFailures = Map<string, number>;
 
-export type Tally = { invalidCount: number; samples: string[] };
+/** One entry's checks: heads that fail a step, and heads without a value a `validateRequired` step needs. */
+export type EntryChecks = { failures: StepFailures; gaps: StepFailures };
+
+/** Heads (`invalidCount`) and distinct entries counted for one step, with a few of those entries. */
+export type Tally = { invalidCount: number; entries?: number; samples: string[] };
 export type Tallies = Record<string, Tally>;
 
 const MAX_SAMPLES = 10;
@@ -56,9 +64,7 @@ const lacksRequired = (step: Extract<ContentStep, { kind: 'validateRequired' }>,
 const isValid = (proposed: SchemaById, head: ProposedHead) => {
   const model = resolveModelById(proposed, head.model_id);
   return (
-    !model ||
-    buildValidator(proposed, model).validate(head.data, { skipRequired: isLenientDraft(head) }).issues
-      .length === 0
+    !model || buildValidator(proposed, model).validate(head.data, { skipRequired: true }).issues.length === 0
   );
 };
 
@@ -130,19 +136,16 @@ export const checkEntry = async (
   proposal: EntryProposal,
   steps: readonly ContentStep[],
   context: { proposed: SchemaById; executor: Executor },
-): Promise<StepFailures> => {
+): Promise<EntryChecks> => {
   const failures: StepFailures = new Map(proposal.failedSteps);
+  const gaps: StepFailures = new Map();
   for (const head of proposal.heads) {
-    let lacking = false;
     for (const step of steps) {
       if (step.kind === 'validateRequired' && appliesTo(step, head) && lacksRequired(step, head)) {
-        add(failures, stepKey(step));
-        lacking = true;
+        add(gaps, stepKey(step));
       }
     }
-    // A head that lacks a required value fails whole-entry validation for that reason: it is reported
-    // under the required-value check, not again under a conversion that has nothing to do with it.
-    const validationKey = lacking ? undefined : validationStepKey(steps, head);
+    const validationKey = validationStepKey(steps, head);
     if (validationKey && !isValid(context.proposed, head)) {
       add(failures, validationKey);
     }
@@ -155,23 +158,48 @@ export const checkEntry = async (
       add(failures, stepKey(step));
     }
   }
-  return failures;
+  return { failures, gaps };
 };
 
+/** Adds one entry's counts: its heads, and the entry itself once per step. */
 export const tallyFailures = (tallies: Tallies, entryId: string, failures: StepFailures) => {
   for (const [key, count] of failures) {
-    const tally = (tallies[key] ??= { invalidCount: 0, samples: [] });
+    const tally = (tallies[key] ??= { invalidCount: 0, entries: 0, samples: [] });
     tally.invalidCount += count;
+    tally.entries = (tally.entries ?? 0) + 1;
     if (tally.samples.length < MAX_SAMPLES && !tally.samples.includes(entryId)) {
       tally.samples.push(entryId);
     }
   }
 };
 
+/**
+ * The required-value gaps of a run, per `validateRequired` step with any. The dry run and the activation's
+ * re-check each count their own entries, and the change job adds them up (`mergeGaps`): an entry edited
+ * while the dry run was going is counted by both (as it was, then as it is), so the totals may be slightly
+ * high. Accepted: they say how much there is to fill in, and the Inbox lists the entries exactly.
+ */
+export const gapsOf = (steps: readonly ContentStep[], tallies: Tallies): RequiredGap[] =>
+  steps.flatMap((step) => {
+    const tally = tallies[stepKey(step)];
+    if (step.kind !== 'validateRequired' || !tally || tally.invalidCount === 0) {
+      return [];
+    }
+    return [
+      {
+        step: stepKey(step),
+        ownerId: step.ownerId,
+        fieldId: step.fieldId,
+        ...(step.fieldApiKey ? { fieldApiKey: step.fieldApiKey } : {}),
+        versions: tally.invalidCount,
+        entries: tally.entries ?? tally.samples.length,
+        sampleEntryIds: [...tally.samples],
+      },
+    ];
+  });
+
 const failureReason = (step: ContentStep, count: number): string => {
   switch (step.kind) {
-    case 'validateRequired':
-      return `${count} entry version(s) have no value for the required field${step.fieldApiKey ? ` "${step.fieldApiKey}"` : ''}`;
     case 'checkUnique':
       return `${count} entry version(s) share a value that must be unique`;
     case 'convert':

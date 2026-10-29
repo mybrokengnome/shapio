@@ -1,6 +1,13 @@
 import type { DataType, SchemaDefinition } from '@shapio/schema';
+import type { ApprovalStage } from './approvalTypes.js';
 import type { DeploymentRunStatus, Page, PublicationAction } from './publishingTypes.js';
-import type { ChangePlan, DefinitionCategory, DefinitionPayload, PlanImpact } from './schemaTypes.js';
+import type {
+  ChangePlan,
+  DefinitionCategory,
+  DefinitionPayload,
+  PlanImpact,
+  SchemaChangeResult,
+} from './schemaTypes.js';
 import type { SiteRef } from './sitesTypes.js';
 
 /**
@@ -58,9 +65,74 @@ export type ChangeSetSchemaItem = {
   draftVersion: number;
   status: ChangeSetItemStatus;
   error: string | null;
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: SchemaChangeResult | null;
 };
 
 export type ChangeSetItem = ChangeSetEntryItem | ChangeSetSchemaItem;
+
+export const APPROVAL_STATUSES = ['none', 'requested', 'approved', 'changes_requested'] as const;
+/** Approval (plan approval-workflows): not asked, in review, approved, or sent back with a note. */
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+/** Why the caller may not approve now (`signed` and `outdated` still allow requesting changes). */
+export type ApprovalIneligibleReason = 'rolesDeleted' | 'role' | 'self' | 'signed' | 'outdated';
+
+/** The stage a set in review is at. */
+export type ApprovalStageState = {
+  index: number;
+  id: string;
+  name: string;
+  required: number;
+  /** Distinct approvers so far in this round. */
+  signed: number;
+};
+
+/** The approval summary on list rows. */
+export type ChangeSetApprovalSummary = {
+  status: ApprovalStatus;
+  /** The request's note, or what to change once changes were requested. */
+  note: string;
+  /** The review round (each request starts a new one); 0 before the first request. */
+  round: number;
+  requestedBy: ChangeSetActor | null;
+  requestedAt: string | null;
+  /** The set changed after this round's first sign-off or after approval: ask for approval again. */
+  outdated: boolean;
+  /** Whether the approval was current when the set shipped; null until it ships. */
+  approvedAtShip: boolean | null;
+  /** The caller may approve at the current stage now. */
+  eligible: boolean;
+  /** Why not, while the set is in review; null when eligible or not in review. */
+  eligibleReason: ApprovalIneligibleReason | null;
+  stage: ApprovalStageState | null;
+};
+
+export type ApprovalSignoff = {
+  round: number;
+  stageIndex: number;
+  stageId: string;
+  stageName: string | null;
+  decision: 'approve' | 'request_changes';
+  by: ChangeSetActor;
+  at: string;
+  note: string;
+  /** It counts: given in the current round, and the set has not changed since. */
+  current: boolean;
+};
+
+/** The approval block of one set: the summary, the frozen workflow and every sign-off. */
+export type ChangeSetApproval = ChangeSetApprovalSummary & {
+  /** The workflow frozen when review started (null before the first request). */
+  workflow: {
+    stages: Array<ApprovalStage & { roleNames: string[] }>;
+    selfApproval: boolean;
+  } | null;
+  signoffs: ApprovalSignoff[];
+  /** The last sign-off of the final stage, once approved. */
+  approvedBy: ChangeSetActor | null;
+  approvedAt: string | null;
+};
 
 export type ChangeSetSummary = {
   id: string;
@@ -85,9 +157,11 @@ export type ChangeSetSummary = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  approval: ChangeSetApprovalSummary;
 };
 
-export type ChangeSet = ChangeSetSummary & {
+export type ChangeSet = Omit<ChangeSetSummary, 'approval'> & {
+  approval: ChangeSetApproval;
   items: ChangeSetItem[];
   /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
   shippedBy: ChangeSetActor | null;
@@ -96,9 +170,18 @@ export type ChangeSet = ChangeSetSummary & {
 export type ChangeSetQuery = {
   /** Comma-separated statuses; default: everything except `discarded`. */
   status?: string;
+  /** Comma-separated approval states (`none`, `requested`, `approved`, `changes_requested`). */
+  approval?: string;
+  /** Only sets in review the caller can sign off now; a page can be short and still have a next cursor. */
+  awaitingMe?: boolean;
   cursor?: string;
   limit?: number;
 };
+
+/** `approval/request` and `approval/approve`: an optional note. */
+export type ApprovalNoteInput = { note?: string };
+/** `approval/request-changes`: what to change. */
+export type RequestChangesInput = { note: string };
 
 export type CreateChangeSetInput = {
   title: string;
@@ -282,6 +365,13 @@ export type ChangeSetTimelineEvent = {
   deploymentRunId: string | null;
   /** `item.changedAfterReview`: the entry whose draft moved between review and a scheduled ship. */
   item: { entryId: string; locale: string; fromVersion: number; toVersion: number } | null;
+  /** Approval rows: the round, the stage and, for a sign-off, k of required. */
+  approval: {
+    round: number | null;
+    stage: string | null;
+    signed: number | null;
+    required: number | null;
+  } | null;
 };
 
 export type UnassignedEntry = {

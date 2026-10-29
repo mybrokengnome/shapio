@@ -13,13 +13,19 @@ import { DeployPopover } from '../DeployPopover';
 import type { ShipFlow } from '../hooks/useShipFlow';
 import { SchedulePopover } from '../SchedulePopover';
 
-type ActionsProps = { set: ChangeSet; flow: ShipFlow };
+type ActionsProps = {
+  set: ChangeSet;
+  flow: ShipFlow;
+  /** The site requires approval and this set isn't approved (or changed since): it can't ship yet. */
+  approvalBlocked: boolean;
+};
 
 /**
- * Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. The ship
- * actions need `changes.ship` (the server enforces it).
+ * Discard, Schedule…, Ship with deploy and Ship (primary, last); each confirmed where it was asked for. The
+ * ship actions need `changes.ship`, and an approved set where the site requires it (the server enforces both).
+ * The approval steps are in the set's approval block.
  */
-export const Actions = ({ set, flow }: ActionsProps) => {
+export const Actions = ({ set, flow, approvalBlocked }: ActionsProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const discard = useDiscardChangeSet();
@@ -28,7 +34,7 @@ export const Actions = ({ set, flow }: ActionsProps) => {
   const { canShipChanges } = useDevelopPermissions();
   const enabledConnections = (connections.data ?? []).filter((connection) => connection.enabled);
   const editable = EDITABLE_STATUSES.has(set.status);
-  const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping;
+  const shipDisabled = !flow.canShip || !flow.acknowledged || flow.shipping || approvalBlocked;
   const itemCount = set.entryItemCount + set.schemaItemCount;
   if (set.status === 'shipped' || set.status === 'discarded' || set.status === 'shipping') {
     return null;

@@ -9,7 +9,8 @@ older snapshot, which is itself a reviewed change set.
 These live under **Develop → Changes** and **Develop → Snapshots** in the admin, for roles with the
 `changes.manage` permission (owners, admins and editors by default). Shipping and scheduling a ship also need
 `changes.ship` (the same roles by default). A role with `changes.manage` but not `changes.ship` prepares change
-sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)).
+sets for someone else to ship: give it to API tokens used by coding agents ([MCP server](mcp.md)). Approving a set
+needs `changes.approve` (every role that can ship has it by default; see [Approval](#approval)).
 Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
 On an instance with several [sites](sites.md), change sets and snapshot numbers are per site: a set holds its
@@ -58,7 +59,7 @@ Open a set to review it, shaped like a pull request:
   the ship; **warnings** do not.
 - **Consumers**: for breaking changes, the API tokens (and app users and anonymous callers, as groups) that read
   the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage).
-- **Timeline**: created, items added and removed, drafts saved, scheduled, entries changed after review (on a
+- **Timeline**: created, items added and removed, drafts saved, approval steps with their notes, scheduled, entries changed after review (on a
   scheduled ship), shipped (with a link to the snapshot) and the deployment run.
 
 A shipped set keeps its review, like a merged pull request: each entry's values before and after the ship
@@ -78,6 +79,10 @@ If anything fails (an entry that no longer validates, a check that fails, a [hoo
 publish) the transaction rolls back: the set shows _Failed_ with the item and the reason, and the live schema and
 content are exactly as they were. Fix the cause and ship again.
 
+Making a field required never fails a ship by itself: entries without a value stay as they are and are listed
+in the Inbox, and the shipped schema item says how many. But such an entry can't be published again until the
+value is filled in, so an open set that publishes one can no longer ship until it is.
+
 A ship is strict: if an entry draft, a schema draft or the set itself changed after your review loaded, Shapio
 refuses (`409 CHANGE_SET_STALE`) and asks you to refresh and look again. Breaking and destructive changes need
 their acknowledgement.
@@ -92,6 +97,50 @@ schedules made from the entry form stay separate and are listed read-only on the
 
 States: _open_ → _scheduled_ (optional) → _shipping_ → _shipped_, or _failed_ (editable and shippable again),
 or _discarded_.
+
+### Approval
+
+A change set can go through an **approval workflow** before it ships: an ordered list of stages, each saying
+which roles may sign off and how many sign-offs it needs, plus whether people may approve their own change
+sets.
+
+- **Where the workflow comes from.** **Network → Approval** (needs `sites.manage`) sets the default every site
+  inherits; off by default. Turning the default off keeps its workflow, so turning it back on restores it.
+  **Settings → Change sets** (needs `site.settings`) chooses, per site, the network
+  default, Off, or a workflow of the site's own. A site with a workflow (its own or the inherited one) requires
+  an approved set before anything ships or is scheduled; a site with none ships without approval.
+- **Stages.** One to ten, in order. A stage names admin roles (none: anyone who may approve on the site) and
+  needs 1 to 20 sign-offs from different people. A role counts when it is held on the site or on every site; an
+  API token counts with its one role. A role named by a workflow in use (the default while it is on, or a site's
+  own while the site uses it) cannot be deleted; a workflow kept while off is checked again when it is turned on.
+- **Request approval** (needs `changes.manage`) sends an open set for review with an optional note. The site's
+  workflow is frozen on the set at that moment, so editing a workflow never changes a review in flight; asking
+  again later starts a new round under the workflow that applies then.
+- **Review** (needs `changes.approve`) signs off at the current stage, or requests changes with a note at any
+  stage, which ends the round. You may sign when the stage names one of your roles, you have not signed this
+  stage yet, and, unless the workflow allows it, you neither created the set nor asked for its approval. When a
+  stage has its sign-offs the review moves to the next one; after the last stage the set is approved. There is
+  no owner override: an owner who holds none of the stage's roles cannot sign it (switching the site to Off,
+  which is audited, is the way past a workflow). Upgrading gives `changes.approve` to every role that holds
+  `changes.ship`.
+- **Pinned to what the set holds.** Sign-offs are given for the set's items, the draft of each entry it
+  publishes, and each schema draft. An edit to any of them after the first sign-off of a round makes the review
+  _Approval outdated_: nobody can sign, and the set cannot ship, until someone asks for approval again, which
+  starts a new round at the first stage. Renaming the set or scheduling it does not count as an edit, and
+  approval steps never change the set's version, so nobody's open review goes stale because of them.
+- Where approval is required, **Ship** and **Schedule…** stay disabled until the set is approved and unchanged
+  since. A scheduled set whose draft moved after the approval fails at its time with the reason, and nothing
+  of it goes live. The check also runs inside the ship itself, after any background checks.
+- **Shipping ends a review.** A set that ships while still in review (possible only where approval is not
+  required) leaves review. An approved set stays approved after it ships, whatever its drafts do later; the set
+  view says whether the approval was current when it shipped. A shipped set cannot be sent for approval.
+- **Turning approval off** while sets are in review: they keep their frozen workflow and may finish it, but
+  shipping no longer waits for it.
+- A stage whose roles were all deleted while a set was in review cannot be signed by anyone. Clear the approval
+  and ask again under the current workflow.
+- **Clear approval** takes the set back to no approval; its sign-offs stay as history. The set's timeline lists
+  every step (requested, each sign-off with k of required, each completed stage, approved, changes requested,
+  cleared), and the Inbox lists only the sets you can sign off now, with the stage they are at.
 
 ### Ship with deploy
 
@@ -182,7 +231,7 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 
 | Endpoint                                           | What                                                                                   |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET /api/admin/change-sets?status=open,scheduled` | sets, newest first (`cursor`, `limit`); discarded sets only when asked for             |
+| `GET /api/admin/change-sets?status=open,scheduled` | sets, newest first (`cursor`, `limit`, `approval=requested,…`, `awaitingMe=true`)      |
 | `POST /api/admin/change-sets`                      | `{ title, description? }`                                                              |
 | `GET`, `PATCH /api/admin/change-sets/:id`          | read; change `title`, `description`, `deploymentConnectionId` (with `expectedVersion`) |
 | `GET /api/admin/change-sets/unassigned`            | entry drafts no active set holds                                                       |
@@ -192,6 +241,12 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `POST …/:id/ship`                                  | `{ expectedVersion, acknowledgeBreaking?, acknowledgeDestructive?, itemVersions? }`    |
 | `POST …/:id/schedule`, `POST …/:id/unschedule`     | `{ at, expectedVersion, acknowledge… }`                                                |
 | `POST …/:id/discard`                               |                                                                                        |
+| `POST …/:id/approval/request`                      | `{ note? }`: freeze the site's workflow and start a round (`changes.manage`)           |
+| `POST …/:id/approval/approve`                      | `{ note? }`: sign off at the current stage (`changes.approve`)                         |
+| `POST …/:id/approval/request-changes`              | `{ note }`: send back with what to change (`changes.approve`)                          |
+| `POST …/:id/approval/clear`                        | back to no approval (`changes.manage`)                                                 |
+| `GET`, `PUT /api/admin/site/change-sets`           | the site's approval: `{ expectedVersion, mode, workflow? }` to change                  |
+| `GET`, `PUT /api/admin/network/approval`           | the default workflow: `{ expectedVersion, mode, workflow? }` (`sites.manage`)          |
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
 | `GET /api/admin/usage/fields?modelId&days=7`       | reads per field and reader for one model (needs `tokens.manage`)                       |
@@ -201,6 +256,34 @@ in the background; poll the set until it is `shipped` or `failed`. `itemVersions
 as the review lists them) makes the ship refuse with `409 CHANGE_SET_STALE` when one of those drafts moved. A
 shipped set reports `shippedSnapshot` and, when it had schema items, `schemaVersionAfter`.
 
+Every set carries `approval`: `status` (`none`, `requested`, `approved`, `changes_requested`), the request's
+`note` (or what to change), the review `round`, `requestedBy`/`requestedAt`, `outdated`, `approvedAtShip`,
+`stage` (the current stage while in review: `index`, `name`, `signed`, `required`), and for the caller
+`eligible` and `eligibleReason` (`role`, `self`, `signed`, `outdated`, or `rolesDeleted`; with `signed` or
+`outdated` you may still request changes). A single set also carries the frozen `workflow` (each stage with
+its `roleNames`), every sign-off (`signoffs`: round, stage, decision, who, when, note, and whether it still
+counts), and `approvedBy`/`approvedAt` (the last sign-off of the final stage). `awaitingMe=true` lists only the
+sets in review you can sign now; it scans a bounded number of sets per call, so a page can be short and still
+have a `nextCursor`.
+
+A workflow is `{ stages: [{ id?, name, roleIds, required }], selfApproval? }` (1 to 10 stages; a name of 1 to
+100 characters; admin role IDs, none meaning anyone who may approve; `required` 1 to 20; the server assigns
+an `id` to a new stage). `GET /api/admin/site/change-sets` answers `{ version, mode, workflow, inherited,
+effective, unknownRoleIds }`, with `mode` one of `inherit`, `off`, or `custom`; a `PUT` without `workflow` keeps
+the site's stored one. `GET /api/admin/network/approval` answers `{ version, mode, workflow, unknownRoleIds, sites: { inheriting,
+custom, off } }`; `version` 0 means it was never saved. `mode` is `custom` (inheriting sites follow the workflow)
+or `off` (they ship without approval); turning it off keeps the stored workflow, and a `PUT` without `workflow`
+keeps the stored one, so switching back to `custom` restores it. The site list's `requireApproval` says whether a site has an effective workflow.
+
+Where the site requires approval, `ship` and `schedule` refuse with `409 CHANGE_SET_NOT_APPROVED` or `409
+CHANGE_SET_APPROVAL_STALE`. Approval steps refuse with `409 CHANGE_SET_APPROVAL_NOT_CONFIGURED` (the site has
+no workflow), `409 CHANGE_SET_APPROVAL_NOT_REQUESTED` (signing a set not in review), `409
+CHANGE_SET_APPROVAL_STALE` (signing an outdated review), `403 CHANGE_SET_APPROVAL_NOT_ELIGIBLE` with
+`details.reason` (`role`, `self`, `signed`, or `rolesDeleted`), and `409 CHANGE_SET_STATE` on a set that is
+scheduled, shipping, shipped, or discarded (clearing is allowed on a shipped set). Saving a workflow that names
+a role that is not an admin role answers `400 APPROVAL_UNKNOWN_ROLE`; deleting a role a workflow names answers
+`409 ROLE_IN_USE`.
+
 Other refusals: `409 VERSION_CONFLICT` (the set changed since you read it), `409 CHANGE_SET_LOCKED` (a set that
 is shipping, shipped or discarded cannot change), `409 CHANGE_SET_NOT_SHIPPABLE`, `409 CHANGE_SET_ITEM_EXISTS`,
 `409 SNAPSHOT_IS_CURRENT` (restoring the live snapshot).
@@ -209,15 +292,20 @@ is shipping, shipped or discarded cannot change), `409 CHANGE_SET_NOT_SHIPPABLE`
 
 Subscribe to `change_set.*` or single events ([Webhooks](publishing.md#webhooks)):
 
-| Event                  | When                                                                      |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `change_set.scheduled` | a set was scheduled (`at`)                                                |
-| `change_set.shipping`  | a ship started its background checks                                      |
-| `change_set.shipped`   | the set is live: `snapshot`, `schemaVersion`, `schemaItems` and the items |
-| `change_set.failed`    | the ship failed and nothing went live: `failedItemId`, `error`            |
-| `change_set.discarded` | the set was discarded                                                     |
+| Event                                 | When                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `change_set.scheduled`                | a set was scheduled (`at`)                                                |
+| `change_set.shipping`                 | a ship started its background checks                                      |
+| `change_set.shipped`                  | the set is live: `snapshot`, `schemaVersion`, `schemaItems` and the items |
+| `change_set.failed`                   | the ship failed and nothing went live: `failedItemId`, `error`            |
+| `change_set.discarded`                | the set was discarded                                                     |
+| `change_set.approval_requested`       | someone asked for approval (`note`, `round`, the first `stage`)           |
+| `change_set.approval_stage_completed` | a stage got its sign-offs (`round`, `stage`), the last one included       |
+| `change_set.approved`                 | the last stage completed: the set is approved (`round`, `stage`)          |
+| `change_set.changes_requested`        | the set was sent back (`note`, `round`, `stage`)                          |
 
-Each entry item also sends its own `entry.published` or `entry.unpublished`.
+Approval events also carry the `actor` (`type` and `id`); `stage` is `{ index, id, name }`. Each entry item also
+sends its own `entry.published` or `entry.unpublished`.
 
 ## Schema sync and the CLI
 

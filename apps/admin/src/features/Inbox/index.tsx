@@ -10,6 +10,7 @@ import { Stats } from '@/features/Home/Stats';
 import { flattenPlaces } from '@/features/Shell/helpers/placeTree';
 import { usePlaces } from '@/features/Shell/hooks/usePlaces';
 import { GetStarted } from './GetStarted';
+import { useAwaitingApprovalGroup, type AwaitingApprovalGroup } from './hooks/useAwaitingApprovalGroup';
 import { useFindingGroups } from './hooks/useFindingGroups';
 import { NeedsYou } from './NeedsYou';
 import { RecentlyPublished } from './RecentlyPublished';
@@ -19,11 +20,12 @@ type ContentInboxProps = {
   isAdmin: boolean;
   canSeeSchedules: boolean;
   findingGroups: ReturnType<typeof useFindingGroups>;
+  approvals: AwaitingApprovalGroup;
 };
 
 /** A workspace with content: what needs you, what goes live soon, what went live lately. */
-const ContentInbox = ({ isAdmin, canSeeSchedules, findingGroups }: ContentInboxProps) => {
-  const needsYou = <NeedsYou {...findingGroups} />;
+const ContentInbox = ({ isAdmin, canSeeSchedules, findingGroups, approvals }: ContentInboxProps) => {
+  const needsYou = <NeedsYou {...findingGroups} approvals={approvals} />;
   // Editors: what needs them beside what went live. Admins: everything full width, side lists paired.
   return isAdmin ? (
     <>
@@ -56,13 +58,14 @@ export const Inbox = () => {
   const places = usePlaces();
   const { models } = useModelSummaries();
   const findingGroups = useFindingGroups();
+  const approvals = useAwaitingApprovalGroup();
   const canSeeSchedules = useHasGlobalPermission('publishing.manage');
   const canManageUsers = useHasGlobalPermission('users.manage');
   const isAdmin = canSeeSchedules || canManageUsers;
   const name = me?.user.name;
   // A registry that fails to load is not "empty": the content inbox shows its own errors.
   const empty = definitions.data?.length === 0;
-  const { total } = findingGroups;
+  const total = findingGroups.total === undefined ? undefined : findingGroups.total + approvals.count;
   const meta =
     empty || total === undefined
       ? undefined
@@ -78,7 +81,12 @@ export const Inbox = () => {
       ) : empty ? (
         <GetStarted places={flattenPlaces(places ?? [])} />
       ) : (
-        <ContentInbox isAdmin={isAdmin} canSeeSchedules={canSeeSchedules} findingGroups={findingGroups} />
+        <ContentInbox
+          isAdmin={isAdmin}
+          canSeeSchedules={canSeeSchedules}
+          findingGroups={findingGroups}
+          approvals={approvals}
+        />
       )}
     </Page>
   );

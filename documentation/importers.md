@@ -110,8 +110,9 @@ npx @shapio/cms import wordpress --map ./import [--media-dir ./wp-content/upload
 - **Bodies** are converted from HTML to Shapio rich text. Classic-editor content gets paragraphs the way
   WordPress renders them. Block-editor content keeps its markup and its block comments are dropped.
   `[caption]` becomes an image followed by its caption. Other shortcodes (`[gallery]`, `[embed]`, plugin
-  shortcodes) stay as literal text and are counted in the summary. Underline, strike-through, colors and
-  inline styles are dropped (the text stays). Iframes, video and audio embeds are dropped and counted.
+  shortcodes) stay as literal text and are counted in the summary. Underline (`<u>`, `<ins>`, or a
+  `text-decoration: underline` style), subscript, and superscript (`<sub>`, `<sup>`, or a `vertical-align`
+  style) are kept. Strike-through, colors, and other inline styles are dropped (the text stays). Iframes, video and audio embeds are dropped and counted.
 - **Images** in a body are matched to their attachment, including WordPress's resized copies
   (`photo-300x200.jpg` → `photo.jpg`). Images on other hosts are downloaded and imported too. An image that
   cannot be fetched is left out of the body and reported.
@@ -180,8 +181,8 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
   not satisfy it. Add the rules you want to the schema files before or after applying.
 - **Markdown** is converted through HTML. Constructs with no rich-text equivalent degrade to text: strike-through
   loses its mark, raw HTML is unwrapped, and footnotes and task lists become plain paragraphs and lists.
-  **Blocks** map directly. Underline and strike-through lose their mark, and images resolve to the imported
-  uploads.
+  **Blocks** map directly, underline included. Strike-through loses its mark, and images resolve to the
+  imported uploads.
 - **Media:** every upload file in the export is imported from the archive, with its alternative text and
   caption. Generated formats (thumbnails) are not imported: Shapio makes its own variants.
 - Not imported: passwords, users and roles (users-permissions or admin), API tokens, plugin content types,

@@ -3,6 +3,7 @@ import { Settings } from '@/features/Settings';
 import { ApiTokens } from '@/features/Settings/ApiTokens';
 import { Appearance } from '@/features/Settings/Appearance';
 import { Assist } from '@/features/Settings/Assist';
+import { ChangeSets } from '@/features/Settings/ChangeSets';
 import { Locales } from '@/features/Settings/Locales';
 import { Profile } from '@/features/Settings/Profile';
 import { Seo } from '@/features/Settings/Seo';
@@ -16,6 +17,7 @@ export const settingsLazyRoutes = {
   theme: createLazyRoute('/app/settings/theme')({ component: Appearance }),
   locales: createLazyRoute('/app/settings/locales')({ component: Locales }),
   seo: createLazyRoute('/app/settings/seo')({ component: Seo }),
+  changeSets: createLazyRoute('/app/settings/change-sets')({ component: ChangeSets }),
   assist: createLazyRoute('/app/settings/assist')({ component: Assist }),
   apiTokens: createLazyRoute('/app/settings/api-tokens')({ component: ApiTokens }),
 };

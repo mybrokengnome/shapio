@@ -29,6 +29,7 @@ import { loadSiteKeys } from '../siteKeys.js';
 import { readStoredDefinition } from '../storedDefinition.js';
 import { actorColumns } from './actor.js';
 import type { ActivationContext } from './contentPorts.js';
+import type { ChangeResult } from './gaps.js';
 import { lockForActivation } from './locks.js';
 import { scopeOfPlan, type ChangePlan } from './plan.js';
 import { enqueueFollowUps } from './prerequisites.js';
@@ -46,7 +47,7 @@ export type ActivationItem = {
    * The watermark re-check and the content rewrite (ADR 0002 pipeline); runs under the exclusive locks
    * before the pointer flips and throws to abort the activation.
    */
-  recheck?: (trx: Transaction<DB>, activation: ActivationContext) => Promise<void>;
+  recheck?: (trx: Transaction<DB>, activation: ActivationContext) => Promise<ChangeResult | undefined>;
   /**
    * The change moves the definition to `plan.siteId` (the scope change, services/schemaScope.ts). Without
    * it, an existing definition must already be in that scope: nothing else ever changes a scope.
@@ -83,6 +84,8 @@ export type ActivationResult = {
   version: number | null;
   revisionId: string | null;
   schemaVersion: number;
+  /** What the change left to do (entries without a value for a field it made required); absent when nothing. */
+  outcome?: ChangeResult;
 };
 
 const referenceIssues = (
@@ -287,13 +290,18 @@ export const activateDefinitions = async (
       );
       const pointers = await verifyChangesUnderLock(trx, items);
       const { activation, finish } = createActivationContext(trx, request);
+      const outcomes = new Map<ActivationItem, ChangeResult>();
       for (const item of items) {
-        await item.recheck?.(trx, activation);
+        const outcome = await item.recheck?.(trx, activation);
+        if (outcome) {
+          outcomes.set(item, outcome);
+        }
       }
       const schemaVersion = await schemaVersionsRepository.bumpSchemaVersion(trx, now);
       const results: ActivationResult[] = [];
       for (const item of items) {
-        results.push(await flipItem(trx, item, { request, pointers, schemaVersion, now }));
+        const outcome = outcomes.get(item);
+        results.push(await flipItem(trx, item, { request, pointers, schemaVersion, now, outcome }));
       }
       await request.afterFlip?.(trx, { schemaVersion, results, activation });
       await finish();
@@ -372,9 +380,10 @@ const flipItem = async (
     pointers: ReadonlyMap<string, string | null>;
     schemaVersion: number;
     now: Date;
+    outcome?: ChangeResult;
   },
 ): Promise<ActivationResult> => {
-  const { request, pointers, schemaVersion, now } = context;
+  const { request, pointers, schemaVersion, now, outcome } = context;
   const { plan, after } = item;
   const previousScope = (await schemaModelsRepository.findModelById(plan.definitionId, trx))?.site_id;
   const scope = scopeOfPlan(plan);
@@ -392,13 +401,18 @@ const flipItem = async (
     await schemaModelsRepository.deleteActivePointer(plan.definitionId, trx);
   }
   if (item.pending) {
-    await schemaChangeJobsRepository.finish(item.pending.changeJobId, { status: 'activated', now }, trx);
+    await schemaChangeJobsRepository.finish(
+      item.pending.changeJobId,
+      { status: 'activated', now, ...(outcome ? { outcome } : {}) },
+      trx,
+    );
   }
-  const result = {
+  const result: ActivationResult = {
     definitionId: plan.definitionId,
     version: revision?.version ?? null,
     revisionId: revision?.id ?? null,
     schemaVersion,
+    ...(outcome ? { outcome } : {}),
   };
   await recordActivation(trx, item, result, request, eventSiteId);
   return result;

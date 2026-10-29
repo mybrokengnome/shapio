@@ -66,9 +66,11 @@ server once). Creating the owner this way closes Setup before anyone else can re
 Custom roles (Network → Roles) grant actions per model (`read`, `create`, `update`, `delete`, `publish`,
 `schemaManage`), optionally per field, plus instance-wide permissions (`schema.create`, `users.manage`,
 `roles.manage`, `tokens.manage`, `audit.read`, `media.*`, `publishing.manage`, `webhooks.manage`,
-`deployments.manage`, `deployments.trigger`, `changes.manage`, `changes.ship`). Everything is denied unless a
-role grants it. `changes.manage` covers preparing change sets, snapshots and restore; `changes.ship` covers
-shipping and scheduling them; the field-usage report needs `tokens.manage`.
+`deployments.manage`, `deployments.trigger`, `changes.manage`, `changes.ship`, `changes.approve`,
+`site.settings`). Everything is denied unless a role grants it. `changes.manage` covers preparing change sets,
+snapshots and restore; `changes.ship` covers shipping and scheduling them; `changes.approve` covers signing off
+on them in an approval workflow (Network → Approval sets the default, with `sites.manage`); the field-usage
+report needs `tokens.manage`.
 
 Network → Roles → **New role** names the role; its page then sets the grants: a table of models (every model
 first, then each shared and site model) by action, where **Options** limits an action to the admin's own

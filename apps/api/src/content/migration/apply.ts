@@ -13,6 +13,7 @@ import { syncUniqueValues, uniqueFields } from '../unique.js';
 import { syncHeadDerivations } from '../write/heads.js';
 import {
   checkEntry,
+  gapsOf,
   outcomeOf,
   ownerOf,
   promoteStaged,
@@ -44,7 +45,9 @@ type Context = {
   activation: ActivationContext;
 };
 
-const recheckChanged = async (context: Context, watermark: string): Promise<Tallies> => {
+type Recheck = { tallies: Tallies; gaps: Tallies };
+
+const recheckChanged = async (context: Context, watermark: string): Promise<Recheck> => {
   const { trx, steps, proposed } = context;
   const modelIds = contentModelIds(steps);
   const uniqueFieldIds = steps.flatMap((step) =>
@@ -60,11 +63,14 @@ const recheckChanged = async (context: Context, watermark: string): Promise<Tall
   }
   const transforms = steps.filter(isTransformStep);
   const tallies: Tallies = {};
+  const gaps: Tallies = {};
   await scanEntries(trx, { modelIds, changedAfterSeq: watermark, cursor: null }, async (heads) => {
     const proposal = proposeEntry(heads, transforms, proposed.defaultLocale);
-    tallyFailures(tallies, proposal.entryId, await checkEntry(proposal, steps, { proposed, executor: trx }));
+    const checks = await checkEntry(proposal, steps, { proposed, executor: trx });
+    tallyFailures(tallies, proposal.entryId, checks.failures);
+    tallyFailures(gaps, proposal.entryId, checks.gaps);
   });
-  return tallies;
+  return { tallies, gaps };
 };
 
 /**
@@ -237,15 +243,14 @@ export const applyChange = async (
     return singleton;
   }
   const context: Context = { trx, steps, proposed, activation };
-  const outcome = outcomeOf(
-    steps,
-    await recheckChanged(context, typeof watermark === 'string' ? watermark : '0'),
-  );
+  const recheck = await recheckChanged(context, typeof watermark === 'string' ? watermark : '0');
+  const outcome = outcomeOf(steps, recheck.tallies);
   if (!outcome.ok) {
     return outcome;
   }
   // Before the rewrite re-syncs registry rows from the new values, so they already hold the new form.
   await promoteStaged(steps, trx);
   await rewriteAll(context);
-  return { ok: true };
+  const gaps = gapsOf(steps, recheck.gaps);
+  return { ok: true, ...(gaps.length > 0 ? { gaps } : {}) };
 };

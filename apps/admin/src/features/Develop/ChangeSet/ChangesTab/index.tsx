@@ -9,6 +9,12 @@ import { SchemaDiffCard } from '../SchemaDiffCard';
 
 type ChangesTabProps = { review: ChangeSetReview; editable: boolean };
 
+/** A shipped schema item's outcome, from the set's items (the review has none). */
+const outcomeOf = (review: ChangeSetReview, itemId: string) => {
+  const item = review.changeSet.items.find((candidate) => candidate.id === itemId);
+  return item?.kind === 'schema' ? item.outcome : null;
+};
+
 /**
  * Every item as a diff card: schema first (it decides what the entries may hold), then entries. A shipped
  * set shows what it shipped; one shipped as a release before change sets kept their diff shows none.
@@ -34,7 +40,12 @@ export const ChangesTab = ({ review, editable }: ChangesTabProps) => {
         <p className="text-meta text-muted-foreground">{t('changes.review.notRecorded')}</p>
       ) : null}
       {review.schema.map((item) => (
-        <SchemaDiffCard key={item.itemId} changeSetId={setId} item={item} />
+        <SchemaDiffCard
+          key={item.itemId}
+          changeSetId={setId}
+          item={item}
+          outcome={outcomeOf(review, item.itemId)}
+        />
       ))}
       {review.entries.map((item) => (
         <EntryDiffCard

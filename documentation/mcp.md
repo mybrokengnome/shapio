@@ -21,8 +21,9 @@ Give the agent its own role, so its token can do only what you want it to.
    - `changes.manage` (creating and filling change sets);
    - `media.read` and `media.write` if it should upload media.
 
-   Leave out `publish`, `delete` and **`changes.ship`**. Without `changes.ship` the server refuses to ship or
-   schedule a change set with this token, whatever the agent tries.
+   Leave out `publish`, `delete`, **`changes.ship`**, and **`changes.approve`**. Without `changes.ship` the server
+   refuses to ship or schedule a change set with this token, whatever the agent tries; without
+   `changes.approve` it cannot approve one either.
 
 2. **Settings → API tokens → New token**, bound to that role. Copy the token: it is shown once.
 
@@ -83,15 +84,16 @@ it this command and environment (`npx @shapio/cms mcp --client generic` prints i
 
 ### Options
 
-| Option               | What it does                                                                                                                 |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--media-root <dir>` | The only directory `media_upload` reads files from (symlinks are resolved). Default: the directory the server starts in.     |
-| `--allow-ship`       | Also offers the `change_sets_ship` tool. This is a guard in the client only: the token's role must also hold `changes.ship`. |
-| `--site <key>`       | The site to work on; overrides `SHAPIO_SITE`.                                                                                |
+| Option               | What it does                                                                                                                                                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--media-root <dir>` | The only directory `media_upload` reads files from (symlinks are resolved). Default: the directory the server starts in.                                                                                                               |
+| `--allow-ship`       | Also offers `change_sets_ship`, `change_sets_approve`, and `change_sets_request_changes`. This is a guard in the client only: the token's role must also hold `changes.ship` (to ship) or `changes.approve` (to approve or send back). |
+| `--site <key>`       | The site to work on; overrides `SHAPIO_SITE`.                                                                                                                                                                                          |
 
-Keep `--allow-ship` off unless you want the agent to ship when you ask it to. Content an agent reads (an entry, a
-web page) can contain instructions, and the agent might follow them. Leaving out the tool and leaving out
-`changes.ship` from the role means it cannot ship even then.
+Keep `--allow-ship` off unless you want the agent to ship or approve when you ask it to. Where a site requires
+approval, approving is what lets a set go live, so it sits behind the same flag. Content an agent reads (an
+entry, a web page) can contain instructions, and the agent might follow them. Leaving out the tools and leaving
+out `changes.ship` and `changes.approve` from the role means it cannot ship or approve even then.
 
 On an instance with several sites, set `SHAPIO_SITE` (or pass `--site <key>`) to the site the agent works on;
 every request then sends it as the `Shapio-Site` header. Without it the agent works on its token's site, else
@@ -114,6 +116,8 @@ Tools (names are stable):
 | `preflight_run`                                                   | What publishing an entry would run into, without publishing.                                                                                                                                                                                                           |
 | `change_sets_list`, `change_sets_create`, `change_sets_add_entry` | Change sets: list, create, propose publishing (or unpublishing) an entry locale.                                                                                                                                                                                       |
 | `change_sets_review`                                              | The set and its review: field diffs, the schema plan (breaking, destructive), blocking issues, consumers of affected fields.                                                                                                                                           |
+| `change_sets_request_approval`                                    | Sends a set for approval, with an optional note for the approver.                                                                                                                                                                                                      |
+| `change_sets_approve`, `change_sets_request_changes`              | Only with `--allow-ship`: approves a set, or sends it back with a note. Refused without `changes.approve` on the token's role.                                                                                                                                         |
 | `change_sets_ship`                                                | Only with `--allow-ship` and a role holding `changes.ship`.                                                                                                                                                                                                            |
 | `snapshots_list`, `snapshots_changes`, `snapshots_restore`        | The publication ledger, what changed between two snapshots, and a restore proposed as an open change set.                                                                                                                                                              |
 | `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                                                                                                                                                          |

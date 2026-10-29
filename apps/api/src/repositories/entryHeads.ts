@@ -176,28 +176,45 @@ export const countEntriesMatching = async (
   return Number(row.count);
 };
 
-/**
- * Heads of these models that must be complete (published heads, and drafts not saved leniently by autosave),
- * and the distinct entries they belong to.
- */
-export const countStrictHeads = async (
+const countStrictHeadsWhere = async (
   modelIds: readonly string[],
-  executor: Executor = db,
+  condition: Expression<SqlBool> | undefined,
+  executor: Executor,
 ): Promise<{ heads: number; entries: number }> => {
   if (modelIds.length === 0) {
     return { heads: 0, entries: 0 };
   }
-  const row = await executor
+  let query = executor
     .selectFrom('entry_heads')
     .select(({ fn }) => [
       fn.countAll<string>().as('heads'),
       fn.count<string>('entry_id').distinct().as('entries'),
     ])
     .where('model_id', 'in', modelIds)
-    .where((eb) => eb.or([eb('state', '<>', 'draft'), eb('autosaved_at', 'is', null)]))
-    .executeTakeFirstOrThrow();
+    .where((eb) => eb.or([eb('state', '<>', 'draft'), eb('autosaved_at', 'is', null)]));
+  if (condition) {
+    query = query.where(condition);
+  }
+  const row = await query.executeTakeFirstOrThrow();
   return { heads: Number(row.heads), entries: Number(row.entries) };
 };
+
+/**
+ * Heads of these models that must be complete (published heads, and drafts not saved leniently by autosave),
+ * and the distinct entries they belong to.
+ */
+export const countStrictHeads = (modelIds: readonly string[], executor: Executor = db) =>
+  countStrictHeadsWhere(modelIds, undefined, executor);
+
+/**
+ * Of those heads, the ones where `missing` holds (the content compiler's `fieldMissingExpression`: no value
+ * for a field), and their distinct entries: what a field made required leaves without a value.
+ */
+export const countStrictHeadsMissing = (
+  modelIds: readonly string[],
+  missing: Expression<SqlBool>,
+  executor: Executor = db,
+) => countStrictHeadsWhere(modelIds, missing, executor);
 
 export const countForLocale = async (locale: string, executor: Executor = db): Promise<number> => {
   const row = await executor

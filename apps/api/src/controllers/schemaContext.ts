@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
 import type { SchemaChangeJobRow } from '../repositories/schemaChangeJobs.js';
+import type { ChangeResult } from '../schema/planner/gaps.js';
 import type { ActiveDefinition } from '../schema/snapshot.js';
 import type { SchemaServiceContext } from '../services/schemaAccess.js';
 
@@ -38,6 +39,7 @@ export const toChangeJobResponse = (row: SchemaChangeJobRow) => ({
   toRevisionId: row.to_revision_id,
   jobId: row.job_id,
   error: row.error,
+  outcome: (row.outcome ?? null) as ChangeResult | null,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
   finishedAt: row.finished_at?.toISOString() ?? null,

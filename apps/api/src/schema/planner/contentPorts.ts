@@ -25,8 +25,27 @@ export type ActivationContext = {
  * these ports. Until E lands, the defaults report "no content", which is exactly true: no entries exist.
  */
 
+/**
+ * Entry versions that hold no value for a field a change makes required (a `validateRequired` step). Since
+ * 2026-10-29 such a change goes live anyway: these entries are listed in the Inbox and can't be published
+ * again until the value is filled in (ADR 0002 amendment).
+ */
+export type RequiredGap = {
+  /** Key (`stepKey`) of the `validateRequired` step. */
+  step: string;
+  /** The definition that declares the field (a model, or a component its value lives in). */
+  ownerId: string;
+  fieldId: string;
+  fieldApiKey?: string;
+  /** Heads (entry versions: draft and published, per locale) without a value. */
+  versions: number;
+  /** The distinct entries they belong to. */
+  entries: number;
+  sampleEntryIds: string[];
+};
+
 export type StepOutcome =
-  | { ok: true; watermark?: unknown }
+  | { ok: true; watermark?: unknown; gaps?: RequiredGap[] }
   | {
       ok: false;
       /** Key (`stepKey`) of the step the content fails. */
@@ -77,6 +96,13 @@ export type StepImpact = {
   invalidHeads?: number;
   /** The distinct entries those failing heads belong to (a person counts entries; the check counts heads). */
   invalidEntries?: number;
+  /**
+   * A `validateRequired` step on a model's own field: complete heads (published, and drafts not saved by
+   * autosave) without a value. They don't block the change; they're listed in the Inbox afterwards.
+   */
+  missingHeads?: number;
+  /** The distinct entries those heads belong to. */
+  missingEntries?: number;
   /** A type change Shapio cannot convert: live entries holding a value it drops (absent inside components). */
   droppedEntries?: number;
 };

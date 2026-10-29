@@ -3,14 +3,15 @@ import type { Database } from '../../db/index.js';
 import * as entryHeadsRepository from '../../repositories/entryHeads.js';
 import type { StepImpact } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
-import { fieldPresentExpression } from '../compiler/expressions.js';
+import { fieldMissingExpression, fieldPresentExpression } from '../compiler/expressions.js';
 import { stepModelIds } from './checks.js';
 
 /**
  * What a content step would touch, for the plan preview (brief §5 step 5), counted without a dry run. A type
- * change Shapio cannot convert also says how many entries lose their value and, for a required field, how
- * many heads (and entries) would then fail the required check. Both are exact only for a model's own fields; a field inside
- * a component is counted by the dry run alone.
+ * change Shapio cannot convert also says how many entries lose their value, and a field made required how
+ * many complete heads (and entries) will have no value for it: they don't block the change, they're listed
+ * in the Inbox afterwards. Both are exact only for a model's own fields; a field inside a component is
+ * counted by the dry run alone (the review then says so without a number).
  */
 type ConvertStep = Extract<ContentStep, { kind: 'convert' }>;
 
@@ -25,11 +26,11 @@ const droppingFieldId = (step: ContentStep): string | undefined => {
   return changeDropsValues(step.change) ? step.change.fieldId : undefined;
 };
 
-/** A required field whose values the plan drops with no default to backfill: every complete head fails. */
-const failsRequiredAfterDrop = (step: ContentStep, steps: readonly ContentStep[]) => {
-  if (step.kind !== 'validateRequired' || !isModelLevel(step)) {
-    return false;
-  }
+/** A required field whose values the plan drops with no default to backfill: every complete head lacks one. */
+const emptiedByDrop = (
+  step: Extract<ContentStep, { kind: 'validateRequired' }>,
+  steps: readonly ContentStep[],
+) => {
   const drops = steps.some(
     (other) =>
       other.kind === 'convert' && other.ownerId === step.ownerId && droppingFieldId(other) === step.fieldId,
@@ -38,6 +39,23 @@ const failsRequiredAfterDrop = (step: ContentStep, steps: readonly ContentStep[]
     (other) => other.kind === 'backfill' && other.ownerId === step.ownerId && other.fieldId === step.fieldId,
   );
   return drops && !backfills;
+};
+
+/** Complete heads (and entries) without a value for a model-level field the plan makes required. */
+const countMissing = async (
+  database: Database,
+  step: Extract<ContentStep, { kind: 'validateRequired' }>,
+  steps: readonly ContentStep[],
+  modelIds: readonly string[],
+) => {
+  const missing = emptiedByDrop(step, steps)
+    ? await entryHeadsRepository.countStrictHeads(modelIds, database)
+    : await entryHeadsRepository.countStrictHeadsMissing(
+        modelIds,
+        fieldMissingExpression(step.fieldId),
+        database,
+      );
+  return { missingHeads: missing.heads, missingEntries: missing.entries };
 };
 
 export const assessStep = async (
@@ -58,9 +76,8 @@ export const assessStep = async (
       ),
     };
   }
-  if (failsRequiredAfterDrop(step, steps)) {
-    const strict = await entryHeadsRepository.countStrictHeads(modelIds, database);
-    return { affectedHeads, invalidHeads: strict.heads, invalidEntries: strict.entries };
+  if (step.kind === 'validateRequired' && isModelLevel(step)) {
+    return { affectedHeads, ...(await countMissing(database, step, steps, modelIds)) };
   }
   return { affectedHeads };
 };

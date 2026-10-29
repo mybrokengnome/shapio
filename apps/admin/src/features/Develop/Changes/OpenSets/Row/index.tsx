@@ -5,6 +5,7 @@ import { RowTitle } from '@/components/RowTitle';
 import { StatusChip } from '@/components/StatusChip';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { ApprovalChip } from '../../ApprovalChip';
 import { CHANGE_SET_STATUS_DISPLAY } from '../../constants';
 import { useActorLabel } from '../../hooks/useActorLabel';
 
@@ -29,7 +30,10 @@ export const Row = ({ set, connectionName }: RowProps) => {
         ) : null}
       </TableCell>
       <TableCell>
-        <StatusChip tone={status.tone} label={t(status.labelKey)} />
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusChip tone={status.tone} label={t(status.labelKey)} />
+          <ApprovalChip approval={set.approval} />
+        </span>
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {t('changes.itemCount', { count: set.entryItemCount + set.schemaItemCount })}

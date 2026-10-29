@@ -3,6 +3,7 @@ import type { SchemaApplyResult, SchemaSyncResult } from '@shapio/client';
 import { upgradeLockFile, type ScopedLockFile } from '@shapio/schema';
 import type { CliCommand, CliIo } from '../../types.js';
 import { removeFile, writeDefinitionFile, writeLockFile } from './files.js';
+import { formatRequiredGaps } from './format.js';
 import { COMMON_USAGE, parseSchemaOptions, type SchemaCommandOptions } from './options.js';
 import { coverSiteIfHeld } from './siteTree.js';
 import { apiFor, printResults, readSiteState, sendApply, type SiteState } from './sync.js';
@@ -24,6 +25,9 @@ const waitForChanges = async (
       const change = await api.change(item.changeId ?? '');
       if (change.status === 'activated') {
         item.outcome = 'activated';
+        for (const line of formatRequiredGaps(item.apiKey, change.outcome)) {
+          io.stdout(`${line}\n`);
+        }
         break;
       }
       if (change.status === 'failed' || change.status === 'canceled') {

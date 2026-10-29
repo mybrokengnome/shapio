@@ -10,6 +10,7 @@ import { verifyChangesUnderLock, type ActivationItem } from '../schema/planner/a
 import { lockSchema } from '../schema/planner/locks.js';
 import type { ChangePlan } from '../schema/planner/plan.js';
 import { insertPendingChange } from '../schema/planner/request.js';
+import { assertShipApproved } from '../services/changeSetApproval.js';
 import { draftScopeOf, planDrafts, type DraftPlan } from '../services/changeSetPlanning.js';
 import type { ChangeSetServiceContext } from '../services/changeSets.js';
 import { assertCanCreate, assertCanManage } from '../services/schemaAccess.js';
@@ -83,6 +84,8 @@ export const planShip = async (
   executor: Transaction<DB>,
 ): Promise<ShipPlan> => {
   await assertCanShip(context, executor);
+  // A site that requires approval ships (and schedules) approved, unchanged sets only (plan approval).
+  await assertShipApproved(row, executor);
   const items = await changeSetItemsRepository.listForSet(row.id, executor);
   const entryItems = items.filter((item) => item.kind === 'entry');
   const drafts = await schemaDraftsRepository.listForSet(row.id, executor);

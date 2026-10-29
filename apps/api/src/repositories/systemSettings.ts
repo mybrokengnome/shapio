@@ -26,3 +26,22 @@ export const upsertValue = async (key: string, value: string, trx: Executor = db
     .onConflict((oc) => oc.column('key').doUpdateSet({ value, updated_at: new Date() }))
     .execute();
 };
+
+/**
+ * Compare-and-swap: replaces the setting only while it still holds exactly `expected` (the text the caller
+ * read). Returns false when another write got there first.
+ */
+export const replaceValueIfEquals = async (
+  key: string,
+  expected: string,
+  value: string,
+  trx: Executor = db,
+): Promise<boolean> => {
+  const result = await trx
+    .updateTable('system_settings')
+    .set({ value, updated_at: new Date() })
+    .where('key', '=', key)
+    .where('value', '=', expected)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
+};

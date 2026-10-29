@@ -77,7 +77,13 @@ export const markRunning = (id: string, now: Date, trx: Executor = db) =>
 /** Moves an in-flight change to a final status; returns false if it had already finished. */
 export const finish = async (
   id: string,
-  outcome: { status: Exclude<SchemaChangeStatus, 'pending' | 'running'>; error?: unknown; now: Date },
+  outcome: {
+    status: Exclude<SchemaChangeStatus, 'pending' | 'running'>;
+    error?: unknown;
+    /** What an activated change left to do (`ChangeResult`). */
+    outcome?: unknown;
+    now: Date;
+  },
   trx: Executor = db,
 ): Promise<boolean> => {
   const result = await trx
@@ -85,6 +91,7 @@ export const finish = async (
     .set({
       status: outcome.status,
       error: outcome.error === undefined ? null : JSON.stringify(outcome.error),
+      outcome: outcome.outcome === undefined ? null : JSON.stringify(outcome.outcome),
       updated_at: outcome.now,
       finished_at: outcome.now,
     })
@@ -113,4 +120,14 @@ export const listInFlightForChangeSet = (changeSetId: string, executor: Executor
     .where('status', 'in', ['pending', 'running'])
     .orderBy('created_at')
     .orderBy('id')
+    .execute();
+
+/** The outcomes of a change set's activated changes that left something to do, by definition. */
+export const listOutcomesForChangeSet = (changeSetId: string, executor: Executor = db) =>
+  executor
+    .selectFrom('schema_change_jobs')
+    .select(['model_id', 'outcome'])
+    .where('change_set_id', '=', changeSetId)
+    .where('status', '=', 'activated')
+    .where('outcome', 'is not', null)
     .execute();

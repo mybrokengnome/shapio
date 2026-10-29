@@ -34,6 +34,10 @@ const MARK_TAGS: Readonly<Record<string, Mark['type']>> = {
   b: 'bold',
   em: 'italic',
   i: 'italic',
+  u: 'underline',
+  ins: 'underline',
+  sub: 'subscript',
+  sup: 'superscript',
   code: 'code',
   kbd: 'code',
   samp: 'code',
@@ -173,10 +177,43 @@ const flush = (sink: Sink) => {
   }
 };
 
+/** Marks that replace each other, as in the editor: the innermost of subscript and superscript wins. */
+const EXCLUDED_MARKS: Readonly<Record<string, string>> = {
+  subscript: 'superscript',
+  superscript: 'subscript',
+};
+
 const withMark = (marks: readonly Mark[], mark: Mark): Mark[] => [
-  ...marks.filter((existing) => existing.type !== mark.type),
+  ...marks.filter((existing) => existing.type !== mark.type && existing.type !== EXCLUDED_MARKS[mark.type]),
   mark,
 ];
+
+/** The value of one declaration in an inline `style` attribute, lower-cased; null when it is absent. */
+const styleValue = (element: Element, property: string): string | null => {
+  for (const declaration of (attrOf(element, 'style') ?? '').split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon > 0 && declaration.slice(0, colon).trim().toLowerCase() === property) {
+      return declaration
+        .slice(colon + 1)
+        .trim()
+        .toLowerCase();
+    }
+  }
+  return null;
+};
+
+/**
+ * The marks a `<span>`'s inline style stands for: underline and subscript/superscript, the way word processors
+ * (Google Docs, the WordPress classic editor) write them. Every other style is dropped.
+ */
+const spanStyleMarks = (element: Element): Mark[] => {
+  const decoration = `${styleValue(element, 'text-decoration') ?? ''} ${styleValue(element, 'text-decoration-line') ?? ''}`;
+  const align = styleValue(element, 'vertical-align');
+  return [
+    ...(/\bunderline\b/.test(decoration) ? [{ type: 'underline' }] : []),
+    ...(align === 'sub' ? [{ type: 'subscript' }] : align === 'super' ? [{ type: 'superscript' }] : []),
+  ];
+};
 
 const linkMark = (element: Element, context: Context): Mark | undefined => {
   const href = attrOf(element, 'href')?.trim();
@@ -189,6 +226,18 @@ const linkMark = (element: Element, context: Context): Mark | undefined => {
   }
   const target = attrOf(element, 'target') === '_blank' ? '_blank' : null;
   return { type: 'link', attrs: { href, target, rel: null, class: null } };
+};
+
+const elementMarks = (element: Element, context: Context): Mark[] => {
+  const markType = MARK_TAGS[element.tagName];
+  if (markType) {
+    return [{ type: markType }];
+  }
+  if (element.tagName === 'a') {
+    const link = linkMark(element, context);
+    return link ? [link] : [];
+  }
+  return element.tagName === 'span' ? spanStyleMarks(element) : [];
 };
 
 const clip = (value: string | null) => (value === null ? null : value.slice(0, MAX_ATTR_TEXT));
@@ -404,9 +453,8 @@ const walkElement = (
     sink.blocks.push(...blocks);
     return;
   }
-  const markType = MARK_TAGS[tag];
-  const mark = markType ? { type: markType } : tag === 'a' ? linkMark(element, context) : undefined;
-  walkChildren(element.childNodes, sink, mark ? withMark(marks, mark) : marks, context, depth);
+  const inner = elementMarks(element, context).reduce(withMark, [...marks]);
+  walkChildren(element.childNodes, sink, inner, context, depth);
 };
 
 /** Converts nodes in block context: loose inline content becomes paragraphs. */

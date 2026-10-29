@@ -22,10 +22,17 @@ import {
 } from '../../schemas/publishing.js';
 import {
   ChangePlanSchema,
+  ChangeResultSchema,
   DefinitionSchema,
   ImpactSchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
+import {
+  ApprovalNoteBodySchema,
+  ChangeSetApprovalSchema,
+  ChangeSetApprovalSummarySchema,
+  RequestChangesBodySchema,
+} from './approvalSchemas.js';
 
 /**
  * /api/admin/change-sets (developer-face plan §5): a named bundle of schema drafts and entry publications that
@@ -94,6 +101,8 @@ export const SchemaItemSchema = Type.Object({
   draftVersion: Type.Integer(),
   status: ItemStatusSchema,
   error: NullableString,
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: ChangeResultSchema,
 });
 
 export const ChangeSetItemSchema = Type.Union([EntryItemSchema, SchemaItemSchema]);
@@ -124,11 +133,15 @@ const summaryFields = {
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema,
   version: Type.Integer(),
+  /** Approval (plan approval-workflows): where the review stands and whether the caller may sign off. */
+  approval: ChangeSetApprovalSummarySchema,
 };
 
 export const ChangeSetSummarySchema = Type.Object(summaryFields);
 export const ChangeSetSchema = Type.Object({
   ...summaryFields,
+  /** The full approval block: the summary, the frozen workflow and every sign-off. */
+  approval: ChangeSetApprovalSchema,
   items: Type.Array(ChangeSetItemSchema),
   /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
   shippedBy: Nullable(ActorSchema),
@@ -148,6 +161,13 @@ export const ListChangeSetsQuerySchema = Type.Object(
   {
     /** Comma-separated statuses; default: every status except `discarded`. */
     status: Type.Optional(Type.String({ maxLength: 200, pattern: '^[a-z,]+$' })),
+    /** Comma-separated approval states (`none`, `requested`, `approved`, `changes_requested`). */
+    approval: Type.Optional(Type.String({ maxLength: 200, pattern: '^[a-z_,]+$' })),
+    /**
+     * Only sets in review the caller can sign off now (plan approval-workflows). A page can be short and
+     * still have a next cursor: one call scans a bounded number of sets.
+     */
+    awaitingMe: Type.Optional(Type.Boolean()),
     ...CursorQueryFields,
   },
   { additionalProperties: false },
@@ -159,6 +179,21 @@ export const listChangeSetsSchema = {
 };
 
 export const getChangeSetSchema = { params: IdParamsSchema, response: { 200: ChangeSetSchema, ...errors } };
+
+// Approval (plan approval) -------------------------------------------------------------------------
+
+/** `POST /:id/approval/request { note? }` and `POST /:id/approval/approve { note? }`. */
+export const approvalWithNoteSchema = {
+  params: IdParamsSchema,
+  body: ApprovalNoteBodySchema,
+  response: { 200: ChangeSetSchema, ...errors },
+};
+/** `POST /:id/approval/request-changes { note }`: what to change is required. */
+export const requestChangesSchema = {
+  params: IdParamsSchema,
+  body: RequestChangesBodySchema,
+  response: { 200: ChangeSetSchema, ...errors },
+};
 
 const TitleSchema = Type.String({ minLength: 1, maxLength: 200 });
 const DescriptionSchema = Type.String({ maxLength: 5000 });
@@ -467,7 +502,9 @@ export const scheduleSchema = {
 export const TimelineEventSchema = Type.Object({
   at: DateTimeSchema,
   /** created, updated, item_added, item_removed, schema_draft_saved, scheduled, unscheduled, shipping,
-   * shipped, failed, discarded, item.changedAfterReview, deploy_triggered, deploy_building, deploy_deployed, deploy_failed. */
+   * shipped, failed, discarded, item.changedAfterReview, approval.requested, approval.signed,
+   * approval.stageCompleted, approval.approved, approval.changesRequested, approval.cleared, deploy_triggered,
+   * deploy_building, deploy_deployed, deploy_failed. */
   kind: Type.String(),
   actor: Nullable(ActorSchema),
   message: NullableString,
@@ -480,6 +517,15 @@ export const TimelineEventSchema = Type.Object({
       locale: Type.String(),
       fromVersion: Type.Integer(),
       toVersion: Type.Integer(),
+    }),
+  ),
+  /** Approval rows (plan approval-workflows): the round, the stage and, for a sign-off, k of required. */
+  approval: Nullable(
+    Type.Object({
+      round: NullableInteger,
+      stage: NullableString,
+      signed: NullableInteger,
+      required: NullableInteger,
     }),
   ),
 });

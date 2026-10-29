@@ -1,4 +1,5 @@
 import { createLazyRoute } from '@tanstack/react-router';
+import { Approval } from '@/features/Network/Approval';
 import { ContentTypes } from '@/features/Network/ContentTypes';
 import { New as NewContentType } from '@/features/Network/ContentTypes/New';
 import { Site } from '@/features/Network/Site';
@@ -21,5 +22,6 @@ export const networkLazyRoutes = {
   role: createLazyRoute('/app/network/roles/$roleId')({ component: RoleEditor }),
   appRoles: createLazyRoute('/app/network/roles/app')({ component: AppRoles }),
   appRole: createLazyRoute('/app/network/roles/app/$roleId')({ component: AppRoleEditor }),
+  approval: createLazyRoute('/app/network/approval')({ component: Approval }),
   auditLog: createLazyRoute('/app/network/audit-log')({ component: AuditLog }),
 };

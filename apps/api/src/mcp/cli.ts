@@ -12,8 +12,8 @@ const MCP_USAGE =
   '  Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then\n' +
   "  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else\n" +
   '  the primary site). --client generic prints the stdio server definition any MCP client takes.\n' +
-  '  Create an admin API token whose role has no "changes.ship" and paste it in place\n' +
-  '  of the placeholder: agents prepare change sets, people ship them.';
+  '  Create an admin API token whose role has neither "changes.ship" nor "changes.approve" and paste it in\n' +
+  '  place of the placeholder: agents prepare change sets, people approve and ship them.';
 
 const CLIENTS = ['claude-code', 'cursor', 'claude-desktop', 'generic'] as const;
 type McpClientKind = (typeof CLIENTS)[number];
@@ -116,9 +116,10 @@ export const mcpCommand: CliCommand = {
     const sections = (client ? [client] : CLIENTS).map((kind) => SECTIONS[kind](target));
     io.stdout(
       `${sections.join('\n')}\nReplace ${TOKEN_PLACEHOLDER} with an admin API token (Settings → API tokens). ` +
-        'Give its role no "changes.ship": the agent drafts and opens change sets, a person ships them.' +
+        'Give its role neither "changes.ship" nor "changes.approve": the agent drafts and opens change sets, ' +
+        'a person approves and ships them.' +
         (values['allow-ship']
-          ? ' --allow-ship only offers the ship tool; the token’s role still decides.\n'
+          ? ' --allow-ship only offers the ship and approval tools; the token’s role still decides.\n'
           : '\n'),
     );
     return 0;

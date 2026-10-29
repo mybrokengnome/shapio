@@ -248,6 +248,7 @@ const sessionsRoute = settingsChild('sessions', 'sessions');
 const appearanceRoute = settingsChild('theme', 'theme');
 const localesRoute = settingsChild('locales', 'locales');
 const seoRoute = settingsChild('seo', 'seo');
+const changeSetsSettingsRoute = settingsChild('change-sets', 'changeSets');
 const assistRoute = settingsChild('assist', 'assist');
 const apiTokensRoute = settingsChild('api-tokens', 'apiTokens');
 
@@ -331,6 +332,13 @@ const networkNewContentTypeRoute = createRoute({
   getParentRoute: () => networkContentTypesRoute,
   path: 'new',
 }).lazy(() => networkLazy().then((routes) => routes.newContentType));
+
+// The default approval workflow is managed by whoever manages sites (plan approval-workflows).
+const networkApprovalRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'approval',
+  beforeLoad: ({ context }) => requireNetworkPermission(context.queryClient, 'sites.manage'),
+}).lazy(() => networkLazy().then((routes) => routes.approval));
 
 const networkAuditLogRoute = createRoute({
   getParentRoute: () => networkRoute,
@@ -489,6 +497,7 @@ const routeTree = rootRoute.addChildren([
       appearanceRoute,
       localesRoute,
       seoRoute,
+      changeSetsSettingsRoute,
       assistRoute,
       rolesRedirectRoute,
       appRolesRedirectRoute,
@@ -501,6 +510,7 @@ const routeTree = rootRoute.addChildren([
       sitesRoute,
       siteRoute,
       networkContentTypesRoute.addChildren([networkContentTypesIndexRoute, networkNewContentTypeRoute]),
+      networkApprovalRoute,
       networkUsersRoute,
       networkRolesRoute,
       networkRoleRoute,

@@ -94,3 +94,15 @@ export const addToChangeSets = async (
 /** The admin page of a change set (`/admin/s/<site>/changes/<id>` on a named site). */
 export const changeSetUrl = (baseUrl: string, id: string, site: string | null) =>
   `${baseUrl.replace(/\/+$/, '')}/admin/${site ? `s/${encodeURIComponent(site)}/` : ''}changes/${encodeURIComponent(id)}`;
+
+/**
+ * When the import's site requires approval before a change set ships (plan approval), the line that says so;
+ * null when it does not. `site` is the import's site key (null: the primary site).
+ */
+export const approvalNotice = async (client: ShapioClient, site: string | null): Promise<string | null> => {
+  const sites = await client.admin.sites.list();
+  const target = sites.find((candidate) => (site === null ? candidate.isPrimary : candidate.key === site));
+  return target?.requireApproval
+    ? `This site requires approval: ask for approval on each change set, and ship it once it is approved.\n`
+    : null;
+};

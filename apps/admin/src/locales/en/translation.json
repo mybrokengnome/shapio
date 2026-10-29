@@ -38,7 +38,8 @@
     "moreAbout": "More about {{about}}",
     "pageRange": "{{from}}–{{to}} of {{total}}",
     "rowsPerPage": "Rows per page",
-    "perPage": "{{count}} per page"
+    "perPage": "{{count}} per page",
+    "openInbox": "Open the Inbox"
   },
   "validation": {
     "required": "This field is required.",
@@ -67,7 +68,9 @@
     "siteTwice": "Each site can only be listed once.",
     "ownerAllSites": "The owner role can only be given on all sites.",
     "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
-    "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores."
+    "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores.",
+    "approvalRequired": "Enter a whole number from 1 to 20.",
+    "approvalDeletedRole": "Uncheck the deleted role before saving."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -126,7 +129,7 @@
       "FOLDER_NOT_FOUND": "That folder no longer exists.",
       "NOT_CONFIGURED": "This isn't configured on the server yet.",
       "ALREADY_CONFIRMED": "This email address is already confirmed.",
-      "ROLE_IN_USE": "Remove this role from everyone who holds it first.",
+      "ROLE_IN_USE": "Remove this role from everyone who holds it, and from the approval workflows that name it, first.",
       "UNKNOWN_MODEL": "Some permissions name models that no longer exist. Reload and try again.",
       "CONTENT_INVALID": "Some fields need attention. Check the highlighted fields and try again.",
       "CONTENT_VERSION_CONFLICT": "This entry changed since you opened it. Reload it and try again.",
@@ -160,7 +163,14 @@
       "ASSIST_NOTHING_TO_SUMMARIZE": "There is no saved body text to summarize yet.",
       "ASSIST_NOT_LOCALIZED": "This content type isn't localized.",
       "ASSIST_SAME_LOCALE": "Pick a different locale to translate from.",
-      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists."
+      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists.",
+      "APPROVAL_UNKNOWN_ROLE": "A role this workflow names was deleted. Uncheck it and save again.",
+      "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this site a workflow of its own.",
+      "CHANGE_SET_APPROVAL_NOT_ELIGIBLE": "You can't sign off on this change set at its current stage.",
+      "CHANGE_SET_APPROVAL_STALE": "The change set changed after it was signed off. Ask for approval again.",
+      "CHANGE_SET_APPROVAL_NOT_CONFIGURED": "This site has no approval workflow, so its change sets ship without approval.",
+      "CHANGE_SET_APPROVAL_NOT_REQUESTED": "This change set isn't waiting for approval anymore. Reload to see where it stands.",
+      "CHANGE_SET_NOT_APPROVED": "This site requires an approved change set before it ships or is scheduled."
     }
   },
   "notFound": {
@@ -285,7 +295,8 @@
       "appUsers": "App users",
       "sites": "Sites",
       "auditLog": "Audit log",
-      "sharedContentTypes": "Content types"
+      "sharedContentTypes": "Content types",
+      "approval": "Approval"
     }
   },
   "palette": {
@@ -410,7 +421,11 @@
       },
       "waiting": "Nothing to write yet.",
       "waitingDescription": "An administrator adds the first content type; it appears in the sidebar."
-    }
+    },
+    "awaitingApproval": "Awaiting your approval",
+    "approvalMeta": "Requested by {{name}} {{at}}",
+    "reviewSet": "Review",
+    "showAllSets": "Show all"
   },
   "contentTypes": {
     "newTitle": "New content type",
@@ -480,7 +495,8 @@
     "locales": "Locales",
     "seo": "SEO",
     "apiTokens": "API tokens",
-    "assist": "Assist"
+    "assist": "Assist",
+    "changeSets": "Change sets"
   },
   "profile": {
     "title": "Profile",
@@ -624,6 +640,7 @@
       "deploymentsTrigger": "Trigger and retry site builds",
       "changesManage": "Create and review change sets",
       "changesShip": "Ship and schedule change sets",
+      "changesApprove": "Approve change sets",
       "siteSettings": "Site settings"
     },
     "contentPermissions": "Content",
@@ -820,7 +837,15 @@
       "assistSchemaDraft": "Proposed content types with assist",
       "assistSummarize": "Summarized with assist",
       "assistTranslate": "Translated with assist",
-      "schemaScope": "Changed where a model is available"
+      "schemaScope": "Changed where a model is available",
+      "changeSetApprovalClear": "Change set approval cleared",
+      "changeSetApprovalRequest": "Change set approval requested",
+      "changeSetApprovalRequestChanges": "Change set sent back",
+      "changeSetApprove": "Change set approved",
+      "siteChangeSetsUpdate": "Site change set settings changed",
+      "changeSetApprovalSign": "Change set signed off",
+      "changeSetApprovalStageComplete": "Change set approval stage completed",
+      "networkApprovalUpdate": "Default approval workflow changed"
     },
     "targets": {
       "adminInvitation": "Invitation",
@@ -1218,11 +1243,15 @@
       "stepEntries_other": "{{count}} entry versions to check",
       "stepInvalid_one": "{{count}} entry ({{versions}}) would fail",
       "stepInvalid_other": "{{count}} entries ({{versions}}) would fail",
-      "stepMissingRequired_one": "{{count}} entry ({{versions}}) would be left without a required value; untick Required or set a default",
-      "stepMissingRequired_other": "{{count}} entries ({{versions}}) would be left without a required value; untick Required or set a default",
+      "stepWithoutValue_one": "{{count}} entry ({{versions}}) without a value",
+      "stepWithoutValue_other": "{{count}} entries ({{versions}}) without a value",
       "stepVersions_one": "{{count}} version",
       "stepVersions_other": "{{count}} versions",
       "blockedByCheck": "A check above already fails, so this can't ship. Fix it in the builder first.",
+      "requiredGapsTitle": "Entries without a value go live as they are",
+      "requiredGaps_one": "{{count}} entry ({{versions}}) has no value for {{field}}. It stays as it is, is listed in the Inbox under Required fields left empty, and can't be published again until {{field}} is filled in.",
+      "requiredGaps_other": "{{count}} entries ({{versions}}) have no value for {{field}}. They stay as they are, are listed in the Inbox under Required fields left empty, and can't be published again until {{field}} is filled in.",
+      "requiredGapsUncounted": "Entries without a value for {{field}} stay as they are. They're listed in the Inbox under Required fields left empty and can't be published again until it's filled in.",
       "stepDropped_one": "{{field}}: {{from}} → {{to}}, {{count}} entry loses its value",
       "stepDropped_other": "{{field}}: {{from}} → {{to}}, {{count}} entries lose their value",
       "acknowledge": "Confirm this change",
@@ -1296,7 +1325,10 @@
       "failedTitle": "The change didn't go live",
       "failedDescription": "Existing content doesn't fit, so the previous version stays active.",
       "invalidCount_one": "{{count}} entry version doesn't fit.",
-      "invalidCount_other": "{{count}} entry versions don't fit."
+      "invalidCount_other": "{{count}} entry versions don't fit.",
+      "wentLive": "Went live",
+      "requiredGaps_one": "{{count}} entry ({{versions}}) has no value for {{field}}; it's listed in the Inbox.",
+      "requiredGaps_other": "{{count}} entries ({{versions}}) have no value for {{field}}; they're listed in the Inbox."
     },
     "remote": {
       "titles": {
@@ -2207,6 +2239,9 @@
       "codeBlock": "Code block",
       "bold": "Bold",
       "italic": "Italic",
+      "underline": "Underline",
+      "subscript": "Subscript",
+      "superscript": "Superscript",
       "code": "Inline code",
       "link": "Link",
       "linkUrl": "Link address",
@@ -2216,6 +2251,7 @@
       "removeLink": "Remove link",
       "bulletList": "Bulleted list",
       "orderedList": "Numbered list",
+      "listJoinHint": "Backspace at the start of an item joins it to the item above",
       "blockquote": "Quote",
       "image": "Insert image",
       "imageMissing": "This image is no longer in the media library.",
@@ -2905,7 +2941,62 @@
       "deployBuilding": "Deploy building",
       "deployDeployed": "Deployed",
       "deployFailed": "Deploy failed",
-      "deployRun": "View run"
+      "deployRun": "View run",
+      "approvalRequested": "Approval requested",
+      "approved": "Approved",
+      "changesRequested": "Changes requested",
+      "approvalCleared": "Approval cleared",
+      "signed": "Signed off",
+      "signedAt": "Signed off · {{stage}} {{signed}} of {{required}}",
+      "stageCompleted": "Stage complete",
+      "stageCompletedAt": "Stage complete · {{stage}}"
+    },
+    "approval": {
+      "statuses": {
+        "requested": "In review",
+        "approved": "Approved",
+        "changesRequested": "Changes requested",
+        "outdated": "Approval outdated"
+      },
+      "filter": {
+        "label": "Approval",
+        "none": "Not requested",
+        "empty": "No change sets in this approval state."
+      },
+      "request": "Request approval",
+      "requestTitle": "Ask for approval",
+      "review": "Review",
+      "reviewTitle": "Approve this change set, or say what to change",
+      "approve": "Approve",
+      "requestChanges": "Request changes",
+      "note": "Note",
+      "noteOptional": "Note (optional)",
+      "noteRequired": "Say what to change.",
+      "requested": "Approval requested.",
+      "approvedToast": "Change set approved.",
+      "signedToast": "Signed off.",
+      "changesRequestedToast": "Sent back with your note.",
+      "cleared": "Approval cleared.",
+      "clearFailed": "Could not clear the approval. Try again.",
+      "clear": "Clear approval",
+      "requestedBy": "{{name}} asked for approval {{at}}",
+      "changesRequestedBy": "{{name}} requested changes {{at}}",
+      "approvedBy": "Approved by {{name}} {{at}}",
+      "outdatedTitle": "Approval outdated: the set changed after {{name}} approved it {{at}}",
+      "requiredTitle": "This site requires approval",
+      "requiredDescription": "Ship and Schedule stay off until the change set is approved, and approved again after any edit.",
+      "inReviewAt": "In review · {{stage}} {{signed}}/{{required}}",
+      "stageProgress": "{{stage}} {{signed}}/{{required}}",
+      "requestChangesTitle": "Say what to change",
+      "outdatedReviewTitle": "The change set changed after it was signed off. Ask for approval again.",
+      "ineligible": {
+        "role": "Only {{roles}} may sign off at this stage.",
+        "roleAny": "Your roles may not sign off at this stage.",
+        "self": "You can't approve your own change set.",
+        "signed": "You already signed this stage.",
+        "outdated": "The change set changed since it was signed; ask for approval again.",
+        "rolesDeleted": "Every role this stage names was deleted; clear the approval and ask again."
+      }
     }
   },
   "snapshots": {
@@ -3046,7 +3137,6 @@
       "webhooksFailing_other": "{{count}} failing",
       "healthOpen_one": "{{count}} open finding",
       "healthOpen_other": "{{count}} open findings",
-      "openInbox": "Open the Inbox",
       "notTracking": "Usage tracking is off on this server (USAGE_TRACKING=false); counts stop at the last flush."
     },
     "schema": {
@@ -3394,6 +3484,62 @@
       "saved": "SEO settings saved.",
       "conflict": "Someone else changed the SEO settings. Reload to see their version, then make your changes again.",
       "reload": "Reload"
+    }
+  },
+  "approval": {
+    "title": "Approval",
+    "stages": "Stages",
+    "stageNumber": "Stage {{number}}",
+    "stageTitle": "{{number}}. {{name}}",
+    "stageName": "Name",
+    "required": "Sign-offs needed",
+    "whoMaySign": "Who may sign off",
+    "anyApprover": "Anyone who may approve change sets",
+    "deletedRole": "Deleted role",
+    "moveUp": "Move {{stage}} up",
+    "moveDown": "Move {{stage}} down",
+    "removeStage": "Remove {{stage}}",
+    "addStage": "Add stage",
+    "selfApproval": "People may approve their own change sets",
+    "selfApprovalHint": "When off, whoever created a change set or asked for its approval can't sign off on it.",
+    "selfApprovalOn": "People may approve their own change sets.",
+    "selfApprovalOff": "People can't approve their own change sets.",
+    "signoffsNeeded_one": "{{count}} sign-off needed",
+    "signoffsNeeded_other": "{{count}} sign-offs needed",
+    "stageDone": "complete",
+    "stageCount": "{{signed}}/{{required}}",
+    "stageCountLong": "{{signed}} of {{required}} signed",
+    "signoffs": "Sign-offs",
+    "signedStage": "{{name}} signed off at {{stage}}",
+    "signedOff": "{{name}} signed off",
+    "changesRequestedStage": "{{name}} requested changes at {{stage}}",
+    "changesRequestedOff": "{{name}} requested changes",
+    "earlierRound": "Earlier round",
+    "changedSince": "Set changed since",
+    "saved": "Saved.",
+    "conflict": "Someone changed these settings meanwhile. The page now shows the latest ones.",
+    "modes": {
+      "inherit": "Network default",
+      "off": "Off",
+      "custom": "Own workflow",
+      "workflow": "Workflow"
+    },
+    "network": {
+      "defaultTitle": "Default for every site",
+      "defaultDescription": "Sites use it unless they choose otherwise in their change set settings.",
+      "offDescription": "Change sets ship without approval.",
+      "workflowDescription": "Change sets go through these stages before they ship.",
+      "inheriting_one": "{{count}} site inherits this default.",
+      "inheriting_other": "{{count}} sites inherit this default.",
+      "customSites": "Own workflow: {{sites}}.",
+      "offSites": "Approval off: {{sites}}."
+    },
+    "site": {
+      "inheritDescription": "Use the network's default.",
+      "offDescription": "Change sets ship without approval.",
+      "customDescription": "Stages of this site's own.",
+      "inheritedOff": "The network default has no approval, so change sets ship without it.",
+      "readOnly": "Only admins who may change site settings can change this."
     }
   }
 }

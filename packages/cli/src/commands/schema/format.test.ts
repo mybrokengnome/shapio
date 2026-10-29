@@ -1,7 +1,7 @@
 import { ShapioApiError, type SchemaSyncResult } from '@shapio/client';
 import type { DataType, SchemaChange } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
-import { formatApiError, formatChange, formatItem } from './format.js';
+import { formatApiError, formatChange, formatItem, formatRequiredGaps } from './format.js';
 
 const names = new Map([['f1', 'price']]);
 const typeChange = (from: DataType, to: DataType): SchemaChange => ({
@@ -290,5 +290,28 @@ describe('interfaces', () => {
     expect(text).toContain('An interface’s field can’t be a component or a dynamic zone');
     expect(text).toContain('Remove the interface from "implements" on every type that names it');
     expect(text).toContain('Remove the references the message counts');
+  });
+});
+
+describe('formatRequiredGaps', () => {
+  const gap = (entries: number, versions: number) => ({
+    step: 'validateRequired:m1:f1',
+    ownerId: 'm1',
+    fieldId: 'f1',
+    fieldApiKey: 'keywords',
+    versions,
+    entries,
+    sampleEntryIds: [],
+  });
+
+  it('says how many entries a field made required has no value in, and where they are listed', () => {
+    expect(formatRequiredGaps('article', { requiredGaps: [gap(3, 4), gap(1, 1)] })).toEqual([
+      'article: 3 entries (4 versions) have no value for "keywords"; they\'re listed in the Inbox.',
+      'article: 1 entry (1 version) has no value for "keywords"; it\'s listed in the Inbox.',
+    ]);
+  });
+
+  it('says nothing when the change left nothing to do', () => {
+    expect(formatRequiredGaps('article', null)).toEqual([]);
   });
 });

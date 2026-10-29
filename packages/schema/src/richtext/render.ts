@@ -47,6 +47,12 @@ const renderMarks = (text: string, marks: RichTextNode['marks']): string =>
         return `<strong>${inner}</strong>`;
       case 'italic':
         return `<em>${inner}</em>`;
+      case 'underline':
+        return `<u>${inner}</u>`;
+      case 'subscript':
+        return `<sub>${inner}</sub>`;
+      case 'superscript':
+        return `<sup>${inner}</sup>`;
       case 'code':
         return `<code>${inner}</code>`;
       case 'link': {

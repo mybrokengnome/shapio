@@ -42,6 +42,23 @@ export type DefinitionListItem = ActiveDefinition & {
 export type SchemaChangeStatus = 'pending' | 'running' | 'activated' | 'failed' | 'canceled';
 
 /** A planned change whose prerequisites run as jobs before the new revision activates. */
+/** Entry versions without a value for a field a change made required (listed in the Inbox until filled in). */
+export type RequiredGap = {
+  step: string;
+  /** The definition that declares the field (a model, or a component its value lives in). */
+  ownerId: string;
+  fieldId: string;
+  fieldApiKey?: string;
+  /** Entry versions (draft and published, per locale) without a value. */
+  versions: number;
+  /** The distinct entries they belong to. */
+  entries: number;
+  sampleEntryIds: string[];
+};
+
+/** What an activated change left to do. */
+export type SchemaChangeResult = { requiredGaps: RequiredGap[] };
+
 export type SchemaChangeJob = {
   id: string;
   targetType: string;
@@ -52,6 +69,8 @@ export type SchemaChangeJob = {
   jobId: string | null;
   /** Why a failed change failed, e.g. `{ reason, invalidCount, sampleEntryIds }`. */
   error: unknown;
+  /** What an activated change left to do (entries without a value for a field it made required); else null. */
+  outcome: SchemaChangeResult | null;
   createdAt: string;
   updatedAt: string;
   finishedAt: string | null;
@@ -88,6 +107,12 @@ export type PlanStepImpact = {
   invalidHeads?: number;
   /** The distinct entries those failing heads (entry versions) belong to. */
   invalidEntries?: number;
+  /**
+   * On a `validateRequired` step for a model's own field: entry versions (and entries) that will have no
+   * value. They don't block the change; they're listed in the Inbox afterwards.
+   */
+  missingHeads?: number;
+  missingEntries?: number;
   /** On a `convert` step of a type change Shapio cannot convert: live entries that lose their value. */
   droppedEntries?: number;
 };

@@ -22,6 +22,7 @@ vi.mock('@/api/changeSets', () => ({
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('@/helpers/reportError', () => ({ logError: vi.fn(), reportError: vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 
 const change = (status: SchemaChangeStatus): SchemaChangeJob => ({
   id: 'change-1',
@@ -32,6 +33,7 @@ const change = (status: SchemaChangeStatus): SchemaChangeJob => ({
   toRevisionId: 'revision-2',
   jobId: 'job-1',
   error: null,
+  outcome: null,
   createdAt: '2026-10-11T10:00:00.000Z',
   updatedAt: '2026-10-11T10:00:00.000Z',
   finishedAt: status === 'activated' ? '2026-10-11T10:00:01.000Z' : null,
@@ -63,5 +65,40 @@ describe('useSaveFlow: a change shipped in the background', () => {
     // ChangeProgress reads the final status on its first poll and the builder reloads the new version.
     expect(result.current.runningChangeId).toBe('change-1');
     expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it('says how many entries a field made required has no value in, and points to the Inbox', async () => {
+    const result = await shipInBackground('activated');
+    const titleId = model().fields[0]?.id ?? '';
+    await act(() =>
+      result.current.onChangeFinished({
+        ...change('activated'),
+        outcome: {
+          requiredGaps: [
+            {
+              step: `validateRequired:model-1:${titleId}`,
+              ownerId: 'model-1',
+              fieldId: titleId,
+              fieldApiKey: 'title',
+              versions: 4,
+              entries: 3,
+              sampleEntryIds: [],
+            },
+          ],
+        },
+      }),
+    );
+    expect(toast.success).toHaveBeenCalledWith('Went live', {
+      description: expect.stringMatching(
+        /^3 entries \(4 versions\) have no value for .+; they're listed in the Inbox\.$/,
+      ) as unknown,
+      action: expect.objectContaining({ label: 'Open the Inbox' }) as unknown,
+    });
+  });
+
+  it('reports a plain success when the change left nothing to do', async () => {
+    const result = await shipInBackground('activated');
+    await act(() => result.current.onChangeFinished(change('activated')));
+    expect(toast.success).toHaveBeenCalledWith('Model updated — no restart needed');
   });
 });

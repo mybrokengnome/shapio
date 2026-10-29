@@ -27,12 +27,21 @@ const BASELINE_DOC = {
             { type: 'link', attrs: { href: 'https://shapio.dev', target: null, rel: null, class: null } },
           ],
         },
+        { type: 'text', text: 'under', marks: [{ type: 'underline' }] },
+        { type: 'text', text: '2', marks: [{ type: 'subscript' }] },
+        { type: 'text', text: 'nd', marks: [{ type: 'superscript' }] },
       ],
     },
     {
       type: 'bulletList',
       content: [
-        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] },
+        {
+          type: 'listItem',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+            { type: 'paragraph', content: [{ type: 'text', text: 'more' }] },
+          ],
+        },
       ],
     },
     {
@@ -83,6 +92,25 @@ describe('rich-text editor schema (the shapio-richtext v1 contract)', () => {
     expect(result.ok && result.document.doc).toEqual(BASELINE_DOC);
   });
 
+  it('lets subscript and superscript replace each other', () => {
+    const { subscript, superscript } = schema.marks;
+    if (!subscript || !superscript) {
+      throw new Error('missing marks');
+    }
+    expect(
+      superscript
+        .create()
+        .addToSet([subscript.create()])
+        .map((mark) => mark.type.name),
+    ).toEqual(['superscript']);
+    expect(
+      subscript
+        .create()
+        .addToSet([superscript.create()])
+        .map((mark) => mark.type.name),
+    ).toEqual(['subscript']);
+  });
+
   it('has exactly the nodes and marks the server allows', () => {
     expect(Object.keys(schema.nodes).sort()).toEqual(
       [
@@ -104,7 +132,15 @@ describe('rich-text editor schema (the shapio-richtext v1 contract)', () => {
         'text',
       ].sort(),
     );
-    expect(Object.keys(schema.marks).sort()).toEqual(['bold', 'code', 'italic', 'link']);
+    expect(Object.keys(schema.marks).sort()).toEqual([
+      'bold',
+      'code',
+      'italic',
+      'link',
+      'subscript',
+      'superscript',
+      'underline',
+    ]);
     expect(Object.keys(schema.marks.link?.spec.attrs ?? {}).sort()).toEqual([
       'class',
       'href',

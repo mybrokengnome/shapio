@@ -3,6 +3,7 @@ import { adminApiFor, type AdminApi } from './content/api';
 import { OWNER } from './support/accounts';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
+import { entryDocument } from './support/entryDocument';
 import { openKeyboardSuite } from './support/keyboardSuite';
 import { logOffset, waitForEmailedLink } from './support/serverLog';
 import { ADMIN_API, signInAsOwner } from './support/session';
@@ -31,7 +32,10 @@ const openPage = async (browser: Browser) => {
   return opened;
 };
 
-/** A place with a required summary and a cover image; one entry lacks alt text, another its summary. */
+/**
+ * A place with a required summary, a cover image and an optional subtitle; one entry lacks alt text, another
+ * its summary, and neither has a subtitle.
+ */
 const seedContent = async () => {
   await api.createDefinition('models', {
     kind: 'collection',
@@ -41,6 +45,8 @@ const seedContent = async () => {
       { apiKey: 'title', label: 'Title', type: 'string' },
       { apiKey: 'summary', label: 'Summary', type: 'string', required: true },
       { apiKey: 'cover', label: 'Cover', type: 'media', settings: { allowedKinds: ['image'] } },
+      // Empty in both entries: made required from the builder later, with the entries listed in the Inbox.
+      { apiKey: 'subtitle', label: 'Subtitle', type: 'string' },
     ],
   });
   const cover = await api.uploadPng('inbox-cover.png', 40, 30);
@@ -208,6 +214,76 @@ test('the Inbox is home: findings grouped by rule, one sentence each, with a fix
   await expect(fix).toHaveAccessibleDescription('Harbour lights');
   await fix.click();
   await expect(owner).toHaveURL(new RegExp(`/content/fieldNote/${entries.harbour}(\\?[^#]*)?#cover$`));
+});
+
+test('making a field required while entries lack it ships, and the Inbox lists them until filled in', async () => {
+  // The builder: Field note's Structure tab, Subtitle made required.
+  await owner.goto(ADMIN_URL);
+  await owner
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: 'Field note', exact: true })
+    .click();
+  await owner.getByRole('tab', { name: 'Structure' }).click();
+  await owner
+    .getByRole('list', { name: /^\d+ fields?$/ })
+    .getByRole('button', { name: /^Subtitle\b/ })
+    .click();
+  await owner.getByRole('switch', { name: 'Required' }).click();
+  await owner.getByRole('button', { name: 'Review', exact: true }).click();
+  const plan = owner.getByRole('dialog', { name: /^Review changes to / });
+  // The count is of complete versions: Harbour lights' draft and published one. Unfinished thoughts' draft
+  // was kept by autosave (it may lack values while in progress), so it isn't counted, but it is listed.
+  await expect(plan.getByText('1 entry (2 versions) without a value')).toBeVisible();
+  await expect(
+    plan.getByText(
+      "1 entry (2 versions) has no value for Subtitle. It stays as it is, is listed in the Inbox under Required fields left empty, and can't be published again until Subtitle is filled in.",
+    ),
+  ).toBeVisible();
+  await captureScreen(owner, 'inbox-03-required-review', { viewports: ['desktop'] });
+  await plan.getByRole('button', { name: 'Ship now' }).click();
+  await expect(plan).toBeHidden();
+  // The checks run in the background; the outcome says how many and points to the Inbox.
+  await expect(owner.getByText('Went live')).toBeVisible({ timeout: 30_000 });
+  await expect(
+    owner.getByText("1 entry (2 versions) has no value for Subtitle; it's listed in the Inbox."),
+  ).toBeVisible();
+  await owner.getByRole('button', { name: 'Open the Inbox' }).click();
+
+  const subtitleRow = (title: string) =>
+    row(ruleGroup(owner, 'Required fields left empty'), title).filter({ hasText: 'Subtitle' });
+  await expect(async () => {
+    await owner.reload();
+    await expect(subtitleRow('Harbour lights')).toBeVisible({ timeout: 2_000 });
+    await expect(subtitleRow('Unfinished thoughts')).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 60_000, intervals: [1_000, 2_000, 3_000] });
+  await expect(subtitleRow('Harbour lights')).toContainText(
+    'Field note · Subtitle is required and still empty',
+  );
+  await captureScreen(owner, 'inbox-04-required-listed', { viewports: ['desktop'] });
+
+  // Fill it in from the finding: it leaves the list once the entry is re-checked.
+  await subtitleRow('Harbour lights').getByRole('link', { name: 'Fill in' }).click();
+  await expect(owner).toHaveURL(new RegExp(`/content/fieldNote/${entries.harbour}(\\?[^#]*)?#subtitle$`));
+  const subtitle = await entryDocument(owner).property('subtitle');
+  await subtitle.getByRole('textbox').fill('Lanterns on the water');
+  // The entry's Save in the top bar (the settings drawer has a Save of its own, for the image's details).
+  const saved = owner.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      response.url().includes(`/content/fieldNote/${entries.harbour}`) &&
+      !response.request().postData()?.includes('"autosave":true'),
+  );
+  await owner
+    .getByRole('tabpanel', { name: 'Entries' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click();
+  expect((await saved).status()).toBe(200);
+  await owner.goto(ADMIN_URL);
+  await expect(async () => {
+    await owner.reload();
+    await expect(subtitleRow('Unfinished thoughts')).toBeVisible({ timeout: 2_000 });
+    await expect(subtitleRow('Harbour lights')).toHaveCount(0, { timeout: 2_000 });
+  }).toPass({ timeout: 60_000, intervals: [1_000, 2_000, 3_000] });
 });
 
 test('snapshots that change only the schema never push publishes out of Recently published', async () => {

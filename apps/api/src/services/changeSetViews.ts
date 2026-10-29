@@ -1,25 +1,30 @@
 import { categoryOfKind, effectiveTitleField, type DefinitionCategory } from '@shapio/schema';
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
+import type { PermissionEvaluator, Principal } from '../permissions/types.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
 import * as publicationSnapshotsRepository from '../repositories/publicationSnapshots.js';
+import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
+import type { ChangeResult } from '../schema/planner/gaps.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
+import { actorOfIds, type ChangeSetActorView } from './changeSetActors.js';
+import {
+  loadApprovalView,
+  type ChangeSetApprovalSummaryView,
+  type ChangeSetApprovalView,
+} from './changeSetApprovalViews.js';
 
 /**
  * Change set views (the shapes in routes/admin/changeSets/schemas.ts) and the errors every change-set
  * service shares.
  */
-export type ChangeSetActorView = {
-  type: 'admin' | 'token' | 'system';
-  id: string | null;
-  name: string | null;
-};
+export type { ChangeSetActorView };
 
 export type ChangeSetErrorView = { code: string; message: string; itemId: string | null; details?: unknown };
 
@@ -53,6 +58,8 @@ export type SchemaItemView = {
   draftVersion: number;
   status: 'pending' | 'done' | 'failed';
   error: string | null;
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: ChangeResult | null;
 };
 
 export type ChangeSetSummaryView = {
@@ -76,9 +83,11 @@ export type ChangeSetSummaryView = {
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  approval: ChangeSetApprovalSummaryView;
 };
 
-export type ChangeSetView = ChangeSetSummaryView & {
+export type ChangeSetView = Omit<ChangeSetSummaryView, 'approval'> & {
+  approval: ChangeSetApprovalView;
   items: Array<EntryItemView | SchemaItemView>;
   /** Who shipped the set (the snapshot ledger's actor); null until it ships. */
   shippedBy: ChangeSetActorView | null;
@@ -114,15 +123,7 @@ export const operationOf = (draft: Pick<SchemaDraftRow, 'base_version' | 'defini
 const actorOf = (
   row: Pick<ChangeSetRow, 'created_by' | 'created_by_token'>,
   names: ReadonlyMap<string, string>,
-): ChangeSetActorView => {
-  if (row.created_by) {
-    return { type: 'admin', id: row.created_by, name: names.get(row.created_by) ?? null };
-  }
-  if (row.created_by_token) {
-    return { type: 'token', id: row.created_by_token, name: names.get(row.created_by_token) ?? null };
-  }
-  return { type: 'system', id: null, name: null };
-};
+): ChangeSetActorView => actorOfIds(row.created_by, row.created_by_token, names);
 
 const errorOf = (value: unknown): ChangeSetErrorView | null => {
   if (!value || typeof value !== 'object') {
@@ -141,6 +142,7 @@ export const toSummary = (
   row: ChangeSetRow,
   counts: { entries: number; schema: number },
   names: ReadonlyMap<string, string>,
+  approval: ChangeSetApprovalSummaryView,
 ): ChangeSetSummaryView => ({
   id: row.id,
   title: row.title,
@@ -162,16 +164,22 @@ export const toSummary = (
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   version: row.version,
+  approval,
 });
 
-export const actorNamesFor = (
-  database: Database,
-  rows: ReadonlyArray<Pick<ChangeSetRow, 'created_by' | 'created_by_token'>>,
-) =>
+type NamedRow = Pick<ChangeSetRow, 'created_by' | 'created_by_token'> &
+  Partial<Pick<ChangeSetRow, 'approval_requested_by' | 'approval_requested_by_token'>>;
+
+const presentIds = (values: ReadonlyArray<string | null | undefined>) => [
+  ...new Set(values.flatMap((value) => (value ? [value] : []))),
+];
+
+/** Names of everyone a page of sets names: creators and approval actors. */
+export const actorNamesFor = (database: Database, rows: readonly NamedRow[]) =>
   changeSetsRepository.findActorNames(
     {
-      adminIds: [...new Set(rows.flatMap((row) => (row.created_by ? [row.created_by] : [])))],
-      tokenIds: [...new Set(rows.flatMap((row) => (row.created_by_token ? [row.created_by_token] : [])))],
+      adminIds: presentIds(rows.flatMap((row) => [row.created_by, row.approval_requested_by])),
+      tokenIds: presentIds(rows.flatMap((row) => [row.created_by_token, row.approval_requested_by_token])),
     },
     database,
   );
@@ -229,7 +237,11 @@ const toEntryItem = (
   error: item.error,
 });
 
-const toSchemaItem = (item: ChangeSetItemRow, draft: SchemaDraftRow): SchemaItemView => ({
+const toSchemaItem = (
+  item: ChangeSetItemRow,
+  draft: SchemaDraftRow,
+  outcome: ChangeResult | undefined,
+): SchemaItemView => ({
   id: item.id,
   kind: 'schema',
   position: item.position,
@@ -242,10 +254,18 @@ const toSchemaItem = (item: ChangeSetItemRow, draft: SchemaDraftRow): SchemaItem
   draftVersion: draft.version,
   status: item.status as SchemaItemView['status'],
   error: item.error,
+  outcome: outcome ?? null,
 });
 
 /** The site-scoped part of a service context a set is read with. */
-export type ChangeSetReadContext = { db: Database; snapshot: SchemaSnapshot; site: SiteRef };
+export type ChangeSetReadContext = {
+  db: Database;
+  snapshot: SchemaSnapshot;
+  site: SiteRef;
+  /** The caller (the approval block says whether they may sign off). */
+  actor: Principal;
+  permissions: PermissionEvaluator;
+};
 
 /** One set of the context's site; another site's set is not found (sites plan §H). */
 export const findChangeSet = async (context: ChangeSetReadContext, id: string): Promise<ChangeSetRow> => {
@@ -267,6 +287,14 @@ export const loadChangeSetView = async (
   const drafts = new Map(
     (await schemaDraftsRepository.listForSet(id, database)).map((draft) => [draft.id, draft]),
   );
+  const outcomes = new Map(
+    row.status === 'shipped'
+      ? (await schemaChangeJobsRepository.listOutcomesForChangeSet(id, database)).map((change) => [
+          change.model_id,
+          change.outcome as ChangeResult,
+        ])
+      : [],
+  );
   const heads = await changeSetItemsRepository.findHeadsForEntries(
     [...new Set(items.flatMap((item) => (item.entry_id ? [item.entry_id] : [])))],
     database,
@@ -276,7 +304,7 @@ export const loadChangeSetView = async (
       return [toEntryItem(snapshot, item, heads)];
     }
     const draft = drafts.get(item.schema_draft_id ?? '');
-    return draft ? [toSchemaItem(item, draft)] : [];
+    return draft ? [toSchemaItem(item, draft, outcomes.get(draft.definition_id))] : [];
   });
   const counts = {
     entries: views.filter((view) => view.kind === 'entry').length,
@@ -284,8 +312,10 @@ export const loadChangeSetView = async (
   };
   const shipper = await shipperOf(context, row);
   const names = await actorNamesFor(database, shipper ? [row, shipper] : [row]);
+  const approval = await loadApprovalView(context, row, names);
   return {
-    ...toSummary(row, counts, names),
+    ...toSummary(row, counts, names, approval),
+    approval,
     items: views,
     shippedBy: shipper ? actorOf(shipper, names) : null,
   };

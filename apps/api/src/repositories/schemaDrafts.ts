@@ -40,6 +40,16 @@ export const findById = (id: string, executor: Executor = db) =>
 export const listForSet = (changeSetId: string, executor: Executor = db) =>
   executor.selectFrom('schema_drafts').selectAll().where('change_set_id', '=', changeSetId).execute();
 
+/** The ID and row version of each draft of these sets (the approval fingerprint's input). */
+export const listVersionsForSets = (changeSetIds: readonly string[], executor: Executor = db) =>
+  changeSetIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('schema_drafts')
+        .select(['id', 'change_set_id', 'version'])
+        .where('change_set_id', 'in', changeSetIds)
+        .execute();
+
 export const insert = (draft: SchemaDraftWrite, trx: Executor = db) =>
   trx
     .insertInto('schema_drafts')

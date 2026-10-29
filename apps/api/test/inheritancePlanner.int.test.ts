@@ -13,7 +13,11 @@ import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
-type ChangeBody = { status: string; error: { step?: string; reason?: string } | null };
+type ChangeBody = {
+  status: string;
+  error: { step?: string; reason?: string } | null;
+  outcome: { requiredGaps: Array<{ fieldApiKey?: string; versions: number; entries: number }> } | null;
+};
 type PreviewBody = {
   plan: { affectedModelIds: string[]; changes: Array<{ kind: string; category: string; breaking: boolean }> };
   impact: { affectedHeads: number; steps: Array<{ kind: string; affectedHeads: number }> };
@@ -160,7 +164,7 @@ describe('model inheritance: planner', () => {
     expect(data).toMatchObject({ [fieldIdOf(child, 'pages')]: 10 });
   });
 
-  it('moving a type under a parent with a required field it lacks fails on that field, not on a clear', async () => {
+  it('moving a type under a parent with a required field it lacks counts that field, not a clear', async () => {
     const { child } = await family('F');
     await entry('bookF', { name: 'Ebook', pages: 10 });
     const post = await createDefinition(admin, {
@@ -170,10 +174,13 @@ describe('model inheritance: planner', () => {
       label: 'Post',
       fields: [{ apiKey: 'title', label: 'Title', type: 'string', required: true }],
     });
+    // It goes live (ADR 0002 amendment 2026-10-29); the entry is counted for the field it now lacks.
     const outcome = await applyAndRun(child, { ...child.definition, extends: post.definition.id });
-    expect(outcome.status).toBe('failed');
-    expect(outcome.error?.step).toMatch(/^validateRequired:/);
-    expect(outcome.error?.reason).toBe('1 entry version(s) have no value for the required field "title"');
+    expect(outcome).toMatchObject({
+      status: 'activated',
+      error: null,
+      outcome: { requiredGaps: [{ fieldApiKey: 'title', versions: 1, entries: 1 }] },
+    });
   });
 
   it('a parent with children cannot be deleted; its child can', async () => {

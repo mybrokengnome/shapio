@@ -9,8 +9,8 @@ import type { ConversionWarning, RichTextConversion } from '../types.js';
 
 /**
  * Strapi 5 "blocks" (its JSON rich-text format) → Shapio rich text. Paragraphs, headings, lists (nested lists
- * join the previous item), quotes, code and images map directly; bold, italic, code and links keep their marks;
- * underline and strikethrough have no Shapio mark and are dropped (the text stays). Images become image nodes
+ * join the previous item), quotes, code and images map directly; bold, italic, underline, code and links keep
+ * their marks; strikethrough has no Shapio mark and is dropped (the text stays). Images become image nodes
  * when `resolveImage` knows the uploaded asset, else they are left out with a warning.
  */
 type Block = {
@@ -24,6 +24,7 @@ type Block = {
   image?: { url?: string; alternativeText?: string | null; caption?: string | null };
   bold?: boolean;
   italic?: boolean;
+  underline?: boolean;
   code?: boolean;
 };
 
@@ -56,6 +57,7 @@ const inline = (nodes: readonly Block[] | undefined, context: Context, link?: Ma
     const marks: Mark[] = [
       ...(node.bold ? [{ type: 'bold' }] : []),
       ...(node.italic ? [{ type: 'italic' }] : []),
+      ...(node.underline ? [{ type: 'underline' }] : []),
       ...(node.code ? [{ type: 'code' }] : []),
       ...(link ? [link] : []),
     ];

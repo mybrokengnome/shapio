@@ -23,6 +23,12 @@ const EVENT_DISPLAY = {
   deploy_building: { labelKey: 'changes.timeline.deployBuilding', tone: 'progress' },
   deploy_deployed: { labelKey: 'changes.timeline.deployDeployed', tone: 'success' },
   deploy_failed: { labelKey: 'changes.timeline.deployFailed', tone: 'danger' },
+  'approval.requested': { labelKey: 'changes.timeline.approvalRequested', tone: 'scheduled' },
+  'approval.signed': { labelKey: 'changes.timeline.signed', tone: 'neutral' },
+  'approval.stageCompleted': { labelKey: 'changes.timeline.stageCompleted', tone: 'success' },
+  'approval.approved': { labelKey: 'changes.timeline.approved', tone: 'success' },
+  'approval.changesRequested': { labelKey: 'changes.timeline.changesRequested', tone: 'danger' },
+  'approval.cleared': { labelKey: 'changes.timeline.approvalCleared', tone: 'muted' },
 } as const satisfies Record<string, { labelKey: string; tone: StatusTone }>;
 
 const isKnownKind = (kind: string): kind is keyof typeof EVENT_DISPLAY => kind in EVENT_DISPLAY;
@@ -34,6 +40,16 @@ export const EventRow = ({ event, last }: EventRowProps) => {
   const { t } = useTranslation();
   const actorLabel = useActorLabel();
   const display = isKnownKind(event.kind) ? EVENT_DISPLAY[event.kind] : undefined;
+  // A sign-off names its stage and how far it got ("Signed off · Legal 1 of 2"); a completed stage its name.
+  const stage = event.approval?.stage ?? null;
+  const signed = event.approval?.signed;
+  const required = event.approval?.required;
+  const approvalLabel =
+    stage && event.kind === 'approval.signed' && typeof signed === 'number' && typeof required === 'number'
+      ? t('changes.timeline.signedAt', { stage, signed, required })
+      : stage && event.kind === 'approval.stageCompleted'
+        ? t('changes.timeline.stageCompletedAt', { stage })
+        : null;
   return (
     <li className="flex gap-3">
       <span aria-hidden="true" className="flex flex-col items-center">
@@ -44,7 +60,7 @@ export const EventRow = ({ event, last }: EventRowProps) => {
         <div className="flex flex-wrap items-center gap-2">
           <StatusChip
             tone={display?.tone ?? 'neutral'}
-            label={display ? t(display.labelKey) : event.kind}
+            label={approvalLabel ?? (display ? t(display.labelKey) : event.kind)}
             live={false}
             size="sm"
           />

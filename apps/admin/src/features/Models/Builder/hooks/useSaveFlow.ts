@@ -1,4 +1,11 @@
-import type { Acknowledgement, DefinitionCategory, PlanPreview } from '@shapio/client';
+import type {
+  Acknowledgement,
+  DefinitionCategory,
+  PlanPreview,
+  SchemaChangeJob,
+  SchemaChangeResult,
+} from '@shapio/client';
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -10,6 +17,7 @@ import { describeError } from '@/helpers/describeError';
 import { logError } from '@/helpers/reportError';
 import { useDefinitionDraftStore } from '@/stores/definitionDraft';
 import { describeIssue } from '../../helpers/describeIssue';
+import { describeRequiredGaps } from '../../helpers/describeStep';
 import { missingContractIssues, type MissingContractIssue } from '../../helpers/interfaces';
 import type { useReloadDraft } from './useReloadDraft';
 
@@ -35,6 +43,7 @@ const isVersionConflict = (error: unknown) => hasErrorCode(error, 'SCHEMA_VERSIO
  */
 export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraft: ReloadDraft) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const plan = usePlanChange();
   const apply = useShipDraftNow();
   const [state, setState] = useState<SaveFlowState>({ step: 'idle' });
@@ -63,8 +72,24 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
     toast.error(describeError(error));
   };
 
-  const finishSuccessfully = async () => {
-    toast.success(t('models.updated'));
+  /**
+   * The change is live. When entries have no value for a field it made required, say how many and point to
+   * the Inbox, where they're listed (the Inbox may list a different number: it lists drafts).
+   */
+  const notifySuccess = (result: SchemaChangeResult | null | undefined) => {
+    const gaps = describeRequiredGaps(result, useDefinitionDraftStore.getState().draft);
+    if (gaps.length === 0) {
+      toast.success(t('models.updated'));
+      return;
+    }
+    toast.success(t('models.progress.wentLive'), {
+      description: gaps.join(' '),
+      action: { label: t('common.openInbox'), onClick: () => void navigate({ to: '/' }) },
+    });
+  };
+
+  const finishSuccessfully = async (result?: SchemaChangeResult | null) => {
+    notifySuccess(result);
     try {
       // Rebase rather than replace: edits made while a change was running are kept on the new version.
       await reloadDraft('rebase');
@@ -137,10 +162,10 @@ export const useSaveFlow = (category: DefinitionCategory, id: string, reloadDraf
   };
 
   /** The running change ended: reload on success; keep showing a failure until it is dismissed. */
-  const onChangeFinished = async (status: string) => {
-    if (status === 'activated') {
+  const onChangeFinished = async (change: SchemaChangeJob) => {
+    if (change.status === 'activated') {
       setRunningChangeId(undefined);
-      await finishSuccessfully();
+      await finishSuccessfully(change.outcome);
     }
   };
 

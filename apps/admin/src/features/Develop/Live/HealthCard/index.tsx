@@ -25,7 +25,7 @@ export const HealthCard = () => {
                   label={t('develop.live.healthOpen', { count: total })}
                 />
                 <Link to="/" className="text-sm text-link underline-offset-4 hover:underline">
-                  {t('develop.live.openInbox')}
+                  {t('common.openInbox')}
                 </Link>
               </div>
               {open.length > 0 ? (

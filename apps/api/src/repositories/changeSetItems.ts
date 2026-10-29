@@ -243,6 +243,27 @@ export const findHeadsForEntries = (entryIds: readonly string[], executor: Execu
 
 export type EntryHeadRow = Awaited<ReturnType<typeof findHeadsForEntries>>[number];
 
+/** The draft head version of each (entry, locale) of these entries (the approval fingerprint's input). */
+export const findDraftVersions = (entryIds: readonly string[], executor: Executor = db) =>
+  entryIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('entry_heads')
+        .select(['entry_id', 'locale', 'version'])
+        .where('entry_id', 'in', entryIds)
+        .where('state', '=', 'draft')
+        .execute();
+
+/** The items of several sets, with only what the approval fingerprint reads. */
+export const listFingerprintFieldsForSets = (changeSetIds: readonly string[], executor: Executor = db) =>
+  changeSetIds.length === 0
+    ? Promise.resolve([])
+    : executor
+        .selectFrom('change_set_items')
+        .select(['id', 'change_set_id', 'kind', 'action', 'source_revision_id', 'entry_id', 'locale'])
+        .where('change_set_id', 'in', changeSetIds)
+        .execute();
+
 /**
  * Entries (distinct, every locale and state) of these models per site, with the site's key: the review of a
  * schema change lists what it affects on each site (option a: one schema, one snapshot per affected site).

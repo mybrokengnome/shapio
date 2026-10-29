@@ -41,7 +41,11 @@ export type ChangeCategory =
   | 'constraint'
   | 'index';
 
-/** Work that must succeed before activation. Content-touching kinds run through the content ports. */
+/**
+ * Work done before activation. Content-touching kinds run through the content ports. `validateRequired`
+ * counts the entries without a value and never fails: they're listed in the Inbox (ADR 0002 amendment
+ * 2026-10-29); the others must succeed.
+ */
 export type PrerequisiteKind =
   'validateRequired' | 'backfill' | 'validateValues' | 'checkUnique' | 'buildIndex' | 'convert';
 
@@ -176,7 +180,10 @@ export type PlannedChange = SchemaChange & { dropsValues?: boolean };
 export const changeDropsValues = (change: PlannedChange): boolean =>
   (change.kind === 'field.type' || change.kind === 'field.removed') && change.dropsValues === true;
 
-/** A required field whose values are dropped is backfilled from its default, else checked (no silent nulls). */
+/**
+ * A required field whose values are dropped is backfilled from its default, else counted (the entries left
+ * without a value are listed in the Inbox).
+ */
 const requiredStep = (field: FieldDefinition | undefined): PrerequisiteKind[] => {
   if (!field?.required) {
     return [];

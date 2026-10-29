@@ -213,11 +213,11 @@ export const Editor = ({ category, id, detail }: EditorProps) => {
           <ChangeProgress
             key={visibleChangeId}
             changeId={visibleChangeId}
-            onFinished={(status) => {
-              if (status !== 'activated') {
+            onFinished={(finished) => {
+              if (finished.status !== 'activated') {
                 setEndedChangeId(visibleChangeId);
               }
-              void flow.onChangeFinished(status);
+              void flow.onChangeFinished(finished);
             }}
             onDismiss={() => {
               setDismissedChangeId(visibleChangeId);

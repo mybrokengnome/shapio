@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createContentPorts } from '../src/content/ports.js';
 import {
   CONTENT_HEALTH_JOBS,
   contentHealthOutboxSubscriber,
@@ -7,6 +8,8 @@ import {
 } from '../src/jobs/contentHealth.js';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { createWorker, type Worker } from '../src/jobs/worker.js';
+import { createSchemaJobHandlers } from '../src/schema/planner/changeJob.js';
+import { SCHEMA_CHANGE_JOB, SCHEMA_FOLLOW_UP_JOB } from '../src/schema/planner/prerequisites.js';
 import { createAdmin, login, type TestSession } from './helpers/adminIdentity.js';
 import {
   createDefinition,
@@ -14,7 +17,6 @@ import {
   createTokenForRole,
   expectStatus,
   fieldIdOf,
-  runContentSchemaJobs,
   type EntryBody,
   type ModelBody,
 } from './helpers/content.js';
@@ -88,6 +90,15 @@ describe('editor experience: pre-flight, content health, presence, counts, model
     }
     return drainJobs(worker, database.current.db, { types: HEALTH_TYPES });
   };
+  /** Runs schema change jobs and the health jobs their activation triggers. */
+  const drainSchema = () => {
+    if (!worker) {
+      throw new Error('worker not started');
+    }
+    return drainJobs(worker, database.current.db, {
+      types: [...HEALTH_TYPES, SCHEMA_CHANGE_JOB, SCHEMA_FOLLOW_UP_JOB],
+    });
+  };
 
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { schemaListen: false });
@@ -129,9 +140,15 @@ describe('editor experience: pre-flight, content health, presence, counts, model
     });
     worker = createWorker({
       db: database.current.db,
-      handlers: createJobHandlers(
-        createContentHealthJobHandlers({ db: database.current.db, staleDays: 14, log: silentLogger }),
-      ),
+      handlers: createJobHandlers([
+        ...createContentHealthJobHandlers({ db: database.current.db, staleDays: 14, log: silentLogger }),
+        // Schema changes run here too when a test needs the health sweep their activation triggers: a
+        // separate worker would dispatch the activation's event without the health subscriber.
+        ...createSchemaJobHandlers({
+          db: database.current.db,
+          ports: createContentPorts(database.current.db),
+        }),
+      ]),
       subscribers: [contentHealthOutboxSubscriber],
       workerId: `test-${randomUUID()}`,
       concurrency: 2,
@@ -345,8 +362,7 @@ describe('editor experience: pre-flight, content health, presence, counts, model
         acknowledgeDestructive: true,
       });
       expect(changed.statusCode, changed.body).toBeLessThan(300);
-      await runContentSchemaJobs(database.current.db);
-      await drain();
+      await drainSchema();
       // The backfill gave the entry a value; the sweep ran and found nothing to report.
       const sweeps = await database.current.db
         .selectFrom('jobs')
@@ -355,6 +371,135 @@ describe('editor experience: pre-flight, content health, presence, counts, model
         .execute();
       expect(sweeps.some((job) => job.status === 'succeeded')).toBe(true);
       expect((await findings()).filter((finding) => finding.entryId === entry.id)).toEqual([]);
+    });
+
+    it('a field made required while entries lack it goes live and lists them until filled in', async () => {
+      const kb = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'kbArticle',
+        label: 'KB article',
+        fields: [
+          { apiKey: 'heading', label: 'Heading', type: 'string' },
+          { apiKey: 'keywords', label: 'Keywords', type: 'string' },
+        ],
+      });
+      await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'kbGuide',
+        label: 'KB guide',
+        extends: kb.definition.id,
+        fields: [{ apiKey: 'level', label: 'Level', type: 'string' }],
+      });
+      const add = async (apiKey: string, heading: string, publish: boolean) => {
+        const created = expectStatus(
+          await admin.post(`/api/admin/content/${apiKey}`, { data: { heading } }),
+          201,
+        ).json<EntryBody>();
+        if (publish) {
+          expectStatus(await admin.post(`/api/admin/content/${apiKey}/${created.id}/publish`, {}), 200);
+        }
+        return created;
+      };
+      const live = await add('kbArticle', 'Charts', true);
+      await add('kbArticle', 'Scanners', true);
+      await add('kbArticle', 'Draft only', false);
+      const guide = await add('kbGuide', 'Getting started', false);
+
+      const current = expectStatus(
+        await admin.get(`/api/admin/models/${kb.definition.id}`),
+        200,
+      ).json<ModelBody>();
+      const changed = await admin.put(`/api/admin/models/${kb.definition.id}`, {
+        definition: {
+          ...current.definition,
+          fields: current.definition.fields.map((field) =>
+            field.apiKey === 'keywords' ? { ...field, required: true } : field,
+          ),
+        },
+        expectedVersion: current.version,
+      });
+      expect(changed.statusCode, changed.body).toBe(202);
+      await drainSchema();
+      // Two published entries (draft and published: two versions each), a draft and the kind's draft.
+      const change = expectStatus(
+        await admin.get(`/api/admin/schema/changes/${changed.json<{ changeId: string }>().changeId}`),
+        200,
+      ).json<{ status: string; outcome: unknown }>();
+      expect(change).toMatchObject({
+        status: 'activated',
+        outcome: { requiredGaps: [{ fieldApiKey: 'keywords', versions: 6, entries: 4 }] },
+      });
+
+      const listed = async () =>
+        (await findings(admin, '?rule=requiredEmpty')).filter((finding) => finding.path === '/keywords');
+      expect((await listed()).map((finding) => finding.entryTitle).sort()).toEqual([
+        'Charts',
+        'Draft only',
+        'Getting started',
+        'Scanners',
+      ]);
+      expect((await listed()).find((finding) => finding.entryId === guide.id)).toBeDefined();
+
+      // Published entries keep serving. Editing one asks for the value: an explicit save is refused, and a
+      // change kept by autosave can't be published until it's filled in.
+      const draft = expectStatus(
+        await admin.get(`/api/admin/content/kbArticle/${live.id}`),
+        200,
+      ).json<EntryBody>();
+      const unsaved = await admin.put(`/api/admin/content/kbArticle/${live.id}`, {
+        expectedVersion: draft.version,
+        data: { heading: 'Charts, updated' },
+      });
+      expect(unsaved.statusCode).toBe(422);
+      expect(unsaved.body).toContain('REQUIRED');
+      const autosaved = expectStatus(
+        await admin.put(`/api/admin/content/kbArticle/${live.id}`, {
+          expectedVersion: draft.version,
+          autosave: true,
+          data: { heading: 'Charts, updated' },
+        }),
+        200,
+      ).json<EntryBody>();
+      const refused = await admin.post(`/api/admin/content/kbArticle/${live.id}/publish`, {});
+      expect(refused.statusCode).toBe(422);
+      expect(refused.body).toContain('REQUIRED');
+      expectStatus(
+        await admin.put(`/api/admin/content/kbArticle/${live.id}`, {
+          expectedVersion: autosaved.version,
+          data: { heading: 'Charts', keywords: 'charts, candles' },
+        }),
+        200,
+      );
+      expectStatus(await admin.post(`/api/admin/content/kbArticle/${live.id}/publish`, {}), 200);
+      await drain();
+      expect((await listed()).map((finding) => finding.entryTitle).sort()).toEqual([
+        'Draft only',
+        'Getting started',
+        'Scanners',
+      ]);
+
+      // A later, unrelated check on the model is not failed by the entries still without a value.
+      const withKeywords = expectStatus(
+        await admin.get(`/api/admin/models/${kb.definition.id}`),
+        200,
+      ).json<ModelBody>();
+      const tightened = await admin.put(`/api/admin/models/${kb.definition.id}`, {
+        definition: {
+          ...withKeywords.definition,
+          fields: withKeywords.definition.fields.map((field) =>
+            field.apiKey === 'heading' ? { ...field, settings: { maxLength: 100 } } : field,
+          ),
+        },
+        expectedVersion: withKeywords.version,
+      });
+      expect(tightened.statusCode, tightened.body).toBe(202);
+      await drainSchema();
+      expect(
+        expectStatus(
+          await admin.get(`/api/admin/schema/changes/${tightened.json<{ changeId: string }>().changeId}`),
+          200,
+        ).json<{ status: string; outcome: unknown }>(),
+      ).toMatchObject({ status: 'activated', outcome: null });
     });
 
     it('titles a finding on a kind’s entry with the title field it inherits', async () => {

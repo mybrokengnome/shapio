@@ -4,7 +4,14 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { initI18n } from '@/app/i18n';
 import { field, model } from '../../../../../../packages/schema/src/testing/fixtures';
 import { describeChange } from './describeChange';
-import { describeStep, describeStepImpact, hasFailingCheck, stepsToShow } from './describeStep';
+import {
+  describeRequiredGaps,
+  describeStep,
+  describeStepImpact,
+  hasFailingCheck,
+  requiredGapNotices,
+  stepsToShow,
+} from './describeStep';
 
 const before = model({ fields: [field({ apiKey: 'price', label: 'Price', type: 'media' })] });
 const price = before.fields[0]!;
@@ -85,19 +92,56 @@ describe('a type change Shapio cannot convert', () => {
     expect(describeStep(toText, before, after)).toBe('Convert stored values');
   });
 
-  it('says how to fix entries a required field would leave empty', () => {
+  it('counts the entries a required field leaves without a value, without calling it a failure', () => {
     const required: PlanStep = { kind: 'validateRequired', fieldId: price.id };
     expect(
       describeStepImpact(required, {
         key: 'validateRequired',
         kind: 'validateRequired',
         affectedHeads: 4,
-        invalidHeads: 4,
-        invalidEntries: 3,
+        missingHeads: 4,
+        missingEntries: 3,
       }),
-    ).toBe(
-      '4 entry versions to check · 3 entries (4 versions) would be left without a required value; untick Required or set a default',
+    ).toBe('4 entry versions to check · 3 entries (4 versions) without a value');
+    expect(hasFailingCheck([{ key: 'r', kind: 'validateRequired', affectedHeads: 4, missingHeads: 4 }])).toBe(
+      false,
     );
+  });
+
+  it('says what happens to entries without a value for a field made required', () => {
+    const required: PlanStep = { kind: 'validateRequired', ownerId: before.id, fieldId: price.id };
+    const impact = (missingHeads?: number) => ({
+      key: 'r',
+      kind: 'validateRequired',
+      affectedHeads: 4,
+      ...(missingHeads === undefined ? {} : { missingHeads, missingEntries: 3 }),
+    });
+    expect(requiredGapNotices([required], [impact(4)], before, after)).toEqual([
+      "3 entries (4 versions) have no value for Price. They stay as they are, are listed in the Inbox under Required fields left empty, and can't be published again until Price is filled in.",
+    ]);
+    // Inside a component the preview has no count: the same notice without a number.
+    expect(requiredGapNotices([required], [impact()], before, after)).toEqual([
+      "Entries without a value for Price stay as they are. They're listed in the Inbox under Required fields left empty and can't be published again until it's filled in.",
+    ]);
+    // Every entry has a value: nothing to say.
+    expect(requiredGapNotices([required], [impact(0)], before, after)).toEqual([]);
+  });
+
+  it('reports what a change that went live left to fill in', () => {
+    const gap = (entries: number, versions: number) => ({
+      step: 'r',
+      ownerId: before.id,
+      fieldId: price.id,
+      fieldApiKey: 'price',
+      versions,
+      entries,
+      sampleEntryIds: [],
+    });
+    expect(describeRequiredGaps({ requiredGaps: [gap(3, 4), gap(1, 1)] }, after)).toEqual([
+      "3 entries (4 versions) have no value for Price; they're listed in the Inbox.",
+      "1 entry (1 version) has no value for Price; it's listed in the Inbox.",
+    ]);
+    expect(describeRequiredGaps(null, after)).toEqual([]);
   });
 
   it('knows a plan with a failing check can not ship', () => {

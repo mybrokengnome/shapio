@@ -7,6 +7,8 @@ import * as siteSeoSettings from './20261004130000_site_seo_settings.js';
 import * as entryHeadsEntryCreatedAt from './20261005120000_entry_heads_entry_created_at.js';
 import * as canceledStatus from './20261014120000_canceled_status.js';
 import * as interfaceKind from './20261021120000_interface_kind.js';
+import * as changeSetApproval from './20261028120000_change_set_approval.js';
+import * as schemaChangeOutcome from './20261029120000_schema_change_outcome.js';
 
 /**
  * SQLite migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -25,4 +27,6 @@ export const SQLITE_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261006120000_system_versions_release': systemVersionsRelease,
   '20261014120000_canceled_status': canceledStatus,
   '20261021120000_interface_kind': interfaceKind,
+  '20261028120000_change_set_approval': changeSetApproval,
+  '20261029120000_schema_change_outcome': schemaChangeOutcome,
 };

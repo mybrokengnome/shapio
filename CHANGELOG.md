@@ -6,6 +6,69 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Approval workflows on change sets. A site's change sets go through an ordered list of stages before they ship;
+  each stage names the roles that may sign off (or anyone who may approve) and how many sign-offs it needs, and
+  the workflow says whether people may approve their own change sets. Asking for approval freezes the workflow
+  on the set, so editing a workflow never changes a review in flight; a stage completes when enough different
+  people sign off, and the set is approved after the last stage. Requesting changes at any stage ends the round.
+- Network → Approval sets the default workflow every site inherits (off until set; needs `sites.manage`). Turning
+  it off keeps the workflow for when it is turned back on.
+  Settings → Change sets lets a site use the network default, switch approval off, or keep a workflow of its own
+  (needs `site.settings`). A site with a workflow refuses to ship or schedule a set that is not approved
+  (`CHANGE_SET_NOT_APPROVED`).
+- A review is pinned to what the set holds. An edit to an item, an entry draft it publishes, or a schema draft
+  after the first sign-off of a round, or after approval, marks it "Approval outdated": nobody can sign, and a
+  site with a workflow refuses the ship (`CHANGE_SET_APPROVAL_STALE`) until approval is asked for again, which
+  starts a new round. A scheduled set whose draft moved after approval fails at its time with the reason, and
+  nothing of it goes live. Shipping a set that is still in review ends the review.
+- A new permission, `changes.approve`. Upgrading gives it to every role that holds `changes.ship`, and the
+  built-in editor role has it. A role an approval workflow names cannot be deleted (`ROLE_IN_USE`), and a stage
+  whose roles were all deleted during a review cannot be signed by anyone until the approval is cleared and asked
+  for again.
+- The change set page shows the frozen workflow as a stage strip, every sign-off, and why you cannot sign when
+  you cannot. The Changes list shows the stage a set is at; the Inbox lists only the sets you can sign off now.
+  Every step shows on the set's timeline and sends a webhook event (`change_set.approval_requested`,
+  `change_set.approval_stage_completed`, `change_set.approved`, and `change_set.changes_requested`).
+- The API: `POST /api/admin/change-sets/:id/approval/request`, `…/approve`, `…/request-changes`, and `…/clear`;
+  `GET` and `PUT /api/admin/site/change-sets` and `/api/admin/network/approval`; every change set carries
+  `approval` with its round, stage, eligibility, and sign-offs; `?approval=` filters the list and
+  `?awaitingMe=true` keeps the sets you can sign now. `@shapio/client` has the same calls. The MCP server offers
+  `change_sets_request_approval`, and, with `--allow-ship` only (approving is what lets a set go live),
+  `change_sets_approve` and `change_sets_request_changes`.
+- `shapio import` says so when the site requires approval before the change sets it opened can ship.
+- Rich text has three new marks: underline, subscript, and superscript. The editor's toolbar and the floating
+  toolbar have a button for each (Mod+U, Mod+comma, Mod+period; the minimal toolbar shows Underline only),
+  delivery HTML renders them as `<u>`, `<sub>`, and `<sup>`, and pasted and imported HTML keeps them (tags
+  and the equivalent inline styles). Subscript and superscript replace each other. The stored format stays
+  version 1: existing documents are unchanged.
+- The Strapi importer keeps underline from Blocks fields.
+
+### Changed
+
+- Making a field required, or adding a required field, now goes live even when entries have no value for it.
+  A `defaultValue` still fills them; otherwise those entries stay as they are, are listed in the Inbox under
+  Required fields left empty, and can't be published again until the value is filled in. The review says how
+  many before you ship, and the builder, the change set page, and `shapio schema apply` say how many after.
+  Before, such a change failed with "N entry version(s) have no value for the required field". An entry left
+  without a value no longer fails a later, unrelated schema change, and importing a bundle accepts published
+  versions without it.
+
+- Backspace at the start of a list item joins it to the item above as its next paragraph, so an item can hold
+  several paragraphs and the list keeps numbering straight through. It used to take the item out of the list
+  and restart the numbering of the items after it. The list buttons' tooltips and the `+` menu's list entries
+  say so.
+
+### Fixed
+
+- On a phone, a page header with many actions wraps them instead of widening the page.
+
+### Security
+
+- Updated nodemailer, fastify, fast-uri, ip-address, seroval, zod, and the MCP server library to releases with
+  security fixes.
+
 ## [0.6.4] - 2026-10-23
 
 ### Changed

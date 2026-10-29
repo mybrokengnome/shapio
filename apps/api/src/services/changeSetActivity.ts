@@ -19,6 +19,13 @@ export type TimelineEventView = {
   deploymentRunId: string | null;
   /** `item.changedAfterReview`: the entry whose draft moved between review and a scheduled ship. */
   item: { entryId: string; locale: string; fromVersion: number; toVersion: number } | null;
+  /** Approval rows: the round, the stage and, for a sign-off, k of required. */
+  approval: {
+    round: number | null;
+    stage: string | null;
+    signed: number | null;
+    required: number | null;
+  } | null;
 };
 
 const TIMELINE_LIMIT = 500;
@@ -35,6 +42,12 @@ const KIND_BY_ACTION: Readonly<Record<string, string>> = {
   'change_set.shipping': 'shipping',
   'change_set.discard': 'discarded',
   'change_set.item_changed_after_review': 'item.changedAfterReview',
+  'change_set.approval_request': 'approval.requested',
+  'change_set.approval_sign': 'approval.signed',
+  'change_set.approval_stage_complete': 'approval.stageCompleted',
+  'change_set.approve': 'approval.approved',
+  'change_set.approval_request_changes': 'approval.changesRequested',
+  'change_set.approval_clear': 'approval.cleared',
 };
 
 const changedItemOf = (metadata: Record<string, unknown>): TimelineEventView['item'] =>
@@ -50,6 +63,19 @@ const changedItemOf = (metadata: Record<string, unknown>): TimelineEventView['it
       }
     : null;
 
+const numberOr = (value: unknown) => (typeof value === 'number' ? value : null);
+
+/** The round and stage of an approval row (plan approval-workflows); null for other rows. */
+const approvalOf = (action: string, metadata: Record<string, unknown>): TimelineEventView['approval'] =>
+  action.startsWith('change_set.approval') || action === 'change_set.approve'
+    ? {
+        round: numberOr(metadata.round),
+        stage: typeof metadata.stage === 'string' ? metadata.stage : null,
+        signed: numberOr(metadata.signed),
+        required: numberOr(metadata.required),
+      }
+    : null;
+
 const kindOf = (action: string, outcome: string) => {
   if (action === 'change_set.ship') {
     return outcome === 'failure' ? 'failed' : 'shipped';
@@ -58,7 +84,8 @@ const kindOf = (action: string, outcome: string) => {
 };
 
 const messageOf = (metadata: Record<string, unknown>): string | null => {
-  for (const key of ['error', 'title', 'modelKey', 'apiKey', 'at']) {
+  // An approval row shows its note (plan approval); other rows their error, title or subject.
+  for (const key of ['note', 'error', 'title', 'modelKey', 'apiKey', 'at']) {
     const value = metadata[key];
     if (typeof value === 'string' && value !== '') {
       return value;
@@ -87,6 +114,7 @@ const deployEvents = (runId: string, timeline: unknown): TimelineEventView[] =>
     snapshot: null,
     deploymentRunId: runId,
     item: null,
+    approval: null,
   }));
 
 export const getTimeline = async (
@@ -111,6 +139,7 @@ export const getTimeline = async (
       snapshot: typeof metadata.snapshot === 'number' ? metadata.snapshot : null,
       deploymentRunId: typeof metadata.deploymentRunId === 'string' ? metadata.deploymentRunId : null,
       item: event.action === 'change_set.item_changed_after_review' ? changedItemOf(metadata) : null,
+      approval: approvalOf(event.action, metadata),
     };
   });
   const run = row.deployment_run_id

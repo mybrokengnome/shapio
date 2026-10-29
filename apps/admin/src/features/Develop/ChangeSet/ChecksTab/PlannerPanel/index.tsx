@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { InfoHint } from '@/components/InfoHint';
 import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { RequiredGapsNotice } from '@/features/Models/Builder/ReviewSheet/RequiredGapsNotice';
 import { StepList } from '@/features/Models/Builder/ReviewSheet/StepList';
 import { useSchemaItemDefinitions } from '../../hooks/useSchemaItemDefinitions';
 import { IssueList } from '../../IssueList';
@@ -46,6 +47,15 @@ export const PlannerPanel = ({ changeSetId, item }: PlannerPanelProps) => {
               before={before}
               after={after}
             />
+            {item.impact ? (
+              // Before shipping only: a shipped set reports what it left on its Changes tab.
+              <RequiredGapsNotice
+                steps={plan.prerequisites}
+                impacts={item.impact.steps}
+                before={before}
+                after={after}
+              />
+            ) : null}
           </section>
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">

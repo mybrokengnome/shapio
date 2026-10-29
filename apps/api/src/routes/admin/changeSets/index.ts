@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import * as handlers from '../../../controllers/changeSets.js';
 import { declareSiteScope } from '../../../plugins/siteResolution.js';
+import { registerApprovalRoutes } from './approval.js';
 import * as schemas from './schemas.js';
 
 /**
@@ -78,4 +79,5 @@ export const adminChangeSetsRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { schema: schemas.changeSetActionSchema, ...audited('change_set.unschedule') },
     handlers.unschedule,
   );
+  registerApprovalRoutes(app);
 };

@@ -1,11 +1,12 @@
-import type { ReviewSchemaItem } from '@shapio/client';
+import type { ReviewSchemaItem, SchemaChangeResult } from '@shapio/client';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Globe2 } from 'lucide-react';
+import { AlertTriangle, Globe2, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { describeChange } from '@/features/Models/helpers/describeChange';
+import { describeRequiredGaps } from '@/features/Models/helpers/describeStep';
 import { useDefinitionName } from '@/features/Models/hooks/useDefinitionName';
 import { cn } from '@/helpers/cn';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
@@ -25,19 +26,25 @@ const OPERATION_KEYS = {
   delete: 'changes.review.operations.delete',
 } as const;
 
-type SchemaDiffCardProps = { changeSetId: string; item: ReviewSchemaItem };
+type SchemaDiffCardProps = {
+  changeSetId: string;
+  item: ReviewSchemaItem;
+  /** A shipped item: what its change left to do (entries without a value for a field it made required). */
+  outcome?: SchemaChangeResult | null;
+};
 
 /**
  * A schema item as a diff: one `+`/`−`/`~` line per planned change, each with its classification, and a
  * quiet badge when the definition is shared (shipping it affects every site).
  */
-export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
+export const SchemaDiffCard = ({ changeSetId, item, outcome }: SchemaDiffCardProps) => {
   const { t } = useTranslation();
   const { before, after, shared } = useSchemaItemDefinitions(changeSetId, item);
   const { multiSite } = useSchemaScopeAccess();
   const { definitionName } = useDefinitionName();
   const changes = item.plan?.changes ?? [];
   const title = after?.label ?? before?.label ?? item.apiKey;
+  const gaps = describeRequiredGaps(outcome, after);
   return (
     <Panel
       title={title}
@@ -65,6 +72,21 @@ export const SchemaDiffCard = ({ changeSetId, item }: SchemaDiffCardProps) => {
                 base: item.baseVersion ?? 0,
                 active: item.activeVersion ?? 0,
               })}
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+      {gaps.length > 0 ? (
+        <div className="border-b p-4">
+          <Alert variant="info">
+            <Info aria-hidden="true" />
+            <AlertDescription>
+              {gaps.map((gap) => (
+                <p key={gap}>{gap}</p>
+              ))}
+              <Link to="/" className="text-link underline-offset-4 hover:underline">
+                {t('common.openInbox')}
+              </Link>
             </AlertDescription>
           </Alert>
         </div>

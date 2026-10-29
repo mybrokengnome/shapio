@@ -31,11 +31,11 @@ const failingPorts = (kind: ContentStep['kind'], phase: 'run' | 'apply'): Schema
     ...NO_CONTENT_PORTS.migration,
     run: async (steps) =>
       phase === 'run' && steps.some((step) => step.kind === kind)
-        ? { ok: false, reason: 'entries are missing a value', invalidCount: 2, sampleEntryIds: ['e1', 'e2'] }
+        ? { ok: false, reason: 'entries share a value', invalidCount: 2, sampleEntryIds: ['e1', 'e2'] }
         : { ok: true, watermark: 41 },
     apply: async (steps, watermark) =>
       phase === 'apply' && steps.some((step) => step.kind === kind) && watermark === 41
-        ? { ok: false, reason: 'a write after the watermark left a value missing', invalidCount: 1 }
+        ? { ok: false, reason: 'a write after the watermark duplicated a value', invalidCount: 1 }
         : { ok: true },
   },
 });
@@ -65,6 +65,15 @@ describe('planned schema changes (prerequisites)', () => {
     definition: {
       ...model.definition,
       fields: [...model.definition.fields, { apiKey, label: apiKey, type: 'text', required: true }],
+    },
+    expectedVersion: model.version,
+  });
+
+  /** A new unique field: a prerequisite check (`checkUnique`) that can fail. */
+  const addUniqueField = (model: ModelBody, apiKey = 'code') => ({
+    definition: {
+      ...model.definition,
+      fields: [...model.definition.fields, { apiKey, label: apiKey, type: 'string', unique: true }],
     },
     expectedVersion: model.version,
   });
@@ -106,16 +115,16 @@ describe('planned schema changes (prerequisites)', () => {
   it('a failing prerequisite keeps the previous revision active and records why', async () => {
     const id = await createModel('recipe');
     const model = await getModel(id);
-    const response = await admin.put(`/api/admin/models/${id}`, addRequiredField(model));
+    const response = await admin.put(`/api/admin/models/${id}`, addUniqueField(model));
     expect(response.statusCode).toBe(202);
     const { changeId } = response.json<{ changeId: string }>();
 
-    await runSchemaJobs(database.current.db, failingPorts('validateRequired', 'run'));
+    await runSchemaJobs(database.current.db, failingPorts('checkUnique', 'run'));
 
     const change = (await admin.get(`/api/admin/schema/changes/${changeId}`)).json<unknown>();
     expect(change).toMatchObject({
       status: 'failed',
-      error: { reason: 'entries are missing a value', invalidCount: 2, sampleEntryIds: ['e1', 'e2'] },
+      error: { reason: 'entries share a value', invalidCount: 2, sampleEntryIds: ['e1', 'e2'] },
     });
     const after = await getModel(id);
     expect(after).toMatchObject({ version: 1, pendingChange: null });
@@ -142,13 +151,13 @@ describe('planned schema changes (prerequisites)', () => {
   it('a failing watermark re-check at activation also keeps the previous revision', async () => {
     const id = await createModel('venue');
     const model = await getModel(id);
-    const { changeId } = (await admin.put(`/api/admin/models/${id}`, addRequiredField(model))).json<{
+    const { changeId } = (await admin.put(`/api/admin/models/${id}`, addUniqueField(model))).json<{
       changeId: string;
     }>();
-    await runSchemaJobs(database.current.db, failingPorts('validateRequired', 'apply'));
+    await runSchemaJobs(database.current.db, failingPorts('checkUnique', 'apply'));
     expect((await admin.get(`/api/admin/schema/changes/${changeId}`)).json()).toMatchObject({
       status: 'failed',
-      error: { reason: 'a write after the watermark left a value missing' },
+      error: { reason: 'a write after the watermark duplicated a value' },
     });
     expect((await getModel(id)).version).toBe(1);
   });

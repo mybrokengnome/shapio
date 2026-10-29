@@ -121,14 +121,18 @@ const textOf = (result: { content?: unknown }) =>
   JSON.parse((result.content as Array<{ text: string }>)[0]?.text ?? 'null') as Record<string, unknown>;
 
 describe('the Shapio MCP server', () => {
-  it('offers change_sets_ship only with --allow-ship', async () => {
+  it('offers shipping and approving (ship, approve, request changes) only with --allow-ship', async () => {
+    const guarded = ['change_sets_ship', 'change_sets_approve', 'change_sets_request_changes'];
     const without = await connect(false, fakeClient().client);
     const names = (await without.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain('change_sets_review');
-    expect(names).not.toContain('change_sets_ship');
+    expect(names).toContain('change_sets_request_approval');
+    expect(names.filter((name) => guarded.includes(name))).toEqual([]);
     expect(names.every((name) => /^[a-z][a-z0-9_]*$/.test(name))).toBe(true);
     const withShip = await connect(true, fakeClient().client);
-    expect((await withShip.listTools()).tools.map((tool) => tool.name)).toContain('change_sets_ship');
+    expect((await withShip.listTools()).tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(guarded),
+    );
   });
 
   it('drafts a new definition with a fresh ID and resolves relation targets given as API IDs', async () => {

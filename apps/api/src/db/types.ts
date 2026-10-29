@@ -240,6 +240,21 @@ export interface AuditEvents {
   target_type: string | null;
 }
 
+export interface ChangeSetApprovals {
+  admin_user_id: string | null;
+  api_token_id: string | null;
+  change_set_id: string;
+  created_at: Generated<Timestamp>;
+  decision: string;
+  fingerprint: string;
+  id: Generated<string>;
+  note: Generated<string>;
+  round: number;
+  site_id: string;
+  stage_id: string;
+  stage_index: number;
+}
+
 export interface ChangeSetItems {
   action: string | null;
   change_set_id: string;
@@ -261,6 +276,16 @@ export interface ChangeSetItems {
 export interface ChangeSets {
   acknowledge_breaking: Generated<boolean>;
   acknowledge_destructive: Generated<boolean>;
+  approval_fingerprint: string | null;
+  approval_note: Generated<string>;
+  approval_requested_at: Timestamp | null;
+  approval_requested_by: string | null;
+  approval_requested_by_token: string | null;
+  approval_round: Generated<number>;
+  approval_stage: Generated<number>;
+  approval_status: Generated<string>;
+  approval_workflow: Json | null;
+  approved_at_ship: boolean | null;
   created_at: Generated<Timestamp>;
   created_by: string | null;
   created_by_token: string | null;
@@ -666,6 +691,7 @@ export interface SchemaChangeJobs {
   id: Generated<string>;
   job_id: string | null;
   model_id: string | null;
+  outcome: Json | null;
   plan: Generated<Json>;
   requested_by_id: string | null;
   requested_by_type: string;
@@ -730,6 +756,8 @@ export interface SiteAppRoles {
 }
 
 export interface Sites {
+  approval_mode: Generated<string>;
+  approval_workflow: Json | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   is_primary: Generated<boolean>;
@@ -825,6 +853,7 @@ export interface DB {
   app_users: AppUsers;
   assist_runs: AssistRuns;
   audit_events: AuditEvents;
+  change_set_approvals: ChangeSetApprovals;
   change_set_items: ChangeSetItems;
   change_sets: ChangeSets;
   content_health_findings: ContentHealthFindings;

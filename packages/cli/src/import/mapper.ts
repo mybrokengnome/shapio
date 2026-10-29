@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { createClient, type ShapioClient } from '@shapio/client';
 import { createRateLimitedFetch } from '../helpers/rateLimitRetry.js';
 import type { CliIo } from '../types.js';
-import { addToChangeSets, changeSetUrl, pendingPublishItems } from './changeSets.js';
+import { addToChangeSets, approvalNotice, changeSetUrl, pendingPublishItems } from './changeSets.js';
 import { localeKey, readImportMap, sha256File, writeImportMap, type ImportMap } from './importMap.js';
 import { importMedia } from './media.js';
 import { writeOrder } from './order.js';
@@ -263,6 +263,21 @@ const openChangeSets = async (run: Run) => {
   return addToChangeSets(run.client, run.map, pending, { label: run.options.label, total, save: run.save });
 };
 
+/** Says so when the site requires approval before the import's change sets can ship (plan approval). */
+const printApprovalNotice = async (run: Run) => {
+  if (run.map.state.changeSets.length === 0) {
+    return;
+  }
+  try {
+    const notice = await approvalNotice(run.client, run.map.state.site);
+    if (notice) {
+      run.io.stdout(notice);
+    }
+  } catch (error) {
+    run.io.stderr(`Could not read whether the site requires approval: ${(error as Error).message}\n`);
+  }
+};
+
 const printSummary = (run: Run, source: ImportSource, changeSetFailures: number) => {
   const { state } = run.map;
   const drafts = Object.values(run.map.entries).filter((entry) => entry.published.length === 0).length;
@@ -319,5 +334,7 @@ export const runMap = async (options: MapOptions, io: CliIo): Promise<number> =>
   for (const failure of changeSets.failed) {
     io.stderr(`  ! change set item ${failure.key}: ${failure.message}\n`);
   }
-  return printSummary(run, source, changeSets.failed.length);
+  const code = printSummary(run, source, changeSets.failed.length);
+  await printApprovalNotice(run);
+  return code;
 };

@@ -20,6 +20,7 @@ import {
   createDefinition,
   createDeliveryToken,
   expectStatus,
+  runContentSchemaJobs,
   type EntryBody,
   type ModelBody,
 } from './helpers/content.js';
@@ -1002,5 +1003,67 @@ describe('timestamps in a bundle (microseconds, order of entries created in one 
     await setCreatedAt(instance, ids[1], '2026-10-01T10:22:58.006000Z');
     expect(await deliveredOrder(instance)).toEqual(ids);
     expect(await adminOrder(instance)).toEqual(ids);
+  });
+});
+
+describe('an entry published before one of its fields was made required', () => {
+  let source: Instance | undefined;
+  let target: Instance | undefined;
+  let worker: Worker | undefined;
+  let workdir: string;
+
+  beforeAll(async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'shapio-transfer-gap-'));
+  });
+
+  afterAll(async () => {
+    await worker?.stop(5000);
+    await stopInstance(source);
+    await stopInstance(target);
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it('imports with its published version still lacking the value (ADR 0002 amendment 2026-10-29)', async () => {
+    source = await startInstance(await createTestDatabase());
+    const admin = schemaClient(source.testApp.app, source.adminToken);
+    const faq = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'faq',
+      label: 'FAQ',
+      fields: [
+        { apiKey: 'question', label: 'Question', type: 'string' },
+        { apiKey: 'answer', label: 'Answer', type: 'string' },
+      ],
+    });
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/faq', { data: { question: 'Why?' } }),
+      201,
+    ).json<EntryBody>();
+    expectStatus(await admin.post(`/api/admin/content/faq/${entry.id}/publish`, {}), 200);
+    const changed = await admin.put(`/api/admin/models/${faq.definition.id}`, {
+      definition: {
+        ...faq.definition,
+        fields: faq.definition.fields.map((field) =>
+          field.apiKey === 'answer' ? { ...field, required: true } : field,
+        ),
+      },
+      expectedVersion: faq.version,
+    });
+    expect(changed.statusCode, changed.body).toBe(202);
+    await runContentSchemaJobs(source.database.db);
+    const bundle = join(workdir, 'gap.ndjson');
+    const exported = await runCli('export', ['--url', source.url, '--token', source.adminToken, bundle]);
+    expect(exported, exported.stderr).toMatchObject({ code: 0 });
+    await stopInstance(source);
+    source = undefined;
+
+    target = await startInstance(await createTestDatabase());
+    worker = startWorker(target);
+    const imported = await runCli('import', ['--url', target.url, '--token', target.adminToken, bundle]);
+    expect(imported, `${imported.stdout}\n${imported.stderr}`).toMatchObject({ code: 0 });
+    const onTarget = schemaClient(target.testApp.app, target.adminToken);
+    expect(
+      expectStatus(await onTarget.get(`/api/admin/content/faq/${entry.id}`), 200).json<EntryBody>(),
+    ).toMatchObject({ status: 'published', data: { question: 'Why?', answer: null } });
   });
 });

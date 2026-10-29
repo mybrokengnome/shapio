@@ -116,3 +116,33 @@ export const updateSeoDefaultsIfVersion = (
     .where('version', '=', expectedVersion)
     .returning(['id', 'key', 'name', 'version', 'seo_defaults'])
     .executeTakeFirst();
+
+const APPROVAL_COLUMNS = ['id', 'name', 'version', 'approval_mode', 'approval_workflow'] as const;
+
+/** A site's approval mode and custom workflow (plan approval-workflows), with the version an update must name. */
+export const findApprovalSetting = (id: string, trx: Executor = db) =>
+  trx.selectFrom('sites').select(APPROVAL_COLUMNS).where('id', '=', id).executeTakeFirst();
+
+/** Every site's approval mode and custom workflow (the network approval page, role deletion). */
+export const listApprovalSettings = (trx: Executor = db) =>
+  trx.selectFrom('sites').select(APPROVAL_COLUMNS).orderBy('is_primary', 'desc').orderBy('name').execute();
+
+/** Optimistic update of the approval mode and workflow: applies only at `expectedVersion`; bumps the version. */
+export const updateApprovalIfVersion = (
+  id: string,
+  expectedVersion: number,
+  setting: { mode: string; workflow: unknown },
+  trx: Executor = db,
+) =>
+  trx
+    .updateTable('sites')
+    .set((eb) => ({
+      approval_mode: setting.mode,
+      approval_workflow: setting.workflow === null ? null : JSON.stringify(setting.workflow),
+      version: eb('version', '+', 1),
+      updated_at: new Date(),
+    }))
+    .where('id', '=', id)
+    .where('version', '=', expectedVersion)
+    .returning(APPROVAL_COLUMNS)
+    .executeTakeFirst();
