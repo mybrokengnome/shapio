@@ -22,6 +22,7 @@ import {
 } from '../../schemas/publishing.js';
 import {
   ChangePlanSchema,
+  ChangeResultSchema,
   DefinitionSchema,
   ImpactSchema,
   StableIdSchema,
@@ -100,6 +101,8 @@ export const SchemaItemSchema = Type.Object({
   draftVersion: Type.Integer(),
   status: ItemStatusSchema,
   error: NullableString,
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: ChangeResultSchema,
 });
 
 export const ChangeSetItemSchema = Type.Union([EntryItemSchema, SchemaItemSchema]);

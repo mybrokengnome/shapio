@@ -1,7 +1,13 @@
 import type { DataType, SchemaDefinition } from '@shapio/schema';
 import type { ApprovalStage } from './approvalTypes.js';
 import type { DeploymentRunStatus, Page, PublicationAction } from './publishingTypes.js';
-import type { ChangePlan, DefinitionCategory, DefinitionPayload, PlanImpact } from './schemaTypes.js';
+import type {
+  ChangePlan,
+  DefinitionCategory,
+  DefinitionPayload,
+  PlanImpact,
+  SchemaChangeResult,
+} from './schemaTypes.js';
 import type { SiteRef } from './sitesTypes.js';
 
 /**
@@ -59,6 +65,8 @@ export type ChangeSetSchemaItem = {
   draftVersion: number;
   status: ChangeSetItemStatus;
   error: string | null;
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: SchemaChangeResult | null;
 };
 
 export type ChangeSetItem = ChangeSetEntryItem | ChangeSetSchemaItem;

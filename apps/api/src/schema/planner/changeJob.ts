@@ -12,9 +12,11 @@ import { principalFromColumns } from './actor.js';
 import type {
   ActivationContext,
   ContentStepContext,
+  RequiredGap,
   SchemaContentPorts,
   StepOutcome,
 } from './contentPorts.js';
+import { mergeGaps, type ChangeResult } from './gaps.js';
 import { buildEntryOrderIndex, buildFieldIndex, dropFieldIndex, ENTRY_ORDER_INDEX_JOB } from './indexes.js';
 import { createFieldIndexLayoutHandler, FIELD_INDEX_LAYOUT_JOB } from './indexLayout.js';
 import type { ChangePlan } from './plan.js';
@@ -39,6 +41,8 @@ export type Checkpoint = {
   completed: string[];
   watermarks: Record<string, unknown>;
   stepCheckpoints: Record<string, unknown>;
+  /** The dry run's required-value gaps, added to the activation re-check's. */
+  gaps?: RequiredGap[];
 };
 
 /** Checkpoint key of the content steps, which run together as one dry run. */
@@ -60,10 +64,11 @@ const readCheckpoint = (value: unknown): Checkpoint => {
     completed: raw.completed ?? [],
     watermarks: raw.watermarks ?? {},
     stepCheckpoints: raw.stepCheckpoints ?? {},
+    ...(raw.gaps ? { gaps: raw.gaps } : {}),
   };
 };
 
-const failOn = (outcome: StepOutcome) => {
+const failOn = (outcome: StepOutcome): Extract<StepOutcome, { ok: true }> => {
   if (!outcome.ok) {
     throw new PrerequisiteFailure({
       step: outcome.step ?? CONTENT_STEPS_KEY,
@@ -111,6 +116,9 @@ export const runSteps = async (
     };
     const outcome = failOn(await deps.ports.migration.run(contentSteps, stepContext));
     checkpoint.watermarks[CONTENT_STEPS_KEY] = outcome.watermark ?? null;
+    if (outcome.gaps) {
+      checkpoint.gaps = outcome.gaps;
+    }
     checkpoint.completed.push(CONTENT_STEPS_KEY);
     await io.saveCheckpoint(checkpoint);
   }
@@ -126,21 +134,27 @@ export const runSteps = async (
   return checkpoint;
 };
 
-/** Runs inside the activation transaction: the watermark re-check, then the content rewrite. */
+/**
+ * Runs inside the activation transaction: the watermark re-check, then the content rewrite. Returns what the
+ * change leaves to do (the dry run's and the re-check's required-value gaps), or undefined when nothing.
+ */
 export const applyContent =
   (deps: HandlerDeps, steps: readonly PrerequisiteStep[], checkpoint: Checkpoint) =>
-  async (trx: Transaction<DB>, activation: ActivationContext) => {
+  async (trx: Transaction<DB>, activation: ActivationContext): Promise<ChangeResult | undefined> => {
     const contentSteps = contentStepsOf(steps);
-    if (contentSteps.length > 0) {
-      failOn(
-        await deps.ports.migration.apply(
-          contentSteps,
-          checkpoint.watermarks[CONTENT_STEPS_KEY] ?? null,
-          trx,
-          activation,
-        ),
-      );
+    if (contentSteps.length === 0) {
+      return undefined;
     }
+    const outcome = failOn(
+      await deps.ports.migration.apply(
+        contentSteps,
+        checkpoint.watermarks[CONTENT_STEPS_KEY] ?? null,
+        trx,
+        activation,
+      ),
+    );
+    const requiredGaps = mergeGaps(checkpoint.gaps, outcome.gaps);
+    return requiredGaps.length > 0 ? { requiredGaps } : undefined;
   };
 
 /** Releases what a change's dry run staged (unique-registry claims); idempotent. */

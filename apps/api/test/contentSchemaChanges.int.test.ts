@@ -23,6 +23,7 @@ import { useTestDatabase } from './helpers/testDatabase.js';
 type ChangeBody = {
   status: string;
   error: { step?: string; reason?: string; invalidCount?: number; sampleEntryIds?: string[] } | null;
+  outcome: { requiredGaps: Array<Record<string, unknown>> } | null;
 };
 
 /**
@@ -104,44 +105,65 @@ describe('content and schema changes', () => {
     expect(new Set(rows.map((row) => row.entry_id)).size).toBe(1);
   });
 
-  it('a required field without default is blocked by entries that lack it; with a default it is backfilled', async () => {
+  it('a required field without a default goes live and counts the entries that lack it; with a default it is backfilled', async () => {
     const note = await model('note', [{ apiKey: 'title', label: 'Title', type: 'string' }]);
     const entry = expectStatus(await create('note', { title: 'n1' }), 201).json<EntryBody>();
 
-    const blocked = await change(note, [
+    // ADR 0002 amendment 2026-10-29: the entry without a value is counted, not a reason to refuse.
+    const counted = await change(note, [
       ...note.definition.fields,
       { apiKey: 'summary', label: 'Summary', type: 'text', required: true },
     ]);
-    expect(blocked.statusCode).toBe(202);
+    expect(counted.statusCode).toBe(202);
     await runContentSchemaJobs(database.current.db);
-    const failed = await changeStatus(blocked.json<{ changeId: string }>().changeId);
-    expect(failed).toMatchObject({
-      status: 'failed',
-      error: { invalidCount: 1, sampleEntryIds: [entry.id] },
+    const live = await changeStatus(counted.json<{ changeId: string }>().changeId);
+    const withSummary = await reload(note.definition.id);
+    expect(withSummary.version).toBe(2);
+    expect(live).toMatchObject({
+      status: 'activated',
+      error: null,
+      outcome: {
+        requiredGaps: [
+          {
+            fieldId: fieldIdOf(withSummary, 'summary'),
+            fieldApiKey: 'summary',
+            versions: 1,
+            entries: 1,
+            sampleEntryIds: [entry.id],
+          },
+        ],
+      },
     });
-    expect((await reload(note.definition.id)).version).toBe(1);
+    // Nothing is rewritten: the entry keeps what it had. New entries need the value.
+    expect((await admin.get(`/api/admin/content/note/${entry.id}`)).json<EntryBody>().data).toEqual({
+      title: 'n1',
+      summary: null,
+    });
+    expect((await create('note', { title: 'n2' })).statusCode).toBe(422);
 
-    const backfilled = await change(note, [
-      ...note.definition.fields,
-      { apiKey: 'summary', label: 'Summary', type: 'text', required: true, defaultValue: 'TBD' },
+    const backfilled = await change(withSummary, [
+      ...withSummary.definition.fields,
+      { apiKey: 'stage', label: 'Stage', type: 'string', required: true, defaultValue: 'TBD' },
     ]);
     expect(backfilled.statusCode).toBe(202);
     await runContentSchemaJobs(database.current.db);
     expect(await changeStatus(backfilled.json<{ changeId: string }>().changeId)).toMatchObject({
       status: 'activated',
+      outcome: null,
     });
     expect((await admin.get(`/api/admin/content/note/${entry.id}`)).json<EntryBody>().data).toEqual({
       title: 'n1',
-      summary: 'TBD',
+      summary: null,
+      stage: 'TBD',
     });
     // New entries get the default; clearing the now-required field is refused.
-    expect((await create('note', { title: 'n2' })).json<EntryBody>().data).toEqual({
-      title: 'n2',
-      summary: 'TBD',
+    expect((await create('note', { title: 'n3', summary: 's' })).json<EntryBody>().data).toEqual({
+      title: 'n3',
+      summary: 's',
+      stage: 'TBD',
     });
-    expect((await create('note', { title: 'n3', summary: null })).statusCode).toBe(422);
+    expect((await create('note', { title: 'n4', summary: 's', stage: null })).statusCode).toBe(422);
 
-    // The history marks the version whose checks failed: it never went live.
     const revisions = expectStatus(
       await admin.get(`/api/admin/models/${note.definition.id}/revisions`),
       200,
@@ -150,12 +172,12 @@ describe('content and schema changes', () => {
     }>().items;
     expect(revisions.map(({ version, status, active }) => ({ version, status, active }))).toEqual([
       { version: 3, status: 'activated', active: true },
-      { version: 2, status: 'failed', active: false },
+      { version: 2, status: 'activated', active: false },
       { version: 1, status: 'activated', active: false },
     ]);
   });
 
-  it('a write that lands between the scan and the activation is caught by the re-check', async () => {
+  it('a write that lands between the scan and the activation is counted by the re-check', async () => {
     const memo = await model('memo', [{ apiKey: 'title', label: 'Title', type: 'string' }]);
     const response = await change(memo, [
       ...memo.definition.fields,
@@ -178,11 +200,12 @@ describe('content and schema changes', () => {
     };
     await runSchemaJobs(database.current.db, racing);
     expect(raced).toBe(201);
+    // The re-check counts the entry the scan never saw.
     expect(await changeStatus(response.json<{ changeId: string }>().changeId)).toMatchObject({
-      status: 'failed',
-      error: { invalidCount: 1 },
+      status: 'activated',
+      outcome: { requiredGaps: [{ fieldApiKey: 'owner', versions: 1, entries: 1 }] },
     });
-    expect((await reload(memo.definition.id)).version).toBe(1);
+    expect((await reload(memo.definition.id)).version).toBe(2);
   });
 
   it('concurrent activation of a required field and entry writes: no invalid committed row', async () => {
@@ -539,27 +562,20 @@ describe('content and schema changes', () => {
     /** Each kind of check, failing on content the same change also converts and backfills. */
     const failingChecks = [
       {
-        kind: 'validateRequired',
-        field: (field: ModelBody['definition']['fields'][number]) => field,
-        extra: [{ apiKey: 'sku', label: 'SKU', type: 'string', required: true }],
-      },
-      {
         kind: 'checkUnique',
         field: (field: ModelBody['definition']['fields'][number]) =>
           field.apiKey === 'code' ? { ...field, unique: true } : field,
-        extra: [],
       },
       {
         kind: 'validateValues',
         field: (field: ModelBody['definition']['fields'][number]) =>
           field.apiKey === 'name' ? { ...field, settings: { maxLength: 2 } } : field,
-        extra: [],
       },
     ] as const;
 
     it.each(failingChecks)(
       'a failing $kind after a conversion and a backfill leaves storage byte-identical',
-      async ({ kind, field, extra }) => {
+      async ({ kind, field }) => {
         const apiKey = `${kind}Product`;
         const product = await model(apiKey, productFields);
         const entry = await publishedProduct(apiKey, { price: 12, code: 'DUP', name: 'Lamp' });
@@ -580,7 +596,6 @@ describe('content and schema changes', () => {
             candidate.apiKey === 'price' ? { ...candidate, type: 'decimal', settings: {} } : field(candidate),
           ),
           { apiKey: 'origin', label: 'Origin', type: 'string', required: true, defaultValue: 'unknown' },
-          ...extra,
         ]);
         expect(response.statusCode).toBe(202);
         await runContentSchemaJobs(database.current.db);

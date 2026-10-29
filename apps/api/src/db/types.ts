@@ -691,6 +691,7 @@ export interface SchemaChangeJobs {
   id: Generated<string>;
   job_id: string | null;
   model_id: string | null;
+  outcome: Json | null;
   plan: Generated<Json>;
   requested_by_id: string | null;
   requested_by_type: string;

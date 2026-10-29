@@ -37,11 +37,15 @@ const unknownModel = (entry: EntryRecord) =>
 
 const headKey = (head: { locale: string; state: string }) => `${head.locale}:${head.state}`;
 
-/** Validates every head (drafts may lack required values, like an autosave) and collects their targets. */
+/**
+ * Validates every head and collects their targets. Required values are not checked: a draft may lack one
+ * (like an autosave), and so may a published version since a field was made required while entries had no
+ * value (ADR 0002 amendment 2026-10-29); the target lists those in its Inbox like the source did.
+ */
 const validateHeads = (snapshot: SchemaSnapshot, model: ContentModel, entry: EntryRecord) => {
   const validator = buildValidator(snapshot, model);
   return entry.heads.map((head) => {
-    const outcome = validator.validate(head.data, { skipRequired: head.state === 'draft' });
+    const outcome = validator.validate(head.data, { skipRequired: true });
     if (outcome.issues.length > 0) {
       throw contentInvalid(
         outcome.issues.map((issue) => ({ ...issue, path: `/${head.locale}/${head.state}${issue.path}` })),

@@ -41,6 +41,7 @@ type ChangeSet = {
     definitionId?: string;
     status: string;
     action?: string;
+    outcome?: { requiredGaps: Array<{ fieldApiKey?: string; versions: number; entries: number }> } | null;
   }>;
 };
 
@@ -523,16 +524,19 @@ describe('change sets (schema + content)', () => {
   });
 
   it('a prerequisite failure fails the set and leaves schema and content as they were', async () => {
-    const entry = await createArticle('No summary');
+    const entry = await createArticle('Twin');
     await publish(entry.id);
+    await createArticle('Twin');
     const versionBefore = article.version;
-    const set = await createSet('Require summary');
+    const set = await createSet('Unique titles');
+    // Two entries share a title: the uniqueness check fails (a missing required value no longer would).
     expectStatus(
-      await putDraft(
-        set.id,
-        article,
-        fieldsWith(article, [{ apiKey: 'summary', label: 'Summary', type: 'string', required: true }]),
-      ),
+      await putDraft(set.id, article, {
+        ...article.definition,
+        fields: article.definition.fields.map((field) =>
+          field.apiKey === 'title' ? { ...field, unique: true } : field,
+        ),
+      }),
       200,
     );
     const other = await createArticle('Waiting');
@@ -559,6 +563,40 @@ describe('change sets (schema + content)', () => {
       200,
     );
     article = await reloadModel(article.definition.id);
+  });
+
+  it('ships a field made required while entries lack it; the schema item says how many', async () => {
+    const memo = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'memo',
+      label: 'Memo',
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        { apiKey: 'owner', label: 'Owner', type: 'string' },
+      ],
+    });
+    const created = expectStatus(
+      await admin.post('/api/admin/content/memo', { data: { title: 'No owner' } }),
+      201,
+    ).json<EntryBody>();
+    expectStatus(await admin.post(`/api/admin/content/memo/${created.id}/publish`, {}), 200);
+    const set = await createSet('Require an owner');
+    expectStatus(
+      await putDraft(set.id, memo, {
+        ...memo.definition,
+        fields: memo.definition.fields.map((field) =>
+          field.apiKey === 'owner' ? { ...field, required: true } : field,
+        ),
+      }),
+      200,
+    );
+    expect((await ship(set.id)).statusCode).toBe(202);
+    await drain();
+    const shipped = await getSet(set.id);
+    expect(shipped.status).toBe('shipped');
+    expect(shipped.items.find((item) => item.kind === 'schema')?.outcome).toMatchObject({
+      requiredGaps: [{ fieldApiKey: 'owner', versions: 2, entries: 1 }],
+    });
   });
 
   it('creates a model from a one-item set ("Review & ship now")', async () => {

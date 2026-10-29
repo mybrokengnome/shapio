@@ -4,6 +4,7 @@ import type { ContentStepContext, StepOutcome } from '../../schema/planner/conte
 import type { ContentStep } from '../../schema/planner/steps.js';
 import {
   checkEntry,
+  gapsOf,
   outcomeOf,
   ownerOf,
   registryFieldIdOf,
@@ -27,6 +28,8 @@ type DryRunCheckpoint = {
   watermark: string;
   cursor: EntryCursor;
   tallies: Tallies;
+  /** Heads without a value a `validateRequired` step needs (absent in checkpoints of older versions). */
+  gaps?: Tallies;
   /** Stale registry rows of the fields becoming unique were cleared before the first batch. */
   prepared: boolean;
 };
@@ -44,6 +47,7 @@ const startCheckpoint = async (
       watermark: saved.watermark,
       cursor: saved.cursor ?? null,
       tallies: saved.tallies,
+      gaps: saved.gaps ?? {},
       prepared: !!saved.prepared,
     };
   }
@@ -51,6 +55,7 @@ const startCheckpoint = async (
     watermark: await acquireWatermark(database, contentModelIds(steps)),
     cursor: null,
     tallies: {},
+    gaps: {},
     prepared: false,
   };
 };
@@ -94,8 +99,9 @@ export const dryRun = async (
         return;
       }
       const proposal = proposeEntry(heads, transforms, proposed.defaultLocale);
-      const failures = await checkEntry(proposal, steps, { proposed, executor: database });
-      tallyFailures(checkpoint.tallies, proposal.entryId, failures);
+      const checks = await checkEntry(proposal, steps, { proposed, executor: database });
+      tallyFailures(checkpoint.tallies, proposal.entryId, checks.failures);
+      tallyFailures((checkpoint.gaps ??= {}), proposal.entryId, checks.gaps);
     },
   );
   const outcome = outcomeOf(steps, checkpoint.tallies);
@@ -106,5 +112,6 @@ export const dryRun = async (
     );
     return outcome;
   }
-  return { ok: true, watermark: checkpoint.watermark };
+  const gaps = gapsOf(steps, checkpoint.gaps ?? {});
+  return { ok: true, watermark: checkpoint.watermark, ...(gaps.length > 0 ? { gaps } : {}) };
 };

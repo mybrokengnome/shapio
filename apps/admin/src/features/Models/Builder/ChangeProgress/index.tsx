@@ -1,3 +1,4 @@
+import type { SchemaChangeJob } from '@shapio/client';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +9,8 @@ import { FINAL_CHANGE_STATUSES } from '@/constants/schema';
 
 type ChangeProgressProps = {
   changeId: string;
-  onFinished: (status: string) => void;
+  /** Called once with the finished change (its status, and what an activated one left to do). */
+  onFinished: (change: SchemaChangeJob) => void;
   onDismiss: () => void;
 };
 
@@ -27,11 +29,11 @@ export const ChangeProgress = ({ changeId, onFinished, onDismiss }: ChangeProgre
   const status = change.data?.status;
   const reported = useRef(false);
   useEffect(() => {
-    if (status && FINAL_CHANGE_STATUSES.has(status) && !reported.current) {
+    if (change.data && FINAL_CHANGE_STATUSES.has(change.data.status) && !reported.current) {
       reported.current = true;
-      onFinished(status);
+      onFinished(change.data);
     }
-  }, [status, onFinished]);
+  }, [change.data, onFinished]);
   if (status === 'activated') {
     return null;
   }

@@ -79,6 +79,10 @@ If anything fails (an entry that no longer validates, a check that fails, a [hoo
 publish) the transaction rolls back: the set shows _Failed_ with the item and the reason, and the live schema and
 content are exactly as they were. Fix the cause and ship again.
 
+Making a field required never fails a ship by itself: entries without a value stay as they are and are listed
+in the Inbox, and the shipped schema item says how many. But such an entry can't be published again until the
+value is filled in, so an open set that publishes one can no longer ship until it is.
+
 A ship is strict: if an entry draft, a schema draft or the set itself changed after your review loaded, Shapio
 refuses (`409 CHANGE_SET_STALE`) and asks you to refresh and look again. Breaking and destructive changes need
 their acknowledgement.

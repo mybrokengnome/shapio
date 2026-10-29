@@ -1,4 +1,4 @@
-import type { PlanStep, PlanStepImpact } from '@shapio/client';
+import type { PlanStep, PlanStepImpact, SchemaChangeResult } from '@shapio/client';
 import {
   changeDropsValues,
   isDataType,
@@ -115,20 +115,67 @@ export const describeStepImpact = (
     return undefined;
   }
   const checked = i18next.t('models.plan.stepEntries', { count: impact.affectedHeads });
+  if (impact.missingHeads) {
+    return `${checked} · ${i18next.t('models.plan.stepWithoutValue', entryCounts(impact.missingEntries, impact.missingHeads))}`;
+  }
   if (!impact.invalidHeads) {
     return checked;
   }
-  // A person counts entries; the check counts entry versions (draft and published, per locale): say both.
-  const counts = {
-    count: impact.invalidEntries ?? impact.invalidHeads,
-    versions: i18next.t('models.plan.stepVersions', { count: impact.invalidHeads }),
-  };
-  const failing =
-    step.kind === 'validateRequired'
-      ? i18next.t('models.plan.stepMissingRequired', counts)
-      : i18next.t('models.plan.stepInvalid', counts);
-  return `${checked} · ${failing}`;
+  return `${checked} · ${i18next.t('models.plan.stepInvalid', entryCounts(impact.invalidEntries, impact.invalidHeads))}`;
 };
+
+/** A person counts entries; the checks count entry versions (draft and published, per locale): say both. */
+const entryCounts = (entries: number | undefined, versions: number) => ({
+  count: entries ?? versions,
+  versions: i18next.t('models.plan.stepVersions', { count: versions }),
+});
+
+/**
+ * What the review says about each field the plan makes required: how many entries will have no value (a
+ * model's own field, counted by the preview) or, inside a component, the same without a number. Those
+ * entries go live as they are, are listed in the Inbox and can't be published again until filled in.
+ * Nothing for a field every entry already fills.
+ */
+export const requiredGapNotices = (
+  steps: readonly PlanStep[],
+  impacts: readonly PlanStepImpact[] | undefined,
+  before: SchemaDefinition | null,
+  after: SchemaDefinition | null,
+): string[] =>
+  steps.flatMap((step, index) => {
+    if (step.kind !== 'validateRequired') {
+      return [];
+    }
+    const field = fieldLabelOf(step.fieldId, before, after);
+    const impact = impacts?.[index];
+    if (impact?.missingHeads === undefined) {
+      return [i18next.t('models.plan.requiredGapsUncounted', { field })];
+    }
+    return impact.missingHeads > 0
+      ? [
+          i18next.t('models.plan.requiredGaps', {
+            ...entryCounts(impact.missingEntries, impact.missingHeads),
+            field,
+          }),
+        ]
+      : [];
+  });
+
+/**
+ * After a change went live: one sentence per field it made required that entries have no value for
+ * ("3 entries (4 versions) have no value for Keywords; they're listed in the Inbox").
+ */
+export const describeRequiredGaps = (
+  result: SchemaChangeResult | null | undefined,
+  definition: SchemaDefinition | null,
+): string[] =>
+  (result?.requiredGaps ?? []).map((gap) =>
+    i18next.t('models.progress.requiredGaps', {
+      ...entryCounts(gap.entries, gap.versions),
+      field:
+        definition?.fields.find((field) => field.id === gap.fieldId)?.label ?? gap.fieldApiKey ?? gap.fieldId,
+    }),
+  );
 
 /** The plan already knows a prerequisite check fails (entries that wouldn't fit), so shipping it can't work. */
 export const hasFailingCheck = (impacts: readonly PlanStepImpact[]): boolean =>

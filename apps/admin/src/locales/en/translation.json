@@ -38,7 +38,8 @@
     "moreAbout": "More about {{about}}",
     "pageRange": "{{from}}–{{to}} of {{total}}",
     "rowsPerPage": "Rows per page",
-    "perPage": "{{count}} per page"
+    "perPage": "{{count}} per page",
+    "openInbox": "Open the Inbox"
   },
   "validation": {
     "required": "This field is required.",
@@ -1242,11 +1243,15 @@
       "stepEntries_other": "{{count}} entry versions to check",
       "stepInvalid_one": "{{count}} entry ({{versions}}) would fail",
       "stepInvalid_other": "{{count}} entries ({{versions}}) would fail",
-      "stepMissingRequired_one": "{{count}} entry ({{versions}}) would be left without a required value; untick Required or set a default",
-      "stepMissingRequired_other": "{{count}} entries ({{versions}}) would be left without a required value; untick Required or set a default",
+      "stepWithoutValue_one": "{{count}} entry ({{versions}}) without a value",
+      "stepWithoutValue_other": "{{count}} entries ({{versions}}) without a value",
       "stepVersions_one": "{{count}} version",
       "stepVersions_other": "{{count}} versions",
       "blockedByCheck": "A check above already fails, so this can't ship. Fix it in the builder first.",
+      "requiredGapsTitle": "Entries without a value go live as they are",
+      "requiredGaps_one": "{{count}} entry ({{versions}}) has no value for {{field}}. It stays as it is, is listed in the Inbox under Required fields left empty, and can't be published again until {{field}} is filled in.",
+      "requiredGaps_other": "{{count}} entries ({{versions}}) have no value for {{field}}. They stay as they are, are listed in the Inbox under Required fields left empty, and can't be published again until {{field}} is filled in.",
+      "requiredGapsUncounted": "Entries without a value for {{field}} stay as they are. They're listed in the Inbox under Required fields left empty and can't be published again until it's filled in.",
       "stepDropped_one": "{{field}}: {{from}} → {{to}}, {{count}} entry loses its value",
       "stepDropped_other": "{{field}}: {{from}} → {{to}}, {{count}} entries lose their value",
       "acknowledge": "Confirm this change",
@@ -1320,7 +1325,10 @@
       "failedTitle": "The change didn't go live",
       "failedDescription": "Existing content doesn't fit, so the previous version stays active.",
       "invalidCount_one": "{{count}} entry version doesn't fit.",
-      "invalidCount_other": "{{count}} entry versions don't fit."
+      "invalidCount_other": "{{count}} entry versions don't fit.",
+      "wentLive": "Went live",
+      "requiredGaps_one": "{{count}} entry ({{versions}}) has no value for {{field}}; it's listed in the Inbox.",
+      "requiredGaps_other": "{{count}} entries ({{versions}}) have no value for {{field}}; they're listed in the Inbox."
     },
     "remote": {
       "titles": {
@@ -3129,7 +3137,6 @@
       "webhooksFailing_other": "{{count}} failing",
       "healthOpen_one": "{{count}} open finding",
       "healthOpen_other": "{{count}} open findings",
-      "openInbox": "Open the Inbox",
       "notTracking": "Usage tracking is off on this server (USAGE_TRACKING=false); counts stop at the last flush."
     },
     "schema": {

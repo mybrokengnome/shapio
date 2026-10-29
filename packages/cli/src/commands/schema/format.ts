@@ -1,4 +1,4 @@
-import { type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
+import { type SchemaChangeResult, type SchemaSyncResult, type ShapioApiError } from '@shapio/client';
 import {
   ANY_TARGET,
   categoryOfKind,
@@ -338,3 +338,19 @@ export const formatApiError = (
   lines.push(...[...codes].flatMap((code) => HINTS[code] ?? []));
   return `${lines.join('\n')}\n`;
 };
+
+const plural = (count: number, one: string, other: string) => `${count} ${count === 1 ? one : other}`;
+
+/**
+ * What an activated change left to do, one line per field it made required that entries have no value for:
+ * `article: 3 entries (4 versions) have no value for "keywords"; they're listed in the Inbox.`
+ */
+export const formatRequiredGaps = (apiKey: string, result: SchemaChangeResult | null): string[] =>
+  (result?.requiredGaps ?? []).map((gap) => {
+    const entries = plural(gap.entries, 'entry', 'entries');
+    const versions = plural(gap.versions, 'version', 'versions');
+    const field = gap.fieldApiKey ?? gap.fieldId;
+    return gap.entries === 1
+      ? `${apiKey}: ${entries} (${versions}) has no value for "${field}"; it's listed in the Inbox.`
+      : `${apiKey}: ${entries} (${versions}) have no value for "${field}"; they're listed in the Inbox.`;
+  });

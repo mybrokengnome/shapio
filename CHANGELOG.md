@@ -47,6 +47,14 @@ All notable changes to Shapio are listed here. The format follows
 
 ### Changed
 
+- Making a field required, or adding a required field, now goes live even when entries have no value for it.
+  A `defaultValue` still fills them; otherwise those entries stay as they are, are listed in the Inbox under
+  Required fields left empty, and can't be published again until the value is filled in. The review says how
+  many before you ship, and the builder, the change set page and `shapio schema apply` say how many after.
+  Before, such a change failed with "N entry version(s) have no value for the required field". An entry left
+  without a value no longer fails a later, unrelated schema change, and importing a bundle accepts published
+  versions without it.
+
 - Backspace at the start of a list item joins it to the item above as its next paragraph, so an item can hold
   several paragraphs and the list keeps numbering straight through. It used to take the item out of the list
   and restart the numbering of the items after it. The list buttons' tooltips and the `+` menu's list entries

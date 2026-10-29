@@ -407,39 +407,42 @@ describe('type changes that drop values', () => {
     });
   });
 
-  it('a required field: refused with the count unless it has a default, which is backfilled', async () => {
-    const poster = await model('poster', [
+  it('a required field whose values are dropped: counted unless it has a default, which is backfilled', async () => {
+    const posterFields = [
       { apiKey: 'title', label: 'Title', type: 'string' },
       { apiKey: 'cover', label: 'Cover', type: 'media', required: true },
-    ]);
+    ];
+    const poster = await model('poster', posterFields);
     const entry = await create('poster', { title: 'P', cover: first.id });
     await publish('poster', entry.id);
 
     const required = retype(poster, 'cover', { type: 'integer' });
     const { impact } = await preview(poster, required);
-    // One entry, published: two versions (draft and published) fail, and the review says both numbers.
+    // One entry, published: two versions (draft and published) will have no value; the review says both.
     expect(impact.steps.find((step) => step.kind === 'validateRequired')).toMatchObject({
-      invalidHeads: 2,
-      invalidEntries: 1,
+      missingHeads: 2,
+      missingEntries: 1,
     });
+    // It goes live (ADR 0002 amendment 2026-10-29): the values are dropped and the entry is counted.
     expect(await shipped(await change(poster, required))).toMatchObject({
-      status: 'failed',
-      error: {
-        step: expect.stringMatching(/^validateRequired:/) as unknown,
-        reason: expect.stringMatching(/required field/) as unknown,
-        invalidCount: 2,
-      },
+      status: 'activated',
+      outcome: { requiredGaps: [{ fieldApiKey: 'cover', versions: 2, entries: 1 }] },
     });
-    expect(
-      (await headsOf(poster.definition.id)).every((head) => fieldIdOf(poster, 'cover') in head.data),
-    ).toBe(true);
-
-    const withDefault = retype(poster, 'cover', { type: 'integer', defaultValue: 7 });
-    expect(await shipped(await change(poster, withDefault))).toMatchObject({ status: 'activated' });
     expect((await admin.get(`/api/admin/content/poster/${entry.id}`)).json<EntryBody>().data).toEqual({
       title: 'P',
-      cover: 7,
+      cover: null,
     });
+
+    const backfilled = await model('posterDefault', posterFields);
+    const filled = await create('posterDefault', { title: 'Q', cover: first.id });
+    const withDefault = retype(backfilled, 'cover', { type: 'integer', defaultValue: 7 });
+    expect(await shipped(await change(backfilled, withDefault))).toMatchObject({
+      status: 'activated',
+      outcome: null,
+    });
+    expect((await admin.get(`/api/admin/content/posterDefault/${filled.id}`)).json<EntryBody>().data).toEqual(
+      { title: 'Q', cover: 7 },
+    );
   });
 
   it('a media field that stops being localized: references follow the kept value', async () => {

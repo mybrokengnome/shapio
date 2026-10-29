@@ -22,7 +22,7 @@ export type ContentStep =
       ownerId: string;
       fieldId: string;
       locations: ValueLocation[];
-      /** The field's API ID, to name it when the check fails. Absent in older plans. */
+      /** The field's API ID, to name it where the entries without a value are reported. Absent in older plans. */
       fieldApiKey?: string;
     }
   | { kind: 'backfill'; ownerId: string; fieldId: string; value: JsonValue; locations: ValueLocation[] }

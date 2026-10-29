@@ -501,7 +501,7 @@ test("a saved field changes to a type Shapio can't convert: Media to Number drop
   await expect(price.getByRole('textbox')).toHaveValue('');
 });
 
-test('a type change that leaves a required field empty counts entries and versions, and blocks Ship', async () => {
+test('a type change that leaves a required field empty counts entries and versions, and can still ship', async () => {
   const api = adminApiFor(page.request, ADMIN_API);
   const ticketId = randomUUID();
   await api.createDefinition('models', {
@@ -545,29 +545,21 @@ test('a type change that leaves a required field empty counts entries and versio
   const plan = await review();
   await expect(plan.getByText('Photos: Media → Number, 2 entries lose their value')).toBeVisible();
   await expect(
+    plan.getByText('4 entry versions to check · 3 entries (4 versions) without a value'),
+  ).toBeVisible();
+  // Not a failing check: the entries go live as they are and are listed in the Inbox.
+  await expect(
     plan.getByText(
-      '4 entry versions to check · 3 entries (4 versions) would be left without a required value; untick Required or set a default',
+      "3 entries (4 versions) have no value for Photos. They stay as they are, are listed in the Inbox under Required fields left empty, and can't be published again until Photos is filled in.",
     ),
   ).toBeVisible();
-  await plan.getByLabel('I understand this changes the API contract', { exact: false }).check();
-  await plan.getByLabel('I understand stored data will be converted or removed', { exact: false }).check();
-  const ship = plan.getByRole('button', { name: 'Ship now' });
-  await expect(ship).toBeDisabled();
-  await expect(ship).toHaveAccessibleDescription(
-    "A check above already fails, so this can't ship. Fix it in the builder first.",
-  );
-  await expect(plan.getByRole('button', { name: 'Review in a change set' })).toBeEnabled();
-  await captureScreen(page, 'models-18d-plan-required-blocked', { viewports: ['desktop'] });
-
-  // Untick Required: the same change can ship.
-  await plan.getByRole('button', { name: 'Cancel' }).click();
-  await expect(plan).toBeHidden();
-  await page.getByRole('switch', { name: 'Required' }).click();
-  const unblocked = await review();
+  await expect(plan.getByText("A check above already fails, so this can't ship.")).toHaveCount(0);
+  const unblocked = plan;
   await unblocked.getByLabel('I understand this changes the API contract', { exact: false }).check();
   await unblocked
     .getByLabel('I understand stored data will be converted or removed', { exact: false })
     .check();
+  await captureScreen(page, 'models-18d-plan-required-gaps', { viewports: ['desktop'] });
   await expect(unblocked.getByRole('button', { name: 'Ship now' })).toBeEnabled();
   await unblocked.getByRole('button', { name: 'Cancel' }).click();
   await page.getByRole('button', { name: 'Discard changes' }).click();

@@ -447,4 +447,40 @@ describe('shapio schema pull | diff | apply', () => {
     expect(lock.schemaVersion).toBe(await schemaVersion());
     expect(result.stdout).toContain(`Applied 1 definition(s) at schema version ${lock.schemaVersion}.`);
   });
+
+  it('applies a field made required while entries lack it, and says how many there are', async () => {
+    const created = await admin.post('/api/admin/models', {
+      definition: pageDefinition({ apiKey: 'notice', label: 'Notice' }),
+      scope: 'network',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    for (const title of ['First', 'Second']) {
+      const entry = await admin.post('/api/admin/content/notice', { data: { title } });
+      expect(entry.statusCode, entry.body).toBe(201);
+    }
+    expect((await cli('pull', '--force')).code).toBe(0);
+    const notice = await readDefinitionFile('notice');
+    await writeDefinitionFile('notice', {
+      ...notice,
+      fields: [...notice.fields, { apiKey: 'teaser', label: 'Teaser', type: 'string', required: true }],
+    });
+    const applying = cli('apply');
+    let settled = false;
+    void applying.finally(() => {
+      settled = true;
+    });
+    await waitFor(
+      async () => {
+        await runContentSchemaJobs(database.current.db);
+        return settled;
+      },
+      { description: 'schema apply finished waiting for the required-value check' },
+    );
+    const result = await applying;
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      `notice: 2 entries (2 versions) have no value for "teaser"; they're listed in the Inbox.`,
+    );
+    expect(result.stdout).toMatch(/Applied 1 definition\(s\)/);
+  });
 });

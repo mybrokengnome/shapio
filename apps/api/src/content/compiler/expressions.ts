@@ -131,9 +131,9 @@ export const fieldEqualsExpression = (
 export const fieldMissingExpression = (
   fieldId: string,
   dialect: ContentSqlDialect = contentDialect(),
-): RawBuilder<unknown> => {
+): RawBuilder<SqlBool> => {
   assertStableId(fieldId, 'a field ID');
-  return dialect.fieldMissing(fieldId);
+  return dialect.fieldMissing(fieldId).$castTo<SqlBool>();
 };
 
 /** The IDs a top-level relation or media field stores, one row each (`v`; see `ContentSqlDialect`). */

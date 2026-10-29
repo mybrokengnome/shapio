@@ -165,7 +165,10 @@ export const changeScope = async (
     moveScope: true,
   }));
   const [first, ...others] = items;
-  const recheck = (trx: Transaction<DB>) => assertNoEntriesElsewhere(trx);
+  const recheck = async (trx: Transaction<DB>) => {
+    await assertNoEntriesElsewhere(trx);
+    return undefined;
+  };
   const results = await activateDefinitions(context.db, {
     items: [{ ...(first as ActivationItem), recheck }, ...others],
     actor: context.actor,

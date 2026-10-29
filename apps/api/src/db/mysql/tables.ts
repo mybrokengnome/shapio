@@ -1038,6 +1038,7 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
       'updated_at',
       'finished_at',
       'change_set_id',
+      'outcome',
     ],
     nullable: [
       'model_id',
@@ -1048,6 +1049,7 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
       'requested_by_id',
       'finished_at',
       'change_set_id',
+      'outcome',
     ],
     timestamps: ['created_at', 'updated_at', 'finished_at'],
     uniqueKeys: [

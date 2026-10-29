@@ -23,6 +23,7 @@ import { bucketOfPlan, type PlanBucket } from '../../helpers/planBuckets';
 import { BucketChip } from '../BucketChip';
 import { ChangeList } from './ChangeList';
 import { useReviewInChangeSet } from './hooks/useReviewInChangeSet';
+import { RequiredGapsNotice } from './RequiredGapsNotice';
 import { StepList } from './StepList';
 
 type ReviewSheetProps = {
@@ -181,6 +182,12 @@ export const ReviewSheet = ({
                     before={resolvedBefore}
                     after={resolvedAfter}
                     definitionName={definitionName}
+                  />
+                  <RequiredGapsNotice
+                    steps={plan.prerequisites}
+                    impacts={previewShown.impact.steps}
+                    before={resolvedBefore}
+                    after={resolvedAfter}
                   />
                 </section>
               ) : null}

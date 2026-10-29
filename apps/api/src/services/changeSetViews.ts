@@ -7,8 +7,10 @@ import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetIt
 import * as changeSetsRepository from '../repositories/changeSets.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
 import * as publicationSnapshotsRepository from '../repositories/publicationSnapshots.js';
+import * as schemaChangeJobsRepository from '../repositories/schemaChangeJobs.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
+import type { ChangeResult } from '../schema/planner/gaps.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
 import { actorOfIds, type ChangeSetActorView } from './changeSetActors.js';
@@ -56,6 +58,8 @@ export type SchemaItemView = {
   draftVersion: number;
   status: 'pending' | 'done' | 'failed';
   error: string | null;
+  /** After shipping: what the change left to do (entries without a value for a field it made required). */
+  outcome: ChangeResult | null;
 };
 
 export type ChangeSetSummaryView = {
@@ -233,7 +237,11 @@ const toEntryItem = (
   error: item.error,
 });
 
-const toSchemaItem = (item: ChangeSetItemRow, draft: SchemaDraftRow): SchemaItemView => ({
+const toSchemaItem = (
+  item: ChangeSetItemRow,
+  draft: SchemaDraftRow,
+  outcome: ChangeResult | undefined,
+): SchemaItemView => ({
   id: item.id,
   kind: 'schema',
   position: item.position,
@@ -246,6 +254,7 @@ const toSchemaItem = (item: ChangeSetItemRow, draft: SchemaDraftRow): SchemaItem
   draftVersion: draft.version,
   status: item.status as SchemaItemView['status'],
   error: item.error,
+  outcome: outcome ?? null,
 });
 
 /** The site-scoped part of a service context a set is read with. */
@@ -278,6 +287,14 @@ export const loadChangeSetView = async (
   const drafts = new Map(
     (await schemaDraftsRepository.listForSet(id, database)).map((draft) => [draft.id, draft]),
   );
+  const outcomes = new Map(
+    row.status === 'shipped'
+      ? (await schemaChangeJobsRepository.listOutcomesForChangeSet(id, database)).map((change) => [
+          change.model_id,
+          change.outcome as ChangeResult,
+        ])
+      : [],
+  );
   const heads = await changeSetItemsRepository.findHeadsForEntries(
     [...new Set(items.flatMap((item) => (item.entry_id ? [item.entry_id] : [])))],
     database,
@@ -287,7 +304,7 @@ export const loadChangeSetView = async (
       return [toEntryItem(snapshot, item, heads)];
     }
     const draft = drafts.get(item.schema_draft_id ?? '');
-    return draft ? [toSchemaItem(item, draft)] : [];
+    return draft ? [toSchemaItem(item, draft, outcomes.get(draft.definition_id))] : [];
   });
   const counts = {
     entries: views.filter((view) => view.kind === 'entry').length,

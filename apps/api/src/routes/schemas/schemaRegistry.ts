@@ -51,6 +51,23 @@ export const ActiveDefinitionSchema = Type.Object({
   activatedAt: Timestamp,
 });
 
+/** Entry versions without a value for a field a change made required (listed in the Inbox until filled in). */
+export const RequiredGapSchema = Type.Object({
+  step: Type.String(),
+  ownerId: Type.String(),
+  fieldId: Type.String(),
+  fieldApiKey: Type.Optional(Type.String()),
+  versions: Type.Integer(),
+  entries: Type.Integer(),
+  sampleEntryIds: Type.Array(Type.String()),
+});
+
+/** What an activated change left to do; null when nothing. */
+export const ChangeResultSchema = Type.Union([
+  Type.Object({ requiredGaps: Type.Array(RequiredGapSchema) }),
+  Type.Null(),
+]);
+
 export const ChangeJobSchema = Type.Object({
   id: Type.String(),
   targetType: Type.String(),
@@ -60,6 +77,7 @@ export const ChangeJobSchema = Type.Object({
   toRevisionId: NullableString,
   jobId: NullableString,
   error: Type.Unknown(),
+  outcome: ChangeResultSchema,
   createdAt: Timestamp,
   updatedAt: Timestamp,
   finishedAt: Type.Union([Timestamp, Type.Null()]),
