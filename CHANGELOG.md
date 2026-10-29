@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-29
+
 ### Added
 
 - Approval workflows on change sets. A site's change sets go through an ordered list of stages before they ship;
