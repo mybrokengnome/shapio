@@ -7,8 +7,8 @@ import { SubmitButton } from '@/components/SubmitButton';
 import { UnsavedChangesGuard } from '@/components/UnsavedChangesGuard';
 import { ModeField, type ModeOption } from '@/features/Approval/ModeField';
 import { WorkflowEditor } from '@/features/Approval/WorkflowEditor';
-import { Coverage } from '../Coverage';
 import { useNetworkApprovalForm } from '../hooks/useNetworkApprovalForm';
+import { SiteList } from '../SiteList';
 
 type DefaultFormProps = { approval: NetworkApproval };
 
@@ -42,7 +42,7 @@ export const DefaultForm = ({ approval }: DefaultFormProps) => {
         <div className="space-y-5">
           <ModeField control={form.control} label={t('approval.network.defaultTitle')} options={options} />
           {mode === 'custom' ? <WorkflowEditor control={form.control} /> : null}
-          <Coverage sites={approval.sites} />
+          <SiteList sites={approval.sites} />
         </div>
       </Panel>
       <div>
