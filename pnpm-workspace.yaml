@@ -14,7 +14,7 @@ packages:
 # - graphql stays on 16.x until a deliberate upgrade (ADR 0006).
 catalog:
   # Backend
-  fastify: 5.12.5
+  fastify: 5.12.7
   fastify-plugin: 6.0.0
   '@fastify/static': 10.1.5
   '@fastify/cors': 11.3.0
@@ -38,7 +38,7 @@ catalog:
   '@node-rs/argon2': 2.2.1
   '@fastify/cookie': 11.1.2
   '@fastify/csrf-protection': 8.0.1
-  nodemailer: 10.0.13
+  nodemailer: 10.2.1
   # GraphQL (package J, ADR 0006)
   graphql: 16.14.2
   dataloader: 2.2.3
@@ -78,7 +78,7 @@ catalog:
   react-i18next: 17.0.15
   react-hook-form: 7.89.0
   '@hookform/resolvers': 5.9.1
-  zod: 4.6.5
+  zod: 4.6.7
   '@playwright/test': 1.63.0
   '@axe-core/playwright': 4.13.0
   # Admin component tests (DOM): jsdom + Testing Library, dev only
@@ -119,8 +119,8 @@ catalog:
   '@tiptap/suggestion': 3.31.4
   # MCP server (A1, @shapio/mcp): official TypeScript SDK v2 split packages, Apache-2.0. 2.2.0 rather than
   # 2.3.0, which is younger than the release-age window. The client is a dev dependency (stdio test only).
-  '@modelcontextprotocol/server': 2.2.0
-  '@modelcontextprotocol/client': 2.2.0
+  '@modelcontextprotocol/server': 2.4.0
+  '@modelcontextprotocol/client': 2.4.0
   # Example site (package L): static site generator, MIT. Telemetry is turned off in its scripts.
   astro: 7.3.5
   # Starters (B1): Next.js App Router and SvelteKit 3 (static). Next's telemetry is turned off in its scripts.

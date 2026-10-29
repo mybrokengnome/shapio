@@ -64,6 +64,11 @@ All notable changes to Shapio are listed here. The format follows
 
 - On a phone, a page header with many actions wraps them instead of widening the page.
 
+### Security
+
+- Updated nodemailer, fastify, fast-uri, ip-address, seroval, zod, and the MCP server library to releases with
+  security fixes.
+
 ## [0.6.4] - 2026-10-23
 
 ### Changed
