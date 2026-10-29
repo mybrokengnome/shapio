@@ -5,12 +5,16 @@ import { ErrorResponseSchema } from '../../schemas/error.js';
 import { Nullable } from '../../schemas/publishing.js';
 
 /** The instance's default approval workflow (plan approval-workflows) and the sites that follow it. */
+const InstanceModeSchema = Type.Enum(['off', 'custom']);
+
 const SiteRefSchema = Type.Object({ id: UuidSchema, name: Type.String() });
 
 export const NetworkApprovalSchema = Type.Object({
   /** The version an update must name (0: never saved). */
   version: Type.Integer(),
-  /** Null: approval is off by default. */
+  /** `custom`: inheriting sites follow the workflow; `off`: they ship without approval. */
+  mode: InstanceModeSchema,
+  /** The stored workflow, kept while the default is off; null until one is saved. */
   workflow: Nullable(ApprovalWorkflowSchema),
   unknownRoleIds: Type.Array(Type.String()),
   sites: Type.Object({
@@ -32,7 +36,12 @@ const errors = {
 export const getNetworkApprovalSchema = { response: { 200: NetworkApprovalSchema, ...errors } };
 
 export const UpdateNetworkApprovalBodySchema = Type.Object(
-  { expectedVersion: Type.Integer({ minimum: 0 }), workflow: Nullable(ApprovalWorkflowInputSchema) },
+  {
+    expectedVersion: Type.Integer({ minimum: 0 }),
+    mode: InstanceModeSchema,
+    /** Omitted: the stored workflow is kept (`custom` needs one stored or sent). */
+    workflow: Type.Optional(ApprovalWorkflowInputSchema),
+  },
   { additionalProperties: false },
 );
 export type UpdateNetworkApprovalBody = Static<typeof UpdateNetworkApprovalBodySchema>;

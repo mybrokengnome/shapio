@@ -15,14 +15,17 @@ import { settle } from '@/helpers/settle';
 export const useNetworkApprovalForm = (approval: NetworkApproval) => {
   const update = useUpdateNetworkApproval();
   const form = useApprovalSettingsForm(
-    { mode: approval.workflow ? 'custom' : 'off', workflow: workflowValuesOf(approval.workflow) },
+    { mode: approval.mode, workflow: workflowValuesOf(approval.workflow) },
     approval.unknownRoleIds,
   );
   const onSubmit = form.handleSubmit(async ({ mode, workflow }) => {
     const saved = await settle(
       update.mutateAsync({
         expectedVersion: approval.version,
-        workflow: mode === 'custom' ? toWorkflowInput(workflow) : null,
+        // The network form offers off and custom only (no inherit).
+        mode: mode === 'custom' ? 'custom' : 'off',
+        // Off keeps the stored workflow on the server, so switching back restores it.
+        ...(mode === 'custom' ? { workflow: toWorkflowInput(workflow) } : {}),
       }),
     );
     if (!saved.ok) {
@@ -30,7 +33,7 @@ export const useNetworkApprovalForm = (approval: NetworkApproval) => {
       return;
     }
     form.reset({
-      mode: saved.value.workflow ? 'custom' : 'off',
+      mode: saved.value.mode,
       workflow: workflowValuesOf(saved.value.workflow),
     });
     toast.success(i18next.t('approval.saved'));

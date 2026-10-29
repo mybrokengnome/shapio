@@ -112,15 +112,22 @@ describe('change set approval workflows', () => {
       at: at.toISOString(),
       expectedVersion: (await getSet(id)).version,
     });
-  const setDefault = async (workflow: WorkflowInput | null) => {
+  type NetworkView = { version: number; mode: string; workflow: Workflow | null };
+  const putDefault = async (body: { mode: 'off' | 'custom'; workflow?: WorkflowInput }) => {
     const current = expectStatus(await admin.get('/api/admin/network/approval'), 200).json<{
       version: number;
     }>();
-    return expectStatus(
-      await admin.put('/api/admin/network/approval', { expectedVersion: current.version, workflow }),
-      200,
-    ).json<{ version: number; workflow: Workflow | null }>();
+    return admin.put('/api/admin/network/approval', { expectedVersion: current.version, ...body });
   };
+  /** Turns the default on with `workflow`, or off (keeping the stored one) with null. */
+  const setDefault = async (workflow: WorkflowInput | null) =>
+    expectStatus(
+      await putDefault(workflow ? { mode: 'custom', workflow } : { mode: 'off' }),
+      200,
+    ).json<NetworkView>();
+  const requiresApproval = async () =>
+    expectStatus(await admin.get('/api/admin/sites'), 200).json<Array<{ requireApproval: boolean }>>()[0]
+      ?.requireApproval;
   const setSiteMode = async (mode: 'inherit' | 'off' | 'custom', workflow?: WorkflowInput) => {
     const current = expectStatus(await admin.get('/api/admin/site/change-sets'), 200).json<{
       version: number;
@@ -206,6 +213,7 @@ describe('change set approval workflows', () => {
     }>();
     expect(initial).toMatchObject({
       version: 0,
+      mode: 'off',
       workflow: null,
       sites: { inheriting: 1, custom: [], off: [] },
     });
@@ -217,37 +225,63 @@ describe('change set approval workflows', () => {
     const editor = schemaClient(testApp.app, await createRoleToken(database.current.db, 'editor'));
     expect((await editor.get('/api/admin/network/approval')).statusCode).toBe(403);
     expect(
-      (await editor.put('/api/admin/network/approval', { expectedVersion: 0, workflow: twoStages() }))
-        .statusCode,
+      (
+        await editor.put('/api/admin/network/approval', {
+          expectedVersion: 0,
+          mode: 'custom',
+          workflow: twoStages(),
+        })
+      ).statusCode,
     ).toBe(403);
 
+    const neverSaved = await admin.put('/api/admin/network/approval', { expectedVersion: 0, mode: 'custom' });
+    expect(neverSaved.statusCode).toBe(400);
+    expect(codeOf(neverSaved)).toBe('APPROVAL_WORKFLOW_REQUIRED');
     const unknownRole = await admin.put('/api/admin/network/approval', {
       expectedVersion: 0,
+      mode: 'custom',
       workflow: { stages: [{ name: 'X', roleIds: ['00000000-0000-4000-8000-000000000000'], required: 1 }] },
     });
     expect(unknownRole.statusCode).toBe(400);
     expect(codeOf(unknownRole)).toBe('APPROVAL_UNKNOWN_ROLE');
     const tooMany = await admin.put('/api/admin/network/approval', {
       expectedVersion: 0,
+      mode: 'custom',
       workflow: { stages: [{ name: 'X', roleIds: [], required: 21 }] },
     });
     expect(tooMany.statusCode).toBe(400);
 
     const saved = await setDefault(twoStages());
-    expect(saved.version).toBe(1);
+    expect(saved).toMatchObject({ version: 1, mode: 'custom' });
     expect(saved.workflow?.stages.map((stage) => stage.name)).toEqual(['Editorial', 'Legal']);
     expect(saved.workflow?.stages.every((stage) => stage.id.length > 0)).toBe(true);
-    const stale = await admin.put('/api/admin/network/approval', { expectedVersion: 0, workflow: null });
+    const stale = await admin.put('/api/admin/network/approval', { expectedVersion: 0, mode: 'off' });
     expect(stale.statusCode).toBe(409);
 
     const inherited = expectStatus(await admin.get('/api/admin/site/change-sets'), 200).json<{
       effective: Workflow | null;
     }>();
     expect(inherited.effective?.stages).toHaveLength(2);
-    const sites = expectStatus(await admin.get('/api/admin/sites'), 200).json<
-      Array<{ requireApproval: boolean }>
-    >();
-    expect(sites[0]?.requireApproval).toBe(true);
+    expect(await requiresApproval()).toBe(true);
+
+    // Off keeps the stored workflow; sites stop requiring approval.
+    const off = expectStatus(await putDefault({ mode: 'off' }), 200).json<NetworkView>();
+    expect(off).toMatchObject({ version: 2, mode: 'off' });
+    expect(off.workflow?.stages.map((stage) => stage.name)).toEqual(['Editorial', 'Legal']);
+    expect(await requiresApproval()).toBe(false);
+    expect(
+      expectStatus(await admin.get('/api/admin/site/change-sets'), 200).json<{ effective: unknown }>()
+        .effective,
+    ).toBeNull();
+    // Custom without a workflow turns the stored one back on.
+    const on = expectStatus(await putDefault({ mode: 'custom' }), 200).json<NetworkView>();
+    expect(on).toMatchObject({ version: 3, mode: 'custom' });
+    expect(await requiresApproval()).toBe(true);
+    expect(
+      expectStatus(await admin.get('/api/admin/site/change-sets'), 200)
+        .json<{ effective: Workflow | null }>()
+        .effective?.stages.map((stage) => stage.name),
+    ).toEqual(['Editorial', 'Legal']);
   });
 
   it('runs two stages to approval: roles, required sign-offs, signed twice, awaitingMe, events and timeline', async () => {

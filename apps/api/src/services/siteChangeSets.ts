@@ -8,7 +8,7 @@ import {
   effectiveOf,
   findUnknownRoleIds,
   normalizeWorkflow,
-  readInstanceDefault,
+  readInstanceWorkflow,
   toSiteSetting,
   type ApprovalMode,
   type ApprovalWorkflow,
@@ -43,7 +43,7 @@ const loadView = async (siteId: string, executor: Database): Promise<SiteChangeS
     throw siteNotFound();
   }
   const site = toSiteSetting(row);
-  const inherited = (await readInstanceDefault(executor)).workflow;
+  const inherited = await readInstanceWorkflow(executor);
   return {
     version: site.version,
     mode: site.mode,

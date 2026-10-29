@@ -26,7 +26,7 @@ export const createApprovalApi = (request: RequestFn) => ({
     approval: {
       /** `sites.manage`. */
       get: () => request<NetworkApproval>(APPROVAL_PATHS.networkApproval),
-      /** `sites.manage`; `workflow: null` turns approval off by default. */
+      /** `sites.manage`; `mode: 'off'` turns approval off by default and keeps the stored workflow. */
       update: (body: UpdateNetworkApprovalInput) =>
         request<NetworkApproval>(APPROVAL_PATHS.networkApproval, { method: 'PUT', body }),
     },

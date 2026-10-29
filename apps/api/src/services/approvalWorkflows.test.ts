@@ -4,6 +4,7 @@ import type { AdminPrincipal, TokenPrincipal } from '../permissions/types.js';
 import { ApprovalWorkflowInputSchema, ApprovalWorkflowSchema } from '../routes/schemas/approvalWorkflow.js';
 import {
   effectiveOf,
+  instanceEffective,
   ineligibleReason,
   nextReviewStep,
   normalizeWorkflow,
@@ -128,6 +129,16 @@ describe('effectiveOf', () => {
     expect(effectiveOf({ mode: 'inherit', workflow: own }, instance)).toBe(instance);
     expect(effectiveOf({ mode: 'inherit', workflow: null }, null)).toBeNull();
     expect(effectiveOf({ mode: 'off', workflow: own }, instance)).toBeNull();
+  });
+});
+
+describe('instanceEffective', () => {
+  const stored = { stages: [stage], selfApproval: false };
+
+  it('applies the stored default only while it is on', () => {
+    expect(instanceEffective({ mode: 'custom', workflow: stored })).toBe(stored);
+    expect(instanceEffective({ mode: 'off', workflow: stored })).toBeNull();
+    expect(instanceEffective({ mode: 'off', workflow: null })).toBeNull();
   });
 });
 

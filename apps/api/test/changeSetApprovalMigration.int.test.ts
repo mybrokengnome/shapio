@@ -117,7 +117,7 @@ describe('migration: change set approval', () => {
       .execute();
     await systemSettingsRepository.upsertValue(
       APPROVAL_WORKFLOW_SETTING,
-      '{"version":1,"workflow":null}',
+      '{"version":1,"mode":"off","workflow":null}',
       db,
     );
     const migrationDb = db as unknown as Kysely<unknown>;

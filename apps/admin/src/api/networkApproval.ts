@@ -16,7 +16,8 @@ export const useNetworkApproval = () =>
   });
 
 /**
- * Saves the default (`workflow: null` turns approval off by default); 409 when someone saved meanwhile, and
+ * Saves the default (`mode: 'off'` turns approval off by default and keeps the stored workflow); 409 when
+ * someone saved meanwhile, and
  * the fresh default is read again. Sites that inherit it change with it, so the site's settings are read again.
  */
 export const useUpdateNetworkApproval = () => {

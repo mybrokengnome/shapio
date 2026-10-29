@@ -13,7 +13,8 @@ All notable changes to Shapio are listed here. The format follows
   the workflow says whether people may approve their own change sets. Asking for approval freezes the workflow
   on the set, so editing a workflow never changes a review in flight; a stage completes when enough different
   people sign off, and the set is approved after the last stage. Requesting changes at any stage ends the round.
-- Network → Approval sets the default workflow every site inherits (off until set; needs `sites.manage`).
+- Network → Approval sets the default workflow every site inherits (off until set; needs `sites.manage`). Turning
+  it off keeps the workflow for when it is turned back on.
   Settings → Change sets lets a site use the network default, switch approval off, or keep a workflow of its own
   (needs `site.settings`). A site with a workflow refuses to ship or schedule a set that is not approved
   (`CHANGE_SET_NOT_APPROVED`).

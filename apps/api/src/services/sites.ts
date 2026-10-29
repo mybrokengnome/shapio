@@ -15,7 +15,7 @@ import { lockSchema } from '../schema/planner/locks.js';
 import type { ActorContext, SiteRef } from './actorContext.js';
 import {
   effectiveOf,
-  readInstanceDefault,
+  readInstanceWorkflow,
   toSiteSetting,
   type ApprovalWorkflow,
 } from './approvalWorkflows.js';
@@ -100,7 +100,7 @@ export const listAccessibleSites = async (principal: AdminPrincipal | TokenPrinc
 };
 
 /** The instance's default approval workflow, which `requireApproval` of inheriting sites follows. */
-const instanceWorkflow = async (executor: Database = db) => (await readInstanceDefault(executor)).workflow;
+const instanceWorkflow = async (executor: Database = db) => readInstanceWorkflow(executor);
 
 const toSiteViews = async (rows: readonly SiteRow[], executor: Database = db): Promise<SiteView[]> => {
   const instance = await instanceWorkflow(executor);

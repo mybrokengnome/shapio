@@ -56,7 +56,9 @@ export type UpdateSiteChangeSetsInput = {
 export type NetworkApproval = {
   /** The version an update must name (0: never saved). */
   version: number;
-  /** Null: approval is off by default. */
+  /** `custom`: inheriting sites follow the workflow; `off`: they ship without approval. */
+  mode: 'off' | 'custom';
+  /** The stored workflow, kept while the default is off; null until one is saved. */
   workflow: ApprovalWorkflow | null;
   unknownRoleIds: string[];
   sites: {
@@ -66,4 +68,9 @@ export type NetworkApproval = {
   };
 };
 
-export type UpdateNetworkApprovalInput = { expectedVersion: number; workflow: ApprovalWorkflowInput | null };
+/** Without `workflow` the stored one is kept; `custom` needs one stored or sent. */
+export type UpdateNetworkApprovalInput = {
+  expectedVersion: number;
+  mode: 'off' | 'custom';
+  workflow?: ApprovalWorkflowInput;
+};

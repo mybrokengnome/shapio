@@ -101,13 +101,14 @@ which roles may sign off and how many sign-offs it needs, plus whether people ma
 sets.
 
 - **Where the workflow comes from.** **Network → Approval** (needs `sites.manage`) sets the default every site
-  inherits; off by default. **Settings → Change sets** (needs `site.settings`) chooses, per site, the network
+  inherits; off by default. Turning the default off keeps its workflow, so turning it back on restores it.
+  **Settings → Change sets** (needs `site.settings`) chooses, per site, the network
   default, Off, or a workflow of the site's own. A site with a workflow (its own or the inherited one) requires
   an approved set before anything ships or is scheduled; a site with none ships without approval.
 - **Stages.** One to ten, in order. A stage names admin roles (none: anyone who may approve on the site) and
   needs 1 to 20 sign-offs from different people. A role counts when it is held on the site or on every site; an
-  API token counts with its one role. A role an approval workflow names cannot be deleted until no workflow
-  names it.
+  API token counts with its one role. A role named by a workflow in use (the default while it is on, or a site's
+  own while the site uses it) cannot be deleted; a workflow kept while off is checked again when it is turned on.
 - **Request approval** (needs `changes.manage`) sends an open set for review with an optional note. The site's
   workflow is frozen on the set at that moment, so editing a workflow never changes a review in flight; asking
   again later starts a new round under the workflow that applies then.
@@ -241,7 +242,7 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `POST …/:id/approval/request-changes`              | `{ note }`: send back with what to change (`changes.approve`)                          |
 | `POST …/:id/approval/clear`                        | back to no approval (`changes.manage`)                                                 |
 | `GET`, `PUT /api/admin/site/change-sets`           | the site's approval: `{ expectedVersion, mode, workflow? }` to change                  |
-| `GET`, `PUT /api/admin/network/approval`           | the default workflow: `{ expectedVersion, workflow \| null }` (`sites.manage`)         |
+| `GET`, `PUT /api/admin/network/approval`           | the default workflow: `{ expectedVersion, mode, workflow? }` (`sites.manage`)          |
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
 | `GET /api/admin/usage/fields?modelId&days=7`       | reads per field and reader for one model (needs `tokens.manage`)                       |
@@ -265,9 +266,10 @@ A workflow is `{ stages: [{ id?, name, roleIds, required }], selfApproval? }` (1
 100 characters; admin role IDs, none meaning anyone who may approve; `required` 1 to 20; the server assigns
 an `id` to a new stage). `GET /api/admin/site/change-sets` answers `{ version, mode, workflow, inherited,
 effective, unknownRoleIds }`, with `mode` one of `inherit`, `off`, or `custom`; a `PUT` without `workflow` keeps
-the site's stored one. `GET /api/admin/network/approval` answers `{ version, workflow, unknownRoleIds, sites:
-{ inheriting, custom, off } }`; `version` 0 means it was never saved, and `workflow: null` turns approval off
-by default. The site list's `requireApproval` says whether a site has an effective workflow.
+the site's stored one. `GET /api/admin/network/approval` answers `{ version, mode, workflow, unknownRoleIds, sites: { inheriting,
+custom, off } }`; `version` 0 means it was never saved. `mode` is `custom` (inheriting sites follow the workflow)
+or `off` (they ship without approval); turning it off keeps the stored workflow, and a `PUT` without `workflow`
+keeps the stored one, so switching back to `custom` restores it. The site list's `requireApproval` says whether a site has an effective workflow.
 
 Where the site requires approval, `ship` and `schedule` refuse with `409 CHANGE_SET_NOT_APPROVED` or `409
 CHANGE_SET_APPROVAL_STALE`. Approval steps refuse with `409 CHANGE_SET_APPROVAL_NOT_CONFIGURED` (the site has

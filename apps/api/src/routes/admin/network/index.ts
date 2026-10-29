@@ -12,7 +12,7 @@ export const adminNetworkRoutes: FastifyPluginAsyncTypebox = async (app) => {
   const manageSites = { preHandler: app.requireGlobalPermission('sites.manage') };
   // GET /api/admin/network/approval: the default workflow and which sites follow it
   app.get('/approval', { schema: getNetworkApprovalSchema, ...manageSites }, getNetworkApproval);
-  // PUT /api/admin/network/approval { expectedVersion, workflow }: null turns approval off by default
+  // PUT /api/admin/network/approval { expectedVersion, mode, workflow? }: `off` keeps the stored workflow
   app.put(
     '/approval',
     {

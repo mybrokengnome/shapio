@@ -109,7 +109,7 @@ test.afterAll(async () => {
   const network = await getJson<{ version: number }>('/network/approval');
   await adminRequest(page.request, 'PUT', '/network/approval', {
     expectedVersion: network.version,
-    workflow: null,
+    mode: 'off',
   });
   const site = await getJson<{ version: number }>('/site/change-sets');
   await adminRequest(page.request, 'PUT', '/site/change-sets', {

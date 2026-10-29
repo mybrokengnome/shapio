@@ -107,8 +107,14 @@ export const findUnknownRoleIds = async (
 
 // The instance default ------------------------------------------------------------------------------
 
+/** The instance default is on (`custom`, its workflow applies to inheriting sites) or `off` (kept, unused). */
+export const INSTANCE_MODES = ['off', 'custom'] as const;
+export type InstanceMode = (typeof INSTANCE_MODES)[number];
+
 export type InstanceDefault = {
   version: number;
+  mode: InstanceMode;
+  /** The stored workflow, kept while the default is off. */
   workflow: ApprovalWorkflow | null;
   /** The exact stored text (the compare-and-swap's expected value); undefined when never saved. */
   stored: string | undefined;
@@ -117,15 +123,35 @@ export type InstanceDefault = {
 export const readInstanceDefault = async (executor: Executor): Promise<InstanceDefault> => {
   const stored = await systemSettingsRepository.findValue(APPROVAL_WORKFLOW_SETTING, executor);
   if (stored === undefined) {
-    return { version: 0, workflow: null, stored };
+    return { version: 0, mode: 'off', workflow: null, stored };
   }
-  const parsed = safeJson(stored, 'the instance');
-  const record = parsed as { version?: unknown; workflow?: unknown } | null;
-  if (!record || typeof record !== 'object' || typeof record.version !== 'number') {
+  const record = safeJson(stored, 'the instance') as {
+    version?: unknown;
+    mode?: unknown;
+    workflow?: unknown;
+  } | null;
+  if (
+    !record ||
+    typeof record !== 'object' ||
+    typeof record.version !== 'number' ||
+    !(INSTANCE_MODES as readonly unknown[]).includes(record.mode)
+  ) {
     throw corrupt('the instance');
   }
-  return { version: record.version, workflow: parseStoredWorkflow(record.workflow, 'the instance'), stored };
+  const workflow = parseStoredWorkflow(record.workflow, 'the instance');
+  if (record.mode === 'custom' && workflow === null) {
+    throw corrupt('the instance');
+  }
+  return { version: record.version, mode: record.mode as InstanceMode, workflow, stored };
 };
+
+/** The workflow inheriting sites follow: the stored one while the default is on, else none. */
+export const instanceEffective = (instance: Pick<InstanceDefault, 'mode' | 'workflow'>) =>
+  instance.mode === 'custom' ? instance.workflow : null;
+
+/** The instance default's effective workflow (what `inherit` means right now). */
+export const readInstanceWorkflow = async (executor: Executor): Promise<ApprovalWorkflow | null> =>
+  instanceEffective(await readInstanceDefault(executor));
 
 /**
  * Writes the instance default when it is still at `expectedVersion` (0: never saved). False when another
@@ -133,11 +159,11 @@ export const readInstanceDefault = async (executor: Executor): Promise<InstanceD
  */
 export const writeInstanceDefault = async (
   current: InstanceDefault,
-  workflow: ApprovalWorkflow | null,
+  next: { mode: InstanceMode; workflow: ApprovalWorkflow | null },
   trx: Transaction<DB>,
 ): Promise<number | null> => {
   const version = current.version + 1;
-  const value = JSON.stringify({ version, workflow });
+  const value = JSON.stringify({ version, mode: next.mode, workflow: next.workflow });
   const written =
     current.stored === undefined
       ? await systemSettingsRepository.insertIfAbsent(APPROVAL_WORKFLOW_SETTING, value, trx)
@@ -203,17 +229,20 @@ export const effectiveWorkflow = async (
   if (site.mode !== 'inherit') {
     return effectiveOf(site, null);
   }
-  return (await readInstanceDefault(executor)).workflow;
+  return readInstanceWorkflow(executor);
 };
 
-/** Where a role is named: the instance default and the sites with their own workflow (role deletion). */
+/**
+ * Where a role is named by a workflow in use: the instance default while it is on, and the sites with their own
+ * workflow (role deletion). A dormant workflow does not block deletion; switching it back on re-checks roles.
+ */
 export const workflowsNamingRole = async (roleId: string, executor: Executor) => {
-  const instance = await readInstanceDefault(executor);
+  const instance = await readInstanceWorkflow(executor);
   const sites = (await sitesRepository.listApprovalSettings(executor))
     .map(toSiteSetting)
     .filter((site) => site.mode === 'custom' && roleIdsOfWorkflow(site.workflow).includes(roleId));
   return {
-    instanceDefault: roleIdsOfWorkflow(instance.workflow).includes(roleId),
+    instanceDefault: roleIdsOfWorkflow(instance).includes(roleId),
     sites: sites.map((site) => ({ id: site.id, name: site.name })),
   };
 };
