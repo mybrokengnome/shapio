@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { assistDisabled } from '../assist/errors.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import type {
+  AcceptBody,
   AltTextBody,
   ContentOpsBody,
   RewriteBody,
@@ -15,6 +16,7 @@ import type {
 import { writeAltText } from '../services/assist/altText.js';
 import { getContentOpsRun, proposeContentOps } from '../services/assist/contentOps.js';
 import type { AssistServiceContext } from '../services/assist/context.js';
+import { acceptFillProposals } from '../services/assist/fillAccept.js';
 import { rewriteText } from '../services/assist/rewrite.js';
 import { draftSchema } from '../services/assist/schemaDraft.js';
 import { getAssistStatus } from '../services/assist/status.js';
@@ -94,3 +96,6 @@ export const proposeContentOpsRun = async (
 
 export const getContentOpsRunView = (request: FastifyRequest<{ Params: RunParams }>) =>
   getContentOpsRun(lightContextOf(request), request.params.runId);
+
+export const acceptContentOps = async (request: FastifyRequest<{ Params: RunParams; Body: AcceptBody }>) =>
+  acceptFillProposals(await contentContextFor(request), request.params.runId, request.body.items);

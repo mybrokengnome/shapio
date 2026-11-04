@@ -6,7 +6,11 @@ import type { DB } from '../db/types.js';
 import { AppError } from '../helpers/appError.js';
 import { writeOutboxEvent } from '../jobs/outbox.js';
 import { adminIdOf, tokenIdOf } from '../publishing/principals.js';
-import { resolvePublicationTarget, type PublicationTargetInput } from '../publishing/targets.js';
+import {
+  resolvePublicationTarget,
+  type PublicationTarget,
+  type PublicationTargetInput,
+} from '../publishing/targets.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import * as changeSetsRepository from '../repositories/changeSets.js';
 import type { ApprovalStatus, ChangeSetStatus } from '../repositories/changeSets.js';
@@ -178,29 +182,38 @@ export const listChangeSets = async (
   };
 };
 
+export type NewChangeSetInput = {
+  title: string;
+  description?: string | undefined;
+  source?: 'manual' | 'builder' | 'assist' | undefined;
+};
+
+/** Inserts a set and its `change_set.create` audit row inside a transaction the caller holds. */
+export const insertChangeSet = async (
+  trx: Transaction<DB>,
+  context: ContentServiceContext,
+  input: NewChangeSetInput,
+) => {
+  const inserted = await changeSetsRepository.insert(
+    {
+      site_id: context.site.id,
+      title: input.title.trim(),
+      description: input.description ?? '',
+      source: input.source ?? 'manual',
+      created_by: adminIdOf(context.actor),
+      created_by_token: tokenIdOf(context.actor),
+    },
+    trx,
+  );
+  await auditChangeSet(trx, context, inserted.id, 'change_set.create', { title: inserted.title });
+  return inserted;
+};
+
 export const createChangeSet = async (
   context: ContentServiceContext,
-  input: {
-    title: string;
-    description?: string | undefined;
-    source?: 'manual' | 'builder' | 'assist' | undefined;
-  },
+  input: NewChangeSetInput,
 ): Promise<ChangeSetView> => {
-  const row = await context.db.transaction().execute(async (trx) => {
-    const inserted = await changeSetsRepository.insert(
-      {
-        site_id: context.site.id,
-        title: input.title.trim(),
-        description: input.description ?? '',
-        source: input.source ?? 'manual',
-        created_by: adminIdOf(context.actor),
-        created_by_token: tokenIdOf(context.actor),
-      },
-      trx,
-    );
-    await auditChangeSet(trx, context, inserted.id, 'change_set.create', { title: inserted.title });
-    return inserted;
-  });
+  const row = await context.db.transaction().execute((trx) => insertChangeSet(trx, context, input));
   return getChangeSet(context, row.id);
 };
 
@@ -289,25 +302,7 @@ export const addEntryItem = async (
   const target = await resolvePublicationTarget(context, input, 'update');
   await context.db.transaction().execute(async (trx) => {
     await lockEditable(trx, context, id);
-    const inserted = await changeSetItemsRepository
-      .insertEntryItem(
-        {
-          changeSetId: id,
-          entryId: target.entryId,
-          modelId: target.model.definition.id,
-          locale: target.locale,
-          action: target.action,
-        },
-        trx,
-      )
-      .catch((error: unknown) => {
-        // The entry is on another site than the set (the composite key refuses it): it does not exist here.
-        if (isForeignKeyViolation(error, 'change_set_items_entry_site_fk')) {
-          throw entryNotFound(target.entryId);
-        }
-        throw error;
-      });
-    if (!inserted) {
+    if ((await addEntryItemInTransaction(trx, context, id, target)) === 'exists') {
       throw new AppError(
         409,
         'CHANGE_SET_ITEM_EXISTS',
@@ -318,17 +313,52 @@ export const addEntryItem = async (
         },
       );
     }
-    await changeSetItemsRepository.recordReviewedDraftVersions(id, trx, inserted.id);
-    await touchChangeSet(trx, id);
-    await auditChangeSet(trx, context, id, 'change_set.item_add', {
-      itemId: inserted.id,
-      entryId: target.entryId,
-      modelKey: target.model.definition.apiKey,
-      locale: target.locale,
-      action: target.action,
-    });
   });
   return getChangeSet(context, id);
+};
+
+/**
+ * The body of `addEntryItem` inside a transaction the caller holds, with the set already locked
+ * (`lockEditable`): the item, its reviewed draft version, the set's version and the audit row. `exists` when the
+ * set already holds that entry and locale (nothing is written then).
+ */
+export const addEntryItemInTransaction = async (
+  trx: Transaction<DB>,
+  context: ContentServiceContext,
+  id: string,
+  target: PublicationTarget,
+): Promise<'added' | 'exists'> => {
+  const inserted = await changeSetItemsRepository
+    .insertEntryItem(
+      {
+        changeSetId: id,
+        entryId: target.entryId,
+        modelId: target.model.definition.id,
+        locale: target.locale,
+        action: target.action,
+      },
+      trx,
+    )
+    .catch((error: unknown) => {
+      // The entry is on another site than the set (the composite key refuses it): it does not exist here.
+      if (isForeignKeyViolation(error, 'change_set_items_entry_site_fk')) {
+        throw entryNotFound(target.entryId);
+      }
+      throw error;
+    });
+  if (!inserted) {
+    return 'exists';
+  }
+  await changeSetItemsRepository.recordReviewedDraftVersions(id, trx, inserted.id);
+  await touchChangeSet(trx, id);
+  await auditChangeSet(trx, context, id, 'change_set.item_add', {
+    itemId: inserted.id,
+    entryId: target.entryId,
+    modelKey: target.model.definition.apiKey,
+    locale: target.locale,
+    action: target.action,
+  });
+  return 'added';
 };
 
 /** Removes an item; a schema item takes its draft with it. */

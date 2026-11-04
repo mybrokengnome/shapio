@@ -91,6 +91,17 @@ export const adminAssistRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
     handlers.proposeContentOpsRun,
   );
+  // POST /content-ops/:runId/accept { items: [{ key, value }] } → the entry's new version and its change set.
+  // No model call, so it does not count against AI_RATE_LIMIT_MAX.
+  app.post(
+    '/content-ops/:runId/accept',
+    {
+      schema: schemas.acceptContentOpsSchema,
+      preHandler: app.requireGlobalPermission('changes.manage'),
+      config: { audit: { action: 'assist.content_ops_accept' } },
+    },
+    handlers.acceptContentOps,
+  );
   // GET /content-ops/:runId → the run's status and, once done, its result
   app.get(
     '/content-ops/:runId',

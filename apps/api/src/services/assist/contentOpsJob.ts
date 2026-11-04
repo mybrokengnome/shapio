@@ -1,6 +1,6 @@
 import type { UsageMeter } from '../../assist/completion.js';
 import { assistDisabled } from '../../assist/errors.js';
-import { ASSIST_CONTENT_OPS_MAX_FINDINGS, type ContentOpsRule } from '../../constants/assist.js';
+import { ASSIST_CONTENT_OPS_MAX_FINDINGS, isFillRule, type ContentOpsRule } from '../../constants/assist.js';
 import { rowWriteMask } from '../../content/compiler/policy.js';
 import type { ContentModel } from '../../content/model.js';
 import { resolveModel } from '../../content/model.js';
@@ -19,8 +19,10 @@ import { updateEntry } from '../contentEntries.js';
 import { listFindings, type FindingView } from '../contentHealthReads.js';
 import { proposeAltText } from './altText.js';
 import { CONTENT_OPS_PERMISSIONS, type ContentOpsJobPayload } from './contentOps.js';
+import { isRunFatal, reasonOf, type Skipped } from './contentOpsShared.js';
 import type { AssistRuntime, AssistServiceContext } from './context.js';
 import { loadEntryDraft } from './entrySource.js';
+import { loadFillGroups, proposeFills, type FieldProposal, type FillResult } from './fillJob.js';
 import { auditMetadataOf } from './runs.js';
 import { toInputFormat, translatableFields, translateDocument } from './translate.js';
 
@@ -41,14 +43,7 @@ export type AltProposal = {
   findingCount: number;
 };
 
-export type Skipped = {
-  key: string;
-  entryId?: string;
-  assetId?: string;
-  locale?: string;
-  reason: string;
-  detail?: unknown;
-};
+export type { Skipped } from './contentOpsShared.js';
 export type Written = { entryId: string; modelKey: string; locale: string; version: number };
 
 export type ContentOpsResult =
@@ -59,7 +54,8 @@ export type ContentOpsResult =
       fromLocale: string;
       written: Written[];
       skipped: Skipped[];
-    };
+    }
+  | FillResult;
 
 /** Progress kept across attempts: finished items are not redone (their drafts already exist). */
 type Checkpoint = {
@@ -69,6 +65,9 @@ type Checkpoint = {
   proposals: AltProposal[];
   written: Written[];
   skipped: Skipped[];
+  /** Fill rules (absent from checkpoints written before them). */
+  fills?: FieldProposal[];
+  scanCapped?: boolean;
 };
 
 const emptyCheckpoint = (model: string): Checkpoint => ({
@@ -81,7 +80,11 @@ const emptyCheckpoint = (model: string): Checkpoint => ({
 });
 
 /** Open findings of the rule the actor may see, newest first, at most ASSIST_CONTENT_OPS_MAX_FINDINGS. */
-const loadFindings = async (context: AssistServiceContext, rule: ContentOpsRule, modelKey: string | null) => {
+const loadFindings = async (
+  context: AssistServiceContext,
+  rule: 'altMissing' | 'localeMissing',
+  modelKey: string | null,
+) => {
   const findings: FindingView[] = [];
   let cursor: string | undefined;
   do {
@@ -96,13 +99,6 @@ const loadFindings = async (context: AssistServiceContext, rule: ContentOpsRule,
   } while (cursor && findings.length < ASSIST_CONTENT_OPS_MAX_FINDINGS);
   return findings.slice(0, ASSIST_CONTENT_OPS_MAX_FINDINGS);
 };
-
-const reasonOf = (error: unknown) => (error instanceof AppError ? error.code : 'INTERNAL_ERROR');
-
-/** Errors that end the whole run: every further item would fail the same way. */
-const isRunFatal = (error: unknown) =>
-  error instanceof AppError &&
-  ['ASSIST_VISION_UNSUPPORTED', 'ASSIST_PROVIDER_AUTH', 'ACTOR_UNAVAILABLE'].includes(error.code);
 
 type RunState = {
   job: JobContext;
@@ -322,12 +318,20 @@ const markFailed = (deps: ContentOpsJobDependencies, run: AssistRunRow, errorCod
   );
 
 const countsOf = (result: ContentOpsResult) =>
-  result.rule === 'altMissing'
-    ? { proposals: result.proposals.length, skipped: result.skipped.length }
-    : { changeSetId: result.changeSetId, written: result.written.length, skipped: result.skipped.length };
+  result.rule === 'localeMissing'
+    ? { changeSetId: result.changeSetId, written: result.written.length, skipped: result.skipped.length }
+    : { proposals: result.proposals.length, skipped: result.skipped.length };
 
-const resultOf = (rule: ContentOpsRule, checkpoint: Checkpoint, fromLocale: string): ContentOpsResult =>
-  rule === 'altMissing'
+const resultOf = (rule: ContentOpsRule, checkpoint: Checkpoint, fromLocale: string): ContentOpsResult => {
+  if (isFillRule(rule)) {
+    return {
+      rule,
+      proposals: checkpoint.fills ?? [],
+      skipped: checkpoint.skipped,
+      scanCapped: checkpoint.scanCapped ?? false,
+    };
+  }
+  return rule === 'altMissing'
     ? { rule, proposals: checkpoint.proposals, skipped: checkpoint.skipped }
     : {
         rule,
@@ -336,6 +340,31 @@ const resultOf = (rule: ContentOpsRule, checkpoint: Checkpoint, fromLocale: stri
         written: checkpoint.written,
         skipped: checkpoint.skipped,
       };
+};
+
+/** `requiredEmpty`, `fieldEmpty`: proposals for empty fields (`fillJob.ts`); nothing is written. */
+const runFill = async (state: RunState, payload: ContentOpsJobPayload & { rule: FillResult['rule'] }) => {
+  const { groups, scanCapped } = await loadFillGroups(state.context, {
+    rule: payload.rule,
+    modelKey: payload.modelKey,
+    fieldPath: payload.fieldPath ?? null,
+    locale: payload.locale ?? null,
+  });
+  state.checkpoint.fills ??= [];
+  state.checkpoint.scanCapped = scanCapped;
+  await proposeFills(
+    {
+      context: state.context,
+      meter: state.meter,
+      signal: state.job.signal,
+      done: state.checkpoint.done,
+      proposals: state.checkpoint.fills,
+      skipped: state.checkpoint.skipped,
+      save: () => saveProgress(state),
+    },
+    groups,
+  );
+};
 
 /** The context the run works in: the actor as they are now (roles re-checked), on the run's site. */
 const runContext = async (
@@ -385,11 +414,16 @@ export const runContentOpsJob = async (
     state = { job, context: { ...context, signal: job.signal }, meter: { ...checkpoint.meter }, checkpoint };
     await assistRunsRepository.update(run.id, { status: 'running' }, context.db);
     const fromLocale = payload.fromLocale ?? context.snapshot.defaultLocale;
-    const findings = await loadFindings(state.context, payload.rule, payload.modelKey);
-    if (payload.rule === 'altMissing') {
-      await proposeAlts(state, findings);
+    if (payload.rule === 'requiredEmpty' || payload.rule === 'fieldEmpty') {
+      await runFill(state, { ...payload, rule: payload.rule });
+    } else if (payload.rule === 'altMissing') {
+      await proposeAlts(state, await loadFindings(state.context, payload.rule, payload.modelKey));
     } else {
-      await proposeLocales(state, findings, fromLocale);
+      await proposeLocales(
+        state,
+        await loadFindings(state.context, payload.rule, payload.modelKey),
+        fromLocale,
+      );
     }
     if (job.signal.aborted) {
       throw new Error('Stopped by shutdown; the next attempt resumes from the checkpoint');

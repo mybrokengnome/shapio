@@ -16,8 +16,15 @@ export const ASSIST_CONTENT_OPS_JOB = 'assist.contentOps';
 export const ASSIST_CONTENT_OPS_MAX_ATTEMPTS = 3;
 /** Most findings one content-ops run works through. */
 export const ASSIST_CONTENT_OPS_MAX_FINDINGS = 50;
-export const CONTENT_OPS_RULES = ['altMissing', 'localeMissing'] as const;
+export const CONTENT_OPS_RULES = ['altMissing', 'localeMissing', 'requiredEmpty', 'fieldEmpty'] as const;
 export type ContentOpsRule = (typeof CONTENT_OPS_RULES)[number];
+/** Rules that propose field values to accept into a change set (plan write-and-fill). */
+export const FILL_RULES = ['requiredEmpty', 'fieldEmpty'] as const;
+export type FillRule = (typeof FILL_RULES)[number];
+export const isFillRule = (rule: string): rule is FillRule =>
+  (FILL_RULES as readonly string[]).includes(rule);
+/** Most entries a component field's fill reads looking for empty values (filtered in memory). */
+export const ASSIST_FILL_SCAN_LIMIT = 2_000;
 
 /** Images sent to a vision model are re-encoded as JPEG fitting this box. */
 export const ASSIST_IMAGE_MAX_EDGE = 1024;

@@ -315,6 +315,115 @@ const saveDraftChanges = async (
 const isUnchangedSave = (previous: HeadRecord | undefined, after: ContentData): previous is HeadRecord =>
   previous !== undefined && previous.autosaved_at === null && isDeepStrictEqual(previous.data, after);
 
+/** What a draft update reads before it decides its patch (the locked heads and the draft it replaces). */
+export type DraftUpdateBase = {
+  before: Readonly<ContentData>;
+  previous: HeadRecord | undefined;
+  heads: readonly HeadRecord[];
+};
+
+export type EntryUpdateWrite = {
+  model: ContentModel;
+  policy: Policy;
+  validator: ModelValidator;
+  id: string;
+  locale: string;
+  autosave: boolean;
+  /**
+   * The draft version the caller saw; null creates this locale's version. Left out, the version is not
+   * checked: the caller guards what it changes in `patchOf` (the heads are locked by then).
+   */
+  expectedVersion?: number | null;
+  /**
+   * The patch (field IDs; null clears a field), or a function that makes it from the locked draft (it may
+   * throw to refuse the write).
+   */
+  patch: Readonly<ContentData> | ((base: DraftUpdateBase) => ContentData);
+};
+
+/**
+ * The body of `updateEntry` inside a transaction the caller holds, after `guardEntryWrite` (fill accepts
+ * compose it with a change set item). Returns the locale written and its draft head afterwards.
+ */
+export const writeEntryUpdate = async (
+  trx: Transaction<DB>,
+  context: ContentServiceContext,
+  input: EntryUpdateWrite,
+): Promise<{ locale: string; head: HeadRecord | undefined }> => {
+  const { model, policy, id, autosave } = input;
+  const write: WriteContext = { trx, siteId: context.site.id, model, actor: context.actor, now: new Date() };
+  const entry = assertEntryVisible(
+    policy,
+    context.actor,
+    await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
+    id,
+  );
+  const writeMask = rowWriteMask(policy, context.actor, entry);
+  if (typeof input.patch !== 'function') {
+    // After the row check, so an entry the caller cannot see stays a 404 (issue #80).
+    assertWritable(writeMask, model.definition.fields, Object.keys(input.patch));
+  }
+  const heads = await entryHeadsRepository.lockForEntry(id, trx);
+  // Non-localized entries keep their heads in the locale they were created in.
+  const targetLocale = model.definition.localized
+    ? input.locale
+    : (heads.find((head) => head.state === 'draft')?.locale ?? input.locale);
+  const previous = heads.find((head) => head.state === 'draft' && head.locale === targetLocale);
+  if (!previous && (!model.definition.localized || input.expectedVersion !== null)) {
+    throw entryLocaleNotFound(
+      id,
+      targetLocale,
+      heads.filter((head) => head.state === 'draft').map((head) => head.locale),
+    );
+  }
+  if (previous && input.expectedVersion !== undefined && previous.version !== input.expectedVersion) {
+    throw contentVersionConflict(input.expectedVersion, previous.version);
+  }
+  const before = previous?.data ?? newLocaleBase(model, heads);
+  let patch = input.patch;
+  if (typeof patch === 'function') {
+    patch = patch({ before, previous, heads });
+    assertWritable(writeMask, model.definition.fields, Object.keys(patch));
+  }
+  const outcome = validated(input.validator, applyPatch(before, patch), autosave);
+  if (isUnchangedSave(previous, outcome.data)) {
+    // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
+    return { locale: targetLocale, head: previous };
+  }
+  await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]));
+  const hook = {
+    trx,
+    site: context.site,
+    model,
+    entryId: id,
+    locale: targetLocale,
+    data: outcome.data,
+    before,
+    actor: context.actor,
+  };
+  await context.hooks.run('beforeUpdate', hook);
+  const changes = draftChanges(model, heads, {
+    locale: targetLocale,
+    previous,
+    before,
+    after: outcome.data,
+    autosave,
+  });
+  const written = await saveDraftChanges(context, write, id, changes, previous ? 'save' : 'localize');
+  await syncEntryUniqueValues(write, id);
+  await touchEntry(write, id);
+  if (!autosave) {
+    await writeEntryEvent(trx, context.site.id, model, 'entry.updated', id, {
+      locale: targetLocale,
+      locales: changes.map((change) => change.locale),
+      revisionId: written[0]?.revision_id ?? null,
+    });
+    // Autosaves are not saves: post-commit work (webhooks, after hooks) follows saved revisions only.
+    await context.hooks.run('afterUpdate', hook);
+  }
+  return { locale: targetLocale, head: written[0] };
+};
+
 export const updateEntry = async (
   context: ContentServiceContext,
   modelKey: string,
@@ -323,82 +432,21 @@ export const updateEntry = async (
 ): Promise<AdminEntryView> => {
   const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
-  const autosave = Boolean(input.autosave) && model.definition.draftAndPublish;
   const validator = buildValidator(context.snapshot, model);
   const patch = inputPatch(validator, input.data);
-  let servedLocale = locale;
-  await runEntryWrite(context.db, model, context.site.id, [locale], async (trx) => {
-    const write: WriteContext = {
-      trx,
-      siteId: context.site.id,
+  const written = await runEntryWrite(context.db, model, context.site.id, [locale], (trx) =>
+    writeEntryUpdate(trx, context, {
       model,
-      actor: context.actor,
-      now: new Date(),
-    };
-    const entry = assertEntryVisible(
       policy,
-      context.actor,
-      await entriesRepository.lockLive(id, model.definition.id, context.site.id, trx),
+      validator,
       id,
-    );
-    // After the row check, so an entry the caller cannot see stays a 404 (issue #80).
-    assertWritable(rowWriteMask(policy, context.actor, entry), model.definition.fields, Object.keys(patch));
-    const heads = await entryHeadsRepository.lockForEntry(id, trx);
-    // Non-localized entries keep their heads in the locale they were created in.
-    const targetLocale = model.definition.localized
-      ? locale
-      : (heads.find((head) => head.state === 'draft')?.locale ?? locale);
-    servedLocale = targetLocale;
-    const previous = heads.find((head) => head.state === 'draft' && head.locale === targetLocale);
-    if (!previous && (!model.definition.localized || input.expectedVersion !== null)) {
-      throw entryLocaleNotFound(
-        id,
-        targetLocale,
-        heads.filter((head) => head.state === 'draft').map((head) => head.locale),
-      );
-    }
-    if (previous && previous.version !== input.expectedVersion) {
-      throw contentVersionConflict(input.expectedVersion, previous.version);
-    }
-    const before = previous?.data ?? newLocaleBase(model, heads);
-    const outcome = validated(validator, applyPatch(before, patch), autosave);
-    if (isUnchangedSave(previous, outcome.data)) {
-      // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
-      return;
-    }
-    await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]));
-    const hook = {
-      trx,
-      site: context.site,
-      model,
-      entryId: id,
-      locale: targetLocale,
-      data: outcome.data,
-      before,
-      actor: context.actor,
-    };
-    await context.hooks.run('beforeUpdate', hook);
-    const changes = draftChanges(model, heads, {
-      locale: targetLocale,
-      previous,
-      before,
-      after: outcome.data,
-      autosave,
-    });
-    const written = await saveDraftChanges(context, write, id, changes, previous ? 'save' : 'localize');
-    await syncEntryUniqueValues(write, id);
-    await touchEntry(write, id);
-    if (!autosave) {
-      await writeEntryEvent(trx, context.site.id, model, 'entry.updated', id, {
-        locale: targetLocale,
-        locales: changes.map((change) => change.locale),
-        revisionId: written[0]?.revision_id ?? null,
-      });
-      // Autosaves are not saves: post-commit work (webhooks, after hooks) follows saved revisions only.
-      await context.hooks.run('afterUpdate', hook);
-    }
-  });
-  return viewAfterWrite(context, model, policy, id, servedLocale);
+      locale,
+      autosave: Boolean(input.autosave) && model.definition.draftAndPublish,
+      expectedVersion: input.expectedVersion,
+      patch,
+    }),
+  );
+  return viewAfterWrite(context, model, policy, id, written.locale);
 };
 
 /** Brings back an older revision as the new draft of its locale (a new revision; history is never rewritten). */

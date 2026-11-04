@@ -51,6 +51,7 @@ describe('assist off (AI_PROVIDER unset)', () => {
         ['/api/admin/assist/suggest', { modelKey: 'post', entryId: ENTRY_ID, fieldPath: '/summary' }],
         ['/api/admin/assist/schema/draft', { description: 'A blog' }],
         ['/api/admin/assist/content-ops/propose', { rule: 'altMissing' }],
+        [`/api/admin/assist/content-ops/${ENTRY_ID}/accept`, { items: [{ key: 'k', value: 'v' }] }],
       ];
       for (const [url, body] of posts) {
         expectStatus(await owner.post(url, body), 404);

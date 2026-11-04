@@ -16,7 +16,14 @@ All notable changes to Shapio are listed here. The format follows
   included: a value from the rest of the entry, shaped by the field's label, help text, and limits, that you
   review before saving. It replaces "Summarize from body" in the admin; `POST /api/admin/assist/summarize` stays.
   `POST /api/admin/assist/suggest` takes the field as a JSON pointer (`/keywords`, `/seo/title`).
-- `@shapio/client` has `admin.assist.write` and `admin.assist.suggest`.
+- Fill empty fields across entries with one reviewed run. The Inbox's "Required fields left empty" group has
+  **Propose fixes**, and a content type's list has **Fill in…** for any string, text, or enum field. Values
+  come back as a review list to edit, accept, or reject; accepting saves the entry's draft and adds it to one
+  change set opened for the run, so nothing goes live until that set ships. An entry whose draft already held
+  unpublished changes, or that was never published, is saved but left out of the set. Content-ops gains the
+  rules `requiredEmpty` and `fieldEmpty`, and `POST /api/admin/assist/content-ops/:runId/accept` accepts
+  proposals.
+- `@shapio/client` has `admin.assist.write`, `admin.assist.suggest`, and `admin.assist.acceptContentOps`.
 
 ## [0.7.0] - 2026-10-29
 

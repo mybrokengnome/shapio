@@ -108,6 +108,10 @@ export const resolveSuggestTarget = (model: ContentModel, fieldPath: string): Su
   };
 };
 
+/** The field's label, with its component field's when it is a component's field ("SEO › Title"). */
+export const fieldLabelOf = (target: SuggestTarget): string =>
+  target.parent ? `${target.parent.field.label} › ${target.field.label}` : target.field.label;
+
 /** The target's stored value in a draft's data (keyed by field IDs). */
 export const targetValue = (data: Readonly<ContentData>, target: SuggestTarget): unknown => {
   const top = data[target.topField.id];

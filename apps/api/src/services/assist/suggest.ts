@@ -12,7 +12,7 @@ import type { AssistServiceContext } from './context.js';
 import { loadEntryDraft } from './entrySource.js';
 import { entrySourceText } from './entryText.js';
 import { runAssist } from './runs.js';
-import { resolveSuggestTarget, type SuggestTarget } from './suggestTarget.js';
+import { fieldLabelOf, resolveSuggestTarget, type SuggestTarget } from './suggestTarget.js';
 import { askWithinLength, cleanModelText } from './text.js';
 
 export type SuggestInput = {
@@ -38,9 +38,6 @@ export type SuggestSubject = {
 export const nothingToWorkFrom = () =>
   new AppError(422, 'ASSIST_NOTHING_TO_WORK_FROM', 'The entry has no text to make a suggestion from yet');
 
-const labelOf = (target: SuggestTarget) =>
-  target.parent ? `${target.parent.field.label} › ${target.field.label}` : target.field.label;
-
 const deduplicated = (values: readonly string[]) => [...new Set(values)];
 
 /** The text the subject's suggestion is made from; 422 ASSIST_NOTHING_TO_WORK_FROM when there is none. */
@@ -56,20 +53,20 @@ export const subjectSource = (subject: SuggestSubject): string => {
 };
 
 /**
- * A value for the subject's field, from the rest of its draft (plan write-and-fill §2): text with one shorter
- * retry and a cut at the field's maximum, or an enum answer checked against the allowed values. The model calls
- * count on `meter`. 422 ASSIST_NOTHING_TO_WORK_FROM when nothing readable holds text.
+ * A value for the subject's field, made from `source` (`subjectSource`, computed once by the caller) (plan
+ * write-and-fill §2): text with one shorter retry and a cut at the field's maximum, or an enum answer checked
+ * against the allowed values. The model calls count on `meter`.
  */
 export const suggestFieldValue = async (
   context: AssistServiceContext,
   meter: UsageMeter,
   subject: SuggestSubject,
+  source: string,
 ): Promise<{ value: SuggestedValue; truncated: boolean }> => {
   const { target } = subject;
-  const source = subjectSource(subject);
   const base = {
     modelLabel: subject.model.definition.label,
-    fieldLabel: labelOf(target),
+    fieldLabel: fieldLabelOf(target),
     fieldDescription: target.field.description,
     isTitle: target.isTitle,
     locale: subject.locale,
@@ -147,7 +144,7 @@ export const suggestEntryValue = async (
     readMask: rowReadMask(readPolicy, context.actor, entry),
   };
   // Before the run: an entry with nothing to work from is not a model request.
-  subjectSource(subject);
+  const source = subjectSource(subject);
   return runAssist(
     context,
     {
@@ -160,6 +157,6 @@ export const suggestEntryValue = async (
         locale: draft.locale,
       },
     },
-    async (meter) => ({ ...(await suggestFieldValue(context, meter, subject)), model: meter.model }),
+    async (meter) => ({ ...(await suggestFieldValue(context, meter, subject, source)), model: meter.model }),
   );
 };

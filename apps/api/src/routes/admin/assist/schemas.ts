@@ -145,6 +145,8 @@ const ContentOpsBodySchema = Type.Object(
     rule: ContentOpsRuleSchema,
     modelKey: Type.Optional(ModelKeySchema),
     fromLocale: Type.Optional(LocaleCodeSchema),
+    fieldPath: Type.Optional(FieldPathSchema),
+    locale: Type.Optional(LocaleCodeSchema),
   },
   closed,
 );
@@ -168,6 +170,42 @@ export const contentOpsRunSchema = {
       finishedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
       error: Type.Union([Type.Object({ code: Type.String() }), Type.Null()]),
       result: Type.Unknown(),
+    }),
+  },
+};
+
+const AcceptBodySchema = Type.Object(
+  {
+    items: Type.Array(
+      Type.Object(
+        // A string, or a list of strings for a multiple enum. Checked by the service: ajv's type coercion would
+        // turn a one-item list into a string under a union.
+        { key: Type.String({ minLength: 1, maxLength: 400 }), value: Type.Unknown() },
+        closed,
+      ),
+      { minItems: 1, maxItems: 50 },
+    ),
+  },
+  closed,
+);
+export type AcceptBody = Static<typeof AcceptBodySchema>;
+export const acceptContentOpsSchema = {
+  params: RunParamsSchema,
+  body: AcceptBodySchema,
+  response: {
+    200: Type.Object({
+      entryId: Type.String(),
+      modelKey: Type.String(),
+      locale: Type.String(),
+      version: Type.Integer(),
+      changeSet: Type.Union([
+        Type.Object({ added: Type.Literal(true), id: Type.String() }),
+        Type.Object({
+          added: Type.Literal(false),
+          id: Type.Union([Type.String(), Type.Null()]),
+          reason: Type.Enum(['unpublishedChanges', 'neverPublished']),
+        }),
+      ]),
     }),
   },
 };

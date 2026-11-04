@@ -231,6 +231,22 @@ export const listUnassigned = (
   return query.execute();
 };
 
+/** Whether the set holds an item of this entry and locale (any action). */
+export const hasEntryItem = async (
+  changeSetId: string,
+  entryId: string,
+  locale: string,
+  executor: Executor = db,
+): Promise<boolean> =>
+  (await executor
+    .selectFrom('change_set_items')
+    .select('id')
+    .where('change_set_id', '=', changeSetId)
+    .where('kind', '=', 'entry')
+    .where('entry_id', '=', entryId)
+    .where('locale', '=', locale)
+    .executeTakeFirst()) !== undefined;
+
 /** Every head of these entries (titles, review diffs, draft versions). */
 export const findHeadsForEntries = (entryIds: readonly string[], executor: Executor = db) =>
   entryIds.length === 0

@@ -75,10 +75,20 @@ export const runEntryWrite = <T>(
   write: (trx: Transaction<DB>) => Promise<T>,
 ): Promise<T> =>
   database.transaction().execute(async (trx) => {
-    await guardModelVersions(trx, [model], siteId);
-    const missing = await lockWriteLocales(trx, locales);
-    if (missing !== undefined) {
-      throw unknownLocale(missing);
-    }
+    await guardEntryWrite(trx, model, siteId, locales);
     return write(trx);
   });
+
+/** Steps 1–3 of `runEntryWrite` inside a transaction the caller holds (writes composed with other work). */
+export const guardEntryWrite = async (
+  trx: Transaction<DB>,
+  model: ContentModel,
+  siteId: string,
+  locales: readonly string[],
+): Promise<void> => {
+  await guardModelVersions(trx, [model], siteId);
+  const missing = await lockWriteLocales(trx, locales);
+  if (missing !== undefined) {
+    throw unknownLocale(missing);
+  }
+};

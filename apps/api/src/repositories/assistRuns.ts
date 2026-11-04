@@ -20,6 +20,16 @@ export const findOnSite = (siteId: string, id: string, trx: Executor = db) =>
     .where('id', '=', id)
     .executeTakeFirst();
 
+/** Locks one run of a site (fill accepts: one change set per run, opened under this lock). */
+export const lockOnSite = (siteId: string, id: string, trx: Transaction<DB>) =>
+  trx
+    .selectFrom('assist_runs')
+    .selectAll()
+    .where('site_id', '=', siteId)
+    .where('id', '=', id)
+    .forUpdate()
+    .executeTakeFirst();
+
 export const findById = (id: string, trx: Executor = db) =>
   trx.selectFrom('assist_runs').selectAll().where('id', '=', id).executeTakeFirst();
 
