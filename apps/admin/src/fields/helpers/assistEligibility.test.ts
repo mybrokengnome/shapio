@@ -47,13 +47,13 @@ if (!seoTitle) {
 }
 
 describe('isSuggestible', () => {
-  it('accepts top-level string, text and enum fields, the title included', () => {
+  it('accepts top-level string and text fields, the title included', () => {
     expect(isSuggestible(article, fieldOf('title'), '/title')).toBe(true);
     expect(isSuggestible(article, fieldOf('excerpt'), '/excerpt')).toBe(true);
-    expect(isSuggestible(article, fieldOf('kind'), '/kind')).toBe(true);
   });
 
-  it('refuses other types and deprecated fields', () => {
+  it('refuses enums (the API suggests them, the admin does not), other types and deprecated fields', () => {
+    expect(isSuggestible(article, fieldOf('kind'), '/kind')).toBe(false);
     expect(isSuggestible(article, fieldOf('readingTime'), '/readingTime')).toBe(false);
     expect(isSuggestible(article, fieldOf('old'), '/old')).toBe(false);
     expect(isSuggestible(article, fieldOf('seo'), '/seo')).toBe(false);

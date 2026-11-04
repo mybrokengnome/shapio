@@ -275,7 +275,13 @@ test('Suggest fills the property from the rest of the entry, saving the document
   // The property's popover (the settings drawer may show the same field).
   const excerpt = page.getByRole('textbox', { name: /^Excerpt/ });
   const chip = page.locator('[data-slot="popover-content"]').filter({ has: excerpt });
-  await chip.getByRole('button', { name: 'Suggest a value for Excerpt', exact: true }).click();
+  const suggest = chip.getByRole('button', { name: 'Suggest a value for Excerpt', exact: true });
+  // Suggest shows with focus in the field, and Tab from the input reaches it (it is never out of the tab order).
+  await chip.getByRole('textbox', { name: /^Excerpt/ }).focus();
+  await page.keyboard.press('Tab');
+  await expect(suggest).toBeFocused();
+  await expect(suggest.locator('xpath=../..')).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Enter');
   await expect(chip.getByRole('textbox', { name: /^Excerpt/ })).toHaveValue(suggestionFor('Excerpt'));
   // The value was made from the saved entry, whose body is the rewritten one.
   expect(llm.calls.at(-1)?.firstUserText).toContain(ASSIST_ANSWERS.rewrite);
@@ -419,6 +425,16 @@ test('Form layout: the body toolbar has the same Assist menu (and none with assi
     await page.unroute('**/api/admin/assist/status');
   }
   await page.reload();
+
+  // Suggest under a form field appears when the field is pointed at.
+  const excerptField = page.locator('[data-field-path="/excerpt"]');
+  await excerptField.hover();
+  const excerptSuggest = excerptField.getByRole('button', {
+    name: 'Suggest a value for Excerpt',
+    exact: true,
+  });
+  await expect(excerptSuggest.locator('xpath=../..')).toHaveCSS('opacity', '1');
+  await captureScreen(page, 'assist-13-form-suggest-hover', { viewports: ['desktop'] });
 
   // Rewrite… needs selected text; Continue writing goes at the end of the text.
   await assistMenu.click();

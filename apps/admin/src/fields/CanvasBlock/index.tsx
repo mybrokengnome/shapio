@@ -40,7 +40,7 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
       id={`${control.inputId}-section`}
       data-field-path={path}
       data-canvas-field={field.type}
-      className="relative min-w-0 scroll-mt-24 space-y-2"
+      className={cn('relative min-w-0 scroll-mt-24 space-y-2', canSuggest && 'group/field')}
     >
       <div
         className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"

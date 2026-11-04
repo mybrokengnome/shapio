@@ -1,11 +1,14 @@
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
 
-/** Field types assist can suggest a value for (the server's rule, services/assist/suggestTarget.ts). */
-const SUGGESTIBLE_TYPES: ReadonlySet<string> = new Set(['string', 'text', 'enum']);
+/**
+ * Field types the admin offers Suggest and Fill in… for. The server also suggests enum values
+ * (services/assist/suggestTarget.ts), for API callers and `requiredEmpty` runs; the admin leaves enums out.
+ */
+const SUGGESTIBLE_TYPES: ReadonlySet<string> = new Set(['string', 'text']);
 
 /**
- * Whether "Suggest" can fill a field at `path` (a JSON pointer in API IDs): a live string, text or enum
- * field of the entry itself (`/keywords`, the title included), or of a single, non-repeatable component
+ * Whether "Suggest" can fill a field at `path` (a JSON pointer in API IDs): a live string or text field
+ * of the entry itself (`/keywords`, the title included), or of a single, non-repeatable component
  * field (`/seo/title`). Repeatable components, dynamic zones and anything deeper are left out.
  */
 export const isSuggestible = (model: ModelDefinition, field: FieldDefinition, path: string): boolean => {

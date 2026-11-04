@@ -48,7 +48,11 @@ const InlineTitle = ({ field, heading }: InlineTitleProps) => {
   const canSuggest = useCanSuggest(field, path);
   const invalid = control.messages.length > 0;
   return (
-    <div className="space-y-1" data-field-path={path} id={`${control.inputId}-section`}>
+    <div
+      className={cn('space-y-1', canSuggest && 'group/field')}
+      data-field-path={path}
+      id={`${control.inputId}-section`}
+    >
       <h1 className="sr-only">{heading}</h1>
       <textarea
         id={control.inputId}

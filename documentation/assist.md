@@ -147,10 +147,10 @@ as a draft. Nothing is published.
   direction). The proposal opens in an editable box beside the document, as rich text: **Insert** puts it at
   that place as real headings, paragraphs, lists and quotes, Discard throws it away. Images, tables and links
   are never written.
-- **Suggest**: under any string, text or enum field, the title and the fields of a single component (such as
-  SEO) included. It writes a value from the rest of the entry (title, properties, body), shaped by the field's
-  label, help text and limits, and fills the field; you review it before saving. Numbers, dates, slugs, media,
-  relations and repeatable components get no suggestion.
+- **Suggest**: under any string or text field, the title and the fields of a single component (such as SEO)
+  included; it shows when you point at the field or tab into it. It writes a value from the rest of the entry (title, properties, body), shaped by the field's
+  label, help text and limits, and fills the field; you review it before saving. Enums, numbers, dates, slugs,
+  media, relations and repeatable components get no suggestion in the admin (the API still takes enum fields).
 - **Translate {locale} from {source}**: in the Settings drawer's locale list, beside each locale the entry
   doesn't have yet, and in the notice shown when you open a locale that isn't started. It saves the
   translation as that locale's first draft and opens it with a "Proposed by {model}" banner. The banner lists
@@ -168,7 +168,7 @@ as a draft. Nothing is published.
   - Required fields open in a review list: one row per field with the proposed value, which you can edit,
     then Accept or Reject. Accept saves the entry's draft and adds the entry to the run's change set.
 - **Fill in…** (a button at the top of a content type's list, beside New, with `changes.manage`): pick a
-  string, text, or enum field (also a field of a single component such as SEO). It proposes values for the
+  string or text field (also a field of a single component such as SEO; the API also fills enum fields). It proposes values for the
   entries where that field is empty, in the list's current locale, and opens the same review list.
 - **Settings → Assist**: whether assist is on, the provider and model, this month's usage (with
   `changes.manage`), and a **Try it** box that runs a rewrite without saving anything.

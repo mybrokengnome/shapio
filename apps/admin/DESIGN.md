@@ -416,8 +416,12 @@ message.
 
 **`FieldAssist`** (`fields/FieldAssist`) `{ label; path; onChange; align? }`
 "Suggest" under a field assist can fill: rendered by `FieldControl`, `CanvasBlock` and the document's title
-only where `useCanSuggest` holds (string, text or enum; top level or a single component's field; an existing,
-editable entry). Its accessible name is "Suggest a value for {field}"; the explanation is behind `InfoHint`.
+only where `useCanSuggest` holds (string or text, not enums; top level or a single component's field; an
+existing, editable entry). Its accessible name is "Suggest a value for {field}"; the explanation is behind
+`InfoHint`, on the same row. The row is out of sight (opacity, never removed) until the pointer is over the
+field or focus is inside it: the field's wrapper is a `group/field`, and the button stays in the tab order, so
+Tab from the input reaches and shows it. On touch screens (`pointer-coarse`) it is always shown, and while a
+suggestion is pending or has a message it stays shown. Its height is always reserved, so nothing moves.
 
 **Write proposal** (`fields/RichTextField/canvas/WritePopover`, `ProposalEditor`)
 "Write…" and "Continue writing" in the canvas's `/` and `+` menus open a popover anchored where the text

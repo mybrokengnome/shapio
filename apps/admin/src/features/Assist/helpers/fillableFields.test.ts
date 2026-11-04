@@ -15,6 +15,12 @@ const article = model({
   fields: [
     field({ apiKey: 'title', label: 'Title' }),
     field({ apiKey: 'views', label: 'Views', type: 'integer' }),
+    field({
+      apiKey: 'category',
+      label: 'Category',
+      type: 'enum',
+      settings: { values: [{ value: 'news', label: 'News' }] },
+    }),
     field({ apiKey: 'seo', label: 'SEO', type: 'component', settings: { component: seo.id } }),
     field({
       apiKey: 'sections',
@@ -26,7 +32,7 @@ const article = model({
 });
 
 describe('fillableFieldsOf', () => {
-  it("lists suggestible fields and a single component's suggestible fields, not repeatable ones", () => {
+  it("lists string and text fields and a single component's, not enums or repeatable ones", () => {
     const components = new Map([
       [seo.id, seo],
       [section.id, section],

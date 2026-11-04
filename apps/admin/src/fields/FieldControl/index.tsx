@@ -50,6 +50,8 @@ export const FieldControl = memo(
         className={cn(
           'min-w-0 scroll-mt-24',
           inline ? 'grid gap-x-4 gap-y-1 sm:grid-cols-[9rem_minmax(0,1fr)]' : 'space-y-2',
+          // Suggest shows while the pointer is over the field or focus is in it (FieldAssist).
+          canSuggest && 'group/field',
           className,
         )}
         id={`${control.inputId}-section`}

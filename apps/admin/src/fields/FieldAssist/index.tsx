@@ -20,7 +20,8 @@ type FieldAssistProps = {
 /**
  * "Suggest" under a field that assist can fill (render it only where `useCanSuggest` holds): the model
  * writes a value from the rest of the entry into the field, as an edit to review and save. Renders nothing
- * while assist is off.
+ * while assist is off. It appears while the pointer is over the field or focus is inside it (always on touch
+ * screens), and stays while it has something to show.
  */
 export const FieldAssist = ({ label, path, onChange, align = 'start' }: FieldAssistProps) => {
   const { t } = useTranslation();
@@ -30,8 +31,20 @@ export const FieldAssist = ({ label, path, onChange, align = 'start' }: FieldAss
     return null;
   }
   const name = t('assist.suggest.runFor', { field: label });
+  // Something to see (progress, why it didn't run, a shortened value): shown whatever the pointer does.
+  const showing = suggest.pending || suggest.blocked !== null || suggest.error !== null || suggest.truncated;
   return (
-    <div className={cn('space-y-1', align === 'end' && 'flex flex-col items-end')}>
+    <div
+      className={cn(
+        'space-y-1 transition-opacity',
+        // Out of sight until the field is pointed at or focused (the field is a `group/field`); still in the
+        // tab order and the accessibility tree, and always shown on touch screens, which have no hover.
+        showing
+          ? 'opacity-100'
+          : 'opacity-0 group-focus-within/field:opacity-100 group-hover/field:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100',
+        align === 'end' && 'flex flex-col items-end',
+      )}
+    >
       <div className="flex items-center gap-1">
         <AssistButton
           size="xs"

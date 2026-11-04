@@ -73,16 +73,14 @@ test.beforeAll(async ({ browser }) => {
     fields: [
       { apiKey: 'title', label: 'Title', type: 'string' },
       { apiKey: 'summary', label: 'Summary', type: 'text' },
+      // Optional: filled from the list's "Fill in…".
+      { apiKey: 'subtitle', label: 'Subtitle', type: 'text' },
+      // An enum: the admin offers no suggestion for it.
       {
         apiKey: 'category',
         label: 'Category',
         type: 'enum',
-        settings: {
-          values: [
-            { value: 'news', label: 'News' },
-            { value: 'guide', label: 'Guide' },
-          ],
-        },
+        settings: { values: [{ value: 'news', label: 'News' }] },
       },
     ],
   });
@@ -200,12 +198,14 @@ test('Inbox: required fields left empty get proposed values; Accept saves drafts
   expect(inSet).not.toContain(entries.draft);
 });
 
-test('a content type\'s "Fill in…" proposes values for an optional field', async () => {
+test('a content type\'s "Fill in…" proposes values for an optional text field', async () => {
   await page.goto(`${server.adminUrl}content/tip`);
   await page.getByRole('button', { name: 'Fill in…' }).click();
   const popover = page.getByRole('dialog', { name: 'Fill in a field' });
   await popover.getByRole('combobox', { name: 'Field' }).click();
-  await page.getByRole('option', { name: 'Category' }).click();
+  // Only string and text fields are offered, not the Category enum.
+  await expect(page.getByRole('option', { name: 'Category' })).toHaveCount(0);
+  await page.getByRole('option', { name: 'Subtitle' }).click();
   await captureScreen(page, 'assist-fill-03-fill-in', { viewports: ['desktop'] });
   await popover.getByRole('button', { name: 'Propose values' }).click();
   // "Ferry times" still lacks its required summary, which this run can't fill: it is left as it is.
@@ -213,10 +213,10 @@ test('a content type\'s "Fill in…" proposes values for an optional field', asy
   const sheet = page.getByRole('dialog', { name: 'Proposed values' });
   await expect(sheet.getByText('1 left as it is')).toBeVisible();
   const draft = groupOf(sheet, 'Lighthouse visit');
-  await expect(draft.getByRole('combobox', { name: 'Category' })).toHaveText('News');
+  await expect(draft.getByRole('textbox', { name: 'Subtitle' })).toHaveValue(suggestionFor('Subtitle'));
   await draft.getByRole('button', { name: 'Accept values for Lighthouse visit' }).click();
   await expect(draft.getByText('Saved as draft')).toBeVisible();
-  expect((await entry(entries.draft)).data.category).toBe('news');
+  expect((await entry(entries.draft)).data.subtitle).toBe(suggestionFor('Subtitle'));
   await sheet.getByRole('button', { name: 'Close' }).first().click();
   await expect(sheet).toBeHidden();
 });
