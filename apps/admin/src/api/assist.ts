@@ -6,7 +6,6 @@ import type {
   RewriteInput,
   SchemaDraftInput,
   SuggestInput,
-  SummarizeInput,
   TranslateInput,
   WriteInput,
 } from '@shapio/client';
@@ -37,13 +36,6 @@ export const useSuggestAltText = () =>
     mutationKey: ['assist', 'altText'],
     meta: silent,
     mutationFn: (input: AltTextInput) => withCsrf(() => adminApi.assist.altText(input)),
-  });
-
-export const useSummarizeField = () =>
-  useMutation({
-    mutationKey: ['assist', 'summarize'],
-    meta: silent,
-    mutationFn: (input: SummarizeInput) => withCsrf(() => adminApi.assist.summarize(input)),
   });
 
 /** A value for one field, from the rest of the entry's saved draft; the caller fills the field with it. */

@@ -161,9 +161,13 @@
       "ASSIST_NOT_AN_IMAGE": "Alt text can only be suggested for images.",
       "ASSIST_FIELD_NOT_SUMMARIZABLE": "This field can't be filled with a summary.",
       "ASSIST_NOTHING_TO_SUMMARIZE": "There is no saved body text to summarize yet.",
+      "ASSIST_FIELD_NOT_SUGGESTIBLE": "Assist can't suggest a value for this field.",
+      "ASSIST_NOTHING_TO_WORK_FROM": "There is nothing saved in this entry to work from yet. Write a title or some text first.",
       "ASSIST_NOT_LOCALIZED": "This content type isn't localized.",
       "ASSIST_SAME_LOCALE": "Pick a different locale to translate from.",
       "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists.",
+      "ASSIST_PROPOSAL_NOT_FOUND": "That proposal is no longer part of the run.",
+      "ASSIST_FIELD_FILLED_MEANWHILE": "This field got a value meanwhile.",
       "APPROVAL_UNKNOWN_ROLE": "A role this workflow names was deleted. Uncheck it and save again.",
       "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this site a workflow of its own.",
       "CHANGE_SET_APPROVAL_NOT_ELIGIBLE": "You can't sign off on this change set at its current stage.",
@@ -3396,9 +3400,10 @@
     },
     "saveFirst": "Save your changes first: assist reads the saved version.",
     "saveFailed": "Your changes couldn't be saved, so assist didn't run. Check the document and try again.",
-    "summarize": {
-      "run": "Summarize from body",
-      "hint": "Writes a summary of the body into this field. Review it before you save: it's a proposal."
+    "suggest": {
+      "run": "Suggest",
+      "runFor": "Suggest a value for {{field}}",
+      "hint": "Writes a value from the rest of the entry (title, properties, and body). Review it before you save."
     },
     "translate": {
       "run": "Translate {{locale}} from {{from}}",

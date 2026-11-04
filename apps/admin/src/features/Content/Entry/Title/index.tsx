@@ -1,8 +1,10 @@
 import type { FieldDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
+import { FieldAssist } from '@/fields/FieldAssist';
 import { FieldMessages } from '@/fields/FieldMessages';
 import { useFieldsEnvironment } from '@/fields/form/context';
 import { textValue } from '@/fields/helpers/props';
+import { useCanSuggest } from '@/fields/hooks/useCanSuggest';
 import { useFieldControl } from '@/fields/hooks/useFieldControl';
 import { useTopLevelValue } from '@/fields/hooks/useTopLevelValue';
 import { cn } from '@/helpers/cn';
@@ -43,6 +45,7 @@ const InlineTitle = ({ field, heading }: InlineTitleProps) => {
   const { value, onChange } = useTopLevelValue(field);
   const path = `/${field.apiKey}`;
   const control = useFieldControl({ field, owner: model, value, onChange, path });
+  const canSuggest = useCanSuggest(field, path);
   const invalid = control.messages.length > 0;
   return (
     <div className="space-y-1" data-field-path={path} id={`${control.inputId}-section`}>
@@ -78,6 +81,7 @@ const InlineTitle = ({ field, heading }: InlineTitleProps) => {
         )}
       />
       <FieldMessages field={field} control={control} />
+      {canSuggest ? <FieldAssist label={field.label} path={path} onChange={onChange} /> : null}
     </div>
   );
 };

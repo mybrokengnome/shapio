@@ -1,4 +1,4 @@
-import type { SaveBeforeAssist } from '../hooks/useAssistTarget';
+import type { SaveBeforeAssist } from '../form/assistTarget';
 
 /** Why an entry assist didn't run: the changes have to be saved first, or saving them failed. */
 export const SAVE_BEFORE_ASSIST_KEYS = {

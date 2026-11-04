@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { startFakeLlm, type FakeLlm } from '../../api/test/fixtures/fakeLlm';
 import type { AdminApi } from './content/api';
 import type { ProjectServer } from './content/projectServer';
-import { ASSIST_ANSWERS, FAIL_TRIGGER, assistResponder } from './support/assistResponder';
+import { ASSIST_ANSWERS, FAIL_TRIGGER, assistResponder, suggestionFor } from './support/assistResponder';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { entryDocument } from './support/entryDocument';
@@ -92,7 +92,7 @@ test('with assist off, no assist control is shown anywhere', async ({ browser })
     await expect(page.getByRole('button', { name: 'Rewrite…' })).toHaveCount(0);
     await page.locator('[data-property="excerpt"]').click();
     await expect(page.getByLabel('Excerpt')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Summarize from body', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Suggest a value for Excerpt' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     const drawer = await doc().openSettings();
     await expect(drawer.getByRole('button', { name: 'Start French' })).toBeVisible();
@@ -164,14 +164,14 @@ test('rewrite the selection from the bubble toolbar: a proposal to edit, then Re
     .toContain(ASSIST_ANSWERS.rewrite);
 });
 
-test('summarize from body fills the property, saving the document first', async () => {
+test('Suggest fills the property from the rest of the entry, saving the document first', async () => {
   await page.goto(storyUrl());
   await page.locator('[data-property="excerpt"]').click();
-  await page.getByRole('button', { name: 'Summarize from body', exact: true }).click();
-  await expect(page.getByLabel('Excerpt')).toHaveValue(ASSIST_ANSWERS.summary);
-  // The summary was made from the saved body, which is the rewritten one.
+  await page.getByRole('button', { name: 'Suggest a value for Excerpt' }).click();
+  await expect(page.getByLabel('Excerpt')).toHaveValue(suggestionFor('Excerpt'));
+  // The value was made from the saved entry, whose body is the rewritten one.
   expect(llm.calls.at(-1)?.firstUserText).toContain(ASSIST_ANSWERS.rewrite);
-  await captureScreen(page, 'assist-03-summarize', { viewports: ['desktop'] });
+  await captureScreen(page, 'assist-03-suggest', { viewports: ['desktop'] });
   await page.keyboard.press('Escape');
 });
 

@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { useAssistEnabled } from '@/api/assist';
 import { AssistButton } from '@/components/AssistButton';
 import { AssistError } from '@/components/AssistError';
+import type { SaveBeforeAssist } from '@/fields/form/assistTarget';
+import { SAVE_BEFORE_ASSIST_KEYS } from '@/fields/helpers/assistMessages';
 import { cn } from '@/helpers/cn';
-import { SAVE_BEFORE_ASSIST_KEYS } from '../helpers/assistMessages';
-import type { SaveBeforeAssist } from '../hooks/useAssistTarget';
 import { useTranslateLocale } from '../hooks/useTranslateLocale';
 
 type TranslateLocaleProps = {

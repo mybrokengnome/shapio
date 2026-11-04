@@ -5,10 +5,10 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InlineConfirm } from '@/components/InlineConfirm';
 import { Button } from '@/components/ui/button';
+import { useAssistTarget } from '@/fields/form/assistTarget';
 import { formatDateTime } from '@/helpers/formatDate';
 import { EntryStatusChip } from '../../EntryStatusChip';
 import { DrawerSection } from '../DrawerSection';
-import { useAssistTarget } from '../hooks/useAssistTarget';
 import { LocaleStatusList } from '../LocaleStatusList';
 import { TranslateLocale } from '../TranslateLocale';
 
