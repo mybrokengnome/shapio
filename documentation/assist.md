@@ -102,6 +102,8 @@ Only what the action needs, and only when a person (or an admin API token) asks 
 | Summarize    | The entry's rich-text body as plain text (up to 60,000 characters), its title, the target field's label, help text and length limits.                                                                                                                |
 | Translate    | The text of the entry's localized fields (strings, texts, rich-text paragraphs and headings, image alt and title, also inside components and dynamic zones), with field length limits. Slugs, numbers, media, relations and code blocks aren't sent. |
 | Rewrite      | The selected text and the instruction.                                                                                                                                                                                                               |
+| Write        | The instruction, the document text before the cursor (up to 12,000 characters) and after it (up to 2,000), the entry's title, the field's label and the locale, all sent by the editor.                                                              |
+| Suggest      | The entry's title and its string, text, enum and rich-text values, also in single components (up to 24,000 characters; not the field being filled), with the target field's label, help text, length limits, pattern or allowed values.              |
 | Schema draft | The description, and the API IDs, kinds and labels of your existing content types and components.                                                                                                                                                    |
 | Content-ops  | What the actions above send, for each finding it works on.                                                                                                                                                                                           |
 
@@ -117,8 +119,8 @@ Field settings and the task go in the system prompt.
 
 Each assist request writes one row to `assist_runs`: who, which action, provider and model, input and
 output token counts, duration, and the outcome. No prompt or answer text is stored. It also writes an audit
-event (`assist.alt_text`, `assist.summarize`, `assist.translate`, `assist.rewrite`, `assist.schema_draft`,
-`assist.content_ops`) with the same metadata and the IDs involved (asset, entry, model, locales).
+event (`assist.alt_text`, `assist.summarize`, `assist.translate`, `assist.rewrite`, `assist.write`,
+`assist.suggest`, `assist.schema_draft`, `assist.content_ops`) with the same metadata and the IDs involved (asset, entry, model, locales).
 `assist_runs` rows are deleted after `USAGE_RETENTION_DAYS`. The proposals of a content-ops run are kept as
 the result of its job until finished jobs are pruned (`RETENTION_DAYS`).
 
@@ -138,8 +140,15 @@ as a draft. Nothing is published.
 - **Suggest alt text**: beside the alt text of an image in rich text, a media field, the cover (Settings
   drawer → Cover) and a file's details in the media library. Images only. It fills the alt text input, and
   you save as usual.
-- **Summarize from body**: in a property's popover under the title, for string and text properties (not the
-  title) of a content type with a rich-text body. It fills the property, and you review it before saving.
+- **Write… and Continue writing**: in the `/` menu and the `+` block menu of a rich-text document. Write…
+  asks what to write ("a section on pricing"); Continue writing picks up where the text stops (you can add a
+  direction). The proposal opens in an editable box beside the document, as rich text: **Insert** puts it at
+  that place as real headings, paragraphs, lists and quotes, Discard throws it away. Images, tables and links
+  are never written.
+- **Suggest**: under any string, text or enum field, the title and the fields of a single component (such as
+  SEO) included. It writes a value from the rest of the entry (title, properties, body), shaped by the field's
+  label, help text and limits, and fills the field; you review it before saving. Numbers, dates, slugs, media,
+  relations and repeatable components get no suggestion.
 - **Translate {locale} from {source}**: in the Settings drawer's locale list, beside each locale the entry
   doesn't have yet, and in the notice shown when you open a locale that isn't started. It saves the
   translation as that locale's first draft and opens it with a "Proposed by {model}" banner. The banner lists
@@ -157,7 +166,7 @@ as a draft. Nothing is published.
 - **Settings → Assist**: whether assist is on, the provider and model, this month's usage (with
   `changes.manage`), and a **Try it** box that runs a rewrite without saving anything.
 
-**Unsaved changes.** Summarize and translate read the entry as it is saved. If the document has unsaved
+**Unsaved changes.** Suggest and translate read the entry as it is saved. If the document has unsaved
 changes, the admin saves them as a draft first. In a content type without drafts, saving would publish, so
 the admin asks you to save yourself instead.
 
@@ -166,20 +175,34 @@ the admin asks you to save yourself instead.
 All endpoints are under `/api/admin/assist` and are site routes (send `Shapio-Site` or `?site=` on a
 multi-site instance). Every action except `status` and reading a run counts against `AI_RATE_LIMIT_MAX`.
 
-| Endpoint                                                        | Needs                                                         | Returns                                                                                                            |
-| --------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `GET /status`                                                   | any admin                                                     | `{ enabled, provider, model, usage? }`. `usage` (this month's runs and tokens on the site) needs `changes.manage`. |
-| `POST /alt-text` `{ assetId, locale? }`                         | `media.read`                                                  | `{ alt, model }`. The editor applies it as a normal edit.                                                          |
-| `POST /summarize` `{ modelKey, entryId, locale?, fieldApiKey }` | `read` + `update` on the model                                | `{ text, truncated, model }`                                                                                       |
-| `POST /translate` `{ modelKey, entryId, from, to }`             | `read` + `update` on the model                                | `{ data, issues, model }`                                                                                          |
-| `POST /rewrite` `{ text, instruction, maxLength? }`             | any admin                                                     | `{ text, truncated, model }`                                                                                       |
-| `POST /schema/draft` `{ description }`                          | `schema.create`                                               | `{ definitions, model }`                                                                                           |
-| `POST /content-ops/propose` `{ rule, modelKey?, fromLocale? }`  | `media.read` (altMissing) or `changes.manage` (localeMissing) | `202 { runId }`                                                                                                    |
-| `GET /content-ops/:runId`                                       | who started it, or `media.write` / `changes.manage`           | the run and, once done, its result                                                                                 |
+| Endpoint                                                                             | Needs                                                         | Returns                                                                                                            |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /status`                                                                        | any admin                                                     | `{ enabled, provider, model, usage? }`. `usage` (this month's runs and tokens on the site) needs `changes.manage`. |
+| `POST /alt-text` `{ assetId, locale? }`                                              | `media.read`                                                  | `{ alt, model }`. The editor applies it as a normal edit.                                                          |
+| `POST /summarize` `{ modelKey, entryId, locale?, fieldApiKey }`                      | `read` + `update` on the model                                | `{ text, truncated, model }`                                                                                       |
+| `POST /translate` `{ modelKey, entryId, from, to }`                                  | `read` + `update` on the model                                | `{ data, issues, model }`                                                                                          |
+| `POST /rewrite` `{ text, instruction, maxLength? }`                                  | any admin                                                     | `{ text, truncated, model }`                                                                                       |
+| `POST /write` `{ kind, instruction?, before, after?, title?, fieldLabel?, locale? }` | any admin                                                     | `{ markdown, model }`                                                                                              |
+| `POST /suggest` `{ modelKey, entryId, locale?, fieldPath }`                          | `read` + `update` on the model, the field writable            | `{ value, truncated, model }`                                                                                      |
+| `POST /schema/draft` `{ description }`                                               | `schema.create`                                               | `{ definitions, model }`                                                                                           |
+| `POST /content-ops/propose` `{ rule, modelKey?, fromLocale? }`                       | `media.read` (altMissing) or `changes.manage` (localeMissing) | `202 { runId }`                                                                                                    |
+| `GET /content-ops/:runId`                                                            | who started it, or `media.write` / `changes.manage`           | the run and, once done, its result                                                                                 |
 
 - **Summarize** writes into a string or text property, never the title, of a content type whose document has
   a rich-text body. The summary respects the field's maximum length: if the model's answer is too long it's
   asked once for a shorter one, then cut at a word boundary (`truncated: true`).
+- **Write** drafts Markdown for the editor to insert: `kind: 'section'` writes what `instruction` asks for
+  (required), `kind: 'continue'` continues `before` (which must not be empty), with `instruction` as an
+  optional direction. Send the text before the cursor (its last 12,000 characters) and after it (up to 2,000).
+  The answer uses only `##`/`###` headings, paragraphs, lists, quotes, bold, italic and inline code; a code fence
+  around the whole answer is taken off. No entry is read, so it works in an unsaved entry.
+- **Suggest** proposes a value for one field of the entry's saved draft. `fieldPath` is a JSON pointer in API
+  IDs: a top-level string, text or enum field (`/keywords`, the title included) or a field of a non-repeatable
+  component (`/seo/title`). Anything else is `400 ASSIST_FIELD_NOT_SUGGESTIBLE`. Only what you may read on that
+  entry is sent, never the field's own value. Text respects the field's maximum length like summarize does;
+  the SEO title and description aim at 70 and 160 characters without being cut. An enum answer is one of its
+  values, or a list for an enum that allows several. Nothing is saved.
+- **Summarize** stays for API callers: the admin uses Suggest instead.
 - **Translate** proposes the target locale's values of the localized fields you can read and edit. Shared
   fields are never part of it. Inline formatting (bold, italic, underline, subscript, superscript, code), links, and line breaks are kept. If a paragraph's formatting
   can't be restored, it comes back as plain text with a `FORMATTING_LOST` issue. Values over a field's limit
@@ -200,17 +223,19 @@ multi-site instance). Every action except `status` and reading a run counts agai
 
 ### Errors
 
-| Status | Code                        | Meaning                                                                  |
-| ------ | --------------------------- | ------------------------------------------------------------------------ |
-| 404    | (route not found)           | Assist is off.                                                           |
-| 422    | `ASSIST_VISION_UNSUPPORTED` | The model doesn't accept images.                                         |
-| 422    | `ASSIST_NOT_AN_IMAGE`       | Alt text for a file that isn't a raster image (SVG included).            |
-| 422    | `ASSIST_DECLINED`           | The model declined the request.                                          |
-| 429    | `RATE_LIMITED`              | Over `AI_RATE_LIMIT_MAX` this minute.                                    |
-| 502    | `ASSIST_INVALID_OUTPUT`     | No valid answer, even after one correction. `details.problems` says why. |
-| 502    | `ASSIST_PROVIDER_AUTH`      | The provider rejected the key or model.                                  |
-| 502    | `ASSIST_PROVIDER_ERROR`     | The provider failed, timed out or couldn't be reached.                   |
-| 503    | `ASSIST_PROVIDER_BUSY`      | The provider is rate limiting.                                           |
+| Status | Code                           | Meaning                                                                  |
+| ------ | ------------------------------ | ------------------------------------------------------------------------ |
+| 404    | (route not found)              | Assist is off.                                                           |
+| 422    | `ASSIST_VISION_UNSUPPORTED`    | The model doesn't accept images.                                         |
+| 422    | `ASSIST_NOT_AN_IMAGE`          | Alt text for a file that isn't a raster image (SVG included).            |
+| 422    | `ASSIST_DECLINED`              | The model declined the request.                                          |
+| 400    | `ASSIST_FIELD_NOT_SUGGESTIBLE` | Suggest: the field's type or place gets no suggestion.                   |
+| 422    | `ASSIST_NOTHING_TO_WORK_FROM`  | Suggest: the entry has no readable text yet; write: nothing to continue. |
+| 429    | `RATE_LIMITED`                 | Over `AI_RATE_LIMIT_MAX` this minute.                                    |
+| 502    | `ASSIST_INVALID_OUTPUT`        | No valid answer, even after one correction. `details.problems` says why. |
+| 502    | `ASSIST_PROVIDER_AUTH`         | The provider rejected the key or model.                                  |
+| 502    | `ASSIST_PROVIDER_ERROR`        | The provider failed, timed out or couldn't be reached.                   |
+| 503    | `ASSIST_PROVIDER_BUSY`         | The provider is rate limiting.                                           |
 
 ## Limits
 

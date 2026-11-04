@@ -9,6 +9,7 @@ import * as canceledStatus from './20261014120000_canceled_status.js';
 import * as interfaceKind from './20261021120000_interface_kind.js';
 import * as changeSetApproval from './20261028120000_change_set_approval.js';
 import * as schemaChangeOutcome from './20261029120000_schema_change_outcome.js';
+import * as assistWriteAndFill from './20261104120000_assist_write_and_fill.js';
 
 /**
  * SQLite migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -29,4 +30,5 @@ export const SQLITE_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261021120000_interface_kind': interfaceKind,
   '20261028120000_change_set_approval': changeSetApproval,
   '20261029120000_schema_change_outcome': schemaChangeOutcome,
+  '20261104120000_assist_write_and_fill': assistWriteAndFill,
 };

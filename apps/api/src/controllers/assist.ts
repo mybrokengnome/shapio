@@ -7,8 +7,10 @@ import type {
   RewriteBody,
   RunParams,
   SchemaDraftBody,
+  SuggestBody,
   SummarizeBody,
   TranslateBody,
+  WriteBody,
 } from '../routes/admin/assist/schemas.js';
 import { writeAltText } from '../services/assist/altText.js';
 import { getContentOpsRun, proposeContentOps } from '../services/assist/contentOps.js';
@@ -16,8 +18,10 @@ import type { AssistServiceContext } from '../services/assist/context.js';
 import { rewriteText } from '../services/assist/rewrite.js';
 import { draftSchema } from '../services/assist/schemaDraft.js';
 import { getAssistStatus } from '../services/assist/status.js';
+import { suggestEntryValue } from '../services/assist/suggest.js';
 import { summarizeEntry } from '../services/assist/summarize.js';
 import { translateEntry } from '../services/assist/translate.js';
+import { writeText } from '../services/assist/write.js';
 import { contentContextFor } from './contentContext.js';
 
 const runtimeOf = (request: FastifyRequest) => {
@@ -70,6 +74,12 @@ export const translate = async (request: FastifyRequest<{ Body: TranslateBody }>
 
 export const rewrite = async (request: FastifyRequest<{ Body: RewriteBody }>, reply: FastifyReply) =>
   rewriteText(await assistContextFor(request, reply), request.body);
+
+export const write = async (request: FastifyRequest<{ Body: WriteBody }>, reply: FastifyReply) =>
+  writeText(await assistContextFor(request, reply), request.body);
+
+export const suggest = async (request: FastifyRequest<{ Body: SuggestBody }>, reply: FastifyReply) =>
+  suggestEntryValue(await assistContextFor(request, reply), request.body);
 
 export const schemaDraft = async (request: FastifyRequest<{ Body: SchemaDraftBody }>, reply: FastifyReply) =>
   draftSchema(await assistContextFor(request, reply), request.body);

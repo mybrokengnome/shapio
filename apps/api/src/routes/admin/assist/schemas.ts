@@ -1,7 +1,11 @@
 import { STABLE_ID_PATTERN } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
 import { AI_PROVIDERS } from '../../../config/schema.js';
-import { CONTENT_OPS_RULES } from '../../../constants/assist.js';
+import {
+  ASSIST_WRITE_AFTER_CHARS,
+  ASSIST_WRITE_BEFORE_CHARS,
+  CONTENT_OPS_RULES,
+} from '../../../constants/assist.js';
 import { EntryIdSchema, LocaleCodeSchema, ModelKeySchema } from '../../schemas/content.js';
 import { DefinitionSchema } from '../../schemas/schemaRegistry.js';
 
@@ -82,6 +86,48 @@ const RewriteBodySchema = Type.Object(
 );
 export type RewriteBody = Static<typeof RewriteBodySchema>;
 export const rewriteSchema = { body: RewriteBodySchema, response: { 200: TextResultSchema } };
+
+const InstructionSchema = Type.String({ minLength: 1, maxLength: 500 });
+const writeContext = {
+  before: Type.String({ maxLength: ASSIST_WRITE_BEFORE_CHARS }),
+  after: Type.Optional(Type.String({ maxLength: ASSIST_WRITE_AFTER_CHARS })),
+  title: Type.Optional(Type.String({ maxLength: 500 })),
+  fieldLabel: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  locale: Type.Optional(LocaleCodeSchema),
+};
+const WriteBodySchema = Type.Union([
+  Type.Object({ kind: Type.Literal('section'), instruction: InstructionSchema, ...writeContext }, closed),
+  Type.Object(
+    { kind: Type.Literal('continue'), instruction: Type.Optional(InstructionSchema), ...writeContext },
+    closed,
+  ),
+]);
+export type WriteBody = Static<typeof WriteBodySchema>;
+export const writeSchema = {
+  body: WriteBodySchema,
+  response: { 200: Type.Object({ markdown: Type.String(), model: ModelNameSchema }) },
+};
+
+/** A JSON pointer in API IDs: `/apiKey` or `/component/apiKey`. */
+const FieldPathSchema = Type.String({ minLength: 2, maxLength: 200, pattern: '^/' });
+const SuggestedValueSchema = Type.Union([Type.String(), Type.Array(Type.String())]);
+
+const SuggestBodySchema = Type.Object(
+  {
+    modelKey: ModelKeySchema,
+    entryId: EntryIdSchema,
+    locale: Type.Optional(LocaleCodeSchema),
+    fieldPath: FieldPathSchema,
+  },
+  closed,
+);
+export type SuggestBody = Static<typeof SuggestBodySchema>;
+export const suggestSchema = {
+  body: SuggestBodySchema,
+  response: {
+    200: Type.Object({ value: SuggestedValueSchema, truncated: Type.Boolean(), model: ModelNameSchema }),
+  },
+};
 
 const SchemaDraftBodySchema = Type.Object(
   { description: Type.String({ minLength: 1, maxLength: 4000 }) },

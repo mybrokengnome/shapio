@@ -6,6 +6,18 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Assist writes, not just rewrites. In a rich-text document, the `/` menu and the `+` block menu have
+  **Write…** (say what to write, such as "a section on pricing") and **Continue writing**. The proposal opens as
+  editable rich text beside the document; **Insert** puts it at the cursor as real headings, paragraphs, lists,
+  and quotes, and Discard throws it away. `POST /api/admin/assist/write` returns the text as Markdown.
+- **Suggest** under any string, text, or enum field, the title and the fields of a single component such as SEO
+  included: a value from the rest of the entry, shaped by the field's label, help text, and limits, that you
+  review before saving. It replaces "Summarize from body" in the admin; `POST /api/admin/assist/summarize` stays.
+  `POST /api/admin/assist/suggest` takes the field as a JSON pointer (`/keywords`, `/seo/title`).
+- `@shapio/client` has `admin.assist.write` and `admin.assist.suggest`.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

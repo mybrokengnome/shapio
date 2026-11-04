@@ -47,6 +47,8 @@ describe('assist off (AI_PROVIDER unset)', () => {
         ['/api/admin/assist/summarize', { modelKey: 'post', entryId: ENTRY_ID, fieldApiKey: 'summary' }],
         ['/api/admin/assist/translate', { modelKey: 'post', entryId: ENTRY_ID, from: 'en', to: 'fr' }],
         ['/api/admin/assist/rewrite', { text: 'Hello', instruction: 'Shorten' }],
+        ['/api/admin/assist/write', { kind: 'continue', before: 'Hello' }],
+        ['/api/admin/assist/suggest', { modelKey: 'post', entryId: ENTRY_ID, fieldPath: '/summary' }],
         ['/api/admin/assist/schema/draft', { description: 'A blog' }],
         ['/api/admin/assist/content-ops/propose', { rule: 'altMissing' }],
       ];

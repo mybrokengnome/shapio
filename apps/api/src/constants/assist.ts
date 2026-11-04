@@ -6,6 +6,8 @@ export const ASSIST_ACTIONS = [
   'rewrite',
   'schema_draft',
   'content_ops',
+  'write',
+  'suggest',
 ] as const;
 export type AssistAction = (typeof ASSIST_ACTIONS)[number];
 
@@ -26,4 +28,10 @@ export const ASSIST_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const ASSIST_TRANSLATE_CHUNK_CHARS = 12_000;
 /** Characters of rich text a summary is made from. */
 export const ASSIST_SUMMARY_SOURCE_CHARS = 60_000;
+/** Characters of a document before and after the point where assist writes (the client sends the nearest). */
+export const ASSIST_WRITE_BEFORE_CHARS = 12_000;
+export const ASSIST_WRITE_AFTER_CHARS = 2_000;
+/** Characters of an entry a suggestion is made from (title, properties, then body), and of one property. */
+export const ASSIST_SUGGEST_SOURCE_CHARS = 24_000;
+export const ASSIST_SUGGEST_VALUE_CHARS = 2_000;
 export const ASSIST_RATE_LIMIT_WINDOW_MS = 60_000;
