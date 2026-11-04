@@ -21,10 +21,13 @@ export const ProposalEditor = ({ write, result }: ProposalEditorProps) => {
   const label = t('assist.proposedBy', { model: result.model });
   const html = useMemo(() => markdownToHtml(result.markdown), [result.markdown]);
   const editor = useProposalEditor({ html, label, onTextChange: write.setHasText });
-  // Back into the proposal when the person chose to keep editing it.
+  // The confirm step starts on Keep editing (the safe choice); keeping goes back into the proposal.
+  const keepRef = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
   useEffect(() => {
-    if (wasConfirming.current && !write.confirmingDiscard) {
+    if (write.confirmingDiscard) {
+      keepRef.current?.focus();
+    } else if (wasConfirming.current) {
       editor.commands.focus();
     }
     wasConfirming.current = write.confirmingDiscard;
@@ -49,7 +52,7 @@ export const ProposalEditor = ({ write, result }: ProposalEditorProps) => {
           <p role="alert" className="mr-auto text-sm font-medium">
             {t('assist.write.discardTitle')}
           </p>
-          <Button type="button" variant="outline" size="sm" autoFocus onClick={write.keepEditing}>
+          <Button ref={keepRef} type="button" variant="outline" size="sm" onClick={write.keepEditing}>
             {t('assist.write.keepEditing')}
           </Button>
           <Button type="button" variant="destructive-ghost" size="sm" onClick={write.discard}>

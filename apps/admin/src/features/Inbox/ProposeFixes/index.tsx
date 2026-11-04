@@ -4,20 +4,24 @@ import { useTranslation } from 'react-i18next';
 import { AssistButton } from '@/components/AssistButton';
 import { AssistError } from '@/components/AssistError';
 import { Button } from '@/components/ui/button';
+import { FillResult } from '@/features/Assist/FillResult';
+import { useContentOpsProposal } from '@/features/Assist/hooks/useContentOpsProposal';
+import { useFieldFill } from '@/features/Assist/hooks/useFieldFill';
 import { describeAssistErrorCode } from '@/helpers/describeAssistError';
-import { useContentOpsProposal } from '../hooks/useContentOpsProposal';
 import { AltReview } from './AltReview';
 import { LocaleResult } from './LocaleResult';
 
 type ProposeFixesProps = { rule: ContentOpsRule };
 
 /**
- * "Propose fixes" under a rule group (missing alt text, locales not started): a model drafts the fixes in
- * the background. Alt texts come back as a list to accept or reject; locale drafts land in a change set.
+ * "Propose fixes" under a rule group (missing alt text, locales not started, required fields left empty):
+ * a model drafts the fixes in the background. Alt texts and field values come back as a list to accept or
+ * reject; locale drafts land in a change set.
  */
 export const ProposeFixes = ({ rule }: ProposeFixesProps) => {
   const { t } = useTranslation();
-  const proposal = useContentOpsProposal(rule);
+  const proposal = useContentOpsProposal({ rule });
+  const fill = useFieldFill(proposal.runId);
   const [reviewOpen, setReviewOpen] = useState(false);
   const { run } = proposal;
   const result = run?.status === 'succeeded' ? run.result : null;
@@ -28,7 +32,7 @@ export const ProposeFixes = ({ rule }: ProposeFixesProps) => {
           variant="outline"
           pending={proposal.running}
           pendingLabel={t('assist.fixes.running')}
-          onClick={proposal.propose}
+          onClick={() => proposal.propose()}
         >
           {run ? t('assist.fixes.again') : t('assist.fixes.propose')}
         </AssistButton>
@@ -42,6 +46,9 @@ export const ProposeFixes = ({ rule }: ProposeFixesProps) => {
           )
         ) : null}
         {result?.rule === 'localeMissing' ? <LocaleResult result={result} /> : null}
+        {run && (result?.rule === 'requiredEmpty' || result?.rule === 'fieldEmpty') ? (
+          <FillResult model={run.model} result={result} fill={fill} />
+        ) : null}
       </div>
       <AssistError error={proposal.error} />
       {run?.status === 'failed' ? (

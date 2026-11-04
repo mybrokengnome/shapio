@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import type { AltDecision } from '../../hooks/useContentOpsProposal';
+import type { AltDecision } from '@/features/Assist/hooks/useContentOpsProposal';
 import { Row } from './Row';
 
 type AltReviewProps = {

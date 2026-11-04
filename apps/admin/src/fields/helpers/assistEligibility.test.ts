@@ -7,7 +7,17 @@ const article = model({
   fields: [
     field({ apiKey: 'title', label: 'Title' }),
     field({ apiKey: 'excerpt', label: 'Excerpt', type: 'text' }),
-    field({ apiKey: 'kind', label: 'Kind', type: 'enum', settings: { options: ['news', 'guide'] } }),
+    field({
+      apiKey: 'kind',
+      label: 'Kind',
+      type: 'enum',
+      settings: {
+        values: [
+          { value: 'news', label: 'News' },
+          { value: 'guide', label: 'Guide' },
+        ],
+      },
+    }),
     field({ apiKey: 'readingTime', label: 'Reading time', type: 'integer' }),
     field({ apiKey: 'old', label: 'Old', deprecated: true }),
     field({

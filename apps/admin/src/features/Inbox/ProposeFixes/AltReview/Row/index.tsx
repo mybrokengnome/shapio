@@ -8,8 +8,8 @@ import { SubmitButton } from '@/components/SubmitButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { AltDecision } from '@/features/Assist/hooks/useContentOpsProposal';
 import { describeError } from '@/helpers/describeError';
-import type { AltDecision } from '../../../hooks/useContentOpsProposal';
 
 type RowProps = {
   proposal: AltProposal;

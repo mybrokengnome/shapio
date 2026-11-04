@@ -43,7 +43,9 @@ export const WritePopover = ({ editor, write }: WritePopoverProps) => {
       ) : null}
       <PopoverContent
         align="start"
-        className="w-[min(32rem,calc(100vw-2rem))] space-y-3 font-sans"
+        collisionPadding={16}
+        // Never taller than the room beside the text: a long proposal scrolls inside, the buttons stay reachable.
+        className="max-h-(--radix-popover-content-available-height) w-[min(32rem,calc(100vw-2rem))] space-y-3 overflow-y-auto font-sans"
         aria-label={t('assist.write.title')}
         // Back to the text, so writing continues where the proposal went.
         onCloseAutoFocus={(event) => {

@@ -1,4 +1,4 @@
-import type { ContentOpsRule } from '@shapio/client';
+import type { ContentOpsInput } from '@shapio/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useContentOpsRun, useProposeContentOps } from '@/api/assist';
@@ -7,10 +7,11 @@ import { queryKeys } from '@/api/queryKeys';
 export type AltDecision = 'accepted' | 'rejected';
 
 /**
- * "Propose fixes" for one rule group: starts a content-ops run, follows it until it finishes, and keeps
- * the person's accept/reject decisions on its alt-text proposals (for this visit to the Inbox).
+ * A content-ops run asked for from the Inbox ("Propose fixes" on a rule group) or a content type's list
+ * ("Fill in…"): starts it with `base` (plus what the person picked, for a fill), follows it until it
+ * finishes, and keeps the person's accept/reject decisions on its alt-text proposals (for this visit).
  */
-export const useContentOpsProposal = (rule: ContentOpsRule) => {
+export const useContentOpsProposal = (base: ContentOpsInput) => {
   const queryClient = useQueryClient();
   const start = useProposeContentOps();
   const [runId, setRunId] = useState<string>();
@@ -18,10 +19,11 @@ export const useContentOpsProposal = (rule: ContentOpsRule) => {
   const [decisions, setDecisions] = useState<Readonly<Record<string, AltDecision>>>({});
   const status = run.data?.status;
   return {
-    propose: () => {
+    propose: (picked?: Partial<ContentOpsInput>) => {
       setDecisions({});
-      start.mutate({ rule }, { onSuccess: ({ runId: id }) => setRunId(id) });
+      start.mutate({ ...base, ...picked }, { onSuccess: ({ runId: id }) => setRunId(id) });
     },
+    runId,
     running:
       start.isPending ||
       (runId !== undefined && (status === undefined || status === 'queued' || status === 'running')),
