@@ -84,12 +84,17 @@ const storyUrl = (locale = 'en') => `${server.adminUrl}content/story/${entryId}?
 const doc = () => entryDocument(page);
 /**
  * "Continue writing" from the `+` after the body. The menu is taller than the space below it, so the item is
- * chosen from the keyboard (focus, Enter) as a keyboard user would.
+ * chosen from the keyboard (End, Enter) as a keyboard user would.
  */
 const continueWriting = async () => {
   await page.getByRole('button', { name: 'Add a block, or just keep writing' }).click();
+  await expect(page.getByRole('menu', { name: 'Add a block, or just keep writing' })).toBeVisible();
   const item = page.getByRole('menuitem', { name: 'Continue writing', exact: true });
-  await item.focus();
+  // Radix moves focus into the menu a moment after it opens: End (the last item) until the item has it.
+  await expect(async () => {
+    await page.keyboard.press('End');
+    await expect(item).toBeFocused({ timeout: 500 });
+  }).toPass();
   await page.keyboard.press('Enter');
 };
 /**
