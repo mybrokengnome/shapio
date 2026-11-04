@@ -740,10 +740,16 @@ test('underline, subscript and superscript from the toolbar; Backspace joins a l
   });
 
   await test.step('the list buttons say how to join items; Backspace joins one into the item above', async () => {
-    await tool('Numbered list').hover();
-    await expect(page.getByRole('tooltip')).toContainText(
-      'Backspace at the start of an item joins it to the item above',
-    );
+    // A tooltip opens after the pointer moves onto its button, after a delay; right after a click on another
+    // tool button it may need the pointer to leave and come back. Off the toolbar, then hover until it shows.
+    await page.mouse.move(0, 0);
+    await expect(async () => {
+      await tool('Numbered list').hover();
+      await expect(page.getByRole('tooltip')).toContainText(
+        'Backspace at the start of an item joins it to the item above',
+        { timeout: 1_500 },
+      );
+    }).toPass();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await press('Numbered list');
