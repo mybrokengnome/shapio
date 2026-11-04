@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
 ### Added
 
 - Assist writes, not just rewrites. In a rich-text document, the `/` menu and the `+` block menu have
