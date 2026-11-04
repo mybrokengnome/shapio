@@ -5,7 +5,7 @@ import { useEntryFormStore, useFieldsEnvironment } from '@/fields/form/context';
 import { newComponentItem } from '@/fields/helpers/formValues';
 import { toList, type ItemValues } from '@/fields/helpers/values';
 import { allowedComponentsOf } from '@/fields/hooks/useAllowedComponents';
-import type { BlockType } from '@/fields/RichTextField/canvas/blocks';
+import type { BlockType, WriteKind } from '@/fields/RichTextField/canvas/blocks';
 import { reportError } from '@/helpers/reportError';
 
 export type Edge = 'start' | 'end';
@@ -73,6 +73,18 @@ export const useCanvasInsertions = () => {
     [handles],
   );
 
+  /** The field's editor can start an assist write (assist on, editable). */
+  const canWrite = useCallback(
+    (field: FieldDefinition) => handles?.get(`/${field.apiKey}`)?.write !== undefined,
+    [handles],
+  );
+
+  const write = useCallback(
+    (field: FieldDefinition, kind: WriteKind, edge: Edge) =>
+      handles?.get(`/${field.apiKey}`)?.write?.(kind, edge),
+    [handles],
+  );
+
   const insertComponent = useCallback(
     (field: FieldDefinition, component: ComponentDefinition, edge: Edge) => {
       const item: ItemValues = newComponentItem(component, field.type === 'dynamiczone');
@@ -98,5 +110,5 @@ export const useCanvasInsertions = () => {
     [pickMedia, putInList, store],
   );
 
-  return { insertionsOf, insertBlock, insertComponent, insertFiles };
+  return { insertionsOf, insertBlock, canWrite, write, insertComponent, insertFiles };
 };

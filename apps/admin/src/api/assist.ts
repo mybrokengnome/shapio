@@ -1,11 +1,14 @@
 import type {
+  AcceptContentOpsInput,
   AltTextInput,
   ContentOpsInput,
   ContentOpsRun,
   RewriteInput,
   SchemaDraftInput,
+  SuggestInput,
   SummarizeInput,
   TranslateInput,
+  WriteInput,
 } from '@shapio/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ASSIST_STATUS_STALE_MS, CONTENT_OPS_FINISHED, CONTENT_OPS_POLL_MS } from '@/constants/assist';
@@ -43,6 +46,14 @@ export const useSummarizeField = () =>
     mutationFn: (input: SummarizeInput) => withCsrf(() => adminApi.assist.summarize(input)),
   });
 
+/** A value for one field, from the rest of the entry's saved draft; the caller fills the field with it. */
+export const useSuggestValue = () =>
+  useMutation({
+    mutationKey: ['assist', 'suggest'],
+    meta: silent,
+    mutationFn: (input: SuggestInput) => withCsrf(() => adminApi.assist.suggest(input)),
+  });
+
 export const useTranslateEntry = () =>
   useMutation({
     mutationKey: ['assist', 'translate'],
@@ -55,6 +66,14 @@ export const useRewriteText = () =>
     mutationKey: ['assist', 'rewrite'],
     meta: silent,
     mutationFn: (input: RewriteInput) => withCsrf(() => adminApi.assist.rewrite(input)),
+  });
+
+/** Markdown written for a rich-text document at the cursor, from the context the caller sends. */
+export const useWriteText = () =>
+  useMutation({
+    mutationKey: ['assist', 'write'],
+    meta: silent,
+    mutationFn: (input: WriteInput) => withCsrf(() => adminApi.assist.write(input)),
   });
 
 /** Proposed definitions for a description; writes nothing. */
@@ -94,3 +113,15 @@ export const useContentOpsRun = (runId: string | undefined) => {
     refetchInterval: (query) => (isFinished(query.state.data) ? false : CONTENT_OPS_POLL_MS),
   });
 };
+
+/**
+ * Saves accepted proposals of a fill run into one entry locale's draft (and the run's change set). Outcomes
+ * are shown on the review's rows, so no toast.
+ */
+export const useAcceptContentOps = () =>
+  useMutation({
+    mutationKey: ['assist', 'contentOpsAccept'],
+    meta: silent,
+    mutationFn: ({ runId, input }: { runId: string; input: AcceptContentOpsInput }) =>
+      withCsrf(() => adminApi.assist.acceptContentOps(runId, input)),
+  });

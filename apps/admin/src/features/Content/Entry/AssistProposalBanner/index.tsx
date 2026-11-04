@@ -27,7 +27,7 @@ export const AssistProposalBanner = ({ labelOf }: AssistProposalBannerProps) => 
   return (
     <Alert variant="info" role="status">
       <Sparkles aria-hidden="true" />
-      <AlertTitle>{t('assist.proposal.title', { model: proposal.model })}</AlertTitle>
+      <AlertTitle>{t('assist.proposedBy', { model: proposal.model })}</AlertTitle>
       <AlertDescription className="space-y-2">
         <p>{t('assist.proposal.description', { from: labelOf(proposal.from) })}</p>
         {proposal.issues.length > 0 ? (

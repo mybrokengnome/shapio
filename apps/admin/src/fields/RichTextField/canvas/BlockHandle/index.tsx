@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDeferredMenuAction } from '../../../hooks/useDeferredMenuAction';
 import { BlockMenuItems } from '../BlockMenuItems';
 import { startBlockDrag } from '../blockMove';
-import type { BlockType } from '../blocks';
+import type { BlockType, WriteKind } from '../blocks';
 
 /** The hovered top-level block: where it starts and its offset from the top of the canvas field. */
 export type HoveredBlock = { pos: number; top: number };
@@ -18,6 +18,8 @@ type BlockHandleProps = {
   editor: Editor;
   block: HoveredBlock;
   onInsert: (type: BlockType, pos: number) => void;
+  /** Assist writes after the block (only while assist is on). */
+  onWrite?: (write: WriteKind, pos: number) => void;
   /** The `+` menu is open: keep the handle where it is while the pointer is in the menu. */
   onMenuOpenChange: (open: boolean) => void;
 };
@@ -26,7 +28,7 @@ type BlockHandleProps = {
  * Beside the block under the pointer (desktop): `+` adds a block after it, the grip drags it (ProseMirror
  * moves it on drop) and selects it on click, so ⌥↑ / ⌥↓ can move it from the keyboard.
  */
-export const BlockHandle = ({ editor, block, onInsert, onMenuOpenChange }: BlockHandleProps) => {
+export const BlockHandle = ({ editor, block, onInsert, onWrite, onMenuOpenChange }: BlockHandleProps) => {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useDeferredMenuAction();
@@ -67,7 +69,10 @@ export const BlockHandle = ({ editor, block, onInsert, onMenuOpenChange }: Block
           <TooltipContent>{t('entry.blocks.addAfter')}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="start" className="w-72" onCloseAutoFocus={menu.onCloseAutoFocus}>
-          <BlockMenuItems onSelect={(type) => menu.defer(() => onInsert(type, after))} />
+          <BlockMenuItems
+            onSelect={(type) => menu.defer(() => onInsert(type, after))}
+            onAssist={onWrite ? (write) => menu.defer(() => onWrite(write, after)) : undefined}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
       <Tooltip>

@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect } from 'react';
-import type { BlockType } from '../RichTextField/canvas/blocks';
+import type { BlockType, WriteKind } from '../RichTextField/canvas/blocks';
 
 /** What the document's insertion points between canvas fields can ask a rich-text field to do. */
 export type CanvasFieldHandle = {
   /** Adds a block at the start or end of the field's document and puts the cursor in it. */
   insertBlock: (type: BlockType, at: 'start' | 'end') => Promise<void>;
+  /** Starts an assist write at the start or end of the field's document; absent while assist is off. */
+  write?: (kind: WriteKind, at: 'start' | 'end') => void;
 };
 
 /** Rich-text canvas fields by value path; provided by the entry document's canvas. */

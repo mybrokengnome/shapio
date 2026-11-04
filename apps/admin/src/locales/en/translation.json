@@ -1765,6 +1765,7 @@
       "dragItem": "Drag {{item}} (item {{position}}) to move it",
       "groupWrite": "Write",
       "groupMedia": "Media",
+      "groupAssist": "Assist",
       "groupComponents": "Your components",
       "groupIn": "{{group}} · {{field}}",
       "paragraph": "Paragraph",
@@ -3356,6 +3357,7 @@
     "working": "Writing…",
     "discard": "Discard",
     "truncated": "Shortened to fit the field's limit.",
+    "proposedBy": "Proposed by {{model}}",
     "errors": {
       "rateLimited": "Too many assist requests. Try again in a minute.",
       "runFailed": "The proposal run failed."
@@ -3369,10 +3371,24 @@
       "run": "Rewrite",
       "shorten": "Shorten",
       "expand": "Expand",
-      "proposal": "Proposed by {{model}}",
       "replace": "Replace selection",
       "stale": "The selected text changed meanwhile. Select it again and rewrite.",
       "tooLong": "Select less text (at most {{max}} characters)."
+    },
+    "write": {
+      "section": "Write…",
+      "continue": "Continue writing",
+      "title": "Write with assist",
+      "instruction": "What should it write?",
+      "instructionPlaceholder": "A section on pricing",
+      "hint": "The model writes from the text around this point, the entry's title and the field's name. Nothing changes in the document until you insert it.",
+      "run": "Write",
+      "proposalHint": "Edit it here like any text. Insert puts it in the document as headings, paragraphs and lists.",
+      "insert": "Insert",
+      "tryAgain": "Try again",
+      "stale": "The place you were writing at changed. Discard this and start again.",
+      "discardTitle": "Discard this proposal?",
+      "keepEditing": "Keep editing"
     },
     "altText": {
       "suggest": "Suggest alt text",
@@ -3389,7 +3405,6 @@
       "pending": "Translating into {{locale}}…"
     },
     "proposal": {
-      "title": "Proposed by {{model}}",
       "description": "Translated from {{from}} as a draft. Review it before publishing.",
       "issues": "Translation issues",
       "dismiss": "Dismiss"

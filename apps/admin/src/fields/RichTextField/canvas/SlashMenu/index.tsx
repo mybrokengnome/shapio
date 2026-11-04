@@ -3,14 +3,25 @@ import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/helpers/cn';
-import { filterBlockOptions, type BlockOption, type BlockType } from '../blocks';
+import {
+  filterAssistOptions,
+  filterBlockOptions,
+  type AssistOption,
+  type BlockOption,
+  type MenuChoice,
+} from '../blocks';
 import { closeSlashMenu, type SlashBridge, type SlashState } from '../slashCommand';
 
 type SlashMenuProps = {
   editor: Editor;
   bridge: SlashBridge;
-  onChoose: (type: BlockType, state: SlashState) => void;
+  onChoose: (choice: MenuChoice, state: SlashState) => void;
+  /** Offer the Assist group ("Write…", "Continue writing") after the blocks (only while assist is on). */
+  assist: boolean;
 };
+
+/** One row of the menu: a block type or an assist, with what it shows and what choosing it does. */
+type SlashOption = { id: string; icon: BlockOption['icon']; label: string; choice: MenuChoice };
 
 const MOVES: Readonly<Record<string, number>> = { ArrowDown: 1, ArrowUp: -1 };
 
@@ -18,17 +29,33 @@ const MOVES: Readonly<Record<string, number>> = { ArrowDown: 1, ArrowUp: -1 };
  * The `/` menu: a listbox under the cursor, filtered by what follows the slash. Focus stays in the text
  * (the editor's keys drive it: ↑ ↓ to move, Enter or Tab to choose, Esc to close).
  */
-export const SlashMenu = ({ editor, bridge, onChoose }: SlashMenuProps) => {
+export const SlashMenu = ({ editor, bridge, onChoose, assist }: SlashMenuProps) => {
   const { t } = useTranslation();
   const listId = useId();
   const [state, setState] = useState<SlashState | null>(null);
   const [active, setActive] = useState(0);
-  const labelOf = (option: BlockOption) => t(option.labelKey);
-  const options = state ? filterBlockOptions(state.query, labelOf) : [];
+  const options: SlashOption[] = state
+    ? [
+        ...filterBlockOptions(state.query, (option) => t(option.labelKey)).map((option) => ({
+          id: option.type,
+          icon: option.icon,
+          label: t(option.labelKey),
+          choice: { kind: 'block' as const, type: option.type },
+        })),
+        ...(assist ? filterAssistOptions(state.query, (option: AssistOption) => t(option.labelKey)) : []).map(
+          (option) => ({
+            id: `assist-${option.write}`,
+            icon: option.icon,
+            label: t(option.labelKey),
+            choice: { kind: 'assist' as const, write: option.write },
+          }),
+        ),
+      ]
+    : [];
   const current = options[Math.min(active, options.length - 1)];
-  const choose = (option: BlockOption | undefined) => {
+  const choose = (option: SlashOption | undefined) => {
     if (option && state) {
-      onChoose(option.type, state);
+      onChoose(option.choice, state);
     }
   };
   // The plugin calls whatever the bridge holds now: refreshed after every render, so never stale.
@@ -89,7 +116,7 @@ export const SlashMenu = ({ editor, bridge, onChoose }: SlashMenuProps) => {
         >
           {options.map((option, index) => (
             <li
-              key={option.type}
+              key={option.id}
               role="option"
               aria-selected={option === current}
               className={cn(
@@ -106,7 +133,7 @@ export const SlashMenu = ({ editor, bridge, onChoose }: SlashMenuProps) => {
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4">
                 <option.icon aria-hidden="true" />
               </span>
-              {labelOf(option)}
+              {option.label}
             </li>
           ))}
         </ul>

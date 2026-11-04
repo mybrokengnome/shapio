@@ -20,12 +20,20 @@ import { useTranslation } from 'react-i18next';
 import { Separator } from '@/components/ui/separator';
 import { ToolButton } from '../../ToolButton';
 
-type BubbleToolbarProps = {
-  editor: Editor;
-  onLink: () => void;
-  /** "Rewrite…" with the instance's model (only while assist is on). */
-  onRewrite?: () => void;
-};
+type BubbleToolbarProps =
+  | {
+      editor: Editor;
+      /** The document's canvas: every mark, Link, the block buttons and Rewrite while assist is on. */
+      variant?: 'canvas';
+      onLink: () => void;
+      /** "Rewrite…" with the instance's model (only while assist is on). */
+      onRewrite?: () => void;
+    }
+  | {
+      editor: Editor;
+      /** An assist proposal: marks and the block buttons; no Link (proposals carry none), no Rewrite. */
+      variant: 'proposal';
+    };
 
 /** Text is selected (not an image or rule, not inside code): the floating toolbar has something to do. */
 const hasTextSelection = ({ editor }: { editor: Editor }) => {
@@ -39,8 +47,11 @@ const hasTextSelection = ({ editor }: { editor: Editor }) => {
 };
 
 /** Formatting for the selected text, floating above it (Ghost/Notion style); every action has a shortcut. */
-export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps) => {
+export const BubbleToolbar = (props: BubbleToolbarProps) => {
   const { t } = useTranslation();
+  const { editor } = props;
+  const onLink = props.variant === 'proposal' ? undefined : props.onLink;
+  const onRewrite = props.variant === 'proposal' ? undefined : props.onRewrite;
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -113,14 +124,16 @@ export const BubbleToolbar = ({ editor, onLink, onRewrite }: BubbleToolbarProps)
           disabled={false}
           onClick={() => chain().toggleCode().run()}
         />
-        <ToolButton
-          icon={Link}
-          label={t('content.richText.link')}
-          keys="Mod+Shift+K"
-          pressed={state.link}
-          disabled={false}
-          onClick={onLink}
-        />
+        {onLink ? (
+          <ToolButton
+            icon={Link}
+            label={t('content.richText.link')}
+            keys="Mod+Shift+K"
+            pressed={state.link}
+            disabled={false}
+            onClick={onLink}
+          />
+        ) : null}
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ToolButton
           icon={Heading2}

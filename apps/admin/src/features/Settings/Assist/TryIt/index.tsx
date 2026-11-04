@@ -65,7 +65,7 @@ export const TryIt = () => {
           {rewrite.data ? (
             <figure className="space-y-1 rounded-lg border bg-muted/40 p-3">
               <figcaption className="text-meta text-muted-foreground">
-                {t('assist.rewrite.proposal', { model: rewrite.data.model })}
+                {t('assist.proposedBy', { model: rewrite.data.model })}
               </figcaption>
               <p className="text-sm whitespace-pre-wrap">{rewrite.data.text}</p>
             </figure>

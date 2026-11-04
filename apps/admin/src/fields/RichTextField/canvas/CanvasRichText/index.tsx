@@ -6,22 +6,34 @@ import { toast } from 'sonner';
 import { useAssistEnabled } from '@/api/assist';
 import { logError, reportError } from '@/helpers/reportError';
 import { useRegisterCanvasHandle, type CanvasFieldHandle } from '../../../form/canvasHandles';
-import { useFieldsEnvironment } from '../../../form/context';
+import { useEntryFormStore, useFieldsEnvironment } from '../../../form/context';
 import { createRelay } from '../../../helpers/relay';
+import { entryTitle } from '../../../helpers/titles';
 import type { BuiltInEditorProps } from '../../../types';
 import { useRewriteSelection } from '../../hooks/useRewriteSelection';
 import { useRichTextEditor } from '../../hooks/useRichTextEditor';
+import { useWriteProposal } from '../../hooks/useWriteProposal';
 import { LinkPopover } from '../../LinkPopover';
 import { Notes } from '../../Notes';
 import { BlockHandle, type HoveredBlock } from '../BlockHandle';
 import { topLevelBlockAt } from '../blockMove';
-import { edgeTarget, insertBlockAt, turnInto, type BlockType, type PickedImage } from '../blocks';
+import {
+  edgeTarget,
+  insertBlockAt,
+  turnInto,
+  type BlockType,
+  type MenuChoice,
+  type PickedImage,
+  type WriteKind,
+} from '../blocks';
 import { BubbleToolbar } from '../BubbleToolbar';
 import { canvasExtensions } from '../extensions';
 import { RewritePopover } from '../RewritePopover';
 import { createSlashBridge } from '../slashCommand';
 import { SlashMenu } from '../SlashMenu';
 import { uploadIntoEditor } from '../uploadFiles';
+import { WritePopover } from '../WritePopover';
+import { contextAround, targetAtBlock, targetOf } from '../writeTarget';
 
 /**
  * The writing surface's typography: the reading face (Source Serif 4, `font-serif text-canvas`) for the
@@ -72,7 +84,8 @@ const blockUnderPointer = (editor: Editor, wrapper: HTMLElement, clientY: number
  */
 export const CanvasRichText = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
-  const { uploadMedia } = useFieldsEnvironment();
+  const { uploadMedia, model, locale } = useFieldsEnvironment();
+  const store = useEntryFormStore();
   const { context, definition, field, path } = props;
   const [linkOpen, setLinkOpen] = useState(false);
   const [hovered, setHovered] = useState<HoveredBlock | null>(null);
@@ -112,6 +125,38 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
   });
   const assistEnabled = useAssistEnabled();
   const rewrite = useRewriteSelection(editor);
+  const write = useWriteProposal(editor, {
+    title: () => entryTitle(model, store.getState().values),
+    fieldLabel: definition.label,
+    locale,
+  });
+  // The `+` menus and the canvas handle stay the same between renders; they call the current `start`.
+  const startWrite = useRef(write.start);
+  useEffect(() => {
+    startWrite.current = write.start;
+  });
+  /** A write from a `+` menu: at a boundary between blocks, or in place of an empty paragraph at an edge. */
+  const writeAt = useCallback(
+    (kind: WriteKind, at: Parameters<typeof targetOf>[1]) => {
+      const target = targetOf(editor.state.doc, at);
+      startWrite.current({ kind, target, context: contextAround(editor.state.doc, target.from, target.to) });
+    },
+    [editor],
+  );
+  /** The `/` menu: a block replaces or wraps the cursor's block; an assist writes there. */
+  const chooseFromSlash = (choice: MenuChoice, range: { from: number; to: number }) => {
+    if (choice.kind === 'block') {
+      void turnInto(editor, choice.type, range, pickImages);
+      return;
+    }
+    editor.chain().focus().deleteRange(range).run();
+    const cursor = editor.state.selection.from;
+    write.start({
+      kind: choice.write,
+      target: targetAtBlock(editor.state.doc, cursor),
+      context: contextAround(editor.state.doc, cursor, cursor),
+    });
+  };
   const pickImages = useCallback(async (): Promise<PickedImage[]> => {
     try {
       const picked = await context.pickMedia({ multiple: true, allowedKinds: ['image'] });
@@ -127,8 +172,13 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
     [editor, pickImages],
   );
   const handle = useMemo<CanvasFieldHandle>(
-    () => ({ insertBlock: (type, at) => insert(type, edgeTarget(editor, at)) }),
-    [insert, editor],
+    () => ({
+      insertBlock: (type, at) => insert(type, edgeTarget(editor, at)),
+      ...(assistEnabled
+        ? { write: (kind: WriteKind, at: 'start' | 'end') => writeAt(kind, edgeTarget(editor, at)) }
+        : {}),
+    }),
+    [insert, editor, assistEnabled, writeAt],
   );
   useRegisterCanvasHandle(path, editable ? handle : undefined);
   const track = (event: MouseEvent<HTMLDivElement>) => {
@@ -138,46 +188,56 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
   };
   const maxLength = definition.type === 'richtext' ? definition.settings.maxLength : undefined;
   return (
-    <div
-      ref={wrapperRef}
-      className="relative"
-      onMouseMove={track}
-      onMouseLeave={() => (menuOpen ? undefined : setHovered(null))}
-      data-rich-text-canvas
-    >
-      {editable && hovered ? (
-        <BlockHandle
-          editor={editor}
-          block={hovered}
-          onInsert={(type, pos) => void insert(type, pos)}
-          onMenuOpenChange={setMenuOpen}
-        />
-      ) : null}
-      <EditorContent editor={editor} />
-      {editable ? (
+    <>
+      <div
+        ref={wrapperRef}
+        className="relative"
+        onMouseMove={track}
+        onMouseLeave={() => (menuOpen ? undefined : setHovered(null))}
+        data-rich-text-canvas
+      >
+        {editable && hovered ? (
+          <BlockHandle
+            editor={editor}
+            block={hovered}
+            onInsert={(type, pos) => void insert(type, pos)}
+            onWrite={assistEnabled ? writeAt : undefined}
+            onMenuOpenChange={setMenuOpen}
+          />
+        ) : null}
+        <EditorContent editor={editor} />
+        {editable ? (
+          <>
+            <BubbleToolbar
+              editor={editor}
+              onLink={() => setLinkOpen(true)}
+              onRewrite={assistEnabled ? rewrite.start : undefined}
+            />
+            <LinkPopover
+              editor={editor}
+              active={editor.isActive('link')}
+              disabled={false}
+              open={linkOpen}
+              onOpenChange={setLinkOpen}
+              anchorToSelection
+            />
+            <SlashMenu
+              editor={editor}
+              bridge={slash}
+              onChoose={(choice, state) => chooseFromSlash(choice, state.range)}
+              assist={assistEnabled}
+            />
+          </>
+        ) : null}
+        <Notes editor={editor} initial={initial} maxLength={maxLength} />
+      </div>
+      {/* Outside the wrapper: pointer moves over these portaled popovers must not move the block handle. */}
+      {editable && assistEnabled ? (
         <>
-          <BubbleToolbar
-            editor={editor}
-            onLink={() => setLinkOpen(true)}
-            onRewrite={assistEnabled ? rewrite.start : undefined}
-          />
-          {assistEnabled ? <RewritePopover editor={editor} rewrite={rewrite} /> : null}
-          <LinkPopover
-            editor={editor}
-            active={editor.isActive('link')}
-            disabled={false}
-            open={linkOpen}
-            onOpenChange={setLinkOpen}
-            anchorToSelection
-          />
-          <SlashMenu
-            editor={editor}
-            bridge={slash}
-            onChoose={(type, state) => void turnInto(editor, type, state.range, pickImages)}
-          />
+          <RewritePopover editor={editor} rewrite={rewrite} />
+          <WritePopover editor={editor} write={write} />
         </>
       ) : null}
-      <Notes editor={editor} initial={initial} maxLength={maxLength} />
-    </div>
+    </>
   );
 };

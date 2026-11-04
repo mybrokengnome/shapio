@@ -81,6 +81,11 @@ export const BoundaryInserter = ({ targets, actions, final }: BoundaryInserterPr
                 <BlockMenuItems
                   heading={several ? insertions.field.label : undefined}
                   onSelect={(type) => menu.defer(() => actions.insertBlock(insertions.field, type, edge))}
+                  onAssist={
+                    actions.canWrite(insertions.field)
+                      ? (kind) => menu.defer(() => actions.write(insertions.field, kind, edge))
+                      : undefined
+                  }
                 />
               ) : insertions.kind === 'components' ? (
                 <>

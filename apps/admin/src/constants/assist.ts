@@ -15,6 +15,15 @@ export const CONTENT_OPS_FINISHED: readonly ContentOpsStatus[] = ['succeeded', '
 export const REWRITE_MAX_TEXT = 20_000;
 export const REWRITE_MAX_INSTRUCTION = 500;
 
+/**
+ * The server's limits on a write (routes/admin/assist/schemas.ts): the text before the insertion point (the
+ * client sends its end), the text after it (its start), the instruction and the title.
+ */
+export const ASSIST_WRITE_BEFORE_CHARS = 12_000;
+export const ASSIST_WRITE_AFTER_CHARS = 2_000;
+export const ASSIST_WRITE_MAX_INSTRUCTION = 500;
+export const ASSIST_WRITE_MAX_TITLE = 500;
+
 /** A schema description's limit (routes/admin/assist/schemas.ts). */
 export const SCHEMA_DESCRIPTION_MAX = 4000;
 
