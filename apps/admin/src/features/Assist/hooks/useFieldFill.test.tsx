@@ -127,13 +127,19 @@ describe('useFieldFill', () => {
     expect(result.current.outcomeOf(second)).toMatchObject({ kind: 'invalid', issues: [{ path: '/title' }] });
   });
 
-  it('tells a draft with unsaved autosaved work apart', async () => {
-    mocks.answer.mockRejectedValueOnce(
-      new ShapioApiError(409, { error: { code: 'ASSIST_DRAFT_HAS_UNSAVED_WORK', message: 'unsaved' } }),
-    );
+  it('tells a draft with unsaved autosaved work apart, and accepts again once it is saved', async () => {
+    mocks.answer
+      .mockRejectedValueOnce(
+        new ShapioApiError(409, { error: { code: 'ASSIST_DRAFT_HAS_UNSAVED_WORK', message: 'unsaved' } }),
+      )
+      .mockResolvedValueOnce(saved('a', { added: true, id: 'set-1' }));
     const { result } = setup();
     act(() => result.current.accept(first));
     await waitFor(() => expect(result.current.outcomeOf(first)).toEqual({ kind: 'unsavedWork' }));
+    expect(result.current.isPending(first)).toBe(false);
+    act(() => result.current.accept(first));
+    await waitFor(() => expect(result.current.outcomeOf(first)?.kind).toBe('saved'));
+    expect(mocks.calls).toHaveLength(2);
   });
 
   it('refuses to send an emptied value', () => {

@@ -29,8 +29,7 @@ export const Group = ({ group, fill, model }: GroupProps) => {
   const { t } = useTranslation();
   const outcome = fill.outcomeOf(group);
   const pending = fill.isPending(group);
-  const final =
-    outcome?.kind === 'saved' || outcome?.kind === 'filledMeanwhile' || outcome?.kind === 'unsavedWork';
+  const final = outcome?.kind === 'saved' || outcome?.kind === 'filledMeanwhile';
   const allRejected = group.proposals.every((proposal) => fill.isRejected(proposal.key));
   const title = group.entryTitle ?? t('content.untitled');
   const firstPath = group.proposals[0]?.fieldPath;

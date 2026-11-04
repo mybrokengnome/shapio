@@ -186,6 +186,8 @@ test('rewrite the selection from the bubble toolbar: a proposal to edit, then Re
   await expect(popover).toBeHidden();
   await expect(body()).toContainText(ASSIST_ANSWERS.rewrite);
   await expect(body()).not.toContainText(BODY_TEXT);
+  // The triple-clicked paragraph was replaced exactly: no empty paragraph is left beside it.
+  expect(await body().locator(':scope > *').allTextContents()).toEqual([ASSIST_ANSWERS.rewrite]);
   expect(llm.calls.at(-1)?.system).toContain('Make it moodier');
   // Autosave keeps the edit as a draft.
   await expect

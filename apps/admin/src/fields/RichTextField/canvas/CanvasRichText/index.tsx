@@ -150,12 +150,11 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
       return;
     }
     editor.chain().focus().deleteRange(range).run();
-    const cursor = editor.state.selection.from;
-    write.start({
-      kind: choice.write,
-      target: targetAtBlock(editor.state.doc, cursor),
-      context: contextAround(editor.state.doc, cursor, cursor),
-    });
+    // The proposal goes after the cursor's block (or in place of it, when empty), so the context splits there,
+    // not at the cursor: `/` typed mid-paragraph still writes after the whole paragraph.
+    const { doc } = editor.state;
+    const target = targetAtBlock(doc, editor.state.selection.from);
+    write.start({ kind: choice.write, target, context: contextAround(doc, target.from, target.to) });
   };
   const pickImages = useCallback(async (): Promise<PickedImage[]> => {
     try {

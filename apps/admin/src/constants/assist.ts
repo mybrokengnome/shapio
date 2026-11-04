@@ -24,6 +24,9 @@ export const ASSIST_WRITE_AFTER_CHARS = 2_000;
 export const ASSIST_WRITE_MAX_INSTRUCTION = 500;
 export const ASSIST_WRITE_MAX_TITLE = 500;
 
+/** Drafts a fill run reads at most for a component field before it stops (`scanCapped`; constants/assist.ts). */
+export const ASSIST_FILL_SCAN_LIMIT = 2_000;
+
 /** A schema description's limit (routes/admin/assist/schemas.ts). */
 export const SCHEMA_DESCRIPTION_MAX = 4000;
 

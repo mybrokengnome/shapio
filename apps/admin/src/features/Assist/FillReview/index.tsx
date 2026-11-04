@@ -15,11 +15,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { ASSIST_FILL_SCAN_LIMIT } from '@/constants/assist';
+import { findModelByKey, useContentSchema } from '@/features/Content/hooks/useContentSchema';
 import { describeAssistErrorCode } from '@/helpers/describeAssistError';
 import { isKnownSkipReason, SKIP_REASON_KEYS } from '../constants';
 import { fillGroupsOf } from '../helpers/fillGroups';
 import type { FieldFill } from '../hooks/useFieldFill';
-import { useModelsByKey } from '../hooks/useModelsByKey';
 import { Group } from './Group';
 
 type FillReviewProps = {
@@ -37,7 +38,7 @@ type FillReviewProps = {
  */
 export const FillReview = ({ open, onOpenChange, model, result, fill }: FillReviewProps) => {
   const { t } = useTranslation();
-  const models = useModelsByKey();
+  const { schema } = useContentSchema();
   const groups = useMemo(() => fillGroupsOf(result.proposals), [result.proposals]);
   const skipReason = (skip: ContentOpsSkip) =>
     isKnownSkipReason(skip.reason) ? t(SKIP_REASON_KEYS[skip.reason]) : describeAssistErrorCode(skip.reason);
@@ -55,7 +56,12 @@ export const FillReview = ({ open, onOpenChange, model, result, fill }: FillRevi
           ) : (
             <ul aria-label={t('assist.fill.title')} className="divide-y">
               {groups.map((group) => (
-                <Group key={group.key} group={group} fill={fill} model={models.get(group.modelKey)} />
+                <Group
+                  key={group.key}
+                  group={group}
+                  fill={fill}
+                  model={schema ? findModelByKey(schema, group.modelKey) : undefined}
+                />
               ))}
             </ul>
           )}
@@ -74,7 +80,12 @@ export const FillReview = ({ open, onOpenChange, model, result, fill }: FillRevi
             </p>
           ) : null}
           {result.scanCapped ? (
-            <p className="text-meta text-muted-foreground">{t('assist.fill.scanCapped')}</p>
+            <p className="text-meta text-muted-foreground">
+              {t('assist.fill.scanCapped', {
+                count: ASSIST_FILL_SCAN_LIMIT,
+                limit: ASSIST_FILL_SCAN_LIMIT.toLocaleString(),
+              })}
+            </p>
           ) : null}
         </SheetBody>
         <SheetFooter>

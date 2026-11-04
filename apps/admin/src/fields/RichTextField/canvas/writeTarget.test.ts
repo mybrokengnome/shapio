@@ -58,6 +58,13 @@ describe('targetOf', () => {
 });
 
 describe('contextAround', () => {
+  it('splits at the target, not the cursor, for a `/` typed mid-paragraph', () => {
+    const { doc } = stateOf([paragraph('One more'), paragraph('Two')]);
+    const target = targetAtBlock(doc, 4);
+    expect(target).toEqual({ from: 10, to: 10 });
+    expect(contextAround(doc, target.from, target.to)).toEqual({ before: 'One more', after: 'Two' });
+  });
+
   it('sends the text before the split and after the target', () => {
     const { doc } = doc3();
     expect(contextAround(doc, 5, 7)).toEqual({ before: 'One', after: 'Two' });

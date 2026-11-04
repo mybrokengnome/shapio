@@ -13,7 +13,10 @@ import { contentIssuesOf } from '@/fields/helpers/apiErrors';
 import { logError } from '@/helpers/reportError';
 import type { FillGroup } from '../helpers/fillGroups';
 
-/** What happened to one entry locale's accept. `failed` and `invalid` can be tried again. */
+/**
+ * What happened to one entry locale's accept. `saved` and `filledMeanwhile` are final; `unsavedWork` (save or
+ * discard the entry's autosaved changes first), `invalid` and `failed` can be accepted again.
+ */
 export type FillOutcome =
   | { kind: 'saved'; changeSet: AcceptContentOpsResult['changeSet'] }
   | { kind: 'filledMeanwhile' }
