@@ -123,7 +123,8 @@ event (`assist.alt_text`, `assist.summarize`, `assist.translate`, `assist.rewrit
 `assist.suggest`, `assist.schema_draft`, `assist.content_ops`) with the same metadata and the IDs involved (asset, entry, model, locales).
 Accepting a fill proposal records `assist.content_ops_accept` with the entry, its fields, and the change set.
 `assist_runs` rows are deleted after `USAGE_RETENTION_DAYS`. The proposals of a content-ops run are kept as
-the result of its job until finished jobs are pruned (`RETENTION_DAYS`).
+the result of its job until finished jobs are pruned (`RETENTION_DAYS`). Accepting a fill proposal after that answers
+`404 ASSIST_RUN_NOT_FOUND`, like a missing run.
 
 ## In the admin
 
@@ -166,9 +167,9 @@ as a draft. Nothing is published.
     alone.
   - Required fields open in a review list: one row per field with the proposed value, which you can edit,
     then Accept or Reject. Accept saves the entry's draft and adds the entry to the run's change set.
-- **Fill in…** (a content type's list, behind the toolbar's overflow, with `changes.manage`): pick a string,
-  text, or enum field (also a field of a single component such as SEO) and, for a localized type, the locale.
-  It proposes values for the entries where that field is empty and opens the same review list.
+- **Fill in…** (a button at the top of a content type's list, beside New, with `changes.manage`): pick a
+  string, text, or enum field (also a field of a single component such as SEO). It proposes values for the
+  entries where that field is empty, in the list's current locale, and opens the same review list.
 - **Settings → Assist**: whether assist is on, the provider and model, this month's usage (with
   `changes.manage`), and a **Try it** box that runs a rewrite without saving anything.
 
@@ -253,20 +254,26 @@ multi-site instance). Every action except `status`, reading a run, and accepting
 
 ### Errors
 
-| Status | Code                            | Meaning                                                                  |
-| ------ | ------------------------------- | ------------------------------------------------------------------------ |
-| 404    | (route not found)               | Assist is off.                                                           |
-| 422    | `ASSIST_VISION_UNSUPPORTED`     | The model doesn't accept images.                                         |
-| 422    | `ASSIST_NOT_AN_IMAGE`           | Alt text for a file that isn't a raster image (SVG included).            |
-| 422    | `ASSIST_DECLINED`               | The model declined the request.                                          |
-| 400    | `ASSIST_FIELD_NOT_SUGGESTIBLE`  | Suggest: the field's type or place gets no suggestion.                   |
-| 422    | `ASSIST_NOTHING_TO_WORK_FROM`   | Suggest: the entry has no readable text yet; write: nothing to continue. |
-| 409    | `ASSIST_FIELD_FILLED_MEANWHILE` | Accept: the field was filled since the proposal.                         |
-| 429    | `RATE_LIMITED`                  | Over `AI_RATE_LIMIT_MAX` this minute.                                    |
-| 502    | `ASSIST_INVALID_OUTPUT`         | No valid answer, even after one correction. `details.problems` says why. |
-| 502    | `ASSIST_PROVIDER_AUTH`          | The provider rejected the key or model.                                  |
-| 502    | `ASSIST_PROVIDER_ERROR`         | The provider failed, timed out or couldn't be reached.                   |
-| 503    | `ASSIST_PROVIDER_BUSY`          | The provider is rate limiting.                                           |
+| Status | Code                               | Meaning                                                                                        |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 404    | (route not found)                  | Assist is off.                                                                                 |
+| 422    | `ASSIST_VISION_UNSUPPORTED`        | The model doesn't accept images.                                                               |
+| 422    | `ASSIST_NOT_AN_IMAGE`              | Alt text for a file that isn't a raster image (SVG included).                                  |
+| 422    | `ASSIST_DECLINED`                  | The model declined the request.                                                                |
+| 400    | `ASSIST_FIELD_NOT_SUGGESTIBLE`     | Suggest: the field's type or place gets no suggestion.                                         |
+| 422    | `ASSIST_NOTHING_TO_WORK_FROM`      | Suggest: the entry has no readable text yet; write: nothing to continue.                       |
+| 409    | `ASSIST_FIELD_FILLED_MEANWHILE`    | Accept: the field was filled since the proposal.                                               |
+| 409    | `ASSIST_DRAFT_HAS_UNSAVED_WORK`    | Accept: the draft has autosaved changes nobody saved.                                          |
+| 409    | `ASSIST_RUN_NOT_FINISHED`          | Accept: the run has not finished yet.                                                          |
+| 404    | `ASSIST_RUN_NOT_FOUND`             | No such run you can see, or (accept) its result was pruned after `RETENTION_DAYS`.             |
+| 404    | `ASSIST_PROPOSAL_NOT_FOUND`        | Accept: the run has no proposal with that key.                                                 |
+| 400    | `ASSIST_ACCEPT_ITEMS_INVALID`      | Accept: items of several entries or locales, a wrong value shape, or a key twice.              |
+| 400    | `ASSIST_CONTENT_OPS_INPUT_INVALID` | Propose: `fieldEmpty` without `modelKey` and `fieldPath`, or an option the rule does not take. |
+| 429    | `RATE_LIMITED`                     | Over `AI_RATE_LIMIT_MAX` this minute.                                                          |
+| 502    | `ASSIST_INVALID_OUTPUT`            | No valid answer, even after one correction. `details.problems` says why.                       |
+| 502    | `ASSIST_PROVIDER_AUTH`             | The provider rejected the key or model.                                                        |
+| 502    | `ASSIST_PROVIDER_ERROR`            | The provider failed, timed out or couldn't be reached.                                         |
+| 503    | `ASSIST_PROVIDER_BUSY`             | The provider is rate limiting.                                                                 |
 
 ## Limits
 
