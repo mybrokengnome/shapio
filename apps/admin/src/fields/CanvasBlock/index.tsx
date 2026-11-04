@@ -3,8 +3,10 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/helpers/cn';
+import { FieldAssist } from '../FieldAssist';
 import { FieldEditor } from '../FieldEditor';
 import { FieldMessages } from '../FieldMessages';
+import { useCanSuggest } from '../hooks/useCanSuggest';
 import { useFieldControl } from '../hooks/useFieldControl';
 import { ScopeIcon } from '../ScopeIcon';
 
@@ -28,6 +30,7 @@ type CanvasBlockProps = {
 export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScope }: CanvasBlockProps) => {
   const { t } = useTranslation();
   const control = useFieldControl({ field, owner, value, onChange, path, appearance: 'canvas' });
+  const canSuggest = useCanSuggest(field, path);
   const custom = control.resolved.kind === 'runtime';
   const LabelElement = control.labeling === 'input' ? Label : 'span';
   return (
@@ -37,7 +40,7 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
       id={`${control.inputId}-section`}
       data-field-path={path}
       data-canvas-field={field.type}
-      className="relative min-w-0 scroll-mt-24 space-y-2"
+      className={cn('relative min-w-0 scroll-mt-24 space-y-2', canSuggest && 'group/field')}
     >
       <div
         className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"
@@ -65,6 +68,7 @@ export const CanvasBlock = memo(({ field, owner, value, onChange, path, showScop
         <FieldEditor control={control} />
       </div>
       <FieldMessages field={field} control={control} />
+      {canSuggest ? <FieldAssist label={field.label} path={path} onChange={onChange} /> : null}
     </div>
   );
 });

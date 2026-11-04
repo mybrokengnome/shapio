@@ -1,10 +1,8 @@
 import {
   effectiveTitleField,
   richTextBodyOf,
-  richTextToPlainText,
   type FieldDefinition,
   type ModelDefinition,
-  type RichTextDocument,
 } from '@shapio/schema';
 import { completeText } from '../../assist/completion.js';
 import { summarizePrompt } from '../../assist/prompts/summarize.js';
@@ -15,8 +13,9 @@ import { AppError } from '../../helpers/appError.js';
 import { modelWithPolicy } from '../contentAccess.js';
 import type { AssistServiceContext } from './context.js';
 import { loadEntryDraft } from './entrySource.js';
+import { plainTextOf } from './entryText.js';
 import { runAssist } from './runs.js';
-import { cleanModelText, fitToLength } from './text.js';
+import { askWithinLength, cleanModelText } from './text.js';
 
 export type SummarizeInput = {
   modelKey: string;
@@ -61,11 +60,6 @@ const summaryTarget = (definition: ModelDefinition, fieldApiKey: string) => {
   }
   return { field: field as FieldDefinition<'string' | 'text'>, body, title };
 };
-
-const plainTextOf = (value: unknown): string =>
-  typeof value === 'object' && value !== null && 'doc' in value
-    ? richTextToPlainText(value as RichTextDocument)
-    : '';
 
 /** A summary of the entry's draft body for one property (`read` and `update` on the model). */
 export const summarizeEntry = async (
@@ -122,11 +116,7 @@ export const summarizeEntry = async (
           { singleLine: target.field.type === 'string' },
         );
       };
-      let text = await ask(false);
-      if (maxLength !== undefined && [...text].length > maxLength) {
-        text = await ask(true);
-      }
-      return { ...fitToLength(text, maxLength), model: meter.model };
+      return { ...(await askWithinLength(ask, maxLength)), model: meter.model };
     },
   );
 };

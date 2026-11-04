@@ -47,6 +47,44 @@ describe('assist api', () => {
     expect(call(3).body).toEqual({ text: 'Hello', instruction: 'Shorten' });
   });
 
+  it('posts write and suggest with the body as given', async () => {
+    const { client, call } = setup(200, {});
+    await client.admin.assist.write({ kind: 'section', instruction: 'Pricing', before: 'Intro.' });
+    await client.admin.assist.write({ kind: 'continue', before: 'Intro.' });
+    await client.admin.assist.suggest({ modelKey: 'article', entryId: 'e1', fieldPath: '/seo/title' });
+    expect([0, 1, 2].map((index) => [call(index).method, call(index).url])).toEqual([
+      ['POST', 'https://cms.test/cms/api/admin/assist/write'],
+      ['POST', 'https://cms.test/cms/api/admin/assist/write'],
+      ['POST', 'https://cms.test/cms/api/admin/assist/suggest'],
+    ]);
+    expect(call(0).body).toEqual({ kind: 'section', instruction: 'Pricing', before: 'Intro.' });
+    expect(call(2).body).toEqual({ modelKey: 'article', entryId: 'e1', fieldPath: '/seo/title' });
+  });
+
+  it('starts a fill run and accepts its proposals under the encoded run ID', async () => {
+    const { client, call } = setup(200, {});
+    await client.admin.assist.proposeContentOps({
+      rule: 'fieldEmpty',
+      modelKey: 'article',
+      fieldPath: '/keywords',
+      locale: 'fr',
+    });
+    await client.admin.assist.acceptContentOps('r 1', {
+      items: [{ key: 'entry:e1:fr:/keywords', value: 'a' }],
+    });
+    expect(call(0).body).toEqual({
+      rule: 'fieldEmpty',
+      modelKey: 'article',
+      fieldPath: '/keywords',
+      locale: 'fr',
+    });
+    expect(call(1)).toEqual({
+      url: 'https://cms.test/cms/api/admin/assist/content-ops/r%201/accept',
+      method: 'POST',
+      body: { items: [{ key: 'entry:e1:fr:/keywords', value: 'a' }] },
+    });
+  });
+
   it('reads a content-ops run by its encoded ID', async () => {
     const { client, call } = setup(200, { runId: 'r 1', status: 'queued' });
     await client.admin.assist.contentOpsRun('r 1');

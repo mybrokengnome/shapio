@@ -161,9 +161,16 @@
       "ASSIST_NOT_AN_IMAGE": "Alt text can only be suggested for images.",
       "ASSIST_FIELD_NOT_SUMMARIZABLE": "This field can't be filled with a summary.",
       "ASSIST_NOTHING_TO_SUMMARIZE": "There is no saved body text to summarize yet.",
+      "ASSIST_FIELD_NOT_SUGGESTIBLE": "Assist can't suggest a value for this field.",
+      "ASSIST_NOTHING_TO_WORK_FROM": "There is nothing saved in this entry to work from yet. Write a title or some text first.",
       "ASSIST_NOT_LOCALIZED": "This content type isn't localized.",
       "ASSIST_SAME_LOCALE": "Pick a different locale to translate from.",
-      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists.",
+      "ASSIST_RUN_NOT_FOUND": "That proposal run no longer exists: its proposals expired. Run it again.",
+      "ASSIST_PROPOSAL_NOT_FOUND": "That proposal is no longer part of the run.",
+      "ASSIST_FIELD_FILLED_MEANWHILE": "This field got a value meanwhile.",
+      "ASSIST_DRAFT_HAS_UNSAVED_WORK": "The entry's draft has autosaved changes nobody has saved yet, so nothing was saved over them.",
+      "ASSIST_RUN_NOT_FINISHED": "The proposal run hasn't finished yet. Try again in a moment.",
+      "ASSIST_ACCEPT_ITEMS_INVALID": "These values can't be accepted together. Close the review and run it again.",
       "APPROVAL_UNKNOWN_ROLE": "A role this workflow names was deleted. Uncheck it and save again.",
       "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this site a workflow of its own.",
       "CHANGE_SET_APPROVAL_NOT_ELIGIBLE": "You can't sign off on this change set at its current stage.",
@@ -833,10 +840,13 @@
       "webhookUpdate": "Updated webhook",
       "assistAltText": "Suggested alt text with assist",
       "assistContentOps": "Proposed fixes with assist",
+      "assistContentOpsAccept": "Accepted proposed values with assist",
       "assistRewrite": "Rewrote text with assist",
       "assistSchemaDraft": "Proposed content types with assist",
+      "assistSuggest": "Suggested a field value with assist",
       "assistSummarize": "Summarized with assist",
       "assistTranslate": "Translated with assist",
+      "assistWrite": "Wrote text with assist",
       "schemaScope": "Changed where a model is available",
       "changeSetApprovalClear": "Change set approval cleared",
       "changeSetApprovalRequest": "Change set approval requested",
@@ -1765,6 +1775,7 @@
       "dragItem": "Drag {{item}} (item {{position}}) to move it",
       "groupWrite": "Write",
       "groupMedia": "Media",
+      "groupAssist": "Assist",
       "groupComponents": "Your components",
       "groupIn": "{{group}} · {{field}}",
       "paragraph": "Paragraph",
@@ -3356,6 +3367,8 @@
     "working": "Writing…",
     "discard": "Discard",
     "truncated": "Shortened to fit the field's limit.",
+    "proposedBy": "Proposed by {{model}}",
+    "menu": "Assist",
     "errors": {
       "rateLimited": "Too many assist requests. Try again in a minute.",
       "runFailed": "The proposal run failed."
@@ -3369,10 +3382,24 @@
       "run": "Rewrite",
       "shorten": "Shorten",
       "expand": "Expand",
-      "proposal": "Proposed by {{model}}",
       "replace": "Replace selection",
       "stale": "The selected text changed meanwhile. Select it again and rewrite.",
       "tooLong": "Select less text (at most {{max}} characters)."
+    },
+    "write": {
+      "section": "Write…",
+      "continue": "Continue writing",
+      "title": "Write with assist",
+      "instruction": "What should it write?",
+      "instructionPlaceholder": "A section on pricing",
+      "hint": "The model writes from the text around this point, the entry's title and the field's name. Nothing changes in the document until you insert it.",
+      "run": "Write",
+      "proposalHint": "Edit it here like any text. Insert puts it in the document as headings, paragraphs and lists.",
+      "insert": "Insert",
+      "tryAgain": "Try again",
+      "stale": "The place you were writing at changed. Discard this and start again.",
+      "discardTitle": "Discard this proposal?",
+      "keepEditing": "Keep editing"
     },
     "altText": {
       "suggest": "Suggest alt text",
@@ -3380,16 +3407,16 @@
     },
     "saveFirst": "Save your changes first: assist reads the saved version.",
     "saveFailed": "Your changes couldn't be saved, so assist didn't run. Check the document and try again.",
-    "summarize": {
-      "run": "Summarize from body",
-      "hint": "Writes a summary of the body into this field. Review it before you save: it's a proposal."
+    "suggest": {
+      "run": "Suggest",
+      "runFor": "Suggest a value for {{field}}",
+      "hint": "Writes a value from the rest of the entry (title, properties, and body). Review it before you save."
     },
     "translate": {
       "run": "Translate {{locale}} from {{from}}",
       "pending": "Translating into {{locale}}…"
     },
     "proposal": {
-      "title": "Proposed by {{model}}",
       "description": "Translated from {{from}} as a draft. Review it before publishing.",
       "issues": "Translation issues",
       "dismiss": "Dismiss"
@@ -3424,6 +3451,51 @@
       "reject": "Reject",
       "accepted": "Accepted",
       "rejected": "Rejected"
+    },
+    "fill": {
+      "open": "Fill in…",
+      "popover": "Fill in a field",
+      "field": "Field",
+      "fieldPlaceholder": "Pick a field",
+      "hint": "A model proposes a value for each entry where this field is empty (up to 50 per run), in this list's locale. You review every value; accepted ones are saved as drafts in one change set.",
+      "propose": "Propose values",
+      "running": "Proposing values…",
+      "title": "Proposed values",
+      "description": "Proposed by {{model}}. Accepting saves the values as drafts in one change set; nothing goes live until it ships.",
+      "none": "Nothing to fill.",
+      "noneSkipped_one": "Nothing to fill: {{count}} left as it is.",
+      "noneSkipped_other": "Nothing to fill: {{count}} left as they are.",
+      "skippedAbout": "fields left as they are",
+      "scanCapped_one": "Stopped after scanning {{limit}} entry. Run it again for more.",
+      "scanCapped_other": "Stopped after scanning {{limit}} entries. Run it again for more.",
+      "keep": "Keep",
+      "keepField": "Keep {{field}}",
+      "rejectField": "Reject {{field}}",
+      "rejectedField": "Left out: this field stays empty.",
+      "acceptFor": "Accept values for {{entry}}",
+      "inChangeSet": "In change set",
+      "savedAsDraft": "Saved as draft",
+      "filledMeanwhile": "Filled meanwhile",
+      "unsavedWork": "Unsaved work",
+      "unsavedWorkHint": "The entry's draft has autosaved changes nobody has saved yet, so the values weren't saved over them. Open the entry, save or discard those changes, and fill it there.",
+      "notSaved": "Not saved",
+      "invalid": "The entry can't be saved yet:",
+      "issue": "{{path}}: {{problem}}",
+      "openChangeSet": "Open change set",
+      "notAdded": {
+        "unpublishedChanges": "The draft already had edits that haven't shipped, so it was left out of the change set: shipping the set would publish more than this fill. Review the entry and publish it yourself.",
+        "neverPublished": "The entry was never published, so it was left out of the change set: shipping the set would publish the whole entry. Publish it yourself when it's ready."
+      },
+      "skip": {
+        "fieldNotSuggestible": "Assist can't suggest a value for the field.",
+        "notReadable": "You can't read the entry.",
+        "notEditable": "You can't edit the entry or the field.",
+        "publishesOnSave": "The content type has no drafts: saving would publish at once.",
+        "filledMeanwhile": "The field got a value meanwhile.",
+        "modelMissing": "The content type no longer exists.",
+        "otherRequiredEmpty": "Another required field is empty too, and this run can't fill it.",
+        "unsavedWork": "The entry has autosaved edits that haven't been saved yet."
+      }
     },
     "settings": {
       "status": "Status",

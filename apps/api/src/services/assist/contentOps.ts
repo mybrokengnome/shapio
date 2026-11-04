@@ -4,6 +4,7 @@ import {
   ASSIST_CONTENT_OPS_MAX_ATTEMPTS,
   type ContentOpsRule,
 } from '../../constants/assist.js';
+import { writeLocaleFor } from '../../content/locales.js';
 import { resolveModel } from '../../content/model.js';
 import type { Database } from '../../db/index.js';
 import { AppError } from '../../helpers/appError.js';
@@ -13,15 +14,18 @@ import * as assistRunsRepository from '../../repositories/assistRuns.js';
 import * as jobsRepository from '../../repositories/jobs.js';
 import { actorColumns } from '../../schema/planner/actor.js';
 import type { SiteRef } from '../actorContext.js';
-import type { ContentServiceContext } from '../contentAccess.js';
+import { modelWithPolicy, type ContentServiceContext } from '../contentAccess.js';
 import type { AssistRuntime } from './context.js';
 import { assertLocale } from './entrySource.js';
+import { resolveSuggestTarget } from './suggestTarget.js';
 
 /**
  * Content-ops (plan §I): a job that works through up to 50 open health findings of one rule and proposes
  * fixes. `altMissing` proposes library alt texts as a review list (nothing is written; the person applies
  * each through the media update API); `localeMissing` writes missing locale drafts through the normal save
- * path into one change set (`source: 'assist'`). Nothing is published.
+ * path into one change set (`source: 'assist'`). `requiredEmpty` (the health rule's findings) and `fieldEmpty`
+ * (one field of one content type) propose values for empty fields as a review list; each accept saves them into
+ * the entry's draft and the run's change set (`services/assist/fillAccept.ts`). Nothing is published.
  */
 export type ContentOpsInput = {
   rule: ContentOpsRule;
@@ -29,13 +33,19 @@ export type ContentOpsInput = {
   modelKey?: string | undefined;
   /** `localeMissing`: the locale translations are made from (default: the default locale). */
   fromLocale?: string | undefined;
+  /** `fieldEmpty`: the field to fill (JSON pointer in API IDs) and the locale (default: the default locale). */
+  fieldPath?: string | undefined;
+  locale?: string | undefined;
 };
 
+/** `fieldPath` and `locale` are absent from runs queued before fills existed. */
 export type ContentOpsJobPayload = {
   runId: string;
   rule: ContentOpsRule;
   modelKey: string | null;
   fromLocale: string | null;
+  fieldPath?: string | null;
+  locale?: string | null;
 };
 
 type ContentOpsContext = {
@@ -51,6 +61,32 @@ export const CONTENT_OPS_PERMISSIONS: Readonly<
 > = {
   altMissing: { start: 'media.read', readAny: 'media.write' },
   localeMissing: { start: 'changes.manage', readAny: 'changes.manage' },
+  requiredEmpty: { start: 'changes.manage', readAny: 'changes.manage' },
+  fieldEmpty: { start: 'changes.manage', readAny: 'changes.manage' },
+};
+
+const invalidInput = (message: string) => new AppError(400, 'ASSIST_CONTENT_OPS_INPUT_INVALID', message);
+
+/**
+ * The input's rule-specific parts: `fieldPath` and `locale` belong to `fieldEmpty`, which needs a content type,
+ * a field that can get a suggestion and `update` on that type; `fromLocale` to `localeMissing`.
+ */
+const checkRuleInput = async (context: ContentServiceContext, input: ContentOpsInput) => {
+  if (input.rule !== 'fieldEmpty') {
+    if (input.fieldPath !== undefined || input.locale !== undefined) {
+      throw invalidInput('fieldPath and locale are only for the fieldEmpty rule');
+    }
+  } else {
+    if (input.modelKey === undefined || input.fieldPath === undefined) {
+      throw invalidInput('The fieldEmpty rule needs modelKey and fieldPath');
+    }
+    const { model } = await modelWithPolicy(context, input.modelKey, 'update');
+    resolveSuggestTarget(model, input.fieldPath);
+    writeLocaleFor(context.snapshot, model.definition, input.locale);
+  }
+  if (input.fromLocale !== undefined && input.rule !== 'localeMissing') {
+    throw invalidInput('fromLocale is only for the localeMissing rule');
+  }
 };
 
 const assertCan = async (context: ContentOpsContext, action: GlobalAction) => {
@@ -72,6 +108,7 @@ export const proposeContentOps = async (
   if (input.fromLocale !== undefined) {
     assertLocale(context, input.fromLocale);
   }
+  await checkRuleInput(context, input);
   const runId = randomUUID();
   const actor = actorColumns(context.actor);
   await context.db.transaction().execute(async (trx) => {
@@ -80,6 +117,8 @@ export const proposeContentOps = async (
       rule: input.rule,
       modelKey: input.modelKey ?? null,
       fromLocale: input.fromLocale ?? null,
+      fieldPath: input.fieldPath ?? null,
+      locale: input.locale ?? null,
     };
     const { job } = await enqueueJob(
       {

@@ -49,7 +49,7 @@ export const RewritePopover = ({ editor, rewrite }: RewritePopoverProps) => {
           <div className="space-y-2">
             <HintedLabel
               htmlFor={`${id}-result`}
-              label={t('assist.rewrite.proposal', { model: result.model })}
+              label={t('assist.proposedBy', { model: result.model })}
               hint={t('assist.rewrite.marksHint')}
             />
             <Textarea

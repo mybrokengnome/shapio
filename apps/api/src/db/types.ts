@@ -209,6 +209,7 @@ export interface AssistRuns {
   action: string;
   actor_id: string;
   actor_type: string;
+  change_set_id: string | null;
   created_at: Generated<Timestamp>;
   duration_ms: Generated<number>;
   error_code: string | null;

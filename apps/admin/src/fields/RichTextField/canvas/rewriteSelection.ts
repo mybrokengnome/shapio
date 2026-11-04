@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import type { EditorState } from '@tiptap/pm/state';
+import { Selection, type EditorState } from '@tiptap/pm/state';
 import type { TextRange } from '../selectionAnchor';
 
 /** Blocks of the selection are sent to the model separated by a blank line, and come back the same way. */
@@ -12,14 +12,32 @@ export type CapturedSelection = TextRange & { text: string };
 export const textOfRange = (doc: ProseMirrorNode, { from, to }: TextRange) =>
   doc.textBetween(from, to, BLOCK_SEPARATOR, '');
 
+/**
+ * A selection's range held to the text it covers. A triple-click selects a paragraph up to the start of the
+ * next block (or from before it, between blocks); replacing that would also take the boundary and leave an
+ * empty paragraph. Each end moves into the nearest textblock: the start forward, an end at the very start of
+ * a block (or between blocks) back to the end of the text before it.
+ */
+export const textRangeOf = (doc: ProseMirrorNode, { from, to }: TextRange): TextRange => {
+  const start = Selection.findFrom(doc.resolve(from), 1, true)?.from ?? from;
+  const $to = doc.resolve(to);
+  const atBlockStart = $to.parent.isTextblock && $to.parentOffset === 0 && to > start;
+  const end = !$to.parent.isTextblock
+    ? (Selection.findFrom($to, -1, true)?.to ?? to)
+    : atBlockStart
+      ? (Selection.findFrom(doc.resolve($to.before()), -1, true)?.to ?? to)
+      : to;
+  return end > start ? { from: start, to: end } : { from, to };
+};
+
 /** The selected text and where it is, or null when nothing but whitespace is selected. */
 export const captureSelection = (state: EditorState): CapturedSelection | null => {
-  const { from, to, empty } = state.selection;
-  if (empty) {
+  if (state.selection.empty) {
     return null;
   }
-  const text = textOfRange(state.doc, { from, to });
-  return text.trim() === '' ? null : { from, to, text };
+  const range = textRangeOf(state.doc, state.selection);
+  const text = textOfRange(state.doc, range);
+  return text.trim() === '' ? null : { ...range, text };
 };
 
 /** The range still holds the text that was sent (nobody typed into it meanwhile). */

@@ -414,6 +414,28 @@ message.
 "Suggest alt text" beside an alt input (rich-text image, media field, cover, library details). Images only;
 `onSuggest` puts the proposal in the caller's input and the person saves.
 
+**`FieldAssist`** (`fields/FieldAssist`) `{ label; path; onChange; align? }`
+"Suggest" under a field assist can fill: rendered by `FieldControl`, `CanvasBlock` and the document's title
+only where `useCanSuggest` holds (string or text, not enums; top level or a single component's field; an
+existing, editable entry). Its accessible name is "Suggest a value for {field}"; the explanation is behind
+`InfoHint`, on the same row. The row is out of sight (opacity, never removed) until the pointer is over the
+field or focus is inside it: the field's wrapper is a `group/field`, and the button stays in the tab order, so
+Tab from the input reaches and shows it. On touch screens (`pointer-coarse`) it is always shown, and while a
+suggestion is pending or has a message it stays shown. Its height is always reserved, so nothing moves.
+
+**Write proposal** (`fields/RichTextField/canvas/WritePopover`, `ProposalEditor`)
+"Write…" and "Continue writing" in the canvas's `/` and `+` menus open a popover anchored where the text
+goes: the instruction, then the model's text in a small Tiptap editor (the stored schema, the bubble toolbar's
+`proposal` variant) to edit and Insert as blocks. Escape or a click outside asks before discarding a proposal
+with text (a confirm step inside the popover, focus on Keep editing). The form editor's toolbar offers the same three actions
+(Write…, Continue writing, Rewrite…) in its Assist menu (`AssistMenu`); both share `useAssistActions`.
+
+**`FillReview`** (`features/Assist/FillReview`)
+Proposed values of a fill run in a `md` sheet, one group per entry locale (the entry as a link, a locale
+`Badge`, each field's value in its editor with Reject, one Accept). Outcomes are `StatusChip`s: In change set
+(`success`), Saved as draft (`muted`, with why behind `InfoHint`), Filled meanwhile and Unsaved work
+(`warning`), Not saved (`danger`, with the issues). The footer links the run's change set once one exists.
+
 ### Primitives (`components/ui`)
 
 - `Button` variants: `default` (primary), `outline`, `ghost`, `destructive`, `destructive-ghost`

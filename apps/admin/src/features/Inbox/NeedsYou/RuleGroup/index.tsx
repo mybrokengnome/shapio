@@ -3,6 +3,7 @@ import type { ModelDefinition } from '@shapio/schema';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssistEnabled } from '@/api/assist';
+import { useHasGlobalPermission } from '@/api/auth';
 import { ErrorState } from '@/components/ErrorState';
 import { IconTile } from '@/components/IconTile';
 import { LoadingState } from '@/components/LoadingState';
@@ -24,6 +25,9 @@ type RuleGroupProps = {
 const isContentOpsRule = (rule: string): rule is ContentOpsRule =>
   (CONTENT_OPS_RULES as readonly string[]).includes(rule);
 
+/** Runs whose fixes land in a change set: starting one needs `changes.manage` (the server checks it too). */
+const NEEDS_CHANGES_MANAGE: ReadonlySet<ContentOpsRule> = new Set(['localeMissing', 'requiredEmpty']);
+
 /**
  * One rule's findings: a heading with the rule's count, the first few rows, then "Show all" in place, which
  * pages through that rule's findings with "Load more" inside the group.
@@ -32,6 +36,7 @@ export const RuleGroup = ({ group, models, localeLabel, showLocale }: RuleGroupP
   const { t } = useTranslation();
   const headingId = useId();
   const assistEnabled = useAssistEnabled();
+  const canManageChanges = useHasGlobalPermission('changes.manage');
   const { query, findings, canShowAll, showAll, hasMore, loadMore, loadingMore } = useRuleGroupFindings(
     group.rule,
   );
@@ -50,7 +55,11 @@ export const RuleGroup = ({ group, models, localeLabel, showLocale }: RuleGroupP
           {group.count.toLocaleString()}
         </Badge>
       </div>
-      {assistEnabled && isContentOpsRule(group.rule) ? <ProposeFixes rule={group.rule} /> : null}
+      {assistEnabled &&
+      isContentOpsRule(group.rule) &&
+      (canManageChanges || !NEEDS_CHANGES_MANAGE.has(group.rule)) ? (
+        <ProposeFixes rule={group.rule} />
+      ) : null}
       {query.isPending ? (
         <LoadingState rows={2} className="px-5 py-2" />
       ) : query.isError ? (

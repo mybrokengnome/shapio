@@ -3,9 +3,11 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/helpers/cn';
+import { FieldAssist } from '../FieldAssist';
 import { FieldEditor } from '../FieldEditor';
 import { FieldMessages } from '../FieldMessages';
 import { useFieldsEnvironment } from '../form/context';
+import { useCanSuggest } from '../hooks/useCanSuggest';
 import { useFieldControl } from '../hooks/useFieldControl';
 import { ScopeBadge } from '../ScopeBadge';
 import { ScopeIcon } from '../ScopeIcon';
@@ -33,13 +35,14 @@ type FieldControlProps = {
 
 /**
  * One field in a form: label (with the localized/shared badge), the editor the field's definition chooses,
- * help text and inline errors.
+ * help text, inline errors and, where assist can fill it, "Suggest".
  */
 export const FieldControl = memo(
   ({ field, owner, value, onChange, path, topLevel, layout = 'stacked', className }: FieldControlProps) => {
     const { t } = useTranslation();
     const environment = useFieldsEnvironment();
     const control = useFieldControl({ field, owner, value, onChange, path });
+    const canSuggest = useCanSuggest(field, path);
     const LabelElement = control.labeling === 'input' ? Label : 'span';
     const inline = layout === 'inline';
     return (
@@ -47,6 +50,8 @@ export const FieldControl = memo(
         className={cn(
           'min-w-0 scroll-mt-24',
           inline ? 'grid gap-x-4 gap-y-1 sm:grid-cols-[9rem_minmax(0,1fr)]' : 'space-y-2',
+          // Suggest shows while the pointer is over the field or focus is in it (FieldAssist).
+          canSuggest && 'group/field',
           className,
         )}
         id={`${control.inputId}-section`}
@@ -88,6 +93,14 @@ export const FieldControl = memo(
         <div className="min-w-0 space-y-2">
           <FieldEditor control={control} />
           <FieldMessages field={field} control={control} />
+          {canSuggest ? (
+            <FieldAssist
+              label={field.label}
+              path={path}
+              onChange={onChange}
+              align={inline ? 'end' : 'start'}
+            />
+          ) : null}
         </div>
       </div>
     );

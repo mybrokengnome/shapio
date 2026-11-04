@@ -10,7 +10,7 @@ import * as schemas from './schemas.js';
  * proposal or writes drafts into a change set; nothing publishes. With AI_PROVIDER unset only `GET /status`
  * exists (it answers `enabled: false`) and no request ever reaches a model provider.
  * Permissions are those of what each action maps to: media (alt text), the model's read/update (summarize,
- * translate), schema.create (schema drafts), and per rule for content-ops (checked by the services).
+ * suggest, translate), any admin for text the caller sends (rewrite, write), schema.create (schema drafts), and per rule for content-ops (checked by the services).
  */
 export const adminAssistRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
@@ -59,6 +59,18 @@ export const adminAssistRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { schema: schemas.rewriteSchema, preHandler: admin, config: { audit: { action: 'assist.rewrite' } } },
     handlers.rewrite,
   );
+  // POST /write { kind, instruction?, before, after?, title?, fieldLabel?, locale? } → { markdown, model }
+  app.post(
+    '/write',
+    { schema: schemas.writeSchema, preHandler: admin, config: { audit: { action: 'assist.write' } } },
+    handlers.write,
+  );
+  // POST /suggest { modelKey, entryId, locale?, fieldPath } → { value, truncated, model }
+  app.post(
+    '/suggest',
+    { schema: schemas.suggestSchema, preHandler: admin, config: { audit: { action: 'assist.suggest' } } },
+    handlers.suggest,
+  );
   // POST /schema/draft { description } → { definitions, model }; writes nothing
   app.post(
     '/schema/draft',
@@ -78,6 +90,17 @@ export const adminAssistRoutes: FastifyPluginAsyncTypebox = async (app) => {
       config: { audit: { action: 'assist.content_ops' } },
     },
     handlers.proposeContentOpsRun,
+  );
+  // POST /content-ops/:runId/accept { items: [{ key, value }] } → the entry's new version and its change set.
+  // No model call, so it does not count against AI_RATE_LIMIT_MAX.
+  app.post(
+    '/content-ops/:runId/accept',
+    {
+      schema: schemas.acceptContentOpsSchema,
+      preHandler: app.requireGlobalPermission('changes.manage'),
+      config: { audit: { action: 'assist.content_ops_accept' } },
+    },
+    handlers.acceptContentOps,
   );
   // GET /content-ops/:runId → the run's status and, once done, its result
   app.get(

@@ -6,11 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createEntryFormStore } from '@/fields/form/store';
 import { field, model } from '../../../../../../../packages/schema/src/testing/fixtures';
 import type { EntryMode } from '../types';
-import { useAssistDocument } from './useAssistTarget';
+import { useAssistDocument } from './useAssistDocument';
 import type { SaveOutcome } from './useEntrySaver';
 
 const article = model({ fields: [field({ apiKey: 'title', label: 'Title' })] });
-const edit: EntryMode = { kind: 'edit', entry: {} as AdminEntry };
+const edit: EntryMode = { kind: 'edit', entry: { id: 'entry-1' } as AdminEntry };
 
 const setup = (options: {
   dirty: boolean;

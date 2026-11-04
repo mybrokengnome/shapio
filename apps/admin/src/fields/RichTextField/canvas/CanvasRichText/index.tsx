@@ -9,19 +9,28 @@ import { useRegisterCanvasHandle, type CanvasFieldHandle } from '../../../form/c
 import { useFieldsEnvironment } from '../../../form/context';
 import { createRelay } from '../../../helpers/relay';
 import type { BuiltInEditorProps } from '../../../types';
-import { useRewriteSelection } from '../../hooks/useRewriteSelection';
+import { useAssistActions } from '../../hooks/useAssistActions';
 import { useRichTextEditor } from '../../hooks/useRichTextEditor';
 import { LinkPopover } from '../../LinkPopover';
 import { Notes } from '../../Notes';
 import { BlockHandle, type HoveredBlock } from '../BlockHandle';
 import { topLevelBlockAt } from '../blockMove';
-import { edgeTarget, insertBlockAt, turnInto, type BlockType, type PickedImage } from '../blocks';
+import {
+  edgeTarget,
+  insertBlockAt,
+  turnInto,
+  type BlockType,
+  type MenuChoice,
+  type PickedImage,
+  type WriteKind,
+} from '../blocks';
 import { BubbleToolbar } from '../BubbleToolbar';
 import { canvasExtensions } from '../extensions';
 import { RewritePopover } from '../RewritePopover';
 import { createSlashBridge } from '../slashCommand';
 import { SlashMenu } from '../SlashMenu';
 import { uploadIntoEditor } from '../uploadFiles';
+import { WritePopover } from '../WritePopover';
 
 /**
  * The writing surface's typography: the reading face (Source Serif 4, `font-serif text-canvas`) for the
@@ -111,7 +120,16 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
     refuseFileDrops: !canUpload,
   });
   const assistEnabled = useAssistEnabled();
-  const rewrite = useRewriteSelection(editor);
+  const { rewrite, write, writeAt, writeAtCursor } = useAssistActions(editor, definition.label);
+  /** The `/` menu: a block replaces or wraps the cursor's block; an assist writes there. */
+  const chooseFromSlash = (choice: MenuChoice, range: { from: number; to: number }) => {
+    if (choice.kind === 'block') {
+      void turnInto(editor, choice.type, range, pickImages);
+      return;
+    }
+    editor.chain().focus().deleteRange(range).run();
+    writeAtCursor(choice.write);
+  };
   const pickImages = useCallback(async (): Promise<PickedImage[]> => {
     try {
       const picked = await context.pickMedia({ multiple: true, allowedKinds: ['image'] });
@@ -127,8 +145,13 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
     [editor, pickImages],
   );
   const handle = useMemo<CanvasFieldHandle>(
-    () => ({ insertBlock: (type, at) => insert(type, edgeTarget(editor, at)) }),
-    [insert, editor],
+    () => ({
+      insertBlock: (type, at) => insert(type, edgeTarget(editor, at)),
+      ...(assistEnabled
+        ? { write: (kind: WriteKind, at: 'start' | 'end') => writeAt(kind, edgeTarget(editor, at)) }
+        : {}),
+    }),
+    [insert, editor, assistEnabled, writeAt],
   );
   useRegisterCanvasHandle(path, editable ? handle : undefined);
   const track = (event: MouseEvent<HTMLDivElement>) => {
@@ -138,46 +161,56 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
   };
   const maxLength = definition.type === 'richtext' ? definition.settings.maxLength : undefined;
   return (
-    <div
-      ref={wrapperRef}
-      className="relative"
-      onMouseMove={track}
-      onMouseLeave={() => (menuOpen ? undefined : setHovered(null))}
-      data-rich-text-canvas
-    >
-      {editable && hovered ? (
-        <BlockHandle
-          editor={editor}
-          block={hovered}
-          onInsert={(type, pos) => void insert(type, pos)}
-          onMenuOpenChange={setMenuOpen}
-        />
-      ) : null}
-      <EditorContent editor={editor} />
-      {editable ? (
+    <>
+      <div
+        ref={wrapperRef}
+        className="relative"
+        onMouseMove={track}
+        onMouseLeave={() => (menuOpen ? undefined : setHovered(null))}
+        data-rich-text-canvas
+      >
+        {editable && hovered ? (
+          <BlockHandle
+            editor={editor}
+            block={hovered}
+            onInsert={(type, pos) => void insert(type, pos)}
+            onWrite={assistEnabled ? writeAt : undefined}
+            onMenuOpenChange={setMenuOpen}
+          />
+        ) : null}
+        <EditorContent editor={editor} />
+        {editable ? (
+          <>
+            <BubbleToolbar
+              editor={editor}
+              onLink={() => setLinkOpen(true)}
+              onRewrite={assistEnabled ? rewrite.start : undefined}
+            />
+            <LinkPopover
+              editor={editor}
+              active={editor.isActive('link')}
+              disabled={false}
+              open={linkOpen}
+              onOpenChange={setLinkOpen}
+              anchorToSelection
+            />
+            <SlashMenu
+              editor={editor}
+              bridge={slash}
+              onChoose={(choice, state) => chooseFromSlash(choice, state.range)}
+              assist={assistEnabled}
+            />
+          </>
+        ) : null}
+        <Notes editor={editor} initial={initial} maxLength={maxLength} />
+      </div>
+      {/* Outside the wrapper: pointer moves over these portaled popovers must not move the block handle. */}
+      {editable && assistEnabled ? (
         <>
-          <BubbleToolbar
-            editor={editor}
-            onLink={() => setLinkOpen(true)}
-            onRewrite={assistEnabled ? rewrite.start : undefined}
-          />
-          {assistEnabled ? <RewritePopover editor={editor} rewrite={rewrite} /> : null}
-          <LinkPopover
-            editor={editor}
-            active={editor.isActive('link')}
-            disabled={false}
-            open={linkOpen}
-            onOpenChange={setLinkOpen}
-            anchorToSelection
-          />
-          <SlashMenu
-            editor={editor}
-            bridge={slash}
-            onChoose={(type, state) => void turnInto(editor, type, state.range, pickImages)}
-          />
+          <RewritePopover editor={editor} rewrite={rewrite} />
+          <WritePopover editor={editor} write={write} />
         </>
       ) : null}
-      <Notes editor={editor} initial={initial} maxLength={maxLength} />
-    </div>
+    </>
   );
 };

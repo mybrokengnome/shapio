@@ -3,7 +3,7 @@ import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { describe, expect, it } from 'vitest';
 import { richTextExtensions } from '../extensions';
-import { captureSelection, contentOfRewrite, isRangeUnchanged } from './rewriteSelection';
+import { captureSelection, contentOfRewrite, isRangeUnchanged, textRangeOf } from './rewriteSelection';
 
 const schema = getSchema(richTextExtensions());
 
@@ -24,6 +24,35 @@ describe('captureSelection', () => {
   it('is null for an empty or whitespace-only selection', () => {
     expect(captureSelection(stateOf([paragraph('Hello')], 2, 2))).toBeNull();
     expect(captureSelection(stateOf([paragraph('a   b')], 2, 5))).toBeNull();
+  });
+});
+
+describe('textRangeOf (a triple-click selection)', () => {
+  // "One" is 1..4 inside 0..5, "Two" 6..9 inside 5..10.
+  const { doc } = stateOf([paragraph('One'), paragraph('Two')], 1, 1);
+
+  it('ends a paragraph selection that reaches the start of the next block at the end of its text', () => {
+    expect(textRangeOf(doc, { from: 1, to: 6 })).toEqual({ from: 1, to: 4 });
+  });
+
+  it('moves ends between blocks into the text', () => {
+    expect(textRangeOf(doc, { from: 0, to: 5 })).toEqual({ from: 1, to: 4 });
+    expect(textRangeOf(doc, { from: 0, to: 10 })).toEqual({ from: 1, to: 9 });
+  });
+
+  it('leaves a selection inside the text as it is', () => {
+    expect(textRangeOf(doc, { from: 2, to: 8 })).toEqual({ from: 2, to: 8 });
+  });
+
+  it('captures and replaces only the paragraph, so no empty paragraph is left', () => {
+    const state = stateOf([paragraph('One'), paragraph('Two')], 1, 6);
+    const captured = captureSelection(state);
+    expect(captured).toEqual({ from: 1, to: 4, text: 'One' });
+    if (!captured) {
+      return;
+    }
+    const replaced = state.apply(state.tr.insertText('Uno', captured.from, captured.to));
+    expect(replaced.doc.toJSON()).toEqual({ type: 'doc', content: [paragraph('Uno'), paragraph('Two')] });
   });
 });
 

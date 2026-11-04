@@ -2,8 +2,8 @@ import type { ModelDefinition } from '@shapio/schema';
 import { useState } from 'react';
 import { useTranslateEntry } from '@/api/assist';
 import { useSaveEntry } from '@/api/content';
+import type { SaveBeforeAssist } from '@/fields/form/assistTarget';
 import { proposalKey, useAssistProposalsStore } from '@/stores/assistProposals';
-import type { SaveBeforeAssist } from './useAssistTarget';
 
 type TranslateLocaleOptions = {
   model: ModelDefinition;

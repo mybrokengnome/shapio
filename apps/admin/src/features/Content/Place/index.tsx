@@ -69,6 +69,7 @@ const PlaceScreen = ({ schema, model, locales, modelKey }: PlaceScreenProps) => 
               locale={locales.current}
               onLocaleChange={onLocaleChange}
               creatable={kinds.creatable}
+              components={schema.components}
             />
             <Entries
               schema={schema}

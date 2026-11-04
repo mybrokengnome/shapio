@@ -9,7 +9,9 @@ import {
   ListOrdered,
   Minus,
   Pilcrow,
+  PenLine,
   Quote,
+  Sparkles,
   Table,
   type LucideIcon,
 } from 'lucide-react';
@@ -114,24 +116,57 @@ export const BLOCK_OPTIONS: readonly BlockOption[] = [
   { type: 'table', icon: Table, labelKey: 'entry.blocks.table', group: 'media', keywords: ['grid'] },
 ];
 
-/** Options whose label or keywords start with the query (case-insensitive); all for an empty query. */
-export const filterBlockOptions = (
-  query: string,
-  labelOf: (option: BlockOption) => string,
-): BlockOption[] => {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') {
-    return [...BLOCK_OPTIONS];
-  }
-  return BLOCK_OPTIONS.filter((option) =>
-    [labelOf(option), ...option.keywords].some((word) =>
-      word
-        .toLowerCase()
-        .split(/\s+/)
-        .some((part) => part.startsWith(needle)),
-    ),
-  );
+/** What assist writes into the document: a section on request, or more of what is there. */
+export type WriteKind = 'section' | 'continue';
+
+export type AssistOption = {
+  write: WriteKind;
+  icon: LucideIcon;
+  labelKey: 'assist.write.section' | 'assist.write.continue';
+  keywords: readonly string[];
 };
+
+/** The menus' Assist group (only while assist is on); never a block type, nothing is inserted until Insert. */
+export const ASSIST_OPTIONS: readonly AssistOption[] = [
+  { write: 'section', icon: Sparkles, labelKey: 'assist.write.section', keywords: ['ai', 'assist', 'draft'] },
+  {
+    write: 'continue',
+    icon: PenLine,
+    labelKey: 'assist.write.continue',
+    keywords: ['ai', 'assist', 'more', 'next'],
+  },
+];
+
+/** A choice in the `/` and `+` menus: a block to insert, or an assist that writes one. */
+export type MenuChoice = { kind: 'block'; type: BlockType } | { kind: 'assist'; write: WriteKind };
+
+type MenuOption = { labelKey: string; keywords: readonly string[] };
+
+const matches = <T extends MenuOption>(
+  options: readonly T[],
+  needle: string,
+  labelOf: (option: T) => string,
+) =>
+  needle === ''
+    ? [...options]
+    : options.filter((option) =>
+        [labelOf(option), ...option.keywords].some((word) =>
+          word
+            .toLowerCase()
+            .split(/\s+/)
+            .some((part) => part.startsWith(needle)),
+        ),
+      );
+
+/** Options whose label or keywords start with the query (case-insensitive); all for an empty query. */
+export const filterBlockOptions = (query: string, labelOf: (option: BlockOption) => string): BlockOption[] =>
+  matches(BLOCK_OPTIONS, query.trim().toLowerCase(), labelOf);
+
+/** The Assist group's options matching the `/` query, the same way. */
+export const filterAssistOptions = (
+  query: string,
+  labelOf: (option: AssistOption) => string,
+): AssistOption[] => matches(ASSIST_OPTIONS, query.trim().toLowerCase(), labelOf);
 
 const NEW_TABLE: JSONContent = {
   type: 'table',
