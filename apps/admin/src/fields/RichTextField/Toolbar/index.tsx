@@ -19,6 +19,7 @@ import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { AssistMenu } from '../AssistMenu';
 import { LinkPopover } from '../LinkPopover';
 import { TableMenu } from '../TableMenu';
 import { ToolButton } from '../ToolButton';
@@ -30,6 +31,8 @@ type ToolbarProps = {
   linkOpen: boolean;
   onLinkOpenChange: (open: boolean) => void;
   onInsertImage: () => void;
+  /** The Assist menu's actions; absent while assist is off. */
+  assist?: { onWrite: () => void; onContinue: () => void; onRewrite: () => void };
 };
 
 const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
@@ -73,6 +76,7 @@ export const Toolbar = ({
   linkOpen,
   onLinkOpenChange,
   onInsertImage,
+  assist,
 }: ToolbarProps) => {
   const { t } = useTranslation();
   const state = useEditorState({
@@ -246,7 +250,13 @@ export const Toolbar = ({
           />
         </>
       ) : null}
-      <span className="ml-auto flex">
+      <span className="ml-auto flex items-center">
+        {assist ? (
+          <>
+            <AssistMenu editor={editor} disabled={disabled} {...assist} />
+            <Separator orientation="vertical" className="mx-1 h-5" />
+          </>
+        ) : null}
         <ToolButton
           icon={Undo2}
           label={t('content.richText.undo')}

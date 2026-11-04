@@ -423,7 +423,8 @@ editable entry). Its accessible name is "Suggest a value for {field}"; the expla
 "Write…" and "Continue writing" in the canvas's `/` and `+` menus open a popover anchored where the text
 goes: the instruction, then the model's text in a small Tiptap editor (the stored schema, the bubble toolbar's
 `proposal` variant) to edit and Insert as blocks. Escape or a click outside asks before discarding a proposal
-with text (a confirm step inside the popover, focus on Keep editing).
+with text (a confirm step inside the popover, focus on Keep editing). The form editor's toolbar offers the same three actions
+(Write…, Continue writing, Rewrite…) in its Assist menu (`AssistMenu`); both share `useAssistActions`.
 
 **`FillReview`** (`features/Assist/FillReview`)
 Proposed values of a fill run in a `md` sheet, one group per entry locale (the entry as a link, a locale

@@ -3368,6 +3368,7 @@
     "discard": "Discard",
     "truncated": "Shortened to fit the field's limit.",
     "proposedBy": "Proposed by {{model}}",
+    "menu": "Assist",
     "errors": {
       "rateLimited": "Too many assist requests. Try again in a minute.",
       "runFailed": "The proposal run failed."

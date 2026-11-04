@@ -395,3 +395,46 @@ test('Settings → Assist: provider, model, this month’s usage and a rewrite t
   await expect(tryIt.getByText(ASSIST_ANSWERS.rewrite)).toBeVisible();
   await captureScreen(page, 'assist-08-settings', { viewports: ['desktop', 'phone'] });
 });
+
+test('Form layout: the body toolbar has the same Assist menu (and none with assist off)', async () => {
+  await page.goto(storyUrl());
+  const switchLayout = async () => {
+    const drawer = await doc().openSettings();
+    await drawer.getByRole('switch', { name: 'Open as a form' }).click();
+  };
+  await switchLayout();
+  await expect(page.locator('[data-entry-layout="form"]')).toBeVisible();
+  const toolbar = page.locator('[data-field-path="/body"]').getByRole('toolbar', { name: 'Text formatting' });
+  const assistMenu = toolbar.getByRole('button', { name: 'Assist', exact: true });
+
+  // An instance without assist shows no Assist menu in the form either.
+  await page.route('**/api/admin/assist/status', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":false}' }),
+  );
+  try {
+    await page.reload();
+    await expect(toolbar.getByRole('button', { name: 'Bold' })).toBeVisible();
+    await expect(assistMenu).toHaveCount(0);
+  } finally {
+    await page.unroute('**/api/admin/assist/status');
+  }
+  await page.reload();
+
+  // Rewrite… needs selected text; Continue writing goes at the end of the text.
+  await assistMenu.click();
+  await expect(page.getByRole('menuitem', { name: 'Rewrite…' })).toBeDisabled();
+  await captureScreen(page, 'assist-12-form-menu', { viewports: ['desktop'] });
+  await page.getByRole('menuitem', { name: 'Continue writing' }).click();
+  const popover = page.getByRole('dialog', { name: 'Write with assist' });
+  const proposal = popover.getByRole('textbox', { name: `Proposed by ${ASSIST_ANSWERS.model}` });
+  await expect(proposal).toContainText(ASSIST_ANSWERS.continuation);
+  expect(llm.calls.at(-1)?.system).toContain('Continue the text');
+  await body().locator(':scope > *').last().scrollIntoViewIfNeeded();
+  await popover.getByRole('button', { name: 'Insert' }).click();
+  await expect(popover).toBeHidden();
+  await expect(body().locator(':scope > *').last()).toHaveText(ASSIST_ANSWERS.continuation);
+
+  // Back to the document layout for the rest of this server's life.
+  await switchLayout();
+  await expect(page.locator('[data-entry-layout="form"]')).toHaveCount(0);
+});

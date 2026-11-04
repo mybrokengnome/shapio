@@ -1,12 +1,16 @@
 import { EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAssistEnabled } from '@/api/assist';
 import { cn } from '@/helpers/cn';
 import { reportError } from '@/helpers/reportError';
 import type { BuiltInEditorProps } from '../types';
 import { CanvasRichText } from './canvas/CanvasRichText';
+import { RewritePopover } from './canvas/RewritePopover';
+import { WritePopover } from './canvas/WritePopover';
 import { FORM_CONTENT_CLASSES } from './contentClasses';
 import { richTextExtensions } from './extensions';
+import { useAssistActions } from './hooks/useAssistActions';
 import { useRichTextEditor } from './hooks/useRichTextEditor';
 import { ImageView } from './ImageView';
 import { Notes } from './Notes';
@@ -41,6 +45,8 @@ const FormRichText = (props: BuiltInEditorProps) => {
     onLinkShortcut: () => setLinkOpen(true),
     refuseFileDrops: true,
   });
+  const assistEnabled = useAssistEnabled();
+  const { rewrite, write, writeAtCursor, continueAtEnd } = useAssistActions(editor, definition.label);
   const maxLength = definition.type === 'richtext' ? definition.settings.maxLength : undefined;
   const insertImage = async () => {
     try {
@@ -73,11 +79,27 @@ const FormRichText = (props: BuiltInEditorProps) => {
             linkOpen={linkOpen}
             onLinkOpenChange={setLinkOpen}
             onInsertImage={() => void insertImage()}
+            assist={
+              assistEnabled
+                ? {
+                    onWrite: () => writeAtCursor('section'),
+                    onContinue: continueAtEnd,
+                    onRewrite: rewrite.start,
+                  }
+                : undefined
+            }
           />
         ) : null}
         <EditorContent editor={editor} />
       </div>
       <Notes editor={editor} initial={initial} maxLength={maxLength} />
+      {/* Portaled popovers anchored to the text (the bordered box clips nothing outside it). */}
+      {editable && assistEnabled ? (
+        <>
+          <RewritePopover editor={editor} rewrite={rewrite} />
+          <WritePopover editor={editor} write={write} />
+        </>
+      ) : null}
     </div>
   );
 };

@@ -6,13 +6,11 @@ import { toast } from 'sonner';
 import { useAssistEnabled } from '@/api/assist';
 import { logError, reportError } from '@/helpers/reportError';
 import { useRegisterCanvasHandle, type CanvasFieldHandle } from '../../../form/canvasHandles';
-import { useEntryFormStore, useFieldsEnvironment } from '../../../form/context';
+import { useFieldsEnvironment } from '../../../form/context';
 import { createRelay } from '../../../helpers/relay';
-import { entryTitle } from '../../../helpers/titles';
 import type { BuiltInEditorProps } from '../../../types';
-import { useRewriteSelection } from '../../hooks/useRewriteSelection';
+import { useAssistActions } from '../../hooks/useAssistActions';
 import { useRichTextEditor } from '../../hooks/useRichTextEditor';
-import { useWriteProposal } from '../../hooks/useWriteProposal';
 import { LinkPopover } from '../../LinkPopover';
 import { Notes } from '../../Notes';
 import { BlockHandle, type HoveredBlock } from '../BlockHandle';
@@ -33,7 +31,6 @@ import { createSlashBridge } from '../slashCommand';
 import { SlashMenu } from '../SlashMenu';
 import { uploadIntoEditor } from '../uploadFiles';
 import { WritePopover } from '../WritePopover';
-import { contextAround, targetAtBlock, targetOf } from '../writeTarget';
 
 /**
  * The writing surface's typography: the reading face (Source Serif 4, `font-serif text-canvas`) for the
@@ -84,8 +81,7 @@ const blockUnderPointer = (editor: Editor, wrapper: HTMLElement, clientY: number
  */
 export const CanvasRichText = (props: BuiltInEditorProps) => {
   const { t } = useTranslation();
-  const { uploadMedia, model, locale } = useFieldsEnvironment();
-  const store = useEntryFormStore();
+  const { uploadMedia } = useFieldsEnvironment();
   const { context, definition, field, path } = props;
   const [linkOpen, setLinkOpen] = useState(false);
   const [hovered, setHovered] = useState<HoveredBlock | null>(null);
@@ -124,25 +120,7 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
     refuseFileDrops: !canUpload,
   });
   const assistEnabled = useAssistEnabled();
-  const rewrite = useRewriteSelection(editor);
-  const write = useWriteProposal(editor, {
-    title: () => entryTitle(model, store.getState().values),
-    fieldLabel: definition.label,
-    locale,
-  });
-  // The `+` menus and the canvas handle stay the same between renders; they call the current `start`.
-  const startWrite = useRef(write.start);
-  useEffect(() => {
-    startWrite.current = write.start;
-  });
-  /** A write from a `+` menu: at a boundary between blocks, or in place of an empty paragraph at an edge. */
-  const writeAt = useCallback(
-    (kind: WriteKind, at: Parameters<typeof targetOf>[1]) => {
-      const target = targetOf(editor.state.doc, at);
-      startWrite.current({ kind, target, context: contextAround(editor.state.doc, target.from, target.to) });
-    },
-    [editor],
-  );
+  const { rewrite, write, writeAt, writeAtCursor } = useAssistActions(editor, definition.label);
   /** The `/` menu: a block replaces or wraps the cursor's block; an assist writes there. */
   const chooseFromSlash = (choice: MenuChoice, range: { from: number; to: number }) => {
     if (choice.kind === 'block') {
@@ -150,11 +128,7 @@ export const CanvasRichText = (props: BuiltInEditorProps) => {
       return;
     }
     editor.chain().focus().deleteRange(range).run();
-    // The proposal goes after the cursor's block (or in place of it, when empty), so the context splits there,
-    // not at the cursor: `/` typed mid-paragraph still writes after the whole paragraph.
-    const { doc } = editor.state;
-    const target = targetAtBlock(doc, editor.state.selection.from);
-    write.start({ kind: choice.write, target, context: contextAround(doc, target.from, target.to) });
+    writeAtCursor(choice.write);
   };
   const pickImages = useCallback(async (): Promise<PickedImage[]> => {
     try {

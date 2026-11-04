@@ -1,5 +1,4 @@
 import type { Editor } from '@tiptap/core';
-import { NodeSelection } from '@tiptap/pm/state';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import {
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '@/components/ui/separator';
+import { hasTextSelection } from '../../textSelection';
 import { ToolButton } from '../../ToolButton';
 
 type BubbleToolbarProps =
@@ -34,17 +34,6 @@ type BubbleToolbarProps =
       /** An assist proposal: marks and the block buttons; no Link (proposals carry none), no Rewrite. */
       variant: 'proposal';
     };
-
-/** Text is selected (not an image or rule, not inside code): the floating toolbar has something to do. */
-const hasTextSelection = ({ editor }: { editor: Editor }) => {
-  const { selection } = editor.state;
-  return (
-    editor.isEditable &&
-    !selection.empty &&
-    !(selection instanceof NodeSelection) &&
-    !editor.isActive('codeBlock')
-  );
-};
 
 /** Formatting for the selected text, floating above it (Ghost/Notion style); every action has a shortcut. */
 export const BubbleToolbar = (props: BubbleToolbarProps) => {
