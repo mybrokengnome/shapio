@@ -326,6 +326,12 @@ export const activateDefinitions = async (
   }
 };
 
+/** `activation.seq` of an activation without a change set: it has no origin site, so no number to take. */
+const NO_ORIGIN: SeqAllocator = {
+  next: () => Promise.reject(new Error('This activation has no origin site: it ships no change set')),
+  taken: () => undefined,
+};
+
 /**
  * An activation that changes live content (converted published heads roll their log rows) or ships a change
  * set is a publication snapshot on every site it changes (sites plan §H: one snapshot per affected site),
@@ -337,12 +343,6 @@ export const activateDefinitions = async (
  * sites' rows in first-use order cannot deadlock. A metadata-only activation (a label rename) takes no
  * number anywhere: live content and every API response stay exactly as they were (brief §10).
  */
-/** `activation.seq` of an activation without a change set: it has no origin site, so no number to take. */
-const NO_ORIGIN: SeqAllocator = {
-  next: () => Promise.reject(new Error('This activation has no origin site: it ships no change set')),
-  taken: () => undefined,
-};
-
 const createActivationContext = (trx: Transaction<DB>, request: ActivationRequest) => {
   const origin = request.changeSetId ? request.siteId : undefined;
   const allocators = new Map<string, SeqAllocator>();

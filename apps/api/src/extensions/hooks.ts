@@ -237,7 +237,6 @@ export const createAfterHookSubscriber =
 
 type AfterHookJobPayload = { eventId: string; hook: string };
 
-/** Runs one `after*` hook in a transaction that also records the run (skipped if it already ran). */
 /** The site of an event recorded before sites existed: the built-in site, while it exists. */
 const preSitesSiteOf = async (db: Database): Promise<SiteRef> => {
   const site = await findPreSitesSite(db);
@@ -247,6 +246,7 @@ const preSitesSiteOf = async (db: Database): Promise<SiteRef> => {
   return site;
 };
 
+/** Runs one `after*` hook in a transaction that also records the run (skipped if it already ran). */
 export const createAfterHookJobHandler =
   (environment: HookEnvironment): JobHandler =>
   async (job) => {
