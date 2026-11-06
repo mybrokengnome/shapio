@@ -101,6 +101,7 @@ export const AUDIT_ACTION_LABEL_KEYS = {
   'session.revoke_all': 'audit.actions.sessionRevokeAll',
   'setup.complete': 'audit.actions.setupComplete',
   'site.change_sets_update': 'audit.actions.siteChangeSetsUpdate',
+  'site.make_primary': 'audit.actions.siteMakePrimary',
   'transfer.import': 'audit.actions.transferImport',
   'webhook.create': 'audit.actions.webhookCreate',
   'webhook.delete': 'audit.actions.webhookDelete',
