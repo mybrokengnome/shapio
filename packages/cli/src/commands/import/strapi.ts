@@ -18,9 +18,9 @@ export const importStrapiCommand = createImporterCommand({
     '  --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models\n' +
     '  and components (<dir>/schema) and <dir>/import-map.json. With --url it checks the planned API IDs against\n' +
     '  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one site\n' +
-    '  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site ("default"); --shared shares\n' +
-    '  them with all sites (applying them needs a network admin token). --map without --site imports into the\n' +
-    '  planned site. Apply the schema with\n' +
+    "  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the token's site or the primary\n" +
+    '  site, else the built-in site ("default"); --shared shares them with all sites (applying them needs a\n' +
+    '  network admin token). --map without --site imports into the planned site. Apply the schema with\n' +
     '  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:\n' +
     '  it uploads the media, creates every document as a draft and opens change sets with the published ones.\n' +
     '  Strapi 5 only.',

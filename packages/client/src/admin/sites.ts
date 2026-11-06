@@ -21,8 +21,16 @@ export const createSitesApi = (request: RequestFn) => ({
     get: (id: string) => request<Site>(sitePath(id)),
     create: (body: CreateSiteInput) => request<Site>(SITES_PATHS.sites, { method: 'POST', body }),
     update: (id: string, body: UpdateSiteInput) => request<Site>(sitePath(id), { method: 'PATCH', body }),
-    /** Only an empty site (409 `SITE_NOT_EMPTY`); never the primary site (409 `SITE_IS_PRIMARY`). */
+    /**
+     * Only an empty site (409 `SITE_NOT_EMPTY`), and not while it is the primary site (409 `SITE_IS_PRIMARY`:
+     * make another site primary first).
+     */
     remove: (id: string) => request<void>(sitePath(id), { method: 'DELETE' }),
+    /**
+     * Makes the site primary (`sites.manage`): requests that name no site, and credentials that belong to no
+     * site, read it from the next request on. Already primary: returned unchanged.
+     */
+    makePrimary: (id: string) => request<Site>(`${sitePath(id)}/make-primary`, { method: 'POST' }),
     /** The app roles bound to the site's anonymous callers (`public`) and signed-in app users (`authenticated`). */
     appRoles: {
       get: (id: string) => request<SiteAppRoles>(`${sitePath(id)}/app-roles`),

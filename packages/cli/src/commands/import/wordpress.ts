@@ -18,8 +18,9 @@ export const importWordPressCommand = createImporterCommand({
     '  --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json.\n' +
     '  With --url it checks the planned API IDs against that instance and renames clashes (tag → tagItem);\n' +
     '  without it, it sends nothing.\n' +
-    '  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site\n' +
-    '  ("default"); --shared shares them with all sites (applying them needs a network admin token).\n' +
+    '  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the\n' +
+    '  token\'s site or the primary site, else the built-in site ("default"); --shared shares them with all sites\n' +
+    '  (applying them needs a network admin token).\n' +
     '  --map without --site imports into the planned site.\n' +
     '  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:\n' +
     '  it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),\n' +

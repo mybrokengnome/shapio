@@ -40,10 +40,11 @@ export const formatPlanSummary = (
       ? 'The models and components will be shared with all sites (--shared): applying them needs a network admin token.'
       : explicit
         ? `The models and components will belong to site "${site}".`
-        : `The models and components will belong to the primary site ("${site}"). Plan with --site <key> for another site, or --shared to share them with all sites.`,
+        : `The models and components will belong to site "${site}", the built-in site. Plan with --site <key> for another site, or --shared to share them with all sites.`,
   );
-  // The primary site by default: apply and map find it without --site (the token's site, or the plan's).
-  const siteFlag = site && explicit ? ` --site ${site}` : '';
+  // Always named: without --site, apply would target the token's site or the primary site, which may not be
+  // the site the plan was written for.
+  const siteFlag = site ? ` --site ${site}` : '';
   lines.push(
     'Next:',
     '  1. Review the files: rename API IDs or delete fields you do not want (entries follow the stable IDs).',

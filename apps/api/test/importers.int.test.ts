@@ -288,9 +288,11 @@ describe('shapio import strapi', () => {
     const planned = await runCli('import', ['strapi', archive, '--plan', dir, '--key', 'k3y'], instance.env);
     expect(planned.code, planned.stderr).toBe(0);
     expect(planned.stdout).toContain('Draft and publish is turned on for author');
-    // No --site on a single-site instance: the primary site's models, which an ordinary admin token applies.
-    expect(planned.stdout).toContain('will belong to the primary site ("default")');
-    expect(planned.stdout).toContain(`schema-lock.json\n  3. shapio import strapi --map ${dir}\n`);
+    // No --site and offline: the built-in site's models, which an ordinary admin token applies.
+    expect(planned.stdout).toContain('will belong to site "default", the built-in site');
+    expect(planned.stdout).toContain(
+      `schema-lock.json --site default\n  3. shapio import strapi --map ${dir} --site default\n`,
+    );
     expect(
       await readFile(join(dir, 'schema', 'sites', 'default', 'models', 'article.json'), 'utf8'),
     ).toContain('"apiKey": "article"');

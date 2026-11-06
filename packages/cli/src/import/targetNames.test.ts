@@ -116,9 +116,8 @@ describe('checkTargetNames', () => {
     expect(checked.notes).toEqual(['Adapter note.', NAMES_NOT_CHECKED_NOTE]);
   });
 
-  it("reads the site's view with the site header and notes a shared plan's limit", async () => {
-    const target = targetOf([{ ...seoComponent, key: 'builtin.seo' }]);
-    const fetch = vi.fn(
+  const exportFetch = (target: SchemaDefinition[]) =>
+    vi.fn(
       async () =>
         new Response(
           JSON.stringify({
@@ -129,16 +128,33 @@ describe('checkTargetNames', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
     );
+
+  it("reads the plan's site view with the site header", async () => {
+    const fetch = exportFetch(targetOf([{ ...seoComponent, key: 'builtin.seo' }]));
     const checked = await checkTargetNames(sourceOf([seoComponent]), {
       baseUrl: 'https://cms.test',
       token: 'shp_test',
-      site: 'default',
-      shared: true,
+      site: 'blog',
+      shared: false,
       fetch,
     });
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://cms.test/api/admin/schema/export');
-    expect(new Headers(init.headers).get('shapio-site')).toBe('default');
+    expect(new Headers(init.headers).get('shapio-site')).toBe('blog');
+    expect(apiKeys(checked)).toEqual({ 'shared.seo': 'seoItem' });
+    expect(checked.notes.at(-1)).not.toBe(SHARED_PLAN_NOTE);
+  });
+
+  it('names no site for a shared plan (the instance answers for the token) and notes its limit', async () => {
+    const fetch = exportFetch(targetOf([{ ...seoComponent, key: 'builtin.seo' }]));
+    const checked = await checkTargetNames(sourceOf([seoComponent]), {
+      baseUrl: 'https://cms.test',
+      token: 'shp_test',
+      shared: true,
+      fetch,
+    });
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).has('shapio-site')).toBe(false);
     expect(apiKeys(checked)).toEqual({ 'shared.seo': 'seoItem' });
     expect(checked.notes.at(-1)).toBe(SHARED_PLAN_NOTE);
   });
