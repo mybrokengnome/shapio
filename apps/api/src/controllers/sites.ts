@@ -23,3 +23,6 @@ export const deleteSite = async (request: FastifyRequest<{ Params: IdParams }>, 
   await sitesService.deleteSite(toActorContext(request), request.params.id);
   return reply.code(204).send();
 };
+
+export const makePrimarySite = async (request: FastifyRequest<{ Params: IdParams }>) =>
+  sitesService.makePrimarySite(toActorContext(request), { by: 'id', id: request.params.id });

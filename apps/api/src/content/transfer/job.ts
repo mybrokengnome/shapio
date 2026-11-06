@@ -1,5 +1,4 @@
 import type { Readable } from 'node:stream';
-import { PRIMARY_SITE_ID } from '../../constants/sites.js';
 import type { Database } from '../../db/index.js';
 import { AppError } from '../../helpers/appError.js';
 import { describeError } from '../../helpers/errors.js';
@@ -12,7 +11,7 @@ import { loadSnapshot } from '../../schema/loadSnapshot.js';
 import type { NetworkSchema, SchemaSnapshot } from '../../schema/snapshot.js';
 import { buildContentContext } from '../../services/contentContext.js';
 import { deleteEntry } from '../../services/contentEntries.js';
-import { getSiteRef } from '../../services/sites.js';
+import { findPreSitesSite, getSiteRef } from '../../services/sites.js';
 import { openStoredBundle, removeStoredBundle, type StoredBundle } from './bundleFile.js';
 import type { AppUserRecord, BundleRecord, EntryRecord, MediaAssetRecord } from './format.js';
 import { importEntry } from './importEntry.js';
@@ -39,7 +38,10 @@ const PRUNE_ROUNDS = 5;
 
 export type ImportPayload = {
   importId: string;
-  /** The site the bundle is imported into (jobs queued before sites existed import into the primary site). */
+  /**
+   * The site the bundle is imported into. Jobs queued before sites existed have none: they import into the
+   * built-in site, the one the sites migration moved all earlier data to.
+   */
   siteId: string;
   bundle: StoredBundle;
   prune: boolean;
@@ -78,14 +80,25 @@ const initialProgress = (): ImportProgress => ({
 const isProgress = (value: unknown): value is ImportProgress =>
   typeof value === 'object' && value !== null && PHASES.includes((value as ImportProgress).phase);
 
-const readPayload = (payload: unknown): ImportPayload => {
+/** The site of a payload queued before sites existed: the built-in site, while it exists. */
+const preSitesSiteId = async (db: Database): Promise<string> => {
+  const site = await findPreSitesSite(db);
+  if (!site) {
+    throw new PermanentJobError(
+      'This import was queued before sites existed and its site was deleted; run the import again',
+    );
+  }
+  return site.id;
+};
+
+const readPayload = async (payload: unknown, db: Database): Promise<ImportPayload> => {
   const value = payload as Partial<ImportPayload> | null;
   if (!value?.importId || !value.bundle?.key || !value.bundle.driver) {
     throw new PermanentJobError('The transfer.import payload is incomplete');
   }
   return {
     importId: value.importId,
-    siteId: value.siteId ?? PRIMARY_SITE_ID,
+    siteId: value.siteId ?? (await preSitesSiteId(db)),
     bundle: value.bundle,
     prune: value.prune === true,
     pendingChangeIds: value.pendingChangeIds ?? [],
@@ -330,7 +343,7 @@ const runPhase = async (run: Run, phase: ImportPhase) => {
 };
 
 export const runImportJob = async (deps: TransferJobDependencies, job: JobContext) => {
-  const payload = readPayload(job.payload);
+  const payload = await readPayload(job.payload, deps.db);
   const run: Run = {
     deps,
     job,

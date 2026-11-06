@@ -2,7 +2,6 @@ import { isModelDefinition } from '@shapio/schema';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config/index.js';
 import { EXTENSION_JOB_PREFIX, EXTENSION_SYSTEM_COMPONENT } from '../constants/extensions.js';
-import { PRIMARY_SITE_ID } from '../constants/sites.js';
 import { modelRouteOf, resolveModel } from '../content/model.js';
 import type { Database } from '../db/index.js';
 import { describeError } from '../helpers/errors.js';
@@ -15,6 +14,8 @@ import type { ContentServiceContext } from '../services/contentAccess.js';
 import { buildContentContext } from '../services/contentContext.js';
 import { getAdminEntry, listAdminEntries } from '../services/contentReads.js';
 import { listUsagesOnSite } from '../services/mediaReferences.js';
+import { copyServices } from './copyServices.js';
+import { createPrimarySiteTracker, type PrimarySiteTracker } from './primarySite.js';
 import type {
   ContentReadEntry,
   ExtensionHostConfig,
@@ -38,8 +39,19 @@ export type ServiceEnvironment = {
   jobNames: ReadonlySet<string>;
 };
 
-/** The site top-level services read (routes, jobs, factories) until they ask `forSite` for another one. */
-const PRIMARY_SITE: SiteRef = { id: PRIMARY_SITE_ID, key: 'default' };
+/**
+ * The site a set of services reads: one fixed site (`forSite`, a hook's site), or the primary site, which
+ * top-level services (routes, jobs, factories) follow live: `read` resolves it on every call, `current` is
+ * what the synchronous `site` property returns.
+ */
+type SiteSource = { current: () => SiteRef; read: () => Promise<SiteRef> };
+
+const fixedSite = (site: SiteRef): SiteSource => ({ current: () => site, read: async () => site });
+
+const primarySite = (tracker: PrimarySiteTracker): SiteSource => ({
+  current: tracker.current,
+  read: tracker.refresh,
+});
 
 const SYSTEM_PRINCIPAL: Principal = { kind: 'system', component: EXTENSION_SYSTEM_COMPONENT };
 
@@ -60,80 +72,90 @@ const contentContext = async (
 const toReadEntry = (view: { id: string; locale: string; status: string; data: Record<string, unknown> }) =>
   ({ id: view.id, locale: view.locale, status: view.status, data: view.data }) satisfies ContentReadEntry;
 
-const createShapioServices = (environment: ServiceEnvironment, site: SiteRef): ShapioServices => ({
-  site,
-  forSite: (other: ExtensionSite) => createShapioServices(environment, { id: other.id, key: other.key }),
-  content: {
-    get: async (modelKey, id, options = {}) =>
-      toReadEntry(
-        await getAdminEntry(
-          await contentContext(environment, site, options.principal),
-          modelKey,
-          id,
-          options.locale,
+const createShapioServices = (environment: ServiceEnvironment, source: SiteSource): ShapioServices => {
+  const services: Omit<ShapioServices, 'site'> = {
+    forSite: (other: ExtensionSite) =>
+      createShapioServices(environment, fixedSite({ id: other.id, key: other.key })),
+    content: {
+      get: async (modelKey, id, options = {}) =>
+        toReadEntry(
+          await getAdminEntry(
+            await contentContext(environment, await source.read(), options.principal),
+            modelKey,
+            id,
+            options.locale,
+          ),
         ),
-      ),
-    list: async (modelKey, query = '', options = {}) => {
-      const result = await listAdminEntries(
-        await contentContext(environment, site, options.principal),
-        modelKey,
-        query,
-      );
-      return { items: result.items.map(toReadEntry), total: result.pagination.total };
+      list: async (modelKey, query = '', options = {}) => {
+        const result = await listAdminEntries(
+          await contentContext(environment, await source.read(), options.principal),
+          modelKey,
+          query,
+        );
+        return { items: result.items.map(toReadEntry), total: result.pagination.total };
+      },
+      models: async () => {
+        const site = await source.read();
+        const view = (await environment.registry.getSnapshot()).forSite(site.id);
+        const apiKeyOf = (id: string) => view.byId.get(id)?.definition.apiKey;
+        return [...view.byId.values()]
+          .map((active) => active.definition)
+          .filter(isModelDefinition)
+          .flatMap((definition) => {
+            const resolved = view.resolve(definition.id);
+            return resolved ? [toServiceModel(resolved, modelRouteOf(view, definition), apiKeyOf)] : [];
+          });
+      },
+      count: async (modelKey) => {
+        const site = await source.read();
+        const model = resolveModel((await environment.registry.getSnapshot()).forSite(site.id), modelKey);
+        return entriesRepository.countLive(model.definition.id, site.id, environment.db);
+      },
     },
-    models: async () => {
-      const view = (await environment.registry.getSnapshot()).forSite(site.id);
-      const apiKeyOf = (id: string) => view.byId.get(id)?.definition.apiKey;
-      return [...view.byId.values()]
-        .map((active) => active.definition)
-        .filter(isModelDefinition)
-        .flatMap((definition) => {
-          const resolved = view.resolve(definition.id);
-          return resolved ? [toServiceModel(resolved, modelRouteOf(view, definition), apiKeyOf)] : [];
-        });
+    media: {
+      usages: async (assetId) => {
+        const { items, total } = await listUsagesOnSite(await source.read(), assetId);
+        return {
+          items: items.map(({ entryId, modelId, fieldId, locale, state }) => ({
+            entryId,
+            modelId,
+            fieldId,
+            locale,
+            state,
+          })),
+          total,
+        };
+      },
     },
-    count: async (modelKey) => {
-      const model = resolveModel((await environment.registry.getSnapshot()).forSite(site.id), modelKey);
-      return entriesRepository.countLive(model.definition.id, site.id, environment.db);
+    jobs: {
+      enqueue: async (name, payload = {}, options = {}) => {
+        if (!environment.jobNames.has(name)) {
+          throw new Error(`No job "${name}" in shapio.config jobs`);
+        }
+        const { job, created } = await enqueueJob(
+          {
+            type: `${EXTENSION_JOB_PREFIX}${name}`,
+            payload,
+            ...(options.runAt ? { runAt: options.runAt } : {}),
+            ...(options.idempotencyKey
+              ? { idempotencyKey: `${EXTENSION_JOB_PREFIX}${name}:${options.idempotencyKey}` }
+              : {}),
+            ...(options.maxAttempts ? { maxAttempts: options.maxAttempts } : {}),
+          },
+          environment.db,
+        );
+        return { id: job.id, created };
+      },
     },
-  },
-  media: {
-    usages: async (assetId) => {
-      const { items, total } = await listUsagesOnSite(site, assetId);
-      return {
-        items: items.map(({ entryId, modelId, fieldId, locale, state }) => ({
-          entryId,
-          modelId,
-          fieldId,
-          locale,
-          state,
-        })),
-        total,
-      };
-    },
-  },
-  jobs: {
-    enqueue: async (name, payload = {}, options = {}) => {
-      if (!environment.jobNames.has(name)) {
-        throw new Error(`No job "${name}" in shapio.config jobs`);
-      }
-      const { job, created } = await enqueueJob(
-        {
-          type: `${EXTENSION_JOB_PREFIX}${name}`,
-          payload,
-          ...(options.runAt ? { runAt: options.runAt } : {}),
-          ...(options.idempotencyKey
-            ? { idempotencyKey: `${EXTENSION_JOB_PREFIX}${name}:${options.idempotencyKey}` }
-            : {}),
-          ...(options.maxAttempts ? { maxAttempts: options.maxAttempts } : {}),
-        },
-        environment.db,
-      );
-      return { id: job.id, created };
-    },
-  },
-  logger: environment.logger,
-});
+    logger: environment.logger,
+  };
+  // An accessor, not a value: on top-level services it follows the primary site (as last read).
+  return Object.defineProperty(services, 'site', {
+    get: source.current,
+    enumerable: true,
+    configurable: true,
+  }) as ShapioServices;
+};
 
 export const toHostConfig = (config: AppConfig, projectDir: string): ExtensionHostConfig => ({
   nodeEnv: config.nodeEnv,
@@ -144,7 +166,8 @@ export const toHostConfig = (config: AppConfig, projectDir: string): ExtensionHo
 
 /**
  * Shapio's services, then each custom service in declaration order (a service sees the ones declared before
- * it). A factory that throws fails startup.
+ * it). A factory that throws fails startup. Shapio's services read the primary site, followed live: a site
+ * made primary while the server runs is read from the next call on, no restart.
  */
 export const createExtensionServices = async (
   environment: ServiceEnvironment,
@@ -152,16 +175,18 @@ export const createExtensionServices = async (
   host: ExtensionHostConfig,
 ): Promise<ExtensionServices> => {
   // Custom services are only known to the type system through `CustomServices` augmentation.
-  const services: ShapioServices & Record<string, unknown> = {
-    ...createShapioServices(environment, PRIMARY_SITE),
-  };
+  const tracker = await createPrimarySiteTracker(environment.db);
+  const services: ShapioServices & Record<string, unknown> = createShapioServices(
+    environment,
+    primarySite(tracker),
+  );
   for (const [name, factory] of Object.entries(factories)) {
     try {
       services[name] = await factory({
         db: environment.db,
         config: host,
         logger: environment.logger.child({ service: name }),
-        services: { ...services },
+        services: copyServices(services),
       });
     } catch (error) {
       throw new Error(`shapio.config service "${name}" failed to start: ${describeError(error)}`, {

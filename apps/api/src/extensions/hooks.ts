@@ -23,6 +23,7 @@ import type { Principal } from '../permissions/types.js';
 import * as extensionHookRunsRepository from '../repositories/extensionHookRuns.js';
 import * as outboxEventsRepository from '../repositories/outboxEvents.js';
 import type { SiteRef } from '../services/actorContext.js';
+import { findPreSitesSite } from '../services/sites.js';
 import {
   HookError,
   isHookError,
@@ -159,7 +160,7 @@ const runBeforeHooks = async (
 /** What the outbox event carries for the post-commit run (kept out of job payloads, which admins can see). */
 export type AfterHookEventPayload = {
   event: AfterEvent;
-  /** The entry's site (absent on events recorded before sites: the primary site). */
+  /** The entry's site (absent on events recorded before sites: the built-in site, while it exists). */
   site?: SiteRef;
   model: HookModel;
   /** The models the entry's model extends, root first (absent on events recorded before inheritance). */
@@ -237,6 +238,15 @@ export const createAfterHookSubscriber =
 type AfterHookJobPayload = { eventId: string; hook: string };
 
 /** Runs one `after*` hook in a transaction that also records the run (skipped if it already ran). */
+/** The site of an event recorded before sites existed: the built-in site, while it exists. */
+const preSitesSiteOf = async (db: Database): Promise<SiteRef> => {
+  const site = await findPreSitesSite(db);
+  if (!site) {
+    throw new PermanentJobError('This event was recorded before sites existed and its site was deleted');
+  }
+  return site;
+};
+
 export const createAfterHookJobHandler =
   (environment: HookEnvironment): JobHandler =>
   async (job) => {
@@ -253,12 +263,12 @@ export const createAfterHookJobHandler =
       job.log.warn({ hook: name }, 'after hook no longer configured; skipped');
       return { skipped: 'not configured' };
     }
+    const site = payload.site ?? (await preSitesSiteOf(environment.db));
     return environment.db.transaction().execute(async (trx) => {
       if (!(await extensionHookRunsRepository.claim({ eventId, hook: name, jobId: job.id }, trx))) {
         job.log.info({ hook: name }, 'after hook already ran for this event; skipped');
         return { skipped: 'already ran' };
       }
-      const site = payload.site ?? environment.services.site;
       await matched.hook({
         event: payload.event,
         site,

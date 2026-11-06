@@ -211,6 +211,41 @@ describe('field usage', () => {
     expect(rows.find((candidate) => candidate.fieldPath === 'upsert-test')?.reads).toBe(6);
   });
 
+  it("leaves out a deleted site's counters and writes the rest of the flush", async () => {
+    const day = usageDayOf(new Date());
+    const row = (siteId: string, fieldPath: string) => ({
+      day,
+      siteId,
+      modelId: article.definition.id,
+      fieldPath,
+      principalKey: 'anonymous',
+      selection: 'explicit' as const,
+      reads: 1,
+      lastReadAt: new Date(),
+    });
+    const goneSite = '00000000-0000-4000-b000-0000000000fe';
+    await writeUsageBatch(database.current.db, {
+      fieldReads: [row(goneSite, 'deleted-site'), row(PRIMARY_SITE_ID, 'live-site')],
+      tokenReads: [
+        {
+          day,
+          siteId: goneSite,
+          principalKey: 'anonymous',
+          requests: 1,
+          lastSnapshot: null,
+          lastReadAt: new Date(),
+        },
+      ],
+    });
+    const rows = await usageRepository.fieldUsageForModel(
+      PRIMARY_SITE_ID,
+      article.definition.id,
+      day,
+      database.current.db,
+    );
+    expect(rows.find((candidate) => candidate.fieldPath === 'live-site')?.reads).toBe(1);
+  });
+
   it('is gated by tokens.manage and validates the model', async () => {
     expect(
       (

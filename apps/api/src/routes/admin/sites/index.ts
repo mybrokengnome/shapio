@@ -1,6 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { getSiteAppRoles, setSiteAppRoles } from '../../../controllers/siteAppRoles.js';
-import { createSite, deleteSite, getSite, listSites, updateSite } from '../../../controllers/sites.js';
+import {
+  createSite,
+  deleteSite,
+  getSite,
+  listSites,
+  makePrimarySite,
+  updateSite,
+} from '../../../controllers/sites.js';
 import { declareSiteScope } from '../../../plugins/siteResolution.js';
 import { getSiteAppRolesSchema, setSiteAppRolesSchema } from './appRoleSchemas.js';
 import {
@@ -8,12 +15,13 @@ import {
   deleteSiteSchema,
   getSiteSchema,
   listSitesSchema,
+  makePrimarySiteSchema,
   updateSiteSchema,
 } from './schemas.js';
 
 /**
  * /api/admin/sites (sites plan §H): network routes. Any admin lists the sites they work on (the site
- * switcher); creating, renaming and deleting sites needs `sites.manage`, a network action.
+ * switcher); creating, renaming, deleting sites and making one primary needs `sites.manage`, a network action.
  */
 export const adminSitesRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
@@ -37,11 +45,17 @@ export const adminSitesRoutes: FastifyPluginAsyncTypebox = async (app) => {
     { schema: updateSiteSchema, config: { audit: { action: 'site.update' } }, ...manageSites },
     updateSite,
   );
-  // DELETE /api/admin/sites/:id: only an empty site, never the primary one
+  // DELETE /api/admin/sites/:id: only an empty site, and not while it is the primary one
   app.delete(
     '/:id',
     { schema: deleteSiteSchema, config: { audit: { action: 'site.delete' } }, ...manageSites },
     deleteSite,
+  );
+  // POST /api/admin/sites/:id/make-primary: requests that name no site go to this site from now on
+  app.post(
+    '/:id/make-primary',
+    { schema: makePrimarySiteSchema, config: { audit: { action: 'site.make_primary' } }, ...manageSites },
+    makePrimarySite,
   );
   // GET /api/admin/sites/:id/app-roles: the app roles bound to the site's anonymous callers (`public`) and
   // signed-in app users (`authenticated`).

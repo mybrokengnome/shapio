@@ -1,6 +1,11 @@
 /** Sites (plan agentic-ecosystem §H, ADR 0011). */
 
-/** The primary site the sites migration created; every row that existed before sites belongs to it. */
+/**
+ * The ID of the built-in site (key `default`), which the sites migration created as the primary site; every
+ * row that existed before sites belongs to it. It may later stop being primary, or be deleted, so it never
+ * means "the primary site" (read the flag: `sitesRepository.findPrimary`). Its only runtime use is
+ * `findPreSitesSite`: work queued before sites existed (a transfer import, an after-hook event) belongs here.
+ */
 export const PRIMARY_SITE_ID = '00000000-0000-4000-b000-000000000001';
 
 /** A site key: lower case, starts with a letter (the same rule as role keys). Used in URLs and `?site=`. */

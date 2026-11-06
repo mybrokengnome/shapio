@@ -9,10 +9,11 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PERSON_NAME_MAX_LENGTH } from
 import { SITE_KEY_PATTERN } from './constants/sites.js';
 import { SHAPIO_VERSION } from './constants/version.js';
 import { backupDatabase, BackupError } from './db/backup.js';
-import { createDb } from './db/index.js';
+import { createDb, type Database } from './db/index.js';
 import { getPendingMigrations, migrateToLatest } from './db/migrator.js';
 import { assertDatabaseReachable } from './db/startupChecks.js';
 import { checkExtensions } from './extensions/check.js';
+import { AppError } from './helpers/appError.js';
 import { probeStatus } from './helpers/healthProbe.js';
 import { loopbackUrl } from './helpers/publicUrl.js';
 import { generateToken } from './helpers/tokens.js';
@@ -23,7 +24,7 @@ import { EmailSchema, PasswordSchema, PersonNameSchema } from './routes/schemas/
 import { startServer } from './server.js';
 import { SYSTEM_CLI_ACTOR } from './services/actorContext.js';
 import { createAdminDirect } from './services/setup.js';
-import { createSite, listAllSites } from './services/sites.js';
+import { createSite, listAllSites, makePrimarySite } from './services/sites.js';
 import { startDedicatedWorker } from './worker.js';
 
 /** Runs until a signal stops the process; the exit code is set by the shutdown handler. */
@@ -220,13 +221,61 @@ const adminCommand: CliCommand = {
 const SITES_USAGE =
   'shapio sites list\n' +
   'shapio sites create --key <key> --name <name>\n' +
-  '  Lists or creates sites directly in the database (sites share the admins, roles and shared content types;\n' +
-  '  each has its own content types, content, media, tokens and snapshots). Keys are lower case and fixed once\n' +
-  '  created.';
+  'shapio sites make-primary --key <key>\n' +
+  '  Lists, creates, or makes primary sites directly in the database (sites share the admins, roles and shared\n' +
+  '  content types; each has its own content types, content, media, tokens and snapshots). Keys are lower case\n' +
+  '  and fixed once created. The primary site answers requests that name no site; making another site primary\n' +
+  '  takes effect right away, and the former primary can then be deleted once it is empty.';
+
+const SITES_SUBCOMMANDS = ['list', 'create', 'make-primary'] as const;
+type SitesSubcommand = (typeof SITES_SUBCOMMANDS)[number];
 
 const SITE_KEY_RE = new RegExp(SITE_KEY_PATTERN);
 
-const runSites = async (subcommand: string | undefined, options: Map<string, string>, io: CliIo) => {
+const usageError = (io: CliIo) => {
+  io.stderr(`Usage: ${SITES_USAGE}\n`);
+  return 1;
+};
+
+const runSitesSubcommand = async (
+  db: Database,
+  subcommand: SitesSubcommand,
+  options: Map<string, string>,
+  io: CliIo,
+) => {
+  if (subcommand === 'list') {
+    for (const site of await listAllSites(db)) {
+      io.stdout(`${site.key}\t${site.name}${site.isPrimary ? '\t(primary)' : ''}\n`);
+    }
+    return 0;
+  }
+  const key = options.get('key') ?? '';
+  if (subcommand === 'make-primary') {
+    if (!SITE_KEY_RE.test(key)) {
+      return usageError(io);
+    }
+    try {
+      const site = await makePrimarySite(SYSTEM_CLI_ACTOR, { by: 'key', key }, db);
+      io.stdout(`Site ${site.key} is now the primary site.\n`);
+      return 0;
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'SITE_NOT_FOUND') {
+        io.stderr(`No site has the key "${key}".\n`);
+        return 1;
+      }
+      throw error;
+    }
+  }
+  const name = options.get('name')?.trim() ?? '';
+  if (!SITE_KEY_RE.test(key) || name.length === 0) {
+    return usageError(io);
+  }
+  const site = await createSite(SYSTEM_CLI_ACTOR, { key, name }, db);
+  io.stdout(`Created site ${site.key} (${site.id}).\n`);
+  return 0;
+};
+
+const runSites = async (subcommand: SitesSubcommand, options: Map<string, string>, io: CliIo) => {
   const config = loadConfig();
   const db = createDb({ connectionString: config.database.url, poolMax: 2, applicationName: 'shapio-sites' });
   try {
@@ -234,34 +283,23 @@ const runSites = async (subcommand: string | undefined, options: Map<string, str
       io.stderr('Database migrations are pending; run `shapio migrate` (or start the server) first.\n');
       return 1;
     }
-    if (subcommand === 'list') {
-      for (const site of await listAllSites(db)) {
-        io.stdout(`${site.key}\t${site.name}${site.isPrimary ? '\t(primary)' : ''}\n`);
-      }
-      return 0;
-    }
-    const key = options.get('key') ?? '';
-    const name = options.get('name')?.trim() ?? '';
-    if (!SITE_KEY_RE.test(key) || name.length === 0) {
-      io.stderr(`Usage: ${SITES_USAGE}\n`);
-      return 1;
-    }
-    const site = await createSite(SYSTEM_CLI_ACTOR, { key, name }, db);
-    io.stdout(`Created site ${site.key} (${site.id}).\n`);
-    return 0;
+    return await runSitesSubcommand(db, subcommand, options, io);
   } finally {
     await db.destroy();
   }
 };
 
+const isSitesSubcommand = (value: string | undefined): value is SitesSubcommand =>
+  SITES_SUBCOMMANDS.includes(value as SitesSubcommand);
+
 const sitesCommand: CliCommand = {
-  summary: 'List or create sites directly in the database (sites list | sites create --key ... --name ...)',
+  summary:
+    'List, create, or make primary sites directly in the database (sites list | sites create --key ... --name ... | sites make-primary --key ...)',
   usage: SITES_USAGE,
   run: async (args, io) => {
     const [subcommand, ...rest] = args;
-    if (subcommand !== 'list' && subcommand !== 'create') {
-      io.stderr(`Usage: ${SITES_USAGE}\n`);
-      return 1;
+    if (!isSitesSubcommand(subcommand)) {
+      return usageError(io);
     }
     return runSites(subcommand, parseOptions(rest), io);
   },
