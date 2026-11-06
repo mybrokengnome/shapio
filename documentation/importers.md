@@ -8,11 +8,11 @@ collected into a [change set](change-sets.md) that you review and ship.
 An import has two steps, with a schema apply between them:
 
 1. **Plan** (`--plan <dir>`) reads the export and writes the models it proposes as ordinary
-   [schema files](schema-sync.md) into `<dir>/schema` (the primary site's folder, `sites/default/`, unless you
+   [schema files](schema-sync.md) into `<dir>/schema` (the built-in site's folder, `sites/default/`, unless you
    say otherwise: see below), plus `<dir>/import-map.json`. It runs offline: it needs no URL or token and sends
    nothing anywhere, unless you pass `--url` to check the planned names against your instance (see below).
 2. **Review and apply** the files, like any schema change:
-   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json`. You can rename API IDs, labels and
+   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json --site default`. You can rename API IDs, labels and
    descriptions, or delete fields you don't want, before applying. Or copy the files into your project's
    `schema/` and apply them with the rest of your schema.
 3. **Map** (`--map <dir>`) runs against the instance. It uploads the media, creates every entry as a draft
@@ -20,8 +20,8 @@ An import has two steps, with a schema apply between them:
 
 ```sh
 npx @shapio/cms import wordpress export.xml --plan ./import
-npx @shapio/cms schema apply --dir ./import/schema --lock ./import/schema-lock.json
-npx @shapio/cms import wordpress --map ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
+npx @shapio/cms schema apply --dir ./import/schema --lock ./import/schema-lock.json --site default
+npx @shapio/cms import wordpress --map ./import --site default --url https://cms.example.com --token "$SHAPIO_TOKEN"
 ```
 
 `schema apply` and `--map` take the usual remote-command options: `--url` (or `SHAPIO_URL`), `--token` (or
@@ -36,8 +36,9 @@ API ID, plural API ID, and GraphQL name against them. A planned model or compone
 `Item` suffix, numbered if that is taken too (`seoItem`, `seoItem2`), and `--plan` prints one line for each
 rename, such as "Component seo is named seoItem (the target already has seo)." A renamed collection's plural API
 ID is derived from its new API ID. Only `--url` turns the check on: `SHAPIO_URL` alone keeps the plan offline.
-For a `--shared` plan, the names are checked against the primary site's view, and `--plan` notes that other
-sites' own models and components were not checked. Without `--url`, `--plan` prints "Names were not checked
+For a `--shared` plan, `--plan` names no site, so the names are checked against the view of the token's site
+(for a network token, the primary site's), and `--plan` notes that other sites' own models and components were
+not checked. Without `--url`, `--plan` prints "Names were not checked
 against a target: pass --url and --token to --plan, or rename clashes in the schema files before applying."
 
 ```sh
@@ -45,8 +46,11 @@ npx @shapio/cms import strapi my-export.tar.gz --plan ./import --url https://cms
 ```
 
 **Which site the models belong to.** The planned models belong to one [site](sites.md): the one `--site <key>`
-(or `SHAPIO_SITE`) names, else the primary site (key `default`). On an instance with one site, that is the only
-site, so the commands above need no `--site` and work with an ordinary admin token. The plan records the site,
+(or `SHAPIO_SITE`) names. Otherwise, with `--url`, the site the instance answers for (the token's site, else the
+primary site); offline, the built-in site, key `default`, which is the primary site unless another site was
+made primary (pass `--site` then, or once `default` is deleted). On an instance with one site, that is the only
+site, and an ordinary admin token works. `--plan` prints the apply and map commands with `--site <key>`, so
+they reach the planned site whichever site is primary when you run them. The plan records the site,
 so `--map` without `--site` imports into it, and a `--map --site` that names another site is refused.
 
 - **Another site of a multi-site instance:** plan with `--site <key>`. The files go in

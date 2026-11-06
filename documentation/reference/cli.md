@@ -108,14 +108,16 @@ shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|gene
 
 ### shapio sites
 
-List or create sites directly in the database (sites list | sites create --key ... --name ...).
+List, create, or make primary sites directly in the database (sites list | sites create --key ... --name ... | sites make-primary --key ...).
 
 ```text
 shapio sites list
 shapio sites create --key <key> --name <name>
-  Lists or creates sites directly in the database (sites share the admins, roles and shared content types;
-  each has its own content types, content, media, tokens and snapshots). Keys are lower case and fixed once
-  created.
+shapio sites make-primary --key <key>
+  Lists, creates, or makes primary sites directly in the database (sites share the admins, roles and shared
+  content types; each has its own content types, content, media, tokens and snapshots). Keys are lower case
+  and fixed once created. The primary site answers requests that name no site; making another site primary
+  takes effect right away, and the former primary can then be deleted once it is empty.
 ```
 
 ### shapio extensions
@@ -198,8 +200,9 @@ shapio import wordpress <export.xml> --plan <dir> [--site <key> | --shared] [--u
   --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json.
   With --url it checks the planned API IDs against that instance and renames clashes (tag → tagItem);
   without it, it sends nothing.
-  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site
-  ("default"); --shared shares them with all sites (applying them needs a network admin token).
+  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the
+  token's site or the primary site, else the built-in site ("default"); --shared shares them with all sites
+  (applying them needs a network admin token).
   --map without --site imports into the planned site.
   Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
   it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),
@@ -210,9 +213,9 @@ shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key
   --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models
   and components (<dir>/schema) and <dir>/import-map.json. With --url it checks the planned API IDs against
   that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one site
-  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else the primary site ("default"); --shared shares
-  them with all sites (applying them needs a network admin token). --map without --site imports into the
-  planned site. Apply the schema with
+  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the token's site or the primary
+  site, else the built-in site ("default"); --shared shares them with all sites (applying them needs a
+  network admin token). --map without --site imports into the planned site. Apply the schema with
   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
   it uploads the media, creates every document as a draft and opens change sets with the published ones.
   Strapi 5 only.

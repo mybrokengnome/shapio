@@ -170,7 +170,7 @@ services: {
   - `media.usages(assetId)`: where an asset is referenced.
   - `jobs.enqueue(name, payload?, { runAt?, idempotencyKey?, maxAttempts? })`: queues one of your jobs.
   - `logger`.
-  - `site` and `forSite(site)`: content and media are per [site](sites.md). The services a hook receives read the hook's site; those given to routes, jobs and factories read the primary site. `services.forSite(request.site)` returns the same services on the request's site.
+  - `site` and `forSite(site)`: content and media are per [site](sites.md). The services a hook receives read the hook's site; those given to routes, jobs and factories read the primary site, and follow it live when another site is made primary (each call reads which site is primary now). `services.forSite(request.site)` returns the same services on the request's site.
 
 For typed access everywhere, augment `CustomServices`:
 
@@ -212,7 +212,11 @@ working on:
   about the whole instance rather than one site; it then has no `request.site`.
 - **Services:** `services.site` is the site that `content` and `media` read, and `services.forSite(site)`
   returns the same services reading another site. The services given to routes, jobs and service factories
-  read the **primary site**, so in a route use `services.forSite(request.site)` for the request's site:
+  read the **primary site**, so in a route use `services.forSite(request.site)` for the request's site.
+  They follow the primary site live: when another site is [made primary](sites.md#the-primary-site), the next
+  call reads it, with no restart. On these services `services.site` is the primary site as last read in this
+  process, so don't keep it: a route reads `request.site`, and other code calls `content` or `media` (which
+  read the primary site now) or `forSite`:
 
   ```ts
   app.get('/stats', { preHandler: requireAdmin }, async (request) => ({

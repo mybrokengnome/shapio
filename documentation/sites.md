@@ -174,13 +174,45 @@ A new site starts empty: snapshot 0, no tokens, no webhooks, and **no anonymous 
 A site can be deleted only when it is empty: no entries, media, folders, change sets, app users or content
 types and components of its own (`409 SITE_NOT_EMPTY` lists what is left, with `definitions` counting its own
 content types and components). Delete them, or share them with all sites, first; definitions the site had
-already deleted go with it. Its tokens, webhooks, deployment connections, role assignments and
-snapshot history go with it. Sites cannot be merged or split later.
+already deleted go with it. Its tokens, webhooks, deployment connections, role assignments, and
+snapshot history are deleted with it. The primary site cannot be deleted (`409 SITE_IS_PRIMARY`): make another
+site primary first. Sites cannot be merged or split later.
 
 ### The primary site
 
-Every instance has exactly one **primary** site, key `default`. It cannot be deleted. Requests that name no site
-go to it, and an upgraded instance finds all its existing content there.
+Every instance has exactly one **primary** site. Requests that name no site go to it. At first it is the
+built-in site, key `default`, where an upgraded instance finds all its existing content.
+
+You can make another site primary, from the site's page in the admin (**Make primary**), the admin API
+(`sites.manage`), or the server host:
+
+```sh
+npx shapio sites make-primary --key marketing
+# Site marketing is now the primary site.
+```
+
+```sh
+curl -X POST "$SHAPIO_URL/api/admin/sites/<site id>/make-primary" -H "Authorization: Bearer $SHAPIO_TOKEN"
+```
+
+The switch is live, with no restart, and takes effect from the next request:
+
+- **Requests that name no site** read the new primary site: anonymous delivery without `?site=`, network admin
+  tokens without `Shapio-Site`, the admin at a URL without a site (for a browser that has no last site
+  remembered), extension services given to routes, jobs, and factories, and starters and CLI commands that
+  ask the instance which site is primary. Requests that name a site, and credentials that belong to one, are
+  not affected.
+- **Tokens, webhooks, deployment connections, and app role bindings stay with their own site.** Every delivery
+  token from before sites belongs to `default`, so a frontend reading with such a token keeps reading
+  `default` after a switch, and stops working if `default` is deleted (its tokens are deleted with it). Create
+  tokens on the new site first.
+- **A new site binds no `public` role** (see [App users](#app-users-and-anonymous-access)), so anonymous
+  delivery that names no site returns nothing after a switch to it until you bind app roles there.
+- **CDN caches**: a CDN that keys on the URL alone and caches responses for requests without `?site=` keeps
+  serving the old primary's responses until they expire. Purge it after a switch.
+
+The former primary is then an ordinary site: it can be deleted once it is empty. Making the site that is
+already primary primary again changes nothing.
 
 ## Which site a request reads
 
@@ -360,7 +392,8 @@ otherwise the agent works on its token's site, else the primary site. See [MCP s
 
 Custom routes are site routes: `request.site` is the request's site (`{ id, key }`). Hooks receive `site` (the
 entry's site), and the `services` they get read that site. Services given to routes, jobs and service factories
-read the primary site; use `services.forSite(request.site)` for another. See [Extensions](extensions.md).
+read the primary site, and follow it when another site is made primary (each call reads which site is primary
+now); use `services.forSite(request.site)` for another. See [Extensions](extensions.md).
 
 ## In the admin
 
@@ -378,8 +411,9 @@ nothing from one site's screens carries over to another. The ⌘K palette offers
 - **Sites**: every site, and **New site** (a name and a key, which is fixed once created). Any admin with a
   network permission can look; creating a site needs `sites.manage`. A site's page renames it (a stale edit is
   refused with a conflict), sets its **App roles** (checkbox groups for _Public_ and _Authenticated_; needs
-  `roles.manage`), and deletes it. **Delete site** shows the server's reason when the site is not empty; the
-  primary site has no delete button.
+  `roles.manage`), shows whether it is the **Primary site** (with **Make primary** on any other site; needs
+  `sites.manage`), and deletes it. **Delete site** shows the server's reason when the site is not empty; the
+  primary site has no delete button until another site is made primary.
 - **Users**: people, their access and invitations. A badge per assignment reads _Editor · Blog_ or
   _Editor · All sites_. **Change access** edits the rows (site or _All sites_, and a role; **Add a site**, remove
   a row); Owner can only be given on _All sites_. On a single-site instance this is just the role. Pending
