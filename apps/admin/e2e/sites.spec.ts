@@ -39,6 +39,18 @@ const pageErrors: string[] = [];
 const owner = () => siteApi(page.request);
 const onBlog = () => siteApi(page.request, SITE.key);
 
+/**
+ * Makes the built-in site primary again if a test moved the flag: later specs on the same server expect it
+ * (requests that name no site read it).
+ */
+const restoreBuiltInPrimary = async () => {
+  const sites = await owner().get<{ id: string; key: string; isPrimary: boolean }[]>('/sites');
+  const builtIn = sites.find((site) => site.key === 'default');
+  if (builtIn && !builtIn.isPrimary) {
+    await owner().send('POST', `/sites/${builtIn.id}/make-primary`);
+  }
+};
+
 /** Deletes a definition at its active version, through the site whose view has it. */
 const deleteDefinition = async (api: ReturnType<typeof siteApi>, path: string) => {
   const { version } = await api.get<{ version: number }>(path);
@@ -85,7 +97,8 @@ test.afterEach(() => {
 });
 
 test.afterAll(async () => {
-  // Leave one site, no extra admins and no extra models behind (later specs expect that).
+  // Leave one site, primary, no extra admins and no extra models behind (later specs expect that).
+  await restoreBuiltInPrimary();
   await editorPage?.context().close();
   const users = await owner().get<{ id: string; email: string }[]>('/users');
   const editor = users.find((user) => user.email === EDITOR.email);
@@ -475,6 +488,50 @@ test("a site admin creates the site's own types; a shared type's builder is read
   await expect(editor.getByRole('textbox', { name: 'Label' }).first()).toBeDisabled();
   await expect(editor.getByRole('button', { name: 'Keep on this site' })).toHaveCount(0);
   await captureScreen(editor, 'sites-13-shared-read-only', { viewports: ['desktop'] });
+});
+
+test('another site is made primary; the former primary can then be deleted', async () => {
+  try {
+    await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
+    const panel = page.getByRole('region', { name: 'Primary site' });
+    await expect(panel.getByText('Requests that name no site read Default site.')).toBeVisible();
+    await panel.getByRole('button', { name: 'Make primary' }).click();
+    const confirm = page.getByRole('alertdialog', { name: `Make ${SITE.name} the primary site?` });
+    await expect(
+      confirm.getByText(
+        `Requests that name no site will read ${SITE.name} instead of Default site, right away.`,
+        { exact: false },
+      ),
+    ).toBeVisible();
+    await captureScreen(page, 'sites-14-make-primary', BOTH);
+    await confirm.getByRole('button', { name: 'Make primary' }).click();
+    await expect(page.getByText(`${SITE.name} is now the primary site.`)).toBeVisible();
+    await expect(page.getByRole('main').getByText('Primary', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Make primary' })).toHaveCount(0);
+    await expect(
+      panel.getByText(
+        'Requests that name no site read this site. Make another site primary before you delete this one.',
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete site' })).toHaveCount(0);
+
+    // The former primary is an ordinary site now: it offers Make primary and Delete.
+    const builtIn = (await owner().get<{ id: string; key: string }[]>('/sites')).find(
+      (site) => site.key === 'default',
+    );
+    await page.goto(`${ADMIN_URL}network/sites/${builtIn?.id ?? ''}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Default site' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Primary', { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole('region', { name: 'Primary site' }).getByRole('button', { name: 'Make primary' }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete site' })).toBeVisible();
+    await captureScreen(page, 'sites-15-former-primary', BOTH);
+    await page.getByRole('link', { name: 'Sites' }).first().click();
+    await expect(page.getByRole('row').filter({ hasText: SITE.name })).toContainText('Primary');
+  } finally {
+    await restoreBuiltInPrimary();
+  }
 });
 
 test('a site with content cannot be deleted; once emptied it can', async () => {

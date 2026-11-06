@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliIo } from '../../types.js';
 import { importCommand } from './index.js';
 
@@ -50,5 +54,75 @@ describe('shapio import wordpress | strapi arguments', () => {
   it('still treats any other first argument as a bundle file', async () => {
     const result = await run(['bundle.ndjson']);
     expect(result.stderr).toContain('An admin API token is required');
+  });
+});
+
+describe('shapio import --plan --url: which site names are checked on', () => {
+  const WXR = fileURLToPath(new URL('../../../test/fixtures/wxr/blog.xml', import.meta.url));
+  let scratch: string | undefined;
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    if (scratch) {
+      await rm(scratch, { recursive: true, force: true });
+      scratch = undefined;
+    }
+  });
+
+  /** An instance whose schema export answers for site `marketing` (the token's site, or the primary). */
+  const stubInstance = () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ schemaVersion: 1, site: { id: 's2', key: 'marketing' }, definitions: [] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    return fetch;
+  };
+
+  const siteHeaders = (fetch: ReturnType<typeof stubInstance>) =>
+    fetch.mock.calls.map((call) =>
+      new Headers((call as unknown as [string, RequestInit])[1].headers).get('shapio-site'),
+    );
+
+  const planDir = async () => {
+    scratch = await mkdtemp(join(tmpdir(), 'shapio-plan-'));
+    return join(scratch, 'plan');
+  };
+
+  it('a shared plan names no site, so a site token is checked on its own site', async () => {
+    const fetch = stubInstance();
+    const dir = await planDir();
+    const result = await run(['wordpress', WXR, '--plan', dir, '--shared', '--url', 'https://cms.test'], {
+      SHAPIO_TOKEN: 'shp_test',
+    });
+    expect(result.stderr).toBe('');
+    expect(result.code).toBe(0);
+    expect(siteHeaders(fetch)).toEqual([null]);
+  });
+
+  it('with no site named, plans for the site the instance answers for and says so in the next steps', async () => {
+    const fetch = stubInstance();
+    const dir = await planDir();
+    const result = await run(['wordpress', WXR, '--plan', dir, '--url', 'https://cms.test'], {
+      SHAPIO_TOKEN: 'shp_test',
+    });
+    expect(result.stderr).toBe('');
+    expect(result.code).toBe(0);
+    // The first request asks which site; the name check then reads that site's view.
+    expect(siteHeaders(fetch)).toEqual([null, 'marketing']);
+    expect(await readdir(join(dir, 'schema', 'sites'))).toEqual(['marketing']);
+    expect(result.stdout).toContain('will belong to site "marketing"');
+    expect(result.stdout).toContain('--site marketing');
+  });
+
+  it('offline, plans for the built-in site and still names it in the next steps', async () => {
+    const dir = await planDir();
+    const result = await run(['wordpress', WXR, '--plan', dir]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('will belong to site "default", the built-in site');
+    expect(result.stdout).toContain('schema-lock.json --site default');
   });
 });

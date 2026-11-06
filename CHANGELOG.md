@@ -6,6 +6,34 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Make another site primary. The site's page in the admin (Network, Sites) has **Make primary**, the admin API
+  has `POST /api/admin/sites/:id/make-primary` (`sites.manage`, audited as `site.make_primary`), the server host
+  has `shapio sites make-primary --key <key>`, and `@shapio/client` has `admin.sites.makePrimary(id)`. The
+  switch is live, with no restart: requests that name no site read the new primary site from the next request
+  on. Tokens, webhooks, deployment connections, and app role bindings stay with their own site. The former
+  primary, the built-in `default` site included, can then be deleted once it is empty.
+
+### Changed
+
+- Extension services given to routes, jobs, and service factories follow the primary site: each call reads
+  which site is primary now. `services.site` on those services is the primary site as last read.
+- Deleting the primary site is refused with "The primary site cannot be deleted. Make another site primary
+  first."
+- `shapio import wordpress|strapi --plan --url` with no site named plans for the site the instance answers for
+  (the token's site, else the primary site), and the printed apply and map commands always name the site
+  with `--site <key>`.
+
+### Fixed
+
+- `shapio import wordpress|strapi --plan --shared --url` sent `Shapio-Site: default`, so with a site admin
+  token the name check was refused with `403 SITE_MISMATCH`. A shared plan now names no site and is checked
+  against the token's own site.
+- Deleting a site no longer stops usage counting. Counters already buffered for the deleted site made every
+  later usage flush fail, so field and token read counts for every site went unrecorded until a restart. They
+  are now left out of the flush.
+
 ## [0.8.0] - 2026-11-04
 
 ### Added

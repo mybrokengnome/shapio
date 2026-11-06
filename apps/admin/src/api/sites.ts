@@ -6,7 +6,10 @@ import { adminApi } from './client';
 import { withCsrf } from './csrf';
 import { queryKeys } from './queryKeys';
 
-/** The sites list and `me` (whose `sites` feed the switcher) after a site is created, renamed or deleted. */
+/**
+ * The sites list, every site, and `me` (whose `sites` feed the switcher and whose `site.isPrimary` decides
+ * whether delivery requests name the site) after a site is created, renamed, deleted, or made primary.
+ */
 const refreshSites = (queryClient: QueryClient) =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.sites.all }),
@@ -70,6 +73,20 @@ export const useDeleteSite = () => {
       queryClient.removeQueries({ queryKey: queryKeys.sites.site(site.id) });
       return refreshSites(queryClient);
     },
+  });
+};
+
+/**
+ * Makes a site primary: requests that name no site read it from now on. Shows its own error where the action
+ * was asked for. The page load's own site never changes (every request names it).
+ */
+export const useMakePrimarySite = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['sites', 'makePrimary'],
+    meta: { silent: true },
+    mutationFn: (site: Pick<Site, 'id'>) => withCsrf(() => adminApi.sites.makePrimary(site.id)),
+    onSettled: () => refreshSites(queryClient),
   });
 };
 

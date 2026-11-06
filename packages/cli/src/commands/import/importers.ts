@@ -3,12 +3,13 @@ import { parseArgs } from 'node:util';
 import { sha256File, type ImportMap } from '../../import/importMap.js';
 import { runMap } from '../../import/mapper.js';
 import { checkPlanDirectory, writePlan } from '../../import/planner.js';
-import { PRIMARY_SITE_KEY, resolvePlanSite, type PlanSite } from '../../import/planSite.js';
+import { resolvePlanSite, type PlanSite } from '../../import/planSite.js';
 import { formatPlanSummary } from '../../import/summary.js';
 import { checkTargetNames } from '../../import/targetNames.js';
 import type { ImportSource } from '../../import/types.js';
 import type { CliCommand, CliIo } from '../../types.js';
 import { DEFAULT_URL, describeFailure, UsageError } from '../export/http.js';
+import { resolveSiteKey } from '../schema/sync.js';
 
 /**
  * `shapio import wordpress|strapi`: the two-step importers. `--plan <dir>` reads the export and writes schema
@@ -77,9 +78,9 @@ const siteOf = (values: ImporterValues, io: CliIo) =>
 
 /**
  * The instance `--plan` checks names against: only with an explicit `--url` (SHAPIO_URL alone keeps the plan
- * offline), with `--token` or SHAPIO_TOKEN. A shared plan is checked against the primary site's view.
+ * offline), with `--token` or SHAPIO_TOKEN.
  */
-const planTargetOf = (values: ImporterValues, io: CliIo, planSite: PlanSite) => {
+const planConnectionOf = (values: ImporterValues, io: CliIo) => {
   const baseUrl = values.url as string | undefined;
   if (baseUrl === undefined) {
     return undefined;
@@ -90,18 +91,40 @@ const planTargetOf = (values: ImporterValues, io: CliIo, planSite: PlanSite) => 
       '--plan --url checks names on that instance and needs an admin API token: pass --token or set SHAPIO_TOKEN',
     );
   }
-  return { baseUrl, token, site: planSite.site ?? PRIMARY_SITE_KEY, shared: planSite.site === undefined };
+  return { baseUrl, token };
 };
+
+/**
+ * The site the plan is for. With an instance and no site named, the instance says which (the token's site,
+ * else the primary site) rather than assuming the built-in site's key.
+ */
+const planSiteOf = async (
+  requested: PlanSite,
+  connection: { baseUrl: string; token: string } | undefined,
+): Promise<PlanSite> =>
+  connection && !requested.explicit ? { site: await resolveSiteKey(connection), explicit: true } : requested;
+
+/**
+ * Where names are checked: the plan's site, or for a shared plan no site at all, so the instance checks it
+ * against the view it answers for (a site token's own site, never a site the token cannot reach).
+ */
+const planTargetOf = (connection: { baseUrl: string; token: string } | undefined, planSite: PlanSite) =>
+  connection && {
+    ...connection,
+    ...(planSite.site === undefined ? {} : { site: planSite.site }),
+    shared: planSite.site === undefined,
+  };
 
 const runPlan = async (spec: ImporterSpec, file: string, values: ImporterValues, io: CliIo) => {
   const dir = resolve(String(values.plan));
   const path = resolve(file);
   await checkPlanDirectory(dir, values.force === true);
-  const planSite = resolvePlanSite(
-    { site: values.site as string | undefined, shared: values.shared === true },
-    io.env,
+  const connection = planConnectionOf(values, io);
+  const planSite = await planSiteOf(
+    resolvePlanSite({ site: values.site as string | undefined, shared: values.shared === true }, io.env),
+    connection,
   );
-  const target = planTargetOf(values, io, planSite);
+  const target = planTargetOf(connection, planSite);
   const source = await checkTargetNames(await spec.plan(path, dir, values), target);
   const { definitions } = await writePlan(
     dir,

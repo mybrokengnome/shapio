@@ -144,7 +144,7 @@
       "FORBIDDEN_FIELD": "You don't have access to one of the fields in this filter or sort.",
       "LOCALE_NOT_FOUND": "That locale doesn't exist.",
       "SITE_NOT_EMPTY": "This site still has content types, components, entries, media, change sets or app users. Delete them first.",
-      "SITE_IS_PRIMARY": "The primary site can't be deleted.",
+      "SITE_IS_PRIMARY": "The primary site can't be deleted. Make another site primary first.",
       "SITE_KEY_TAKEN": "Another site already uses this key.",
       "OWNER_ALL_SITES": "The owner role applies to every site; it can't be given on one site.",
       "SITE_FORBIDDEN": "You have no role on this site.",
@@ -853,6 +853,7 @@
       "changeSetApprovalRequestChanges": "Change set sent back",
       "changeSetApprove": "Change set approved",
       "siteChangeSetsUpdate": "Site change set settings changed",
+      "siteMakePrimary": "Made a site primary",
       "changeSetApprovalSign": "Change set signed off",
       "changeSetApprovalStageComplete": "Change set approval stage completed",
       "networkApprovalUpdate": "Default approval workflow changed"
@@ -3359,8 +3360,19 @@
     "deleteDescription": "Only an empty site can be deleted.",
     "delete": "Delete site",
     "deleteTitle": "Delete {{name}}?",
-    "deleteConsequence": "Its tokens, webhooks, deployment connections and role assignments go with it.",
+    "deleteConsequence": "Its tokens, webhooks, deployment connections, and role assignments are deleted with it.",
     "deleted": "{{name}} deleted.",
+    "primarySite": {
+      "title": "Primary site",
+      "isPrimary": "Requests that name no site read this site. Make another site primary before you delete this one.",
+      "notPrimary": "Requests that name no site read {{primary}}.",
+      "notPrimaryUnknown": "Requests that name no site read the primary site.",
+      "makePrimary": "Make primary",
+      "confirmTitle": "Make {{name}} the primary site?",
+      "confirmConsequence": "Requests that name no site will read {{name}} instead of {{primary}}, right away. Tokens, webhooks, and app roles stay with their own site.",
+      "confirmConsequenceUnknown": "Requests that name no site will read {{name}} instead of the current primary site, right away. Tokens, webhooks, and app roles stay with their own site.",
+      "made": "{{name}} is now the primary site."
+    },
     "everySite": "Every site"
   },
   "assist": {

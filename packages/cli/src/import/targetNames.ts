@@ -16,13 +16,16 @@ export const NAMES_NOT_CHECKED_NOTE =
   'Names were not checked against a target: pass --url and --token to --plan, or rename clashes in the schema files before applying.';
 
 export const SHARED_PLAN_NOTE =
-  "Names were checked against the primary site's view: other sites' own definitions were not checked.";
+  "Names were checked against the view of the token's site (or the primary site): other sites' own definitions were not checked.";
 
 export type TargetOptions = {
   baseUrl: string;
   token: string;
-  /** The site whose view (shared definitions and its own) the plan must fit. */
-  site: string;
+  /**
+   * The site whose view (shared definitions and its own) the plan must fit. Absent (a shared plan): the site
+   * the instance answers for, the token's site, else the primary site.
+   */
+  site?: string;
   fetch?: typeof globalThis.fetch;
 };
 
@@ -33,7 +36,12 @@ export const fetchTargetDefinitions = async ({
   site,
   fetch,
 }: TargetOptions): Promise<SchemaDefinition[]> => {
-  const client = createClient({ baseUrl, token, site, fetch: createRateLimitedFetch(fetch) });
+  const client = createClient({
+    baseUrl,
+    token,
+    ...(site === undefined ? {} : { site }),
+    fetch: createRateLimitedFetch(fetch),
+  });
   const exported = await client.admin.schema.export();
   return exported.definitions.map((entry) => entry.definition);
 };

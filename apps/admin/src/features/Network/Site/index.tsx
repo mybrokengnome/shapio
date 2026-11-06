@@ -11,8 +11,12 @@ import { useNetworkPermission } from '../hooks/useNetworkPermission';
 import { AppRoleBindings } from './AppRoleBindings';
 import { DangerZone } from './DangerZone';
 import { Details } from './Details';
+import { Primary } from './Primary';
 
-/** Network → Sites → one site: its name and key, the app roles it grants, and deleting it. */
+/**
+ * Network → Sites → one site: its name and key, the app roles it grants, whether it is the primary site (and
+ * making it primary), and deleting it (not while it is primary).
+ */
 export const Site = () => {
   const { t } = useTranslation();
   const { siteId } = useParams({ from: '/app/network/sites/$siteId' });
@@ -37,6 +41,7 @@ export const Site = () => {
             />
             <Details key={data.id} site={data} canManage={canManage} />
             <AppRoleBindings siteId={data.id} canManage={canManageRoles} />
+            <Primary site={data} canManage={canManage} />
             {canManage && !data.isPrimary ? <DangerZone site={data} /> : null}
           </>
         )}

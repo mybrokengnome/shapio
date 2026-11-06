@@ -155,11 +155,14 @@ export type ExtensionJobService = {
  * What Shapio offers extensions. Deliberately small; everything else goes through `trx` or HTTP.
  *
  * Content and media are per site. The services handed to a hook read the hook's site; the services given to
- * routes, jobs and service factories read the primary site. Use `forSite` for another one (in a custom
- * route: `services.forSite(request.site)`).
+ * routes, jobs and service factories read the primary site, followed live (each call reads which site is
+ * primary now). Use `forSite` for another one (in a custom route: `services.forSite(request.site)`).
  */
 export type ShapioServices = {
-  /** The site `content` and `media` read. */
+  /**
+   * The site `content` and `media` read. On the top-level services it is the primary site as last read in
+   * this process: a value kept from it does not follow a later switch. A route reads `request.site`.
+   */
   site: ExtensionSite;
   /** The same services reading another site. */
   forSite: (site: ExtensionSite) => ShapioServices;

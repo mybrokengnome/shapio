@@ -11,8 +11,9 @@ import { Button } from '@/components/ui/button';
 type DangerZoneProps = { site: Site };
 
 /**
- * Deleting a site: only an empty one (no entries, media, folders, change sets or app users), never the
- * primary one. The server says which (`SITE_NOT_EMPTY`, `SITE_IS_PRIMARY`); the confirmation shows it.
+ * Deleting a site: only an empty one (no entries, media, folders, change sets or app users), and not while it
+ * is the primary site (make another site primary first). The server says which (`SITE_NOT_EMPTY`,
+ * `SITE_IS_PRIMARY`); the confirmation shows it.
  */
 export const DangerZone = ({ site }: DangerZoneProps) => {
   const { t } = useTranslation();

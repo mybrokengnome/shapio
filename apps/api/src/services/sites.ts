@@ -1,3 +1,4 @@
+import { PRIMARY_SITE_ID } from '../constants/sites.js';
 import { db } from '../db/index.js';
 import type { Database } from '../db/index.js';
 import { isUniqueViolation } from '../db/sql/errors.js';
@@ -24,7 +25,7 @@ import { recordAudit } from './audit.js';
 /**
  * Sites (plan agentic-ecosystem §H, ADR 0011): the tenants of content. The schema, locales, admin users and
  * roles are shared; everything a site publishes is its own. Exactly one site is primary: requests that name
- * no site go to it, and it can never be deleted.
+ * no site go to it. The flag can move to another site (`makePrimarySite`); the primary site cannot be deleted.
  */
 export type SiteView = {
   id: string;
@@ -84,6 +85,20 @@ export const getSiteRef = async (siteId: string, executor: Database = db): Promi
     throw siteNotFound();
   }
   return toSiteRef(site);
+};
+
+/** The primary site as it is now (extension services that follow it read it on every call). */
+export const getPrimarySite = async (executor: Database = db): Promise<SiteRef> =>
+  toSiteRef(await sitesRepository.findPrimary(executor));
+
+/**
+ * The built-in site (the one the sites migration created), for work queued before sites existed: a job or
+ * outbox event without a site belongs to it, since the migration moved all earlier data there. Undefined once
+ * that site has been deleted: such work then has no site and must fail, never go to the current primary.
+ */
+export const findPreSitesSite = async (executor: Database = db): Promise<SiteRef | undefined> => {
+  const site = await sitesRepository.findById(PRIMARY_SITE_ID, executor);
+  return site && toSiteRef(site);
 };
 
 /**
@@ -189,7 +204,11 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
       throw siteNotFound();
     }
     if (site.is_primary) {
-      throw new AppError(409, 'SITE_IS_PRIMARY', 'The primary site cannot be deleted');
+      throw new AppError(
+        409,
+        'SITE_IS_PRIMARY',
+        'The primary site cannot be deleted. Make another site primary first.',
+      );
     }
     // Serialized with schema changes, so no definition can be created on the site meanwhile.
     await lockSchema(trx);
@@ -221,6 +240,51 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
     });
   });
 };
+
+/** The site `makePrimarySite` moves the flag to: by ID (the admin API) or by key (the CLI). */
+export type SiteTarget = Exclude<SiteLookup, { by: 'primary' }>;
+
+const matchesTarget = (row: SiteRow, target: SiteTarget) =>
+  target.by === 'id' ? row.id === target.id : row.key === target.key;
+
+/**
+ * Makes another site the primary one: requests that name no site, and credentials that belong to no site,
+ * go to it from the next request on. Every site row is locked first (in ID order), so concurrent switches
+ * and a delete racing a switch see one consistent flag. Already primary: returned unchanged, no audit row.
+ * Only `updated_at` changes: `version` guards the name, SEO defaults and approval settings, which this
+ * does not touch.
+ */
+export const makePrimarySite = async (
+  context: ActorContext,
+  target: SiteTarget,
+  database: Database = db,
+): Promise<SiteView> =>
+  database.transaction().execute(async (trx) => {
+    const sites = await sitesRepository.lockAll(trx);
+    const site = sites.find((row) => matchesTarget(row, target));
+    if (!site) {
+      throw siteNotFound();
+    }
+    if (site.is_primary) {
+      return toSiteView(site, await instanceWorkflow(trx));
+    }
+    const previous = sites.find((row) => row.is_primary);
+    if (previous) {
+      await sitesRepository.setPrimary(previous.id, false, trx);
+    }
+    const updated = await sitesRepository.setPrimary(site.id, true, trx);
+    await recordAudit(trx, {
+      ...context,
+      action: 'site.make_primary',
+      target: { type: 'site', id: site.id },
+      metadata: {
+        key: site.key,
+        name: site.name,
+        previous: previous ? { id: previous.id, key: previous.key, name: previous.name } : null,
+      },
+    });
+    return toSiteView(updated, await instanceWorkflow(trx));
+  });
 
 export type SiteResolutionInput = {
   /** The site the credential belongs to (a site token); undefined when the credential names none. */
@@ -278,7 +342,8 @@ export const resolveSite = async (
   }
   const primary = await read({ by: 'primary' });
   if (!primary) {
-    // Every instance has exactly one primary site (migrations create it; it can never be deleted).
+    // Every instance has exactly one primary site: migrations create it, the flag only ever moves to
+    // another site, and the primary site cannot be deleted.
     throw new Error('No primary site');
   }
   return primary;

@@ -39,6 +39,14 @@ export const findByIds = (ids: readonly string[], trx: Executor = db) =>
         .orderBy('name')
         .execute();
 
+/** Which of these site IDs still exist (work buffered for a site may outlive it). */
+export const findExistingIds = async (ids: readonly string[], trx: Executor = db): Promise<Set<string>> =>
+  ids.length === 0
+    ? new Set()
+    : new Set(
+        (await trx.selectFrom('sites').select('id').where('id', 'in', ids).execute()).map((row) => row.id),
+      );
+
 export const insert = (site: NewSite, trx: Executor = db) =>
   trx.insertInto('sites').values(site).returningAll().executeTakeFirstOrThrow();
 
@@ -58,6 +66,25 @@ export const renameIfVersion = (id: string, expectedVersion: number, name: strin
 
 export const lockById = (id: string, trx: Transaction<DB>) =>
   trx.selectFrom('sites').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
+
+/**
+ * Every site row, locked in ID order (moving the primary flag): concurrent switches serialize on the first
+ * row, and the flag read from the locked rows cannot move while the transaction holds them.
+ */
+export const lockAll = (trx: Transaction<DB>) =>
+  trx.selectFrom('sites').selectAll().orderBy('id').forUpdate().execute();
+
+/**
+ * Sets or clears one site's primary flag. Moving the flag takes two calls, clear then set: the one-primary
+ * unique index is checked per statement (per row) on every dialect.
+ */
+export const setPrimary = (id: string, isPrimary: boolean, trx: Executor = db) =>
+  trx
+    .updateTable('sites')
+    .set({ is_primary: isPrimary, updated_at: new Date() })
+    .where('id', '=', id)
+    .returningAll()
+    .executeTakeFirstOrThrow();
 
 /**
  * What keeps a site from being deleted: live content, media, change sets and app users (counted per kind).

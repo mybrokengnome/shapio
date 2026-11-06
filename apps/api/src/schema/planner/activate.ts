@@ -6,7 +6,6 @@ import {
   type ValidationIssue,
 } from '@shapio/schema';
 import type { Transaction } from 'kysely';
-import { PRIMARY_SITE_ID } from '../../constants/sites.js';
 import type { Database } from '../../db/index.js';
 import { isUniqueViolation } from '../../db/sql/errors.js';
 import type { DB } from '../../db/types.js';
@@ -67,16 +66,27 @@ export type ActivationRequest = {
   requestId?: string;
   ip?: string;
   now?: Date;
-  /** The change set shipping this activation (publication ledger, audit). */
-  changeSetId?: string;
-  /**
-   * The change set's site (the origin of the activation). Content converted on other sites takes a number
-   * on each of them (`source: 'conversion'`, naming the change set); without a change set every affected
-   * site's number is a `schema` snapshot.
-   */
-  siteId?: string;
   afterFlip?: AfterFlip;
-};
+} & (
+  | {
+      /** The change set shipping this activation (publication ledger, audit). */
+      changeSetId: string;
+      /**
+       * The change set's site (the origin of the activation). Content converted on other sites takes a
+       * number on each of them (`source: 'conversion'`, naming the change set).
+       */
+      siteId: string;
+    }
+  /** Without a change set there is no origin: every affected site's number is a `schema` snapshot. */
+  | { changeSetId?: undefined; siteId?: undefined }
+);
+
+/** A request without its items; distributes over the union, so a change set still names its site. */
+type ActivationOptions = ActivationRequest extends infer Request
+  ? Request extends unknown
+    ? Omit<Request, 'items'>
+    : never
+  : never;
 
 export type ActivationResult = {
   definitionId: string;
@@ -316,6 +326,12 @@ export const activateDefinitions = async (
   }
 };
 
+/** `activation.seq` of an activation without a change set: it has no origin site, so no number to take. */
+const NO_ORIGIN: SeqAllocator = {
+  next: () => Promise.reject(new Error('This activation has no origin site: it ships no change set')),
+  taken: () => undefined,
+};
+
 /**
  * An activation that changes live content (converted published heads roll their log rows) or ships a change
  * set is a publication snapshot on every site it changes (sites plan §H: one snapshot per affected site),
@@ -328,7 +344,7 @@ export const activateDefinitions = async (
  * number anywhere: live content and every API response stay exactly as they were (brief §10).
  */
 const createActivationContext = (trx: Transaction<DB>, request: ActivationRequest) => {
-  const origin = request.siteId ?? PRIMARY_SITE_ID;
+  const origin = request.changeSetId ? request.siteId : undefined;
   const allocators = new Map<string, SeqAllocator>();
   const deferred = new Map<string, Array<(seq: number) => Promise<void>>>();
   const sourceFor = (siteId: string): SnapshotSource => {
@@ -350,7 +366,7 @@ const createActivationContext = (trx: Transaction<DB>, request: ActivationReques
     return allocator;
   };
   const activation: ActivationContext = {
-    seq: seqFor(origin),
+    seq: origin === undefined ? NO_ORIGIN : seqFor(origin),
     seqFor,
     atSeq: (siteId, work) => {
       deferred.set(siteId, [...(deferred.get(siteId) ?? []), work]);
@@ -360,7 +376,7 @@ const createActivationContext = (trx: Transaction<DB>, request: ActivationReques
     const sites = new Set([
       ...deferred.keys(),
       ...[...allocators].filter(([, allocator]) => allocator.taken() !== undefined).map(([siteId]) => siteId),
-      ...(request.changeSetId ? [origin] : []),
+      ...(origin === undefined ? [] : [origin]),
     ]);
     for (const siteId of [...sites].sort()) {
       const seq = await seqFor(siteId).next();
@@ -421,7 +437,7 @@ const flipItem = async (
 export const activateDefinition = async (
   db: Database,
   item: ActivationItem,
-  request: Omit<ActivationRequest, 'items'>,
+  request: ActivationOptions,
 ): Promise<ActivationResult> => {
   const [result] = await activateDefinitions(db, { ...request, items: [item] });
   return result as ActivationResult;

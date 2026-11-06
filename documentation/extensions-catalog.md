@@ -161,7 +161,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   success) or `{ audit: { exempt: '<why>' } }`, or Shapio refuses to start.
 - **Sites:** custom routes are site routes. `request.site` is the credential's site, else the `Shapio-Site`
   header or `?site=`, else the primary site, and a request naming another site than its token's is refused
-  (`403 SITE_MISMATCH`). The `services` passed to the plugin read the primary site; use
+  (`403 SITE_MISMATCH`). The `services` passed to the plugin read the primary site (followed live when another
+  site is made primary); use
   `services.forSite(request.site)` for the request's. Declare `config: { site: 'network' }` on a route that is
   about the whole instance; it then has no `request.site`.
 - **Limits:** authorization is yours (`requireAdmin`, or `permissions.evaluate(request.principal, …)`). Prefixes
@@ -208,7 +209,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Sites:** content and media are per site, and so is the schema: `content.models()` lists the site's view
   (its own content types and the shared ones), and `content.get`, `list` and `count` resolve a model's API ID in
   that view, so a content type of another site is unknown there. Services handed to a hook read the hook's site;
-  those given to routes, jobs and factories read the primary site until you call `forSite`. Your custom services
+  those given to routes, jobs and factories read the primary site until you call `forSite`, and follow it live
+  when another site is made primary (`services.site` is the primary site as last read). Your custom services
   are shared across sites as they are, so pass them the site they should work on.
 - **Limits:** content reads run as Shapio itself unless you pass a `principal`. They read committed data: inside a
   `before*` hook, read your own uncommitted writes through `trx`. Read your own settings from environment
@@ -237,7 +239,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   leases, retries with backoff (throw to retry), dead-lettering, graceful shutdown through `signal`. They show
   in the admin's jobs view.
 - **Limits:** delivery is at least once, so make side effects idempotent. Enqueueing a name that is not in
-  `jobs` throws. Job services read the primary site; use `services.forSite` for another.
+  `jobs` throws. Job services read the primary site, whichever site is primary when they run; use
+  `services.forSite` for another.
 
 ### Error reporting
 

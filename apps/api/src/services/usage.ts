@@ -2,6 +2,7 @@ import { isModelDefinition, type FieldDefinition } from '@shapio/schema';
 import { modelNotFound, resolveModelById } from '../content/model.js';
 import { relationTargetFor } from '../content/relationTarget.js';
 import type { Database } from '../db/index.js';
+import * as sitesRepository from '../repositories/sites.js';
 import * as usageRepository from '../repositories/usage.js';
 import type { FieldUsageRow, UsageSelection } from '../repositories/usage.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
@@ -252,17 +253,25 @@ const byKey =
 /**
  * Writes one aggregator flush in one transaction: multi-row upserts, chunked only past UPSERT_CHUNK rows.
  * Rows go in key order, so two instances flushing overlapping keys lock them in the same order (no deadlock).
+ * Counters of a site deleted since they were read are left out: the site's usage went with it, and one such
+ * row would otherwise fail every flush (the site foreign key) until the server restarts.
  */
 export const writeUsageBatch = (database: Database, batch: UsageBatch): Promise<void> =>
   database.transaction().execute(async (trx) => {
-    const fieldReads = [...batch.fieldReads].sort(
-      byKey((row) =>
-        [row.day, row.siteId, row.modelId, row.fieldPath, row.principalKey, row.selection].join('\u0000'),
-      ),
+    const live = await sitesRepository.findExistingIds(
+      [...new Set([...batch.fieldReads, ...batch.tokenReads].map((row) => row.siteId))],
+      trx,
     );
-    const tokenReads = [...batch.tokenReads].sort(
-      byKey((row) => [row.day, row.siteId, row.principalKey].join('\u0000')),
-    );
+    const fieldReads = batch.fieldReads
+      .filter((row) => live.has(row.siteId))
+      .sort(
+        byKey((row) =>
+          [row.day, row.siteId, row.modelId, row.fieldPath, row.principalKey, row.selection].join('\u0000'),
+        ),
+      );
+    const tokenReads = batch.tokenReads
+      .filter((row) => live.has(row.siteId))
+      .sort(byKey((row) => [row.day, row.siteId, row.principalKey].join('\u0000')));
     for (const rows of chunks(fieldReads)) {
       await usageRepository.upsertFieldReads(rows, trx);
     }

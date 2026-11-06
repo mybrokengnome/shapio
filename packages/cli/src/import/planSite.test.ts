@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { UsageError } from '../commands/export/http.js';
-import { PRIMARY_SITE_KEY, resolvePlanSite } from './planSite.js';
+import { BUILT_IN_SITE_KEY, resolvePlanSite } from './planSite.js';
 
 describe('resolvePlanSite', () => {
   it('plans for the primary site when nothing names one', () => {
-    expect(resolvePlanSite({}, {})).toEqual({ site: PRIMARY_SITE_KEY, explicit: false });
-    expect(PRIMARY_SITE_KEY).toBe('default');
+    expect(resolvePlanSite({}, {})).toEqual({ site: BUILT_IN_SITE_KEY, explicit: false });
+    expect(BUILT_IN_SITE_KEY).toBe('default');
   });
 
   it('takes --site, then SHAPIO_SITE', () => {
@@ -15,7 +15,7 @@ describe('resolvePlanSite', () => {
     });
     expect(resolvePlanSite({}, { SHAPIO_SITE: 'shop' })).toEqual({ site: 'shop', explicit: true });
     expect(resolvePlanSite({ site: ' ' }, { SHAPIO_SITE: '' })).toEqual({
-      site: PRIMARY_SITE_KEY,
+      site: BUILT_IN_SITE_KEY,
       explicit: false,
     });
   });

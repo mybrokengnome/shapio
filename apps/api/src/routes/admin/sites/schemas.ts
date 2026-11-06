@@ -9,7 +9,10 @@ export const SiteSchema = Type.Object({
   id: UuidSchema,
   key: Type.String(),
   name: Type.String(),
-  /** The site requests fall back to when nothing names one. Exactly one; it cannot be deleted. */
+  /**
+   * The site requests fall back to when nothing names one. Exactly one; it cannot be deleted until another
+   * site is made primary (`POST /api/admin/sites/:id/make-primary`).
+   */
   isPrimary: Type.Boolean(),
   /**
    * Ships and schedules approved change sets only: the site has an effective approval workflow (plan
@@ -65,8 +68,17 @@ export const updateSiteSchema = {
   response: { 200: SiteSchema, 404: ErrorResponseSchema, 409: ErrorResponseSchema },
 };
 
-/** Only an empty site can be deleted (409 `SITE_NOT_EMPTY`); the primary site never (409 `SITE_IS_PRIMARY`). */
+/**
+ * Only an empty site can be deleted (409 `SITE_NOT_EMPTY`), and not while it is the primary site (409
+ * `SITE_IS_PRIMARY`: make another site primary first).
+ */
 export const deleteSiteSchema = {
   params: IdParamsSchema,
   response: { 204: Type.Null(), 404: ErrorResponseSchema, 409: ErrorResponseSchema },
+};
+
+/** Moves the primary flag to the site; already primary is a no-op (200, the site unchanged). */
+export const makePrimarySiteSchema = {
+  params: IdParamsSchema,
+  response: { 200: SiteSchema, 404: ErrorResponseSchema },
 };

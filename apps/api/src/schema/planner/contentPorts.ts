@@ -12,7 +12,10 @@ import type { ContentStep, FollowUpStep } from './steps.js';
  * A site whose content does not change takes no number.
  */
 export type ActivationContext = {
-  /** The origin site's number: the shipping change set's site (the primary site without a change set). */
+  /**
+   * The origin site's number: the shipping change set's site. An activation without a change set has no
+   * origin, and taking this number throws (use `seqFor` with the site the content is on).
+   */
   seq: SeqAllocator;
   /** The number of one site, for content converted on it. */
   seqFor: (siteId: string) => SeqAllocator;
