@@ -18,11 +18,12 @@ Each starter has:
   `/en/colophon/`;
 - English and French, with a language switch;
 - responsive images from the WebP variants Shapio renders;
-- one pinned publication snapshot per build, and the site key for multi-site instances (below);
+- one pinned publication snapshot per build, and the workspace key for instances with several workspaces
+  (below);
 - [SEO fields](seo.md) on pages and articles: each page's `<head>` has its title through the site's title
   template, the description, Open Graph and Twitter tags (the cover or the site's default image), `robots` when
   the entry hides itself from search engines, and, with `SITE_URL`, the canonical URL. Entries are read with
-  `seo=resolved`; pages without an entry use the site's SEO defaults (`client.site.get()`). The seed sets those
+  `seo=resolved`; pages without an entry use the site's SEO defaults (`client.workspace.get()`). The seed sets those
   defaults (Settings → SEO) in English and French.
 
 All three have draft preview at `/preview/` with [visual editing](visual-editing.md): in the admin's preview
@@ -73,7 +74,7 @@ Every starter reads its settings from the environment, or from `.env` (`.env.exa
 | `SHAPIO_URL`                | Shapio's origin, with its `BASE_PATH` if any (default `http://localhost:4300`)               |
 | `SHAPIO_DELIVERY_TOKEN`     | a read-only delivery token (Settings → API tokens, a delivery role); the seed writes one     |
 | `SHAPIO_SNAPSHOT`           | optional: build this publication snapshot instead of the latest                              |
-| `SHAPIO_SITE`               | optional: the site key on a multi-site instance                                              |
+| `SHAPIO_WORKSPACE`          | optional: the workspace key on an instance with several workspaces (`SHAPIO_SITE` also read) |
 | `PUBLIC_SHAPIO_URL`         | Astro and SvelteKit, optional: the URL the browser calls for previews (default `SHAPIO_URL`) |
 | `NEXT_PUBLIC_SHAPIO_URL`    | Next.js, optional: the same, inlined into the client bundle at build time                    |
 | `SHAPIO_WEBHOOK_SECRET`     | Next.js: the signing secret of the webhook that calls `/api/revalidate`; the seed writes it  |
@@ -131,11 +132,11 @@ output allows, and all three read the [changes API](snapshots.md#what-changed-be
 - **Next.js** (`next start`): on-demand revalidation. The seed's webhook calls `/api/revalidate/` on every
   publish, unpublish, delete, change set ship and schema change; the route verifies the signature, diffs the
   snapshot the site shows against the current one and calls `revalidatePath` for just those pages, which
-  re-render at the new snapshot. Reads are cached by tag: every read carries the site, model and entry tags
+  re-render at the new snapshot. Reads are cached by tag: every read carries the workspace, model, and entry tags
   ([Next.js cache tags](delivery-api.md#nextjs-cache-tags)), reads pinned to a snapshot are `force-cache`, and
-  the starter sets no cache mode of its own, so `site.get()` stays fresh on every build (Next's data cache
-  outlives `next build`). A publish expires the tags of the models and entries in the diff with `revalidateTag`; site settings
-  (`site.updated`) and schema changes expire the site tag, which every read carries. New articles and pages
+  the starter sets no cache mode of its own, so `workspace.get()` stays fresh on every build (Next's data cache
+  outlives `next build`). A publish expires the tags of the models and entries in the diff with `revalidateTag`; workspace settings
+  (`site.updated`) and schema changes expire the workspace tag, which every read carries. New articles and pages
   render on their first request. A local site needs
   Shapio's `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST` to include `127.0.0.1/32,::1/128`, since Shapio never calls
   loopback addresses otherwise. A build pinned with `SHAPIO_SNAPSHOT` stays at that snapshot. Details in the
@@ -154,20 +155,22 @@ database role is enough. The scaffolded project pins `@shapio/local` to the exac
 server of another one ([Upgrades](in-process.md#upgrades)). In-process reads do not go through `fetch`, so cache
 tags do not apply to them; on-demand revalidation still refreshes the pages with `revalidatePath`.
 
-### Site key
+### Workspace key
 
-On an instance with several sites, `SHAPIO_SITE` names the site to read; it is passed to `@shapio/client`'s
-`site` option, which sends it with every request. Without it the delivery token's site is used, else the
-primary site. A token bound to one site never reads another (`403 SITE_MISMATCH`).
+On an instance with several [workspaces](workspaces.md), `SHAPIO_WORKSPACE` names the workspace to read; it is
+passed to `@shapio/client`'s `workspace` option, which sends it with every request. Without it the delivery
+token's workspace is used, else the primary workspace. A token bound to one workspace never reads another
+(`403 SITE_MISMATCH`). The starters still read `SHAPIO_SITE` when `SHAPIO_WORKSPACE` is unset.
 
-The seed honors `SHAPIO_SITE` too: it creates the models, content and tokens on that site (else the admin
-token's site, else the primary) and writes `SHAPIO_SITE` to `.env`. The models become **that site's own**
-content types: a starter's schema belongs to the first site it is seeded on. Seeding the same starter onto a
-second site of the instance is refused (`DUPLICATE_ID`: its model files carry the same stable IDs). To use it
-on a second site, share its models and components with all sites first, from the site they were seeded on,
-with a network admin token (`shapio schema scope <apiKey> --shared --site <that site>` for each, or **Share
-with all sites** in the builder). A shared definition may only refer to shared ones, so share the components
-and `author` before `page` and `article`. Then seed the second site; or seed a separate Shapio instance.
+The seed honors `SHAPIO_WORKSPACE` too: it creates the models, content, and tokens in that workspace (else the
+admin token's workspace, else the primary) and writes `SHAPIO_WORKSPACE` to `.env`. The models become **that
+workspace's own** content types: a starter's schema belongs to the first workspace it is seeded in. Seeding the
+same starter into a second workspace of the instance is refused (`DUPLICATE_ID`: its model files carry the same
+stable IDs). To use it in a second workspace, share its models and components with all workspaces first, from
+the workspace they were seeded in, with a network admin token
+(`shapio schema scope <apiKey> --shared --workspace <that workspace>` for each, or **Share with all workspaces**
+in the builder). A shared definition may only refer to shared ones, so share the components and `author` before
+`page` and `article`. Then seed the second workspace; or seed a separate Shapio instance.
 
 ### Telemetry
 

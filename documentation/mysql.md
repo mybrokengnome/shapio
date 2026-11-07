@@ -1,7 +1,7 @@
 # MySQL
 
 Shapio runs on PostgreSQL, MySQL or SQLite. On MySQL everything works as on PostgreSQL: modeling live, drafts
-and publishing, snapshots, change sets, sites, end users, REST and GraphQL. You can run several Shapio
+and publishing, snapshots, change sets, workspaces, end users, REST and GraphQL. You can run several Shapio
 instances on one MySQL database, and a separate worker process (`WORKER_MODE=dedicated`).
 
 **Supported:** MySQL 8.4 LTS, which CI tests. MySQL 8.0.23 and later should work but are untested (8.0 reached
@@ -53,8 +53,8 @@ These differences are deliberate; ADR 0001 ("MySQL") explains each.
 
 - **Filterable and sortable fields: at most 55 per instance.** MySQL allows 64 indexes on a table and has no
   partial indexes, so every filterable or sortable field of every model is one index on the same content
-  table. The cap counts the models of every [site](sites.md) together, shared and site-owned: with several
-  sites, one site's filterable fields use up room the others then lack. Shapio refuses a model change that would
+  table. The cap counts the models of every [workspace](workspaces.md) together, shared and workspace-owned: with
+  several workspaces, one workspace's filterable fields use up room the others then lack. Shapio refuses a model change that would
   need more, with a message naming the field. Clear "filterable" or "sortable" on fields that do not need them.
 - **Text filters and sorts use the first 255 characters.** Equality with a longer value still compares the
   whole text. Two values that share their first 255 characters sort in an arbitrary order.

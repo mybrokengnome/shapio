@@ -112,11 +112,11 @@ the ready ones with their URL and size, ready for a `srcset`:
 }
 ```
 
-## Sites
+## Workspaces
 
-Each [site](sites.md) has its own library and folders; media fields only accept assets of the entry's site. File
-URLs are the same for every site: public files are public, and private files are reached through signed URLs that
-only reads on the asset's site issue.
+Each [workspace](workspaces.md) has its own library and folders; media fields only accept assets of the entry's
+workspace. File URLs are the same for every workspace: public files are public, and private files are reached
+through signed URLs that only reads in the asset's workspace issue.
 
 ## Used in, and safe deletes
 

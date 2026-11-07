@@ -1,6 +1,6 @@
 # End users
 
-Besides editors, Shapio has accounts for the **end users of your sites and apps**: members, customers,
+Besides editors, Shapio has accounts for the **end users of your sites and apps**: members, shoppers,
 players. They sign up and sign in through `/api/app-auth`, and read or write content through the
 [delivery API](delivery-api.md) under roles you define, including "only their own entries". Admin accounts and
 app users are separate: an app user can never reach the admin.
@@ -28,11 +28,12 @@ without writing plain posts. A grant can't take away what a parent's grant allow
 role, grant the role its sibling kinds one by one instead of the parent. A role with `read` on Guide but not on
 Post reads `/api/content/posts/guides`, but not the list of every post at `/api/content/posts`.
 
-On an instance with several [sites](sites.md#app-users-and-anonymous-access), app users belong to one site: the
-same address can have a separate account on each, and sign-up, sign-in and OAuth happen on the request's site
-(`?site=` or `Shapio-Site`, else the primary site). An access token, refresh token, email link or OAuth code is
-refused on any other site (`403 SITE_MISMATCH`). Which roles `public` and `authenticated` hold is bound per site;
-a new site binds none.
+On an instance with several [workspaces](workspaces.md#app-users-and-anonymous-access), app users belong to one
+workspace: the same address can have a separate account in each, and sign-up, sign-in, and OAuth happen in the
+request's workspace (`?workspace=` or `Shapio-Workspace`, else the primary workspace; server 0.8.2 or later,
+`Shapio-Site` and `?site=` work on every version). An access token, refresh token, email link, or OAuth code is
+refused in any other workspace (`403 SITE_MISMATCH`). Which roles `public` and `authenticated` hold is bound per
+workspace; a new workspace binds none.
 
 ## Sign-up and sign-in
 

@@ -42,38 +42,46 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
   nothing until you allow it (Network → Roles → App roles). Use that for content anyone may read from the
   browser. App users' own tokens are covered in [End users](end-users.md).
 
-## Sites
+## Workspaces
 
-One Shapio instance can host several [sites](sites.md), each with its own content types (plus those shared with
-all sites), content, tokens and snapshots. A content type of another site is unknown on this one (`404`). Every
-delivery request reads exactly one site:
+One Shapio instance can hold several [workspaces](workspaces.md), each with its own content types (plus those
+shared with all workspaces), content, tokens, and snapshots. A content type of another workspace is unknown in this
+one (`404`). Every delivery request reads exactly one workspace:
 
-1. **The token's site.** Delivery tokens belong to the site they were created on, and only ever read it.
-2. **The site the request names**, with `?site=<key>` or the `Shapio-Site: <key>` header. Anonymous callers and
-   network admin tokens use this to pick a site.
-3. **The primary site**, when neither names one. An instance with a single site never needs to name it.
+1. **The token's workspace.** Delivery tokens belong to the workspace they were created in, and only ever read
+   it.
+2. **The workspace the request names**, with `?workspace=<key>` or the `Shapio-Workspace: <key>` header.
+   Anonymous callers and network admin tokens use this to pick a workspace.
+3. **The primary workspace**, when neither names one. An instance with a single workspace never needs to name it.
 
-Naming a different site than the token's is refused with `403 SITE_MISMATCH`, never redirected, and so is a
-request whose header and `?site=` disagree. An unknown key is `404 SITE_NOT_FOUND`. Entries of another site
-read as not found, and relations never cross sites.
+Server 0.8.2 or later; `Shapio-Site` and `?site=` work on every version.
+
+Naming a different workspace than the token's is refused with `403 SITE_MISMATCH`, never redirected, and so is a
+request whose header and query parameter disagree (or that sends both spellings with different keys). An unknown
+key is `404 SITE_NOT_FOUND`. Entries of another workspace read as not found, and relations never cross
+workspaces.
 
 ```sh
-curl "$SHAPIO_URL/api/content/articles?site=marketing"
+curl "$SHAPIO_URL/api/content/articles?workspace=marketing"
 ```
 
-Anonymous reads get what the app roles bound to the request site's `public` audience grant. The primary site
-binds the built-in **public** role; a new site binds none, so it serves nothing anonymously until you bind one
-([Sites](sites.md#app-users-and-anonymous-access)).
+Anonymous reads get what the app roles bound to the request workspace's `public` audience grant. The primary
+workspace binds the built-in **public** role; a new workspace binds none, so it serves nothing anonymously until
+you bind one ([Workspaces](workspaces.md#app-users-and-anonymous-access)).
 
-With `@shapio/client`, pass the site once:
+`GET /api/workspace` returns the request's workspace as delivery sees it: its key and name, and the website's
+SEO defaults (`GET /api/site` answers the same).
+
+With `@shapio/client`, pass the workspace once:
 
 ```ts
-const shapio = createClient({ baseUrl: process.env.SHAPIO_URL, token, site: 'marketing' });
+const shapio = createClient({ baseUrl: process.env.SHAPIO_URL, token, workspace: 'marketing' });
 ```
 
-The client sends it as `?site=` on delivery and snapshot reads, which keeps a cross-origin `GET` free of a
-CORS preflight and keeps URL-keyed caches apart. Every other request (writes, GraphQL, the admin API) carries
-the `Shapio-Site` header. Leave `site` out to read the token's site, or the primary site.
+The client sends it in the query string on delivery and snapshot reads, which keeps a cross-origin `GET` free of
+a CORS preflight and keeps URL-keyed caches apart. Every other request (writes, GraphQL, the admin API) carries
+it in a header. Leave `workspace` out to read the token's workspace, or the primary workspace. The client still
+sends `Shapio-Site` and `?site=` on the wire, so a newer `@shapio/client` works against a 0.8.1 server.
 
 ## Responses
 
@@ -364,10 +372,12 @@ Details, the change classification and incremental-build recipes are in
 
 ## Caching
 
-Responses carry a strong `ETag` over the exact body and `Vary: Authorization, Cookie, Shapio-Site`. Send
+Responses carry a strong `ETag` over the exact body and
+`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site`. Send
 `If-None-Match` to get `304 Not Modified` when nothing changed. Anonymous responses are `Cache-Control: public,
 max-age=0, must-revalidate`; authenticated ones `private`. A CDN that keys its cache on the URL alone and
-ignores `Vary` must be given the site as `?site=`, not as the header, so that two sites never share a cached
+ignores `Vary` must be given the workspace as `?workspace=` (or `?site=`), not as the header, so that two
+workspaces never share a cached
 response.
 
 ### Next.js cache tags
@@ -380,19 +390,20 @@ data cache, so a site refreshes exactly what changed with `revalidateTag`:
 | `delivery.list(routeKey)`    | `shapio:site:<key>`, `shapio:<routeKey>`                           |
 | `delivery.singleton(apiKey)` | `shapio:site:<key>`, `shapio:<apiKey>`                             |
 | `delivery.get(routeKey, id)` | `shapio:site:<key>`, `shapio:<routeKey>`, `shapio:<routeKey>:<id>` |
-| `site.get()`                 | `shapio:site:<key>`                                                |
+| `workspace.get()`            | `shapio:site:<key>`                                                |
 
 Models are tagged by their route key (a collection's plural API ID, a singleton's API ID, and for a kind its
 nested route key, `posts/guides`), as the [snapshot diff](snapshots.md#what-changed-between-two-snapshots)
-names them. The site tag is `shapio:site:<key>`
-when the client names a site (`site: 'marketing'`) and `shapio:site` when it leaves the site to the token.
+names them. The workspace tag is `shapio:site:<key>`
+when the client names a workspace (`workspace: 'marketing'`) and `shapio:site` when it leaves the workspace to
+the token.
 `shapioTags.site(key)`, `shapioTags.model(routeKey)` and `shapioTags.entry(routeKey, id)` build the same strings:
 
 ```ts
 import { createClient, shapioTags } from '@shapio/client';
 import { revalidateTag } from 'next/cache';
 
-const shapio = createClient({ baseUrl, token, site: 'marketing', next: { cache: 'force-cache' } });
+const shapio = createClient({ baseUrl, token, workspace: 'marketing', next: { cache: 'force-cache' } });
 const { data } = await shapio.delivery.get<Article>('articles', id, { locale: 'en' });
 
 // In the webhook route, for each entry in the snapshot diff:
@@ -436,7 +447,7 @@ development server render saved drafts: save in the admin, reload the page on yo
 there. Publish still rebuilds your site; drafts mode is for your machine.
 
 1. Create a second delivery role for development (or let the starters' `npm run seed` create `<site> dev`)
-   with `read` on the site's models and **Read drafts**. Read drafts always covers every model the role
+   with `read` on the workspace's models and **Read drafts**. Read drafts always covers every model the role
    reads; it adds no model of its own.
 2. Create a token for that role. The tokens list marks it with a **Drafts** chip. Never put it in a production
    environment.

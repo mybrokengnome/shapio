@@ -6,6 +6,47 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-07
+
+### Changed
+
+- Sites are now called **workspaces** everywhere people read: the admin (Network, Workspaces; the workspace
+  switcher; **New workspace**; **Primary workspace**), the CLI's help and output, the MCP server's tool
+  descriptions, error messages, and the docs. "Site" now means a website: the sites and apps that read a
+  workspace. Nothing about how workspaces work changed, and no data changed. The built-in workspace on a new
+  install is called "Default workspace"; an existing install keeps its names. The page is now
+  [Workspaces](documentation/workspaces.md); `documentation/sites.md` points there.
+
+### Added
+
+- New names for everything a caller sends about a workspace, on server 0.8.2 or later: the `Shapio-Workspace`
+  header and the `?workspace=` query parameter; the admin API paths `/api/admin/workspaces`,
+  `/api/admin/workspaces/:id`, `/api/admin/workspaces/:id/make-primary`, `/api/admin/workspaces/:id/app-roles`,
+  `/api/admin/workspace/seo`, and `/api/admin/workspace/change-sets`; and delivery's `GET /api/workspace`.
+  Cacheable delivery responses send `Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site`. A request
+  that sends both spellings with different keys is refused with `403 SITE_MISMATCH`.
+- `shapio workspaces list | create | make-primary`, and `--workspace <key>` on
+  `shapio schema pull|diff|apply|status|scope`, `shapio export`, `shapio import`,
+  `shapio import wordpress|strapi`, `shapio mcp`, and `shapio-mcp`. The `SHAPIO_WORKSPACE` environment variable
+  is read first. Both flags, or both environment variables, set to different keys is an error.
+- `@shapio/client`: `createClient({ workspace })`, `client.workspace.get()`, `admin.workspaces.*`,
+  `admin.workspace.changeSets`, and the types `Workspace`, `WorkspaceSummary`, and the other `Workspace*`
+  names. `@shapio/local` takes a `workspace` option. The client and the CLI still send `Shapio-Site`, `?site=`,
+  and the `sites` paths on the wire in this release, so a newer package works against a 0.8.1 server.
+- First-run setup asks for the first workspace's name, prefilled "Default workspace". Its key stays `default`.
+
+### Fixed
+
+- A repeated `?site=` query parameter silently read the primary site. A repeated `?site=` or `?workspace=` is
+  now refused with `400`.
+
+Nothing was removed. The `Shapio-Site` header, the `?site=` parameter, the `/api/admin/sites`,
+`/api/admin/site`, and `/api/site` paths, `shapio sites`, `--site`, `SHAPIO_SITE`, the `site` options and
+namespaces in `@shapio/client` and `@shapio/local`, the JSON field names (`siteId`, `site`, `sites`, and the
+`site` scope value), the `SITE_*` error codes, the `sites.manage` and `site.settings` permission keys, the
+`site.updated` webhook event, the `sites/<key>/` schema folder, and the lock file format all keep working,
+unchanged. See [Names you may still see](documentation/workspaces.md#names-you-may-still-see).
+
 ## [0.8.1] - 2026-11-06
 
 ### Added
@@ -976,7 +1017,7 @@ All notable changes to Shapio are listed here. The format follows
   `me` reports `siteCount` and lists site-granted `schema.create` in `sitePermissions`. A change to a site's own
   content type notifies only that site's webhooks and deployment connections and numbers only its snapshots.
   A site that still owns content types cannot be deleted (`SITE_NOT_EMPTY` counts `definitions`). See
-  [Sites](documentation/sites.md#content-types-per-site).
+  [Sites](documentation/workspaces.md#content-types-per-workspace).
 
 ### Changed
 
@@ -998,7 +1039,7 @@ All notable changes to Shapio are listed here. The format follows
   `shapio schema scope <apiKey> --shared | --site <key>` shares a content type with all sites or keeps a shared
   one on one site. The `GET /api/admin/schema/export` response names its `site` and each definition's site.
   GitHub write-back writes its connection's site view. See
-  [Schema sync](documentation/schema-sync.md#several-sites).
+  [Schema sync](documentation/schema-sync.md#several-workspaces).
 - **Export and import carry scope.** A bundle holds its site's view of the schema with each definition's
   scope; importing creates the site's own content types on the target site and shared ones shared.
 - **Importers, MCP and starters are site-aware.** `shapio import wordpress|strapi --plan --site <key>` plans the
@@ -1006,14 +1047,14 @@ All notable changes to Shapio are listed here. The format follows
   view with each definition's scope, and `schema_draft` / `change_sets_add_schema_draft` take `shared: true`
   to create a definition shared with all sites. The starters' seed creates the models as the site's own
   (`SHAPIO_SITE`, else the token's site) and writes `SHAPIO_SITE` to `.env`; seeding one starter onto a second
-  site is refused until its models are shared ([Site starters](documentation/starters.md#site-key)).
+  site is refused until its models are shared ([Site starters](documentation/starters.md#workspace-key)).
 - **Admin: content types per site.** Creating a content type or component asks where it is available: this
   site (the default) or all sites (needs a role on every site); the choice shows only with more than one
   site. Shared types carry a small globe in the sidebar and the Components list, the builder's settings share
   a type with all sites or keep it on one, and the new Network → Content types page lists and creates shared
   ones. A schema role held on one site shows shared types' structure read-only, change set review marks shared
   schema items and names each breaking-field reader's site, and Locales now need a role on every site in the
-  sidebar too ([Sites](documentation/sites.md#content-types-in-the-admin)).
+  sidebar too ([Sites](documentation/workspaces.md#content-types-in-the-admin)).
 
 ### Fixed
 
@@ -1056,7 +1097,7 @@ release of these changes.
   `/api/admin/sites` and `/api/admin/sites/:id/app-roles` (per-site `public`/`authenticated` bindings, none on a
   new site); a `site` option in `@shapio/client`; `--site` for `shapio export|import` and `@shapio/mcp`;
   `services.site`, `services.forSite()` and `site` on hook contexts for extensions. See
-  [Sites](documentation/sites.md).
+  [Sites](documentation/workspaces.md).
 - **Vercel and Netlify deployment connections**, next to Cloudflare Pages: Vercel builds start through a
   deploy hook and Netlify builds through its API, and both report real build status from the provider's API
   (with a link to the deployment or deploy log). `VERCEL_API_URL` and `NETLIFY_API_URL` set the API bases

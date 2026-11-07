@@ -18,14 +18,14 @@ npx @shapio/cms schema pull
 ```
 
 ```text
-Pulled 8 definition(s) of site "default" at schema version 12 into schema
+Pulled 8 definition(s) of workspace "default" (sites/default/ for its own) at schema version 12 into schema
 ```
 
 This writes one canonical JSON file per model, component, and interface (sorted keys, stable IDs, every default
-spelled out, so diffs are clean): the ones shared with all sites in `schema/models/<apiKey>.json`,
-`schema/components/<apiKey>.json`, and `schema/interfaces/<apiKey>.json`, the site's own in the same three
-folders under `schema/sites/<siteKey>/` (see [Several sites](#several-sites)). It also writes
-`.shapio/schema-lock.json`, which records the version, hash and site of every definition as pulled. Commit
+spelled out, so diffs are clean): the ones shared with all workspaces in `schema/models/<apiKey>.json`,
+`schema/components/<apiKey>.json`, and `schema/interfaces/<apiKey>.json`, the workspace's own in the same three
+folders under `schema/sites/<workspaceKey>/` (see [Several workspaces](#several-workspaces)). It also writes
+`.shapio/schema-lock.json`, which records the version, hash and workspace of every definition as pulled. Commit
 both.
 `--dir` and `--lock` change the paths. Pull refuses to overwrite files you edited and have not applied, unless
 you pass `--force`.
@@ -105,7 +105,7 @@ model opinion (extends post): update [BREAKING]
   equal its parent's; otherwise apply refuses with `INHERITED_FLAG_MISMATCH` and the message names the value to
   set.
 - **Same place.** A kind's file sits where its parent's does: both in the shared `models/`, or both in one
-  site's `sites/<key>/models/`. Otherwise apply refuses with `INVALID_PARENT`.
+  workspace's `sites/<key>/models/`. Otherwise apply refuses with `INVALID_PARENT`.
 - **Moving a type under another parent** (changing `extends`, adding it to an existing type, or removing it)
   is breaking, so it needs `--allow-breaking`. `schema diff` shows a re-parent as the `extends` change
   only: the fields the type gains and loses are those of the old and new parent's files. When the type loses
@@ -141,9 +141,9 @@ model homepage: update [BREAKING]
   `INTERFACE_FIELD_MISSING` or `INTERFACE_FIELD_MISMATCH`; the message names the field and the interface.
   Renaming or deleting a member's contract field in a file is refused the same way, unless the same apply
   removes the interface from its `implements`.
-- **Same place, or shared.** A type in a site's folder may implement a shared interface or one in the same
-  site's `interfaces/`. A shared type may implement shared interfaces only. An interface in a site's folder
-  can't have a member in another site's folder (`INVALID_INTERFACE`).
+- **Same place, or shared.** A type in a workspace's folder may implement a shared interface or one in the same
+  workspace's `interfaces/`. A shared type may implement shared interfaces only. An interface in a workspace's
+  folder can't have a member in another workspace's folder (`INVALID_INTERFACE`).
 - **Breaking.** Removing an interface from `implements` is breaking (`--allow-breaking`), and refused while a
   relation to the interface holds entries of that type (`RELATION_VALUES_EXIST`). Widening a relation's target (to an interface its type
   implements, or to `*`) is breaking and keeps the values; narrowing it is also destructive
@@ -164,53 +164,55 @@ files you also edited is refused as a conflict. After upgrading, run `shapio sch
 you have local edits: commit them first and bring them back with `git diff`), commit, and apply from there.
 Applying an older file that only lacks the new property is not a change: it gets the same filled value.
 
-## Several sites
+## Several workspaces
 
-Each site owns its content types; a content type can also be shared with all sites
-([Sites](sites.md)). The schema commands work on one site's view at a time: its own definitions and the shared
-ones. `--site <key>` (or `SHAPIO_SITE`) names the site; without it they use the token's site, else the primary
-site.
+Each workspace owns its content types; a content type can also be shared with all workspaces
+([Workspaces](workspaces.md)). The schema commands work on one workspace's view at a time: its own definitions
+and the shared ones. `--workspace <key>` (or `SHAPIO_WORKSPACE`) names the workspace; without it they use the
+token's workspace, else the primary workspace. A workspace's own definitions live under `sites/<key>/`: the
+folder keeps its `sites/` name, so trees pulled by older versions stay valid.
 
 ```text
 schema/
-  models/                 shared with all sites
+  models/                 shared with all workspaces
   components/
   interfaces/
   sites/
-    blog/models/          the blog site's own
+    blog/models/          the blog workspace's own
     blog/interfaces/
-    shop/models/          the shop site's own
-.shapio/schema-lock.json  every definition's version, hash and site, and the sites the tree covers
+    shop/models/          the shop workspace's own
+.shapio/schema-lock.json  every definition's version, hash and workspace, and the workspaces the tree covers
 ```
 
-- `shapio schema pull --site blog` writes the shared folders and `sites/blog/`. It replaces only the lock entries
+- `shapio schema pull --workspace blog` writes the shared folders and `sites/blog/`. It replaces only the lock entries
   of those, and removes stale files only there, so pulling `blog` and then `shop` into one tree keeps both.
-- `shapio schema apply --site blog` sends the shared files and `sites/blog/`, never another site's, and its base
-  holds only those definitions: `--prune` cannot delete another site's content types. A tree pulled for other
-  sites only is refused (`LOCK_SITE_MISMATCH`): pull the site into it first.
+- `shapio schema apply --workspace blog` sends the shared files and `sites/blog/`, never another workspace's, and
+  its base holds only those definitions: `--prune` cannot delete another workspace's content types. A tree
+  pulled for other workspaces only is refused (`LOCK_SITE_MISMATCH`): pull the workspace into it first.
 - A file's folder decides where a **new** definition is created. Sync never moves an existing one: a file whose
-  folder disagrees with the instance (it was shared or kept on one site in the admin meanwhile, or you moved
+  folder disagrees with the instance (it was shared or kept in one workspace in the admin meanwhile, or you moved
   the file) is refused with `SCOPE_MISMATCH`. Pull to get the instance's layout.
-- Changing a shared definition needs schema permission on every site. A token of one site that applies a tree
+- Changing a shared definition needs schema permission on every workspace. A token of one workspace that applies a tree
   with changed shared files is refused, with each refused definition listed (`FORBIDDEN_SCOPE`), and nothing
   is applied.
 
-To share a site's content type with all sites, or keep a shared one on one site, use `shapio schema scope`,
+To share a workspace's content type with all workspaces, or keep a shared one in one workspace, use
+`shapio schema scope`,
 then pull to move its file:
 
 ```sh
-npx @shapio/cms schema scope post --shared --site blog   # share blog's post with all sites
-npx @shapio/cms schema scope post --site blog            # keep the shared post on blog only
+npx @shapio/cms schema scope post --shared --workspace blog   # share blog's post with all workspaces
+npx @shapio/cms schema scope post --workspace blog            # keep the shared post in blog only
 ```
 
-Keeping a shared type on one site is refused while other sites have entries of it (`SCOPE_IN_USE`, with the
-number of entries) or while something shared or on another site refers to it. Moving a site's content type
-straight to another site is not a `shapio schema scope` option; it is done through the API
-([Sites](sites.md#changing-the-scope)). `--version <n>` guards the change with the version you saw (default: the
+Keeping a shared type in one workspace is refused while other workspaces have entries of it (`SCOPE_IN_USE`,
+with the number of entries) or while something shared or in another workspace refers to it. Moving a
+workspace's content type straight to another workspace is not a `shapio schema scope` option; it is done
+through the API ([Workspaces](workspaces.md#changing-the-scope)). `--version <n>` guards the change with the version you saw (default: the
 version the command reads first).
 
-A lock written before per-site schemas (format 1) still works: all its definitions are shared, and it applies
-to every site. The next pull rewrites it in format 2. An old `shapio` CLI, or a tree without `sites/`, creates
+A lock written before per-workspace schemas (format 1) still works: all its definitions are shared, and it
+applies to every workspace. The next pull rewrites it in format 2. An old `shapio` CLI, or a tree without `sites/`, creates
 new definitions shared, as before.
 
 ## A typical flow
@@ -263,15 +265,17 @@ and a token that can write contents (and pull requests). After each schema chang
 `schema pull` writes, plus the lock file, to that branch, or opens a pull request from `shapio/schema-sync`.
 Bursts of changes coalesce into one commit. Git mirrors production; it never locks it.
 
-A connection belongs to a site and writes that site's view, as `schema pull --site <key>` would: the shared
-folders and `sites/<key>/`, and a lock file covering that site only. It never removes another site's folder, but
-the lock file is rewritten for its own site, so give each site's connection its own branch or repository.
+A connection belongs to a workspace and writes that workspace's view, as `schema pull --workspace <key>` would:
+the shared folders and `sites/<key>/`, and a lock file covering that workspace only. It never removes another
+workspace's folder, but the lock file is rewritten for its own workspace, so give each workspace's connection
+its own branch or repository.
 
 ## Optional: a read-only lock
 
 Teams that want production changed only through `apply` can turn on the lock. The admin then shows models but
 refuses changes to them (`423 SCHEMA_READ_ONLY`); `shapio schema apply` keeps working. The lock covers every
-site's content types. It is off by default and needs the `schema.create` permission from a role on every site:
+workspace's content types. It is off by default and needs the `schema.create` permission from a role on every
+workspace:
 
 ```sh
 curl -X PUT "$SHAPIO_URL/api/admin/schema/settings" \

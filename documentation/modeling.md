@@ -15,9 +15,9 @@ saved. No rebuild, no restart, no deploy.
 | **Component**   | A reusable group of fields embedded in models, never addressed by itself | inside the entries that use it                                                    |
 | **Interface**   | Fields that unrelated types share; it stores nothing                     | `/api/content/<pluralApiKey>` lists every member's entries                        |
 
-On an instance with several [sites](sites.md), each definition belongs to the site it was created on, or is
-shared with all sites ([Content types per site](sites.md#content-types-per-site)). A site's own definitions may use
-shared ones; shared ones may only use shared ones.
+On an instance with several [workspaces](workspaces.md), each definition belongs to the workspace it was created
+in, or is shared with all workspaces ([Content types per workspace](workspaces.md#content-types-per-workspace)).
+A workspace's own definitions may use shared ones; shared ones may only use shared ones.
 
 A **dynamic zone** is a field that holds an ordered list of components chosen from an allowed set: the
 sections of a page (hero, feature grid, gallery, call to action) are the usual example. Each item carries the
@@ -51,8 +51,8 @@ attributes (`id`, `locale`, `status`, `version`, `createdAt`, `updatedAt`, `publ
 Shapio's generated types are reserved too, compared ignoring case: a model can't be called `entry`,
 `entryState`, `node`, `anyEntry`, `interfaceMember`, `kind`, `pagination`, or `error` (`API_KEY_RESERVED`). A
 field may still be called `kind`.
-With several sites these checks run in each site's view (its own definitions and the shared ones): two sites
-may each have a `post`, but a shared definition cannot take an API ID that any site uses.
+With several workspaces these checks run in each workspace's view (its own definitions and the shared ones):
+two workspaces may each have a `post`, but a shared definition cannot take an API ID that any workspace uses.
 
 ## Field types
 
@@ -120,13 +120,13 @@ off on a block field to move it to the Settings panel. In schema files this is t
 Changing it is live, like any display setting.
 
 **SEO fields** are one click away: **Add field → SEO fields** adds the built-in, shared SEO component (title,
-description, social image, canonical URL, noindex), with per-site defaults and a resolved form in the delivery
+description, social image, canonical URL, noindex), with per-workspace defaults and a resolved form in the delivery
 API ([SEO fields](seo.md)).
 
 ## New fields are live, and public by default
 
 A new field appears in the admin form, the REST and GraphQL APIs, the OpenAPI document and the generated
-TypeScript types as soon as you save. Because `public` defaults to on, a site's delivery token sees it at once.
+TypeScript types as soon as you save. Because `public` defaults to on, a delivery token sees it at once.
 Turn `public` off for fields only editors should see (internal notes, prices before launch); a delivery role
 can still be granted those fields explicitly (Network → Roles). A hidden field is also left out of the GraphQL
 schema delivery callers see. On a component's field, off always hides it
@@ -161,8 +161,8 @@ parent. A kind's own fields can't reuse the API ID of an inherited field (compar
   can't become a single type.
 - A kind has the same **Localized** and **Draft & publish** settings as its parent. The admin fills them in
   from the parent and locks them.
-- A kind is available where its parent is: both shared with all sites, or both on the same site. Sharing a
-  root type, or keeping it on one site, moves its whole family with it; a kind can't move on its own.
+- A kind is available where its parent is: both shared with all workspaces, or both in the same workspace.
+  Sharing a root type, or keeping it in one workspace, moves its whole family with it; a kind can't move on its own.
 - A relation to Products accepts an entry of any kind of product. A relation to Digital accepts Digital
   entries only.
 
@@ -253,8 +253,8 @@ Removing Featurable from **Implements** in the same change unblocks it.
 **Adding a contract field.** When you add a field to Featurable that some members lack, the review names those
 members and offers to **add it to them** in the same change set: the interface change plus one new field per
 member, a copy of the contract field with its own ID. Ship the change set and every member has the field,
-live. A member on another site is listed with "add it on site B first": a change set belongs to one site, so
-add the field on that site yourself, then come back.
+live. A member in another workspace is listed with "add it in workspace B first": a change set belongs to one
+workspace, so add the field in that workspace yourself, then come back.
 
 **Kinds and single types.**
 
@@ -263,10 +263,11 @@ add the field on that site yourself, then come back.
 - A single type can be a member: the About page can be featured.
 - A component can't implement an interface, and an interface can't implement or extend anything.
 
-**Sites.** An interface is shared with all sites or belongs to one site, like a type
-([Sites](sites.md#interfaces-across-sites)). A site's type may implement a shared interface or one on its own
-site; a shared type may implement shared interfaces only. An interface on one site may only have members on
-that site. An interface's list is always one site's view: the members on that site.
+***Workspaces.** An interface is shared with all workspaces or belongs to one workspace, like a type
+([Workspaces](workspaces.md#interfaces-across-workspaces)). A workspace's type may implement a shared interface
+or one in its own workspace; a shared type may implement shared interfaces only. An interface in one workspace
+may only have members in that workspace. An interface's list is always one workspace's view: the members in
+that workspace.
 
 **In the APIs.** `GET /api/content/featurables` lists every member's entries in one page, each row in its own
 shape with `__model`, filterable and sortable on the contract fields
@@ -281,11 +282,11 @@ grants decide whether its entries are in the list and which of their fields you 
 
 A relation field's target can be a type, an interface, or **Any entry**:
 
-| Target       | Accepts                                                                              | In schema files           |
-| ------------ | ------------------------------------------------------------------------------------ | ------------------------- |
-| A type       | an entry of that type or of one of its kinds                                         | the type's stable ID      |
-| An interface | an entry of any member, kinds of members included (`featured`: many Featurable)      | the interface's stable ID |
-| Any entry    | an entry of any collection or single type on the site (`spotlight`: one of anything) | `*`                       |
+| Target       | Accepts                                                                                   | In schema files           |
+| ------------ | ----------------------------------------------------------------------------------------- | ------------------------- |
+| A type       | an entry of that type or of one of its kinds                                              | the type's stable ID      |
+| An interface | an entry of any member, kinds of members included (`featured`: many Featurable)           | the interface's stable ID |
+| Any entry    | an entry of any collection or single type in the workspace (`spotlight`: one of anything) | `*`                       |
 
 Populated, each target comes in its own shape with its own `__model`, so a site renders a BlogPost, a Guide,
 and the About page side by side. In the admin, the picker searches across the member types, with a filter by
@@ -302,15 +303,15 @@ references (`RELATION_VALUES_EXIST`). Remove those references first (or keep the
 
 **What Shapio refuses, and why.**
 
-| Refusal                    | Why                                                                                                                                                   |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `UNKNOWN_INTERFACE`        | `implements` names an interface that doesn't exist                                                                                                    |
-| `INVALID_INTERFACE`        | `implements` names something that is not an interface, a component or an interface implements one, or a site's interface has a member on another site |
-| `INTERFACE_FIELD_MISSING`  | a member lacks a contract field; the message names the field and the interface (`"title" is required by Featurable`)                                  |
-| `INTERFACE_FIELD_MISMATCH` | a member's field doesn't match the contract field; the message says what differs                                                                      |
-| `INVALID_INTERFACE_FIELD`  | a contract field is a component or a dynamic zone, is unique, or is a slug that names a source field                                                  |
-| `HAS_MEMBERS`              | you deleted an interface that types still implement: remove it from their **Implements** first                                                        |
-| `RELATION_VALUES_EXIST`    | a type would leave an interface (or be deleted) while a relation to the interface holds its entries; the message counts them                          |
+| Refusal                    | Why                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_INTERFACE`        | `implements` names an interface that doesn't exist                                                                                                              |
+| `INVALID_INTERFACE`        | `implements` names something that is not an interface, a component or an interface implements one, or a workspace's interface has a member in another workspace |
+| `INTERFACE_FIELD_MISSING`  | a member lacks a contract field; the message names the field and the interface (`"title" is required by Featurable`)                                            |
+| `INTERFACE_FIELD_MISMATCH` | a member's field doesn't match the contract field; the message says what differs                                                                                |
+| `INVALID_INTERFACE_FIELD`  | a contract field is a component or a dynamic zone, is unique, or is a slug that names a source field                                                            |
+| `HAS_MEMBERS`              | you deleted an interface that types still implement: remove it from their **Implements** first                                                                  |
+| `RELATION_VALUES_EXIST`    | a type would leave an interface (or be deleted) while a relation to the interface holds its entries; the message counts them                                    |
 
 An interface that a relation targets can't be deleted either: point the relation somewhere else first.
 

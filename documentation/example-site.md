@@ -87,7 +87,7 @@ tokens); the first pull also writes `.shapio/schema-lock.json` ([Schema sync](sc
 npx @shapio/cms schema pull --url http://localhost:4300 --token "$SHAPIO_ADMIN_TOKEN" --dir shapio
 ```
 
-The seed applied the starter's models as this site's own, so the pull moves them from `shapio/models/` and
+The seed applied the starter's models as the `default` workspace's own, so the pull moves them from `shapio/models/` and
 `shapio/components/` to `shapio/sites/default/models/` and `shapio/sites/default/components/`; nothing is
 deleted, and the shared SEO component stays in `shapio/components/`.
 
@@ -163,7 +163,7 @@ Paths are relative to the project; the model files and the seed are the same in 
 
 | File                                                 | Role                                                                                                                        |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `shapio/models/*.json`, `shapio/components/*.json`   | the content models, as `shapio schema pull` writes them (after a pull, under `shapio/sites/<site>/`)                        |
+| `shapio/models/*.json`, `shapio/components/*.json`   | the content models, as `shapio schema pull` writes them (after a pull, under `shapio/sites/<workspace>/`)                   |
 | `src/lib/shapio.ts`                                  | reads the delivery API with `@shapio/client`, pinned to one snapshot                                                        |
 | `src/lib/render.ts`                                  | turns pages, sections and articles into HTML (escaped; rich text from Shapio's sanitized `html`, read with `richText=html`) |
 | `src/layouts/Base.astro`                             | the header and footer, from the `siteSettings` singleton                                                                    |

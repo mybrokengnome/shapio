@@ -1,8 +1,8 @@
 # Snapshots and the changes API
 
-Every publish moves its site's **publication snapshot** number forward. Each site has its own sequence
-(snapshot 12 on one site says nothing about another), and the snapshot routes, `?snapshot=N` and GraphQL's
-`_snapshot` and `_changes` answer for the request's site ([Delivery API](delivery-api.md#sites)). Delivery responses report the snapshot
+Every publish moves its workspace's **publication snapshot** number forward. Each workspace has its own sequence
+(snapshot 12 of one workspace says nothing about another), and the snapshot routes, `?snapshot=N` and GraphQL's
+`_snapshot` and `_changes` answer for the request's workspace ([Delivery API](delivery-api.md#workspaces)). Delivery responses report the snapshot
 they read in `meta.snapshot`, and `?snapshot=N` reads published content as it was at snapshot N
 ([Delivery API](delivery-api.md#snapshots-one-consistent-moment)). This page covers the parts built for site
 builds: pinning a build to a snapshot, asking what changed between two snapshots, and refreshing only the

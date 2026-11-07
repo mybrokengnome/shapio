@@ -2,7 +2,7 @@
 
 Shapio runs on PostgreSQL or on SQLite. SQLite keeps the whole instance in one file next to your project. You
 need no database server, backups are one command, and a small site or a local trial is running in a minute.
-Everything works the same way on both: modeling live, drafts and publishing, snapshots, change sets, sites,
+Everything works the same way on both: modeling live, drafts and publishing, snapshots, change sets, workspaces,
 end users, REST and GraphQL.
 
 The difference is scale. A SQLite instance is **one process** on one machine. Use PostgreSQL when you want
@@ -94,10 +94,10 @@ Move content with [`shapio export` and `shapio import`](backup-restore.md#conten
 work over HTTP and do not care which database either side uses:
 
 1. Start a second Shapio on PostgreSQL (an empty database), create its owner and an admin API token.
-2. Export every site from the SQLite instance, with media and history:
-   `npx shapio export --url http://old:4300 --token shp_… --site <key> --with-media --include-users site.tar`
+2. Export every workspace from the SQLite instance, with media and history:
+   `npx shapio export --url http://old:4300 --token shp_… --workspace <key> --with-media --include-users workspace.tar`
 3. Import each bundle into the PostgreSQL instance:
-   `npx shapio import --url http://new:4300 --token shp_… --site <key> site.tar`
+   `npx shapio import --url http://new:4300 --token shp_… --workspace <key> workspace.tar`
 4. Recreate what bundles leave out: admin accounts, API tokens and webhook and deployment secrets.
 5. Point your sites at the new instance.
 

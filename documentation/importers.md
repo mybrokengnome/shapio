@@ -1,6 +1,6 @@
 # Moving from WordPress or Strapi
 
-`shapio import wordpress` and `shapio import strapi` bring a site's content over from WordPress or Strapi 5:
+`shapio import wordpress` and `shapio import strapi` bring a website's content over from WordPress or Strapi 5:
 content types become models, posts and documents become entries, uploads move into the media library. Nothing
 goes live by itself. Every entry is created as a **draft**. The ones that were published in the old system are
 collected into a [change set](change-sets.md) that you review and ship.
@@ -8,11 +8,11 @@ collected into a [change set](change-sets.md) that you review and ship.
 An import has two steps, with a schema apply between them:
 
 1. **Plan** (`--plan <dir>`) reads the export and writes the models it proposes as ordinary
-   [schema files](schema-sync.md) into `<dir>/schema` (the built-in site's folder, `sites/default/`, unless you
+   [schema files](schema-sync.md) into `<dir>/schema` (the built-in workspace's folder, `sites/default/`, unless you
    say otherwise: see below), plus `<dir>/import-map.json`. It runs offline: it needs no URL or token and sends
    nothing anywhere, unless you pass `--url` to check the planned names against your instance (see below).
 2. **Review and apply** the files, like any schema change:
-   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json --site default`. You can rename API IDs, labels and
+   `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json --workspace default`. You can rename API IDs, labels and
    descriptions, or delete fields you don't want, before applying. Or copy the files into your project's
    `schema/` and apply them with the rest of your schema.
 3. **Map** (`--map <dir>`) runs against the instance. It uploads the media, creates every entry as a draft
@@ -20,44 +20,46 @@ An import has two steps, with a schema apply between them:
 
 ```sh
 npx @shapio/cms import wordpress export.xml --plan ./import
-npx @shapio/cms schema apply --dir ./import/schema --lock ./import/schema-lock.json --site default
-npx @shapio/cms import wordpress --map ./import --site default --url https://cms.example.com --token "$SHAPIO_TOKEN"
+npx @shapio/cms schema apply --dir ./import/schema --lock ./import/schema-lock.json --workspace default
+npx @shapio/cms import wordpress --map ./import --workspace default --url https://cms.example.com --token "$SHAPIO_TOKEN"
 ```
 
 `schema apply` and `--map` take the usual remote-command options: `--url` (or `SHAPIO_URL`), `--token` (or
-`SHAPIO_TOKEN`), and `--site <key>` (or `SHAPIO_SITE`). The token is an admin API token (Settings → API tokens)
+`SHAPIO_TOKEN`), and `--workspace <key>` (or `SHAPIO_WORKSPACE`). The token is an admin API token (Settings → API tokens)
 with the admin or owner role: it creates the models, entries and media and manages change sets. Run the commands
 from the folder that holds the export: `npx @shapio/cms` works anywhere (inside a project made by `create-shapio`,
 `npx shapio` is the same command).
 
 **Names already on the instance.** With `--url` (and `--token`, or `SHAPIO_TOKEN`), `--plan` reads the models
-and components the planned site can already see (the shared ones and the site's own) and checks every planned
+and components the planned workspace can already see (the shared ones and the workspace's own) and checks every planned
 API ID, plural API ID, and GraphQL name against them. A planned model or component that would clash gets the
 `Item` suffix, numbered if that is taken too (`seoItem`, `seoItem2`), and `--plan` prints one line for each
 rename, such as "Component seo is named seoItem (the target already has seo)." A renamed collection's plural API
 ID is derived from its new API ID. Only `--url` turns the check on: `SHAPIO_URL` alone keeps the plan offline.
-For a `--shared` plan, `--plan` names no site, so the names are checked against the view of the token's site
-(for a network token, the primary site's), and `--plan` notes that other sites' own models and components were
-not checked. Without `--url`, `--plan` prints "Names were not checked
+For a `--shared` plan, `--plan` names no workspace, so the names are checked against the view of the token's
+workspace (for a network token, the primary workspace's), and `--plan` notes that other workspaces' own models
+and components were not checked. Without `--url`, `--plan` prints "Names were not checked
 against a target: pass --url and --token to --plan, or rename clashes in the schema files before applying."
 
 ```sh
 npx @shapio/cms import strapi my-export.tar.gz --plan ./import --url https://cms.example.com --token "$SHAPIO_TOKEN"
 ```
 
-**Which site the models belong to.** The planned models belong to one [site](sites.md): the one `--site <key>`
-(or `SHAPIO_SITE`) names. Otherwise, with `--url`, the site the instance answers for (the token's site, else the
-primary site); offline, the built-in site, key `default`, which is the primary site unless another site was
-made primary (pass `--site` then, or once `default` is deleted). On an instance with one site, that is the only
-site, and an ordinary admin token works. `--plan` prints the apply and map commands with `--site <key>`, so
-they reach the planned site whichever site is primary when you run them. The plan records the site,
-so `--map` without `--site` imports into it, and a `--map --site` that names another site is refused.
+**Which workspace the models belong to.** The planned models belong to one [workspace](workspaces.md): the one
+`--workspace <key>` (or `SHAPIO_WORKSPACE`) names. Otherwise, with `--url`, the workspace the instance answers
+for (the token's workspace, else the primary workspace); offline, the built-in workspace, key `default`, which is
+the primary workspace unless another workspace was made primary (pass `--workspace` then, or once `default` is
+deleted). On an instance with one workspace, that is the only workspace, and an ordinary admin token works.
+`--plan` prints the apply and map commands with `--workspace <key>`, so they reach the planned workspace
+whichever workspace is primary when you run them. The plan records the workspace (as `site` in
+`import-map.json`), so `--map` without `--workspace` imports into it, and a `--map --workspace` that names
+another workspace is refused.
 
-- **Another site of a multi-site instance:** plan with `--site <key>`. The files go in
-  `<dir>/schema/sites/<key>/` and `--plan` prints the apply and map commands with `--site <key>`.
-- **Models shared with all sites:** plan with `--shared`. The files go in the shared folders
+- **Another workspace of an instance with several:** plan with `--workspace <key>`. The files go in
+  `<dir>/schema/sites/<key>/` and `--plan` prints the apply and map commands with `--workspace <key>`.
+- **Models shared with all workspaces:** plan with `--shared`. The files go in the shared folders
   (`<dir>/schema/models/` and `components/`), and applying them needs a **network** admin token (Settings → API
-  tokens, _Works on_: _Every site (network token)_); a token of one site is refused with `FORBIDDEN_SCOPE` and
+  tokens, _Works on_: _Every workspace (network token)_); a token of one workspace is refused with `FORBIDDEN_SCOPE` and
   nothing is applied.
 
 ## What happens to your edits and re-runs
@@ -68,7 +70,7 @@ so `--map` without `--site` imports into it, and a `--map --site` that names ano
 - **`--map` refuses until the models exist**, and says which ones are missing and what to run.
 - **Re-running `--map` resumes.** Every upload, entry and change set item is recorded in `import-map.json` as
   soon as it is done. A re-run skips finished work and retries what failed, so run it again after fixing a
-  problem (a missing locale, a file that would not download). A re-run must use the same `--site`. It refuses
+  problem (a missing locale, a file that would not download). A re-run must use the same `--workspace`. It refuses
   if the export file changed since it was planned.
 - **One gap:** if `--map` is killed in the instant between creating an entry and recording it, a re-run
   creates that one entry again. Delete the duplicate draft if it happens.

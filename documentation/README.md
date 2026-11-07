@@ -29,15 +29,16 @@ model never needs a rebuild, a restart or a deploy.
 - [Delivery API (REST)](delivery-api.md): filters, sort, populate, fields, locale, snapshots, tokens, caching.
 - [In-process delivery](in-process.md): `@shapio/local`, the delivery API as function calls in a site's server
   process (Next.js and others), on PostgreSQL or MySQL.
-- [SEO fields](seo.md): the built-in SEO group, per-site defaults (Settings → SEO), `seo=resolved`.
+- [SEO fields](seo.md): the built-in SEO group, per-workspace defaults (Settings → SEO), `seo=resolved`.
 - [GraphQL](graphql.md)
 - [Snapshots and the changes API](snapshots.md): pinning builds, what changed between two snapshots,
   incremental builds and `revalidatePath`.
 - [End users](end-users.md): sign-up, sign-in, Google and GitHub, roles, owner-only writes.
 - [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, Vercel, Netlify,
   preview links.
-- [Sites](sites.md): several sites on one instance (one team; content types per site or shared with all sites;
-  separate content, tokens, snapshots and app users); which site a request reads, permissions, upgrade notes.
+- [Workspaces](workspaces.md): several workspaces on one instance (one team; content types per workspace or
+  shared with all workspaces; separate content, tokens, snapshots, and app users); which workspace a request
+  reads, permissions, upgrade notes, and the older `site` names that still work.
 - [Visual editing](visual-editing.md): preview drafts beside the document and click a part of the page to edit
   its field.
 - [Extensions](extensions.md): hooks, custom routes and services, jobs, custom field editors.
