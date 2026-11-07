@@ -282,7 +282,7 @@ const fieldIndexLimitIssues = (
     {
       path: position === -1 ? '/fields' : `/fields/${position}/${flag}`,
       code: 'UNSUPPORTED_FLAG',
-      message: `MySQL can index at most ${limit} filterable or sortable fields across all models of all sites (InnoDB allows 64 indexes per table); this change would need ${total}. Clear "filterable" or "sortable" on fields that do not need it.`,
+      message: `MySQL can index at most ${limit} filterable or sortable fields across all models of all workspaces (InnoDB allows 64 indexes per table); this change would need ${total}. Clear "filterable" or "sortable" on fields that do not need it.`,
       definitionId: after.id,
     },
   ];

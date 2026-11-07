@@ -96,7 +96,7 @@ const isNetworkToken = async (
 ): Promise<boolean> => {
   if (roleKind === 'delivery') {
     if (requested === true) {
-      throw new AppError(400, 'INVALID_TOKEN_SITE', 'Delivery tokens always belong to one site');
+      throw new AppError(400, 'INVALID_TOKEN_SITE', 'Delivery tokens always belong to one workspace');
     }
     return false;
   }
@@ -107,7 +107,7 @@ const isNetworkToken = async (
     throw new AppError(
       403,
       'FORBIDDEN',
-      'Only admins who manage users on every site can create network tokens',
+      'Only admins who manage users on every workspace can create network tokens',
     );
   }
   return true;

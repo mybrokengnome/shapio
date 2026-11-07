@@ -27,7 +27,7 @@ export type SiteSeoContext = SiteActorContext & {
 
 export type SiteSeoView = { version: number; seo: SeoDefaults };
 
-const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Site not found');
+const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Workspace not found');
 
 /** Stored defaults, or the empty ones when none were saved (or the stored value no longer fits the schema). */
 const readDefaults = (stored: unknown): SeoDefaults =>
@@ -52,8 +52,8 @@ const assertReadsSite = async (context: Pick<DeliverySiteContext, 'snapshot' | '
     }
   }
   throw context.actor.kind === 'anonymous'
-    ? new AppError(401, 'UNAUTHENTICATED', 'This site needs a delivery token')
-    : new AppError(403, 'FORBIDDEN', 'You may not read content on this site');
+    ? new AppError(401, 'UNAUTHENTICATED', 'This workspace needs a delivery token')
+    : new AppError(403, 'FORBIDDEN', 'You may not read content in this workspace');
 };
 
 /**
@@ -87,7 +87,7 @@ const assertUsableImage = async (context: SiteSeoContext, imageId: string | null
   }
   const [asset] = await mediaAssetsRepository.findLiveManyOnSite(context.site.id, [imageId], context.db);
   if (!asset) {
-    throw invalid('SEO_IMAGE_INVALID', 'The default image is not an asset of this site', { imageId });
+    throw invalid('SEO_IMAGE_INVALID', 'The default image is not an asset of this workspace', { imageId });
   }
   if (!isPublicImage({ visibility: asset.visibility as 'public' | 'private', mimeType: asset.mime_type })) {
     throw invalid('SEO_IMAGE_INVALID', 'The default image must be a public image', { imageId });
@@ -122,7 +122,7 @@ export const updateSiteSeo = async (
       trx,
     );
     if (!updated) {
-      throw new AppError(409, 'VERSION_CONFLICT', 'The site changed since you loaded it', {
+      throw new AppError(409, 'VERSION_CONFLICT', 'The workspace changed since you loaded it', {
         expectedVersion: input.expectedVersion,
         actualVersion: current.version,
       });

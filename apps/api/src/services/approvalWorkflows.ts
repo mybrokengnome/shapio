@@ -190,14 +190,14 @@ type SiteApprovalRow = NonNullable<Awaited<ReturnType<typeof sitesRepository.fin
 
 export const toSiteSetting = (row: SiteApprovalRow): SiteApprovalSetting => {
   if (!(APPROVAL_MODES as readonly string[]).includes(row.approval_mode)) {
-    throw corrupt(`site ${row.id}`);
+    throw corrupt(`workspace ${row.id}`);
   }
   return {
     id: row.id,
     name: row.name,
     version: row.version,
     mode: row.approval_mode as ApprovalMode,
-    workflow: parseStoredWorkflow(row.approval_workflow, `site ${row.id}`),
+    workflow: parseStoredWorkflow(row.approval_workflow, `workspace ${row.id}`),
   };
 };
 

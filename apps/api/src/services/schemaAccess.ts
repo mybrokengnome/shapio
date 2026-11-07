@@ -51,7 +51,7 @@ export const assertCanCreate = async (
   executor?: PermissionExecutor,
 ): Promise<void> => {
   if (scope !== null && scope !== context.snapshot.siteId) {
-    throw forbidden('A definition can only be created on the site of the request');
+    throw forbidden('A definition can only be created in the workspace of the request');
   }
   const allowed =
     scope === null
@@ -60,7 +60,7 @@ export const assertCanCreate = async (
   if (!allowed) {
     throw forbidden(
       scope === null
-        ? 'Sharing a definition with all sites needs schema.create on every site'
+        ? 'Sharing a definition with all workspaces needs schema.create on every workspace'
         : 'Your role does not allow schema.create',
     );
   }

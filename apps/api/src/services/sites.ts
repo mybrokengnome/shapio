@@ -64,7 +64,7 @@ export const toSiteSummary = (row: SiteRow): SiteSummaryView => ({
 
 export const toSiteRef = (row: Pick<SiteRow, 'id' | 'key'>): SiteRef => ({ id: row.id, key: row.key });
 
-const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Site not found');
+const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Workspace not found');
 
 /** A site's summary by ID (`me` for a site the admin holds no role on: they see its name, nothing else). */
 /** How many sites the instance has, whatever roles the caller holds (one: per-site schema UI is moot). */
@@ -157,7 +157,7 @@ export const createSite = async (
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new AppError(409, 'SITE_KEY_TAKEN', 'A site with this key already exists', undefined, {
+      throw new AppError(409, 'SITE_KEY_TAKEN', 'A workspace with this key already exists', undefined, {
         cause: error,
       });
     }
@@ -178,7 +178,7 @@ export const renameSite = async (
     }
     const updated = await sitesRepository.renameIfVersion(id, input.expectedVersion, input.name.trim(), trx);
     if (!updated) {
-      throw new AppError(409, 'VERSION_CONFLICT', 'The site changed since you loaded it', {
+      throw new AppError(409, 'VERSION_CONFLICT', 'The workspace changed since you loaded it', {
         expectedVersion: input.expectedVersion,
         actualVersion: current.version,
       });
@@ -207,7 +207,7 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
       throw new AppError(
         409,
         'SITE_IS_PRIMARY',
-        'The primary site cannot be deleted. Make another site primary first.',
+        'The primary workspace cannot be deleted. Make another workspace primary first.',
       );
     }
     // Serialized with schema changes, so no definition can be created on the site meanwhile.
@@ -221,7 +221,7 @@ export const deleteSite = async (context: ActorContext, id: string): Promise<voi
       throw new AppError(
         409,
         'SITE_NOT_EMPTY',
-        'Only an empty site can be deleted: remove its entries, media, change sets, app users and content types first',
+        'Only an empty workspace can be deleted: remove its entries, media, change sets, app users, and content types first',
         contents,
       );
     }
@@ -328,7 +328,7 @@ export const resolveSite = async (
       throw new AppError(
         403,
         'SITE_MISMATCH',
-        `This credential belongs to site "${site.key}", not "${requestedKey}"`,
+        `This credential belongs to workspace "${site.key}", not "${requestedKey}"`,
       );
     }
     return site;
@@ -336,7 +336,7 @@ export const resolveSite = async (
   if (requestedKey !== undefined) {
     const site = await read({ by: 'key', key: requestedKey });
     if (!site) {
-      throw new AppError(404, 'SITE_NOT_FOUND', `No site has the key "${requestedKey}"`);
+      throw new AppError(404, 'SITE_NOT_FOUND', `No workspace has the key "${requestedKey}"`);
     }
     return site;
   }
@@ -344,7 +344,7 @@ export const resolveSite = async (
   if (!primary) {
     // Every instance has exactly one primary site: migrations create it, the flag only ever moves to
     // another site, and the primary site cannot be deleted.
-    throw new Error('No primary site');
+    throw new Error('No primary workspace');
   }
   return primary;
 };

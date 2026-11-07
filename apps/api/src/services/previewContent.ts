@@ -179,7 +179,7 @@ const authorize = async (
   // The preview token's site is the request's site (the routes resolve it from the token); a token of another
   // site never reads here.
   if (base.site.id !== token.site_id) {
-    throw new AppError(403, 'SITE_MISMATCH', 'This preview token belongs to another site');
+    throw new AppError(403, 'SITE_MISMATCH', 'This preview token belongs to another workspace');
   }
   const context: ContentServiceContext = { ...base, actor: creator, permissions };
   const policy = await permissions.evaluate(creator, { action: 'read', modelId: model.definition.id });
