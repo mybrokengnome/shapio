@@ -6,6 +6,8 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-06
+
 ### Added
 
 - Make another site primary. The site's page in the admin (Network, Sites) has **Make primary**, the admin API
