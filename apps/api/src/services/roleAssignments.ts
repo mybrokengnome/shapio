@@ -73,7 +73,11 @@ export const assertAssignableAssignments = async (
     throw new AppError(400, 'INVALID_SITES', 'Every workspace must exist');
   }
   if (assignments.some((assignment) => assignment.roleId === ownerRoleId && assignment.siteId !== null)) {
-    throw new AppError(400, 'OWNER_ALL_SITES', 'The owner role is held on every workspace, never on one workspace');
+    throw new AppError(
+      400,
+      'OWNER_ALL_SITES',
+      'The owner role is held on every workspace, never on one workspace',
+    );
   }
   return sortAssignments(assignments);
 };

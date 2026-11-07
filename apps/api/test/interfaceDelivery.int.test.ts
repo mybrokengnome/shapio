@@ -424,7 +424,9 @@ describe('interfaces: delivery reads and relation values', () => {
       `entry ${ids.digital} is not a Featurable (a post, guide, blogPost, or about)`,
     );
     const nowhere = await save({ spotlight: '00000000-0000-4000-8000-0000000000ff' });
-    expect(nowhere.body).toContain('entry 00000000-0000-4000-8000-0000000000ff is not an entry of this workspace');
+    expect(nowhere.body).toContain(
+      'entry 00000000-0000-4000-8000-0000000000ff is not an entry of this workspace',
+    );
     expectStatus(await save({ featured: [ids.beta, ids.gamma, ids.epsilon], spotlight: ids.epsilon }), 201);
     const home = await list('/api/content/homepage?populate=featured,spotlight');
     const data = home.data as unknown as { featured: Row[]; spotlight: Row };

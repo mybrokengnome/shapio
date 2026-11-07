@@ -72,7 +72,11 @@ export const updateSiteChangeSets = async (
     }
     const workflow = input.workflow ? normalizeWorkflow(input.workflow) : toSiteSetting(current).workflow;
     if (input.mode === 'custom' && workflow === null) {
-      throw new AppError(400, 'APPROVAL_WORKFLOW_REQUIRED', 'A workspace with its own approval needs a workflow');
+      throw new AppError(
+        400,
+        'APPROVAL_WORKFLOW_REQUIRED',
+        'A workspace with its own approval needs a workflow',
+      );
     }
     // A stored workflow can name a role deleted while the site was not `custom`: check it before it applies.
     if (input.workflow || input.mode === 'custom') {
