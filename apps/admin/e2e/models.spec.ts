@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { adminApiFor } from './content/api';
+import { BUILT_IN_WORKSPACE } from './support/accounts';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { entryDocument } from './support/entryDocument';
@@ -646,18 +647,18 @@ test('with a second site, a new content type asks where it is available: "All si
     await page.goto(ADMIN_URL);
     const form = await createDefinition('Brand');
     const availableOn = form.getByRole('group', { name: 'Available on' });
-    await expect(availableOn.getByRole('radio', { name: 'This site' })).toBeChecked();
-    await expect(availableOn.getByRole('radio', { name: 'This site' })).toHaveAccessibleDescription(
-      'Only on Default site.',
+    await expect(availableOn.getByRole('radio', { name: 'This workspace' })).toBeChecked();
+    await expect(availableOn.getByRole('radio', { name: 'This workspace' })).toHaveAccessibleDescription(
+      `Only on ${BUILT_IN_WORKSPACE}.`,
     );
-    await availableOn.getByRole('radio', { name: 'All sites' }).check();
+    await availableOn.getByRole('radio', { name: 'All workspaces' }).check();
     await captureScreen(page, 'models-18-available-on', { viewports: ['desktop', 'phone'] });
     await form.getByRole('button', { name: 'Create' }).click();
     await expect(toast('Created — no restart needed.')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Brand' })).toBeVisible();
     // Shared: marked in the sidebar (its name stays the label) and listed on the other site too.
     await expect(nav().getByRole('link', { name: 'Brand', exact: true })).toHaveAccessibleDescription(
-      'Shared with all sites',
+      'Shared with all workspaces',
     );
     const onShop = await siteApi(page.request, 'shop').get<{
       items: { definition: { id: string; apiKey: string }; scope: string }[];

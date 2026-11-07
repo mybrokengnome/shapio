@@ -20,10 +20,10 @@ describe('canSeeNetwork', () => {
 });
 
 describe('withSiteParameter', () => {
-  it('adds ?site= for a site other than the primary one', () => {
-    expect(withSiteParameter('/api/content/posts', 'blog')).toBe('/api/content/posts?site=blog');
+  it('adds ?workspace= for a workspace other than the primary one', () => {
+    expect(withSiteParameter('/api/content/posts', 'blog')).toBe('/api/content/posts?workspace=blog');
     expect(withSiteParameter('/api/content/posts?locale=en', 'blog')).toBe(
-      '/api/content/posts?locale=en&site=blog',
+      '/api/content/posts?locale=en&workspace=blog',
     );
     expect(withSiteParameter('/api/content/posts', undefined)).toBe('/api/content/posts');
   });

@@ -40,7 +40,7 @@ export const Table = ({ sites }: TableProps) => {
               <TableCell>
                 <div className="flex items-center gap-2">
                   <RowTitle asChild>
-                    <Link to="/network/sites/$siteId" params={{ siteId: site.id }}>
+                    <Link to="/network/workspaces/$siteId" params={{ siteId: site.id }}>
                       {site.name}
                     </Link>
                   </RowTitle>

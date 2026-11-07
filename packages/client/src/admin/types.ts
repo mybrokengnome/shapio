@@ -132,8 +132,17 @@ export type SetupStatusResponse = {
   requiresToken: boolean;
 };
 
-/** `token` is needed only when the server requires it (`requiresToken`); otherwise it is ignored. */
-export type SetupInput = { token?: string; email: string; name: string; password: string };
+/**
+ * `token` is needed only when the server requires it (`requiresToken`); otherwise it is ignored. `workspaceName`
+ * names the built-in workspace (server 0.8.2 or later; its key stays `default`); absent leaves its name.
+ */
+export type SetupInput = {
+  token?: string;
+  email: string;
+  name: string;
+  password: string;
+  workspaceName?: string;
+};
 
 export type LoginInput = { email: string; password: string };
 

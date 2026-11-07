@@ -4,9 +4,11 @@ import { playgroundUrl } from './playgroundUrl';
 const BASE = 'https://cms.example.com/cms/api/graphql/playground';
 
 describe('playgroundUrl', () => {
-  it('names the theme, and the site only when it is not the primary one', () => {
+  it('names the theme, and the workspace only when it is not the primary one', () => {
     expect(playgroundUrl(BASE, { theme: 'dark' })).toBe(`${BASE}?theme=dark`);
-    expect(playgroundUrl(BASE, { siteKey: 'blog', theme: 'light' })).toBe(`${BASE}?site=blog&theme=light`);
+    expect(playgroundUrl(BASE, { siteKey: 'blog', theme: 'light' })).toBe(
+      `${BASE}?workspace=blog&theme=light`,
+    );
   });
 
   it('carries a query, encoded, and leaves out a blank one', () => {

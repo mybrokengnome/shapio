@@ -1,5 +1,6 @@
 import type { Kysely, Transaction } from 'kysely';
 import { LOCK_NAMESPACE, SETUP_LOCK_KEY } from '../constants/lockKeys.js';
+import { PRIMARY_SITE_ID } from '../constants/sites.js';
 import { acquireXactLock } from '../db/advisoryLocks.js';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
@@ -11,7 +12,8 @@ import { narrowToSite } from '../permissions/sites.js';
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as adminUsersRepository from '../repositories/adminUsers.js';
 import * as setupTokensRepository from '../repositories/setupTokens.js';
-import { SYSTEM_CLI_ACTOR, type ClientInfo } from './actorContext.js';
+import * as sitesRepository from '../repositories/sites.js';
+import { SYSTEM_CLI_ACTOR, type ActorContext, type ClientInfo } from './actorContext.js';
 import { createSession } from './adminSessions.js';
 import { getOwnerRoleId, insertAdminUser, normalizeEmail } from './adminUsers.js';
 import { recordAudit } from './audit.js';
@@ -47,8 +49,32 @@ type CompleteSetupInput = {
   email: string;
   name: string;
   password: string;
+  /** Renames the built-in workspace; absent leaves its name as it is. */
+  workspaceName?: string | undefined;
   client: ClientInfo;
   requestId: string;
+};
+
+/**
+ * Names the built-in workspace (code: site; its key `default` stays) as the first owner chose, audited as
+ * `site.update` like a rename from the network view. Skipped when the row is gone or the name is unchanged.
+ */
+const nameBuiltInWorkspace = async (context: ActorContext, name: string, trx: Transaction<DB>) => {
+  const current = await sitesRepository.findById(PRIMARY_SITE_ID, trx);
+  const trimmed = name.trim();
+  if (!current || trimmed === '' || current.name === trimmed) {
+    return;
+  }
+  const updated = await sitesRepository.renameIfVersion(current.id, current.version, trimmed, trx);
+  if (!updated) {
+    return;
+  }
+  await recordAudit(trx, {
+    ...context,
+    action: 'site.update',
+    target: { type: 'site', id: current.id },
+    metadata: { name: { from: current.name, to: updated.name } },
+  });
 };
 
 /**
@@ -75,16 +101,22 @@ export const completeSetup = async (input: CompleteSetupInput): Promise<Authenti
     await setupTokensRepository.supersedeUnused(now, trx);
     const session = await createSession(adminUserId, { client: input.client, now }, trx);
     await adminUsersRepository.update(adminUserId, { last_login_at: now }, trx);
-    await recordAudit(trx, {
+    const context: ActorContext = {
       actor: narrowToSite(
         { adminUserId, sessionId: session.sessionId, assignments: [{ roleId: ownerRoleId, siteId: null }] },
         null,
       ),
-      action: 'setup.complete',
-      target: { type: 'admin_user', id: adminUserId },
       requestId: input.requestId,
       ...(input.client.ip ? { ip: input.client.ip } : {}),
+    };
+    await recordAudit(trx, {
+      ...context,
+      action: 'setup.complete',
+      target: { type: 'admin_user', id: adminUserId },
     });
+    if (input.workspaceName !== undefined) {
+      await nameBuiltInWorkspace(context, input.workspaceName, trx);
+    }
     return { adminUserId, session };
   });
 };

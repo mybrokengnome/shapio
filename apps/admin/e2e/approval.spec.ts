@@ -140,7 +140,7 @@ test('Network → Approval sets a two-stage default every site inherits', async 
 
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Saved.')).toBeVisible();
-  await expect(page.getByText(/sites? inherits? this default\./)).toBeVisible();
+  await expect(page.getByText(/workspaces? inherits? this default\./)).toBeVisible();
   await page.reload();
   await expect(page.getByRole('radio', { name: 'Workflow' })).toBeChecked();
   await expect(stage(2).getByLabel('Name', { exact: true })).toHaveValue('Legal');
@@ -162,7 +162,7 @@ test('asking for approval starts at the first stage; the owner signs Editorial a
   await page.goto(`${ADMIN_URL}changes/${setId}`);
   await expect(page.getByRole('heading', { level: 1, name: SET_TITLE })).toBeVisible();
   const panel = approvalPanel(page);
-  await expect(panel.getByText('This site requires approval')).toBeVisible();
+  await expect(panel.getByText('This workspace requires approval')).toBeVisible();
   await expect(panel.getByRole('list', { name: 'Stages' })).toHaveText(/1\s*Editorial.*2\s*Legal/);
   await expect(page.getByRole('button', { name: 'Ship', exact: true })).toBeDisabled();
 
