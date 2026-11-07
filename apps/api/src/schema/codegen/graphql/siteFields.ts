@@ -12,8 +12,9 @@ import type { GraphqlContext } from './context.js';
 import type { FixedTypes } from './fixedTypes.js';
 
 /**
- * `_site` (plan seo-fields): the request's site and its SEO defaults, through the same service as REST
- * `GET /api/site`. Underscored like `_snapshot`, so a model called `site` keeps its own root fields; the name
+ * `_site` (plan seo-fields): the request's workspace and its SEO defaults, through the same service as REST
+ * `GET /api/workspace` (`GET /api/site`). The GraphQL names keep `site` (plan workspace-rename: renaming or
+ * aliasing them would reserve new names against user models); the descriptions say workspace. Underscored like `_snapshot`, so a model called `site` keeps its own root fields; the name
  * and the `SiteInfo`/`SiteSeo*` types are reserved in `@shapio/schema` naming.ts. SEO fields on entries stay
  * raw in GraphQL: merge them with `resolveSeo()` from `@shapio/client`.
  */
@@ -51,10 +52,10 @@ const createTypes = (media: FixedTypes['media']) => {
   });
   return new GraphQLObjectType({
     name: 'SiteInfo',
-    description: 'The site this request reads, and its SEO defaults',
+    description: 'The workspace this request reads, and its SEO defaults',
     fields: {
-      key: { type: nonNull(GraphQLString) },
-      name: { type: nonNull(GraphQLString) },
+      key: { type: nonNull(GraphQLString), description: "The workspace's key" },
+      name: { type: nonNull(GraphQLString), description: "The workspace's name" },
       seo: { type: nonNull(seo) },
     },
   });
@@ -66,7 +67,7 @@ export const siteQueryFields = (
 ): GraphQLFieldConfigMap<unknown, GraphqlContext> => ({
   [SITE_QUERY]: {
     type: nonNull(createTypes(fixed.media)),
-    description: "The request's site: its key, name and SEO defaults",
+    description: "The request's workspace: its key, name and SEO defaults",
     resolve: async (_root, _args, context) => siteSeoService.getDeliverySite(await context.content(snapshot)),
   },
 });

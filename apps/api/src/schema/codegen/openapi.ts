@@ -24,7 +24,7 @@ import {
 } from '../../content/compiler/types.js';
 import { relationTargetOf } from '../../content/relationTarget.js';
 import type { SchemaSnapshot } from '../snapshot.js';
-import { sitePaths, SITE_TAG } from './openapiSite.js';
+import { sitePaths, SITE_TAG, WORKSPACE_TAG } from './openapiSite.js';
 import { snapshotPaths, SNAPSHOTS_TAG } from './openapiSnapshots.js';
 
 /**
@@ -396,7 +396,7 @@ const seoParameters = (seo: boolean) =>
           in: 'query',
           schema: { type: 'string', enum: [...SEO_MODES], default: 'raw' },
           description:
-            "SEO fields as stored (`raw`) or merged with the site's SEO defaults (`resolved`): the title through the site's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults.",
+            "SEO fields as stored (`raw`) or merged with the workspace's SEO defaults (`resolved`): the title through the workspace's title template (the entry's own title when empty), description and image from the defaults, `noindex` a boolean. A pinned `snapshot` uses today's defaults.",
         },
       ]
     : [];
@@ -835,6 +835,7 @@ export const generateOpenApi = (
         description: contract.description ?? `interface \`${contract.apiKey}\``,
       })),
       SNAPSHOTS_TAG,
+      WORKSPACE_TAG,
       SITE_TAG,
     ],
     paths: Object.assign(

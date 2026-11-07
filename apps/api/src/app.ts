@@ -262,6 +262,8 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   });
   await app.register(adminExtensionsRoutes, { prefix: urls.withBasePath('/api/admin/extensions') });
   await app.register(deliveryRoutes, { prefix: urls.withBasePath('/api/content') });
+  // The workspace's delivery view, under its name and its original one (both kept; same handler and schema).
+  await app.register(siteRoutes, { prefix: urls.withBasePath('/api/workspace') });
   await app.register(siteRoutes, { prefix: urls.withBasePath('/api/site') });
   await app.register(snapshotsRoutes, { prefix: urls.withBasePath('/api/snapshots') });
   await app.register(docsRoutes, { prefix: urls.withBasePath('/api/docs') });
