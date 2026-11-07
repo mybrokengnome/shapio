@@ -19,7 +19,7 @@ import { Primary } from './Primary';
  */
 export const Site = () => {
   const { t } = useTranslation();
-  const { siteId } = useParams({ from: '/app/network/sites/$siteId' });
+  const { siteId } = useParams({ from: '/app/network/workspaces/$siteId' });
   const site = useSite(siteId);
   const canManage = useNetworkPermission('sites.manage');
   const canManageRoles = useNetworkPermission('roles.manage');
@@ -29,7 +29,7 @@ export const Site = () => {
         {(data) => (
           <>
             <PageHeader
-              breadcrumb={[{ label: t('sites.title'), link: linkOptions({ to: '/network/sites' }) }]}
+              breadcrumb={[{ label: t('sites.title'), link: linkOptions({ to: '/network/workspaces' }) }]}
               title={data.name}
               badge={data.isPrimary ? <Badge variant="secondary">{t('sites.primary')}</Badge> : null}
               meta={data.key}

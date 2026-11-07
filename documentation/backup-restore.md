@@ -74,10 +74,10 @@ Restore into a scratch database from time to time; a backup you have not restore
 `shapio export` and `shapio import` move content between instances over HTTP, without database access: from
 staging to production, into a fresh install, or as a portable backup. They need an owner or admin API token.
 
-A bundle holds one [site](sites.md#export-and-import)'s content, media, app users, webhooks and deployment
-connections, with the site's content types (its own and the shared ones), locales and roles. `--site <key>` (or
-`SHAPIO_SITE`) names the site to export from or import into; without it, the token's site, else the primary
-site.
+A bundle holds one [workspace](workspaces.md#export-and-import)'s content, media, app users, webhooks and
+deployment connections, with the workspace's content types (its own and the shared ones), locales and roles.
+`--workspace <key>` (or `SHAPIO_WORKSPACE`) names the workspace to export from or import into; without it, the
+token's workspace, else the primary workspace.
 
 ```sh
 npx shapio export --url https://cms.example.com --token shp_… --with-media content.tar
@@ -89,7 +89,7 @@ npx shapio import --url https://new.example.com --token shp_… content.tar
 
 An NDJSON file (one JSON record per line): the schema (every model and component, as `schema pull` writes them,
 plus a lock), locales, app roles and custom delivery roles with their grants on the bundle's models (roles are
-shared by every site, so their grants on another site's models stay behind), media folders and media metadata with each file's key, size
+shared by every workspace, so their grants on another workspace's models stay behind), media folders and media metadata with each file's key, size
 and SHA-256, and every entry with its full revision history and its draft and published versions in every
 locale. IDs and timestamps are kept, so an import into an empty instance answers the delivery API (REST and
 GraphQL) exactly like the source. Timestamps keep their microseconds (bundle format 2; Shapio still imports
@@ -150,7 +150,7 @@ Everything is matched by stable ID:
   edited since, that belongs to another model, or that was deleted on the target is a **conflict**.
 - **Delivery roles**: matched by key; missing ones are created and changed ones updated to the bundle's
   grants on the bundle's models. A role's grants on the target's other models stay as they are, so importing
-  one site never changes what a role may read on another. A key the target uses for an admin role is a
+  one workspace never changes what a role may read on another. A key the target uses for an admin role is a
   conflict. A grant on a model that neither the bundle
   nor the target has is left out, and the plan lists it; a role left with no grants is not created.
 - **Media**: missing assets are added after their file is checked against the manifest's checksum and size; an

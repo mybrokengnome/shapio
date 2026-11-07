@@ -286,7 +286,7 @@ const auditLogRedirectRoute = createRoute({
   },
 });
 
-// The network view (sites plan §H): sites, admin users, roles and the audit log, about the whole instance.
+// The network view (sites plan §H): workspaces, admin users, roles and the audit log, about the whole instance.
 const networkLazy = () => import('./lazyRoutes/network').then((module) => module.networkLazyRoutes);
 
 type NetworkLazyKey = keyof Awaited<ReturnType<typeof networkLazy>>;
@@ -301,7 +301,7 @@ const networkIndexRoute = createRoute({
   getParentRoute: () => networkRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/network/sites', replace: true });
+    throw redirect({ to: '/network/workspaces', replace: true });
   },
 });
 
@@ -310,8 +310,25 @@ const networkChild = <TPath extends string>(path: TPath, key: NetworkLazyKey) =>
     networkLazy().then((routes) => routes[key]),
   );
 
-const sitesRoute = networkChild('sites', 'sites');
-const siteRoute = networkChild('sites/$siteId', 'site');
+const sitesRoute = networkChild('workspaces', 'sites');
+const siteRoute = networkChild('workspaces/$siteId', 'site');
+
+// Sites became workspaces (0.8.2, plan workspace-rename); old links keep working.
+const sitesRedirectRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'sites',
+  beforeLoad: () => {
+    throw redirect({ to: '/network/workspaces', replace: true });
+  },
+});
+
+const siteRedirectRoute = createRoute({
+  getParentRoute: () => networkRoute,
+  path: 'sites/$siteId',
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/network/workspaces/$siteId', params, replace: true });
+  },
+});
 const networkUsersRoute = networkChild('users', 'users');
 const networkRolesRoute = networkChild('roles', 'roles');
 const networkRoleRoute = networkChild('roles/$roleId', 'role');
@@ -509,6 +526,8 @@ const routeTree = rootRoute.addChildren([
       networkIndexRoute,
       sitesRoute,
       siteRoute,
+      sitesRedirectRoute,
+      siteRedirectRoute,
       networkContentTypesRoute.addChildren([networkContentTypesIndexRoute, networkNewContentTypeRoute]),
       networkApprovalRoute,
       networkUsersRoute,

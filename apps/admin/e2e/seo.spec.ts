@@ -109,7 +109,7 @@ test('Add field → SEO fields enables the shared component and ships through th
   await expect(page.getByRole('menuitem', { name: 'Field', exact: true })).toBeVisible();
   await page.getByRole('menuitem', { name: 'SEO fields' }).click();
 
-  const confirm = page.getByRole('alertdialog', { name: 'Enable SEO for every site?' });
+  const confirm = page.getByRole('alertdialog', { name: 'Enable SEO for every workspace?' });
   await expect(confirm).toBeVisible();
   await captureScreen(page, 'seo-02-enable-confirm', { viewports: ['desktop'] });
   await confirm.getByRole('button', { name: 'Enable SEO' }).click();

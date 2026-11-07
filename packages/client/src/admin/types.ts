@@ -6,7 +6,7 @@ import type { SiteSummary } from './sitesTypes.js';
 
 export type AdminUserStatus = 'active' | 'disabled';
 
-/** A role held on one site, or on every site (`siteId` null). */
+/** A role held on one workspace, or on every workspace (`siteId` null). */
 export type RoleAssignment = { roleId: string; siteId: string | null };
 
 export type AdminUser = {
@@ -16,7 +16,7 @@ export type AdminUser = {
   status: AdminUserStatus;
   /** Where each role applies. */
   assignments: RoleAssignment[];
-  /** Deprecated: the distinct roles of `assignments`, on any site. */
+  /** Deprecated: the distinct roles of `assignments`, on any workspace. */
   roleIds: string[];
   lastLoginAt: string | null;
   createdAt: string;
@@ -32,15 +32,15 @@ export const CONTENT_ACTIONS = ['read', 'create', 'update', 'delete', 'publish',
 export type ContentAction = (typeof CONTENT_ACTIONS)[number];
 
 /**
- * What a delivery role grants: `read`, and `readDrafts` (drafts mode: the token's site may read drafts with
+ * What a delivery role grants: `read`, and `readDrafts` (drafts mode: the token's workspace may read drafts with
  * `publicationState=draft`). `readDrafts` always covers every model and is never granted to admin roles.
  */
 export const DELIVERY_ACTIONS = ['read', 'readDrafts'] as const;
 export type DeliveryAction = (typeof DELIVERY_ACTIONS)[number];
 
 /**
- * Network actions: about the whole instance. Only roles assigned on every site grant them, so a role held
- * on one site never reaches the network.
+ * Network actions: about the whole instance. Only roles assigned on every workspace grant them, so a role
+ * held on one workspace never reaches the network.
  */
 export const NETWORK_ACTIONS = [
   'schema.create',
@@ -51,7 +51,7 @@ export const NETWORK_ACTIONS = [
 ] as const;
 export type NetworkAction = (typeof NETWORK_ACTIONS)[number];
 
-/** Site actions: about one site's library, tokens and publishing. */
+/** Workspace actions: about one workspace's library, tokens and publishing. */
 export const SITE_ACTIONS = [
   'tokens.manage',
   'media.read',
@@ -67,7 +67,7 @@ export const SITE_ACTIONS = [
 ] as const;
 export type SiteAction = (typeof SITE_ACTIONS)[number];
 
-/** Actions not scoped to a model: network actions and site actions. */
+/** Actions not scoped to a model: network actions and workspace actions. */
 export const GLOBAL_ACTIONS = [
   'schema.create',
   'users.manage',
@@ -99,17 +99,19 @@ export type SessionStarted = { user: AdminUser; csrfToken: string };
 export type MeResponse = {
   user: AdminUser;
   roles: RoleSummary[];
-  /** The site this response is about: the request's `Shapio-Site`, else the primary site. */
+  /** The workspace this response is about: the request's `Shapio-Site`, else the primary workspace. */
   site: SiteSummary;
-  /** Every site this admin holds a role on (all of them for a role assigned on every site). */
+  /** Every workspace this admin holds a role on (all of them for a role assigned on every workspace). */
   sites: SiteSummary[];
-  /** Sites on this instance (whether or not the admin holds a role on them); scope is shown only above 1. */
+  /**
+   * Workspaces on this instance (whether or not the admin holds a role on them); scope is shown only above 1.
+   */
   siteCount: number;
-  /** Network actions (roles assigned on every site only). */
+  /** Network actions (roles assigned on every workspace only). */
   networkPermissions: NetworkAction[];
   /**
-   * Site actions on the request's site, plus `schema.create` when a role on the site grants it for the
-   * site's own definitions (`networkPermissions` lists it when shared definitions may be created too).
+   * Workspace actions on the request's workspace, plus `schema.create` when a role on the workspace grants it
+   * for the workspace's own definitions (`networkPermissions` lists it when shared definitions may be created too).
    */
   sitePermissions: Array<SiteAction | 'schema.create'>;
   /** `networkPermissions` and `sitePermissions` together. */
@@ -130,8 +132,17 @@ export type SetupStatusResponse = {
   requiresToken: boolean;
 };
 
-/** `token` is needed only when the server requires it (`requiresToken`); otherwise it is ignored. */
-export type SetupInput = { token?: string; email: string; name: string; password: string };
+/**
+ * `token` is needed only when the server requires it (`requiresToken`); otherwise it is ignored. `workspaceName`
+ * names the built-in workspace (server 0.8.2 or later; its key stays `default`); absent leaves its name.
+ */
+export type SetupInput = {
+  token?: string;
+  email: string;
+  name: string;
+  password: string;
+  workspaceName?: string;
+};
 
 export type LoginInput = { email: string; password: string };
 
@@ -175,7 +186,7 @@ export type Invitation = {
 export type InvitationLink = { acceptUrl: string; expiresAt: string };
 
 /**
- * Either `assignments` or (deprecated) `roleIds`, meaning those roles on every site; never both. Updating
+ * Either `assignments` or (deprecated) `roleIds`, meaning those roles on every workspace; never both. Updating
  * either replaces every assignment.
  */
 type AssignmentsInput =
@@ -236,7 +247,7 @@ export type ApiToken = {
   tokenPrefix: string;
   roleId: string;
   scope: RoleKind;
-  /** The token's site; null for a network admin token (its role applies on every site). */
+  /** The token's workspace; null for a network admin token (its role applies on every workspace). */
   siteId: string | null;
   createdBy: string | null;
   /** The creator's account is disabled: the token is refused until it is enabled again. */
@@ -252,8 +263,9 @@ export type CreateApiTokenInput = {
   roleId: string;
   expiresAt?: string | null;
   /**
-   * A network admin token (every site and network actions; needs `users.manage`). Omitted: a network token
-   * when the creator may create one, else a token of the request's site. Delivery tokens are always per site.
+   * A network admin token (every workspace and network actions; needs `users.manage`). Omitted: a network
+   * token when the creator may create one, else a token of the request's workspace. Delivery tokens are
+   * always per workspace.
    */
   network?: boolean;
 };

@@ -192,7 +192,9 @@ describe('scoped validation: a type and its parent share a scope', () => {
       [null],
       { siteKeys: new Map([[siteA, 'shop']]) },
     );
-    expect(found?.message).toContain('"product" is on site "shop" and this type is shared with all sites');
+    expect(found?.message).toContain(
+      '"product" is in workspace "shop" and this type is shared with all workspaces',
+    );
   });
 });
 

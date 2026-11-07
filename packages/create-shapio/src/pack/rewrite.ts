@@ -103,8 +103,12 @@ export const rewriteTsconfig = (text: string): string => {
   return rewritten;
 };
 
-/** Text left in a project that only makes sense inside the repository: a packing bug if found. */
-export const REPOSITORY_ONLY_MARKERS = ['workspace:', 'catalog:', '@shapio/source', '../shared/'] as const;
+/**
+ * Text left in a project that only makes sense inside the repository: a packing bug if found. The pnpm
+ * protocols are matched as JSON string values (`"workspace:*"`), so code such as `createClient({ workspace: key })`
+ * is not mistaken for one.
+ */
+export const REPOSITORY_ONLY_MARKERS = ['"workspace:', '"catalog:', '@shapio/source', '../shared/'] as const;
 
 export const findRepositoryMarkers = (text: string): string[] =>
   REPOSITORY_ONLY_MARKERS.filter((marker) => text.includes(marker));

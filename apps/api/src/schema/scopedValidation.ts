@@ -59,7 +59,7 @@ const sharedReferenceIssues = (proposed: readonly ScopedDefinition[]): Validatio
               {
                 path,
                 code: 'INVALID_REFERENCE_TARGET' as const,
-                message: `"${target.definition.apiKey}" belongs to one site; a definition shared with all sites can only reference shared definitions`,
+                message: `"${target.definition.apiKey}" belongs to one workspace; a definition shared with all workspaces can only reference shared definitions`,
                 definitionId: definition.id,
               },
             ]
@@ -69,7 +69,7 @@ const sharedReferenceIssues = (proposed: readonly ScopedDefinition[]): Validatio
 };
 
 const describeScope = (siteId: string | null, siteKeys: ReadonlyMap<string, string> | undefined) =>
-  siteId === null ? 'shared with all sites' : `on site "${siteKeys?.get(siteId) ?? siteId}"`;
+  siteId === null ? 'shared with all workspaces' : `in workspace "${siteKeys?.get(siteId) ?? siteId}"`;
 
 /**
  * A model and the model it extends have the same scope: both shared, or both on the same site (plan
@@ -120,7 +120,7 @@ const interfaceScopeIssues = (
                 {
                   path: `/implements/${position}`,
                   code: 'INVALID_INTERFACE' as const,
-                  message: `"${target.definition.apiKey}" is ${describeScope(target.siteId, siteKeys)} and this type is ${describeScope(siteId, siteKeys)}; a site's interface can only be implemented by that site's types`,
+                  message: `"${target.definition.apiKey}" is ${describeScope(target.siteId, siteKeys)} and this type is ${describeScope(siteId, siteKeys)}; a workspace's interface can only be implemented by that workspace's types`,
                   definitionId: definition.id,
                 },
               ]

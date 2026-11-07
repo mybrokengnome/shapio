@@ -27,9 +27,12 @@ describe('shapio import wordpress | strapi arguments', () => {
     expect((await run(['strapi', 'x.tar.gz', '--map', 'out'])).stderr).toContain('leave the file out');
   });
 
-  it('takes --shared on --plan only, and not with --site', async () => {
+  it('takes --shared on --plan only, and not with --workspace (or --site)', async () => {
+    expect(
+      (await run(['strapi', 'x.tar', '--plan', 'out', '--shared', '--workspace', 'blog'])).stderr,
+    ).toContain('Pass either --workspace <key> or --shared, not both');
     expect((await run(['strapi', 'x.tar', '--plan', 'out', '--shared', '--site', 'blog'])).stderr).toContain(
-      'Pass either --site <key> or --shared, not both',
+      'Pass either --workspace <key> or --shared, not both',
     );
     expect((await run(['strapi', '--map', 'out', '--shared'])).stderr).toContain(
       '--shared is a --plan option',
@@ -114,15 +117,49 @@ describe('shapio import --plan --url: which site names are checked on', () => {
     // The first request asks which site; the name check then reads that site's view.
     expect(siteHeaders(fetch)).toEqual([null, 'marketing']);
     expect(await readdir(join(dir, 'schema', 'sites'))).toEqual(['marketing']);
-    expect(result.stdout).toContain('will belong to site "marketing"');
-    expect(result.stdout).toContain('--site marketing');
+    expect(result.stdout).toContain('will belong to workspace "marketing"');
+    expect(result.stdout).toContain('--workspace marketing');
   });
 
   it('offline, plans for the built-in site and still names it in the next steps', async () => {
     const dir = await planDir();
     const result = await run(['wordpress', WXR, '--plan', dir]);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('will belong to site "default", the built-in site');
-    expect(result.stdout).toContain('schema-lock.json --site default');
+    expect(result.stdout).toContain('will belong to workspace "default", the built-in workspace');
+    expect(result.stdout).toContain('schema-lock.json --workspace default');
+  });
+
+  it('plans for the workspace --workspace, --site, SHAPIO_WORKSPACE or SHAPIO_SITE names', async () => {
+    const cases: Array<[string[], Record<string, string>]> = [
+      [['--workspace', 'blog'], {}],
+      [['--site', 'blog'], {}],
+      [['--workspace', 'blog', '--site', 'blog'], {}],
+      [[], { SHAPIO_WORKSPACE: 'blog' }],
+      [[], { SHAPIO_WORKSPACE: 'blog', SHAPIO_SITE: 'blog' }],
+      [[], { SHAPIO_SITE: 'blog' }],
+      // The flags win over the environment.
+      [['--workspace', 'blog'], { SHAPIO_WORKSPACE: 'shop' }],
+    ];
+    for (const [flags, env] of cases) {
+      const dir = await planDir();
+      const result = await run(['wordpress', WXR, '--plan', dir, ...flags], env);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('will belong to workspace "blog"');
+      expect(await readdir(join(dir, 'schema', 'sites'))).toEqual(['blog']);
+      await rm(scratch ?? '', { recursive: true, force: true });
+    }
+  });
+
+  it('refuses two different workspaces in the flags or in the environment', async () => {
+    const dir = await planDir();
+    const flags = await run(['wordpress', WXR, '--plan', dir, '--workspace', 'a', '--site', 'b']);
+    expect(flags.code).toBe(1);
+    expect(flags.stderr).toContain('--workspace "a" and --site "b" name different workspaces');
+    const env = await run(['wordpress', WXR, '--plan', dir], {
+      SHAPIO_WORKSPACE: 'a',
+      SHAPIO_SITE: 'b',
+    });
+    expect(env.code).toBe(1);
+    expect(env.stderr).toContain('SHAPIO_WORKSPACE "a" and SHAPIO_SITE "b" name different workspaces');
   });
 });

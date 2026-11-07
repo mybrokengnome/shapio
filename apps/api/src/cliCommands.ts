@@ -218,28 +218,29 @@ const adminCommand: CliCommand = {
   },
 };
 
-const SITES_USAGE =
-  'shapio sites list\n' +
-  'shapio sites create --key <key> --name <name>\n' +
-  'shapio sites make-primary --key <key>\n' +
-  '  Lists, creates, or makes primary sites directly in the database (sites share the admins, roles and shared\n' +
-  '  content types; each has its own content types, content, media, tokens and snapshots). Keys are lower case\n' +
-  '  and fixed once created. The primary site answers requests that name no site; making another site primary\n' +
-  '  takes effect right away, and the former primary can then be deleted once it is empty.';
+const WORKSPACES_USAGE =
+  'shapio workspaces list\n' +
+  'shapio workspaces create --key <key> --name <name>\n' +
+  'shapio workspaces make-primary --key <key>\n' +
+  '  Lists, creates, or makes primary workspaces directly in the database (workspaces share the admins, roles\n' +
+  '  and shared content types; each has its own content types, content, media, tokens and snapshots). Keys are\n' +
+  '  lower case and fixed once created. The primary workspace answers requests that name no workspace; making\n' +
+  '  another workspace primary takes effect right away, and the former primary can then be deleted once it is\n' +
+  '  empty.';
 
-const SITES_SUBCOMMANDS = ['list', 'create', 'make-primary'] as const;
-type SitesSubcommand = (typeof SITES_SUBCOMMANDS)[number];
+const WORKSPACES_SUBCOMMANDS = ['list', 'create', 'make-primary'] as const;
+type WorkspacesSubcommand = (typeof WORKSPACES_SUBCOMMANDS)[number];
 
 const SITE_KEY_RE = new RegExp(SITE_KEY_PATTERN);
 
 const usageError = (io: CliIo) => {
-  io.stderr(`Usage: ${SITES_USAGE}\n`);
+  io.stderr(`Usage: ${WORKSPACES_USAGE}\n`);
   return 1;
 };
 
-const runSitesSubcommand = async (
+const runWorkspacesSubcommand = async (
   db: Database,
-  subcommand: SitesSubcommand,
+  subcommand: WorkspacesSubcommand,
   options: Map<string, string>,
   io: CliIo,
 ) => {
@@ -256,11 +257,11 @@ const runSitesSubcommand = async (
     }
     try {
       const site = await makePrimarySite(SYSTEM_CLI_ACTOR, { by: 'key', key }, db);
-      io.stdout(`Site ${site.key} is now the primary site.\n`);
+      io.stdout(`Workspace ${site.key} is now the primary workspace.\n`);
       return 0;
     } catch (error) {
       if (error instanceof AppError && error.code === 'SITE_NOT_FOUND') {
-        io.stderr(`No site has the key "${key}".\n`);
+        io.stderr(`No workspace has the key "${key}".\n`);
         return 1;
       }
       throw error;
@@ -271,39 +272,46 @@ const runSitesSubcommand = async (
     return usageError(io);
   }
   const site = await createSite(SYSTEM_CLI_ACTOR, { key, name }, db);
-  io.stdout(`Created site ${site.key} (${site.id}).\n`);
+  io.stdout(`Created workspace ${site.key} (${site.id}).\n`);
   return 0;
 };
 
-const runSites = async (subcommand: SitesSubcommand, options: Map<string, string>, io: CliIo) => {
+const runWorkspaces = async (subcommand: WorkspacesSubcommand, options: Map<string, string>, io: CliIo) => {
   const config = loadConfig();
-  const db = createDb({ connectionString: config.database.url, poolMax: 2, applicationName: 'shapio-sites' });
+  const db = createDb({
+    connectionString: config.database.url,
+    poolMax: 2,
+    applicationName: 'shapio-workspaces',
+  });
   try {
     if ((await getPendingMigrations(db)).length > 0) {
       io.stderr('Database migrations are pending; run `shapio migrate` (or start the server) first.\n');
       return 1;
     }
-    return await runSitesSubcommand(db, subcommand, options, io);
+    return await runWorkspacesSubcommand(db, subcommand, options, io);
   } finally {
     await db.destroy();
   }
 };
 
-const isSitesSubcommand = (value: string | undefined): value is SitesSubcommand =>
-  SITES_SUBCOMMANDS.includes(value as SitesSubcommand);
+const isWorkspacesSubcommand = (value: string | undefined): value is WorkspacesSubcommand =>
+  WORKSPACES_SUBCOMMANDS.includes(value as WorkspacesSubcommand);
 
-const sitesCommand: CliCommand = {
+const workspacesCommand: CliCommand = {
   summary:
-    'List, create, or make primary sites directly in the database (sites list | sites create --key ... --name ... | sites make-primary --key ...)',
-  usage: SITES_USAGE,
+    'List, create, or make primary workspaces directly in the database (workspaces list | workspaces create --key ... --name ... | workspaces make-primary --key ...)',
+  usage: WORKSPACES_USAGE,
   run: async (args, io) => {
     const [subcommand, ...rest] = args;
-    if (!isSitesSubcommand(subcommand)) {
+    if (!isWorkspacesSubcommand(subcommand)) {
       return usageError(io);
     }
-    return runSites(subcommand, parseOptions(rest), io);
+    return runWorkspaces(subcommand, parseOptions(rest), io);
   },
 };
+
+/** `shapio sites ...`, the name before 0.8.2: still runs, left out of the help and the CLI reference. */
+const sitesCommand: CliCommand = { ...workspacesCommand, hidden: true };
 
 const EXTENSIONS_USAGE =
   'shapio extensions check\n' +
@@ -334,6 +342,7 @@ const LOCAL_COMMANDS: Readonly<Record<string, CliCommand>> = {
   admin: adminCommand,
   media: mediaCommand,
   mcp: mcpCommand,
+  workspaces: workspacesCommand,
   sites: sitesCommand,
   extensions: extensionsCommand,
 };
@@ -341,11 +350,14 @@ const LOCAL_COMMANDS: Readonly<Record<string, CliCommand>> = {
 /** Every `shapio` command: the server-side ones here and the remote ones from packages/cli. */
 export const COMMANDS: Readonly<Record<string, CliCommand>> = { ...LOCAL_COMMANDS, ...REMOTE_COMMANDS };
 
+/** The commands help and the CLI reference list: every one but the hidden older names. */
+export const listedCommands = (): Array<[string, CliCommand]> =>
+  Object.entries(COMMANDS).filter(([, command]) => command.hidden !== true);
+
 export const helpText = () => {
-  const width = Math.max(...Object.keys(COMMANDS).map((name) => name.length));
-  const lines = Object.entries(COMMANDS).map(
-    ([name, command]) => `  ${name.padEnd(width)}  ${command.summary}`,
-  );
+  const listed = listedCommands();
+  const width = Math.max(...listed.map(([name]) => name.length));
+  const lines = listed.map(([name, command]) => `  ${name.padEnd(width)}  ${command.summary}`);
   return `shapio ${SHAPIO_VERSION}\n\nUsage: shapio <command> [options]\n\nCommands:\n${lines.join('\n')}\n`;
 };
 

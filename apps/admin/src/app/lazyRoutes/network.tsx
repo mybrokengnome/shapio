@@ -13,8 +13,8 @@ import { Users } from '@/features/Users';
 
 /** The network view's screens (sites plan §H), loaded together on the first visit. */
 export const networkLazyRoutes = {
-  sites: createLazyRoute('/app/network/sites')({ component: Sites }),
-  site: createLazyRoute('/app/network/sites/$siteId')({ component: Site }),
+  sites: createLazyRoute('/app/network/workspaces')({ component: Sites }),
+  site: createLazyRoute('/app/network/workspaces/$siteId')({ component: Site }),
   contentTypes: createLazyRoute('/app/network/content-types/')({ component: ContentTypes }),
   newContentType: createLazyRoute('/app/network/content-types/new')({ component: NewContentType }),
   users: createLazyRoute('/app/network/users')({ component: Users }),

@@ -85,7 +85,7 @@ const preSitesSiteId = async (db: Database): Promise<string> => {
   const site = await findPreSitesSite(db);
   if (!site) {
     throw new PermanentJobError(
-      'This import was queued before sites existed and its site was deleted; run the import again',
+      'This import was queued before workspaces existed and its workspace was deleted; run the import again',
     );
   }
   return site.id;

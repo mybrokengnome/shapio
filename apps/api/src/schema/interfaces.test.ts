@@ -56,7 +56,7 @@ describe('interface scopes', () => {
     expect(found.map((issue) => `${issue.definitionId ?? ''} ${issue.path} ${issue.code}`)).toEqual([
       `${uuid(3)} /implements/0 INVALID_INTERFACE`,
     ]);
-    expect(found[0]?.message).toContain('"featurable" is on site "a" and this type is on site "b"');
+    expect(found[0]?.message).toContain('"featurable" is in workspace "a" and this type is in workspace "b"');
   });
 
   it("a shared type may not implement a site's interface", () => {

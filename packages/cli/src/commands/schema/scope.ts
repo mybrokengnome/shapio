@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import { categoryOfKind } from '@shapio/schema';
+import { workspaceFromFlags } from '../../helpers/workspace.js';
 import type { CliCommand, CliIo } from '../../types.js';
 import { CONNECTION_FLAGS, resolveConnection, UsageError } from './options.js';
 import { clientFor } from './sync.js';
@@ -24,8 +25,10 @@ const parseScopeOptions = (args: readonly string[], io: CliIo): ScopeOptions => 
   if (!apiKey || extra.length > 0) {
     throw new UsageError('Name one model, component, or interface by its API ID');
   }
-  if (!values.shared && !values.site) {
-    throw new UsageError('Pass --site <key> to keep it on that site, or --shared to share it with all sites');
+  if (!values.shared && workspaceFromFlags(values) === undefined) {
+    throw new UsageError(
+      'Pass --workspace <key> to keep it in that workspace, or --shared to share it with all workspaces',
+    );
   }
   const version = values.version === undefined ? undefined : Number(values.version);
   if (version !== undefined && (!Number.isInteger(version) || version < 1)) {
@@ -35,15 +38,16 @@ const parseScopeOptions = (args: readonly string[], io: CliIo): ScopeOptions => 
 };
 
 /**
- * `shapio schema scope <apiKey> --site <key> | --shared [--site <key>]`: keeps a shared definition on one
- * site, or shares a site's definition with all sites (needs schema permission on every site). `--site`
- * names the site whose view the API ID is resolved in. Live, through the same endpoint as the admin.
+ * `shapio schema scope <apiKey> --workspace <key> | --shared [--workspace <key>]`: keeps a shared definition in
+ * one workspace, or shares a workspace's definition with all workspaces (needs schema permission on every
+ * workspace). `--workspace` names the workspace whose view the API ID is resolved in. Live, through the same
+ * endpoint as the admin.
  */
 export const schemaScopeCommand: CliCommand = {
   summary:
-    'Keep a shared model, component, or interface on one site (--site), or share a site’s with all sites (--shared)',
+    'Keep a shared model, component, or interface in one workspace (--workspace), or share a workspace’s with all workspaces (--shared)',
   usage:
-    'shapio schema scope <apiKey> (--site <key> | --shared [--site <key>]) [--url <origin>] [--token <admin token>] [--version <n>]',
+    'shapio schema scope <apiKey> (--workspace <key> | --shared [--workspace <key>]) [--url <origin>] [--token <admin token>] [--version <n>]',
   run: async (args, io) => {
     const options = parseScopeOptions(args, io);
     const client = clientFor(options);
@@ -51,7 +55,9 @@ export const schemaScopeCommand: CliCommand = {
     const siteKey = options.site ?? exported.site?.key ?? '(default)';
     const found = exported.definitions.find(({ definition }) => definition.apiKey === options.apiKey);
     if (!found) {
-      io.stderr(`Site "${siteKey}" has no model, component, or interface with API ID "${options.apiKey}".\n`);
+      io.stderr(
+        `Workspace "${siteKey}" has no model, component, or interface with API ID "${options.apiKey}".\n`,
+      );
       return 1;
     }
     const api = {
@@ -63,12 +69,13 @@ export const schemaScopeCommand: CliCommand = {
       scope: options.shared ? 'network' : 'site',
       version: options.version ?? found.version,
     });
-    const where = outcome.scope === 'network' ? 'shared with all sites' : `on site "${siteKey}" only`;
+    const where =
+      outcome.scope === 'network' ? 'shared with all workspaces' : `in workspace "${siteKey}" only`;
     io.stdout(
       outcome.status === 'unchanged'
         ? `${options.apiKey} is already ${where}.\n`
         : `${options.apiKey} is now ${where} (version ${outcome.version}, schema version ${outcome.schemaVersion}).\n` +
-            `Pull to move its file: shapio schema pull --site ${siteKey}\n`,
+            `Pull to move its file: shapio schema pull --workspace ${siteKey}\n`,
     );
     return 0;
   },

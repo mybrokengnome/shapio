@@ -55,7 +55,7 @@ export type NavPath =
   | '/settings/locales'
   | '/settings'
   | '/network'
-  | '/network/sites'
+  | '/network/workspaces'
   | '/network/content-types'
   | '/network/approval'
   | '/network/users'
@@ -200,7 +200,7 @@ export const WORKSPACE_ITEMS: readonly NavItemDefinition[] = [
 
 /** The network view (sites plan §H): about the whole instance rather than one site. */
 export const NETWORK_ITEMS: readonly NavItemDefinition[] = [
-  { key: 'sites', labelKey: 'shell.nav.sites', icon: Globe2, to: '/network/sites' },
+  { key: 'sites', labelKey: 'shell.nav.sites', icon: Globe2, to: '/network/workspaces' },
   {
     key: 'contentTypes',
     labelKey: 'shell.nav.sharedContentTypes',

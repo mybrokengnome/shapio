@@ -106,7 +106,7 @@ Shapio checks every entry against a set of health rules and lists what it finds 
 you**, one group per rule. Findings are warnings and block nothing themselves, though publishing still
 refuses content that fails validation (an empty required field, a taken unique value). A finding disappears
 by itself once the content is fixed, so there is nothing to dismiss. On an instance with several
-sites, each site sees the findings for its own entries ([Sites](sites.md)).
+workspaces, each workspace sees the findings for its own entries ([Workspaces](workspaces.md)).
 
 | Rule                  | Inbox group                    | What it detects                                                                                                                                                              | Models      | Propose fixes |
 | --------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------- |

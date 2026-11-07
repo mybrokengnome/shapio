@@ -37,14 +37,14 @@ export const formatPlanSummary = (
   lines.push(...source.notes);
   lines.push(
     !site
-      ? 'The models and components will be shared with all sites (--shared): applying them needs a network admin token.'
+      ? 'The models and components will be shared with all workspaces (--shared): applying them needs a network admin token.'
       : explicit
-        ? `The models and components will belong to site "${site}".`
-        : `The models and components will belong to site "${site}", the built-in site. Plan with --site <key> for another site, or --shared to share them with all sites.`,
+        ? `The models and components will belong to workspace "${site}" (schema/sites/${site}/).`
+        : `The models and components will belong to workspace "${site}", the built-in workspace (schema/sites/${site}/). Plan with --workspace <key> for another workspace, or --shared to share them with all workspaces.`,
   );
-  // Always named: without --site, apply would target the token's site or the primary site, which may not be
-  // the site the plan was written for.
-  const siteFlag = site ? ` --site ${site}` : '';
+  // Always named: without --workspace, apply would target the token's workspace or the primary workspace, which
+  // may not be the workspace the plan was written for.
+  const siteFlag = site ? ` --workspace ${site}` : '';
   lines.push(
     'Next:',
     '  1. Review the files: rename API IDs or delete fields you do not want (entries follow the stable IDs).',

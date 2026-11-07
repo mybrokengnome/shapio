@@ -69,7 +69,7 @@ const isEntryId = (id: string): boolean => isStableId(id);
 export const MAX_TARGET_IDS = 100;
 
 const fieldNotFound = (fieldId: string) =>
-  new AppError(404, 'FIELD_NOT_FOUND', `No relation field ${fieldId} in this site's schema`, {
+  new AppError(404, 'FIELD_NOT_FOUND', `No relation field ${fieldId} in this workspace's schema`, {
     field: fieldId,
   });
 

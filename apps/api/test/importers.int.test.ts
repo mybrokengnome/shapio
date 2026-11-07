@@ -240,8 +240,8 @@ describe('shapio import onto one site of several', () => {
     const dir = join(instance.workdir, 'wordpress-blog');
     const planned = await runCli('import', ['wordpress', wxr, '--plan', dir, '--site', 'blog'], instance.env);
     expect(planned.code, planned.stderr).toBe(0);
-    expect(planned.stdout).toContain('will belong to site "blog"');
-    expect(planned.stdout).toContain('--site blog');
+    expect(planned.stdout).toContain('will belong to workspace "blog"');
+    expect(planned.stdout).toContain('--workspace blog');
     expect(await readFile(join(dir, 'schema', 'sites', 'blog', 'models', 'post.json'), 'utf8')).toContain(
       '"apiKey": "post"',
     );
@@ -250,7 +250,7 @@ describe('shapio import onto one site of several', () => {
     // Another site than the planned one is refused, before anything is sent.
     const elsewhere = await runCli('import', ['wordpress', '--map', dir, '--site', 'default'], instance.env);
     expect(elsewhere.code).toBe(1);
-    expect(elsewhere.stderr).toContain('planned for site "blog", not "default"');
+    expect(elsewhere.stderr).toContain('planned for workspace "blog", not "default"');
     // Without --site, --map imports into the site the plan recorded.
     const mapped = await runCli('import', ['wordpress', '--map', dir], instance.env);
     expect(mapped.code, mapped.stderr).toBe(0);
@@ -289,9 +289,9 @@ describe('shapio import strapi', () => {
     expect(planned.code, planned.stderr).toBe(0);
     expect(planned.stdout).toContain('Draft and publish is turned on for author');
     // No --site and offline: the built-in site's models, which an ordinary admin token applies.
-    expect(planned.stdout).toContain('will belong to site "default", the built-in site');
+    expect(planned.stdout).toContain('will belong to workspace "default", the built-in workspace');
     expect(planned.stdout).toContain(
-      `schema-lock.json --site default\n  3. shapio import strapi --map ${dir} --site default\n`,
+      `schema-lock.json --workspace default\n  3. shapio import strapi --map ${dir} --workspace default\n`,
     );
     expect(
       await readFile(join(dir, 'schema', 'sites', 'default', 'models', 'article.json'), 'utf8'),
@@ -348,7 +348,7 @@ describe('shapio import strapi', () => {
     const dir = join(instance.workdir, 'strapi-shared');
     const planned = await runCli('import', ['strapi', archive, '--plan', dir, '--shared'], instance.env);
     expect(planned.code, planned.stderr).toBe(0);
-    expect(planned.stdout).toContain('shared with all sites (--shared)');
+    expect(planned.stdout).toContain('shared with all workspaces (--shared)');
     expect(await readFile(join(dir, 'schema', 'models', 'article.json'), 'utf8')).toContain(
       '"apiKey": "article"',
     );

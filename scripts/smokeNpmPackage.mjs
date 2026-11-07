@@ -117,7 +117,8 @@ const startAndProbe = async (label, command, args, cwd, env, probe = async () =>
 };
 
 const SITE_STARTERS = ['astro', 'next', 'sveltekit'];
-const REPOSITORY_ONLY = ['workspace:', 'catalog:', '@shapio/source', '../shared/'];
+// The pnpm protocols are matched as quoted JSON values, so createClient({ workspace: key }) in a starter is not one.
+const REPOSITORY_ONLY = ['"workspace:', '"catalog:', '@shapio/source', '../shared/'];
 
 const filesUnder = (directory) =>
   readdirSync(directory, { withFileTypes: true, recursive: true })

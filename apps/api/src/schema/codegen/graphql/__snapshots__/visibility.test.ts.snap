@@ -120,7 +120,7 @@ type Query {
   """The current snapshot and schema version"""
   _snapshot: SnapshotInfo!
 
-  """The request's site: its key, name and SEO defaults"""
+  """The request's workspace: its key, name and SEO defaults"""
   _site: SiteInfo!
 }
 
@@ -348,9 +348,12 @@ type SnapshotInfo {
   publishedAt: String
 }
 
-"""The site this request reads, and its SEO defaults"""
+"""The workspace this request reads, and its SEO defaults"""
 type SiteInfo {
+  """The workspace's key"""
   key: String!
+
+  """The workspace's name"""
   name: String!
   seo: SiteSeoDefaults!
 }

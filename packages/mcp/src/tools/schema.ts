@@ -7,8 +7,8 @@ import { runTool } from './results.js';
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const;
 
 const SHARED_DESCRIPTION =
-  'For a new definition only: true shares it with all sites (needs schema permission on every site). ' +
-  "Default false: it belongs to this server's site. An existing definition keeps its scope.";
+  'For a new definition only: true shares it with all workspaces (needs schema permission on every ' +
+  "workspace). Default false: it belongs to this server's workspace. An existing definition keeps its scope.";
 
 const DEFINITION_DESCRIPTION =
   'A whole definition in Shapio\'s authored format: { kind: "collection" | "singleton" | "component" | ' +
@@ -29,8 +29,8 @@ export const registerSchemaTools = ({ server, client }: ToolContext) => {
     {
       title: 'List content types',
       description:
-        "Every model (collection, singleton), component and interface of this server's site (its own and the " +
-        'ones shared with all sites) with its kind, API IDs, scope, version and fields (types only). A ' +
+        "Every model (collection, singleton), component and interface of this server's workspace (its own and " +
+        'the ones shared with all workspaces) with its kind, API IDs, scope, version and fields (types only). A ' +
         'collection that extends another names it in extends and lists the inherited fields first, each with ' +
         "inheritedFrom. A type lists the interfaces it implements (its parents' too) in implements. An " +
         "interface's fields are its contract, and members lists the types that implement it. Delivery reads use " +

@@ -18,12 +18,13 @@ import { importStrapiCommand } from './strapi.js';
 import { importWordPressCommand } from './wordpress.js';
 
 const USAGE =
-  'shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>\n' +
+  'shapio import [--url <origin>] [--token <admin token>] [--workspace <key>] [--dry-run] [--prune] [--no-wait] <file>\n' +
   '  Plans the import (--dry-run stops there) and refuses it, writing nothing, on any conflict.\n' +
   '  An import never changes an existing model: a model the target has in another form is a conflict.\n' +
   "  Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the\n" +
   '  files (git diff), `shapio schema apply`, then import again.\n' +
-  "  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.\n" +
+  "  --workspace (or SHAPIO_WORKSPACE) names the workspace the bundle goes to; default: the token's workspace,\n" +
+  '  else the primary workspace.\n' +
   '\n' +
   `${importWordPressCommand.usage}\n\n${importStrapiCommand.usage}`;
 const FLAGS = ['dry-run', 'prune', 'no-wait'] as const;

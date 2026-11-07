@@ -49,6 +49,13 @@ export const Setup = () => {
             type="password"
             autoComplete="new-password"
           />
+          <FormTextField
+            control={control}
+            name="workspaceName"
+            label={t('setup.workspaceName')}
+            hint={t('setup.workspaceNameHint')}
+            autoComplete="off"
+          />
           <FormError error={setup.error} />
           <SubmitButton
             pending={setup.isPending}

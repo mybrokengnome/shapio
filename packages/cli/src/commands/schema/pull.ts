@@ -6,21 +6,21 @@ import { editedFilesForSite, staleFilesAfterPull } from './siteTree.js';
 import { apiFor, readLocalState } from './sync.js';
 
 /**
- * `shapio schema pull`: writes one site's view of the instance (the shared definitions in `models/`,
- * `components/`, and `interfaces/`, the site's own under `sites/<key>/`) as canonical JSON, one file per
- * definition,
- * and records what was pulled in the lock file. Another site's folder and lock entries are left alone, so one
- * tree can hold several sites. Refuses to overwrite local edits in the pulled folders unless --force.
+ * `shapio schema pull`: writes one workspace's view of the instance (the shared definitions in `models/`,
+ * `components/`, and `interfaces/`, the workspace's own under `sites/<key>/`) as canonical JSON, one file per
+ * definition, and records what was pulled in the lock file. Another workspace's folder and lock entries are left
+ * alone, so one tree can hold several workspaces. Refuses to overwrite local edits in the pulled folders unless
+ * --force.
  */
 export const schemaPullCommand: CliCommand = {
   summary:
-    'Write a site’s models, components, and interfaces (shared and its own) to schema files and the lock file',
+    'Write a workspace’s models, components, and interfaces (shared and its own) to schema files and the lock file',
   usage: `shapio schema pull ${COMMON_USAGE} [--force]`,
   run: async (args, io) => {
     const options = parseSchemaOptions(args, io);
     const exported = await apiFor(options).export();
     if (!exported.site) {
-      throw new Error('The instance did not say which site this view is; pass --site <key>');
+      throw new Error('The instance did not say which workspace this view is; pass --workspace <key>');
     }
     const siteKey = exported.site.key;
     const state = await readLocalState(options);
@@ -37,7 +37,7 @@ export const schemaPullCommand: CliCommand = {
       written.set(definition.id, await writeDefinitionFile(options.dir, definition, site));
     }
     // The pulled folders mirror the instance: files of definitions that no longer exist, were renamed or
-    // moved to another scope are removed. Another site's folder is never touched.
+    // moved to another scope are removed. Another workspace's folder is never touched.
     for (const file of staleFilesAfterPull(state.files, siteKey, written)) {
       await removeFile(file.path);
     }
@@ -50,7 +50,7 @@ export const schemaPullCommand: CliCommand = {
       }),
     );
     io.stdout(
-      `Pulled ${exported.definitions.length} definition(s) of site "${siteKey}" at schema version ${exported.schemaVersion} into ${displayPath(options.dir)}\n`,
+      `Pulled ${exported.definitions.length} definition(s) of workspace "${siteKey}" at schema version ${exported.schemaVersion} into ${displayPath(options.dir)}\n`,
     );
     return 0;
   },

@@ -19,13 +19,13 @@ import type {
  */
 export type { DefinitionCategory };
 
-/** Where a definition lives: one site (`site`), or shared with every site (`network`). */
+/** Where a definition lives: one workspace (`site`), or shared with every workspace (`network`). */
 export type DefinitionScope = 'network' | 'site';
 
 export type ActiveDefinition = {
   definition: SchemaDefinition;
   scope: DefinitionScope;
-  /** The site a `site` definition belongs to; null when shared. */
+  /** The workspace a `site` definition belongs to; null when shared. */
   siteId: string | null;
   /** Per-definition version: send it back as `expectedVersion` when changing the definition. */
   version: number;
@@ -89,7 +89,7 @@ export type ChangePlan = {
   kind: SchemaDefinition['kind'];
   apiKey: string;
   operation: 'create' | 'update' | 'delete';
-  /** The definition's site after the change; null when shared. */
+  /** The definition's workspace after the change; null when shared. */
   siteId?: string | null;
   fromVersion: number | null;
   changes: ClassifiedChange[];
@@ -142,14 +142,17 @@ export type Acknowledgement = { acknowledgeBreaking?: boolean; acknowledgeDestru
 
 export type CreateDefinitionInput = {
   definition: DefinitionPayload;
-  /** Default `site`: the request's site. `network` shares it with all sites (schema.create on every site). */
+  /**
+   * Default `site`: the request's workspace. `network` shares it with all workspaces (schema.create on every
+   * workspace).
+   */
   scope?: DefinitionScope;
 } & Acknowledgement;
 
-/** `PUT /api/admin/{models,components}/:id/scope`: share with all sites, or keep on one site. */
+/** `PUT /api/admin/{models,components}/:id/scope`: share with all workspaces, or keep on one. */
 export type ChangeScopeInput = {
   scope: DefinitionScope;
-  /** For `site`: the site to keep it on (default: the request's site). */
+  /** For `site`: the workspace to keep it on (default: the request's workspace). */
   siteId?: string;
   /** The definition's active version (409 SCHEMA_VERSION_CONFLICT when it moved). */
   version: number;
@@ -195,7 +198,7 @@ export type SchemaSummaryItem = {
   label: string;
   version: number;
   hash: string;
-  /** The key of the site the definition belongs to; null when shared. */
+  /** The key of the workspace the definition belongs to; null when shared. */
   site: string | null;
 };
 

@@ -16,13 +16,13 @@ import { createLocalClient } from '@shapio/local';
 export const shapio = createLocalClient({
   databaseUrl: process.env.DATABASE_URL!, // Shapio's own database
   token: process.env.SHAPIO_DELIVERY_TOKEN, // a delivery token; leave it out to read as an anonymous caller
-  site: process.env.SHAPIO_SITE, // optional, as over HTTP
+  workspace: process.env.SHAPIO_WORKSPACE, // optional, as over HTTP
 });
 
 const { data } = await shapio.delivery.list<Article>('articles', { locale: 'fr', populate: ['author'] });
 ```
 
-`createLocalClient` returns the `delivery`, `site` and `snapshots` groups of `@shapio/client` (the same methods
+`createLocalClient` returns the `delivery`, `workspace` (also as `site`), and `snapshots` groups of `@shapio/client` (the same methods
 and types as `createClient`) and `close()`. Creating it reads nothing; the first call does.
 
 Model changes made in the admin show on the next call, without restarting the site: every call reads the schema
@@ -43,7 +43,7 @@ version`). The server records its release in the database each time it starts; u
 ## What the site can see
 
 In-process reads are delivery reads: published content only, through the delivery token's role (or the
-site's `public` role without a token), with hidden fields hidden. Admin API tokens are refused
+workspace's `public` role without a token), with hidden fields hidden. Admin API tokens are refused
 (`403 DELIVERY_TOKEN_REQUIRED`), and there is no way to read drafts, previews or the admin API in process.
 GraphQL and writes are not available in process either; use the HTTP API for them.
 
@@ -100,7 +100,7 @@ import { shapioTags } from '@shapio/local/next';
 
 export const getArticles = async (locale: string) => {
   'use cache';
-  cacheTag(shapioTags.site(), shapioTags.model('articles'));
+  cacheTag(shapioTags.workspace(), shapioTags.model('articles'));
   return (await shapio.delivery.list<Article>('articles', { locale })).data;
 };
 ```
@@ -161,16 +161,16 @@ back is automatic. Pages rendered at build time are unaffected; only reads made 
 
 ## Options
 
-| Option             | Default                        | Meaning                                                                                                     |
-| ------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `databaseUrl`      | required                       | Shapio's database (`postgres://…` or `mysql://…`)                                                           |
-| `token`            | none (anonymous)               | a delivery API token                                                                                        |
-| `site`             | the token's site, else primary | the site key                                                                                                |
-| `poolMax`          | 4                              | connections in the process's pool                                                                           |
-| `acquireTimeoutMs` | 10000                          | wait for a pooled connection before a 503                                                                   |
-| `signingSecret`    | the server's stored secret     | private local media; the server's `SESSION_SECRET` when it sets it                                          |
-| `s3Credentials`    | the AWS SDK's credential chain | private S3 media                                                                                            |
-| `onVersionSkew`    | `'throw'`                      | `'http'` reads over HTTP from `fallbackUrl` during a release skew                                           |
-| `fallbackUrl`      | none                           | the Shapio server's URL, with `BASE_PATH`                                                                   |
-| `logger`           | pino, warnings and errors only | a pino logger for failures                                                                                  |
-| `drafts`           | `false`                        | [drafts mode](delivery-api.md#drafts-in-development): read saved drafts; the token's role needs Read drafts |
+| Option             | Default                             | Meaning                                                                                                     |
+| ------------------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `databaseUrl`      | required                            | Shapio's database (`postgres://…` or `mysql://…`)                                                           |
+| `token`            | none (anonymous)                    | a delivery API token                                                                                        |
+| `workspace`        | the token's workspace, else primary | the workspace key (`site` is also accepted)                                                                 |
+| `poolMax`          | 4                                   | connections in the process's pool                                                                           |
+| `acquireTimeoutMs` | 10000                               | wait for a pooled connection before a 503                                                                   |
+| `signingSecret`    | the server's stored secret          | private local media; the server's `SESSION_SECRET` when it sets it                                          |
+| `s3Credentials`    | the AWS SDK's credential chain      | private S3 media                                                                                            |
+| `onVersionSkew`    | `'throw'`                           | `'http'` reads over HTTP from `fallbackUrl` during a release skew                                           |
+| `fallbackUrl`      | none                                | the Shapio server's URL, with `BASE_PATH`                                                                   |
+| `logger`           | pino, warnings and errors only      | a pino logger for failures                                                                                  |
+| `drafts`           | `false`                             | [drafts mode](delivery-api.md#drafts-in-development): read saved drafts; the token's role needs Read drafts |

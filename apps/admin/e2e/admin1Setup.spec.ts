@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { OWNER } from './support/accounts';
+import { BUILT_IN_WORKSPACE, OWNER } from './support/accounts';
 import { captureScreen, type ViewportName } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 
@@ -51,12 +51,17 @@ test('setup validates inline before calling the API', async () => {
 test('setup creates the owner and opens the shell', async () => {
   // No setup token by default (SETUP_REQUIRE_TOKEN unset): the first visitor creates the owner.
   await expect(page.getByLabel('Setup token')).toHaveCount(0);
-  await page.getByLabel('Name').fill(OWNER.name);
+  await page.getByLabel('Name', { exact: true }).fill(OWNER.name);
   await page.getByLabel('Email').fill(OWNER.email);
   await page.getByLabel('Password', { exact: true }).fill(OWNER.password);
   await page.getByLabel('Confirm password').fill(OWNER.password);
+  // The built-in workspace's name comes prefilled; the owner may change it (the key stays `default`).
+  await expect(page.getByRole('textbox', { name: 'Workspace name' })).toHaveValue(BUILT_IN_WORKSPACE);
   await page.getByRole('button', { name: 'Create owner account' }).click();
   await expect(page.getByRole('heading', { name: `Welcome, ${OWNER.name}` })).toBeVisible();
   await expect(page).toHaveURL(/\/cms\/admin\/s\/default\/$/);
+  await expect(
+    page.getByRole('button', { name: `Switch workspace (current: ${BUILT_IN_WORKSPACE})` }),
+  ).toBeVisible();
   await captureScreen(page, '03-home');
 });

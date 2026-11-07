@@ -21,6 +21,7 @@ Variables only the CLI reads:
 | --- | --- | --- |
 | `SHAPIO_URL` | remote commands | The instance to talk to. |
 | `SHAPIO_TOKEN` | remote commands | An admin API token. |
+| `SHAPIO_WORKSPACE` | remote commands, `shapio mcp` | The workspace key to work on (`--workspace` overrides it); default: the token’s workspace, else the primary workspace. `SHAPIO_SITE` is also accepted. |
 | `SHAPIO_ADMIN_PASSWORD` | `shapio admin create` | The new admin’s password; without it one is generated and printed once. |
 
 ## Server commands
@@ -98,26 +99,28 @@ shapio media migrate --from <local|s3> --to <local|s3> [--delete-source]
 Print the configuration that connects Claude Code, Cursor, Claude Desktop or any MCP client through @shapio/mcp.
 
 ```text
-shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--site <key>]
+shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--workspace <key>]
   Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then
-  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else
-  the primary site). --client generic prints the stdio server definition any MCP client takes.
+  PUBLIC_URL + BASE_PATH. --workspace (default: SHAPIO_WORKSPACE) names the workspace the server works on,
+  for instances with several; default: the token's workspace, else the primary workspace. --client generic
+  prints the stdio server definition any MCP client takes.
   Create an admin API token whose role has neither "changes.ship" nor "changes.approve" and paste it in
   place of the placeholder: agents prepare change sets, people approve and ship them.
 ```
 
-### shapio sites
+### shapio workspaces
 
-List, create, or make primary sites directly in the database (sites list | sites create --key ... --name ... | sites make-primary --key ...).
+List, create, or make primary workspaces directly in the database (workspaces list | workspaces create --key ... --name ... | workspaces make-primary --key ...).
 
 ```text
-shapio sites list
-shapio sites create --key <key> --name <name>
-shapio sites make-primary --key <key>
-  Lists, creates, or makes primary sites directly in the database (sites share the admins, roles and shared
-  content types; each has its own content types, content, media, tokens and snapshots). Keys are lower case
-  and fixed once created. The primary site answers requests that name no site; making another site primary
-  takes effect right away, and the former primary can then be deleted once it is empty.
+shapio workspaces list
+shapio workspaces create --key <key> --name <name>
+shapio workspaces make-primary --key <key>
+  Lists, creates, or makes primary workspaces directly in the database (workspaces share the admins, roles
+  and shared content types; each has its own content types, content, media, tokens and snapshots). Keys are
+  lower case and fixed once created. The primary workspace answers requests that name no workspace; making
+  another workspace primary takes effect right away, and the former primary can then be deleted once it is
+  empty.
 ```
 
 ### shapio extensions
@@ -150,14 +153,14 @@ shapio schema <pull|diff|apply|scope> [options]
 
 ```text
 Usage:
-  shapio schema pull [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--force]
-      Write a site’s models, components, and interfaces (shared and its own) to schema files and the lock file
-  shapio schema diff [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune]
+  shapio schema pull [--url <origin>] [--token <admin token>] [--workspace <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--force]
+      Write a workspace’s models, components, and interfaces (shared and its own) to schema files and the lock file
+  shapio schema diff [--url <origin>] [--token <admin token>] [--workspace <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune]
       Show what `shapio schema apply` would change on the instance (dry run)
-  shapio schema apply [--url <origin>] [--token <admin token>] [--site <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]
+  shapio schema apply [--url <origin>] [--token <admin token>] [--workspace <key>] [--dir schema] [--lock .shapio/schema-lock.json] [--prune] [--allow-breaking] [--allow-destructive] [--no-wait] [--wait-timeout <s>]
       Apply local schema files to the instance live (three-way, per model; refuses on conflicts)
-  shapio schema scope <apiKey> (--site <key> | --shared [--site <key>]) [--url <origin>] [--token <admin token>] [--version <n>]
-      Keep a shared model, component, or interface on one site (--site), or share a site’s with all sites (--shared)
+  shapio schema scope <apiKey> (--workspace <key> | --shared [--workspace <key>]) [--url <origin>] [--token <admin token>] [--version <n>]
+      Keep a shared model, component, or interface in one workspace (--workspace), or share a workspace’s with all workspaces (--shared)
 ```
 
 ### shapio types
@@ -179,8 +182,9 @@ Usage:
 Export schema, locales, roles, content and media metadata to a bundle file (--with-media: tar with files).
 
 ```text
-shapio export [--url <origin>] [--token <admin token>] [--site <key>] [--with-media] [--heads-only] [--include-users] <file>
-  Exports one site's content (--site or SHAPIO_SITE; default: the token's site, else the primary site).
+shapio export [--url <origin>] [--token <admin token>] [--workspace <key>] [--with-media] [--heads-only] [--include-users] <file>
+  Exports one workspace's content (--workspace or SHAPIO_WORKSPACE; default: the token's workspace, else the
+  primary workspace).
 ```
 
 ### shapio import
@@ -188,35 +192,38 @@ shapio export [--url <origin>] [--token <admin token>] [--site <key>] [--with-me
 Import a bundle, or a WordPress or Strapi export (import wordpress|strapi).
 
 ```text
-shapio import [--url <origin>] [--token <admin token>] [--site <key>] [--dry-run] [--prune] [--no-wait] <file>
+shapio import [--url <origin>] [--token <admin token>] [--workspace <key>] [--dry-run] [--prune] [--no-wait] <file>
   Plans the import (--dry-run stops there) and refuses it, writing nothing, on any conflict.
   An import never changes an existing model: a model the target has in another form is a conflict.
   Reconcile the schema first: `shapio schema pull` from the target, merge the bundle's models into the
   files (git diff), `shapio schema apply`, then import again.
-  --site (or SHAPIO_SITE) names the site the bundle goes to; default: the token's site, else the primary.
+  --workspace (or SHAPIO_WORKSPACE) names the workspace the bundle goes to; default: the token's workspace,
+  else the primary workspace.
 
-shapio import wordpress <export.xml> --plan <dir> [--site <key> | --shared] [--url <origin> --token <admin token>] [--force]
-       shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--site <key>] [--media-dir <uploads dir>]
+shapio import wordpress <export.xml> --plan <dir> [--workspace <key> | --shared] [--url <origin> --token <admin token>] [--force]
+       shapio import wordpress --map <dir> [--url <origin>] [--token <admin token>] [--workspace <key>] [--media-dir <uploads dir>]
   --plan reads the export and writes the planned models (<dir>/schema) and <dir>/import-map.json.
   With --url it checks the planned API IDs against that instance and renames clashes (tag → tagItem);
   without it, it sends nothing.
-  The models belong to one site (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the
-  token's site or the primary site, else the built-in site ("default"); --shared shares them with all sites
-  (applying them needs a network admin token).
-  --map without --site imports into the planned site.
-  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
-  it uploads the media (downloaded from the site, or read from --media-dir, a copy of wp-content/uploads),
-  creates every post and page as a draft, and opens change sets with the published ones. Re-run --map to resume.
+  The models belong to one workspace (<dir>/schema/sites/<key>/): --workspace (or SHAPIO_WORKSPACE), else
+  with --url the token's workspace or the primary workspace, else the built-in workspace ("default");
+  --shared shares them with all workspaces (applying them needs a network admin token).
+  --map without --workspace imports into the planned workspace.
+  Apply the models with `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--workspace <key>]`, then run --map:
+  it uploads the media (downloaded from the WordPress site, or read from --media-dir, a copy of
+  wp-content/uploads), creates every post and page as a draft, and opens change sets with the published
+  ones. Re-run --map to resume.
 
-shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--url <origin> --token <admin token>] [--force]
-       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]
+shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--workspace <key> | --shared] [--url <origin> --token <admin token>] [--force]
+       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--workspace <key>]
   --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models
   and components (<dir>/schema) and <dir>/import-map.json. With --url it checks the planned API IDs against
-  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one site
-  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the token's site or the primary
-  site, else the built-in site ("default"); --shared shares them with all sites (applying them needs a
-  network admin token). --map without --site imports into the planned site. Apply the schema with
-  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:
+  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one
+  workspace (<dir>/schema/sites/<key>/): --workspace (or SHAPIO_WORKSPACE), else with --url the token's
+  workspace or the primary workspace, else the built-in workspace ("default"); --shared shares them with all
+  workspaces (applying them needs a network admin token). --map without --workspace imports into the
+  planned workspace. Apply the schema with
+  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--workspace <key>]`, then run --map:
   it uploads the media, creates every document as a draft and opens change sets with the published ones.
   Strapi 5 only.
 ```

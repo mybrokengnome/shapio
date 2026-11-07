@@ -139,7 +139,8 @@ another address, or edit the connection. Add that origin to Shapio's `CORS_ORIGI
 
 ## Content Security Policy
 
-- The admin page's `frame-src` lists exactly the origins of the enabled connections' preview URLs, on every site,
+- The admin page's `frame-src` lists exactly the origins of the enabled connections' preview URLs, in every
+  workspace,
   and the GraphQL playground's own URL. Nothing else can be framed. The list is read when the admin page loads
   (reused for up to 10 seconds), so a site connected later needs a reload of the admin.
 - Shapio's own origin is never framed for a preview: a page there could script the admin. Such templates are

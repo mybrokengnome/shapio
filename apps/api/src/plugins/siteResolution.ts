@@ -1,7 +1,12 @@
 import type { FastifyInstance, FastifyRequest, RouteOptions } from 'fastify';
 import fp from 'fastify-plugin';
-import { SITE_HEADER, SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { AppError } from '../helpers/appError.js';
+import {
+  deleteSiteParameters,
+  pickSiteKey,
+  siteHeaderCandidates,
+  siteQueryCandidates,
+} from '../helpers/siteQuery.js';
 import { principalForSite } from '../permissions/sites.js';
 import type { SiteRef } from '../services/actorContext.js';
 import { resolveSite } from '../services/sites.js';
@@ -14,9 +19,10 @@ import { readRequestSite } from './requestState.js';
  * route without a declaration, like the audit declaration, so a new route cannot forget which it is.
  *
  * For a site route, the site is resolved after authentication: the credential's site (a site token), else
- * the site the request names (`Shapio-Site` header or `?site=`), else the primary site. A request naming a
- * different site than its credential is refused (403 `SITE_MISMATCH`). The admin principal is then narrowed
- * to that site's roles. Network routes keep the network-narrowed principal and have no `request.site`.
+ * the site the request names (the `Shapio-Workspace` or `Shapio-Site` header, `?workspace=` or `?site=`), else
+ * the primary site. A request naming a different site than its credential is refused (403 `SITE_MISMATCH`).
+ * The admin principal is then narrowed to that site's roles. Network routes keep the network-narrowed
+ * principal and have no `request.site`. (User-facing text calls a site a workspace; code keeps `site`.)
  */
 export type RouteSiteScope = 'site' | 'network';
 
@@ -68,33 +74,24 @@ export const getRequestSite = (request: FastifyRequest): SiteRef => {
   return request.site;
 };
 
-const singleValue = (value: unknown): string | undefined => {
-  if (typeof value === 'string' && value.length > 0) {
-    return value;
-  }
-  return undefined;
-};
-
-/** The site key the request names: the header, else the query parameter (they must agree when both are set). */
-const requestedSiteKey = (request: FastifyRequest): string | undefined => {
-  const fromHeader = singleValue(request.headers[SITE_HEADER]);
-  const query = request.query as Record<string, unknown> | undefined;
-  const fromQuery = singleValue(query?.[SITE_QUERY_PARAMETER]);
-  if (fromHeader !== undefined && fromQuery !== undefined && fromHeader !== fromQuery) {
-    throw new AppError(403, 'SITE_MISMATCH', `The ${SITE_HEADER} header and ?site= name different sites`);
-  }
-  return fromHeader ?? fromQuery;
-};
+/**
+ * The workspace key the request names: either header (`Shapio-Workspace`, `Shapio-Site`) or either query
+ * parameter (`?workspace=`, `?site=`). Every one that is set must agree (403 `SITE_MISMATCH`); a repeated
+ * parameter is refused (400).
+ */
+const requestedSiteKey = (request: FastifyRequest): string | undefined =>
+  pickSiteKey([
+    ...siteHeaderCandidates(request.headers),
+    ...siteQueryCandidates(request.query as Record<string, unknown> | undefined),
+  ]);
 
 /**
- * `?site=` belongs to site resolution, not to the route: it is removed from the parsed query once read, so a
- * route's strict querystring schema never sees it (`rawQueryOf` drops it from the raw query likewise).
+ * `?workspace=` and `?site=` belong to site resolution, not to the route: they are removed from the parsed
+ * query once read, so a route's strict querystring schema never sees them (`rawQueryOf` drops them from the
+ * raw query likewise).
  */
 const consumeSiteQuery = (request: FastifyRequest): void => {
-  const query = request.query as Record<string, unknown> | undefined;
-  if (query && typeof query === 'object' && SITE_QUERY_PARAMETER in query) {
-    delete query[SITE_QUERY_PARAMETER];
-  }
+  deleteSiteParameters(request.query as Record<string, unknown> | undefined);
 };
 
 /**
@@ -156,7 +153,7 @@ export const siteResolutionPlugin = fp<SiteResolutionOptions>(
         request.principal.roleIds.length === 0 &&
         request.routeOptions.config?.siteAccess !== 'unassigned'
       ) {
-        throw new AppError(403, 'SITE_FORBIDDEN', 'You have no role on this site');
+        throw new AppError(403, 'SITE_FORBIDDEN', 'You have no role on this workspace');
       }
     });
   },

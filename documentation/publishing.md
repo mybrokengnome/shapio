@@ -11,7 +11,8 @@ Deployments → Webhooks → New webhook: a URL and the events to send (`entry.*
 shown once. The change set events (`change_set.scheduled`, `.shipping`, `.shipped`, `.failed`, `.discarded`) are
 described in [Change sets](change-sets.md#webhooks).
 
-Each event is a `POST` with a JSON body `{ "id", "type", "createdAt", "site", "data" }` and these headers:
+Each event is a `POST` with a JSON body `{ "id", "type", "createdAt", "site", "data" }` (`site` is the event's
+workspace) and these headers:
 
 | Header               | Value                                                                  |
 | -------------------- | ---------------------------------------------------------------------- |
@@ -100,13 +101,13 @@ Webhooks and deployment connections never call private, loopback or link-local a
 time. To reach a host on your own network, list its address in `OUTBOUND_PRIVATE_NETWORK_ALLOWLIST`
 (CIDR, comma-separated) **and** turn on "Allow private network" on that webhook or connection.
 
-### Sites
+### Workspaces
 
-On an instance with several [sites](sites.md), a webhook belongs to the site it was created on and receives that
-site's events (including changes to the site's own content types), plus network events such as locale changes
-and changes to content types shared with all sites. A **network** webhook (`"network": true`
-when creating it, which needs `webhooks.manage` on all sites) receives every site's events. `site` in the body
-is the event's site (`{ "id", "key" }`), or `null` for a network event.
+On an instance with several [workspaces](workspaces.md), a webhook belongs to the workspace it was created in and
+receives that workspace's events (including changes to the workspace's own content types), plus network events
+such as locale changes and changes to content types shared with all workspaces. A **network** webhook
+(`"network": true` when creating it, which needs `webhooks.manage` on all workspaces) receives every workspace's
+events. `site` in the body is the event's workspace (`{ "id", "key" }`), or `null` for a network event.
 
 ## Deployment connections
 
@@ -128,9 +129,9 @@ Deployments → New connection. A connection says how to start a site build and 
   anything else is refused with `SECRET_ENV_NOT_ALLOWED`, so an admin can never point a connection at the
   server's own settings such as `SESSION_SECRET` or `SMTP_PASSWORD`.
 - **Test connection** checks the settings without starting a build.
-- Connections belong to a [site](sites.md): a site's publishes, change sets and changes to its own content types
-  build its own connections, and a change to a content type shared with all sites builds every site's
-  connections that build on schema changes.
+- Connections belong to a [workspace](workspaces.md): a workspace's publishes, change sets, and changes to its
+  own content types build its own connections, and a change to a content type shared with all workspaces builds
+  every workspace's connections that build on schema changes.
 
 ### Generic signed build webhook
 
@@ -237,7 +238,7 @@ Editors preview drafts on the real site before publishing.
    (`articles`), the API ID of a single type (`homepage`), and for a type that extends another its nested route
    key (`articles/guides`).
 2. The entry document's **Preview** opens that URL beside the document with a fresh **preview token**: scoped to
-   the entry, its locale and its [site](sites.md), expiring after an hour (the admin replaces it before then),
+   the entry, its locale and its [workspace](workspaces.md), expiring after an hour (the admin replaces it before then),
    never an admin credential. Putting it after `#` keeps it out of server logs and Referer
    headers.
 3. Your preview page reads the draft from the preview API, sending the token as a bearer token (never in the

@@ -1,13 +1,13 @@
 /**
  * Approval workflows (plan approval-workflows): the stages a change set goes through before it may ship, the
- * instance default every site inherits, and a site's own choice. Mirrors
- * apps/api/src/routes/schemas/approvalWorkflow.ts and the site and network route schemas.
+ * instance default every workspace inherits, and a workspace's own choice. Mirrors
+ * apps/api/src/routes/schemas/approvalWorkflow.ts and the workspace and network route schemas.
  */
 export type ApprovalStage = {
   /** Stable; assigned by the server when a stage is saved without one. */
   id: string;
   name: string;
-  /** Admin role IDs; empty: anyone who may approve on the site. */
+  /** Admin role IDs; empty: anyone who may approve on the workspace. */
   roleIds: string[];
   /** Distinct sign-offs the stage needs (1 to 20). */
   required: number;
@@ -27,17 +27,17 @@ export type ApprovalWorkflowInput = {
 };
 
 export const APPROVAL_MODES = ['inherit', 'off', 'custom'] as const;
-/** A site inherits the instance default, switches approval off, or keeps its own workflow. */
+/** A workspace inherits the instance default, switches approval off, or keeps its own workflow. */
 export type ApprovalMode = (typeof APPROVAL_MODES)[number];
 
-/** `GET /api/admin/site/change-sets`: the request's site's approval settings. */
+/** `GET /api/admin/site/change-sets`: the request's workspace's approval settings. */
 export type SiteChangeSets = {
-  /** The site version an update must name. */
+  /** The workspace version an update must name. */
   version: number;
   mode: ApprovalMode;
-  /** The site's own workflow, kept while another mode is chosen. */
+  /** The workspace's own workflow, kept while another mode is chosen. */
   workflow: ApprovalWorkflow | null;
-  /** The instance default this site would inherit. */
+  /** The instance default this workspace would inherit. */
   inherited: ApprovalWorkflow | null;
   /** What applies now; null: change sets ship without approval. */
   effective: ApprovalWorkflow | null;
@@ -52,11 +52,17 @@ export type UpdateSiteChangeSetsInput = {
   workflow?: ApprovalWorkflowInput;
 };
 
-/** `GET /api/admin/network/approval` (`sites.manage`): the instance default and the sites that follow it. */
+/** The workspace names of `SiteChangeSets` and `UpdateSiteChangeSetsInput` (the same types). */
+export type WorkspaceChangeSets = SiteChangeSets;
+export type UpdateWorkspaceChangeSetsInput = UpdateSiteChangeSetsInput;
+
+/**
+ * `GET /api/admin/network/approval` (`sites.manage`): the instance default and the workspaces that follow it.
+ */
 export type NetworkApproval = {
   /** The version an update must name (0: never saved). */
   version: number;
-  /** `custom`: inheriting sites follow the workflow; `off`: they ship without approval. */
+  /** `custom`: inheriting workspaces follow the workflow; `off`: they ship without approval. */
   mode: 'off' | 'custom';
   /** The stored workflow, kept while the default is off; null until one is saved. */
   workflow: ApprovalWorkflow | null;

@@ -113,7 +113,7 @@ describe('useCreateDefinitionForm', () => {
       draftAndPublish: false,
     });
     expect(result.current.form.getFieldState('extends').error?.message).toBe(
-      'Only a collection can extend another, and only one available in the same place (this site or all sites).',
+      'Only a collection can extend another, and only one available in the same place (this workspace or all workspaces).',
     );
   });
 });

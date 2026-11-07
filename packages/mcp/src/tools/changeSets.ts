@@ -100,9 +100,9 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
     {
       title: 'Ask for approval of a change set',
       description:
-        "Sends an open change set for approval under the site's approval workflow (one or more stages, each " +
+        "Sends an open change set for approval under the workspace's approval workflow (one or more stages, each " +
         'naming who may sign off and how many sign-offs it needs), with an optional note. Asking again starts a ' +
-        'new review round. A site with a workflow requires an approved set before it ships.',
+        'new review round. A workspace with a workflow requires an approved set before it ships.',
       inputSchema: z.object({ changeSetId: SET_ID, note: z.string().max(2000).optional() }),
       annotations: { destructiveHint: false, openWorldHint: false },
     },
@@ -111,7 +111,7 @@ export const registerChangeSetTools = ({ server, client, options }: ToolContext)
   );
 
   if (options.allowShip) {
-    // Where a site requires approval, approving is what lets a set go live: the same guard as shipping.
+    // Where a workspace requires approval, approving is what lets a set go live: the same guard as shipping.
     server.registerTool(
       'change_sets_approve',
       {

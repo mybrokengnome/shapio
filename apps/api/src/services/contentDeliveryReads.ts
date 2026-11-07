@@ -169,7 +169,7 @@ const withSeoDefaults = async (read: DeliveryRead): Promise<DeliveryRead> =>
 
 const seqOf = (seq: number | null): number => {
   if (seq === null) {
-    throw new Error('The site has no publication state');
+    throw new Error('The workspace has no publication state');
   }
   return seq;
 };

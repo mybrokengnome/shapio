@@ -35,7 +35,7 @@ export type SiteChangeSetsView = {
   unknownRoleIds: string[];
 };
 
-const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Site not found');
+const siteNotFound = () => new AppError(404, 'SITE_NOT_FOUND', 'Workspace not found');
 
 const loadView = async (siteId: string, executor: Database): Promise<SiteChangeSetsView> => {
   const row = await sitesRepository.findApprovalSetting(siteId, executor);
@@ -72,7 +72,11 @@ export const updateSiteChangeSets = async (
     }
     const workflow = input.workflow ? normalizeWorkflow(input.workflow) : toSiteSetting(current).workflow;
     if (input.mode === 'custom' && workflow === null) {
-      throw new AppError(400, 'APPROVAL_WORKFLOW_REQUIRED', 'A site with its own approval needs a workflow');
+      throw new AppError(
+        400,
+        'APPROVAL_WORKFLOW_REQUIRED',
+        'A workspace with its own approval needs a workflow',
+      );
     }
     // A stored workflow can name a role deleted while the site was not `custom`: check it before it applies.
     if (input.workflow || input.mode === 'custom') {
@@ -85,7 +89,7 @@ export const updateSiteChangeSets = async (
       trx,
     );
     if (!updated) {
-      throw new AppError(409, 'VERSION_CONFLICT', 'The site changed since you loaded it', {
+      throw new AppError(409, 'VERSION_CONFLICT', 'The workspace changed since you loaded it', {
         expectedVersion: input.expectedVersion,
         actualVersion: current.version,
       });

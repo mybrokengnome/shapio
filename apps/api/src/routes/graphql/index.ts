@@ -1,11 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 import { PLAYGROUND_QUERY_MAX_LENGTH, PLAYGROUND_THEMES } from '../../constants/graphql.js';
-import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER } from '../../constants/sites.js';
+import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER, WORKSPACE_QUERY_PARAMETER } from '../../constants/sites.js';
 import { getGraphql, graphqlErrorHandler, postGraphql } from '../../controllers/graphql.js';
 import { getPlaygroundAsset, getPlaygroundPage } from '../../controllers/graphqlPlayground.js';
 import { csrfForGet, cacheHeaders } from '../../plugins/graphqlHooks.js';
 import { declareSiteScope } from '../../plugins/siteResolution.js';
+
+const siteKey = Type.Optional(Type.String({ pattern: SITE_KEY_PATTERN }));
 
 const operationName = Type.Optional(Type.Union([Type.String(), Type.Null()]));
 
@@ -25,8 +27,8 @@ const getQuerystring = Type.Object({
 });
 
 /**
- * /api/graphql (ADR 0006): one schema per site view (the request's site: its token's, `?site=` or
- * `Shapio-Site`, else the primary site). Registered by plugins/graphql.ts.
+ * /api/graphql (ADR 0006): one schema per workspace view (the request's workspace: its token's, `?workspace=`
+ * or `Shapio-Workspace` (or their original spellings `?site=` and `Shapio-Site`), else the primary workspace). Registered by plugins/graphql.ts.
  *
  * No response schema: results are arbitrary JSON shaped by the query (error paths mix strings and list
  * indices), serialized as they are. Errors use the GraphQL envelope (`graphqlErrorHandler`), not REST's.
@@ -55,15 +57,16 @@ export const graphqlRoutes: FastifyPluginAsyncTypebox = async (app) => {
 export const graphqlPlaygroundRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'network');
   const admin = { preHandler: app.requireAdmin };
-  // GET /playground: the GraphiQL page; `?site=<key>` points it at that site's GraphQL endpoint, `?query=`
-  // prefills the editor, `?theme=light|dark` fixes GraphiQL's theme
+  // GET /playground: the GraphiQL page; `?workspace=<key>` (or `?site=`) points it at that workspace's GraphQL
+  // endpoint, `?query=` prefills the editor, `?theme=light|dark` fixes GraphiQL's theme
   app.get(
     '/playground',
     {
       ...admin,
       schema: {
         querystring: Type.Object({
-          [SITE_QUERY_PARAMETER]: Type.Optional(Type.String({ pattern: SITE_KEY_PATTERN })),
+          [WORKSPACE_QUERY_PARAMETER]: siteKey,
+          [SITE_QUERY_PARAMETER]: siteKey,
           query: Type.Optional(Type.String({ maxLength: PLAYGROUND_QUERY_MAX_LENGTH })),
           theme: Type.Optional(Type.Enum(PLAYGROUND_THEMES)),
         }),

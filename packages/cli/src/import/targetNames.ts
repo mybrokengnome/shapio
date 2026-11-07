@@ -7,7 +7,7 @@ import type { ImportSource } from './types.js';
 
 /**
  * `--plan --url <instance>`: planned API IDs and the GraphQL names they generate are checked against the
- * definitions the planned site can already see, so `schema apply` does not refuse the plan with
+ * definitions the planned workspace can already see, so `schema apply` does not refuse the plan with
  * `API_KEY_COLLISION` or `GENERATED_NAME_COLLISION`. A planned definition that clashes is renamed (`seo` →
  * `seoItem`, then `seoItem2`, ...) and the plan output says so. Without a URL the plan stays offline and says the
  * names were not checked.
@@ -16,20 +16,20 @@ export const NAMES_NOT_CHECKED_NOTE =
   'Names were not checked against a target: pass --url and --token to --plan, or rename clashes in the schema files before applying.';
 
 export const SHARED_PLAN_NOTE =
-  "Names were checked against the view of the token's site (or the primary site): other sites' own definitions were not checked.";
+  "Names were checked against the view of the token's workspace (or the primary workspace): other workspaces' own definitions were not checked.";
 
 export type TargetOptions = {
   baseUrl: string;
   token: string;
   /**
-   * The site whose view (shared definitions and its own) the plan must fit. Absent (a shared plan): the site
-   * the instance answers for, the token's site, else the primary site.
+   * The workspace whose view (shared definitions and its own) the plan must fit. Absent (a shared plan): the
+   * workspace the instance answers for, the token's workspace, else the primary workspace.
    */
   site?: string;
   fetch?: typeof globalThis.fetch;
 };
 
-/** The definitions the site can see: the same export `--map` reads. */
+/** The definitions the workspace can see: the same export `--map` reads. */
 export const fetchTargetDefinitions = async ({
   baseUrl,
   token,

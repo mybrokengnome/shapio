@@ -39,7 +39,7 @@ export type CreatedEntry = {
 };
 
 export type ImportState = {
-  /** The site the first `--map` run wrote to (`null`: the token's site or the primary). */
+  /** The workspace the first `--map` run wrote to (`null`: the token's workspace or the primary). */
   site: string | null;
   baseUrl: string | null;
   media: Record<string, { assetId: string }>;
@@ -57,8 +57,9 @@ export type ImportMap = {
   source: { kind: ImportSourceKind; path: string; sha256: string };
   plannedAt: string;
   /**
-   * The site the plan's schema belongs to (`--plan --site`); `--map` without `--site` uses it. Null or absent
-   * (a map written before sites had their own schema): shared definitions, the token's site or the primary.
+   * The workspace the plan's schema belongs to (`--plan --workspace`); `--map` without `--workspace` uses it.
+   * Null or absent (a map written before workspaces had their own schema): shared definitions, the token's
+   * workspace or the primary.
    */
   site?: string | null;
   definitions: Record<string, PlannedDefinitionIds>;

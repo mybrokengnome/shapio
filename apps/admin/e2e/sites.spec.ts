@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { BUILT_IN_WORKSPACE } from './support/accounts';
 import { captureScreen } from './support/capture';
 import { ADMIN_URL } from './support/constants';
 import { expectVisibleFocus, inBothSchemes } from './support/keyboard';
@@ -57,7 +58,7 @@ const deleteDefinition = async (api: ReturnType<typeof siteApi>, path: string) =
   await api.send('DELETE', `${path}?expectedVersion=${version}&acknowledgeBreaking=true`);
 };
 
-const switcher = (on: Page) => on.getByRole('button', { name: /^Switch site/ });
+const switcher = (on: Page) => on.getByRole('button', { name: /^Switch workspace/ });
 
 const openSite = async (on: Page, name: string) => {
   await switcher(on).click();
@@ -146,26 +147,29 @@ test.afterAll(async () => {
 test('a URL without a site opens the primary site, and the switcher leads to the network view', async () => {
   await page.goto(ADMIN_URL);
   await expect(page).toHaveURL(/\/admin\/s\/default\/$/);
-  await expect(switcher(page)).toHaveAccessibleName('Switch site (current: Default site)');
+  await expect(switcher(page)).toHaveAccessibleName('Switch workspace (current: Default workspace)');
   await switcher(page).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitem', { name: /^Default site/ })).toHaveAttribute('aria-current', 'page');
+  await expect(menu.getByRole('menuitem', { name: /^Default workspace/ })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await expect(menu.getByRole('menuitem', { name: 'Network' })).toBeVisible();
   await captureScreen(page, 'sites-01-switcher', { viewports: ['desktop'] });
   await menu.getByRole('menuitem', { name: 'Network' }).click();
-  await expect(page).toHaveURL(/\/admin\/network\/sites$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Sites' })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/network\/workspaces$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Workspaces' })).toBeVisible();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  for (const name of ['Sites', 'Users', 'Roles', 'Audit log']) {
+  for (const name of ['Workspaces', 'Users', 'Roles', 'Audit log']) {
     await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
   }
   await expect(nav.getByRole('link', { name: 'Inbox' })).toHaveCount(0);
-  await expect(switcher(page)).toHaveAccessibleName('Switch site (current: Network)');
+  await expect(switcher(page)).toHaveAccessibleName('Switch workspace (current: Network)');
 });
 
-test('Network → Sites creates a site with a fixed key', async () => {
-  await page.getByRole('button', { name: 'New site' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Create site' });
+test('Network → Workspaces creates a workspace with a fixed key', async () => {
+  await page.getByRole('button', { name: 'New workspace' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Create workspace' });
   await sheet.getByRole('textbox', { name: 'Name' }).fill(SITE.name);
   await sheet.getByRole('textbox', { name: 'Key' }).fill('Not a key');
   await sheet.getByRole('button', { name: 'Create' }).click();
@@ -175,13 +179,22 @@ test('Network → Sites creates a site with a fixed key', async () => {
   await sheet.getByRole('textbox', { name: 'Key' }).fill(SITE.key);
   await captureScreen(page, 'sites-02-create-sheet', BOTH);
   await sheet.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByText(`Site ${SITE.name} created.`)).toBeVisible();
+  await expect(page.getByText(`Workspace ${SITE.name} created.`)).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: SITE.name })).toBeVisible();
-  siteId = /\/network\/sites\/([0-9a-f-]{36})$/.exec(page.url())?.[1] ?? '';
+  siteId = /\/network\/workspaces\/([0-9a-f-]{36})$/.exec(page.url())?.[1] ?? '';
   expect(siteId).not.toBe('');
-  await page.getByRole('link', { name: 'Sites' }).first().click();
+  await page.getByRole('link', { name: 'Workspaces' }).first().click();
   await expect(page.getByRole('row').filter({ hasText: SITE.name })).toContainText(SITE.key);
   await captureScreen(page, 'sites-03-network-sites', BOTH);
+});
+
+test('old Network → Sites links open Network → Workspaces', async () => {
+  await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
+  await expect(page).toHaveURL(new RegExp(`/admin/network/workspaces/${siteId}$`));
+  await expect(page.getByRole('heading', { level: 1, name: SITE.name })).toBeVisible();
+  await page.goto(`${ADMIN_URL}network/sites`);
+  await expect(page).toHaveURL(/\/admin\/network\/workspaces$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Workspaces' })).toBeVisible();
 });
 
 test("a site's app role bindings: public and authenticated callers", async () => {
@@ -211,7 +224,7 @@ test('the switcher opens another site: the URL carries its key and its content i
 
   await openSite(page, SITE.name);
   await expect(page).toHaveURL(new RegExp(`/admin/s/${SITE.key}/$`));
-  await expect(switcher(page)).toHaveAccessibleName(`Switch site (current: ${SITE.name})`);
+  await expect(switcher(page)).toHaveAccessibleName(`Switch workspace (current: ${SITE.name})`);
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await nav.getByRole('link', { name: MODEL.label, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/admin/s/${SITE.key}/content/${MODEL.key}$`));
@@ -222,7 +235,7 @@ test('the switcher opens another site: the URL carries its key and its content i
   await page.goto(`${ADMIN_URL}content/${MODEL.key}`);
   await expect(page).toHaveURL(new RegExp(`/admin/s/${SITE.key}/content/${MODEL.key}$`));
 
-  await openSite(page, 'Default site');
+  await openSite(page, BUILT_IN_WORKSPACE);
   await expect(page).toHaveURL(/\/admin\/s\/default\/$/);
   await page.goto(`${ADMIN_URL}s/default/content/${MODEL.key}`);
   await expect(page.getByRole('row').filter({ hasText: MAIN_NOTE })).toBeVisible();
@@ -257,7 +270,7 @@ test("a site's own content types stay on it; shared ones are on every site", asy
     '',
   );
   await expect(nav.getByRole('link', { name: MODEL.label, exact: true })).toHaveAccessibleDescription(
-    'Shared with all sites',
+    'Shared with all workspaces',
   );
   await captureScreen(page, 'sites-08-shared-mark', { viewports: ['desktop'] });
   await page.goto(`${ADMIN_URL}s/${SITE.key}/develop/components`);
@@ -284,26 +297,26 @@ test('the builder shares a type with all sites and keeps it on one; a type with 
   await expect(page.getByRole('heading', { level: 1, name: BLOG_MODEL.label })).toBeVisible();
   await settings().click();
   await expect(availableOn()).toContainText(`Only on ${SITE.name}`);
-  await availableOn().getByRole('button', { name: 'Share with all sites' }).click();
-  const share = page.getByRole('alertdialog', { name: `Share ${BLOG_MODEL.label} with all sites?` });
+  await availableOn().getByRole('button', { name: 'Share with all workspaces' }).click();
+  const share = page.getByRole('alertdialog', { name: `Share ${BLOG_MODEL.label} with all workspaces?` });
   await expect(share).toBeVisible();
   await captureScreen(page, 'sites-09-share-confirm', { viewports: ['desktop'] });
-  await share.getByRole('button', { name: 'Share with all sites' }).click();
-  await expect(page.getByText('Shared with all sites.').first()).toBeVisible();
-  await expect(availableOn().getByRole('button', { name: 'Keep on this site' })).toBeVisible();
+  await share.getByRole('button', { name: 'Share with all workspaces' }).click();
+  await expect(page.getByText('Shared with all workspaces.').first()).toBeVisible();
+  await expect(availableOn().getByRole('button', { name: 'Keep on this workspace' })).toBeVisible();
   await captureScreen(page, 'sites-10-scope-shared', { viewports: ['desktop', 'phone'] });
 
   // Shared: the main site has it now; keeping it there moves it off the blog (which has no entries of it).
   await page.goto(`${ADMIN_URL}s/default/content/${BLOG_MODEL.key}?tab=structure`);
   await expect(page.getByRole('heading', { level: 1, name: BLOG_MODEL.label })).toBeVisible();
   await settings().click();
-  await availableOn().getByRole('button', { name: 'Keep on this site' }).click();
+  await availableOn().getByRole('button', { name: 'Keep on this workspace' }).click();
   await page
-    .getByRole('alertdialog', { name: `Keep ${BLOG_MODEL.label} on Default site only?` })
-    .getByRole('button', { name: 'Keep on this site' })
+    .getByRole('alertdialog', { name: `Keep ${BLOG_MODEL.label} on ${BUILT_IN_WORKSPACE} only?` })
+    .getByRole('button', { name: 'Keep on this workspace' })
     .click();
-  await expect(page.getByText('Now only on this site.').first()).toBeVisible();
-  await expect(availableOn()).toContainText('Only on Default site');
+  await expect(page.getByText('Now only on this workspace.').first()).toBeVisible();
+  await expect(availableOn()).toContainText(`Only on ${BUILT_IN_WORKSPACE}`);
   const blogModels = await onBlog().get<{ items: { definition: { apiKey: string } }[] }>('/models');
   expect(blogModels.items.map(({ definition }) => definition.apiKey)).not.toContain(BLOG_MODEL.key);
   await deleteDefinition(owner(), `/models/${blogModelId}`);
@@ -317,13 +330,13 @@ test('the builder shares a type with all sites and keeps it on one; a type with 
   await page.goto(`${ADMIN_URL}s/default/content/${MODEL.key}?tab=structure`);
   await expect(page.getByRole('heading', { level: 1, name: MODEL.label })).toBeVisible();
   await settings().click();
-  await availableOn().getByRole('button', { name: 'Keep on this site' }).click();
-  const keep = page.getByRole('alertdialog', { name: `Keep ${MODEL.label} on Default site only?` });
-  await keep.getByRole('button', { name: 'Keep on this site' }).click();
-  await expect(keep.getByText(/Other sites still have 1 entry of this content type/)).toBeVisible();
+  await availableOn().getByRole('button', { name: 'Keep on this workspace' }).click();
+  const keep = page.getByRole('alertdialog', { name: `Keep ${MODEL.label} on ${BUILT_IN_WORKSPACE} only?` });
+  await keep.getByRole('button', { name: 'Keep on this workspace' }).click();
+  await expect(keep.getByText(/Other workspaces still have 1 entry of this content type/)).toBeVisible();
   await captureScreen(page, 'sites-11-scope-in-use', { viewports: ['desktop'] });
   await keep.getByRole('button', { name: 'Cancel' }).click();
-  await expect(availableOn()).toContainText('Shared with all sites');
+  await expect(availableOn()).toContainText('Shared with all workspaces');
   // A fresh load: the next test's focus checks start without a preceding mouse click.
   await page.goto(`${ADMIN_URL}s/default/`);
 });
@@ -332,12 +345,12 @@ test('the switcher works from the keyboard with a visible focus in both themes',
   const trigger = switcher(page);
   await inBothSchemes(page, async () => {
     await trigger.focus();
-    await expectVisibleFocus(page, 'site switcher');
+    await expectVisibleFocus(page, 'workspace switcher');
     await page.keyboard.press('Enter');
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
     await page.keyboard.press('ArrowDown');
-    await expectVisibleFocus(page, 'site switcher menu');
+    await expectVisibleFocus(page, 'workspace switcher menu');
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
@@ -370,7 +383,7 @@ test('inviting an admin to one site: the access rows', async () => {
   const sheet = page.getByRole('dialog', { name: 'Invite a user' });
   await sheet.getByLabel('Email').fill(EDITOR.email);
   const row = sheet.getByRole('group', { name: 'Access 1' });
-  await row.getByRole('combobox', { name: 'Site' }).click();
+  await row.getByRole('combobox', { name: 'Workspace' }).click();
   await page.getByRole('option', { name: SITE.name }).click();
   await expect(row.getByRole('combobox', { name: 'Role' })).toHaveText('Editor');
   await captureScreen(page, 'sites-05-invite-access', BOTH);
@@ -416,7 +429,7 @@ test('an editor with a role on one site only: the other site says so, and its AP
   await editor.keyboard.press('Escape');
 
   await editor.goto(`${ADMIN_URL}s/default/`);
-  await expect(editor.getByText('You have no role on this site')).toBeVisible();
+  await expect(editor.getByText('You have no role on this workspace')).toBeVisible();
   await expect(editor.getByRole('button', { name: `Open ${SITE.name}` })).toBeVisible();
   await expect(nav.getByRole('link')).toHaveCount(0);
   await captureScreen(editor, 'sites-06-no-role', BOTH);
@@ -431,7 +444,7 @@ test('an editor with a role on one site only: the other site says so, and its AP
   await expect(editor).toHaveURL(new RegExp(`/admin/s/${SITE.key}/$`));
 
   await editor.goto(`${ADMIN_URL}s/no-such-site/`);
-  await expect(editor.getByRole('heading', { name: "This site doesn't exist" })).toBeVisible();
+  await expect(editor.getByRole('heading', { name: "This workspace doesn't exist" })).toBeVisible();
 });
 
 test("an owner changes an admin's access per site; the owner role stays on all sites", async () => {
@@ -440,16 +453,16 @@ test("an owner changes an admin's access per site; the owner role stays on all s
   await page.getByRole('menuitem', { name: 'Change access' }).click();
   const sheet = page.getByRole('dialog', { name: `Access for ${EDITOR.name}` });
   await expect(
-    sheet.getByRole('group', { name: 'Access 1' }).getByRole('combobox', { name: 'Site' }),
+    sheet.getByRole('group', { name: 'Access 1' }).getByRole('combobox', { name: 'Workspace' }),
   ).toHaveText(SITE.name);
-  await sheet.getByRole('button', { name: 'Add a site' }).click();
+  await sheet.getByRole('button', { name: 'Add a workspace' }).click();
   const second = sheet.getByRole('group', { name: 'Access 2' });
-  await second.getByRole('combobox', { name: 'Site' }).click();
-  await page.getByRole('option', { name: 'Default site' }).click();
+  await second.getByRole('combobox', { name: 'Workspace' }).click();
+  await page.getByRole('option', { name: BUILT_IN_WORKSPACE }).click();
   await second.getByRole('combobox', { name: 'Role' }).click();
   await page.getByRole('option', { name: 'Owner' }).click();
   await sheet.getByRole('button', { name: 'Save changes' }).click();
-  await expect(second.getByText('The owner role can only be given on all sites.')).toBeVisible();
+  await expect(second.getByText('The owner role can only be given on all workspaces.')).toBeVisible();
   await second.getByRole('combobox', { name: 'Role' }).click();
   await page.getByRole('option', { name: 'Read-only' }).click();
   await captureScreen(page, 'sites-07-access-sheet', BOTH);
@@ -457,7 +470,7 @@ test("an owner changes an admin's access per site; the owner role stays on all s
   await expect(page.getByText('Access updated.')).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: EDITOR.email });
   await expect(row).toContainText(`Editor · ${SITE.name}`);
-  await expect(row).toContainText('Read-only · Default site');
+  await expect(row).toContainText(`Read-only · ${BUILT_IN_WORKSPACE}`);
 });
 
 test("a site admin creates the site's own types; a shared type's builder is read-only", async () => {
@@ -475,59 +488,61 @@ test("a site admin creates the site's own types; a shared type's builder is read
   // Admin on the blog only: "All sites" is off when creating, and the shared note can be read, not changed.
   await editor.goto(`${ADMIN_URL}s/${SITE.key}/content/new`);
   const availableOn = editor.getByRole('group', { name: 'Available on' });
-  await expect(availableOn.getByRole('radio', { name: 'This site' })).toBeChecked();
-  await expect(availableOn.getByRole('radio', { name: 'All sites' })).toBeDisabled();
+  await expect(availableOn.getByRole('radio', { name: 'This workspace' })).toBeChecked();
+  await expect(availableOn.getByRole('radio', { name: 'All workspaces' })).toBeDisabled();
   await captureScreen(editor, 'sites-12-available-on-site-only', { viewports: ['desktop'] });
 
   await editor.goto(`${ADMIN_URL}s/${SITE.key}/content/${MODEL.key}?tab=structure`);
   await expect(editor.getByRole('heading', { level: 1, name: MODEL.label })).toBeVisible();
   await expect(
-    editor.getByText('Shared with all sites: changing it needs a role on every site.'),
+    editor.getByText('Shared with all workspaces: changing it needs a role on every workspace.'),
   ).toBeVisible();
   await editor.getByRole('button', { name: 'Model settings' }).click();
   await expect(editor.getByRole('textbox', { name: 'Label' }).first()).toBeDisabled();
-  await expect(editor.getByRole('button', { name: 'Keep on this site' })).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: 'Keep on this workspace' })).toHaveCount(0);
   await captureScreen(editor, 'sites-13-shared-read-only', { viewports: ['desktop'] });
 });
 
 test('another site is made primary; the former primary can then be deleted', async () => {
   try {
-    await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
-    const panel = page.getByRole('region', { name: 'Primary site' });
-    await expect(panel.getByText('Requests that name no site read Default site.')).toBeVisible();
+    await page.goto(`${ADMIN_URL}network/workspaces/${siteId}`);
+    const panel = page.getByRole('region', { name: 'Primary workspace' });
+    await expect(
+      panel.getByText(`Requests that name no workspace read ${BUILT_IN_WORKSPACE}.`),
+    ).toBeVisible();
     await panel.getByRole('button', { name: 'Make primary' }).click();
-    const confirm = page.getByRole('alertdialog', { name: `Make ${SITE.name} the primary site?` });
+    const confirm = page.getByRole('alertdialog', { name: `Make ${SITE.name} the primary workspace?` });
     await expect(
       confirm.getByText(
-        `Requests that name no site will read ${SITE.name} instead of Default site, right away.`,
+        `Requests that name no workspace will read ${SITE.name} instead of ${BUILT_IN_WORKSPACE}, right away.`,
         { exact: false },
       ),
     ).toBeVisible();
     await captureScreen(page, 'sites-14-make-primary', BOTH);
     await confirm.getByRole('button', { name: 'Make primary' }).click();
-    await expect(page.getByText(`${SITE.name} is now the primary site.`)).toBeVisible();
+    await expect(page.getByText(`${SITE.name} is now the primary workspace.`)).toBeVisible();
     await expect(page.getByRole('main').getByText('Primary', { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Make primary' })).toHaveCount(0);
     await expect(
       panel.getByText(
-        'Requests that name no site read this site. Make another site primary before you delete this one.',
+        'Requests that name no workspace read this workspace. Make another workspace primary before you delete this one.',
       ),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Delete site' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete workspace' })).toHaveCount(0);
 
     // The former primary is an ordinary site now: it offers Make primary and Delete.
     const builtIn = (await owner().get<{ id: string; key: string }[]>('/sites')).find(
       (site) => site.key === 'default',
     );
-    await page.goto(`${ADMIN_URL}network/sites/${builtIn?.id ?? ''}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Default site' })).toBeVisible();
+    await page.goto(`${ADMIN_URL}network/workspaces/${builtIn?.id ?? ''}`);
+    await expect(page.getByRole('heading', { level: 1, name: BUILT_IN_WORKSPACE })).toBeVisible();
     await expect(page.getByRole('main').getByText('Primary', { exact: true })).toHaveCount(0);
     await expect(
-      page.getByRole('region', { name: 'Primary site' }).getByRole('button', { name: 'Make primary' }),
+      page.getByRole('region', { name: 'Primary workspace' }).getByRole('button', { name: 'Make primary' }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Delete site' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete workspace' })).toBeVisible();
     await captureScreen(page, 'sites-15-former-primary', BOTH);
-    await page.getByRole('link', { name: 'Sites' }).first().click();
+    await page.getByRole('link', { name: 'Workspaces' }).first().click();
     await expect(page.getByRole('row').filter({ hasText: SITE.name })).toContainText('Primary');
   } finally {
     await restoreBuiltInPrimary();
@@ -535,13 +550,13 @@ test('another site is made primary; the former primary can then be deleted', asy
 });
 
 test('a site with content cannot be deleted; once emptied it can', async () => {
-  await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
-  await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.goto(`${ADMIN_URL}network/workspaces/${siteId}`);
+  await page.getByRole('button', { name: 'Delete workspace' }).click();
   const confirm = page.getByRole('alertdialog', { name: `Delete ${SITE.name}?` });
   await confirm.getByRole('button', { name: 'Delete' }).click();
   await expect(
     confirm.getByText(
-      'This site still has content types, components, entries, media, change sets or app users.',
+      'This workspace still has content types, components, entries, media, change sets or app users.',
       { exact: false },
     ),
   ).toBeVisible();
@@ -554,14 +569,14 @@ test('a site with content cannot be deleted; once emptied it can', async () => {
   await onBlog().send('DELETE', `/content/${MODEL.key}/${blogEntryId}`);
   blogEntryId = '';
   await page.goto(`${ADMIN_URL}s/${SITE.key}/`);
-  await page.goto(`${ADMIN_URL}network/sites/${siteId}`);
-  await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.goto(`${ADMIN_URL}network/workspaces/${siteId}`);
+  await page.getByRole('button', { name: 'Delete workspace' }).click();
   await page
     .getByRole('alertdialog', { name: `Delete ${SITE.name}?` })
     .getByRole('button', { name: 'Delete' })
     .click();
-  await expect(page).toHaveURL(/\/admin\/network\/sites$/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Sites' })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/network\/workspaces$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Workspaces' })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: SITE.name })).toHaveCount(0);
   await switcher(page).click();
   await expect(page.getByRole('menuitem', { name: new RegExp(`^${SITE.name}`) })).toHaveCount(0);

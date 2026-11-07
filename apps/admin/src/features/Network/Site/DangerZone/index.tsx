@@ -24,7 +24,7 @@ export const DangerZone = ({ site }: DangerZoneProps) => {
     // Deleting this page load's own site reloads the sites list instead (see useDeleteSite).
     if (site.key !== currentSite().key) {
       toast.success(t('sites.deleted', { name: site.name }));
-      void navigate({ to: '/network/sites' });
+      void navigate({ to: '/network/workspaces' });
     }
   };
   return (

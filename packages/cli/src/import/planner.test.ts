@@ -70,7 +70,7 @@ describe('writePlan', () => {
     });
   });
 
-  it("with --site, writes the planned definitions into that site's folder", async () => {
+  it("with a workspace, writes the planned definitions into that workspace's folder", async () => {
     const source = wordpressSource(await readWxr(FIXTURE));
     await writePlan(dir, source, INFO, { site: 'blog' });
     const files = await readLocalFiles(join(dir, 'schema'));
@@ -82,13 +82,13 @@ describe('writePlan', () => {
     expect((await readImportMap(dir)).site).toBe('blog');
   });
 
-  it('--map uses the planned site unless --site names it, and refuses another one', () => {
+  it('--map uses the planned workspace unless --workspace names it, and refuses another one', () => {
     expect(resolveMapSite({ site: 'blog' }, undefined)).toBe('blog');
     expect(resolveMapSite({ site: 'blog' }, 'blog')).toBe('blog');
     expect(() => resolveMapSite({ site: 'blog' }, 'shop')).toThrow(
-      'This import was planned for site "blog", not "shop"',
+      'This import was planned for workspace "blog", not "shop"',
     );
-    // A plan without a site (or written before plans recorded one): --site decides, as before.
+    // A plan without a workspace (or written before plans recorded one): --workspace decides, as before.
     expect(resolveMapSite({ site: null }, 'shop')).toBe('shop');
     expect(resolveMapSite({}, undefined)).toBeUndefined();
   });

@@ -1,7 +1,7 @@
 import type { ContentListQuery } from './admin/contentTypes.js';
 
 /**
- * The delivery API (`/api/content/:routeKey`): published content as sites and apps read it. `routeKey` is a
+ * The delivery API (`/api/content/:routeKey`): published content as websites and apps read it. `routeKey` is a
  * collection's plural API ID (`articles`) or a singleton's API ID (`homepage`); a type that extends another is
  * nested under its ancestors' plural API IDs (`posts/guides`).
  */
@@ -12,7 +12,7 @@ import type { ContentListQuery } from './admin/contentTypes.js';
 export type RichTextMode = 'json' | 'html' | 'both';
 
 /**
- * How SEO fields come back: `raw` (the default) as stored, `resolved` merged with the site's SEO defaults
+ * How SEO fields come back: `raw` (the default) as stored, `resolved` merged with the workspace's SEO defaults
  * (`SeoResolved`). `resolved` needs an SEO field on the model; a pinned snapshot uses today's defaults.
  */
 export type SeoMode = 'raw' | 'resolved';
@@ -22,7 +22,7 @@ export type DeliveryListQuery = Omit<ContentListQuery, 'status' | 'author'> & {
   snapshot?: number;
   /** The shape of rich-text fields (`json` when absent). */
   richText?: RichTextMode;
-  /** SEO fields as stored or with the site's defaults (`raw` when absent). */
+  /** SEO fields as stored or with the workspace's defaults (`raw` when absent). */
   seo?: SeoMode;
 };
 

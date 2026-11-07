@@ -90,7 +90,9 @@ export const planDraft = async (
       plan: null,
       activeVersion,
       stale: true,
-      issues: [{ path: '', code: 'INVALID_STRUCTURE', message: 'the definition belongs to another site' }],
+      issues: [
+        { path: '', code: 'INVALID_STRUCTURE', message: 'the definition belongs to another workspace' },
+      ],
     };
   }
   const siteId = draftScopeOf(context, draft);

@@ -36,7 +36,7 @@ Give the agent its own role, so its token can do only what you want it to.
 npx @shapio/cms mcp                      # every client
 npx @shapio/cms mcp --client claude-code
 npx @shapio/cms mcp --client generic     # the stdio server definition, for any other MCP client
-npx @shapio/cms mcp --site marketing     # a multi-site instance: work on the marketing site
+npx @shapio/cms mcp --workspace marketing  # several workspaces: work on the marketing workspace
 ```
 
 Replace `<admin API token>` with the token from step 1.
@@ -64,19 +64,19 @@ claude mcp add shapio --env SHAPIO_URL=https://cms.example.com --env "SHAPIO_TOK
 **Any MCP client (stdio)**: `@shapio/mcp` is a stdio MCP server, so any client that can start one works. Give
 it this command and environment (`npx @shapio/cms mcp --client generic` prints it as JSON):
 
-| Setting        | Value                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| Command        | `npx -y @shapio/mcp`                                                                                    |
-| `SHAPIO_URL`   | Shapio's base URL.                                                                                      |
-| `SHAPIO_TOKEN` | The admin API token from step 1.                                                                        |
-| `SHAPIO_SITE`  | Optional: the site to work on, on an instance with several sites.                                       |
-| Flags          | Optional, after the package name: `--allow-ship`, `--media-root <dir>` (see [Options](#options) below). |
+| Setting            | Value                                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
+| Command            | `npx -y @shapio/mcp`                                                                                     |
+| `SHAPIO_URL`       | Shapio's base URL.                                                                                       |
+| `SHAPIO_TOKEN`     | The admin API token from step 1.                                                                         |
+| `SHAPIO_WORKSPACE` | Optional: the workspace to work on, on an instance with several workspaces (`SHAPIO_SITE` is also read). |
+| Flags              | Optional, after the package name: `--allow-ship`, `--media-root <dir>` (see [Options](#options) below).  |
 
 ```json
 {
   "command": "npx",
   "args": ["-y", "@shapio/mcp", "--media-root", "/path/to/project/assets"],
-  "env": { "SHAPIO_URL": "https://cms.example.com", "SHAPIO_TOKEN": "shp_…", "SHAPIO_SITE": "marketing" }
+  "env": { "SHAPIO_URL": "https://cms.example.com", "SHAPIO_TOKEN": "shp_…", "SHAPIO_WORKSPACE": "marketing" }
 }
 ```
 
@@ -88,50 +88,53 @@ it this command and environment (`npx @shapio/cms mcp --client generic` prints i
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--media-root <dir>` | The only directory `media_upload` reads files from (symlinks are resolved). Default: the directory the server starts in.                                                                                                               |
 | `--allow-ship`       | Also offers `change_sets_ship`, `change_sets_approve`, and `change_sets_request_changes`. This is a guard in the client only: the token's role must also hold `changes.ship` (to ship) or `changes.approve` (to approve or send back). |
-| `--site <key>`       | The site to work on; overrides `SHAPIO_SITE`.                                                                                                                                                                                          |
+| `--workspace <key>`  | The workspace to work on; overrides `SHAPIO_WORKSPACE`.                                                                                                                                                                                |
 
-Keep `--allow-ship` off unless you want the agent to ship or approve when you ask it to. Where a site requires
+Keep `--allow-ship` off unless you want the agent to ship or approve when you ask it to. Where a workspace requires
 approval, approving is what lets a set go live, so it sits behind the same flag. Content an agent reads (an
 entry, a web page) can contain instructions, and the agent might follow them. Leaving out the tools and leaving
 out `changes.ship` and `changes.approve` from the role means it cannot ship or approve even then.
 
-On an instance with several sites, set `SHAPIO_SITE` (or pass `--site <key>`) to the site the agent works on;
-every request then sends it as the `Shapio-Site` header. Without it the agent works on its token's site, else
-the primary site. A site token cannot reach another site (`403 SITE_MISMATCH`); a network admin token works on
-whichever site you name ([Sites](sites.md#api-tokens)). `shapio mcp --site
-<key>` adds `SHAPIO_SITE` to the printed configuration.
+On an instance with several workspaces, set `SHAPIO_WORKSPACE` (or pass `--workspace <key>`) to the workspace
+the agent works on; every request then names it in the `Shapio-Site` header, which every server version reads.
+Without it the agent works on its token's workspace, else the primary workspace. A workspace token cannot reach
+another workspace (`403 SITE_MISMATCH`); a network admin token works on whichever workspace you name
+([Workspaces](workspaces.md#api-tokens)). `shapio mcp --workspace <key>` adds the key to the printed
+configuration as `SHAPIO_SITE`, which every version of `@shapio/mcp` reads. Setting `SHAPIO_WORKSPACE` and
+`SHAPIO_SITE` (or `--workspace` and `--site`) to different keys is an error.
 
 ## What the agent can do
 
 Tools (names are stable):
 
-| Tool                                                              | What it does                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_list`, `schema_get`                                       | The site's content types, components, and interfaces (its own and the shared ones): API IDs, kinds, scope, fields (inherited ones marked, with `extends`), the interfaces each type implements, and each interface's members; one definition in full with its version. |
-| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given). `shared: true` shares a new one.                                                                                                                                                 |
-| `change_sets_add_schema_draft`                                    | The same, into a given change set.                                                                                                                                                                                                                                     |
-| `content_query`, `content_get`                                    | Entries: drafts by default; `published: true` or `snapshot: N` reads what the delivery API serves. Filters, sort, locale, paging. With an interface's API ID and `published: true`, every member's entries.                                                            |
-| `content_create`, `content_update`                                | Saves drafts (never publishes). Updates send the version they read; a stale version is refused (`CONTENT_VERSION_CONFLICT`).                                                                                                                                           |
-| `media_list`, `media_upload`                                      | The media library; uploads a file from the media root, optionally with alt text.                                                                                                                                                                                       |
-| `preflight_run`                                                   | What publishing an entry would run into, without publishing.                                                                                                                                                                                                           |
-| `change_sets_list`, `change_sets_create`, `change_sets_add_entry` | Change sets: list, create, propose publishing (or unpublishing) an entry locale.                                                                                                                                                                                       |
-| `change_sets_review`                                              | The set and its review: field diffs, the schema plan (breaking, destructive), blocking issues, consumers of affected fields.                                                                                                                                           |
-| `change_sets_request_approval`                                    | Sends a set for approval, with an optional note for the approver.                                                                                                                                                                                                      |
-| `change_sets_approve`, `change_sets_request_changes`              | Only with `--allow-ship`: approves a set, or sends it back with a note. Refused without `changes.approve` on the token's role.                                                                                                                                         |
-| `change_sets_ship`                                                | Only with `--allow-ship` and a role holding `changes.ship`.                                                                                                                                                                                                            |
-| `snapshots_list`, `snapshots_changes`, `snapshots_restore`        | The publication ledger, what changed between two snapshots, and a restore proposed as an open change set.                                                                                                                                                              |
-| `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                                                                                                                                                          |
+| Tool                                                              | What it does                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_list`, `schema_get`                                       | The workspace's content types, components, and interfaces (its own and the shared ones): API IDs, kinds, scope, fields (inherited ones marked, with `extends`), the interfaces each type implements, and each interface's members; one definition in full with its version. |
+| `schema_draft`                                                    | Drafts a new or changed definition into a change set (a new set unless one is given). `shared: true` shares a new one.                                                                                                                                                      |
+| `change_sets_add_schema_draft`                                    | The same, into a given change set.                                                                                                                                                                                                                                          |
+| `content_query`, `content_get`                                    | Entries: drafts by default; `published: true` or `snapshot: N` reads what the delivery API serves. Filters, sort, locale, paging. With an interface's API ID and `published: true`, every member's entries.                                                                 |
+| `content_create`, `content_update`                                | Saves drafts (never publishes). Updates send the version they read; a stale version is refused (`CONTENT_VERSION_CONFLICT`).                                                                                                                                                |
+| `media_list`, `media_upload`                                      | The media library; uploads a file from the media root, optionally with alt text.                                                                                                                                                                                            |
+| `preflight_run`                                                   | What publishing an entry would run into, without publishing.                                                                                                                                                                                                                |
+| `change_sets_list`, `change_sets_create`, `change_sets_add_entry` | Change sets: list, create, propose publishing (or unpublishing) an entry locale.                                                                                                                                                                                            |
+| `change_sets_review`                                              | The set and its review: field diffs, the schema plan (breaking, destructive), blocking issues, consumers of affected fields.                                                                                                                                                |
+| `change_sets_request_approval`                                    | Sends a set for approval, with an optional note for the approver.                                                                                                                                                                                                           |
+| `change_sets_approve`, `change_sets_request_changes`              | Only with `--allow-ship`: approves a set, or sends it back with a note. Refused without `changes.approve` on the token's role.                                                                                                                                              |
+| `change_sets_ship`                                                | Only with `--allow-ship` and a role holding `changes.ship`.                                                                                                                                                                                                                 |
+| `snapshots_list`, `snapshots_changes`, `snapshots_restore`        | The publication ledger, what changed between two snapshots, and a restore proposed as an open change set.                                                                                                                                                                   |
+| `health_list`, `usage_fields`                                     | Content health findings (the Inbox), and which fields sites read, per token, before renaming or removing one.                                                                                                                                                               |
 
 Definitions use the authored format of [schema files](schema-sync.md). IDs are optional: an existing type keeps
 its IDs (matched by API ID), and relation targets, component references, `extends`, and `implements` may be
 given as API IDs. A relation target may name an interface, or be `*` (or the word `any`) for any entry. An
 interface is drafted like a type, with `kind: "interface"` and its contract `fields`
 ([Modeling](modeling.md#interfaces)). A new
-definition belongs to the agent's site; `shared: true` (on `schema_draft` and `change_sets_add_schema_draft`)
-creates it shared with all sites instead, which needs schema permission on every site. An existing definition
-keeps its scope: change it with [`shapio schema scope`](schema-sync.md#several-sites) or in the admin.
+definition belongs to the agent's workspace; `shared: true` (on `schema_draft` and `change_sets_add_schema_draft`)
+creates it shared with all workspaces instead, which needs schema permission on every workspace. An existing
+definition keeps its scope: change it with [`shapio schema scope`](schema-sync.md#several-workspaces) or in the
+admin.
 
-Resources: `shapio://schema/{apiKey}` (a definition of the site's view, interfaces included, in the schema file format, with stable IDs) and
+Resources: `shapio://schema/{apiKey}` (a definition of the workspace's view, interfaces included, in the schema file format, with stable IDs) and
 `shapio://docs/delivery-api` (the [delivery API guide](delivery-api.md)).
 
 Prompts: **Model a content type for …** (`model_content_type`) and **Review change set N**

@@ -13,8 +13,11 @@ export type ChangedEntryRef = Pick<SnapshotChange, 'routeKey' | 'id'> & {
   interfaces?: readonly string[];
 };
 
-/** Every delivery read of the site carries this tag: the site's settings, and everything after a schema change. */
-export const siteTags = (siteKey: string | undefined): string[] => [shapioTags.site(siteKey)];
+/**
+ * Every delivery read of the workspace carries this tag: the site's settings, and everything after a schema
+ * change.
+ */
+export const siteTags = (siteKey: string | undefined): string[] => [shapioTags.workspace(siteKey)];
 
 /**
  * The tags to revalidate for the entries that changed between two snapshots: each entry's model and the entry

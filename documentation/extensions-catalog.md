@@ -96,8 +96,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   | `beforeCreate`, `beforeUpdate`, `beforePublish`, `beforeDelete` | inside the write's transaction                  | yes: 422 `HOOK_REJECTED` |
   | `afterCreate`, `afterUpdate`, `afterPublish`, `afterDelete`     | after commit, as a job (`extensions.afterHook`) | no; retried on error     |
 
-  Every context carries `event`, `site` (`{ id, key }`, the entry's site), `model`, `entry`, `locale`, `data`,
-  `before`, `principal`, `trx`, `services` (bound to the entry's site), `logger` and `signal`. `before*` adds
+  Every context carries `event`, `site` (`{ id, key }`, the entry's workspace), `model`, `entry`, `locale`, `data`,
+  `before`, `principal`, `trx`, `services` (bound to the entry's workspace), `logger` and `signal`. `before*` adds
   `reject(message, details)`; `after*` adds `eventId`, `idempotencyKey` (`<eventId>:<hook name>`) and `attempt`.
 
 - **Example:**
@@ -128,8 +128,8 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Limits:** `before*` hooks hold the write's locks, so keep them fast and never call slow services from them.
   One rejected item fails a whole change set. `data` is the full, unmasked document (hooks are trusted code).
   Changing a model's API ID stops hooks keyed by the old one from matching; key by the stable model ID if that
-  matters. On a multi-site instance, hooks are configured once for every site: branch on `context.site` when a
-  site needs different behavior.
+  matters. On an instance with several workspaces, hooks are configured once for every workspace: branch on
+  `context.site` (the workspace) when a workspace needs different behavior.
 
 ### Custom routes
 
@@ -145,7 +145,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   import type { ExtensionRoute } from '@shapio/cms/config';
 
   export const acmeRoutes: ExtensionRoute['plugin'] = async (app, { services, requireAdmin }) => {
-    // A site route: count the requesting site's articles, not the primary site's.
+    // A workspace route: count the requesting workspace's articles, not the primary workspace's.
     app.get('/stats', { preHandler: requireAdmin }, async (request) => ({
       articles: await services.forSite(request.site!).content.count('article'),
     }));
@@ -159,10 +159,10 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   (`request.principal`), CSRF on cookie-authenticated writes, the central error handler, the global rate limit,
   and the audit declaration check: every mutating route declares `config: { audit: { action } }` (recorded on
   success) or `{ audit: { exempt: '<why>' } }`, or Shapio refuses to start.
-- **Sites:** custom routes are site routes. `request.site` is the credential's site, else the `Shapio-Site`
-  header or `?site=`, else the primary site, and a request naming another site than its token's is refused
-  (`403 SITE_MISMATCH`). The `services` passed to the plugin read the primary site (followed live when another
-  site is made primary); use
+- **Workspaces:** custom routes are workspace routes. `request.site` is the workspace: the credential's, else
+  the `Shapio-Workspace` (or `Shapio-Site`) header or `?workspace=` (or `?site=`), else the primary workspace,
+  and a request naming another workspace than its token's is refused (`403 SITE_MISMATCH`). The `services`
+  passed to the plugin read the primary workspace (followed live when another workspace is made primary); use
   `services.forSite(request.site)` for the request's. Declare `config: { site: 'network' }` on a route that is
   about the whole instance; it then has no `request.site`.
 - **Limits:** authorization is yours (`requireAdmin`, or `permissions.evaluate(request.principal, …)`). Prefixes
@@ -176,13 +176,13 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
 - **Where it runs:** server (API and worker).
 - **Contract:** `ServiceFactory`, `ServiceFactoryContext` (`db`, `config`, `logger`, `services`),
   `ShapioServices`, `CustomServices` in [`public.ts`](../apps/api/src/extensions/public.ts); construction in
-  [`extensions/services.ts`](../apps/api/src/extensions/services.ts); site binding in
+  [`extensions/services.ts`](../apps/api/src/extensions/services.ts); workspace binding in
   [`extensions/siteServices.ts`](../apps/api/src/extensions/siteServices.ts). Shapio's services:
 
   | Service                                                          | What it does                                                 |
   | ---------------------------------------------------------------- | ------------------------------------------------------------ |
-  | `site`                                                           | the site `content` and `media` read                          |
-  | `forSite(site)`                                                  | the same services reading another site                       |
+  | `site`                                                           | the workspace `content` and `media` read                     |
+  | `forSite(site)`                                                  | the same services reading another workspace                  |
   | `content.get`, `content.list`, `content.count`, `content.models` | read drafts as the admin API shows them, from committed data |
   | `media.usages(assetId)`                                          | where an asset is referenced (up to 100, plus the total)     |
   | `jobs.enqueue(name, payload?, options?)`                         | queue one of your [jobs](#jobs)                              |
@@ -206,12 +206,13 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   ```
 
 - **Lifecycle:** factories run in declaration order, may be async, and a throwing factory stops startup.
-- **Sites:** content and media are per site, and so is the schema: `content.models()` lists the site's view
-  (its own content types and the shared ones), and `content.get`, `list` and `count` resolve a model's API ID in
-  that view, so a content type of another site is unknown there. Services handed to a hook read the hook's site;
-  those given to routes, jobs and factories read the primary site until you call `forSite`, and follow it live
-  when another site is made primary (`services.site` is the primary site as last read). Your custom services
-  are shared across sites as they are, so pass them the site they should work on.
+- **Workspaces:** content and media are per workspace, and so is the schema: `content.models()` lists the
+  workspace's view (its own content types and the shared ones), and `content.get`, `list` and `count` resolve a
+  model's API ID in that view, so a content type of another workspace is unknown there. Services handed to a
+  hook read the hook's workspace; those given to routes, jobs and factories read the primary workspace until you
+  call `forSite`, and follow it live when another workspace is made primary (`services.site` is the primary
+  workspace as last read). Your custom services are shared across workspaces as they are, so pass them the
+  workspace they should work on.
 - **Limits:** content reads run as Shapio itself unless you pass a `principal`. They read committed data: inside a
   `before*` hook, read your own uncommitted writes through `trx`. Read your own settings from environment
   variables; `config` only carries `nodeEnv`, `publicUrl`, `basePath` and `projectDir`.
@@ -239,7 +240,7 @@ Server extensions are your own TypeScript or JavaScript running inside Shapio's 
   leases, retries with backoff (throw to retry), dead-lettering, graceful shutdown through `signal`. They show
   in the admin's jobs view.
 - **Limits:** delivery is at least once, so make side effects idempotent. Enqueueing a name that is not in
-  `jobs` throws. Job services read the primary site, whichever site is primary when they run; use
+  `jobs` throws. Job services read the primary workspace, whichever workspace is primary when they run; use
   `services.forSite` for another.
 
 ### Error reporting
@@ -393,7 +394,8 @@ queue (retries, logs) and refuses private, loopback and link-local addresses unl
 - **Lifecycle:** at least once, with exponential backoff up to the webhook's maximum attempts; every attempt is
   in the delivery log, where you can redeliver. The secret is shown once and can be rotated; during rotation
   the signature header may carry several comma-separated `v1=` values, and any match is accepted.
-- **Sites:** a webhook belongs to one site (that site's events) or to the network (every site's events).
+- **Workspaces:** a webhook belongs to one workspace (that workspace's events) or to the network (every
+  workspace's events).
 - **Limits:** signatures older or newer than 300 seconds are refused by `verifyWebhookSignature` by default.
   Deduplicate on `X-Shapio-Delivery`. Guide: [Webhooks, deployments and preview](publishing.md#webhooks).
 
@@ -475,9 +477,11 @@ served at once, with no generated code.
 | Admin                 | `/api/admin/…`                       | everything the admin does, with an admin API token     | [REST reference](reference/rest-api.md) |
 | Custom routes         | `/api/ext/<prefix>/…`                | your own endpoints                                     | [Custom routes](#custom-routes)         |
 
-Each running instance serves its OpenAPI document for the current schema at `/api/docs` (admins). On a
-multi-site instance every request reads one site: the token's, else `?site=` or `Shapio-Site`, else the primary
-site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
+Each running instance serves its OpenAPI document for the current schema at `/api/docs` (admins). On an
+instance with several workspaces every request reads one workspace: the token's, else `?workspace=` or
+`Shapio-Workspace`, else the primary workspace
+([Workspaces: which workspace a request reads](workspaces.md#which-workspace-a-request-reads)). Server 0.8.2 or
+later; `Shapio-Site` and `?site=` work on every version.
 
 ### `@shapio/client`
 
@@ -486,19 +490,19 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
 - **Contract:** `createClient(options)` in [`packages/client/src/client.ts`](../packages/client/src/client.ts),
   exports in [`index.ts`](../packages/client/src/index.ts):
 
-  | Option        | Meaning                                                                                   |
-  | ------------- | ----------------------------------------------------------------------------------------- |
-  | `baseUrl`     | Shapio's URL including any `BASE_PATH`                                                    |
-  | `token`       | an API token, sent as a bearer token                                                      |
-  | `site`        | a site key: `?site=` on delivery and snapshot reads, the `Shapio-Site` header on the rest |
-  | `fetch`       | a custom fetch (tests, agents)                                                            |
-  | `credentials` | fetch credentials mode (`same-origin` for cookie sessions)                                |
-  | `headers`     | extra headers computed per request                                                        |
+  | Option        | Meaning                                                                                                                                  |
+  | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+  | `baseUrl`     | Shapio's URL including any `BASE_PATH`                                                                                                   |
+  | `token`       | an API token, sent as a bearer token                                                                                                     |
+  | `workspace`   | a workspace key: `?site=` on delivery and snapshot reads, the `Shapio-Site` header on the rest (`site` is the older name of this option) |
+  | `fetch`       | a custom fetch (tests, agents)                                                                                                           |
+  | `credentials` | fetch credentials mode (`same-origin` for cookie sessions)                                                                               |
+  | `headers`     | extra headers computed per request                                                                                                       |
 
   The client has `request` (any route), `system` (`health`, `ready`, `version`), `delivery` (`list`, `get`,
   `singleton`), `snapshots` (`current`, `changes`, `allChanges`), `appAuth` (with `createPkcePair` for OAuth)
   and `admin` (setup, auth, users, roles, tokens, audit, schema, content, media, publishing, change sets, app
-  users, usage, sites). It also exports `verifyWebhookSignature`. `@shapio/client/node` exports `uploadFile`
+  users, usage, workspaces). It also exports `verifyWebhookSignature`. `@shapio/client/node` exports `uploadFile`
   (grant, upload, confirm) and `mimeTypeOf` ([`node.ts`](../packages/client/src/node.ts)).
 
 - **Example:**
@@ -509,7 +513,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
   const shapio = createClient({
     baseUrl: process.env.SHAPIO_URL!,
     token: process.env.SHAPIO_TOKEN,
-    site: 'marketing',
+    workspace: 'marketing',
   });
   const { snapshot } = await shapio.snapshots.current();
   const articles = await shapio.delivery.list<Article>('articles', { locale: 'fr', snapshot });
@@ -518,7 +522,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
 - **Versioning:** semver with the `@shapio/client` package; errors are `ShapioApiError` with the server's
   `{ error: { code, message } }` body.
 - **Limits:** content is typed by the caller (`list<Article>`); use [generated types](#generated-types) for the
-  shapes. A site token naming another site is refused (`403 SITE_MISMATCH`).
+  shapes. A workspace token naming another workspace is refused (`403 SITE_MISMATCH`).
 
 ### Generated types
 
@@ -533,7 +537,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
 
 - **What:** one `shapio` command, shipped with the `@shapio/cms` package and the Docker image.
 - **Where it runs:** **server commands** (`start`, `worker`, `migrate`, `healthcheck`, `version`, `admin`,
-  `media migrate`, `sites`, `extensions check`, `mcp`) on the machine that runs Shapio, with its environment;
+  `media migrate`, `workspaces`, `extensions check`, `mcp`) on the machine that runs Shapio, with its environment;
   **remote commands** (`status`, `schema pull|diff|apply`, `types generate`, `export`, `import`) over HTTP with
   `--url`/`SHAPIO_URL` and an admin token (`--token`/`SHAPIO_TOKEN`), from a laptop or CI.
 - **Contract:** command definitions in [`packages/cli/src/commands`](../packages/cli/src/commands); the
@@ -552,7 +556,7 @@ site ([Sites: which site a request reads](sites.md#which-site-a-request-reads)).
 
 ## Export/import bundles
 
-- **What:** a portable file holding one site's schema, locales, roles, content and media metadata (and media
+- **What:** a portable file holding one workspace's schema, locales, roles, content and media metadata (and media
   files with `--with-media`), for moving content between instances.
 - **Where it runs:** CLI (`shapio export`, `shapio import`) over HTTP: `/api/admin/transfer/export`,
   `/import`, `/imports/:id`, `/media/:assetId`.
