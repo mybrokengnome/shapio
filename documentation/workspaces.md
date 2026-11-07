@@ -195,7 +195,9 @@ workspace primary first. Workspaces cannot be merged or split later.
 
 Every instance has exactly one **primary** workspace. Requests that name no workspace go to it. At first it is
 the built-in workspace, key `default`, where an upgraded instance finds all its existing content. A new install
-names it in first-run setup ("Default workspace" unless you type another name); the key stays `default`.
+names it in first-run setup ("Default workspace" unless you type another name); the key stays `default`. An
+install set up with `shapio admin create`, or with a setup API call that sends no name, keeps the name "Default
+site" until you rename it.
 
 You can make another workspace primary, from the workspace's page in the admin (**Make primary**), the admin API
 (`sites.manage`), or the server host:
@@ -366,9 +368,9 @@ workspaces together. App-user emails use the instance's sender for every workspa
   in.
 
 Settings → API tokens lists and revokes the current workspace's tokens, plus network tokens for admins with
-`users.manage`, with a **Workspace** column. Creating an admin token there asks where it **works on**: _This
-workspace_ (the default) or _Every workspace (network token)_, a choice shown only to admins with
-`users.manage`.
+`users.manage`, with each token's workspace (or _Every workspace_) under its role. Creating an admin token there
+asks where it **works on**: _This workspace_ (the default) or _Every workspace (network token)_, a choice shown
+only to admins with `users.manage`.
 
 ## Webhooks and deployments
 
@@ -529,7 +531,7 @@ These stay as they are, with no newer spelling, because programs and stored data
   importer's `import-map.json`.
 - **The extension API**: `request.site`, `services.site`, `services.forSite()`, the hook context's `site`, and
   the `site` route config.
-- **Next.js cache tags** `shapio:site:<key>` and `shapioTags.site(key)`.
+- **Next.js cache tags** `shapio:site:<key>`, and `shapioTags.site(key)` (the same as `shapioTags.workspace(key)`).
 
 In 0.8.2, `@shapio/client`, the CLI, and the MCP server still send `Shapio-Site`, `?site=`, and the `sites` paths
 on the wire, so a newer package works against an older server.

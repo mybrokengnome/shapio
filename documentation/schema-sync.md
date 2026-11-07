@@ -18,7 +18,7 @@ npx @shapio/cms schema pull
 ```
 
 ```text
-Pulled 8 definition(s) of workspace "default" (sites/default/ for its own) at schema version 12 into schema
+Pulled 8 definition(s) of workspace "default" at schema version 12 into schema
 ```
 
 This writes one canonical JSON file per model, component, and interface (sorted keys, stable IDs, every default

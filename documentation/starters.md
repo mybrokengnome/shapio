@@ -58,9 +58,9 @@ applies the models through the schema apply API (the same change planner as the 
 locales (one article stays a draft), creates a deployment connection named **Preview** whose preview URL is the
 starter's `/preview/` page (it triggers no builds; `SITE_URL` overrides the local address it points at), for
 the Next.js starter a webhook named **Site revalidation** to its `/api/revalidate/` route (the signing secret goes
-to `.env`), and creates a delivery role and token that read only the four models, plus a second one, `<site> dev`,
-that may also read drafts ([drafts mode](#drafts-mode)), written to `.env` as `SHAPIO_DEV_DELIVERY_TOKEN`. Never put
-that token in a production environment.
+to `.env`), and creates a delivery role and token that read only the four models, plus a second one,
+`<workspace name> dev`, that may also read drafts ([drafts mode](#drafts-mode)), written to `.env` as
+`SHAPIO_DEV_DELIVERY_TOKEN`. Never put that token in a production environment.
 
 You need a running Shapio with an owner account ([npm](install-npm.md), [Docker](install-docker.md)).
 Without `--site`, `create-shapio` creates a Shapio (CMS) project instead.
@@ -105,10 +105,10 @@ cached or tagged), `/api/revalidate` does nothing, and every page carries a **Dr
 drafts build is never mistaken for the real one. `/preview/` is unchanged.
 
 Drafts mode reads with `SHAPIO_DEV_DELIVERY_TOKEN` when it is set, else `SHAPIO_DELIVERY_TOKEN`. The token's
-delivery role must grant **Read drafts**: the seed creates one, `<site> dev`, and writes its token to `.env`.
-With a token that lacks the grant, the first read fails with Shapio's `DRAFTS_FORBIDDEN` message (a build stops,
-a dev server shows it on the error page); it never falls back to published content. Never set `SHAPIO_DRAFTS`
-or put the dev token in a production environment (Cloudflare, Vercel, Netlify): the two safeguards are the
+delivery role must grant **Read drafts**: the seed creates one, `<workspace name> dev`, and writes its token to
+`.env`. With a token that lacks the grant, the first read fails with Shapio's `DRAFTS_FORBIDDEN` message (a
+build stops, a dev server shows it on the error page); it never falls back to published content. Never set
+`SHAPIO_DRAFTS` or put the dev token in a production environment (Cloudflare, Vercel, Netlify): the two safeguards are the
 grant on the server and the flag on the site ([Delivery API](delivery-api.md#drafts-in-development)).
 
 ### Incremental rebuilds

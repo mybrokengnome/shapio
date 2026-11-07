@@ -100,7 +100,7 @@ import { shapioTags } from '@shapio/local/next';
 
 export const getArticles = async (locale: string) => {
   'use cache';
-  cacheTag(shapioTags.site(), shapioTags.model('articles'));
+  cacheTag(shapioTags.workspace(), shapioTags.model('articles'));
   return (await shapio.delivery.list<Article>('articles', { locale })).data;
 };
 ```

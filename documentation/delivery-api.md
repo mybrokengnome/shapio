@@ -394,10 +394,10 @@ data cache, so a site refreshes exactly what changed with `revalidateTag`:
 
 Models are tagged by their route key (a collection's plural API ID, a singleton's API ID, and for a kind its
 nested route key, `posts/guides`), as the [snapshot diff](snapshots.md#what-changed-between-two-snapshots)
-names them. The workspace tag is `shapio:site:<key>`
-when the client names a workspace (`workspace: 'marketing'`) and `shapio:site` when it leaves the workspace to
-the token.
-`shapioTags.site(key)`, `shapioTags.model(routeKey)` and `shapioTags.entry(routeKey, id)` build the same strings:
+names them. The workspace tag is `shapio:site:<key>` when the client names a workspace (`workspace: 'marketing'`)
+and `shapio:site` when it leaves the workspace to the token; it keeps that spelling so tags you already revalidate
+keep matching. `shapioTags.workspace(key)` (or its older name, `shapioTags.site(key)`),
+`shapioTags.model(routeKey)` and `shapioTags.entry(routeKey, id)` build these strings:
 
 ```ts
 import { createClient, shapioTags } from '@shapio/client';
@@ -446,7 +446,7 @@ Publishing rebuilds your live site, so it is not how you check a change. **Draft
 development server render saved drafts: save in the admin, reload the page on your machine, and the change is
 there. Publish still rebuilds your site; drafts mode is for your machine.
 
-1. Create a second delivery role for development (or let the starters' `npm run seed` create `<site> dev`)
+1. Create a second delivery role for development (or let the starters' `npm run seed` create `<workspace name> dev`)
    with `read` on the workspace's models and **Read drafts**. Read drafts always covers every model the role
    reads; it adds no model of its own.
 2. Create a token for that role. The tokens list marks it with a **Drafts** chip. Never put it in a production
