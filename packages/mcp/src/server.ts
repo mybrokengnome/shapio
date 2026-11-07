@@ -18,7 +18,7 @@ export const MCP_SERVER_VERSION: string = packageJson.version;
 const INSTRUCTIONS =
   'Shapio is a headless CMS whose content types are live data. Agents propose, people ship: draft schema ' +
   'changes and entries, collect them in a change set, and leave shipping to a person. Model and field ' +
-  'identifiers are called "API IDs". Read shapio://docs/delivery-api for how sites read content.';
+  'identifiers are called "API IDs". Read shapio://docs/delivery-api for how sites and apps read content.';
 
 /** The MCP server for one Shapio instance, with every tool, resource and prompt registered. */
 export const createShapioMcpServer = (

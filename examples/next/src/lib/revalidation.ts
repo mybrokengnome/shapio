@@ -112,7 +112,7 @@ export const revalidateChanges = (): Promise<RevalidationResult> => {
 
 /**
  * Site-wide changes that publish no snapshot (the site's SEO defaults: `site.updated`): the site tag expires
- * every cached read (`site.get()` among them) and every page is revalidated at the snapshot the site already
+ * every cached read (`workspace.get()` among them) and every page is revalidated at the snapshot the site already
  * shows.
  */
 export const revalidateEveryPage = (): RevalidationResult => {

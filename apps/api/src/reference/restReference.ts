@@ -148,7 +148,7 @@ export const renderRestReference = async (): Promise<string> => {
     '[example site](../example-site.md) (`examples/shared/shapio/models/article.json`). Every other model gets',
     'the same set under its own API IDs.',
     'Usage, filters and examples are in the [delivery API guide](../delivery-api.md); `seo=resolved` and',
-    '`GET /api/site` are in [SEO fields](../seo.md).',
+    '`GET /api/workspace` are in [SEO fields](../seo.md).',
     '',
     `## The \`${name}\` entry`,
     '',

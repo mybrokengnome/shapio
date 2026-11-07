@@ -34,7 +34,7 @@ const shapio = () =>
   (client ??= createClient({
     baseUrl: shapioUrl(),
     token: deliveryToken(),
-    site: siteKey(),
+    workspace: siteKey(),
     drafts: isDraftsMode(),
   }));
 
@@ -132,7 +132,7 @@ export const getSiteSettings = (locale: Locale): Promise<SiteSettings | null> =>
 
 const readSite = async (): Promise<DeliverySite | null> => {
   try {
-    return await shapio().site.get();
+    return await shapio().workspace.get();
   } catch (error) {
     if (error instanceof ShapioApiError && error.status === 404) {
       return null;

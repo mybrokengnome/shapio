@@ -17,7 +17,7 @@ import {
 
 /**
  * Schema files: one canonical JSON file per definition. Shared ones in `models/`, `components/`, and
- * `interfaces/`, a site's own in the same folders under `sites/<siteKey>/` (the layout of `@shapio/schema`).
+ * `interfaces/`, a workspace's own in the same folders under `sites/<siteKey>/` (the layout of `@shapio/schema`).
  */
 export type LocalFile = {
   path: string;
@@ -28,7 +28,7 @@ export type LocalFile = {
   hash?: string;
 };
 
-/** The file of a definition in a scope (`site`: its site key, null when shared). */
+/** The file of a definition in a scope (`site`: its workspace key, null when shared). */
 export const definitionPath = (
   dir: string,
   definition: Pick<SchemaDefinition, 'kind' | 'apiKey'>,
@@ -81,7 +81,7 @@ const readScopeFiles = async (dir: string, site: string | null): Promise<LocalFi
   return files;
 };
 
-/** Every schema file under `dir`: the shared folders first, then each site folder by key. */
+/** Every schema file under `dir`: the shared folders first, then each workspace's folder by key. */
 export const readLocalFiles = async (dir: string): Promise<LocalFile[]> => {
   const files = await readScopeFiles(dir, null);
   for (const siteKey of await listNames(

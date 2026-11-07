@@ -3,28 +3,25 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { SITE_HEADER, ShapioApiError } from '@shapio/client';
 import { MAX_RATE_LIMIT_RETRIES, retryAfterMs } from '../../helpers/rateLimitRetry.js';
+import { UsageError } from '../../helpers/usageError.js';
+import { resolveWorkspace, WORKSPACE_FLAGS } from '../../helpers/workspace.js';
 import type { CliIo } from '../../types.js';
+
+export { UsageError };
 
 /**
  * HTTP for `shapio export` and `shapio import`: the same base URL and admin API token as the other remote
  * commands (SHAPIO_URL / SHAPIO_TOKEN), plus streaming bodies, which the JSON client does not do. A 429 from
- * the instance's rate limit is waited out and retried. A bundle is one site's content: `--site <key>` (or
- * SHAPIO_SITE) names it, else the token's site, else the primary site.
+ * the instance's rate limit is waited out and retried. A bundle is one workspace's content: `--workspace <key>`
+ * (or SHAPIO_WORKSPACE) names it, else the token's workspace, else the primary workspace.
  */
 export const DEFAULT_URL = 'http://localhost:4300';
 
 export type Connection = { baseUrl: string; token: string; site?: string };
 
-export class UsageError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'UsageError';
-  }
-}
-
 export type TransferArgs = { connection: Connection; flags: Record<string, boolean>; file: string };
 
-/** `[--url] [--token] [--site] [--<flag>...] <file>` for both commands. */
+/** `[--url] [--token] [--workspace] [--<flag>...] <file>` for both commands. */
 export const parseTransferArgs = (
   args: readonly string[],
   io: CliIo,
@@ -35,7 +32,7 @@ export const parseTransferArgs = (
     options: {
       url: { type: 'string' },
       token: { type: 'string' },
-      site: { type: 'string' },
+      ...WORKSPACE_FLAGS,
       ...Object.fromEntries(flags.map((flag) => [flag, { type: 'boolean' as const, default: false }])),
     },
     allowPositionals: true,
@@ -48,7 +45,7 @@ export const parseTransferArgs = (
   if (!file || extra.length > 0) {
     throw new UsageError('Give exactly one bundle file');
   }
-  const site = values.site ?? io.env.SHAPIO_SITE;
+  const site = resolveWorkspace(values, io.env);
   return {
     connection: {
       baseUrl: values.url ?? io.env.SHAPIO_URL ?? DEFAULT_URL,

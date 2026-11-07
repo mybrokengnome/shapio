@@ -1,5 +1,11 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  resolveWorkspace,
+  WORKSPACE_FLAGS,
+  workspaceFromFlags,
+  type WorkspaceFlagValues,
+} from '../../helpers/workspace.js';
 import { sha256File, type ImportMap } from '../../import/importMap.js';
 import { runMap } from '../../import/mapper.js';
 import { checkPlanDirectory, writePlan } from '../../import/planner.js';
@@ -46,7 +52,7 @@ const parse = (args: readonly string[], spec: ImporterSpec): Parsed => {
       shared: { type: 'boolean', default: false },
       url: { type: 'string' },
       token: { type: 'string' },
-      site: { type: 'string' },
+      ...WORKSPACE_FLAGS,
       ...Object.fromEntries(spec.options.map((option) => [option, { type: 'string' as const }])),
     },
     allowPositionals: true,
@@ -66,15 +72,17 @@ const parse = (args: readonly string[], spec: ImporterSpec): Parsed => {
   if (values.map !== undefined && values.shared) {
     throw new UsageError('--shared is a --plan option: --map imports where the plan put the models');
   }
-  if (values.shared && values.site !== undefined) {
-    throw new UsageError('Pass either --site <key> or --shared, not both');
+  if (values.shared && workspaceFromFlags(values) !== undefined) {
+    throw new UsageError('Pass either --workspace <key> or --shared, not both');
   }
   return { values, file: positionals[0] };
 };
 
-/** `--site`, else SHAPIO_SITE: the site `--map` writes to (else the site the plan recorded). */
-const siteOf = (values: ImporterValues, io: CliIo) =>
-  ((values.site as string | undefined) ?? io.env.SHAPIO_SITE)?.trim() || undefined;
+/** The workspace flags among an importer's values (`--workspace`, and `--site`, its older name). */
+const workspaceFlagsOf = (values: ImporterValues): WorkspaceFlagValues => ({
+  workspace: values.workspace as string | undefined,
+  site: values.site as string | undefined,
+});
 
 /**
  * The instance `--plan` checks names against: only with an explicit `--url` (SHAPIO_URL alone keeps the plan
@@ -95,8 +103,8 @@ const planConnectionOf = (values: ImporterValues, io: CliIo) => {
 };
 
 /**
- * The site the plan is for. With an instance and no site named, the instance says which (the token's site,
- * else the primary site) rather than assuming the built-in site's key.
+ * The workspace the plan is for. With an instance and no workspace named, the instance says which (the
+ * token's workspace, else the primary workspace) rather than assuming the built-in workspace's key.
  */
 const planSiteOf = async (
   requested: PlanSite,
@@ -105,8 +113,8 @@ const planSiteOf = async (
   connection && !requested.explicit ? { site: await resolveSiteKey(connection), explicit: true } : requested;
 
 /**
- * Where names are checked: the plan's site, or for a shared plan no site at all, so the instance checks it
- * against the view it answers for (a site token's own site, never a site the token cannot reach).
+ * Where names are checked: the plan's workspace, or for a shared plan none at all, so the instance checks it
+ * against the view it answers for (a workspace token's own workspace, never one the token cannot reach).
  */
 const planTargetOf = (connection: { baseUrl: string; token: string } | undefined, planSite: PlanSite) =>
   connection && {
@@ -121,7 +129,7 @@ const runPlan = async (spec: ImporterSpec, file: string, values: ImporterValues,
   await checkPlanDirectory(dir, values.force === true);
   const connection = planConnectionOf(values, io);
   const planSite = await planSiteOf(
-    resolvePlanSite({ site: values.site as string | undefined, shared: values.shared === true }, io.env),
+    resolvePlanSite({ ...workspaceFlagsOf(values), shared: values.shared === true }, io.env),
     connection,
   );
   const target = planTargetOf(connection, planSite);
@@ -142,7 +150,8 @@ const runMapStep = (spec: ImporterSpec, values: ImporterValues, io: CliIo) => {
     throw new UsageError('An admin API token is required: pass --token or set SHAPIO_TOKEN');
   }
   const dir = resolve(String(values.map));
-  const site = siteOf(values, io);
+  // `--workspace`, else SHAPIO_WORKSPACE: where `--map` writes (else the workspace the plan recorded).
+  const site = resolveWorkspace(workspaceFlagsOf(values), io.env);
   return runMap(
     {
       dir,

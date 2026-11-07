@@ -13,15 +13,16 @@ export const importStrapiCommand = createImporterCommand({
   label: 'Strapi',
   summary: 'Import a Strapi 5 export: --plan writes schema files, --map creates drafts and change sets',
   usage:
-    'shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--site <key> | --shared] [--url <origin> --token <admin token>] [--force]\n' +
-    '       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--site <key>]\n' +
+    'shapio import strapi <export.tar[.gz[.enc]]> --plan <dir> [--key <encryption key>] [--workspace <key> | --shared] [--url <origin> --token <admin token>] [--force]\n' +
+    '       shapio import strapi --map <dir> [--url <origin>] [--token <admin token>] [--workspace <key>]\n' +
     '  --plan unpacks the export into <dir>/source (--key for an encrypted export) and writes the planned models\n' +
     '  and components (<dir>/schema) and <dir>/import-map.json. With --url it checks the planned API IDs against\n' +
-    '  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one site\n' +
-    "  (<dir>/schema/sites/<key>/): --site (or SHAPIO_SITE), else with --url the token's site or the primary\n" +
-    '  site, else the built-in site ("default"); --shared shares them with all sites (applying them needs a\n' +
-    '  network admin token). --map without --site imports into the planned site. Apply the schema with\n' +
-    '  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--site <key>]`, then run --map:\n' +
+    '  that instance and renames clashes (seo → seoItem); without it, it sends nothing. They belong to one\n' +
+    "  workspace (<dir>/schema/sites/<key>/): --workspace (or SHAPIO_WORKSPACE), else with --url the token's\n" +
+    '  workspace or the primary workspace, else the built-in workspace ("default"); --shared shares them with all\n' +
+    '  workspaces (applying them needs a network admin token). --map without --workspace imports into the\n' +
+    '  planned workspace. Apply the schema with\n' +
+    '  `shapio schema apply --dir <dir>/schema --lock <dir>/schema-lock.json [--workspace <key>]`, then run --map:\n' +
     '  it uploads the media, creates every document as a draft and opens change sets with the published ones.\n' +
     '  Strapi 5 only.',
   options: ['key'],

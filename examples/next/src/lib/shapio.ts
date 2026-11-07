@@ -21,10 +21,10 @@ import type { Article, Page, SiteSettings } from './types';
  * mode (SHAPIO_DRAFTS=true) reads saved drafts, which have no snapshot: no read sends one, and every read is
  * fresh (the client never caches drafts).
  *
- * The client tags every read with the site, model and entry, and /api/revalidate expires the tags of what
- * changed (src/lib/revalidationTags.ts) as well as the pages. No `next: { cache }` option: reads pinned to a
- * snapshot are `force-cache` regardless, and `site.get()` (no snapshot) stays fresh on every build, since Next's
- * data cache outlives `next build`.
+ * The client tags every read with the workspace, model and entry, and /api/revalidate expires the tags of
+ * what changed (src/lib/revalidationTags.ts) as well as the pages. No `next: { cache }` option: reads pinned to
+ * a snapshot are `force-cache` regardless, and `workspace.get()` (no snapshot) stays fresh on every build, since
+ * Next's data cache outlives `next build`.
  */
 const PAGE_SIZE = 100;
 
@@ -120,7 +120,7 @@ export const getSiteSettings = async (locale: Locale): Promise<SiteSettings | nu
  */
 export const getSite = async (): Promise<DeliverySite | null> => {
   try {
-    return await shapio().site.get();
+    return await shapio().workspace.get();
   } catch (error) {
     if (error instanceof ShapioApiError && error.status === 404) {
       return null;

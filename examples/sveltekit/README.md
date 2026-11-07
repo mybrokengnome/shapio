@@ -16,7 +16,7 @@ npm run smoke       # in another shell: checks the served pages over HTTP
 
 `npm run seed` applies the models in `shapio/` to Shapio live, creates the content and writes `SHAPIO_URL` and
 `SHAPIO_DELIVERY_TOKEN` to `.env`. `SHAPIO_SNAPSHOT` pins a build to an exact snapshot (by default the latest
-one, read once when prerendering starts); `SHAPIO_SITE` picks the site on a multi-site instance.
+one, read once when prerendering starts); `SHAPIO_WORKSPACE` picks the workspace on an instance with several.
 
 | File                         | Role                                                                |
 | ---------------------------- | ------------------------------------------------------------------- |

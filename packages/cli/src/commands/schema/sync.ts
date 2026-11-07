@@ -24,7 +24,7 @@ export type LocalState = {
   implemented: ImplementedIds;
 };
 
-/** One site's part of the local tree: what an apply for `siteKey` sends. */
+/** One workspace's part of the local tree: what an apply for `siteKey` sends. */
 export type SiteState = LocalState & { siteKey: string; sent: LocalFile[] };
 
 type RawDefinition = {
@@ -36,10 +36,10 @@ type RawDefinition = {
 };
 
 /**
- * Field and definition names by ID from every local file (all sites' folders too, and interfaces/ like the
- * other kinds' folders), for readable diffs. A type
- * that extends another stores only its own fields, and an inherited field keeps its parent's ID, so the
- * parent's file names it: the whole file set is read, never one site's part, and inherited fields resolve.
+ * Field and definition names by ID from every local file (all workspaces' folders too, and interfaces/ like the
+ * other kinds' folders), for readable diffs. A type that extends another stores only its own fields, and an
+ * inherited field keeps its parent's ID, so the parent's file names it: the whole file set is read, never one
+ * workspace's part, and inherited fields resolve.
  */
 export const collectNames = (files: readonly LocalFile[]): Map<string, string> => {
   const names = new Map<string, string>();
@@ -114,7 +114,7 @@ export const readLocalState = async (options: SchemaCommandOptions): Promise<Loc
   };
 };
 
-/** The admin client for the command's site (`--site`, else the token's site, else the primary). */
+/** The admin client for the command's workspace (`--workspace`, else the token's workspace, else the primary). */
 export const clientFor = (options: ConnectionOptions) =>
   createClient({
     baseUrl: options.baseUrl,
@@ -125,21 +125,21 @@ export const clientFor = (options: ConnectionOptions) =>
 /** The schema sync endpoints (`export`, `apply`, `change`) of @shapio/client. */
 export const apiFor = (options: ConnectionOptions) => clientFor(options).admin.schema;
 
-/** The key of the site the command works on, as the instance resolved it (an unnamed site is the default). */
+/** The key of the workspace the command works on, as the instance resolved it. */
 export const resolveSiteKey = async (options: ConnectionOptions): Promise<string> => {
   if (options.site) {
     return options.site;
   }
   const { site } = await apiFor(options).export({ scope: 'network' });
   if (!site) {
-    throw new Error('The instance did not say which site this token works on; pass --site <key>');
+    throw new Error('The instance did not say which workspace this token works on; pass --workspace <key>');
   }
   return site.key;
 };
 
 /**
- * The local tree narrowed to one site (shared files and `sites/<key>/`), or undefined (after explaining)
- * when the tree was pulled for other sites only.
+ * The local tree narrowed to one workspace (shared files and `sites/<key>/`), or undefined (after explaining)
+ * when the tree was pulled for other workspaces only.
  */
 export const readSiteState = async (
   options: SchemaCommandOptions,
@@ -149,15 +149,15 @@ export const readSiteState = async (
   const state = await readLocalState(options);
   if (!lockCoversSite(state.lock, siteKey)) {
     io.stderr(
-      `${displayPath(options.lockPath)} covers the site(s) ${(state.lock.sites ?? []).join(', ')}, not "${siteKey}".\n` +
-        `Apply it with --site <one of those>, or pull "${siteKey}" into this tree first: shapio schema pull --site ${siteKey}\n`,
+      `${displayPath(options.lockPath)} covers the workspace(s) ${(state.lock.sites ?? []).join(', ')}, not "${siteKey}".\n` +
+        `Apply it with --workspace <one of those>, or pull "${siteKey}" into this tree first: shapio schema pull --workspace ${siteKey}\n`,
     );
     return undefined;
   }
   return { ...state, siteKey, sent: filesForSite(state.files, siteKey) };
 };
 
-/** Sends the site's files with their lock-file bases; the server decides per definition (three-way). */
+/** Sends the workspace's files with their lock-file bases; the server decides per definition (three-way). */
 export const sendApply = async (
   options: SchemaCommandOptions,
   state: SiteState,

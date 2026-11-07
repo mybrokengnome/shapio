@@ -10,8 +10,9 @@ import { bodyOf, describeFailure, parseTransferArgs, send, UsageError, type Conn
 import { BUNDLE_ENTRY, endTar, mediaEntryName, writeTarEntry } from './tar.js';
 
 const USAGE =
-  'shapio export [--url <origin>] [--token <admin token>] [--site <key>] [--with-media] [--heads-only] [--include-users] <file>\n' +
-  "  Exports one site's content (--site or SHAPIO_SITE; default: the token's site, else the primary site).";
+  'shapio export [--url <origin>] [--token <admin token>] [--workspace <key>] [--with-media] [--heads-only] [--include-users] <file>\n' +
+  "  Exports one workspace's content (--workspace or SHAPIO_WORKSPACE; default: the token's workspace, else the\n" +
+  '  primary workspace).';
 
 const FLAGS = ['with-media', 'heads-only', 'include-users'] as const;
 

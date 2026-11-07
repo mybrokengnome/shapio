@@ -30,9 +30,10 @@ import { createPng } from './lib/png.js';
  * 1. the `fr` locale;
  * 2. the models and components in shapio/ (models/ and components/, plus sites/<key>/models/ and
  *    sites/<key>/components/ once `shapio schema pull` has run) through the schema apply API (live, no
- *    restart; the same planner as `shapio schema apply` and the admin), as the site's own (SHAPIO_SITE, else the token's site, else the
- *    primary): a starter's schema belongs to the first site it is seeded on;
- *    The built-in SEO component (components/seo.json) is the exception: it is always shared with every site;
+ *    restart; the same planner as `shapio schema apply` and the admin), as the workspace's own
+ *    (SHAPIO_WORKSPACE, else the token's workspace, else the primary): a starter's schema belongs to the first
+ *    workspace it is seeded on; the built-in SEO component (components/seo.json) is the exception: it is always
+ *    shared with every workspace;
  * 3. placeholder images, an author, the site settings, pages and articles in English and French, published
  *    per locale, and the site's SEO defaults (Settings → SEO);
  * 4. a deployment connection named "Preview" whose preview URL opens this starter's /preview/ page (the
@@ -42,12 +43,12 @@ import { createPng } from './lib/png.js';
  *    sends publish, unpublish, delete, change set and schema events to SITE_URL + that path; its signing secret
  *    (rotated on every run, as Shapio shows it only once) is written to .env as SHAPIO_WEBHOOK_SECRET;
  * 6. a delivery role and token for the build, written with SHAPIO_URL to .env in the current directory;
- * 7. a second delivery role and token for development servers, "<site> dev", that may also read drafts (drafts
+ * 7. a second delivery role and token for development servers, "<workspace> dev", that may also read drafts (drafts
  *    mode: SHAPIO_DRAFTS=true), written to .env as SHAPIO_DEV_DELIVERY_TOKEN. Never put it in production.
  */
 const SCHEMA_DIR = resolve(import.meta.dirname, '..', 'shapio');
 const SCHEMA_KINDS = ['models', 'components'] as const;
-/** A pulled tree keeps each site's own definitions in sites/<siteKey>/models and sites/<siteKey>/components. */
+/** A pulled tree keeps each workspace's own definitions in sites/<siteKey>/models and sites/<siteKey>/components. */
 const SITES_DIR = 'sites';
 const SITE_MODELS = ['page', 'article', 'author', 'siteSettings'];
 const DELIVERY_ROLE_KEY = 'starter-delivery';
@@ -59,7 +60,7 @@ const PREVIEW_PATH = '/preview/?model={modelKey}&id={entryId}&locale={locale}#to
 /** A placeholder build hook: the connection has no triggers, so nothing is ever sent to it. */
 const PREVIEW_BUILD_HOOK = 'https://build.invalid/shapio-starter';
 const REVALIDATE_WEBHOOK_NAME = 'Site revalidation';
-/** The request's site's SEO defaults (`site.settings`). */
+/** The request's workspace's SEO defaults (`site.settings`). */
 const SEO_DEFAULTS_PATH = '/api/admin/site/seo';
 /** The events that change what a published site shows (the starter's route ignores any others). */
 const REVALIDATE_EVENTS = [
@@ -114,7 +115,7 @@ const listFolder = async (path: string): Promise<string[]> => {
 
 /**
  * The folders that may hold definition files, in apply order: every models folder, then every components
- * folder; within each kind the shared folder first, then `sites/<key>/` in key order. The site key is ignored
+ * folder; within each kind the shared folder first, then `sites/<key>/` in key order. The workspace key is ignored
  * (the seed decides the scope, see applySchema).
  */
 const definitionFolders = async (): Promise<string[]> => {
@@ -183,8 +184,8 @@ const applySchema = async (client: ShapioClient) => {
   try {
     response = await client.admin.schema.apply({
       definitions,
-      // Every definition is the site's own (sites/<key>/ in a pulled tree), never shared by default, except
-      // the built-in SEO component: Shapio knows it by its fixed ID, so one shared copy serves every site.
+      // Every definition is the workspace's own (sites/<key>/ in a pulled tree), never shared by default, except
+      // the built-in SEO component: Shapio knows it by its fixed ID, so one shared copy serves every workspace.
       scopes: definitions.map((definition) =>
         (definition as { id?: unknown }).id === SEO_COMPONENT_ID ? ('network' as const) : ('site' as const),
       ),
@@ -197,11 +198,12 @@ const applySchema = async (client: ShapioClient) => {
   } catch (error) {
     if (isSeededElsewhere(error)) {
       throw new SeedRefusedError(
-        "This starter's schema already belongs to another site of this instance: a starter's schema belongs " +
-          'to the first site it is seeded on. To reuse it on this site, share it with all sites ' +
-          'with a network admin token (`shapio schema scope <apiKey> --shared --site <that site>` for each ' +
-          'component, then author, page, article and siteSettings) and seed again, or seed a separate instance. ' +
-          'The SEO component is always shared; a site that keeps its own copy of it blocks the others.',
+        "This starter's schema already belongs to another workspace of this instance: a starter's schema " +
+          'belongs to the first workspace it is seeded on. To reuse it in this workspace, share it with all ' +
+          'workspaces with a network admin token (`shapio schema scope <apiKey> --shared --workspace <that ' +
+          'workspace>` for each component, then author, page, article and siteSettings) and seed again, or seed ' +
+          'a separate instance. The SEO component is always shared; a workspace that keeps its own copy of it ' +
+          'blocks the others.',
         { cause: error },
       );
     }
@@ -405,7 +407,7 @@ const BUILD_ROLE: DeliveryRoleSpec = {
   drafts: false,
 };
 
-/** The development token's role: the build role plus Read drafts. Named after the site it reads. */
+/** The development token's role: the build role plus Read drafts. Named after the workspace it reads. */
 const devRole = (siteName: string): DeliveryRoleSpec => ({
   key: DEV_ROLE_KEY,
   name: 'Starter site dev (drafts)',
@@ -415,11 +417,11 @@ const devRole = (siteName: string): DeliveryRoleSpec => ({
   drafts: true,
 });
 
-/** The name of the site the seed works on: SHAPIO_SITE, else the primary site. */
+/** The name of the workspace the seed works on: SHAPIO_WORKSPACE (or SHAPIO_SITE), else the primary workspace. */
 const siteNameOf = async (client: ShapioClient, siteKey: string | undefined) => {
   const sites = await client.admin.sites.list();
   const site = sites.find((candidate) => (siteKey ? candidate.key === siteKey : candidate.isPrimary));
-  return site?.name ?? siteKey ?? 'site';
+  return site?.name ?? siteKey ?? 'workspace';
 };
 
 /** The "Preview" connection, created once and pointed at this starter's /preview/ page on every run. */
@@ -502,13 +504,13 @@ const writeEnv = async ({ url, site, deliveryToken, devDeliveryToken, webhookSec
     '# Development only: drafts mode (SHAPIO_DRAFTS=true) reads with this token, which may read drafts.',
     '# Never put it in a production environment.',
     `SHAPIO_DEV_DELIVERY_TOKEN=${devDeliveryToken}`,
-    // The site the content was seeded on: the starter reads the same one.
-    ...(site ? [`SHAPIO_SITE=${site}`] : []),
+    // The workspace the content was seeded in: the starter reads the same one.
+    ...(site ? [`SHAPIO_WORKSPACE=${site}`] : []),
     ...(webhookSecret ? [`SHAPIO_WEBHOOK_SECRET=${webhookSecret}`] : []),
   ];
   await writeFile(path, `${lines.join('\n')}\n`, { mode: 0o600 });
   log(
-    `Wrote SHAPIO_URL, ${site ? 'SHAPIO_SITE, ' : ''}SHAPIO_DELIVERY_TOKEN, SHAPIO_DEV_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
+    `Wrote SHAPIO_URL, ${site ? 'SHAPIO_WORKSPACE, ' : ''}SHAPIO_DELIVERY_TOKEN, SHAPIO_DEV_DELIVERY_TOKEN${webhookSecret ? ' and SHAPIO_WEBHOOK_SECRET' : ''} to ${path}`,
   );
 };
 

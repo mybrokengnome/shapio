@@ -18,4 +18,12 @@ export const REMOTE_COMMANDS: Readonly<Record<string, CliCommand>> = {
   import: importCommand,
 };
 
+export { UsageError } from './helpers/usageError.js';
+export {
+  resolveWorkspace,
+  WORKSPACE_FLAGS,
+  workspaceFromEnv,
+  workspaceFromFlags,
+  type WorkspaceFlagValues,
+} from './helpers/workspace.js';
 export type { CliCommand, CliIo } from './types.js';

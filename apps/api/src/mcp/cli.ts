@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import type { CliCommand, CliIo } from '@shapio/cli';
+import { resolveWorkspace, UsageError, WORKSPACE_FLAGS, type CliCommand, type CliIo } from '@shapio/cli';
 import { SITE_KEY_PATTERN } from '../constants/sites.js';
 import { createUrlBuilder } from '../helpers/publicUrl.js';
 
@@ -8,10 +8,11 @@ import { createUrlBuilder } from '../helpers/publicUrl.js';
  * server run with npx). Prints configuration only: it creates no token and contacts nothing.
  */
 const MCP_USAGE =
-  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--site <key>]\n' +
+  'shapio mcp [--url <Shapio URL>] [--client claude-code|cursor|claude-desktop|generic] [--allow-ship] [--workspace <key>]\n' +
   '  Prints the MCP client configuration for @shapio/mcp. The URL defaults to SHAPIO_URL, then\n' +
-  "  PUBLIC_URL + BASE_PATH. --site sets SHAPIO_SITE (multi-site instances; default: the token's site, else\n" +
-  '  the primary site). --client generic prints the stdio server definition any MCP client takes.\n' +
+  '  PUBLIC_URL + BASE_PATH. --workspace (default: SHAPIO_WORKSPACE) names the workspace the server works on,\n' +
+  "  for instances with several; default: the token's workspace, else the primary workspace. --client generic\n" +
+  '  prints the stdio server definition any MCP client takes.\n' +
   '  Create an admin API token whose role has neither "changes.ship" nor "changes.approve" and paste it in\n' +
   '  place of the placeholder: agents prepare change sets, people approve and ship them.';
 
@@ -35,13 +36,17 @@ const defaultUrl = (env: CliIo['env']) => {
   return 'http://localhost:4300';
 };
 
-/** What the printed configuration connects to. */
+/** What the printed configuration connects to; `site` is the workspace key. */
 type McpTarget = { url: string; allowShip: boolean; site: string | undefined };
 
 const SITE_KEY = new RegExp(SITE_KEY_PATTERN);
 
 const serverArgs = ({ allowShip }: McpTarget) => ['-y', PACKAGE, ...(allowShip ? ['--allow-ship'] : [])];
 
+/**
+ * The server's environment. The workspace goes in SHAPIO_SITE, which every @shapio/mcp version reads (0.8.2
+ * and later also read SHAPIO_WORKSPACE), so the printed configuration works with an older server package.
+ */
 const serverEnv = ({ url, site }: McpTarget): Record<string, string> => ({
   SHAPIO_URL: url,
   SHAPIO_TOKEN: TOKEN_PLACEHOLDER,
@@ -90,7 +95,7 @@ export const mcpCommand: CliCommand = {
           url: { type: 'string' },
           client: { type: 'string' },
           'allow-ship': { type: 'boolean', default: false },
-          site: { type: 'string' },
+          ...WORKSPACE_FLAGS,
         },
         strict: true,
       }));
@@ -108,11 +113,21 @@ export const mcpCommand: CliCommand = {
       io.stderr(`--url must be an http(s) URL (got ${url})\n`);
       return 1;
     }
-    if (values.site !== undefined && !SITE_KEY.test(values.site)) {
-      io.stderr(`--site must be a site key (lower case, starting with a letter; got ${values.site})\n`);
+    let site;
+    try {
+      site = resolveWorkspace(values, io.env);
+    } catch (error) {
+      if (error instanceof UsageError) {
+        io.stderr(`${error.message}\n`);
+        return 1;
+      }
+      throw error;
+    }
+    if (site !== undefined && !SITE_KEY.test(site)) {
+      io.stderr(`--workspace must be a workspace key (lower case, starting with a letter; got ${site})\n`);
       return 1;
     }
-    const target: McpTarget = { url, allowShip: values['allow-ship'], site: values.site };
+    const target: McpTarget = { url, allowShip: values['allow-ship'], site };
     const sections = (client ? [client] : CLIENTS).map((kind) => SECTIONS[kind](target));
     io.stdout(
       `${sections.join('\n')}\nReplace ${TOKEN_PLACEHOLDER} with an admin API token (Settings → API tokens). ` +

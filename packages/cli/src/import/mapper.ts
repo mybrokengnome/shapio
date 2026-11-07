@@ -47,14 +47,15 @@ export class ImportRefusedError extends Error {
 }
 
 /**
- * The site `--map` writes to: `--site` (or SHAPIO_SITE), else the site the plan was made for. A requested site
- * that disagrees with the planned one is refused: the planned models exist on that site only.
+ * The workspace `--map` writes to: `--workspace` (or SHAPIO_WORKSPACE), else the workspace the plan was made
+ * for. A requested workspace that disagrees with the planned one is refused: the planned models exist in that
+ * workspace only.
  */
 export const resolveMapSite = (map: Pick<ImportMap, 'site'>, requested: string | undefined) => {
   const planned = map.site ?? undefined;
   if (requested !== undefined && planned !== undefined && requested !== planned) {
     throw new ImportRefusedError(
-      `This import was planned for site "${planned}", not "${requested}": run --map with --site ${planned}, or plan again with --site ${requested}`,
+      `This import was planned for workspace "${planned}", not "${requested}": run --map with --workspace ${planned}, or plan again with --workspace ${requested}`,
     );
   }
   return requested ?? planned;
@@ -74,12 +75,12 @@ const checkSourceAndSite = async (map: ImportMap, site: string | undefined) => {
   const started = Object.keys(map.state.entries).length > 0 || Object.keys(map.state.media).length > 0;
   if (started && (map.state.site ?? null) !== (site ?? null)) {
     throw new ImportRefusedError(
-      `This import was started on site ${map.state.site ?? '(default)'}: re-run it with the same --site`,
+      `This import was started in workspace ${map.state.site ?? '(default)'}: re-run it with the same --workspace`,
     );
   }
 };
 
-/** The target site's view (the client names the site): its own definitions and the shared ones. */
+/** The target workspace's view (the client names it): its own definitions and the shared ones. */
 const loadLiveSchema = async (
   client: ShapioClient,
   map: ImportMap,
@@ -94,7 +95,7 @@ const loadLiveSchema = async (
   if (live.missing.length > 0) {
     throw new ImportRefusedError(
       `The instance does not have the planned models yet: ${live.missing.join(', ')}.\n` +
-        `Apply them first: shapio schema apply --dir ${join(dir, PLAN_SCHEMA_DIR)} --lock ${join(dir, PLAN_LOCK_FILE)}${site ? ` --site ${site}` : ''}`,
+        `Apply them first: shapio schema apply --dir ${join(dir, PLAN_SCHEMA_DIR)} --lock ${join(dir, PLAN_LOCK_FILE)}${site ? ` --workspace ${site}` : ''}`,
     );
   }
   return live;
@@ -263,7 +264,7 @@ const openChangeSets = async (run: Run) => {
   return addToChangeSets(run.client, run.map, pending, { label: run.options.label, total, save: run.save });
 };
 
-/** Says so when the site requires approval before the import's change sets can ship (plan approval). */
+/** Says so when the workspace requires approval before the import's change sets can ship (plan approval). */
 const printApprovalNotice = async (run: Run) => {
   if (run.map.state.changeSets.length === 0) {
     return;
@@ -274,7 +275,7 @@ const printApprovalNotice = async (run: Run) => {
       run.io.stdout(notice);
     }
   } catch (error) {
-    run.io.stderr(`Could not read whether the site requires approval: ${(error as Error).message}\n`);
+    run.io.stderr(`Could not read whether the workspace requires approval: ${(error as Error).message}\n`);
   }
 };
 

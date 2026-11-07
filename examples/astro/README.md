@@ -16,7 +16,7 @@ npm run smoke:http  # checks the served pages over HTTP (in another terminal, wh
 ```
 
 `npm run seed` applies the models in `shapio/` to Shapio live, creates the content and writes `SHAPIO_URL` and
-`SHAPIO_DELIVERY_TOKEN` to `.env`. Other settings (`SHAPIO_SNAPSHOT`, `SHAPIO_SITE`, `PUBLIC_SHAPIO_URL`) are
+`SHAPIO_DELIVERY_TOKEN` to `.env`. Other settings (`SHAPIO_SNAPSHOT`, `SHAPIO_WORKSPACE`, `PUBLIC_SHAPIO_URL`) are
 in `.env.example`. Settings are read from the environment and `.env` only (not `.env.local` or
 `.env.production`). Astro's telemetry is turned off in the npm scripts.
 
