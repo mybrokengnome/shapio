@@ -1,4 +1,4 @@
-import { createDeliveryClient, type ShapioDeliveryClient } from '@shapio/client';
+import { createDeliveryClient, resolveWorkspaceOption, type ShapioDeliveryClient } from '@shapio/client';
 import * as delivery from '@shapio/cms/delivery';
 import { assertNodeRuntime } from './nodeRuntime.js';
 import type {
@@ -35,22 +35,29 @@ export type LocalClient = ShapioDeliveryClient & {
 };
 
 /**
- * Shapio's delivery API as function calls in this process: the `delivery`, `site` and `snapshots` groups of
- * `@shapio/client`, with the same paths, permissions, response shapes and `ShapioApiError`s, answered from the
- * database without an HTTP hop. Reads as `token` (a delivery API token) or, without one, as an anonymous
- * caller (the site's `public` role). Model changes made in the admin show on the next call. `drafts: true`
- * reads drafts instead (drafts mode), when the token's role grants Read drafts.
+ * Shapio's delivery API as function calls in this process: the `delivery`, `workspace` (also as `site`) and
+ * `snapshots` groups of `@shapio/client`, with the same paths, permissions, response shapes and
+ * `ShapioApiError`s, answered from the database without an HTTP hop. Reads as `token` (a delivery API token)
+ * or, without one, as an anonymous caller (the workspace's `public` role). Model changes made in the admin
+ * show on the next call. `drafts: true` reads drafts instead (drafts mode), when the token's role grants Read
+ * drafts.
  *
  * Needs PostgreSQL or MySQL, the Node.js runtime, and the same Shapio release as the server (`SHAPIO_VERSION`);
  * see `onVersionSkew`. Nothing is read until the first call.
  */
 export const createLocalClient = ({
   token,
-  site,
+  workspace,
+  site: siteOption,
   drafts,
   ...runtimeOptions
 }: LocalClientOptions): LocalClient => {
   assertNodeRuntime();
+  const site = resolveWorkspaceOption(
+    { workspace, site: siteOption },
+    'createLocalClient',
+    (message) => new DeliveryRuntimeError(message),
+  );
   const runtime = delivery.createDeliveryRuntime(runtimeOptions);
   const release = runtime.retain();
   const request = delivery.createInProcessRequest(runtime, {

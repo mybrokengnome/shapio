@@ -89,7 +89,7 @@ export type Webhook = {
   enabled: boolean;
   allowPrivateNetwork: boolean;
   maxAttempts: number;
-  /** The site whose events it receives; null for a network-wide webhook (every site's events). */
+  /** The workspace whose events it receives; null for a network-wide webhook (every workspace's events). */
   site: SiteRef | null;
   lastDelivery: { status: WebhookDeliveryStatus; at: string } | null;
   createdBy: string | null;
@@ -107,11 +107,11 @@ export type CreateWebhookInput = {
   enabled?: boolean;
   allowPrivateNetwork?: boolean;
   maxAttempts?: number;
-  /** A network-wide webhook (every site's events); otherwise it belongs to the request's site. */
+  /** A network-wide webhook (every workspace's events); otherwise it belongs to the request's workspace. */
   network?: boolean;
 };
 
-/** A webhook's site is fixed once created. */
+/** A webhook's workspace is fixed once created. */
 export type UpdateWebhookInput = Partial<Omit<CreateWebhookInput, 'network'>> & { expectedVersion: number };
 
 /** The JSON body every webhook delivery sends (signed; verify it with `verifyWebhookSignature`). */
@@ -119,7 +119,7 @@ export type WebhookEventBody = {
   id: string;
   type: string;
   createdAt: string;
-  /** The site the event is about; null for events about no site (network-wide). */
+  /** The workspace the event is about; null for events about no workspace (network-wide). */
   site: SiteRef | null;
   data: unknown;
 };
@@ -240,10 +240,10 @@ export type DeploymentConnection = {
   debounceSeconds: number;
   allowPrivateNetwork: boolean;
   enabled: boolean;
-  /** Where the site posts signed build callbacks (generic webhook connections). */
+  /** Where the website posts signed build callbacks (generic webhook connections). */
   callbackUrl: string;
   latestRun: DeploymentRun | null;
-  /** The newest deployed run by snapshot: what the site is serving, as far as Shapio knows. */
+  /** The newest deployed run by snapshot: what the website is serving, as far as Shapio knows. */
   currentRun: DeploymentRun | null;
   createdBy: string | null;
   createdAt: string;
@@ -352,7 +352,7 @@ export type OpenPreviewResult = {
   connectionId: string | null;
 };
 
-/** A connection the site's previews open on (names and origins only). */
+/** A connection the workspace's previews open on (names and origins only). */
 export type PreviewTarget = {
   connectionId: string;
   name: string;

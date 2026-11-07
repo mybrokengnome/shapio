@@ -1,6 +1,6 @@
 import type { SeoLocaleDefaults } from '@shapio/schema/seo';
 
-/** A media asset as the delivery API returns it (media fields, the site's default image). */
+/** A media asset as the delivery API returns it (media fields, the workspace's default image). */
 export type DeliveryAsset = {
   id: string;
   filename: string;
@@ -12,7 +12,7 @@ export type DeliveryAsset = {
   caption: string | null;
   focalPoint: { x: number; y: number } | null;
   url: string;
-  /** Null for public assets (always, for the site's default image). */
+  /** Null for public assets (always, for the workspace's default image). */
   urlExpiresAt: string | null;
   variants: Array<{
     name: string;
@@ -34,13 +34,14 @@ export type SeoFields = {
 };
 
 /**
- * The same field with `?seo=resolved` (or `resolveSeo`): the title through the site's template (the entry's
- * own title when the SEO title is empty), description and image from the site's defaults when empty,
- * `noindex` a boolean. `canonical` stays the entry's value or null: the site builds its own from its URL.
+ * The same field with `?seo=resolved` (or `resolveSeo`): the title through the workspace's template (the
+ * entry's own title when the SEO title is empty), description and image from the workspace's defaults when
+ * empty, `noindex` a boolean. `canonical` stays the entry's value or null: the website builds its own from its
+ * URL.
  */
 export type SeoResolved = Omit<SeoFields, 'noindex'> & { noindex: boolean };
 
-/** `GET /api/site`: the request's site and its SEO defaults (texts per locale, the default image). */
+/** `GET /api/site`: the request's workspace and its SEO defaults (texts per locale, the default image). */
 export type DeliverySite = {
   key: string;
   name: string;
@@ -50,3 +51,6 @@ export type DeliverySite = {
     image: DeliveryAsset | null;
   };
 };
+
+/** The workspace name of `DeliverySite` (the same type). */
+export type DeliveryWorkspace = DeliverySite;

@@ -12,7 +12,7 @@ export const SNAPSHOT_PATHS = {
   changes: '/api/snapshots/changes',
 } as const;
 
-/** Snapshots and the diff between two of them, for incremental site builds (delivery credentials). */
+/** Snapshots and the diff between two of them, for incremental website builds (delivery credentials). */
 export const createSnapshotsApi = (request: RequestFn) => {
   const changes = (query: SnapshotChangesQuery) =>
     request<SnapshotChangesPage>(`${SNAPSHOT_PATHS.changes}${toQueryString(query)}`);

@@ -19,7 +19,10 @@ export type RequestConfig = {
   fetch: typeof globalThis.fetch;
   credentials: FetchCredentials | undefined;
   headers: (() => Readonly<Record<string, string>>) | undefined;
-  /** The site key every request names (see site.ts); undefined: the credential's site, else the primary. */
+  /**
+   * The workspace key every request names (see site.ts); undefined: the credential's workspace, else the
+   * primary one.
+   */
   site: string | undefined;
 };
 

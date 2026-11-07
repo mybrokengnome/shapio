@@ -1,5 +1,5 @@
 /**
- * App-user authentication (package I), mirroring apps/api/src/routes/app-auth/schemas.ts. For the sites and
+ * App-user authentication (package I), mirroring apps/api/src/routes/app-auth/schemas.ts. For the websites and
  * apps built on Shapio: their end users sign up, sign in and manage their accounts here.
  */
 

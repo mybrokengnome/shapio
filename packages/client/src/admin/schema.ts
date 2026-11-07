@@ -38,7 +38,7 @@ const DEFINITION_PATHS = {
 export const createDefinitionApi = (request: RequestFn, category: DefinitionCategory) => {
   const base = DEFINITION_PATHS[category];
   return {
-    /** The site's view (shared definitions and its own); `{ scope: 'network' }` lists the shared ones. */
+    /** The workspace's view (shared definitions and its own); `{ scope: 'network' }` lists the shared ones. */
     list: async (options: { scope?: DefinitionScope } = {}) =>
       (await request<{ items: DefinitionListItem[] }>(`${base}${toQueryString(options)}`)).items,
     get: (id: string) => request<DefinitionDetail>(withId(base, id)),
@@ -50,7 +50,7 @@ export const createDefinitionApi = (request: RequestFn, category: DefinitionCate
         method: 'POST',
         body: scope ? { definition, scope } : { definition },
       }),
-    /** Shares a definition with all sites, or keeps it on one (needs schema.create on every site). */
+    /** Shares a definition with all workspaces, or keeps it on one (needs schema.create on every workspace). */
     changeScope: (id: string, body: ChangeScopeInput) =>
       request<ChangeScopeOutcome>(`${withId(base, id)}/scope`, { method: 'PUT', body }),
     /** Changes a definition; 409 SCHEMA_VERSION_CONFLICT when `expectedVersion` is stale. */

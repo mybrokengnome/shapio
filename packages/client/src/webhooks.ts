@@ -1,5 +1,5 @@
 /**
- * Verifying Shapio's signed webhooks and deploy triggers on the receiving side (a site's revalidate route,
+ * Verifying Shapio's signed webhooks and deploy triggers on the receiving side (a website's revalidate route,
  * a build hook). The scheme is the server's (`apps/api/src/publishing/signature.ts`):
  * `X-Shapio-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>` with
  * `X-Shapio-Timestamp: <unix seconds>`; several comma-separated `v1=` values are accepted (secret rotation).

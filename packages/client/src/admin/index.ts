@@ -135,7 +135,7 @@ export * from './usageTypes.js';
 export * from './sitesTypes.js';
 export * from './approvalTypes.js';
 export { APPROVAL_PATHS } from './approval.js';
-export { SITE_HEADER, SITES_PATHS } from './sites.js';
+export { SITE_HEADER, SITES_PATHS, WORKSPACE_HEADER } from './sites.js';
 export { toContentQueryString } from './contentQuery.js';
 export { buildUploadForm, resolveUploadUrl } from './media.js';
 export { HEALTH_RULES } from './editingTypes.js';

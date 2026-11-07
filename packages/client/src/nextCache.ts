@@ -1,6 +1,6 @@
 /**
  * Next.js data-cache support for delivery reads. Under Next (`process.env.NEXT_RUNTIME` is set) or when the
- * client is given a `next` option, every delivery read passes `next: { tags }` to `fetch`, so a site can
+ * client is given a `next` option, every delivery read passes `next: { tags }` to `fetch`, so a website can
  * refresh exactly what changed with `revalidateTag`. The cache mode is only set when asked for, except that a
  * read pinned to a publication snapshot is immutable and always `force-cache`, and a drafts-mode read is never
  * cached or tagged (`no-store`). Elsewhere nothing is added.
@@ -36,6 +36,10 @@ const routeKeyPrefixes = (routeKey: string): string[] => {
   return segments.map((_, index) => segments.slice(0, index + 1).join('/'));
 };
 
+/** The tag keeps its `site` spelling: tags already passed to `revalidateTag` must keep matching. */
+const workspaceTag = (workspaceKey?: string) =>
+  workspaceKey === undefined ? `${TAG_PREFIX}:site` : `${TAG_PREFIX}:site:${workspaceKey}`;
+
 const modelTag = (routeKey: string) => `${TAG_PREFIX}:${routeKey}`;
 const entryTag = (routeKey: string, entryId: string) => `${TAG_PREFIX}:${routeKey}:${entryId}`;
 
@@ -45,9 +49,10 @@ const entryTag = (routeKey: string, entryId: string) => `${TAG_PREFIX}:${routeKe
  * extends another its ancestors' plural API IDs and its own joined by `/` (`posts/guides`).
  */
 export const shapioTags = {
-  /** Every delivery read of the site; `shapio:site` when the client names no site. */
-  site: (siteKey?: string) =>
-    siteKey === undefined ? `${TAG_PREFIX}:site` : `${TAG_PREFIX}:site:${siteKey}`,
+  /** Every delivery read of the workspace; `shapio:site` when the client names no workspace. */
+  workspace: workspaceTag,
+  /** The older name of `workspace` (the same tags). */
+  site: workspaceTag,
   /** Every read of one model (lists, singletons and its entries). */
   model: modelTag,
   /** Reads of one entry by its ID. */
@@ -76,7 +81,7 @@ const isNextRuntime = (): boolean => {
   }
 };
 
-/** What every delivery read needs to tag itself: the client's site, `next` option and drafts mode. */
+/** What every delivery read needs to tag itself: the client's workspace, `next` option and drafts mode. */
 export type DeliveryCacheContext = {
   site: string | undefined;
   next: NextCacheOptions | false | undefined;
