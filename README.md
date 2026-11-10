@@ -65,6 +65,8 @@ just like a rejected push.
 
 ### Old clients keep working
 
+![A change set review saying what clients on an older schema version will see](.github/readme/older-clients.png)
+
 Rename a field or change its type, and the app you shipped last month keeps working. Each client names the
 schema version it was built against (`shapio types generate` writes it next to your types), and Shapio answers
 in that shape: its field names, its types, its routes. Regenerate the types when you're ready to move forward.

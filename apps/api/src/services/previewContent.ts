@@ -21,6 +21,7 @@ import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
+import { withClientQueryNames } from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
@@ -191,12 +192,14 @@ const authorize = async (
 
 /** The token's locale wins; a different `locale` in the query is refused rather than silently ignored. */
 const scopedQuery = (scope: PreviewScope, rawQuery: string): ContentQuery => {
-  const query = parseQueryFor(scope.context, scope.model, scope.policy, rawQuery, {
-    allowSnapshot: false,
-    allowRichText: true,
-    allowSeo: true,
-    members: scope.members,
-  });
+  const query = withClientQueryNames(scope.context, scope.model.definition.id, () =>
+    parseQueryFor(scope.context, scope.model, scope.policy, rawQuery, {
+      allowSnapshot: false,
+      allowRichText: true,
+      allowSeo: true,
+      members: scope.members,
+    }),
+  );
   if (scope.token.locale && query.locale && query.locale !== scope.token.locale) {
     throw new AppError(403, 'PREVIEW_SCOPE', `This preview token is for locale "${scope.token.locale}"`);
   }

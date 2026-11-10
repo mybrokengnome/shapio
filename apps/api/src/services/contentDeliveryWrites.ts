@@ -17,6 +17,7 @@ import {
 import { resolveModel, type ContentModel } from '../content/model.js';
 import type { ContentIssue } from '../content/validator/issues.js';
 import { AppError } from '../helpers/appError.js';
+import type { ContentAction } from '../permissions/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import { lensUncovered, lensWriteIssues } from '../schema/errors.js';
@@ -252,11 +253,24 @@ export const updateDeliveryEntry = async (
   return toResult(context, await inClientNames(context, lens, () => update(data)));
 };
 
-export const deleteDeliveryEntry = async (context: ContentServiceContext, modelKey: string, id: string) => {
+/**
+ * Through a schema lens, an entry acted on by ID must be one the client's version can name: 404 for an entry of
+ * a kind it lacks, 409 `LENS_UNCOVERED` for a kind change, under the same checks `action` makes. Nothing
+ * without a lens. Deletes here; GraphQL's publish and unpublish too.
+ */
+export const assertEntryThroughLens = async (
+  context: ContentServiceContext,
+  modelKey: string,
+  id: string,
+  action: Extract<ContentAction, 'delete' | 'publish'>,
+): Promise<void> => {
   if (activeLens(context)) {
-    // An entry of a kind the client's version lacks is not one it can name.
-    const { model } = await entryModelWithPolicy(context, modelKey, id, 'delete');
+    const { model } = await entryModelWithPolicy(context, modelKey, id, action);
     writeLens(context, model, entryNotFound(id));
   }
+};
+
+export const deleteDeliveryEntry = async (context: ContentServiceContext, modelKey: string, id: string) => {
+  await assertEntryThroughLens(context, modelKey, id, 'delete');
   await contentEntriesService.deleteEntry(context, modelKey, id);
 };

@@ -3,6 +3,7 @@ import { schemaVersionToken } from '../constants/schemaLens.js';
 import { parseQueryTree, type QueryTree, type QueryValue } from '../content/compiler/querystring.js';
 import { rewriteQueryTree } from '../content/lens/query.js';
 import { modelNotFound, modelRouteOf } from '../content/model.js';
+import { AppError } from '../helpers/appError.js';
 import { lensUncovered } from '../schema/errors.js';
 import type { RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
@@ -138,4 +139,84 @@ export const schemaVersionMetaOf = (context: ContentServiceContext): SchemaVersi
 export const knownToLens = (context: ContentServiceContext, id: string): boolean => {
   const lens = activeLens(context);
   return !lens || lens.view.byId.has(id);
+};
+
+/** Today's API IDs → the client's, for a definition and the relation targets one populate level below it. */
+const clientNamesOf = (lens: RequestLens, definitionId: string): Map<string, string> => {
+  const names = new Map<string, string>();
+  const add = (definition: DefinitionLens | null) => {
+    if (!definition || definition.storedApiKey === null) {
+      return;
+    }
+    names.set(definition.storedApiKey, definition.apiKey);
+    for (const field of definition.fields) {
+      if (field.kind !== 'null' && !names.has(field.stored.apiKey)) {
+        names.set(field.stored.apiKey, field.apiKey);
+      }
+    }
+  };
+  const route = lens.lensFor(definitionId);
+  add(route);
+  for (const field of route?.fields ?? []) {
+    if (field.kind !== 'null' && field.client.type === 'relation') {
+      try {
+        add(lens.lensFor(field.client.settings.target));
+      } catch {
+        // A target whose history does not reach the version: its names stay today's.
+      }
+    }
+  }
+  return names;
+};
+
+const QUOTED = /"([^"]*)"/g;
+const NAMED_DETAILS = ['field', 'apiKey', 'modelKey'] as const;
+
+/**
+ * A query error in the client's names: the parser and compiler run on the rewritten (today's) query, so the
+ * API IDs they quote, and those in `details`, are mapped back by stable ID. Anything else is left as it is.
+ */
+const inClientNames = (names: ReadonlyMap<string, string>, error: AppError): AppError => {
+  const rename = (key: string) => names.get(key) ?? key;
+  const details =
+    typeof error.details === 'object' && error.details !== null
+      ? Object.fromEntries(
+          Object.entries(error.details as Record<string, unknown>).map(([key, value]) => [
+            key,
+            (NAMED_DETAILS as readonly string[]).includes(key) && typeof value === 'string'
+              ? rename(value)
+              : value,
+          ]),
+        )
+      : error.details;
+  return new AppError(
+    error.statusCode,
+    error.code,
+    error.message.replace(QUOTED, (_match, key: string) => `"${rename(key)}"`),
+    details,
+    { cause: error },
+  );
+};
+
+/**
+ * Parses (or otherwise checks) a lensed query so its errors name the client's fields and models: wrap the
+ * parse of a request `lensDeliveryRequest` rewrote. Without an active lens it only runs `parse`.
+ */
+export const withClientQueryNames = <T>(
+  context: ContentServiceContext,
+  definitionId: string,
+  parse: () => T,
+): T => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return parse();
+  }
+  try {
+    return parse();
+  } catch (error) {
+    if (!(error instanceof AppError) || error.statusCode >= 500) {
+      throw error;
+    }
+    throw inClientNames(clientNamesOf(lens, definitionId), error);
+  }
 };

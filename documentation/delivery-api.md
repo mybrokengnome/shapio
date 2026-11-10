@@ -389,9 +389,11 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
   `createClient({ …, schemaVersion: SCHEMA_VERSION })`.
 - `filters`, `sort`, `fields`, and `populate` take that version's API IDs. Fields removed since read `null`
   (`[]` for lists). Visibility and permissions are always today's.
-- Such reads report `meta.schemaVersion: { requested, current }`, both as tokens. Every delivery response
-  carries the current token in the `Shapio-Schema-Version-Current` header, so a client can tell that a newer
-  schema exists.
+- A read that names a version, today's included, reports `meta.schemaVersion: { requested, current }`, both
+  as tokens. Every delivery, preview, and snapshot response carries the current token (`<schemaId>:<version>`)
+  in the `Shapio-Schema-Version-Current` header, so a client can tell that a newer schema exists; a request
+  refused before Shapio reads its schema (an invalid credential, a request a route's schema refuses, an
+  invalid, foreign, or newer schema version) gets no such header.
 - It pairs with `snapshot`: the snapshot picks the content, the schema version picks the shape.
 - Errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` (a version from another instance),
   `SCHEMA_VERSION_AHEAD`, and `LENS_QUERY_UNSUPPORTED` (a filter or sort on a field that changed);

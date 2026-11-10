@@ -12,7 +12,7 @@ import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { lensReadLimit, restFieldReads } from '../usage/restFieldReads.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
-import { schemaVersionMetaOf, type SchemaVersionMeta } from './contentDeliveryLens.js';
+import { schemaVersionMetaOf, withClientQueryNames, type SchemaVersionMeta } from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { parseInterfaceQuery, queryMembers, type InterfaceRoute } from './contentInterfaceReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
@@ -150,12 +150,15 @@ type ReadableRoute = {
 
 /** The query of a route: parsed against the model, or against the interface's contract. */
 const parseRouteQuery = (context: ContentServiceContext, route: ReadableRoute, rawQuery: string) =>
-  route.contract
-    ? parseInterfaceQuery(context, route.contract, rawQuery, DELIVERY_PARSE)
-    : parseQueryFor(context, route.model, route.policy, rawQuery, {
-        ...DELIVERY_PARSE,
-        members: route.members,
-      });
+  // Through a schema lens the query was rewritten into today's names; its errors name the client's.
+  withClientQueryNames(context, route.contract?.definition.id ?? route.model.definition.id, () =>
+    route.contract
+      ? parseInterfaceQuery(context, route.contract, rawQuery, DELIVERY_PARSE)
+      : parseQueryFor(context, route.model, route.policy, rawQuery, {
+          ...DELIVERY_PARSE,
+          members: route.members,
+        }),
+  );
 
 /** The read of a route: an interface read carries its members' own queries. */
 const routeRead = (

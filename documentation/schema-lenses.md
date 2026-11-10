@@ -12,7 +12,7 @@ version's shape on the fly.
 ## An example
 
 At schema version 17, the `article` content type has `title` (short text), `teaser` (long text), and
-`readingTime` (short text holding minutes, such as `"4"`). A site is built against it and deployed. Its client
+`readingTime` (an integer, minutes). A site is built against it and deployed. Its client
 names version 17 with every request:
 
 ```sh
@@ -20,8 +20,8 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
   "$SHAPIO_URL/api/content/articles?fields=title,teaser,readingTime&pageSize=1&schemaVersion=$SCHEMA_VERSION"
 ```
 
-Then two changes ship: `teaser` is renamed `excerpt` (version 18), and `readingTime` becomes an integer
-(version 19; Shapio converts `"4"` to `4` as the change goes live). The deployed site sends the same request and
+Then two changes ship: `teaser` is renamed `excerpt` (version 18), and `readingTime` becomes short text
+(version 19; Shapio converts `4` to `"4"` as the change goes live). The deployed site sends the same request and
 gets the same shape it was built for:
 
 ```json
@@ -37,7 +37,7 @@ gets the same shape it was built for:
       "publishedAt": "2026-11-10T14:02:19.880Z",
       "title": "Why builds pin a snapshot",
       "teaser": "One number per build, so a publish never lands halfway.",
-      "readingTime": "4"
+      "readingTime": 4
     }
   ],
   "meta": {
@@ -52,14 +52,18 @@ gets the same shape it was built for:
 }
 ```
 
-`teaser` is read from the field now called `excerpt`, and the stored `4` is converted back to the text `"4"`.
+`teaser` is read from the field now called `excerpt`, and the stored text `"4"` is converted back to the
+integer `4` (a value written since that is no whole number, such as `"about 5"`, reads `null`).
 The response also carries the header
 `Shapio-Schema-Version-Current: 0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:19`, so the site can tell that newer types
-exist.
+exist. Every delivery, preview, snapshot, and GraphQL response carries it, whether or not the request names a
+version, except one refused before Shapio reads its schema (an invalid credential, a request a route's
+schema refuses, an invalid, foreign, or newer version). `meta.schemaVersion` is on every read that names a
+version, today's included.
 
 Without `schemaVersion`, the same request fails with `400 INVALID_QUERY` (`Unknown field "teaser"`), and a read
-without `fields=` returns `excerpt` and the number `4`, which code written for version 17 does not expect. A
-client built against version 19 names it, or names nothing, and reads `excerpt` and `4`.
+without `fields=` returns `excerpt` and the text `"4"`, which code written for version 17 does not expect. A
+client built against version 19 names it, or names nothing, and reads `excerpt` and `"4"`.
 
 ## Turning it on
 
@@ -114,10 +118,34 @@ curl -H "Shapio-Schema-Version: $SCHEMA_VERSION" "$SHAPIO_URL/api/content/articl
   `@shapio/local` takes the same option: `createLocalClient({ …, schemaVersion: SCHEMA_VERSION })`
   ([In-process delivery](in-process.md#options)).
 
+### In the API explorer
+
+Develop → API explorer has a **Schema version** box on the REST request: type a version number (empty is
+today's shape) and the request, and its curl and fetch snippets, send `?schemaVersion=<schemaId>:<number>` for
+this instance, so you can see what a client on that version reads.
+
 ### In the starters
 
 The [starters](starters.md#schema-version) pass `SCHEMA_VERSION` to their client. A built site keeps reading in
 the shape it was built for when the schema moves, and moves to the current shape when you regenerate its types.
+
+### Pinning a token
+
+When you can't change the client (an app already in the store, a kiosk, a partner's integration), pin its API
+token instead: Settings → API tokens → **Edit**, then type a schema version or click **Pin to the current
+version**. Over the admin API, send `pinnedSchemaVersion` (a version from 1 to the current one, or `null` to
+clear it) on `POST /api/admin/tokens` or `PATCH /api/admin/tokens/:id`.
+
+- A request made with a pinned token that names no schema version is served as if it had named the pin, on
+  every route above: reads, writes, previews, snapshots, the API docs, and GraphQL. Writes follow the
+  [Writes](#writes) rules, GraphQL mutations included.
+- A version the request names wins over the pin.
+- The token list says "Pinned to schema version 42" (or "Sends schema version 42" when the client names its
+  own), and flags a pin the [history](#limits) does not reach: reads of those content types answer
+  `409 SCHEMA_VERSION_UNAVAILABLE`.
+- A pinned token is listed in the change set review as a reader on its version even before it reads anything.
+- Clear the pin once the client is updated to the current schema. Each change is in the audit log
+  (`api_token.update`).
 
 ## What a client on an older version sees
 
@@ -128,9 +156,9 @@ knows.
 | Effect                     | Changes since the client's version                                                                                                                                                                                                                              | What the client gets                                                                                         |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Keeps working**          | a field's API ID renamed; a content type's API ID or plural API ID renamed (its route); a component's API ID renamed; field order; labels, descriptions, and help text; the editor; fields, content types, or components added; a field made required or unique | no difference: its own routes and API IDs, and no fields it does not know                                    |
-| **Converted**              | a type change whose values all read back in the old type (a text field made an integer); a multiple field made single                                                                                                                                           | the value converted to the old type (`4` reads as `"4"`); a single value as a one-item list                  |
+| **Converted**              | a type change whose values all read back in the old type (a number field made an integer, long text made short text); a multiple field made single                                                                                                              | the value in the old type (the integer `4` as the number `4`); a single value as a one-item list             |
 | **Some values read empty** | a type change where not every value fits the old type (an integer field made text: `"about 5"` is no integer); enum values or dynamic zone components added since; a single field made multiple; a relation's target widened                                    | the values that fit; `null` (`[]` for lists) for the others; a field that became a list reads its first item |
-| **Reads empty**            | a field removed; values a type change dropped; a field made private (`public` off); a component field switched to another component                                                                                                                             | `null` (`[]` for lists), always                                                                              |
+| **Reads empty**            | a field removed; values a type change dropped (text made a number: Shapio does not convert text to numbers); a field made private (`public` off); a component field switched to another component                                                               | `null` (`[]` for lists), always                                                                              |
 | **Gone**                   | the content type deleted                                                                                                                                                                                                                                        | `404`, like any unknown content type                                                                         |
 | **Not covered**            | a collection made a single type, or the reverse                                                                                                                                                                                                                 | `409 LENS_UNCOVERED`                                                                                         |
 |                            | `filterable` or `sortable` turned off                                                                                                                                                                                                                           | old filters or sorts on that field are refused, as for any client                                            |
@@ -185,20 +213,33 @@ Writes through the delivery routes (app users creating or editing entries, [End 
 a schema version are accepted for the fields that are unchanged since that version, or only renamed: the body
 uses the old API IDs and Shapio stores the values under today's fields.
 
-Any other field in the body (one whose type or settings changed, or that was removed) is refused with
-`422 LENS_WRITE_UNSUPPORTED`, naming the field by the client's API ID. The exception is a value equal to what a
-read through the same version returns for that field: a client that sends back the entry it just read, with
-one field edited, is not refused for the fields it did not touch, and those keep their stored values.
+Any other field in the body (one whose type or settings changed, or that was removed) is refused. One
+`422 LENS_WRITE_UNSUPPORTED` lists every such field in `details.issues`, each with a JSON pointer in the
+client's API IDs (`/count`) and how the field changed (`changed type (integer → string)`, `was removed`,
+`became per locale`), and nothing is written. The exception is a value equal to what a read through the same
+version returns for that field: a client that sends back the entry it just read, with one field edited, is not
+refused for the fields it did not touch, and those keep their stored values (not the value sent back).
+
+Only the delivery routes (`/api/content`) and [GraphQL](#graphql) take a schema version on writes. The admin content API
+(`/api/admin/content`) ignores the header and the parameter: it always reads and writes today's shape.
 
 Shapio does not convert written values back to today's type: a write through a lossy conversion would replace
 data the old client could not see. To write such a field, move the client to the current version.
+
+Items in repeatable components and dynamic zones have no IDs, so they are matched by position: a client on an
+older version that reorders, inserts, or removes items can attach values it does not know about (fields added
+since its version) to the wrong item.
 
 ## GraphQL
 
 A GraphQL request that sends `Shapio-Schema-Version` is answered by that version's schema: its type names,
 fields, and arguments, with the same effects as REST. Introspection with the header gives that version's
-schema, so a client generated from it keeps validating. Mutations that name a schema version are refused with
-`400`; send them without the header, in today's shape.
+schema, so a client generated from it keeps validating. A content type deleted since reads as empty (no
+nodes, `null` for a single read) rather than failing validation. The response carries
+`extensions.schemaVersion: { requested, current }`. Mutations that name a schema version are that version's
+(its names and input types) and follow the [Writes](#writes) rules above: a field that cannot be written comes
+back as a GraphQL error with `extensions.code: LENS_WRITE_UNSUPPORTED` and every refused field in
+`extensions.issues`. A content type deleted since has no mutations ([GraphQL](graphql.md#older-schema-versions)).
 
 ## Generated types for an older version
 
@@ -234,11 +275,10 @@ counts a field that reads `null` because it is gone.
 | `400 SCHEMA_VERSION_FOREIGN`     | the version comes from another instance; generate your types against this one                                |
 | `400 SCHEMA_VERSION_AHEAD`       | the version is newer than this instance's current one                                                        |
 | `400 SCHEMA_VERSION_MISMATCH`    | the query parameter and the header name different versions                                                   |
-| `400`                            | a GraphQL mutation names a schema version                                                                    |
 | `400 LENS_QUERY_UNSUPPORTED`     | a filter or sort on a field that changed its stored form or was removed since the version (`details.apiKey`) |
 | `404`                            | the content type was deleted since the version                                                               |
 | `409 LENS_UNCOVERED`             | the content type switched between a collection and a single type since the version                           |
 | `409 SCHEMA_VERSION_UNAVAILABLE` | no record of the content type at that version; `details.oldestVersion` is the oldest that works              |
-| `422 LENS_WRITE_UNSUPPORTED`     | a write sends a field that changed since the version (`details.apiKey`)                                      |
+| `422 LENS_WRITE_UNSUPPORTED`     | a write sends fields that changed since the version (`details.issues`, one per field)                        |
 
 A server older than 0.9.0 answers `400` to the `schemaVersion` query parameter.

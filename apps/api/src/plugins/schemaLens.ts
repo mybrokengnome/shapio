@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import {
+  SCHEMA_LENS_ROUTE_PATHS,
   SCHEMA_LENS_ROUTE_PREFIXES,
   SCHEMA_VERSION_CURRENT_HEADER,
   SCHEMA_VERSION_HEADER,
@@ -29,6 +30,18 @@ const pathOf = (request: FastifyRequest) => {
   return index === -1 ? request.url : request.url.slice(0, index);
 };
 
+/** Whether a request path (no querystring) is one that may name a schema version. */
+export const isSchemaLensPath = (path: string, apiPrefix: string): boolean => {
+  if (!path.startsWith(apiPrefix)) {
+    return false;
+  }
+  const rest = path.slice(apiPrefix.length);
+  return (
+    (SCHEMA_LENS_ROUTE_PATHS as readonly string[]).includes(rest) ||
+    SCHEMA_LENS_ROUTE_PREFIXES.some((prefix) => rest.startsWith(prefix))
+  );
+};
+
 /**
  * Schema lenses (plan schema-lenses): reads the schema version a delivery, preview, snapshot, contract or
  * GraphQL request names, from `?schemaVersion=` or the `Shapio-Schema-Version` header, and removes the
@@ -42,11 +55,7 @@ export const schemaLensPlugin = fp<SchemaLensPluginOptions>(
     app.decorateRequest('schemaVersionToken', null);
     app.decorateRequest('schemaVersionCurrent', null);
     app.addHook('onRequest', async (request) => {
-      const path = pathOf(request);
-      if (
-        !path.startsWith(apiPrefix) ||
-        !SCHEMA_LENS_ROUTE_PREFIXES.some((prefix) => path.slice(apiPrefix.length).startsWith(prefix))
-      ) {
+      if (!isSchemaLensPath(pathOf(request), apiPrefix)) {
         return;
       }
       request.schemaLensRoute = true;

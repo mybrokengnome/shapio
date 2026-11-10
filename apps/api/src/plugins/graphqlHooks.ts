@@ -85,14 +85,22 @@ export const collectUsage = (
   return usage.reads.size > 0 ? { principalKey, usage } : undefined;
 };
 
-/** Step 2 (after execution): counts the reads once the operation returned data. */
-export const recordUsage = (request: FastifyRequest, pending: PendingUsage | undefined, hasData: boolean) => {
+/**
+ * Step 2 (after execution): counts the reads once the operation returned data. `schemaVersion` is the version
+ * the request named (today's included), null when it named none, as REST records it.
+ */
+export const recordUsage = (
+  request: FastifyRequest,
+  pending: PendingUsage | undefined,
+  hasData: boolean,
+  schemaVersion: number | null,
+) => {
   if (!pending || !hasData) {
     return;
   }
   const { principalKey, usage } = pending;
   const site = getRequestSite(request);
-  request.server.usage.recordRequest(site.id, principalKey, usage.snapshot);
+  request.server.usage.recordRequest(site.id, principalKey, usage.snapshot, schemaVersion);
   for (const [modelId, reads] of usage.reads) {
     request.server.usage.recordFieldReads(site.id, principalKey, modelId, reads);
   }

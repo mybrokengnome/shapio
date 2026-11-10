@@ -70,6 +70,27 @@ describe('CORS', () => {
       }
     });
 
+    it('lets browser apps read the current schema version and send theirs', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/snapshots/current',
+        headers: { origin: SITE },
+      });
+      expect(String(response.headers['access-control-expose-headers'])).toMatch(
+        /shapio-schema-version-current/i,
+      );
+      const options = await app.inject({
+        method: 'OPTIONS',
+        url: '/api/content/posts',
+        headers: {
+          origin: SITE,
+          'access-control-request-method': 'GET',
+          'access-control-request-headers': 'authorization,shapio-schema-version',
+        },
+      });
+      expect(String(options.headers['access-control-allow-headers'])).toMatch(/shapio-schema-version/i);
+    });
+
     it('ignores origins that are not listed', async () => {
       const evil = 'https://evil.example';
       const response = await app.inject({ method: 'GET', url: '/api/health', headers: { origin: evil } });

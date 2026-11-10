@@ -20,15 +20,22 @@ All notable changes to Shapio are listed here. The format follows
     `meta.schemaVersion: { requested, current }`.
   - Filters, sorts, `fields`, and `populate` take the old API IDs. Works with `?snapshot=N`: the snapshot picks
     the content, the schema version picks the shape. The snapshot diff and previews honor it too.
-  - GraphQL answers with the named version's schema. Mutations that name a version are refused.
-  - REST writes that name a version are accepted for fields unchanged or only renamed since; any other field is
-    `422 LENS_WRITE_UNSUPPORTED`, unless its value is what a read returns for it.
+  - GraphQL answers with the named version's schema (introspection included) and reports
+    `extensions.schemaVersion`. Its mutations are the named version's and write as REST writes do.
+  - REST and GraphQL writes that name a version are accepted for fields unchanged or only renamed since; any
+    other field is `422 LENS_WRITE_UNSUPPORTED` (GraphQL: `extensions.code`, with `extensions.issues`), unless
+    its value is what a read returns for it.
   - New errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN`, `SCHEMA_VERSION_AHEAD`,
     `SCHEMA_VERSION_MISMATCH`, and `LENS_QUERY_UNSUPPORTED`; `409 LENS_UNCOVERED` and
     `SCHEMA_VERSION_UNAVAILABLE`; `422 LENS_WRITE_UNSUPPORTED`.
 - The change set review shows, for each breaking change, what clients on older schema versions will see, and
-  which tokens still send one. `shapio schema diff` prints the same on each breaking line.
+  which tokens still send one. `shapio schema diff` prints the same on each breaking line. The API tokens list
+  shows the schema version a token sends, `GET /api/admin/usage/schema-versions` lists them, and the API
+  explorer has a schema version box.
 - `shapio types generate --schema-version <token>` writes the types of an older schema version.
+- An API token can be pinned to a schema version (`pinnedSchemaVersion` when creating or changing it, or Edit
+  on Settings → API tokens): requests made with it that name no version are served as if they named the pin,
+  and a version the request names wins. Reviews list pinned tokens as older clients even before they read.
 - The starters pass `SCHEMA_VERSION`, so a built site keeps working when the schema moves and moves forward when
   its types are regenerated.
 - Shapio now records which version of each content type was live at each schema version. The upgrade rebuilds

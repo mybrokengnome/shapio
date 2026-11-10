@@ -12,9 +12,13 @@ export const SCHEMA_VERSION_CURRENT_HEADER = 'Shapio-Schema-Version-Current';
 
 /**
  * The API routes (below the API prefix) that read a schema version: delivery, preview, snapshots and the
- * generated contracts. Elsewhere the parameter and header mean nothing and are left alone.
+ * generated contracts, by prefix, and GraphQL by exact path (its playground below it is an admin page, never
+ * lensed). Elsewhere the parameter and header mean nothing and are left alone.
  */
-export const SCHEMA_LENS_ROUTE_PREFIXES = ['content/', 'preview/', 'snapshots/', 'docs/', 'graphql'] as const;
+export const SCHEMA_LENS_ROUTE_PREFIXES = ['content/', 'preview/', 'snapshots/', 'docs/'] as const;
+
+/** The exact API paths (below the API prefix) that read a schema version: the GraphQL endpoint. */
+export const SCHEMA_LENS_ROUTE_PATHS = ['graphql', 'graphql/'] as const;
 
 /** `<schemaId>:<version>`, as `shapio types generate` writes `SCHEMA_VERSION`. */
 export const schemaVersionToken = (schemaId: string, version: number): string => `${schemaId}:${version}`;

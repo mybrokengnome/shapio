@@ -17,7 +17,8 @@ import { shapio } from './shapio';
  * the current one (`/api/snapshots/changes`), revalidates the pages those changes touch and the cached reads
  * tagged with their models and entries, and moves the site to the new snapshot. The diff, not the event, is the
  * source of truth: one call covers a change set's many entries, retried or missed deliveries, and both locales
- * of a publish.
+ * of a publish. It is also read through the site's schema version, so it names models and routes as the site's
+ * cached reads do after a rename (the event names them as they are today).
  */
 export type RevalidationResult =
   | { from: number; to: number; changed: number; revalidated: RevalidationTarget[]; tags: string[] }

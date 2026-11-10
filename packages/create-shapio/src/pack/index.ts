@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, extname, join } from 'node:path';
 import { PACKED_GITIGNORE, SITE_STARTERS } from '../starters.js';
 import { parseCatalog } from './catalog.js';
-import { listFiles } from './files.js';
+import { checkSchemaVersionModule, listFiles } from './files.js';
 import {
   findRepositoryMarkers,
   rewritePackageJson,
@@ -96,6 +96,7 @@ const packStarter = (repoRoot: string, outDir: string, starter: string, versions
       continue;
     }
     const content = transformFile(path, readFileSync(from, 'utf8'), versions);
+    checkSchemaVersionModule(starter, path, content);
     const markers = findRepositoryMarkers(content);
     if (markers.length > 0) {
       throw new TemplateError(`${starter}/${path} still contains ${markers.join(', ')} after packing`);

@@ -292,11 +292,22 @@ curl "$SHAPIO_URL/api/graphql" \
 
 - Fields removed since read `null` (`[]` for lists); what your role may see is always today's, as for any
   query.
+- A content type deleted since reads as empty: its list has no nodes (`totalCount: 0`) and a single read is
+  `null`. One that switched between a collection and a single type is refused (`LENS_UNCOVERED`).
 - Filters and sorts follow REST: one on a field whose stored form changed since the version, or that is gone,
   is refused (`LENS_QUERY_UNSUPPORTED`).
-- **Reads only.** A mutation in a request that names a schema version is refused with `400`. Send mutations
-  without the header, in today's schema.
-- `_schemaVersion` is unchanged: still a reserved name.
+- Introspection with the header shows that version's schema, so a client generated from it keeps validating,
+  mutations included.
+- The response carries `extensions.schemaVersion: { requested, current }` (both tokens), and `_schemaVersion`
+  answers the version the request named (the number), today's when it names none.
+- **Mutations** that name a schema version take that version's names and input types, under today's
+  permissions, and write as [REST writes through an older version](schema-lenses.md#writes) do: fields unchanged
+  or only renamed are written, values the client does not know are kept, and validation errors name the
+  client's fields. Any other field is refused with `extensions.code: LENS_WRITE_UNSUPPORTED` and every refused
+  field in `extensions.issues` (a JSON pointer in the client's names and how it changed), unless its value is
+  what a read returns, which keeps the stored value. A content type deleted since has no mutations (a document
+  naming one fails validation); one that switched between a collection and a single type is refused
+  (`LENS_UNCOVERED`).
 
 ## Limits
 

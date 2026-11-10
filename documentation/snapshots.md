@@ -14,7 +14,8 @@ Read the current snapshot once, when the build starts, and pass it with every re
 
 ```sh
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/snapshots/current"
-# {"snapshot":42,"schemaVersion":17,"publishedAt":"2026-10-02T09:30:00.000Z"}
+# {"snapshot":42,"schemaVersion":17,"publishedAt":"2026-10-02T09:30:00.000Z",
+#  "schemaVersionToken":"0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:17"}
 
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/articles?snapshot=42&fields=title,slug"
 ```
@@ -22,7 +23,8 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 A publish in the middle of the build then cannot produce a site that mixes two moments. Deployment triggers
 carry the snapshot to build, and the [example site](example-site.md) pins every build this way.
 
-`schemaVersion` is the schema delivery serves now. Old snapshots are read through the **current** schema,
+`schemaVersion` is the schema delivery serves now; `schemaVersionToken` (server 0.9.0 or later) is the same
+version as a client names it ([Schema lenses](schema-lenses.md)). Old snapshots are read through the **current** schema,
 unless the request names a schema version: fields added since then are empty, removed fields are gone, and a
 value stored under an earlier field type (text that has since become rich text, say) is returned as `null`
 (`[]` for list fields), never passed off as the new type.

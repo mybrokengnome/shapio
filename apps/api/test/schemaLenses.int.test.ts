@@ -144,6 +144,7 @@ describe('schema lenses', () => {
         { apiKey: 'summary', label: 'Summary', type: 'text', filterable: true },
         { apiKey: 'secret', label: 'Secret', type: 'string' },
         { apiKey: 'restricted', label: 'Restricted', type: 'string' },
+        { apiKey: 'excerpt', label: 'Excerpt', type: 'string' },
         { apiKey: 'hero', label: 'Hero', type: 'component', settings: { component: hero.definition.id } },
         {
           apiKey: 'writer',
@@ -235,6 +236,7 @@ describe('schema lenses', () => {
         retype(field(definition, 'price'), 'number'),
         { ...field(definition, 'secret'), public: false },
         { ...field(definition, 'restricted') },
+        { ...field(definition, 'excerpt'), apiKey: 'blurb' },
         { ...field(definition, 'hero') },
         { apiKey: 'subtitle', label: 'Subtitle', type: 'string', required: true, defaultValue: 'Sub' },
       ],
@@ -358,6 +360,27 @@ describe('schema lenses', () => {
     expect(pinned.data[0]).toMatchObject({ count: 3, price: '12.5', summary: null });
   });
 
+  it("names the client's fields in errors the parser raises after the rewrite", async () => {
+    for (const [query, message] of [
+      ['sort=excerpt', '"excerpt" is not sortable'],
+      ['filters[excerpt][$contains]=x', '"excerpt" is not filterable'],
+      ['filters[title][$bogus]=1', 'Unknown operator "$bogus" on "title"'],
+      ['filters[title][$null]=maybe', '"title"'],
+    ] as const) {
+      const response = await get(at(`/api/content/articles?${query}`));
+      expect(response.statusCode, query).toBe(400);
+      const error = response.json<{ error: { message: string; details?: { field?: string } } }>().error;
+      expect(error.message, query).toContain(message);
+      expect(error.message, query).not.toMatch(/blurb|headline/);
+      if (error.details?.field !== undefined) {
+        expect(['excerpt', 'title']).toContain(error.details.field);
+      }
+    }
+    // Today's clients still see today's names.
+    const today = await get('/api/content/posts?sort=blurb');
+    expect(today.json<{ error: { message: string } }>().error.message).toContain('"blurb" is not sortable');
+  });
+
   it('reads previews in the old shape', async () => {
     const { token: previewToken } = expectStatus(
       await testApp.app.inject({
@@ -372,6 +395,11 @@ describe('schema lenses', () => {
     expect(preview.data).toMatchObject({ title: 'First', count: 3, hero: { heading: 'Hi' } });
     expect(preview.data).not.toHaveProperty('secret');
     expect(preview.meta).toMatchObject({ preview: true, schemaVersion: { requested: v } });
+    const refused = await get(at('/api/preview/content/articles?sort=excerpt'), previewToken);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<{ error: { message: string } }>().error.message).toContain(
+      '"excerpt" is not sortable',
+    );
   });
 
   it('names models in the old names in the snapshot diff, and leaves out models the old version lacks', async () => {
@@ -469,6 +497,9 @@ describe('schema lenses', () => {
       ]) {
         expect(await local(path)).toStrictEqual(expectStatus(await get(path), 200).json());
       }
+      await expect(local(at('/api/content/articles?sort=excerpt'))).rejects.toThrow(
+        /"excerpt" is not sortable/,
+      );
     });
   });
 });

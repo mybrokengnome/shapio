@@ -120,6 +120,9 @@ const SITE_STARTERS = ['astro', 'next', 'sveltekit'];
 // The pnpm protocols are matched as quoted JSON values, so createClient({ workspace: key }) in a starter is not one.
 const REPOSITORY_ONLY = ['"workspace:', '"catalog:', '@shapio/source', '../shared/'];
 
+/** A starter's src/lib/schemaVersion.ts as shipped: naming no version (create-shapio's packer checks the same). */
+const UNPINNED_SCHEMA_VERSION = /^export const SCHEMA_VERSION(?::[^=]+)?=\s*undefined;\s*$/m;
+
 const filesUnder = (directory) =>
   readdirSync(directory, { withFileTypes: true, recursive: true })
     .filter((entry) => entry.isFile())
@@ -151,6 +154,13 @@ const checkSiteStarter = (createTgz, work, starter) => {
     if (!existsSync(join(project, required))) {
       throw new Error(`create-shapio --site ${starter}: ${required} is missing`);
     }
+  }
+  // `npm run types` against a local instance must never ship: its types and token are that instance's.
+  if (existsSync(join(project, 'src/lib/shapio.generated.ts'))) {
+    throw new Error(`create-shapio --site ${starter}: src/lib/shapio.generated.ts was packed`);
+  }
+  if (!UNPINNED_SCHEMA_VERSION.test(readFileSync(join(project, 'src/lib/schemaVersion.ts'), 'utf8'))) {
+    throw new Error(`create-shapio --site ${starter}: src/lib/schemaVersion.ts names a schema version`);
   }
   for (const file of filesUnder(project)) {
     const found = REPOSITORY_ONLY.filter((marker) => readFileSync(file, 'utf8').includes(marker));

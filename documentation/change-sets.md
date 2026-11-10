@@ -59,12 +59,18 @@ Open a set to review it, shaped like a pull request:
   findings, and the acknowledgement checkboxes for breaking or destructive changes. **Blocking** issues stop
   the ship; **warnings** do not.
 - **Consumers**: for breaking changes, the API tokens (and app users and anonymous callers, as groups) that read
-  the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage). Each
-  token also shows the [schema version](schema-lenses.md) it last sent, if any.
-- **Older schema versions**: each breaking change says what clients that name an older schema version will see
-  (they keep working, see the field empty, or lose the content type), worked out from each version your tokens
-  actually send to the schema the set ships. The acknowledgement for breaking changes says which readers are
-  protected that way and lists those that are not.
+  the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage). Below
+  them, **Readers on older schema versions** lists each reader that names an older
+  [schema version](schema-lenses.md), the version it sends, and what it sees once the set ships (_Keeps
+  working_, _Some values empty_, _Fields empty_, _Content type gone_, _Not covered_, or _No record of this
+  version_), at most the most recently used versions. A reviewer without `tokens.manage` sees counts, not token
+  names.
+- **Older schema versions** on the Changes tab: each breaking change line says what clients naming an older
+  schema version will see ("Clients naming an older schema version keep working", "…get this field empty",
+  "…lose this content type"), worked out from each version your tokens actually send to the schema the set
+  ships. The acknowledgement for breaking changes on the Checks tab says which readers are protected that way
+  and lists those that are not, readers that name no schema version included. The model builder's review sheet
+  shows the same.
 - **Timeline**: created, items added and removed, drafts saved, approval steps with their notes, scheduled, entries changed after review (on a
   scheduled ship), shipped (with a link to the snapshot) and the deployment run.
 
@@ -259,6 +265,7 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
 | `GET /api/admin/usage/fields?modelId&days=7`       | reads per field and reader for one model (needs `tokens.manage`)                       |
+| `GET /api/admin/usage/schema-versions`             | readers whose latest read named a schema version, and which (`tokens.manage`)          |
 
 `ship` answers `200` when the set shipped (or failed: see `status` and `error`) and `202` while it is shipping
 in the background; poll the set until it is `shipped` or `failed`. `itemVersions` (`[{ itemId, draftVersion }]`,
