@@ -339,6 +339,15 @@ new version, atomically. If a check fails, the old version stays active and cont
 | Stop implementing an interface                                                                        | **breaking**: clients reading the interface lose the type; refused while a relation to the interface holds its entries                                                                                                                                                                                                                                                                                                                                                      |
 | Add a field to an interface, or turn on one of its flags                                              | accepted only when every member complies; the review offers to add a missing field to the members                                                                                                                                                                                                                                                                                                                                                                           |
 
+**Clients that name a schema version.** A site or app that names the schema version it was built against
+([Schema lenses](schema-lenses.md)) keeps reading in that version's shape after any of these changes: renamed
+API IDs, plural API IDs, and routes keep working; a changed type is converted back where the values allow it
+(otherwise those values read `null`); deleted, hidden, and dropped fields read `null` (`[]` for lists); a deleted
+model is a `404`; and switching a model between a collection and a single type is `409 LENS_UNCOVERED`. Turning
+localization or drafts on or off is not hidden from such a client. The
+[change review](change-sets.md#review) says, per breaking change, what these clients will see and which tokens
+still send an older version.
+
 Deleting a field keeps its stored values (they are no longer returned); deleting a model hides its entries,
 which come back if you restore it. Rolling a model back to an earlier version is a metadata change: it never
 undoes a data conversion that already ran.

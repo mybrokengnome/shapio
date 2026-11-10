@@ -302,18 +302,19 @@ own.
 
 ## Query parameters
 
-| Parameter          | Example                               | Notes                                                                             |
-| ------------------ | ------------------------------------- | --------------------------------------------------------------------------------- |
-| `locale`           | `locale=fr`                           | falls back along the locale chain ([Localization](localization.md))               |
-| `filters`          | `filters[slug][$eq]=about`            | see below                                                                         |
-| `sort`             | `sort=publishedOn:desc,createdAt:asc` | fields marked sortable, `id`, `createdAt`, `updatedAt`                            |
-| `page`, `pageSize` | `page=2&pageSize=50`                  | `pageSize` 25 by default, at most 100                                             |
-| `fields`           | `fields=title,slug`                   | top-level fields to return (system attributes always come)                        |
-| `populate`         | `populate=author`                     | relation paths: `author`, `author,tags.author`, or `*`; at most 3 levels          |
-| `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one) |
-| `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                         |
-| `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                |
-| `publicationState` | `publicationState=draft`              | `published` (default) or `draft`: [drafts mode](#drafts-in-development)           |
+| Parameter          | Example                               | Notes                                                                                          |
+| ------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `locale`           | `locale=fr`                           | falls back along the locale chain ([Localization](localization.md))                            |
+| `filters`          | `filters[slug][$eq]=about`            | see below                                                                                      |
+| `sort`             | `sort=publishedOn:desc,createdAt:asc` | fields marked sortable, `id`, `createdAt`, `updatedAt`                                         |
+| `page`, `pageSize` | `page=2&pageSize=50`                  | `pageSize` 25 by default, at most 100                                                          |
+| `fields`           | `fields=title,slug`                   | top-level fields to return (system attributes always come)                                     |
+| `populate`         | `populate=author`                     | relation paths: `author`, `author,tags.author`, or `*`; at most 3 levels                       |
+| `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one)              |
+| `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                                      |
+| `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                             |
+| `publicationState` | `publicationState=draft`              | `published` (default) or `draft`: [drafts mode](#drafts-in-development)                        |
+| `schemaVersion`    | `schemaVersion=0d5c…:17`              | answer in an older schema version's shape ([below](#schema-versions-old-clients-keep-working)) |
 
 ### Filters
 
@@ -357,7 +358,8 @@ moment after `meta.snapshot` may already appear; an unpublished one never does. 
 [example site](example-site.md) does exactly this, and Shapio's deployment triggers carry the snapshot to build.
 
 Old snapshots are read through the current schema (a value stored under an earlier field type comes back as
-`null`). A [change set](change-sets.md) goes live as one snapshot, schema and entries together, so a pinned
+`null`), unless the request names a [schema version](#schema-versions-old-clients-keep-working). A
+[change set](change-sets.md) goes live as one snapshot, schema and entries together, so a pinned
 build sees all of it or none of it.
 
 Two endpoints serve builds, with the same tokens as `/api/content` and only for models the token may read:
@@ -370,15 +372,41 @@ Two endpoints serve builds, with the same tokens as `/api/content` and only for 
 Details, the change classification and incremental-build recipes are in
 [Snapshots and the changes API](snapshots.md).
 
+## Schema versions: old clients keep working
+
+A client can name the schema version it was built against, and every read then answers in that version's shape:
+its routes, API IDs, field types, and components, whatever changed since. Server 0.9.0 or later. What each kind of
+change looks like to such a client is in [Schema lenses](schema-lenses.md).
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
+  "$SHAPIO_URL/api/content/articles?schemaVersion=0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:17"
+```
+
+- The value is `<schemaId>:<version>`, exported as `SCHEMA_VERSION` by `shapio types generate`. Send it as
+  `?schemaVersion=` on reads (always, behind a CDN that keys on the URL) or as the `Shapio-Schema-Version`
+  header. Both, with different values, is `400 SCHEMA_VERSION_MISMATCH`. With `@shapio/client`,
+  `createClient({ …, schemaVersion: SCHEMA_VERSION })`.
+- `filters`, `sort`, `fields`, and `populate` take that version's API IDs. Fields removed since read `null`
+  (`[]` for lists). Visibility and permissions are always today's.
+- Such reads report `meta.schemaVersion: { requested, current }`, both as tokens. Every delivery response
+  carries the current token in the `Shapio-Schema-Version-Current` header, so a client can tell that a newer
+  schema exists.
+- It pairs with `snapshot`: the snapshot picks the content, the schema version picks the shape.
+- Errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` (a version from another instance),
+  `SCHEMA_VERSION_AHEAD`, and `LENS_QUERY_UNSUPPORTED` (a filter or sort on a field that changed);
+  `409 LENS_UNCOVERED` and `SCHEMA_VERSION_UNAVAILABLE`; `422 LENS_WRITE_UNSUPPORTED` on writes
+  ([Errors](schema-lenses.md#errors)).
+
 ## Caching
 
 Responses carry a strong `ETag` over the exact body and
-`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site`. Send
+`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`. Send
 `If-None-Match` to get `304 Not Modified` when nothing changed. Anonymous responses are `Cache-Control: public,
 max-age=0, must-revalidate`; authenticated ones `private`. A CDN that keys its cache on the URL alone and
 ignores `Vary` must be given the workspace as `?workspace=` (or `?site=`), not as the header, so that two
-workspaces never share a cached
-response.
+workspaces never share a cached response. The same goes for a
+[schema version](#schema-versions-old-clients-keep-working): send it as `?schemaVersion=`.
 
 ### Next.js cache tags
 

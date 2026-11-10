@@ -33,8 +33,8 @@ On an instance with several [workspaces](workspaces.md), a request reads one wor
 ([Delivery API](delivery-api.md#workspaces)): the token's workspace, else the `Shapio-Workspace` header or
 `?workspace=`, else the primary workspace. Server 0.8.2 or later; `Shapio-Site` and `?site=` work on every
 version. Naming another workspace than the token's is refused with `403 SITE_MISMATCH`. The entries,
-`_snapshot` and `_changes` are the request workspace's. GET responses vary on `Shapio-Workspace` and
-`Shapio-Site` as well as on the credentials.
+`_snapshot` and `_changes` are the request workspace's. GET responses vary on `Shapio-Workspace`,
+`Shapio-Site`, and `Shapio-Schema-Version` as well as on the credentials.
 
 Each workspace has its own schema: its own content types and the shared ones. Within a workspace, the schema
 follows the caller's role ([below](#what-each-caller-sees)). Two workspaces can each have a `post` with different
@@ -275,6 +275,28 @@ These names are reserved: `_changes`, `_snapshot` and `_schemaVersion` as query 
 `SnapshotChangeKind`, `SnapshotChangeLocale`, `SnapshotChangePage`, `SnapshotInfo`, `Entry`, `EntryState`,
 and `Node` as type names. A model or interface whose generated names would collide with them is refused when
 you save it.
+
+## Older schema versions
+
+A request that names a schema version, with the `Shapio-Schema-Version` header (or `?schemaVersion=` on GET),
+is answered by **that version's schema**: its type names, fields, and arguments, with today's content read into
+it as REST does ([Schema lenses](schema-lenses.md)). Server 0.9.0 or later. A client whose queries were
+written and validated against version 17 keeps validating after a field is renamed or a type changes:
+
+```sh
+curl "$SHAPIO_URL/api/graphql" \
+  -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" -H 'Content-Type: application/json' \
+  -H "Shapio-Schema-Version: $SCHEMA_VERSION" \
+  -d '{"query":"{ articles(pageSize: 5) { nodes { title teaser } } }"}'
+```
+
+- Fields removed since read `null` (`[]` for lists); what your role may see is always today's, as for any
+  query.
+- Filters and sorts follow REST: one on a field whose stored form changed since the version, or that is gone,
+  is refused (`LENS_QUERY_UNSUPPORTED`).
+- **Reads only.** A mutation in a request that names a schema version is refused with `400`. Send mutations
+  without the header, in today's schema.
+- `_schemaVersion` is unchanged: still a reserved name.
 
 ## Limits
 

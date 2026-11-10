@@ -63,6 +63,13 @@ is just another change set.
 back on any instance, live. If someone changed production since your last pull, apply refuses and shows the diff,
 just like a rejected push.
 
+### Old clients keep working
+
+Rename a field or change its type, and the app you shipped last month keeps working. Each client names the
+schema version it was built against (`shapio types generate` writes it next to your types), and Shapio answers
+in that shape: its field names, its types, its routes. Regenerate the types when you're ready to move forward.
+See [Schema lenses](documentation/schema-lenses.md).
+
 ### Many workspaces, one install
 
 ![The workspaces on one Shapio install](.github/readme/workspaces.png)

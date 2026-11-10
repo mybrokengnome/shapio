@@ -6,6 +6,45 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Schema lenses: old clients keep working.** A client names the schema version it was built against, and
+  every read answers in that version's shape: its routes, API IDs, field types, and components, whatever
+  changed since. Fields removed since read `null` (`[]` for lists); visibility and permissions are always
+  today's. See [Schema lenses](documentation/schema-lenses.md).
+  - The version is a token, `<schemaId>:<version>`. `shapio types generate` and `/api/docs/typescript` export it
+    as `SCHEMA_VERSION`, so `createClient({ schemaVersion: SCHEMA_VERSION })` ties a client to the types it was
+    compiled against. `@shapio/local` takes the same option.
+  - Over HTTP: `?schemaVersion=<token>` (use it behind CDNs that key on the URL) or the `Shapio-Schema-Version`
+    header, on the delivery, preview, snapshot, and API docs routes. Reads that name a version report
+    `meta.schemaVersion: { requested, current }`.
+  - Filters, sorts, `fields`, and `populate` take the old API IDs. Works with `?snapshot=N`: the snapshot picks
+    the content, the schema version picks the shape. The snapshot diff and previews honor it too.
+  - GraphQL answers with the named version's schema. Mutations that name a version are refused.
+  - REST writes that name a version are accepted for fields unchanged or only renamed since; any other field is
+    `422 LENS_WRITE_UNSUPPORTED`, unless its value is what a read returns for it.
+  - New errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN`, `SCHEMA_VERSION_AHEAD`,
+    `SCHEMA_VERSION_MISMATCH`, and `LENS_QUERY_UNSUPPORTED`; `409 LENS_UNCOVERED` and
+    `SCHEMA_VERSION_UNAVAILABLE`; `422 LENS_WRITE_UNSUPPORTED`.
+- The change set review shows, for each breaking change, what clients on older schema versions will see, and
+  which tokens still send one. `shapio schema diff` prints the same on each breaking line.
+- `shapio types generate --schema-version <token>` writes the types of an older schema version.
+- The starters pass `SCHEMA_VERSION`, so a built site keeps working when the schema moves and moves forward when
+  its types are regenerated.
+- Shapio now records which version of each content type was live at each schema version. The upgrade rebuilds
+  the earlier record from the audit log; where that is missing, a read through an older version answers
+  `409 SCHEMA_VERSION_UNAVAILABLE` with the oldest version that works.
+
+### Changed
+
+- Every delivery response carries `Shapio-Schema-Version-Current` (the current schema version token, exposed to
+  CORS), and cacheable delivery responses send
+  `Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`.
+
+Nothing existing changes for clients that name no schema version: their reads, writes, and snapshot reads answer
+exactly as before. A server older than 0.9.0 refuses the `schemaVersion` query parameter with `400`, on purpose,
+so a newer client that names a version never silently gets a shape it was not built for.
+
 ## [0.8.2] - 2026-11-10
 
 ### Changed

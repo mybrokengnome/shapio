@@ -528,10 +528,12 @@ later; `Shapio-Site` and `?site=` work on every version.
 
 - **What:** TypeScript types for your models and components, generated from the live schema.
 - **Where it runs:** CLI, against a running instance; the output goes into your code.
-- **Contract:** `shapio types generate [--url] [--token] [--out shapio-types.ts]`
-  ([CLI reference](reference/cli.md#shapio-types)).
-- **Limits:** the file is a snapshot of the schema when you ran it; regenerate after model changes. Nothing on
-  the server depends on it.
+- **Contract:** `shapio types generate [--url] [--token] [--out shapio-types.ts] [--schema-version <token>]`
+  ([CLI reference](reference/cli.md#shapio-types)). The file exports `SCHEMA_VERSION`, the schema version it
+  describes; pass it to `createClient({ schemaVersion })` and the client keeps reading in that shape
+  ([Schema lenses](schema-lenses.md)).
+- **Limits:** the file is a snapshot of the schema when you ran it; regenerate after model changes (a client
+  that passes `SCHEMA_VERSION` keeps working until you do). Nothing on the server depends on it.
 
 ## CLI
 
