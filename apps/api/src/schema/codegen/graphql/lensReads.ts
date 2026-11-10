@@ -22,14 +22,6 @@ export type DeliveryCall = {
   rawQuery: string;
 };
 
-/** A schema version was named on a mutation: lenses are for reads (plan schema-lenses, agreed 9). */
-export const lensMutationsUnsupported = () =>
-  new AppError(
-    400,
-    'LENS_MUTATIONS_UNSUPPORTED',
-    'GraphQL mutations cannot name a schema version. Send mutations without the Shapio-Schema-Version header or ?schemaVersion=, in the current schema.',
-  );
-
 const isModelNotFound = (error: unknown) => error instanceof AppError && error.code === 'MODEL_NOT_FOUND';
 
 /** The route key the client's version gave a model or an interface definition. */

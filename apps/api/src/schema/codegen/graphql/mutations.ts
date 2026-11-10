@@ -9,6 +9,7 @@ import {
   type GraphQLFieldConfigArgumentMap,
   type GraphQLFieldConfigMap,
 } from 'graphql';
+import { modelNotFound } from '../../../content/model.js';
 import { AppError } from '../../../helpers/appError.js';
 import * as deliveryWritesService from '../../../services/contentDeliveryWrites.js';
 import * as contentPublishingService from '../../../services/contentPublishing.js';
@@ -16,13 +17,16 @@ import type { AdminEntryView } from '../../../services/contentReads.js';
 import type { SchemaBuild } from './build.js';
 import type { GraphqlContext } from './context.js';
 import { modelInput, toWriteData } from './inputTypes.js';
+import { deliveryCall } from './lensReads.js';
 import { mutationName } from './names.js';
 import { assertId, type RootField } from './operations.js';
 
 /**
  * `createPage`, `updatePage`, `deletePage`, `publishPage`, `unpublishPage` (names from naming.ts). They call
  * the content services REST's delivery writes and publish endpoints call, under the same evaluator, and
- * return the entry's identity and state (`EntryState`), never values: writes create drafts.
+ * return the entry's identity and state (`EntryState`), never values: writes create drafts. In a lens schema
+ * (plan schema-lenses) names and inputs are the client's version's; the delivery write service translates
+ * them in the limited form REST writes have (`LENS_WRITE_UNSUPPORTED` for fields that cannot be written).
  */
 type EntryResult = deliveryWritesService.DeliveryWriteResult['data'];
 
@@ -38,6 +42,20 @@ const fromAdminView = (view: AdminEntryView): EntryResult => ({
 
 const writeData = (build: SchemaBuild, model: ResolvedModelDefinition, args: Record<string, unknown>) =>
   args.data ? toWriteData(build, model, args.data as Record<string, unknown>) : {};
+
+/**
+ * The service context and today's API ID a mutation of `model` writes through. Through a schema lens (plan
+ * schema-lenses) the model is the client's version's: its route resolves as for reads (`LENS_UNCOVERED` for a
+ * kind change), and the input, still in the client's names, is translated by the delivery write service.
+ */
+const writeCall = async (build: SchemaBuild, context: GraphqlContext, model: ResolvedModelDefinition) => {
+  const call = await deliveryCall(build, context, model, '');
+  if (!call) {
+    // Never in a schema: a model deleted since the client's version has no mutations.
+    throw modelNotFound(model.apiKey);
+  }
+  return call;
+};
 
 const missingExpectedVersion = () =>
   new AppError(
@@ -60,18 +78,16 @@ export const mutationFields = (
       type: entry,
       description: `Creates a ${model.label} entry (a draft unless \`publish\` is true)`,
       args: { ...data, locale: { type: GraphQLString }, publish: { type: GraphQLBoolean } },
-      resolve: async (_root, args, context) =>
-        (
-          await deliveryWritesService.createDeliveryEntry(
-            await context.content(build.snapshot),
-            model.apiKey,
-            {
-              ...(args.locale ? { locale: args.locale as string } : {}),
-              data: writeData(build, model, args),
-              publish: Boolean(args.publish),
-            },
-          )
-        ).data,
+      resolve: async (_root, args, context) => {
+        const { service, apiKey } = await writeCall(build, context, model);
+        return (
+          await deliveryWritesService.createDeliveryEntry(service, apiKey, {
+            ...(args.locale ? { locale: args.locale as string } : {}),
+            data: writeData(build, model, args),
+            publish: Boolean(args.publish),
+          })
+        ).data;
+      },
     },
     [mutationName('update', model)]: {
       type: entry,
@@ -81,17 +97,13 @@ export const mutationFields = (
         if (!Object.hasOwn(args, 'expectedVersion')) {
           throw missingExpectedVersion();
         }
+        const { service, apiKey } = await writeCall(build, context, model);
         return (
-          await deliveryWritesService.updateDeliveryEntry(
-            await context.content(build.snapshot),
-            model.apiKey,
-            assertId(args.id),
-            {
-              ...(args.locale ? { locale: args.locale as string } : {}),
-              expectedVersion: (args.expectedVersion as number | null) ?? null,
-              data: writeData(build, model, args),
-            },
-          )
+          await deliveryWritesService.updateDeliveryEntry(service, apiKey, assertId(args.id), {
+            ...(args.locale ? { locale: args.locale as string } : {}),
+            expectedVersion: (args.expectedVersion as number | null) ?? null,
+            data: writeData(build, model, args),
+          })
         ).data;
       },
     },
@@ -100,11 +112,8 @@ export const mutationFields = (
       args: id,
       resolve: async (_root, args, context) => {
         const entryId = assertId(args.id);
-        await deliveryWritesService.deleteDeliveryEntry(
-          await context.content(build.snapshot),
-          model.apiKey,
-          entryId,
-        );
+        const { service, apiKey } = await writeCall(build, context, model);
+        await deliveryWritesService.deleteDeliveryEntry(service, apiKey, entryId);
         return entryId;
       },
     },
@@ -123,12 +132,14 @@ export const mutationFields = (
         ...(operation === 'publish' ? { expectedVersion: { type: GraphQLInt } } : {}),
       },
       resolve: async (_root, args, context) => {
-        const service = await context.content(build.snapshot);
+        const { service, apiKey } = await writeCall(build, context, model);
+        const entryId = assertId(args.id);
+        await deliveryWritesService.assertEntryThroughLens(service, apiKey, entryId, 'publish');
         const change =
           operation === 'publish'
             ? contentPublishingService.publishEntry
             : contentPublishingService.unpublishEntry;
-        const view = await change(service, model.apiKey, assertId(args.id), {
+        const view = await change(service, apiKey, entryId, {
           ...(args.locales ? { locales: args.locales as string[] } : {}),
           ...(typeof args.expectedVersion === 'number' ? { expectedVersion: args.expectedVersion } : {}),
         });

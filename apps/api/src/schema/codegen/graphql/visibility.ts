@@ -43,6 +43,11 @@ export type SchemaVisibility = {
   models: ReadonlyMap<string, ModelVisibility> | null;
   /** Inside components: every live field, or only `public` ones (delivery callers). */
   componentFields: 'all' | 'public';
+  /**
+   * Models that get read queries but no mutations (schema lenses: models deleted since the client's version,
+   * which nothing can write). Absent: every model in the schema gets its mutations.
+   */
+  readOnly?: ReadonlySet<string>;
 };
 
 export const FULL_VISIBILITY: SchemaVisibility = Object.freeze({

@@ -34,8 +34,8 @@ export type BuiltSchema = { version: number; schema: GraphQLSchema };
 export type BuildOptions = {
   /**
    * A schema lens (plan schema-lenses): `snapshot` is the client's version of the workspace, `visibility`
-   * today's widened by `lensVisibility`. Reads only (no mutation type), and fields today's visibility hides
-   * read null.
+   * today's widened by `lensVisibility`. Fields today's visibility hides read null; mutations are the client
+   * version's, written through the lens (`lensReads.ts`).
    */
   lens?: boolean;
 };
@@ -69,7 +69,7 @@ export const buildGraphqlSchema = (
         entryType(build, model);
       }
     }
-    if (!lens) {
+    if (!visibility.readOnly?.has(model.id)) {
       Object.assign(mutation, mutationFields(build, model));
     }
   }
@@ -96,7 +96,7 @@ export const buildGraphqlSchema = (
   );
   const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: query }),
-    ...(models.length > 0 && !lens
+    ...(Object.keys(mutation).length > 0
       ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) }
       : {}),
     // Every generated object type, including those reachable only as dynamic-zone union members or as an

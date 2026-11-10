@@ -177,7 +177,7 @@ describe('GraphQL schema cache', () => {
         [],
       ).forSite(SITE_A);
 
-    it('builds one read-only schema per view, shared by versions with the same revisions', async () => {
+    it('builds one schema per view, shared by versions with the same revisions', async () => {
       const { cache, builds } = setup();
       const [a, b] = await Promise.all([
         cache.getLens(lensView(3, 1), FULL_VISIBILITY),
@@ -185,7 +185,7 @@ describe('GraphQL schema cache', () => {
       ]);
       expect(a).toBe(b);
       expect(builds).toEqual([{ siteId: SITE_A, version: 3, lens: true }]);
-      expect(a.schema.getMutationType()).toBeUndefined();
+      expect(a.schema.getMutationType()?.getFields()).toHaveProperty('createNote');
       expect(await cache.getLens(lensView(3, 2), FULL_VISIBILITY)).not.toBe(a);
       expect(await cache.getLens(lensView(3, 1), masked('lens:x'))).not.toBe(a);
       expect(cache.listLens().map((entry) => entry.view)).toEqual([

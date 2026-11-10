@@ -1,16 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
-import { GRAPHQL_SCHEMA_VARIANTS_MAX, GRAPHQL_SITE_SCHEMA_IDLE_MS } from '../../../constants/graphql.js';
+import {
+  GRAPHQL_LENS_SCHEMA_CACHE_SIZE,
+  GRAPHQL_SCHEMA_VARIANTS_MAX,
+  GRAPHQL_SITE_SCHEMA_IDLE_MS,
+} from '../../../constants/graphql.js';
 import type { NetworkSchema, SchemaSnapshot } from '../../snapshot.js';
 import { buildGraphqlSchema, type BuildOptions, type BuiltSchema } from './schemaBuilder.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
-
-/**
- * Lens schemas kept (plan schema-lenses): one per (workspace, visibility, client version's revisions), least
- * recently used dropped first. Apart from the current schemas: they never evict one, never count against
- * GRAPHQL_SCHEMA_VARIANTS_MAX, and a client walking versions can hold no more than this many.
- */
-export const GRAPHQL_LENS_SCHEMA_CACHE_SIZE = 8;
 
 /**
  * The GraphQL schemas of the sites' views (ADR 0006), one per (site, visibility): admin callers share a site's

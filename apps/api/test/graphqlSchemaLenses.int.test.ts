@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { GRAPHQL_LENS_SCHEMA_CACHE_SIZE } from '../src/constants/graphql.js';
 import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import * as permissionsVersionRepository from '../src/repositories/permissionsVersion.js';
-import { GRAPHQL_LENS_SCHEMA_CACHE_SIZE } from '../src/schema/codegen/graphql/schemaCache.js';
 import {
   createDefinition,
   createRole,
@@ -427,6 +427,49 @@ describe('schema lenses: GraphQL', () => {
     expect(errorCodes(await gql('{ articles { totalCount } }'))).toEqual(['GRAPHQL_VALIDATION_FAILED']);
   });
 
+  it('records the version a GraphQL read names for its token, and clears it when it names none', async () => {
+    const roleId = await createRole(database.current.db, 'delivery', [
+      { action: 'read', modelId: article.definition.id },
+    ]);
+    const reader = await createTokenForRole(database.current.db, roleId);
+    const { id: readerId } = await database.current.db
+      .selectFrom('api_tokens')
+      .select('id')
+      .where('role_id', '=', roleId)
+      .executeTakeFirstOrThrow();
+    const versionOf = async () => {
+      await testApp.app.usage.flush();
+      const { principals } = expectStatus(
+        await testApp.app.inject({
+          method: 'GET',
+          url: '/api/admin/usage/schema-versions',
+          headers: headersOf(adminToken),
+        }),
+        200,
+      ).json<{ principals: Array<{ principalKey: string; schemaVersion: number }> }>();
+      return principals.find((entry) => entry.principalKey === `token:${readerId}`)?.schemaVersion ?? null;
+    };
+    const query = 'query ($id: ID!) { article(id: $id) { title } }';
+    dataOf(await gql(query, { credential: reader, version: v, variables: { id: first.id } }));
+    expect(await versionOf()).toBe(Number(v.split(':')[1]));
+    const today = await currentToken();
+    dataOf(
+      await gql('query ($id: ID!) { story(id: $id) { headline } }', {
+        credential: reader,
+        version: today,
+        variables: { id: first.id },
+      }),
+    );
+    expect(await versionOf()).toBe(Number(today.split(':')[1]));
+    dataOf(
+      await gql('query ($id: ID!) { story(id: $id) { headline } }', {
+        credential: reader,
+        variables: { id: first.id },
+      }),
+    );
+    expect(await versionOf()).toBeNull();
+  });
+
   it('shows the old version’s types and fields in introspection', async () => {
     const articleFields = await fieldNames('Article', v);
     expect(articleFields).toEqual(expect.arrayContaining(['title', 'count', 'summary', 'secret', 'hero']));
@@ -435,9 +478,15 @@ describe('schema lenses: GraphQL', () => {
     expect(await fieldNames('Story', v)).toBeNull();
     expect(await fieldNames('Hero', v)).toEqual(['heading', 'note']);
     expect(await fieldNames('Story')).toContain('headline');
-    // Reads only: no mutation type through a lens.
-    const mutation = dataOf(await gql('{ __schema { mutationType { name } } }', { version: v }));
-    expect(mutation).toEqual({ __schema: { mutationType: null } });
+    // The old version's mutations, none for a model deleted since.
+    type Mutations = { __schema: { mutationType: { fields: Array<{ name: string }> } } };
+    const mutations = dataOf(
+      await gql('{ __schema { mutationType { fields { name } } } }', { version: v }),
+    ) as Mutations;
+    const names = mutations.__schema.mutationType.fields.map(({ name }) => name);
+    expect(names).toEqual(expect.arrayContaining(['createArticle', 'updateArticle', 'deleteArticle']));
+    expect(names).not.toContain('createStory');
+    expect(names).not.toContain('createGadget');
   });
 
   it('takes filters and sorts in the old names and refuses those the lens cannot answer', async () => {
@@ -503,15 +552,15 @@ describe('schema lenses: GraphQL', () => {
     expect(changes._changes.nodes.find((node) => node.modelKey === 'article')?.routeKey).toBe('articles');
   });
 
-  it('refuses a mutation naming a schema version', async () => {
-    for (const version of [v, await currentToken()]) {
-      const refused = await gql('mutation { deleteArticle(id: "x") { id } }', {
-        credential: adminToken,
-        version,
-      });
-      expect(refused.statusCode).toBe(400);
-      expect(errorCodes(refused)).toEqual(['LENS_MUTATIONS_UNSUPPORTED']);
-    }
+  it('runs a mutation naming a schema version under today’s permissions (writes: graphqlSchemaLensWrites)', async () => {
+    const mutation = `mutation ($id: ID!) { deleteArticle(id: $id) }`;
+    const refused = await old(mutation, { variables: { id: first.id } });
+    // `deleteArticle` is non-null, so its refusal takes the response's data and status (as without a lens).
+    expect(refused.statusCode).toBe(403);
+    expect(errorCodes(refused)).toEqual(['FORBIDDEN']);
+    expect(errorCodes(await old('mutation { deleteGadget(id: "x") }'))).toEqual([
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
   });
 
   it('checks the version it is given', async () => {

@@ -22,6 +22,17 @@ const withExtensions = (
   return { ...formatted, message, extensions: { ...formatted.extensions, ...extensions } };
 };
 
+/**
+ * A write through a schema lens refused (plan schema-lenses): its issues (pointers in the client's names and
+ * how each field changed) also sit directly on `extensions.issues`, where GraphQL clients look for them.
+ */
+const lensWriteIssuesOf = (error: AppError): { issues?: unknown } => {
+  const details = error.details as { issues?: unknown } | undefined;
+  return error.code === 'LENS_WRITE_UNSUPPORTED' && Array.isArray(details?.issues)
+    ? { issues: details.issues }
+    : {};
+};
+
 const classify = (error: GraphQLError, log: FastifyBaseLogger): Classified => {
   const original: ErrorWithStatus | undefined = error.originalError;
   if (original instanceof AppError) {
@@ -29,6 +40,7 @@ const classify = (error: GraphQLError, log: FastifyBaseLogger): Classified => {
       formatted: withExtensions(error, original.message, {
         code: original.code,
         ...(original.details !== undefined ? { details: original.details } : {}),
+        ...lensWriteIssuesOf(original),
       }),
       statusCode: original.statusCode,
     };

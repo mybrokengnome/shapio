@@ -77,8 +77,26 @@ const delivery = (models: Record<string, Partial<ModelVisibility>>): SchemaVisib
 });
 
 describe('lensVisibility', () => {
-  it('shows admin callers the client version whole', () => {
-    expect(lensVisibility(FULL_VISIBILITY, clientView, current)).toBe(FULL_VISIBILITY);
+  it('shows admin callers the client version whole, models deleted since without mutations', () => {
+    const lens = lensVisibility(FULL_VISIBILITY, clientView, current);
+    expect(lens.models).toBeNull();
+    expect([...(lens.readOnly ?? [])]).toEqual([GADGET]);
+    expect(lens.key).not.toBe(FULL_VISIBILITY.key);
+    expect(lensVisibility(FULL_VISIBILITY, current, current)).toBe(FULL_VISIBILITY);
+  });
+
+  it("names today's writable fields and, when the caller may write, the client's public ones", () => {
+    const writer = lensVisibility(
+      delivery({ [ARTICLE]: { writeFields: new Set([TITLE, INTERNAL]) } }),
+      clientView,
+      current,
+    );
+    expect([...(writer.models?.get(ARTICLE)?.writeFields ?? [])].sort()).toEqual(
+      [TITLE, SECRET, INTERNAL, GONE].sort(),
+    );
+    const reader = lensVisibility(delivery({ [ARTICLE]: {} }), clientView, current);
+    expect(reader.models?.get(ARTICLE)?.writeFields.size).toBe(0);
+    expect(reader.readOnly?.has(ARTICLE)).toBeFalsy();
   });
 
   it("names today's readable fields and the client's public ones, never its private ones", () => {
@@ -99,10 +117,19 @@ describe('lensVisibility', () => {
     expect(granted.key).not.toBe(lens.key);
   });
 
-  it('keeps models deleted since for a caller who reads something, never models it may not read today', () => {
+  it('keeps models deleted since, read only, for a caller who reads something; models as today otherwise', () => {
     const lens = lensVisibility(delivery({ [ARTICLE]: {} }), clientView, current);
     expect([...(lens.models?.keys() ?? [])].sort()).toEqual([ARTICLE, GADGET].sort());
-    const writeOnly = lensVisibility(delivery({ [ARTICLE]: { readable: false } }), clientView, current);
-    expect(writeOnly.models?.size).toBe(0);
+    expect([...(lens.readOnly ?? [])]).toEqual([GADGET]);
+    // A model the caller may only write keeps its mutations and has no reads; nothing deleted is added.
+    const writeOnly = lensVisibility(
+      delivery({ [ARTICLE]: { readable: false, writeFields: new Set([TITLE]) } }),
+      clientView,
+      current,
+    );
+    expect([...(writeOnly.models?.keys() ?? [])]).toEqual([ARTICLE]);
+    expect(writeOnly.models?.get(ARTICLE)).toMatchObject({ readable: false });
+    expect(writeOnly.models?.get(ARTICLE)?.readFields.size).toBe(0);
+    expect(writeOnly.readOnly).toBeUndefined();
   });
 });

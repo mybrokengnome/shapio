@@ -11,7 +11,6 @@ import {
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
-import { lensMutationsUnsupported } from '../schema/codegen/graphql/lensReads.js';
 import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import {
   executeOperation,
@@ -19,7 +18,7 @@ import {
   type GraphqlOperationInput,
 } from '../services/graphqlExecution.js';
 import { createGraphqlRequestContext } from './graphqlContext.js';
-import { graphqlLensOf, graphqlSchemaFor, runsWrite, usageLensOf, withSchemaVersion } from './graphqlLens.js';
+import { graphqlLensOf, graphqlSchemaFor, usageLensOf, withSchemaVersion } from './graphqlLens.js';
 
 export type GraphqlQuerystring = { query: string; variables?: string; operationName?: string };
 
@@ -81,9 +80,6 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed);
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
-    if (lensed && prepared.document && runsWrite(prepared.document, input.operationName)) {
-      throw lensMutationsUnsupported();
-    }
     if (prepared.document && hasNoContentAccess(visibility)) {
       throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
     }
@@ -97,9 +93,6 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
         lensed,
       ),
     );
-  }
-  if (lensed && prepared.operation.operation !== OperationTypeNode.QUERY) {
-    throw lensMutationsUnsupported();
   }
   if (request.method === 'GET' && prepared.operation.operation !== OperationTypeNode.QUERY) {
     reply.header('allow', 'POST');
@@ -118,7 +111,12 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   );
   const context = createGraphqlRequestContext(request, lensed);
   const result = await executeOperation(schema, prepared, input, context);
-  recordUsage(request, usage, result.data !== null && result.data !== undefined);
+  recordUsage(
+    request,
+    usage,
+    result.data !== null && result.data !== undefined,
+    lensed?.lens?.requested ?? null,
+  );
   if (context.readDrafts()) {
     // Drafts (plan drafts-mode §3) are never stored by a cache, as REST draft reads.
     reply.header('cache-control', DRAFTS_CACHE_CONTROL);
