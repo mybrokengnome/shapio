@@ -4,10 +4,16 @@ import { parseQueryTree, type QueryTree, type QueryValue } from '../content/comp
 import { rewriteQueryTree } from '../content/lens/query.js';
 import { apiKeyOfRoute, modelNotFound, modelRouteOf } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
-import { lensUncovered } from '../schema/errors.js';
+import { lensUncovered, schemaVersionUnavailable } from '../schema/errors.js';
+import type { LensBudgetKey } from '../schema/lens/budget.js';
 import type { RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
-import { activeLens, type ContentServiceContext } from './contentAccess.js';
+import {
+  activeLens,
+  loadSchemaLens,
+  namesSchemaVersion,
+  type ContentServiceContext,
+} from './contentAccess.js';
 
 /**
  * Schema lenses at the request's edge (plan schema-lenses): a delivery or preview request written in the
@@ -150,11 +156,67 @@ export const authorizeClientRoute = async <T>(
   try {
     return await authorize(route.apiKey);
   } catch (error) {
-    if (isRefusal(error)) {
-      await asWithoutVersion();
+    if (!isRefusal(error)) {
+      throw error;
     }
-    throw error;
+    await asWithoutVersion();
+    // Authorized for what the key names today, refused for what it named then: the refusal names only the
+    // route key the caller sent, never an API ID it did not send.
+    throw renamedRefusal(error as AppError, route.apiKey, route.clientRouteKey);
   }
+};
+
+const renamedRefusal = (error: AppError, apiKey: string, routeKey: string): AppError =>
+  new AppError(
+    error.statusCode,
+    error.code,
+    error.message.split(`"${apiKey}"`).join(`"${routeKey}"`),
+    error.details,
+    { cause: error },
+  );
+
+/**
+ * The gate every call naming a schema version passes before anything lens-specific happens (no lens loaded, no
+ * build budget charged, no version error): authorized for what the route key it sent names today, exactly as
+ * without a version; for a key today's schema does not know (a route renamed since), the caller must hold some
+ * grant on the workspace (`holdsAnyGrant`), else it gets the 404 a request without a version gets.
+ */
+export const authorizeBeforeLens = async (
+  context: ContentServiceContext,
+  routeKey: string,
+  authorize: (apiKey: string) => Promise<unknown>,
+  holdsAnyGrant: () => Promise<boolean>,
+): Promise<void> => {
+  let todayKey: string | null = null;
+  try {
+    todayKey = apiKeyOfRoute(context.snapshot, routeKey);
+  } catch (error) {
+    if (!(error instanceof AppError) || error.statusCode !== 404) {
+      throw error;
+    }
+  }
+  if (todayKey !== null) {
+    await authorize(todayKey);
+  } else if (!(await holdsAnyGrant())) {
+    throw modelNotFound(routeKey);
+  }
+};
+
+/**
+ * The client's route once its lens is loaded: `409 SCHEMA_VERSION_UNAVAILABLE` for a route the version names
+ * but cannot serve (history that does not reach it), never a 404 that hides it. Call after authorization.
+ */
+export const clientRouteAfterAuthorization = (
+  context: ContentServiceContext,
+  routeKey: string,
+): ClientRoute | null => {
+  const route = clientRouteOf(context, routeKey);
+  const lens = activeLens(context);
+  const pruned = lens && route && route.definitionId === null ? lens.unavailable?.get(routeKey) : undefined;
+  if (pruned) {
+    throw schemaVersionUnavailable(pruned.apiKey, pruned.oldestVersion);
+  }
+  return route;
 };
 
 /**
@@ -168,8 +230,14 @@ export const lensQueryOf = (
   definitionId: string,
   clientRouteKey: string,
   rawQuery: string,
-  /** Fields the caller reads as null through the lens (`readsNullThroughLens`), which `fields=` may name. */
-  readsNull?: (fieldId: string) => boolean,
+  /**
+   * What the caller may name (`lensQueryVisibility`): fields it reads as null, and fields whose fate since the
+   * version it may learn. Absent (an interface's route): nothing gone or changed since is named.
+   */
+  visibility: { readsNull: (fieldId: string) => boolean; mayName: (fieldId: string) => boolean } = {
+    readsNull: () => false,
+    mayName: () => false,
+  },
 ): { context: ContentServiceContext; rawQuery: string } => {
   const lens = activeLens(context);
   if (!lens) {
@@ -185,7 +253,8 @@ export const lensQueryOf = (
       const kindId = lens.view.modelsByApiKey.get(apiKey)?.definition.id;
       return kindId === undefined ? undefined : context.snapshot.byId.get(kindId)?.definition.apiKey;
     },
-    ...(readsNull ? { readsNull } : {}),
+    readsNull: visibility.readsNull,
+    mayName: visibility.mayName,
   });
   // A selection names the route model's field IDs; an interface's contract fields are each member's own
   // there (`queryMembers` maps them), so an interface read selects through its rewritten query alone.
@@ -314,4 +383,30 @@ export const withClientQueryNames = <T>(
     }
     throw inClientNames(clientNamesOf(lens, definitionId), error);
   }
+};
+
+/**
+ * A call on the route key a request sent, ready for the service: without a schema version, today's API ID. With
+ * one, the caller is authorized first exactly as without it (`authorizeBeforeLens`); only then is a version
+ * error answered, the lens loaded (and its build budget charged), and the client's route resolved.
+ */
+export const openClientRoute = async (
+  base: ContentServiceContext,
+  routeKey: string,
+  versionError: AppError | null,
+  authorize: (apiKey: string) => Promise<unknown>,
+  holdsAnyGrant: () => Promise<boolean>,
+  budgetKey?: LensBudgetKey | null,
+): Promise<{ context: ContentServiceContext; apiKey: string; clientRoute: ClientRoute | null }> => {
+  if (!versionError && !namesSchemaVersion(base)) {
+    return { context: base, apiKey: apiKeyOfRoute(base.snapshot, routeKey), clientRoute: null };
+  }
+  await authorizeBeforeLens(base, routeKey, authorize, holdsAnyGrant);
+  if (versionError) {
+    throw versionError;
+  }
+  const context = await loadSchemaLens(base, budgetKey);
+  const clientRoute = clientRouteAfterAuthorization(context, routeKey);
+  const apiKey = clientRoute ? (clientRoute.apiKey ?? routeKey) : apiKeyOfRoute(context.snapshot, routeKey);
+  return { context, apiKey, clientRoute };
 };

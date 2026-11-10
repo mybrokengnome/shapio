@@ -210,6 +210,12 @@ export type Policy = {
   writeMask: FieldMask;
   /** null: `writeMask` applies to every row. Otherwise writes check these per row (never `writeMask`). */
   rowWriteMasks: RowWriteMasks | null;
+  /**
+   * The shape of the grants behind the masks: `true` when at least one read (write) grant on the model names
+   * no fields, so the principal reads (writes) every field its audience may see rather than a chosen list.
+   * Read through `hasUnrestrictedGrant` (permissions/unrestrictedGrant.ts); absent on denied policies.
+   */
+  unrestrictedFields?: { read: boolean; write: boolean };
 };
 
 export type PolicyRequest = {

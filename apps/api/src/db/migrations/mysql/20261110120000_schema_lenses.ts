@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
-import { LENS_HISTORY_BACKFILL_JOB, LENS_HISTORY_BACKFILL_KEY } from '../20261110120000_schema_lenses.js';
+import {
+  LENS_HISTORY_BACKFILL_JOB,
+  LENS_HISTORY_BACKFILL_KEY,
+  LENS_HISTORY_BACKFILL_KEYS,
+} from '../20261110120000_schema_lenses.js';
 
 /**
  * MySQL twin of `../20261110120000_schema_lenses.ts`. `insert ignore` stands in for `on conflict do nothing`
@@ -53,7 +57,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
 export const down = async (db: Kysely<unknown>): Promise<void> => {
   await sql`alter table \`token_reads\` drop column \`last_schema_version\``.execute(db);
   await sql`alter table \`system_versions\` drop column \`schema_id\``.execute(db);
-  await sql`delete from \`jobs\` where \`idempotency_key\` = ${LENS_HISTORY_BACKFILL_KEY} and \`status\` = 'pending'`.execute(
+  await sql`delete from \`jobs\` where \`idempotency_key\` in (${sql.join([...LENS_HISTORY_BACKFILL_KEYS])})`.execute(
     db,
   );
   await sql`drop table \`schema_activations\``.execute(db);

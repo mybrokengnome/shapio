@@ -136,6 +136,8 @@ export const OlderClientsSchema = Type.Object({
             label: Type.Union([Type.String(), Type.Null()]),
             /** The version is the token's pin, not one the client sends. */
             pinned: Type.Boolean(),
+            /** A network token: listed on each workspace the change reaches, read there or not. */
+            network: Type.Boolean(),
             /** Null: a token pinned to the version that has not read since (a declared older client). */
             lastReadAt: NullableDateTimeSchema,
           }),

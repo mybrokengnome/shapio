@@ -2,6 +2,7 @@ import type { DefinitionLens, FieldDefinition, SeoDefaults } from '@shapio/schem
 import type { Kysely, RawBuilder, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
 import type { FieldMask, PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
+import { hasUnrestrictedGrant } from '../permissions/unrestrictedGrant.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
@@ -15,7 +16,13 @@ import {
   type LocaleScope,
 } from './compiler/compile.js';
 import { entryIdIn } from './compiler/conditions.js';
-import { compileRowFilter, hidesPrivateComponentFields, maskAllows, rowReadMask } from './compiler/policy.js';
+import {
+  compileRowFilter,
+  everyRowReadMask,
+  hidesPrivateComponentFields,
+  maskAllows,
+  rowReadMask,
+} from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
@@ -551,17 +558,6 @@ const componentFieldsOf = (model: ContentModel): Map<string, FieldDefinition> =>
   );
 
 /**
- * Whether a read mask covers every public field of today's model: the caller's grant names no fields. Such a
- * caller sees, through a lens, the client's public fields it cannot read today as null (plan schema-lenses, as
- * GraphQL names them); a caller with a field-restricted grant does not see them at all.
- */
-export const isUnrestrictedMask = (mask: FieldMask, model: ContentModel): boolean =>
-  mask.mode === 'all' ||
-  model.definition.fields
-    .filter((field) => field.public && !field.deprecated)
-    .every((field) => mask.fieldIds.includes(field.id));
-
-/**
  * Whether a client field reads null through a lens (never a value): public in the client's version, gone or
  * not readable today, and the caller's grant on the model unrestricted. `fields=` may name it; filters and
  * sorts on it are refused as they are today.
@@ -570,12 +566,40 @@ export const readsNullThroughLens = (
   clientField: FieldDefinition,
   today: FieldDefinition | undefined,
   mask: FieldMask,
-  model: ContentModel,
+  policy: Policy,
 ): boolean =>
   clientField.public &&
   !clientField.deprecated &&
   (today === undefined || !visibleToday(mask, today)) &&
-  isUnrestrictedMask(mask, model);
+  // The grant's shape decides, never what the mask happens to cover today (permissions/unrestrictedGrant.ts).
+  hasUnrestrictedGrant(policy, 'read');
+/**
+ * What a lensed query may name on a model for this caller (plan schema-lenses): `readsNull`, the client fields
+ * it reads as null (`fields=` may name them); `mayName`, the client fields whose fate since the version it may
+ * learn (a grant naming no fields, the field public at the version). Anything else is answered as a field that
+ * never existed.
+ */
+export const lensQueryVisibility = (
+  clientModel: ContentModel | undefined,
+  model: ContentModel,
+  policy: Policy,
+): { readsNull: (fieldId: string) => boolean; mayName: (fieldId: string) => boolean } => {
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
+  const mask = everyRowReadMask(policy);
+  const unrestricted = hasUnrestrictedGrant(policy, 'read');
+  const clientField = (fieldId: string) =>
+    clientModel?.definition.fields.find((candidate) => candidate.id === fieldId);
+  return {
+    readsNull: (fieldId) => {
+      const field = clientField(fieldId);
+      return field !== undefined && readsNullThroughLens(field, today.get(fieldId), mask, policy);
+    },
+    mayName: (fieldId) => {
+      const field = clientField(fieldId);
+      return unrestricted && field !== undefined && field.public && !field.deprecated;
+    },
+  };
+};
 
 /**
  * `projectRows` through a schema lens (plan schema-lenses): today's rows, read with today's policies, relation
@@ -639,7 +663,7 @@ const projectRowsThroughLens = async (
   };
   return rows.map((row) => {
     const mask = policy.rowReadMasks ? rowReadMask(policy, env.actor, row) : policy.readMask;
-    const unrestricted = isUnrestrictedMask(mask, model);
+    const unrestricted = hasUnrestrictedGrant(policy, 'read');
     const readable = (fieldId: string) => {
       const current = today.get(fieldId);
       return current !== undefined && visibleToday(mask, current);
@@ -647,7 +671,7 @@ const projectRowsThroughLens = async (
     const clientFields = clientModel.definition.fields.filter(
       (field) =>
         isSelected(field.id) &&
-        (readable(field.id) || readsNullThroughLens(field, today.get(field.id), mask, model)),
+        (readable(field.id) || readsNullThroughLens(field, today.get(field.id), mask, policy)),
     );
     // Only what the caller may read today keeps a value, at every depth.
     const read = readableThroughLens(lens, readThroughLens(lens, row.data), readable, componentFieldReadable);
@@ -679,7 +703,9 @@ const projectRowsThroughLens = async (
             clientModel,
             policy,
             clientFields,
-            row,
+            // Resolved from what the lens reads and the caller may see, never the raw stored row (a title field
+            // removed since keeps its stored value there).
+            { ...row, data: read },
             data,
           )
         : data,

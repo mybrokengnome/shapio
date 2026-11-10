@@ -160,6 +160,7 @@ describe('permission evaluator', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: true, write: false },
     });
     expect(await evaluator.canPerform(principal, 'schema.create')).toBe(false);
   });
@@ -231,6 +232,7 @@ describe('permission evaluator', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: false, write: false },
     });
     const both: Principal = adminOn(['a', 'b']);
     expect(await evaluator.evaluate(both, { action: 'update', modelId: MODEL })).toMatchObject({
@@ -273,6 +275,7 @@ describe('permission evaluator', () => {
       },
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: true, write: false },
     });
   });
 

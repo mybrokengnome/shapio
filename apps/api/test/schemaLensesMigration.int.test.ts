@@ -95,5 +95,18 @@ describe('migration: schema lenses', () => {
       .where('idempotency_key', '=', LENS_HISTORY_BACKFILL_KEY)
       .execute();
     expect(jobs).toHaveLength(1);
+
+    // A finished backfill does not stop the next `up` from enqueueing it again.
+    await db
+      .updateTable('jobs')
+      .set({ status: 'succeeded' })
+      .where('idempotency_key', '=', LENS_HISTORY_BACKFILL_KEY)
+      .execute();
+    await down(migrationDb);
+    expect(await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db)).toBeUndefined();
+    await up(migrationDb);
+    expect(await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db)).toMatchObject({
+      status: 'pending',
+    });
   });
 });

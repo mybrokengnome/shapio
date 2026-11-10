@@ -42,6 +42,15 @@ All notable changes to Shapio are listed here. The format follows
   the earlier record from the audit log; where that is missing, a read through an older version answers
   `409 SCHEMA_VERSION_UNAVAILABLE` with the oldest version that works.
 
+### Fixed
+
+- A caller that could not read a field inside a component (private to its audience, or deprecated) no longer
+  wipes it by writing the component back; items of repeatable components and dynamic zones are matched to the
+  items they continue, so a hidden value never moves to another item
+  ([Delivery API](documentation/delivery-api.md#writing-components)).
+- A number field changed to decimal or big integer no longer fails on very large or very small stored numbers
+  (`1e21`, `1e-7`); they convert to exact digits.
+
 ### Changed
 
 - Every delivery response carries `Shapio-Schema-Version-Current` (the current schema version token, exposed to

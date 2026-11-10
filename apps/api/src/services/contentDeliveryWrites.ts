@@ -42,6 +42,7 @@ import { deliveryEnvironment } from './contentDeliveryReads.js';
 import * as contentEntriesService from './contentEntries.js';
 import type { DraftUpdateBase } from './contentEntries.js';
 import type { AdminEntryView } from './contentReads.js';
+import { assertMayReadDrafts } from './draftAccess.js';
 
 /**
  * Writes through the delivery API (`POST/PUT/DELETE /api/content/:modelKey…`, build plan §4.I4): app users,
@@ -117,6 +118,8 @@ const writeLens = (
 type ReadScope = {
   visible: (fieldId: string) => boolean;
   componentFieldVisible: (fieldId: string) => boolean;
+  /** The caller may read drafts: a draft is one of the heads it may have read. */
+  readsDrafts: boolean;
 };
 
 /**
@@ -145,7 +148,12 @@ const readScopeOf = async (
     ),
   );
   const publicOnly = hidesPrivateComponentFields(mask);
+  const readsDrafts = await assertMayReadDrafts(context, model.definition.id, model.definition.apiKey).then(
+    () => true,
+    () => false,
+  );
   return {
+    readsDrafts,
     visible: (fieldId) => {
       const field = today.get(fieldId);
       return field !== undefined && maskAllows(mask, field);
@@ -171,8 +179,10 @@ const readsOf = (
     return [];
   }
   const heads = base.heads.filter((head) => head.locale === locale);
+  // Only heads this caller may read: a draft only with draft access, so a value sent back never tests a guess
+  // of a draft it cannot see.
   return heads
-    .filter((head) => head.state === 'draft' || head.state === 'published')
+    .filter((head) => head.state === 'published' || (head.state === 'draft' && scope.readsDrafts))
     .flatMap((head) =>
       isRecord(head.data)
         ? [
@@ -284,8 +294,10 @@ const deliveryPatch = (
   data: unknown,
   before: Readonly<ContentData>,
   scope: ReadScope | null,
+  lens: DefinitionLens | null,
 ): ContentData => {
-  const { patch, issues } = validator.fromInput(isRecord(data) ? data : {});
+  const input = isRecord(data) ? data : {};
+  const { patch, issues } = validator.fromInput(input);
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }
@@ -298,6 +310,7 @@ const deliveryPatch = (
       return definition && isComponentDefinition(definition) ? definition : undefined;
     },
     (field) => scope?.componentFieldVisible(field.id) ?? false,
+    { mayRead: scope !== null, input, lens },
   );
 };
 
@@ -345,6 +358,7 @@ export const updateDeliveryEntry = async (
                 reads: readsOf(lens, base, base.previous?.locale ?? locale, scope),
                 definitionOf,
                 visibleTargets,
+                mayRead: scope !== null,
                 ...(scope
                   ? { readable: scope.visible, componentFieldReadable: scope.componentFieldVisible }
                   : { readable: () => false, componentFieldReadable: () => false }),
@@ -352,6 +366,7 @@ export const updateDeliveryEntry = async (
             : (input.data ?? {}),
           base.before,
           scope,
+          lens,
         ),
     });
   return toResult(context, lens ? await inClientNames(context, lens, write) : await write());

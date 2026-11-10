@@ -1,5 +1,6 @@
 import {
   compileLens,
+  isModelDefinition,
   lensDefinitionEffect,
   lensEffectOfChange,
   lensEffects,
@@ -34,8 +35,11 @@ import { schemaVersionReadersWithPins, type VersionReaderRow } from './usage.js'
  * whether or not they read yet. Shared by the change set review and the model builder's plan preview.
  */
 
-/** Distinct schema versions a review compiles lenses for: the most recently used first. */
-export const OLDER_CLIENT_VERSIONS_CAP = 8;
+/**
+ * Distinct schema versions a review compiles lenses for: versions tokens are pinned to first (a pin is a
+ * declared older client), then the most recently read.
+ */
+export const OLDER_CLIENT_VERSIONS_CAP = 16;
 /**
  * Activation steps walked per definition and client version to find what happened to stored values; a longer
  * history reports the direct effect (shapes only) and `historyTruncated`.
@@ -51,6 +55,8 @@ export type OlderClientReader = {
   label: string | null;
   /** The version is the token's pin, not one the client sends. */
   pinned: boolean;
+  /** A network token: it may read every workspace, so it is listed on each one the change reaches. */
+  network: boolean;
   /** Null: a token pinned to the version that has not read since (a declared older client). */
   lastReadAt: Date | null;
 };
@@ -104,7 +110,7 @@ export type OlderClientVersion = {
 };
 
 export type OlderClientsReview = {
-  /** Most recently used first, at most `OLDER_CLIENT_VERSIONS_CAP`. */
+  /** Pinned versions first, then the most recently read; at most `OLDER_CLIENT_VERSIONS_CAP`. */
   versions: OlderClientVersion[];
   /** More versions are in use than the review compiled. */
   truncated: boolean;
@@ -182,7 +188,13 @@ const affectedSiteIds = (input: OlderClientsInput): string[] | undefined => {
   return [...sites];
 };
 
-type VersionReaders = { schemaVersion: number; lastReadAt: number; rows: VersionReaderRow[] };
+type VersionReaders = {
+  schemaVersion: number;
+  lastReadAt: number;
+  /** A token is pinned to it: a declared older client, kept ahead of versions merely read from. */
+  pinned: boolean;
+  rows: VersionReaderRow[];
+};
 
 const groupByVersion = (rows: readonly VersionReaderRow[], currentVersion: number) => {
   const versions = new Map<number, VersionReaders>();
@@ -192,17 +204,24 @@ const groupByVersion = (rows: readonly VersionReaderRow[], currentVersion: numbe
       continue;
     }
     const known = versions.get(row.schemaVersion);
-    // A pinned token that has not read yet sorts after every version read from.
+    // A pinned token that has not read yet adds no read time.
     const at = row.lastReadAt?.getTime() ?? 0;
     if (!known) {
-      versions.set(row.schemaVersion, { schemaVersion: row.schemaVersion, lastReadAt: at, rows: [row] });
+      versions.set(row.schemaVersion, {
+        schemaVersion: row.schemaVersion,
+        lastReadAt: at,
+        pinned: row.pinned,
+        rows: [row],
+      });
       continue;
     }
     known.rows.push(row);
     known.lastReadAt = Math.max(known.lastReadAt, at);
+    known.pinned ||= row.pinned;
   }
   return [...versions.values()].sort(
-    (a, b) => b.lastReadAt - a.lastReadAt || b.schemaVersion - a.schemaVersion,
+    (a, b) =>
+      Number(b.pinned) - Number(a.pinned) || b.lastReadAt - a.lastReadAt || b.schemaVersion - a.schemaVersion,
   );
 };
 
@@ -217,6 +236,7 @@ const readersOf = (rows: readonly VersionReaderRow[], visibility: Visibility) =>
           principalKey: row.principalKey,
           label: row.tokenName,
           pinned: row.pinned,
+          network: row.network,
           lastReadAt: row.lastReadAt,
         }))
       : null,
@@ -324,6 +344,18 @@ const historyOf = async (
       }
       if (held.length > 0) {
         fields.set(fieldId, foldInto(fields.get(fieldId), held));
+      }
+    }
+    // A kind stores its own fields only: what its parent chain's steps did to the fields it inherits (in the
+    // client's version) comes from the parent's history, each walk under the same step cap.
+    const parentId = isModelDefinition(clientDefinition) ? clientDefinition.extends : undefined;
+    if (parentId) {
+      const parent = await historyOf(input, client, parentId, memo);
+      truncated ||= parent.truncated;
+      for (const [fieldId, history] of parent.fields) {
+        if (!fields.has(fieldId)) {
+          fields.set(fieldId, history);
+        }
       }
     }
     return { fields, truncated };

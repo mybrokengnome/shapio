@@ -1,21 +1,21 @@
 import { isModelDefinition } from '@shapio/schema';
 import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
-import { everyRowReadMask } from '../content/compiler/policy.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
 import { kindsMetaOf, readableMembers, type KindMeta, type ReadMember } from '../content/family.js';
 import { modelRouteOf, resolveContentRoute, resolveModelById, type ContentModel } from '../content/model.js';
-import { readsNullThroughLens } from '../content/read.js';
+import { lensQueryVisibility } from '../content/read.js';
 import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
-import type { Policy } from '../permissions/types.js';
+import type { ContentAction, Policy } from '../permissions/types.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { lensReadLimit, restFieldReads } from '../usage/restFieldReads.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import {
   authorizeClientRoute,
+  openClientRoute,
   lensQueryOf,
   schemaVersionMetaOf,
   withClientQueryNames,
@@ -146,6 +146,38 @@ export const authorizeDeliveryRead = async (
 ): Promise<void> => {
   await readableRoute(context, modelKey);
 };
+
+/** Whether the caller may perform any of `actions` on some content type of the workspace today. */
+export const holdsAnyGrant = async (
+  context: ContentServiceContext,
+  actions: readonly ContentAction[],
+): Promise<boolean> => {
+  for (const { definition } of context.snapshot.definitions) {
+    if (!isModelDefinition(definition)) {
+      continue;
+    }
+    for (const action of actions) {
+      if ((await context.permissions.evaluate(context.actor, { action, modelId: definition.id })).allowed) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+/** A delivery read of the route key a request sent (REST and in-process): `openClientRoute` for reads. */
+export const openDeliveryRead = (
+  base: ContentServiceContext,
+  routeKey: string,
+  versionError: AppError | null = null,
+) =>
+  openClientRoute(
+    base,
+    routeKey,
+    versionError,
+    (apiKey) => readableRoute(base, apiKey),
+    () => holdsAnyGrant(base, ['read']),
+  );
 
 /** The first collection or singleton of the view the caller may read, if any. */
 const someReadableModel = async (
@@ -410,16 +442,10 @@ export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<stri
   }
 };
 
-/** The client fields a caller reads as null through the lens on this model (every row's mask). */
-const lensNullFields = (context: ContentServiceContext, model: ContentModel, policy: Policy) => {
+/** What a lensed query may name on the route's model, for this caller. */
+const lensVisibilityOf = (context: ContentServiceContext, model: ContentModel, policy: Policy) => {
   const view = activeLens(context)?.view;
-  const client = view ? resolveModelById(view, model.definition.id) : undefined;
-  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
-  const mask = everyRowReadMask(policy);
-  return (fieldId: string): boolean => {
-    const field = client?.definition.fields.find((candidate) => candidate.id === fieldId);
-    return field !== undefined && readsNullThroughLens(field, today.get(fieldId), mask, model);
-  };
+  return lensQueryVisibility(view ? resolveModelById(view, model.definition.id) : undefined, model, policy);
 };
 
 /**
@@ -448,7 +474,7 @@ const authorizedRead = async (
       definitionId,
       clientRoute.clientRouteKey,
       rawQuery,
-      route.contract ? undefined : lensNullFields(context, route.model, route.policy),
+      route.contract ? undefined : lensVisibilityOf(context, route.model, route.policy),
     ),
   };
 };

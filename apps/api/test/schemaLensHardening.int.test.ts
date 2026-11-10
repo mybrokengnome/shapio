@@ -5,7 +5,11 @@ import type { UrlBuilder } from '../src/helpers/publicUrl.js';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as schemaActivationsRepository from '../src/repositories/schemaActivations.js';
 import { getSchemaVersion } from '../src/repositories/schemaVersions.js';
-import { LENS_BUILDS_PER_MINUTE, resetLensBuildBudgets } from '../src/schema/lens/budget.js';
+import {
+  LENS_BUILDS_PER_MINUTE,
+  resetLensBuildBudgets,
+  takeLensBuildBudget,
+} from '../src/schema/lens/budget.js';
 import {
   backfillActivationHistory,
   LENS_HISTORY_BACKFILL_JOB,
@@ -231,6 +235,14 @@ describe('schema lens hardening', () => {
       statusCode: 409,
       code: 'SCHEMA_VERSION_UNAVAILABLE',
     });
+    // Left out of the view, but named: by ID and by the route it had, so it answers 409 rather than 404.
+    const expected = {
+      definitionId: digital.definition.id,
+      apiKey: 'digitalProduct',
+      oldestVersion: lens?.current,
+    };
+    expect(lens?.unavailable?.get('products/digital')).toEqual(expected);
+    expect(lens?.unavailable?.get(digital.definition.id)).toEqual(expected);
 
     // The backfill repairs what it wrote (backfilled rows), from the audit log.
     await backfillActivationHistory(database.current.db);
@@ -344,6 +356,35 @@ describe('schema lens hardening', () => {
     expect(await loadRequestLens(db, current, 1, key)).not.toBeNull();
     expect(await loadRequestLens(db, current, LENS_BUILDS_PER_MINUTE + 1, 'token:other')).not.toBeNull();
     expect(await loadRequestLens(db, current, LENS_BUILDS_PER_MINUTE + 2, null)).not.toBeNull();
+    resetLensBuildBudgets();
+  });
+
+  it("keeps each workspace's cached history apart, and a refused miss evicts nothing", async () => {
+    const { db } = database.current;
+    clearLensCaches();
+    resetLensBuildBudgets();
+    const now = await version();
+    const atV = now - 1;
+    const first = await loadRequestLens(db, await currentView(), atV, null);
+    // A caller with no budget left can only be served from caches.
+    const key = 'token:exhausted';
+    while (takeLensBuildBudget(key)) {
+      // drain
+    }
+    // Another workspace walks more versions than a workspace's caches hold.
+    const otherId = (
+      await db.selectFrom('sites').select('id').where('key', '=', 'other').executeTakeFirstOrThrow()
+    ).id;
+    const other = (await loadSnapshot(db)).forSite(otherId);
+    for (let older = 1; older < now; older += 1) {
+      await loadRequestLens(db, other, older, null);
+    }
+    const today = await currentView();
+    expect((await loadRequestLens(db, today, atV, key))?.view).toBe(first?.view);
+    expect(await appErrorOf(() => loadRequestLens(db, today, 1, key))).toMatchObject({
+      code: 'LENS_BUDGET_EXCEEDED',
+    });
+    expect((await loadRequestLens(db, today, atV, key))?.view).toBe(first?.view);
     resetLensBuildBudgets();
   });
 });

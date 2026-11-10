@@ -3,6 +3,7 @@ import { modelNotFound, resolveModelById } from '../content/model.js';
 import { relationTargetFor } from '../content/relationTarget.js';
 import type { Database } from '../db/index.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
+import type { PinnedTokenRow } from '../repositories/apiTokens.js';
 import * as sitesRepository from '../repositories/sites.js';
 import * as usageRepository from '../repositories/usage.js';
 import type { FieldUsageRow, SchemaVersionReaderRow, UsageSelection } from '../repositories/usage.js';
@@ -291,21 +292,36 @@ export type SchemaVersionReader = {
   lastReadAt: Date;
 };
 
-/** A reader on a schema version; `lastReadAt` null: a pinned token that has not read yet. */
+/** A reader on a schema version; `lastReadAt` null: a pinned token that has not read at its pin yet. */
 export type VersionReaderRow = Omit<SchemaVersionReaderRow, 'lastReadAt'> & {
   lastReadAt: Date | null;
   /** The version is the token's pin, not one the client sends. */
   pinned: boolean;
+  /** A network token (it may read every workspace); listed on each workspace it reads or may read. */
+  network: boolean;
 };
 
 const TOKEN_PRINCIPAL_PREFIX = 'token:';
 
+/** The workspaces an unread pinned token is listed on: its own, or for a network token each one given. */
+const pinWorkspaces = async (
+  pin: PinnedTokenRow,
+  siteIds: readonly string[] | undefined,
+  allSites: () => Promise<ReadonlyArray<{ id: string; key: string }>>,
+): Promise<ReadonlyArray<{ id: string; key: string }>> => {
+  if (pin.siteId !== null) {
+    return pin.siteKey === null ? [] : [{ id: pin.siteId, key: pin.siteKey }];
+  }
+  const sites = await allSites();
+  return siteIds === undefined ? sites : sites.filter((site) => siteIds.includes(site.id));
+};
+
 /**
  * Readers on these workspaces (every workspace when omitted) by the schema version their latest request was
- * served at: the version it named, or its token's pin (`pinned`; recorded the same way, so a read at the
- * version the token is pinned to counts as the pin). `includeUnread`: live tokens pinned to a version that
- * have not read since are declared older clients too, listed at their pin with `lastReadAt` null (workspace
- * tokens only: a network token's reads say which workspace it reads).
+ * served at: the version it named, or its token's pin. A pinned token is listed at its CURRENT pin: reads it
+ * made at another version before the pin last changed do not list it there. `includeUnread`: live tokens
+ * pinned to a version that have not read at it are declared older clients too, listed at their pin with
+ * `lastReadAt` null; a network token on each of these workspaces it has not read on.
  */
 export const schemaVersionReadersWithPins = async (
   siteIds: readonly string[] | undefined,
@@ -316,29 +332,43 @@ export const schemaVersionReadersWithPins = async (
     usageRepository.latestSchemaVersions(siteIds, executor),
     apiTokensRepository.listPinned(siteIds, new Date(), executor),
   ]);
-  const pinOf = new Map(pins.map((pin) => [`${TOKEN_PRINCIPAL_PREFIX}${pin.id}`, pin.pinnedSchemaVersion]));
-  const readers: VersionReaderRow[] = rows.map((row) => ({
-    ...row,
-    pinned: pinOf.get(row.principalKey) === row.schemaVersion,
-  }));
+  const pinOf = new Map(pins.map((pin) => [`${TOKEN_PRINCIPAL_PREFIX}${pin.id}`, pin]));
+  const readers: VersionReaderRow[] = rows.flatMap((row) => {
+    const pin = pinOf.get(row.principalKey);
+    const atPin = pin?.pinnedSchemaVersion === row.schemaVersion;
+    // Read at another version before the pin last changed: the token is on its new pin, listed there below.
+    // (A read after it that names another version is the client's own choice and is listed as read.)
+    if (pin && !atPin && row.lastReadAt < pin.updatedAt) {
+      return [];
+    }
+    return [{ ...row, pinned: atPin, network: pin !== undefined && pin.siteId === null }];
+  });
   if (!includeUnread) {
     return readers;
   }
-  const read = new Set(rows.map((row) => `${row.siteId}|${row.principalKey}`));
+  let sites: Promise<ReadonlyArray<{ id: string; key: string }>> | undefined;
+  const allSites = () =>
+    (sites ??= sitesRepository
+      .list(executor)
+      .then((list) => list.map((site) => ({ id: site.id, key: site.key }))));
+  const listed = new Set(readers.map((row) => `${row.siteId}|${row.principalKey}`));
   for (const pin of pins) {
     const principalKey = `${TOKEN_PRINCIPAL_PREFIX}${pin.id}`;
-    if (pin.siteId === null || pin.siteKey === null || read.has(`${pin.siteId}|${principalKey}`)) {
-      continue;
+    for (const site of await pinWorkspaces(pin, siteIds, allSites)) {
+      if (listed.has(`${site.id}|${principalKey}`)) {
+        continue;
+      }
+      readers.push({
+        siteId: site.id,
+        siteKey: site.key,
+        principalKey,
+        tokenName: pin.name,
+        schemaVersion: pin.pinnedSchemaVersion,
+        lastReadAt: null,
+        pinned: true,
+        network: pin.siteId === null,
+      });
     }
-    readers.push({
-      siteId: pin.siteId,
-      siteKey: pin.siteKey,
-      principalKey,
-      tokenName: pin.name,
-      schemaVersion: pin.pinnedSchemaVersion,
-      lastReadAt: null,
-      pinned: true,
-    });
   }
   return readers;
 };

@@ -15,7 +15,13 @@ import { sql, type Kysely } from 'kysely';
  * SQLite and MySQL have their own twins.
  */
 export const LENS_HISTORY_BACKFILL_JOB = 'schema.lensHistoryBackfill';
-export const LENS_HISTORY_BACKFILL_KEY = 'schema.lensHistoryBackfill:v1';
+/** `:v2`: the corrected, re-runnable backfill (v1 put pre-0.9.0 history in wrong scopes; never released). */
+export const LENS_HISTORY_BACKFILL_KEY = 'schema.lensHistoryBackfill:v2';
+/** Every key this migration ever enqueued under, so `down` forgets them all and `up` can enqueue again. */
+export const LENS_HISTORY_BACKFILL_KEYS = [
+  'schema.lensHistoryBackfill:v1',
+  LENS_HISTORY_BACKFILL_KEY,
+] as const;
 
 export const up = async (db: Kysely<unknown>): Promise<void> => {
   await sql`
@@ -52,7 +58,8 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
 export const down = async (db: Kysely<unknown>): Promise<void> => {
   await sql`alter table token_reads drop column last_schema_version`.execute(db);
   await sql`alter table system_versions drop column schema_id`.execute(db);
-  await sql`delete from jobs where idempotency_key = ${LENS_HISTORY_BACKFILL_KEY} and status = 'pending'`.execute(
+  // Whatever its status: a finished job's key would otherwise stop the next `up` from enqueueing it again.
+  await sql`delete from jobs where idempotency_key in (${sql.join([...LENS_HISTORY_BACKFILL_KEYS])})`.execute(
     db,
   );
   await sql`drop table schema_activations`.execute(db);

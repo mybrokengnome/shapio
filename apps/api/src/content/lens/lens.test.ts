@@ -3,13 +3,16 @@ import {
   createDefinitionIndex,
   normalizeDefinition,
   plainTextToRichText,
+  type ComponentDefinition,
   type DefinitionLens,
+  type FieldDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../helpers/appError.js';
 import { parseQueryTree } from '../compiler/querystring.js';
 import { COMPONENT_KEY } from '../validator/index.js';
+import { keepUnreadableComponentFields } from '../write/keepUnreadable.js';
 import { rewriteQueryTree, type QueryRewriteContext } from './query.js';
 import { readThroughLens } from './read.js';
 import { clientApiKey, issuesInClientNames, readableThroughLens, writeThroughLens } from './write.js';
@@ -367,7 +370,7 @@ describe('writeThroughLens', () => {
     expect(writeThroughLens(lens, { count: 3 }, baseOf(stored())).issues).toHaveLength(1);
   });
 
-  it('keeps fields a component gained since, and the ones the client cannot write, inside an instance', () => {
+  it('leaves out what an instance holds that the client cannot write or does not know; storage carries it', () => {
     const today = stored([
       { id: HEADING, apiKey: 'heading' },
       { id: NEW, apiKey: 'subheading' },
@@ -385,23 +388,32 @@ describe('writeThroughLens', () => {
       stored: { [id(6)]: { [HEADING]: 'old', [NEW]: 'kept', [id(9)]: 2.5 } },
       read: { [id(6)]: { [HEADING]: 'old' } },
     };
-    expect(writeThroughLens(lens, { hero: { heading: 'h' } }, baseOf(today, entry))).toEqual({
-      input: { hero: { heading: 'h', subheading: 'kept', size: 2.5 } },
+    const base = baseOf(today, entry);
+    expect(writeThroughLens(lens, { hero: { heading: 'h' } }, base)).toEqual({
+      input: { hero: { heading: 'h' } },
       issues: [],
     });
-    expect(writeThroughLens(lens, { hero: { heading: 'h', size: 3 } }, baseOf(today, entry)).issues).toEqual([
+    const index = createDefinitionIndex(today);
+    const fields = (index.resolve(id(1)) as { fields: FieldDefinition[] }).fields;
+    const componentOf = (componentId: string) => index.get(componentId) as ComponentDefinition | undefined;
+    expect(
+      keepUnreadableComponentFields(
+        { [id(6)]: { [HEADING]: 'h' } },
+        entry.stored,
+        fields,
+        componentOf,
+        () => true,
+        {
+          lens,
+        },
+      ),
+    ).toEqual({ [id(6)]: { [HEADING]: 'h', [NEW]: 'kept', [id(9)]: 2.5 } });
+    expect(writeThroughLens(lens, { hero: { heading: 'h', size: 3 } }, base).issues).toEqual([
       expect.objectContaining({ path: '/hero/size', code: 'NOT_ALLOWED' }),
     ]);
   });
 
-  it('refuses names the client version does not have', () => {
-    const lens = lensOf(stored(), client);
-    expect(writeThroughLens(lens, { headline: 'x' }, baseOf(stored())).issues).toEqual([
-      expect.objectContaining({ path: '/headline', code: 'UNKNOWN_FIELD' }),
-    ]);
-  });
-
-  it('translates dynamic-zone component API IDs and keeps what an item gained, matched by position', () => {
+  it('translates dynamic-zone component API IDs; storage matches items by what the client sees', () => {
     const zone = (heroKey: string, fields: FieldSpec[]) => [
       model([{ id: F, apiKey: 'blocks', type: 'dynamiczone', settings: { components: [HERO] } }]),
       component(HERO, heroKey, fields),
@@ -411,30 +423,58 @@ describe('writeThroughLens', () => {
       { id: NEW, apiKey: 'extra' },
     ]);
     const lens = lensOf(today, zone('hero', [{ id: HEADING, apiKey: 'heading' }]));
-    const entry = {
-      stored: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a', [NEW]: 'x' }] },
-      read: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a' }] },
-    };
+    const stored = { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a', [NEW]: 'x' }] };
     expect(
       writeThroughLens(
         lens,
         {
           blocks: [
-            { [COMPONENT_KEY]: 'hero', heading: 'h' },
             { [COMPONENT_KEY]: 'hero', heading: 'new' },
+            { [COMPONENT_KEY]: 'hero', heading: 'a' },
           ],
         },
-        baseOf(today, entry),
+        baseOf(today, { stored, read: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a' }] } }),
       ),
     ).toEqual({
       input: {
         blocks: [
-          { [COMPONENT_KEY]: 'banner', title: 'h', extra: 'x' },
           { [COMPONENT_KEY]: 'banner', title: 'new' },
+          { [COMPONENT_KEY]: 'banner', title: 'a' },
         ],
       },
       issues: [],
     });
+    const index = createDefinitionIndex(today);
+    const fields = (index.resolve(id(1)) as { fields: FieldDefinition[] }).fields;
+    const componentOf = (componentId: string) => index.get(componentId) as ComponentDefinition | undefined;
+    // The untouched item moved behind an inserted one keeps what the client does not know; the new one has none.
+    expect(
+      keepUnreadableComponentFields(
+        {
+          [F]: [
+            { [COMPONENT_KEY]: HERO, [HEADING]: 'new' },
+            { [COMPONENT_KEY]: HERO, [HEADING]: 'a' },
+          ],
+        },
+        stored,
+        fields,
+        componentOf,
+        () => true,
+        { lens },
+      ),
+    ).toEqual({
+      [F]: [
+        { [COMPONENT_KEY]: HERO, [HEADING]: 'new' },
+        { [COMPONENT_KEY]: HERO, [HEADING]: 'a', [NEW]: 'x' },
+      ],
+    });
+  });
+
+  it('refuses names the client version does not have', () => {
+    const lens = lensOf(stored(), client);
+    expect(writeThroughLens(lens, { headline: 'x' }, baseOf(stored())).issues).toEqual([
+      expect.objectContaining({ path: '/headline', code: 'UNKNOWN_FIELD' }),
+    ]);
   });
 
   it("maps today's validation pointers to the client's names and marks fields added since", () => {

@@ -24,7 +24,8 @@ import type { ModelVisibility, SchemaVisibility } from './visibility.js';
  * - A field that still exists today (by stable ID) is named when today's read mask allows it (today's grant and
  *   today's `public`); in inputs, when today's write mask does. Its old name and type are the client's.
  * - A field removed since is named only when it was public in the client's version and the caller's grant on
- *   the model today is unrestricted (its mask holds every public field of the model today): it reads null.
+ *   the model today names no fields (`hasUnrestrictedGrant`: the grant's shape, never what its mask happens to
+ *   cover today): it reads null.
  * - Component fields: a component that exists today names the fields public today (by ID); a field removed
  *   from it since, and every field of a component gone since, follow the removed-field rule for every model
  *   that embeds the component.
@@ -51,21 +52,15 @@ const keyOf = (
   return `lens:${digest([...canonical, ...componentLines].join('\n'))}`;
 };
 
-/** Whether a mask holds every public field of today's model: the grant names no fields, so it sees them all. */
-const unrestricted = (mask: ReadonlySet<string>, today: SchemaDefinition | undefined): boolean =>
-  today !== undefined &&
-  liveFields(today.fields)
-    .filter((field) => field.public)
-    .every((field) => mask.has(field.id));
-
-/** The client's fields named for one mask: today's grant by ID, removed fields when the grant is unrestricted. */
+/** The client's fields named for one mask: today's grant by ID, removed fields when the grant names no fields. */
 const namedFields = (
   model: ResolvedModelDefinition,
   today: ResolvedModelDefinition | undefined,
   mask: ReadonlySet<string>,
+  /** The grant names no fields (`hasUnrestrictedGrant`): its shape, never what the mask covers today. */
+  withRemoved: boolean,
 ): Set<string> => {
   const exists = new Set(today?.fields.map((field) => field.id) ?? []);
-  const withRemoved = unrestricted(mask, today);
   return new Set(
     liveFields(model.fields)
       .filter((field) => (exists.has(field.id) ? mask.has(field.id) : withRemoved && field.public))
@@ -99,7 +94,7 @@ const componentsOf = (view: SchemaSnapshot, root: SchemaDefinition): Set<string>
 
 /**
  * The fields each of the client's components names: today's public ones by ID; removed ones (and a gone
- * component's) when public in the client's version and every model embedding the component reads unrestricted.
+ * component's) when public in the client's version and every model embedding it has a grant naming no fields.
  */
 const componentFieldIds = (
   view: SchemaSnapshot,
@@ -148,7 +143,7 @@ export const lensVisibility = (
       : { ...visibility, key: `${visibility.key}:lens:${digest(sorted(gone))}`, readOnly: gone };
   }
   const models = new Map<string, ModelVisibility>();
-  /** Component ID → whether each model embedding it reads unrestricted today. */
+  /** Component ID → whether each model embedding it has a read grant naming no fields today. */
   const embedders = new Map<string, boolean[]>();
   for (const { definition } of view.definitions) {
     const today = visibility.models.get(definition.id);
@@ -159,10 +154,12 @@ export const lensVisibility = (
     const todayModel = current.resolve(definition.id);
     models.set(definition.id, {
       readable: today.readable,
-      readFields: today.readable ? namedFields(model, todayModel, today.readFields) : NO_FIELDS,
-      writeFields: namedFields(model, todayModel, today.writeFields),
+      readFields: today.readable
+        ? namedFields(model, todayModel, today.readFields, today.unrestrictedRead === true)
+        : NO_FIELDS,
+      writeFields: namedFields(model, todayModel, today.writeFields, today.unrestrictedWrite === true),
     });
-    const open = today.readable && unrestricted(today.readFields, todayModel);
+    const open = today.readable && today.unrestrictedRead === true;
     for (const componentId of componentsOf(view, model)) {
       embedders.set(componentId, [...(embedders.get(componentId) ?? []), open]);
     }

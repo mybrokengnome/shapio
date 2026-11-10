@@ -15,6 +15,7 @@ import type {
   Policy,
   Principal,
 } from '../../../permissions/types.js';
+import { hasUnrestrictedGrant } from '../../../permissions/unrestrictedGrant.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
 
 /**
@@ -34,6 +35,12 @@ export type ModelVisibility = {
   readable: boolean;
   readFields: ReadonlySet<string>;
   writeFields: ReadonlySet<string>;
+  /**
+   * Whether a read (write) grant names no fields (`hasUnrestrictedGrant`): the grant's shape, not what the
+   * mask covers. Schema lenses name a field removed since the client's version only for such a grant.
+   */
+  unrestrictedRead?: boolean;
+  unrestrictedWrite?: boolean;
 };
 
 export type SchemaVisibility = {
@@ -94,6 +101,10 @@ const modelVisibility = (
     readable: policies.read.allowed,
     readFields: new Set(policies.read.allowed ? maskFieldIds(model, policies.read.readMask) : []),
     writeFields,
+    unrestrictedRead: hasUnrestrictedGrant(policies.read, 'read'),
+    unrestrictedWrite: (['create', 'update'] as const).some((action) =>
+      hasUnrestrictedGrant(policies[action], 'write'),
+    ),
   };
 };
 

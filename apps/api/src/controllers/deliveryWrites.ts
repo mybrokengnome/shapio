@@ -1,5 +1,4 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { apiKeyOfRoute } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import {
   entryModelWithPolicy,
@@ -7,7 +6,8 @@ import {
   refuseInterfaceWrite,
   type ContentServiceContext,
 } from '../services/contentAccess.js';
-import { clientRouteOf } from '../services/contentDeliveryLens.js';
+import { holdsAnyGrant } from '../services/contentDelivery.js';
+import { clientRouteOf, openClientRoute } from '../services/contentDeliveryLens.js';
 import * as deliveryWritesService from '../services/contentDeliveryWrites.js';
 import { contextDeferringVersion } from './delivery.js';
 
@@ -30,19 +30,17 @@ type UpdateRequest = FastifyRequest<{
  */
 const lensedWrite = async (
   request: FastifyRequest<{ Params: ModelParams }>,
-  /** The write's own authorization, as without a version: run before a version error is answered. */
+  /** The write's own authorization, as without a version: run before anything lens-specific. */
   authorize: (context: ContentServiceContext, apiKey: string) => Promise<unknown>,
 ) => {
-  const { context, versionError } = await contextDeferringVersion(request);
-  if (versionError) {
-    await authorize(context, apiKeyOfRoute(context.snapshot, request.params.modelKey));
-    throw versionError;
-  }
-  const clientRoute = clientRouteOf(context, request.params.modelKey);
-  const apiKey = clientRoute
-    ? (clientRoute.apiKey ?? request.params.modelKey)
-    : apiKeyOfRoute(context.snapshot, request.params.modelKey);
-  return { context, apiKey, clientRoute };
+  const { context: base, versionError } = await contextDeferringVersion(request);
+  return openClientRoute(
+    base,
+    request.params.modelKey,
+    versionError,
+    (apiKey) => authorize(base, apiKey),
+    () => holdsAnyGrant(base, ['create', 'update', 'delete']),
+  );
 };
 
 /**

@@ -8,12 +8,14 @@ describe('matchDeliveryRequest', () => {
       query: 'locale=fr&populate=author',
       site: undefined,
       schemaVersion: null,
+      schemaVersionError: null,
     });
     expect(matchDeliveryRequest('GET', '/api/content/articles/abc%2Fdef')).toEqual({
       route: { kind: 'item', routeKey: 'articles', id: 'abc/def' },
       query: '',
       site: undefined,
       schemaVersion: null,
+      schemaVersionError: null,
     });
     expect(matchDeliveryRequest('GET', '/api/workspace')?.route).toEqual({ kind: 'site' });
     expect(matchDeliveryRequest('GET', '/api/site')?.route).toEqual({ kind: 'site' });
@@ -53,12 +55,16 @@ describe('matchDeliveryRequest', () => {
       query: 'from=1',
       schemaVersion: 'abc:2',
     });
-    expect(() => matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=4')).toThrow(
-      expect.objectContaining({ code: 'SCHEMA_VERSION_INVALID' }),
-    );
-    expect(() =>
-      matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=a:1&schemaVersion=a:2'),
-    ).toThrow(expect.objectContaining({ code: 'INVALID_QUERY' }));
+    // Kept for after authorization, never thrown while matching.
+    expect(
+      matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=4')?.schemaVersionError,
+    ).toMatchObject({
+      code: 'SCHEMA_VERSION_INVALID',
+    });
+    expect(
+      matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=a:1&schemaVersion=a:2')
+        ?.schemaVersionError,
+    ).toMatchObject({ code: 'INVALID_QUERY' });
   });
 
   it('takes `site` out of the query, as site resolution does over HTTP', () => {

@@ -1,7 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { appendVary } from '../helpers/vary.js';
-import type { ContentServiceContext } from '../services/contentAccess.js';
-import { clientRouteOf, schemaVersionMetaOf } from '../services/contentDeliveryLens.js';
 import * as previewContentService from '../services/previewContent.js';
 import { previewTokenSiteOf } from '../services/previewTokens.js';
 import { rawQueryOf } from './contentContext.js';
@@ -29,78 +27,34 @@ const send = (reply: FastifyReply, payload: unknown) => {
 
 /** The request in today's names when it names an older schema version (plan schema-lenses). */
 const lensedRequest = async (request: FastifyRequest<{ Params: ModelParams }>) => {
+  // Nothing about a schema version is read here: the service checks the preview token first.
   const { context, versionError } = await contextDeferringVersion(request);
-  if (versionError) {
-    // The preview token first, as without a version; then the version's own error.
-    await previewContentService.authorizePreview(
-      request.server.publishing,
-      context,
-      request.server.schemaLookup,
-      {
-        token: tokenOf(request),
-        modelKey: request.params.modelKey,
-        rawQuery: '',
-      },
-    );
-    throw versionError;
-  }
-  // Only names here: the service checks the preview token before anything lens-specific runs.
-  return {
-    context,
-    routeKey: request.params.modelKey,
-    rawQuery: rawQueryOf(request),
-    clientRoute: clientRouteOf(context, request.params.modelKey),
-  };
+  return { context, routeKey: request.params.modelKey, rawQuery: rawQueryOf(request), versionError };
 };
 
-/** A preview response naming a schema version carries both versions in `meta`, as delivery does. */
-const withSchemaVersionMeta = <T extends { meta: object }>(
-  context: ContentServiceContext,
-  payload: T,
-): T => ({
-  ...payload,
-  meta: { ...payload.meta, ...schemaVersionMetaOf(context) },
-});
-
 export const listPreview = async (request: FastifyRequest<{ Params: ModelParams }>, reply: FastifyReply) => {
-  const { context, routeKey, rawQuery, clientRoute } = await lensedRequest(request);
+  const { context, routeKey, rawQuery, versionError } = await lensedRequest(request);
   return send(
     reply,
-    withSchemaVersionMeta(
-      context,
-      await previewContentService.listPreview(
-        request.server.publishing,
-        context,
-        request.server.schemaLookup,
-        {
-          token: tokenOf(request),
-          modelKey: routeKey,
-          rawQuery,
-          clientRoute,
-        },
-      ),
-    ),
+    await previewContentService.listPreview(request.server.publishing, context, request.server.schemaLookup, {
+      token: tokenOf(request),
+      modelKey: routeKey,
+      rawQuery,
+      versionError,
+    }),
   );
 };
 
 export const getPreview = async (request: FastifyRequest<{ Params: EntryParams }>, reply: FastifyReply) => {
-  const { context, routeKey, rawQuery, clientRoute } = await lensedRequest(request);
+  const { context, routeKey, rawQuery, versionError } = await lensedRequest(request);
   return send(
     reply,
-    withSchemaVersionMeta(
-      context,
-      await previewContentService.getPreview(
-        request.server.publishing,
-        context,
-        request.server.schemaLookup,
-        {
-          token: tokenOf(request),
-          modelKey: routeKey,
-          id: request.params.id,
-          rawQuery,
-          clientRoute,
-        },
-      ),
-    ),
+    await previewContentService.getPreview(request.server.publishing, context, request.server.schemaLookup, {
+      token: tokenOf(request),
+      modelKey: routeKey,
+      id: request.params.id,
+      rawQuery,
+      versionError,
+    }),
   );
 };

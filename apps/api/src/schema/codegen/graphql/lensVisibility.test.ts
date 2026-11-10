@@ -157,10 +157,22 @@ describe('lensVisibility', () => {
     expect(lens.key).toMatch(/^lens:/);
   });
 
+  it('decides "unrestricted" by the grant\'s shape, never by what its mask covers today', () => {
+    // Granted the title, body and hero by name: that is every public field today, yet a named grant.
+    const named = lensVisibility(
+      delivery({ [ARTICLE]: { readFields: new Set([TITLE, BODY, HERO_FIELD]), unrestrictedRead: false } }),
+      clientView,
+      current,
+    );
+    expect(ids(named.models?.get(ARTICLE)?.readFields)).toEqual([TITLE, BODY, HERO_FIELD].sort());
+    expect(ids(named.componentFieldIds?.get(HERO))).toEqual([HEADING]);
+    expect(ids(named.componentFieldIds?.get(OLD_HERO))).toEqual([]);
+  });
+
   it('names removed public fields for an unrestricted grant, never fields hidden today', () => {
     // Today's wildcard grant: every public field of today's model (the secret is private now).
     const lens = lensVisibility(
-      delivery({ [ARTICLE]: { readFields: new Set([TITLE, BODY, HERO_FIELD]) } }),
+      delivery({ [ARTICLE]: { readFields: new Set([TITLE, BODY, HERO_FIELD]), unrestrictedRead: true } }),
       clientView,
       current,
     );
@@ -171,7 +183,9 @@ describe('lensVisibility', () => {
     expect(ids(lens.componentFieldIds?.get(OLD_HERO))).toEqual([QUOTE]);
     // A private field is named only when today's grant names it.
     const granted = lensVisibility(
-      delivery({ [ARTICLE]: { readFields: new Set([TITLE, BODY, HERO_FIELD, INTERNAL]) } }),
+      delivery({
+        [ARTICLE]: { readFields: new Set([TITLE, BODY, HERO_FIELD, INTERNAL]), unrestrictedRead: true },
+      }),
       clientView,
       current,
     );
@@ -188,7 +202,7 @@ describe('lensVisibility', () => {
     );
     expect(ids(restricted.models?.get(ARTICLE)?.writeFields)).toEqual([TITLE, INTERNAL].sort());
     const open = lensVisibility(
-      delivery({ [ARTICLE]: { writeFields: new Set([TITLE, BODY, HERO_FIELD]) } }),
+      delivery({ [ARTICLE]: { writeFields: new Set([TITLE, BODY, HERO_FIELD]), unrestrictedWrite: true } }),
       clientView,
       current,
     );

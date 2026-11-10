@@ -6,7 +6,7 @@ import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
 import { familyIdsOf, kindsMetaOf, type ReadMember } from '../content/family.js';
 import { modelNotFound, resolveModelById, resolveRouteModel, type ContentModel } from '../content/model.js';
-import { readsNullThroughLens } from '../content/read.js';
+import { lensQueryVisibility } from '../content/read.js';
 import { AppError } from '../helpers/appError.js';
 import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
 import {
@@ -19,10 +19,21 @@ import {
 import { loadAdminPrincipal } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
 import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
+import { previewLensBudgetKey } from '../schema/lens/budget.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
-import { activeLens, type ContentServiceContext } from './contentAccess.js';
+import {
+  activeLens,
+  loadSchemaLens,
+  namesSchemaVersion,
+  type ContentServiceContext,
+} from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
-import { lensQueryOf, withClientQueryNames, type ClientRoute } from './contentDeliveryLens.js';
+import {
+  clientRouteAfterAuthorization,
+  lensQueryOf,
+  schemaVersionMetaOf,
+  withClientQueryNames,
+} from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
@@ -121,10 +132,11 @@ export type PreviewRequest = {
   modelKey: string;
   rawQuery: string;
   /**
-   * Schema lenses: the request names a schema version; `modelKey` and `rawQuery` are the client's
-   * (`clientRouteOf`), translated only once the preview token is checked (plan schema-lenses).
+   * A schema version the request could not even name (malformed, repeated, header and parameter disagreeing):
+   * answered once the preview token is checked. A version it names is in the context (`lensRequest`), and
+   * `modelKey` and `rawQuery` are then the client's, translated only after the token is checked.
    */
-  clientRoute?: ClientRoute | null;
+  versionError?: AppError | null;
 };
 
 type PreviewScope = {
@@ -230,6 +242,8 @@ const metaOf = (scope: PreviewScope, query: ContentQuery) => ({
   locale: query.locale ?? scope.context.snapshot.defaultLocale,
   preview: true as const,
   expiresAt: scope.token.expires_at,
+  // Through a schema lens: both versions, as delivery reports them.
+  ...schemaVersionMetaOf(scope.context),
 });
 
 /**
@@ -268,11 +282,32 @@ const isRefusal = (error: unknown) =>
  */
 const authorizeRequest = async (
   runtime: PublishingRuntime,
-  base: ContentServiceContext,
+  unloaded: ContentServiceContext,
   fields: FieldVisibilityLookup,
   request: PreviewRequest,
 ): Promise<{ scope: PreviewScope; rawQuery: string }> => {
-  const clientRoute = request.clientRoute ?? null;
+  if (!request.versionError && !namesSchemaVersion(unloaded)) {
+    return { scope: await authorize(runtime, unloaded, fields, request), rawQuery: request.rawQuery };
+  }
+  // The preview token first, exactly as without a version; for a route key today's schema knows, the whole
+  // preview check. Nothing about the version is read or charged before.
+  const token = request.token ? await resolvePreviewToken(runtime, request.token) : undefined;
+  if (!token) {
+    throw unauthenticated();
+  }
+  const { snapshot } = unloaded;
+  if (
+    snapshot.modelsByRouteKey.has(request.modelKey) ||
+    snapshot.interfacesByRouteKey.has(request.modelKey)
+  ) {
+    await authorize(runtime, unloaded, fields, request);
+  }
+  if (request.versionError) {
+    throw request.versionError;
+  }
+  // Preview requests build lenses on the preview token's own budget.
+  const base = await loadSchemaLens(unloaded, previewLensBudgetKey(token.id));
+  const clientRoute = clientRouteAfterAuthorization(base, request.modelKey);
   if (!clientRoute) {
     return { scope: await authorize(runtime, base, fields, request), rawQuery: request.rawQuery };
   }
@@ -292,18 +327,16 @@ const authorizeRequest = async (
     throw error;
   }
   const client = activeLens(scope.context)?.view;
-  const clientModel = client ? resolveModelById(client, scope.model.definition.id) : undefined;
-  const mask = everyRowReadMask(scope.policy);
   const lensed = lensQueryOf(
     scope.context,
     scope.model.definition.id,
     clientRoute.clientRouteKey,
     request.rawQuery,
-    (fieldId) => {
-      const field = clientModel?.definition.fields.find((candidate) => candidate.id === fieldId);
-      const today = scope.model.definition.fields.find((candidate) => candidate.id === fieldId);
-      return field !== undefined && readsNullThroughLens(field, today, mask, scope.model);
-    },
+    lensQueryVisibility(
+      client ? resolveModelById(client, scope.model.definition.id) : undefined,
+      scope.model,
+      scope.policy,
+    ),
   );
   return { scope: { ...scope, context: lensed.context }, rawQuery: lensed.rawQuery };
 };

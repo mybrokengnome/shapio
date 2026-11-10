@@ -1,6 +1,6 @@
 import type { RequestFn } from '@shapio/client';
 import type { Kysely } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SHAPIO_VERSION } from '../src/constants/version.js';
 import * as pinMigration from '../src/db/migrations/20261110130000_api_token_schema_pin.js';
 import {
@@ -245,17 +245,28 @@ describe('schema lenses: tokens pinned to a schema version', () => {
 
   it('records the effective version in usage, says whether it is a pin, and audits the change', async () => {
     const { secret, view } = await createPinned(version);
-    await list(secret);
-    await testApp.app.usage.flush();
-    type Readers = { principals: Array<{ principalKey: string; schemaVersion: number; pinned: boolean }> };
+    type Reader = { principalKey: string; schemaVersion: number; pinned: boolean };
+    type Readers = { principals: Reader[] };
     const readerOf = async () =>
       expectStatus(await admin.get('/api/admin/usage/schema-versions'), 200)
         .json<Readers>()
         .principals.find((principal) => principal.principalKey === `token:${view.id}`);
-    expect(await readerOf()).toMatchObject({ schemaVersion: version, pinned: true });
+    /**
+     * Usage is recorded after the response and written by a flush; polls the real condition (flush, then
+     * read the recorded reader) until it holds, never a fixed wait.
+     */
+    const expectReader = (expected: Partial<Reader>) =>
+      vi.waitFor(
+        async () => {
+          await testApp.app.usage.flush();
+          expect(await readerOf()).toMatchObject(expected);
+        },
+        { timeout: 10_000, interval: 50 },
+      );
+    await list(secret);
+    await expectReader({ schemaVersion: version, pinned: true });
     await list(secret, `?schemaVersion=${encodeURIComponent(current)}`);
-    await testApp.app.usage.flush();
-    expect(await readerOf()).toMatchObject({ schemaVersion: Number(current.split(':')[1]), pinned: false });
+    await expectReader({ schemaVersion: Number(current.split(':')[1]), pinned: false });
 
     expectStatus(await setPin(view.id, null), 200);
     // Setting the same value again records nothing.

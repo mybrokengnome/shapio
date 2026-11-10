@@ -82,6 +82,8 @@ export type OlderClientReader = {
   label: string | null;
   /** The version is the token's pin, not one the client sends. */
   pinned: boolean;
+  /** A network token: listed on each workspace the change reaches, read there or not. */
+  network: boolean;
   /** Null: a token pinned to the version that has not read since (a declared older client). */
   lastReadAt: string | null;
 };

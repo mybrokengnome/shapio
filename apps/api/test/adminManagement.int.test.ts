@@ -91,6 +91,8 @@ describe('roles, admin users, API tokens and the audit log', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-title'], componentFields: 'all' },
       rowWriteMasks: null,
+      // The read grant names no fields; the update grant names one.
+      unrestrictedFields: { read: true, write: false },
     });
     expect(
       (await testApp.app.permissions.evaluate(principal, { action: 'delete', modelId: 'model-page' }))

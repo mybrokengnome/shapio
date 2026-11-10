@@ -258,9 +258,13 @@ its published version, media and populated relations by ID.
 Shapio does not convert written values back to today's type: a write through a lossy conversion would replace
 data the old client could not see. To write such a field, move the client to the current version.
 
-Items in repeatable components and dynamic zones have no IDs, so they are matched by position: a client on an
-older version that reorders, inserts, or removes items can attach values it does not know about (fields added
-since its version) to the wrong item.
+A component instance is written whole. Fields inside it that the client cannot read, does not know (added
+since its version), or cannot write (changed since) keep their stored values. Items of repeatable components
+and dynamic zones have no IDs, so Shapio matches each item the client sends to the stored item it continues,
+the same way for every client, with or without a version ([Delivery API](delivery-api.md#writing-components)):
+by what the client sees of the item first (so deleting, inserting, and reordering untouched items keep each
+item's hidden values), then in place for an edited item when the list kept its length; any other item is new
+and its hidden fields start empty.
 
 ## GraphQL
 
@@ -303,21 +307,30 @@ counts a field that reads `null` because it is gone.
 - **History from before 0.9.0.** Shapio 0.9.0 starts recording which version of each content type was live at
   each schema version, and rebuilds the earlier record from the audit log when it upgrades. Where the audit log
   has no record (it was pruned, say), a read of that content type through an older version answers
-  `409 SCHEMA_VERSION_UNAVAILABLE`, naming the oldest version that works. Content types without that gap are
-  unaffected, and from 0.9.0 on the record is complete.
+  `409 SCHEMA_VERSION_UNAVAILABLE`, naming the oldest version that works. A content type whose record would put
+  it apart from its parent type or from a component it embeds is unavailable at that version too (`409`, never
+  `404`); through that version its entries drop out of relations and interface lists, and GraphQL leaves its type
+  out. A component that cannot be served makes the content types embedding it unavailable, not gone. Content
+  types without such a gap are unaffected, and from 0.9.0 on the record is complete.
 
 ## Errors
 
-| Status and code                  | When                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `400 SCHEMA_VERSION_INVALID`     | the value is not `<schemaId>:<version>`                                                                      |
-| `400 SCHEMA_VERSION_FOREIGN`     | the version comes from another instance; generate your types against this one                                |
-| `400 SCHEMA_VERSION_AHEAD`       | the version is newer than this instance's current one                                                        |
-| `400 SCHEMA_VERSION_MISMATCH`    | the query parameter and the header name different versions                                                   |
-| `400 LENS_QUERY_UNSUPPORTED`     | a filter or sort on a field that changed its stored form or was removed since the version (`details.apiKey`) |
-| `404`                            | the content type was deleted since the version                                                               |
-| `409 LENS_UNCOVERED`             | the content type switched between a collection and a single type since the version                           |
-| `409 SCHEMA_VERSION_UNAVAILABLE` | no record of the content type at that version; `details.oldestVersion` is the oldest that works              |
-| `422 LENS_WRITE_UNSUPPORTED`     | a write sends fields that changed since the version (`details.issues`, one per field)                        |
+| Status and code                  | When                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `400 SCHEMA_VERSION_INVALID`     | the value is not `<schemaId>:<version>`                                                                                               |
+| `400 SCHEMA_VERSION_FOREIGN`     | the version comes from another instance; generate your types against this one                                                         |
+| `400 SCHEMA_VERSION_AHEAD`       | the version is newer than this instance's current one                                                                                 |
+| `400 SCHEMA_VERSION_MISMATCH`    | the query parameter and the header name different versions                                                                            |
+| `400 LENS_QUERY_UNSUPPORTED`     | a filter or sort on a field that changed its stored form or was removed since the version (`details.apiKey`)                          |
+| `404`                            | the content type was deleted since the version                                                                                        |
+| `409 LENS_UNCOVERED`             | the content type switched between a collection and a single type since the version                                                    |
+| `409 SCHEMA_VERSION_UNAVAILABLE` | no record of the content type at that version; `details.oldestVersion` is the oldest that works                                       |
+| `422 LENS_WRITE_UNSUPPORTED`     | a write sends fields that changed since the version (`details.issues`, one per field)                                                 |
+| `429 LENS_BUDGET_EXCEEDED`       | the caller made the instance build too many older-version schemas in the last minute (REST, preview, snapshots, GraphQL); retry later |
+
+Every one of these answers only a caller that is authorized for what it asked: a request the caller may not
+make gets exactly the answer it gets without a version (the same `401`, `403`, or `404`), whatever version it
+names, and builds nothing (it is never charged to a build budget). Anonymous callers each have their own build
+budget, by client address; previews build on the preview token's.
 
 A server older than 0.9.0 answers `400` to the `schemaVersion` query parameter.

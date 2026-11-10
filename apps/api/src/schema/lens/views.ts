@@ -20,7 +20,7 @@ import {
 } from '../errors.js';
 import { buildNetworkSchema, type ActiveDefinition, type SchemaSnapshot } from '../snapshot.js';
 import { readStoredRevision } from '../storedDefinition.js';
-import { takeLensBuildBudget } from './budget.js';
+import { takeLensBuildBudget, type LensBudgetKey } from './budget.js';
 import { LENS_HISTORY_BACKFILL_KEY } from './history.js';
 import { createLru, type Lru } from './lru.js';
 
@@ -30,11 +30,14 @@ import { createLru, type Lru } from './lru.js';
  * pairs it with the current view.
  */
 
-/** Lens views kept per instance: keyed by workspace and the view's revisions, so many versions share one. */
+/**
+ * Lens views kept per workspace: keyed by the view's revisions, so many versions share one. Each workspace
+ * has its own caches, so a caller cycling versions in one workspace never evicts another's.
+ */
 export const LENS_VIEW_CACHE_SIZE = 32;
 /** Compiled definition lenses kept per process (keys are revision IDs, unique across instances). */
 export const DEFINITION_LENS_CACHE_SIZE = 256;
-/** One workspace's history rows at one version. */
+/** History rows at one version, per workspace. */
 const HISTORY_CACHE_SIZE = 32;
 
 export type RequestLens = {
@@ -51,14 +54,35 @@ export type RequestLens = {
    * know the definition (created since), so nothing of it may be shown.
    */
   lensFor: (modelOrComponentId: string) => DefinitionLens | null;
+  /**
+   * Definitions this version's view cannot serve, by definition ID and by the route key they had at the
+   * version: history that does not reach it, or history that would put one apart from its parent or a
+   * component it embeds (those are left out of `view`). A route that `view` does not resolve but this does
+   * answers `409 SCHEMA_VERSION_UNAVAILABLE` (after authorization), not 404. Absent: none (today's view).
+   */
+  unavailable?: ReadonlyMap<string, UnavailableDefinition>;
 };
+
+export type UnavailableDefinition = { definitionId: string; apiKey: string; oldestVersion: number };
 
 type Unavailable = { apiKey: string; oldestVersion: number };
 
 type ViewEntry = {
   view: SchemaSnapshot;
-  /** Definitions whose history starts after the version: placed in the view as first known, never lensed. */
+  /**
+   * By definition ID: history starts after the version (placed in the view as first known, never lensed),
+   * or the definition was left out of the view to keep it consistent.
+   */
   unavailable: ReadonlyMap<string, Unavailable>;
+  /** The same, also by the route key each had at the version: what callers look up. */
+  byRoute: ReadonlyMap<string, UnavailableDefinition>;
+};
+
+/** One workspace's caches. */
+type SiteCaches = {
+  earliest?: Promise<EarliestActivationRow[]>;
+  history: Lru<number, Promise<ActivationAtRow[]>>;
+  views: Lru<string, Promise<ViewEntry>>;
 };
 
 type LensState = {
@@ -72,11 +96,8 @@ type LensState = {
    * it finished: everything they hold may predate rows it wrote or repaired.
    */
   settled: boolean;
-  /** Per workspace (`siteId ?? ''`). */
-  earliest: Lru<string, Promise<EarliestActivationRow[]>>;
-  /** Per workspace and version. */
-  history: Lru<string, Promise<ActivationAtRow[]>>;
-  views: Lru<string, Promise<ViewEntry>>;
+  /** Per workspace (`siteId ?? ''`); workspaces are few, so the map is not bounded beyond them. */
+  sites: Map<string, SiteCaches>;
 };
 
 let generations = 0;
@@ -92,9 +113,7 @@ const freshState = (db: Database, settled: boolean): LensState => {
     generation: generations,
     cleared: clearCount,
     settled,
-    earliest: createLru(LENS_VIEW_CACHE_SIZE),
-    history: createLru(HISTORY_CACHE_SIZE),
-    views: createLru(LENS_VIEW_CACHE_SIZE),
+    sites: new Map(),
   };
   states.set(db, state);
   return state;
@@ -139,6 +158,15 @@ const refreshSettled = async (db: Database, state: LensState): Promise<LensState
   const job = await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db);
   const settled = !job || job.status === 'succeeded' || job.status === 'dead';
   return settled ? freshState(db, true) : state;
+};
+
+const siteCachesOf = (state: LensState, siteKey: string): SiteCaches => {
+  let caches = state.sites.get(siteKey);
+  if (!caches) {
+    caches = { history: createLru(HISTORY_CACHE_SIZE), views: createLru(LENS_VIEW_CACHE_SIZE) };
+    state.sites.set(siteKey, caches);
+  }
+  return caches;
 };
 
 const inView = (siteId: string | null, rowSiteId: string | null) =>
@@ -224,36 +252,82 @@ const consistentDefinitions = (definitions: readonly ActiveDefinition[]) => {
   }
 };
 
+/** Route keys at the version, by definition ID, from a view over every definition (before pruning). */
+const routeKeysOf = (view: SchemaSnapshot): Map<string, string> =>
+  new Map(
+    [...view.modelsByRouteKey, ...view.interfacesByRouteKey].map(([routeKey, active]) => [
+      active.definition.id,
+      routeKey,
+    ]),
+  );
+
+const viewOf = (current: SchemaSnapshot, version: number, definitions: readonly ActiveDefinition[]) => {
+  // The network of a lens view holds this workspace's definitions only: it serves name lookups, never planning.
+  const network = buildNetworkSchema(version, definitions, current.locales);
+  return current.siteId === null ? network.shared() : network.forSite(current.siteId);
+};
+
+/**
+ * Ancestors the set lacks, taken from today's schema (any workspace, as shared): only to name the route a
+ * left-out kind had (`products/digital`), never served.
+ */
+const missingAncestorsOf = (
+  definitions: readonly ActiveDefinition[],
+  current: SchemaSnapshot,
+): ActiveDefinition[] => {
+  const ids = new Set(definitions.map((active) => active.definition.id));
+  const extras: ActiveDefinition[] = [];
+  const queue = [...definitions];
+  while (queue.length > 0) {
+    const { definition } = queue.pop() as ActiveDefinition;
+    const parentId = isModelDefinition(definition) ? definition.extends : undefined;
+    const parent =
+      parentId === undefined || ids.has(parentId) ? undefined : current.network.byId.get(parentId);
+    if (parent) {
+      ids.add(parent.definition.id);
+      const shared = { ...parent, siteId: null };
+      extras.push(shared);
+      queue.push(shared);
+    }
+  }
+  return extras;
+};
+
 const buildViewEntry = async (
   current: SchemaSnapshot,
   version: number,
   { rows, unavailable }: ViewRows,
 ): Promise<ViewEntry> => {
-  const { kept: definitions, removed } = consistentDefinitions(
-    await Promise.all(
-      [...rows, ...unavailable.filter((row) => row.revisionId !== null)].map(toActiveDefinition),
-    ),
+  const all = await Promise.all(
+    [...rows, ...unavailable.filter((row) => row.revisionId !== null)].map(toActiveDefinition),
   );
-  // The network of a lens view holds this workspace's definitions only: it serves name lookups, never planning.
-  const network = buildNetworkSchema(version, definitions, current.locales);
-  const view = current.siteId === null ? network.shared() : network.forSite(current.siteId);
-  const apiKeys = new Map(
-    [...definitions, ...removed].map((active) => [active.definition.id, active.definition.apiKey]),
+  const { kept: definitions, removed } = consistentDefinitions(all);
+  const view = viewOf(current, version, definitions);
+  const routeKeys = routeKeysOf(
+    removed.length === 0 ? view : viewOf(current, version, [...all, ...missingAncestorsOf(all, current)]),
   );
-  return {
-    view,
-    unavailable: new Map([
-      ...unavailable.map((row): [string, Unavailable] => [
-        row.modelId,
-        { apiKey: apiKeys.get(row.modelId) ?? row.modelId, oldestVersion: row.schemaVersion },
-      ]),
-      // Inconsistent history: only the current version is known to work.
-      ...removed.map((active): [string, Unavailable] => [
-        active.definition.id,
-        { apiKey: active.definition.apiKey, oldestVersion: current.version },
-      ]),
+  const apiKeys = new Map(all.map((active) => [active.definition.id, active.definition.apiKey]));
+  const byId = new Map<string, Unavailable>([
+    ...unavailable.map((row): [string, Unavailable] => [
+      row.modelId,
+      { apiKey: apiKeys.get(row.modelId) ?? row.modelId, oldestVersion: row.schemaVersion },
     ]),
-  };
+    // Inconsistent history: only the current version is known to work.
+    ...removed.map((active): [string, Unavailable] => [
+      active.definition.id,
+      { apiKey: active.definition.apiKey, oldestVersion: current.version },
+    ]),
+  ]);
+  const byRoute = new Map<string, UnavailableDefinition>();
+  for (const [definitionId, { apiKey, oldestVersion }] of byId) {
+    const entry = { definitionId, apiKey, oldestVersion };
+    byRoute.set(definitionId, entry);
+    const routeKey = routeKeys.get(definitionId);
+    if (routeKey !== undefined) {
+      byRoute.set(routeKey, entry);
+    }
+  }
+  return { view, unavailable: byId, byRoute };
 };
 
 const sideOf = (view: SchemaSnapshot): LensSide => ({
@@ -312,43 +386,57 @@ const createLensFor = (current: SchemaSnapshot, entry: ViewEntry) => {
 };
 
 /**
+ * Whether a request naming `version` needs a lens: false at the current version, `SCHEMA_VERSION_AHEAD`
+ * past it. No database work, so callers may run it before authorization and load the lens after.
+ */
+export const needsRequestLens = (current: SchemaSnapshot, version: number): boolean => {
+  if (version > current.version) {
+    throw schemaVersionAhead(version, current.version);
+  }
+  return version !== current.version;
+};
+
+/**
  * The lens for a request naming `version` against `current` (the workspace's view the request pinned); null
- * when it names the current version. `SCHEMA_VERSION_AHEAD` when it names a version this instance has not
- * reached. `budgetKey` (`lensBudgetKeyOf`) pays for cache misses, `LENS_BUDGET_EXCEEDED` when its bucket is
- * empty; null (admin and system work) is never limited.
+ * when it names the current version, `SCHEMA_VERSION_AHEAD` past it. Call it after the request is
+ * authorized: a cache miss costs one build from `budget` (`lensBudgetKeyOf`), and an empty bucket is
+ * `LENS_BUDGET_EXCEEDED`, decided before any database work, so a refused caller evicts nothing. null budget
+ * (admin review, system work) is never limited.
  */
 export const loadRequestLens = async (
   db: Database,
   current: SchemaSnapshot,
   version: number,
-  budgetKey: string | null,
+  budget: LensBudgetKey | null,
 ): Promise<RequestLens | null> => {
-  if (version === current.version) {
+  if (!needsRequestLens(current, version)) {
     return null;
   }
-  if (version > current.version) {
-    throw schemaVersionAhead(version, current.version);
-  }
   let charged = false;
-  /** A miss costs one build from the caller's bucket, at most once per request, before any work. */
+  /** A miss costs one build from the caller's budget, at most once per request, before any work. */
   const chargeMiss = <T>(cached: T | undefined) => {
-    if (cached !== undefined || charged || budgetKey === null) {
+    if (cached !== undefined || charged || budget === null) {
       return;
     }
-    if (!takeLensBuildBudget(budgetKey)) {
+    if (!takeLensBuildBudget(budget)) {
       throw lensBudgetExceeded();
     }
     charged = true;
   };
   const state = await stateOf(db);
   const scope = { siteId: current.siteId };
-  const siteKey = current.siteId ?? '';
-  const historyKey = `${siteKey}|${version}`;
-  chargeMiss(state.history.get(historyKey));
-  chargeMiss(state.earliest.get(siteKey));
+  const caches = siteCachesOf(state, current.siteId ?? '');
+  chargeMiss(caches.history.get(version));
+  chargeMiss(caches.earliest);
+  const earliestLoad = (caches.earliest ??= schemaActivationsRepository.findEarliest(db, scope));
+  earliestLoad.catch(() => {
+    if (caches.earliest === earliestLoad) {
+      caches.earliest = undefined;
+    }
+  });
   const [rows, earliest] = await Promise.all([
-    remember(state.history, historyKey, () => schemaActivationsRepository.findAt(version, db, scope)),
-    remember(state.earliest, siteKey, () => schemaActivationsRepository.findEarliest(db, scope)),
+    remember(caches.history, version, () => schemaActivationsRepository.findAt(version, db, scope)),
+    earliestLoad,
   ]);
   const viewRows = viewRowsOf(current.siteId, version, rows, earliest);
   const hash = hashOf([
@@ -356,9 +444,9 @@ export const loadRequestLens = async (
     ...viewRows.unavailable.map((row) => `${row.modelId}=?`),
   ]);
   // Locales are today's in every view (a lens does not hide locale changes).
-  const viewKey = `${siteKey}|${JSON.stringify(current.locales)}|${hash}`;
-  chargeMiss(state.views.get(viewKey));
-  const entry = await remember(state.views, viewKey, () => buildViewEntry(current, version, viewRows));
+  const viewKey = `${JSON.stringify(current.locales)}|${hash}`;
+  chargeMiss(caches.views.get(viewKey));
+  const entry = await remember(caches.views, viewKey, () => buildViewEntry(current, version, viewRows));
   // A cached view may come from another version with the same revisions: only the number differs.
   const view = entry.view.version === version ? entry.view : Object.freeze({ ...entry.view, version });
   viewGenerations.set(view, state.generation);
@@ -368,6 +456,7 @@ export const loadRequestLens = async (
     view,
     identity: hash === currentHashOf(current),
     lensFor: createLensFor(current, { ...entry, view }),
+    unavailable: entry.byRoute,
   };
 };
 

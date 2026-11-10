@@ -21,6 +21,13 @@ export type QueryRewriteContext = {
    * unrestricted grant): `fields=` may name it like a field gone since; filters and sorts on it stay today's.
    */
   readsNull?: (fieldId: string) => boolean;
+  /**
+   * Whether the caller may learn that a client field existed at its version and changed since (a grant naming no
+   * fields, and the field public at the version): only then does a field gone or stored differently since get
+   * the lens's own answer (`LENS_QUERY_UNSUPPORTED`, `fields=` reading null). Anyone else gets exactly the
+   * answer for a field that never existed. Absent: every field.
+   */
+  mayName?: (fieldId: string) => boolean;
 };
 
 export type RewrittenQuery = {
@@ -48,7 +55,7 @@ const fieldByApiKey = (lens: DefinitionLens, apiKey: string): FieldLens | undefi
 const unknownField = (apiKey: string) => queryInvalid(`Unknown field "${apiKey}"`, { field: apiKey });
 
 /** Today's API ID of a client field a query filters, sorts or searches on. */
-const queryableApiKey = (lens: DefinitionLens, apiKey: string): string => {
+const queryableApiKey = (lens: DefinitionLens, apiKey: string, context: QueryRewriteContext): string => {
   if (SYSTEM.has(apiKey)) {
     return apiKey;
   }
@@ -56,14 +63,13 @@ const queryableApiKey = (lens: DefinitionLens, apiKey: string): string => {
   if (!field) {
     throw unknownField(apiKey);
   }
-  if (field.kind === 'null') {
-    throw lensQueryUnsupported(apiKey);
-  }
-  if (storageFamilyOf(field.stored) !== storageFamilyOf(field.client)) {
-    throw lensQueryUnsupported(apiKey);
+  if (field.kind === 'null' || storageFamilyOf(field.stored) !== storageFamilyOf(field.client)) {
+    throw mayName(context, field.fieldId) ? lensQueryUnsupported(apiKey) : unknownField(apiKey);
   }
   return field.stored.apiKey;
 };
+
+const mayName = (context: QueryRewriteContext, fieldId: string) => context.mayName?.(fieldId) ?? true;
 
 const rewriteKinds = (value: QueryValue, context: QueryRewriteContext): QueryValue => {
   const one = (apiKey: string): string => {
@@ -116,19 +122,19 @@ const rewriteFilters = (lens: DefinitionLens, tree: QueryTree, context: QueryRew
     } else if (key === KIND_KEY) {
       rewritten[key] = rewriteKinds(value, context);
     } else {
-      rewritten[queryableApiKey(lens, key)] = value;
+      rewritten[queryableApiKey(lens, key, context)] = value;
     }
   }
   return rewritten;
 };
 
-const rewriteSort = (lens: DefinitionLens, value: QueryValue): QueryValue =>
+const rewriteSort = (lens: DefinitionLens, value: QueryValue, context: QueryRewriteContext): QueryValue =>
   toList(value).map((item) => {
     if (typeof item !== 'string') {
       throw queryInvalid('sort needs "field" or "field:asc|desc" values');
     }
     const [key = '', ...rest] = item.split(':');
-    return [queryableApiKey(lens, key), ...rest].join(':');
+    return [queryableApiKey(lens, key, context), ...rest].join(':');
   });
 
 const rewriteFields = (lens: DefinitionLens, value: QueryValue, context: QueryRewriteContext) => {
@@ -144,7 +150,7 @@ const rewriteFields = (lens: DefinitionLens, value: QueryValue, context: QueryRe
       continue;
     }
     const field = fieldByApiKey(lens, item);
-    if (!field) {
+    if (!field || (field.kind === 'null' && !mayName(context, field.fieldId))) {
       throw unknownField(item);
     }
     selected.push(field.fieldId);
@@ -180,6 +186,9 @@ const rewritePath = (lens: DefinitionLens, path: string, context: QueryRewriteCo
       throw queryInvalid(`"${segment}" is not a relation of "${current.apiKey}" and cannot be populated`);
     }
     if (!keepsTarget(field)) {
+      if (!mayName(context, field.fieldId)) {
+        throw queryInvalid(`"${segment}" is not a relation of "${current.apiKey}" and cannot be populated`);
+      }
       return null;
     }
     rewritten.push(field.stored.apiKey);
@@ -218,7 +227,7 @@ export const rewriteQueryTree = (
         rewritten[key] = isTree(value) ? rewriteFilters(lens, value, context) : value;
         break;
       case 'sort':
-        rewritten[key] = rewriteSort(lens, value);
+        rewritten[key] = rewriteSort(lens, value, context);
         break;
       case 'fields': {
         const { selected, current } = rewriteFields(lens, value, context);

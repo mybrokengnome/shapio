@@ -1,10 +1,4 @@
-import {
-  canonicalJson,
-  type DefinitionLens,
-  type FieldDefinition,
-  type FieldLens,
-  type SchemaDefinition,
-} from '@shapio/schema';
+import { canonicalJson, type DefinitionLens, type FieldLens, type SchemaDefinition } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
@@ -51,6 +45,11 @@ export type LensWriteBase = {
    * sent back is compared with the list without them. Absent or null: every target shows.
    */
   visibleTargets?: ReadonlySet<string> | null;
+  /**
+   * The caller may read the entry (default true). Without, nothing it sends is "what it read": an explicit
+   * null it sends clears a field (the write path's carry-over keeps only what it leaves out).
+   */
+  mayRead?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -112,40 +111,6 @@ const refusal = (field: FieldLens, path: string): ContentIssue => ({
   code: 'NOT_ALLOWED',
   message: `${changeOf(field)} since this client's schema version and cannot be written through it; send back the value it read to keep it, or update the client`,
 });
-
-/** A stored value (today's storage form) in today's input form, to be written back unchanged. */
-const toInput = (field: FieldDefinition, value: unknown, base: LensWriteBase): unknown => {
-  const instance = (componentId: unknown, item: unknown): unknown => {
-    const component = typeof componentId === 'string' ? base.definitionOf(componentId) : undefined;
-    if (!component || !isRecord(item)) {
-      return item;
-    }
-    const output: Record<string, unknown> = {};
-    for (const nested of component.fields) {
-      // Deprecated fields are not input: the write path carries them over in storage form
-      // (`keepUnreadableComponentFields`), never through today's input validator.
-      if (!nested.deprecated && !isMissingValue(item[nested.id])) {
-        output[nested.apiKey] = toInput(nested, item[nested.id], base);
-      }
-    }
-    return output;
-  };
-  if (field.type === 'component') {
-    return Array.isArray(value)
-      ? value.map((item) => instance(field.settings.component, item))
-      : instance(field.settings.component, value);
-  }
-  if (field.type === 'dynamiczone' && Array.isArray(value)) {
-    return value.map((item: unknown): unknown => {
-      const componentId = isRecord(item) ? item[COMPONENT_KEY] : undefined;
-      const component = typeof componentId === 'string' ? base.definitionOf(componentId) : undefined;
-      return component
-        ? { ...(instance(componentId, item) as object), [COMPONENT_KEY]: component.apiKey }
-        : item;
-    });
-  }
-  return value;
-};
 
 /** A value the lens read (storage form, field IDs) in the client's input form (API IDs), for comparison. */
 const inputFormOf = (lens: DefinitionLens, data: unknown): unknown => {
@@ -352,17 +317,7 @@ const translateObject = (
   whole: boolean,
 ): Record<string, unknown> => {
   const output: Record<string, unknown> = {};
-  const keep = (field: FieldDefinition) => {
-    const stored = counterpart.stored?.[field.id];
-    // A deprecated field cannot be written (today's input refuses it): the write path carries its stored value
-    // over itself (`keepUnreadableComponentFields`).
-    const carried =
-      whole && !field.deprecated && !isMissingValue(stored) ? toInput(field, stored, walk.base) : undefined;
-    // An instance with nothing left in input form is carried over whole in storage form instead.
-    if (carried !== undefined && !(isRecord(carried) && Object.keys(carried).length === 0)) {
-      output[field.apiKey] = carried;
-    }
-  };
+  const readNothing = walk.base.mayRead === false || walk.base.reads.length === 0;
   /** Whether the caller reads the field today; one it does not reads empty through the lens. */
   const readableToday = (field: FieldLens): boolean => {
     if (!field.stored || field.stored.deprecated) {
@@ -371,7 +326,6 @@ const translateObject = (
     const check = whole ? walk.base.componentFieldReadable : walk.base.readable;
     return check ? check(field.fieldId) : field.stored.public;
   };
-  const sent = new Set<string>();
   for (const [key, item] of Object.entries(value)) {
     if (key === COMPONENT_KEY) {
       continue;
@@ -386,34 +340,19 @@ const translateObject = (
       });
       continue;
     }
-    sent.add(field.fieldId);
-    if (field.stored && !readableToday(field) && isMissingValue(item)) {
-      // The empty value a hidden field reads as, sent back: the stored value stays.
-      keep(field.stored);
-    } else if (isWritable(field)) {
+    // A caller that read nothing (no read access, or no head to read) cannot send anything back: its empty values
+    // clear what they name, through the rules below, never keep it.
+    if (!readNothing && field.stored && !readableToday(field) && isMissingValue(item)) {
+      // The empty value a hidden field reads as, sent back: left out, so the stored value stays.
+      continue;
+    }
+    if (isWritable(field)) {
       output[field.stored.apiKey] = translateValue(walk, field, item, counterpart, fieldPath);
-    } else if (sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
-      if (field.stored) {
-        keep(field.stored);
-      }
-    } else {
+    } else if (!sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       walk.issues.push(refusal(field, fieldPath));
     }
-  }
-  if (whole) {
-    // Fields the client could not write or cannot read, left out: kept, never cleared on its behalf.
-    for (const field of lens.fields) {
-      if (!sent.has(field.fieldId) && field.stored && (!isWritable(field) || !readableToday(field))) {
-        keep(field.stored);
-      }
-    }
-    const today = walk.base.definitionOf(lens.definitionId);
-    for (const fieldId of lens.addedFieldIds) {
-      const field = today?.fields.find((candidate) => candidate.id === fieldId);
-      if (field) {
-        keep(field);
-      }
-    }
+    // Sent back as read: left out. What a written instance leaves out (fields the client cannot read, write or
+    // does not know) is carried over in storage form by the write path (`keepUnreadableComponentFields`).
   }
   return output;
 };

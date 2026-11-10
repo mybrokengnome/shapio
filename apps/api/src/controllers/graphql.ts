@@ -76,7 +76,7 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
  * the caller's bucket of cache-miss builds lasts (429 beyond it); undefined for work that is never limited.
  */
 const lensBuildAdmission = (request: FastifyRequest): (() => boolean) | undefined => {
-  const key = lensBudgetKeyOf(request.principal, getRequestSite(request).id);
+  const key = lensBudgetKeyOf(request.principal, getRequestSite(request).id, request.ip);
   return key === null ? undefined : () => takeLensBuildBudget(key);
 };
 

@@ -4,6 +4,9 @@ import {
   createDefinitionIndex,
   lensEffects,
   normalizeDefinition,
+  RICHTEXT_FORMAT,
+  richTextToPlainText,
+  type RichTextDocument,
   storageFamilyOf,
   validateSchema,
   type DefinitionLens,
@@ -46,6 +49,7 @@ import { maskAllows } from '../compiler/policy.js';
 import type { QueryTree } from '../compiler/querystring.js';
 import { projectRows, type ReadEnvironment } from '../read.js';
 import { COMPONENT_KEY } from '../validator/index.js';
+import { canonicalDate, canonicalDatetime, canonicalTime } from '../validator/scalars.js';
 import { keepUnreadableComponentFields } from '../write/keepUnreadable.js';
 import { rewriteQueryTree } from './query.js';
 import { readThroughLens } from './read.js';
@@ -61,6 +65,10 @@ import { readableThroughLens, writeThroughLens } from './write.js';
 
 /** 500 by default; `LENS_PROPERTY_RUNS=5000` for a longer hunt. */
 const RUNS = Number(process.env.LENS_PROPERTY_RUNS ?? 500);
+/** `LENS_PROPERTY_SEED=<n>` replays a run (fast-check prints the seed of a failure). */
+if (process.env.LENS_PROPERTY_SEED !== undefined) {
+  fc.configureGlobal({ seed: Number(process.env.LENS_PROPERTY_SEED) });
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Harness
@@ -80,6 +88,9 @@ const row = (data: ContentData): HeadRow => ({
   owner_app_user_id: null,
 });
 
+/** Masks made from a grant that names no fields (`deliveryMask`): the policy's `unrestrictedFields`. */
+const WILDCARD_MASKS = new WeakSet<FieldMask>();
+
 const policyOf = (readMask: FieldMask): Policy => ({
   allowed: true,
   rowFilter: null,
@@ -87,6 +98,7 @@ const policyOf = (readMask: FieldMask): Policy => ({
   rowReadMasks: null,
   writeMask: { mode: 'all' },
   rowWriteMasks: null,
+  ...(WILDCARD_MASKS.has(readMask) ? { unrestrictedFields: { read: true, write: true } } : {}),
 });
 
 const ALL: FieldMask = { mode: 'all' };
@@ -95,11 +107,17 @@ const ALL: FieldMask = { mode: 'all' };
  * The read mask a wildcard delivery grant gets (`combineFieldMasks` over `createSchemaFieldVisibility`): the
  * model's public, non-deprecated fields; public component fields only.
  */
-const deliveryMask = (schema: Schema): FieldMask => ({
-  mode: 'only',
-  fieldIds: schema.model.fields.filter((field) => field.public && !field.deprecated).map((field) => field.id),
-  componentFields: 'public',
-});
+const deliveryMask = (schema: Schema): FieldMask => {
+  const mask: FieldMask = {
+    mode: 'only',
+    fieldIds: schema.model.fields
+      .filter((field) => field.public && !field.deprecated)
+      .map((field) => field.id),
+    componentFields: 'public',
+  };
+  WILDCARD_MASKS.add(mask);
+  return mask;
+};
 
 /** What a client on `client` reads of `data` stored under `today`, through the real lensed projection. */
 const projectThrough = async (
@@ -166,6 +184,16 @@ const migratedArb = (changes: fc.Arbitrary<Change> = changeArb) =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** The text of a string or a rich-text document; undefined for anything else. */
+const plainTextOf = (value: unknown): string | undefined => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return isRecord(value) && value.format === RICHTEXT_FORMAT
+    ? richTextToPlainText(value as RichTextDocument)
+    : undefined;
+};
+
 /** Whether some list anywhere in `stored` holds both values. */
 const inOneStoredList = (stored: unknown, a: unknown, b: unknown): boolean => {
   if (Array.isArray(stored)) {
@@ -192,9 +220,16 @@ const subsumes = (direct: unknown, replay: unknown, stored: unknown): boolean =>
       const kept = new Set(direct.map((item) => canonicalJson(item)));
       return replay.every((item) => kept.has(canonicalJson(item)));
     }
-    return (
-      replay.length <= direct.length && replay.every((item, index) => subsumes(direct[index], item, stored))
-    );
+    // Items in order, the replay's a subsequence of the direct read's: a replay drops whole items (a zone item
+    // of a component an intermediate version did not allow) that the direct lens keeps.
+    let position = 0;
+    return replay.every((item) => {
+      while (position < direct.length && !subsumes(direct[position], item, stored)) {
+        position += 1;
+      }
+      position += 1;
+      return position <= direct.length;
+    });
   }
   if (isRecord(direct) && isRecord(replay)) {
     return Object.keys(replay).every((key) => subsumes(direct[key], replay[key], stored));
@@ -357,7 +392,14 @@ describe('schema lens properties', { timeout: 300_000 }, () => {
     );
   });
 
-  it('5. monotonic loss: the direct lens never loses a value the step-by-step replay keeps, nor disagrees', async () => {
+  /**
+   * What is tested of ADR 0015's "a replay can only add loss": the direct lens returns a value wherever a
+   * step-by-step replay does, equal up to the spelling of the same value. Allowed differences, each recorded:
+   * a field read untouched (`same`) where the replay canonicalized it; a list read as one value taking another
+   * item of the same stored list; a replay that dropped whole items (N); one number spelled two ways, plain or
+   * in rich text, the replay's float rounding included (R, seed 3708); one time or date spelled two ways (T).
+   */
+  it('5. monotonic loss: the direct lens returns a value wherever a replay does, equal up to spelling', async () => {
     await fc.assert(
       fc.asyncProperty(historyArb(changeArb, 2), async ({ versions, todayData }) => {
         const client = versions[0] as Schema;
@@ -391,6 +433,28 @@ describe('schema lens properties', { timeout: 300_000 }, () => {
             return [`${field.apiKey}: replay keeps ${JSON.stringify(b)}, direct lens reads empty`];
           }
           if (canonicalJson(a) === canonicalJson(b)) {
+            return [];
+          }
+          // Known, recorded as example R: one number spelled two ways as text ("5e-324" / "0.000…5"), plain or
+          // in rich text. Also the replay's own loss: a hop through a number rounds "99999999999999999999" to
+          // "100000000000000000000" (seed 3708), while the direct read keeps the exact digits.
+          const [textA, textB] = [plainTextOf(a), plainTextOf(b)];
+          // Known, recorded as example T: one time (or date) spelled two ways ("10:30" / "10:30:00.000").
+          if (
+            textA !== undefined &&
+            textB !== undefined &&
+            [canonicalTime, canonicalDate, canonicalDatetime].some(
+              (canonical) => canonical(textA) !== undefined && canonical(textA) === canonical(textB),
+            )
+          ) {
+            return [];
+          }
+          if (
+            textA !== undefined &&
+            textB !== undefined &&
+            textA.trim() !== '' &&
+            Number(textA) === Number(textB)
+          ) {
             return [];
           }
           // ADR 0015: a replay can only add loss. A list the replay cut short (a list → one → list hop), at
@@ -793,6 +857,7 @@ const writeThrough = (
     today.model.fields,
     (componentId) => componentById(today, componentId) as ComponentDefinition | undefined,
     (field) => componentFieldReadable(field.id),
+    { input: result.input, lens },
   );
   const outcome = validator.validate(applyPatch(stored, kept), { skipRequired: true });
   return outcome.issues.length > 0
@@ -831,7 +896,13 @@ const writeDamage = (
   return damage;
 };
 
-/** Inside instances written whole, at positions holding the same component: what V cannot write is kept. */
+/**
+ * Inside component values written whole (property 8, restated for the item-matching rule of
+ * `keepUnreadableComponentFields`): what the client cannot write or does not know (its "hidden" part) is kept
+ * for a single instance; in a list, an item may keep only the hidden part of a stored item it continues: one
+ * equal in what the client sees, or the one at its position when the list kept its length. A new item may lose
+ * it. A stored item continued unambiguously (the only one with that content, sent once) keeps it exactly.
+ */
 const instanceDamage = (
   field: FieldLens,
   today: Schema,
@@ -842,44 +913,89 @@ const instanceDamage = (
   if (field.kind === 'null' || !field.nested) {
     return [];
   }
-  const pairs: Array<[unknown, unknown, string]> = Array.isArray(before)
-    ? before.map((item, index) => [item, Array.isArray(after) ? after[index] : undefined, `${path}/${index}`])
-    : [[before, after, path]];
-  return pairs.flatMap(([old, now, at]) => {
-    if (!isRecord(old) || !isRecord(now)) {
-      return [];
-    }
-    const componentId =
-      field.client.type === 'dynamiczone'
-        ? (old[COMPONENT_KEY] as string)
-        : (field.client.settings as { component: string }).component;
-    if (field.client.type === 'dynamiczone' && now[COMPONENT_KEY] !== old[COMPONENT_KEY]) {
-      return [];
-    }
+  const zone = field.client.type === 'dynamiczone';
+  const componentIdOf = (item: unknown) =>
+    zone
+      ? isRecord(item)
+        ? String(item[COMPONENT_KEY])
+        : ''
+      : (field.client.settings as { component: string }).component;
+  /** The client-visible and hidden parts of an item (storage form), and its writable containers. */
+  const split = (item: unknown) => {
+    const componentId = componentIdOf(item);
     const nested = field.nested?.components.get(componentId);
     const component = componentById(today, componentId);
-    if (!nested || !component) {
-      return [];
+    const visible: Record<string, unknown> = { kind: componentId };
+    const hidden: Record<string, unknown> = {};
+    const containers: Array<[FieldLens, FieldDefinition]> = [];
+    if (!nested || !component || !isRecord(item)) {
+      return {
+        visible: canonicalJson(visible),
+        hidden: '{}',
+        containers,
+        item: {} as Record<string, unknown>,
+      };
     }
     const lensById = new Map(nested.fields.map((candidate) => [candidate.fieldId, candidate]));
-    return component.fields.flatMap((componentField) => {
+    for (const componentField of component.fields) {
       const clientField = lensById.get(componentField.id);
-      const was = old[componentField.id];
-      const is = now[componentField.id];
-      if (!clientField && !same(was, is)) {
-        return [
-          `${at}/${componentField.apiKey} (added since V): ${JSON.stringify(was)} → ${JSON.stringify(is)}`,
-        ];
+      const value = item[componentField.id];
+      if (value === undefined || value === null) {
+        continue;
       }
-      if (clientField && !isWritable(clientField) && !same(was, is)) {
-        return [
-          `${at}/${componentField.apiKey} (${clientField.kind}): ${JSON.stringify(was)} → ${JSON.stringify(is)}`,
-        ];
+      if (clientField && isWritable(clientField) && !componentField.deprecated) {
+        visible[componentField.id] = value;
+        if (componentField.type === 'component' || componentField.type === 'dynamiczone') {
+          containers.push([clientField, componentField]);
+        }
+      } else {
+        hidden[componentField.id] = value;
       }
-      return clientField && isWritable(clientField)
-        ? instanceDamage(clientField, today, was, is, `${at}/${componentField.apiKey}`)
+    }
+    return { visible: canonicalJson(visible), hidden: canonicalJson(hidden), containers, item };
+  };
+  const nestedDamage = (old: ReturnType<typeof split>, now: ReturnType<typeof split>, at: string) =>
+    now.containers.flatMap(([clientField, componentField]) =>
+      instanceDamage(
+        clientField,
+        today,
+        old.item[componentField.id],
+        now.item[componentField.id],
+        `${at}/${componentField.apiKey}`,
+      ),
+    );
+  if (!Array.isArray(before) || !Array.isArray(after)) {
+    if (!isRecord(before) || !isRecord(after)) {
+      return [];
+    }
+    const [old, now] = [split(before), split(after)];
+    return old.hidden === now.hidden
+      ? nestedDamage(old, now, path)
+      : [`${path}: hidden ${old.hidden} → ${now.hidden}`];
+  }
+  const olds = before.map(split);
+  const nows = after.map(split);
+  const count = (items: Array<ReturnType<typeof split>>, visible: string) =>
+    items.filter((item) => item.visible === visible).length;
+  return nows.flatMap((now, index) => {
+    const at = `${path}/${index}`;
+    const sameContent = olds.filter((old) => old.visible === now.visible);
+    const inPlace =
+      before.length === after.length &&
+      olds[index] &&
+      componentIdOf(before[index]) === componentIdOf(after[index])
+        ? [olds[index]]
         : [];
-    });
+    const allowed = [...sameContent, ...inPlace];
+    if (now.hidden !== canonicalJson({}) && !allowed.some((old) => old.hidden === now.hidden)) {
+      return [`${at}: hidden ${now.hidden} came from no stored item it continues`];
+    }
+    const unique = sameContent.length === 1 && count(nows, now.visible) === 1 ? sameContent[0] : undefined;
+    if (unique && unique.hidden !== now.hidden) {
+      return [`${at}: continues the only stored item like it, but hidden ${unique.hidden} → ${now.hidden}`];
+    }
+    const continued = unique ?? allowed.find((old) => old.hidden === now.hidden);
+    return continued ? nestedDamage(continued, now, at) : [];
   });
 };
 
@@ -1373,8 +1489,9 @@ describe('schema lens counterexamples', () => {
     expect(outcome.written).toEqual(stored);
   });
 
-  it('L. a relation the client cannot write: removing an item it read is ignored, neither written nor refused', () => {
-    // Property 8, found after the REST hardening (write.ts `matchesRead` → `isSubsequence`): to allow for
+  it('L. a relation the client cannot write: removing an item it read is refused or written, never silently ignored', () => {
+    // Regression check (was a counterexample; fixed in write.ts). Property 8, found after the REST hardening
+    // (write.ts `matchesRead` → `isSubsequence`): to allow for
     // targets a delivery read hides, any subsequence of the read counts as "sent back", so the stored value is
     // kept. Here the field became shared across locales (not writable through the lens); the client drops one
     // relation and gets a success while nothing changes.
@@ -1395,9 +1512,9 @@ describe('schema lens counterexamples', () => {
     );
   });
 
-  it('M. echoing an entry is refused when a hidden component holds a deprecated field', async () => {
-    // Property 9, found after the REST hardening: `inner` (a component field, private) is hidden from a public
-    // token, so the lens write carries its stored instance over whole (`keep` → `toInput`), deprecated field
+  it('M. echoing an entry is accepted when a hidden component holds a deprecated field', async () => {
+    // Regression check (was a counterexample; fixed in write.ts). Property 9, found after the REST hardening:
+    // `inner` (a component field, private) is hidden from a public token, so the lens write carries its stored instance over whole (`keep` → `toInput`), deprecated field
     // `x` inside it included; today's `fromInput` refuses deprecated fields (422 UNKNOWN_FIELD at
     // /blocks/0/inner/x). `keep` skips deprecated fields at its own level, not inside the instance it carries.
     const leaf = componentOf(C2, 'leaf', [{ id: F(0x30), apiKey: 'x', deprecated: true }]);
@@ -1412,5 +1529,526 @@ describe('schema lens counterexamples', () => {
     const outcome = writeThrough(today, client, stored, read, deliveryMask(today), deliveryMask(today));
     expect(outcome.issues ?? []).toEqual([]);
     expect(outcome.written).toEqual(stored);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Item matching in component lists (`keepUnreadableComponentFields`, delivery-api.md "Writing components")
+
+const LIST_X = F(0xc1);
+const LIST_Y = F(0xc2);
+const LIST_FIELDS = { v: F(0x20), h: F(0x21), d: F(0x22), u: F(0x23), yv: F(0x30), yh: F(0x31) };
+const ITEMS = F(0x10);
+const BLOCKS = F(0x11);
+
+/** Today: X holds a visible `v`, a private `h`, a deprecated `d` and `u` (added since V when through a lens). */
+const listSchemas = () => {
+  const x = (withU: boolean) =>
+    componentOf(LIST_X, 'x', [
+      { id: LIST_FIELDS.v, apiKey: 'v' },
+      { id: LIST_FIELDS.h, apiKey: 'h', public: false },
+      { id: LIST_FIELDS.d, apiKey: 'd', deprecated: true },
+      ...(withU ? [{ id: LIST_FIELDS.u, apiKey: 'u' }] : []),
+    ]);
+  const y = componentOf(LIST_Y, 'y', [
+    { id: LIST_FIELDS.yv, apiKey: 'v' },
+    { id: LIST_FIELDS.yh, apiKey: 'h', public: false },
+  ]);
+  const model = pageOf([
+    { id: ITEMS, apiKey: 'items', type: 'component', settings: { component: LIST_X, repeatable: true } },
+    { id: BLOCKS, apiKey: 'blocks', type: 'dynamiczone', settings: { components: [LIST_X, LIST_Y] } },
+  ]);
+  return { today: schemaOf(model, [x(true), y]), atV: schemaOf(model, [x(false), y]) };
+};
+
+type ListMode = 'public' | 'lens' | 'noRead' | 'noReadLens';
+const LIST_MODES: readonly ListMode[] = ['public', 'lens', 'noRead', 'noReadLens'];
+
+type StoredItem = { kind: 'x' | 'y'; v: string; h: boolean; d: boolean; u: boolean };
+type SentItem = {
+  kind: 'x' | 'y';
+  v: string;
+  origin: { type: 'kept' | 'edited'; from: number } | { type: 'new' };
+};
+
+/** The fields a caller of `mode` sees (and so sends, and is matched by) in an item of `kind`. */
+const seenFields = (mode: ListMode, kind: 'x' | 'y'): Array<'v' | 'h' | 'u'> => {
+  const read = mode === 'public' || mode === 'lens';
+  const lens = mode === 'lens' || mode === 'noReadLens';
+  if (kind === 'y') {
+    return read ? ['v'] : ['v', 'h'];
+  }
+  return [...(['v'] as const), ...(read ? [] : (['h'] as const)), ...(lens ? [] : (['u'] as const))];
+};
+/** The hidden fields of an item of `kind` for a caller of `mode`: what must travel with the item. */
+const hiddenFields = (mode: ListMode, kind: 'x' | 'y'): Array<'h' | 'd' | 'u'> =>
+  (kind === 'x' ? (['h', 'd', 'u'] as const) : (['h'] as const)).filter(
+    (name) => !(seenFields(mode, kind) as string[]).includes(name),
+  );
+
+const fieldIdOfList = (kind: 'x' | 'y', name: 'v' | 'h' | 'd' | 'u') =>
+  kind === 'y' ? (name === 'v' ? LIST_FIELDS.yv : LIST_FIELDS.yh) : LIST_FIELDS[name];
+
+/** A stored item in storage form; hidden values name the item they belong to (`h3` is item 3's). */
+const storedItem = (item: StoredItem, index: number, zone: boolean): Record<string, unknown> => ({
+  ...(zone ? { [COMPONENT_KEY]: item.kind === 'x' ? LIST_X : LIST_Y } : {}),
+  [fieldIdOfList(item.kind, 'v')]: item.v,
+  ...(item.h ? { [fieldIdOfList(item.kind, 'h')]: `h${index}` } : {}),
+  ...(item.kind === 'x' && item.d ? { [LIST_FIELDS.d]: `d${index}` } : {}),
+  ...(item.kind === 'x' && item.u ? { [LIST_FIELDS.u]: `u${index}` } : {}),
+});
+
+const storedListArb = (zone: boolean) =>
+  fc.array(
+    fc.record({
+      kind: zone ? fc.constantFrom<'x' | 'y'>('x', 'y') : fc.constant<'x' | 'y'>('x'),
+      v: fc.constantFrom('p', 'q', 'r'),
+      h: fc.boolean(),
+      d: fc.boolean(),
+      u: fc.boolean(),
+    }),
+    { maxLength: 5 },
+  );
+
+/** Deletions, reorders and in-place or moved edits of stored items, plus inserted ones. */
+const sentListArb = (stored: StoredItem[], zone: boolean): fc.Arbitrary<SentItem[]> =>
+  fc
+    .tuple(
+      fc.shuffledSubarray(
+        stored.map((_, index) => index),
+        { minLength: 0, maxLength: stored.length },
+      ),
+      fc.array(fc.option(fc.constantFrom('p', 'q', 'r', 's'), { nil: undefined, freq: 2 }), {
+        minLength: stored.length,
+        maxLength: stored.length,
+      }),
+      fc.array(
+        fc.record({
+          kind: zone ? fc.constantFrom<'x' | 'y'>('x', 'y') : fc.constant<'x' | 'y'>('x'),
+          v: fc.constantFrom('p', 'q', 'r', 's'),
+          at: fc.nat({ max: 6 }),
+        }),
+        { maxLength: 2 },
+      ),
+    )
+    .map(([kept, edits, inserts]) => {
+      const sent: SentItem[] = kept.map((from) => {
+        const item = stored[from] as StoredItem;
+        const edit = edits[from];
+        return edit === undefined || edit === item.v
+          ? { kind: item.kind, v: item.v, origin: { type: 'kept', from } }
+          : { kind: item.kind, v: edit, origin: { type: 'edited', from } };
+      });
+      for (const insert of inserts) {
+        sent.splice(Math.min(insert.at, sent.length), 0, {
+          kind: insert.kind,
+          v: insert.v,
+          origin: { type: 'new' },
+        });
+      }
+      return sent;
+    });
+
+/** The body a caller of `mode` sends for one item (API IDs): what it sees, as stored for an untouched item. */
+const sentBody = (
+  mode: ListMode,
+  item: SentItem,
+  stored: StoredItem[],
+  zone: boolean,
+): Record<string, unknown> => {
+  const from = item.origin.type === 'new' ? undefined : item.origin.from;
+  const original = from === undefined ? undefined : storedItem(stored[from] as StoredItem, from, zone);
+  const body: Record<string, unknown> = zone ? { [COMPONENT_KEY]: item.kind } : {};
+  for (const name of seenFields(mode, item.kind)) {
+    if (name === 'v') {
+      body.v = item.v;
+    } else if (original && original[fieldIdOfList(item.kind, name)] !== undefined) {
+      body[name] = original[fieldIdOfList(item.kind, name)];
+    }
+  }
+  return body;
+};
+
+/** The written lists through the real write path of `mode` (lens translation, input, carried fields). */
+const writeLists = (mode: ListMode, stored: ContentData, body: Record<string, unknown>) => {
+  const { today, atV } = listSchemas();
+  const withLens = mode === 'lens' || mode === 'noReadLens';
+  const mayRead = mode === 'public' || mode === 'lens';
+  const all = fieldsById(today);
+  const componentReadable = (fieldId: string) => {
+    const field = all.get(fieldId)?.field;
+    return mayRead && field !== undefined && field.public && !field.deprecated;
+  };
+  let input = body;
+  const lens = withLens ? lensBetween(today, atV) : null;
+  if (lens) {
+    const read = readableThroughLens(lens, readThroughLens(lens, stored), () => mayRead, componentReadable);
+    const result = writeThroughLens(lens, body, {
+      stored,
+      reads: mayRead ? [read] : [],
+      definitionOf: definitionOfToday(today),
+      readable: () => mayRead,
+      componentFieldReadable: componentReadable,
+    });
+    expect(result.issues).toEqual([]);
+    input = result.input;
+  }
+  const { patch, issues } = validatorOf(today).fromInput(input);
+  expect(issues).toEqual([]);
+  const kept = keepUnreadableComponentFields(
+    patch,
+    stored,
+    today.model.fields,
+    (componentId) => componentById(today, componentId) as ComponentDefinition | undefined,
+    (field) => componentReadable(field.id),
+    { mayRead, input, lens },
+  );
+  return applyPatch(stored, kept);
+};
+
+/** Problems with where hidden values ended up, for one list. */
+const provenanceProblems = (
+  mode: ListMode,
+  stored: StoredItem[],
+  sent: SentItem[],
+  written: unknown,
+  zone: boolean,
+): { real: string[]; inPlace: string[] } => {
+  const real: string[] = [];
+  const inPlace: string[] = [];
+  const items = Array.isArray(written) ? written : [];
+  if (items.length !== sent.length) {
+    return { real: [`wrote ${items.length} items for ${sent.length} sent`], inPlace };
+  }
+  const keyOf = (kind: string, values: Record<string, unknown>) =>
+    canonicalJson({ kind: zone ? kind : 'x', values });
+  const storedKey = (index: number) => {
+    const item = stored[index] as StoredItem;
+    const data = storedItem(item, index, zone);
+    return keyOf(
+      item.kind,
+      Object.fromEntries(
+        seenFields(mode, item.kind).map((name) => [name, data[fieldIdOfList(item.kind, name)] ?? null]),
+      ),
+    );
+  };
+  const sentKey = (item: SentItem) => {
+    const body = sentBody(mode, item, stored, zone);
+    return keyOf(
+      item.kind,
+      Object.fromEntries(seenFields(mode, item.kind).map((name) => [name, body[name] ?? null])),
+    );
+  };
+  const bundle = (index: number) => {
+    const item = stored[index] as StoredItem;
+    const data = storedItem(item, index, zone);
+    return canonicalJson(
+      Object.fromEntries(
+        hiddenFields(mode, item.kind).flatMap((name) => {
+          const value = data[fieldIdOfList(item.kind, name)];
+          return value === undefined ? [] : [[name, value]];
+        }),
+      ),
+    );
+  };
+  const empty = canonicalJson({});
+  items.forEach((written, position) => {
+    const item = sent[position] as SentItem;
+    const values = isRecord(written) ? written : {};
+    const carried = Object.fromEntries(
+      hiddenFields(mode, item.kind).flatMap((name) => {
+        const value = values[fieldIdOfList(item.kind, name)];
+        return value === undefined ? [] : [[name, value]];
+      }),
+    );
+    const sources = new Set(
+      Object.values(carried).map((value) =>
+        typeof value === 'string' ? Number(value.slice(1)) : Number.NaN,
+      ),
+    );
+    const at = `#${position} (${item.origin.type}${item.origin.type === 'new' ? '' : ` from ${item.origin.from}`})`;
+    if (sources.size > 1) {
+      real.push(`${at}: hidden values of several stored items ${JSON.stringify(carried)}`);
+      return;
+    }
+    const [source] = [...sources];
+    const sameAsSeen = (index: number) => storedKey(index) === sentKey(item);
+    if (source !== undefined) {
+      if (canonicalJson(carried) !== bundle(source)) {
+        real.push(`${at}: part of item ${source}'s hidden values ${JSON.stringify(carried)}`);
+      } else if (!sameAsSeen(source) && !(item.origin.type === 'edited' && item.origin.from === source)) {
+        // An item edited where it was keeps its own values; any other item that is not this one to the caller
+        // may carry them only by the documented in-place rule.
+        // Not indistinguishable to the caller: allowed only by the documented in-place rule.
+        const documentedInPlace =
+          stored.length === sent.length &&
+          source === position &&
+          (stored[source] as StoredItem).kind === item.kind;
+        (documentedInPlace ? inPlace : real).push(
+          `${at}: carries item ${source}'s hidden values ${JSON.stringify(carried)} though it is not that item`,
+        );
+      }
+    }
+    // (a) an item sent back untouched keeps exactly its own hidden values, when it is unambiguous to the caller.
+    if (item.origin.type === 'kept') {
+      const from = item.origin.from;
+      const key = sentKey(item);
+      const unambiguous =
+        stored.filter((_, index) => storedKey(index) === key).length === 1 &&
+        sent.filter((candidate) => sentKey(candidate) === key).length === 1;
+      if (
+        unambiguous &&
+        canonicalJson(carried) !== bundle(from) &&
+        !(bundle(from) === empty && source === undefined)
+      ) {
+        real.push(
+          `${at}: untouched, but carries ${JSON.stringify(carried)} instead of its own ${bundle(from)}`,
+        );
+      }
+    }
+  });
+  return { real, inPlace };
+};
+
+describe('item matching in component lists', { timeout: 300_000 }, () => {
+  const caseArb = fc
+    .tuple(storedListArb(false), storedListArb(true), fc.constantFrom(...LIST_MODES))
+    .chain(([items, blocks, mode]) =>
+      fc.record({
+        mode: fc.constant(mode),
+        items: fc.constant(items),
+        blocks: fc.constant(blocks),
+        sentItems: sentListArb(items, false),
+        sentBlocks: sentListArb(blocks, true),
+      }),
+    );
+  const run = ({
+    mode,
+    items,
+    blocks,
+    sentItems,
+    sentBlocks,
+  }: {
+    mode: ListMode;
+    items: StoredItem[];
+    blocks: StoredItem[];
+    sentItems: SentItem[];
+    sentBlocks: SentItem[];
+  }) => {
+    const stored: ContentData = {
+      ...(items.length > 0 ? { [ITEMS]: items.map((item, index) => storedItem(item, index, false)) } : {}),
+      ...(blocks.length > 0 ? { [BLOCKS]: blocks.map((item, index) => storedItem(item, index, true)) } : {}),
+    };
+    const body = {
+      items: sentItems.map((item) => sentBody(mode, item, items, false)),
+      blocks: sentBlocks.map((item) => sentBody(mode, item, blocks, true)),
+    };
+    const written = writeLists(mode, stored, body);
+    const a = provenanceProblems(mode, items, sentItems, written[ITEMS], false);
+    const b = provenanceProblems(mode, blocks, sentBlocks, written[BLOCKS], true);
+    return {
+      real: [...a.real.map((line) => `items ${line}`), ...b.real.map((line) => `blocks ${line}`)],
+      inPlace: [...a.inPlace, ...b.inPlace],
+      message: `mode ${mode}\n  stored ${JSON.stringify(stored)}\n  sent ${JSON.stringify({ sentItems, sentBlocks })}\n  written ${JSON.stringify(written)}`,
+    };
+  };
+
+  it('12. hidden and unknown values stay with their item: untouched items keep them, nothing moves to another item', () => {
+    fc.assert(
+      fc.property(caseArb, (input) => {
+        const { real, message } = run(input);
+        expect(real, message).toEqual([]);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it.fails(
+    '12b. an edited-and-moved or new item carries nothing (as stated; the documented in-place rule breaks it)',
+    () => {
+      // Kept recorded by decision (2026-11-10): the in-place rule stays (wiping hidden values on every in-place
+      // edit was the original data-loss bug). Item IDs are the real fix, a separate future change.
+      fc.assert(
+        fc.property(caseArb, (input) => {
+          const { inPlace, message } = run(input);
+          expect(inPlace, message).toEqual([]);
+        }),
+        { numRuns: RUNS },
+      );
+    },
+  );
+});
+
+describe('schema lens counterexamples, property 5', () => {
+  it('N. a zone item an intermediate version did not allow: the direct lens keeps it, a replay drops it', () => {
+    // Found once at LENS_PROPERTY_RUNS=5000 elsewhere, reproduced with LENS_PROPERTY_SEED=202 at 50,000 runs
+    // (run 22,873). Not a lens bug: V allows [b, c], an intermediate version only [b], today [b, c]; an item of
+    // c written today reads through the direct lens (both ends allow c) and is dropped by the replay. The
+    // property's oracle compared lists of objects position by position; it now matches the replay's items as a
+    // subsequence of the direct read's.
+    const b = componentOf(C1, 'b', [{ id: F(0x20), apiKey: 'x' }]);
+    const c = componentOf(C2, 'c', [{ id: F(0x30), apiKey: 'y' }]);
+    const zone = (components: string[]): Spec => ({
+      id: F(0x10),
+      apiKey: 'blocks',
+      type: 'dynamiczone',
+      settings: { components },
+    });
+    const client = schemaOf(pageOf([zone([C1, C2])]), [b, c]);
+    const middle = schemaOf(pageOf([zone([C1])]), [b, c]);
+    const today = schemaOf(pageOf([zone([C1, C2])]), [b, c]);
+    const stored = {
+      [F(0x10)]: [
+        { [COMPONENT_KEY]: C2, [F(0x30)]: 'c' },
+        { [COMPONENT_KEY]: C1, [F(0x20)]: 'b' },
+      ],
+    };
+    const direct = readThroughLens(lensBetween(today, client), stored);
+    const replayed = readThroughLens(
+      lensBetween(middle, client),
+      readThroughLens(lensBetween(today, middle), stored),
+    );
+    expect(direct[F(0x10)]).toHaveLength(2);
+    expect(replayed[F(0x10)]).toEqual([{ [COMPONENT_KEY]: C1, [F(0x20)]: 'b' }]);
+  });
+
+  it('O. through a lens, a caller that may update but not read cannot clear a field: its null is ignored', () => {
+    // Property 12 (item matching), minimized: a write-only caller (no read access) sends `title: null` or
+    // `items: []` through a lens; write.ts treats an empty value for a field the caller cannot read as "the
+    // empty value it read, sent back" and keeps the stored value. The write succeeds and nothing is cleared.
+    // Without a lens the same write clears the field.
+    const fields = (extra: Spec[]): Spec[] => [{ id: F(0x10), apiKey: 'title' }, ...extra];
+    const client = schemaOf(pageOf(fields([])));
+    const today = schemaOf(pageOf(fields([{ id: F(0x11), apiKey: 'added' }])));
+    const lens = lensBetween(today, client);
+    const stored = { [F(0x10)]: 'keep me?' };
+    const result = writeThroughLens(
+      lens,
+      { title: null },
+      {
+        stored,
+        reads: [],
+        definitionOf: definitionOfToday(today),
+        readable: () => false,
+        componentFieldReadable: () => false,
+      },
+    );
+    expect(result.issues).toEqual([]);
+    const { patch } = validatorOf(today).fromInput(result.input);
+    expect(applyPatch(stored, patch)).toEqual({});
+  });
+
+  it.fails(
+    "P. delete an item and insert a new one in its place: the new item inherits the deleted one's hidden values",
+    () => {
+      // Property 12b (as stated: a new or edited-and-moved item carries nothing), minimized. By the documented rule
+      // (delivery-api.md "Writing components", 2: in place when the list keeps its length), a new item sent where
+      // a deleted item stood is taken for an edit of it and keeps its private value `h`. The server cannot tell the
+      // two apart from the body alone (items have no IDs); recorded so the trade-off stays visible. Decision
+      // (2026-11-10): documented behaviour; item IDs are the real fix, a separate future change.
+      const items = { [ITEMS]: [{ [LIST_FIELDS.v]: 'p', [LIST_FIELDS.h]: 'h0' }] };
+      const written = writeLists('public', items, { items: [{ v: 'new item' }], blocks: [] });
+      expect(written[ITEMS]).toEqual([{ [LIST_FIELDS.v]: 'new item' }]); // actual: h: 'h0' carried over
+    },
+  );
+
+  it('Q. numeric text that is not canonical ("00012", " 12 ") reads as a big integer, exactly, as a replay does', () => {
+    // Property 5 (the direct lens never returns less than a replay), found with LENS_PROPERTY_SEED=1809 at
+    // 50,000 runs (run 49,638; there through rich text "00012"). V: biginteger; an intermediate version: integer;
+    // today: string. The replay reads "00012" as the integer 12 (`convertType` text → number), then 12 as "12".
+    // The direct lens tries text → biginteger only: "00012" fails the canonical big-integer pattern, so null.
+    // Decimal clients likewise ("012.5"). Fixed: decimal and big-integer clients read numeric text with its
+    // exact digits (values.ts `exactNumberText`), never through a float.
+    const client = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'biginteger' }]));
+    const middle = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'integer' }]));
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n' }]));
+    const stored = { [F(0x10)]: '00012' };
+    const replayed = readThroughLens(
+      lensBetween(middle, client),
+      readThroughLens(lensBetween(today, middle), stored),
+    );
+    expect(replayed).toEqual({ [F(0x10)]: '12' });
+    expect(readThroughLens(lensBetween(today, client), stored)).toEqual({ [F(0x10)]: '12' });
+    const read = (type: string, value: string) =>
+      readThroughLens(lensBetween(today, schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type }]))), {
+        [F(0x10)]: value,
+      })[F(0x10)];
+    expect(read('biginteger', ' 12 ')).toBe('12');
+    expect(read('biginteger', '99999999999999999999')).toBe('99999999999999999999');
+    expect(read('biginteger', '-00012.000')).toBe('-12');
+    expect(read('biginteger', '12.5')).toBeUndefined();
+    expect(read('biginteger', 'twelve')).toBeUndefined();
+    expect(read('decimal', '012.5')).toBe('12.5');
+    expect(read('decimal', '.5')).toBe('0.5');
+    expect(read('decimal', '1.5e-3')).toBe('0.0015');
+    expect(read('decimal', '1e3')).toBe('1000');
+    // Canonical already (the decimal validator accepts "-0"): read as written.
+    expect(read('decimal', '-0')).toBe('-0');
+    // Trimmed comes before the number spelling, and "-0" fits a decimal as written.
+    expect(read('decimal', ' -0 ')).toBe('-0');
+  });
+
+  it.fails('R. a number read as text: "5e-324" directly, "0.000…5" through a decimal version', () => {
+    // Property 5, found with LENS_PROPERTY_SEED=2415 at 50,000 runs (run 46,677). V: string; an intermediate
+    // version: decimal; today: number. Directly, number → text is `String()` ("5e-324", as the activation's own
+    // conversion writes it); the replay goes number → decimal (exact digits) → text. Same value, other text.
+    // Cosmetic. Decision (2026-11-10): stays; the direct lens matches what activation's own conversion writes.
+    const client = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n' }]));
+    const middle = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'decimal' }]));
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'number' }]));
+    const stored = { [F(0x10)]: 5e-324 };
+    const replayed = readThroughLens(
+      lensBetween(middle, client),
+      readThroughLens(lensBetween(today, middle), stored),
+    );
+    expect(readThroughLens(lensBetween(today, client), stored)).toEqual(replayed);
+  });
+
+  it('S. text a client cannot hold as written (" 7 " as a uid) reads trimmed, or as its exact number, as a replay does', () => {
+    // Property 5, found with LENS_PROPERTY_SEED=3607 (run 6,422; through code) and 6102 (run 7,644; through rich
+    // text) at 50,000 runs, after the Q fix. V: uid; an intermediate version: integer; today: text " 7 ". The
+    // replay reads " 7 " as the integer 7, then as the uid "7"; the direct lens reads " 7 " as a uid, which the
+    // uid pattern refuses (spaces). Fixed: every text-reading client tries the text as written, trimmed, then
+    // its exact number text (values.ts `textCandidates`); the first that fits wins.
+    const client = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'uid' }]));
+    const middle = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'integer' }]));
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n' }]));
+    const stored = { [F(0x10)]: ' 7 ' };
+    const replayed = readThroughLens(
+      lensBetween(middle, client),
+      readThroughLens(lensBetween(today, middle), stored),
+    );
+    expect(replayed).toEqual({ [F(0x10)]: '7' });
+    expect(readThroughLens(lensBetween(today, client), stored)).toEqual(replayed);
+    const read = (field: Spec, value: string) =>
+      readThroughLens(lensBetween(today, schemaOf(pageOf([{ ...field, id: F(0x10), apiKey: 'n' }]))), {
+        [F(0x10)]: value,
+      })[F(0x10)];
+    expect(read({ id: '', apiKey: '', type: 'uid' }, ' 7 ')).toBe('7');
+    expect(read({ id: '', apiKey: '', type: 'slug' }, ' 7 ')).toBe('7');
+    expect(read({ id: '', apiKey: '', type: 'slug' }, '007')).toBe('007');
+    expect(read({ id: '', apiKey: '', type: 'enum', settings: enumSettings(['7'], false) }, ' 7 ')).toBe('7');
+    expect(read({ id: '', apiKey: '', type: 'enum', settings: enumSettings(['7'], false) }, '007')).toBe('7');
+    expect(read({ id: '', apiKey: '', type: 'biginteger' }, '007')).toBe('7');
+    // A pattern that refuses spaces: no spelling fits, null.
+    expect(read({ id: '', apiKey: '', type: 'slug' }, ' a b ')).toBeUndefined();
+    expect(read({ id: '', apiKey: '', type: 'uid' }, ' a b ')).toBeUndefined();
+    // Written as is wins when it fits: a string keeps its spaces.
+    expect(read({ id: '', apiKey: '', type: 'string' }, ' 7 ')).toBe(' 7 ');
+  });
+
+  it.fails('T. a time read as text: "10:30" directly, "10:30:00.000" through a time version', () => {
+    // Property 5, found with LENS_PROPERTY_SEED=6001 at 50,000 runs (run 17,899). V: code; an intermediate
+    // version: time; today: text "10:30". The replay canonicalizes through the time ("10:30:00.000"); the direct
+    // lens keeps the stored text. Same time, two spellings; cosmetic, like R (the direct read is the exact one).
+    const client = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'code' }]));
+    const middle = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'time' }]));
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'text' }]));
+    const stored = { [F(0x10)]: '10:30' };
+    const replayed = readThroughLens(
+      lensBetween(middle, client),
+      readThroughLens(lensBetween(today, middle), stored),
+    );
+    expect(readThroughLens(lensBetween(today, client), stored)).toEqual(replayed);
   });
 });

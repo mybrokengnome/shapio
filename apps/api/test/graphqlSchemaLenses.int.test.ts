@@ -75,6 +75,9 @@ describe('schema lenses: GraphQL', () => {
   let token: string;
   let narrowRole: string;
   let narrowToken: string;
+  let profile: ModelBody;
+  /** Granted the profile's `name` by name only. */
+  let nameOnlyToken: string;
   let first: EntryBody;
   /** The schema version the old client was built against. */
   let v: string;
@@ -213,6 +216,23 @@ describe('schema lenses: GraphQL', () => {
       label: 'Gadget',
       fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
     });
+    profile = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'profile',
+      label: 'Profile',
+      fields: [
+        { apiKey: 'name', label: 'Name', type: 'string' },
+        { apiKey: 'salary', label: 'Salary', type: 'string' },
+        { apiKey: 'ssn', label: 'SSN', type: 'string' },
+        { apiKey: 'nickname', label: 'Nickname', type: 'string' },
+      ],
+    });
+    nameOnlyToken = await createTokenForRole(
+      database.current.db,
+      await createRole(database.current.db, 'delivery', [
+        { action: 'read', modelId: profile.definition.id, fieldIds: [fieldIdOf(profile, 'name')] },
+      ]),
+    );
     promo = await createDefinition(admin, {
       kind: 'collection',
       apiKey: 'promo',
@@ -288,6 +308,7 @@ describe('schema lenses: GraphQL', () => {
     await createEntry('product', { name: 'Lamp' });
     await createEntry('post', { name: 'Featured' });
 
+    await createEntry('profile', { name: 'Pat', salary: '100', ssn: '123', nickname: 'P' });
     v = await currentToken();
     before = {
       list: dataOf(await old(OLD_LIST)),
@@ -336,6 +357,16 @@ describe('schema lenses: GraphQL', () => {
       ),
       200,
     );
+    // Salary and SSN made private, the nickname removed: the name-only role's mask now covers every public
+    // field, yet its grant still names one field.
+    profile = await change(profile, (definition) => ({
+      ...definition,
+      fields: [
+        field(definition, 'name'),
+        { ...field(definition, 'salary'), public: false },
+        { ...field(definition, 'ssn'), public: false },
+      ],
+    }));
     promo = await change(promo, (definition) => ({
       ...definition,
       kind: 'singleton',
@@ -694,6 +725,30 @@ describe('schema lenses: GraphQL', () => {
     expect(errorCodes(refused)).toEqual(['LENS_BUDGET_EXCEEDED']);
     resetLensBuildBudgets();
     dataOf(await old('{ _schemaVersion }', { credential: narrowToken }));
+  });
+
+  it("judges a removed field by the grant's shape: a name-only grant never sees it, nor fields made private", async () => {
+    const profileFields = await fieldNames('Profile', v, nameOnlyToken);
+    expect(profileFields).toContain('name');
+    for (const name of ['salary', 'ssn', 'nickname']) {
+      expect(profileFields, name).not.toContain(name);
+    }
+    for (const selection of ['salary', 'nickname']) {
+      const old_ = await old(`{ profiles { nodes { ${selection} } } }`, { credential: nameOnlyToken });
+      const today = await gql(`{ profiles { nodes { ${selection} } } }`, { credential: nameOnlyToken });
+      for (const result of [old_, today]) {
+        expect(result.statusCode, selection).toBe(400);
+        expect(errorCodes(result)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+      }
+      expect(JSON.stringify(old_.body)).not.toMatch(/100|"P"/);
+    }
+    expect(dataOf(await old('{ profiles { nodes { name } } }', { credential: nameOnlyToken }))).toEqual({
+      profiles: { nodes: [{ name: 'Pat' }] },
+    });
+    // A grant naming no fields reads the removed nickname as null.
+    expect(dataOf(await old('{ profiles { nodes { name nickname } } }', { credential: adminToken }))).toEqual(
+      { profiles: { nodes: [{ name: 'Pat', nickname: null }] } },
+    );
   });
 
   it('names the old models in `_changes`', async () => {

@@ -12,7 +12,7 @@ import type { NewSchemaActivation } from '../../repositories/schemaActivations.j
  */
 export const LENS_HISTORY_BACKFILL_JOB = 'schema.lensHistoryBackfill';
 /** The migration enqueues the job under this key; its status says whether history is still being rebuilt. */
-export const LENS_HISTORY_BACKFILL_KEY = 'schema.lensHistoryBackfill:v1';
+export const LENS_HISTORY_BACKFILL_KEY = 'schema.lensHistoryBackfill:v2';
 
 const ACTIVATION_ACTIONS = ['schema.activate', 'schema.delete'] as const;
 const SCOPE_ACTION = 'schema.scope';

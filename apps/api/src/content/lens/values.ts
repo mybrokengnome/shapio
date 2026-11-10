@@ -74,7 +74,66 @@ const fitScalarItem = (client: FieldDefinition, from: FieldDefinition['type'], v
     return direct;
   }
   const text = asText(from, value);
-  return text === undefined ? undefined : check(converted('text', client.type, text));
+  if (text === undefined) {
+    return undefined;
+  }
+  for (const candidate of textCandidates(text, client.type === 'biginteger')) {
+    const fitted = check(converted('text', client.type, candidate));
+    if (fitted !== undefined) {
+      return fitted;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * The spellings of one text a client field tries, in order, the first that fits its shape winning: the text as
+ * written, trimmed, and (when it parses as a number) its exact number text, as a version in between with a
+ * number type would read it, without a float (" 7 " → "7", "007" → "7", "012.5" → "12.5"). For an integer
+ * client a number with a fraction has no integer spelling.
+ */
+const textCandidates = (text: string, integer: boolean): string[] => {
+  const trimmed = text.trim();
+  const number = exactNumberText(text, integer);
+  return [...new Set([text, trimmed, ...(number === undefined ? [] : [number])])];
+};
+
+const DECIMAL_NOTATION = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
+
+/**
+ * Text that parses as a finite number (as `convertType` text → number would read it), as exact decimal digits:
+ * trimmed, sign and leading zeros normalized, an exponent applied by moving the point, never through a float
+ * ("99999999999999999999" stays exact). For an integer client a zero fraction is dropped. Notations `Number`
+ * reads that are not decimal (hex, binary, octal) go through the number. undefined when it is no number.
+ */
+export const exactNumberText = (text: string, integer: boolean): string | undefined => {
+  const trimmed = text.trim();
+  const parsed = Number(trimmed);
+  if (trimmed === '' || !Number.isFinite(parsed)) {
+    return undefined;
+  }
+  const match = DECIMAL_NOTATION.exec(trimmed);
+  if (!match) {
+    return plainNumber(parsed);
+  }
+  const [, sign = '', whole = '', fraction = '', exponent = '0'] = match;
+  if (whole === '' && fraction === '') {
+    return undefined;
+  }
+  const digits = `${whole}${fraction}`;
+  const point = whole.length + Number(exponent);
+  const padded = point <= 0 ? `${'0'.repeat(1 - point)}${digits}` : digits.padEnd(point, '0');
+  const at = Math.max(point, 1);
+  const integerPart = padded.slice(0, at).replace(/^0+(?=\d)/, '');
+  let fractionPart = padded.slice(at);
+  if (integer) {
+    if (/[1-9]/.test(fractionPart)) {
+      return undefined;
+    }
+    fractionPart = '';
+  }
+  const zero = /^0*$/.test(integerPart) && /^0*$/.test(fractionPart);
+  return `${sign === '-' && !zero ? '-' : ''}${integerPart}${fractionPart === '' ? '' : `.${fractionPart}`}`;
 };
 
 const fitRichTextItem = (
@@ -101,7 +160,9 @@ const fitRichTextItem = (
 const fitEnumItem = (client: FieldDefinition<'enum'>, from: FieldDefinition['type'], value: unknown) => {
   const allowed = new Set(client.settings.values.map((entry) => entry.value));
   const text = typeof value === 'string' ? value : asText(from, value);
-  return text !== undefined && allowed.has(text) ? text : undefined;
+  return text === undefined
+    ? undefined
+    : textCandidates(text, false).find((candidate) => allowed.has(candidate));
 };
 
 /**

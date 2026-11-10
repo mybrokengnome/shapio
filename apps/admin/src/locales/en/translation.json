@@ -2961,6 +2961,7 @@
         "truncated_other": "The {{count}} most recently used schema versions, and what their readers see",
         "hint": "These readers name the schema version they were built against, or use a token pinned to one. Shapio keeps answering them in that shape, so a breaking change reaches them only as the effect shown here.",
         "pinned": "Pinned",
+        "networkToken": "Network token",
         "schemaVersion": "Schema version",
         "outcome": "Once shipped",
         "otherSites_one": "Other workspaces: {{count}} reader",

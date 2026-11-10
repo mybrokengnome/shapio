@@ -5,7 +5,7 @@ import { withoutSiteParameter } from '../helpers/siteQuery.js';
 import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestNetworkSchema } from '../plugins/schemaSnapshot.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
-import { withSchemaLens, type ContentServiceContext } from '../services/contentAccess.js';
+import { deferSchemaLens, withSchemaLens, type ContentServiceContext } from '../services/contentAccess.js';
 import { buildContentContext } from '../services/contentContext.js';
 
 /**
@@ -14,7 +14,14 @@ import { buildContentContext } from '../services/contentContext.js';
  * memoized per (principal, action, model), so the read, relation visibility, populate and usage recording
  * evaluate each model's policy once.
  */
-export const contentContextFor = async (request: FastifyRequest): Promise<ContentServiceContext> => {
+export const contentContextFor = async (
+  request: FastifyRequest,
+  /**
+   * Keep a named schema version for after authorization (`loadSchemaLens`) instead of loading its lens now:
+   * delivery, preview, write and snapshot routes. GraphQL loads it here.
+   */
+  { deferLens = false }: { deferLens?: boolean } = {},
+): Promise<ContentServiceContext> => {
   const context = buildContentContext({
     db: request.server.db,
     network: await getRequestNetworkSchema(request),
@@ -31,7 +38,9 @@ export const contentContextFor = async (request: FastifyRequest): Promise<Conten
   }
   // Delivery, preview and snapshot reads: the schema version the request names, and the current one's token
   // on the response (plugins/schemaLens.ts).
-  const lensed = await withSchemaLens(context, request.schemaVersionToken);
+  const lensed = deferLens
+    ? await deferSchemaLens(context, request.schemaVersionToken)
+    : await withSchemaLens(context, request.schemaVersionToken);
   request.schemaVersionCurrent = schemaVersionToken(lensed.schemaId as string, context.snapshot.version);
   return lensed;
 };

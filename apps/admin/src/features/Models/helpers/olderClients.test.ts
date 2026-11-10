@@ -48,6 +48,7 @@ const version = (
       principalKey: `token:t${schemaVersion}`,
       label: `Site ${schemaVersion}`,
       pinned: false,
+      network: false,
       lastReadAt: '',
     },
   ],

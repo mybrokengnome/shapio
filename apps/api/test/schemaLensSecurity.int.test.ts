@@ -388,6 +388,14 @@ describe('schema lenses and authorization', () => {
     ).json<{ data: Record<string, unknown> }>();
     expect(read.data.count).toBe(3);
     const draft = await adminEntry(echoed.id);
+    // The draft holds count '7' (read as 7 through the version); a caller without draft access that guesses it
+    // is refused exactly as for any other value: only heads it may read count as "sent back".
+    const guess = await request('PUT', at(`/api/content/articles/${echoed.id}`), readEditor.accessToken, {
+      expectedVersion: draft.version,
+      data: { count: 7 },
+    });
+    expect(guess.statusCode).toBe(422);
+    expect(guess.json<ErrorBody>().error.code).toBe('LENS_WRITE_UNSUPPORTED');
     expectStatus(
       await request('PUT', at(`/api/content/articles/${echoed.id}`), readEditor.accessToken, {
         expectedVersion: draft.version,

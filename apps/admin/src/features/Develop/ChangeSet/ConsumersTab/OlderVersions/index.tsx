@@ -86,6 +86,13 @@ export const OlderVersions = ({ review }: OlderVersionsProps) => {
                         label={t('changes.consumers.olderVersions.pinned')}
                       />
                     ) : null}
+                    {row.reader?.network ? (
+                      <StatusChip
+                        tone="muted"
+                        size="sm"
+                        label={t('changes.consumers.olderVersions.networkToken')}
+                      />
+                    ) : null}
                   </span>
                 </TableCell>
                 {multiSite ? (

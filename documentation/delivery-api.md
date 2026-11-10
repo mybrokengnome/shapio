@@ -512,3 +512,23 @@ field can be empty): render drafts defensively. For one entry in the admin's Pre
 The same routes accept `POST`, `PUT` and `DELETE` from app users whose roles allow it (for example, members
 editing their own entries). Delivery tokens cannot write. See [End users](end-users.md). Editors and your
 build tools use the admin API (`/api/admin/content/<key>`) with admin credentials.
+
+### Writing components
+
+A component is written whole: an update sends the full instance (or the full list of items) a field holds.
+Fields of an instance the caller cannot read (private to its audience, or deprecated) are never wiped by that:
+left out, they keep their stored values. Items of repeatable components and dynamic zones have no IDs, so each
+item sent is matched to the stored item it continues:
+
+1. By what the caller sees of it: an item equal to a stored item in every field the caller may read (the same
+   component, for dynamic zone items) continues that item; equal items are taken in order. Deleting an item,
+   inserting one anywhere, or reordering untouched items keeps every item's hidden values with it.
+2. In place: when the list keeps its length, an edited item continues the stored item at its position, if that
+   one was not matched already (and, in a dynamic zone, holds the same component).
+3. Any other item is new: its hidden fields start empty. Stored items no item continues are deleted, with
+   their hidden values.
+
+A single (not repeatable) component always continues the stored instance. A caller that may update an entry but
+not read it matches by the fields it may write; an explicit `null` it sends for a field inside a component
+clears that field, and a field it leaves out keeps its value. Admin writes are not affected: admins read
+everything.

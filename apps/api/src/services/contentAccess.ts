@@ -20,7 +20,7 @@ import type {
 import * as entriesRepository from '../repositories/entries.js';
 import type { EntryRow } from '../repositories/entries.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
-import { lensBudgetKeyOf } from '../schema/lens/budget.js';
+import { lensBudgetKeyOf, type LensBudgetKey } from '../schema/lens/budget.js';
 import { loadRequestLens, parseSchemaVersionToken, type RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
@@ -52,6 +52,19 @@ export type ContentServiceContext = {
   lensSelection?: readonly string[] | null;
   /** This instance's schema ID (`<schemaId>:<version>` tokens); set on delivery contexts. */
   schemaId?: string;
+  /**
+   * The schema version the call names (or its token's pin), not read yet: nothing about it is read, loaded or
+   * charged to a lens build budget until the caller is authorized (`loadSchemaLens`).
+   */
+  lensRequest?: LensRequest;
+};
+
+/** A schema version a call names, kept until the caller is authorized. */
+export type LensRequest = {
+  /** `<schemaId>:<version>` as sent; null when only the API token's pin names one. */
+  token: string | null;
+  /** Who pays for a lens build on a cache miss (`lensBudgetKeyOf`). */
+  budgetKey: LensBudgetKey | null;
 };
 
 const schemaIds = new WeakMap<Database, Promise<string>>();
@@ -76,6 +89,7 @@ const currentVersionLens = (snapshot: SchemaSnapshot): RequestLens => {
     view: snapshot,
     identity: true,
     lensFor: (id) => compileLens(side, side, id),
+    unavailable: new Map(),
   };
 };
 
@@ -105,6 +119,7 @@ export const schemaVersionTokenWithPin = async (
 export const withSchemaLens = async (
   context: ContentServiceContext,
   token: string | null,
+  budgetKey: LensBudgetKey | null = budgetKeyOf(context),
 ): Promise<ContentServiceContext> => {
   const schemaId = await schemaIdOf(context.db);
   const version =
@@ -113,13 +128,53 @@ export const withSchemaLens = async (
     return { ...context, schemaId };
   }
   const lens =
-    (await loadRequestLens(
-      context.db,
-      context.snapshot,
-      version,
-      lensBudgetKeyOf(context.actor, context.snapshot.siteId),
-    )) ?? currentVersionLens(context.snapshot);
+    (await loadRequestLens(context.db, context.snapshot, version, budgetKey)) ??
+    currentVersionLens(context.snapshot);
   return { ...context, schemaId, lens };
+};
+
+/** Who pays for this call's lens builds: its principal, an anonymous caller by its client address. */
+const budgetKeyOf = (context: ContentServiceContext): LensBudgetKey | null =>
+  lensBudgetKeyOf(context.actor, context.snapshot.siteId, context.ip);
+
+/**
+ * The context with the schema ID and, when the call names a schema version (or its API token is pinned to one),
+ * that request kept for later: nothing is parsed, loaded or charged yet. `loadSchemaLens` reads it once the
+ * caller is authorized, so a caller that may not read never learns anything about versions or lens budgets.
+ */
+export const deferSchemaLens = async (
+  context: ContentServiceContext,
+  token: string | null,
+): Promise<ContentServiceContext> => {
+  const schemaId = await schemaIdOf(context.db);
+  if (token === null && pinnedSchemaVersionOf(context.actor) === null) {
+    return { ...context, schemaId };
+  }
+  return {
+    ...context,
+    schemaId,
+    lensRequest: { token, budgetKey: budgetKeyOf(context) },
+  };
+};
+
+/** Whether the call names a schema version (loaded or not yet). */
+export const namesSchemaVersion = (context: ContentServiceContext): boolean =>
+  context.lens !== undefined || context.lensRequest !== undefined;
+
+/**
+ * The context with the lens of the version it names, once the caller is authorized: `SCHEMA_VERSION_INVALID`,
+ * `_FOREIGN`, `_AHEAD`, or `LENS_BUDGET_EXCEEDED` here and only here. `budgetKey` overrides who pays (a preview
+ * token). Without a pending request, the context as it is.
+ */
+export const loadSchemaLens = async (
+  context: ContentServiceContext,
+  budgetKey?: LensBudgetKey | null,
+): Promise<ContentServiceContext> => {
+  const { lensRequest, ...rest } = context;
+  if (!lensRequest) {
+    return context;
+  }
+  return withSchemaLens(rest, lensRequest.token, budgetKey === undefined ? lensRequest.budgetKey : budgetKey);
 };
 
 /** Whether the call reads through a lens that translates anything (not today's version, not an identity). */

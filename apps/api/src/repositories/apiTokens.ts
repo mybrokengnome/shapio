@@ -152,6 +152,8 @@ export type PinnedTokenRow = {
   siteId: string | null;
   siteKey: string | null;
   pinnedSchemaVersion: number;
+  /** The token's last change (setting the pin bumps it): reads before it may be at an earlier pin. */
+  updatedAt: Date;
 };
 
 /**
@@ -172,6 +174,7 @@ export const listPinned = async (
       'api_tokens.site_id',
       'sites.key as site_key',
       'api_tokens.pinned_schema_version',
+      'api_tokens.updated_at',
     ])
     .where('api_tokens.pinned_schema_version', 'is not', null)
     .$narrowType<{ pinned_schema_version: number }>()
@@ -193,6 +196,7 @@ export const listPinned = async (
     siteId: row.site_id,
     siteKey: row.site_key,
     pinnedSchemaVersion: Number(row.pinned_schema_version),
+    updatedAt: row.updated_at,
   }));
 };
 
