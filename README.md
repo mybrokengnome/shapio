@@ -63,12 +63,13 @@ is just another change set.
 back on any instance, live. If someone changed production since your last pull, apply refuses and shows the diff,
 just like a rejected push.
 
-### Many sites, one install
+### Many workspaces, one install
 
-![The sites on one Shapio install](.github/readme/sites.png)
+![The workspaces on one Shapio install](.github/readme/workspaces.png)
 
-One Shapio runs as many sites as you want, with one login. Each site has its own content types, content, media,
-tokens and end users. Share a content type across all of them when you want to.
+One Shapio runs as many workspaces as you want, with one login: one for each website, app, or team. Each
+workspace has its own content types, content, media, tokens, and end users. Share a content type across all of
+them when you want to.
 
 ### A media library you'll actually use
 

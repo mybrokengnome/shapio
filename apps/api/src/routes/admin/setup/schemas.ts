@@ -25,6 +25,11 @@ export const CompleteSetupBodySchema = Type.Object(
     email: EmailSchema,
     name: PersonNameSchema,
     password: PasswordSchema,
+    /**
+     * Renames the built-in workspace (key `default`, which stays). Same rules as a workspace's name in
+     * routes/admin/sites/schemas.ts. Absent: the name is left as it is.
+     */
+    workspaceName: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
   },
   { additionalProperties: false },
 );

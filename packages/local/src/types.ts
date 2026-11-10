@@ -9,9 +9,11 @@ import type { Logger } from 'pino';
 export type LocalClientOptions = {
   /** The Shapio database: a `postgres://` or `mysql://` URL. SQLite is single-process and refused. */
   databaseUrl: string;
-  /** A delivery API token; without one, reads are anonymous (the site's `public` role). */
+  /** A delivery API token; without one, reads are anonymous (the workspace's `public` role). */
   token?: string;
-  /** The site key; default the token's site, else the primary site. */
+  /** The workspace key; default the token's workspace, else the primary workspace. */
+  workspace?: string;
+  /** The older name of `workspace`. Both set to different keys throws `DeliveryRuntimeError`. */
   site?: string;
   /** Pooled connections (default 4). Serverless functions: 1 or 2. `next build` opens one pool per worker. */
   poolMax?: number;
@@ -34,7 +36,7 @@ export type LocalClientOptions = {
   /** Where failures are logged (pino). Default: warnings and errors to stdout. */
   logger?: Logger;
   /**
-   * Drafts mode, for a site's development server: every delivery read asks for drafts instead of published
+   * Drafts mode, for a website's development server: every delivery read asks for drafts instead of published
    * content (as `@shapio/client`'s `drafts`). Needs a delivery token whose role grants Read drafts; never set
    * it on a production build.
    */

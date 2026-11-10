@@ -4,7 +4,8 @@
  * - SHAPIO_DELIVERY_TOKEN: a read-only delivery token (Settings → API tokens, delivery role).
  * - SHAPIO_SNAPSHOT: optional; the publication snapshot to build. A generic-webhook trigger carries it;
  *   without it the build pins the latest snapshot when it starts.
- * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
+ * - SHAPIO_WORKSPACE: optional; the workspace key on a Shapio with several workspaces (default: the token's
+ *   workspace, else the primary). SHAPIO_SITE, its name before Shapio 0.8.2, is read when it is unset.
  * - PUBLIC_SHAPIO_URL: the origin the browser calls for previews (defaults to SHAPIO_URL).
  * - SHAPIO_DRAFTS: `true` turns on drafts mode, for your development server: every read shows saved drafts
  *   instead of published content (no snapshot), and pages carry a "Drafts" badge. The token must be a delivery
@@ -51,7 +52,8 @@ export const configuredSnapshot = (): number | undefined => {
 
 export const publicShapioUrl = () => read('PUBLIC_SHAPIO_URL') ?? shapioUrl();
 
-export const siteKey = () => read('SHAPIO_SITE');
+/** The Shapio workspace to read: SHAPIO_WORKSPACE, else SHAPIO_SITE. */
+export const siteKey = () => read('SHAPIO_WORKSPACE') ?? read('SHAPIO_SITE');
 
 type ViteImportMeta = ImportMeta & { env: { DEV?: boolean } };
 

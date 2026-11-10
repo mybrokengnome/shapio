@@ -56,7 +56,7 @@ const forgetSite = () => {
 /** The public URL of a site's home (its Inbox). */
 export const siteHomeUrl = (key: string) => `${routerBasePath().replace(/\/$/, '')}/s/${key}/`;
 
-/** The public URL of a network page (`/network/sites`). */
+/** The public URL of a network page (`/network/workspaces`). */
 export const networkUrl = (path = '/network') => `${routerBasePath().replace(/\/$/, '')}${path}`;
 
 /**
@@ -74,7 +74,7 @@ export const goToSite = (key: string) => {
  */
 export const leaveDeletedSite = () => {
   forgetSite();
-  window.location.assign(networkUrl('/network/sites'));
+  window.location.assign(networkUrl('/network/workspaces'));
 };
 
 /**

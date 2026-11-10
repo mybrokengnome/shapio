@@ -9,7 +9,7 @@ query returns exactly what the equivalent REST request returns.
 
 ## Playground
 
-In the admin, **Develop → GraphQL** opens GraphiQL on the site you are working in: write a query, run it with
+In the admin, **Develop → GraphQL** opens GraphiQL on the workspace you are working in: write a query, run it with
 your admin session, and browse every type and field in its **Docs** panel, which shows each content type's and
 field's label and help text. Your session can ask for drafts (`publicationState: DRAFT`); anonymous callers and
 app users only ever get published content, and delivery tokens too unless their role grants Read drafts
@@ -19,8 +19,8 @@ The **API explorer**'s GraphQL tab turns the request you built on its REST tab i
 sort, search, page, locale, snapshot and fields; `populate` has no GraphQL argument, since a query expands a
 relation by selecting it) with **Open in playground**, which opens that query in Develop → GraphQL.
 
-Outside the admin shell the page is at `/api/graphql/playground` (signed in to the admin): `?site=<key>` points
-it at that site's schema, `?query=` opens it on an operation and `?theme=light|dark` fixes its theme. Its files
+Outside the admin shell the page is at `/api/graphql/playground` (signed in to the admin): `?workspace=<key>`
+points it at that workspace's schema, `?query=` opens it on an operation and `?theme=light|dark` fixes its theme. Its files
 are served by Shapio itself, no CDN. Turn it off with `GRAPHQL_PLAYGROUND_ENABLED=false`.
 
 ## Authentication
@@ -29,23 +29,24 @@ The same credentials as REST, in the `Authorization: Bearer` header: a delivery 
 an app user's access token. Without one the request is anonymous and gets what the public app role grants.
 Requests made with the admin's session cookie must also send the `X-CSRF-Token` header.
 
-On an instance with several [sites](sites.md), a request reads one site, chosen as in REST
-([Delivery API](delivery-api.md#sites)): the token's site, else the `Shapio-Site` header or `?site=`, else the
-primary site. Naming another site than the token's is refused with `403 SITE_MISMATCH`. The entries,
-`_snapshot` and `_changes` are the request site's. GET responses vary on `Shapio-Site` as well as on the
-credentials.
+On an instance with several [workspaces](workspaces.md), a request reads one workspace, chosen as in REST
+([Delivery API](delivery-api.md#workspaces)): the token's workspace, else the `Shapio-Workspace` header or
+`?workspace=`, else the primary workspace. Server 0.8.2 or later; `Shapio-Site` and `?site=` work on every
+version. Naming another workspace than the token's is refused with `403 SITE_MISMATCH`. The entries,
+`_snapshot` and `_changes` are the request workspace's. GET responses vary on `Shapio-Workspace` and
+`Shapio-Site` as well as on the credentials.
 
-Each site has its own schema: its own content types and the shared ones. Within a site, the schema follows the
-caller's role ([below](#what-each-caller-sees)). Two sites can each have a `post`
-with different fields, and each site's schema shows its own; a content type of one site is not in another
-site's schema or introspection, so a query for it there fails validation (`400`). Generate client types per
-site (introspect with `?site=` or `Shapio-Site`). A site's schema is built on its first request and rebuilt
-when a model changes; a site's schema that no request has used for ten minutes is dropped from memory and built
-again when next asked for.
+Each workspace has its own schema: its own content types and the shared ones. Within a workspace, the schema
+follows the caller's role ([below](#what-each-caller-sees)). Two workspaces can each have a `post` with different
+fields, and each workspace's schema shows its own; a content type of one workspace is not in another workspace's
+schema or introspection, so a query for it there fails validation (`400`). Generate client types per workspace
+(introspect with `?workspace=` or `Shapio-Workspace`). A workspace's schema is built on its first request and
+rebuilt when a model changes; a workspace's schema that no request has used for ten minutes is dropped from
+memory and built again when next asked for.
 
 ## What each caller sees
 
-Admin sessions and admin API tokens see the whole schema of the site. A delivery token, an app user or an
+Admin sessions and admin API tokens see the whole schema of the workspace. A delivery token, an app user or an
 anonymous caller sees only what its role allows:
 
 - content types it may neither read nor write are left out, names included; one it may only write (a contact
@@ -189,8 +190,8 @@ token whose role grants **Read drafts** ([drafts mode](delivery-api.md#drafts-in
 development server). Anyone else gets `DRAFTS_FORBIDDEN`. An operation that reads drafts is answered with
 `Cache-Control: private, no-store`, and its connections report `snapshot: null` (drafts cannot be pinned).
 
-SEO fields come back as stored. `_site { key name seo { … } }` returns the request's site and its SEO
-defaults; merge them with `resolveSeo()` from `@shapio/client` ([SEO fields](seo.md#graphql)).
+SEO fields come back as stored. `_site { key name seo { … } }` returns the request's workspace (`key` and
+`name` are the workspace's) and the website's SEO defaults (`seo`); merge them with `resolveSeo()` from `@shapio/client` ([SEO fields](seo.md#graphql)).
 
 ## Example
 

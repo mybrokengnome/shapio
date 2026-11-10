@@ -247,10 +247,10 @@ type ErrorDetails = {
 
 const FOLDER_OF: Readonly<Record<string, string>> = {
   network: 'the shared folders',
-  site: 'the site’s folder',
+  site: 'the workspace’s folder',
 };
-const PLACE_OF: Readonly<Record<string, string>> = { network: 'shared', site: 'on one site' };
-const SCOPE_OF: Readonly<Record<string, string>> = { network: 'shared', site: 'site' };
+const PLACE_OF: Readonly<Record<string, string>> = { network: 'shared', site: 'in one workspace' };
+const SCOPE_OF: Readonly<Record<string, string>> = { network: 'shared', site: 'workspace' };
 
 /** One line per item of a scope refusal (`SCOPE_MISMATCH`, `FORBIDDEN_SCOPE`). */
 const scopeItemLines = (code: string, items: readonly ScopeItem[]) =>
@@ -268,13 +268,13 @@ const HINTS: Readonly<Record<string, string>> = {
   SCHEMA_SYNC_CONFLICT:
     'Commit your files, run `shapio schema pull --force`, reconcile with git, then apply again.',
   SCOPE_MISMATCH:
-    'Sync never moves a definition between sites: run `shapio schema pull` to get the instance’s layout, or change the scope with `shapio schema scope`.',
+    'Sync never moves a definition between workspaces: run `shapio schema pull` to get the instance’s layout, or change the scope with `shapio schema scope`.',
   FORBIDDEN_SCOPE:
-    'Shared definitions (in models/, components/, and interfaces/) need schema permission on every site: apply with a network token, or leave those files unchanged.',
+    'Shared definitions (in models/, components/, and interfaces/) need schema permission on every workspace: apply with a network token, or leave those files unchanged.',
   UNKNOWN_PARENT:
     '"extends" holds the stable ID of the parent type: check the ID, or add the parent’s file (it can be in the same apply).',
   INVALID_PARENT:
-    'Only a collection can extend another collection, and both must be in the same place: both shared (models/), or both in one site’s folder.',
+    'Only a collection can extend another collection, and both must be in the same place: both shared (models/), or both in one workspace’s folder.',
   INHERITANCE_CYCLE:
     'Follow the "extends" chain from the type named above and remove the link that leads back to it.',
   INHERITANCE_TOO_DEEP: 'A family can be at most 8 types deep: make the type extend one higher up the chain.',
@@ -286,7 +286,7 @@ const HINTS: Readonly<Record<string, string>> = {
   UNKNOWN_INTERFACE:
     '"implements" holds the stable IDs of interfaces: check the ID, or add the interface’s file (it can be in the same apply).',
   INVALID_INTERFACE:
-    'Only a collection or a single type can implement an interface, "implements" can only name interfaces, and an interface on one site can only be implemented by types on that site.',
+    'Only a collection or a single type can implement an interface, "implements" can only name interfaces, and an interface in one workspace can only be implemented by types in that workspace.',
   INTERFACE_FIELD_MISSING:
     'Give the type the field the message names (the same API ID, a compatible type, and the flags the interface sets), or remove the interface from "implements" in the same apply.',
   INTERFACE_FIELD_MISMATCH:
@@ -304,13 +304,15 @@ const issueWhere = (found: Issue, filePaths: readonly string[]) => {
   const where = match
     ? `${filePaths[Number(match[1])] ?? `definition ${match[1]}`} ${match[2] || '/'}`
     : (found.path ?? '');
-  return found.siteKey ? `${where} (site ${found.siteKey})` : where;
+  return found.siteKey ? `${where} (workspace ${found.siteKey})` : where;
 };
 
 const siteCountLines = (sites: ErrorDetails['sites']) =>
   (sites ?? []).flatMap((site) =>
     typeof site === 'object' && site.entries !== undefined
-      ? [`  site ${site.key ?? site.siteId ?? '?'}: ${site.entries} entr${site.entries === 1 ? 'y' : 'ies'}`]
+      ? [
+          `  workspace ${site.key ?? site.siteId ?? '?'}: ${site.entries} entr${site.entries === 1 ? 'y' : 'ies'}`,
+        ]
       : [],
   );
 

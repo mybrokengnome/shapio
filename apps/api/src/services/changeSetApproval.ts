@@ -39,7 +39,7 @@ export const changeSetNotApproved = () =>
   new AppError(
     409,
     'CHANGE_SET_NOT_APPROVED',
-    'This site requires an approved change set before it ships or is scheduled. Ask for approval first.',
+    'This workspace requires an approved change set before it ships or is scheduled. Ask for approval first.',
   );
 
 export const changeSetApprovalStale = () =>
@@ -53,7 +53,7 @@ const notConfigured = () =>
   new AppError(
     409,
     'CHANGE_SET_APPROVAL_NOT_CONFIGURED',
-    'This site has no approval workflow, so its change sets cannot be sent for approval',
+    'This workspace has no approval workflow, so its change sets cannot be sent for approval',
   );
 
 const notInReview = (status: string) =>

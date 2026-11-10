@@ -253,7 +253,7 @@ describe('making another site primary', () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json<{ error: { code: string; message: string } }>().error).toMatchObject({
       code: 'SITE_IS_PRIMARY',
-      message: 'The primary site cannot be deleted. Make another site primary first.',
+      message: 'The primary workspace cannot be deleted. Make another workspace primary first.',
     });
     expectStatus(await as(owner, 'default').delete(`/api/admin/content/post/${ids.defaultPost}`), 204);
     expect(await findPreSitesSite(database.current.db)).toEqual({ id: PRIMARY_SITE_ID, key: 'default' });
@@ -308,7 +308,7 @@ describe('making another site primary', () => {
     } as unknown as JobContext;
     const failure = runImportJob({ db: database.current.db, storage: undefined as never }, job);
     await expect(failure).rejects.toBeInstanceOf(PermanentJobError);
-    await expect(failure).rejects.toThrow('queued before sites existed and its site was deleted');
+    await expect(failure).rejects.toThrow('queued before workspaces existed and its workspace was deleted');
   });
 
   it('serializes concurrent switches: exactly one primary remains', async () => {
@@ -324,18 +324,18 @@ describe('making another site primary', () => {
     expect(['alpha', 'beta']).toContain(primaries[0]);
   });
 
-  it('`shapio sites make-primary --key` moves the flag; an unknown key exits 1', async () => {
-    const moved = await cli(['sites', 'make-primary', '--key', 'marketing']);
+  it('`shapio workspaces make-primary --key` moves the flag; an unknown key exits 1; `sites` still runs', async () => {
+    const moved = await cli(['workspaces', 'make-primary', '--key', 'marketing']);
     expect(moved.stderr).toBe('');
     expect(moved.code).toBe(0);
-    expect(moved.stdout).toBe('Site marketing is now the primary site.\n');
+    expect(moved.stdout).toBe('Workspace marketing is now the primary workspace.\n');
     expect(await primaryKeys()).toEqual(['marketing']);
     const listed = await cli(['sites', 'list']);
     expect(listed.stdout.split('\n').filter((line) => line.endsWith('(primary)'))).toEqual([
       'marketing\tMarketing\t(primary)',
     ]);
-    const unknown = await cli(['sites', 'make-primary', '--key', 'nowhere']);
+    const unknown = await cli(['workspaces', 'make-primary', '--key', 'nowhere']);
     expect(unknown.code).toBe(1);
-    expect(unknown.stderr).toBe('No site has the key "nowhere".\n');
+    expect(unknown.stderr).toBe('No workspace has the key "nowhere".\n');
   });
 });

@@ -73,7 +73,7 @@ const findRelationIssues = async (
         code: 'RELATION_TARGET_MISSING' as const,
         message: reference.accepts
           ? `entry ${id} is not ${reference.accepts}`
-          : `entry ${id} does not exist in the target model on this site`,
+          : `entry ${id} does not exist in the target model in this workspace`,
       })),
   );
 };
@@ -103,7 +103,7 @@ const findMediaIssues = async (
               {
                 path: check.path,
                 code: 'MEDIA_MISSING',
-                message: `media asset ${id} does not exist on this site`,
+                message: `media asset ${id} does not exist in this workspace`,
               },
             ];
       }

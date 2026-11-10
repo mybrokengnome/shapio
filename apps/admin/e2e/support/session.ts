@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { NEW_PASSWORD, OWNER } from './accounts';
+import { BUILT_IN_WORKSPACE, NEW_PASSWORD, OWNER } from './accounts';
 import { ARTIFACTS_DIR, E2E_BASE_PATH, E2E_ORIGIN } from './constants';
 
 export const ADMIN_API = `${E2E_ORIGIN}${E2E_BASE_PATH}/api/admin`;
@@ -29,7 +29,12 @@ export const signInAsOwner = async (page: Page): Promise<string> => {
   const status = (await (await request.get(`${ADMIN_API}/setup`)).json()) as { required: boolean };
   if (status.required) {
     const response = await request.post(`${ADMIN_API}/setup`, {
-      data: { name: OWNER.name, email: OWNER.email, password: OWNER.password },
+      data: {
+        name: OWNER.name,
+        email: OWNER.email,
+        password: OWNER.password,
+        workspaceName: BUILT_IN_WORKSPACE,
+      },
     });
     expect(response.ok()).toBe(true);
     writeFileSync(OWNER_PASSWORD_FILE, OWNER.password);

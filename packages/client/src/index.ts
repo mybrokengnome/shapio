@@ -15,6 +15,7 @@ export {
   SITE_ACTIONS,
   SITE_HEADER,
   SITES_PATHS,
+  WORKSPACE_HEADER,
   APPROVAL_PATHS,
   APPROVAL_MODES,
   HEALTH_RULES,
@@ -56,10 +57,15 @@ export {
   type NextCacheMode,
   type NextCacheOptions,
 } from './nextCache.js';
-export { SITE_QUERY_PARAMETER } from './site.js';
+export {
+  resolveWorkspaceOption,
+  SITE_QUERY_PARAMETER,
+  WORKSPACE_QUERY_PARAMETER,
+  type WorkspaceOption,
+} from './site.js';
 export type * from './deliveryTypes.js';
 export type * from './seoTypes.js';
-export { DELIVERY_SITE_PATH, type SiteApi } from './siteDelivery.js';
+export { DELIVERY_SITE_PATH, type SiteApi, type WorkspaceApi } from './siteDelivery.js';
 export {
   applyTitleTemplate,
   DEFAULT_SEO_KEYS,

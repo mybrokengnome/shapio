@@ -14,8 +14,9 @@ type Exported = Awaited<ReturnType<ShapioClient['admin']['schema']['export']>>;
 export type ExportedDefinition = Exported['definitions'][number];
 
 /**
- * The site's active schema (the pull format): its own definitions and the shared ones, for the site the
- * client names (`--site`, else the token's site, else the primary). Read fresh for each call: models change live.
+ * The workspace's active schema (the pull format): its own definitions and the shared ones, for the workspace
+ * the client names (`--workspace`, else the token's workspace, else the primary). Read fresh for each call:
+ * models change live.
  */
 export const readSchema = (client: ShapioClient): Promise<Exported> => client.admin.schema.export();
 
@@ -32,7 +33,7 @@ export const findDefinition = (schema: Exported, key: string): ExportedDefinitio
 };
 
 /**
- * Inheritance lookups over the site's view: a type that extends another stores only its own fields, so
+ * Inheritance lookups over the workspace's view: a type that extends another stores only its own fields, so
  * anything that describes what a type holds reads the effective fields (the parent's first) through this.
  */
 export const indexSchema = (schema: Exported): DefinitionIndex =>
@@ -137,7 +138,7 @@ export const summarizer = (schema: Exported) => {
     const implemented = implementedApiKeys(index, definition);
     return {
       id: definition.id,
-      /** `shared` (every site), or the key of the site it belongs to. */
+      /** `shared` (every workspace), or the key of the workspace it belongs to. */
       scope: site === null ? 'shared' : site,
       kind: definition.kind,
       apiKey: definition.apiKey,

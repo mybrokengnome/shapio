@@ -61,7 +61,7 @@ export const assertAssignableAssignments = async (
 ): Promise<RoleAssignment[]> => {
   const keys = new Set(assignments.map(assignmentKey));
   if (keys.size !== assignments.length) {
-    throw new AppError(400, 'DUPLICATE_ASSIGNMENT', 'A role is assigned twice on the same site');
+    throw new AppError(400, 'DUPLICATE_ASSIGNMENT', 'A role is assigned twice on the same workspace');
   }
   const roleIds = roleIdsOf(assignments);
   const roles = await adminRolesRepository.findByIds(roleIds, trx);
@@ -70,10 +70,14 @@ export const assertAssignableAssignments = async (
   }
   const siteIds = [...new Set(assignments.flatMap((assignment) => assignment.siteId ?? []))];
   if (siteIds.length > 0 && (await sitesRepository.findByIds(siteIds, trx)).length !== siteIds.length) {
-    throw new AppError(400, 'INVALID_SITES', 'Every site must exist');
+    throw new AppError(400, 'INVALID_SITES', 'Every workspace must exist');
   }
   if (assignments.some((assignment) => assignment.roleId === ownerRoleId && assignment.siteId !== null)) {
-    throw new AppError(400, 'OWNER_ALL_SITES', 'The owner role is held on every site, never on one site');
+    throw new AppError(
+      400,
+      'OWNER_ALL_SITES',
+      'The owner role is held on every workspace, never on one workspace',
+    );
   }
   return sortAssignments(assignments);
 };

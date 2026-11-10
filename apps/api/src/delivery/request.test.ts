@@ -13,6 +13,7 @@ describe('matchDeliveryRequest', () => {
       query: '',
       site: undefined,
     });
+    expect(matchDeliveryRequest('GET', '/api/workspace')?.route).toEqual({ kind: 'site' });
     expect(matchDeliveryRequest('GET', '/api/site')?.route).toEqual({ kind: 'site' });
     expect(matchDeliveryRequest('GET', '/api/snapshots/current')?.route).toEqual({ kind: 'snapshotCurrent' });
     expect(matchDeliveryRequest('GET', '/api/snapshots/changes?from=1')?.route).toEqual({
@@ -47,6 +48,33 @@ describe('matchDeliveryRequest', () => {
     expect(matchDeliveryRequest('GET', '/api/site?site=')?.site).toBeUndefined();
   });
 
+  it('takes `workspace` out of the query too, and accepts both spellings naming the same workspace', () => {
+    expect(matchDeliveryRequest('GET', '/api/content/articles?workspace=blog&locale=fr')).toMatchObject({
+      query: 'locale=fr',
+      site: 'blog',
+    });
+    expect(matchDeliveryRequest('GET', '/api/workspace?workspace=blog&site=blog')).toMatchObject({
+      query: '',
+      site: 'blog',
+    });
+    expect(matchDeliveryRequest('GET', '/api/workspace?workspace=')?.site).toBeUndefined();
+  });
+
+  it('refuses two spellings naming different workspaces (403) and a repeated parameter (400)', () => {
+    const failureOf = (path: string) => {
+      try {
+        matchDeliveryRequest('GET', path);
+      } catch (error) {
+        const { statusCode, code } = error as { statusCode: number; code: string };
+        return `${statusCode} ${code}`;
+      }
+      return 'matched';
+    };
+    expect(failureOf('/api/content/articles?workspace=blog&site=shop')).toBe('403 SITE_MISMATCH');
+    expect(failureOf('/api/content/articles?site=blog&site=shop')).toBe('400 INVALID_QUERY');
+    expect(failureOf('/api/content/articles?workspace=blog&workspace=blog')).toBe('400 INVALID_QUERY');
+  });
+
   it('matches nothing else: writes, previews, the admin API, GraphQL, unknown paths', () => {
     for (const [method, path] of [
       ['POST', '/api/content/articles'],
@@ -58,6 +86,8 @@ describe('matchDeliveryRequest', () => {
       ['GET', '/api/content/articles/1/extra'],
       ['GET', '/api/snapshots'],
       ['GET', '/api/site/extra'],
+      ['GET', '/api/workspace/extra'],
+      ['GET', '/api/workspaces'],
       ['GET', 'api/site'],
       ['GET', '/api/content/%E0%A4%A'],
     ] as const) {

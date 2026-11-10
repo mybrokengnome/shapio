@@ -19,8 +19,8 @@ npm test            # unit tests (path mapping, signature check)
 
 `npm run seed` applies the models in `shapio/` to Shapio live, creates the content and writes `SHAPIO_URL` and
 `SHAPIO_DELIVERY_TOKEN` to `.env`. `SHAPIO_SNAPSHOT` pins a build to an exact snapshot (by default
-`next.config.ts` pins the latest one when the build starts); `SHAPIO_SITE` picks the site on a multi-site
-instance. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in the npm scripts and `.env.example`.
+`next.config.ts` pins the latest one when the build starts); `SHAPIO_WORKSPACE` picks the workspace on an
+instance with several. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in the npm scripts and `.env.example`.
 
 | File                         | Role                                                               |
 | ---------------------------- | ------------------------------------------------------------------ |
@@ -81,7 +81,7 @@ With `npm run start`, a publish refreshes only the pages it changed, without a r
    the site, the model and the entry, so the route also calls `revalidateTag` for each changed model and entry;
    `site.updated` and a schema change expire the site tag, which every read carries. Content reads are pinned to
    a snapshot, so they sit in Next's data cache (`force-cache`) regardless; the client sets no cache mode, so
-   `site.get()` stays fresh on every build (the data cache outlives `next build`).
+   `workspace.get()` stays fresh on every build (the data cache outlives `next build`).
 3. The site moves to the new snapshot: revalidated pages re-render at it, and the snapshot is kept in
    `.next/shapio-revalidate.json` so a restart carries on from it. `next build` empties `.next/`, so a new build
    starts again from its own snapshot.

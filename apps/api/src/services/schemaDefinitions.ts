@@ -102,7 +102,7 @@ export const scopeForCreate = (
     throw new AppError(
       400,
       'SITE_REQUIRED',
-      'A site definition is created on a site: name one, or ask for scope "network"',
+      'A definition with scope "site" is created in a workspace: name one, or ask for scope "network"',
     );
   }
   return context.snapshot.siteId;
@@ -139,8 +139,8 @@ export const scopeMismatch = (id: string, scope: DefinitionScope) =>
     409,
     'SCOPE_MISMATCH',
     scope === 'network'
-      ? 'This definition is shared with all sites; restore or change it with scope "network", or change its scope first'
-      : 'This definition belongs to one site; restore or change it with scope "site", or change its scope first',
+      ? 'This definition is shared with all workspaces; restore or change it with scope "network", or change its scope first'
+      : 'This definition belongs to one workspace; restore or change it with scope "site", or change its scope first',
     { definitionId: id, scope },
   );
 

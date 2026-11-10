@@ -24,7 +24,7 @@ export const Sites = () => {
   const onCreated = (site: Site) => {
     setCreating(false);
     toast.success(t('sites.created', { name: site.name }));
-    void navigate({ to: '/network/sites/$siteId', params: { siteId: site.id } });
+    void navigate({ to: '/network/workspaces/$siteId', params: { siteId: site.id } });
   };
   return (
     <Page>

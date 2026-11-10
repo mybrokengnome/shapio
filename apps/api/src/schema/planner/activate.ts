@@ -328,7 +328,7 @@ export const activateDefinitions = async (
 
 /** `activation.seq` of an activation without a change set: it has no origin site, so no number to take. */
 const NO_ORIGIN: SeqAllocator = {
-  next: () => Promise.reject(new Error('This activation has no origin site: it ships no change set')),
+  next: () => Promise.reject(new Error('This activation has no origin workspace: it ships no change set')),
   taken: () => undefined,
 };
 

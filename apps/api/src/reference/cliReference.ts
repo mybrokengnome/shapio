@@ -1,9 +1,10 @@
 import { REMOTE_COMMANDS, type CliCommand } from '@shapio/cli';
-import { COMMANDS } from '../cliCommands.js';
+import { listedCommands } from '../cliCommands.js';
 
 /**
  * Generates documentation/reference/cli.md from the `shapio` command definitions (cliCommands.ts and
  * packages/cli). Command groups whose `help` only prints (schema, types) contribute their full help text.
+ * Hidden commands (older names kept as aliases, such as `sites`) are left out, as in `shapio help`.
  * `reference.test.ts` fails when the page and the commands drift apart.
  */
 const HELP_GROUPS = new Set(['schema', 'types']);
@@ -49,11 +50,13 @@ export const renderCliReference = async (): Promise<string> => {
     '| --- | --- | --- |',
     '| `SHAPIO_URL` | remote commands | The instance to talk to. |',
     '| `SHAPIO_TOKEN` | remote commands | An admin API token. |',
+    '| `SHAPIO_WORKSPACE` | remote commands, `shapio mcp` | The workspace key to work on (`--workspace` overrides it); default: the token’s workspace, else the primary workspace. `SHAPIO_SITE` is also accepted. |',
     '| `SHAPIO_ADMIN_PASSWORD` | `shapio admin create` | The new admin’s password; without it one is generated and printed once. |',
   ];
+  const listed = listedCommands();
   const sections: Array<[string, Array<[string, CliCommand]>]> = [
-    ['Server commands', Object.entries(COMMANDS).filter(([name]) => !(name in REMOTE_COMMANDS))],
-    ['Remote commands', Object.entries(COMMANDS).filter(([name]) => name in REMOTE_COMMANDS)],
+    ['Server commands', listed.filter(([name]) => !(name in REMOTE_COMMANDS))],
+    ['Remote commands', listed.filter(([name]) => name in REMOTE_COMMANDS)],
   ];
   for (const [title, commands] of sections) {
     lines.push('', `## ${title}`);

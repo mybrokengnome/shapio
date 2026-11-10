@@ -773,7 +773,7 @@ describe('GraphQL schema and runtime', () => {
     const page = (url: string) => testApp.app.inject({ method: 'GET', url, headers: session.headers });
     const forSite = await page('/api/graphql/playground?site=b');
     expect(forSite.statusCode).toBe(200);
-    expect(forSite.body).toContain('data-endpoint="/api/graphql?site=b"');
+    expect(forSite.body).toContain('data-endpoint="/api/graphql?workspace=b"');
     expect((await page('/api/graphql/playground')).body).toContain('data-endpoint="/api/graphql"');
     expect((await page('/api/graphql/playground?site=Not%20a%20key')).statusCode).toBe(400);
   });
@@ -785,7 +785,7 @@ describe('GraphQL schema and runtime', () => {
       '/api/graphql/playground?site=b&query=%7B%20_schemaVersion%20%7D&theme=light',
     );
     expect(prefilled.statusCode).toBe(200);
-    expect(prefilled.body).toContain('data-endpoint="/api/graphql?site=b"');
+    expect(prefilled.body).toContain('data-endpoint="/api/graphql?workspace=b"');
     expect(prefilled.body).toContain('data-query="{ _schemaVersion }"');
     expect(prefilled.body).toContain('data-theme="light"');
     expect((await page('/api/graphql/playground?theme=blue')).statusCode).toBe(400);
@@ -796,8 +796,8 @@ describe('GraphQL schema and runtime', () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('<h2>GraphQL</h2>');
     // The page is the request site's; its links name that site.
-    expect(page.body).toContain('<code>/api/graphql?site=default</code>');
-    expect(page.body).toContain('href="/api/docs/openapi.json?site=default"');
+    expect(page.body).toContain('<code>/api/graphql?workspace=default</code>');
+    expect(page.body).toContain('href="/api/docs/openapi.json?workspace=default"');
     expect(page.body).toContain('Int53');
   });
 

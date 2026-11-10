@@ -65,8 +65,8 @@
     "maxAttempts": "Enter a whole number from 1 to 20.",
     "debounceSeconds": "Enter a whole number of seconds (0 to 86400).",
     "siteKey": "Use lower-case letters, digits and hyphens, starting with a letter.",
-    "siteTwice": "Each site can only be listed once.",
-    "ownerAllSites": "The owner role can only be given on all sites.",
+    "siteTwice": "Each workspace can only be listed once.",
+    "ownerAllSites": "The owner role can only be given on all workspaces.",
     "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
     "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores.",
     "approvalRequired": "Enter a whole number from 1 to 20.",
@@ -143,14 +143,14 @@
       "INVALID_QUERY": "This filter or sort can't be used on this model.",
       "FORBIDDEN_FIELD": "You don't have access to one of the fields in this filter or sort.",
       "LOCALE_NOT_FOUND": "That locale doesn't exist.",
-      "SITE_NOT_EMPTY": "This site still has content types, components, entries, media, change sets or app users. Delete them first.",
-      "SITE_IS_PRIMARY": "The primary site can't be deleted. Make another site primary first.",
-      "SITE_KEY_TAKEN": "Another site already uses this key.",
-      "OWNER_ALL_SITES": "The owner role applies to every site; it can't be given on one site.",
-      "SITE_FORBIDDEN": "You have no role on this site.",
-      "SITE_MISMATCH": "This credential belongs to another site.",
-      "SITE_NOT_FOUND": "That site doesn't exist.",
-      "INVALID_SITES": "One of the chosen sites doesn't exist.",
+      "SITE_NOT_EMPTY": "This workspace still has content types, components, entries, media, change sets or app users. Delete them first.",
+      "SITE_IS_PRIMARY": "The primary workspace cannot be deleted. Make another workspace primary first.",
+      "SITE_KEY_TAKEN": "Another workspace already uses this key.",
+      "OWNER_ALL_SITES": "The owner role applies to every workspace; it can't be given on one workspace.",
+      "SITE_FORBIDDEN": "You have no role on this workspace.",
+      "SITE_MISMATCH": "This credential belongs to another workspace.",
+      "SITE_NOT_FOUND": "That workspace doesn't exist.",
+      "INVALID_SITES": "One of the chosen workspaces doesn't exist.",
       "ASSIST_DISABLED": "Assist is off on this server.",
       "ASSIST_PROVIDER_ERROR": "The model provider returned an error. Try again in a moment.",
       "ASSIST_PROVIDER_AUTH": "The model provider refused this server's credentials. Ask whoever runs Shapio to check the assist settings.",
@@ -172,12 +172,12 @@
       "ASSIST_RUN_NOT_FINISHED": "The proposal run hasn't finished yet. Try again in a moment.",
       "ASSIST_ACCEPT_ITEMS_INVALID": "These values can't be accepted together. Close the review and run it again.",
       "APPROVAL_UNKNOWN_ROLE": "A role this workflow names was deleted. Uncheck it and save again.",
-      "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this site a workflow of its own.",
+      "APPROVAL_WORKFLOW_REQUIRED": "Add at least one stage to give this workspace a workflow of its own.",
       "CHANGE_SET_APPROVAL_NOT_ELIGIBLE": "You can't sign off on this change set at its current stage.",
       "CHANGE_SET_APPROVAL_STALE": "The change set changed after it was signed off. Ask for approval again.",
-      "CHANGE_SET_APPROVAL_NOT_CONFIGURED": "This site has no approval workflow, so its change sets ship without approval.",
+      "CHANGE_SET_APPROVAL_NOT_CONFIGURED": "This workspace has no approval workflow, so its change sets ship without approval.",
       "CHANGE_SET_APPROVAL_NOT_REQUESTED": "This change set isn't waiting for approval anymore. Reload to see where it stands.",
-      "CHANGE_SET_NOT_APPROVED": "This site requires an approved change set before it ships or is scheduled."
+      "CHANGE_SET_NOT_APPROVED": "This workspace requires an approved change set before it ships or is scheduled."
     }
   },
   "notFound": {
@@ -227,6 +227,9 @@
     "token": "Setup token",
     "tokenHint": "Printed in the API server's log at startup.",
     "tokenMore": "In the banner \"No admin account exists yet\", on the line \"One-time setup token: …\".",
+    "workspaceName": "Workspace name",
+    "workspaceNameDefault": "Default workspace",
+    "workspaceNameHint": "Your first workspace. You can rename it and add more later under Network → Workspaces.",
     "submit": "Create owner account",
     "submitting": "Creating account…"
   },
@@ -300,7 +303,7 @@
       "settings": "Settings",
       "team": "Team",
       "appUsers": "App users",
-      "sites": "Sites",
+      "sites": "Workspaces",
       "auditLog": "Audit log",
       "sharedContentTypes": "Content types",
       "approval": "Approval"
@@ -439,20 +442,20 @@
     "newComponentTitle": "New component",
     "noComponents": "No components yet",
     "availableOn": "Available on",
-    "thisSite": "This site",
+    "thisSite": "This workspace",
     "thisSiteDescription": "Only on {{site}}.",
-    "allSites": "All sites",
-    "allSitesDescription": "Every site has it, each with its own content.",
-    "allSitesNeedsNetwork": "Sharing with all sites needs a role on every site.",
-    "sharedWithAllSites": "Shared with all sites",
+    "allSites": "All workspaces",
+    "allSitesDescription": "Every workspace has it, each with its own content.",
+    "allSitesNeedsNetwork": "Sharing with all workspaces needs a role on every workspace.",
+    "sharedWithAllSites": "Shared with all workspaces",
     "network": {
       "title": "Content types",
-      "count_one": "{{count}} shared with all sites",
-      "count_other": "{{count}} shared with all sites",
+      "count_one": "{{count}} shared with all workspaces",
+      "count_other": "{{count}} shared with all workspaces",
       "create": "New shared type",
       "newTitle": "New shared content type",
       "empty": "Nothing is shared yet",
-      "emptyDescription": "Content types and components shared with all sites are listed here."
+      "emptyDescription": "Content types and components shared with all workspaces are listed here."
     }
   },
   "userMenu": {
@@ -637,7 +640,7 @@
       "rolesManage": "Manage roles",
       "tokensManage": "Manage API tokens",
       "auditRead": "Read the audit log",
-      "sitesManage": "Manage sites",
+      "sitesManage": "Manage workspaces",
       "mediaRead": "Browse the media library",
       "mediaWrite": "Upload and edit media",
       "mediaManage": "Delete media and change its visibility",
@@ -648,7 +651,7 @@
       "changesManage": "Create and review change sets",
       "changesShip": "Ship and schedule change sets",
       "changesApprove": "Approve change sets",
-      "siteSettings": "Site settings"
+      "siteSettings": "Workspace settings"
     },
     "contentPermissions": "Content",
     "contentHintAdmin": "Without a field list, every field.",
@@ -725,10 +728,10 @@
     "empty": "No API tokens yet.",
     "emptyDescription": "Create one to let a site or the CLI talk to Shapio.",
     "scope": "Works on",
-    "scopeSite": "This site ({{name}})",
-    "scopeSiteDescription": "The token's role applies on this site only.",
-    "scopeNetwork": "Every site (network token)",
-    "scopeNetworkDescription": "Its role applies on every site, including network actions such as managing users."
+    "scopeSite": "This workspace ({{name}})",
+    "scopeSiteDescription": "The token's role applies on this workspace only.",
+    "scopeNetwork": "Every workspace (network token)",
+    "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users."
   },
   "audit": {
     "title": "Audit log",
@@ -831,6 +834,7 @@
       "sessionRevoke": "Revoked session",
       "sessionRevokeAll": "Signed out everywhere",
       "setupComplete": "Completed setup",
+      "siteAppRolesUpdate": "Updated workspace app roles",
       "transferImport": "Imported content",
       "webhookCreate": "Created webhook",
       "webhookDelete": "Deleted webhook",
@@ -852,8 +856,12 @@
       "changeSetApprovalRequest": "Change set approval requested",
       "changeSetApprovalRequestChanges": "Change set sent back",
       "changeSetApprove": "Change set approved",
-      "siteChangeSetsUpdate": "Site change set settings changed",
-      "siteMakePrimary": "Made a site primary",
+      "siteChangeSetsUpdate": "Workspace change set settings changed",
+      "siteCreate": "Created workspace",
+      "siteDelete": "Deleted workspace",
+      "siteMakePrimary": "Made a workspace primary",
+      "siteSeoUpdate": "Updated workspace SEO settings",
+      "siteUpdate": "Updated workspace",
       "changeSetApprovalSign": "Change set signed off",
       "changeSetApprovalStageComplete": "Change set approval stage completed",
       "networkApprovalUpdate": "Default approval workflow changed"
@@ -877,6 +885,7 @@
       "previewToken": "Preview link",
       "changeSet": "Change set",
       "schemaSettings": "Schema settings",
+      "site": "Workspace",
       "webhook": "Webhook"
     },
     "empty": "No audit events match.",
@@ -930,9 +939,9 @@
     "access": {
       "title": "Access",
       "row": "Access {{n}}",
-      "site": "Site",
+      "site": "Workspace",
       "remove": "Remove access {{n}}",
-      "add": "Add a site",
+      "add": "Add a workspace",
       "badge": "{{role}} · {{site}}"
     }
   },
@@ -1482,14 +1491,14 @@
       "COMPONENT_TOO_DEEP": "Components are nested too deeply.",
       "REFERENCED_DEFINITION": "Another model still references this one. Remove the reference first.",
       "UNKNOWN_PARENT": "The type it extends doesn't exist.",
-      "INVALID_PARENT": "Only a collection can extend another, and only one available in the same place (this site or all sites).",
+      "INVALID_PARENT": "Only a collection can extend another, and only one available in the same place (this workspace or all workspaces).",
       "INHERITANCE_CYCLE": "Types can't extend each other in a circle.",
       "INHERITANCE_TOO_DEEP": "A family can have at most 8 levels of types.",
       "INHERITED_FLAG_MISMATCH": "A kind must match the type it extends here.",
       "INHERITED_FIELD_COLLISION": "The type it extends already has a field with this API ID (IDs are case-insensitive).",
       "HAS_CHILDREN": "Other types extend this one. Delete them or move them under another type first.",
       "UNKNOWN_INTERFACE": "This interface doesn't exist.",
-      "INVALID_INTERFACE": "Only a collection or single type can implement an interface, and only one available here (this site or all sites).",
+      "INVALID_INTERFACE": "Only a collection or single type can implement an interface, and only one available here (this workspace or all workspaces).",
       "INTERFACE_FIELD_MISSING": "\"{{field}}\" is required by {{name}}.",
       "INTERFACE_FIELD_MISMATCH": "\"{{field}}\" doesn't match what {{name}} requires: the same data type, compatible settings, and its options.",
       "INVALID_INTERFACE_FIELD": "An interface's field can't hold components, require unique values, take a slug source, or set an editor, width, or default value.",
@@ -1502,16 +1511,16 @@
     },
     "scope": {
       "onlyOn": "Only on {{site}}",
-      "share": "Share with all sites",
-      "keep": "Keep on this site",
-      "shareTitle": "Share {{label}} with all sites?",
-      "shareDescription": "Every site gets it, each with its own content.",
+      "share": "Share with all workspaces",
+      "keep": "Keep on this workspace",
+      "shareTitle": "Share {{label}} with all workspaces?",
+      "shareDescription": "Every workspace gets it, each with its own content.",
       "keepTitle": "Keep {{label}} on {{site}} only?",
-      "keepDescription": "Other sites lose it. Refused while another site has entries of it.",
+      "keepDescription": "Other workspaces lose it. Refused while another workspace has entries of it.",
       "blocked": "Save or discard your changes first.",
-      "shared": "Shared with all sites.",
-      "kept": "Now only on this site.",
-      "readOnly": "Shared with all sites: changing it needs a role on every site."
+      "shared": "Shared with all workspaces.",
+      "kept": "Now only on this workspace.",
+      "readOnly": "Shared with all workspaces: changing it needs a role on every workspace."
     },
     "inheritance": {
       "extends": "Extends",
@@ -1584,9 +1593,9 @@
       "description": "{{name}} can only require fields every member has ({{fields}}). Add them to these types in one change set, or remove them from {{name}}.",
       "membersLabel": "Members missing a field",
       "otherSite": "A type on {{site}}",
-      "otherSiteUnnamed": "A type on another site",
+      "otherSiteUnnamed": "A type on another workspace",
       "lacks": "Lacks {{fields}}",
-      "addThereFirst": "Lacks {{fields}}: add it on that site first.",
+      "addThereFirst": "Lacks {{fields}}: add it on that workspace first.",
       "addField_one": "Add \"{{field}}\" to this type",
       "addField_other": "Add \"{{field}}\" to these {{count}} types",
       "addFields_one": "Add the fields to this type",
@@ -2552,8 +2561,8 @@
         "dead": "Failed"
       },
       "scope": "Receives events from",
-      "scopeSite": "This site ({{name}})",
-      "scopeNetwork": "Every site's events; each delivery names its site. Can't be changed later."
+      "scopeSite": "This workspace ({{name}})",
+      "scopeNetwork": "Every workspace's events; each delivery names its workspace. Can't be changed later."
     },
     "deployments": {
       "create": "New connection",
@@ -2721,7 +2730,7 @@
     "lastLogin": "Last sign-in",
     "editRoles": "Change roles",
     "rolesTitle": "Roles for {{name}}",
-    "rolesDescription": "Every app user also holds the roles this site gives to everyone (Public) and to signed-in users (Authenticated).",
+    "rolesDescription": "Every app user also holds the roles this workspace gives to everyone (Public) and to signed-in users (Authenticated).",
     "noCustomRoles": "There are no custom app roles yet. Create one in Settings → Roles → App roles.",
     "rolesSaved": "Roles updated.",
     "resendConfirmation": "Resend confirmation email",
@@ -2915,7 +2924,7 @@
       },
       "healthTitle": "Content health",
       "noHealthFindings": "No open health findings on these entries.",
-      "shared": "Shared, affects every site",
+      "shared": "Shared, affects every workspace",
       "checksPassedAtShip": "Every check passed when this set shipped."
     },
     "consumers": {
@@ -2931,9 +2940,9 @@
       "selection": "How",
       "explicit": "Selects this field",
       "implicit": "Reads the whole model",
-      "site": "Site",
-      "otherSites_one": "Other sites: {{count}} reader, {{reads}} reads",
-      "otherSites_other": "Other sites: {{count}} readers, {{reads}} reads"
+      "site": "Workspace",
+      "otherSites_one": "Other workspaces: {{count}} reader, {{reads}} reads",
+      "otherSites_other": "Other workspaces: {{count}} readers, {{reads}} reads"
     },
     "timeline": {
       "empty": "Nothing has happened yet.",
@@ -2995,7 +3004,7 @@
       "changesRequestedBy": "{{name}} requested changes {{at}}",
       "approvedBy": "Approved by {{name}} {{at}}",
       "outdatedTitle": "Approval outdated: the set changed after {{name}} approved it {{at}}",
-      "requiredTitle": "This site requires approval",
+      "requiredTitle": "This workspace requires approval",
       "requiredDescription": "Ship and Schedule stay off until the change set is approved, and approved again after any edit.",
       "inReviewAt": "In review · {{stage}} {{signed}}/{{required}}",
       "stageProgress": "{{stage}} {{signed}}/{{required}}",
@@ -3099,7 +3108,7 @@
     "apiExplorerTitle": "API explorer",
     "graphql": {
       "title": "GraphQL",
-      "hint": "GraphiQL on this site's GraphQL API, built live from its content types; the Docs panel describes every type and field. Your admin session can read drafts (publicationState: DRAFT); site tokens and visitors only ever see published content.",
+      "hint": "GraphiQL on this workspace's GraphQL API, built live from its content types; the Docs panel describes every type and field. Your admin session can read drafts (publicationState: DRAFT); delivery tokens and visitors only ever see published content.",
       "frame": "GraphiQL playground",
       "unavailable": "GraphiQL is turned off",
       "unavailableDescription": "Set GRAPHQL_ENABLED and GRAPHQL_PLAYGROUND_ENABLED to use it here."
@@ -3319,61 +3328,61 @@
   "sites": {
     "network": "Network",
     "switcher": {
-      "label": "Switch site (current: {{name}})",
-      "sites": "Sites",
-      "allSites": "All sites"
+      "label": "Switch workspace (current: {{name}})",
+      "sites": "Workspaces",
+      "allSites": "All workspaces"
     },
     "noAccess": {
-      "title": "You have no role on this site",
-      "description": "Ask an owner for access, or open a site you work on.",
-      "noSites": "Ask an owner to give you a role on a site."
+      "title": "You have no role on this workspace",
+      "description": "Ask an owner for access, or open a workspace you work on.",
+      "noSites": "Ask an owner to give you a role on a workspace."
     },
     "notFound": {
-      "title": "This site doesn't exist",
+      "title": "This workspace doesn't exist",
       "description": "It may have been deleted, or the address has a typo."
     },
-    "title": "Sites",
-    "count_one": "{{count}} site",
-    "count_other": "{{count}} sites",
-    "create": "New site",
-    "createTitle": "Create site",
+    "title": "Workspaces",
+    "count_one": "{{count}} workspace",
+    "count_other": "{{count}} workspaces",
+    "create": "New workspace",
+    "createTitle": "Create workspace",
     "name": "Name",
     "key": "Key",
-    "keyHint": "The site's key appears in its admin URLs and names the site in API calls (the Shapio-Site header or ?site=).",
-    "keyFixed": "The key can't be changed once the site exists.",
+    "keyHint": "The workspace's key appears in its admin URLs and names the workspace in API calls (the Shapio-Workspace header or ?workspace=).",
+    "keyFixed": "The key can't be changed once the workspace exists.",
     "createdAt": "Created",
-    "created": "Site {{name}} created.",
-    "empty": "No sites yet.",
+    "created": "Workspace {{name}} created.",
+    "empty": "No workspaces yet.",
     "primary": "Primary",
     "open": "Open",
     "openNamed": "Open {{name}}",
     "details": "Details",
-    "renamed": "Site renamed.",
+    "renamed": "Workspace renamed.",
     "appRoles": {
       "title": "App roles",
-      "description": "What everyone, and signed-in app users on top, may do on this site. Signed-in users also hold the Public roles.",
+      "description": "What everyone, and signed-in app users on top, may do on this workspace. Signed-in users also hold the Public roles.",
       "public": "Everyone, signed in or not (public)",
       "authenticated": "Signed-in app users (authenticated)",
       "saved": "App roles saved."
     },
-    "danger": "Delete site",
-    "deleteDescription": "Only an empty site can be deleted.",
-    "delete": "Delete site",
+    "danger": "Delete workspace",
+    "deleteDescription": "Only an empty workspace can be deleted.",
+    "delete": "Delete workspace",
     "deleteTitle": "Delete {{name}}?",
     "deleteConsequence": "Its tokens, webhooks, deployment connections, and role assignments are deleted with it.",
     "deleted": "{{name}} deleted.",
     "primarySite": {
-      "title": "Primary site",
-      "isPrimary": "Requests that name no site read this site. Make another site primary before you delete this one.",
-      "notPrimary": "Requests that name no site read {{primary}}.",
-      "notPrimaryUnknown": "Requests that name no site read the primary site.",
+      "title": "Primary workspace",
+      "isPrimary": "Requests that name no workspace read this workspace. Make another workspace primary before you delete this one.",
+      "notPrimary": "Requests that name no workspace read {{primary}}.",
+      "notPrimaryUnknown": "Requests that name no workspace read the primary workspace.",
       "makePrimary": "Make primary",
-      "confirmTitle": "Make {{name}} the primary site?",
-      "confirmConsequence": "Requests that name no site will read {{name}} instead of {{primary}}, right away. Tokens, webhooks, and app roles stay with their own site.",
-      "confirmConsequenceUnknown": "Requests that name no site will read {{name}} instead of the current primary site, right away. Tokens, webhooks, and app roles stay with their own site.",
-      "made": "{{name}} is now the primary site."
+      "confirmTitle": "Make {{name}} the primary workspace?",
+      "confirmConsequence": "Requests that name no workspace will read {{name}} instead of {{primary}}, right away. Tokens, webhooks, and app roles stay with their own workspace.",
+      "confirmConsequenceUnknown": "Requests that name no workspace will read {{name}} instead of the current primary workspace, right away. Tokens, webhooks, and app roles stay with their own workspace.",
+      "made": "{{name}} is now the primary workspace."
     },
-    "everySite": "Every site"
+    "everySite": "Every workspace"
   },
   "assist": {
     "working": "Writing…",
@@ -3532,8 +3541,8 @@
       "seoFields": "SEO fields",
       "askAdmin": "Ask a network admin to enable SEO.",
       "present": "This content type already has SEO fields.",
-      "enableTitle": "Enable SEO for every site?",
-      "enableDescription": "Adds a shared SEO component to the schema of every site in the network. Each content type still chooses whether to use it.",
+      "enableTitle": "Enable SEO for every workspace?",
+      "enableDescription": "Adds a shared SEO component to the schema of every workspace in the network. Each content type still chooses whether to use it.",
       "enable": "Enable SEO",
       "enabling": "Enabling…",
       "added": "SEO fields added. Review to ship them.",
@@ -3609,21 +3618,21 @@
       "workflow": "Workflow"
     },
     "network": {
-      "defaultTitle": "Default for every site",
-      "defaultDescription": "Sites use it unless they choose otherwise in their change set settings.",
+      "defaultTitle": "Default for every workspace",
+      "defaultDescription": "Workspaces use it unless they choose otherwise in their change set settings.",
       "offDescription": "Change sets ship without approval.",
       "workflowDescription": "Change sets go through these stages before they ship.",
-      "inheriting_one": "{{count}} site inherits this default.",
-      "inheriting_other": "{{count}} sites inherit this default.",
+      "inheriting_one": "{{count}} workspace inherits this default.",
+      "inheriting_other": "{{count}} workspaces inherit this default.",
       "customSites": "Own workflow: {{sites}}.",
       "offSites": "Approval off: {{sites}}."
     },
     "site": {
       "inheritDescription": "Use the network's default.",
       "offDescription": "Change sets ship without approval.",
-      "customDescription": "Stages of this site's own.",
+      "customDescription": "Stages of this workspace's own.",
       "inheritedOff": "The network default has no approval, so change sets ship without it.",
-      "readOnly": "Only admins who may change site settings can change this."
+      "readOnly": "Only admins who may change workspace settings can change this."
     }
   }
 }

@@ -57,7 +57,7 @@ const scopeInUse = (counts: readonly SiteEntryCount[], detailed: boolean) => {
   return new AppError(
     409,
     'SCOPE_IN_USE',
-    `Other sites still have ${total} entr${total === 1 ? 'y' : 'ies'} of this content type; delete them before keeping it on one site.`,
+    `Other workspaces still have ${total} entr${total === 1 ? 'y' : 'ies'} of this content type; delete them before keeping it in one workspace.`,
     // Which sites, only for those who see every site (a site admin learns nothing about the others).
     detailed ? { entries: total, sites: counts } : { entries: total },
   );
@@ -84,7 +84,7 @@ const targetSiteOf = async (
   }
   const siteId = input.siteId ?? context.snapshot.siteId;
   if (!siteId || !(await sitesRepository.findById(siteId, context.db))) {
-    throw new AppError(404, 'SITE_NOT_FOUND', 'No such site');
+    throw new AppError(404, 'SITE_NOT_FOUND', 'No such workspace');
   }
   return siteId;
 };

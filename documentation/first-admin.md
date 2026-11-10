@@ -11,7 +11,9 @@ No admin account yet. Open https://cms.example.com/admin/ to create the owner ac
 ```
 
 Open `/admin/`; it sends you to the Setup screen. Enter your name, email and a password (at least 12
-characters). That creates the first **owner** and signs you in.
+characters), and a name for your first [workspace](workspaces.md) (prefilled "Default workspace"; you can
+rename it later). That creates the first **owner** and signs you in. The workspace's key stays `default`,
+whatever its name. Instances set up before 0.8.2 keep the name they already have.
 
 - The first person to complete Setup becomes the owner, as with WordPress, Ghost or Strapi. Two people
   submitting at the same moment cannot both succeed: exactly one owner is created.
@@ -52,7 +54,8 @@ SHAPIO_ADMIN_PASSWORD='a long passphrase here' npx shapio admin create --email y
 Without `SHAPIO_ADMIN_PASSWORD` a strong password is generated and printed once. `--role` picks another
 built-in or custom role by its key (default `owner`; the built-in keys are `owner`, `admin`, `editor` and
 `read-only`). It needs the migrations applied (`npx shapio migrate`, or start the
-server once). Creating the owner this way closes Setup before anyone else can reach it.
+server once). Creating the owner this way closes Setup before anyone else can reach it. It does not name the
+first workspace; rename it later in Network → Workspaces.
 
 ## Roles
 
@@ -73,20 +76,22 @@ on them in an approval workflow (Network → Approval sets the default, with `si
 report needs `tokens.manage`.
 
 Network → Roles → **New role** names the role; its page then sets the grants: a table of models (every model
-first, then each shared and site model) by action, where **Options** limits an action to the admin's own
+first, then each shared and workspace model) by action, where **Options** limits an action to the admin's own
 entries or to some fields, and the instance permissions below it. A field list names fields of that model only;
 the server refuses others (`UNKNOWN_FIELD`).
 
-On an instance with several [sites](sites.md#permissions-and-assignments), a role is assigned on one site or on
-all sites. `schema.create`, `users.manage`, `roles.manage`, `audit.read`, `sites.manage` and `schemaManage` are
-network permissions: only roles held on all sites grant them. The Owner role is always held on all sites.
+On an instance with several [workspaces](workspaces.md#permissions-and-assignments), a role is assigned in one
+workspace or on all workspaces. `schema.create`, `users.manage`, `roles.manage`, `audit.read`, `sites.manage`
+and `schemaManage` are network permissions: only roles held on all workspaces grant them. The Owner role is
+always held on all workspaces.
 
 ## Your team
 
 Network → Users → **Invite user** sends an invitation link (valid 7 days) by email. Each person has one role per
-site, or one role on all sites; Editor on all sites is preselected. With a single site the form is just the role.
-With several, it lists **Access** rows of a site (or _All sites_) and a role, one row per site. The Owner role
-isn't offered when inviting: invite them with another role, then an owner can give them Owner on all sites from
+workspace, or one role on all workspaces; Editor on all workspaces is preselected. With a single workspace the
+form is just the role. With several, it lists **Access** rows of a workspace (or _All workspaces_) and a role,
+one row per workspace. The Owner role isn't offered when inviting: invite them with another role, then an owner
+can give them Owner on all workspaces from
 the user's row (**Change access**). Password reset emails work the same way (links valid one hour).
 
 ### Inviting people without email
@@ -113,7 +118,7 @@ use it.
   ([Schema sync](schema-sync.md)).
 - **Components**: the reusable groups of fields content types are built from ([Modeling](modeling.md)).
 - **API explorer**: every delivery endpoint, sent as a site would send it, with curl and fetch snippets.
-- **GraphQL**: GraphiQL on this site's schema, with the docs for every type and field
+- **GraphQL**: GraphiQL on this workspace's schema, with the docs for every type and field
   ([GraphQL](graphql.md#playground)).
 - **Live**: who reads what: which content types and fields your sites and apps request.
 - **API tokens** and **Webhooks**.
@@ -127,8 +132,8 @@ Settings → API tokens creates a token bound to one role. It is shown once; Sha
 - A **delivery** token (bound to a delivery role, which can only grant `read`) is what your site's build uses
   to read published content. See [Delivery API](delivery-api.md#tokens).
 
-Tokens belong to the site they are created on. An admin with `users.manage` can instead create a **network**
-admin token, which works on every site ([Sites](sites.md#api-tokens)).
+Tokens belong to the workspace they are created in. An admin with `users.manage` can instead create a
+**network** admin token, which works in every workspace ([Workspaces](workspaces.md#api-tokens)).
 
 Tokens stop working while the admin who created them is disabled, and are revoked when that admin is deleted;
 Network → Users names them before you confirm, so you can replace a site's delivery token first.

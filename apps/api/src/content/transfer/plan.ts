@@ -593,7 +593,7 @@ const planPrune = async (acc: Accumulator, siteId: string) => {
 /** The import's target site: transfer routes are site routes, so the context is that site's view. */
 const siteOf = (context: SchemaServiceContext): string => {
   if (context.snapshot.siteId === null) {
-    throw new Error('An import plan needs the target site’s view of the schema');
+    throw new Error('An import plan needs the target workspace’s view of the schema');
   }
   return context.snapshot.siteId;
 };

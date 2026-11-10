@@ -212,7 +212,7 @@ export type SchemaDraft = {
   baseVersion: number | null;
   /** Null when the draft deletes the definition. */
   definition: SchemaDefinition | null;
-  /** A new definition the draft creates shared with all sites (otherwise it belongs to the set's site). */
+  /** A new definition the draft creates shared with all workspaces (otherwise it belongs to the set's workspace). */
   shared: boolean;
   version: number;
   updatedBy: ChangeSetActor;
@@ -226,7 +226,7 @@ export type PutSchemaDraftInput = {
   definition: DefinitionPayload | null;
   /** The active version the edit is based on (null: a new definition). */
   baseVersion: number | null;
-  /** For a new definition: create it shared with all sites (default false: the set's site). */
+  /** For a new definition: create it shared with all workspaces (default false: the set's workspace). */
   shared?: boolean;
   /** The draft row version the caller saw; omit when creating the draft. */
   expectedDraftVersion?: number;
@@ -276,7 +276,9 @@ export type ReviewSchemaItem = {
   stale: boolean;
   plan: ChangePlan | null;
   impact: PlanImpact | null;
-  /** Entries of the affected models per site (a shared definition converts every site's content). */
+  /**
+   * Entries of the affected models per workspace (a shared definition converts every workspace's content).
+   */
   affectedEntriesBySite: Array<{ site: SiteRef; entries: number }>;
   issues: ReviewIssue[];
   alsoChangedIn: Array<{ id: string; title: string }>;
@@ -306,7 +308,7 @@ export type NotRestorable = {
 };
 
 export type FieldConsumer = {
-  /** The site the reads were made on. */
+  /** The workspace the reads were made on. */
   site: SiteRef;
   /** `token:<id>`, `app_users` or `anonymous`. */
   principalKey: string;
@@ -323,8 +325,8 @@ export type FieldConsumers = {
   apiKey: string;
   consumers: FieldConsumer[];
   /**
-   * Readers on other sites, as totals, when the viewer holds no role on every site; null when the viewer
-   * sees every site's readers in `consumers`.
+   * Readers on other workspaces, as totals, when the viewer holds no role on every workspace; null when the
+   * viewer sees every workspace's readers in `consumers`.
    */
   otherSites: { consumers: number; reads: number } | null;
 };

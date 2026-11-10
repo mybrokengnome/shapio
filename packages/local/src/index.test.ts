@@ -21,11 +21,11 @@ describe('createLocalClient', () => {
     );
   });
 
-  it("gives the client's delivery, site and snapshot groups, and a close that shares the pool", async () => {
+  it("gives the client's read groups and a close that shares the pool", async () => {
     // Nothing connects until the first read.
     const first = createLocalClient({ databaseUrl: 'postgres://localhost/local-unit' });
     const second = createLocalClient({ databaseUrl: 'postgres://localhost/local-unit', token: 'shp_x' });
-    expect(Object.keys(first).sort()).toEqual(['close', 'delivery', 'site', 'snapshots']);
+    expect(Object.keys(first).sort()).toEqual(['close', 'delivery', 'site', 'snapshots', 'workspace']);
     await first.close();
     await second.close();
   });

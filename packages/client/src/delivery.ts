@@ -52,7 +52,7 @@ const draftsPinned = () =>
  * extends another is read by its nested route key (`delivery.list('posts/guides')`); a parent's list
  * holds every kind, each entry naming its own in `__model`. Each read
  * takes Next.js cache options last and is tagged for `revalidateTag` (nextCache.ts): lists and singletons with
- * the site and model tags, `get` with the entry's tag too. In drafts mode (`drafts: true`) every read asks for
+ * the workspace and model tags, `get` with the entry's tag too. In drafts mode (`drafts: true`) every read asks for
  * drafts (`publicationState=draft`), is never cached or tagged under Next, and refuses a pinned snapshot.
  */
 export const createDeliveryApi = (request: RequestFn, cacheContext: DeliveryCacheContext) => {

@@ -26,7 +26,12 @@ const ARTICLE_FIELDS = ['title', 'slug', 'excerpt', 'body', 'cover', 'author', '
 const SITE_SETTINGS_FIELDS = ['siteName', 'tagline', 'footer', 'colophon'];
 
 const createShapio = () =>
-  createClient({ baseUrl: shapioUrl(), token: deliveryToken(), site: siteKey(), drafts: isDraftsMode() });
+  createClient({
+    baseUrl: shapioUrl(),
+    token: deliveryToken(),
+    workspace: siteKey(),
+    drafts: isDraftsMode(),
+  });
 
 let client: ReturnType<typeof createShapio> | undefined;
 const shapio = () => (client ??= createShapio());
@@ -124,7 +129,7 @@ const readSiteSettings = async (locale: Locale): Promise<SiteSettings | null> =>
 export const getSite = (): Promise<DeliverySite | null> =>
   once('site', async () => {
     try {
-      return await shapio().site.get();
+      return await shapio().workspace.get();
     } catch (error) {
       if (error instanceof ShapioApiError && error.status === 404) {
         return null;

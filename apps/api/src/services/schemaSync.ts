@@ -138,7 +138,7 @@ const parseLocalDefinitions = async (
       issues.push({
         path: `/definitions/${index}/id`,
         code: 'DUPLICATE_ID',
-        message: 'the ID belongs to another site’s definition',
+        message: 'the ID belongs to another workspace’s definition',
       });
       continue;
     }
@@ -318,7 +318,7 @@ const authorizeActions = async (
     throw new AppError(
       403,
       'FORBIDDEN_SCOPE',
-      'Your role does not allow some of these changes (shared definitions need schema permission on every site). Nothing was applied.',
+      'Your role does not allow some of these changes (shared definitions need schema permission on every workspace). Nothing was applied.',
       { items: refused },
     );
   }
@@ -426,7 +426,7 @@ const assertLockCoversSite = (input: SyncApplyInput, siteKey: string | null) => 
     throw new AppError(
       409,
       'LOCK_SITE_MISMATCH',
-      `These schema files were pulled for ${sites.map((key) => `"${key}"`).join(', ')}, not "${siteKey}". Apply them with --site, or pull this site first.`,
+      `These schema files were pulled for ${sites.map((key) => `"${key}"`).join(', ')}, not "${siteKey}". Apply them with --workspace (--site on an older CLI), or pull this workspace first.`,
       { sites, site: siteKey },
     );
   }

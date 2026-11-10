@@ -38,7 +38,7 @@ export const schemaCommand: CliCommand = {
         return 1;
       }
       if (error instanceof ShapioApiError) {
-        // Refusals outside an apply (an unknown site, a scope change in use, a stale version): readable, not a stack.
+        // Refusals outside an apply (an unknown workspace, a scope change in use, a stale version): readable, not a stack.
         io.stderr(formatApiError(error, [], new Map()));
         return 1;
       }

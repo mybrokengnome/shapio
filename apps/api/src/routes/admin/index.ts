@@ -24,7 +24,10 @@ export const adminIdentityRoutes: FastifyPluginAsyncTypebox = async (app) => {
   await app.register(adminAuditRoutes, { prefix: '/audit' });
   await app.register(adminEditingRoutes);
   await app.register(adminUsageRoutes, { prefix: '/usage' });
+  // Workspaces (code: sites), under their name and their original one: both answer, same handlers and schemas.
+  await app.register(adminSitesRoutes, { prefix: '/workspaces' });
   await app.register(adminSitesRoutes, { prefix: '/sites' });
+  await app.register(adminSiteRoutes, { prefix: '/workspace' });
   await app.register(adminSiteRoutes, { prefix: '/site' });
   await app.register(adminNetworkRoutes, { prefix: '/network' });
 };

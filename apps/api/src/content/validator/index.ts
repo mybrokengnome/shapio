@@ -470,7 +470,7 @@ const orList = (items: readonly string[]): string =>
 /** What an interface or any-entry relation accepts, in words; undefined for a model target. */
 const acceptsInWords = (snapshot: SchemaById, target: RelationTarget): string | undefined => {
   if (target.kind === 'any') {
-    return 'an entry of this site';
+    return 'an entry of this workspace';
   }
   if (target.kind === 'model') {
     return undefined;

@@ -42,6 +42,14 @@ describe('rewritePackageJson', () => {
     expect(findRepositoryMarkers(JSON.stringify(rewritten))).toEqual([]);
   });
 
+  it('finds the pnpm protocols in package.json but not a `workspace` option in code', () => {
+    expect(findRepositoryMarkers('{"@shapio/client":"workspace:*","next":"catalog:"}')).toEqual([
+      '"workspace:',
+      '"catalog:',
+    ]);
+    expect(findRepositoryMarkers('createClient({ baseUrl, workspace: siteKey() });')).toEqual([]);
+  });
+
   it.each([
     [{ dependencies: { '@shapio/unknown': 'workspace:*' } }, /no workspace package/],
     [{ dependencies: { svelte: 'catalog:' } }, /no entry for it/],

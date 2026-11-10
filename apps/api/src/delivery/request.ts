@@ -1,11 +1,9 @@
 import { createClient, ShapioApiError, type RequestFn, type RequestOptions } from '@shapio/client';
 import { Value } from 'typebox/value';
-import { SITE_QUERY_PARAMETER } from '../constants/sites.js';
 import { apiKeyOfRoute } from '../content/model.js';
-import { AppError } from '../helpers/appError.js';
 import { splitContentPath } from '../helpers/contentRoutes.js';
 import type { ErrorLike } from '../helpers/errorResponse.js';
-import { withoutSiteParameter } from '../helpers/siteQuery.js';
+import { pickSiteKey, rawSiteQueryCandidates, withoutSiteParameter } from '../helpers/siteQuery.js';
 import { SnapshotChangesQuerySchema, type SnapshotChangesQuery } from '../routes/snapshots/schemas.js';
 import type { ContentServiceContext } from '../services/contentAccess.js';
 import { getDelivery, listDelivery } from '../services/contentDelivery.js';
@@ -22,7 +20,7 @@ import { openCallScope, type CallCredentials } from './scope.js';
  *
  * - `GET /api/content/:routeKey` (a collection's page, or a singleton's entry)
  * - `GET /api/content/:routeKey/:id`
- * - `GET /api/site`
+ * - `GET /api/workspace` (and its original spelling, `GET /api/site`)
  * - `GET /api/snapshots/current`
  * - `GET /api/snapshots/changes`
  *
@@ -35,7 +33,10 @@ export type DeliveryRoute =
   | { kind: 'snapshotCurrent' }
   | { kind: 'snapshotChanges' };
 
-/** A matched path: the route, its querystring without `site`, and the site the path names, if any. */
+/**
+ * A matched path: the route, its querystring without `workspace` and `site`, and the workspace the path names
+ * (`?workspace=` or `?site=`), if any.
+ */
 export type MatchedRequest = { route: DeliveryRoute; query: string; site: string | undefined };
 
 /**
@@ -65,7 +66,7 @@ const routeOf = (segments: readonly string[]): DeliveryRoute | undefined => {
   if (rest.length > 0) {
     return undefined;
   }
-  if (group === 'site' && first === undefined) {
+  if ((group === 'workspace' || group === 'site') && first === undefined) {
     return { kind: 'site' };
   }
   if (group === 'snapshots' && second === undefined) {
@@ -79,7 +80,10 @@ const routeOf = (segments: readonly string[]): DeliveryRoute | undefined => {
   return undefined;
 };
 
-/** Matches a delivery read; undefined for any other method or path. */
+/**
+ * Matches a delivery read; undefined for any other method or path. Throws, as over HTTP, when `?workspace=` and
+ * `?site=` name different workspaces (403 `SITE_MISMATCH`) or one is repeated (400).
+ */
 export const matchDeliveryRequest = (method: string, path: string): MatchedRequest | undefined => {
   if (method.toUpperCase() !== 'GET') {
     return undefined;
@@ -94,8 +98,8 @@ export const matchDeliveryRequest = (method: string, path: string): MatchedReque
   if (!route) {
     return undefined;
   }
-  // An empty `?site=` names no site, as over HTTP.
-  const site = new URLSearchParams(rawQuery).get(SITE_QUERY_PARAMETER) || undefined;
+  // An empty `?workspace=` or `?site=` names no workspace, as over HTTP.
+  const site = pickSiteKey(rawSiteQueryCandidates(rawQuery));
   return { route, query: withoutSiteParameter(rawQuery), site };
 };
 
@@ -107,13 +111,12 @@ const notAvailable = (method: string, path: string) =>
     },
   });
 
-/** The site a call reads: the path's `?site=` or the credentials' site; both must agree. */
-const siteOf = (pathSite: string | undefined, credentialsSite: string | undefined): string | undefined => {
-  if (pathSite !== undefined && credentialsSite !== undefined && pathSite !== credentialsSite) {
-    throw new AppError(403, 'SITE_MISMATCH', 'The site option and ?site= name different sites');
-  }
-  return pathSite ?? credentialsSite;
-};
+/** The workspace a call reads: the path's (`?workspace=` or `?site=`) or the credentials'; both must agree. */
+const siteOf = (pathSite: string | undefined, credentialsSite: string | undefined): string | undefined =>
+  pickSiteKey([
+    { source: 'the query', value: pathSite },
+    { source: 'the workspace option', value: credentialsSite },
+  ]);
 
 /** `?from&to&after&limit`, coerced and checked against the HTTP route's own schema. */
 const snapshotChangesQuery = (rawQuery: string): SnapshotChangesQuery => {
@@ -178,7 +181,12 @@ export const createInProcessRequest = (runtime: DeliveryRuntime, credentials: Ca
 
   return async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
     const method = options.method ?? 'GET';
-    const matched = matchDeliveryRequest(method, path);
+    let matched: MatchedRequest | undefined;
+    try {
+      matched = matchDeliveryRequest(method, path);
+    } catch (error) {
+      throw toShapioApiError(error, runtime.log);
+    }
     if (!matched) {
       throw notAvailable(method, path);
     }

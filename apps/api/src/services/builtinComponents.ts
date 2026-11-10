@@ -35,7 +35,7 @@ const conflictOf = async (context: SchemaServiceContext) => {
     return undefined;
   }
   const siteKey = taken.siteId === null ? null : ((await loadSiteKeys(context.db)).get(taken.siteId) ?? null);
-  const where = siteKey === null ? 'shared with all sites' : `on site "${siteKey}"`;
+  const where = siteKey === null ? 'shared with all workspaces' : `in workspace "${siteKey}"`;
   return new AppError(
     409,
     'SEO_COMPONENT_CONFLICT',
@@ -57,7 +57,7 @@ const elsewhere = () =>
   new AppError(
     409,
     'SEO_COMPONENT_CONFLICT',
-    'The SEO component is kept on another site. A network admin can share it with all sites.',
+    'The SEO component is kept in another workspace. A network admin can share it with all workspaces.',
     { definitionId: SEO_COMPONENT_ID, scope: 'site' },
   );
 

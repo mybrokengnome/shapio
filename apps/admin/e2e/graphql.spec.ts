@@ -198,7 +198,7 @@ test('on another site the frame names that site', async () => {
   await expect(page.getByRole('heading', { level: 1, name: 'GraphQL' })).toBeVisible();
   await expect(page.locator(FRAME)).toHaveAttribute(
     'src',
-    new RegExp(`${PLAYGROUND_PATH}\\?site=${SITE.key}&theme=dark$`),
+    new RegExp(`${PLAYGROUND_PATH}\\?workspace=${SITE.key}&theme=dark$`),
   );
   await expectGraphiql();
 });

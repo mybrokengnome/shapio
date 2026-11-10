@@ -203,7 +203,7 @@ describe('delivery per site', () => {
 
     it('varies cacheable responses on Shapio-Site', async () => {
       const response = await get('/api/content/posts', { [SITE_HEADER]: 'default' });
-      expect(response.headers.vary).toBe('Authorization, Cookie, Shapio-Site');
+      expect(response.headers.vary).toBe('Authorization, Cookie, Shapio-Workspace, Shapio-Site');
     });
   });
 
@@ -215,10 +215,10 @@ describe('delivery per site', () => {
     try {
       const origin = { origin: 'https://site.example' };
       const rest = await corsApp.app.inject({ method: 'GET', url: '/api/content/posts', headers: origin });
-      expect(rest.headers.vary).toBe('Origin, Authorization, Cookie, Shapio-Site');
+      expect(rest.headers.vary).toBe('Origin, Authorization, Cookie, Shapio-Workspace, Shapio-Site');
       const query = new URLSearchParams({ query: '{ _snapshot { snapshot } }' }).toString();
       const gql = await corsApp.app.inject({ method: 'GET', url: `/api/graphql?${query}`, headers: origin });
-      expect(gql.headers.vary).toBe('Origin, Authorization, Cookie, Shapio-Site');
+      expect(gql.headers.vary).toBe('Origin, Authorization, Cookie, Shapio-Workspace, Shapio-Site');
     } finally {
       await corsApp.app.close();
     }
@@ -305,7 +305,7 @@ describe('delivery per site', () => {
         headers: { [SITE_HEADER]: 'default' },
       });
       expect(network.statusCode).toBe(200);
-      expect(network.response.headers.vary).toBe('Authorization, Cookie, Shapio-Site');
+      expect(network.response.headers.vary).toBe('Authorization, Cookie, Shapio-Workspace, Shapio-Site');
       const viaQuery = await get(
         `/api/graphql?${new URLSearchParams({ query: QUERY, site: 'marketing' }).toString()}`,
         bearer(tokens.marketing),

@@ -3,6 +3,7 @@ import { createAppAuthApi } from './appAuth/index.js';
 import { createDeliveryClient } from './deliveryClient.js';
 import type { NextCacheOptions } from './nextCache.js';
 import { createRequest, type FetchCredentials } from './request.js';
+import { resolveWorkspaceOption } from './site.js';
 import type { HealthResponse, ReadyResponse, VersionResponse } from './types.js';
 
 export type ShapioClientOptions = {
@@ -17,10 +18,13 @@ export type ShapioClientOptions = {
   /** Extra headers computed per request (the admin's CSRF token). */
   headers?: () => Readonly<Record<string, string>>;
   /**
-   * The site key (multi-site instances). Delivery reads send it as `?site=`, every other request as the
-   * `Shapio-Site` header. Leave it out to use the token's site, else the primary site. A site token only
-   * ever reads its own site: naming another one is refused (403 `SITE_MISMATCH`).
+   * The workspace key (instances with several workspaces). Delivery reads send it as `?site=`, every other
+   * request as the `Shapio-Site` header (the spellings every server version reads). Leave it out to use the
+   * token's workspace, else the primary workspace. A workspace token only ever reads its own workspace:
+   * naming another one is refused (403 `SITE_MISMATCH`).
    */
+  workspace?: string;
+  /** The older name of `workspace`. Both set to different keys throws. */
   site?: string;
   /**
    * Next.js data-cache options for delivery reads (`delivery.*`, `site.get`), e.g. `{ cache: 'force-cache' }`.
@@ -30,7 +34,7 @@ export type ShapioClientOptions = {
    */
   next?: NextCacheOptions | false;
   /**
-   * Drafts mode, for a site's development server: every delivery read asks for drafts
+   * Drafts mode, for a website's development server: every delivery read asks for drafts
    * (`publicationState=draft`) instead of published content, and under Next is never cached or tagged. Needs
    * a delivery token whose role grants Read drafts (the server refuses others with 403 `DRAFTS_FORBIDDEN`);
    * never set it on a production build. Reads pinned to a `snapshot` are refused. `snapshots` is unaffected.
@@ -44,10 +48,12 @@ export const createClient = ({
   fetch = globalThis.fetch,
   credentials,
   headers,
-  site,
+  workspace,
+  site: siteOption,
   next,
   drafts,
 }: ShapioClientOptions) => {
+  const site = resolveWorkspaceOption({ workspace, site: siteOption }, 'createClient');
   const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
   const reads = createDeliveryClient(request, { site, next, ...(drafts !== undefined ? { drafts } : {}) });
 
@@ -65,12 +71,14 @@ export const createClient = ({
     },
     /** Published content (the delivery API), typed by the caller. */
     delivery: reads.delivery,
-    /** The site as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
+    /** The workspace as delivery sees it: key, name and SEO defaults (`GET /api/site`). */
+    workspace: reads.workspace,
+    /** The older name of `workspace`. */
     site: reads.site,
     admin: createAdminApi(request),
     /** Publication snapshots and the diff between two (incremental builds). */
     snapshots: reads.snapshots,
-    /** End users of your sites and apps: sign-up, sign-in, tokens, OAuth. */
+    /** End users of your websites and apps: sign-up, sign-in, tokens, OAuth. */
     appAuth: createAppAuthApi(request, baseUrl),
   };
 };

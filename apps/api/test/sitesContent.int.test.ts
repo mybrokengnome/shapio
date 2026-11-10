@@ -165,7 +165,7 @@ describe('content per site', () => {
     const [issue, ...others] = response.json<IssuesBody>().error.details.issues;
     expect(others).toEqual([]);
     expect(issue).toMatchObject({ path: '/tag', code: 'RELATION_TARGET_MISSING' });
-    expect(issue?.message).toContain('on this site');
+    expect(issue?.message).toContain('in this workspace');
     const ownTag = await create(marketing, 'tag', { name: 'Here' });
     await create(marketing, 'article', { title: 'Linked here', tag: ownTag.id });
   });
@@ -205,7 +205,7 @@ describe('content per site', () => {
       expect.objectContaining({
         path: '/cover',
         code: 'MEDIA_MISSING',
-        message: `media asset ${assetId} does not exist on this site`,
+        message: `media asset ${assetId} does not exist in this workspace`,
       }),
     ]);
     await create(marketing, 'article', { title: 'With cover', cover: assetId });

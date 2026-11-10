@@ -13,9 +13,9 @@ import type { DefinitionScope } from './schemaTypes.js';
  */
 export type SchemaExport = {
   schemaVersion: number;
-  /** The site whose view this is (shared definitions and its own); null on a network request. */
+  /** The workspace whose view this is (shared definitions and its own); null on a network request. */
   site: { id: string; key: string } | null;
-  /** Each with its scope: `site` is the site key, null when shared. */
+  /** Each with its scope: `site` is the workspace key, null when shared. */
   definitions: ExportedDefinition[];
 };
 
@@ -39,7 +39,7 @@ export type SchemaApplyInput = {
   definitions: unknown[];
   /**
    * Each file's scope, parallel to `definitions` (its folder: `models/` → network, `sites/<key>/` →
-   * site). Omit for a tree without site folders: every file is shared. Only creates use it.
+   * that workspace). Omit for a tree without workspace folders: every file is shared. Only creates use it.
    */
   scopes?: DefinitionScope[];
   /** The lock file the files came from: the versions the local copy is based on. */

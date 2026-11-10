@@ -13,12 +13,13 @@ sets for someone else to ship: give it to API tokens used by coding agents ([MCP
 needs `changes.approve` (every role that can ship has it by default; see [Approval](#approval)).
 Adding an entry to a set needs `update` on its model; whoever ships the set needs `publish` on it.
 
-On an instance with several [sites](sites.md), change sets and snapshot numbers are per site: a set holds its
-site's entries only and ships as one snapshot there. Its schema items are drafts of definitions in the site's
-view. A draft of the site's own content type needs schema permission on that site, and converts content on that
-site only. A draft of a shared one (or of a new definition created shared) needs schema permission held on all
-sites and is marked "Shared, affects every site": its review lists affected entries per site, and a conversion
-takes a snapshot on every site whose published content it changes, recorded there as a conversion naming the
+On an instance with several [workspaces](workspaces.md), change sets and snapshot numbers are per workspace: a
+set holds its workspace's entries only and ships as one snapshot there. Its schema items are drafts of
+definitions in the workspace's view. A draft of the workspace's own content type needs schema permission in that
+workspace, and converts content in that workspace only. A draft of a shared one (or of a new definition created
+shared) needs schema permission held on all workspaces and is marked "Shared, affects every workspace": its
+review lists affected entries per workspace, and a conversion takes a snapshot in every workspace whose
+published content it changes, recorded there as a conversion naming the
 set.
 
 ## A change set
@@ -104,23 +105,24 @@ A change set can go through an **approval workflow** before it ships: an ordered
 which roles may sign off and how many sign-offs it needs, plus whether people may approve their own change
 sets.
 
-- **Where the workflow comes from.** **Network → Approval** (needs `sites.manage`) sets the default every site
-  inherits; off by default. Turning the default off keeps its workflow, so turning it back on restores it.
-  **Settings → Change sets** (needs `site.settings`) chooses, per site, the network
-  default, Off, or a workflow of the site's own. A site with a workflow (its own or the inherited one) requires
-  an approved set before anything ships or is scheduled; a site with none ships without approval.
-- **Stages.** One to ten, in order. A stage names admin roles (none: anyone who may approve on the site) and
-  needs 1 to 20 sign-offs from different people. A role counts when it is held on the site or on every site; an
-  API token counts with its one role. A role named by a workflow in use (the default while it is on, or a site's
-  own while the site uses it) cannot be deleted; a workflow kept while off is checked again when it is turned on.
-- **Request approval** (needs `changes.manage`) sends an open set for review with an optional note. The site's
+- **Where the workflow comes from.** **Network → Approval** (needs `sites.manage`) sets the default every
+  workspace inherits; off by default. Turning the default off keeps its workflow, so turning it back on restores it.
+  **Settings → Change sets** (needs `site.settings`) chooses, per workspace, the
+  network default, Off, or a workflow of the workspace's own. A workspace with a workflow (its own or the
+  inherited one) requires an approved set before anything ships or is scheduled; a workspace with none ships
+  without approval.
+- **Stages.** One to ten, in order. A stage names admin roles (none: anyone who may approve in the workspace)
+  and needs 1 to 20 sign-offs from different people. A role counts when it is held on the workspace or on every
+  workspace; an API token counts with its one role. A role named by a workflow in use (the default while it is
+  on, or a workspace's own while the workspace uses it) cannot be deleted; a workflow kept while off is checked again when it is turned on.
+- **Request approval** (needs `changes.manage`) sends an open set for review with an optional note. The workspace's
   workflow is frozen on the set at that moment, so editing a workflow never changes a review in flight; asking
   again later starts a new round under the workflow that applies then.
 - **Review** (needs `changes.approve`) signs off at the current stage, or requests changes with a note at any
   stage, which ends the round. You may sign when the stage names one of your roles, you have not signed this
   stage yet, and, unless the workflow allows it, you neither created the set nor asked for its approval. When a
   stage has its sign-offs the review moves to the next one; after the last stage the set is approved. There is
-  no owner override: an owner who holds none of the stage's roles cannot sign it (switching the site to Off,
+  no owner override: an owner who holds none of the stage's roles cannot sign it (switching the workspace to Off,
   which is audited, is the way past a workflow). Upgrading gives `changes.approve` to every role that holds
   `changes.ship`.
 - **Pinned to what the set holds.** Sign-offs are given for the set's items, the draft of each entry it
@@ -194,9 +196,10 @@ restore a newer snapshot if you hit that (`422 CHANGE_SET_TOO_LARGE`).
 Shapio counts which fields your sites and apps actually read, so a breaking change shows who it breaks before
 you ship it. Every delivery read (REST and GraphQL) adds to a counter per day, per model, per field, per reader:
 each API token by name, app users as one group, anonymous callers as one group. Admin users, admin API tokens and
-previews are not counted. Counters are kept per [site](sites.md). **Develop → Live** shows who reads what; the change set review shows the readers of
-the fields a breaking change touches: for a site's own content type that site's readers, for a shared one the
-readers on every site (each labeled with its site, or the other sites as totals for admins of one site).
+previews are not counted. Counters are kept per [workspace](workspaces.md). **Develop → Live** shows who reads what; the change set review shows the readers of
+the fields a breaking change touches: for a workspace's own content type that workspace's readers, for a shared one
+the readers in every workspace (each labeled with its workspace, or the other workspaces as totals for admins
+of one workspace).
 
 Ask for the fields you use (`fields=` in REST, a selection in GraphQL). A REST read without `fields=` counts
 every field as used, shown as "reads the whole model", which hides what a site really depends on.
@@ -241,11 +244,11 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `POST …/:id/ship`                                  | `{ expectedVersion, acknowledgeBreaking?, acknowledgeDestructive?, itemVersions? }`    |
 | `POST …/:id/schedule`, `POST …/:id/unschedule`     | `{ at, expectedVersion, acknowledge… }`                                                |
 | `POST …/:id/discard`                               |                                                                                        |
-| `POST …/:id/approval/request`                      | `{ note? }`: freeze the site's workflow and start a round (`changes.manage`)           |
+| `POST …/:id/approval/request`                      | `{ note? }`: freeze the workspace's workflow and start a round (`changes.manage`)      |
 | `POST …/:id/approval/approve`                      | `{ note? }`: sign off at the current stage (`changes.approve`)                         |
 | `POST …/:id/approval/request-changes`              | `{ note }`: send back with what to change (`changes.approve`)                          |
 | `POST …/:id/approval/clear`                        | back to no approval (`changes.manage`)                                                 |
-| `GET`, `PUT /api/admin/site/change-sets`           | the site's approval: `{ expectedVersion, mode, workflow? }` to change                  |
+| `GET`, `PUT /api/admin/workspace/change-sets`      | the workspace's approval: `{ expectedVersion, mode, workflow? }` to change             |
 | `GET`, `PUT /api/admin/network/approval`           | the default workflow: `{ expectedVersion, mode, workflow? }` (`sites.manage`)          |
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
@@ -268,16 +271,16 @@ have a `nextCursor`.
 
 A workflow is `{ stages: [{ id?, name, roleIds, required }], selfApproval? }` (1 to 10 stages; a name of 1 to
 100 characters; admin role IDs, none meaning anyone who may approve; `required` 1 to 20; the server assigns
-an `id` to a new stage). `GET /api/admin/site/change-sets` answers `{ version, mode, workflow, inherited,
+an `id` to a new stage). `GET /api/admin/workspace/change-sets` answers `{ version, mode, workflow, inherited,
 effective, unknownRoleIds }`, with `mode` one of `inherit`, `off`, or `custom`; a `PUT` without `workflow` keeps
-the site's stored one. `GET /api/admin/network/approval` answers `{ version, mode, workflow, unknownRoleIds, sites: { inheriting,
-custom, off } }`; `version` 0 means it was never saved. `mode` is `custom` (inheriting sites follow the workflow)
+the workspace's stored one. `GET /api/admin/network/approval` answers `{ version, mode, workflow, unknownRoleIds, sites: { inheriting,
+custom, off } }`; `version` 0 means it was never saved. `mode` is `custom` (inheriting workspaces follow the workflow)
 or `off` (they ship without approval); turning it off keeps the stored workflow, and a `PUT` without `workflow`
-keeps the stored one, so switching back to `custom` restores it. The site list's `requireApproval` says whether a site has an effective workflow.
+keeps the stored one, so switching back to `custom` restores it. The workspace list's `requireApproval` says whether a workspace has an effective workflow.
 
-Where the site requires approval, `ship` and `schedule` refuse with `409 CHANGE_SET_NOT_APPROVED` or `409
-CHANGE_SET_APPROVAL_STALE`. Approval steps refuse with `409 CHANGE_SET_APPROVAL_NOT_CONFIGURED` (the site has
-no workflow), `409 CHANGE_SET_APPROVAL_NOT_REQUESTED` (signing a set not in review), `409
+Where the workspace requires approval, `ship` and `schedule` refuse with `409 CHANGE_SET_NOT_APPROVED` or `409
+CHANGE_SET_APPROVAL_STALE`. Approval steps refuse with `409 CHANGE_SET_APPROVAL_NOT_CONFIGURED` (the workspace
+has no workflow), `409 CHANGE_SET_APPROVAL_NOT_REQUESTED` (signing a set not in review), `409
 CHANGE_SET_APPROVAL_STALE` (signing an outdated review), `403 CHANGE_SET_APPROVAL_NOT_ELIGIBLE` with
 `details.reason` (`role`, `self`, `signed`, or `rolesDeleted`), and `409 CHANGE_SET_STATE` on a set that is
 scheduled, shipping, shipped, or discarded (clearing is allowed on a shipped set). Saving a workflow that names

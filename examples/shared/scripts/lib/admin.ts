@@ -3,12 +3,13 @@ import { createClient, type ShapioClient } from '@shapio/client';
 /**
  * How the seed talks to Shapio's admin API: with SHAPIO_TOKEN (an admin API token), or with
  * SHAPIO_ADMIN_EMAIL + SHAPIO_ADMIN_PASSWORD, in which case it signs in, creates a one-hour admin API token
- * for itself (the schema CLI needs a bearer token) and revokes it when done. Every request is about the site
- * in SHAPIO_SITE (the one the starter reads), else the token's site, else the primary site.
+ * for itself (the schema CLI needs a bearer token) and revokes it when done. Every request is about the
+ * workspace in SHAPIO_WORKSPACE (else SHAPIO_SITE, its name before Shapio 0.8.2; the one the starter reads),
+ * else the token's workspace, else the primary workspace.
  */
 export type AdminConnection = {
   url: string;
-  /** SHAPIO_SITE, if set: the site every request is about. */
+  /** SHAPIO_WORKSPACE (else SHAPIO_SITE), if set: the workspace every request is about. */
   site: string | undefined;
   token: string;
   client: ShapioClient;
@@ -37,14 +38,14 @@ const signIn = async (url: string, email: string, password: string, site: string
   return createClient({
     baseUrl: url,
     headers: () => ({ cookie: cookie.split(';')[0] ?? '', 'x-csrf-token': csrfToken }),
-    ...(site ? { site } : {}),
+    ...(site ? { workspace: site } : {}),
   });
 };
 
 export const connectAdmin = async (env: NodeJS.ProcessEnv): Promise<AdminConnection> => {
   const url = env.SHAPIO_URL ?? 'http://localhost:4300';
-  const site = env.SHAPIO_SITE?.trim() || undefined;
-  const siteOption = site ? { site } : {};
+  const site = env.SHAPIO_WORKSPACE?.trim() || env.SHAPIO_SITE?.trim() || undefined;
+  const siteOption = site ? { workspace: site } : {};
   if (env.SHAPIO_TOKEN) {
     return {
       url,

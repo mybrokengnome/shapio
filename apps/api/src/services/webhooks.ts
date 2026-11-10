@@ -130,7 +130,7 @@ export const getWebhook = async (
 };
 
 const networkForbidden = () =>
-  new AppError(403, 'FORBIDDEN', 'Network webhooks need webhooks.manage on every site');
+  new AppError(403, 'FORBIDDEN', 'Network webhooks need webhooks.manage on every workspace');
 
 const assertNetworkManager = async (context: WebhookContext) => {
   if (!(await canPerformOnEverySite(context.permissions, context.actor, 'webhooks.manage'))) {

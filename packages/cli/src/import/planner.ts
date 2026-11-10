@@ -190,9 +190,9 @@ const plannedMap = (
 /**
  * `--plan`: writes one pull-format schema file per planned definition under `<dir>/schema`, an empty lock file
  * beside them (so `schema apply` treats every definition as new and leaves the project's own lock alone), and
- * `import-map.json`. Nothing is sent to an instance. With `site` (`--site` / SHAPIO_SITE) the files go under
- * `schema/sites/<site>/`, so `schema apply --site <site>` creates them on that site; without one they go in
- * the shared folders and are created shared with all sites.
+ * `import-map.json`. Nothing is sent to an instance. With `site` (`--workspace` / SHAPIO_WORKSPACE) the files
+ * go under `schema/sites/<key>/`, so `schema apply --workspace <key>` creates them in that workspace; without
+ * one they go in the shared folders and are created shared with all workspaces.
  */
 export const writePlan = async (
   dir: string,

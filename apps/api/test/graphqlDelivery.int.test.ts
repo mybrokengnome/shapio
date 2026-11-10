@@ -460,7 +460,7 @@ describe('GraphQL delivery (twins of the REST delivery tests)', () => {
       graphql(testApp.app, query, { method: 'GET', headers: { ...bearer(as), ...headers } });
     const first = await get();
     expect(first.statusCode).toBe(200);
-    expect(first.response.headers.vary).toBe('Authorization, Cookie, Shapio-Site');
+    expect(first.response.headers.vary).toBe('Authorization, Cookie, Shapio-Workspace, Shapio-Site');
     expect(first.response.headers['cache-control']).toContain('private');
     const etag = first.response.headers.etag as string;
     expect(etag).toMatch(/^"[\w-]+"$/);

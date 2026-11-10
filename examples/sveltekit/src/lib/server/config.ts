@@ -6,6 +6,7 @@ import {
   SHAPIO_SITE,
   SHAPIO_SNAPSHOT,
   SHAPIO_URL,
+  SHAPIO_WORKSPACE,
   SITE_URL,
 } from '$app/env/private';
 
@@ -16,7 +17,8 @@ import {
  * - SHAPIO_DELIVERY_TOKEN: a read-only delivery token (Settings → API tokens, delivery role).
  * - SHAPIO_SNAPSHOT: optional; the publication snapshot to build. Without it the build pins the latest
  *   snapshot when prerendering starts, so every page shows the same moment.
- * - SHAPIO_SITE: optional; the site key on a multi-site Shapio (default: the token's site, else the primary).
+ * - SHAPIO_WORKSPACE: optional; the workspace key on a Shapio with several workspaces (default: the token's
+ *   workspace, else the primary). SHAPIO_SITE, its name before Shapio 0.8.2, is read when it is unset.
  * - PUBLIC_SHAPIO_URL: the Shapio URL the browser calls for previews (defaults to SHAPIO_URL).
  * - SITE_URL: optional; this site's public origin, e.g. https://www.example.com. Pages then carry a canonical
  *   URL (and `og:url`) unless the entry sets its own.
@@ -44,7 +46,8 @@ export const deliveryToken = () => {
   return token;
 };
 
-export const siteKey = () => SHAPIO_SITE;
+/** The Shapio workspace to read: SHAPIO_WORKSPACE, else SHAPIO_SITE. */
+export const siteKey = () => SHAPIO_WORKSPACE ?? SHAPIO_SITE;
 
 export const configuredSnapshot = (): number | undefined => {
   const value = SHAPIO_SNAPSHOT;

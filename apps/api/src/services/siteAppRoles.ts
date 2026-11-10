@@ -48,7 +48,7 @@ export const setSiteAppRoles = async (
 ): Promise<SiteAppRolesView> =>
   db.transaction().execute(async (trx) => {
     if (!(await sitesRepository.lockById(siteId, trx))) {
-      throw new AppError(404, 'SITE_NOT_FOUND', 'Site not found');
+      throw new AppError(404, 'SITE_NOT_FOUND', 'Workspace not found');
     }
     const next = {
       public: [...new Set(input.public)].sort(),

@@ -100,7 +100,7 @@ describe('shapio schema per site', () => {
   it("pull writes the shared definitions and the site's own (default: the token's site, else the primary)", async () => {
     const result = await cli('pull');
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stdout).toContain('site "default"');
+    expect(result.stdout).toContain('workspace "default"');
     expect((await readJson<Definition>(file('models', 'tag.json'))).id).toBe(ids.tag);
     expect((await readJson<Definition>(file('sites', 'default', 'models', 'post.json'))).id).toBe(ids.postA);
     expect(await exists(file('sites', 'b', 'models', 'post.json'))).toBe(false);
@@ -145,8 +145,8 @@ describe('shapio schema per site', () => {
   it('refuses a site the tree does not cover, before sending anything', async () => {
     const result = await cli('apply', '--site', 'c');
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('covers the site(s) b, default, not "c"');
-    expect(result.stderr).toContain('shapio schema pull --site c');
+    expect(result.stderr).toContain('covers the workspace(s) b, default, not "c"');
+    expect(result.stderr).toContain('shapio schema pull --workspace c');
   });
 
   it('reports a shared file a site admin may not change, per item, and applies nothing', async () => {
@@ -160,7 +160,7 @@ describe('shapio schema per site', () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('FORBIDDEN_SCOPE');
     expect(result.stderr).toContain('  tag (shared):');
-    expect(result.stderr).toContain('schema permission on every site');
+    expect(result.stderr).toContain('schema permission on every workspace');
     expect(await versionOf('default', 'post')).toBe(postVersion);
     expect((await cli('pull', '--force')).code).toBe(0);
   });
@@ -173,7 +173,7 @@ describe('shapio schema per site', () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('SCOPE_MISMATCH');
     expect(result.stderr).toContain(
-      'tag: its file is in the site’s folder, but on the instance it is shared',
+      'tag: its file is in the workspace’s folder, but on the instance it is shared',
     );
     expect((await cli('pull', '--force')).code).toBe(0);
     expect(await exists(file('models', 'tag.json'))).toBe(true);
@@ -183,7 +183,7 @@ describe('shapio schema per site', () => {
   it('schema scope shares a site definition, and a pull moves its file', async () => {
     const shared = await runCli(['scope', 'note', '--shared', '--site', 'b'], env);
     expect(shared.code, shared.stderr).toBe(0);
-    expect(shared.stdout).toContain('note is now shared with all sites');
+    expect(shared.stdout).toContain('note is now shared with all workspaces');
     expect((await exported('default')).definitions.map((entry) => entry.definition.apiKey)).toContain('note');
     const pulled = await cli('pull', '--site', 'default');
     expect(pulled.code, pulled.stderr).toBe(0);
@@ -192,7 +192,7 @@ describe('shapio schema per site', () => {
     expect(await exists(file('sites', 'b', 'models', 'note.json'))).toBe(false);
     expect((await lock()).definitions[ids.note!]).toMatchObject({ site: null });
     const again = await runCli(['scope', 'note', '--shared'], env);
-    expect(again.stdout).toContain('note is already shared with all sites');
+    expect(again.stdout).toContain('note is already shared with all workspaces');
   });
 
   it('schema scope refuses to keep on one site what another site has entries of (SCOPE_IN_USE)', async () => {
@@ -200,10 +200,10 @@ describe('shapio schema per site', () => {
     const refused = await runCli(['scope', 'note', '--site', 'b'], env);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain('SCOPE_IN_USE');
-    expect(refused.stderr).toContain('site default: 1 entry');
+    expect(refused.stderr).toContain('workspace default: 1 entry');
     const usage = await runCli(['scope', 'note'], env);
     expect(usage.code).toBe(1);
-    expect(usage.stderr).toContain('Pass --site <key> to keep it on that site, or --shared');
+    expect(usage.stderr).toContain('Pass --workspace <key> to keep it in that workspace, or --shared');
   });
 
   it('upgrades a format 1 lock: a shared-only tree still applies to every site', async () => {

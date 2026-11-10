@@ -55,9 +55,9 @@ export const resolveReferences = (definition: DraftDefinition, idsByApiKey: Read
 /**
  * Puts a definition into a change set as a draft: picks its stable ID (the active definition's, the set's
  * existing draft's, or a new one), its base version and the draft version to replace, then lets the server
- * parse, validate and plan it. Nothing goes live until a person ships the set. The site's view decides what
- * exists: a new definition belongs to the site, or is shared with all sites when `shared` (creates only; an
- * existing definition keeps its scope).
+ * parse, validate and plan it. Nothing goes live until a person ships the set. The workspace's view decides
+ * what exists: a new definition belongs to the workspace, or is shared with all workspaces when `shared`
+ * (creates only; an existing definition keeps its scope).
  */
 export const putDefinitionDraft = async (
   client: ShapioClient,

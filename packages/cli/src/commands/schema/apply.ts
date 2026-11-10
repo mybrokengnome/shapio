@@ -51,7 +51,7 @@ const waitForChanges = async (
 /**
  * Records the new state in the lock file and rewrites the files of applied definitions in canonical form
  * (e.g. with server-assigned field IDs), in their scope's folder. Definitions skipped because they were
- * unchanged locally keep their old base, so a later apply still treats them as untouched. Other sites'
+ * unchanged locally keep their old base, so a later apply still treats them as untouched. Other workspaces'
  * entries are kept as they are. Returns the schema version it recorded: the instance's version after any
  * waited-for changes activated, which can be newer than the one the apply response reported.
  */
@@ -100,7 +100,7 @@ const updateLocalState = async (
 /**
  * `shapio schema apply`: applies local schema files to a running instance live, through the same planner as
  * the admin UI. Three-way per definition against the lock file; refuses (and changes nothing) on conflicts.
- * It sends the shared files and the site's own (`sites/<key>/`), never another site's.
+ * It sends the shared files and the workspace's own (`sites/<key>/`), never another workspace's.
  */
 export const schemaApplyCommand: CliCommand = {
   summary: 'Apply local schema files to the instance live (three-way, per model; refuses on conflicts)',

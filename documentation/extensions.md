@@ -102,7 +102,7 @@ The write holds one pooled database connection while your hook runs. Do every da
 | Field                                                                                                                  | `before*` | `after*`                |
 | ---------------------------------------------------------------------------------------------------------------------- | --------- | ----------------------- |
 | `event`, `model` (`id`, `apiKey`, `label`, `kind`, `localized`, `draftAndPublish`, and `extends`, the parent's API ID) | ✓         | ✓                       |
-| `site` (`id`, `key`): the entry's [site](sites.md); `services` read this site                                          | ✓         | ✓                       |
+| `site` (`id`, `key`): the entry's [workspace](workspaces.md); `services` read it                                       | ✓         | ✓                       |
 | `entry` (`id`, `locale`, `state`: `draft`, `published` or `deleted`), `locale`                                         | ✓         | ✓                       |
 | `data`: the document after the change, keyed by field API ID (media and relations as IDs; absent for deletes)          | ✓         | ✓ (as it was at commit) |
 | `before`: the previous draft (update) or the live version being replaced (publish)                                     | ✓         | ✓                       |
@@ -146,7 +146,7 @@ export const acmeRoutes: ExtensionRoute['plugin'] = async (app, { services, perm
   - **Audit:** every mutating route must declare `config: { audit: { action } }`, or `{ audit: { exempt: '<why>' } }`, or Shapio refuses to start. On a successful response Shapio records the declared action in the audit log, with the principal, request ID and IP.
   - **Errors:** thrown errors go through the central handler as `{ error: { code, message } }`, and a 500 never shows its text.
   - **Rate limiting:** the global per-IP limit (`RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_MS`) applies.
-  - **Sites:** custom routes are site routes. `request.site` (`{ id, key }`) is the request's [site](sites.md): the credential's, else `?site=` or the `Shapio-Site` header, else the primary site. A route about the whole instance declares `config: { site: 'network' }`, and then has no `request.site`.
+  - **Workspaces:** custom routes are workspace routes. `request.site` (`{ id, key }`) is the request's [workspace](workspaces.md): the credential's, else `?workspace=` or the `Shapio-Workspace` header (or their older spellings `?site=` and `Shapio-Site`), else the primary workspace. A route about the whole instance declares `config: { site: 'network' }`, and then has no `request.site`.
 - Declare a JSON schema for `params`, `querystring`, `body` and `response`, as Shapio's own routes do.
 
 ## Services
@@ -166,11 +166,11 @@ services: {
   - `logger`.
   - `services`: Shapio's services and the custom services declared so far.
 - Shapio's own services:
-  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()` (the site's content types: its own and the shared ones, each with `routeKey`, `extends` for a type that extends another, and its `fields`: `id`, `apiKey`, `label`, `type`, `required`, `localized`, and, on a field it inherits, `inheritedFrom`, the API ID of the type that declares it, with inherited fields first). These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
+  - `content.get(modelKey, id, { locale?, principal? })`, `content.list(modelKey, querystring?, { principal? })`, `content.count(modelKey)` and `content.models()` (the workspace's content types: its own and the shared ones, each with `routeKey`, `extends` for a type that extends another, and its `fields`: `id`, `apiKey`, `label`, `type`, `required`, `localized`, and, on a field it inherits, `inheritedFrom`, the API ID of the type that declares it, with inherited fields first). These read drafts as the admin API shows them, as Shapio itself unless you pass a `principal`, from committed data. Inside a `before*` hook, read your own uncommitted changes through `trx`.
   - `media.usages(assetId)`: where an asset is referenced.
   - `jobs.enqueue(name, payload?, { runAt?, idempotencyKey?, maxAttempts? })`: queues one of your jobs.
   - `logger`.
-  - `site` and `forSite(site)`: content and media are per [site](sites.md). The services a hook receives read the hook's site; those given to routes, jobs and factories read the primary site, and follow it live when another site is made primary (each call reads which site is primary now). `services.forSite(request.site)` returns the same services on the request's site.
+  - `site` and `forSite(site)`: the workspace. Content and media are per [workspace](workspaces.md). The services a hook receives read the hook's workspace; those given to routes, jobs and factories read the primary workspace, and follow it live when another workspace is made primary (each call reads which workspace is primary now). `services.forSite(request.site)` returns the same services on the request's workspace.
 
 For typed access everywhere, augment `CustomServices`:
 
@@ -198,25 +198,27 @@ jobs: {
 - Delivery is at least once, so make side effects idempotent (use `jobId` or the `idempotencyKey` you enqueued with).
 - Enqueue a job with `services.jobs.enqueue('reindex', payload)`.
 
-## Sites
+## Workspaces
 
-On an instance with several [sites](sites.md), sites share the content types but each has its own
-content and media. Extensions are configured once for the whole instance, and each one knows which site it is
-working on:
+On an instance with several [workspaces](workspaces.md), workspaces can share content types, and each has its
+own content and media. Extensions are configured once for the whole instance, and each one knows which
+workspace it is working on. The code keeps the older name: `site` in the API below always means the workspace.
 
-- **Hooks:** `context.site` (`{ id, key }`) is the site of the entry that changed, and `context.services` read
-  that site. Branch on `context.site.key` when a site needs different behavior.
-- **Custom routes** are site routes. `request.site` is the request's site: the token's site, else the one the
-  request names (`Shapio-Site` header or `?site=`), else the primary site. A request naming a different site
-  than its token's is refused with `403 SITE_MISMATCH`. Declare `config: { site: 'network' }` on a route that is
-  about the whole instance rather than one site; it then has no `request.site`.
-- **Services:** `services.site` is the site that `content` and `media` read, and `services.forSite(site)`
-  returns the same services reading another site. The services given to routes, jobs and service factories
-  read the **primary site**, so in a route use `services.forSite(request.site)` for the request's site.
-  They follow the primary site live: when another site is [made primary](sites.md#the-primary-site), the next
-  call reads it, with no restart. On these services `services.site` is the primary site as last read in this
-  process, so don't keep it: a route reads `request.site`, and other code calls `content` or `media` (which
-  read the primary site now) or `forSite`:
+- **Hooks:** `context.site` (`{ id, key }`) is the workspace of the entry that changed, and `context.services`
+  read that workspace. Branch on `context.site.key` when a workspace needs different behavior.
+- **Custom routes** are workspace routes. `request.site` is the request's workspace: the token's workspace, else
+  the one the request names (`Shapio-Workspace` or `Shapio-Site` header, or `?workspace=` or `?site=`), else the
+  primary workspace. A request naming a different workspace than its token's is refused with
+  `403 SITE_MISMATCH`. Declare `config: { site: 'network' }` on a route that is about the whole instance rather
+  than one workspace; it then has no `request.site`.
+- **Services:** `services.site` is the workspace that `content` and `media` read, and `services.forSite(site)`
+  returns the same services reading another workspace. The services given to routes, jobs and service factories
+  read the **primary workspace**, so in a route use `services.forSite(request.site)` for the request's
+  workspace. They follow the primary workspace live: when another workspace is
+  [made primary](workspaces.md#the-primary-workspace), the next call reads it, with no restart. On these services
+  `services.site` is the primary workspace as last read in this process, so don't keep it: a route reads
+  `request.site`, and other code calls `content` or `media` (which read the primary workspace now) or
+  `forSite`:
 
   ```ts
   app.get('/stats', { preHandler: requireAdmin }, async (request) => ({
@@ -224,9 +226,10 @@ working on:
   }));
   ```
 
-- **Jobs** read the primary site too. Pass the site's key or ID in the payload and use `forSite` when a job is
-  about one site.
-- **Your own services** are constructed once and shared by every site. Pass them the site they should work on.
+- **Jobs** read the primary workspace too. Pass the workspace's key or ID in the payload and use `forSite` when
+  a job is about one workspace.
+- **Your own services** are constructed once and shared by every workspace. Pass them the workspace they should
+  work on.
 
 ## Custom field editors
 

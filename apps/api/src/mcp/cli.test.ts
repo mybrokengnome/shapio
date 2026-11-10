@@ -40,7 +40,7 @@ describe('shapio mcp', () => {
       '--client',
       'generic',
       '--allow-ship',
-      '--site',
+      '--workspace',
       'marketing',
       '--url',
       'https://cms.example.com/',
@@ -61,12 +61,35 @@ describe('shapio mcp', () => {
     });
   });
 
-  it('adds SHAPIO_SITE with --site, and refuses an invalid site key', async () => {
-    const { code, stdout } = await run(['--site', 'marketing', '--url', 'https://cms.example.com']);
+  it('adds SHAPIO_SITE (read by every @shapio/mcp version) with --workspace, and refuses an invalid key', async () => {
+    const { code, stdout } = await run(['--workspace', 'marketing', '--url', 'https://cms.example.com']);
     expect(code).toBe(0);
     expect(stdout).toContain('--env SHAPIO_SITE=marketing -- npx -y @shapio/mcp');
     expect(stdout).toContain('"SHAPIO_SITE": "marketing"');
     expect((await run([])).stdout).not.toContain('SHAPIO_SITE');
-    expect((await run(['--site', 'Not A Key'])).code).toBe(1);
+    expect((await run(['--workspace', 'Not A Key'])).code).toBe(1);
+  });
+
+  it('takes --site too, and SHAPIO_WORKSPACE or SHAPIO_SITE when no flag names one', async () => {
+    expect((await run(['--site', 'docs'])).stdout).toContain('"SHAPIO_SITE": "docs"');
+    expect((await run([], { SHAPIO_WORKSPACE: 'docs' })).stdout).toContain('"SHAPIO_SITE": "docs"');
+    expect((await run([], { SHAPIO_SITE: 'docs' })).stdout).toContain('"SHAPIO_SITE": "docs"');
+    expect((await run(['--workspace', 'blog'], { SHAPIO_WORKSPACE: 'docs' })).stdout).toContain(
+      '"SHAPIO_SITE": "blog"',
+    );
+  });
+
+  it('refuses two different workspaces in the flags or in the environment', async () => {
+    const flags = await run(['--workspace', 'a', '--site', 'b']);
+    expect(flags.code).toBe(1);
+    expect(flags.stderr).toBe('--workspace "a" and --site "b" name different workspaces: set one of them\n');
+    const env = await run([], { SHAPIO_WORKSPACE: 'a', SHAPIO_SITE: 'b' });
+    expect(env.code).toBe(1);
+    expect(env.stderr).toContain('SHAPIO_WORKSPACE "a" and SHAPIO_SITE "b"');
+  });
+
+  it('documents --workspace only', () => {
+    expect(mcpCommand.usage).toContain('--workspace <key>');
+    expect(mcpCommand.usage).not.toMatch(/--site\b|\bsites?\b/i);
   });
 });

@@ -47,7 +47,7 @@ export const identityOf = (principal: AdminPrincipal): AdminIdentity => ({
 
 /** A credential (token, app-user session, link or code) used on another site than its own. */
 export const siteMismatch = () =>
-  new AppError(403, 'SITE_MISMATCH', 'This credential belongs to another site than the one requested');
+  new AppError(403, 'SITE_MISMATCH', 'This credential belongs to another workspace than the one requested');
 
 /**
  * Re-narrows a principal to the request's site. Admins get that site's roles; anonymous callers get the site
