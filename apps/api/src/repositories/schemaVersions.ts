@@ -24,3 +24,9 @@ export const bumpSchemaVersion = async (trx: Executor, now: Date): Promise<numbe
 export const setRelease = async (release: string, executor: Executor = db): Promise<void> => {
   await executor.updateTable('system_versions').set({ release }).execute();
 };
+
+/** The instance's schema ID, written once by the migration: what a client's `<schemaId>:<version>` names. */
+export const getSchemaId = async (executor: Executor = db): Promise<string> => {
+  const row = await executor.selectFrom('system_versions').select('schema_id').executeTakeFirstOrThrow();
+  return row.schema_id;
+};

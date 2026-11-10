@@ -10,6 +10,7 @@ import * as interfaceKind from './20261021120000_interface_kind.js';
 import * as changeSetApproval from './20261028120000_change_set_approval.js';
 import * as schemaChangeOutcome from './20261029120000_schema_change_outcome.js';
 import * as assistWriteAndFill from './20261104120000_assist_write_and_fill.js';
+import * as schemaLenses from './20261110120000_schema_lenses.js';
 
 /**
  * MySQL migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -31,4 +32,5 @@ export const MYSQL_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261028120000_change_set_approval': changeSetApproval,
   '20261029120000_schema_change_outcome': schemaChangeOutcome,
   '20261104120000_assist_write_and_fill': assistWriteAndFill,
+  '20261110120000_schema_lenses': schemaLenses,
 };

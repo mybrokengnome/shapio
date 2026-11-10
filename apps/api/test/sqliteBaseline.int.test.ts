@@ -259,7 +259,10 @@ const readSqlite = async (db: Kysely<DB>): Promise<LogicalSchema> => {
   return schema;
 };
 
-/** Every row of every seeded table, without the times they were written (they differ by run). */
+/** Columns every database fills with its own random value (the instance's schema ID). */
+const RANDOM_COLUMNS = new Set(['schema_id']);
+
+/** Every row of every seeded table, without the times they were written or random IDs (they differ by run). */
 const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
   const rows: Record<string, unknown[]> = {};
   for (const table of tables) {
@@ -269,7 +272,13 @@ const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
       .execute();
     if (found.length > 0) {
       rows[table] = found
-        .map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => !(value instanceof Date))))
+        .map((row) =>
+          Object.fromEntries(
+            Object.entries(row).filter(
+              ([column, value]) => !(value instanceof Date) && !RANDOM_COLUMNS.has(column),
+            ),
+          ),
+        )
         .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     }
   }

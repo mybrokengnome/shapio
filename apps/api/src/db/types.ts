@@ -683,6 +683,15 @@ export interface ScheduledPublications {
   updated_at: Generated<Timestamp>;
 }
 
+export interface SchemaActivations {
+  backfilled: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  model_id: string;
+  revision_id: string | null;
+  schema_version: number;
+  site_id: string | null;
+}
+
 export interface SchemaChangeJobs {
   change_set_id: string | null;
   created_at: Generated<Timestamp>;
@@ -779,6 +788,7 @@ export interface SystemVersions {
   id: Generated<boolean>;
   permissions_version: Generated<number>;
   release: string | null;
+  schema_id: Generated<string>;
   schema_version: Generated<number>;
   updated_at: Generated<Timestamp>;
 }
@@ -786,6 +796,7 @@ export interface SystemVersions {
 export interface TokenReads {
   day: Timestamp;
   last_read_at: Timestamp;
+  last_schema_version: number | null;
   last_snapshot: Int8 | null;
   principal_key: string;
   requests: Generated<Int8>;
@@ -884,6 +895,7 @@ export interface DB {
   publication_state: PublicationState;
   relation_edges: RelationEdges;
   scheduled_publications: ScheduledPublications;
+  schema_activations: SchemaActivations;
   schema_change_jobs: SchemaChangeJobs;
   schema_drafts: SchemaDrafts;
   schema_revisions: SchemaRevisions;

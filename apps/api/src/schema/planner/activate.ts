@@ -17,6 +17,7 @@ import {
   type SnapshotSource,
 } from '../../repositories/publications.js';
 import * as relationEdgeCountsRepository from '../../repositories/relationEdgeCounts.js';
+import * as schemaActivationsRepository from '../../repositories/schemaActivations.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import * as schemaVersionsRepository from '../../repositories/schemaVersions.js';
@@ -416,6 +417,17 @@ const flipItem = async (
     await schemaModelsRepository.softDeleteModel(plan.definitionId, now, trx);
     await schemaModelsRepository.deleteActivePointer(plan.definitionId, trx);
   }
+  // Activation history (plan schema-lenses): every flip, scope changes and deletes included.
+  await schemaActivationsRepository.insert(
+    {
+      modelId: plan.definitionId,
+      schemaVersion,
+      siteId: scope,
+      revisionId: revision?.id ?? null,
+      createdAt: now,
+    },
+    trx,
+  );
   if (item.pending) {
     await schemaChangeJobsRepository.finish(
       item.pending.changeJobId,

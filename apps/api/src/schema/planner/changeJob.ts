@@ -2,6 +2,10 @@ import type { Transaction } from 'kysely';
 import type { Database } from '../../db/index.js';
 import type { DB } from '../../db/types.js';
 import { describeError } from '../../helpers/errors.js';
+import {
+  createLensHistoryBackfillHandler,
+  LENS_HISTORY_BACKFILL_JOB,
+} from '../../jobs/handlers/lensHistoryBackfill.js';
 import { type JobContext, type JobHandler, PermanentJobError } from '../../jobs/types.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import type { SchemaChangeJobRow } from '../../repositories/schemaChangeJobs.js';
@@ -337,4 +341,5 @@ export const createSchemaJobHandlers = (deps: HandlerDeps): Array<[string, JobHa
   [SCHEMA_FOLLOW_UP_JOB, createFollowUpHandler(deps)],
   [FIELD_INDEX_LAYOUT_JOB, createFieldIndexLayoutHandler(deps.db)],
   [ENTRY_ORDER_INDEX_JOB, async (context) => ({ outcome: await buildEntryOrderIndex(deps.db, context.log) })],
+  [LENS_HISTORY_BACKFILL_JOB, createLensHistoryBackfillHandler(deps.db)],
 ];
