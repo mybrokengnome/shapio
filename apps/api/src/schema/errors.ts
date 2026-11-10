@@ -1,4 +1,5 @@
 import type { ValidationIssue } from '@shapio/schema';
+import type { ContentIssue } from '../content/validator/issues.js';
 import { AppError } from '../helpers/appError.js';
 
 /** Errors the schema services throw; the central error handler renders them. */
@@ -144,10 +145,14 @@ export const lensUncovered = (modelKey: string) =>
     { modelKey },
   );
 
-export const lensWriteUnsupported = (apiKey: string) =>
+/**
+ * Every field of a write through a schema lens that cannot be written in the client's shape, with JSON pointers
+ * in the client's API IDs and how each changed since its version.
+ */
+export const lensWriteIssues = (issues: readonly ContentIssue[]) =>
   new AppError(
     422,
     'LENS_WRITE_UNSUPPORTED',
-    `"${apiKey}" changed since your schema version and cannot be written through it. Update your client to the current schema version to change this field.`,
-    { apiKey },
+    "Some fields changed since this client's schema version and cannot be written through it. Update the client to the current schema version to change them.",
+    { issues },
   );

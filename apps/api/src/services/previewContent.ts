@@ -19,7 +19,7 @@ import { loadAdminPrincipal } from '../publishing/principals.js';
 import type { PublishingRuntime } from '../publishing/runtime.js';
 import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
-import type { ContentServiceContext } from './contentAccess.js';
+import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
@@ -223,9 +223,19 @@ const metaOf = (scope: PreviewScope, query: ContentQuery) => ({
   expiresAt: scope.token.expires_at,
 });
 
-/** `meta.kinds` of a family list, as delivery reports it. */
+/**
+ * `meta.kinds` of a family list, as delivery reports it: through a schema lens in the client's version's names
+ * (plan schema-lenses).
+ */
 const kindsOf = (scope: PreviewScope) => {
-  const kinds = kindsMetaOf(scope.context.snapshot, scope.model, scope.members);
+  const view = activeLens(scope.context)?.view;
+  const named = (model: ContentModel) => (view ? resolveModelById(view, model.definition.id) : model);
+  const route = named(scope.model);
+  const members = scope.members.flatMap((member) => {
+    const model = named(member.model);
+    return model ? [{ ...member, model }] : [];
+  });
+  const kinds = route ? kindsMetaOf(view ?? scope.context.snapshot, route, members) : undefined;
   return kinds ? { kinds } : {};
 };
 

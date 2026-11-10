@@ -22,7 +22,10 @@ const DeliveryWriteResponseSchema = Type.Object({
     updatedAt: Type.String({ format: 'date-time' }),
     publishedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
   }),
-  meta: Type.Object({}),
+  /** Through a schema lens (plan schema-lenses): the versions the write was translated between. */
+  meta: Type.Object({
+    schemaVersion: Type.Optional(Type.Object({ requested: Type.String(), current: Type.String() })),
+  }),
 });
 
 const errors = {

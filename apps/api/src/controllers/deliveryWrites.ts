@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { apiKeyOfRoute } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { refuseInterfaceWrite } from '../services/contentAccess.js';
+import { lensDeliveryRequest } from '../services/contentDeliveryLens.js';
 import * as deliveryWritesService from '../services/contentDeliveryWrites.js';
 import { contentContextFor } from './contentContext.js';
 
@@ -19,15 +20,32 @@ type UpdateRequest = FastifyRequest<{
 }>;
 
 /**
+ * The write's context and route in today's names: through a schema lens (plan schema-lenses) the route key is
+ * the client's version's (404 for a model gone since, 409 `LENS_UNCOVERED` for a kind change).
+ */
+const lensedWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => {
+  const { context, routeKey } = lensDeliveryRequest(
+    await contentContextFor(request),
+    request.params.modelKey,
+    '',
+  );
+  return { context, routeKey, apiKey: apiKeyOfRoute(context.snapshot, routeKey) };
+};
+
+/**
  * `preValidation` of the write routes (after authentication, which `onRequest` resolves): an interface's route
  * has no entries of its own (plan interfaces), so an authenticated write there is refused with 405 before its
  * body is validated, whatever the body holds. An anonymous caller gets the 401 an anonymous reader gets, and
  * learns nothing of the interface or its members (public delivery never shows schema shape to them).
  */
 export const refuseInterfaceRouteWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => {
-  const context = await contentContextFor(request);
-  const contract = context.snapshot.interfacesByRouteKey.get(request.params.modelKey);
-  if (!contract || context.snapshot.modelsByRouteKey.has(request.params.modelKey)) {
+  const { context, routeKey } = lensDeliveryRequest(
+    await contentContextFor(request),
+    request.params.modelKey,
+    '',
+  );
+  const contract = context.snapshot.interfacesByRouteKey.get(routeKey);
+  if (!contract || context.snapshot.modelsByRouteKey.has(routeKey)) {
     return;
   }
   if (context.actor.kind === 'anonymous') {
@@ -37,14 +55,12 @@ export const refuseInterfaceRouteWrite = async (request: FastifyRequest<{ Params
 };
 
 export const createDeliveryEntry = async (request: CreateRequest, reply: FastifyReply) => {
-  const context = await contentContextFor(request);
-  const apiKey = apiKeyOfRoute(context.snapshot, request.params.modelKey);
+  const { context, apiKey } = await lensedWrite(request);
   return reply.code(201).send(await deliveryWritesService.createDeliveryEntry(context, apiKey, request.body));
 };
 
 export const updateDeliveryEntry = async (request: UpdateRequest) => {
-  const context = await contentContextFor(request);
-  const apiKey = apiKeyOfRoute(context.snapshot, request.params.modelKey);
+  const { context, apiKey } = await lensedWrite(request);
   return deliveryWritesService.updateDeliveryEntry(context, apiKey, request.params.id, request.body);
 };
 
@@ -52,11 +68,7 @@ export const deleteDeliveryEntry = async (
   request: FastifyRequest<{ Params: EntryParams }>,
   reply: FastifyReply,
 ) => {
-  const context = await contentContextFor(request);
-  await deliveryWritesService.deleteDeliveryEntry(
-    context,
-    apiKeyOfRoute(context.snapshot, request.params.modelKey),
-    request.params.id,
-  );
+  const { context, apiKey } = await lensedWrite(request);
+  await deliveryWritesService.deleteDeliveryEntry(context, apiKey, request.params.id);
   return reply.code(204).send();
 };

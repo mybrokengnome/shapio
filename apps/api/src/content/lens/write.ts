@@ -1,22 +1,42 @@
-import { canonicalJson, type DefinitionLens, type FieldLens } from '@shapio/schema';
+import {
+  canonicalJson,
+  type DefinitionLens,
+  type FieldDefinition,
+  type FieldLens,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
 
 /**
  * A write body in the client's schema version (its API IDs) for today's write path (plan schema-lenses,
- * limited writes). Only fields that read exactly as stored (`same`, renames allowed) and kept their
- * localization are translated, components inside them included when nothing was added to or changed in them
- * since (a component instance is written whole, so a field the client does not know would be dropped). Any
- * other field is an issue, unless its value equals what the lens reads for the entry today: then the client
- * sent back what it read, and the field is left untouched. Values are not converted: today's validator checks
- * what is forwarded.
+ * limited writes). Fields that read exactly as stored (`same`, renames allowed) and kept their localization
+ * are translated, into components and dynamic-zone items. Any other field is an issue, unless its value equals
+ * what the lens reads for the entry today: the client sent back what it read, and the stored value is kept
+ * untouched (never the converted value written back). A component instance is written whole, so inside one
+ * the fields the client cannot write or does not know keep their stored values (items matched by position,
+ * dynamic-zone items only when they hold the same component). Values are never converted: today's validator
+ * checks what is forwarded.
  */
 export type LensWriteResult = {
   /** The body in today's API IDs, for the unchanged write path (`fromInput`, validation, storage). */
   input: Record<string, unknown>;
   /** Fields that cannot be written through the lens, by JSON pointer in the client's API IDs. */
   issues: ContentIssue[];
+};
+
+/** What a write through the lens is checked against. */
+export type LensWriteBase = {
+  /** The entry's draft today, in storage form (field IDs); null on create. */
+  stored: Readonly<ContentData> | null;
+  /**
+   * What the lens reads for that draft (`readThroughLens`), only what the caller may read today
+   * (`readableThroughLens`); null on create, where nothing can be sent back.
+   */
+  read: Readonly<ContentData> | null;
+  /** Today's effective definition by ID (a model with its inherited fields, a component). */
+  definitionOf: (id: string) => SchemaDefinition | undefined;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -27,88 +47,89 @@ const fieldByApiKey = (lens: DefinitionLens, apiKey: string): FieldLens | undefi
   return fieldId === undefined ? undefined : lens.fields.find((field) => field.fieldId === fieldId);
 };
 
-const nestedLenses = (field: FieldLens): Array<DefinitionLens | null> =>
-  field.kind === 'null' ? [] : [...(field.nested?.components.values() ?? [])];
+const nestedOf = (field: FieldLens, componentId: string): DefinitionLens | null | undefined =>
+  field.kind === 'null' ? undefined : field.nested?.components.get(componentId);
 
-/** A component instance can be written in the client's shape: every field it has today is one it writes. */
-const writableDefinition = (lens: DefinitionLens | null): boolean =>
-  lens !== null &&
-  (lens.status === 'identity' || lens.status === 'lensed') &&
-  lens.addedFieldIds.length === 0 &&
-  lens.fields.every(writableField);
+const usable = (lens: DefinitionLens | null | undefined): lens is DefinitionLens =>
+  lens !== null && lens !== undefined && (lens.status === 'identity' || lens.status === 'lensed');
 
-function writableField(field: FieldLens): field is FieldLens & { kind: 'same' } {
-  return (
-    field.kind === 'same' &&
-    field.client.localized === field.stored.localized &&
-    nestedLenses(field).every(writableDefinition)
+/** A field written as the client sends it: stored as read (at most renamed), same localization. */
+const isWritable = (field: FieldLens): field is FieldLens & { kind: 'same' } =>
+  field.kind === 'same' &&
+  field.client.localized === field.stored.localized &&
+  (field.client.type !== 'component' || usable(nestedOf(field, field.client.settings.component)));
+
+const DESCRIBED_SETTINGS: ReadonlyArray<[string, string]> = [
+  ['multiple', 'switched between one value and a list'],
+  ['cardinality', 'switched between one entry and a list'],
+  ['repeatable', 'switched between one item and a list'],
+  ['target', 'points at another content type'],
+  ['values', 'has other allowed values'],
+  ['components', 'allows other components'],
+  ['formatVersion', 'uses another rich-text format'],
+];
+
+/** How a field changed since the client's version, for a refusal. */
+const changeOf = (field: FieldLens): string => {
+  if (field.kind === 'null') {
+    return field.reason === 'removed'
+      ? 'was removed'
+      : field.reason === 'componentChanged'
+        ? 'holds another component now'
+        : `changed type (${field.client.type} → ${field.stored?.type ?? 'removed'})`;
+  }
+  const { client, stored } = field;
+  if (client.type !== stored.type) {
+    return `changed type (${client.type} → ${stored.type})`;
+  }
+  if (client.localized !== stored.localized) {
+    return stored.localized ? 'became per locale' : 'became shared across locales';
+  }
+  const from = client.settings as Record<string, unknown>;
+  const to = stored.settings as Record<string, unknown>;
+  const setting = DESCRIBED_SETTINGS.find(
+    ([key]) => canonicalJson(from[key] ?? null) !== canonicalJson(to[key] ?? null),
   );
-}
-
-type Walk = { issues: ContentIssue[] };
-
-const unknownField = (walk: Walk, path: string) =>
-  walk.issues.push({ path, code: 'UNKNOWN_FIELD', message: 'is not a field of this schema version' });
-
-/** A component instance's fields in today's API IDs. */
-const translateInstance = (walk: Walk, lens: DefinitionLens, value: unknown, path: string): unknown => {
-  if (!isRecord(value)) {
-    return value;
-  }
-  const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (key === COMPONENT_KEY) {
-      continue;
-    }
-    const field = fieldByApiKey(lens, key);
-    if (!field || field.kind !== 'same') {
-      unknownField(walk, pointer(path, key));
-      continue;
-    }
-    output[field.stored.apiKey] = translateValue(walk, field, item, pointer(path, key));
-  }
-  return output;
+  return setting ? setting[1] : 'changed';
 };
 
-const translateZoneItem = (walk: Walk, field: FieldLens, item: unknown, path: string): unknown => {
-  if (!isRecord(item)) {
-    return item;
+const refusal = (field: FieldLens, path: string): ContentIssue => ({
+  path,
+  code: 'NOT_ALLOWED',
+  message: `${changeOf(field)} since this client's schema version and cannot be written through it; send back the value it read to keep it, or update the client`,
+});
+
+/** A stored value (today's storage form) in today's input form, to be written back unchanged. */
+const toInput = (field: FieldDefinition, value: unknown, base: LensWriteBase): unknown => {
+  const instance = (componentId: unknown, item: unknown): unknown => {
+    const component = typeof componentId === 'string' ? base.definitionOf(componentId) : undefined;
+    if (!component || !isRecord(item)) {
+      return item;
+    }
+    const output: Record<string, unknown> = {};
+    for (const nested of component.fields) {
+      if (!isMissingValue(item[nested.id])) {
+        output[nested.apiKey] = toInput(nested, item[nested.id], base);
+      }
+    }
+    return output;
+  };
+  if (field.type === 'component') {
+    return Array.isArray(value)
+      ? value.map((item) => instance(field.settings.component, item))
+      : instance(field.settings.component, value);
   }
-  const lens = nestedLenses(field).find((candidate) => candidate?.apiKey === item[COMPONENT_KEY]);
-  if (!lens?.storedApiKey) {
-    walk.issues.push({
-      path: pointer(path, COMPONENT_KEY),
-      code: 'UNKNOWN_COMPONENT',
-      message: 'is not a component this field allows in this schema version',
+  if (field.type === 'dynamiczone' && Array.isArray(value)) {
+    return value.map((item: unknown): unknown => {
+      const componentId = isRecord(item) ? item[COMPONENT_KEY] : undefined;
+      const component = typeof componentId === 'string' ? base.definitionOf(componentId) : undefined;
+      return component
+        ? { ...(instance(componentId, item) as object), [COMPONENT_KEY]: component.apiKey }
+        : item;
     });
-    return item;
-  }
-  return { ...(translateInstance(walk, lens, item, path) as object), [COMPONENT_KEY]: lens.storedApiKey };
-};
-
-function translateValue(
-  walk: Walk,
-  field: FieldLens & { kind: 'same' },
-  value: unknown,
-  path: string,
-): unknown {
-  const { client } = field;
-  if (client.type === 'component') {
-    const lens = field.nested?.components.get(client.settings.component);
-    if (!lens) {
-      return value;
-    }
-    return Array.isArray(value)
-      ? value.map((item, index) => translateInstance(walk, lens, item, pointer(path, index)))
-      : translateInstance(walk, lens, value, path);
-  }
-  if (client.type === 'dynamiczone') {
-    return Array.isArray(value)
-      ? value.map((item, index) => translateZoneItem(walk, field, item, pointer(path, index)))
-      : value;
   }
   return value;
-}
+};
 
 /** A value the lens read (storage form, field IDs) in the client's input form (API IDs), for comparison. */
 const inputFormOf = (lens: DefinitionLens, data: unknown): unknown => {
@@ -131,7 +152,7 @@ const fieldInputForm = (field: FieldLens, value: unknown): unknown => {
   }
   const { client } = field;
   if (client.type === 'component') {
-    const lens = field.nested?.components.get(client.settings.component);
+    const lens = nestedOf(field, client.settings.component);
     if (!lens) {
       return value;
     }
@@ -139,7 +160,7 @@ const fieldInputForm = (field: FieldLens, value: unknown): unknown => {
   }
   if (client.type === 'dynamiczone' && Array.isArray(value)) {
     return value.map((item: unknown): unknown => {
-      const lens = isRecord(item) ? field.nested?.components.get(String(item[COMPONENT_KEY])) : undefined;
+      const lens = isRecord(item) ? nestedOf(field, String(item[COMPONENT_KEY])) : undefined;
       return lens ? { ...(inputFormOf(lens, item) as object), [COMPONENT_KEY]: lens.apiKey } : item;
     });
   }
@@ -148,38 +169,317 @@ const fieldInputForm = (field: FieldLens, value: unknown): unknown => {
 
 /** Whether the client sent back exactly what it reads today (absent and empty count as the same). */
 const sentBackRead = (field: FieldLens, value: unknown, read: Readonly<ContentData> | null): boolean => {
-  const current = read?.[field.fieldId];
+  if (read === null) {
+    return false;
+  }
+  const current = read[field.fieldId];
   if (isMissingValue(value) || isMissingValue(current)) {
     return isMissingValue(value) && isMissingValue(current);
   }
   return canonicalJson(value) === canonicalJson(fieldInputForm(field, current));
 };
 
+type Walk = { issues: ContentIssue[]; base: LensWriteBase };
+
+/** The counterparts of one written object: today's stored one and what the lens read of it. */
+type Counterpart = { stored: Readonly<ContentData> | null; read: Readonly<ContentData> | null };
+
+const recordOrNull = (value: unknown): Readonly<ContentData> | null => (isRecord(value) ? value : null);
+
+const at = (value: unknown, index: number): unknown => (Array.isArray(value) ? value[index] : undefined);
+
 /**
- * `input` (the client's write body, keyed by its API IDs) for today's write path. `read` is what the lens reads
- * for the entry today (`readThroughLens` of its current draft; null on create, where nothing can be sent back).
+ * One written object (the entry, or a component instance) in today's API IDs. `whole`: a component instance,
+ * written whole, so what the client cannot write or does not know keeps its stored value.
+ */
+const translateObject = (
+  walk: Walk,
+  lens: DefinitionLens,
+  value: Readonly<Record<string, unknown>>,
+  counterpart: Counterpart,
+  path: string,
+  whole: boolean,
+): Record<string, unknown> => {
+  const output: Record<string, unknown> = {};
+  const keep = (field: FieldDefinition) => {
+    const stored = counterpart.stored?.[field.id];
+    if (whole && !isMissingValue(stored)) {
+      output[field.apiKey] = toInput(field, stored, walk.base);
+    }
+  };
+  const sent = new Set<string>();
+  for (const [key, item] of Object.entries(value)) {
+    if (key === COMPONENT_KEY) {
+      continue;
+    }
+    const fieldPath = pointer(path, key);
+    const field = fieldByApiKey(lens, key);
+    if (!field) {
+      walk.issues.push({
+        path: fieldPath,
+        code: 'UNKNOWN_FIELD',
+        message: 'is not a field of this schema version',
+      });
+      continue;
+    }
+    sent.add(field.fieldId);
+    if (isWritable(field)) {
+      output[field.stored.apiKey] = translateValue(walk, field, item, counterpart, fieldPath);
+    } else if (sentBackRead(field, item, counterpart.read)) {
+      if (field.stored) {
+        keep(field.stored);
+      }
+    } else {
+      walk.issues.push(refusal(field, fieldPath));
+    }
+  }
+  if (whole) {
+    // Fields the client could not write, and left out: kept, never cleared on its behalf.
+    for (const field of lens.fields) {
+      if (!sent.has(field.fieldId) && !isWritable(field) && field.stored) {
+        keep(field.stored);
+      }
+    }
+    const today = walk.base.definitionOf(lens.definitionId);
+    for (const fieldId of lens.addedFieldIds) {
+      const field = today?.fields.find((candidate) => candidate.id === fieldId);
+      if (field) {
+        keep(field);
+      }
+    }
+  }
+  return output;
+};
+
+const translateInstance = (
+  walk: Walk,
+  lens: DefinitionLens,
+  value: unknown,
+  counterpart: Counterpart,
+  path: string,
+): unknown => (isRecord(value) ? translateObject(walk, lens, value, counterpart, path, true) : value);
+
+const translateZoneItem = (
+  walk: Walk,
+  field: FieldLens & { kind: 'same' },
+  item: unknown,
+  counterpart: Counterpart,
+  path: string,
+): unknown => {
+  if (!isRecord(item)) {
+    return item;
+  }
+  const lens = [...(field.nested?.components.values() ?? [])].find(
+    (candidate) => candidate?.apiKey === item[COMPONENT_KEY],
+  );
+  if (!usable(lens) || lens.storedApiKey === null) {
+    walk.issues.push({
+      path: pointer(path, COMPONENT_KEY),
+      code: 'UNKNOWN_COMPONENT',
+      message: 'is not a component this field allows in this schema version',
+    });
+    return item;
+  }
+  // The stored item at the same position counts only when it holds the same component.
+  const same = (candidate: Readonly<ContentData> | null) =>
+    candidate && candidate[COMPONENT_KEY] === lens.definitionId ? candidate : null;
+  return {
+    ...translateObject(
+      walk,
+      lens,
+      item,
+      { stored: same(counterpart.stored), read: same(counterpart.read) },
+      path,
+      true,
+    ),
+    [COMPONENT_KEY]: lens.storedApiKey,
+  };
+};
+
+function translateValue(
+  walk: Walk,
+  field: FieldLens & { kind: 'same' },
+  value: unknown,
+  parent: Counterpart,
+  path: string,
+): unknown {
+  const { client } = field;
+  const stored = parent.stored?.[field.fieldId];
+  const read = parent.read?.[field.fieldId];
+  if (client.type === 'component') {
+    const lens = nestedOf(field, client.settings.component);
+    if (!usable(lens)) {
+      return value;
+    }
+    return Array.isArray(value)
+      ? value.map((item, index) =>
+          translateInstance(
+            walk,
+            lens,
+            item,
+            { stored: recordOrNull(at(stored, index)), read: recordOrNull(at(read, index)) },
+            pointer(path, index),
+          ),
+        )
+      : translateInstance(
+          walk,
+          lens,
+          value,
+          { stored: recordOrNull(stored), read: recordOrNull(read) },
+          path,
+        );
+  }
+  if (client.type === 'dynamiczone') {
+    return Array.isArray(value)
+      ? value.map((item, index) =>
+          translateZoneItem(
+            walk,
+            field,
+            item,
+            { stored: recordOrNull(at(stored, index)), read: recordOrNull(at(read, index)) },
+            pointer(path, index),
+          ),
+        )
+      : value;
+  }
+  return value;
+}
+
+/**
+ * `input` (the client's write body, keyed by its API IDs) for today's write path. On update, fields the client
+ * does not know are left untouched (a write is a patch), inside components and zone items too.
  */
 export const writeThroughLens = (
   lens: DefinitionLens,
   input: Readonly<Record<string, unknown>>,
-  read: Readonly<ContentData> | null,
+  base: LensWriteBase,
 ): LensWriteResult => {
-  const walk: Walk = { issues: [] };
-  const output: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    const path = pointer('', key);
-    const field = fieldByApiKey(lens, key);
-    if (!field) {
-      unknownField(walk, path);
-    } else if (writableField(field)) {
-      output[field.stored.apiKey] = translateValue(walk, field, value, path);
-    } else if (!sentBackRead(field, value, read)) {
-      walk.issues.push({
-        path,
-        code: 'NOT_ALLOWED',
-        message: 'changed since this schema version and cannot be written through it',
-      });
-    }
-  }
+  const walk: Walk = { issues: [], base };
+  const output = translateObject(walk, lens, input, { stored: base.stored, read: base.read }, '', false);
   return { input: output, issues: walk.issues };
 };
+
+/**
+ * What the lens read (`readThroughLens`) of an entry, without what the caller may not read today: top-level
+ * fields by `visible`, component fields (at any depth) by `componentFieldVisible`. A write compares against
+ * this only, so a refusal never tells a caller whether it guessed a hidden value.
+ */
+export const readableThroughLens = (
+  lens: DefinitionLens,
+  data: Readonly<ContentData>,
+  visible: (fieldId: string) => boolean,
+  componentFieldVisible: (fieldId: string) => boolean,
+): ContentData => {
+  const restrict = (current: DefinitionLens, item: unknown, show: (fieldId: string) => boolean): unknown => {
+    if (!isRecord(item)) {
+      return item;
+    }
+    const output: ContentData = {};
+    for (const field of current.fields) {
+      const value = item[field.fieldId];
+      if (isMissingValue(value) || !show(field.fieldId)) {
+        continue;
+      }
+      output[field.fieldId] = restrictValue(field, value);
+    }
+    if (typeof item[COMPONENT_KEY] === 'string') {
+      output[COMPONENT_KEY] = item[COMPONENT_KEY];
+    }
+    return output;
+  };
+  const restrictValue = (field: FieldLens, value: unknown): unknown => {
+    if (field.kind === 'null') {
+      return value;
+    }
+    const nested = (componentId: unknown, item: unknown) => {
+      const component = typeof componentId === 'string' ? nestedOf(field, componentId) : undefined;
+      return component ? restrict(component, item, componentFieldVisible) : item;
+    };
+    if (field.client.type === 'component') {
+      const componentId = field.client.settings.component;
+      return Array.isArray(value)
+        ? value.map((item) => nested(componentId, item))
+        : nested(componentId, value);
+    }
+    if (field.client.type === 'dynamiczone' && Array.isArray(value)) {
+      return value.map((item: unknown) => nested(isRecord(item) ? item[COMPONENT_KEY] : undefined, item));
+    }
+    return value;
+  };
+  return restrict(lens, data, visible) as ContentData;
+};
+
+const ADDED_SINCE =
+  "(this field was added after the client's schema version; update the client to the current schema version to write it)";
+
+const decodeSegment = (segment: string) => segment.replace(/~1/g, '/').replace(/~0/g, '~');
+
+/** One JSON pointer in today's API IDs in the client's, and whether it names a field the client lacks. */
+const clientPath = (
+  lens: DefinitionLens,
+  path: string,
+  base: Pick<LensWriteBase, 'definitionOf'>,
+): { path: string; added: boolean } => {
+  const segments = path.split('/').slice(1).map(decodeSegment);
+  const output: string[] = [];
+  let current: DefinitionLens | null | undefined = lens;
+  let index = 0;
+  let added = false;
+  while (index < segments.length && current) {
+    const segment = segments[index] as string;
+    const field: FieldLens | undefined = current.fields.find(
+      (candidate) => candidate.kind !== 'null' && candidate.stored.apiKey === segment,
+    );
+    if (!field || field.kind === 'null') {
+      const today = base.definitionOf(current.definitionId);
+      added = current.addedFieldIds.some(
+        (id) => today?.fields.find((candidate) => candidate.id === id)?.apiKey === segment,
+      );
+      break;
+    }
+    output.push(field.apiKey);
+    index += 1;
+    const next = segments[index];
+    const listed = next !== undefined && /^\d+$/.test(next);
+    if (field.client.type === 'component') {
+      current = nestedOf(field, field.client.settings.component);
+      if (listed && field.client.settings.repeatable) {
+        output.push(next);
+        index += 1;
+      }
+    } else if (
+      field.client.type === 'dynamiczone' &&
+      listed &&
+      field.client.settings.components.length === 1
+    ) {
+      output.push(next);
+      index += 1;
+      current = nestedOf(field, field.client.settings.components[0] as string);
+    } else {
+      current = null;
+    }
+  }
+  const rest = segments.slice(index);
+  return {
+    path: [...output, ...rest].reduce((joined, segment) => pointer(joined, segment), ''),
+    added,
+  };
+};
+
+/**
+ * Today's validation issues in the client's API IDs: pointers renamed by stable ID, and an issue on a field
+ * the client's version lacks (a required field added since) says so.
+ */
+export const issuesInClientNames = (
+  lens: DefinitionLens,
+  issues: readonly ContentIssue[],
+  base: Pick<LensWriteBase, 'definitionOf'>,
+): ContentIssue[] =>
+  issues.map((issue) => {
+    const { path, added } = clientPath(lens, issue.path, base);
+    return { ...issue, path, message: added ? `${issue.message} ${ADDED_SINCE}` : issue.message };
+  });
+
+/** Today's API ID of a top-level field in the client's (a `FORBIDDEN_FIELD` list). */
+export const clientApiKey = (lens: DefinitionLens, apiKey: string): string =>
+  lens.fields.find((field) => field.kind !== 'null' && field.stored.apiKey === apiKey)?.apiKey ?? apiKey;

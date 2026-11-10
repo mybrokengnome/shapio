@@ -12,7 +12,7 @@ import { parseQueryTree } from '../compiler/querystring.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import { rewriteQueryTree, type QueryRewriteContext } from './query.js';
 import { readThroughLens } from './read.js';
-import { writeThroughLens } from './write.js';
+import { clientApiKey, issuesInClientNames, readableThroughLens, writeThroughLens } from './write.js';
 
 /** Deterministic UUIDs: id(1) = 00000000-0000-4000-8000-000000000001. */
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
@@ -321,58 +321,179 @@ describe('writeThroughLens', () => {
     ]),
     component(HERO, 'hero', heroFields),
   ];
+  const baseOf = (
+    definitions: SchemaDefinition[],
+    entry: { stored: Record<string, unknown>; read: Record<string, unknown> } | null = null,
+  ) => {
+    const index = createDefinitionIndex(definitions);
+    return {
+      stored: entry?.stored ?? null,
+      read: entry?.read ?? null,
+      definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
+    };
+  };
 
   it('translates renamed fields, inside components too', () => {
     const lens = lensOf(stored(), client);
-    expect(writeThroughLens(lens, { title: 'x', hero: { heading: 'h' } }, null)).toEqual({
+    expect(writeThroughLens(lens, { title: 'x', hero: { heading: 'h' } }, baseOf(stored()))).toEqual({
       input: { headline: 'x', hero: { title: 'h' } },
       issues: [],
     });
   });
 
-  it('refuses converted and re-localized fields unless they are sent back as read', () => {
+  it('refuses converted and re-localized fields, saying how they changed, unless sent back as read', () => {
     const lens = lensOf(stored(), client);
-    const read = { [id(3)]: 3, [id(4)]: 's' };
-    const result = writeThroughLens(lens, { count: 4, summary: 's2' }, read);
+    const entry = { stored: { [id(3)]: 3, [id(4)]: 's' }, read: { [id(3)]: 3, [id(4)]: 's' } };
+    const result = writeThroughLens(lens, { count: 4, summary: 's2' }, baseOf(stored(), entry));
     expect(result.issues.map((issue) => [issue.path, issue.code])).toEqual([
       ['/count', 'NOT_ALLOWED'],
       ['/summary', 'NOT_ALLOWED'],
     ]);
-    expect(writeThroughLens(lens, { count: 3, summary: 's', title: 't' }, read)).toEqual({
+    expect(result.issues[0]?.message).toContain('changed type (integer → number)');
+    expect(result.issues[1]?.message).toContain('became shared across locales');
+    // Sent back as read: left out of the patch, so the stored value stays untouched.
+    expect(writeThroughLens(lens, { count: 3, summary: 's', title: 't' }, baseOf(stored(), entry))).toEqual({
       input: { headline: 't' },
       issues: [],
     });
+    // Nothing to compare with on create.
+    expect(writeThroughLens(lens, { count: 3 }, baseOf(stored())).issues).toHaveLength(1);
   });
 
-  it('refuses a component that gained a field the client does not know', () => {
-    const lens = lensOf(
-      stored([
+  it('keeps fields a component gained since, and the ones the client cannot write, inside an instance', () => {
+    const today = stored([
+      { id: HEADING, apiKey: 'heading' },
+      { id: NEW, apiKey: 'subheading' },
+      { id: id(9), apiKey: 'size', type: 'number' },
+    ]);
+    const clientWithSize = [
+      client[0] as SchemaDefinition,
+      component(HERO, 'hero', [
         { id: HEADING, apiKey: 'heading' },
-        { id: NEW, apiKey: 'subheading' },
+        { id: id(9), apiKey: 'size', type: 'integer' },
       ]),
-      client,
-    );
-    expect(writeThroughLens(lens, { hero: { heading: 'h' } }, null).issues).toEqual([
-      expect.objectContaining({ path: '/hero', code: 'NOT_ALLOWED' }),
+    ];
+    const lens = lensOf(today, clientWithSize);
+    const entry = {
+      stored: { [id(6)]: { [HEADING]: 'old', [NEW]: 'kept', [id(9)]: 2.5 } },
+      read: { [id(6)]: { [HEADING]: 'old' } },
+    };
+    expect(writeThroughLens(lens, { hero: { heading: 'h' } }, baseOf(today, entry))).toEqual({
+      input: { hero: { heading: 'h', subheading: 'kept', size: 2.5 } },
+      issues: [],
+    });
+    expect(writeThroughLens(lens, { hero: { heading: 'h', size: 3 } }, baseOf(today, entry)).issues).toEqual([
+      expect.objectContaining({ path: '/hero/size', code: 'NOT_ALLOWED' }),
     ]);
   });
 
   it('refuses names the client version does not have', () => {
     const lens = lensOf(stored(), client);
-    expect(writeThroughLens(lens, { headline: 'x' }, null).issues).toEqual([
+    expect(writeThroughLens(lens, { headline: 'x' }, baseOf(stored())).issues).toEqual([
       expect.objectContaining({ path: '/headline', code: 'UNKNOWN_FIELD' }),
     ]);
   });
 
-  it('translates dynamic-zone component API IDs', () => {
-    const zone = (heroKey: string, headingKey: string) => [
+  it('translates dynamic-zone component API IDs and keeps what an item gained, matched by position', () => {
+    const zone = (heroKey: string, fields: FieldSpec[]) => [
       model([{ id: F, apiKey: 'blocks', type: 'dynamiczone', settings: { components: [HERO] } }]),
-      component(HERO, heroKey, [{ id: HEADING, apiKey: headingKey }]),
+      component(HERO, heroKey, fields),
     ];
-    const lens = lensOf(zone('banner', 'title'), zone('hero', 'heading'));
-    expect(writeThroughLens(lens, { blocks: [{ [COMPONENT_KEY]: 'hero', heading: 'h' }] }, null)).toEqual({
-      input: { blocks: [{ [COMPONENT_KEY]: 'banner', title: 'h' }] },
+    const today = zone('banner', [
+      { id: HEADING, apiKey: 'title' },
+      { id: NEW, apiKey: 'extra' },
+    ]);
+    const lens = lensOf(today, zone('hero', [{ id: HEADING, apiKey: 'heading' }]));
+    const entry = {
+      stored: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a', [NEW]: 'x' }] },
+      read: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a' }] },
+    };
+    expect(
+      writeThroughLens(
+        lens,
+        {
+          blocks: [
+            { [COMPONENT_KEY]: 'hero', heading: 'h' },
+            { [COMPONENT_KEY]: 'hero', heading: 'new' },
+          ],
+        },
+        baseOf(today, entry),
+      ),
+    ).toEqual({
+      input: {
+        blocks: [
+          { [COMPONENT_KEY]: 'banner', title: 'h', extra: 'x' },
+          { [COMPONENT_KEY]: 'banner', title: 'new' },
+        ],
+      },
       issues: [],
     });
+  });
+
+  it("maps today's validation pointers to the client's names and marks fields added since", () => {
+    const today = [
+      model([
+        { id: F, apiKey: 'headline' },
+        { id: id(6), apiKey: 'hero', type: 'component', settings: { component: HERO, repeatable: true } },
+        { id: NEW, apiKey: 'subtitle' },
+      ]),
+      component(HERO, 'hero', [{ id: HEADING, apiKey: 'title' }]),
+    ];
+    const old = [
+      model([
+        { id: F, apiKey: 'title' },
+        { id: id(6), apiKey: 'hero', type: 'component', settings: { component: HERO, repeatable: true } },
+      ]),
+      component(HERO, 'hero', [{ id: HEADING, apiKey: 'heading' }]),
+    ];
+    const lens = lensOf(today, old);
+    expect(
+      issuesInClientNames(
+        lens,
+        [
+          { path: '/headline', code: 'TOO_LONG', message: 'is too long' },
+          { path: '/hero/1/title', code: 'REQUIRED', message: 'is required' },
+          { path: '/subtitle', code: 'REQUIRED', message: 'is required' },
+        ],
+        baseOf(today),
+      ),
+    ).toMatchObject([
+      { path: '/title', code: 'TOO_LONG', message: 'is too long' },
+      { path: '/hero/1/heading', code: 'REQUIRED', message: 'is required' },
+      { path: '/subtitle', code: 'REQUIRED' },
+    ]);
+    const [added] = issuesInClientNames(
+      lens,
+      [{ path: '/subtitle', code: 'REQUIRED', message: 'is required' }],
+      baseOf(today),
+    );
+    expect(added?.message).toContain('added after');
+    expect(clientApiKey(lens, 'headline')).toBe('title');
+  });
+});
+
+describe('readableThroughLens', () => {
+  it('leaves out what the caller may not read, inside components too', () => {
+    const HERO = id(5);
+    const definitions = [
+      model([
+        { id: F, apiKey: 'title' },
+        { id: id(3), apiKey: 'secret' },
+        { id: id(6), apiKey: 'hero', type: 'component', settings: { component: HERO } },
+      ]),
+      component(HERO, 'hero', [
+        { id: id(7), apiKey: 'open' },
+        { id: id(8), apiKey: 'hidden' },
+      ]),
+    ];
+    const lens = lensOf(definitions, definitions);
+    expect(
+      readableThroughLens(
+        lens,
+        { [F]: 't', [id(3)]: 's', [id(6)]: { [id(7)]: 'o', [id(8)]: 'h' } },
+        (fieldId) => fieldId !== id(3),
+        (fieldId) => fieldId !== id(8),
+      ),
+    ).toEqual({ [F]: 't', [id(6)]: { [id(7)]: 'o' } });
   });
 });
