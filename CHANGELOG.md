@@ -6,7 +6,7 @@ All notable changes to Shapio are listed here. The format follows
 
 ## [Unreleased]
 
-## [0.8.2] - 2026-11-07
+## [0.8.2] - 2026-11-10
 
 ### Changed
 
