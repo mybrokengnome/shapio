@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
+import { schemaVersionNoteOf } from '../helpers/schemaVersionPin';
 import { TokenStatus } from './TokenStatus';
 
 type TableProps = {
@@ -27,9 +28,16 @@ type TableProps = {
   siteName: string;
   /** The schema version a token's latest request named, by token ID (tokens that name none are absent). */
   schemaVersions: ReadonlyMap<string, number>;
+  /** Opens the token's edit sheet (its schema version pin). */
+  onEdit: (token: ApiToken) => void;
   /** Resolves once the token is revoked (the confirmation waits for it). */
   onRevoke: (token: ApiToken) => Promise<unknown>;
 };
+
+const SCHEMA_VERSION_NOTE_KEYS = {
+  pinned: 'apiTokens.pinnedToSchemaVersion',
+  sends: 'apiTokens.sendsSchemaVersion',
+} as const;
 
 export const Table = ({
   tokens,
@@ -37,6 +45,7 @@ export const Table = ({
   draftRoleIds,
   siteName,
   schemaVersions,
+  onEdit,
   onRevoke,
 }: TableProps) => {
   const { t } = useTranslation();
@@ -56,61 +65,83 @@ export const Table = ({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tokens.map((token) => (
-            <TableRow key={token.id}>
-              {/* Long names wrap here, so the status and Revoke stay in view on a narrow laptop. */}
-              <TableCell className="whitespace-normal">
-                <RowTitle>{token.name}</RowTitle>
-                {/* The token's start and when it was last used, under its name: four columns fit a laptop. */}
-                <span className="block text-meta text-muted-foreground">
-                  <span className="font-mono">{`${token.tokenPrefix}…`}</span>
-                  {' · '}
-                  <span title={formatDateTime(token.lastUsedAt) || undefined}>
-                    {token.lastUsedAt
-                      ? t('apiTokens.lastUsedAt', { time: formatRelativeTime(token.lastUsedAt) })
-                      : t('apiTokens.neverUsed')}
+          {tokens.map((token) => {
+            const versionNote = schemaVersionNoteOf(token.pinnedSchemaVersion, schemaVersions.get(token.id));
+            return (
+              <TableRow key={token.id}>
+                {/* Long names wrap here, so the status and Revoke stay in view on a narrow laptop. */}
+                <TableCell className="whitespace-normal">
+                  <RowTitle>{token.name}</RowTitle>
+                  {/* The token's start and when it was last used, under its name: four columns fit a laptop. */}
+                  <span className="block text-meta text-muted-foreground">
+                    <span className="font-mono">{`${token.tokenPrefix}…`}</span>
+                    {' · '}
+                    <span title={formatDateTime(token.lastUsedAt) || undefined}>
+                      {token.lastUsedAt
+                        ? t('apiTokens.lastUsedAt', { time: formatRelativeTime(token.lastUsedAt) })
+                        : t('apiTokens.neverUsed')}
+                    </span>
+                    {versionNote ? (
+                      <>
+                        {' · '}
+                        <span data-schema-version={versionNote.kind}>
+                          {t(SCHEMA_VERSION_NOTE_KEYS[versionNote.kind], { version: versionNote.version })}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
-                  {schemaVersions.has(token.id) ? (
-                    <>
-                      {' · '}
-                      <span data-schema-version>
-                        {t('apiTokens.sendsSchemaVersion', { version: schemaVersions.get(token.id) })}
-                      </span>
-                    </>
-                  ) : null}
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className="flex items-center gap-2">
-                  {roleNames.get(token.roleId) ?? t('common.unknown')}
-                  {draftRoleIds.has(token.roleId) ? (
-                    <StatusChip tone="warning" size="sm" label={t('apiTokens.draftsChip')} />
-                  ) : null}
-                </span>
-                {/* Where the role applies, under it. */}
-                <span className="block text-meta text-muted-foreground">
-                  {token.siteId === null ? t('sites.everySite') : siteName}
-                </span>
-              </TableCell>
-              <TableCell>
-                <TokenStatus token={token} now={now} />
-              </TableCell>
-              <TableCell className="text-right">
-                <InlineConfirm
-                  tone="danger"
-                  title={t('apiTokens.revokeTitle', { name: token.name })}
-                  description={t('apiTokens.revokeDescription')}
-                  confirmLabel={t('common.revoke')}
-                  onConfirm={() => onRevoke(token)}
-                  trigger={
-                    <Button variant="outline" size="sm" aria-label={`${t('common.revoke')}: ${token.name}`}>
-                      {t('common.revoke')}
+                </TableCell>
+                <TableCell>
+                  <span className="flex items-center gap-2">
+                    {roleNames.get(token.roleId) ?? t('common.unknown')}
+                    {draftRoleIds.has(token.roleId) ? (
+                      <StatusChip tone="warning" size="sm" label={t('apiTokens.draftsChip')} />
+                    ) : null}
+                  </span>
+                  {/* Where the role applies, under it. */}
+                  <span className="block text-meta text-muted-foreground">
+                    {token.siteId === null ? t('sites.everySite') : siteName}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <span className="flex flex-col items-start gap-1">
+                    <TokenStatus token={token} now={now} />
+                    {token.pinnedSchemaVersionAvailable ? null : (
+                      <StatusChip tone="warning" size="sm" label={t('apiTokens.pinUnavailable')} />
+                    )}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">
+                  <span className="inline-flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`${t('common.edit')}: ${token.name}`}
+                      onClick={() => onEdit(token)}
+                    >
+                      {t('common.edit')}
                     </Button>
-                  }
-                />
-              </TableCell>
-            </TableRow>
-          ))}
+                    <InlineConfirm
+                      tone="danger"
+                      title={t('apiTokens.revokeTitle', { name: token.name })}
+                      description={t('apiTokens.revokeDescription')}
+                      confirmLabel={t('common.revoke')}
+                      onConfirm={() => onRevoke(token)}
+                      trigger={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={`${t('common.revoke')}: ${token.name}`}
+                        >
+                          {t('common.revoke')}
+                        </Button>
+                      }
+                    />
+                  </span>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </TableRoot>
     </TableCard>

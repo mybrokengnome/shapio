@@ -8,27 +8,37 @@ import { lensVisibility } from '../schema/codegen/graphql/lensVisibility.js';
 import type { BuiltSchema } from '../schema/codegen/graphql/schemaBuilder.js';
 import type { SchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
-import { activeLens, schemaIdOf, type ContentServiceContext } from '../services/contentAccess.js';
+import {
+  activeLens,
+  pinnedSchemaVersionOf,
+  schemaIdOf,
+  type ContentServiceContext,
+} from '../services/contentAccess.js';
 import { schemaVersionMetaOf } from '../services/contentDeliveryLens.js';
 import { contentContextFor } from './contentContext.js';
 
 /**
  * Schema lenses on `/api/graphql` (plan schema-lenses): a request naming a schema version
  * (`Shapio-Schema-Version`, or `?schemaVersion=` on GET; read by plugins/schemaLens.ts) is validated and
- * executed against the GraphQL schema of the workspace at that version, reads only. One naming the current
- * version, or a version since which nothing in the workspace changed, uses the current schema.
+ * executed against the GraphQL schema of the workspace at that version; an API token pinned to a version names
+ * it when the request names none. One naming the current version, or a version since which nothing in the
+ * workspace changed, uses the current schema.
  */
 
 /**
- * The content context of a request naming a schema version, with its lens (built once, before the schema is
- * chosen); undefined when it names none. Every GraphQL response carries the current version's token.
+ * The content context of a request naming a schema version (or made with a pinned token), with its lens
+ * (built once, before the schema is chosen); undefined when it names none. Every GraphQL response carries the
+ * current version's token.
  */
 export const graphqlLensOf = async (
   request: FastifyRequest,
   view: SchemaSnapshot,
 ): Promise<ContentServiceContext | undefined> => {
   request.schemaVersionCurrent = schemaVersionToken(await schemaIdOf(request.server.db), view.version);
-  return request.schemaVersionToken === null ? undefined : contentContextFor(request);
+  // An API token pinned to a schema version names it when the request names none.
+  const namesVersion =
+    request.schemaVersionToken !== null || pinnedSchemaVersionOf(request.principal) !== null;
+  return namesVersion ? contentContextFor(request) : undefined;
 };
 
 /** The schema a request executes against: the client's version through an active lens, else the current one. */

@@ -1,5 +1,6 @@
 import { compileLens, isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
 import type { Transaction } from 'kysely';
+import { schemaVersionToken } from '../constants/schemaLens.js';
 import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
@@ -77,19 +78,39 @@ const currentVersionLens = (snapshot: SchemaSnapshot): RequestLens => {
   };
 };
 
+/** The schema version an API token is pinned to (plan schema-lenses); null for every other caller. */
+export const pinnedSchemaVersionOf = (actor: Principal): number | null =>
+  actor.kind === 'token' ? (actor.pinnedSchemaVersion ?? null) : null;
+
+/**
+ * The `<schemaId>:<version>` a call names, or the one of the API token's pin when it names none; null when
+ * neither. For callers that take the token rather than a content context (the generated contracts).
+ */
+export const schemaVersionTokenWithPin = async (
+  db: Database,
+  actor: Principal,
+  token: string | null,
+): Promise<string | null> => {
+  const pinned = token === null ? pinnedSchemaVersionOf(actor) : null;
+  return pinned === null ? token : schemaVersionToken(await schemaIdOf(db), pinned);
+};
+
 /**
  * The context with the schema ID and, when the call names a schema version (`<schemaId>:<version>`), its lens:
- * `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` or `SCHEMA_VERSION_AHEAD` when it cannot be served.
+ * `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` or `SCHEMA_VERSION_AHEAD` when it cannot be served. A call
+ * that names none, made with an API token pinned to a version, is served as if it had named the pin; a version
+ * the call names wins over the pin.
  */
 export const withSchemaLens = async (
   context: ContentServiceContext,
   token: string | null,
 ): Promise<ContentServiceContext> => {
   const schemaId = await schemaIdOf(context.db);
-  if (token === null) {
+  const version =
+    token === null ? pinnedSchemaVersionOf(context.actor) : parseSchemaVersionToken(token, schemaId);
+  if (version === null) {
     return { ...context, schemaId };
   }
-  const version = parseSchemaVersionToken(token, schemaId);
   const lens =
     (await loadRequestLens(context.db, context.snapshot, version)) ?? currentVersionLens(context.snapshot);
   return { ...context, schemaId, lens };

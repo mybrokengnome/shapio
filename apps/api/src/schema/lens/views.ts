@@ -129,7 +129,7 @@ const inView = (siteId: string | null, rowSiteId: string | null) =>
   rowSiteId === null || rowSiteId === siteId;
 
 /** Its earliest row starts later than its first activation: what came before is unknown. */
-const historyIsIncomplete = (row: EarliestActivationRow) =>
+export const historyIsIncomplete = (row: EarliestActivationRow) =>
   row.backfilled && (row.revisionId === null || row.parentRevisionId !== null);
 
 const toActiveDefinition = async (

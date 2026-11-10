@@ -2,9 +2,10 @@ import { isModelDefinition, type FieldDefinition } from '@shapio/schema';
 import { modelNotFound, resolveModelById } from '../content/model.js';
 import { relationTargetFor } from '../content/relationTarget.js';
 import type { Database } from '../db/index.js';
+import * as apiTokensRepository from '../repositories/apiTokens.js';
 import * as sitesRepository from '../repositories/sites.js';
 import * as usageRepository from '../repositories/usage.js';
-import type { FieldUsageRow, UsageSelection } from '../repositories/usage.js';
+import type { FieldUsageRow, SchemaVersionReaderRow, UsageSelection } from '../repositories/usage.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { UsageBatch } from '../usage/aggregator.js';
 import { usageDayOf } from '../usage/keys.js';
@@ -283,16 +284,77 @@ export const writeUsageBatch = (database: Database, batch: UsageBatch): Promise<
 export type SchemaVersionReader = {
   principalKey: string;
   tokenName?: string;
-  /** The schema version the reader's latest request named (plan schema-lenses). */
+  /** The schema version the reader's latest request was served at (plan schema-lenses). */
   schemaVersion: number;
+  /** The version is the token's pin, not one the client sends. */
+  pinned: boolean;
   lastReadAt: Date;
 };
 
-/** Readers of a site whose latest request named a schema version, most recent first. */
-export const schemaVersionReaders = async (site: SiteRef): Promise<SchemaVersionReader[]> =>
-  (await usageRepository.latestSchemaVersions([site.id])).map((row) => ({
-    principalKey: row.principalKey,
-    ...(row.tokenName !== null ? { tokenName: row.tokenName } : {}),
-    schemaVersion: row.schemaVersion,
-    lastReadAt: row.lastReadAt,
+/** A reader on a schema version; `lastReadAt` null: a pinned token that has not read yet. */
+export type VersionReaderRow = Omit<SchemaVersionReaderRow, 'lastReadAt'> & {
+  lastReadAt: Date | null;
+  /** The version is the token's pin, not one the client sends. */
+  pinned: boolean;
+};
+
+const TOKEN_PRINCIPAL_PREFIX = 'token:';
+
+/**
+ * Readers on these workspaces (every workspace when omitted) by the schema version their latest request was
+ * served at: the version it named, or its token's pin (`pinned`; recorded the same way, so a read at the
+ * version the token is pinned to counts as the pin). `includeUnread`: live tokens pinned to a version that
+ * have not read since are declared older clients too, listed at their pin with `lastReadAt` null (workspace
+ * tokens only: a network token's reads say which workspace it reads).
+ */
+export const schemaVersionReadersWithPins = async (
+  siteIds: readonly string[] | undefined,
+  { includeUnread }: { includeUnread: boolean },
+  executor?: Database,
+): Promise<VersionReaderRow[]> => {
+  const [rows, pins] = await Promise.all([
+    usageRepository.latestSchemaVersions(siteIds, executor),
+    apiTokensRepository.listPinned(siteIds, new Date(), executor),
+  ]);
+  const pinOf = new Map(pins.map((pin) => [`${TOKEN_PRINCIPAL_PREFIX}${pin.id}`, pin.pinnedSchemaVersion]));
+  const readers: VersionReaderRow[] = rows.map((row) => ({
+    ...row,
+    pinned: pinOf.get(row.principalKey) === row.schemaVersion,
   }));
+  if (!includeUnread) {
+    return readers;
+  }
+  const read = new Set(rows.map((row) => `${row.siteId}|${row.principalKey}`));
+  for (const pin of pins) {
+    const principalKey = `${TOKEN_PRINCIPAL_PREFIX}${pin.id}`;
+    if (pin.siteId === null || pin.siteKey === null || read.has(`${pin.siteId}|${principalKey}`)) {
+      continue;
+    }
+    readers.push({
+      siteId: pin.siteId,
+      siteKey: pin.siteKey,
+      principalKey,
+      tokenName: pin.name,
+      schemaVersion: pin.pinnedSchemaVersion,
+      lastReadAt: null,
+      pinned: true,
+    });
+  }
+  return readers;
+};
+
+/** Readers of a site whose latest request was served at a named or pinned schema version, most recent first. */
+export const schemaVersionReaders = async (site: SiteRef): Promise<SchemaVersionReader[]> =>
+  (await schemaVersionReadersWithPins([site.id], { includeUnread: false })).flatMap((row) =>
+    row.lastReadAt === null
+      ? []
+      : [
+          {
+            principalKey: row.principalKey,
+            ...(row.tokenName !== null ? { tokenName: row.tokenName } : {}),
+            schemaVersion: row.schemaVersion,
+            pinned: row.pinned,
+            lastReadAt: row.lastReadAt,
+          },
+        ],
+  );

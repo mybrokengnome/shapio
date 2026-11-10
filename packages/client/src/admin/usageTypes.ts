@@ -57,8 +57,10 @@ export type SchemaVersionReader = {
   /** `token:<id>`, `app_users` or `anonymous`. */
   principalKey: string;
   tokenName?: string;
-  /** The schema version the reader's latest request named. */
+  /** The schema version the reader's latest request was served at: one it named, or its token's pin. */
   schemaVersion: number;
+  /** The version is the token's pin, not one the client sends. */
+  pinned: boolean;
   lastReadAt: string;
 };
 
@@ -78,7 +80,10 @@ export type OlderClientReader = {
   principalKey: string;
   /** The token's name; null for app users, anonymous readers and deleted tokens. */
   label: string | null;
-  lastReadAt: string;
+  /** The version is the token's pin, not one the client sends. */
+  pinned: boolean;
+  /** Null: a token pinned to the version that has not read since (a declared older client). */
+  lastReadAt: string | null;
 };
 
 export type OlderClientDefinition = {

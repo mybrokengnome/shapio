@@ -68,10 +68,15 @@ export type DeliveryStateRow = RequestStateRow & {
   /** The stored delivery descriptor (JSON text); null before a server of this release started. */
   descriptor: string | null;
   /**
-   * The token's revocation, expiry and whether its creator is disabled; null when no token was asked about or
-   * the token no longer exists.
+   * The token's revocation, expiry, whether its creator is disabled, and the schema version it is pinned to;
+   * null when no token was asked about or the token no longer exists.
    */
-  token: { revokedAt: Date | null; expiresAt: Date | null; creatorDisabled: boolean } | null;
+  token: {
+    revokedAt: Date | null;
+    expiresAt: Date | null;
+    creatorDisabled: boolean;
+    pinnedSchemaVersion: number | null;
+  } | null;
 };
 
 /**
@@ -104,6 +109,7 @@ export const readForDelivery = async (
           'api_tokens.id as token_id',
           'api_tokens.revoked_at as token_revoked_at',
           'api_tokens.expires_at as token_expires_at',
+          'api_tokens.pinned_schema_version as token_pinned_schema_version',
           'admin_users.status as token_creator_status',
         ]),
     )
@@ -121,6 +127,7 @@ export const readForDelivery = async (
             revokedAt: row.token_revoked_at ?? null,
             expiresAt: row.token_expires_at ?? null,
             creatorDisabled: row.token_creator_status === 'disabled',
+            pinnedSchemaVersion: row.token_pinned_schema_version ?? null,
           },
   };
 };

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
-import { createToken, listTokens, revokeToken } from '../../../controllers/apiTokens.js';
+import { createToken, listTokens, revokeToken, updateToken } from '../../../controllers/apiTokens.js';
 import { declareSiteScope } from '../../../plugins/siteResolution.js';
-import { createTokenSchema, listTokensSchema, revokeTokenSchema } from './schemas.js';
+import { createTokenSchema, listTokensSchema, revokeTokenSchema, updateTokenSchema } from './schemas.js';
 
 /** API tokens: each bound to one role, shown once, stored hashed. */
 export const adminTokensRoutes: FastifyPluginAsyncTypebox = async (app) => {
@@ -15,6 +15,12 @@ export const adminTokensRoutes: FastifyPluginAsyncTypebox = async (app) => {
     '/',
     { schema: createTokenSchema, config: { audit: { action: 'api_token.create' } }, ...manageTokens },
     createToken,
+  );
+  // PATCH /api/admin/tokens/:id: the schema version the token is pinned to.
+  app.patch(
+    '/:id',
+    { schema: updateTokenSchema, config: { audit: { action: 'api_token.update' } }, ...manageTokens },
+    updateToken,
   );
   // DELETE /api/admin/tokens/:id: revoke.
   app.delete(

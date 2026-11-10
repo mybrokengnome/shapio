@@ -60,6 +60,11 @@ export type TokenPrincipal = {
    * actions). Delivery tokens always have a site.
    */
   siteId: string | null;
+  /**
+   * The schema version the token is pinned to (plan schema-lenses): a request that names no schema version is
+   * served as if it had named this one. Absent or null: no pin.
+   */
+  pinnedSchemaVersion?: number | null;
 };
 
 /**

@@ -19,7 +19,13 @@ const version = (
 ): OlderClientVersion => ({
   schemaVersion,
   readers: [
-    { site: SITE, principalKey: `token:t${schemaVersion}`, label: `Site ${schemaVersion}`, lastReadAt: '' },
+    {
+      site: SITE,
+      principalKey: `token:t${schemaVersion}`,
+      label: `Site ${schemaVersion}`,
+      pinned: false,
+      lastReadAt: '',
+    },
   ],
   readerCount: 1,
   otherSites: null,

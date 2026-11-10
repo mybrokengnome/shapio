@@ -11,19 +11,18 @@ import {
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import type { PermissionEvaluator, Principal } from '../permissions/types.js';
-import * as usageRepository from '../repositories/usage.js';
-import type { SchemaVersionReaderRow } from '../repositories/usage.js';
 import { loadRequestLens } from '../schema/lens/views.js';
 import { buildSnapshot, type SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
 import { seesEverySite } from './networkScope.js';
+import { schemaVersionReadersWithPins, type VersionReaderRow } from './usage.js';
 
 /**
  * What clients that name an older schema version see after a proposed change (plan schema-lenses §6,
  * agreed 13): for each schema version API readers of the affected workspaces actually send
  * (`token_reads.last_schema_version`, the version each is on now), the lens from that version's definition to
- * the PROPOSED one, composite over every change between them, per field. Shared by the change set review and
- * the model builder's plan preview.
+ * the PROPOSED one, composite over every change between them, per field. Tokens pinned to a version are on it
+ * whether or not they read yet. Shared by the change set review and the model builder's plan preview.
  */
 
 /** Distinct schema versions a review compiles lenses for: the most recently used first. */
@@ -36,7 +35,10 @@ export type OlderClientReader = {
   principalKey: string;
   /** The token's name; null for app users, anonymous readers and deleted tokens. */
   label: string | null;
-  lastReadAt: Date;
+  /** The version is the token's pin, not one the client sends. */
+  pinned: boolean;
+  /** Null: a token pinned to the version that has not read since (a declared older client). */
+  lastReadAt: Date | null;
 };
 
 export type OlderClientField = {
@@ -151,9 +153,9 @@ const affectedSiteIds = (input: OlderClientsInput): string[] | undefined => {
   return [...sites];
 };
 
-type VersionReaders = { schemaVersion: number; lastReadAt: number; rows: SchemaVersionReaderRow[] };
+type VersionReaders = { schemaVersion: number; lastReadAt: number; rows: VersionReaderRow[] };
 
-const groupByVersion = (rows: readonly SchemaVersionReaderRow[], currentVersion: number) => {
+const groupByVersion = (rows: readonly VersionReaderRow[], currentVersion: number) => {
   const versions = new Map<number, VersionReaders>();
   for (const row of rows) {
     // A version ahead of this view cannot have been served here (refused with SCHEMA_VERSION_AHEAD).
@@ -161,7 +163,8 @@ const groupByVersion = (rows: readonly SchemaVersionReaderRow[], currentVersion:
       continue;
     }
     const known = versions.get(row.schemaVersion);
-    const at = row.lastReadAt.getTime();
+    // A pinned token that has not read yet sorts after every version read from.
+    const at = row.lastReadAt?.getTime() ?? 0;
     if (!known) {
       versions.set(row.schemaVersion, { schemaVersion: row.schemaVersion, lastReadAt: at, rows: [row] });
       continue;
@@ -176,7 +179,7 @@ const groupByVersion = (rows: readonly SchemaVersionReaderRow[], currentVersion:
 
 type Visibility = { siteId: string | null; network: boolean; names: boolean };
 
-const readersOf = (rows: readonly SchemaVersionReaderRow[], visibility: Visibility) => {
+const readersOf = (rows: readonly VersionReaderRow[], visibility: Visibility) => {
   const detailed = visibility.network ? rows : rows.filter((row) => row.siteId === visibility.siteId);
   return {
     readers: visibility.names
@@ -184,6 +187,7 @@ const readersOf = (rows: readonly SchemaVersionReaderRow[], visibility: Visibili
           site: { id: row.siteId, key: row.siteKey },
           principalKey: row.principalKey,
           label: row.tokenName,
+          pinned: row.pinned,
           lastReadAt: row.lastReadAt,
         }))
       : null,
@@ -266,7 +270,7 @@ export const olderClientsOf = async (input: OlderClientsInput): Promise<OlderCli
   if (input.definitionIds.length === 0) {
     return { versions: [], truncated: false };
   }
-  const rows = await usageRepository.latestSchemaVersions(affectedSiteIds(input), input.db);
+  const rows = await schemaVersionReadersWithPins(affectedSiteIds(input), { includeUnread: true }, input.db);
   const grouped = groupByVersion(rows, input.current.version);
   if (grouped.length === 0) {
     return { versions: [], truncated: false };

@@ -102,7 +102,7 @@ export const openCallScope = async (
   runtime: DeliveryRuntime,
   { token, site: requestedKey }: CallCredentials,
 ): Promise<ContentServiceContext> => {
-  const caller = await callerOf(runtime, token);
+  let caller = await callerOf(runtime, token);
   let state: DeliveryStateRow | undefined;
   const site = await resolveSite(
     {
@@ -132,6 +132,15 @@ export const openCallScope = async (
     ) {
       runtime.tokens.delete(caller.tokenKey);
       throw invalidToken();
+    }
+    // The pin may have changed since the token was resolved: this call reads with the stored one (rule 1).
+    if (
+      caller.principal.kind === 'token' &&
+      (caller.principal.pinnedSchemaVersion ?? null) !== live.pinnedSchemaVersion
+    ) {
+      const refreshed = { ...caller.principal, pinnedSchemaVersion: live.pinnedSchemaVersion };
+      runtime.tokens.set(caller.tokenKey, refreshed);
+      caller = { ...caller, principal: refreshed };
     }
   }
   if (state.descriptor === null) {

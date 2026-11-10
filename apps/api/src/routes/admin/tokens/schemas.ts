@@ -23,7 +23,21 @@ const ApiTokenSchema = Type.Object({
   lastUsedAt: NullableDateTimeSchema,
   revokedAt: NullableDateTimeSchema,
   createdAt: DateTimeSchema,
+  /**
+   * The schema version the token is pinned to: a request made with it that names no schema version is served
+   * as if it had named this one. Null: today's shape.
+   */
+  pinnedSchemaVersion: Type.Union([Type.Integer(), Type.Null()]),
+  /** False when the history does not reach the pin for some definition: those reads answer 409. */
+  pinnedSchemaVersionAvailable: Type.Boolean(),
 });
+
+/**
+ * A schema version to pin the token to, or null for none. Any number is accepted here so the service can
+ * answer `INVALID_PINNED_SCHEMA_VERSION` (a whole number from 1 to the current schema version). One type
+ * list rather than a union: Ajv's type coercion would turn null into 0 trying the number branch first.
+ */
+const PinnedSchemaVersionInputSchema = Type.Unsafe<number | null>({ type: ['number', 'null'] });
 
 export const listTokensSchema = { response: { 200: Type.Array(ApiTokenSchema) } };
 
@@ -38,10 +52,17 @@ export const CreateTokenBodySchema = Type.Object(
      * Delivery tokens always belong to the request's site.
      */
     network: Type.Optional(Type.Boolean()),
+    pinnedSchemaVersion: Type.Optional(PinnedSchemaVersionInputSchema),
   },
   { additionalProperties: false },
 );
 export type CreateTokenBody = Static<typeof CreateTokenBodySchema>;
+
+export const UpdateTokenBodySchema = Type.Object(
+  { pinnedSchemaVersion: PinnedSchemaVersionInputSchema },
+  { additionalProperties: false },
+);
+export type UpdateTokenBody = Static<typeof UpdateTokenBodySchema>;
 
 /** `token` is the only time the value is ever shown. */
 export const createTokenSchema = {
@@ -50,6 +71,17 @@ export const createTokenSchema = {
     201: Type.Object({ token: Type.String(), apiToken: ApiTokenSchema }),
     400: ErrorResponseSchema,
     403: ErrorResponseSchema,
+  },
+};
+
+export const updateTokenSchema = {
+  params: IdParamsSchema,
+  body: UpdateTokenBodySchema,
+  response: {
+    200: ApiTokenSchema,
+    400: ErrorResponseSchema,
+    403: ErrorResponseSchema,
+    404: ErrorResponseSchema,
   },
 };
 

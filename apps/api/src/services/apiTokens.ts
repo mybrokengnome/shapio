@@ -13,6 +13,7 @@ import type { PermissionEvaluator, PermissionExecutor, TokenPrincipal } from '..
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
 import type { SiteActorContext } from './actorContext.js';
+import { assertPinnedSchemaVersion, pinnedVersionsAvailable } from './apiTokenPins.js';
 import { recordAudit } from './audit.js';
 
 export type ApiTokenView = {
@@ -31,13 +32,20 @@ export type ApiTokenView = {
   lastUsedAt: Date | null;
   revokedAt: Date | null;
   createdAt: Date;
+  /**
+   * The schema version the token is pinned to (plan schema-lenses): a request that names none is served as if
+   * it had named this one. Null: today's shape.
+   */
+  pinnedSchemaVersion: number | null;
+  /** False when the activation history does not reach the pin for some definition (its reads answer 409). */
+  pinnedSchemaVersionAvailable: boolean;
 };
 
 type ApiTokenListRow = Awaited<ReturnType<typeof apiTokensRepository.listForSite>>[number];
 
 const scopeOf = (roleKind: string): 'admin' | 'delivery' => (roleKind === 'delivery' ? 'delivery' : 'admin');
 
-const toApiTokenView = (row: ApiTokenListRow): ApiTokenView => ({
+const toApiTokenView = (row: ApiTokenListRow, pinnedSchemaVersionAvailable = true): ApiTokenView => ({
   id: row.id,
   name: row.name,
   tokenPrefix: row.token_prefix,
@@ -50,7 +58,34 @@ const toApiTokenView = (row: ApiTokenListRow): ApiTokenView => ({
   lastUsedAt: row.last_used_at,
   revokedAt: row.revoked_at,
   createdAt: row.created_at,
+  pinnedSchemaVersion: row.pinned_schema_version,
+  pinnedSchemaVersionAvailable,
 });
+
+/** Views of these rows, with whether each pin is served (one history query, only when a token is pinned). */
+const toApiTokenViews = async (
+  rows: readonly ApiTokenListRow[],
+  executor: Database,
+): Promise<ApiTokenView[]> => {
+  const available = await pinnedVersionsAvailable(
+    rows.map((row) => ({ siteId: row.site_id, pinnedSchemaVersion: row.pinned_schema_version })),
+    executor,
+  );
+  return rows.map((row, index) => toApiTokenView(row, available[index]));
+};
+
+/** One token's view, re-read in the caller's transaction after a write. */
+const reloadApiTokenView = async (id: string, trx: Transaction<DB>): Promise<ApiTokenView> => {
+  const row = await apiTokensRepository.findById(id, trx);
+  if (!row) {
+    throw new Error('API token vanished after a write');
+  }
+  const [available] = await pinnedVersionsAvailable(
+    [{ siteId: row.site_id, pinnedSchemaVersion: row.pinned_schema_version }],
+    trx,
+  );
+  return toApiTokenView(row, available);
+};
 
 export const isApiTokenFormat = (value: string): boolean => value.startsWith(API_TOKEN_PREFIX);
 
@@ -69,9 +104,10 @@ export const listApiTokens = async (
   context: SiteActorContext,
   permissions: PermissionEvaluator,
 ): Promise<ApiTokenView[]> =>
-  (
-    await apiTokensRepository.listForSite(context.site.id, await managesNetworkTokens(context, permissions))
-  ).map(toApiTokenView);
+  toApiTokenViews(
+    await apiTokensRepository.listForSite(context.site.id, await managesNetworkTokens(context, permissions)),
+    db,
+  );
 
 type CreateApiTokenInput = {
   name: string;
@@ -79,6 +115,8 @@ type CreateApiTokenInput = {
   expiresAt: Date | null;
   /** A network admin token (every site and network actions); omitted or false: a token of the request's site. */
   network?: boolean | undefined;
+  /** The schema version to pin the token to; omitted or null: no pin. */
+  pinnedSchemaVersion?: number | null | undefined;
 };
 
 /**
@@ -142,6 +180,7 @@ export const createApiToken = async (
     throw new AppError(400, 'INVALID_EXPIRY', 'The expiry must be in the future');
   }
   const token = `${API_TOKEN_PREFIX}${generateToken()}`;
+  const pinnedSchemaVersion = input.pinnedSchemaVersion ?? null;
   return db.transaction().execute(async (trx) => {
     const role = await adminRolesRepository.findById(input.roleId, trx);
     if (!role) {
@@ -151,6 +190,7 @@ export const createApiToken = async (
       throw new AppError(400, 'INVALID_ROLES', 'API tokens cannot hold the owner role');
     }
     const network = await isNetworkToken(context, permissions, role.kind, input.network, trx);
+    await assertPinnedSchemaVersion(pinnedSchemaVersion, trx);
     const { id } = await apiTokensRepository.insert(
       {
         name: input.name.trim(),
@@ -160,6 +200,7 @@ export const createApiToken = async (
         site_id: network ? null : context.site.id,
         created_by: await creatorOf(context, trx),
         expires_at: input.expiresAt,
+        pinned_schema_version: pinnedSchemaVersion,
       },
       trx,
     );
@@ -172,13 +213,53 @@ export const createApiToken = async (
         roleId: role.id,
         siteId: network ? null : context.site.id,
         expiresAt: input.expiresAt?.toISOString() ?? null,
+        pinnedSchemaVersion,
       },
     });
-    const row = await apiTokensRepository.findById(id, trx);
-    if (!row) {
-      throw new Error('API token vanished after insert');
+    return { token, apiToken: await reloadApiTokenView(id, trx) };
+  });
+};
+
+type UpdateApiTokenInput = {
+  /** The schema version to pin the token to; null clears the pin. */
+  pinnedSchemaVersion: number | null;
+};
+
+/**
+ * Changes a live token of the request's site (or a network token, for those who manage them). Only the pin
+ * changes; the audit row records it as `{ from, to }`, and a change to nothing records nothing.
+ */
+export const updateApiToken = async (
+  context: SiteActorContext,
+  permissions: PermissionEvaluator,
+  id: string,
+  input: UpdateApiTokenInput,
+): Promise<ApiTokenView> => {
+  const scope = { siteId: context.site.id, includeNetwork: await managesNetworkTokens(context, permissions) };
+  return db.transaction().execute(async (trx) => {
+    const before = await apiTokensRepository.findById(id, trx);
+    const inScope =
+      before !== undefined &&
+      before.revoked_at === null &&
+      (before.site_id === context.site.id || (before.site_id === null && scope.includeNetwork));
+    if (!inScope) {
+      throw new AppError(404, 'NOT_FOUND', 'Active API token not found');
     }
-    return { token, apiToken: toApiTokenView(row) };
+    const from = before.pinned_schema_version;
+    const to = input.pinnedSchemaVersion;
+    if (from !== to) {
+      await assertPinnedSchemaVersion(to, trx);
+      if (!(await apiTokensRepository.updatePinnedSchemaVersion(id, scope, to, new Date(), trx))) {
+        throw new AppError(404, 'NOT_FOUND', 'Active API token not found');
+      }
+      await recordAudit(trx, {
+        ...context,
+        action: 'api_token.update',
+        target: { type: 'api_token', id },
+        metadata: { name: before.name, pinnedSchemaVersion: { from, to } },
+      });
+    }
+    return reloadApiTokenView(id, trx);
   });
 };
 
@@ -228,5 +309,6 @@ export const resolveApiToken = async (
     scope: scopeOf(row.role_kind),
     roleId: row.role_id,
     siteId: row.site_id,
+    pinnedSchemaVersion: row.pinned_schema_version,
   };
 };

@@ -105,6 +105,7 @@ export interface ApiTokens {
   id: Generated<string>;
   last_used_at: Timestamp | null;
   name: string;
+  pinned_schema_version: number | null;
   revoked_at: Timestamp | null;
   role_id: string;
   site_id: string | null;

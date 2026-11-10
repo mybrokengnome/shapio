@@ -66,7 +66,16 @@ export const OlderVersions = ({ review }: OlderVersionsProps) => {
             return (
               <TableRow key={row.key} data-older-reader={row.reader?.principalKey ?? row.key}>
                 <TableCell className={row.reader ? 'font-semibold' : 'text-muted-foreground'}>
-                  {readerOf(row)}
+                  <span className="flex items-center gap-2">
+                    {readerOf(row)}
+                    {row.reader?.pinned ? (
+                      <StatusChip
+                        tone="muted"
+                        size="sm"
+                        label={t('changes.consumers.olderVersions.pinned')}
+                      />
+                    ) : null}
+                  </span>
                 </TableCell>
                 {multiSite ? (
                   <TableCell className="font-mono text-meta text-muted-foreground">

@@ -70,7 +70,8 @@
     "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
     "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores.",
     "approvalRequired": "Enter a whole number from 1 to 20.",
-    "approvalDeletedRole": "Uncheck the deleted role before saving."
+    "approvalDeletedRole": "Uncheck the deleted role before saving.",
+    "schemaVersion": "Enter a whole number from 1 up, or leave it empty."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -732,7 +733,15 @@
     "scopeSiteDescription": "The token's role applies on this workspace only.",
     "scopeNetwork": "Every workspace (network token)",
     "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users.",
-    "sendsSchemaVersion": "Sends schema version {{version}}"
+    "sendsSchemaVersion": "Sends schema version {{version}}",
+    "pinnedToSchemaVersion": "Pinned to schema version {{version}}",
+    "pinUnavailable": "Pinned version unavailable",
+    "schemaVersion": "Schema version",
+    "schemaVersionPlaceholder": "Always the current schema",
+    "schemaVersionHint": "Pins the token to a schema version: requests made with it read content in that version's shape, as if the client had sent it, and can write only the fields that read unchanged at that version, over REST and GraphQL alike. A schema version the client sends wins over the pin. Clear the pin once the client is updated to the current schema.",
+    "pinCurrent": "Pin to the current version ({{version}})",
+    "editTitle": "Edit {{name}}",
+    "saved": "Token saved."
   },
   "audit": {
     "title": "Audit log",
@@ -762,6 +771,7 @@
       "adminUserUpdate": "Updated admin user",
       "apiTokenCreate": "Created API token",
       "apiTokenRevoke": "Revoked API token",
+      "apiTokenUpdate": "Changed API token",
       "appAuthRefreshReuse": "Reused a revoked refresh token",
       "appRoleCreate": "Created app role",
       "appRoleDelete": "Deleted app role",
@@ -2949,7 +2959,8 @@
         "description": "What each reader sees once this change set ships",
         "truncated_one": "The {{count}} most recently used schema version, and what its readers see",
         "truncated_other": "The {{count}} most recently used schema versions, and what their readers see",
-        "hint": "These readers name the schema version they were built against. Shapio keeps answering them in that shape, so a breaking change reaches them only as the effect shown here.",
+        "hint": "These readers name the schema version they were built against, or use a token pinned to one. Shapio keeps answering them in that shape, so a breaking change reaches them only as the effect shown here.",
+        "pinned": "Pinned",
         "schemaVersion": "Schema version",
         "outcome": "Once shipped",
         "otherSites_one": "Other workspaces: {{count}} reader",

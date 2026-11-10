@@ -140,8 +140,9 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
       'created_at',
       'updated_at',
       'site_id',
+      'pinned_schema_version',
     ],
-    nullable: ['created_by', 'expires_at', 'last_used_at', 'revoked_at', 'site_id'],
+    nullable: ['created_by', 'expires_at', 'last_used_at', 'revoked_at', 'site_id', 'pinned_schema_version'],
     timestamps: ['expires_at', 'last_used_at', 'revoked_at', 'created_at', 'updated_at'],
     uniqueKeys: [
       { name: 'api_tokens_pkey', columns: ['id'] },

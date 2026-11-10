@@ -1,6 +1,6 @@
 import { LENS_EFFECTS } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
-import { DateTimeSchema, UuidSchema } from '../../schemas/adminIdentity.js';
+import { DateTimeSchema, NullableDateTimeSchema, UuidSchema } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
 import { SiteRefSchema } from '../../schemas/publishing.js';
 
@@ -70,8 +70,10 @@ export const SchemaVersionsResponseSchema = Type.Object({
     Type.Object({
       principalKey: PrincipalKeyField,
       tokenName: Type.Optional(Type.String()),
-      /** The schema version the reader's latest request named. */
+      /** The schema version the reader's latest request was served at: one it named, or its token's pin. */
       schemaVersion: Type.Integer(),
+      /** The version is the token's pin, not one the client sends. */
+      pinned: Type.Boolean(),
       lastReadAt: DateTimeSchema,
     }),
   ),
@@ -123,7 +125,10 @@ export const OlderClientsSchema = Type.Object({
             principalKey: PrincipalKeyField,
             /** The token's name; null for app users, anonymous readers and deleted tokens. */
             label: Type.Union([Type.String(), Type.Null()]),
-            lastReadAt: DateTimeSchema,
+            /** The version is the token's pin, not one the client sends. */
+            pinned: Type.Boolean(),
+            /** Null: a token pinned to the version that has not read since (a declared older client). */
+            lastReadAt: NullableDateTimeSchema,
           }),
         ),
         Type.Null(),

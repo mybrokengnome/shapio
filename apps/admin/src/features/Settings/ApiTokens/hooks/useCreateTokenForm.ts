@@ -7,6 +7,7 @@ import { useCreateApiToken } from '@/api/tokens';
 import { settle } from '@/helpers/settle';
 import { requiredText } from '@/helpers/validation';
 import { expiryToDate, TOKEN_EXPIRY_OPTIONS } from '../constants';
+import { pinnedSchemaVersionField, toPinnedSchemaVersion } from '../helpers/schemaVersionPin';
 
 /** `site`: the token works on this site only (the default). `network`: every site and network actions. */
 export const TOKEN_SCOPES = ['site', 'network'] as const;
@@ -16,11 +17,18 @@ const createTokenSchema = z.object({
   roleId: z.string().min(1, 'validation.selectRole'),
   expiry: z.enum(TOKEN_EXPIRY_OPTIONS),
   scope: z.enum(TOKEN_SCOPES),
+  pinnedSchemaVersion: pinnedSchemaVersionField(),
 });
 
 export type CreateTokenValues = z.infer<typeof createTokenSchema>;
 
-const EMPTY: CreateTokenValues = { name: '', roleId: '', expiry: '90', scope: 'site' };
+const EMPTY: CreateTokenValues = {
+  name: '',
+  roleId: '',
+  expiry: '90',
+  scope: 'site',
+  pinnedSchemaVersion: '',
+};
 
 /**
  * `canChooseNetwork(roleId)`: whether a network token may be made with that role (the creator holds
@@ -40,10 +48,16 @@ export const useCreateTokenForm = (
       reset(EMPTY);
     }
   }, [open, reset]);
-  const onSubmit = form.handleSubmit(async ({ name, roleId, expiry, scope }) => {
+  const onSubmit = form.handleSubmit(async ({ name, roleId, expiry, scope, pinnedSchemaVersion }) => {
     const network = scope === 'network' && canChooseNetwork(roleId);
     const created = await settle(
-      createToken.mutateAsync({ name, roleId, expiresAt: expiryToDate(expiry), network }),
+      createToken.mutateAsync({
+        name,
+        roleId,
+        expiresAt: expiryToDate(expiry),
+        network,
+        pinnedSchemaVersion: toPinnedSchemaVersion(pinnedSchemaVersion),
+      }),
     );
     if (!created.ok) {
       return;
@@ -51,5 +65,7 @@ export const useCreateTokenForm = (
     reset(EMPTY);
     onCreated(created.value);
   });
-  return { form, onSubmit, createToken };
+  const pinCurrent = (version: number) =>
+    form.setValue('pinnedSchemaVersion', String(version), { shouldDirty: true, shouldValidate: true });
+  return { form, onSubmit, createToken, pinCurrent };
 };

@@ -10,6 +10,7 @@ export const AUDIT_ACTION_LABEL_KEYS = {
   'admin_user.update': 'audit.actions.adminUserUpdate',
   'api_token.create': 'audit.actions.apiTokenCreate',
   'api_token.revoke': 'audit.actions.apiTokenRevoke',
+  'api_token.update': 'audit.actions.apiTokenUpdate',
   'app_auth.refresh_reuse': 'audit.actions.appAuthRefreshReuse',
   'app_role.create': 'audit.actions.appRoleCreate',
   'app_role.delete': 'audit.actions.appRoleDelete',

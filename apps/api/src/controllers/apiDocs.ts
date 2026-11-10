@@ -2,13 +2,17 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
 import { getRequestSite } from '../plugins/siteResolution.js';
 import * as apiDocsService from '../services/apiDocs.js';
+import { schemaVersionTokenWithPin } from '../services/contentAccess.js';
 
-/** The view a contract renders: the current one, or the schema version the request names. */
+/**
+ * The view a contract renders: the current one, or the schema version the request names (or, naming none,
+ * the one its API token is pinned to).
+ */
 const contractView = async (request: FastifyRequest) =>
   apiDocsService.contractViewFor(
     request.server.db,
     await getRequestSchema(request),
-    request.schemaVersionToken,
+    await schemaVersionTokenWithPin(request.server.db, request.principal, request.schemaVersionToken),
   );
 
 export const getOpenApi = async (request: FastifyRequest) =>
