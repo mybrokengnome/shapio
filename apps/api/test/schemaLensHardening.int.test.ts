@@ -297,6 +297,10 @@ describe('schema lens hardening', () => {
     expect(second?.view).toBe(first?.view);
     const documentBefore = getOpenApiDocument(first?.view as NonNullable<typeof first>['view'], URLS);
 
+    // A job that failed for good has not rebuilt anything: nothing counts as final yet.
+    await db.updateTable('jobs').set({ status: 'dead' }).where('id', '=', job.id).execute();
+    expect((await lensAt(db, await currentView(), atV))?.view).toBe(first?.view);
+
     await db.updateTable('jobs').set({ status: 'succeeded' }).where('id', '=', job.id).execute();
     const settled = await lensAt(db, await currentView(), atV);
     expect(settled?.view).not.toBe(first?.view);
@@ -352,8 +356,9 @@ describe('schema lens hardening', () => {
       statusCode: 429,
       code: 'LENS_BUDGET_EXCEEDED',
     });
-    // Hits are free, other callers have their own bucket, and admin work is never limited.
-    expect(await loadRequestLens(db, current, 1, key)).not.toBeNull();
+    // Hits are free (the last version read is still cached; one-off versions churn among themselves),
+    // other callers have their own bucket, and admin work is never limited.
+    expect(await loadRequestLens(db, current, LENS_BUILDS_PER_MINUTE, key)).not.toBeNull();
     expect(await loadRequestLens(db, current, LENS_BUILDS_PER_MINUTE + 1, 'token:other')).not.toBeNull();
     expect(await loadRequestLens(db, current, LENS_BUILDS_PER_MINUTE + 2, null)).not.toBeNull();
     resetLensBuildBudgets();
@@ -384,6 +389,29 @@ describe('schema lens hardening', () => {
     expect(await appErrorOf(() => loadRequestLens(db, today, 1, key))).toMatchObject({
       code: 'LENS_BUDGET_EXCEEDED',
     });
+    expect((await loadRequestLens(db, today, atV, key))?.view).toBe(first?.view);
+    resetLensBuildBudgets();
+  });
+
+  it('keeps versions real clients read again cached while a caller walks one-off versions', async () => {
+    const { db } = database.current;
+    clearLensCaches();
+    resetLensBuildBudgets();
+    const now = await version();
+    const atV = now - 1;
+    const today = await currentView();
+    // A real client reads its version twice: it is promoted.
+    const first = await loadRequestLens(db, today, atV, null);
+    await loadRequestLens(db, today, atV, null);
+    // Another caller in the same workspace walks every other version, more than the caches hold.
+    for (let older = 1; older < atV; older += 1) {
+      await loadRequestLens(db, today, older, null);
+    }
+    // The real client, with no budget left, is still served from cache.
+    const key = 'token:real-client';
+    while (takeLensBuildBudget(key)) {
+      // drain
+    }
     expect((await loadRequestLens(db, today, atV, key))?.view).toBe(first?.view);
     resetLensBuildBudgets();
   });

@@ -4,6 +4,10 @@
  * big-integer values are plain digit strings, which `String` alone does not give for very small or large numbers.
  */
 export const plainNumber = (value: number): string => {
+  // Only finite numbers have digits to move (their exponent is at most 324, so the output stays short).
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return String(value);
+  }
   const text = String(value);
   const match = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/.exec(text);
   if (!match) {

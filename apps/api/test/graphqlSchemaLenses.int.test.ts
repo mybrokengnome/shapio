@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GRAPHQL_LENS_SCHEMA_CACHE_SIZE } from '../src/constants/graphql.js';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { GRAPHQL_LENS_SCHEMAS_PROBATION, GRAPHQL_LENS_SCHEMAS_PROTECTED } from '../src/constants/graphql.js';
 import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import * as permissionsVersionRepository from '../src/repositories/permissionsVersion.js';
 import { resetLensBuildBudgets, takeLensBuildBudget } from '../src/schema/lens/budget.js';
+import { clearLensCaches } from '../src/schema/lens/views.js';
 import { setPublicGrants } from './helpers/appUsers.js';
 import {
   createDefinition,
@@ -818,33 +819,131 @@ describe('schema lenses: GraphQL', () => {
     expect(cache.list()).toStrictEqual(held);
   });
 
-  it('bounds the lens schemas and never evicts the current one', async () => {
+  it('keeps a version clients read again while another caller walks versions, and shares look-alike versions', async () => {
     const scratch = await createDefinition(admin, {
       kind: 'collection',
       apiKey: 'scratch',
       label: 'Scratch',
       fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
     });
+    // Two tokens of one role: the same visibility, so the same lens cache.
+    const scratchRole = await createRole(database.current.db, 'delivery', [
+      { action: 'read', modelId: scratch.definition.id },
+    ]);
+    const walker = await createTokenForRole(database.current.db, scratchRole);
+    const reader = await createTokenForRole(database.current.db, scratchRole);
     const cache = testApp.app.graphqlRuntime.schemas;
     const versions: string[] = [];
     let current = scratch;
-    for (let i = 0; i < GRAPHQL_LENS_SCHEMA_CACHE_SIZE + 1; i += 1) {
+    for (let i = 0; i < GRAPHQL_LENS_SCHEMAS_PROBATION + GRAPHQL_LENS_SCHEMAS_PROTECTED + 1; i += 1) {
       versions.push(await currentToken());
       current = await change(current, (definition) => ({ ...definition, label: `Scratch ${i}` }));
     }
-    const today = dataOf(await gql('{ _schemaVersion }', { credential: adminToken }));
+    // A change to a model this role never sees: the version looks the same to it.
+    const lookAlike = await currentToken();
+    const story = (await admin.get(`/api/admin/models/${article.definition.id}`)).json<ModelBody>();
+    await change(story, (definition) => ({ ...definition, label: 'Story renamed' }));
+    const lookAlikeToo = await currentToken();
+    // The full current-version schema catches up with the change on its next request, or in the background
+    // (the registry's refresh, on its own schedule per dialect): bring it to the current version and wait for
+    // that real condition, then hold every current schema fixed.
+    const now = Number(lookAlikeToo.split(':')[1]);
+    dataOf(await gql('{ _schemaVersion }', { credential: adminToken }));
+    await vi.waitFor(
+      () => {
+        for (const entry of cache.list()) {
+          expect(entry.visibility !== 'full' || entry.version === now).toBe(true);
+        }
+      },
+      { timeout: 10_000, interval: 25 },
+    );
     const currentEntries = cache.list();
-    const views: string[] = [];
-    for (const version of versions) {
-      dataOf(await gql('{ scratches { totalCount } }', { credential: adminToken, version }));
-      views.push(cache.listLens().at(-1)?.view as string);
+    const read = async (credential: string, version: string) =>
+      gql('{ scratches { totalCount } }', { credential, version });
+    const kept = versions[0] as string;
+    // Read twice by the reader (built, then read again): a version a real client keeps using.
+    dataOf(await read(reader, kept));
+    dataOf(await read(reader, kept));
+    for (const version of versions.slice(1)) {
+      dataOf(await read(walker, version));
     }
-    expect(new Set(views).size).toBe(versions.length);
-    const held = cache.listLens().map((entry) => entry.view);
-    expect(held).toHaveLength(GRAPHQL_LENS_SCHEMA_CACHE_SIZE);
-    expect(held).not.toContain(views[0]);
-    expect(held).toEqual(expect.arrayContaining(views.slice(1)));
-    expect(cache.list()).toEqual(currentEntries);
-    expect(dataOf(await gql('{ _schemaVersion }', { credential: adminToken }))).toEqual(today);
+    // Versions that look the same to this role share one lens schema.
+    const before = cache.listLens().length;
+    dataOf(await read(walker, lookAlike));
+    dataOf(await read(walker, lookAlikeToo));
+    expect(cache.listLens().length).toBeLessThanOrEqual(before + 1);
+    // With both tokens' build budgets spent, the reader's version is still served: it is still cached.
+    const tokenIds = await database.current.db
+      .selectFrom('api_tokens')
+      .select('id')
+      .where('role_id', '=', scratchRole)
+      .execute();
+    for (const { id } of tokenIds) {
+      while (takeLensBuildBudget(`token:${id}`)) {
+        // drain
+      }
+    }
+    expect(dataOf(await read(reader, kept))).toEqual({ scratches: { totalCount: 0 } });
+    // A version the walker read once is gone or refused; never at the reader's expense.
+    expect(cache.listLens().some((entry) => entry.segment === 'protected')).toBe(true);
+    resetLensBuildBudgets();
+    // Current-version schemas are never displaced (the current version read above adds its own).
+    expect(cache.list()).toEqual(expect.arrayContaining(currentEntries));
+  });
+  it('leaves a definition whose history does not reach the version out of its schema, answering 409', async () => {
+    let legacy = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'legacy',
+      pluralApiKey: 'legacies',
+      label: 'Legacy',
+      fields: [{ apiKey: 'name', label: 'Name', type: 'string' }],
+    });
+    await createEntry('legacy', { name: 'Old' });
+    const atCreation = await currentToken();
+    legacy = await change(legacy, (definition) => ({
+      ...definition,
+      fields: [...definition.fields, { apiKey: 'note', label: 'Note', type: 'string' }],
+    }));
+    const changed = Number((await currentToken()).split(':')[1]);
+    // An install upgraded to 0.9.0 whose audit log lacks the older rows: a backfilled baseline only.
+    const { db } = database.current;
+    await db
+      .deleteFrom('schema_activations')
+      .where('model_id', '=', legacy.definition.id)
+      .where('schema_version', '<', changed)
+      .execute();
+    await db
+      .updateTable('schema_activations')
+      .set({ backfilled: true })
+      .where('model_id', '=', legacy.definition.id)
+      .execute();
+    clearLensCaches();
+    // Not presented in its later shape: no type, no queries.
+    const type = dataOf(
+      await gql('{ __type(name: "Legacy") { name } }', { credential: adminToken, version: atCreation }),
+    );
+    expect(type).toEqual({ __type: null });
+    const refused = await gql('{ legacies { nodes { name note } } }', {
+      credential: adminToken,
+      version: atCreation,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(errorCodes(refused)).toEqual(['SCHEMA_VERSION_UNAVAILABLE']);
+    expect(refused.body.errors?.[0]?.extensions?.details).toMatchObject({
+      modelKey: 'legacy',
+      oldestVersion: changed,
+    });
+    // A caller that may not read it today is never told about it: the answer it gets for any unknown field.
+    const hidden = await gql('{ legacies { nodes { name } } }', { version: atCreation });
+    const unknown = await gql('{ nothings { nodes { name } } }', { version: atCreation });
+    for (const result of [hidden, unknown]) {
+      expect(result.statusCode).toBe(400);
+      expect(errorCodes(result)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+    }
+    expect(JSON.stringify(hidden.body)).not.toMatch(/SCHEMA_VERSION_UNAVAILABLE|oldestVersion|"legacy"/);
+    // Everything else of that version still reads.
+    expect(
+      dataOf(await gql('{ stories { totalCount } }', { credential: adminToken, version: atCreation })),
+    ).toHaveProperty('stories');
   });
 });

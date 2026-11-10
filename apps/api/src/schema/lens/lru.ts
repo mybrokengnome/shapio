@@ -42,3 +42,92 @@ export const createLru = <K, V>(capacity: number): Lru<K, V> => {
     },
   };
 };
+
+export type LruSegment = 'probation' | 'protected';
+
+/**
+ * A segmented LRU (plan schema-lenses, review hardening): a new entry enters probation; read again (its
+ * second use, the store being the first) it moves to protected. Eviction takes probation's least recently
+ * used entry first; protected entries leave only when another promoted entry needs the room, and then drop
+ * back to probation rather than out. So versions real clients keep reading stay cached while one-off
+ * versions (a caller walking versions) churn among themselves in probation.
+ */
+export type SegmentedLru<K, V> = Lru<K, V> & {
+  /** Whether the key is cached, without counting a use. */
+  has: (key: K) => boolean;
+  /** Every entry with its segment, least recently used first within each segment (tests). */
+  entries: () => Array<[K, V, LruSegment]>;
+};
+
+export const createSegmentedLru = <K, V>(capacity: {
+  probation: number;
+  protected: number;
+}): SegmentedLru<K, V> => {
+  const probation = new Map<K, V>();
+  const protectedEntries = new Map<K, V>();
+  const trimProbation = () => {
+    while (probation.size > capacity.probation) {
+      const oldest = probation.keys().next();
+      if (oldest.done) {
+        break;
+      }
+      probation.delete(oldest.value);
+    }
+  };
+  const promote = (key: K, value: V) => {
+    probation.delete(key);
+    protectedEntries.set(key, value);
+    while (protectedEntries.size > capacity.protected) {
+      const oldest = protectedEntries.entries().next();
+      if (oldest.done) {
+        break;
+      }
+      const [demotedKey, demotedValue] = oldest.value;
+      protectedEntries.delete(demotedKey);
+      probation.set(demotedKey, demotedValue);
+    }
+    trimProbation();
+  };
+  return {
+    get: (key) => {
+      if (protectedEntries.has(key)) {
+        const value = protectedEntries.get(key) as V;
+        protectedEntries.delete(key);
+        protectedEntries.set(key, value);
+        return value;
+      }
+      if (probation.has(key)) {
+        const value = probation.get(key) as V;
+        promote(key, value);
+        return value;
+      }
+      return undefined;
+    },
+    has: (key) => protectedEntries.has(key) || probation.has(key),
+    set: (key, value) => {
+      if (protectedEntries.has(key)) {
+        protectedEntries.delete(key);
+        protectedEntries.set(key, value);
+        return;
+      }
+      probation.delete(key);
+      probation.set(key, value);
+      trimProbation();
+    },
+    delete: (key) => {
+      probation.delete(key);
+      protectedEntries.delete(key);
+    },
+    clear: () => {
+      probation.clear();
+      protectedEntries.clear();
+    },
+    get size() {
+      return probation.size + protectedEntries.size;
+    },
+    entries: () => [
+      ...[...probation].map(([key, value]): [K, V, LruSegment] => [key, value, 'probation']),
+      ...[...protectedEntries].map(([key, value]): [K, V, LruSegment] => [key, value, 'protected']),
+    ],
+  };
+};

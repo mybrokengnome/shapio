@@ -60,6 +60,12 @@ export type SchemaVisibility = {
    * today's rules (`lensVisibility`); a component missing here names none. Absent: `componentFields` decides.
    */
   componentFieldIds?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * Schema lenses: models and interface definitions left out of the schema entirely, whatever the caller may
+   * do, because the client's version cannot be served for them (history that does not reach it). Never in a
+   * schema of today's version.
+   */
+  omitted?: ReadonlySet<string>;
 };
 
 export const FULL_VISIBILITY: SchemaVisibility = Object.freeze({
@@ -110,12 +116,16 @@ const modelVisibility = (
 
 const sorted = (ids: ReadonlySet<string>) => [...ids].sort().join(',');
 
-/** A stable digest of the visible models and fields, so equal visibility gives an equal key. */
+/**
+ * A stable digest of the visible models and fields, so equal visibility gives an equal key. The grants' shape
+ * is part of it: a lens schema derived from this visibility depends on it (lensVisibility.ts).
+ */
 const visibilityKey = (models: ReadonlyMap<string, ModelVisibility>): string => {
   const canonical = [...models]
     .map(
       ([id, model]) =>
-        `${id}|${model.readable ? 'r' : '-'}|${sorted(model.readFields)}|${sorted(model.writeFields)}`,
+        `${id}|${model.readable ? 'r' : '-'}|${sorted(model.readFields)}|${sorted(model.writeFields)}|` +
+        `${model.unrestrictedRead === true ? 'R' : '-'}${model.unrestrictedWrite === true ? 'W' : '-'}`,
     )
     .join('\n');
   return `delivery:${createHash('sha256').update(canonical).digest('base64url')}`;
@@ -168,11 +178,12 @@ export const hasNoContentAccess = (visibility: SchemaVisibility): boolean =>
 
 /** Whether a model is in the schema at all (read queries or mutations). */
 export const modelInSchema = (visibility: SchemaVisibility, modelId: string): boolean =>
-  visibility.models === null || visibility.models.has(modelId);
+  visibility.omitted?.has(modelId) !== true && (visibility.models === null || visibility.models.has(modelId));
 
 /** Whether a model's read queries and entry type are in the schema (relation fields to it too). */
 export const modelReadable = (visibility: SchemaVisibility, modelId: string): boolean =>
-  visibility.models === null || visibility.models.get(modelId)?.readable === true;
+  visibility.omitted?.has(modelId) !== true &&
+  (visibility.models === null || visibility.models.get(modelId)?.readable === true);
 
 const visibleFields = (
   visibility: SchemaVisibility,

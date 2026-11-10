@@ -323,6 +323,28 @@ const textArb = fc.oneof(
   fc.constantFrom('12', ' 7 ', '4.5', '-3', '1e3', '0', 'true', 'abc', 'Hello world', 'a', 'b', 'c'),
   fc.constantFrom('2024-02-29', '2024-01-01T10:00:00.000Z', '10:30', '10:30:00', 'x@y.co', 'https://e.x/a'),
   fc.constantFrom('99999999999999999999', '0.1', '-0', 'NaN', 'Infinity', '00012', 'summer-sale'),
+  // Adversarial numeric text: huge exponents (that parse to 0 or overflow), long digit runs, signs, padding.
+  fc.constantFrom(
+    '1e-400000000',
+    '0e400000000',
+    ' -0E-400000000 ',
+    '1e400',
+    '1e-400',
+    '+007.50e+2',
+    '0x10',
+    ' 1e3 ',
+  ),
+  fc
+    .tuple(
+      fc.constantFrom('', '-', '+', ' '),
+      fc.nat({ max: 200 }),
+      fc.constantFrom('', 'e', 'E-', 'e+'),
+      fc.nat(),
+    )
+    .map(
+      ([sign, length, marker, exponent]) =>
+        `${sign}${'9'.repeat(length + 1)}${marker === '' ? '' : `${marker}${exponent}`}`,
+    ),
   fc.string({ unit: 'grapheme-ascii', maxLength: 12 }),
 );
 

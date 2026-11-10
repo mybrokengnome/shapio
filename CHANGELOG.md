@@ -55,11 +55,22 @@ All notable changes to Shapio are listed here. The format follows
 
 - Every delivery response carries `Shapio-Schema-Version-Current` (the current schema version token, exposed to
   CORS), and cacheable delivery responses send
-  `Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`.
+  `Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`. Error responses of the
+  delivery, preview, snapshot, and contract routes vary on the same headers too.
+- `GET /api/snapshots/current` (and GraphQL `_snapshot`) adds `schemaVersionToken`, the current version as
+  `<schemaId>:<version>`.
+- A delivery update that sends a component, on a content type whose components hold a field some callers cannot
+  read (private or deprecated), reads the entry's read permissions first, and keeps such fields' stored values
+  for callers that cannot read them (see Fixed).
+- An empty `schemaVersion` query parameter (or header) is `400 SCHEMA_VERSION_INVALID` instead of being
+  ignored.
+- A delivery update that sends a list of components longer than the field's `max`, or longer than 50,000
+  items when the field sets none, is refused with `TOO_MANY` before the list is matched against stored items.
 
-Nothing existing changes for clients that name no schema version: their reads, writes, and snapshot reads answer
-exactly as before. A server older than 0.9.0 refuses the `schemaVersion` query parameter with `400`, on purpose,
-so a newer client that names a version never silently gets a shape it was not built for.
+For clients that name no schema version nothing else changes: reads, writes (with the same order of refusals:
+invalid body, then forbidden field, then a stale version), and snapshot reads answer as before. A server older
+than 0.9.0 refuses the `schemaVersion` query parameter with `400`, on purpose, so a newer client that names a
+version never silently gets a shape it was not built for.
 
 ## [0.8.2] - 2026-11-10
 

@@ -528,6 +528,8 @@ item sent is matched to the stored item it continues:
 3. Any other item is new: its hidden fields start empty. Stored items no item continues are deleted, with
    their hidden values.
 
+A list is matched only up to its field's `max`, or 50,000 items when the field sets none. A longer list is refused with `TOO_MANY` before anything is matched.
+
 A single (not repeatable) component always continues the stored instance. A caller that may update an entry but
 not read it matches by the fields it may write; an explicit `null` it sends for a field inside a component
 clears that field, and a field it leaves out keeps its value. Admin writes are not affected: admins read

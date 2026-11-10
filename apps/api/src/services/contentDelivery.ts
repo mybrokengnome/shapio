@@ -177,6 +177,7 @@ export const openDeliveryRead = (
     versionError,
     (apiKey) => readableRoute(base, apiKey),
     () => holdsAnyGrant(base, ['read']),
+    ['read'],
   );
 
 /** The first collection or singleton of the view the caller may read, if any. */

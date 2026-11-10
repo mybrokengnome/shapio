@@ -149,8 +149,12 @@ export const findEarliest = (executor: Executor = db, scope?: ActivationScope) =
 
 export type EarliestActivationRow = Awaited<ReturnType<typeof findEarliest>>[number];
 
-/** Every row without its revision (the backfill compares them with what the audit log proves). */
-export const findAllRows = (executor: Executor = db) =>
+/** One page of rows without their revisions, in key order after `after` (keyset on the primary key). */
+export const findRowsPage = (
+  after: { modelId: string; schemaVersion: number } | null,
+  limit: number,
+  executor: Executor = db,
+) =>
   executor
     .selectFrom('schema_activations')
     .select([
@@ -160,6 +164,20 @@ export const findAllRows = (executor: Executor = db) =>
       'revision_id as revisionId',
       'backfilled',
     ])
+    .$if(after !== null, (qb) =>
+      qb.where((eb) =>
+        eb.or([
+          eb('model_id', '>', after?.modelId ?? ''),
+          eb.and([
+            eb('model_id', '=', after?.modelId ?? ''),
+            eb('schema_version', '>', after?.schemaVersion ?? 0),
+          ]),
+        ]),
+      ),
+    )
+    .orderBy('model_id')
+    .orderBy('schema_version')
+    .limit(limit)
     .execute();
 
 /**

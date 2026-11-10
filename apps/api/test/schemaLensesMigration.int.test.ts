@@ -109,4 +109,19 @@ describe('migration: schema lenses', () => {
       status: 'pending',
     });
   });
+
+  it.runIf(testDialect() === 'mysql')(
+    'runs up again on MySQL after an interrupted run (DDL is not transactional)',
+    async () => {
+      const { db } = database.current;
+      const migrationDb = db as unknown as Kysely<unknown>;
+      const schemaId = await getSchemaId(db);
+      // An interrupted run left the table and the first column; up finishes without redoing or failing.
+      await db.schema.alterTable('token_reads').dropColumn('last_schema_version').execute();
+      await up(migrationDb);
+      await up(migrationDb);
+      expect(await getSchemaId(db)).toBe(schemaId);
+      expect(await db.selectFrom('token_reads').select('last_schema_version').limit(1).execute()).toEqual([]);
+    },
+  );
 });

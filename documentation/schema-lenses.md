@@ -167,8 +167,10 @@ knows.
 A value is shown in the old type whenever some conversion reaches it, directly or through text, so a client
 several versions back never reads less than it would after each change in turn: a number field made text
 and then a multi-value enum still reads `4` for an entry holding `["4"]`. A number read as a decimal or a big
-integer keeps its exact digits (`"0.0000001"`, never `1e-7`). An empty multi-value enum reads `null`, as it does
-for a client that names no version.
+integer keeps its exact digits (`"0.0000001"`, never `1e-7`). Text is read the way a type change converts it:
+as written when it fits, else trimmed, else as the number it spells (`" 7 "` reads as the ID `7`, `"0x10"`
+reads 16, `"1e3"` reads 1000). Text of more than 64 characters, or with an exponent beyond 400, is not read
+as a number. An empty multi-value enum reads `null`, as it does for a client that names no version.
 
 A component or dynamic zone takes the effect of what is inside it, with one difference: a field inside it that
 reads empty leaves the component and its items in place, so the component is **Some values read empty**, not
@@ -187,10 +189,14 @@ Two more things drop out of an old client's view rather than appear in a shape i
 `filters[teaser][$null]=false` works for the client in the example. The query runs on today's storage, so:
 
 - A filter or sort on a field whose stored form changed since the version (a text field that is now an
-  integer), or that no longer exists, is refused with `400 LENS_QUERY_UNSUPPORTED` naming the field. It is never
-  answered on today's values in a way the old client did not mean.
-- `fields=` may name a field that was removed since, or that the caller reads as `null` (see below): it is
-  accepted and reads `null`.
+  integer), or that no longer exists, is refused, never answered on today's values in a way the old client did
+  not mean. For a caller whose grant on the content type names no fields, and a field that was public at the
+  version, the refusal is `400 LENS_QUERY_UNSUPPORTED` naming the field; for anyone else it is the answer for a
+  field that does not exist (`400 INVALID_QUERY`, unknown field), so a query never tells a caller about fields it
+  was not shown.
+- `fields=` may name a field that was removed since, or that the caller reads as `null` (see below), under the
+  same condition: it is accepted and reads `null`. For anyone else a removed field in `fields=` is an unknown
+  field (`400 INVALID_QUERY`).
 - A filter or sort the field no longer allows (`filterable` or `sortable` turned off) is refused, as for every
   client.
 
@@ -203,7 +209,8 @@ deprecated, outside its role's grant now, or removed) never carries a value:
 - for a caller whose grant on the content type names no fields (it reads every public field), a field that was
   public in the client's version reads `null` (`[]` for lists), at the top level and inside components, and
   `fields=` may name it;
-- for a caller whose grant names fields, it is left out, and `fields=` naming it is `403`, as without a version.
+- for a caller whose grant names fields, it is left out; `fields=` naming it answers as without a version (`403`
+  for a field that exists today and it may not read, `400 INVALID_QUERY` for one removed since).
 
 Filters and sorts on such a field are refused exactly as without a version. Row conditions (owner-only reads)
 are today's too. Over GraphQL such a field follows the same rule ([GraphQL](#graphql)).
@@ -328,9 +335,16 @@ counts a field that reads `null` because it is gone.
 | `422 LENS_WRITE_UNSUPPORTED`     | a write sends fields that changed since the version (`details.issues`, one per field)                                                 |
 | `429 LENS_BUDGET_EXCEEDED`       | the caller made the instance build too many older-version schemas in the last minute (REST, preview, snapshots, GraphQL); retry later |
 
-Every one of these answers only a caller that is authorized for what it asked: a request the caller may not
-make gets exactly the answer it gets without a version (the same `401`, `403`, or `404`), whatever version it
-names, and builds nothing (it is never charged to a build budget). Anonymous callers each have their own build
-budget, by client address; previews build on the preview token's.
+On the delivery, preview, snapshot, and write routes, every one of these answers only a caller that is
+authorized for what it asked: a request the caller may not make gets exactly the answer it gets without a
+version (the same `401`, `403`, or `404`), whatever version it names, and builds nothing (it is never charged to
+a build budget). A route key today's schema does not know (a content type renamed since) can only be resolved
+through the version: a caller holding some grant on the workspace may cause a build for it, charged to its own
+budget, and learns about the content type it names only if it may act on it today (anyone else gets the `404`).
+An empty `schemaVersion` is `400 SCHEMA_VERSION_INVALID`, answered after authorization like the others.
+GraphQL checks versions and budgets in its own pipeline ([GraphQL](#graphql)). Anonymous callers each have their
+own build budget, by client address; previews build on the preview token's.
 
 A server older than 0.9.0 answers `400` to the `schemaVersion` query parameter.
+
+Behind a reverse proxy, set `TRUST_PROXY` so Shapio sees each client's own address. Without it, every anonymous request appears to come from the proxy, and all anonymous clients share one budget for reads of older schema versions.

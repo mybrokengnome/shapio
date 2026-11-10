@@ -1,11 +1,15 @@
 import type { FastifyRequest } from 'fastify';
+import type { DocumentNode } from 'graphql';
 import { schemaVersionToken } from '../constants/schemaLens.js';
+import type { AppError } from '../helpers/appError.js';
 import type { GraphqlRuntime } from '../plugins/graphql.js';
 import type { UsageLens } from '../plugins/graphqlHooks.js';
 import type { FormattedResult } from '../schema/codegen/graphql/errors.js';
+import { unavailableRootField } from '../schema/codegen/graphql/lensUnavailable.js';
 import { lensVisibility } from '../schema/codegen/graphql/lensVisibility.js';
 import type { BuiltSchema } from '../schema/codegen/graphql/schemaBuilder.js';
 import type { SchemaVisibility } from '../schema/codegen/graphql/visibility.js';
+import { schemaVersionUnavailable } from '../schema/errors.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import {
   activeLens,
@@ -55,7 +59,7 @@ export const graphqlSchemaFor = (
   return lens && lensed
     ? runtime.schemas.getLens(
         lens.view,
-        lensVisibility(visibility, lens.view, lensed.snapshot),
+        lensVisibility(visibility, lens.view, lensed.snapshot, lens.unavailable),
         admit ? { admit } : {},
       )
     : runtime.schemas.get(view, visibility);
@@ -79,4 +83,23 @@ export const withSchemaVersion = (
   return schemaVersion
     ? { ...result, body: { ...result.body, extensions: { ...result.body.extensions, schemaVersion } } }
     : result;
+};
+
+/**
+ * A lensed document that failed validation because it names a definition the client's version cannot be served
+ * for (left out of the lens schema): `409 SCHEMA_VERSION_UNAVAILABLE`, as REST answers, rather than a
+ * validation error that would read as if the definition never existed.
+ */
+export const unavailableDefinitionError = (
+  lensed: ContentServiceContext | undefined,
+  /** The caller's visibility today: only definitions it may use are ever named. */
+  visibility: SchemaVisibility,
+  document: DocumentNode,
+  operationName: string | null | undefined,
+): AppError | undefined => {
+  const lens = lensed && activeLens(lensed);
+  const cause = lens
+    ? unavailableRootField(lens.view, lens.unavailable, visibility, document, operationName)
+    : undefined;
+  return cause ? schemaVersionUnavailable(cause.apiKey, cause.oldestVersion) : undefined;
 };

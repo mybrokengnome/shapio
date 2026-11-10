@@ -79,7 +79,9 @@ export const buildGraphqlSchema = (
     .filter((definition): definition is InterfaceDefinition => isInterfaceDefinition(definition))
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
   for (const definition of interfaces) {
-    Object.assign(query, interfaceQueryFields(build, definition));
+    if (!visibility.omitted?.has(definition.id)) {
+      Object.assign(query, interfaceQueryFields(build, definition));
+    }
   }
   // Reserved in naming.ts (RESERVED_QUERY_NAMES), so no model can take it.
   query[SCHEMA_VERSION_FIELD] = {

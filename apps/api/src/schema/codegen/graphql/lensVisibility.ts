@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto';
 import {
   embeddedComponentIds,
   isComponentDefinition,
+  isInterfaceDefinition,
   isModelDefinition,
   type FieldDefinition,
   type ResolvedModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { liveFields } from '../../../content/model.js';
+import type { UnavailableDefinition } from '../../lens/views.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
 import type { ModelVisibility, SchemaVisibility } from './visibility.js';
 
@@ -127,20 +129,62 @@ const componentFieldIds = (
   return named;
 };
 
+/** Definitions the client's version cannot be served for, by ID (`RequestLens.unavailable`). */
+export type UnavailableDefinitions = ReadonlyMap<string, UnavailableDefinition>;
+
+/**
+ * The models and interfaces left out of a lens schema, with why: unavailable themselves, or reaching an
+ * unavailable definition through an ancestor, an interface or an embedded component (the lens for them
+ * cannot be compiled). Their later shape is never presented as the client's version's.
+ */
+export const omittedDefinitions = (
+  view: SchemaSnapshot,
+  unavailable: UnavailableDefinitions | undefined,
+): Map<string, UnavailableDefinition> => {
+  const omitted = new Map<string, UnavailableDefinition>();
+  if (!unavailable || unavailable.size === 0) {
+    return omitted;
+  }
+  const byId = new Map([...unavailable.values()].map((entry) => [entry.definitionId, entry]));
+  for (const { definition } of view.definitions) {
+    if (!isModelDefinition(definition) && !isInterfaceDefinition(definition)) {
+      continue;
+    }
+    const reached = [
+      definition.id,
+      ...view.ancestors(definition.id),
+      ...view.interfacesOf(definition.id),
+      ...componentsOf(view, view.resolve(definition.id) ?? definition),
+    ];
+    const cause = reached.map((id) => byId.get(id)).find((entry) => entry !== undefined);
+    if (cause) {
+      omitted.set(definition.id, cause);
+    }
+  }
+  return omitted;
+};
+
 /**
  * `visibility` (today's, resolved over `current`) for a schema built from `view`, the client's version of the
  * same workspace.
  */
-export const lensVisibility = (
+const computeLensVisibility = (
   visibility: SchemaVisibility,
   view: SchemaSnapshot,
   current: SchemaSnapshot,
+  omitted: ReadonlySet<string>,
 ): SchemaVisibility => {
+  const omittedPart = omitted.size > 0 ? { omitted } : {};
   if (visibility.models === null) {
     const gone = goneModels(view, current);
-    return gone.size === 0
+    return gone.size === 0 && omitted.size === 0
       ? visibility
-      : { ...visibility, key: `${visibility.key}:lens:${digest(sorted(gone))}`, readOnly: gone };
+      : {
+          ...visibility,
+          key: `${visibility.key}:lens:${digest(`${sorted(gone)}|${sorted(omitted)}`)}`,
+          ...(gone.size > 0 ? { readOnly: gone } : {}),
+          ...omittedPart,
+        };
   }
   const models = new Map<string, ModelVisibility>();
   /** Component ID → whether each model embedding it has a read grant naming no fields today. */
@@ -148,7 +192,7 @@ export const lensVisibility = (
   for (const { definition } of view.definitions) {
     const today = visibility.models.get(definition.id);
     const model = isModelDefinition(definition) ? view.resolve(definition.id) : undefined;
-    if (!today || !model) {
+    if (!today || !model || omitted.has(definition.id)) {
       continue;
     }
     const todayModel = current.resolve(definition.id);
@@ -166,9 +210,49 @@ export const lensVisibility = (
   }
   const components = componentFieldIds(view, current, embedders);
   return {
-    key: keyOf(models, components),
+    key: `${keyOf(models, components)}${omitted.size > 0 ? `:${digest(sorted(omitted))}` : ''}`,
     models,
     componentFields: visibility.componentFields,
     componentFieldIds: components,
+    ...omittedPart,
   };
+};
+
+/**
+ * Computed once per (client's view, today's view, caller's visibility key): the view's definitions are shared by
+ * every request reading it (a cached lens view), so a request that hits does no work over the definitions.
+ */
+const memo = new WeakMap<object, WeakMap<SchemaSnapshot, Map<string, SchemaVisibility>>>();
+
+export const lensVisibility = (
+  visibility: SchemaVisibility,
+  view: SchemaSnapshot,
+  current: SchemaSnapshot,
+  unavailable?: UnavailableDefinitions,
+): SchemaVisibility => {
+  let byCurrent = memo.get(view.definitions);
+  if (!byCurrent) {
+    byCurrent = new WeakMap();
+    memo.set(view.definitions, byCurrent);
+  }
+  let byKey = byCurrent.get(current);
+  if (!byKey) {
+    byKey = new Map();
+    byCurrent.set(current, byKey);
+  }
+  const unavailableKey = unavailable
+    ? sorted([...unavailable.values()].map((entry) => entry.definitionId))
+    : '';
+  const memoKey = `${visibility.key}|${unavailableKey}`;
+  let lens = byKey.get(memoKey);
+  if (!lens) {
+    lens = computeLensVisibility(
+      visibility,
+      view,
+      current,
+      new Set(omittedDefinitions(view, unavailable).keys()),
+    );
+    byKey.set(memoKey, lens);
+  }
+  return lens;
 };

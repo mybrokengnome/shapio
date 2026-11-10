@@ -20,7 +20,13 @@ import {
   type GraphqlOperationInput,
 } from '../services/graphqlExecution.js';
 import { createGraphqlRequestContext } from './graphqlContext.js';
-import { graphqlLensOf, graphqlSchemaFor, usageLensOf, withSchemaVersion } from './graphqlLens.js';
+import {
+  graphqlLensOf,
+  graphqlSchemaFor,
+  unavailableDefinitionError,
+  usageLensOf,
+  withSchemaVersion,
+} from './graphqlLens.js';
 
 export type GraphqlQuerystring = { query: string; variables?: string; operationName?: string };
 
@@ -97,6 +103,12 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed, lensBuildAdmission(request));
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
+    const unavailable =
+      prepared.document &&
+      unavailableDefinitionError(lensed, visibility, prepared.document, input.operationName);
+    if (unavailable) {
+      throw unavailable;
+    }
     if (prepared.document && hasNoContentAccess(visibility)) {
       throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
     }

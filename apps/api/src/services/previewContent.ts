@@ -307,7 +307,10 @@ const authorizeRequest = async (
   }
   // Preview requests build lenses on the preview token's own budget.
   const base = await loadSchemaLens(unloaded, previewLensBudgetKey(token.id));
-  const clientRoute = clientRouteAfterAuthorization(base, request.modelKey);
+  // A preview token reads its own entry's type only: no other definition is named to it.
+  const clientRoute = await clientRouteAfterAuthorization(base, request.modelKey, (definitionId) =>
+    Promise.resolve(definitionId === token.model_id),
+  );
   if (!clientRoute) {
     return { scope: await authorize(runtime, base, fields, request), rawQuery: request.rawQuery };
   }

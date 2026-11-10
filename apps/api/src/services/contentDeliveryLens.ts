@@ -4,6 +4,7 @@ import { parseQueryTree, type QueryTree, type QueryValue } from '../content/comp
 import { rewriteQueryTree } from '../content/lens/query.js';
 import { apiKeyOfRoute, modelNotFound, modelRouteOf } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
+import type { ContentAction } from '../permissions/types.js';
 import { lensUncovered, schemaVersionUnavailable } from '../schema/errors.js';
 import type { LensBudgetKey } from '../schema/lens/budget.js';
 import type { RequestLens } from '../schema/lens/views.js';
@@ -206,14 +207,20 @@ export const authorizeBeforeLens = async (
  * The client's route once its lens is loaded: `409 SCHEMA_VERSION_UNAVAILABLE` for a route the version names
  * but cannot serve (history that does not reach it), never a 404 that hides it. Call after authorization.
  */
-export const clientRouteAfterAuthorization = (
+export const clientRouteAfterAuthorization = async (
   context: ContentServiceContext,
   routeKey: string,
-): ClientRoute | null => {
+  /** Whether the caller may act on a definition today (by its ID), before anything about it is answered. */
+  accessible: (definitionId: string) => Promise<boolean>,
+): Promise<ClientRoute | null> => {
   const route = clientRouteOf(context, routeKey);
   const lens = activeLens(context);
   const pruned = lens && route && route.definitionId === null ? lens.unavailable?.get(routeKey) : undefined;
   if (pruned) {
+    // Only a caller that may act on that definition today learns it exists and why it cannot be served.
+    if (!(await accessible(pruned.definitionId))) {
+      throw modelNotFound(routeKey);
+    }
     throw schemaVersionUnavailable(pruned.apiKey, pruned.oldestVersion);
   }
   return route;
@@ -396,6 +403,8 @@ export const openClientRoute = async (
   versionError: AppError | null,
   authorize: (apiKey: string) => Promise<unknown>,
   holdsAnyGrant: () => Promise<boolean>,
+  /** The action the call performs: a definition the caller may not perform it on stays a plain 404. */
+  actions: readonly ContentAction[],
   budgetKey?: LensBudgetKey | null,
 ): Promise<{ context: ContentServiceContext; apiKey: string; clientRoute: ClientRoute | null }> => {
   if (!versionError && !namesSchemaVersion(base)) {
@@ -406,7 +415,14 @@ export const openClientRoute = async (
     throw versionError;
   }
   const context = await loadSchemaLens(base, budgetKey);
-  const clientRoute = clientRouteAfterAuthorization(context, routeKey);
+  const clientRoute = await clientRouteAfterAuthorization(context, routeKey, async (definitionId) => {
+    for (const action of actions) {
+      if ((await context.permissions.evaluate(context.actor, { action, modelId: definitionId })).allowed) {
+        return true;
+      }
+    }
+    return false;
+  });
   const apiKey = clientRoute ? (clientRoute.apiKey ?? routeKey) : apiKeyOfRoute(context.snapshot, routeKey);
   return { context, apiKey, clientRoute };
 };

@@ -40,6 +40,7 @@ const lensedWrite = async (
     versionError,
     (apiKey) => authorize(base, apiKey),
     () => holdsAnyGrant(base, ['create', 'update', 'delete']),
+    ['create', 'update', 'delete'],
   );
 };
 

@@ -13,7 +13,7 @@ import type { PermissionEvaluator, PermissionExecutor, TokenPrincipal } from '..
 import * as adminRolesRepository from '../repositories/adminRoles.js';
 import * as apiTokensRepository from '../repositories/apiTokens.js';
 import type { SiteActorContext } from './actorContext.js';
-import { assertPinnedSchemaVersion, pinnedVersionsAvailable } from './apiTokenPins.js';
+import { parsePinnedSchemaVersion, pinnedVersionsAvailable } from './apiTokenPins.js';
 import { recordAudit } from './audit.js';
 
 export type ApiTokenView = {
@@ -116,7 +116,7 @@ type CreateApiTokenInput = {
   /** A network admin token (every site and network actions); omitted or false: a token of the request's site. */
   network?: boolean | undefined;
   /** The schema version to pin the token to; omitted or null: no pin. */
-  pinnedSchemaVersion?: number | null | undefined;
+  pinnedSchemaVersion?: unknown;
 };
 
 /**
@@ -180,7 +180,6 @@ export const createApiToken = async (
     throw new AppError(400, 'INVALID_EXPIRY', 'The expiry must be in the future');
   }
   const token = `${API_TOKEN_PREFIX}${generateToken()}`;
-  const pinnedSchemaVersion = input.pinnedSchemaVersion ?? null;
   return db.transaction().execute(async (trx) => {
     const role = await adminRolesRepository.findById(input.roleId, trx);
     if (!role) {
@@ -190,7 +189,7 @@ export const createApiToken = async (
       throw new AppError(400, 'INVALID_ROLES', 'API tokens cannot hold the owner role');
     }
     const network = await isNetworkToken(context, permissions, role.kind, input.network, trx);
-    await assertPinnedSchemaVersion(pinnedSchemaVersion, trx);
+    const pinnedSchemaVersion = await parsePinnedSchemaVersion(input.pinnedSchemaVersion ?? null, trx);
     const { id } = await apiTokensRepository.insert(
       {
         name: input.name.trim(),
@@ -221,8 +220,8 @@ export const createApiToken = async (
 };
 
 type UpdateApiTokenInput = {
-  /** The schema version to pin the token to; null clears the pin. */
-  pinnedSchemaVersion: number | null;
+  /** The schema version to pin the token to; null clears the pin. Checked strictly (`parsePinnedSchemaVersion`). */
+  pinnedSchemaVersion: unknown;
 };
 
 /**
@@ -246,9 +245,8 @@ export const updateApiToken = async (
       throw new AppError(404, 'NOT_FOUND', 'Active API token not found');
     }
     const from = before.pinned_schema_version;
-    const to = input.pinnedSchemaVersion;
+    const to = await parsePinnedSchemaVersion(input.pinnedSchemaVersion, trx);
     if (from !== to) {
-      await assertPinnedSchemaVersion(to, trx);
       if (!(await apiTokensRepository.updatePinnedSchemaVersion(id, scope, to, new Date(), trx))) {
         throw new AppError(404, 'NOT_FOUND', 'Active API token not found');
       }

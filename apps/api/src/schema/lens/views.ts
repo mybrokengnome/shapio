@@ -22,7 +22,7 @@ import { buildNetworkSchema, type ActiveDefinition, type SchemaSnapshot } from '
 import { readStoredRevision } from '../storedDefinition.js';
 import { takeLensBuildBudget, type LensBudgetKey } from './budget.js';
 import { LENS_HISTORY_BACKFILL_KEY } from './history.js';
-import { createLru, type Lru } from './lru.js';
+import { createLru, createSegmentedLru, type Lru, type SegmentedLru } from './lru.js';
 
 /**
  * Lens views (plan schema-lenses §2): a workspace's schema as it was at an older global version, built from
@@ -32,13 +32,15 @@ import { createLru, type Lru } from './lru.js';
 
 /**
  * Lens views kept per workspace: keyed by the view's revisions, so many versions share one. Each workspace
- * has its own caches, so a caller cycling versions in one workspace never evicts another's.
+ * has its own caches, so a caller cycling versions in one workspace never evicts another's; within one, the
+ * caches are segmented (`createSegmentedLru`): views read again stay in the protected segment while one-off
+ * versions churn among themselves in probation.
  */
-export const LENS_VIEW_CACHE_SIZE = 32;
+export const LENS_VIEW_CACHE_SIZE = { probation: 16, protected: 32 } as const;
 /** Compiled definition lenses kept per process (keys are revision IDs, unique across instances). */
 export const DEFINITION_LENS_CACHE_SIZE = 256;
 /** History rows at one version, per workspace. */
-const HISTORY_CACHE_SIZE = 32;
+const HISTORY_CACHE_SIZE = { probation: 16, protected: 32 } as const;
 
 export type RequestLens = {
   requested: number;
@@ -81,8 +83,8 @@ type ViewEntry = {
 /** One workspace's caches. */
 type SiteCaches = {
   earliest?: Promise<EarliestActivationRow[]>;
-  history: Lru<number, Promise<ActivationAtRow[]>>;
-  views: Lru<string, Promise<ViewEntry>>;
+  history: SegmentedLru<number, Promise<ActivationAtRow[]>>;
+  views: SegmentedLru<string, Promise<ViewEntry>>;
 };
 
 type LensState = {
@@ -151,19 +153,28 @@ const stateOf = async (db: Database): Promise<LensState> => {
   return refreshSettled(db, state);
 };
 
+/**
+ * The backfill writes everything it proves in one transaction, so a read sees history either as the
+ * migration left it (baseline rows: unavailable where they do not reach) or complete, never in between.
+ * Caches count as final only once the job succeeded; until then (pending, running, failed, dead) they are
+ * dropped the first time a request sees it succeed.
+ */
 const refreshSettled = async (db: Database, state: LensState): Promise<LensState> => {
   if (state.settled) {
     return state;
   }
   const job = await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db);
-  const settled = !job || job.status === 'succeeded' || job.status === 'dead';
+  const settled = !job || job.status === 'succeeded';
   return settled ? freshState(db, true) : state;
 };
 
 const siteCachesOf = (state: LensState, siteKey: string): SiteCaches => {
   let caches = state.sites.get(siteKey);
   if (!caches) {
-    caches = { history: createLru(HISTORY_CACHE_SIZE), views: createLru(LENS_VIEW_CACHE_SIZE) };
+    caches = {
+      history: createSegmentedLru(HISTORY_CACHE_SIZE),
+      views: createSegmentedLru(LENS_VIEW_CACHE_SIZE),
+    };
     state.sites.set(siteKey, caches);
   }
   return caches;

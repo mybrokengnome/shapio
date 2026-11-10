@@ -33,6 +33,7 @@ describe('component items written by a caller that cannot see all of them', () =
   let deck: ModelBody;
   let reader: AppSessionBody;
   let writerOnly: AppSessionBody;
+  let titleOnly: AppSessionBody;
   let v: string;
 
   const request = (method: string, url: string, credential: string, payload?: unknown) =>
@@ -100,6 +101,23 @@ describe('component items written by a caller that cannot see all of them', () =
     await setAuthenticatedGrants(database.current.db, []);
     reader = await signUp(testApp.app);
     writerOnly = await signUp(testApp.app);
+    titleOnly = await signUp(testApp.app);
+    const titleField = deck.definition.fields.find((field) => field.apiKey === 'title')?.id as string;
+    expectStatus(
+      await admin.request({
+        method: 'PATCH',
+        url: `/api/admin/app-users/${titleOnly.user.id}`,
+        payload: {
+          roleIds: [
+            await createAppRole(database.current.db, [
+              { action: 'read', modelId: deck.definition.id },
+              { action: 'update', modelId: deck.definition.id, fieldIds: [titleField] },
+            ]),
+          ],
+        },
+      }),
+      200,
+    );
     const roleOf = async (actions: Array<'read' | 'update'>) =>
       createAppRole(
         database.current.db,
@@ -224,6 +242,33 @@ describe('component items written by a caller that cannot see all of them', () =
           { __component: 'tag', name: 'T', secret: 'sT' },
           { __component: 'card', label: 'C', note: 'nC' },
         ]);
+      });
+
+      it('answers an invalid body (422) and a forbidden field (403) before a stale version (409), as always', async () => {
+        const entry = await create({ title: 't', cards: base });
+        const stale = { expectedVersion: 999 };
+        const invalid = await request('PUT', url(entry.id), reader.accessToken, {
+          ...stale,
+          data: { nope: 1, cards: [{ label: 'A' }] },
+        });
+        // A key the client's version does not know is the lens's refusal; without a version, today's validator's.
+        expect([invalid.statusCode, invalid.json<{ error: { code: string } }>().error.code]).toEqual([
+          422,
+          suffix ? 'LENS_WRITE_UNSUPPORTED' : 'CONTENT_INVALID',
+        ]);
+        const forbidden = await request('PUT', url(entry.id), titleOnly.accessToken, {
+          ...stale,
+          data: { cards: [{ label: 'A' }] },
+        });
+        expect([forbidden.statusCode, forbidden.json<{ error: { code: string } }>().error.code]).toEqual([
+          403,
+          'FORBIDDEN_FIELD',
+        ]);
+        const conflict = await request('PUT', url(entry.id), reader.accessToken, {
+          ...stale,
+          data: { cards: [{ label: 'A' }] },
+        });
+        expect(conflict.statusCode).toBe(409);
       });
 
       it('a caller that may not read clears a field with null and a list with []: never a success that keeps it', async () => {

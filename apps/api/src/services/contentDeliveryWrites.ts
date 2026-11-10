@@ -2,7 +2,9 @@ import { isComponentDefinition, type DefinitionLens } from '@shapio/schema';
 import {
   matchesRowFilter,
   maskAllows,
+  ownershipOfNewEntry,
   rowReadMask,
+  rowWriteMask,
   hidesPrivateComponentFields,
 } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
@@ -15,16 +17,17 @@ import {
   type LensWriteBase,
 } from '../content/lens/write.js';
 import { writeLocaleFor } from '../content/locales.js';
-import { modelNotFound, type ContentModel } from '../content/model.js';
+import { modelNotFound, resolveModel, resolveModelById, type ContentModel } from '../content/model.js';
 import { visibleRelationTargetIds } from '../content/read.js';
-import type { ModelValidator } from '../content/validator/index.js';
-import { contentInvalid, type ContentIssue } from '../content/validator/issues.js';
+import type { ContentIssue } from '../content/validator/issues.js';
 import { keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
 import type { ContentData } from '../db/contentData.js';
 import { AppError } from '../helpers/appError.js';
 import type { ContentAction } from '../permissions/types.js';
+import { hasUnrestrictedGrant } from '../permissions/unrestrictedGrant.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
+import type { HeadRecord } from '../repositories/entryHeads.js';
 import { lensUncovered, lensWriteIssues } from '../schema/errors.js';
 import {
   activeLens,
@@ -40,7 +43,7 @@ import {
 } from './contentDeliveryLens.js';
 import { deliveryEnvironment } from './contentDeliveryReads.js';
 import * as contentEntriesService from './contentEntries.js';
-import type { DraftUpdateBase } from './contentEntries.js';
+import type { UpdateEntryInput } from './contentEntries.js';
 import type { AdminEntryView } from './contentReads.js';
 import { assertMayReadDrafts } from './draftAccess.js';
 
@@ -171,17 +174,17 @@ const readScopeOf = async (
  */
 const readsOf = (
   lens: DefinitionLens,
-  base: DraftUpdateBase,
+  heads: readonly HeadRecord[],
   locale: string,
   scope: ReadScope | null,
 ): ContentData[] => {
   if (!scope) {
     return [];
   }
-  const heads = base.heads.filter((head) => head.locale === locale);
   // Only heads this caller may read: a draft only with draft access, so a value sent back never tests a guess
   // of a draft it cannot see.
   return heads
+    .filter((head) => head.locale === locale)
     .filter((head) => head.state === 'published' || (head.state === 'draft' && scope.readsDrafts))
     .flatMap((head) =>
       isRecord(head.data)
@@ -262,14 +265,21 @@ export const createDeliveryEntry = async (
     return toResult(context, await contentEntriesService.createEntry(context, modelKey, input));
   }
   // Authorized first, exactly as without a version: nothing lens-specific answers a caller that may not create.
-  const { model } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+  const { model, policy } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
     modelWithCreatePolicy(context, apiKey),
   );
   const lens = writeLens(context, model, modelNotFound(clientRoute?.clientRouteKey ?? modelKey));
+  const writeMask = rowWriteMask(policy, context.actor, ownershipOfNewEntry(context.actor));
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
   const data = translateBody(lens, input.data, {
     stored: null,
     reads: [],
     definitionOf: definitionsOf(context),
+    writable: (fieldId) => {
+      const field = today.get(fieldId);
+      return field !== undefined && maskAllows(writeMask, field);
+    },
+    writesEverything: hasUnrestrictedGrant(policy, 'write'),
   });
   return toResult(
     context,
@@ -287,32 +297,36 @@ export const createDeliveryEntry = async (
  * caller cannot read carried over from the draft the write starts from, so a component written whole never
  * wipes what the caller could not see (with or without a version).
  */
-const deliveryPatch = (
-  context: ContentServiceContext,
-  model: ContentModel,
-  validator: ModelValidator,
-  data: unknown,
-  before: Readonly<ContentData>,
-  scope: ReadScope | null,
-  lens: DefinitionLens | null,
-): ContentData => {
-  const input = isRecord(data) ? data : {};
-  const { patch, issues } = validator.fromInput(input);
-  if (issues.length > 0) {
-    throw contentInvalid(issues);
-  }
-  return keepUnreadableComponentFields(
-    patch,
-    before,
-    model.definition.fields,
-    (componentId) => {
-      const definition = context.snapshot.byId.get(componentId)?.definition;
-      return definition && isComponentDefinition(definition) ? definition : undefined;
-    },
-    (field) => scope?.componentFieldVisible(field.id) ?? false,
-    { mayRead: scope !== null, input, lens },
+/** Whether a model's components (at any depth) hold a field some delivery caller cannot read. */
+const holdsHiddenComponentFields = (model: ContentModel): boolean =>
+  [...model.components.values()].some(({ definition }) =>
+    definition.fields.some((field) => field.deprecated || !field.public),
   );
-};
+
+/**
+ * The carry-over of a delivery update, run inside the write once the version is checked: component fields the
+ * caller cannot read (or, through a lens, does not know or cannot write) keep their stored values
+ * (`keepUnreadableComponentFields`). The body was validated and authorized before, as always.
+ */
+const carryOver =
+  (
+    context: ContentServiceContext,
+    input: Readonly<Record<string, unknown>>,
+    scope: ReadScope | null,
+    lens: DefinitionLens | null,
+  ): NonNullable<UpdateEntryInput['carry']> =>
+  (patch, base, model) =>
+    keepUnreadableComponentFields(
+      patch,
+      base.before,
+      model.definition.fields,
+      (componentId) => {
+        const definition = context.snapshot.byId.get(componentId)?.definition;
+        return definition && isComponentDefinition(definition) ? definition : undefined;
+      },
+      (field) => scope?.componentFieldVisible(field.id) ?? false,
+      { mayRead: scope !== null, input, lens },
+    );
 
 export const updateDeliveryEntry = async (
   context: ContentServiceContext,
@@ -321,55 +335,74 @@ export const updateDeliveryEntry = async (
   input: DeliveryUpdateInput,
   clientRoute: ClientRoute | null = null,
 ): Promise<DeliveryWriteResult> => {
+  const body = isRecord(input.data) ? input.data : undefined;
+  const update = (data: unknown, carry?: UpdateEntryInput['carry'], routeKey = modelKey) =>
+    contentEntriesService.updateEntry(context, routeKey, id, {
+      ...input,
+      ...(data === undefined ? {} : { data }),
+      autosave: false,
+      ...(carry ? { carry } : {}),
+    });
+  if (!activeLens(context)) {
+    // Without a version: validated, authorized and checked exactly as always; the carry-over only runs (and
+    // reads anything) when a component of the model holds a field some caller cannot read.
+    const route = resolveModel(context.snapshot, modelKey);
+    const family = context.snapshot.family(route.definition.id);
+    const models = (family.length > 0 ? family : [route.definition.id]).flatMap(
+      (modelId) => resolveModelById(context.snapshot, modelId) ?? [],
+    );
+    if (!body || !models.some(holdsHiddenComponentFields)) {
+      return toResult(context, await update(input.data));
+    }
+    const { model } = await entryModelWithPolicy(context, modelKey, id, 'update');
+    const scope = await readScopeOf(context, model, id);
+    return toResult(context, await update(input.data, carryOver(context, body, scope, null)));
+  }
   // The entry's own kind (a family route writes the kind), authorized first, exactly as without a version.
-  const { model } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+  const { model, policy } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
     entryModelWithPolicy(context, apiKey, id, 'update'),
   );
   const routeApiKey = clientRoute?.apiKey ?? modelKey;
-  const lens = activeLens(context) ? writeLens(context, model, entryNotFound(id)) : null;
+  const lens = writeLens(context, model, entryNotFound(id));
   const scope = await readScopeOf(context, model, id);
+  const entry = await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db);
+  const heads = entry ? await entryHeadsRepository.findForEntry(id, context.db) : [];
   // What a read shows of the entry's relations: a value sent back is compared without the hidden targets.
-  const visibleTargets =
-    lens && scope
-      ? await visibleRelationTargetIds(
-          deliveryEnvironment(context, context.db, { kind: 'heads', state: 'published' }, input.locale),
-          model,
-          (await entryHeadsRepository.findForEntry(id, context.db)).flatMap((head) =>
-            isRecord(head.data) ? [head.data] : [],
-          ),
-        )
-      : null;
-  const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
-  const definitionOf = definitionsOf(context);
-  const write = () =>
-    contentEntriesService.updateEntry(context, routeApiKey, id, {
-      ...(input.locale === undefined ? {} : { locale: input.locale }),
-      expectedVersion: input.expectedVersion,
-      autosave: false,
-      // Made from the locked draft the write starts from (a new locale's base included), inside the write.
-      patchFrom: (base, { model: written, validator }) =>
-        deliveryPatch(
-          context,
-          written,
-          validator,
-          lens
-            ? translateBody(lens, input.data ?? {}, {
-                stored: base.before,
-                reads: readsOf(lens, base, base.previous?.locale ?? locale, scope),
-                definitionOf,
-                visibleTargets,
-                mayRead: scope !== null,
-                ...(scope
-                  ? { readable: scope.visible, componentFieldReadable: scope.componentFieldVisible }
-                  : { readable: () => false, componentFieldReadable: () => false }),
-              })
-            : (input.data ?? {}),
-          base.before,
-          scope,
-          lens,
-        ),
-    });
-  return toResult(context, lens ? await inClientNames(context, lens, write) : await write());
+  const visibleTargets = scope
+    ? await visibleRelationTargetIds(
+        deliveryEnvironment(context, context.db, { kind: 'heads', state: 'published' }, input.locale),
+        model,
+        heads.flatMap((head) => (isRecord(head.data) ? [head.data] : [])),
+      )
+    : null;
+  const locale = model.definition.localized
+    ? writeLocaleFor(context.snapshot, model.definition, input.locale)
+    : (heads.find((head) => head.state === 'draft')?.locale ?? context.snapshot.defaultLocale);
+  const draft = heads.find((head) => head.state === 'draft' && head.locale === locale);
+  const writeMask = entry ? rowWriteMask(policy, context.actor, entry) : policy.writeMask;
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
+  // Translated before the write, so its refusals come in today's order (422 before a stale version's 409).
+  const data = translateBody(lens, input.data ?? {}, {
+    stored: draft && isRecord(draft.data) ? draft.data : null,
+    reads: readsOf(lens, heads, locale, scope),
+    definitionOf: definitionsOf(context),
+    visibleTargets,
+    mayRead: scope !== null,
+    writable: (fieldId) => {
+      const field = today.get(fieldId);
+      return field !== undefined && maskAllows(writeMask, field);
+    },
+    writesEverything: hasUnrestrictedGrant(policy, 'write'),
+    ...(scope
+      ? { readable: scope.visible, componentFieldReadable: scope.componentFieldVisible }
+      : { readable: () => false, componentFieldReadable: () => false }),
+  });
+  return toResult(
+    context,
+    await inClientNames(context, lens, () =>
+      update(data, carryOver(context, isRecord(data) ? data : {}, scope, lens), routeApiKey),
+    ),
+  );
 };
 
 /**

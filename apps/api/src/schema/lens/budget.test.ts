@@ -3,6 +3,7 @@ import type { Principal } from '../../permissions/types.js';
 import {
   LENS_APP_USER_BUILDS_PER_MINUTE,
   LENS_BUILDS_PER_MINUTE,
+  clientNetworkOf,
   lensBudgetKeyOf,
   previewLensBudgetKey,
   resetLensBuildBudgets,
@@ -33,19 +34,33 @@ describe('takeLensBuildBudget', () => {
     expect(takeLensBuildBudget('token:a', now - 3_600_000 + 60_000 / LENS_BUILDS_PER_MINUTE)).toBe(true);
   });
 
-  it('holds all app users of a workspace to one ceiling, and takes nothing from a bucket when another is empty', () => {
+  it('gives each app user a small budget of its own, so other app users cannot drain it', () => {
     const now = 1_000_000;
     const appUser = (id: string) =>
       lensBudgetKeyOf({ kind: 'appUser', appUserId: id } as Principal, 's1') as string;
-    let allowed = 0;
-    for (let user = 0; user < LENS_APP_USER_BUILDS_PER_MINUTE; user += 1) {
-      allowed += takeLensBuildBudget(appUser(`u${user}`), now) ? 1 : 0;
+    for (let user = 0; user < 20; user += 1) {
+      while (takeLensBuildBudget(appUser(`drainer-${user}`), now)) {
+        // drain
+      }
     }
-    expect(allowed).toBe(LENS_APP_USER_BUILDS_PER_MINUTE);
-    expect(takeLensBuildBudget(appUser('fresh'), now)).toBe(false);
-    // The refused user's own bucket was not charged.
-    resetLensBuildBudgets();
-    expect(takeLensBuildBudget(appUser('other-workspace').replace('s1', 's2'), now)).toBe(true);
+    let builds = 0;
+    while (takeLensBuildBudget(appUser('real'), now)) {
+      builds += 1;
+    }
+    expect(builds).toBe(LENS_APP_USER_BUILDS_PER_MINUTE);
+  });
+});
+
+describe('clientNetworkOf', () => {
+  it('budgets IPv4 per address and IPv6 per /64, whatever the spelling', () => {
+    expect(clientNetworkOf('203.0.113.7')).toBe('203.0.113.7');
+    expect(clientNetworkOf('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(clientNetworkOf('2001:db8:aa:bb:1:2:3:4')).toBe('2001:db8:aa:bb::/64');
+    expect(clientNetworkOf('2001:DB8:AA:BB:ffff::9')).toBe('2001:db8:aa:bb::/64');
+    expect(clientNetworkOf('2001:0db8:00aa:00bb::1%eth0')).toBe('2001:db8:aa:bb::/64');
+    expect(clientNetworkOf('2001:db8:aa:bc::1')).not.toBe(clientNetworkOf('2001:db8:aa:bb::1'));
+    expect(clientNetworkOf('::1')).toBe('0:0:0:0::/64');
+    expect(clientNetworkOf('not an address')).toBe('not an address');
   });
 });
 
@@ -54,12 +69,10 @@ describe('lensBudgetKeyOf', () => {
     const anonymous: Principal = { kind: 'anonymous', siteId: null };
     expect(lensBudgetKeyOf({ kind: 'token', tokenId: 't1' } as Principal, 's1')).toBe('token:t1');
     expect(lensBudgetKeyOf({ kind: 'admin', adminUserId: 'a1' } as Principal, 's1')).toBe('admin:a1');
-    expect(lensBudgetKeyOf({ kind: 'appUser', appUserId: 'u1' } as Principal, 's1')).toBe(
-      'app_user:u1|app_users:s1',
-    );
+    expect(lensBudgetKeyOf({ kind: 'appUser', appUserId: 'u1' } as Principal, 's1')).toBe('app_user:u1');
     expect(lensBudgetKeyOf(anonymous, 's1', '10.0.0.1')).toBe('anonymous:s1:10.0.0.1');
     expect(lensBudgetKeyOf(anonymous, 's1', '10.0.0.2')).toBe('anonymous:s1:10.0.0.2');
-    expect(lensBudgetKeyOf(anonymous, null, '::1')).toBe('anonymous:shared:::1');
+    expect(lensBudgetKeyOf(anonymous, null, '2001:db8:1:2::1')).toBe('anonymous:shared:2001:db8:1:2::/64');
     expect(previewLensBudgetKey('p1')).toBe('preview:p1');
     expect(lensBudgetKeyOf({ kind: 'system', component: 'jobs' }, 's1')).toBeNull();
   });

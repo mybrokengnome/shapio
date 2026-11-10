@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../helpers/appError.js';
 import { parseQueryTree } from '../compiler/querystring.js';
 import { COMPONENT_KEY } from '../validator/index.js';
-import { keepUnreadableComponentFields } from '../write/keepUnreadable.js';
+import { CARRY_MAX_ITEMS, keepUnreadableComponentFields } from '../write/keepUnreadable.js';
 import { rewriteQueryTree, type QueryRewriteContext } from './query.js';
 import { readThroughLens } from './read.js';
 import { clientApiKey, issuesInClientNames, readableThroughLens, writeThroughLens } from './write.js';
@@ -617,5 +617,95 @@ describe('lens review findings', () => {
     ).toEqual({ input: {}, issues: [] });
     // A value matching neither head is refused.
     expect(writeThroughLens(lens, { cover: { id: id(51) } }, base).issues).toHaveLength(1);
+  });
+});
+
+describe('lens writes of lists (third review)', () => {
+  const ITEM = id(5);
+  const LIST = id(6);
+  const LABEL = id(7);
+  const SIZE = id(8);
+  const definitions = (sizeType: string) => [
+    model([
+      { id: LIST, apiKey: 'items', type: 'component', settings: { component: ITEM, repeatable: true } },
+    ]),
+    component(ITEM, 'item', [
+      { id: LABEL, apiKey: 'label' },
+      { id: SIZE, apiKey: 'size', type: sizeType },
+    ]),
+  ];
+  const today = definitions('number');
+  const lens = lensOf(today, definitions('integer'));
+  const index = createDefinitionIndex(today);
+  const stored = {
+    [LIST]: [
+      { [LABEL]: 'A', [SIZE]: 1 },
+      { [LABEL]: 'B', [SIZE]: 2 },
+    ],
+  };
+  const base = {
+    stored,
+    reads: [stored],
+    definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
+  };
+
+  it('compares each sent item with the stored item it continues, not the one at its position', () => {
+    // `size` changed type since the version (not writable through it): sent back as read it is accepted, for
+    // the item the client kept after deleting the first one, and for a reordered list.
+    expect(writeThroughLens(lens, { items: [{ label: 'B', size: 2 }] }, base).issues).toEqual([]);
+    expect(
+      writeThroughLens(
+        lens,
+        {
+          items: [
+            { label: 'B', size: 2 },
+            { label: 'A', size: 1 },
+          ],
+        },
+        base,
+      ).issues,
+    ).toEqual([]);
+    // A value that is not what the item it continues holds is refused.
+    expect(
+      writeThroughLens(
+        lens,
+        {
+          items: [
+            { label: 'A', size: 2 },
+            { label: 'B', size: 1 },
+          ],
+        },
+        base,
+      ).issues.map((issue) => issue.path),
+    ).toEqual(['/items/0/size', '/items/1/size']);
+  });
+
+  it('refuses a list longer than the write path considers before matching', () => {
+    const many = Array.from({ length: CARRY_MAX_ITEMS + 1 }, () => ({ label: 'x' }));
+    expect(() => writeThroughLens(lens, { items: many }, base)).toThrow(
+      expect.objectContaining({ code: 'CONTENT_INVALID' }),
+    );
+  });
+
+  it("gives a field the caller may not write today today's answer, never the lens's reason", () => {
+    const page = (countType: string, extra: FieldSpec[] = []) => [
+      model([{ id: F, apiKey: 'title' }, { id: id(3), apiKey: 'count', type: countType }, ...extra]),
+    ];
+    const write = lensOf(page('string'), page('integer', [{ id: id(9), apiKey: 'gone' }]));
+    const todayIndex = createDefinitionIndex(page('string'));
+    const result = writeThroughLens(
+      write,
+      { count: 1, gone: 'x', title: 't' },
+      {
+        stored: null,
+        reads: [],
+        definitionOf: (definitionId: string) =>
+          todayIndex.resolve(definitionId) ?? todayIndex.get(definitionId),
+        writable: (fieldId) => fieldId === F,
+        writesEverything: false,
+      },
+    );
+    // Passed on untranslated, for today's validator and write mask to answer as without a version.
+    expect(result).toEqual({ input: { title: 't', count: 1, gone: 'x' }, issues: [] });
   });
 });

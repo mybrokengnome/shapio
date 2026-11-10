@@ -30,9 +30,10 @@ const schemaVersionMismatch = (first: string, second: string) =>
 export const pickSchemaVersionToken = (candidates: readonly SchemaVersionCandidate[]): string | null => {
   let picked: { source: string; token: string } | null = null;
   for (const { source, value } of candidates) {
-    if (value === undefined || value === '') {
+    if (value === undefined) {
       continue;
     }
+    // An empty value names no version a client could have meant: refused below like any malformed one.
     if (Array.isArray(value)) {
       throw new AppError(400, 'INVALID_QUERY', `${source} is given more than once; name one schema version`);
     }

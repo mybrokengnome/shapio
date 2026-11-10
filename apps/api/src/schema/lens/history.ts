@@ -17,6 +17,8 @@ export const LENS_HISTORY_BACKFILL_KEY = 'schema.lensHistoryBackfill:v2';
 const ACTIVATION_ACTIONS = ['schema.activate', 'schema.delete'] as const;
 const SCOPE_ACTION = 'schema.scope';
 const INSERT_BATCH = 500;
+/** Rows read per page (audit rows, history rows): memory stays bounded by the compact facts kept. */
+const READ_PAGE = 1000;
 
 export type HistoryAuditEvent = {
   action: string;
@@ -54,23 +56,67 @@ const stringsOf = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 /**
+ * What the backfill keeps of one audit row: the compact facts, never the row's metadata (which can be large).
+ * `modelIds`: the target, plus every kind of a family that moved with its root (`schema.scope`).
+ */
+export type CompactHistoryEvent =
+  | {
+      kind: 'activate' | 'delete';
+      modelId: string;
+      schemaVersion: number;
+      toVersion: number | null;
+      at: Date;
+    }
+  | { kind: 'scope'; modelIds: readonly string[]; schemaVersion: number; from: string | null };
+
+/** The compact facts of one audit row; null when it proves nothing (no target, no version, unknown scope). */
+export const compactHistoryEvent = (event: HistoryAuditEvent): CompactHistoryEvent | null => {
+  if (!event.target_id) {
+    return null;
+  }
+  const metadata = metadataOf(event);
+  const schemaVersion = integerOrNull(metadata.schemaVersion);
+  if (schemaVersion === null) {
+    return null;
+  }
+  if (event.action === SCOPE_ACTION) {
+    const from = scopeOf(metadata.from);
+    return from === undefined
+      ? null
+      : {
+          kind: 'scope',
+          modelIds: [...new Set([event.target_id, ...stringsOf(metadata.family)])],
+          schemaVersion,
+          from,
+        };
+  }
+  if (!(ACTIVATION_ACTIONS as readonly string[]).includes(event.action)) {
+    return null;
+  }
+  return {
+    kind: event.action === 'schema.activate' ? 'activate' : 'delete',
+    modelId: event.target_id,
+    schemaVersion,
+    toVersion: integerOrNull(metadata.toVersion),
+    at: event.occurred_at,
+  };
+};
+
+/**
  * Each model's scope moves, oldest first. A family moves with its root: the root's audit row lists every
  * kind in `family` (since inheritance shipped), and each of them moved with it.
  */
-const scopeMovesOf = (events: readonly HistoryAuditEvent[]): Map<string, ScopeMove[]> => {
+const scopeMovesOf = (events: readonly CompactHistoryEvent[]): Map<string, ScopeMove[]> => {
   const moves = new Map<string, ScopeMove[]>();
   for (const event of events) {
-    if (event.action !== SCOPE_ACTION || !event.target_id) {
+    if (event.kind !== 'scope') {
       continue;
     }
-    const metadata = metadataOf(event);
-    const schemaVersion = integerOrNull(metadata.schemaVersion);
-    const from = scopeOf(metadata.from);
-    if (schemaVersion === null || from === undefined) {
-      continue;
-    }
-    for (const modelId of new Set([event.target_id, ...stringsOf(metadata.family)])) {
-      moves.set(modelId, [...(moves.get(modelId) ?? []), { schemaVersion, from }]);
+    for (const modelId of event.modelIds) {
+      moves.set(modelId, [
+        ...(moves.get(modelId) ?? []),
+        { schemaVersion: event.schemaVersion, from: event.from },
+      ]);
     }
   }
   for (const list of moves.values()) {
@@ -79,22 +125,25 @@ const scopeMovesOf = (events: readonly HistoryAuditEvent[]): Map<string, ScopeMo
   return moves;
 };
 
-/**
- * The rows the audit log proves. A model's scope at a version is the scope its first later move left (null
- * when it left the shared scope), or its current scope when it never moved since. Rows of models that no
- * longer exist, activations whose revision is gone, and rows activation wrote itself (`protectedKeys`, never
- * replaced) are skipped.
- */
-export const activationsFromAudit = (input: {
-  events: readonly HistoryAuditEvent[];
+type ProofInput = {
   /** `<modelId>:<version>` → revision ID. */
   revisions: ReadonlyMap<string, string>;
   /** Current scope of every model that still exists. */
   scopes: ReadonlyMap<string, string | null>;
   /** `<modelId>:<schemaVersion>` of the rows activation wrote (not backfilled). */
   protectedKeys: ReadonlySet<string>;
-}): NewSchemaActivation[] => {
-  const { events, revisions, scopes, protectedKeys } = input;
+};
+
+/**
+ * The rows compact audit facts prove. A model's scope at a version is the scope its first later move left
+ * (null when it left the shared scope), or its current scope when it never moved since. Rows of models that
+ * no longer exist, activations whose revision is gone, and rows activation wrote itself (`protectedKeys`,
+ * never replaced) are skipped.
+ */
+export const activationsFromCompact = (
+  events: readonly CompactHistoryEvent[],
+  { revisions, scopes, protectedKeys }: ProofInput,
+): NewSchemaActivation[] => {
   const moves = scopeMovesOf(events);
   const scopeAt = (modelId: string, schemaVersion: number, current: string | null) => {
     const next = (moves.get(modelId) ?? []).find((move) => move.schemaVersion > schemaVersion);
@@ -102,20 +151,17 @@ export const activationsFromAudit = (input: {
   };
   const rows = new Map<string, NewSchemaActivation>();
   for (const event of events) {
-    const modelId = event.target_id;
-    if (!modelId || !(ACTIVATION_ACTIONS as readonly string[]).includes(event.action)) {
+    if (event.kind === 'scope') {
       continue;
     }
-    const metadata = metadataOf(event);
-    const schemaVersion = integerOrNull(metadata.schemaVersion);
+    const { modelId, schemaVersion } = event;
     const key = `${modelId}:${schemaVersion}`;
-    if (schemaVersion === null || !scopes.has(modelId) || protectedKeys.has(key) || rows.has(key)) {
+    if (!scopes.has(modelId) || protectedKeys.has(key) || rows.has(key)) {
       continue;
     }
     let revisionId: string | null = null;
-    if (event.action === 'schema.activate') {
-      const toVersion = integerOrNull(metadata.toVersion);
-      revisionId = toVersion === null ? null : (revisions.get(`${modelId}:${toVersion}`) ?? null);
+    if (event.kind === 'activate') {
+      revisionId = event.toVersion === null ? null : (revisions.get(`${modelId}:${event.toVersion}`) ?? null);
       if (revisionId === null) {
         continue;
       }
@@ -126,31 +172,73 @@ export const activationsFromAudit = (input: {
       siteId: scopeAt(modelId, schemaVersion, scopes.get(modelId) ?? null),
       revisionId,
       backfilled: true,
-      createdAt: event.occurred_at,
+      createdAt: event.at,
     });
   }
   return [...rows.values()];
 };
 
+/** `activationsFromCompact` over raw audit rows. */
+export const activationsFromAudit = (input: ProofInput & { events: readonly HistoryAuditEvent[] }) =>
+  activationsFromCompact(
+    input.events.flatMap((event) => compactHistoryEvent(event) ?? []),
+    input,
+  );
+
+/** The compact facts of every successful schema audit row, read a page at a time (keyset on `seq`). */
+const readCompactEvents = async (db: Database): Promise<CompactHistoryEvent[]> => {
+  const events: CompactHistoryEvent[] = [];
+  let after: string | null = null;
+  for (;;) {
+    const page = await auditEventsRepository.findSuccessfulByActionsPage(
+      [...ACTIVATION_ACTIONS, SCOPE_ACTION],
+      { afterSeq: after, limit: READ_PAGE },
+      db,
+    );
+    events.push(...page.flatMap((row) => compactHistoryEvent(row) ?? []));
+    if (page.length < READ_PAGE) {
+      return events;
+    }
+    after = String((page[page.length - 1] as (typeof page)[number]).seq);
+  }
+};
+
+type ExistingRow = { siteId: string | null; revisionId: string | null; backfilled: boolean };
+
+/** Every history row as compact facts, by `<modelId>:<schemaVersion>`, read a page at a time. */
+const readExistingRows = async (db: Database): Promise<Map<string, ExistingRow>> => {
+  const rows = new Map<string, ExistingRow>();
+  let after: { modelId: string; schemaVersion: number } | null = null;
+  for (;;) {
+    const page = await schemaActivationsRepository.findRowsPage(after, READ_PAGE, db);
+    for (const row of page) {
+      rows.set(`${row.modelId}:${row.schemaVersion}`, {
+        siteId: row.siteId,
+        revisionId: row.revisionId,
+        backfilled: row.backfilled,
+      });
+    }
+    const last = page[page.length - 1];
+    if (page.length < READ_PAGE || !last) {
+      return rows;
+    }
+    after = { modelId: last.modelId, schemaVersion: last.schemaVersion };
+  }
+};
+
 /**
  * Writes every row the audit log proves: missing rows are inserted, and backfilled rows that disagree with
- * it (an earlier run's) are replaced. Rows activation wrote are never touched. Running it again changes
- * nothing.
+ * it (an earlier run's) are replaced. Rows activation wrote are never touched. Every write happens in one
+ * transaction (the rows are the instance's past activations: few), so a lensed read sees history either as
+ * the migration left it or complete, never half rebuilt; a run that fails changes nothing and the job
+ * retries. Running it again changes nothing.
  */
 export const backfillActivationHistory = async (
   db: Database,
 ): Promise<{ inserted: number; replaced: number }> => {
-  const events = await auditEventsRepository.findSuccessfulByActions(
-    [...ACTIVATION_ACTIONS, SCOPE_ACTION],
-    db,
-  );
+  const events = await readCompactEvents(db);
   const modelIds = [
-    ...new Set(
-      events.flatMap((event) => [
-        ...(event.target_id ? [event.target_id] : []),
-        ...stringsOf(metadataOf(event).family),
-      ]),
-    ),
+    ...new Set(events.flatMap((event) => (event.kind === 'scope' ? event.modelIds : [event.modelId]))),
   ];
   const revisions = new Map<string, string>();
   const scopes = new Map<string, string | null>();
@@ -163,14 +251,8 @@ export const backfillActivationHistory = async (
       scopes.set(id, siteId);
     }
   }
-  const existing = new Map(
-    (await schemaActivationsRepository.findAllRows(db)).map((row) => [
-      `${row.modelId}:${row.schemaVersion}`,
-      row,
-    ]),
-  );
-  const proven = activationsFromAudit({
-    events,
+  const existing = await readExistingRows(db);
+  const proven = activationsFromCompact(events, {
     revisions,
     scopes,
     protectedKeys: new Set([...existing].filter(([, row]) => !row.backfilled).map(([key]) => key)),
@@ -180,8 +262,10 @@ export const backfillActivationHistory = async (
     return !known || known.siteId !== row.siteId || known.revisionId !== row.revisionId;
   });
   const replaced = changed.filter((row) => existing.has(`${row.modelId}:${row.schemaVersion}`)).length;
-  for (let start = 0; start < changed.length; start += INSERT_BATCH) {
-    await schemaActivationsRepository.replaceBackfilled(changed.slice(start, start + INSERT_BATCH), db);
-  }
+  await db.transaction().execute(async (trx) => {
+    for (let start = 0; start < changed.length; start += INSERT_BATCH) {
+      await schemaActivationsRepository.replaceBackfilled(changed.slice(start, start + INSERT_BATCH), trx);
+    }
+  });
   return { inserted: changed.length - replaced, replaced };
 };

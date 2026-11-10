@@ -1,12 +1,15 @@
-import { createHash } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import {
-  GRAPHQL_LENS_SCHEMA_CACHE_SIZE,
+  GRAPHQL_LENS_SCHEMA_SPACES_MAX,
+  GRAPHQL_LENS_SCHEMAS_PROBATION,
+  GRAPHQL_LENS_SCHEMAS_PROTECTED,
   GRAPHQL_SCHEMA_VARIANTS_MAX,
   GRAPHQL_SITE_SCHEMA_IDLE_MS,
 } from '../../../constants/graphql.js';
 import { lensBudgetExceeded } from '../../errors.js';
+import { createSegmentedLru, type LruSegment, type SegmentedLru } from '../../lens/lru.js';
 import type { NetworkSchema, SchemaSnapshot } from '../../snapshot.js';
+import { lensSchemaKey } from './lensSchemaKey.js';
 import { buildGraphqlSchema, type BuildOptions, type BuiltSchema } from './schemaBuilder.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
 
@@ -34,17 +37,18 @@ export type GraphqlSchemaCache = {
   list: () => Array<{ siteId: string | null; visibility: string; version: number | null }>;
   /**
    * The schema of a client's version of a workspace (plan schema-lenses; `view` is `RequestLens.view`,
-   * `visibility` from `lensVisibility`), built on first use and kept by exact match on the view's revisions:
-   * versions with the same revisions share one schema. Never served for another view, never replaced by a
-   * newer one.
+   * `visibility` from `lensVisibility`), built on first use and kept by exact match on what shapes it for this
+   * visibility (`lensSchemaKey`): versions that look the same to the caller share one schema. Each
+   * (workspace, visibility) has its own segmented cache, so walking versions churns only that cache's
+   * probation, never a version clients keep reading, another workspace's, or a current-version schema.
    */
   getLens: (
     view: SchemaSnapshot,
     visibility: SchemaVisibility,
     options?: LensBuildOptions,
   ) => Promise<BuiltSchema>;
-  /** The lens schemas held, least recently used first: site, visibility key and view key (tests). */
-  listLens: () => Array<{ siteId: string | null; visibility: string; view: string }>;
+  /** The lens schemas held, per cache least recently used first within each segment (tests). */
+  listLens: () => Array<{ siteId: string | null; visibility: string; view: string; segment: LruSegment }>;
   /** Stops background rebuilds (app shutdown). */
   close: () => void;
 };
@@ -62,7 +66,10 @@ type SchemaCacheOptions = {
   now?: () => number;
   idleMs?: number;
   maxEntries?: number;
-  maxLensEntries?: number;
+  /** Per (workspace, visibility) lens cache: entries on probation and protected. */
+  lensSegments?: { probation: number; protected: number };
+  /** (workspace, visibility) lens caches kept. */
+  maxLensSpaces?: number;
   build?: (view: SchemaSnapshot, visibility: SchemaVisibility, options?: BuildOptions) => BuiltSchema;
 };
 
@@ -75,43 +82,32 @@ export type LensBuildOptions = {
   admit?: () => boolean;
 };
 
-type LensEntry = { siteId: string | null; visibility: string; view: string; schema: Promise<BuiltSchema> };
+type LensEntry = { schema: Promise<BuiltSchema> };
+
+type LensSpace = { siteId: string | null; visibility: string; schemas: SegmentedLru<string, LensEntry> };
 
 const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 const entryKey = (siteId: string | null, visibilityKey: string) => `${siteId ?? ''}\u0000${visibilityKey}`;
-
-const viewKeys = new WeakMap<SchemaSnapshot, string>();
-
-/**
- * What a lens schema is built from besides visibility: the view's definition revisions and today's locales (a
- * lens does not hide locale changes). The version number is not part of it: `_schemaVersion` reads the
- * request's.
- */
-export const lensViewKey = (view: SchemaSnapshot): string => {
-  let key = viewKeys.get(view);
-  if (key === undefined) {
-    const revisions = view.definitions.map((active) => `${active.definition.id}=${active.revisionId}`).sort();
-    key = createHash('sha256')
-      .update(`${revisions.join('\n')}\n${JSON.stringify(view.locales)}`)
-      .digest('base64url');
-    viewKeys.set(view, key);
-  }
-  return key;
-};
 
 export const createGraphqlSchemaCache = ({
   log,
   now = Date.now,
   idleMs = GRAPHQL_SITE_SCHEMA_IDLE_MS,
   maxEntries = GRAPHQL_SCHEMA_VARIANTS_MAX,
-  maxLensEntries = GRAPHQL_LENS_SCHEMA_CACHE_SIZE,
+  lensSegments = { probation: GRAPHQL_LENS_SCHEMAS_PROBATION, protected: GRAPHQL_LENS_SCHEMAS_PROTECTED },
+  maxLensSpaces = GRAPHQL_LENS_SCHEMA_SPACES_MAX,
   build = buildGraphqlSchema,
 }: SchemaCacheOptions): GraphqlSchemaCache => {
   // Map order is use order (re-inserted on every request), so the first entries are the least recently used.
   const entries = new Map<string, Entry>();
-  // Least recently used first, as `entries`; bounded by `maxLensEntries` on every insert.
-  const lenses = new Map<string, LensEntry>();
+  // Lens caches by (workspace, visibility); `spaceUse` bounds and orders them (a segmented LRU of its own),
+  // `spaces` finds one without counting a use.
+  const spaces = new Map<string, LensSpace>();
+  const spaceUse = createSegmentedLru<string, true>({
+    probation: Math.ceil(maxLensSpaces / 2),
+    protected: Math.floor(maxLensSpaces / 2),
+  });
   let lastSweep = now();
   let closed = false;
 
@@ -218,22 +214,42 @@ export const createGraphqlSchemaCache = ({
     })();
   };
 
+  /** The lens cache of a workspace and visibility, created (and the oldest caches past the bound dropped). */
+  const lensSpaceFor = (spaceKey: string, siteId: string | null, visibility: string): LensSpace => {
+    let space = spaces.get(spaceKey);
+    if (space) {
+      spaceUse.get(spaceKey);
+      return space;
+    }
+    space = { siteId, visibility, schemas: createSegmentedLru(lensSegments) };
+    spaces.set(spaceKey, space);
+    spaceUse.set(spaceKey, true);
+    for (const key of spaces.keys()) {
+      if (!spaceUse.has(key)) {
+        spaces.delete(key);
+      }
+    }
+    return space;
+  };
+
   const getLens = (
     view: SchemaSnapshot,
     visibility: SchemaVisibility,
     { admit }: LensBuildOptions = {},
   ): Promise<BuiltSchema> => {
-    const viewKey = lensViewKey(view);
-    const key = `${entryKey(view.siteId, visibility.key)}\u0000${viewKey}`;
-    const cached = lenses.get(key);
-    if (cached) {
-      lenses.delete(key);
-      lenses.set(key, cached);
-      return cached.schema;
+    const spaceKey = entryKey(view.siteId, visibility.key);
+    const key = lensSchemaKey(view, visibility);
+    const cached = spaces.get(spaceKey);
+    if (cached?.schemas.has(key)) {
+      // A hit costs no budget; it counts a use of the cache and of the schema (read again: protected).
+      spaceUse.get(spaceKey);
+      return (cached.schemas.get(key) as LensEntry).schema;
     }
+    // Refused before any cache is touched: an exhausted caller evicts nothing.
     if (admit && !admit()) {
       return Promise.reject(lensBudgetExceeded());
     }
+    const space = lensSpaceFor(spaceKey, view.siteId, visibility.key);
     const schema = Promise.resolve().then(() => {
       const started = performance.now();
       const built = build(view, visibility, { lens: true });
@@ -248,24 +264,21 @@ export const createGraphqlSchemaCache = ({
       );
       return built;
     });
-    lenses.set(key, { siteId: view.siteId, visibility: visibility.key, view: viewKey, schema });
-    for (const oldest of lenses.keys()) {
-      if (lenses.size <= maxLensEntries) {
-        break;
-      }
-      lenses.delete(oldest);
-    }
+    const entry: LensEntry = { schema };
+    space.schemas.set(key, entry);
     // A failed build is forgotten, so the next request retries.
     schema.catch(() => {
-      if (lenses.get(key)?.schema === schema) {
-        lenses.delete(key);
+      if (space.schemas.has(key) && space.schemas.entries().some(([, value]) => value === entry)) {
+        space.schemas.delete(key);
       }
     });
     return schema;
   };
 
   const listLens = () =>
-    [...lenses.values()].map(({ siteId, visibility, view }) => ({ siteId, visibility, view }));
+    [...spaces.values()].flatMap(({ siteId, visibility, schemas }) =>
+      schemas.entries().map(([view, , segment]) => ({ siteId, visibility, view, segment })),
+    );
 
   return {
     get: (view, visibility = FULL_VISIBILITY) => ensure(view, visibility, true),

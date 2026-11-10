@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
+import { executeIdempotentDdl } from '../../ddl.js';
+import type { DB } from '../../types.js';
 import {
   LENS_HISTORY_BACKFILL_JOB,
   LENS_HISTORY_BACKFILL_KEY,
@@ -7,14 +9,19 @@ import {
 } from '../20261110120000_schema_lenses.js';
 
 /**
- * MySQL twin of `../20261110120000_schema_lenses.ts`. `insert ignore` stands in for `on conflict do nothing`
- * (the jobs' idempotency key).
+ * MySQL twin of `../20261110120000_schema_lenses.ts`. `insert ignore` stands in for `on conflict do nothing`.
+ * MySQL commits each DDL statement on its own, so an `up` that fails halfway leaves the earlier statements
+ * done; every statement is guarded (`if not exists`, `executeIdempotentDdl`, `insert ignore`, `where ... is
+ * null`) so running `up` again finishes the work.
  */
+/** The DDL helper takes the app's typed handle; a migration's is untyped. */
+const ddlDb = (db: Kysely<unknown>) => db as unknown as Kysely<DB>;
+
 const UUID = sql.raw('char(36) character set ascii collate ascii_general_ci');
 
 export const up = async (db: Kysely<unknown>): Promise<void> => {
   await sql`
-    create table \`schema_activations\` (
+    create table if not exists \`schema_activations\` (
       \`model_id\` ${UUID} not null,
       \`schema_version\` int not null,
       \`site_id\` ${UUID},
@@ -28,11 +35,12 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
         references \`schema_revisions\` (\`id\`)
     )
   `.execute(db);
-  await sql`create index \`schema_activations_version_idx\` on \`schema_activations\` (\`schema_version\`)`.execute(
-    db,
+  await executeIdempotentDdl(
+    ddlDb(db),
+    sql`create index \`schema_activations_version_idx\` on \`schema_activations\` (\`schema_version\`)`,
   );
   await sql`
-    insert into \`schema_activations\`
+    insert ignore into \`schema_activations\`
       (\`model_id\`, \`schema_version\`, \`site_id\`, \`revision_id\`, \`backfilled\`, \`created_at\`)
     select active.\`model_id\`, active.\`schema_version\`, m.\`site_id\`, active.\`revision_id\`, 1, active.\`activated_at\`
     from \`model_active_versions\` active
@@ -46,12 +54,21 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
   `.execute(db);
   // MySQL refuses to add a column whose default calls `uuid()` to a table with rows (unsafe for the binary
   // log), and its `uuid()` is time-based: the one row gets a random ID first, then the column its default.
-  await sql`alter table \`system_versions\` add column \`schema_id\` ${UUID}`.execute(db);
-  await sql`update \`system_versions\` set \`schema_id\` = ${randomUUID()}`.execute(db);
+  await executeIdempotentDdl(
+    ddlDb(db),
+    sql`alter table \`system_versions\` add column \`schema_id\` ${UUID}`,
+  );
+  // Only a row without one: an ID written by an earlier, interrupted run stays.
+  await sql`update \`system_versions\` set \`schema_id\` = ${randomUUID()} where \`schema_id\` is null`.execute(
+    db,
+  );
   await sql`alter table \`system_versions\` modify column \`schema_id\` ${UUID} not null default (uuid())`.execute(
     db,
   );
-  await sql`alter table \`token_reads\` add column \`last_schema_version\` int`.execute(db);
+  await executeIdempotentDdl(
+    ddlDb(db),
+    sql`alter table \`token_reads\` add column \`last_schema_version\` int`,
+  );
 };
 
 export const down = async (db: Kysely<unknown>): Promise<void> => {

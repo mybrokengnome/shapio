@@ -6,6 +6,7 @@ import {
 } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
+import { contentInvalid, pointer } from '../validator/issues.js';
 
 /**
  * A component instance is written whole, so a delivery caller that cannot read one of its fields (private to
@@ -126,6 +127,7 @@ const keepInInstance = (
   written: unknown,
   stored: unknown,
   raw: unknown,
+  path: string,
 ): unknown => {
   if (!component || !isRecord(written)) {
     return written;
@@ -140,38 +142,79 @@ const keepInInstance = (
         output[field.id] = storedValue;
       }
     } else if (field.id in output) {
-      output[field.id] = keepInValue(rules, field, output[field.id], storedValue, sent[field.apiKey]);
+      output[field.id] = keepInValue(
+        rules,
+        field,
+        output[field.id],
+        storedValue,
+        sent[field.apiKey],
+        pointer(path, field.apiKey),
+      );
     }
   }
   return output;
 };
 
-/** Pairs each sent item with the stored item it continues (index into `stored`), or -1 for a new item. */
-const matchItems = (
-  rules: Rules,
-  written: readonly unknown[],
-  stored: readonly unknown[],
-  componentOfItem: (item: unknown) => ComponentDefinition | undefined,
-  sameKind: (sent: unknown, kept: unknown) => boolean,
+/**
+ * Items a carried-over list may hold (a list's own `max` when lower): a longer one is refused with the
+ * validator's own `TOO_MANY` before any matching, so matching never runs on unbounded input.
+ */
+export const CARRY_MAX_ITEMS = 50_000;
+/** Past this many characters, an item's key is not computed: it is unmatched by content (in place at most). */
+export const CARRY_MAX_ITEM_KEY = 65_536;
+
+/** The `TOO_MANY` refusal the validator answers, for a list longer than the carry-over considers. */
+export const listTooLong = (path: string, max: number) =>
+  contentInvalid([{ path, code: 'TOO_MANY', message: `allows at most ${max} item(s)` }]);
+
+const listCapOf = (field: FieldDefinition): number => {
+  const max = (field.settings as { max?: number }).max;
+  return max !== undefined && max < CARRY_MAX_ITEMS ? max : CARRY_MAX_ITEMS;
+};
+
+/** A key for an item, or null when it is too large to be matched by content. */
+const boundedKey = (key: string): string | null => (key.length > CARRY_MAX_ITEM_KEY ? null : key);
+
+/**
+ * Pairs each sent item with the stored item it continues (index into `stored`), or -1 for a new item: by key
+ * first (equal keys taken in stored order), then in place when the list kept its length. Linear: one key per
+ * item, a map from key to the stored indexes still free.
+ */
+export const pairItems = (
+  sentKeys: ReadonlyArray<string | null>,
+  storedKeys: ReadonlyArray<string | null>,
+  sameKindAt: (position: number) => boolean,
 ): number[] => {
-  const keyOf = (item: unknown) =>
-    canonicalJson({
-      kind: isRecord(item) ? (item[COMPONENT_KEY] ?? null) : null,
-      seen: seenOf(rules, componentOfItem(item), item),
-    });
-  const storedKeys = stored.map(keyOf);
-  const taken = new Set<number>();
-  const pairs = written.map((item) => {
-    const key = keyOf(item);
-    const index = storedKeys.findIndex((candidate, position) => !taken.has(position) && candidate === key);
-    if (index !== -1) {
-      taken.add(index);
+  const free = new Map<string, number[]>();
+  storedKeys.forEach((key, index) => {
+    if (key !== null) {
+      const queue = free.get(key);
+      if (queue) {
+        queue.push(index);
+      } else {
+        free.set(key, [index]);
+      }
     }
+  });
+  const cursor = new Map<string, number>();
+  const taken = new Set<number>();
+  const pairs = sentKeys.map((key) => {
+    if (key === null) {
+      return -1;
+    }
+    const queue = free.get(key);
+    const at = cursor.get(key) ?? 0;
+    if (!queue || at >= queue.length) {
+      return -1;
+    }
+    cursor.set(key, at + 1);
+    const index = queue[at] as number;
+    taken.add(index);
     return index;
   });
-  if (written.length === stored.length) {
+  if (sentKeys.length === storedKeys.length) {
     pairs.forEach((pair, position) => {
-      if (pair === -1 && !taken.has(position) && sameKind(written[position], stored[position])) {
+      if (pair === -1 && !taken.has(position) && sameKindAt(position)) {
         pairs[position] = position;
         taken.add(position);
       }
@@ -180,19 +223,47 @@ const matchItems = (
   return pairs;
 };
 
+const matchItems = (
+  rules: Rules,
+  written: readonly unknown[],
+  stored: readonly unknown[],
+  componentOfItem: (item: unknown) => ComponentDefinition | undefined,
+  sameKind: (sent: unknown, kept: unknown) => boolean,
+): number[] => {
+  const keyOf = (item: unknown) =>
+    boundedKey(
+      canonicalJson({
+        kind: isRecord(item) ? (item[COMPONENT_KEY] ?? null) : null,
+        seen: seenOf(rules, componentOfItem(item), item),
+      }),
+    );
+  return pairItems(written.map(keyOf), stored.map(keyOf), (position) =>
+    sameKind(written[position], stored[position]),
+  );
+};
+
+const assertListSize = (field: FieldDefinition, written: readonly unknown[], path: string) => {
+  const cap = listCapOf(field);
+  if (written.length > cap) {
+    throw listTooLong(path, cap);
+  }
+};
+
 const keepInValue = (
   rules: Rules,
   field: FieldDefinition,
   written: unknown,
   stored: unknown,
   raw: unknown,
+  path: string,
 ): unknown => {
   if (field.type === 'component') {
     const component = rules.componentOf(field.settings.component);
     if (!Array.isArray(written)) {
-      return keepInInstance(rules, component, written, stored, raw);
+      return keepInInstance(rules, component, written, stored, raw, path);
     }
-    const kept = Array.isArray(stored) ? stored : [];
+    assertListSize(field, written, path);
+    const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
     const pairs = matchItems(
       rules,
       written,
@@ -202,11 +273,19 @@ const keepInValue = (
     );
     return written.map((item, index) => {
       const pair = pairs[index] ?? -1;
-      return keepInInstance(rules, component, item, pair === -1 ? undefined : kept[pair], at(raw, index));
+      return keepInInstance(
+        rules,
+        component,
+        item,
+        pair === -1 ? undefined : kept[pair],
+        at(raw, index),
+        pointer(path, index),
+      );
     });
   }
   if (field.type === 'dynamiczone' && Array.isArray(written)) {
-    const kept = Array.isArray(stored) ? stored : [];
+    assertListSize(field, written, path);
+    const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
     const componentOfItem = (item: unknown) =>
       isRecord(item) && typeof item[COMPONENT_KEY] === 'string'
         ? rules.componentOf(item[COMPONENT_KEY])
@@ -226,6 +305,7 @@ const keepInValue = (
         item,
         pair === -1 ? undefined : kept[pair],
         at(raw, index),
+        pointer(path, index),
       );
     });
   }
@@ -259,7 +339,14 @@ export const keepUnreadableComponentFields = (
   const output: ContentData = { ...patch };
   for (const field of fields) {
     if (field.id in output && (field.type === 'component' || field.type === 'dynamiczone')) {
-      output[field.id] = keepInValue(rules, field, output[field.id], before[field.id], input[field.apiKey]);
+      output[field.id] = keepInValue(
+        rules,
+        field,
+        output[field.id],
+        before[field.id],
+        input[field.apiKey],
+        pointer('', field.apiKey),
+      );
     }
   }
   return output;

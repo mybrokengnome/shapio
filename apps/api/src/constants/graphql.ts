@@ -14,11 +14,19 @@ export const GRAPHQL_SITE_SCHEMA_IDLE_MS = 10 * 60 * 1000;
 export const GRAPHQL_SCHEMA_VARIANTS_MAX = 32;
 
 /**
- * Lens schemas kept (plan schema-lenses): one per (workspace, visibility, client version's revisions), least
- * recently used dropped first. Apart from the current schemas: they never evict one, never count against
- * GRAPHQL_SCHEMA_VARIANTS_MAX, and a client walking versions can hold no more than this many.
+ * Lens schemas (plan schema-lenses) are cached per (workspace, visibility): each such cache is a segmented LRU
+ * (`createSegmentedLru`) of this many entries on probation (built once) and this many protected (read again).
+ * A caller walking versions churns probation only; versions real clients keep reading stay protected. Lens
+ * schemas never displace current-version schemas and never count against GRAPHQL_SCHEMA_VARIANTS_MAX.
  */
-export const GRAPHQL_LENS_SCHEMA_CACHE_SIZE = 8;
+export const GRAPHQL_LENS_SCHEMAS_PROBATION = 4;
+export const GRAPHQL_LENS_SCHEMAS_PROTECTED = 4;
+
+/**
+ * (workspace, visibility) lens caches kept at most, themselves a segmented LRU (half on probation): one caller
+ * cannot make another workspace's or another visibility's lens schemas be dropped by walking versions.
+ */
+export const GRAPHQL_LENS_SCHEMA_SPACES_MAX = 32;
 
 /** `/api/graphql/playground?query=`: the longest operation the page opens with (it travels in the URL). */
 export const PLAYGROUND_QUERY_MAX_LENGTH = 8192;

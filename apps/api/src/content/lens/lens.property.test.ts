@@ -43,6 +43,7 @@ import {
 import { instanceIssues, isEmptyApiValue, walkDelivered } from '../../../test/helpers/lensOracles.js';
 import type { ContentData } from '../../db/contentData.js';
 import { AppError } from '../../helpers/appError.js';
+import { plainNumber } from '../../helpers/plainNumber.js';
 import type { FieldMask, Policy } from '../../permissions/types.js';
 import type { HeadRow } from '../compiler/compile.js';
 import { maskAllows } from '../compiler/policy.js';
@@ -53,6 +54,7 @@ import { canonicalDate, canonicalDatetime, canonicalTime } from '../validator/sc
 import { keepUnreadableComponentFields } from '../write/keepUnreadable.js';
 import { rewriteQueryTree } from './query.js';
 import { readThroughLens } from './read.js';
+import { exactNumberText, MAX_EXACT_NUMBER_LENGTH, MAX_NUMBER_EXPONENT } from './values.js';
 import { readableThroughLens, writeThroughLens } from './write.js';
 
 /**
@@ -2050,5 +2052,148 @@ describe('schema lens counterexamples, property 5', () => {
       readThroughLens(lensBetween(today, middle), stored),
     );
     expect(readThroughLens(lensBetween(today, client), stored)).toEqual(replayed);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Bounded work on any stored text (review: `exactNumberText` built a string as long as the exponent said)
+
+const ADVERSARIAL_TEXT = [
+  '1e-400000000',
+  '0e400000000',
+  ' -0E-400000000 ',
+  '1e999999999999',
+  '-1e-9999999999',
+];
+
+describe('reading numeric text is bounded', () => {
+  it('refuses the exponents a review found, before building anything', () => {
+    for (const text of ADVERSARIAL_TEXT) {
+      expect(exactNumberText(text, false)).toBeUndefined();
+      expect(exactNumberText(text, true)).toBeUndefined();
+    }
+    expect(exactNumberText('1e400', false)).toBeUndefined(); // not finite
+    expect(exactNumberText(`1e-${MAX_NUMBER_EXPONENT + 1}`, false)).toBeUndefined();
+    expect(exactNumberText(`1e-${MAX_NUMBER_EXPONENT}`, false)).toBe(
+      `0.${'0'.repeat(MAX_NUMBER_EXPONENT - 1)}1`,
+    );
+    expect(exactNumberText('1e0000000000000000003', false)).toBe('1000'); // leading zeros of the exponent
+    expect(exactNumberText('9'.repeat(64), true)).toBe('9'.repeat(64));
+    expect(exactNumberText('9'.repeat(65), true)).toBeUndefined();
+    expect(exactNumberText(` ${'9'.repeat(64)} `, true)).toBe('9'.repeat(64));
+    expect(exactNumberText('0x10', true)).toBe('16');
+    expect(plainNumber(Number.NaN)).toBe('NaN');
+    expect(plainNumber(Number.POSITIVE_INFINITY)).toBe('Infinity');
+  });
+
+  it('reads the adversarial stored texts quickly: null for exact-digit clients', () => {
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'text' }]));
+    for (const type of [
+      'decimal',
+      'biginteger',
+      'number',
+      'integer',
+      'uid',
+      'slug',
+      'email',
+      'url',
+      'date',
+    ]) {
+      const client = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type }]));
+      for (const text of ADVERSARIAL_TEXT) {
+        const started = performance.now();
+        const read = readThroughLens(lensBetween(today, client), { [F(0x10)]: text })[F(0x10)];
+        expect(performance.now() - started).toBeLessThan(100);
+        // Number and integer clients read them as `convertType` text → number does (a float: "1e-400000000" is
+        // 0), cheaply; text clients whose pattern accepts the text as written (a uid) read it unchanged; the
+        // exact-digit clients and a date refuse them.
+        if (type === 'decimal' || type === 'biginteger' || type === 'date') {
+          expect(read).toBeUndefined();
+        }
+      }
+    }
+  });
+});
+
+const BOUNDED_CLIENTS: Spec[] = [
+  'string',
+  'text',
+  'code',
+  'slug',
+  'email',
+  'url',
+  'uid',
+  'date',
+  'datetime',
+  'time',
+  'number',
+  'integer',
+  'decimal',
+  'biginteger',
+  'boolean',
+  'richtext',
+].map((type) => ({ id: F(0x10), apiKey: 'n', type }));
+BOUNDED_CLIENTS.push(
+  { id: F(0x10), apiKey: 'n', type: 'enum', settings: enumSettings(['7', 'a', '0'], false) },
+  { id: F(0x10), apiKey: 'n', type: 'enum', settings: enumSettings(['7', 'a', '0'], true) },
+);
+
+/** Characters a read returned: text, items of a list, a number's digits, or the text of a rich-text document. */
+const outputLength = (value: unknown): number => {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce<number>((sum, item) => sum + outputLength(item), 0);
+  }
+  const text = plainTextOf(value);
+  if (text !== undefined) {
+    return text.length;
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? String(value).length
+    : JSON.stringify(value).length;
+};
+
+const adversarialStringArb = fc.oneof(
+  fc.string({ maxLength: 10_000 }),
+  fc.string({ unit: 'grapheme-ascii', maxLength: 200 }),
+  fc
+    .tuple(
+      fc.constantFrom('', ' ', '\t', '  '),
+      fc.constantFrom('', '-', '+'),
+      fc.nat({ max: 5_000 }),
+      fc.constantFrom('', '.', '.5'),
+      fc.constantFrom('', 'e', 'E', 'e-', 'e+', 'E-'),
+      fc.oneof(fc.nat(), fc.constantFrom(400, 401, 400000000, 999999999999)),
+      fc.constantFrom('', ' '),
+      fc.constantFrom('0', '9', '1'),
+    )
+    .map(
+      ([pad, sign, length, point, marker, exponent, trail, digit]) =>
+        `${pad}${sign}${digit.repeat(length + 1)}${point}${marker === '' ? '' : `${marker}${exponent}`}${trail}`,
+    ),
+);
+
+describe('schema lens properties: bounded reads', { timeout: 300_000 }, () => {
+  it('13. any stored text up to 10,000 characters reads, through any client type, in bounded time and size', () => {
+    const today = schemaOf(pageOf([{ id: F(0x10), apiKey: 'n', type: 'text' }]));
+    const lenses = BOUNDED_CLIENTS.map((spec) => ({
+      spec,
+      lens: lensBetween(today, schemaOf(pageOf([spec]))),
+    }));
+    fc.assert(
+      fc.property(adversarialStringArb, (text) => {
+        for (const { spec, lens } of lenses) {
+          const started = performance.now();
+          const read = readThroughLens(lens, { [F(0x10)]: text })[F(0x10)];
+          const elapsed = performance.now() - started;
+          const message = `${String(spec.type)} ← ${JSON.stringify(text.slice(0, 80))} (${text.length} chars)`;
+          expect(elapsed, message).toBeLessThan(250);
+          expect(outputLength(read), message).toBeLessThanOrEqual(text.length + MAX_EXACT_NUMBER_LENGTH);
+        }
+      }),
+      { numRuns: Math.max(100, Math.round(RUNS / 5)) },
+    );
   });
 });

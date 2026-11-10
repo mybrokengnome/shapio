@@ -125,8 +125,10 @@ const current = buildSnapshot(
 
 const ids = (set: ReadonlySet<string> | undefined) => [...(set ?? [])].sort();
 
+/** Distinct masks get distinct keys, as `resolveSchemaVisibility` derives them (lens visibility is memoized by key). */
+let deliveryKeys = 0;
 const delivery = (models: Record<string, Partial<ModelVisibility>>): SchemaVisibility => ({
-  key: 'delivery:today',
+  key: `delivery:${(deliveryKeys += 1)}`,
   models: new Map(
     Object.entries(models).map(([id, model]) => [
       id,

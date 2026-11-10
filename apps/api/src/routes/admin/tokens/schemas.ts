@@ -33,11 +33,14 @@ const ApiTokenSchema = Type.Object({
 });
 
 /**
- * A schema version to pin the token to, or null for none. Any number is accepted here so the service can
- * answer `INVALID_PINNED_SCHEMA_VERSION` (a whole number from 1 to the current schema version). One type
- * list rather than a union: Ajv's type coercion would turn null into 0 trying the number branch first.
+ * A schema version to pin the token to, or null for none. Deliberately untyped here: Ajv's type coercion
+ * would read `true` as 1 and `"5"` as 5 (and null as 0 in a union). The service checks the value strictly
+ * and answers `INVALID_PINNED_SCHEMA_VERSION` for anything but null or an integer from 1 to the current
+ * schema version.
  */
-const PinnedSchemaVersionInputSchema = Type.Unsafe<number | null>({ type: ['number', 'null'] });
+const PinnedSchemaVersionInputSchema = Type.Unsafe<unknown>({
+  description: 'A schema version from 1 to the current one, or null for no pin',
+});
 
 export const listTokensSchema = { response: { 200: Type.Array(ApiTokenSchema) } };
 

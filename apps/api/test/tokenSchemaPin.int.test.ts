@@ -147,7 +147,13 @@ describe('schema lenses: tokens pinned to a schema version', () => {
       expect(refused.statusCode, String(pinnedSchemaVersion)).toBe(400);
       expect(refused.json<ErrorBody>().error.code).toBe('INVALID_PINNED_SCHEMA_VERSION');
     }
-    expectStatus(await createToken({ pinnedSchemaVersion: 'one' }), 400);
+    // No coercion: a boolean, a numeric string, or anything else but a number or null is refused.
+    const notNumbers: unknown[] = [true, false, '1', '5', 'one', {}, [1]];
+    for (const pinnedSchemaVersion of notNumbers) {
+      const refused = await createToken({ pinnedSchemaVersion });
+      expect(refused.statusCode, JSON.stringify(pinnedSchemaVersion)).toBe(400);
+      expect(refused.json<ErrorBody>().error.code).toBe('INVALID_PINNED_SCHEMA_VERSION');
+    }
     const { view } = await createPinned(null);
     expect(view).toMatchObject({ pinnedSchemaVersion: null, pinnedSchemaVersionAvailable: true });
     const ahead = await setPin(view.id, currentVersion + 1);
@@ -157,6 +163,12 @@ describe('schema lenses: tokens pinned to a schema version', () => {
       expectStatus(await setPin(view.id, currentVersion), 200).json<TokenView>().pinnedSchemaVersion,
     ).toBe(currentVersion);
     expectStatus(await setPin('00000000-0000-4000-8000-000000000000', 1), 404);
+    for (const pinnedSchemaVersion of notNumbers) {
+      const refused = await setPin(view.id, pinnedSchemaVersion);
+      expect(refused.statusCode, JSON.stringify(pinnedSchemaVersion)).toBe(400);
+      expect(refused.json<ErrorBody>().error.code).toBe('INVALID_PINNED_SCHEMA_VERSION');
+    }
+    expect((await tokens()).find((token) => token.id === view.id)?.pinnedSchemaVersion).toBe(currentVersion);
   });
 
   it('reads the old shape over REST when the request names no version, and a named version wins', async () => {
@@ -366,6 +378,23 @@ describe('schema lenses: tokens pinned to a schema version', () => {
     const refused = await inject('GET', '/api/content/articles', secret);
     expect(refused.statusCode).toBe(409);
     expect(refused.json<ErrorBody>().error.code).toBe('SCHEMA_VERSION_UNAVAILABLE');
+  });
+
+  it('flags a pin ahead of the current version (a restore to an earlier point)', async () => {
+    const { secret, view } = await createPinned(version);
+    const ahead = Number(current.split(':')[1]) + 5;
+    await database.current.db
+      .updateTable('api_tokens')
+      .set({ pinned_schema_version: ahead })
+      .where('id', '=', view.id)
+      .execute();
+    expect((await tokens()).find((token) => token.id === view.id)).toMatchObject({
+      pinnedSchemaVersion: ahead,
+      pinnedSchemaVersionAvailable: false,
+    });
+    const refused = await inject('GET', '/api/content/articles', secret);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<ErrorBody>().error.code).toBe('SCHEMA_VERSION_AHEAD');
   });
 
   it('migrates down and up', async () => {

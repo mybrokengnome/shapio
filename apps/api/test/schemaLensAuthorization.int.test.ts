@@ -45,6 +45,7 @@ describe('schema lenses: authorization before anything lens-specific', () => {
   let essay: ModelBody;
   let kid: ModelBody;
   let unrestrictedToken: string;
+  let adminToken: string;
   let onlyAToken: string;
   let essayBlindToken: string;
   let entry: EntryBody;
@@ -85,7 +86,8 @@ describe('schema lenses: authorization before anything lens-specific', () => {
 
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { schemaListen: false });
-    admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
+    adminToken = await createRoleToken(database.current.db);
+    admin = schemaClient(testApp.app, adminToken);
     expectStatus(await admin.post('/api/admin/components/builtin/seo/ensure', {}), 201);
     author = await createDefinition(admin, {
       kind: 'collection',
@@ -194,7 +196,8 @@ describe('schema lenses: authorization before anything lens-specific', () => {
     );
     // The kids' history is fine, their parent's before the version is lost: the kid cannot be served at V.
     await change(base, (definition) => ({ ...definition, label: 'Base (renamed)' }));
-    await change(kid, (definition) => ({ ...definition, label: 'Kid (renamed)' }));
+    // The kids' route moves too, so `bases/kids` is a key today's schema does not know.
+    await change(kid, (definition) => ({ ...definition, label: 'Kid (renamed)', pluralApiKey: 'children' }));
     const version = Number(v.split(':')[1]);
     await db
       .deleteFrom('schema_activations')
@@ -246,6 +249,41 @@ describe('schema lenses: authorization before anything lens-specific', () => {
 
   // The field-restricted grant names every field that stays public (a, seo): its mask covers them all, yet it
   // named fields, so b and c (made private since) must not appear as null.
+  it('names a definition the version cannot serve only to a caller that may read it today', async () => {
+    // onlyA holds a grant on the workspace (memo) but none on kids: the old route key is a plain 404 to it.
+    const blind = await get(at('/api/content/bases/kids'), onlyAToken);
+    expect(blind.statusCode).toBe(404);
+    expect(blind.json<ErrorBody>().error.code).toBe('MODEL_NOT_FOUND');
+    const plain = await get('/api/content/bases/kids', onlyAToken);
+    expect([blind.statusCode, blind.body]).toEqual([plain.statusCode, plain.body]);
+  });
+
+  it('answers a version it cannot read on the contract routes, and an empty one everywhere, after authorization', async () => {
+    const schemaId = v.split(':')[0] as string;
+    const docs = async (query: string, headers: Record<string, string> = {}) => {
+      const response = await testApp.app.inject({
+        method: 'GET',
+        url: `/api/docs/typescript?${query}`,
+        headers: { ...bearer(adminToken), ...headers },
+      });
+      return [response.statusCode, response.json<ErrorBody>().error?.code];
+    };
+    expect(await docs(`schemaVersion=${schemaId}:1&schemaVersion=${schemaId}:2`)).toEqual([
+      400,
+      'INVALID_QUERY',
+    ]);
+    expect(await docs(`schemaVersion=${schemaId}:1`, { 'shapio-schema-version': v })).toEqual([
+      400,
+      'SCHEMA_VERSION_MISMATCH',
+    ]);
+    expect(await docs('schemaVersion=')).toEqual([400, 'SCHEMA_VERSION_INVALID']);
+    const empty = await get('/api/content/memos?schemaVersion=', unrestrictedToken);
+    expect([empty.statusCode, empty.json<ErrorBody>().error.code]).toEqual([400, 'SCHEMA_VERSION_INVALID']);
+    const anonymous = await get('/api/content/memos?schemaVersion=', null);
+    const plain = await get('/api/content/memos', null);
+    expect([anonymous.statusCode, anonymous.body]).toEqual([plain.statusCode, plain.body]);
+  });
+
   it('reads fields made private since as null only for a grant that names no fields', async () => {
     const open = expectStatus(
       await get(at(`/api/content/memos/${entry.id}`), unrestrictedToken),

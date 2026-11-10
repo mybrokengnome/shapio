@@ -1,9 +1,13 @@
 import { normalizeDefinition } from '@shapio/schema';
 import { describe, expect, it, vi } from 'vitest';
 import { silentLogger } from '../../../../test/helpers/silentLogger.js';
+import {
+  GRAPHQL_LENS_SCHEMAS_PROBATION,
+  GRAPHQL_LENS_SCHEMAS_PROTECTED,
+} from '../../../constants/graphql.js';
 import { buildNetworkSchema, type SchemaSnapshot } from '../../snapshot.js';
 import { buildGraphqlSchema, type BuildOptions } from './schemaBuilder.js';
-import { createGraphqlSchemaCache, lensViewKey } from './schemaCache.js';
+import { createGraphqlSchemaCache } from './schemaCache.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
 
 const SITE_A = 'site-a';
@@ -11,7 +15,14 @@ const SITE_B = 'site-b';
 const view = (version: number, siteId: string) => buildNetworkSchema(version, [], []).forSite(siteId);
 const masked = (key: string): SchemaVisibility => ({ key, models: new Map(), componentFields: 'public' });
 
-const setup = (options: { idleMs?: number; maxEntries?: number; maxLensEntries?: number } = {}) => {
+const setup = (
+  options: {
+    idleMs?: number;
+    maxEntries?: number;
+    maxLensSpaces?: number;
+    lensSegments?: { probation: number; protected: number };
+  } = {},
+) => {
   let time = 0;
   const builds: Array<{ siteId: string | null; version: number; visibility?: string; lens?: true }> = [];
   let failNext = false;
@@ -160,74 +171,117 @@ describe('GraphQL schema cache', () => {
       label: 'Note',
       fields: [{ id: '00000000-0000-4000-8000-000000000011', apiKey: 'text', label: 'Text', type: 'string' }],
     });
-    /** A client's version of SITE_A whose one definition is at revision `revision`. */
-    const lensView = (version: number, revision: number) =>
-      buildNetworkSchema(
-        version,
+    /** A model the masked visibility below never shows. */
+    const SECRET = normalizeDefinition({
+      id: '00000000-0000-4000-8000-000000000002',
+      kind: 'collection',
+      apiKey: 'secret',
+      label: 'Secret',
+      fields: [{ id: '00000000-0000-4000-8000-000000000021', apiKey: 'code', label: 'Code', type: 'string' }],
+    });
+    const revisionId = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+    const active = (definition: typeof NOTE, revision: number, siteId: string) => ({
+      definition,
+      version: revision,
+      revisionId: revisionId(revision),
+      hash: 'h',
+      activatedAt: new Date(0),
+      siteId,
+    });
+    /** A client's version of a workspace: the note at revision `note`, the secret at `secret`. */
+    const lensView = (version: number, note: number, secret = 1000, siteId = SITE_A) =>
+      buildNetworkSchema(version, [active(NOTE, note, siteId), active(SECRET, secret, siteId)], []).forSite(
+        siteId,
+      );
+    /** A delivery caller that sees the note only. */
+    const noteOnly: SchemaVisibility = {
+      key: 'lens:note-only',
+      models: new Map([
         [
-          {
-            definition: NOTE,
-            version: revision,
-            revisionId: `00000000-0000-4000-8000-${revision.toString(16).padStart(12, '0')}`,
-            hash: 'h',
-            activatedAt: new Date(0),
-            siteId: SITE_A,
-          },
+          NOTE.id,
+          { readable: true, readFields: new Set([NOTE.fields[0]?.id ?? '']), writeFields: new Set() },
         ],
-        [],
-      ).forSite(SITE_A);
+      ]),
+      componentFields: 'public',
+    };
+    const held = (cache: ReturnType<typeof setup>['cache']) =>
+      cache
+        .listLens()
+        .map(({ siteId, visibility, view: key, segment }) => ({ siteId, visibility, key, segment }));
 
-    it('builds one schema per view, shared by versions with the same revisions', async () => {
+    it('builds one schema per look: versions differing only in what the caller never sees share it', async () => {
       const { cache, builds } = setup();
       const [a, b] = await Promise.all([
-        cache.getLens(lensView(3, 1), FULL_VISIBILITY),
-        cache.getLens(lensView(4, 1), FULL_VISIBILITY),
+        cache.getLens(lensView(3, 1, 10), noteOnly),
+        cache.getLens(lensView(4, 1, 11), noteOnly),
       ]);
       expect(a).toBe(b);
-      expect(builds).toEqual([{ siteId: SITE_A, version: 3, lens: true }]);
-      expect(a.schema.getMutationType()?.getFields()).toHaveProperty('createNote');
-      expect(await cache.getLens(lensView(3, 2), FULL_VISIBILITY)).not.toBe(a);
-      expect(await cache.getLens(lensView(3, 1), masked('lens:x'))).not.toBe(a);
-      expect(cache.listLens().map((entry) => entry.view)).toEqual([
-        lensViewKey(lensView(3, 1)),
-        lensViewKey(lensView(3, 2)),
-        lensViewKey(lensView(3, 1)),
-      ]);
+      expect(builds).toEqual([{ siteId: SITE_A, version: 3, visibility: 'lens:note-only', lens: true }]);
+      // For an admin the secret shows, so those versions differ.
+      const full1 = await cache.getLens(lensView(3, 1, 10), FULL_VISIBILITY);
+      const full2 = await cache.getLens(lensView(4, 1, 11), FULL_VISIBILITY);
+      expect(full1).not.toBe(full2);
+      expect(full1.schema.getMutationType()?.getFields()).toHaveProperty('createNote');
+      expect(await cache.getLens(lensView(3, 2, 10), noteOnly)).not.toBe(a);
     });
 
-    it('keeps at most maxLensEntries, apart from the current schemas, and retries a failed build', async () => {
-      const { cache, failNextBuild } = setup({ maxEntries: 1, maxLensEntries: 2 });
-      const current = await cache.get(view(9, SITE_A));
-      for (const revision of [1, 2, 3]) {
-        await cache.getLens(lensView(5, revision), FULL_VISIBILITY);
+    it('keeps a version read twice while a caller walks fifty others, and leaves other workspaces alone', async () => {
+      const { cache } = setup();
+      const current = await cache.get(view(99, SITE_A));
+      const kept = await cache.getLens(lensView(5, 1), noteOnly);
+      expect(await cache.getLens(lensView(5, 1), noteOnly)).toBe(kept);
+      const elsewhere = await cache.getLens(lensView(5, 1, 1000, SITE_B), noteOnly);
+      for (let revision = 100; revision < 150; revision += 1) {
+        await cache.getLens(lensView(6, revision), noteOnly);
       }
-      expect(cache.listLens().map((entry) => entry.view)).toEqual([
-        lensViewKey(lensView(5, 2)),
-        lensViewKey(lensView(5, 3)),
-      ]);
+      expect(await cache.getLens(lensView(5, 1), noteOnly)).toBe(kept);
+      expect(await cache.getLens(lensView(5, 1, 1000, SITE_B), noteOnly)).toBe(elsewhere);
       expect(cache.peek(SITE_A)).toBe(current);
-      expect(cache.list()).toHaveLength(1);
+      const inA = held(cache).filter((entry) => entry.siteId === SITE_A);
+      expect(inA.length).toBeLessThanOrEqual(GRAPHQL_LENS_SCHEMAS_PROBATION + GRAPHQL_LENS_SCHEMAS_PROTECTED);
+      expect(inA.filter((entry) => entry.segment === 'protected')).toHaveLength(1);
+    });
+
+    it('bounds the workspaces and visibilities it keeps lens schemas for', async () => {
+      const { cache } = setup({ maxLensSpaces: 2, lensSegments: { probation: 1, protected: 1 } });
+      for (const key of ['lens:a', 'lens:b', 'lens:c']) {
+        await cache.getLens(lensView(5, 1), { ...noteOnly, key });
+      }
+      expect(new Set(held(cache).map((entry) => entry.visibility)).size).toBeLessThanOrEqual(2);
+      for (let revision = 1; revision <= 4; revision += 1) {
+        await cache.getLens(lensView(5, revision), noteOnly);
+      }
+      expect(held(cache).filter((entry) => entry.visibility === noteOnly.key).length).toBeLessThanOrEqual(2);
+    });
+
+    it('retries a failed build', async () => {
+      const { cache, failNextBuild } = setup();
       failNextBuild();
       await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).rejects.toThrow('build failed');
       await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).resolves.toBeDefined();
     });
 
-    it('asks the build budget on a miss only, and refuses a build it does not admit with 429', async () => {
+    it('asks the build budget on a miss only, and refuses before touching any cache', async () => {
       const { cache, builds } = setup();
       let asked = 0;
       const admit = (answer: boolean) => () => {
         asked += 1;
         return answer;
       };
-      await cache.getLens(lensView(6, 1), FULL_VISIBILITY, { admit: admit(true) });
-      await cache.getLens(lensView(7, 1), FULL_VISIBILITY, { admit: admit(false) });
+      await cache.getLens(lensView(6, 1), noteOnly, { admit: admit(true) });
+      await cache.getLens(lensView(7, 1), noteOnly, { admit: admit(false) });
       expect(asked).toBe(1);
+      const before = held(cache);
+      await expect(cache.getLens(lensView(6, 2), noteOnly, { admit: admit(false) })).rejects.toMatchObject({
+        statusCode: 429,
+        code: 'LENS_BUDGET_EXCEEDED',
+      });
       await expect(
-        cache.getLens(lensView(6, 2), FULL_VISIBILITY, { admit: admit(false) }),
-      ).rejects.toMatchObject({ statusCode: 429, code: 'LENS_BUDGET_EXCEEDED' });
-      expect(asked).toBe(2);
+        cache.getLens(lensView(6, 2, 1000, SITE_B), noteOnly, { admit: admit(false) }),
+      ).rejects.toMatchObject({ statusCode: 429 });
+      expect(asked).toBe(3);
       expect(builds).toHaveLength(1);
-      expect(cache.listLens()).toHaveLength(1);
+      expect(held(cache)).toEqual(before);
     });
   });
 });

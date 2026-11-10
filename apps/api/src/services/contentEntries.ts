@@ -217,13 +217,11 @@ export type UpdateEntryInput = {
   /** Autosave: moves the draft head only (no revision) and does not enforce `required`. */
   autosave?: boolean;
   /**
-   * Instead of `data`: makes the patch (field IDs) from the locked draft the write starts from, inside the write
-   * (schema lenses: a write in an older version's shape keeps what that version cannot see, plan schema-lenses).
+   * After `data` is validated and authorized as always, inside the write: values the patch's component fields
+   * carry over from the locked draft the write starts from (a delivery caller never wipes what it cannot read).
+   * It may only change values under keys the patch already names.
    */
-  patchFrom?: (
-    base: DraftUpdateBase,
-    write: { model: ContentModel; validator: ModelValidator },
-  ) => ContentData;
+  carry?: (patch: Readonly<ContentData>, base: DraftUpdateBase, model: ContentModel) => ContentData;
 };
 
 type DraftChange = {
@@ -347,6 +345,8 @@ export type EntryUpdateWrite = {
    * throw to refuse the write).
    */
   patch: Readonly<ContentData> | ((base: DraftUpdateBase) => ContentData);
+  /** `UpdateEntryInput.carry`, applied once the version is checked. */
+  carry?: (patch: Readonly<ContentData>, base: DraftUpdateBase) => ContentData;
 };
 
 /**
@@ -392,6 +392,9 @@ export const writeEntryUpdate = async (
   if (typeof patch === 'function') {
     patch = patch({ before, previous, heads });
     assertWritable(writeMask, model.definition.fields, Object.keys(patch));
+  }
+  if (input.carry) {
+    patch = input.carry(patch, { before, previous, heads });
   }
   const outcome = validated(input.validator, applyPatch(before, patch), autosave);
   if (isUnchangedSave(previous, outcome.data)) {
@@ -441,10 +444,8 @@ export const updateEntry = async (
   const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const { patchFrom } = input;
-  const patch = patchFrom
-    ? (base: DraftUpdateBase) => patchFrom(base, { model, validator })
-    : inputPatch(validator, input.data);
+  const patch = inputPatch(validator, input.data);
+  const { carry } = input;
   const written = await runEntryWrite(context.db, model, context.site.id, [locale], (trx) =>
     writeEntryUpdate(trx, context, {
       model,
@@ -455,6 +456,7 @@ export const updateEntry = async (
       autosave: Boolean(input.autosave) && model.definition.draftAndPublish,
       expectedVersion: input.expectedVersion,
       patch,
+      ...(carry ? { carry: (current, base) => carry(current, base, model) } : {}),
     }),
   );
   return viewAfterWrite(context, model, policy, id, written.locale);

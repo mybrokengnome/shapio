@@ -2,6 +2,7 @@ import { canonicalJson, type DefinitionLens, type FieldLens, type SchemaDefiniti
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
+import { CARRY_MAX_ITEM_KEY, CARRY_MAX_ITEMS, listTooLong, pairItems } from '../write/keepUnreadable.js';
 
 /**
  * A write body in the client's schema version (its API IDs) for today's write path (plan schema-lenses,
@@ -50,6 +51,17 @@ export type LensWriteBase = {
    * null it sends clears a field (the write path's carry-over keeps only what it leaves out).
    */
   mayRead?: boolean;
+  /**
+   * Whether the caller may write a top-level field today (its write mask). A field it may not write is passed
+   * on untranslated under today's API ID, so it gets exactly today's answer (validation, then the forbidden-
+   * field refusal), never a lens-specific reason. Absent: every field.
+   */
+  writable?: (fieldId: string) => boolean;
+  /**
+   * The caller's write grant names no fields: only then is a field removed since refused with the lens's reason;
+   * for anyone else it is a field that does not exist (today's unknown-field answer).
+   */
+  writesEverything?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -308,6 +320,10 @@ const at = (value: unknown, index: number): unknown => (Array.isArray(value) ? v
  * One written object (the entry, or a component instance) in today's API IDs. `whole`: a component instance,
  * written whole, so what the client cannot write or does not know keeps its stored value.
  */
+/** Whether the caller may write a top-level field today; a field removed since only with a no-fields grant. */
+const mayWriteToday = (base: LensWriteBase, field: FieldLens): boolean =>
+  field.stored ? (base.writable?.(field.fieldId) ?? true) : base.writesEverything === true;
+
 const translateObject = (
   walk: Walk,
   lens: DefinitionLens,
@@ -344,6 +360,11 @@ const translateObject = (
     // clear what they name, through the rules below, never keep it.
     if (!readNothing && field.stored && !readableToday(field) && isMissingValue(item)) {
       // The empty value a hidden field reads as, sent back: left out, so the stored value stays.
+      continue;
+    }
+    if (!whole && walk.base.writable && !mayWriteToday(walk.base, field)) {
+      // Not the caller's to write today: today's answer, whatever changed since (no lens reason, no oracle).
+      output[field.stored ? field.stored.apiKey : key] = item;
       continue;
     }
     if (isWritable(field)) {
@@ -386,23 +407,94 @@ const translateZoneItem = (
     });
     return item;
   }
-  // The stored item at the same position counts only when it holds the same component.
-  const same = (candidate: Readonly<ContentData> | null) =>
-    candidate && candidate[COMPONENT_KEY] === lens.definitionId ? candidate : null;
+  // Matched counterparts hold the same component (`listCounterparts`).
   return {
     ...translateObject(
       walk,
       lens,
       item,
-      {
-        stored: same(counterpart.stored),
-        reads: counterpart.reads.filter((read) => read[COMPONENT_KEY] === lens.definitionId),
-      },
+      { stored: null, reads: counterpart.reads.filter((read) => read[COMPONENT_KEY] === lens.definitionId) },
       path,
       true,
     ),
     [COMPONENT_KEY]: lens.storedApiKey,
   };
+};
+
+/** The zone lens of a sent item, by the client's component API ID. */
+const zoneLensOf = (field: FieldLens, item: unknown): DefinitionLens | null | undefined =>
+  isRecord(item)
+    ? [...(field.kind === 'null' ? [] : (field.nested?.components.values() ?? []))].find(
+        (candidate) => candidate?.apiKey === item[COMPONENT_KEY],
+      )
+    : undefined;
+
+/**
+ * The read counterparts of each sent list item, matched as the write path's carry-over matches them
+ * (`pairItems`): per head the client may have read, by what it sees of the item first, then in place when the
+ * list kept its length. An item is compared with the item it continues, never just the one at its position.
+ */
+const listCounterparts = (
+  field: FieldLens & { kind: 'same' },
+  sent: readonly unknown[],
+  reads: ReadonlyArray<Readonly<ContentData>>,
+): Counterpart[] => {
+  const single =
+    field.client.type === 'component' ? nestedOf(field, field.client.settings.component) : undefined;
+  const sentLens = (item: unknown) => (single !== undefined ? single : zoneLensOf(field, item));
+  const kindOfSent = (item: unknown) => sentLens(item)?.definitionId ?? null;
+  const kindOfRead = (item: unknown) =>
+    field.client.type === 'component'
+      ? (single?.definitionId ?? null)
+      : isRecord(item)
+        ? (item[COMPONENT_KEY] ?? null)
+        : null;
+  const sentKeys = sent.map((item) => {
+    const lens = sentLens(item);
+    return lens && isRecord(item)
+      ? boundedItemKey(canonicalJson({ kind: kindOfSent(item), seen: echoedInstance(lens, item) }))
+      : null;
+  });
+  const perHead = reads.map((read) => {
+    const list = Array.isArray(read[field.fieldId])
+      ? (read[field.fieldId] as unknown[]).slice(0, CARRY_MAX_ITEMS)
+      : [];
+    const readKeys = list.map((item) => {
+      const kind = kindOfRead(item);
+      const lens =
+        field.client.type === 'component'
+          ? single
+          : typeof kind === 'string'
+            ? nestedOf(field, kind)
+            : undefined;
+      return lens ? boundedItemKey(canonicalJson({ kind, seen: inputFormOf(lens, item) })) : null;
+    });
+    const pairs = pairItems(
+      sentKeys,
+      readKeys,
+      (position) => kindOfSent(sent[position]) === kindOfRead(list[position]),
+    );
+    return { list, pairs };
+  });
+  return sent.map((_item, index) => ({
+    stored: null,
+    reads: perHead.flatMap(({ list, pairs }) => {
+      const pair = pairs[index] ?? -1;
+      const item = pair === -1 ? undefined : list[pair];
+      return isRecord(item) ? [item] : [];
+    }),
+  }));
+};
+
+const boundedItemKey = (key: string): string | null => (key.length > CARRY_MAX_ITEM_KEY ? null : key);
+
+/** A list longer than the write path considers: the validator's own `TOO_MANY`, before any matching. */
+const assertListCap = (field: FieldLens & { kind: 'same' }, value: readonly unknown[], path: string) => {
+  const max = (field.stored.settings as { max?: number }).max;
+  const cap = max !== undefined && max < CARRY_MAX_ITEMS ? max : CARRY_MAX_ITEMS;
+  if (value.length > cap) {
+    throw listTooLong(path, cap);
+  }
 };
 
 function translateValue(
@@ -419,36 +511,30 @@ function translateValue(
     if (!usable(lens)) {
       return value;
     }
-    return Array.isArray(value)
-      ? value.map((item, index) =>
-          translateInstance(
-            walk,
-            lens,
-            item,
-            { stored: recordOrNull(at(stored, index)), reads: readsAt(parent.reads, field.fieldId, index) },
-            pointer(path, index),
-          ),
-        )
-      : translateInstance(
-          walk,
-          lens,
-          value,
-          { stored: recordOrNull(stored), reads: readsAt(parent.reads, field.fieldId) },
-          path,
-        );
+    if (!Array.isArray(value)) {
+      return translateInstance(
+        walk,
+        lens,
+        value,
+        { stored: recordOrNull(stored), reads: readsAt(parent.reads, field.fieldId) },
+        path,
+      );
+    }
+    assertListCap(field, value, path);
+    const counterparts = listCounterparts(field, value, parent.reads);
+    return value.map((item, index) =>
+      translateInstance(walk, lens, item, counterparts[index] as Counterpart, pointer(path, index)),
+    );
   }
   if (client.type === 'dynamiczone') {
-    return Array.isArray(value)
-      ? value.map((item, index) =>
-          translateZoneItem(
-            walk,
-            field,
-            item,
-            { stored: recordOrNull(at(stored, index)), reads: readsAt(parent.reads, field.fieldId, index) },
-            pointer(path, index),
-          ),
-        )
-      : value;
+    if (!Array.isArray(value)) {
+      return value;
+    }
+    assertListCap(field, value, path);
+    const counterparts = listCounterparts(field, value, parent.reads);
+    return value.map((item, index) =>
+      translateZoneItem(walk, field, item, counterparts[index] as Counterpart, pointer(path, index)),
+    );
   }
   return value;
 }

@@ -98,30 +98,50 @@ const textCandidates = (text: string, integer: boolean): string[] => {
   return [...new Set([text, trimmed, ...(number === undefined ? [] : [number])])];
 };
 
-const DECIMAL_NOTATION = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
+/** Numeric text longer than this (after trimming) is not read as a number: no number needs more digits. */
+export const MAX_NUMBER_TEXT_LENGTH = 64;
+/** An exponent beyond this is not read (every finite double and any practical decimal is within it). */
+export const MAX_NUMBER_EXPONENT = 400;
+/** The longest exact number text `exactNumberText` can return: digits, zeros the exponent adds, sign, point. */
+export const MAX_EXACT_NUMBER_LENGTH = MAX_NUMBER_TEXT_LENGTH + MAX_NUMBER_EXPONENT + 3;
+
+/** Only ever run on at most `MAX_NUMBER_TEXT_LENGTH` characters; no nested quantifiers. */
+const DECIMAL_NOTATION = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?)(\d+))?$/;
 
 /**
  * Text that parses as a finite number (as `convertType` text → number would read it), as exact decimal digits:
  * trimmed, sign and leading zeros normalized, an exponent applied by moving the point, never through a float
  * ("99999999999999999999" stays exact). For an integer client a zero fraction is dropped. Notations `Number`
  * reads that are not decimal (hex, binary, octal) go through the number. undefined when it is no number.
+ *
+ * Bounded before any work: text longer than `MAX_NUMBER_TEXT_LENGTH` after trimming, or an exponent beyond
+ * `MAX_NUMBER_EXPONENT` ("1e-400000000", "0e400000000"), is not read as a number, so the result is never longer
+ * than `MAX_EXACT_NUMBER_LENGTH`.
  */
 export const exactNumberText = (text: string, integer: boolean): string | undefined => {
   const trimmed = text.trim();
-  const parsed = Number(trimmed);
-  if (trimmed === '' || !Number.isFinite(parsed)) {
+  if (trimmed === '' || trimmed.length > MAX_NUMBER_TEXT_LENGTH || !Number.isFinite(Number(trimmed))) {
     return undefined;
   }
   const match = DECIMAL_NOTATION.exec(trimmed);
   if (!match) {
-    return plainNumber(parsed);
+    return plainNumber(Number(trimmed));
   }
-  const [, sign = '', whole = '', fraction = '', exponent = '0'] = match;
+  const [, sign = '', whole = '', fraction = '', exponentSign = '', exponentDigits = '0'] = match;
   if (whole === '' && fraction === '') {
     return undefined;
   }
+  // The exponent as digits (at most 64 of them): its magnitude is checked before anything is built.
+  const magnitudeDigits = exponentDigits.replace(/^0+/, '');
+  if (
+    magnitudeDigits.length > String(MAX_NUMBER_EXPONENT).length ||
+    Number(magnitudeDigits) > MAX_NUMBER_EXPONENT
+  ) {
+    return undefined;
+  }
+  const exponent = (exponentSign === '-' ? -1 : 1) * Number(magnitudeDigits || '0');
   const digits = `${whole}${fraction}`;
-  const point = whole.length + Number(exponent);
+  const point = whole.length + exponent;
   const padded = point <= 0 ? `${'0'.repeat(1 - point)}${digits}` : digits.padEnd(point, '0');
   const at = Math.max(point, 1);
   const integerPart = padded.slice(0, at).replace(/^0+(?=\d)/, '');
@@ -133,7 +153,11 @@ export const exactNumberText = (text: string, integer: boolean): string | undefi
     fractionPart = '';
   }
   const zero = /^0*$/.test(integerPart) && /^0*$/.test(fractionPart);
-  return `${sign === '-' && !zero ? '-' : ''}${integerPart}${fractionPart === '' ? '' : `.${fractionPart}`}`;
+  const result = `${sign === '-' && !zero ? '-' : ''}${integerPart}${fractionPart === '' ? '' : `.${fractionPart}`}`;
+  if (result.length > MAX_EXACT_NUMBER_LENGTH) {
+    throw new Error(`exactNumberText: ${result.length} characters exceeds its bound`);
+  }
+  return result;
 };
 
 const fitRichTextItem = (

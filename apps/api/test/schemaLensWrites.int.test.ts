@@ -37,6 +37,7 @@ describe('schema lens writes', () => {
   let gizmo: ModelBody;
   let alice: AppSessionBody;
   let bob: AppSessionBody;
+  let limited: AppSessionBody;
   let pre: { id: string; version: number };
   let v: string;
 
@@ -145,6 +146,26 @@ describe('schema lens writes', () => {
         200,
       );
     }
+    limited = await signUp(testApp.app);
+    expectStatus(
+      await admin.request({
+        method: 'PATCH',
+        url: `/api/admin/app-users/${limited.user.id}`,
+        payload: {
+          roleIds: [
+            await createAppRole(database.current.db, [
+              { action: 'read', modelId: note.definition.id },
+              {
+                action: 'update',
+                modelId: note.definition.id,
+                fieldIds: [note.definition.fields.find((field) => field.apiKey === 'title')?.id as string],
+              },
+            ]),
+          ],
+        },
+      }),
+      200,
+    );
     pre = expectStatus(
       await request('POST', '/api/content/notes', alice.accessToken, {
         data: {
@@ -364,5 +385,22 @@ describe('schema lens writes', () => {
     });
     expect(viaAdmin.statusCode).toBe(200);
     expect((await adminView(pre.id)).data.headline).toBe('Admin');
+  });
+
+  it('answers a field the caller may not write exactly as without a version, never with the lens reason', async () => {
+    const version = await versionOf(pre.id);
+    for (const data of [{ count: 4 }, { body: 'x' }]) {
+      const lensed = await request('PUT', at(`/api/content/notes/${pre.id}`), limited.accessToken, {
+        expectedVersion: version,
+        data,
+      });
+      const plain = await request('PUT', `/api/content/notes/${pre.id}`, limited.accessToken, {
+        expectedVersion: version,
+        data,
+      });
+      expect(lensed.statusCode, JSON.stringify(data)).toBe(plain.statusCode);
+      expect(lensed.json<ErrorBody>().error.code).toBe(plain.json<ErrorBody>().error.code);
+      expect(lensed.body).not.toMatch(/changed type|was removed|became/);
+    }
   });
 });
