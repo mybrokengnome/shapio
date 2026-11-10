@@ -1,7 +1,7 @@
 import type { Acknowledgement, PlanPreview } from '@shapio/client';
 import type { SchemaDefinition } from '@shapio/schema';
 import { GitPullRequest, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FormError } from '@/components/FormError';
 import { InfoHint } from '@/components/InfoHint';
@@ -19,10 +19,12 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { hasFailingCheck } from '../../helpers/describeStep';
+import { olderClientsEffectsByChange } from '../../helpers/olderClients';
 import { bucketOfPlan, type PlanBucket } from '../../helpers/planBuckets';
 import { BucketChip } from '../BucketChip';
 import { ChangeList } from './ChangeList';
 import { useReviewInChangeSet } from './hooks/useReviewInChangeSet';
+import { OlderClientsAck } from './OlderClientsAck';
 import { RequiredGapsNotice } from './RequiredGapsNotice';
 import { StepList } from './StepList';
 
@@ -103,6 +105,18 @@ export const ReviewSheet = ({
   const kindNames = kindIds.flatMap((modelId) => definitionName?.(modelId) ?? []);
   const memberIds = plan?.kind === 'interface' ? (reachedIds.length > 0 ? reachedIds : knownMemberIds) : [];
   const memberNames = memberIds.flatMap((modelId) => definitionName?.(modelId) ?? []);
+  const olderClientsEffects = useMemo(
+    () =>
+      plan
+        ? olderClientsEffectsByChange(
+            plan.changes,
+            previewShown?.olderClientsEffects,
+            plan.definitionId,
+            previewShown?.olderClients,
+          )
+        : undefined,
+    [plan, previewShown],
+  );
   const canApply =
     !failingCheck &&
     (!needsBreaking || acknowledgedBreaking) &&
@@ -163,6 +177,7 @@ export const ReviewSheet = ({
                   after={resolvedAfter}
                   definitionName={definitionName}
                   memberCount={plan.kind === 'interface' ? memberIds.length : undefined}
+                  olderClientsEffects={olderClientsEffects}
                 />
               </section>
               {plan.prerequisites.length > 0 ? (
@@ -222,6 +237,7 @@ export const ReviewSheet = ({
                       </FieldLabel>
                     </Field>
                   ) : null}
+                  {needsBreaking ? <OlderClientsAck olderClients={previewShown.olderClients} /> : null}
                   {needsDestructive ? (
                     <Field orientation="horizontal">
                       <Checkbox

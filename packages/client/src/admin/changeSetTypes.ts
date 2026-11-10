@@ -9,6 +9,7 @@ import type {
   SchemaChangeResult,
 } from './schemaTypes.js';
 import type { SiteRef } from './sitesTypes.js';
+import type { LensEffect, OlderClients } from './usageTypes.js';
 
 /**
  * Change sets and snapshots (developer-face plan §5), mirroring the TypeBox route schemas in
@@ -275,6 +276,8 @@ export type ReviewSchemaItem = {
   /** The active version moved since the draft was based on it: shipping refuses until it is rebased. */
   stale: boolean;
   plan: ChangePlan | null;
+  /** Per change of `plan.changes`, in order: what a client on the schema version before it sees. */
+  olderClientsEffects: LensEffect[];
   impact: PlanImpact | null;
   /**
    * Entries of the affected models per workspace (a shared definition converts every workspace's content).
@@ -338,6 +341,8 @@ export type ChangeSetReview = {
   notRestorable: NotRestorable[];
   consumers: FieldConsumers[];
   usageDays: number;
+  /** Readers on older schema versions and what they see once the set ships; null for a shipped set. */
+  olderClients: OlderClients | null;
   checks: { breaking: boolean; destructive: boolean; blocking: ReviewIssue[]; warnings: ReviewIssue[] };
   /** Fixed notices, e.g. `NEW_FIELDS_AFTER_SHIP`. */
   notices: string[];

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useMe } from '@/api/auth';
 import { useDraftRoleIds, useRoleNames } from '@/api/roles';
 import { useApiTokens, useRevokeApiToken } from '@/api/tokens';
+import { useTokenSchemaVersions } from '@/api/usage';
 import { EmptyState } from '@/components/EmptyState';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
@@ -22,6 +23,7 @@ export const Manage = () => {
   const tokens = useApiTokens();
   const { names: roleNames } = useRoleNames();
   const { draftRoleIds } = useDraftRoleIds();
+  const { schemaVersions } = useTokenSchemaVersions();
   const siteName = useMe().data?.site.name ?? '';
   const revoke = useRevokeApiToken();
   const [creating, setCreating] = useState(false);
@@ -69,6 +71,7 @@ export const Manage = () => {
             roleNames={roleNames}
             draftRoleIds={draftRoleIds}
             siteName={siteName}
+            schemaVersions={schemaVersions}
             onRevoke={revokeToken}
           />
         )}

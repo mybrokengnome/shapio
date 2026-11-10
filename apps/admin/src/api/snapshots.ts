@@ -10,6 +10,17 @@ export const SNAPSHOT_PAGE_SIZE = 25;
 /** Entries shown per diff (the first page); the summary says when there are more. */
 export const SNAPSHOT_DIFF_LIMIT = 200;
 
+/**
+ * The live snapshot and schema version, as a delivery client sees them (`GET /api/snapshots/current`), with
+ * the schema version as the token a client names (`<schemaId>:<version>`).
+ */
+export const useCurrentSnapshot = () =>
+  useQuery({
+    queryKey: queryKeys.currentSnapshot,
+    queryFn: () => apiClient.snapshots.current(),
+    meta: silent,
+  });
+
 export const useSnapshots = (cursor: string | undefined) =>
   useQuery({
     queryKey: queryKeys.develop.snapshots.list(cursor),

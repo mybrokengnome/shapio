@@ -27,6 +27,7 @@ import {
   ImpactSchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
+import { LensEffectSchema, OlderClientsSchema } from '../usage/schemas.js';
 import {
   ApprovalNoteBodySchema,
   ChangeSetApprovalSchema,
@@ -376,6 +377,11 @@ export const ReviewSchemaItemSchema = Type.Object({
   stale: Type.Boolean(),
   /** Planner output (classification, prerequisites, conversions) and its impact; null when invalid. */
   plan: Nullable(ChangePlanSchema),
+  /**
+   * Per change of `plan.changes`, in order: what a client on the schema version before it sees (plan
+   * schema-lenses). Empty when there is no plan.
+   */
+  olderClientsEffects: Type.Array(LensEffectSchema),
   impact: Nullable(ImpactSchema),
   /** Entries of the affected models per site: the schema is shared, so shipping converts every site's content. */
   affectedEntriesBySite: Type.Array(Type.Object({ site: SiteRefSchema, entries: Type.Integer() })),
@@ -440,6 +446,8 @@ export const ChangeSetReviewSchema = Type.Object({
   /** Readers of fields the set's breaking schema changes affect (last `usageDays` days). */
   consumers: Type.Array(FieldConsumersSchema),
   usageDays: Type.Integer(),
+  /** Readers on older schema versions and what they see once the set ships; null for a shipped set. */
+  olderClients: Nullable(OlderClientsSchema),
   checks: Type.Object({
     breaking: Type.Boolean(),
     destructive: Type.Boolean(),

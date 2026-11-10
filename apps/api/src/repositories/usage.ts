@@ -32,6 +32,11 @@ export type TokenReadRow = {
   principalKey: string;
   requests: number;
   lastSnapshot: number | null;
+  /**
+   * The schema version the principal's latest request in the batch named (plan schema-lenses); null when it
+   * named none.
+   */
+  lastSchemaVersion: number | null;
   lastReadAt: Date;
 };
 
@@ -77,6 +82,7 @@ export const upsertTokenReads = async (rows: readonly TokenReadRow[], trx: Execu
         principal_key: row.principalKey,
         requests: String(row.requests),
         last_snapshot: row.lastSnapshot === null ? null : String(row.lastSnapshot),
+        last_schema_version: row.lastSchemaVersion,
         last_read_at: row.lastReadAt,
       })),
     )
@@ -89,6 +95,14 @@ export const upsertTokenReads = async (rows: readonly TokenReadRow[], trx: Execu
           .when('excluded.last_read_at', '>=', eb.ref('token_reads.last_read_at'))
           .then(eb.fn.coalesce('excluded.last_snapshot', 'token_reads.last_snapshot'))
           .else(eb.fn.coalesce('token_reads.last_snapshot', 'excluded.last_snapshot'))
+          .end(),
+        // The newer flush's schema version wins, null included: a token that stops naming one is back on
+        // today's shape from its next flush on.
+        last_schema_version: eb
+          .case()
+          .when('excluded.last_read_at', '>=', eb.ref('token_reads.last_read_at'))
+          .then(eb.ref('excluded.last_schema_version'))
+          .else(eb.ref('token_reads.last_schema_version'))
           .end(),
         last_read_at: greatestOf(eb.ref('token_reads.last_read_at'), eb.ref('excluded.last_read_at')),
       })),
@@ -256,6 +270,67 @@ export const principalSummaries = async (
     tokenName: row.token_name,
     requests: Number(row.requests),
     lastSnapshot: row.last_snapshot === null ? null : Number(row.last_snapshot),
+    lastReadAt: row.last_read_at,
+  }));
+};
+
+export type SchemaVersionReaderRow = {
+  siteId: string;
+  siteKey: string;
+  principalKey: string;
+  tokenName: string | null;
+  /** The schema version the principal's latest request named. */
+  schemaVersion: number;
+  lastReadAt: Date;
+};
+
+/**
+ * Per principal (and site), the schema version its most recent day bucket recorded, when that names one
+ * (plan schema-lenses): the version the principal is on now. Days the retention job has not pruned count.
+ * `siteIds`: only those sites (every site when omitted).
+ */
+export const latestSchemaVersions = async (
+  siteIds?: readonly string[],
+  trx: Executor = db,
+): Promise<SchemaVersionReaderRow[]> => {
+  if (siteIds?.length === 0) {
+    return [];
+  }
+  let query = trx
+    .selectFrom('token_reads as fr')
+    .innerJoin(
+      (eb) =>
+        eb
+          .selectFrom('token_reads')
+          .select((inner) => ['site_id', 'principal_key', inner.fn.max('day').as('day')])
+          .groupBy(['site_id', 'principal_key'])
+          .as('latest'),
+      (join) =>
+        join
+          .onRef('latest.site_id', '=', 'fr.site_id')
+          .onRef('latest.principal_key', '=', 'fr.principal_key')
+          .onRef('latest.day', '=', 'fr.day'),
+    )
+    .innerJoin('sites as s', 's.id', 'fr.site_id')
+    .select([
+      'fr.site_id',
+      's.key as site_key',
+      'fr.principal_key',
+      'fr.last_schema_version',
+      'fr.last_read_at',
+      (eb) => tokenName(eb).as('token_name'),
+    ])
+    .where('fr.last_schema_version', 'is not', null);
+  if (siteIds) {
+    query = query.where('fr.site_id', 'in', [...siteIds]);
+  }
+  const rows = await query.orderBy('fr.last_read_at', 'desc').orderBy('fr.principal_key').execute();
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    siteKey: row.site_key,
+    principalKey: row.principal_key,
+    tokenName: row.token_name,
+    schemaVersion: Number(row.last_schema_version),
     lastReadAt: row.last_read_at,
   }));
 };

@@ -56,4 +56,17 @@ describe('request building', () => {
     expect(curlSnippet(url, false)).not.toContain('authorization');
     expect(fetchSnippet(url, true)).toContain('process.env.SHAPIO_TOKEN');
   });
+
+  it("names a schema version with the instance's schema ID, and only a whole number", () => {
+    const schemaId = '0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95';
+    expect(requestPath(byId, { ...EMPTY_DRAFT, id: 'a', schemaVersion: ' 17 ' }, schemaId)).toBe(
+      `/api/content/articles/a?schemaVersion=${schemaId}%3A17`,
+    );
+    expect(requestPath(byId, { ...EMPTY_DRAFT, id: 'a', schemaVersion: 'v17' }, schemaId)).toBe(
+      '/api/content/articles/a',
+    );
+    expect(requestPath(byId, { ...EMPTY_DRAFT, id: 'a', schemaVersion: '17' })).toBe(
+      '/api/content/articles/a',
+    );
+  });
 });

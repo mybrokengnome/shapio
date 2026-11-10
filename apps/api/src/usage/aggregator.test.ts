@@ -52,6 +52,27 @@ describe('usage aggregator', () => {
     expect(batches).toHaveLength(1);
   });
 
+  it('records the schema version of the latest request, and clears it when the latest names none', async () => {
+    const { aggregator, batches, setClock } = setup();
+    aggregator.recordRequest(SITE, 'token:a', null, 40);
+    setClock(new Date('2026-10-02T11:00:00Z'));
+    aggregator.recordRequest(SITE, 'token:a', null, 42);
+    // An earlier request flushed late does not overwrite the later one's version.
+    setClock(new Date('2026-10-02T10:30:00Z'));
+    aggregator.recordRequest(SITE, 'token:a', null, 40);
+    setClock(new Date('2026-10-02T12:00:00Z'));
+    aggregator.recordRequest(SITE, 'token:b', null, 42);
+    setClock(new Date('2026-10-02T13:00:00Z'));
+    aggregator.recordRequest(SITE, 'token:b', null);
+    aggregator.recordRequest(SITE, 'anonymous', 7);
+    await aggregator.flush();
+    expect(batches[0]?.tokenReads).toEqual([
+      expect.objectContaining({ principalKey: 'token:a', requests: 3, lastSchemaVersion: 42 }),
+      expect.objectContaining({ principalKey: 'token:b', requests: 2, lastSchemaVersion: null }),
+      expect.objectContaining({ principalKey: 'anonymous', lastSnapshot: 7, lastSchemaVersion: null }),
+    ]);
+  });
+
   it('keeps sites apart: the same principal and field on two sites are two counters', async () => {
     const { aggregator, batches } = setup();
     aggregator.recordFieldReads(SITE, 'anonymous', 'm1', [{ path: 'f1', selection: 'explicit' }]);

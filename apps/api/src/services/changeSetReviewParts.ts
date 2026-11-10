@@ -1,4 +1,4 @@
-import type { DataType, DefinitionCategory, FieldDefinition } from '@shapio/schema';
+import type { DataType, DefinitionCategory, FieldDefinition, LensEffect } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
 import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import type { ContentModel } from '../content/model.js';
@@ -6,6 +6,7 @@ import type { ChangeSetRow } from '../repositories/changeSets.js';
 import type { PlanImpact } from '../schema/planner/impact.js';
 import type { ChangePlan } from '../schema/planner/plan.js';
 import type { DraftPlan } from './changeSetPlanning.js';
+import type { OlderClientsReview } from './changeSetReviewOlderClients.js';
 import type { ChangeSetServiceContext } from './changeSets.js';
 import type { ChangeSetView, SchemaOperation } from './changeSetViews.js';
 import { seesEverySite } from './networkScope.js';
@@ -56,6 +57,11 @@ export type ReviewSchemaItem = {
   activeVersion: number | null;
   stale: boolean;
   plan: ChangePlan | null;
+  /**
+   * Per change of `plan.changes`, in order: what a client on the version before it sees (plan schema-lenses;
+   * the one-line wording when no reader names a version).
+   */
+  olderClientsEffects: LensEffect[];
   impact: PlanImpact | null;
   /**
    * Entries of the models the change affects, per site (sites plan §H, option a): the schema is shared, so
@@ -92,6 +98,11 @@ export type ChangeSetReview = {
   notRestorable: NotRestorable[];
   consumers: FieldConsumersView[];
   usageDays: number;
+  /**
+   * Readers on older schema versions and what they see once the set ships (plan schema-lenses); null for a
+   * shipped set, whose change is no longer a proposal.
+   */
+  olderClients: OlderClientsReview | null;
   checks: { breaking: boolean; destructive: boolean; blocking: Issue[]; warnings: Issue[] };
   notices: string[];
 };

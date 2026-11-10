@@ -9,6 +9,7 @@ import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import { readStoredDefinition } from '../schema/storedDefinition.js';
 import { planShippedDraft, type DraftPlan } from './changeSetPlanning.js';
+import { olderClientsEffectsOf } from './changeSetReviewOlderClients.js';
 import {
   consumersFor,
   fieldDiff,
@@ -141,6 +142,7 @@ const shippedSchemaItem = (
   activeVersion: planned.activeVersion,
   stale: false,
   plan: planned.plan,
+  olderClientsEffects: olderClientsEffectsOf(planned.plan?.changes),
   impact: null,
   affectedEntriesBySite: [],
   issues: [],
@@ -167,6 +169,7 @@ export const getShippedReview = async (
     notRestorable: notRestorableOf(row),
     consumers: await consumersFor(context, plans),
     usageDays: REVIEW_USAGE_DAYS,
+    olderClients: null,
     checks: {
       breaking: plans.some((planned) => planned.plan?.summary.breaking ?? false),
       destructive: plans.some((planned) => planned.plan?.summary.destructive ?? false),

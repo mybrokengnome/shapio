@@ -279,3 +279,20 @@ export const writeUsageBatch = (database: Database, batch: UsageBatch): Promise<
       await usageRepository.upsertTokenReads(rows, trx);
     }
   });
+
+export type SchemaVersionReader = {
+  principalKey: string;
+  tokenName?: string;
+  /** The schema version the reader's latest request named (plan schema-lenses). */
+  schemaVersion: number;
+  lastReadAt: Date;
+};
+
+/** Readers of a site whose latest request named a schema version, most recent first. */
+export const schemaVersionReaders = async (site: SiteRef): Promise<SchemaVersionReader[]> =>
+  (await usageRepository.latestSchemaVersions([site.id])).map((row) => ({
+    principalKey: row.principalKey,
+    ...(row.tokenName !== null ? { tokenName: row.tokenName } : {}),
+    schemaVersion: row.schemaVersion,
+    lastReadAt: row.lastReadAt,
+  }));

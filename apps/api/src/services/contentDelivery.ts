@@ -10,7 +10,7 @@ import { AppError } from '../helpers/appError.js';
 import type { Policy } from '../permissions/types.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
-import { restFieldReads } from '../usage/restFieldReads.js';
+import { lensReadLimit, restFieldReads } from '../usage/restFieldReads.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import { schemaVersionMetaOf, type SchemaVersionMeta } from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
@@ -271,7 +271,7 @@ const recordUsage = async (
   if (!options.usage || readsDrafts(query, options) || principalKey === null) {
     return;
   }
-  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null);
+  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null, context.lens?.requested);
   // An interface read counts each member's own fields under that member (plan interfaces).
   const members: readonly (ReadMember & { query?: ContentQuery })[] = read.contract?.members ??
     read.members ?? [{ model: read.model, policy: read.policy }];
@@ -290,6 +290,7 @@ const recordUsage = async (
       policy,
       query: usageQuery,
       policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
+      limitTo: lensReadLimit(activeLens(context), context.snapshot, model, usageQuery.populate),
     });
     options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
   }

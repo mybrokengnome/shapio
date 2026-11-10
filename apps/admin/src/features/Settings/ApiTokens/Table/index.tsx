@@ -25,11 +25,20 @@ type TableProps = {
   draftRoleIds: ReadonlySet<string>;
   /** This site's name: every token not marked "Every site" belongs to it. */
   siteName: string;
+  /** The schema version a token's latest request named, by token ID (tokens that name none are absent). */
+  schemaVersions: ReadonlyMap<string, number>;
   /** Resolves once the token is revoked (the confirmation waits for it). */
   onRevoke: (token: ApiToken) => Promise<unknown>;
 };
 
-export const Table = ({ tokens, roleNames, draftRoleIds, siteName, onRevoke }: TableProps) => {
+export const Table = ({
+  tokens,
+  roleNames,
+  draftRoleIds,
+  siteName,
+  schemaVersions,
+  onRevoke,
+}: TableProps) => {
   const { t } = useTranslation();
   // One clock for every row's status, read when the list opens.
   const [now] = useState(() => Date.now());
@@ -61,6 +70,14 @@ export const Table = ({ tokens, roleNames, draftRoleIds, siteName, onRevoke }: T
                       ? t('apiTokens.lastUsedAt', { time: formatRelativeTime(token.lastUsedAt) })
                       : t('apiTokens.neverUsed')}
                   </span>
+                  {schemaVersions.has(token.id) ? (
+                    <>
+                      {' · '}
+                      <span data-schema-version>
+                        {t('apiTokens.sendsSchemaVersion', { version: schemaVersions.get(token.id) })}
+                      </span>
+                    </>
+                  ) : null}
                 </span>
               </TableCell>
               <TableCell>

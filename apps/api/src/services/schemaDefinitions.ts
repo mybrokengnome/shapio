@@ -3,6 +3,7 @@ import {
   isModelDefinition,
   parseDefinition,
   type DefinitionCategory,
+  type LensEffect,
   type SchemaDefinition,
 } from '@shapio/schema';
 import { AppError } from '../helpers/appError.js';
@@ -29,6 +30,12 @@ import { scopedDefinitionsOf } from '../schema/scopedValidation.js';
 import { loadSiteKeys } from '../schema/siteKeys.js';
 import type { ActiveDefinition } from '../schema/snapshot.js';
 import { readStoredDefinition, readStoredRevision } from '../schema/storedDefinition.js';
+import {
+  olderClientsEffectsOf,
+  olderClientsOf,
+  proposedSnapshotWith,
+  type OlderClientsReview,
+} from './changeSetReviewOlderClients.js';
 import {
   assertCanCreate,
   assertCanManage,
@@ -281,14 +288,48 @@ const authorize = async (context: SchemaServiceContext, input: ProposedChange) =
     : assertCanCreate(context, scopeForCreate(context, input.scope));
 };
 
-/** Plan preview (brief §5 step 5): classification, impact and prerequisites, with nothing written. */
+export type ChangePreview = {
+  plan: ChangePlan;
+  impact: PlanImpact;
+  /** Per change of `plan.changes`, in order: what a client on the version before it sees. */
+  olderClientsEffects: LensEffect[];
+  /** Readers on older schema versions and what they see once the change is live (plan schema-lenses). */
+  olderClients: OlderClientsReview;
+};
+
+/**
+ * Plan preview (brief §5 step 5): classification, impact and prerequisites, with nothing written, and what
+ * clients naming an older schema version will see.
+ */
 export const previewChange = async (
   context: SchemaServiceContext,
   input: ProposedChange,
-): Promise<{ plan: ChangePlan; impact: PlanImpact }> => {
+): Promise<ChangePreview> => {
   await authorize(context, input);
-  const { plan } = await prepareChange(context, input);
-  return { plan, impact: await computeImpact(plan, context.ports) };
+  const { plan, after, expectedVersion } = await prepareChange(context, input);
+  const proposed = proposedSnapshotWith(context.snapshot, [
+    {
+      id: plan.definitionId,
+      definition: after,
+      version: (expectedVersion ?? 0) + 1,
+      siteId: plan.siteId ?? null,
+      revisionId: '',
+    },
+  ]);
+  return {
+    plan,
+    impact: await computeImpact(plan, context.ports),
+    olderClientsEffects: olderClientsEffectsOf(plan.changes),
+    olderClients: await olderClientsOf({
+      db: context.db,
+      permissions: context.permissions,
+      actor: context.actor,
+      current: context.snapshot,
+      proposed,
+      definitionIds: [plan.definitionId],
+      siteId: context.snapshot.siteId,
+    }),
+  };
 };
 
 /**

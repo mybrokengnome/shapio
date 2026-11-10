@@ -731,7 +731,8 @@
     "scopeSite": "This workspace ({{name}})",
     "scopeSiteDescription": "The token's role applies on this workspace only.",
     "scopeNetwork": "Every workspace (network token)",
-    "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users."
+    "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users.",
+    "sendsSchemaVersion": "Sends schema version {{version}}"
   },
   "audit": {
     "title": "Audit log",
@@ -2942,7 +2943,18 @@
       "implicit": "Reads the whole model",
       "site": "Workspace",
       "otherSites_one": "Other workspaces: {{count}} reader, {{reads}} reads",
-      "otherSites_other": "Other workspaces: {{count}} readers, {{reads}} reads"
+      "otherSites_other": "Other workspaces: {{count}} readers, {{reads}} reads",
+      "olderVersions": {
+        "title": "Readers on older schema versions",
+        "description": "What each reader sees once this change set ships",
+        "truncated_one": "The {{count}} most recently used schema version, and what its readers see",
+        "truncated_other": "The {{count}} most recently used schema versions, and what their readers see",
+        "hint": "These readers name the schema version they were built against. Shapio keeps answering them in that shape, so a breaking change reaches them only as the effect shown here.",
+        "schemaVersion": "Schema version",
+        "outcome": "Once shipped",
+        "otherSites_one": "Other workspaces: {{count}} reader",
+        "otherSites_other": "Other workspaces: {{count}} readers"
+      }
     },
     "timeline": {
       "empty": "Nothing has happened yet.",
@@ -3264,6 +3276,9 @@
         "localeOption": "{{label}} ({{code}})",
         "snapshot": "Snapshot",
         "snapshotHint": "Read content as of this publication snapshot (meta.snapshot), as a pinned site build does.",
+        "schemaVersion": "Schema version",
+        "schemaVersionHint": "Read as a client built against this schema version: its API IDs, routes, and field types. Empty reads today's shape.",
+        "schemaVersionPlaceholder": "{{version}} (current)",
         "fields": "Fields",
         "fieldsHint": "Comma-separated API IDs to return, e.g. title,cover. Empty returns every field you may read.",
         "populate": "Populate",
@@ -3633,6 +3648,33 @@
       "customDescription": "Stages of this workspace's own.",
       "inheritedOff": "The network default has no approval, so change sets ship without it.",
       "readOnly": "Only admins who may change workspace settings can change this."
+    }
+  },
+  "olderClients": {
+    "lines": {
+      "transparent": "Clients naming an older schema version keep working",
+      "converted": "Clients naming an older schema version keep working, with values converted to their type",
+      "lossy": "Clients naming an older schema version get some values empty",
+      "nulled": "Clients naming an older schema version get this field empty",
+      "gone": "Clients naming an older schema version lose this content type",
+      "uncovered": "Clients naming an older schema version are not covered"
+    },
+    "chips": {
+      "transparent": "Keeps working",
+      "converted": "Keeps working, converted",
+      "lossy": "Some values empty",
+      "nulled": "Fields empty",
+      "gone": "Content type gone",
+      "uncovered": "Not covered",
+      "unavailable": "No record of this version"
+    },
+    "ack": {
+      "none": "No reader names an older schema version, so every reader gets the new shape.",
+      "protectedOnly": "Protected: readers naming schema version {{versions}} keep working. Not protected: readers that name no schema version.",
+      "unprotectedOnly": "Not protected: readers naming schema version {{versions}}, and readers that name no schema version.",
+      "mixed": "Protected: readers naming schema version {{protected}} keep working. Not protected: readers naming schema version {{unprotected}}, and readers that name no schema version.",
+      "about": "older schema versions",
+      "hint": "A client can name the schema version it was built against and keep reading content in that shape, with renamed fields under their old API IDs and changed types converted back where they fit. Removed fields and values that do not fit read empty. A client that names no schema version gets the new shape at once."
     }
   }
 }

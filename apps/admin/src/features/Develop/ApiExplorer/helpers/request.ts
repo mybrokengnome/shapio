@@ -16,6 +16,11 @@ export type RequestDraft = {
   page: string;
   pageSize: string;
   q: string;
+  /**
+   * The schema version to read as (plan schema-lenses), a number; empty reads today's shape. Sent as
+   * `schemaVersion=<schemaId>:<version>`.
+   */
+  schemaVersion: string;
   /** `filters[field][$op]=value` rows; `key` is the part inside `filters[…]`, e.g. `title][$contains`. */
   filters: FilterRow[];
 };
@@ -30,6 +35,7 @@ export const EMPTY_DRAFT: RequestDraft = {
   page: '',
   pageSize: '',
   q: '',
+  schemaVersion: '',
   filters: [],
 };
 
@@ -44,8 +50,19 @@ export const filterParamName = (key: string): string => {
   return `filters${parts.map((part) => `[${part}]`).join('')}`;
 };
 
-/** The path and query (relative to the API base) for a draft; `{id}` stays visible when not filled. */
-export const requestPath = (operation: DeliveryOperation, draft: RequestDraft): string => {
+const VERSION_PATTERN = /^\d+$/;
+
+/** `<schemaId>:<version>` for a draft's schema version; null when it names none (or no ID is known yet). */
+export const schemaVersionParam = (draft: RequestDraft, schemaId: string | undefined): string | null => {
+  const version = draft.schemaVersion.trim();
+  return schemaId && VERSION_PATTERN.test(version) ? `${schemaId}:${Number(version)}` : null;
+};
+
+/**
+ * The path and query (relative to the API base) for a draft; `{id}` stays visible when not filled.
+ * `schemaId`: the instance's schema ID, which a named schema version is sent with.
+ */
+export const requestPath = (operation: DeliveryOperation, draft: RequestDraft, schemaId?: string): string => {
   const path = operation.path.replace('{id}', draft.id.trim() ? encodeURIComponent(draft.id.trim()) : '{id}');
   const query = new URLSearchParams();
   for (const name of SCALAR_PARAMS) {
@@ -53,6 +70,10 @@ export const requestPath = (operation: DeliveryOperation, draft: RequestDraft): 
     if (value && operation.parameters.some((parameter) => parameter.name === name)) {
       query.append(name, value);
     }
+  }
+  const schemaVersion = schemaVersionParam(draft, schemaId);
+  if (schemaVersion) {
+    query.append('schemaVersion', schemaVersion);
   }
   if (operation.list) {
     for (const row of draft.filters) {

@@ -1,12 +1,14 @@
-import type { ReviewSchemaItem, SchemaChangeResult } from '@shapio/client';
+import type { OlderClients, ReviewSchemaItem, SchemaChangeResult } from '@shapio/client';
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Globe2, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Panel } from '@/components/Panel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { OlderClientsLine } from '@/features/Models/Builder/ReviewSheet/OlderClientsLine';
 import { describeChange } from '@/features/Models/helpers/describeChange';
 import { describeRequiredGaps } from '@/features/Models/helpers/describeStep';
+import { changeOlderClientsEffect, showsOlderClients } from '@/features/Models/helpers/olderClients';
 import { useDefinitionName } from '@/features/Models/hooks/useDefinitionName';
 import { cn } from '@/helpers/cn';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
@@ -31,13 +33,18 @@ type SchemaDiffCardProps = {
   item: ReviewSchemaItem;
   /** A shipped item: what its change left to do (entries without a value for a field it made required). */
   outcome?: SchemaChangeResult | null;
+  /**
+   * Readers on older schema versions: each breaking line says what they see. Null for a shipped set (its
+   * change is no longer a proposal), which shows no lines.
+   */
+  olderClients?: OlderClients | null;
 };
 
 /**
  * A schema item as a diff: one `+`/`−`/`~` line per planned change, each with its classification, and a
  * quiet badge when the definition is shared (shipping it affects every site).
  */
-export const SchemaDiffCard = ({ changeSetId, item, outcome }: SchemaDiffCardProps) => {
+export const SchemaDiffCard = ({ changeSetId, item, outcome, olderClients }: SchemaDiffCardProps) => {
   const { t } = useTranslation();
   const { before, after, shared } = useSchemaItemDefinitions(changeSetId, item);
   const { multiSite } = useSchemaScopeAccess();
@@ -114,6 +121,15 @@ export const SchemaDiffCard = ({ changeSetId, item, outcome }: SchemaDiffCardPro
         <ul aria-label={t('changes.review.schemaChangesOf', { name: title })} className="divide-y text-sm">
           {changes.map((change, index) => {
             const sign = signOfChange(change);
+            const olderClientsEffect =
+              !olderClients || !showsOlderClients(change)
+                ? null
+                : changeOlderClientsEffect(
+                    change,
+                    item.olderClientsEffects[index],
+                    item.definitionId,
+                    olderClients,
+                  );
             return (
               <li
                 key={`${change.kind}-${change.fieldId ?? ''}-${change.property ?? ''}-${index}`}
@@ -129,6 +145,9 @@ export const SchemaDiffCard = ({ changeSetId, item, outcome }: SchemaDiffCardPro
                   {describeChange(change, before, after, { definitionName })}
                 </span>
                 <ClassificationChip changeClass={classOfChange(change)} size="sm" />
+                {olderClientsEffect ? (
+                  <OlderClientsLine effect={olderClientsEffect} className="basis-full pl-6" />
+                ) : null}
               </li>
             );
           })}
