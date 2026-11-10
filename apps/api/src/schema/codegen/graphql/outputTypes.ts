@@ -281,7 +281,8 @@ export const fieldConfigs = (
       description: describeField(field),
       resolve: (node, args, context, info) => {
         if (masked && !Object.hasOwn(node.data, field.apiKey)) {
-          if (field.required) {
+          // Through a lens a missing field is one the client's version had and today's visibility hides.
+          if (field.required && !build.lens) {
             throw maskedFieldError(field);
           }
           return null;

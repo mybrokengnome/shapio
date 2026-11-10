@@ -1,8 +1,9 @@
+import { normalizeDefinition } from '@shapio/schema';
 import { describe, expect, it, vi } from 'vitest';
 import { silentLogger } from '../../../../test/helpers/silentLogger.js';
 import { buildNetworkSchema, type SchemaSnapshot } from '../../snapshot.js';
-import { buildGraphqlSchema } from './schemaBuilder.js';
-import { createGraphqlSchemaCache } from './schemaCache.js';
+import { buildGraphqlSchema, type BuildOptions } from './schemaBuilder.js';
+import { createGraphqlSchemaCache, lensViewKey } from './schemaCache.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
 
 const SITE_A = 'site-a';
@@ -10,15 +11,15 @@ const SITE_B = 'site-b';
 const view = (version: number, siteId: string) => buildNetworkSchema(version, [], []).forSite(siteId);
 const masked = (key: string): SchemaVisibility => ({ key, models: new Map(), componentFields: 'public' });
 
-const setup = (options: { idleMs?: number; maxEntries?: number } = {}) => {
+const setup = (options: { idleMs?: number; maxEntries?: number; maxLensEntries?: number } = {}) => {
   let time = 0;
-  const builds: Array<{ siteId: string | null; version: number; visibility?: string }> = [];
+  const builds: Array<{ siteId: string | null; version: number; visibility?: string; lens?: true }> = [];
   let failNext = false;
   const cache = createGraphqlSchemaCache({
     log: silentLogger,
     now: () => time,
     ...options,
-    build: (snapshot: SchemaSnapshot, visibility: SchemaVisibility) => {
+    build: (snapshot: SchemaSnapshot, visibility: SchemaVisibility, buildOptions?: BuildOptions) => {
       if (failNext) {
         failNext = false;
         throw new Error('build failed');
@@ -27,8 +28,9 @@ const setup = (options: { idleMs?: number; maxEntries?: number } = {}) => {
         siteId: snapshot.siteId,
         version: snapshot.version,
         ...(visibility === FULL_VISIBILITY ? {} : { visibility: visibility.key }),
+        ...(buildOptions?.lens ? { lens: true as const } : {}),
       });
-      return buildGraphqlSchema(snapshot, visibility);
+      return buildGraphqlSchema(snapshot, visibility, buildOptions);
     },
   });
   return {
@@ -148,5 +150,66 @@ describe('GraphQL schema cache', () => {
     await waitForBuilds(builds, 3);
     expect(builds[2]).toEqual({ siteId: SITE_A, version: 2 });
     expect(cache.peek(SITE_A, 'delivery:a')?.version).toBe(1);
+  });
+
+  describe('lens schemas', () => {
+    const NOTE = normalizeDefinition({
+      id: '00000000-0000-4000-8000-000000000001',
+      kind: 'collection',
+      apiKey: 'note',
+      label: 'Note',
+      fields: [{ id: '00000000-0000-4000-8000-000000000011', apiKey: 'text', label: 'Text', type: 'string' }],
+    });
+    /** A client's version of SITE_A whose one definition is at revision `revision`. */
+    const lensView = (version: number, revision: number) =>
+      buildNetworkSchema(
+        version,
+        [
+          {
+            definition: NOTE,
+            version: revision,
+            revisionId: `00000000-0000-4000-8000-${revision.toString(16).padStart(12, '0')}`,
+            hash: 'h',
+            activatedAt: new Date(0),
+            siteId: SITE_A,
+          },
+        ],
+        [],
+      ).forSite(SITE_A);
+
+    it('builds one read-only schema per view, shared by versions with the same revisions', async () => {
+      const { cache, builds } = setup();
+      const [a, b] = await Promise.all([
+        cache.getLens(lensView(3, 1), FULL_VISIBILITY),
+        cache.getLens(lensView(4, 1), FULL_VISIBILITY),
+      ]);
+      expect(a).toBe(b);
+      expect(builds).toEqual([{ siteId: SITE_A, version: 3, lens: true }]);
+      expect(a.schema.getMutationType()).toBeUndefined();
+      expect(await cache.getLens(lensView(3, 2), FULL_VISIBILITY)).not.toBe(a);
+      expect(await cache.getLens(lensView(3, 1), masked('lens:x'))).not.toBe(a);
+      expect(cache.listLens().map((entry) => entry.view)).toEqual([
+        lensViewKey(lensView(3, 1)),
+        lensViewKey(lensView(3, 2)),
+        lensViewKey(lensView(3, 1)),
+      ]);
+    });
+
+    it('keeps at most maxLensEntries, apart from the current schemas, and retries a failed build', async () => {
+      const { cache, failNextBuild } = setup({ maxEntries: 1, maxLensEntries: 2 });
+      const current = await cache.get(view(9, SITE_A));
+      for (const revision of [1, 2, 3]) {
+        await cache.getLens(lensView(5, revision), FULL_VISIBILITY);
+      }
+      expect(cache.listLens().map((entry) => entry.view)).toEqual([
+        lensViewKey(lensView(5, 2)),
+        lensViewKey(lensView(5, 3)),
+      ]);
+      expect(cache.peek(SITE_A)).toBe(current);
+      expect(cache.list()).toHaveLength(1);
+      failNextBuild();
+      await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).rejects.toThrow('build failed');
+      await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).resolves.toBeDefined();
+    });
   });
 });

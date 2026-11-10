@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 import { PLAYGROUND_QUERY_MAX_LENGTH, PLAYGROUND_THEMES } from '../../constants/graphql.js';
+import { SCHEMA_VERSION_HEADER, SCHEMA_VERSION_QUERY_PARAMETER } from '../../constants/schemaLens.js';
 import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER, WORKSPACE_QUERY_PARAMETER } from '../../constants/sites.js';
 import { getGraphql, graphqlErrorHandler, postGraphql } from '../../controllers/graphql.js';
 import { getPlaygroundAsset, getPlaygroundPage } from '../../controllers/graphqlPlayground.js';
@@ -19,11 +20,26 @@ const postBody = Type.Object({
   extensions: Type.Optional(Type.Unknown()),
 });
 
+/**
+ * The schema version a request reads in (plan schema-lenses), `<schemaId>:<version>`. Read, checked and
+ * removed from the query by plugins/schemaLens.ts before validation; declared here so the contract shows it.
+ */
+const schemaVersion = Type.Optional(
+  Type.String({
+    maxLength: 80,
+    description: 'Read in the shape of this schema version (`<schemaId>:<version>`)',
+  }),
+);
+
+/** `Shapio-Schema-Version` (queries only; a mutation naming a version is refused). */
+const headers = Type.Object({ [SCHEMA_VERSION_HEADER]: schemaVersion });
+
 /** GET: queries only; `variables` is a JSON object in the query string. */
 const getQuerystring = Type.Object({
   query: Type.String(),
   variables: Type.Optional(Type.String()),
   operationName: Type.Optional(Type.String()),
+  [SCHEMA_VERSION_QUERY_PARAMETER]: schemaVersion,
 });
 
 /**
@@ -46,9 +62,9 @@ export const graphqlRoutes: FastifyPluginAsyncTypebox = async (app) => {
     errorHandler: graphqlErrorHandler,
   };
   // GET /api/graphql?query=…: queries (a mutation is refused with 405)
-  app.get('/', { ...options, schema: { querystring: getQuerystring } }, getGraphql);
+  app.get('/', { ...options, schema: { headers, querystring: getQuerystring } }, getGraphql);
   // POST /api/graphql: queries and mutations
-  app.post('/', { ...options, schema: { body: postBody } }, postGraphql);
+  app.post('/', { ...options, schema: { headers, body: postBody } }, postGraphql);
 };
 
 /**

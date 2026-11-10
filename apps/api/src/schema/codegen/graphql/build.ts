@@ -34,16 +34,23 @@ export type SchemaBuild = {
   enums: Map<string, GraphQLEnumType>;
   zones: Map<string, GraphQLUnionType | null>;
   inputs: Map<string, GraphQLInputObjectType | null>;
+  /**
+   * A schema lens build (plan schema-lenses): the snapshot is the client's version, read only. A field the
+   * projection leaves out (gone, not public or not granted today) reads null, never an error.
+   */
+  lens: boolean;
 };
 
 export const createBuild = (
   snapshot: SchemaSnapshot,
   visibility: SchemaVisibility,
   fixed: FixedTypes,
+  lens = false,
 ): SchemaBuild => ({
   snapshot,
   visibility,
   fixed,
+  lens,
   objects: new Map(),
   interfaces: new Map(),
   contracts: new Map(),

@@ -69,6 +69,8 @@ const classify = (error: GraphQLError, log: FastifyBaseLogger): Classified => {
 export type GraphqlResponseBody = {
   data?: ExecutionResult['data'] | null;
   errors?: GraphQLFormattedError[];
+  /** `schemaVersion: { requested, current }` on a request naming a schema version (plan schema-lenses). */
+  extensions?: Record<string, unknown>;
 };
 
 export type FormattedResult = { statusCode: number; body: GraphqlResponseBody };

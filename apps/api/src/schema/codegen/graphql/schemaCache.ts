@@ -1,8 +1,16 @@
+import { createHash } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { GRAPHQL_SCHEMA_VARIANTS_MAX, GRAPHQL_SITE_SCHEMA_IDLE_MS } from '../../../constants/graphql.js';
 import type { NetworkSchema, SchemaSnapshot } from '../../snapshot.js';
-import { buildGraphqlSchema, type BuiltSchema } from './schemaBuilder.js';
+import { buildGraphqlSchema, type BuildOptions, type BuiltSchema } from './schemaBuilder.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
+
+/**
+ * Lens schemas kept (plan schema-lenses): one per (workspace, visibility, client version's revisions), least
+ * recently used dropped first. Apart from the current schemas: they never evict one, never count against
+ * GRAPHQL_SCHEMA_VARIANTS_MAX, and a client walking versions can hold no more than this many.
+ */
+export const GRAPHQL_LENS_SCHEMA_CACHE_SIZE = 8;
 
 /**
  * The GraphQL schemas of the sites' views (ADR 0006), one per (site, visibility): admin callers share a site's
@@ -26,6 +34,15 @@ export type GraphqlSchemaCache = {
   peek: (siteId: string | null, visibilityKey?: string) => BuiltSchema | undefined;
   /** Every schema held: its site, visibility key and built version (tests and diagnostics). */
   list: () => Array<{ siteId: string | null; visibility: string; version: number | null }>;
+  /**
+   * The schema of a client's version of a workspace (plan schema-lenses; `view` is `RequestLens.view`,
+   * `visibility` from `lensVisibility`), built on first use and kept by exact match on the view's revisions:
+   * versions with the same revisions share one schema. Never served for another view, never replaced by a
+   * newer one.
+   */
+  getLens: (view: SchemaSnapshot, visibility: SchemaVisibility) => Promise<BuiltSchema>;
+  /** The lens schemas held, least recently used first: site, visibility key and view key (tests). */
+  listLens: () => Array<{ siteId: string | null; visibility: string; view: string }>;
   /** Stops background rebuilds (app shutdown). */
   close: () => void;
 };
@@ -43,22 +60,47 @@ type SchemaCacheOptions = {
   now?: () => number;
   idleMs?: number;
   maxEntries?: number;
-  build?: (view: SchemaSnapshot, visibility: SchemaVisibility) => BuiltSchema;
+  maxLensEntries?: number;
+  build?: (view: SchemaSnapshot, visibility: SchemaVisibility, options?: BuildOptions) => BuiltSchema;
 };
+
+type LensEntry = { siteId: string | null; visibility: string; view: string; schema: Promise<BuiltSchema> };
 
 const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 const entryKey = (siteId: string | null, visibilityKey: string) => `${siteId ?? ''}\u0000${visibilityKey}`;
+
+const viewKeys = new WeakMap<SchemaSnapshot, string>();
+
+/**
+ * What a lens schema is built from besides visibility: the view's definition revisions and today's locales (a
+ * lens does not hide locale changes). The version number is not part of it: `_schemaVersion` reads the
+ * request's.
+ */
+export const lensViewKey = (view: SchemaSnapshot): string => {
+  let key = viewKeys.get(view);
+  if (key === undefined) {
+    const revisions = view.definitions.map((active) => `${active.definition.id}=${active.revisionId}`).sort();
+    key = createHash('sha256')
+      .update(`${revisions.join('\n')}\n${JSON.stringify(view.locales)}`)
+      .digest('base64url');
+    viewKeys.set(view, key);
+  }
+  return key;
+};
 
 export const createGraphqlSchemaCache = ({
   log,
   now = Date.now,
   idleMs = GRAPHQL_SITE_SCHEMA_IDLE_MS,
   maxEntries = GRAPHQL_SCHEMA_VARIANTS_MAX,
+  maxLensEntries = GRAPHQL_LENS_SCHEMA_CACHE_SIZE,
   build = buildGraphqlSchema,
 }: SchemaCacheOptions): GraphqlSchemaCache => {
   // Map order is use order (re-inserted on every request), so the first entries are the least recently used.
   const entries = new Map<string, Entry>();
+  // Least recently used first, as `entries`; bounded by `maxLensEntries` on every insert.
+  const lenses = new Map<string, LensEntry>();
   let lastSweep = now();
   let closed = false;
 
@@ -165,8 +207,52 @@ export const createGraphqlSchemaCache = ({
     })();
   };
 
+  const getLens = (view: SchemaSnapshot, visibility: SchemaVisibility): Promise<BuiltSchema> => {
+    const viewKey = lensViewKey(view);
+    const key = `${entryKey(view.siteId, visibility.key)}\u0000${viewKey}`;
+    const cached = lenses.get(key);
+    if (cached) {
+      lenses.delete(key);
+      lenses.set(key, cached);
+      return cached.schema;
+    }
+    const schema = Promise.resolve().then(() => {
+      const started = performance.now();
+      const built = build(view, visibility, { lens: true });
+      log.info(
+        {
+          siteId: view.siteId,
+          visibility: visibility.key,
+          schemaVersion: view.version,
+          durationMs: Math.round(performance.now() - started),
+        },
+        'GraphQL lens schema built',
+      );
+      return built;
+    });
+    lenses.set(key, { siteId: view.siteId, visibility: visibility.key, view: viewKey, schema });
+    for (const oldest of lenses.keys()) {
+      if (lenses.size <= maxLensEntries) {
+        break;
+      }
+      lenses.delete(oldest);
+    }
+    // A failed build is forgotten, so the next request retries.
+    schema.catch(() => {
+      if (lenses.get(key)?.schema === schema) {
+        lenses.delete(key);
+      }
+    });
+    return schema;
+  };
+
+  const listLens = () =>
+    [...lenses.values()].map(({ siteId, visibility, view }) => ({ siteId, visibility, view }));
+
   return {
     get: (view, visibility = FULL_VISIBILITY) => ensure(view, visibility, true),
+    getLens,
+    listLens,
     refresh,
     peek: (siteId, visibilityKey = FULL_VISIBILITY.key) =>
       entries.get(entryKey(siteId, visibilityKey))?.built,

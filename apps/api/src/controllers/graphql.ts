@@ -11,6 +11,7 @@ import {
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
+import { lensMutationsUnsupported } from '../schema/codegen/graphql/lensReads.js';
 import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import {
   executeOperation,
@@ -18,6 +19,7 @@ import {
   type GraphqlOperationInput,
 } from '../services/graphqlExecution.js';
 import { createGraphqlRequestContext } from './graphqlContext.js';
+import { graphqlLensOf, graphqlSchemaFor, runsWrite, usageLensOf, withSchemaVersion } from './graphqlLens.js';
 
 export type GraphqlQuerystring = { query: string; variables?: string; operationName?: string };
 
@@ -74,16 +76,30 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   const view = await getRequestSchema(request);
   // The schema as this caller may see it: a delivery caller's never names a field or model it cannot read.
   const visibility = await resolveSchemaVisibility(view, getRequestPermissions(request), request.principal);
-  const { schema } = await runtime.schemas.get(view, visibility);
+  // A request naming a schema version reads in that version's shape (plan schema-lenses).
+  const lensed = await graphqlLensOf(request, view);
+  const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed);
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
+    if (lensed && prepared.document && runsWrite(prepared.document, input.operationName)) {
+      throw lensMutationsUnsupported();
+    }
     if (prepared.document && hasNoContentAccess(visibility)) {
       throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
     }
     return send(
       reply,
-      formatGraphqlResult({ errors: prepared.errors }, { log: request.log, hideSuggestions: !mayIntrospect }),
+      withSchemaVersion(
+        formatGraphqlResult(
+          { errors: prepared.errors },
+          { log: request.log, hideSuggestions: !mayIntrospect },
+        ),
+        lensed,
+      ),
     );
+  }
+  if (lensed && prepared.operation.operation !== OperationTypeNode.QUERY) {
+    throw lensMutationsUnsupported();
   }
   if (request.method === 'GET' && prepared.operation.operation !== OperationTypeNode.QUERY) {
     reply.header('allow', 'POST');
@@ -98,15 +114,16 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
     prepared.document,
     prepared.operation,
     input.variables ?? undefined,
+    usageLensOf(lensed, visibility),
   );
-  const context = createGraphqlRequestContext(request);
+  const context = createGraphqlRequestContext(request, lensed);
   const result = await executeOperation(schema, prepared, input, context);
   recordUsage(request, usage, result.data !== null && result.data !== undefined);
   if (context.readDrafts()) {
     // Drafts (plan drafts-mode §3) are never stored by a cache, as REST draft reads.
     reply.header('cache-control', DRAFTS_CACHE_CONTROL);
   }
-  return send(reply, formatGraphqlResult(result, { log: request.log }));
+  return send(reply, withSchemaVersion(formatGraphqlResult(result, { log: request.log }), lensed));
 };
 
 export const postGraphql = async (
