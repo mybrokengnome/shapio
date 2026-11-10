@@ -31,7 +31,8 @@ const NUMBER_TYPES: ReadonlySet<DataType> = new Set(['number', 'integer']);
 const NUMERIC_STRING_TYPES: ReadonlySet<DataType> = new Set(['decimal', 'biginteger']);
 const TEXT_TYPES: ReadonlySet<DataType> = new Set(['string', 'text']);
 
-const convertType = (from: DataType, to: DataType, value: unknown): Conversion => {
+/** One stored value converted to another type (the read side of schema lenses uses it too). */
+export const convertType = (from: DataType, to: DataType, value: unknown): Conversion => {
   if (NUMERIC_STRING_TYPES.has(to)) {
     return typeof value === 'number' ? set(String(value)) : KEEP;
   }
