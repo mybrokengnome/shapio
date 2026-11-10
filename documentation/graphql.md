@@ -290,10 +290,15 @@ curl "$SHAPIO_URL/api/graphql" \
   -d '{"query":"{ articles(pageSize: 5) { nodes { title teaser } } }"}'
 ```
 
-- Fields removed since read `null` (`[]` for lists); what your role may see is always today's, as for any
-  query.
-- A content type deleted since reads as empty: its list has no nodes (`totalCount: 0`) and a single read is
-  `null`. One that switched between a collection and a single type is refused (`LENS_UNCOVERED`).
+- What your role may see is always today's, as for any query: a field private now, or outside your grant now,
+  is not in that version's schema, and a query naming it fails validation as it would today. A field removed
+  since reads `null` (`[]` for lists) when it was public in that version and your grant covers every public
+  field of the content type today; a grant that names fields does not see removed ones.
+- A content type deleted since is not in the schema for delivery tokens, app users, and anonymous callers: a
+  query naming it fails validation (REST answers `404`). Admin callers see it, reading as empty (no nodes, a
+  single read `null`). One that switched between a collection and a single type is refused (`LENS_UNCOVERED`).
+- A version not used recently costs a schema build; past a small budget of such builds per caller and minute
+  the request is answered `429 LENS_BUDGET_EXCEEDED`.
 - Filters and sorts follow REST: one on a field whose stored form changed since the version, or that is gone,
   is refused (`LENS_QUERY_UNSUPPORTED`).
 - Introspection with the header shows that version's schema, so a client generated from it keeps validating,

@@ -51,8 +51,8 @@ export type ShapioClientOptions = {
    * parameter), on purpose, so a client never silently gets a shape it was not built for. The server may
    * answer 400 `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` (a token from another instance),
    * `SCHEMA_VERSION_AHEAD`, or `LENS_QUERY_UNSUPPORTED` (a filter or sort on a field whose storage changed);
-   * 409 `SCHEMA_VERSION_UNAVAILABLE` or `LENS_UNCOVERED`; 422 `LENS_WRITE_UNSUPPORTED` on a write. GraphQL
-   * mutations are refused (400) while a schema version is named.
+   * 409 `SCHEMA_VERSION_UNAVAILABLE` or `LENS_UNCOVERED`; 422 `LENS_WRITE_UNSUPPORTED` on a write (GraphQL
+   * mutations: the same code in `extensions.code`).
    */
   schemaVersion?: string;
 };

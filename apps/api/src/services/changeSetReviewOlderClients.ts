@@ -11,9 +11,18 @@ import {
 import type { Database } from '../db/index.js';
 import { AppError } from '../helpers/appError.js';
 import type { PermissionEvaluator, Principal } from '../permissions/types.js';
+import * as schemaActivationStepsRepository from '../repositories/schemaActivationSteps.js';
 import { loadRequestLens } from '../schema/lens/views.js';
 import { buildSnapshot, type SchemaSnapshot } from '../schema/snapshot.js';
+import { readStoredDefinition } from '../schema/storedDefinition.js';
 import type { SiteRef } from './actorContext.js';
+import {
+  fieldHistoryOf,
+  isWorse,
+  worstOf,
+  type FieldHistory,
+  type HistoryStep,
+} from './changeSetReviewHistory.js';
 import { seesEverySite } from './networkScope.js';
 import { schemaVersionReadersWithPins, type VersionReaderRow } from './usage.js';
 
@@ -27,6 +36,11 @@ import { schemaVersionReadersWithPins, type VersionReaderRow } from './usage.js'
 
 /** Distinct schema versions a review compiles lenses for: the most recently used first. */
 export const OLDER_CLIENT_VERSIONS_CAP = 8;
+/**
+ * Activation steps walked per definition and client version to find what happened to stored values; a longer
+ * history reports the direct effect (shapes only) and `historyTruncated`.
+ */
+export const OLDER_CLIENT_HISTORY_STEPS_CAP = 16;
 
 export type OlderClientReader = {
   /** The workspace the reads were made on. */
@@ -45,7 +59,17 @@ export type OlderClientField = {
   fieldId: string;
   /** The field's API ID in the client's version. */
   apiKey: string;
+  /**
+   * What the client sees once the change is live: the worst of the shape it reads (the lens from its version
+   * to the proposal) and what every activation since its version, and the proposal, did to stored values.
+   */
   effect: LensEffect;
+  /** The proposed change's own part: what it makes worse than today, by shape or on stored values. */
+  proposedEffect: LensEffect;
+  /** What the client already sees today (shape since its version, values activations dropped or cut). */
+  pastEffect: LensEffect;
+  /** The schema version since which `pastEffect` holds; null when it is transparent or not datable. */
+  pastSince: number | null;
 };
 
 export type OlderClientDefinition = {
@@ -60,6 +84,11 @@ export type OlderClientDefinition = {
   oldestVersion: number | null;
   /** The client's fields that do not keep working unchanged (every other field reads as before). */
   fields: OlderClientField[];
+  /**
+   * The definition (or a component it holds) changed more than `OLDER_CLIENT_HISTORY_STEPS_CAP` times since
+   * the version: what those steps did to stored values was not checked, and `effect` is the shape's alone.
+   */
+  historyTruncated: boolean;
 };
 
 export type OlderClientVersion = {
@@ -196,12 +225,117 @@ const readersOf = (rows: readonly VersionReaderRow[], visibility: Visibility) =>
   };
 };
 
-type ClientSide = { side: LensSide; lensFor?: (id: string) => unknown };
+type ClientSide = { version: number; side: LensSide; lensFor?: (id: string) => unknown };
 
 /** The client's side at a version: today's view for the current version, else the lens view. */
 const clientSideAt = async (input: OlderClientsInput, version: number): Promise<ClientSide> => {
-  const lens = await loadRequestLens(input.db, input.current, version);
-  return lens ? { side: sideOf(lens.view), lensFor: lens.lensFor } : { side: sideOf(input.current) };
+  // The review is admin work: never limited.
+  const lens = await loadRequestLens(input.db, input.current, version, null);
+  return lens
+    ? { version, side: sideOf(lens.view), lensFor: lens.lensFor }
+    : { version, side: sideOf(input.current) };
+};
+
+type DefinitionHistory = { fields: ReadonlyMap<string, FieldHistory>; truncated: boolean };
+
+const NO_HISTORY: DefinitionHistory = { fields: new Map(), truncated: false };
+
+/** The component IDs a definition's fields hold. */
+const heldComponentIds = (definition: SchemaDefinition): Array<{ fieldId: string; ids: string[] }> =>
+  definition.fields.flatMap((field) => {
+    if (field.type === 'component') {
+      return [{ fieldId: field.id, ids: [field.settings.component] }];
+    }
+    return field.type === 'dynamiczone' ? [{ fieldId: field.id, ids: [...field.settings.components] }] : [];
+  });
+
+/** A component's field histories folded into the field that holds it (worst effect, earliest date). */
+const foldInto = (own: FieldHistory | undefined, held: readonly FieldHistory[]): FieldHistory => {
+  let folded: FieldHistory = own ?? { past: 'transparent', pastSince: null, proposed: 'transparent' };
+  for (const entry of held) {
+    const past = worstOf(folded.past, entry.past);
+    const since = [
+      folded.past === past ? folded.pastSince : null,
+      entry.past === past ? entry.pastSince : null,
+    ]
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => a - b)[0];
+    folded = {
+      past,
+      pastSince: past === 'transparent' ? null : (since ?? null),
+      proposed: worstOf(folded.proposed, entry.proposed),
+    };
+  }
+  return folded;
+};
+
+/**
+ * What activations since the client's version, and the proposal, did to the stored values of a definition's
+ * fields (components it holds folded in), per field ID. Memoized per client version (`memo`).
+ */
+const historyOf = async (
+  input: OlderClientsInput,
+  client: ClientSide,
+  definitionId: string,
+  memo: Map<string, Promise<DefinitionHistory>>,
+): Promise<DefinitionHistory> => {
+  const known = memo.get(definitionId);
+  if (known) {
+    return known;
+  }
+  // Placeholder first, so a component that (invalidly) holds itself ends the recursion.
+  memo.set(definitionId, Promise.resolve(NO_HISTORY));
+  const loading = (async (): Promise<DefinitionHistory> => {
+    const clientDefinition = client.side.get(definitionId);
+    if (!clientDefinition) {
+      return NO_HISTORY;
+    }
+    const rows = await schemaActivationStepsRepository.findStepsAfter(
+      definitionId,
+      client.version,
+      input.current.version,
+      OLDER_CLIENT_HISTORY_STEPS_CAP + 1,
+      input.db,
+    );
+    if (rows.length > OLDER_CLIENT_HISTORY_STEPS_CAP) {
+      return { fields: new Map(), truncated: true };
+    }
+    const steps: HistoryStep[] = rows.flatMap((row) =>
+      // A deletion keeps the entries (restoring brings them back): no step for the values.
+      row.revisionId === null || row.definition === null
+        ? []
+        : [{ schemaVersion: row.schemaVersion, definition: readStoredDefinition(row.definition) }],
+    );
+    const fields = new Map(
+      fieldHistoryOf({
+        client: clientDefinition,
+        steps,
+        current: input.current.byId.get(definitionId)?.definition ?? null,
+        proposed: input.proposed.byId.get(definitionId)?.definition ?? null,
+      }),
+    );
+    let truncated = false;
+    for (const { fieldId, ids } of heldComponentIds(clientDefinition)) {
+      const held: FieldHistory[] = [];
+      for (const id of ids) {
+        const component = await historyOf(input, client, id, memo);
+        truncated ||= component.truncated;
+        held.push(...component.fields.values());
+      }
+      if (held.length > 0) {
+        fields.set(fieldId, foldInto(fields.get(fieldId), held));
+      }
+    }
+    return { fields, truncated };
+  })();
+  memo.set(definitionId, loading);
+  return loading;
+};
+
+/** Per field ID, what a lens from the client's version to `stored` shows. */
+const shapeEffects = (stored: LensSide, client: LensSide, definitionId: string) => {
+  const lens = compileLens(stored, client, definitionId);
+  return new Map(lens ? lensEffects(lens).map((field) => [field.fieldId, field.effect]) : []);
 };
 
 const isUnavailable = (error: unknown): error is AppError =>
@@ -212,11 +346,12 @@ const oldestVersionOf = (error: AppError): number | null => {
   return typeof details?.oldestVersion === 'number' ? details.oldestVersion : null;
 };
 
-const definitionAt = (
+const definitionAt = async (
+  input: OlderClientsInput,
   client: ClientSide,
-  proposed: LensSide,
   definitionId: string,
-): OlderClientDefinition | null => {
+  memo: Map<string, Promise<DefinitionHistory>>,
+): Promise<OlderClientDefinition | null> => {
   const known = client.side.get(definitionId);
   if (!known) {
     // Created since the client's version: nothing of it is in the client's shape.
@@ -237,26 +372,60 @@ const definitionAt = (
       effect: null,
       oldestVersion: oldestVersionOf(error),
       fields: [],
+      historyTruncated: false,
     };
   }
-  const lens = compileLens(proposed, client.side, definitionId);
+  const lens = compileLens(sideOf(input.proposed), client.side, definitionId);
   if (!lens) {
     return null;
   }
-  const apiKeys = new Map(lens.fields.map((field) => [field.fieldId, field.apiKey]));
+  const shapeNow = shapeEffects(sideOf(input.current), client.side, definitionId);
+  const history = await historyOf(input, client, definitionId, memo);
+  const definitionLevel = lens.status === 'gone' || lens.status === 'uncovered';
+  const fields = lensEffects(lens).map(({ fieldId, effect: shapeAfter }): OlderClientField => {
+    const apiKey = lens.fields.find((field) => field.fieldId === fieldId)?.apiKey ?? fieldId;
+    if (definitionLevel) {
+      return {
+        fieldId,
+        apiKey,
+        effect: shapeAfter,
+        proposedEffect: shapeAfter,
+        pastEffect: 'transparent',
+        pastSince: null,
+      };
+    }
+    const now = shapeNow.get(fieldId) ?? 'transparent';
+    const values = history.fields.get(fieldId);
+    const pastValues = values?.past ?? 'transparent';
+    const pastEffect = worstOf(now, pastValues);
+    return {
+      fieldId,
+      apiKey,
+      effect: worstOf(shapeAfter, pastValues, values?.proposed ?? 'transparent'),
+      // Only what the proposal makes worse: a shape worse than today's, or what it does to stored values.
+      proposedEffect: worstOf(
+        isWorse(shapeAfter, now) ? shapeAfter : 'transparent',
+        values?.proposed ?? 'transparent',
+      ),
+      pastEffect,
+      // Dated by the step that reached it; a shape worse than any value loss is not dated.
+      pastSince:
+        pastEffect !== 'transparent' && pastValues === pastEffect ? (values?.pastSince ?? null) : null,
+    };
+  });
   return {
     definitionId,
     apiKey: lens.apiKey,
     status: 'available',
-    effect: lensDefinitionEffect(lens),
+    effect: worstOf(lensDefinitionEffect(lens), ...fields.map((field) => field.effect)),
     oldestVersion: null,
-    fields: lensEffects(lens)
-      .filter((field) => field.effect !== 'transparent')
-      .map((field) => ({
-        fieldId: field.fieldId,
-        apiKey: apiKeys.get(field.fieldId) ?? field.fieldId,
-        effect: field.effect,
-      })),
+    fields: fields.filter(
+      (field) =>
+        field.effect !== 'transparent' ||
+        field.proposedEffect !== 'transparent' ||
+        field.pastEffect !== 'transparent',
+    ),
+    historyTruncated: history.truncated,
   };
 };
 
@@ -280,15 +449,18 @@ export const olderClientsOf = async (input: OlderClientsInput): Promise<OlderCli
     network: seesEverySite(input.actor),
     names: await input.permissions.canPerform(input.actor, 'tokens.manage'),
   };
-  const proposed = sideOf(input.proposed);
   const versions: OlderClientVersion[] = [];
   for (const group of grouped.slice(0, OLDER_CLIENT_VERSIONS_CAP)) {
     const client = await clientSideAt(input, group.schemaVersion);
-    versions.push({
-      schemaVersion: group.schemaVersion,
-      ...readersOf(group.rows, visibility),
-      definitions: input.definitionIds.flatMap((id) => definitionAt(client, proposed, id) ?? []),
-    });
+    const memo = new Map<string, Promise<DefinitionHistory>>();
+    const definitions: OlderClientDefinition[] = [];
+    for (const id of input.definitionIds) {
+      const definition = await definitionAt(input, client, id, memo);
+      if (definition) {
+        definitions.push(definition);
+      }
+    }
+    versions.push({ schemaVersion: group.schemaVersion, ...readersOf(group.rows, visibility), definitions });
   }
   return { versions, truncated: grouped.length > OLDER_CLIENT_VERSIONS_CAP };
 };

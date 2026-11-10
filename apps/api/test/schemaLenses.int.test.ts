@@ -278,17 +278,13 @@ describe('schema lenses', () => {
     const list = await json<DeliveredList>(at('/api/content/articles?sort=title:asc'));
     const expected = before.list.data.map((entry) => {
       const { secret: _secret, summary: _summary, hero: heroValue, ...rest } = withoutTimes(entry);
-      const heroShown =
-        heroValue && typeof heroValue === 'object'
-          ? (({ note: _note, ...shown }) => shown)(heroValue as Record<string, unknown>)
-          : heroValue;
-      return { ...rest, summary: null, hero: heroShown };
+      // Private since, for a caller whose grant names no fields: the key stays, null (no value).
+      const heroShown = heroValue && typeof heroValue === 'object' ? { ...heroValue, note: null } : heroValue;
+      return { ...rest, secret: null, summary: null, hero: heroShown };
     });
     expect(list.data.map(withoutTimes)).toEqual(expected);
     // V's field order, V's names; nothing today's version added.
-    expect(Object.keys(list.data[0] ?? {})).toEqual(
-      Object.keys(before.list.data[0] ?? {}).filter((key) => key !== 'secret'),
-    );
+    expect(Object.keys(list.data[0] ?? {})).toEqual(Object.keys(before.list.data[0] ?? {}));
     expect(list.data[0]).toMatchObject({ title: 'First', count: 3, price: '12.5', hero: { heading: 'Hi' } });
     expect(JSON.stringify(list)).not.toMatch(/shh|private soon|headline|subtitle|Sub"/);
     expect(list.meta.schemaVersion).toEqual({ requested: v, current: await currentToken() });
@@ -330,14 +326,15 @@ describe('schema lenses', () => {
 
   it('never shows what is not visible today (rule 7)', async () => {
     const one = await json<Delivered>(at(`/api/content/articles/${first.id}`));
-    expect(one.data).not.toHaveProperty('secret');
-    expect(one.data.hero).toEqual({ heading: 'Hi' });
+    expect(one.data.secret).toBeNull();
+    expect(one.data.hero).toEqual({ heading: 'Hi', note: null });
     expect(JSON.stringify(one)).not.toMatch(/shh|private soon/);
     // A role that lost a field since the client's version does not see it through the lens.
     expect(before.narrow.data).toMatchObject({ title: 'First', restricted: 'r1' });
     const narrow = await json<Delivered>(at(`/api/content/articles/${first.id}`), narrowToken);
     expect(narrow.data).toMatchObject({ title: 'First' });
     expect(narrow.data).not.toHaveProperty('restricted');
+    expect(narrow.data).not.toHaveProperty('secret');
     expect(JSON.stringify(narrow)).not.toContain('r1');
     // A private field cannot be filtered on through a lens either.
     expect((await get(at('/api/content/articles?filters[secret][$eq]=shh'))).statusCode).toBe(403);
@@ -348,8 +345,26 @@ describe('schema lenses', () => {
     ).json<EntryBody>();
     expect((await get(at(`/api/content/articles/${draft.id}`))).statusCode).toBe(404);
     expect(JSON.stringify(await json(at('/api/content/articles')))).not.toContain('Draft only');
-    // Anonymous callers with no grant stay out.
-    expect((await get(at('/api/content/articles'), null)).statusCode).toBe(401);
+    // Anonymous callers with no grant get what they get without a version: `articles` is no route today.
+    const anonymous = await get(at('/api/content/articles'), null);
+    const withoutVersion = await get('/api/content/articles', null);
+    expect([anonymous.statusCode, anonymous.body]).toEqual([withoutVersion.statusCode, withoutVersion.body]);
+    expect((await get(at('/api/content/posts'), null)).statusCode).toBe(401);
+  });
+
+  it('lets an unrestricted caller name a field made private since in fields=, and reads it null', async () => {
+    const named = await json<DeliveredList>(at('/api/content/articles?fields=title,secret&sort=title:asc'));
+    expect(named.data[0]).toMatchObject({ title: 'First', secret: null });
+    expect(JSON.stringify(named)).not.toContain('shh');
+    // A field-restricted grant: left out, and naming it is refused, as without a version.
+    const narrow = await get(at('/api/content/articles?fields=title,secret'), narrowToken);
+    expect(narrow.statusCode).toBe(403);
+    // Filters on it stay refused exactly as without a version, whatever the value.
+    for (const value of ['shh', 'other']) {
+      const lensed = await get(at(`/api/content/articles?filters[secret][$eq]=${value}`));
+      const plain = await get(`/api/content/posts?filters[secret][$eq]=${value}`);
+      expect([lensed.statusCode, lensed.json()]).toEqual([plain.statusCode, plain.json()]);
+    }
   });
 
   it('pairs with ?snapshot=N', async () => {
@@ -393,7 +408,8 @@ describe('schema lenses', () => {
     ).json<{ token: string }>();
     const preview = await json<Delivered>(at(`/api/preview/content/articles/${first.id}`), previewToken);
     expect(preview.data).toMatchObject({ title: 'First', count: 3, hero: { heading: 'Hi' } });
-    expect(preview.data).not.toHaveProperty('secret');
+    expect(preview.data.secret ?? null).toBeNull();
+    expect(JSON.stringify(preview)).not.toContain('shh');
     expect(preview.meta).toMatchObject({ preview: true, schemaVersion: { requested: v } });
     const refused = await get(at('/api/preview/content/articles?sort=excerpt'), previewToken);
     expect(refused.statusCode).toBe(400);
@@ -429,14 +445,15 @@ describe('schema lenses', () => {
     const schemaId = v.split(':')[0] as string;
     const cases: Array<[string, Record<string, string>, string]> = [
       [
-        `/api/content/articles?schemaVersion=${schemaId}:1`,
+        `/api/content/posts?schemaVersion=${schemaId}:1`,
         { 'shapio-schema-version': v },
         'SCHEMA_VERSION_MISMATCH',
       ],
-      [`/api/content/articles?schemaVersion=${schemaId}:99999999`, {}, 'SCHEMA_VERSION_AHEAD'],
-      ['/api/content/articles?schemaVersion=elsewhere:1', {}, 'SCHEMA_VERSION_FOREIGN'],
-      ['/api/content/articles?schemaVersion=7', {}, 'SCHEMA_VERSION_INVALID'],
+      [`/api/content/posts?schemaVersion=${schemaId}:99999999`, {}, 'SCHEMA_VERSION_AHEAD'],
+      ['/api/content/posts?schemaVersion=elsewhere:1', {}, 'SCHEMA_VERSION_FOREIGN'],
+      ['/api/content/posts?schemaVersion=7', {}, 'SCHEMA_VERSION_INVALID'],
     ];
+    // `posts` is today's route: a version that cannot be served is answered once the caller is authorized.
     for (const [url, headers, code] of cases) {
       const response = await get(url, token, headers);
       expect(response.statusCode, code).toBe(400);

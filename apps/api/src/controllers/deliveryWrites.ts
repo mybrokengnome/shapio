@@ -1,10 +1,15 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { apiKeyOfRoute } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
-import { refuseInterfaceWrite } from '../services/contentAccess.js';
-import { lensDeliveryRequest } from '../services/contentDeliveryLens.js';
+import {
+  entryModelWithPolicy,
+  modelWithCreatePolicy,
+  refuseInterfaceWrite,
+  type ContentServiceContext,
+} from '../services/contentAccess.js';
+import { clientRouteOf } from '../services/contentDeliveryLens.js';
 import * as deliveryWritesService from '../services/contentDeliveryWrites.js';
-import { contentContextFor } from './contentContext.js';
+import { contextDeferringVersion } from './delivery.js';
 
 /** `:modelKey` is the route key: the plural API ID of a collection, the API ID of a singleton. */
 type ModelParams = { modelKey: string };
@@ -23,13 +28,21 @@ type UpdateRequest = FastifyRequest<{
  * The write's context and route in today's names: through a schema lens (plan schema-lenses) the route key is
  * the client's version's (404 for a model gone since, 409 `LENS_UNCOVERED` for a kind change).
  */
-const lensedWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => {
-  const { context, routeKey } = lensDeliveryRequest(
-    await contentContextFor(request),
-    request.params.modelKey,
-    '',
-  );
-  return { context, routeKey, apiKey: apiKeyOfRoute(context.snapshot, routeKey) };
+const lensedWrite = async (
+  request: FastifyRequest<{ Params: ModelParams }>,
+  /** The write's own authorization, as without a version: run before a version error is answered. */
+  authorize: (context: ContentServiceContext, apiKey: string) => Promise<unknown>,
+) => {
+  const { context, versionError } = await contextDeferringVersion(request);
+  if (versionError) {
+    await authorize(context, apiKeyOfRoute(context.snapshot, request.params.modelKey));
+    throw versionError;
+  }
+  const clientRoute = clientRouteOf(context, request.params.modelKey);
+  const apiKey = clientRoute
+    ? (clientRoute.apiKey ?? request.params.modelKey)
+    : apiKeyOfRoute(context.snapshot, request.params.modelKey);
+  return { context, apiKey, clientRoute };
 };
 
 /**
@@ -39,11 +52,10 @@ const lensedWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => 
  * learns nothing of the interface or its members (public delivery never shows schema shape to them).
  */
 export const refuseInterfaceRouteWrite = async (request: FastifyRequest<{ Params: ModelParams }>) => {
-  const { context, routeKey } = lensDeliveryRequest(
-    await contentContextFor(request),
-    request.params.modelKey,
-    '',
-  );
+  // A version error waits for the handler, after the write is authorized.
+  const { context } = await contextDeferringVersion(request);
+  // Names only (never a lens error before the write is authorized): the client's route in today's names.
+  const routeKey = clientRouteOf(context, request.params.modelKey)?.routeKey ?? request.params.modelKey;
   const contract = context.snapshot.interfacesByRouteKey.get(routeKey);
   if (!contract || context.snapshot.modelsByRouteKey.has(routeKey)) {
     return;
@@ -55,20 +67,34 @@ export const refuseInterfaceRouteWrite = async (request: FastifyRequest<{ Params
 };
 
 export const createDeliveryEntry = async (request: CreateRequest, reply: FastifyReply) => {
-  const { context, apiKey } = await lensedWrite(request);
-  return reply.code(201).send(await deliveryWritesService.createDeliveryEntry(context, apiKey, request.body));
+  const { context, apiKey, clientRoute } = await lensedWrite(request, (context, apiKey) =>
+    modelWithCreatePolicy(context, apiKey),
+  );
+  return reply
+    .code(201)
+    .send(await deliveryWritesService.createDeliveryEntry(context, apiKey, request.body, clientRoute));
 };
 
 export const updateDeliveryEntry = async (request: UpdateRequest) => {
-  const { context, apiKey } = await lensedWrite(request);
-  return deliveryWritesService.updateDeliveryEntry(context, apiKey, request.params.id, request.body);
+  const { context, apiKey, clientRoute } = await lensedWrite(request, (context, apiKey) =>
+    entryModelWithPolicy(context, apiKey, request.params.id, 'update'),
+  );
+  return deliveryWritesService.updateDeliveryEntry(
+    context,
+    apiKey,
+    request.params.id,
+    request.body,
+    clientRoute,
+  );
 };
 
 export const deleteDeliveryEntry = async (
   request: FastifyRequest<{ Params: EntryParams }>,
   reply: FastifyReply,
 ) => {
-  const { context, apiKey } = await lensedWrite(request);
-  await deliveryWritesService.deleteDeliveryEntry(context, apiKey, request.params.id);
+  const { context, apiKey, clientRoute } = await lensedWrite(request, (context, apiKey) =>
+    entryModelWithPolicy(context, apiKey, request.params.id, 'delete'),
+  );
+  await deliveryWritesService.deleteDeliveryEntry(context, apiKey, request.params.id, clientRoute);
   return reply.code(204).send();
 };

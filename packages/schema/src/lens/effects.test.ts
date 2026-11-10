@@ -38,6 +38,8 @@ describe('lensEffectOfChange', () => {
     ['field.localized', {}, 'uncovered'],
     ['field.public', { to: false }, 'nulled'],
     ['field.public', { to: true }, 'transparent'],
+    ['field.deprecated', { to: true }, 'nulled'],
+    ['field.deprecated', { to: false }, 'transparent'],
     ['field.filterable', { to: false }, 'uncovered'],
     ['field.type', { from: 'string', to: 'number' }, 'converted'],
     ['field.type', { from: 'number', to: 'string' }, 'lossy'],
@@ -91,8 +93,14 @@ describe('lensEffects', () => {
   it('takes the worst effect inside a component changed on its own', () => {
     const heroNumber = withField(hero, id(6), retype('number'));
     expect(effectOf(lens([page, heroNumber], [page, hero]), id(4))).toBe('converted');
+    // A field inside reads empty, but the component still reads its instance: lossy, not nulled.
     const heroJson = withField(hero, id(6), retype('json'));
-    expect(effectOf(lens([page, heroJson], [page, hero]), id(4))).toBe('nulled');
+    expect(effectOf(lens([page, heroJson], [page, hero]), id(4))).toBe('lossy');
+  });
+
+  it('says nulled for a container only when no instance can be read', () => {
+    const gone = lensEffects(lens([page], [page, hero]));
+    expect(gone.find((entry) => entry.fieldId === id(4))?.effect).toBe('nulled');
   });
 
   it('marks every field of a gone or uncovered definition', () => {

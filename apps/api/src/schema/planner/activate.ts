@@ -18,6 +18,7 @@ import {
 } from '../../repositories/publications.js';
 import * as relationEdgeCountsRepository from '../../repositories/relationEdgeCounts.js';
 import * as schemaActivationsRepository from '../../repositories/schemaActivations.js';
+import type { NewSchemaActivation } from '../../repositories/schemaActivations.js';
 import * as schemaChangeJobsRepository from '../../repositories/schemaChangeJobs.js';
 import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import * as schemaVersionsRepository from '../../repositories/schemaVersions.js';
@@ -389,6 +390,25 @@ const createActivationContext = (trx: Transaction<DB>, request: ActivationReques
   return { activation, finish };
 };
 
+/**
+ * Writes the activation's history row. The global version was just bumped under the schema lock, so a row
+ * at it cannot exist; if one does, it is an internal error, never the "API ID taken" every other unique
+ * violation of an activation means.
+ */
+const recordHistory = async (trx: Transaction<DB>, row: NewSchemaActivation) => {
+  try {
+    await schemaActivationsRepository.insert(row, trx);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(
+        `Activation history already has a row for definition ${row.modelId} at schema version ${row.schemaVersion}`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+};
+
 const flipItem = async (
   trx: Transaction<DB>,
   item: ActivationItem,
@@ -418,16 +438,13 @@ const flipItem = async (
     await schemaModelsRepository.deleteActivePointer(plan.definitionId, trx);
   }
   // Activation history (plan schema-lenses): every flip, scope changes and deletes included.
-  await schemaActivationsRepository.insert(
-    {
-      modelId: plan.definitionId,
-      schemaVersion,
-      siteId: scope,
-      revisionId: revision?.id ?? null,
-      createdAt: now,
-    },
-    trx,
-  );
+  await recordHistory(trx, {
+    modelId: plan.definitionId,
+    schemaVersion,
+    siteId: scope,
+    revisionId: revision?.id ?? null,
+    createdAt: now,
+  });
   if (item.pending) {
     await schemaChangeJobsRepository.finish(
       item.pending.changeJobId,

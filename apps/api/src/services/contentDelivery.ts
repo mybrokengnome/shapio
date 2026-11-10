@@ -1,10 +1,12 @@
 import { isModelDefinition } from '@shapio/schema';
 import type { HeadSource } from '../content/compiler/compile.js';
 import { paginationMeta, type Pagination } from '../content/compiler/paginate.js';
+import { everyRowReadMask } from '../content/compiler/policy.js';
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
 import { kindsMetaOf, readableMembers, type KindMeta, type ReadMember } from '../content/family.js';
 import { modelRouteOf, resolveContentRoute, resolveModelById, type ContentModel } from '../content/model.js';
+import { readsNullThroughLens } from '../content/read.js';
 import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
 import type { Policy } from '../permissions/types.js';
@@ -12,7 +14,14 @@ import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
 import { lensReadLimit, restFieldReads } from '../usage/restFieldReads.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
-import { schemaVersionMetaOf, withClientQueryNames, type SchemaVersionMeta } from './contentDeliveryLens.js';
+import {
+  authorizeClientRoute,
+  lensQueryOf,
+  schemaVersionMetaOf,
+  withClientQueryNames,
+  type ClientRoute,
+  type SchemaVersionMeta,
+} from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { parseInterfaceQuery, queryMembers, type InterfaceRoute } from './contentInterfaceReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
@@ -67,6 +76,12 @@ export type DeliveryReadOptions = {
    * it the read records before returning.
    */
   defer?: (task: () => Promise<void>) => void;
+  /**
+   * Schema lenses: the request names a schema version, and its route key and query are the client's
+   * (`clientRouteOf`). The read is authorized exactly as without a version, then translated (plan
+   * schema-lenses). Absent: the query is today's (GraphQL translates its own arguments).
+   */
+  clientRoute?: ClientRoute | null;
 };
 
 const readRefused = (context: ContentServiceContext, modelKey: string) =>
@@ -122,6 +137,14 @@ const lensMemberIds = (
   }
   const known = new Set(lens.view.implementedBy(route.definition.id));
   return route.memberIds.filter((id) => known.has(id));
+};
+
+/** Whether the caller may read a route (401/403 when it may not), with nothing else: a read's authorization. */
+export const authorizeDeliveryRead = async (
+  context: ContentServiceContext,
+  modelKey: string,
+): Promise<void> => {
+  await readableRoute(context, modelKey);
 };
 
 /** The first collection or singleton of the view the caller may read, if any. */
@@ -274,7 +297,10 @@ const recordUsage = async (
   if (!options.usage || readsDrafts(query, options) || principalKey === null) {
     return;
   }
-  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null, context.lens?.requested);
+  // Only API tokens record the version they read: the app-user and anonymous aggregates are no one client,
+  // and would crowd tokens out of the review's list of older versions.
+  const schemaVersion = context.actor.kind === 'token' ? context.lens?.requested : undefined;
+  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null, schemaVersion);
   // An interface read counts each member's own fields under that member (plan interfaces).
   const members: readonly (ReadMember & { query?: ContentQuery })[] = read.contract?.members ??
     read.members ?? [{ model: read.model, policy: read.policy }];
@@ -384,14 +410,57 @@ export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<stri
   }
 };
 
-/** `GET /api/content/:modelKey`: a page of a collection, or a singleton's one entry. */
-export const listDelivery = async (
+/** The client fields a caller reads as null through the lens on this model (every row's mask). */
+const lensNullFields = (context: ContentServiceContext, model: ContentModel, policy: Policy) => {
+  const view = activeLens(context)?.view;
+  const client = view ? resolveModelById(view, model.definition.id) : undefined;
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
+  const mask = everyRowReadMask(policy);
+  return (fieldId: string): boolean => {
+    const field = client?.definition.fields.find((candidate) => candidate.id === fieldId);
+    return field !== undefined && readsNullThroughLens(field, today.get(fieldId), mask, model);
+  };
+};
+
+/**
+ * The route a read covers, authorized, with the context and query it then runs with: through a schema lens the
+ * lens's own checks and the query's translation come only after the caller is authorized, so a caller that may
+ * not read gets exactly the answer it gets without a version (plan schema-lenses).
+ */
+const authorizedRead = async (
   context: ContentServiceContext,
   modelKey: string,
   rawQuery: string,
+  options: DeliveryReadOptions,
+): Promise<{ route: ReadableRoute; context: ContentServiceContext; rawQuery: string }> => {
+  const clientRoute = options.clientRoute ?? null;
+  const route = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+    readableRoute(context, apiKey),
+  );
+  if (!clientRoute) {
+    return { route, context, rawQuery };
+  }
+  const definitionId = route.contract?.definition.id ?? route.model.definition.id;
+  return {
+    route,
+    ...lensQueryOf(
+      context,
+      definitionId,
+      clientRoute.clientRouteKey,
+      rawQuery,
+      route.contract ? undefined : lensNullFields(context, route.model, route.policy),
+    ),
+  };
+};
+
+/** `GET /api/content/:modelKey`: a page of a collection, or a singleton's one entry. */
+export const listDelivery = async (
+  base: ContentServiceContext,
+  modelKey: string,
+  clientQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
-  const route = await readableRoute(context, modelKey);
+  const { route, context, rawQuery } = await authorizedRead(base, modelKey, clientQuery, options);
   const { model } = route;
   const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
@@ -435,14 +504,14 @@ export const listDelivery = async (
  * with drafts, the entry's draft.
  */
 export const getDelivery = async (
-  context: ContentServiceContext,
+  base: ContentServiceContext,
   modelKey: string,
   id: string,
-  rawQuery: string,
+  clientQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryItem> => {
-  assertItemParameters(rawQuery, ITEM_PARAMETERS);
-  const route = await readableRoute(context, modelKey);
+  assertItemParameters(clientQuery, ITEM_PARAMETERS);
+  const { route, context, rawQuery } = await authorizedRead(base, modelKey, clientQuery, options);
   const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);

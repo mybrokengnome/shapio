@@ -31,7 +31,7 @@ const schemaVersion = Type.Optional(
   }),
 );
 
-/** `Shapio-Schema-Version` (queries only; a mutation naming a version is refused). */
+/** `Shapio-Schema-Version`: queries and mutations in that version's names (plan schema-lenses). */
 const headers = Type.Object({ [SCHEMA_VERSION_HEADER]: schemaVersion });
 
 /** GET: queries only; `variables` is a JSON object in the query string. */

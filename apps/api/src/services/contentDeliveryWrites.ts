@@ -1,4 +1,4 @@
-import type { DefinitionLens } from '@shapio/schema';
+import { isComponentDefinition, type DefinitionLens } from '@shapio/schema';
 import {
   matchesRowFilter,
   maskAllows,
@@ -14,16 +14,33 @@ import {
   writeThroughLens,
   type LensWriteBase,
 } from '../content/lens/write.js';
-import { resolveModel, type ContentModel } from '../content/model.js';
-import type { ContentIssue } from '../content/validator/issues.js';
+import { writeLocaleFor } from '../content/locales.js';
+import { modelNotFound, type ContentModel } from '../content/model.js';
+import { visibleRelationTargetIds } from '../content/read.js';
+import type { ModelValidator } from '../content/validator/index.js';
+import { contentInvalid, type ContentIssue } from '../content/validator/issues.js';
+import { keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
+import type { ContentData } from '../db/contentData.js';
 import { AppError } from '../helpers/appError.js';
 import type { ContentAction } from '../permissions/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import { lensUncovered, lensWriteIssues } from '../schema/errors.js';
-import { activeLens, entryModelWithPolicy, type ContentServiceContext } from './contentAccess.js';
-import { schemaVersionMetaOf, type SchemaVersionMeta } from './contentDeliveryLens.js';
+import {
+  activeLens,
+  entryModelWithPolicy,
+  modelWithCreatePolicy,
+  type ContentServiceContext,
+} from './contentAccess.js';
+import {
+  authorizeClientRoute,
+  schemaVersionMetaOf,
+  type ClientRoute,
+  type SchemaVersionMeta,
+} from './contentDeliveryLens.js';
+import { deliveryEnvironment } from './contentDeliveryReads.js';
 import * as contentEntriesService from './contentEntries.js';
+import type { DraftUpdateBase } from './contentEntries.js';
 import type { AdminEntryView } from './contentReads.js';
 
 /**
@@ -96,34 +113,29 @@ const writeLens = (
   return lens;
 };
 
+/** What the caller may read of an entry today, to compare a sent-back value with; null when nothing. */
+type ReadScope = {
+  visible: (fieldId: string) => boolean;
+  componentFieldVisible: (fieldId: string) => boolean;
+};
+
 /**
- * Today's draft of the entry in the written locale, and what the lens reads of it that the caller may read
- * today; both null when the caller cannot see the entry (the write then answers as it would without a lens).
+ * The read mask a sent-back comparison is limited to: what the caller may read of the entry today, so a refusal
+ * never tells it whether it guessed a hidden value. Null when it may not read the entry; the write itself never
+ * depends on it.
  */
-const writeBaseOf = async (
+const readScopeOf = async (
   context: ContentServiceContext,
   model: ContentModel,
-  lens: DefinitionLens,
   id: string,
-  locale: string | undefined,
-): Promise<LensWriteBase> => {
-  const definitionOf = definitionsOf(context);
-  const none = { stored: null, read: null, definitionOf };
+): Promise<ReadScope | null> => {
   const entry = await entriesRepository.findLive(id, model.definition.id, context.site.id, context.db);
   const policy = await context.permissions.evaluate(context.actor, {
     action: 'read',
     modelId: model.definition.id,
   });
   if (!entry || !policy.allowed || !matchesRowFilter(policy.rowFilter, context.actor, entry)) {
-    return none;
-  }
-  const drafts = (await entryHeadsRepository.findForEntry(id, context.db)).filter(
-    (head) => head.state === 'draft',
-  );
-  const wanted = model.definition.localized ? (locale ?? context.snapshot.defaultLocale) : drafts[0]?.locale;
-  const stored = drafts.find((head) => head.locale === wanted)?.data;
-  if (!isRecord(stored)) {
-    return none;
+    return null;
   }
   const mask = rowReadMask(policy, context.actor, entry);
   const today = new Map(model.definition.fields.map((field) => [field.id, field]));
@@ -133,19 +145,46 @@ const writeBaseOf = async (
     ),
   );
   const publicOnly = hidesPrivateComponentFields(mask);
-  const read = readableThroughLens(
-    lens,
-    readThroughLens(lens, stored),
-    (fieldId) => {
+  return {
+    visible: (fieldId) => {
       const field = today.get(fieldId);
-      return field !== undefined && maskAllows(mask, { ...field, deprecated: false });
+      return field !== undefined && maskAllows(mask, field);
     },
-    (fieldId) => {
+    componentFieldVisible: (fieldId) => {
       const field = componentFields.get(fieldId);
-      return field !== undefined && (field.public || !publicOnly);
+      return field !== undefined && !field.deprecated && (field.public || !publicOnly);
     },
-  );
-  return { stored, read, definitionOf };
+  };
+};
+
+/**
+ * What the client may have read of the entry in the written locale: the lens's read of its draft and of its
+ * published head, limited to what the caller may read (empty when nothing).
+ */
+const readsOf = (
+  lens: DefinitionLens,
+  base: DraftUpdateBase,
+  locale: string,
+  scope: ReadScope | null,
+): ContentData[] => {
+  if (!scope) {
+    return [];
+  }
+  const heads = base.heads.filter((head) => head.locale === locale);
+  return heads
+    .filter((head) => head.state === 'draft' || head.state === 'published')
+    .flatMap((head) =>
+      isRecord(head.data)
+        ? [
+            readableThroughLens(
+              lens,
+              readThroughLens(lens, head.data),
+              scope.visible,
+              scope.componentFieldVisible,
+            ),
+          ]
+        : [],
+    );
 };
 
 /** The body in today's API IDs; one 422 naming every field that cannot be written in the client's shape. */
@@ -169,7 +208,8 @@ const inClientNames = async <T>(
   try {
     return await write();
   } catch (error) {
-    if (!(error instanceof AppError) || !isRecord(error.details)) {
+    // A lens refusal names the client's fields already.
+    if (!(error instanceof AppError) || !isRecord(error.details) || error.code === 'LENS_WRITE_UNSUPPORTED') {
       throw error;
     }
     const { details } = error;
@@ -205,29 +245,59 @@ export const createDeliveryEntry = async (
   context: ContentServiceContext,
   modelKey: string,
   input: DeliveryCreateInput,
+  /** The client's route when the request names a schema version (`clientRouteOf`). */
+  clientRoute: ClientRoute | null = null,
 ): Promise<DeliveryWriteResult> => {
   if (!activeLens(context)) {
     return toResult(context, await contentEntriesService.createEntry(context, modelKey, input));
   }
-  const model = resolveModel(context.snapshot, modelKey);
-  const lens = writeLens(
-    context,
-    model,
-    new AppError(404, 'MODEL_NOT_FOUND', `No content model "${modelKey}"`),
+  // Authorized first, exactly as without a version: nothing lens-specific answers a caller that may not create.
+  const { model } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+    modelWithCreatePolicy(context, apiKey),
   );
+  const lens = writeLens(context, model, modelNotFound(clientRoute?.clientRouteKey ?? modelKey));
   const data = translateBody(lens, input.data, {
     stored: null,
-    read: null,
+    reads: [],
     definitionOf: definitionsOf(context),
   });
   return toResult(
     context,
     await inClientNames(context, lens, () =>
-      contentEntriesService.createEntry(context, modelKey, {
+      contentEntriesService.createEntry(context, model.definition.apiKey, {
         ...input,
         ...(data === undefined ? {} : { data }),
       }),
     ),
+  );
+};
+
+/**
+ * The patch of a delivery update: the body (in today's names) as storage, with every component field the
+ * caller cannot read carried over from the draft the write starts from, so a component written whole never
+ * wipes what the caller could not see (with or without a version).
+ */
+const deliveryPatch = (
+  context: ContentServiceContext,
+  model: ContentModel,
+  validator: ModelValidator,
+  data: unknown,
+  before: Readonly<ContentData>,
+  scope: ReadScope | null,
+): ContentData => {
+  const { patch, issues } = validator.fromInput(isRecord(data) ? data : {});
+  if (issues.length > 0) {
+    throw contentInvalid(issues);
+  }
+  return keepUnreadableComponentFields(
+    patch,
+    before,
+    model.definition.fields,
+    (componentId) => {
+      const definition = context.snapshot.byId.get(componentId)?.definition;
+      return definition && isComponentDefinition(definition) ? definition : undefined;
+    },
+    (field) => scope?.componentFieldVisible(field.id) ?? false,
   );
 };
 
@@ -236,21 +306,55 @@ export const updateDeliveryEntry = async (
   modelKey: string,
   id: string,
   input: DeliveryUpdateInput,
+  clientRoute: ClientRoute | null = null,
 ): Promise<DeliveryWriteResult> => {
-  const update = (data: unknown) =>
-    contentEntriesService.updateEntry(context, modelKey, id, {
-      ...input,
-      ...(data === undefined ? {} : { data }),
+  // The entry's own kind (a family route writes the kind), authorized first, exactly as without a version.
+  const { model } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+    entryModelWithPolicy(context, apiKey, id, 'update'),
+  );
+  const routeApiKey = clientRoute?.apiKey ?? modelKey;
+  const lens = activeLens(context) ? writeLens(context, model, entryNotFound(id)) : null;
+  const scope = await readScopeOf(context, model, id);
+  // What a read shows of the entry's relations: a value sent back is compared without the hidden targets.
+  const visibleTargets =
+    lens && scope
+      ? await visibleRelationTargetIds(
+          deliveryEnvironment(context, context.db, { kind: 'heads', state: 'published' }, input.locale),
+          model,
+          (await entryHeadsRepository.findForEntry(id, context.db)).flatMap((head) =>
+            isRecord(head.data) ? [head.data] : [],
+          ),
+        )
+      : null;
+  const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
+  const definitionOf = definitionsOf(context);
+  const write = () =>
+    contentEntriesService.updateEntry(context, routeApiKey, id, {
+      ...(input.locale === undefined ? {} : { locale: input.locale }),
+      expectedVersion: input.expectedVersion,
       autosave: false,
+      // Made from the locked draft the write starts from (a new locale's base included), inside the write.
+      patchFrom: (base, { model: written, validator }) =>
+        deliveryPatch(
+          context,
+          written,
+          validator,
+          lens
+            ? translateBody(lens, input.data ?? {}, {
+                stored: base.before,
+                reads: readsOf(lens, base, base.previous?.locale ?? locale, scope),
+                definitionOf,
+                visibleTargets,
+                ...(scope
+                  ? { readable: scope.visible, componentFieldReadable: scope.componentFieldVisible }
+                  : { readable: () => false, componentFieldReadable: () => false }),
+              })
+            : (input.data ?? {}),
+          base.before,
+          scope,
+        ),
     });
-  if (!activeLens(context)) {
-    return toResult(context, await update(input.data));
-  }
-  // The entry's own kind (a family route writes the kind), under the same checks the write makes.
-  const { model } = await entryModelWithPolicy(context, modelKey, id, 'update');
-  const lens = writeLens(context, model, entryNotFound(id));
-  const data = translateBody(lens, input.data, await writeBaseOf(context, model, lens, id, input.locale));
-  return toResult(context, await inClientNames(context, lens, () => update(data)));
+  return toResult(context, lens ? await inClientNames(context, lens, write) : await write());
 };
 
 /**
@@ -263,14 +367,22 @@ export const assertEntryThroughLens = async (
   modelKey: string,
   id: string,
   action: Extract<ContentAction, 'delete' | 'publish'>,
+  clientRoute: ClientRoute | null = null,
 ): Promise<void> => {
   if (activeLens(context)) {
-    const { model } = await entryModelWithPolicy(context, modelKey, id, action);
+    const { model } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+      entryModelWithPolicy(context, apiKey, id, action),
+    );
     writeLens(context, model, entryNotFound(id));
   }
 };
 
-export const deleteDeliveryEntry = async (context: ContentServiceContext, modelKey: string, id: string) => {
-  await assertEntryThroughLens(context, modelKey, id, 'delete');
-  await contentEntriesService.deleteEntry(context, modelKey, id);
+export const deleteDeliveryEntry = async (
+  context: ContentServiceContext,
+  modelKey: string,
+  id: string,
+  clientRoute: ClientRoute | null = null,
+) => {
+  await assertEntryThroughLens(context, modelKey, id, 'delete', clientRoute);
+  await contentEntriesService.deleteEntry(context, clientRoute?.apiKey ?? modelKey, id);
 };

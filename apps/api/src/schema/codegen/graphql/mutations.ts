@@ -9,7 +9,6 @@ import {
   type GraphQLFieldConfigArgumentMap,
   type GraphQLFieldConfigMap,
 } from 'graphql';
-import { modelNotFound } from '../../../content/model.js';
 import { AppError } from '../../../helpers/appError.js';
 import * as deliveryWritesService from '../../../services/contentDeliveryWrites.js';
 import * as contentPublishingService from '../../../services/contentPublishing.js';
@@ -43,20 +42,6 @@ const fromAdminView = (view: AdminEntryView): EntryResult => ({
 const writeData = (build: SchemaBuild, model: ResolvedModelDefinition, args: Record<string, unknown>) =>
   args.data ? toWriteData(build, model, args.data as Record<string, unknown>) : {};
 
-/**
- * The service context and today's API ID a mutation of `model` writes through. Through a schema lens (plan
- * schema-lenses) the model is the client's version's: its route resolves as for reads (`LENS_UNCOVERED` for a
- * kind change), and the input, still in the client's names, is translated by the delivery write service.
- */
-const writeCall = async (build: SchemaBuild, context: GraphqlContext, model: ResolvedModelDefinition) => {
-  const call = await deliveryCall(build, context, model, '');
-  if (!call) {
-    // Never in a schema: a model deleted since the client's version has no mutations.
-    throw modelNotFound(model.apiKey);
-  }
-  return call;
-};
-
 const missingExpectedVersion = () =>
   new AppError(
     400,
@@ -79,13 +64,18 @@ export const mutationFields = (
       description: `Creates a ${model.label} entry (a draft unless \`publish\` is true)`,
       args: { ...data, locale: { type: GraphQLString }, publish: { type: GraphQLBoolean } },
       resolve: async (_root, args, context) => {
-        const { service, apiKey } = await writeCall(build, context, model);
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
         return (
-          await deliveryWritesService.createDeliveryEntry(service, apiKey, {
-            ...(args.locale ? { locale: args.locale as string } : {}),
-            data: writeData(build, model, args),
-            publish: Boolean(args.publish),
-          })
+          await deliveryWritesService.createDeliveryEntry(
+            service,
+            apiKey,
+            {
+              ...(args.locale ? { locale: args.locale as string } : {}),
+              data: writeData(build, model, args),
+              publish: Boolean(args.publish),
+            },
+            clientRoute,
+          )
         ).data;
       },
     },
@@ -97,13 +87,19 @@ export const mutationFields = (
         if (!Object.hasOwn(args, 'expectedVersion')) {
           throw missingExpectedVersion();
         }
-        const { service, apiKey } = await writeCall(build, context, model);
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
         return (
-          await deliveryWritesService.updateDeliveryEntry(service, apiKey, assertId(args.id), {
-            ...(args.locale ? { locale: args.locale as string } : {}),
-            expectedVersion: (args.expectedVersion as number | null) ?? null,
-            data: writeData(build, model, args),
-          })
+          await deliveryWritesService.updateDeliveryEntry(
+            service,
+            apiKey,
+            assertId(args.id),
+            {
+              ...(args.locale ? { locale: args.locale as string } : {}),
+              expectedVersion: (args.expectedVersion as number | null) ?? null,
+              data: writeData(build, model, args),
+            },
+            clientRoute,
+          )
         ).data;
       },
     },
@@ -112,8 +108,8 @@ export const mutationFields = (
       args: id,
       resolve: async (_root, args, context) => {
         const entryId = assertId(args.id);
-        const { service, apiKey } = await writeCall(build, context, model);
-        await deliveryWritesService.deleteDeliveryEntry(service, apiKey, entryId);
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
+        await deliveryWritesService.deleteDeliveryEntry(service, apiKey, entryId, clientRoute);
         return entryId;
       },
     },
@@ -132,9 +128,10 @@ export const mutationFields = (
         ...(operation === 'publish' ? { expectedVersion: { type: GraphQLInt } } : {}),
       },
       resolve: async (_root, args, context) => {
-        const { service, apiKey } = await writeCall(build, context, model);
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
         const entryId = assertId(args.id);
-        await deliveryWritesService.assertEntryThroughLens(service, apiKey, entryId, 'publish');
+        // Through a lens: authorized as without a version first, then the entry checked against the lens.
+        await deliveryWritesService.assertEntryThroughLens(service, apiKey, entryId, 'publish', clientRoute);
         const change =
           operation === 'publish'
             ? contentPublishingService.publishEntry

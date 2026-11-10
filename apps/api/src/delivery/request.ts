@@ -12,7 +12,7 @@ import { pickSiteKey, rawSiteQueryCandidates, withoutSiteParameter } from '../he
 import { SnapshotChangesQuerySchema, type SnapshotChangesQuery } from '../routes/snapshots/schemas.js';
 import { withSchemaLens, type ContentServiceContext } from '../services/contentAccess.js';
 import { getDelivery, listDelivery } from '../services/contentDelivery.js';
-import { lensDeliveryRequest } from '../services/contentDeliveryLens.js';
+import { clientRouteOf } from '../services/contentDeliveryLens.js';
 import { getDeliverySite } from '../services/siteSeo.js';
 import { currentSnapshot, listSnapshotChanges } from '../services/snapshotChanges.js';
 import { ShapioVersionSkewError, toShapioApiError } from './errors.js';
@@ -160,10 +160,14 @@ const snapshotChangesQuery = (rawQuery: string): SnapshotChangesQuery => {
  */
 const asJson = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
 
-/** A content route's call in today's names when it names an older schema version (plan schema-lenses). */
-const lensed = (context: ContentServiceContext, routeKey: string, query: string) => {
-  const request = lensDeliveryRequest(context, routeKey, query);
-  return { ...request, apiKey: apiKeyOfRoute(request.context.snapshot, request.routeKey) };
+/**
+ * A content route's call: through a schema lens the client's route, which the service authorizes as a request
+ * without a version before anything lens-specific runs (plan schema-lenses), as over HTTP.
+ */
+const routed = (context: ContentServiceContext, routeKey: string) => {
+  const clientRoute = clientRouteOf(context, routeKey);
+  const apiKey = clientRoute ? (clientRoute.apiKey ?? routeKey) : apiKeyOfRoute(context.snapshot, routeKey);
+  return { apiKey, options: { clientRoute } };
 };
 
 const dispatch = async (
@@ -173,12 +177,12 @@ const dispatch = async (
   const context = await withSchemaLens(base, schemaVersion);
   switch (route.kind) {
     case 'list': {
-      const call = lensed(context, route.routeKey, query);
-      return listDelivery(call.context, call.apiKey, call.rawQuery);
+      const call = routed(context, route.routeKey);
+      return listDelivery(context, call.apiKey, query, call.options);
     }
     case 'item': {
-      const call = lensed(context, route.routeKey, query);
-      return getDelivery(call.context, call.apiKey, route.id, call.rawQuery);
+      const call = routed(context, route.routeKey);
+      return getDelivery(context, call.apiKey, route.id, query, call.options);
     }
     case 'site':
       return getDeliverySite(context);

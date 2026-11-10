@@ -1,15 +1,39 @@
-import type { FieldConsumers, OlderClients, OlderClientVersion } from '@shapio/client';
+import type {
+  FieldConsumers,
+  LensEffect,
+  OlderClientField,
+  OlderClients,
+  OlderClientVersion,
+} from '@shapio/client';
 import { describe, expect, it } from 'vitest';
 import {
   changeOlderClientsEffect,
   olderClientsEffectsByChange,
   olderReaderRows,
   readerOutcome,
+  readerPastLoss,
   versionProtection,
   worstEffect,
 } from './olderClients';
 
 const SITE = { id: 's1', key: 'main' };
+
+/** A field whose effect is all the proposal's, unless `past` says what it already reads. */
+const field = (
+  fieldId: string,
+  effect: LensEffect,
+  past: { pastEffect: LensEffect; pastSince: number | null; proposedEffect?: LensEffect } = {
+    pastEffect: 'transparent',
+    pastSince: null,
+  },
+): OlderClientField => ({
+  fieldId,
+  apiKey: fieldId,
+  effect,
+  proposedEffect: past.proposedEffect ?? effect,
+  pastEffect: past.pastEffect,
+  pastSince: past.pastSince,
+});
 const MODEL = 'm1';
 
 const version = (
@@ -37,16 +61,14 @@ const version = (
       effect: worstEffect(fields.map((field) => field.effect)),
       oldestVersion: null,
       fields,
+      historyTruncated: false,
     },
   ],
   ...patch,
 });
 
-const v40 = version(40, [
-  { fieldId: 'count', apiKey: 'count', effect: 'lossy' },
-  { fieldId: 'body', apiKey: 'body', effect: 'nulled' },
-]);
-const v42 = version(42, [{ fieldId: 'count', apiKey: 'count', effect: 'converted' }]);
+const v40 = version(40, [field('count', 'lossy'), field('body', 'nulled')]);
+const v42 = version(42, [field('count', 'converted')]);
 const older: OlderClients = { versions: [v42, v40], truncated: false };
 
 describe('older clients', () => {
@@ -138,5 +160,28 @@ describe('older clients', () => {
       [41, null, 2, false, 'nulled'],
       [41, null, 1, true, 'nulled'],
     ]);
+  });
+
+  it('keeps a breaking line about the proposed change: past loss is not blamed on it', () => {
+    // A list an earlier change cut to its first item (since 37); the proposal only renames it.
+    const cut = version(36, [
+      field('links', 'lossy', { pastEffect: 'lossy', pastSince: 37, proposedEffect: 'transparent' }),
+    ]);
+    const older36: OlderClients = { versions: [cut], truncated: false };
+    expect(changeOlderClientsEffect({ fieldId: 'links' }, 'transparent', MODEL, older36)).toBe('unchanged');
+    // The proposal makes it worse: that is its doing.
+    const worse = version(36, [
+      field('links', 'nulled', { pastEffect: 'lossy', pastSince: 37, proposedEffect: 'nulled' }),
+    ]);
+    expect(
+      changeOlderClientsEffect({ fieldId: 'links' }, 'nulled', MODEL, {
+        versions: [worse],
+        truncated: false,
+      }),
+    ).toBe('nulled');
+    // The Consumers tab dates the past loss instead.
+    expect(readerPastLoss(cut, new Set(['links']))).toEqual({ effect: 'lossy', since: 37 });
+    expect(readerPastLoss(cut, new Set(['title']))).toBeNull();
+    expect(olderReaderRows(older36, [])[0]?.pastLoss).toEqual({ effect: 'lossy', since: 37 });
   });
 });

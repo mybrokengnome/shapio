@@ -153,16 +153,27 @@ Each change between the client's version and today has one of these effects. Whe
 same field, the client sees the combined result: a field renamed twice still reads under the name the client
 knows.
 
-| Effect                     | Changes since the client's version                                                                                                                                                                                                                              | What the client gets                                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Keeps working**          | a field's API ID renamed; a content type's API ID or plural API ID renamed (its route); a component's API ID renamed; field order; labels, descriptions, and help text; the editor; fields, content types, or components added; a field made required or unique | no difference: its own routes and API IDs, and no fields it does not know                                    |
-| **Converted**              | a type change whose values all read back in the old type (a number field made an integer, long text made short text); a multiple field made single                                                                                                              | the value in the old type (the integer `4` as the number `4`); a single value as a one-item list             |
-| **Some values read empty** | a type change where not every value fits the old type (an integer field made text: `"about 5"` is no integer); enum values or dynamic zone components added since; a single field made multiple; a relation's target widened                                    | the values that fit; `null` (`[]` for lists) for the others; a field that became a list reads its first item |
-| **Reads empty**            | a field removed; values a type change dropped (text made a number: Shapio does not convert text to numbers); a field made private (`public` off); a component field switched to another component                                                               | `null` (`[]` for lists), always                                                                              |
-| **Gone**                   | the content type deleted                                                                                                                                                                                                                                        | `404`, like any unknown content type                                                                         |
-| **Not covered**            | a collection made a single type, or the reverse                                                                                                                                                                                                                 | `409 LENS_UNCOVERED`                                                                                         |
-|                            | `filterable` or `sortable` turned off                                                                                                                                                                                                                           | old filters or sorts on that field are refused, as for any client                                            |
-|                            | localization turned on or off (on a content type or a field), drafts turned on or off, locales added or removed                                                                                                                                                 | not hidden: the client sees today's locales and today's values                                               |
+| Effect                     | Changes since the client's version                                                                                                                                                                                                                              | What the client gets                                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Keeps working**          | a field's API ID renamed; a content type's API ID or plural API ID renamed (its route); a component's API ID renamed; field order; labels, descriptions, and help text; the editor; fields, content types, or components added; a field made required or unique | no difference: its own routes and API IDs, and no fields it does not know                                                                       |
+| **Converted**              | a type change whose values all read back in the old type (a number field made an integer, long text made short text); a multiple field made single                                                                                                              | the value in the old type (the integer `4` as the number `4`); a single value as a one-item list                                                |
+| **Some values read empty** | a type change where not every value fits the old type (an integer field made text: `"about 5"` is no integer); enum values or dynamic zone components added since; a single field made multiple; a relation's target widened                                    | the values that fit, item by item in a list; `null` (`[]` for lists) when none does; a field that became a list reads its first value that fits |
+| **Reads empty**            | a field removed; values a type change dropped (text made a number: Shapio does not convert text to numbers); a field made private (`public` off) or deprecated; a component field switched to another component                                                 | `null` (`[]` for lists), always                                                                                                                 |
+| **Gone**                   | the content type deleted                                                                                                                                                                                                                                        | `404`, like any unknown content type                                                                                                            |
+| **Not covered**            | a collection made a single type, or the reverse                                                                                                                                                                                                                 | `409 LENS_UNCOVERED`                                                                                                                            |
+|                            | `filterable` or `sortable` turned off                                                                                                                                                                                                                           | old filters or sorts on that field are refused, as for any client                                                                               |
+|                            | localization turned on or off (on a content type or a field), drafts turned on or off, locales added or removed                                                                                                                                                 | not hidden: the client sees today's locales and today's values                                                                                  |
+
+A value is shown in the old type whenever some conversion reaches it, directly or through text, so a client
+several versions back never reads less than it would after each change in turn: a number field made text
+and then a multi-value enum still reads `4` for an entry holding `["4"]`. A number read as a decimal or a big
+integer keeps its exact digits (`"0.0000001"`, never `1e-7`). An empty multi-value enum reads `null`, as it does
+for a client that names no version.
+
+A component or dynamic zone takes the effect of what is inside it, with one difference: a field inside it that
+reads empty leaves the component and its items in place, so the component is **Some values read empty**, not
+**Reads empty**. It reads empty only when none of its items can be read (its component deleted, or no component
+both versions allow).
 
 Two more things drop out of an old client's view rather than appear in a shape it never saw:
 
@@ -178,16 +189,29 @@ Two more things drop out of an old client's view rather than appear in a shape i
 - A filter or sort on a field whose stored form changed since the version (a text field that is now an
   integer), or that no longer exists, is refused with `400 LENS_QUERY_UNSUPPORTED` naming the field. It is never
   answered on today's values in a way the old client did not mean.
-- `fields=` may name a field that was removed since: it is accepted and reads `null`.
+- `fields=` may name a field that was removed since, or that the caller reads as `null` (see below): it is
+  accepted and reads `null`.
 - A filter or sort the field no longer allows (`filterable` or `sortable` turned off) is refused, as for every
   client.
 
 ## Visibility and permissions are today's
 
-A schema version changes the shape of a response, never who may read what. A field that is private now, or
-that the token's role may not read now, is `null` through every version, even one in which it was public. Row
-conditions (owner-only reads) are today's too. A field marked `deprecated` is still returned: `deprecated` hides
-a field from new clients, and a client naming an old version is an old client.
+A schema version changes the shape of a response, never who may read what: through every version a caller
+sees exactly what it sees without one, deprecation included. A field it cannot read today (made private,
+deprecated, outside its role's grant now, or removed) never carries a value:
+
+- for a caller whose grant on the content type names no fields (it reads every public field), a field that was
+  public in the client's version reads `null` (`[]` for lists), at the top level and inside components, and
+  `fields=` may name it;
+- for a caller whose grant names fields, it is left out, and `fields=` naming it is `403`, as without a version.
+
+Filters and sorts on such a field are refused exactly as without a version. Row conditions (owner-only reads)
+are today's too. Over GraphQL such a field follows the same rule ([GraphQL](#graphql)).
+
+A request the caller is not authorized for gets exactly the answer it gets without a version, whatever version
+it names: the same `401`, `403`, or `404`, never a lens-specific error, and never an error about the version
+itself (malformed, from another instance, or newer than this instance). Those answer only a caller that may
+read (or write) what it asked for.
 
 ## With snapshots
 
@@ -221,7 +245,15 @@ version returns for that field: a client that sends back the entry it just read,
 refused for the fields it did not touch, and those keep their stored values (not the value sent back).
 
 Only the delivery routes (`/api/content`) and [GraphQL](#graphql) take a schema version on writes. The admin content API
-(`/api/admin/content`) ignores the header and the parameter: it always reads and writes today's shape.
+(`/api/admin/content`) ignores the header and refuses the parameter (`400 INVALID_QUERY`, as any unknown query
+parameter): it always reads and writes today's shape.
+
+A write through a version starts from what the write itself starts from today, a locale's first draft included
+(its shared values come from the entry's other locales), whether or not the caller may read the entry. Fields a
+caller cannot read are never cleared by a write, with or without a version: sent back empty they keep their
+stored value, and inside a component instance (written whole) they are carried over from the stored instance.
+A value the client sends back is compared with what a read of the same version returns for the entry's draft or
+its published version, media and populated relations by ID.
 
 Shapio does not convert written values back to today's type: a write through a lossy conversion would replace
 data the old client could not see. To write such a field, move the client to the current version.
@@ -234,12 +266,19 @@ since its version) to the wrong item.
 
 A GraphQL request that sends `Shapio-Schema-Version` is answered by that version's schema: its type names,
 fields, and arguments, with the same effects as REST. Introspection with the header gives that version's
-schema, so a client generated from it keeps validating. A content type deleted since reads as empty (no
-nodes, `null` for a single read) rather than failing validation. The response carries
+schema, so a client generated from it keeps validating. That schema names only what the caller may read
+today: a field private now, or outside the token's grant now, is not in it, so a query naming one fails
+validation exactly as it would against today's schema. A field removed since stays in it and reads `null` when
+it was public in that version and the token's grant today covers every public field of the content type; a
+token granted named fields only does not see removed ones. A content type deleted since is not in it for
+delivery tokens, app users, and anonymous callers (a query naming one fails validation, as REST answers
+`404`); admin callers see it, reading as empty. The response carries
 `extensions.schemaVersion: { requested, current }`. Mutations that name a schema version are that version's
 (its names and input types) and follow the [Writes](#writes) rules above: a field that cannot be written comes
 back as a GraphQL error with `extensions.code: LENS_WRITE_UNSUPPORTED` and every refused field in
-`extensions.issues`. A content type deleted since has no mutations ([GraphQL](graphql.md#older-schema-versions)).
+`extensions.issues`. A content type deleted since has no mutations. A version not used recently costs the
+caller a schema build; past a small budget per minute the request is answered `429 LENS_BUDGET_EXCEEDED`
+([GraphQL](graphql.md#older-schema-versions)).
 
 ## Generated types for an older version
 

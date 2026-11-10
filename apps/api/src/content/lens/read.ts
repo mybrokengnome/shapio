@@ -46,11 +46,18 @@ const readComponent = (
 };
 
 /** Items of components the client allows and still knows, each through its component's lens. */
-const readZone = (client: FieldDefinition<'dynamiczone'>, nested: NestedLens | undefined, value: unknown) => {
+const readZone = (
+  client: FieldDefinition<'dynamiczone'>,
+  stored: FieldDefinition,
+  nested: NestedLens | undefined,
+  value: unknown,
+) => {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const allowed = new Set(client.settings.components);
+  // Allowed by both versions: an item of a component today's zone no longer allows is never shown.
+  const today = new Set(stored.type === 'dynamiczone' ? stored.settings.components : []);
+  const allowed = new Set(client.settings.components.filter((id) => today.has(id)));
   return value.flatMap((item) => {
     const componentId = isRecord(item) ? item[COMPONENT_KEY] : undefined;
     if (typeof componentId !== 'string' || !allowed.has(componentId)) {
@@ -68,7 +75,7 @@ const readSame = (field: FieldLens & { kind: 'same' }, value: unknown): unknown 
     return readComponent(client, stored, nested, value);
   }
   if (client.type === 'dynamiczone') {
-    return readZone(client, nested, value);
+    return readZone(client, stored, nested, value);
   }
   return value;
 };
@@ -85,7 +92,7 @@ const readField = (field: FieldLens, value: unknown): unknown => {
         return readComponent(client, stored, nested, value);
       }
       if (client.type === 'dynamiczone') {
-        return readZone(client, nested, value);
+        return readZone(client, stored, nested, value);
       }
       return fitValue(client, stored, value);
     }
@@ -96,8 +103,37 @@ const readField = (field: FieldLens, value: unknown): unknown => {
  * `data` (today's storage, keyed by field IDs) as the client's definition reads it. An identity lens returns
  * `data` itself. A gone definition reads as nothing; callers refuse it before reading (404).
  */
+/**
+ * Whether a lens holds a dynamic zone that allows fewer components today than in the client's version (at any
+ * depth): an identity lens otherwise passes stored data through, which could then hold items of a component
+ * today's zone no longer allows.
+ */
+const narrowsAZone = (lens: DefinitionLens, seen = new Set<string>()): boolean => {
+  if (seen.has(lens.definitionId)) {
+    return false;
+  }
+  seen.add(lens.definitionId);
+  return lens.fields.some((field) => {
+    if (field.kind === 'null') {
+      return false;
+    }
+    const narrowed =
+      field.client.type === 'dynamiczone' &&
+      field.stored.type === 'dynamiczone' &&
+      field.client.settings.components.some(
+        (id) => !(field.stored as FieldDefinition<'dynamiczone'>).settings.components.includes(id),
+      );
+    return (
+      narrowed ||
+      [...(field.nested?.components.values() ?? [])].some(
+        (nested) => nested !== null && narrowsAZone(nested, seen),
+      )
+    );
+  });
+};
+
 export const readThroughLens = (lens: DefinitionLens, data: Readonly<ContentData>): Readonly<ContentData> => {
-  if (lens.status === 'identity') {
+  if (lens.status === 'identity' && !narrowsAZone(lens)) {
     return data;
   }
   const output: ContentData = {};

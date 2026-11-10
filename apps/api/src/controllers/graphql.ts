@@ -6,12 +6,14 @@ import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
 import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import {
   formatGraphqlRequestError,
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
 import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
+import { lensBudgetKeyOf, takeLensBuildBudget } from '../schema/lens/budget.js';
 import {
   executeOperation,
   prepareOperation,
@@ -69,15 +71,30 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
   return parsed as Record<string, unknown>;
 };
 
+/**
+ * The caller's lens build budget (plan schema-lenses): a lens GraphQL schema not cached yet is built only while
+ * the caller's bucket of cache-miss builds lasts (429 beyond it); undefined for work that is never limited.
+ */
+const lensBuildAdmission = (request: FastifyRequest): (() => boolean) | undefined => {
+  const key = lensBudgetKeyOf(request.principal, getRequestSite(request).id);
+  return key === null ? undefined : () => takeLensBuildBudget(key);
+};
+
 const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: GraphqlOperationInput) => {
   const runtime = request.server.graphqlRuntime;
   const mayIntrospect = runtime.mayIntrospect(request.principal);
   const view = await getRequestSchema(request);
   // The schema as this caller may see it: a delivery caller's never names a field or model it cannot read.
   const visibility = await resolveSchemaVisibility(view, getRequestPermissions(request), request.principal);
-  // A request naming a schema version reads in that version's shape (plan schema-lenses).
-  const lensed = await graphqlLensOf(request, view);
-  const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed);
+  // A request naming a schema version reads in that version's shape (plan schema-lenses). A caller allowed no
+  // content gets exactly the answer it gets without a version, whatever version it names (one that cannot be
+  // read included): no lens is loaded or built for it, and no version error answers it.
+  const authorized = !hasNoContentAccess(visibility);
+  if (authorized && request.schemaVersionError) {
+    throw request.schemaVersionError;
+  }
+  const lensed = await graphqlLensOf(request, view, authorized);
+  const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed, lensBuildAdmission(request));
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
     if (prepared.document && hasNoContentAccess(visibility)) {

@@ -3,11 +3,13 @@ import { WORKSPACE_QUERY_PARAMETER } from '../constants/sites.js';
 import { SHAPIO_VERSION } from '../constants/version.js';
 import type { Database } from '../db/index.js';
 import type { UrlBuilder } from '../helpers/publicUrl.js';
+import type { Principal } from '../permissions/types.js';
 import { renderDocsPage } from '../schema/codegen/docsPage.js';
 import { generateOpenApi } from '../schema/codegen/openapi.js';
 import { generateTypeScript } from '../schema/codegen/typescript.js';
+import { lensBudgetKeyOf } from '../schema/lens/budget.js';
 import { createLru } from '../schema/lens/lru.js';
-import { loadRequestLens, parseSchemaVersionToken } from '../schema/lens/views.js';
+import { lensViewGeneration, loadRequestLens, parseSchemaVersionToken } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { schemaIdOf } from './contentAccess.js';
 
@@ -24,7 +26,8 @@ export const API_DOCS_CACHE_SIZE = 16;
 const cache = createLru<string, Cached>(API_DOCS_CACHE_SIZE);
 
 const forSnapshot = (snapshot: SchemaSnapshot, urls: UrlBuilder): Cached => {
-  const key = `${snapshot.siteId ?? ''}|${snapshot.version}`;
+  // A lens view's generation: contracts rendered from it go when its caches do (the history backfill).
+  const key = `${snapshot.siteId ?? ''}|${snapshot.version}|${lensViewGeneration(snapshot)}`;
   let cached = cache.get(key);
   if (!cached) {
     cached = {
@@ -46,12 +49,19 @@ export const contractViewFor = async (
   db: Database,
   current: SchemaSnapshot,
   token: string | null,
+  /** The caller: pays for building an older version's view (schema/lens/budget.ts). */
+  principal: Principal,
 ): Promise<{ view: SchemaSnapshot; schemaId: string }> => {
   const schemaId = await schemaIdOf(db);
   if (token === null) {
     return { view: current, schemaId };
   }
-  const lens = await loadRequestLens(db, current, parseSchemaVersionToken(token, schemaId));
+  const lens = await loadRequestLens(
+    db,
+    current,
+    parseSchemaVersionToken(token, schemaId),
+    lensBudgetKeyOf(principal, current.siteId),
+  );
   if (!lens) {
     return { view: current, schemaId };
   }

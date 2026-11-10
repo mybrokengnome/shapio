@@ -14,15 +14,22 @@ import type { StatusTone } from '@/components/StatusChip';
  * and, for each version readers actually send, the composite effect per field (`olderClients`).
  */
 
+/**
+ * What a breaking change line says: an effect of the proposed change, or `unchanged` when it changes nothing
+ * for older clients that already read something empty because of an earlier change.
+ */
+export type OlderClientsLine = LensEffect | 'unchanged';
+
 /** The sentence under a breaking change line. */
 export const OLDER_CLIENTS_LINE_KEYS = {
+  unchanged: 'olderClients.lines.unchanged',
   transparent: 'olderClients.lines.transparent',
   converted: 'olderClients.lines.converted',
   lossy: 'olderClients.lines.lossy',
   nulled: 'olderClients.lines.nulled',
   gone: 'olderClients.lines.gone',
   uncovered: 'olderClients.lines.uncovered',
-} as const satisfies Record<LensEffect, string>;
+} as const satisfies Record<OlderClientsLine, string>;
 
 /** What a reader sees, or `unavailable` when there is no record of its version for the content type. */
 export type ReaderOutcome = LensEffect | 'unavailable';
@@ -44,24 +51,25 @@ export const worstEffect = (effects: readonly LensEffect[]): LensEffect =>
   effects.reduce<LensEffect>((worst, effect) => (rank(effect) > rank(worst) ? effect : worst), 'transparent');
 
 /** Keeps working (as is, or with values converted): the reader is protected by naming its version. */
-export const isProtectedEffect = (effect: LensEffect | null): boolean =>
-  effect === 'transparent' || effect === 'converted';
+export const isProtectedEffect = (effect: OlderClientsLine | null): boolean =>
+  effect === 'transparent' || effect === 'converted' || effect === 'unchanged';
 
 /** A change worth an older-clients line: one that breaks the API contract or drops data. */
 export const showsOlderClients = (change: Pick<ClassifiedChange, 'breaking' | 'destructive'>): boolean =>
   change.breaking || change.destructive;
 
 /**
- * What clients on an older version see for one change: for a field change, the worst composite effect on
- * that field over the versions readers send (a field a version reads unchanged keeps working); otherwise, or
- * when no reader sends a version, the change's own effect.
+ * What clients on an older version see because of one change: for a field change, the worst of the
+ * proposal's own part on that field over the versions readers send (never loss an earlier change caused:
+ * that is `unchanged`, and the Consumers tab dates it); otherwise, or when no reader sends a version, the
+ * change's own effect.
  */
 export const changeOlderClientsEffect = (
   change: Pick<ClassifiedChange, 'fieldId'>,
   ownEffect: LensEffect | undefined,
   definitionId: string,
   olderClients: OlderClients | null | undefined,
-): LensEffect | null => {
+): OlderClientsLine | null => {
   const versions = olderClients?.versions ?? [];
   if (!change.fieldId || versions.length === 0) {
     return ownEffect ?? null;
@@ -74,12 +82,41 @@ export const changeOlderClientsEffect = (
   if (definitions.length === 0) {
     return ownEffect ?? null;
   }
-  return worstEffect(
-    definitions.flatMap((definition) =>
-      definition.fields.filter((field) => field.fieldId === change.fieldId).map((field) => field.effect),
-    ),
+  const fields = definitions.flatMap((definition) =>
+    definition.fields.filter((field) => field.fieldId === change.fieldId),
   );
+  const proposed = worstEffect(fields.map((field) => field.proposedEffect));
+  return proposed === 'transparent' && fields.some((field) => field.pastEffect !== 'transparent')
+    ? 'unchanged'
+    : proposed;
 };
+
+/** Loss a reader already has from earlier changes: the worst, and the earliest version it is dated to. */
+export type PastLoss = { effect: 'lossy' | 'nulled'; since: number | null };
+
+/** What a reader on `version` already reads empty today, for the fields it reads (all when unknown). */
+export const readerPastLoss = (
+  version: OlderClientVersion,
+  fieldIds: ReadonlySet<string> | null,
+): PastLoss | null => {
+  const fields = version.definitions.flatMap((definition) =>
+    definition.fields.filter((field) => fieldIds === null || fieldIds.has(field.fieldId)),
+  );
+  const worst = worstEffect(fields.map((field) => field.pastEffect));
+  if (worst !== 'lossy' && worst !== 'nulled') {
+    return null;
+  }
+  const dates = fields
+    .filter((field) => field.pastEffect === worst && field.pastSince !== null)
+    .map((field) => field.pastSince as number);
+  return { effect: worst, since: dates.length > 0 ? Math.min(...dates) : null };
+};
+
+/** The note under a reader's outcome: dated when Shapio knows since which version. */
+export const PAST_LOSS_KEYS = {
+  lossy: { dated: 'olderClients.past.lossy', undated: 'olderClients.past.lossyUndated' },
+  nulled: { dated: 'olderClients.past.nulled', undated: 'olderClients.past.nulledUndated' },
+} as const satisfies Record<PastLoss['effect'], { dated: string; undated: string }>;
 
 /**
  * What a reader on `version` sees: the worst effect on the fields it reads (`fieldIds`, from usage), or on
@@ -130,7 +167,7 @@ export const olderClientsEffectsByChange = (
   ownEffects: readonly LensEffect[] | undefined,
   definitionId: string,
   olderClients: OlderClients | null | undefined,
-): ReadonlyMap<ClassifiedChange, LensEffect | null> =>
+): ReadonlyMap<ClassifiedChange, OlderClientsLine | null> =>
   new Map(
     changes.map((change, index) => [
       change,
@@ -150,6 +187,8 @@ export type OlderReaderRow = {
   /** Readers on other workspaces, counted, when the row stands for them. */
   otherSites: boolean;
   outcome: ReaderOutcome;
+  /** What it already reads empty because of earlier changes, if anything. */
+  pastLoss: PastLoss | null;
 };
 
 /** The breaking fields each reader read, from the review's consumers: `<workspace ID>:<principal key>`. */
@@ -184,6 +223,7 @@ export const olderReaderRows = (
       count: 1,
       otherSites: false,
       outcome: readerOutcome(version, reads.get(`${reader.site.id}:${reader.principalKey}`) ?? null),
+      pastLoss: readerPastLoss(version, reads.get(`${reader.site.id}:${reader.principalKey}`) ?? null),
     }));
     const counted: OlderReaderRow[] =
       version.readers === null && version.readerCount > 0
@@ -195,6 +235,7 @@ export const olderReaderRows = (
               count: version.readerCount,
               otherSites: false,
               outcome: readerOutcome(version, null),
+              pastLoss: readerPastLoss(version, null),
             },
           ]
         : [];
@@ -208,9 +249,16 @@ export const olderReaderRows = (
               count: version.otherSites.consumers,
               otherSites: true,
               outcome: readerOutcome(version, null),
+              pastLoss: readerPastLoss(version, null),
             },
           ]
         : [];
     return [...named, ...counted, ...others];
   });
 };
+
+/** Some content type changed too often since a reader's version for every step to be checked. */
+export const historyTruncatedIn = (olderClients: OlderClients | null | undefined): boolean =>
+  (olderClients?.versions ?? []).some((version) =>
+    version.definitions.some((definition) => definition.historyTruncated),
+  );

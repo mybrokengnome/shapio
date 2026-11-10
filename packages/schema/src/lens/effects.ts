@@ -2,6 +2,7 @@ import type { ClassifiedChange } from '../diff/classify.js';
 import type { ChangeKind } from '../diff/types.js';
 import type { DataType } from '../types/dataTypes.js';
 import type { FieldDefinition } from '../types/definitions.js';
+import { RICHTEXT_FORMAT_VERSION } from '../types/valueFormats.js';
 import { LENS_EFFECTS, type DefinitionLens, type FieldLens, type LensEffect } from './types.js';
 
 const rank = (effect: LensEffect) => LENS_EFFECTS.indexOf(effect);
@@ -13,7 +14,8 @@ const NUMBER_TYPES: ReadonlySet<DataType> = new Set(['number', 'integer']);
 
 /**
  * Whether every value of type `from` survives conversion to `to` (a client reading `from` storage as `to`):
- * a widening. Anything else may leave some values null.
+ * a widening. Anything else may leave some values null. Text read as rich text is a document of the current
+ * format version: lossless only for a client on that version (`richTextFits`).
  */
 const typeConvertsLosslessly = (from: DataType, to: DataType): boolean =>
   (from === 'integer' && to === 'number') ||
@@ -23,14 +25,32 @@ const typeConvertsLosslessly = (from: DataType, to: DataType): boolean =>
   (TEXT_TYPES.has(from) && TEXT_TYPES.has(to)) ||
   (TEXT_TYPES.has(from) && to === 'richtext');
 
-/** A single value read by a list client keeps it (one-item list); a list read by a single client may not. */
+const enumValuesFit = (stored: FieldDefinition, client: FieldDefinition): boolean => {
+  if (stored.type !== 'enum' || client.type !== 'enum') {
+    return false;
+  }
+  const allowed = new Set(client.settings.values.map((entry) => entry.value));
+  return stored.settings.values.every((entry) => allowed.has(entry.value));
+};
+
+const richTextFits = (client: FieldDefinition): boolean =>
+  client.type !== 'richtext' || client.settings.formatVersion === RICHTEXT_FORMAT_VERSION;
+
+/**
+ * A single value read by a list client keeps it (one-item list); a list read by a single client may not. An
+ * enum keeps it only when every value it allows is one the client allows too.
+ */
 const becomesList = (stored: FieldDefinition, client: FieldDefinition): boolean => {
   if (stored.type !== client.type) {
     return false;
   }
   switch (client.type) {
     case 'enum':
-      return client.settings.multiple && !(stored as FieldDefinition<'enum'>).settings.multiple;
+      return (
+        client.settings.multiple &&
+        !(stored as FieldDefinition<'enum'>).settings.multiple &&
+        enumValuesFit(stored, client)
+      );
     case 'media':
       return client.settings.multiple && !(stored as FieldDefinition<'media'>).settings.multiple;
     case 'relation':
@@ -46,24 +66,57 @@ const becomesList = (stored: FieldDefinition, client: FieldDefinition): boolean 
   }
 };
 
-const enumValuesFit = (stored: FieldDefinition, client: FieldDefinition): boolean => {
-  if (stored.type !== 'enum' || client.type !== 'enum') {
-    return false;
+/** The components whose instances a container field (component, zone) shows: allowed then and now. */
+const shownComponents = (lens: FieldLens & { kind: 'same' | 'convert' }): Array<DefinitionLens | null> => {
+  const { client, stored } = lens;
+  if (client.type === 'dynamiczone') {
+    const today = new Set(stored.type === 'dynamiczone' ? stored.settings.components : []);
+    return client.settings.components
+      .filter((id) => today.has(id))
+      .map((id) => lens.nested?.components.get(id) ?? null);
   }
-  const allowed = new Set(client.settings.values.map((entry) => entry.value));
-  return stored.settings.values.every((entry) => allowed.has(entry.value));
+  return [...(lens.nested?.components.values() ?? [])];
 };
 
-const nestedEffect = (lens: FieldLens): LensEffect =>
-  lens.kind === 'null'
-    ? 'transparent'
-    : worst(
-        [...(lens.nested?.components.values() ?? [])].map((nested) =>
-          nested === null ? 'nulled' : definitionEffect(nested),
-        ),
-      );
+/**
+ * A container field (component, repeatable component, zone) takes the worst effect inside it, but a field
+ * read empty inside it (`nulled`) leaves the container with its instances: `lossy`. Only a container no
+ * instance of which can be read (every component it shows gone, or none it may show) reads empty: `nulled`.
+ * Instances of a component that cannot be read, beside ones that can, drop out: `lossy`.
+ */
+const nestedEffect = (lens: FieldLens): LensEffect => {
+  if (lens.kind === 'null' || (lens.client.type !== 'component' && lens.client.type !== 'dynamiczone')) {
+    return 'transparent';
+  }
+  const shown = shownComponents(lens);
+  const readable = shown.filter(
+    (nested): nested is DefinitionLens => nested !== null && nested.status !== 'gone',
+  );
+  if (readable.length === 0) {
+    return 'nulled';
+  }
+  const inside = readable.map((nested) => {
+    const effect = definitionEffect(nested);
+    return effect === 'nulled' ? 'lossy' : effect;
+  });
+  const dropped = readable.length < shown.length ? ['lossy' as const] : [];
+  return worst([...inside, ...dropped]);
+};
+
+/**
+ * Visibility is today's (ADR 0015): a field deprecated since the client's version reads empty for every reader,
+ * and one the client's version delivered publicly that is private now reads empty for every delivery reader
+ * whose role does not name it.
+ */
+const hiddenSince = (lens: FieldLens): boolean =>
+  lens.kind !== 'null' &&
+  !lens.client.deprecated &&
+  (lens.stored.deprecated || (lens.client.public && !lens.stored.public));
 
 const fieldEffect = (lens: FieldLens): LensEffect => {
+  if (hiddenSince(lens)) {
+    return 'nulled';
+  }
   switch (lens.kind) {
     case 'null':
       return 'nulled';
@@ -77,7 +130,7 @@ const fieldEffect = (lens: FieldLens): LensEffect => {
             (client.type === 'enum' &&
               enumValuesFit(stored, client) &&
               (stored as FieldDefinition<'enum'>).settings.multiple === client.settings.multiple)
-          : typeConvertsLosslessly(stored.type, client.type);
+          : typeConvertsLosslessly(stored.type, client.type) && richTextFits(client);
       return worst([lossless ? 'converted' : 'lossy', nestedEffect(lens)]);
     }
   }
@@ -177,7 +230,8 @@ const EFFECT_OF_KIND: Readonly<Record<ChangeKind, LensEffect | ((change: Classif
     'field.localized': 'uncovered',
     // Visibility is today's: a field made private reads null through every lens.
     'field.public': (change) => (change.to === false ? 'nulled' : 'transparent'),
-    'field.deprecated': 'transparent',
+    // Deprecated hides a field from every reader through every lens, as `public` off does.
+    'field.deprecated': (change) => (change.to === true ? 'nulled' : 'transparent'),
     'field.unique': 'transparent',
     // Queries run on today's storage: a filter or sort the field no longer allows is refused, not hidden.
     'field.filterable': (change) => (change.to === false ? 'uncovered' : 'transparent'),

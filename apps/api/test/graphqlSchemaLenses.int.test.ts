@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GRAPHQL_LENS_SCHEMA_CACHE_SIZE } from '../src/constants/graphql.js';
 import * as adminRolesRepository from '../src/repositories/adminRoles.js';
 import * as permissionsVersionRepository from '../src/repositories/permissionsVersion.js';
+import { resetLensBuildBudgets, takeLensBuildBudget } from '../src/schema/lens/budget.js';
+import { setPublicGrants } from './helpers/appUsers.js';
 import {
   createDefinition,
   createRole,
@@ -32,10 +34,9 @@ const OLD_LIST = `query Old($title: String) {
       count
       price
       summary
-      secret
       restricted
-      hero { heading note }
-      blocks { __typename ... on Hero { heading note } ... on Badge { label } }
+      hero { heading }
+      blocks { __typename ... on Hero { heading } ... on Badge { label } }
       writer { id name }
     }
   }
@@ -43,8 +44,14 @@ const OLD_LIST = `query Old($title: String) {
 }`;
 
 const OLD_ONE = `query One($id: ID!) {
-  article(id: $id) { id title count price summary secret restricted hero { heading note } writer { name } }
+  article(id: $id) { id title count price summary restricted hero { heading } writer { name } }
 }`;
+
+/**
+ * What the old client's version also let it read, hidden since: the secret and the hero note were made
+ * private. A delivery caller's lens schema no longer names them, so this fails validation as it would today.
+ */
+const OLD_HIDDEN = `query Hidden($id: ID!) { article(id: $id) { secret hero { note } blocks { ... on Hero { note } } } }`;
 
 const NARROW_ONE = 'query ($id: ID!) { article(id: $id) { title restricted } }';
 
@@ -71,7 +78,7 @@ describe('schema lenses: GraphQL', () => {
   let first: EntryBody;
   /** The schema version the old client was built against. */
   let v: string;
-  let before: { list: Data; one: Data; narrow: Data };
+  let before: { list: Data; one: Data; narrow: Data; hidden: Data };
 
   const headersOf = (credential: string, version?: string) => ({
     authorization: `Bearer ${credential}`,
@@ -128,9 +135,10 @@ describe('schema lenses: GraphQL', () => {
     definition.fields.find((candidate) => candidate.apiKey === apiKey) as FieldBody;
   const retype = ({ editor: _editor, ...rest }: FieldBody, type: string) => ({ ...rest, type, settings: {} });
   const nodesOf = (data: Data, key: string) => (data[key] as Connection).nodes;
-  const fieldNames = async (typeName: string, version?: string) => {
+  const fieldNames = async (typeName: string, version?: string, credential = token) => {
     const data = dataOf(
       await gql('query ($name: String!) { __type(name: $name) { fields { name } } }', {
+        credential,
         ...(version ? { version } : {}),
         variables: { name: typeName },
       }),
@@ -285,6 +293,7 @@ describe('schema lenses: GraphQL', () => {
       list: dataOf(await old(OLD_LIST)),
       one: dataOf(await old(OLD_ONE, { variables: { id: first.id } })),
       narrow: dataOf(await old(NARROW_ONE, { credential: narrowToken, variables: { id: first.id } })),
+      hidden: dataOf(await old(OLD_HIDDEN, { variables: { id: first.id } })),
     };
 
     // Everything an old client must survive.
@@ -372,25 +381,18 @@ describe('schema lenses: GraphQL', () => {
   });
 
   it('runs an old document unchanged: old names, converted values, nulls for what is gone or hidden', async () => {
-    // What the old client saw at its version (so the nulls below are real changes).
-    expect(JSON.stringify(before.list)).toMatch(/shh[\s\S]*private soon[\s\S]*block note/);
     const result = await old(OLD_LIST);
     const data = dataOf(result);
-    const expected = nodesOf(before.list, 'articles').map((node) => ({
-      ...node,
-      summary: null,
-      secret: null,
-      hero: node.hero ? { ...(node.hero as Node), note: null } : null,
-      blocks: (node.blocks as Node[]).map((block) => ('note' in block ? { ...block, note: null } : block)),
-    }));
+    // A field removed since reads null for a grant that reads every public field today.
+    const expected = nodesOf(before.list, 'articles').map((node) => ({ ...node, summary: null }));
     expect(nodesOf(data, 'articles')).toEqual(expected);
     expect(nodesOf(data, 'articles')[0]).toMatchObject({
       title: 'First',
       count: 3,
       price: '12.5',
-      hero: { heading: 'Hi', note: null },
+      hero: { heading: 'Hi' },
       blocks: [
-        { __typename: 'Hero', heading: 'Block hero', note: null },
+        { __typename: 'Hero', heading: 'Block hero' },
         { __typename: 'Badge', label: 'New' },
       ],
       writer: { name: 'Ada' },
@@ -404,12 +406,7 @@ describe('schema lenses: GraphQL', () => {
     expect(String(result.response.headers.vary)).toContain('Shapio-Schema-Version');
 
     const one = dataOf(await old(OLD_ONE, { variables: { id: first.id } }));
-    expect(one.article).toEqual({
-      ...(before.one.article as Node),
-      summary: null,
-      secret: null,
-      hero: { heading: 'Hi', note: null },
-    });
+    expect(one.article).toEqual({ ...(before.one.article as Node), summary: null });
   });
 
   it('answers today’s clients in today’s shape', async () => {
@@ -472,11 +469,14 @@ describe('schema lenses: GraphQL', () => {
 
   it('shows the old version’s types and fields in introspection', async () => {
     const articleFields = await fieldNames('Article', v);
-    expect(articleFields).toEqual(expect.arrayContaining(['title', 'count', 'summary', 'secret', 'hero']));
+    expect(articleFields).toEqual(expect.arrayContaining(['title', 'count', 'summary', 'hero']));
     expect(articleFields).not.toContain('headline');
     expect(articleFields).not.toContain('subtitle');
+    // Private today: not named, whatever the old version had.
+    expect(articleFields).not.toContain('secret');
     expect(await fieldNames('Story', v)).toBeNull();
-    expect(await fieldNames('Hero', v)).toEqual(['heading', 'note']);
+    expect(await fieldNames('Hero', v)).toEqual(['heading']);
+    expect(await fieldNames('Gadget', v)).toBeNull();
     expect(await fieldNames('Story')).toContain('headline');
     // The old version's mutations, none for a model deleted since.
     type Mutations = { __schema: { mutationType: { fields: Array<{ name: string }> } } };
@@ -501,12 +501,13 @@ describe('schema lenses: GraphQL', () => {
     }
   });
 
-  it('reads deleted models as empty, refuses a kind change, and drops kinds and members added since', async () => {
-    const gone = await old(
-      `query ($id: ID!) { gadgets { totalCount nodes { id name } } gadget(id: $id) { id } }`,
-      { variables: { id: first.id } },
-    );
-    expect(dataOf(gone)).toEqual({ gadgets: { totalCount: 0, nodes: [] }, gadget: null });
+  it('leaves deleted models out (admins read them empty), refuses a kind change, and drops kinds and members added since', async () => {
+    const goneQuery = `query ($id: ID!) { gadgets { totalCount nodes { id name } } gadget(id: $id) { id } }`;
+    const gone = await old(goneQuery, { variables: { id: first.id } });
+    expect(gone.statusCode).toBe(400);
+    expect(errorCodes(gone)).toEqual(['GRAPHQL_VALIDATION_FAILED', 'GRAPHQL_VALIDATION_FAILED']);
+    const asAdmin = await old(goneQuery, { credential: adminToken, variables: { id: first.id } });
+    expect(dataOf(asAdmin)).toEqual({ gadgets: { totalCount: 0, nodes: [] }, gadget: null });
     const promoted = await old('{ promos { nodes { id } } }');
     expect(errorCodes(promoted)).toEqual(['LENS_UNCOVERED']);
     const kinds = dataOf(await old('{ products { nodes { __typename name } } }'));
@@ -521,25 +522,178 @@ describe('schema lenses: GraphQL', () => {
   });
 
   it('never shows what is not visible today (rule 7)', async () => {
-    const one = dataOf(await old(OLD_ONE, { variables: { id: first.id } }));
-    expect(one.article).toMatchObject({ secret: null, hero: { note: null } });
-    // A role that lost a field since the client's version reads it as null.
-    expect(before.narrow.article).toMatchObject({ title: 'First', restricted: 'r1' });
-    const narrow = await old(NARROW_ONE, {
-      credential: narrowToken,
+    // Fields made private since: the old client read them, the lens schema no longer names them, exactly as
+    // today's schema does not.
+    expect(JSON.stringify(before.hidden)).toMatch(/shh[\s\S]*private soon[\s\S]*block note/);
+    const hidden = await old(OLD_HIDDEN, { variables: { id: first.id } });
+    const today = await gql('query ($id: ID!) { story(id: $id) { secret hero { note } } }', {
       variables: { id: first.id },
     });
-    expect(dataOf(narrow)).toEqual({ article: { title: 'First', restricted: null } });
-    // A field private today cannot be filtered on through a lens.
+    for (const result of [hidden, today]) {
+      expect(result.statusCode).toBe(400);
+      expect(new Set(errorCodes(result))).toEqual(new Set(['GRAPHQL_VALIDATION_FAILED']));
+      expect(result.body.data ?? null).toBeNull();
+    }
+    expect(JSON.stringify(hidden.body)).not.toMatch(/shh|private soon|block note/);
+    // A field private today cannot be filtered on through a lens either.
     const filtered = await old('{ articles(filter: { secret: { eq: "shh" } }) { nodes { id } } }');
-    expect(filtered.body.data).toEqual({ articles: null });
-    expect(JSON.stringify(filtered.body)).not.toContain('"id"');
+    expect(errorCodes(filtered)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
     // Drafts never show, and a delivery token may not ask for them.
     await createEntry('story', { headline: 'Draft only', count: '1', secret: 'x' }, false);
     expect(JSON.stringify(await old(OLD_LIST))).not.toContain('Draft only');
     const drafts = await old('{ articles(publicationState: DRAFT) { nodes { title } } }');
     expect(drafts.body.data).toEqual({ articles: null });
     expect(JSON.stringify(drafts.body)).not.toContain('Draft only');
+  });
+
+  it("names nothing a field-restricted token cannot read today, as today's schema does not", async () => {
+    // At the old version the narrow token read title and restricted; today its grant names the headline only.
+    expect(before.narrow.article).toMatchObject({ title: 'First', restricted: 'r1' });
+    const articleFields = await fieldNames('Article', v, narrowToken);
+    expect(articleFields).toContain('title');
+    for (const name of ['restricted', 'secret', 'summary', 'count', 'hero']) {
+      expect(articleFields, name).not.toContain(name);
+    }
+    const old_ = await old(NARROW_ONE, { credential: narrowToken, variables: { id: first.id } });
+    const today = await gql('query ($id: ID!) { story(id: $id) { headline restricted } }', {
+      credential: narrowToken,
+      variables: { id: first.id },
+    });
+    for (const result of [old_, today]) {
+      expect(result.statusCode).toBe(400);
+      expect(errorCodes(result)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+    }
+    expect(JSON.stringify(old_.body)).not.toContain('r1');
+    // A field removed since is not named for a restricted grant either; the title still reads.
+    const removed = await old('query ($id: ID!) { article(id: $id) { summary } }', {
+      credential: narrowToken,
+      variables: { id: first.id },
+    });
+    expect(errorCodes(removed)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+    const title = await old('query ($id: ID!) { article(id: $id) { title } }', {
+      credential: narrowToken,
+      variables: { id: first.id },
+    });
+    expect(dataOf(title)).toEqual({ article: { title: 'First' } });
+  });
+
+  it('never names a deleted model to an anonymous caller; an unrestricted public grant reads removed fields as null', async () => {
+    await setPublicGrants(database.current.db, [{ action: 'read', modelId: article.definition.id }]);
+    const anonymous = (query: string) =>
+      graphql<Data>(testApp.app, query, { headers: { 'shapio-schema-version': v } });
+    const gone = await anonymous('{ gadgets { totalCount } }');
+    expect(gone.statusCode).toBe(400);
+    expect(errorCodes(gone)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
+    expect(JSON.stringify(gone.body)).not.toMatch(/Did you mean/);
+    const read = await anonymous('{ articles(sort: [{ title: ASC }]) { nodes { title summary } } }');
+    expect(nodesOf(dataOf(read), 'articles')).toEqual([
+      { title: 'First', summary: null },
+      { title: 'Second', summary: null },
+    ]);
+    await setPublicGrants(database.current.db, []);
+  });
+
+  it('answers a caller allowed nothing exactly as without a version, whatever version it names', async () => {
+    const schemaId = v.split(':')[0] as string;
+    const query = encodeURIComponent('{ articles { totalCount } }');
+    const send = (url: string, headers: Record<string, string>) =>
+      testApp.app.inject({ method: 'GET', url, headers });
+    const plainUrl = `/api/graphql?query=${query}`;
+    const cases: Array<[string, Record<string, string>]> = [
+      [plainUrl, { 'shapio-schema-version': v }],
+      [plainUrl, { 'shapio-schema-version': 'elsewhere:1' }],
+      [plainUrl, { 'shapio-schema-version': `${schemaId}:99999999` }],
+      [plainUrl, { 'shapio-schema-version': 'not a version' }],
+      [`${plainUrl}&schemaVersion=${schemaId}:1`, { 'shapio-schema-version': v }],
+      [`${plainUrl}&schemaVersion=${encodeURIComponent(v)}&schemaVersion=${schemaId}:1`, {}],
+    ];
+    const credentialSets: Array<Record<string, string>> = [{}, { authorization: 'Bearer not-a-token' }];
+    for (const credentials of credentialSets) {
+      const plain = await send(plainUrl, credentials);
+      expect(plain.statusCode).toBe(401);
+      for (const [url, headers] of cases) {
+        const named = await send(url, { ...credentials, ...headers });
+        expect(named.statusCode, `${url} ${JSON.stringify(headers)}`).toBe(plain.statusCode);
+        expect(named.body).toBe(plain.body);
+      }
+    }
+    // An authorized caller is told what is wrong with the version.
+    const malformed = await gql('{ _schemaVersion }', { version: 'not a version' });
+    expect(malformed.statusCode).toBe(400);
+    expect(errorCodes(malformed)).toEqual(['SCHEMA_VERSION_INVALID']);
+  });
+
+  it('authorizes a mutation as without a version before any lens answer', async () => {
+    // `promo` switched to a singleton since; this token may read it but not create: the refusal is today's.
+    const refused = await old('mutation { createPromo { id } }');
+    expect(errorCodes(refused)).toEqual(['FORBIDDEN']);
+    const writable = await old('mutation { createPromo(data: { name: "x" }) { id } }', {
+      credential: adminToken,
+    });
+    expect(errorCodes(writable)).toEqual(['LENS_UNCOVERED']);
+  });
+
+  it('answers the snapshot routes to a caller allowed nothing exactly as without a version', async () => {
+    const schemaId = v.split(':')[0] as string;
+    for (const path of ['/api/snapshots/current', '/api/snapshots/changes?from=0']) {
+      const join = path.includes('?') ? '&' : '?';
+      const plain = await testApp.app.inject({ method: 'GET', url: path });
+      expect(plain.statusCode, path).toBe(401);
+      for (const version of [v, 'elsewhere:1', `${schemaId}:99999999`, 'not a version']) {
+        const named = await testApp.app.inject({
+          method: 'GET',
+          url: `${path}${join}schemaVersion=${encodeURIComponent(version)}`,
+        });
+        expect(named.statusCode, `${path} ${version}`).toBe(plain.statusCode);
+        expect(named.body).toBe(plain.body);
+      }
+      // An authorized caller is told what is wrong with the version.
+      const foreign = await testApp.app.inject({
+        method: 'GET',
+        url: `${path}${join}schemaVersion=elsewhere:1`,
+        headers: headersOf(token),
+      });
+      expect(foreign.statusCode).toBe(400);
+      expect(foreign.json<{ error: { code: string } }>().error.code).toBe('SCHEMA_VERSION_FOREIGN');
+    }
+  });
+
+  it("spends the caller's lens build budget on an uncached lens schema, and refuses with 429 when it is gone", async () => {
+    // The view of the old version is cached by now; the narrow token's lens schema for it is not rebuilt
+    // for free when its visibility changes, so make the narrow token's bucket empty first.
+    const { id: narrowTokenId } = await database.current.db
+      .selectFrom('api_tokens')
+      .select('id')
+      .where('role_id', '=', narrowRole)
+      .executeTakeFirstOrThrow();
+    resetLensBuildBudgets();
+    while (takeLensBuildBudget(`token:${narrowTokenId}`)) {
+      // drain
+    }
+    // A cached lens schema costs nothing.
+    dataOf(await old('{ _schemaVersion }', { credential: narrowToken }));
+    // A narrower grant today: a new visibility, so a lens schema not cached yet.
+    await database.current.db.transaction().execute(async (trx) => {
+      await adminRolesRepository.deletePermissionsForRole(narrowRole, trx);
+      await adminRolesRepository.insertPermissions(
+        [
+          {
+            role_id: narrowRole,
+            action: 'read',
+            model_id: article.definition.id,
+            condition: null,
+            field_ids: [fieldIdOf(article, 'headline'), fieldIdOf(article, 'price')],
+          },
+        ],
+        trx,
+      );
+      await permissionsVersionRepository.bumpPermissionsVersion(trx);
+    });
+    const refused = await old('{ _schemaVersion }', { credential: narrowToken });
+    expect(refused.statusCode).toBe(429);
+    expect(errorCodes(refused)).toEqual(['LENS_BUDGET_EXCEEDED']);
+    resetLensBuildBudgets();
+    dataOf(await old('{ _schemaVersion }', { credential: narrowToken }));
   });
 
   it('names the old models in `_changes`', async () => {

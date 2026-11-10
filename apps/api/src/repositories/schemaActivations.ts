@@ -47,8 +47,18 @@ export const insertMissing = async (
   return Number(result.numInsertedOrUpdatedRows ?? 0n);
 };
 
-/** Per model, the row with the greatest `schema_version` at or below `version`, with its revision. */
-export const findAt = (version: number, executor: Executor = db) =>
+/**
+ * Rows one workspace's view holds: the shared ones and that workspace's (`siteId` null: the shared ones
+ * alone). Absent: every workspace's.
+ */
+export type ActivationScope = { siteId: string | null };
+
+/**
+ * Per model, the row with the greatest `schema_version` at or below `version`, with its revision. With a
+ * scope, only the rows whose scope at that version belongs to the workspace's view (the filter applies
+ * after picking each model's row, so a model that moved since is placed where it was).
+ */
+export const findAt = (version: number, executor: Executor = db, scope?: ActivationScope) =>
   executor
     .selectFrom('schema_activations as activation')
     .innerJoin(
@@ -77,6 +87,13 @@ export const findAt = (version: number, executor: Executor = db) =>
       'revision.hash as hash',
       'revision.definition as definition',
     ])
+    .$if(scope !== undefined, (qb) =>
+      qb.where((eb) =>
+        scope?.siteId
+          ? eb.or([eb('activation.site_id', 'is', null), eb('activation.site_id', '=', scope.siteId)])
+          : eb('activation.site_id', 'is', null),
+      ),
+    )
     // The registry's order (`findActiveDefinitions`): route key collisions resolve the same way.
     .orderBy('models.created_at')
     .orderBy('models.id')
@@ -89,7 +106,7 @@ export type ActivationAtRow = Awaited<ReturnType<typeof findAt>>[number];
  * first activation (no parent): a model whose earliest row is a backfilled later revision has unknown
  * history before it.
  */
-export const findEarliest = (executor: Executor = db) =>
+export const findEarliest = (executor: Executor = db, scope?: ActivationScope) =>
   executor
     .selectFrom('schema_activations as activation')
     .innerJoin(
@@ -118,6 +135,13 @@ export const findEarliest = (executor: Executor = db) =>
       'revision.definition as definition',
       'revision.parent_revision_id as parentRevisionId',
     ])
+    .$if(scope !== undefined, (qb) =>
+      qb.where((eb) =>
+        scope?.siteId
+          ? eb.or([eb('activation.site_id', 'is', null), eb('activation.site_id', '=', scope.siteId)])
+          : eb('activation.site_id', 'is', null),
+      ),
+    )
     // The registry's order (`findActiveDefinitions`): route key collisions resolve the same way.
     .orderBy('models.created_at')
     .orderBy('models.id')
@@ -125,13 +149,47 @@ export const findEarliest = (executor: Executor = db) =>
 
 export type EarliestActivationRow = Awaited<ReturnType<typeof findEarliest>>[number];
 
-/** The (model, schema version) pairs that already have a row, as `<modelId>:<schemaVersion>`. */
-export const findKeys = async (executor: Executor = db): Promise<Set<string>> =>
-  new Set(
-    (await executor.selectFrom('schema_activations').select(['model_id', 'schema_version']).execute()).map(
-      (row) => `${row.model_id}:${row.schema_version}`,
-    ),
-  );
+/** Every row without its revision (the backfill compares them with what the audit log proves). */
+export const findAllRows = (executor: Executor = db) =>
+  executor
+    .selectFrom('schema_activations')
+    .select([
+      'model_id as modelId',
+      'schema_version as schemaVersion',
+      'site_id as siteId',
+      'revision_id as revisionId',
+      'backfilled',
+    ])
+    .execute();
+
+/**
+ * Writes rows the backfill proved: a backfilled row at the same key is replaced, a row activation wrote is
+ * kept. One transaction, so a crash never leaves a key without its row.
+ */
+export const replaceBackfilled = async (rows: readonly NewSchemaActivation[], executor: Executor = db) => {
+  if (rows.length === 0) {
+    return;
+  }
+  const write = async (trx: Executor) => {
+    await trx
+      .deleteFrom('schema_activations')
+      .where('backfilled', '=', true)
+      .where((eb) =>
+        eb.or(
+          rows.map((row) =>
+            eb.and([eb('model_id', '=', row.modelId), eb('schema_version', '=', row.schemaVersion)]),
+          ),
+        ),
+      )
+      .execute();
+    await insertMissing(rows, trx);
+  };
+  if (executor.isTransaction) {
+    await write(executor);
+  } else {
+    await executor.transaction().execute(write);
+  }
+};
 
 export const deleteForModels = async (ids: readonly string[], trx: Executor = db): Promise<void> => {
   if (ids.length === 0) {

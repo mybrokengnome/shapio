@@ -216,6 +216,14 @@ export type UpdateEntryInput = {
   data?: unknown;
   /** Autosave: moves the draft head only (no revision) and does not enforce `required`. */
   autosave?: boolean;
+  /**
+   * Instead of `data`: makes the patch (field IDs) from the locked draft the write starts from, inside the write
+   * (schema lenses: a write in an older version's shape keeps what that version cannot see, plan schema-lenses).
+   */
+  patchFrom?: (
+    base: DraftUpdateBase,
+    write: { model: ContentModel; validator: ModelValidator },
+  ) => ContentData;
 };
 
 type DraftChange = {
@@ -433,7 +441,10 @@ export const updateEntry = async (
   const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, input.data);
+  const { patchFrom } = input;
+  const patch = patchFrom
+    ? (base: DraftUpdateBase) => patchFrom(base, { model, validator })
+    : inputPatch(validator, input.data);
   const written = await runEntryWrite(context.db, model, context.site.id, [locale], (trx) =>
     writeEntryUpdate(trx, context, {
       model,

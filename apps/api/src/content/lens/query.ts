@@ -16,6 +16,11 @@ export type QueryRewriteContext = {
   lensFor: (definitionId: string) => DefinitionLens | null | undefined;
   /** `filters[__model]`: a kind's client API ID → today's API ID; undefined for a kind unknown today. */
   kindApiKey?: (clientApiKey: string) => string | undefined;
+  /**
+   * A field the caller reads as null through the lens (public in the client's version, not readable today, an
+   * unrestricted grant): `fields=` may name it like a field gone since; filters and sorts on it stay today's.
+   */
+  readsNull?: (fieldId: string) => boolean;
 };
 
 export type RewrittenQuery = {
@@ -126,7 +131,7 @@ const rewriteSort = (lens: DefinitionLens, value: QueryValue): QueryValue =>
     return [queryableApiKey(lens, key), ...rest].join(':');
   });
 
-const rewriteFields = (lens: DefinitionLens, value: QueryValue) => {
+const rewriteFields = (lens: DefinitionLens, value: QueryValue, context: QueryRewriteContext) => {
   const selected: string[] = [];
   const current: string[] = [];
   for (const item of toList(value)) {
@@ -143,7 +148,7 @@ const rewriteFields = (lens: DefinitionLens, value: QueryValue) => {
       throw unknownField(item);
     }
     selected.push(field.fieldId);
-    if (field.kind !== 'null') {
+    if (field.kind !== 'null' && !context.readsNull?.(field.fieldId)) {
       current.push(field.stored.apiKey);
     }
   }
@@ -216,7 +221,7 @@ export const rewriteQueryTree = (
         rewritten[key] = rewriteSort(lens, value);
         break;
       case 'fields': {
-        const { selected, current } = rewriteFields(lens, value);
+        const { selected, current } = rewriteFields(lens, value, context);
         selectedFieldIds = selected;
         if (current.length > 0) {
           rewritten[key] = current;

@@ -1,8 +1,8 @@
-import type { LensEffect } from '@shapio/client';
 import type { ClassifiedChange, SchemaDefinition } from '@shapio/schema';
 import { useTranslation } from 'react-i18next';
 import { PLAN_BUCKET_LABEL_KEYS } from '../../../constants';
 import { describeChange } from '../../../helpers/describeChange';
+import type { OlderClientsLine as OlderClientsLineEffect } from '../../../helpers/olderClients';
 import { groupByBucket } from '../../../helpers/planBuckets';
 import { BucketChip } from '../../BucketChip';
 import { OlderClientsLine } from '../OlderClientsLine';
@@ -16,7 +16,7 @@ type ChangeListProps = {
   /** For an interface: how many types implement it. */
   memberCount?: number;
   /** What clients naming an older schema version see, for the changes that need a line. */
-  olderClientsEffects?: ReadonlyMap<ClassifiedChange, LensEffect | null>;
+  olderClientsEffects?: ReadonlyMap<ClassifiedChange, OlderClientsLineEffect | null>;
 };
 
 /** Every change in the plan, grouped by how it is applied, most demanding group first. */

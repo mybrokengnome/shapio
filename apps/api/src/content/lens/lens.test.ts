@@ -92,7 +92,10 @@ describe('readThroughLens', () => {
     ).toBe('12.3');
     expect(
       readOne({ id: F, apiKey: 'n', type: 'number' }, { id: F, apiKey: 'n', type: 'decimal' }, 1e-7),
-    ).toBeUndefined();
+    ).toBe('0.0000001');
+    expect(
+      readOne({ id: F, apiKey: 'n', type: 'number' }, { id: F, apiKey: 'n', type: 'biginteger' }, 1e21),
+    ).toBe('1000000000000000000000');
   });
 
   it('ignores length and range rules of the client: they are validation, not shape', () => {
@@ -113,7 +116,11 @@ describe('readThroughLens', () => {
     const stored = { id: F, apiKey: 'tags', type: 'enum', settings: enumOf(['a', 'b', 'c'], true) };
     const client = { id: F, apiKey: 'tags', type: 'enum', settings: enumOf(['a', 'b'], false) };
     expect(readOne(stored, client, ['a', 'c'])).toBe('a');
-    expect(readOne(stored, client, ['c', 'a'])).toBeUndefined();
+    // A list read as one value: the first value that fits.
+    expect(readOne(stored, client, ['c', 'a'])).toBe('a');
+    expect(readOne(stored, client, ['c'])).toBeUndefined();
+    // A list read as a list: the values that fit.
+    expect(readOne(stored, { ...client, settings: enumOf(['a', 'b'], true) }, ['c', 'a'])).toEqual(['a']);
     const listClient = { ...stored, settings: enumOf(['a'], true) };
     expect(
       readOne({ id: F, apiKey: 'tags', type: 'enum', settings: enumOf(['a'], false) }, listClient, 'a'),
@@ -328,7 +335,7 @@ describe('writeThroughLens', () => {
     const index = createDefinitionIndex(definitions);
     return {
       stored: entry?.stored ?? null,
-      read: entry?.read ?? null,
+      reads: entry?.read ? [entry.read] : [],
       definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
     };
   };
@@ -495,5 +502,80 @@ describe('readableThroughLens', () => {
         (fieldId) => fieldId !== id(8),
       ),
     ).toEqual({ [F]: 't', [id(6)]: { [id(7)]: 'o' } });
+  });
+});
+
+describe('lens review findings', () => {
+  const HERO = id(5);
+  const QUOTE = id(6);
+  const LINK = id(7);
+  const OLD_TARGET = id(30);
+  const NEW_TARGET = id(31);
+
+  it('reads a relation inside a component whose target moved as absent, at any depth', () => {
+    const card = (target: string) =>
+      component(HERO, 'card', [
+        { id: LINK, apiKey: 'link', type: 'relation', settings: { target, cardinality: 'one' } },
+      ]);
+    const holder = model([{ id: F, apiKey: 'card', type: 'component', settings: { component: HERO } }]);
+    const lens = lensOf([holder, card(NEW_TARGET)], [holder, card(OLD_TARGET)]);
+    expect(readThroughLens(lens, { [F]: { [LINK]: id(40) } })).toEqual({ [F]: {} });
+  });
+
+  it("never reads a zone item of a component today's zone no longer allows", () => {
+    const hero = component(HERO, 'hero', [{ id: id(8), apiKey: 'title' }]);
+    const quote = component(QUOTE, 'quote', [{ id: id(9), apiKey: 'text', public: false } as FieldSpec]);
+    const zone = (components: string[]) =>
+      model([{ id: F, apiKey: 'blocks', type: 'dynamiczone', settings: { components } }]);
+    const lens = lensOf([zone([HERO]), hero, quote], [zone([HERO, QUOTE]), hero, quote]);
+    expect(
+      readThroughLens(lens, {
+        [F]: [
+          { [COMPONENT_KEY]: QUOTE, [id(9)]: 'private' },
+          { [COMPONENT_KEY]: HERO, [id(8)]: 'shown' },
+        ],
+      }),
+    ).toEqual({ [F]: [{ [COMPONENT_KEY]: HERO, [id(8)]: 'shown' }] });
+  });
+
+  it('takes a media or relation value echoed from a delivery read as its IDs', () => {
+    const today = [
+      model([
+        { id: F, apiKey: 'cover', type: 'media', settings: { multiple: true } },
+        {
+          id: id(3),
+          apiKey: 'related',
+          type: 'relation',
+          settings: { target: OLD_TARGET, cardinality: 'many' },
+        },
+      ]),
+    ];
+    const old = [
+      model([
+        { id: F, apiKey: 'cover', type: 'media', settings: { multiple: false } },
+        {
+          id: id(3),
+          apiKey: 'related',
+          type: 'relation',
+          settings: { target: OLD_TARGET, cardinality: 'one' },
+        },
+      ]),
+    ];
+    const lens = lensOf(today, old);
+    const index = createDefinitionIndex(today);
+    const base = {
+      stored: { [F]: [id(50)], [id(3)]: [id(60), id(61)] },
+      reads: [{ [F]: id(50), [id(3)]: id(60) }],
+      definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
+    };
+    expect(
+      writeThroughLens(
+        lens,
+        { cover: { id: id(50), url: 'https://cdn.example/a.png' }, related: { id: id(60), title: 'x' } },
+        base,
+      ),
+    ).toEqual({ input: {}, issues: [] });
+    // A value matching neither head is refused.
+    expect(writeThroughLens(lens, { cover: { id: id(51) } }, base).issues).toHaveLength(1);
   });
 });

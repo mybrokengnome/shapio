@@ -5,6 +5,7 @@ import {
   GRAPHQL_SCHEMA_VARIANTS_MAX,
   GRAPHQL_SITE_SCHEMA_IDLE_MS,
 } from '../../../constants/graphql.js';
+import { lensBudgetExceeded } from '../../errors.js';
 import type { NetworkSchema, SchemaSnapshot } from '../../snapshot.js';
 import { buildGraphqlSchema, type BuildOptions, type BuiltSchema } from './schemaBuilder.js';
 import { FULL_VISIBILITY, type SchemaVisibility } from './visibility.js';
@@ -37,7 +38,11 @@ export type GraphqlSchemaCache = {
    * versions with the same revisions share one schema. Never served for another view, never replaced by a
    * newer one.
    */
-  getLens: (view: SchemaSnapshot, visibility: SchemaVisibility) => Promise<BuiltSchema>;
+  getLens: (
+    view: SchemaSnapshot,
+    visibility: SchemaVisibility,
+    options?: LensBuildOptions,
+  ) => Promise<BuiltSchema>;
   /** The lens schemas held, least recently used first: site, visibility key and view key (tests). */
   listLens: () => Array<{ siteId: string | null; visibility: string; view: string }>;
   /** Stops background rebuilds (app shutdown). */
@@ -59,6 +64,15 @@ type SchemaCacheOptions = {
   maxEntries?: number;
   maxLensEntries?: number;
   build?: (view: SchemaSnapshot, visibility: SchemaVisibility, options?: BuildOptions) => BuiltSchema;
+};
+
+export type LensBuildOptions = {
+  /**
+   * Asked once before a cache miss builds (never on a hit): false refuses the build with 429
+   * `LENS_BUDGET_EXCEEDED`, so a caller cycling versions cannot force a schema build per request (the
+   * per-principal lens build budget, `schema/lens/budget.ts`).
+   */
+  admit?: () => boolean;
 };
 
 type LensEntry = { siteId: string | null; visibility: string; view: string; schema: Promise<BuiltSchema> };
@@ -204,7 +218,11 @@ export const createGraphqlSchemaCache = ({
     })();
   };
 
-  const getLens = (view: SchemaSnapshot, visibility: SchemaVisibility): Promise<BuiltSchema> => {
+  const getLens = (
+    view: SchemaSnapshot,
+    visibility: SchemaVisibility,
+    { admit }: LensBuildOptions = {},
+  ): Promise<BuiltSchema> => {
     const viewKey = lensViewKey(view);
     const key = `${entryKey(view.siteId, visibility.key)}\u0000${viewKey}`;
     const cached = lenses.get(key);
@@ -212,6 +230,9 @@ export const createGraphqlSchemaCache = ({
       lenses.delete(key);
       lenses.set(key, cached);
       return cached.schema;
+    }
+    if (admit && !admit()) {
+      return Promise.reject(lensBudgetExceeded());
     }
     const schema = Promise.resolve().then(() => {
       const started = performance.now();

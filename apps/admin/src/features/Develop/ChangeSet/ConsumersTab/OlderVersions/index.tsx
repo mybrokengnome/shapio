@@ -6,7 +6,9 @@ import { Panel } from '@/components/Panel';
 import { StatusChip } from '@/components/StatusChip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
+  historyTruncatedIn,
   olderReaderRows,
+  PAST_LOSS_KEYS,
   READER_OUTCOME_DISPLAY,
   type OlderReaderRow,
 } from '@/features/Models/helpers/olderClients';
@@ -35,15 +37,24 @@ export const OlderVersions = ({ review }: OlderVersionsProps) => {
       ? t('changes.consumers.olderVersions.otherSites', { count: row.count })
       : t('changes.consumers.readers', { count: row.count });
   };
+  const pastLossOf = ({ pastLoss }: OlderReaderRow) => {
+    if (!pastLoss) {
+      return null;
+    }
+    const keys = PAST_LOSS_KEYS[pastLoss.effect];
+    return pastLoss.since === null ? t(keys.undated) : t(keys.dated, { version: pastLoss.since });
+  };
   return (
     <Panel
       title={t('changes.consumers.olderVersions.title')}
       titleAs="h3"
       flush
       description={
-        review.olderClients?.truncated
-          ? t('changes.consumers.olderVersions.truncated', { count: review.olderClients.versions.length })
-          : t('changes.consumers.olderVersions.description')
+        historyTruncatedIn(review.olderClients)
+          ? t('changes.consumers.olderVersions.historyTruncated')
+          : review.olderClients?.truncated
+            ? t('changes.consumers.olderVersions.truncated', { count: review.olderClients.versions.length })
+            : t('changes.consumers.olderVersions.description')
       }
       actions={
         <InfoHint about={t('changes.consumers.olderVersions.title')}>
@@ -83,8 +94,13 @@ export const OlderVersions = ({ review }: OlderVersionsProps) => {
                   </TableCell>
                 ) : null}
                 <TableCell className="text-right tabular-nums">{row.schemaVersion}</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal">
                   <StatusChip tone={display.tone} size="sm" label={t(display.labelKey)} />
+                  {row.pastLoss ? (
+                    <span data-past-loss className="mt-1 block text-meta text-muted-foreground">
+                      {pastLossOf(row)}
+                    </span>
+                  ) : null}
                 </TableCell>
               </TableRow>
             );

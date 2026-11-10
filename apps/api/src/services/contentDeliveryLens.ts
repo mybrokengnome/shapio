@@ -2,7 +2,7 @@ import { isInterfaceDefinition, isModelDefinition, routeKeyOf, type DefinitionLe
 import { schemaVersionToken } from '../constants/schemaLens.js';
 import { parseQueryTree, type QueryTree, type QueryValue } from '../content/compiler/querystring.js';
 import { rewriteQueryTree } from '../content/lens/query.js';
-import { modelNotFound, modelRouteOf } from '../content/model.js';
+import { apiKeyOfRoute, modelNotFound, modelRouteOf } from '../content/model.js';
 import { AppError } from '../helpers/appError.js';
 import { lensUncovered } from '../schema/errors.js';
 import type { RequestLens } from '../schema/lens/views.js';
@@ -86,8 +86,121 @@ const routeLens = (lens: RequestLens, id: string, routeKey: string): DefinitionL
 };
 
 /**
- * A delivery or preview request's route key and querystring in today's names. Without a lens (no version, the
- * current one, or nothing in the workspace changed since) the request passes through as it is.
+ * The route a request names in the client's version, resolved before anything is authorized (plan
+ * schema-lenses): only names, never a lens (no `LENS_UNCOVERED`, no `SCHEMA_VERSION_UNAVAILABLE`), and it never
+ * throws, so a caller that may not read learns nothing a request without a version would not tell it.
+ */
+export type ClientRoute = {
+  /** The route key the request sent (the client's version's). */
+  clientRouteKey: string;
+  /** The definition it names in the client's version; null when that version has no such route. */
+  definitionId: string | null;
+  /** Today's API ID and route key of that definition; null when it is gone since (or unknown). */
+  apiKey: string | null;
+  routeKey: string | null;
+};
+
+/** The client's route in today's names; null without an active lens (the request is today's already). */
+export const clientRouteOf = (context: ContentServiceContext, routeKey: string): ClientRoute | null => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return null;
+  }
+  const model = lens.view.modelsByRouteKey.get(routeKey)?.definition;
+  const contract = lens.view.interfacesByRouteKey.get(routeKey)?.definition;
+  const id =
+    model && isModelDefinition(model)
+      ? model.id
+      : contract && isInterfaceDefinition(contract)
+        ? contract.id
+        : null;
+  const today = id === null ? undefined : context.snapshot.byId.get(id)?.definition;
+  const current =
+    today && isModelDefinition(today)
+      ? { apiKey: today.apiKey, routeKey: modelRouteOf(context.snapshot, today).key }
+      : today && isInterfaceDefinition(today)
+        ? { apiKey: today.apiKey, routeKey: routeKeyOf(today) }
+        : { apiKey: null, routeKey: null };
+  return { clientRouteKey: routeKey, definitionId: id, ...current };
+};
+
+const isRefusal = (error: unknown) =>
+  error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403);
+
+/**
+ * Authorizes a request that names a schema version exactly as the same request without one would be: a caller
+ * refused for the client's model gets the answer today's resolution of the same route key gives it (404 for an
+ * unknown key, its 401/403 otherwise), and a model gone since is a 404 only once the caller is authorized for
+ * what the key names today. `authorize` is the service's own check by today's API ID (it throws when refused).
+ */
+export const authorizeClientRoute = async <T>(
+  context: ContentServiceContext,
+  route: ClientRoute | null,
+  apiKey: string,
+  authorize: (apiKey: string) => Promise<T>,
+): Promise<T> => {
+  if (!route) {
+    return authorize(apiKey);
+  }
+  const asWithoutVersion = async () => authorize(apiKeyOfRoute(context.snapshot, route.clientRouteKey));
+  if (route.apiKey === null) {
+    await asWithoutVersion();
+    throw modelNotFound(route.clientRouteKey);
+  }
+  try {
+    return await authorize(route.apiKey);
+  } catch (error) {
+    if (isRefusal(error)) {
+      await asWithoutVersion();
+    }
+    throw error;
+  }
+};
+
+/**
+ * The lensed query of an authorized request on definition `definitionId`, in today's names, and the context with
+ * its `fields=` selection: 409 `LENS_UNCOVERED` when the definition switched between a collection and a
+ * singleton, 409 `SCHEMA_VERSION_UNAVAILABLE` when its history does not reach the version, 400
+ * `LENS_QUERY_UNSUPPORTED` for a filter or sort the lens cannot run. Call only after authorization.
+ */
+export const lensQueryOf = (
+  context: ContentServiceContext,
+  definitionId: string,
+  clientRouteKey: string,
+  rawQuery: string,
+  /** Fields the caller reads as null through the lens (`readsNullThroughLens`), which `fields=` may name. */
+  readsNull?: (fieldId: string) => boolean,
+): { context: ContentServiceContext; rawQuery: string } => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return { context, rawQuery };
+  }
+  const definitionLens = routeLens(lens, definitionId, clientRouteKey);
+  if (definitionLens.status === 'identity' && rawQuery === '') {
+    return { context, rawQuery };
+  }
+  const rewritten = rewriteQueryTree(definitionLens, parseQueryTree(rawQuery), {
+    lensFor: lens.lensFor,
+    kindApiKey: (apiKey) => {
+      const kindId = lens.view.modelsByApiKey.get(apiKey)?.definition.id;
+      return kindId === undefined ? undefined : context.snapshot.byId.get(kindId)?.definition.apiKey;
+    },
+    ...(readsNull ? { readsNull } : {}),
+  });
+  // A selection names the route model's field IDs; an interface's contract fields are each member's own
+  // there (`queryMembers` maps them), so an interface read selects through its rewritten query alone.
+  const clientDefinition = lens.view.byId.get(definitionId)?.definition;
+  const contract = clientDefinition !== undefined && isInterfaceDefinition(clientDefinition);
+  return {
+    context: { ...context, lensSelection: contract ? null : rewritten.selectedFieldIds },
+    rawQuery: serializeQueryTree(rewritten.tree),
+  };
+};
+
+/**
+ * A request's route key and querystring in today's names, in one step and before authorization (GraphQL's
+ * root reads, which authorize per field afterwards). REST, preview and in-process reads use `clientRouteOf`,
+ * `authorizeClientRoute` and `lensQueryOf` instead, so nothing lens-specific answers a caller that may not read.
  */
 export const lensDeliveryRequest = (
   context: ContentServiceContext,
@@ -99,27 +212,9 @@ export const lensDeliveryRequest = (
     return { context, routeKey, rawQuery };
   }
   const id = clientDefinitionId(lens.view, routeKey);
-  const definitionLens = routeLens(lens, id, routeKey);
+  routeLens(lens, id, routeKey);
   const current = currentRouteKey(context.snapshot, id, routeKey);
-  if (definitionLens.status === 'identity' && rawQuery === '') {
-    return { context, routeKey: current, rawQuery };
-  }
-  const rewritten = rewriteQueryTree(definitionLens, parseQueryTree(rawQuery), {
-    lensFor: lens.lensFor,
-    kindApiKey: (apiKey) => {
-      const kindId = lens.view.modelsByApiKey.get(apiKey)?.definition.id;
-      return kindId === undefined ? undefined : context.snapshot.byId.get(kindId)?.definition.apiKey;
-    },
-  });
-  // A selection names the route model's field IDs; an interface's contract fields are each member's own
-  // there (`queryMembers` maps them), so an interface read selects through its rewritten query alone.
-  const clientDefinition = lens.view.byId.get(id)?.definition;
-  const contract = clientDefinition !== undefined && isInterfaceDefinition(clientDefinition);
-  return {
-    context: { ...context, lensSelection: contract ? null : rewritten.selectedFieldIds },
-    routeKey: current,
-    rawQuery: serializeQueryTree(rewritten.tree),
-  };
+  return { ...lensQueryOf(context, id, routeKey, rawQuery), routeKey: current };
 };
 
 /** `meta.schemaVersion` of a read naming a schema version: both versions as `<schemaId>:<version>` tokens. */

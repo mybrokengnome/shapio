@@ -2964,7 +2964,8 @@
         "schemaVersion": "Schema version",
         "outcome": "Once shipped",
         "otherSites_one": "Other workspaces: {{count}} reader",
-        "otherSites_other": "Other workspaces: {{count}} readers"
+        "otherSites_other": "Other workspaces: {{count}} readers",
+        "historyTruncated": "Some content types changed too often since a reader’s schema version to check every change, so what they show may leave out values an earlier change emptied"
       }
     },
     "timeline": {
@@ -3663,6 +3664,7 @@
   },
   "olderClients": {
     "lines": {
+      "unchanged": "No change for clients naming an older schema version",
       "transparent": "Clients naming an older schema version keep working",
       "converted": "Clients naming an older schema version keep working, with values converted to their type",
       "lossy": "Clients naming an older schema version get some values empty",
@@ -3678,6 +3680,12 @@
       "gone": "Content type gone",
       "uncovered": "Not covered",
       "unavailable": "No record of this version"
+    },
+    "past": {
+      "lossy": "Already reads some values empty since schema version {{version}}",
+      "lossyUndated": "Already reads some values empty",
+      "nulled": "Already reads fields empty since schema version {{version}}",
+      "nulledUndated": "Already reads fields empty"
     },
     "ack": {
       "none": "No reader names an older schema version, so every reader gets the new shape.",

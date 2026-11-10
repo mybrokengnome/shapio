@@ -358,6 +358,20 @@ describe('schema lens writes: GraphQL', () => {
     expect(errorCodes(gone)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
   });
 
+  it('records no schema version for app users, who are counted together', async () => {
+    dataOf(await old('query ($id: ID!) { note(id: $id) { title } }', alice.accessToken, { id: pre.id }));
+    await testApp.app.usage.flush();
+    const { principals } = expectStatus(
+      await testApp.app.inject({
+        method: 'GET',
+        url: '/api/admin/usage/schema-versions',
+        headers: bearer(adminToken),
+      }),
+      200,
+    ).json<{ principals: Array<{ principalKey: string; schemaVersion: number | null }> }>();
+    expect(principals.filter((entry) => entry.principalKey === 'app_users')).toEqual([]);
+  });
+
   it('leaves today’s mutations byte for byte as they were while lens schemas are cached', async () => {
     expect(testApp.app.graphqlRuntime.schemas.listLens().length).toBeGreaterThan(0);
     expect((await gql(MUTATION_TYPE, adminToken)).response.body).toBe(mutationTypeBefore);

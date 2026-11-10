@@ -49,6 +49,12 @@ const appErrorOf = async (work: () => unknown): Promise<AppError> => {
  * transaction (create, change, scope change, delete); `findAt` answers per version; the backfill rebuilds
  * the history from the audit log; `loadRequestLens` builds a workspace's view at an older version.
  */
+
+/** A lens load that no budget limits (these tests are about history and caching, not the limiter). */
+const lensAt = (
+  ...args: Parameters<typeof loadRequestLens> extends [...infer Head, unknown] ? Head : never
+) => loadRequestLens(...args, null);
+
 describe('schema lens history', () => {
   const database = useTestDatabase();
   let testApp: TestApp;
@@ -227,10 +233,8 @@ describe('schema lens history', () => {
 
     it('is null at the current version and refuses a version ahead of it', async () => {
       const current = await currentView();
-      expect(await loadRequestLens(database.current.db, current, current.version)).toBeNull();
-      const ahead = await appErrorOf(() =>
-        loadRequestLens(database.current.db, current, current.version + 1),
-      );
+      expect(await lensAt(database.current.db, current, current.version)).toBeNull();
+      const ahead = await appErrorOf(() => lensAt(database.current.db, current, current.version + 1));
       expect(ahead).toMatchObject({ statusCode: 400, code: 'SCHEMA_VERSION_AHEAD' });
     });
 
@@ -244,10 +248,10 @@ describe('schema lens history', () => {
         ...other.definition,
         fields: other.definition.fields.map((field) => ({ ...field, apiKey: 'label' })),
       });
-      const lensA = await loadRequestLens(database.current.db, await currentView(), before);
+      const lensA = await lensAt(database.current.db, await currentView(), before);
       expect(lensA).toMatchObject({ identity: true, requested: before });
       expect(lensA?.view.version).toBe(before);
-      const lensB = await loadRequestLens(database.current.db, await currentView(siteB.id), before);
+      const lensB = await lensAt(database.current.db, await currentView(siteB.id), before);
       expect(lensB?.identity).toBe(false);
       expect(
         lensB?.view.modelsByApiKey.get('gadget')?.definition.fields.map((field) => field.apiKey),
@@ -267,7 +271,7 @@ describe('schema lens history', () => {
       });
       const current = await currentView();
       expect(current.modelsByRouteKey.has('stories')).toBe(true);
-      const lens = await loadRequestLens(database.current.db, current, atCreate);
+      const lens = await lensAt(database.current.db, current, atCreate);
       expect(lens).not.toBeNull();
       expect(lens?.identity).toBe(false);
       expect(lens?.view.version).toBe(atCreate);
@@ -397,7 +401,7 @@ describe('schema lens history', () => {
         .execute();
       clearLensCaches();
 
-      const lens = await loadRequestLens(db, await currentView(), created);
+      const lens = await lensAt(db, await currentView(), created);
       expect(lens?.identity).toBe(false);
       expect(lens?.view.modelsByApiKey.has('legacy')).toBe(true);
       expect(await appErrorOf(() => lens?.lensFor(legacy.definition.id))).toMatchObject({

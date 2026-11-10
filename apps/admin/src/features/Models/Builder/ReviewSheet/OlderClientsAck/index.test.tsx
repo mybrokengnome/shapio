@@ -20,7 +20,20 @@ const version = (
       status: 'available',
       effect,
       oldestVersion: null,
-      fields: effect === 'transparent' ? [] : [{ fieldId: 'f1', apiKey: 'body', effect }],
+      fields:
+        effect === 'transparent'
+          ? []
+          : [
+              {
+                fieldId: 'f1',
+                apiKey: 'body',
+                effect,
+                proposedEffect: effect,
+                pastEffect: 'transparent',
+                pastSince: null,
+              },
+            ],
+      historyTruncated: false,
     },
   ],
 });

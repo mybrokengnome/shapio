@@ -236,9 +236,24 @@ describe('schema lenses: older clients in reviews', () => {
         oldestVersion: null,
         // The client's names: title and summary were renamed (keep working), so they are not listed.
         fields: [
-          { fieldId: countId, apiKey: 'count', effect: 'lossy' },
-          { fieldId: bodyId, apiKey: 'body', effect: 'nulled' },
+          {
+            fieldId: countId,
+            apiKey: 'count',
+            effect: 'lossy',
+            proposedEffect: 'lossy',
+            pastEffect: 'transparent',
+            pastSince: null,
+          },
+          {
+            fieldId: bodyId,
+            apiKey: 'body',
+            effect: 'nulled',
+            proposedEffect: 'nulled',
+            pastEffect: 'transparent',
+            pastSince: null,
+          },
         ],
+        historyTruncated: false,
       },
     ]);
     const [item] = review.schema;

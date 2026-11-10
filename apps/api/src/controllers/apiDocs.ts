@@ -13,6 +13,7 @@ const contractView = async (request: FastifyRequest) =>
     request.server.db,
     await getRequestSchema(request),
     await schemaVersionTokenWithPin(request.server.db, request.principal, request.schemaVersionToken),
+    request.principal,
   );
 
 export const getOpenApi = async (request: FastifyRequest) =>

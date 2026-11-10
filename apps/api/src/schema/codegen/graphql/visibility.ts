@@ -48,6 +48,11 @@ export type SchemaVisibility = {
    * which nothing can write). Absent: every model in the schema gets its mutations.
    */
   readOnly?: ReadonlySet<string>;
+  /**
+   * Schema lenses: the fields each component of the client's version may name, by component ID, decided by
+   * today's rules (`lensVisibility`); a component missing here names none. Absent: `componentFields` decides.
+   */
+  componentFieldIds?: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
 export const FULL_VISIBILITY: SchemaVisibility = Object.freeze({
@@ -165,6 +170,10 @@ const visibleFields = (
 ): FieldDefinition[] => {
   const live = liveFields(owner.fields);
   if (isComponentDefinition(owner)) {
+    if (visibility.componentFieldIds) {
+      const named = visibility.componentFieldIds.get(owner.id);
+      return live.filter((field) => named?.has(field.id) === true);
+    }
     return visibility.componentFields === 'all' ? live : live.filter((field) => field.public);
   }
   if (visibility.models === null) {

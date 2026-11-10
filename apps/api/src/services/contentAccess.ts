@@ -20,6 +20,7 @@ import type {
 import * as entriesRepository from '../repositories/entries.js';
 import type { EntryRow } from '../repositories/entries.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
+import { lensBudgetKeyOf } from '../schema/lens/budget.js';
 import { loadRequestLens, parseSchemaVersionToken, type RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
@@ -112,7 +113,12 @@ export const withSchemaLens = async (
     return { ...context, schemaId };
   }
   const lens =
-    (await loadRequestLens(context.db, context.snapshot, version)) ?? currentVersionLens(context.snapshot);
+    (await loadRequestLens(
+      context.db,
+      context.snapshot,
+      version,
+      lensBudgetKeyOf(context.actor, context.snapshot.siteId),
+    )) ?? currentVersionLens(context.snapshot);
   return { ...context, schemaId, lens };
 };
 

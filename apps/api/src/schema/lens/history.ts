@@ -50,7 +50,13 @@ const scopeOf = (value: unknown): string | null | undefined => {
   return undefined;
 };
 
-/** Each model's scope moves, oldest first. */
+const stringsOf = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+/**
+ * Each model's scope moves, oldest first. A family moves with its root: the root's audit row lists every
+ * kind in `family` (since inheritance shipped), and each of them moved with it.
+ */
 const scopeMovesOf = (events: readonly HistoryAuditEvent[]): Map<string, ScopeMove[]> => {
   const moves = new Map<string, ScopeMove[]>();
   for (const event of events) {
@@ -63,7 +69,9 @@ const scopeMovesOf = (events: readonly HistoryAuditEvent[]): Map<string, ScopeMo
     if (schemaVersion === null || from === undefined) {
       continue;
     }
-    moves.set(event.target_id, [...(moves.get(event.target_id) ?? []), { schemaVersion, from }]);
+    for (const modelId of new Set([event.target_id, ...stringsOf(metadata.family)])) {
+      moves.set(modelId, [...(moves.get(modelId) ?? []), { schemaVersion, from }]);
+    }
   }
   for (const list of moves.values()) {
     list.sort((a, b) => a.schemaVersion - b.schemaVersion);
@@ -72,9 +80,10 @@ const scopeMovesOf = (events: readonly HistoryAuditEvent[]): Map<string, ScopeMo
 };
 
 /**
- * The rows the audit log proves and the table lacks. A model's scope at a version is the scope its first
- * later move left, or its current scope when it never moved since. Rows of models that no longer exist,
- * and activations whose revision is gone, are skipped.
+ * The rows the audit log proves. A model's scope at a version is the scope its first later move left (null
+ * when it left the shared scope), or its current scope when it never moved since. Rows of models that no
+ * longer exist, activations whose revision is gone, and rows activation wrote itself (`protectedKeys`, never
+ * replaced) are skipped.
  */
 export const activationsFromAudit = (input: {
   events: readonly HistoryAuditEvent[];
@@ -82,13 +91,15 @@ export const activationsFromAudit = (input: {
   revisions: ReadonlyMap<string, string>;
   /** Current scope of every model that still exists. */
   scopes: ReadonlyMap<string, string | null>;
-  /** `<modelId>:<schemaVersion>` of the rows already there. */
-  existing: ReadonlySet<string>;
+  /** `<modelId>:<schemaVersion>` of the rows activation wrote (not backfilled). */
+  protectedKeys: ReadonlySet<string>;
 }): NewSchemaActivation[] => {
-  const { events, revisions, scopes, existing } = input;
+  const { events, revisions, scopes, protectedKeys } = input;
   const moves = scopeMovesOf(events);
-  const scopeAt = (modelId: string, schemaVersion: number, current: string | null) =>
-    (moves.get(modelId) ?? []).find((move) => move.schemaVersion > schemaVersion)?.from ?? current;
+  const scopeAt = (modelId: string, schemaVersion: number, current: string | null) => {
+    const next = (moves.get(modelId) ?? []).find((move) => move.schemaVersion > schemaVersion);
+    return next === undefined ? current : next.from;
+  };
   const rows = new Map<string, NewSchemaActivation>();
   for (const event of events) {
     const modelId = event.target_id;
@@ -98,7 +109,7 @@ export const activationsFromAudit = (input: {
     const metadata = metadataOf(event);
     const schemaVersion = integerOrNull(metadata.schemaVersion);
     const key = `${modelId}:${schemaVersion}`;
-    if (schemaVersion === null || !scopes.has(modelId) || existing.has(key) || rows.has(key)) {
+    if (schemaVersion === null || !scopes.has(modelId) || protectedKeys.has(key) || rows.has(key)) {
       continue;
     }
     let revisionId: string | null = null;
@@ -121,13 +132,26 @@ export const activationsFromAudit = (input: {
   return [...rows.values()];
 };
 
-/** Inserts every row the audit log proves and the table lacks; running it again inserts nothing. */
-export const backfillActivationHistory = async (db: Database): Promise<{ inserted: number }> => {
+/**
+ * Writes every row the audit log proves: missing rows are inserted, and backfilled rows that disagree with
+ * it (an earlier run's) are replaced. Rows activation wrote are never touched. Running it again changes
+ * nothing.
+ */
+export const backfillActivationHistory = async (
+  db: Database,
+): Promise<{ inserted: number; replaced: number }> => {
   const events = await auditEventsRepository.findSuccessfulByActions(
     [...ACTIVATION_ACTIONS, SCOPE_ACTION],
     db,
   );
-  const modelIds = [...new Set(events.flatMap((event) => (event.target_id ? [event.target_id] : [])))];
+  const modelIds = [
+    ...new Set(
+      events.flatMap((event) => [
+        ...(event.target_id ? [event.target_id] : []),
+        ...stringsOf(metadataOf(event).family),
+      ]),
+    ),
+  ];
   const revisions = new Map<string, string>();
   const scopes = new Map<string, string | null>();
   for (let start = 0; start < modelIds.length; start += INSERT_BATCH) {
@@ -139,15 +163,25 @@ export const backfillActivationHistory = async (db: Database): Promise<{ inserte
       scopes.set(id, siteId);
     }
   }
-  const rows = activationsFromAudit({
+  const existing = new Map(
+    (await schemaActivationsRepository.findAllRows(db)).map((row) => [
+      `${row.modelId}:${row.schemaVersion}`,
+      row,
+    ]),
+  );
+  const proven = activationsFromAudit({
     events,
     revisions,
     scopes,
-    existing: await schemaActivationsRepository.findKeys(db),
+    protectedKeys: new Set([...existing].filter(([, row]) => !row.backfilled).map(([key]) => key)),
   });
-  let inserted = 0;
-  for (let start = 0; start < rows.length; start += INSERT_BATCH) {
-    inserted += await schemaActivationsRepository.insertMissing(rows.slice(start, start + INSERT_BATCH), db);
+  const changed = proven.filter((row) => {
+    const known = existing.get(`${row.modelId}:${row.schemaVersion}`);
+    return !known || known.siteId !== row.siteId || known.revisionId !== row.revisionId;
+  });
+  const replaced = changed.filter((row) => existing.has(`${row.modelId}:${row.schemaVersion}`)).length;
+  for (let start = 0; start < changed.length; start += INSERT_BATCH) {
+    await schemaActivationsRepository.replaceBackfilled(changed.slice(start, start + INSERT_BATCH), db);
   }
-  return { inserted };
+  return { inserted: changed.length - replaced, replaced };
 };

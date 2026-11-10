@@ -102,9 +102,18 @@ const OlderClientDefinitionSchema = Type.Object({
       fieldId: Type.String(),
       /** The field's API ID in the client's version. */
       apiKey: Type.String(),
+      /** What the client sees once the change is live: shape and every step's effect on stored values. */
       effect: LensEffectSchema,
+      /** The proposed change's own part: what it makes worse than today. */
+      proposedEffect: LensEffectSchema,
+      /** What the client already sees today (shape since its version, values activations dropped or cut). */
+      pastEffect: LensEffectSchema,
+      /** The schema version since which `pastEffect` holds; null when transparent or not datable. */
+      pastSince: Type.Union([Type.Integer(), Type.Null()]),
     }),
   ),
+  /** Too many changes since the version to check what they did to stored values: `effect` is the shape's. */
+  historyTruncated: Type.Boolean(),
 });
 
 /**

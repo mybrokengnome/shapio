@@ -97,7 +97,23 @@ export type OlderClientDefinition = {
   /** The oldest version reads of it work from, when unavailable. */
   oldestVersion: number | null;
   /** The client's fields that do not keep working unchanged; every other field reads as before. */
-  fields: Array<{ fieldId: string; apiKey: string; effect: LensEffect }>;
+  fields: OlderClientField[];
+  /** Too many changes since the version to check what they did to stored values: `effect` is the shape's. */
+  historyTruncated: boolean;
+};
+
+export type OlderClientField = {
+  fieldId: string;
+  /** The field's API ID in the client's version. */
+  apiKey: string;
+  /** What the client sees once the change is live: shape and every step's effect on stored values. */
+  effect: LensEffect;
+  /** The proposed change's own part: what it makes worse than today. */
+  proposedEffect: LensEffect;
+  /** What the client already sees today (shape since its version, values activations dropped or cut). */
+  pastEffect: LensEffect;
+  /** The schema version since which `pastEffect` holds; null when transparent or not datable. */
+  pastSince: number | null;
 };
 
 export type OlderClientVersion = {

@@ -21,6 +21,7 @@ import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
 import { readThroughLens } from './lens/read.js';
+import { readableThroughLens } from './lens/write.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
@@ -279,6 +280,27 @@ const relationTargets = async (
 };
 
 /**
+ * The relation targets a delivery caller may see among these documents' relations, at any depth: published and
+ * readable under their model's policy today. Null for admin reads (every ID shows). A write through a lens
+ * compares a value sent back with the read without the others (plan schema-lenses).
+ */
+export const visibleRelationTargetIds = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  documents: ReadonlyArray<Readonly<Record<string, unknown>>>,
+): Promise<Set<string> | null> => {
+  if (env.audience === 'admin') {
+    return null;
+  }
+  const visible = new Set<string>();
+  for (const [targetKey, ids] of targetsByModel(model, documents, model.definition.fields)) {
+    const heads = await fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), [...ids]);
+    heads.rows.forEach((row) => visible.add(row.entry_id));
+  }
+  return visible;
+};
+
+/**
  * `fetchFamilyHeadsByIds` for populate, answered from the heads relation visibility already read when it
  * asked for every one of these IDs under the same policies and locale scope (populate's default), else from
  * the database.
@@ -505,9 +527,8 @@ export const projectRows = async (
   });
 };
 
-/** Visible today by the mask, by stable ID: a lens shows a field deprecated since (the client is the old one). */
-const visibleToday = (mask: FieldMask, field: FieldDefinition): boolean =>
-  maskAllows(mask, field.deprecated ? { ...field, deprecated: false } : field);
+/** Visible today by the mask, by stable ID: exactly what the caller sees without a version, deprecation included. */
+const visibleToday = (mask: FieldMask, field: FieldDefinition): boolean => maskAllows(mask, field);
 
 /** A relation the client's version pointed elsewhere: today's IDs are not its target's entries. */
 const targetMoved = (lens: DefinitionLens, fieldId: string): boolean => {
@@ -530,11 +551,39 @@ const componentFieldsOf = (model: ContentModel): Map<string, FieldDefinition> =>
   );
 
 /**
+ * Whether a read mask covers every public field of today's model: the caller's grant names no fields. Such a
+ * caller sees, through a lens, the client's public fields it cannot read today as null (plan schema-lenses, as
+ * GraphQL names them); a caller with a field-restricted grant does not see them at all.
+ */
+export const isUnrestrictedMask = (mask: FieldMask, model: ContentModel): boolean =>
+  mask.mode === 'all' ||
+  model.definition.fields
+    .filter((field) => field.public && !field.deprecated)
+    .every((field) => mask.fieldIds.includes(field.id));
+
+/**
+ * Whether a client field reads null through a lens (never a value): public in the client's version, gone or
+ * not readable today, and the caller's grant on the model unrestricted. `fields=` may name it; filters and
+ * sorts on it are refused as they are today.
+ */
+export const readsNullThroughLens = (
+  clientField: FieldDefinition,
+  today: FieldDefinition | undefined,
+  mask: FieldMask,
+  model: ContentModel,
+): boolean =>
+  clientField.public &&
+  !clientField.deprecated &&
+  (today === undefined || !visibleToday(mask, today)) &&
+  isUnrestrictedMask(mask, model);
+
+/**
  * `projectRows` through a schema lens (plan schema-lenses): today's rows, read with today's policies, relation
- * visibility, populate and asset views, then translated (`readThroughLens`) and projected through the
- * client's definition. A field shows when today's mask allows it (by stable ID), never by the client's flags;
- * a field gone since shows as null only when it was public in the client's version. Rows of a model the
- * client's version does not know are left out.
+ * visibility, populate and asset views, then translated (`readThroughLens`), cut to what the caller may read
+ * today (by stable ID, at every depth; never by the client's flags), and projected through the client's
+ * definition. A client field public in its version that the caller cannot read today (gone, or private since)
+ * shows as null for a caller with an unrestricted grant, and not at all otherwise. Rows of a model the client's
+ * version does not know are left out, and so are relation targets of such models.
  */
 const projectRowsThroughLens = async (
   env: ReadEnvironment,
@@ -564,7 +613,14 @@ const projectRowsThroughLens = async (
       ? [current]
       : [];
   });
-  const { visible: visibleTargets, fetched } = await relationTargets(env, model, rows, fields);
+  const { visible, fetched } = await relationTargets(env, model, rows, fields);
+  // A target of a model (a kind) the client's version does not know is not an entry it can read.
+  const unknownTargets = new Set(
+    [...fetched.values()].flatMap(({ heads }) =>
+      heads.rows.filter((row) => !readLens.view.byId.has(row.model_id)).map((row) => row.entry_id),
+    ),
+  );
+  const visibleTargets = visible && new Set([...visible].filter((id) => !unknownTargets.has(id)));
   const populateEnv: PopulateEnvironment = {
     ...env,
     // A `fields=` selection is the request's own rows', never a populated target's.
@@ -577,20 +633,24 @@ const projectRowsThroughLens = async (
   const media = await loadMediaViews(env, model, rows, fields);
   const publicOnly = hidesPrivateComponentFields(policy.readMask);
   const componentsToday = componentFieldsOf(model);
-  const componentFieldVisible = (field: FieldDefinition) => {
-    const current = componentsToday.get(field.id);
-    return current ? current.public || !publicOnly : field.public && !field.deprecated;
+  const componentFieldReadable = (fieldId: string) => {
+    const current = componentsToday.get(fieldId);
+    return current !== undefined && !current.deprecated && (current.public || !publicOnly);
   };
   return rows.map((row) => {
     const mask = policy.rowReadMasks ? rowReadMask(policy, env.actor, row) : policy.readMask;
-    const clientFields = clientModel.definition.fields.filter((field) => {
-      if (!isSelected(field.id)) {
-        return false;
-      }
-      const current = today.get(field.id);
-      return current ? visibleToday(mask, current) : field.public && !field.deprecated;
-    });
-    const read = { ...readThroughLens(lens, row.data) };
+    const unrestricted = isUnrestrictedMask(mask, model);
+    const readable = (fieldId: string) => {
+      const current = today.get(fieldId);
+      return current !== undefined && visibleToday(mask, current);
+    };
+    const clientFields = clientModel.definition.fields.filter(
+      (field) =>
+        isSelected(field.id) &&
+        (readable(field.id) || readsNullThroughLens(field, today.get(field.id), mask, model)),
+    );
+    // Only what the caller may read today keeps a value, at every depth.
+    const read = readableThroughLens(lens, readThroughLens(lens, row.data), readable, componentFieldReadable);
     for (const field of clientFields) {
       if (targetMoved(lens, field.id)) {
         delete read[field.id];
@@ -606,7 +666,9 @@ const projectRowsThroughLens = async (
         : { keepUnresolvedMedia: true }),
       mediaAssets: media.byId,
       publicComponentFieldsOnly: publicOnly,
-      componentFieldVisible,
+      // Readable today, or (unrestricted) public in the client's version: then it holds no value, reads null.
+      componentFieldVisible: (field) =>
+        componentFieldReadable(field.id) || (unrestricted && field.public && !field.deprecated),
     });
     return {
       row,

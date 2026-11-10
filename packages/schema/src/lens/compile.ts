@@ -1,4 +1,4 @@
-import { storageFamilyOf, type StorageFamily } from '../types/dataTypes.js';
+import { storageFamilyOf, type DataType, type StorageFamily } from '../types/dataTypes.js';
 import {
   isComponentDefinition,
   isInterfaceDefinition,
@@ -76,52 +76,50 @@ export const storedValuesFitClient = (stored: FieldDefinition, client: FieldDefi
   }
 };
 
-const TEXT_TARGET_FAMILIES: ReadonlySet<StorageFamily> = new Set([
+/** Storage a text field can read: every scalar family, a multi-value enum (its first value), rich text. */
+const TEXT_READABLE_FAMILIES: ReadonlySet<StorageFamily> = new Set([
   'jsonString',
+  'jsonStringArray',
   'jsonNumber',
   'numericString',
   'boolean',
   'richtext',
 ]);
 
+/** Client types that can read a text value (by `convertType`, then re-checked against the client's field). */
+const READS_TEXT: ReadonlySet<DataType> = new Set<DataType>([
+  'string',
+  'text',
+  'code',
+  'slug',
+  'email',
+  'url',
+  'uid',
+  'date',
+  'datetime',
+  'time',
+  'enum',
+  'number',
+  'integer',
+  'decimal',
+  'biginteger',
+  'richtext',
+]);
+
 /**
  * Whether some value stored under `stored` can be read as the client's type, by the read-side conversions
- * (`convertType` and list/single). Within one storage family the stored JSON stays as it is. Unlike the
- * planner's `typeChangeDropsValues` (one direction, every value must convert), this asks whether any value
- * can: the read re-checks each value and shows null where one does not fit.
+ * (`convertType` and list/single). Within one storage family the stored JSON stays as it is. Across families
+ * the read goes through text when no conversion is direct: text is the hub every chain of versions passes
+ * through, so the direct lens reads at least what a step-by-step replay of the versions between would (ADR
+ * 0015). A list read as one value takes its first item that fits. Unlike the planner's
+ * `typeChangeDropsValues` (one direction, every value must convert), this asks whether any value can: the
+ * read re-checks each value and shows null where one does not fit.
  */
 export const lensCanRead = (stored: FieldDefinition, client: FieldDefinition): boolean => {
   const from = storageFamilyOf(stored);
-  const to = storageFamilyOf(client);
-  if (from === to) {
-    return true;
-  }
-  switch (client.type) {
-    case 'string':
-    case 'text':
-      return TEXT_TARGET_FAMILIES.has(from);
-    case 'number':
-    case 'integer':
-      return from === 'jsonString' || from === 'numericString';
-    case 'decimal':
-    case 'biginteger':
-      return from === 'jsonNumber' || from === 'jsonString';
-    case 'richtext':
-      return from === 'jsonString' && stored.type !== 'code';
-    case 'enum':
-      return from === 'jsonString' || from === 'jsonStringArray';
-    case 'code':
-    case 'slug':
-    case 'email':
-    case 'url':
-    case 'uid':
-    case 'date':
-    case 'datetime':
-    case 'time':
-      return from === 'numericString';
-    default:
-      return false;
-  }
+  return (
+    from === storageFamilyOf(client) || (TEXT_READABLE_FAMILIES.has(from) && READS_TEXT.has(client.type))
+  );
 };
 
 type Compiler = {

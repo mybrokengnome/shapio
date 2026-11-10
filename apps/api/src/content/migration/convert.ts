@@ -8,6 +8,7 @@ import {
   type RichTextDocument,
   type SchemaChange,
 } from '@shapio/schema';
+import { plainNumber } from '../../helpers/plainNumber.js';
 
 /**
  * Value conversions for `convert` prerequisites (brief §5: "type or rich-text format conversion"). Every
@@ -34,7 +35,8 @@ const TEXT_TYPES: ReadonlySet<DataType> = new Set(['string', 'text']);
 /** One stored value converted to another type (the read side of schema lenses uses it too). */
 export const convertType = (from: DataType, to: DataType, value: unknown): Conversion => {
   if (NUMERIC_STRING_TYPES.has(to)) {
-    return typeof value === 'number' ? set(String(value)) : KEEP;
+    // Exact digits, never exponent notation (`1e21`, `1e-7`), which decimal and big-integer values refuse.
+    return typeof value === 'number' ? set(plainNumber(value)) : KEEP;
   }
   if (NUMBER_TYPES.has(to)) {
     return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))

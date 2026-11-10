@@ -1,5 +1,4 @@
 import type { FastifyRequest } from 'fastify';
-import { getOperationAST, OperationTypeNode, type DocumentNode } from 'graphql';
 import { schemaVersionToken } from '../constants/schemaLens.js';
 import type { GraphqlRuntime } from '../plugins/graphql.js';
 import type { UsageLens } from '../plugins/graphqlHooks.js';
@@ -33,12 +32,14 @@ import { contentContextFor } from './contentContext.js';
 export const graphqlLensOf = async (
   request: FastifyRequest,
   view: SchemaSnapshot,
+  /** false: answer as if no version were named (a caller allowed no content); the header is still sent. */
+  loadLens = true,
 ): Promise<ContentServiceContext | undefined> => {
   request.schemaVersionCurrent = schemaVersionToken(await schemaIdOf(request.server.db), view.version);
   // An API token pinned to a schema version names it when the request names none.
   const namesVersion =
     request.schemaVersionToken !== null || pinnedSchemaVersionOf(request.principal) !== null;
-  return namesVersion ? contentContextFor(request) : undefined;
+  return namesVersion && loadLens ? contentContextFor(request) : undefined;
 };
 
 /** The schema a request executes against: the client's version through an active lens, else the current one. */
@@ -47,10 +48,16 @@ export const graphqlSchemaFor = (
   view: SchemaSnapshot,
   visibility: SchemaVisibility,
   lensed: ContentServiceContext | undefined,
+  /** The caller's lens build budget, asked only when the lens schema is not cached (429 when spent). */
+  admit?: () => boolean,
 ): Promise<BuiltSchema> => {
   const lens = lensed && activeLens(lensed);
   return lens && lensed
-    ? runtime.schemas.getLens(lens.view, lensVisibility(visibility, lens.view, lensed.snapshot))
+    ? runtime.schemas.getLens(
+        lens.view,
+        lensVisibility(visibility, lens.view, lensed.snapshot),
+        admit ? { admit } : {},
+      )
     : runtime.schemas.get(view, visibility);
 };
 
@@ -61,12 +68,6 @@ export const usageLensOf = (
 ): UsageLens | undefined => {
   const lens = lensed && activeLens(lensed);
   return lens && lensed ? { lens, current: lensed.snapshot, visibility } : undefined;
-};
-
-/** Whether the operation a document runs is a mutation (or a subscription): never served through a lens. */
-export const runsWrite = (document: DocumentNode, operationName: string | null | undefined): boolean => {
-  const operation = getOperationAST(document, operationName ?? undefined)?.operation;
-  return operation !== undefined && operation !== OperationTypeNode.QUERY;
 };
 
 /** `extensions.schemaVersion: { requested, current }` (tokens) on the response of a request naming a version. */

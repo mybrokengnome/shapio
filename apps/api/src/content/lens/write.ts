@@ -31,12 +31,26 @@ export type LensWriteBase = {
   /** The entry's draft today, in storage form (field IDs); null on create. */
   stored: Readonly<ContentData> | null;
   /**
-   * What the lens reads for that draft (`readThroughLens`), only what the caller may read today
-   * (`readableThroughLens`); null on create, where nothing can be sent back.
+   * What the lens reads for the entry today (`readThroughLens`), only what the caller may read
+   * (`readableThroughLens`): one per head a client may have read (the draft and the published head of the
+   * written locale). A field matching any of them was sent back. Empty on create.
    */
-  read: Readonly<ContentData> | null;
+  reads: ReadonlyArray<Readonly<ContentData>>;
   /** Today's effective definition by ID (a model with its inherited fields, a component). */
   definitionOf: (id: string) => SchemaDefinition | undefined;
+  /**
+   * Whether the caller may read a top-level field today (its read mask) and a component field (at any depth).
+   * A field it may not read reads empty through the lens: sent back empty it is left untouched, never cleared,
+   * and left out of a component instance it keeps its stored value. Absent: the field's `public` flag decides,
+   * the narrowest audience's view. Deprecated fields are never readable.
+   */
+  readable?: (fieldId: string) => boolean;
+  componentFieldReadable?: (fieldId: string) => boolean;
+  /**
+   * The relation targets the caller may see (published, readable today); a read leaves the others out, so a value
+   * sent back is compared with the list without them. Absent or null: every target shows.
+   */
+  visibleTargets?: ReadonlySet<string> | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -108,7 +122,9 @@ const toInput = (field: FieldDefinition, value: unknown, base: LensWriteBase): u
     }
     const output: Record<string, unknown> = {};
     for (const nested of component.fields) {
-      if (!isMissingValue(item[nested.id])) {
+      // Deprecated fields are not input: the write path carries them over in storage form
+      // (`keepUnreadableComponentFields`), never through today's input validator.
+      if (!nested.deprecated && !isMissingValue(item[nested.id])) {
         output[nested.apiKey] = toInput(nested, item[nested.id], base);
       }
     }
@@ -167,22 +183,157 @@ const fieldInputForm = (field: FieldLens, value: unknown): unknown => {
   return value;
 };
 
-/** Whether the client sent back exactly what it reads today (absent and empty count as the same). */
-const sentBackRead = (field: FieldLens, value: unknown, read: Readonly<ContentData> | null): boolean => {
-  if (read === null) {
-    return false;
+/** An ID from a value a delivery read returned for a reference: the ID itself, or a view with an `id`. */
+const idOf = (value: unknown): unknown =>
+  isRecord(value) && typeof value.id === 'string' ? value.id : value;
+
+/**
+ * A value as a client echoes it from a delivery read, in input form: media and populated relations as their
+ * IDs (delivery shows asset views and entries), rich text without the rendered `html`, inside components and
+ * zone items too.
+ */
+const echoed = (field: FieldLens, value: unknown): unknown => {
+  if (isMissingValue(value) || field.kind === 'null') {
+    return value;
   }
-  const current = read[field.fieldId];
+  const { client } = field;
+  switch (client.type) {
+    case 'media':
+    case 'relation':
+      return Array.isArray(value) ? value.map(idOf) : idOf(value);
+    case 'richtext': {
+      if (!isRecord(value)) {
+        return value;
+      }
+      const { html: _html, ...document } = value;
+      return document;
+    }
+    case 'component': {
+      const lens = nestedOf(field, client.settings.component);
+      return lens
+        ? Array.isArray(value)
+          ? value.map((item) => echoedInstance(lens, item))
+          : echoedInstance(lens, value)
+        : value;
+    }
+    case 'dynamiczone':
+      return Array.isArray(value)
+        ? value.map((item: unknown): unknown => {
+            if (!isRecord(item)) {
+              return item;
+            }
+            const lens = [...(field.nested?.components.values() ?? [])].find(
+              (candidate) => candidate?.apiKey === item[COMPONENT_KEY],
+            );
+            return lens
+              ? { ...(echoedInstance(lens, item) as object), [COMPONENT_KEY]: item[COMPONENT_KEY] }
+              : item;
+          })
+        : value;
+    default:
+      return value;
+  }
+};
+
+const echoedInstance = (lens: DefinitionLens, item: unknown): unknown => {
+  if (!isRecord(item)) {
+    return item;
+  }
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(item)) {
+    if (key === COMPONENT_KEY) {
+      continue;
+    }
+    const field = fieldByApiKey(lens, key);
+    // A null the read emitted for an empty field is the field left empty.
+    if (!isMissingValue(value)) {
+      output[key] = field ? echoed(field, value) : value;
+    }
+  }
+  return output;
+};
+
+/** Whether `sent` keeps `read`'s order and holds nothing else (relations hide targets a caller may not see). */
+/**
+ * A lensed read as the caller receives it: relation IDs of targets it may not see left out, at any depth
+ * (`visible` null: every target shows).
+ */
+const visibleRead = (field: FieldLens, value: unknown, visible: ReadonlySet<string> | null): unknown => {
+  if (visible === null || field.kind === 'null' || isMissingValue(value)) {
+    return value;
+  }
+  const { client } = field;
+  if (client.type === 'relation') {
+    return Array.isArray(value)
+      ? value.filter((id) => typeof id === 'string' && visible.has(id))
+      : typeof value === 'string' && visible.has(value)
+        ? value
+        : undefined;
+  }
+  const instance = (lens: DefinitionLens | null | undefined, item: unknown): unknown => {
+    if (!lens || !isRecord(item)) {
+      return item;
+    }
+    const output: Record<string, unknown> = { ...item };
+    for (const nested of lens.fields) {
+      if (nested.fieldId in output) {
+        output[nested.fieldId] = visibleRead(nested, output[nested.fieldId], visible);
+      }
+    }
+    return output;
+  };
+  if (client.type === 'component') {
+    const lens = nestedOf(field, client.settings.component);
+    return Array.isArray(value) ? value.map((item) => instance(lens, item)) : instance(lens, value);
+  }
+  if (client.type === 'dynamiczone' && Array.isArray(value)) {
+    return value.map((item: unknown) =>
+      instance(isRecord(item) ? nestedOf(field, String(item[COMPONENT_KEY])) : undefined, item),
+    );
+  }
+  return value;
+};
+
+/**
+ * Whether `value` is exactly what the caller reads for the field in one head, order included (absent and empty
+ * count as the same): anything else on a field it cannot write is refused, never silently kept.
+ */
+const matchesRead = (
+  field: FieldLens,
+  value: unknown,
+  stored: unknown,
+  visible: ReadonlySet<string> | null,
+): boolean => {
+  const current = visibleRead(field, stored, visible);
   if (isMissingValue(value) || isMissingValue(current)) {
     return isMissingValue(value) && isMissingValue(current);
   }
-  return canonicalJson(value) === canonicalJson(fieldInputForm(field, current));
+  return canonicalJson(echoed(field, value)) === canonicalJson(fieldInputForm(field, current));
 };
+
+/** Whether the client sent back exactly what it reads today, from any head it may have read. */
+const sentBackRead = (
+  field: FieldLens,
+  value: unknown,
+  reads: ReadonlyArray<Readonly<ContentData>>,
+  visible: ReadonlySet<string> | null,
+): boolean => reads.some((read) => matchesRead(field, value, read[field.fieldId], visible));
 
 type Walk = { issues: ContentIssue[]; base: LensWriteBase };
 
 /** The counterparts of one written object: today's stored one and what the lens read of it. */
-type Counterpart = { stored: Readonly<ContentData> | null; read: Readonly<ContentData> | null };
+type Counterpart = { stored: Readonly<ContentData> | null; reads: ReadonlyArray<Readonly<ContentData>> };
+
+/** The counterparts of each read at one position (a component instance, a list item). */
+const readsAt = (
+  reads: ReadonlyArray<Readonly<ContentData>>,
+  fieldId: string,
+  index?: number,
+): Array<Readonly<ContentData>> =>
+  reads.flatMap((read) => {
+    const value = index === undefined ? read[fieldId] : at(read[fieldId], index);
+    return isRecord(value) ? [value] : [];
+  });
 
 const recordOrNull = (value: unknown): Readonly<ContentData> | null => (isRecord(value) ? value : null);
 
@@ -203,9 +354,22 @@ const translateObject = (
   const output: Record<string, unknown> = {};
   const keep = (field: FieldDefinition) => {
     const stored = counterpart.stored?.[field.id];
-    if (whole && !isMissingValue(stored)) {
-      output[field.apiKey] = toInput(field, stored, walk.base);
+    // A deprecated field cannot be written (today's input refuses it): the write path carries its stored value
+    // over itself (`keepUnreadableComponentFields`).
+    const carried =
+      whole && !field.deprecated && !isMissingValue(stored) ? toInput(field, stored, walk.base) : undefined;
+    // An instance with nothing left in input form is carried over whole in storage form instead.
+    if (carried !== undefined && !(isRecord(carried) && Object.keys(carried).length === 0)) {
+      output[field.apiKey] = carried;
     }
+  };
+  /** Whether the caller reads the field today; one it does not reads empty through the lens. */
+  const readableToday = (field: FieldLens): boolean => {
+    if (!field.stored || field.stored.deprecated) {
+      return false;
+    }
+    const check = whole ? walk.base.componentFieldReadable : walk.base.readable;
+    return check ? check(field.fieldId) : field.stored.public;
   };
   const sent = new Set<string>();
   for (const [key, item] of Object.entries(value)) {
@@ -223,9 +387,12 @@ const translateObject = (
       continue;
     }
     sent.add(field.fieldId);
-    if (isWritable(field)) {
+    if (field.stored && !readableToday(field) && isMissingValue(item)) {
+      // The empty value a hidden field reads as, sent back: the stored value stays.
+      keep(field.stored);
+    } else if (isWritable(field)) {
       output[field.stored.apiKey] = translateValue(walk, field, item, counterpart, fieldPath);
-    } else if (sentBackRead(field, item, counterpart.read)) {
+    } else if (sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       if (field.stored) {
         keep(field.stored);
       }
@@ -234,9 +401,9 @@ const translateObject = (
     }
   }
   if (whole) {
-    // Fields the client could not write, and left out: kept, never cleared on its behalf.
+    // Fields the client could not write or cannot read, left out: kept, never cleared on its behalf.
     for (const field of lens.fields) {
-      if (!sent.has(field.fieldId) && !isWritable(field) && field.stored) {
+      if (!sent.has(field.fieldId) && field.stored && (!isWritable(field) || !readableToday(field))) {
         keep(field.stored);
       }
     }
@@ -288,7 +455,10 @@ const translateZoneItem = (
       walk,
       lens,
       item,
-      { stored: same(counterpart.stored), read: same(counterpart.read) },
+      {
+        stored: same(counterpart.stored),
+        reads: counterpart.reads.filter((read) => read[COMPONENT_KEY] === lens.definitionId),
+      },
       path,
       true,
     ),
@@ -305,7 +475,6 @@ function translateValue(
 ): unknown {
   const { client } = field;
   const stored = parent.stored?.[field.fieldId];
-  const read = parent.read?.[field.fieldId];
   if (client.type === 'component') {
     const lens = nestedOf(field, client.settings.component);
     if (!usable(lens)) {
@@ -317,7 +486,7 @@ function translateValue(
             walk,
             lens,
             item,
-            { stored: recordOrNull(at(stored, index)), read: recordOrNull(at(read, index)) },
+            { stored: recordOrNull(at(stored, index)), reads: readsAt(parent.reads, field.fieldId, index) },
             pointer(path, index),
           ),
         )
@@ -325,7 +494,7 @@ function translateValue(
           walk,
           lens,
           value,
-          { stored: recordOrNull(stored), read: recordOrNull(read) },
+          { stored: recordOrNull(stored), reads: readsAt(parent.reads, field.fieldId) },
           path,
         );
   }
@@ -336,7 +505,7 @@ function translateValue(
             walk,
             field,
             item,
-            { stored: recordOrNull(at(stored, index)), read: recordOrNull(at(read, index)) },
+            { stored: recordOrNull(at(stored, index)), reads: readsAt(parent.reads, field.fieldId, index) },
             pointer(path, index),
           ),
         )
@@ -355,7 +524,7 @@ export const writeThroughLens = (
   base: LensWriteBase,
 ): LensWriteResult => {
   const walk: Walk = { issues: [], base };
-  const output = translateObject(walk, lens, input, { stored: base.stored, read: base.read }, '', false);
+  const output = translateObject(walk, lens, input, { stored: base.stored, reads: base.reads }, '', false);
   return { input: output, issues: walk.issues };
 };
 

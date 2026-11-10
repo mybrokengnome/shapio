@@ -68,6 +68,25 @@ describe('convertValue: type changes', () => {
   });
 });
 
+describe('convertValue: numbers into decimal and big-integer text', () => {
+  it('writes exact digits, never exponent notation', () => {
+    expect(convertValue(retype('number', 'decimal'), 1e21)).toEqual({
+      kind: 'set',
+      value: '1000000000000000000000',
+    });
+    expect(convertValue(retype('number', 'decimal'), 1e-7)).toEqual({ kind: 'set', value: '0.0000001' });
+    expect(convertValue(retype('number', 'decimal'), -2.5e-8)).toEqual({
+      kind: 'set',
+      value: '-0.000000025',
+    });
+    expect(convertValue(retype('integer', 'biginteger'), 1e21)).toEqual({
+      kind: 'set',
+      value: '1000000000000000000000',
+    });
+    expect(convertValue(retype('number', 'decimal'), 12.5)).toEqual({ kind: 'set', value: '12.5' });
+  });
+});
+
 describe('proposeEntry: a dropped field', () => {
   it('removes the value from every head and keeps the other fields', () => {
     const stored = [

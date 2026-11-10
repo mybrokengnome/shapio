@@ -156,3 +156,11 @@ export const lensWriteIssues = (issues: readonly ContentIssue[]) =>
     "Some fields changed since this client's schema version and cannot be written through it. Update the client to the current schema version to change them.",
     { issues },
   );
+
+/** Too many lens builds by one caller (schema/lens/budget.ts): cache misses cost a view build each. */
+export const lensBudgetExceeded = () =>
+  new AppError(
+    429,
+    'LENS_BUDGET_EXCEEDED',
+    'Too many requests for older schema versions that are not cached. Wait a minute, or read through fewer versions.',
+  );

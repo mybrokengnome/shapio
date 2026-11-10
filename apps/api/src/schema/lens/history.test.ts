@@ -27,7 +27,7 @@ describe('activationsFromAudit', () => {
       ],
       revisions,
       scopes: new Map([['m', null]]),
-      existing: new Set(['m:6']),
+      protectedKeys: new Set(['m:6']),
     });
     expect(
       rows.map(({ schemaVersion, siteId, revisionId }) => ({ schemaVersion, siteId, revisionId })),
@@ -50,8 +50,59 @@ describe('activationsFromAudit', () => {
         ],
         revisions,
         scopes: new Map([['m', 's2']]),
-        existing: new Set(),
+        protectedKeys: new Set(),
       }).map((row) => [row.schemaVersion, row.revisionId, row.siteId]),
     ).toEqual([[5, 'r2', 's2']]);
+  });
+
+  it('keeps rows before a move from shared to a workspace shared (null scope)', () => {
+    const rows = activationsFromAudit({
+      events: [
+        event('schema.activate', 'm', { toVersion: 1, schemaVersion: 4 }),
+        event('schema.scope', 'm', { from: 'network', to: { siteId: 's1' }, schemaVersion: 6 }),
+        event('schema.activate', 'm', { toVersion: 2, schemaVersion: 6 }),
+      ],
+      revisions,
+      scopes: new Map([['m', 's1']]),
+      protectedKeys: new Set(),
+    });
+    expect(rows.map((row) => [row.schemaVersion, row.siteId])).toEqual([
+      [4, null],
+      [6, 's1'],
+    ]);
+  });
+
+  it('moves every kind of a family with its root', () => {
+    const rows = activationsFromAudit({
+      events: [
+        event('schema.activate', 'root', { toVersion: 1, schemaVersion: 2 }),
+        event('schema.activate', 'kind', { toVersion: 1, schemaVersion: 3 }),
+        event('schema.scope', 'root', {
+          from: { siteId: 's1' },
+          to: 'network',
+          schemaVersion: 9,
+          family: ['root', 'kind'],
+        }),
+        event('schema.activate', 'root', { toVersion: 2, schemaVersion: 9 }),
+        event('schema.activate', 'kind', { toVersion: 2, schemaVersion: 9 }),
+      ],
+      revisions: new Map([
+        ['root:1', 'a1'],
+        ['root:2', 'a2'],
+        ['kind:1', 'b1'],
+        ['kind:2', 'b2'],
+      ]),
+      scopes: new Map([
+        ['root', null],
+        ['kind', null],
+      ]),
+      protectedKeys: new Set(),
+    });
+    expect(rows.map((row) => [row.modelId, row.schemaVersion, row.siteId])).toEqual([
+      ['root', 2, 's1'],
+      ['kind', 3, 's1'],
+      ['root', 9, null],
+      ['kind', 9, null],
+    ]);
   });
 });

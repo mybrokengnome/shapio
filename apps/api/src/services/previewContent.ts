@@ -5,7 +5,8 @@ import { everyRowReadMask } from '../content/compiler/policy.js';
 import type { ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound } from '../content/errors.js';
 import { familyIdsOf, kindsMetaOf, type ReadMember } from '../content/family.js';
-import { resolveModelById, resolveRouteModel, type ContentModel } from '../content/model.js';
+import { modelNotFound, resolveModelById, resolveRouteModel, type ContentModel } from '../content/model.js';
+import { readsNullThroughLens } from '../content/read.js';
 import { AppError } from '../helpers/appError.js';
 import { intersectMasks, type FieldVisibilityLookup } from '../permissions/policy.js';
 import {
@@ -21,7 +22,7 @@ import type { PreviewTokenSummary } from '../repositories/previewTokens.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import { assertItemParameters } from './contentDelivery.js';
-import { withClientQueryNames } from './contentDeliveryLens.js';
+import { lensQueryOf, withClientQueryNames, type ClientRoute } from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
 import { resolvePreviewToken } from './previewTokens.js';
@@ -119,6 +120,11 @@ export type PreviewRequest = {
   /** The route key (`routeKeyOf`): plural API ID of a collection, API ID of a singleton. */
   modelKey: string;
   rawQuery: string;
+  /**
+   * Schema lenses: the request names a schema version; `modelKey` and `rawQuery` are the client's
+   * (`clientRouteOf`), translated only once the preview token is checked (plan schema-lenses).
+   */
+  clientRoute?: ClientRoute | null;
 };
 
 type PreviewScope = {
@@ -242,14 +248,74 @@ const kindsOf = (scope: PreviewScope) => {
   return kinds ? { kinds } : {};
 };
 
+/** Checks the preview token and the route as a read would, with nothing else. */
+export const authorizePreview = async (
+  runtime: PublishingRuntime,
+  base: ContentServiceContext,
+  fields: FieldVisibilityLookup,
+  request: PreviewRequest,
+): Promise<void> => {
+  await authorize(runtime, base, fields, request);
+};
+
+const isRefusal = (error: unknown) =>
+  error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403);
+
+/**
+ * `authorize` for a request that may name a schema version: the token is checked exactly as without one (a
+ * refused request gets the answer the client's route key gives today), and only then is the request read
+ * through the lens, its query translated (plan schema-lenses).
+ */
+const authorizeRequest = async (
+  runtime: PublishingRuntime,
+  base: ContentServiceContext,
+  fields: FieldVisibilityLookup,
+  request: PreviewRequest,
+): Promise<{ scope: PreviewScope; rawQuery: string }> => {
+  const clientRoute = request.clientRoute ?? null;
+  if (!clientRoute) {
+    return { scope: await authorize(runtime, base, fields, request), rawQuery: request.rawQuery };
+  }
+  const asWithoutVersion = () =>
+    authorize(runtime, base, fields, { ...request, modelKey: clientRoute.clientRouteKey });
+  if (clientRoute.routeKey === null) {
+    await asWithoutVersion();
+    throw modelNotFound(clientRoute.clientRouteKey);
+  }
+  let scope: PreviewScope;
+  try {
+    scope = await authorize(runtime, base, fields, { ...request, modelKey: clientRoute.routeKey });
+  } catch (error) {
+    if (isRefusal(error)) {
+      await asWithoutVersion();
+    }
+    throw error;
+  }
+  const client = activeLens(scope.context)?.view;
+  const clientModel = client ? resolveModelById(client, scope.model.definition.id) : undefined;
+  const mask = everyRowReadMask(scope.policy);
+  const lensed = lensQueryOf(
+    scope.context,
+    scope.model.definition.id,
+    clientRoute.clientRouteKey,
+    request.rawQuery,
+    (fieldId) => {
+      const field = clientModel?.definition.fields.find((candidate) => candidate.id === fieldId);
+      const today = scope.model.definition.fields.find((candidate) => candidate.id === fieldId);
+      return field !== undefined && readsNullThroughLens(field, today, mask, scope.model);
+    },
+  );
+  return { scope: { ...scope, context: lensed.context }, rawQuery: lensed.rawQuery };
+};
+
 export const listPreview = async (
   runtime: PublishingRuntime,
   base: ContentServiceContext,
   fields: FieldVisibilityLookup,
   request: PreviewRequest,
 ) => {
-  const scope = await authorize(runtime, base, fields, request);
-  const query = scopedQuery(scope, request.rawQuery);
+  const { scope, rawQuery } = await authorizeRequest(runtime, base, fields, request);
+  const query = scopedQuery(scope, rawQuery);
   const { entries, limit, total } = await readEntryPage(readOf(scope, query));
   return {
     data: entries,
@@ -268,11 +334,11 @@ export const getPreview = async (
   request: PreviewRequest & { id: string },
 ) => {
   assertItemParameters(request.rawQuery, ITEM_PARAMETERS);
-  const scope = await authorize(runtime, base, fields, request);
+  const { scope, rawQuery } = await authorizeRequest(runtime, base, fields, request);
   if (scope.token.entry_id !== request.id) {
     throw new AppError(403, 'PREVIEW_SCOPE', 'This preview token is for another entry');
   }
-  const query = scopedQuery(scope, request.rawQuery);
+  const query = scopedQuery(scope, rawQuery);
   const { entry } = await readOneEntry(readOf(scope, query), request.id);
   if (!entry) {
     throw entryNotFound(request.id);

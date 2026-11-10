@@ -29,7 +29,7 @@ import { PAGE_SIZE_ARGUMENT, TOTAL_COUNT_COST } from './complexity.js';
 import { entryNode, type GraphqlContext, type ReadScope, type ValueNode } from './context.js';
 import { familyTarget, servableNodes } from './entryKinds.js';
 import { contractFields, contractType, interfaceTarget } from './interfaceTypes.js';
-import { deliveryCall } from './lensReads.js';
+import { deliveryCall, isGoneRead } from './lensReads.js';
 import { collectionQueryName, modelTypeName, singleQueryName } from './names.js';
 import { entryOutputType } from './outputTypes.js';
 import {
@@ -185,14 +185,20 @@ const collectionQuery = (build: SchemaBuild, served: Served): RootField => {
         ...scalarParams({ pageSize: args[PAGE_SIZE_ARGUMENT] as number | null }),
         ...readParams(args),
       ]);
-      const call = await deliveryCall(build, context, owner, rawQuery);
-      if (!call) {
-        return emptyConnection(args, scope, (await context.content(build.snapshot)).snapshot.defaultLocale);
+      const call = await deliveryCall(build, context, owner);
+      let result: contentDeliveryService.DeliveryList;
+      try {
+        result = (await contentDeliveryService.listDelivery(call.service, call.apiKey, rawQuery, {
+          fallback: scope.fallback,
+          drafts: scope.drafts,
+          clientRoute: call.clientRoute,
+        })) as contentDeliveryService.DeliveryList;
+      } catch (error) {
+        if (isGoneRead(call, error)) {
+          return emptyConnection(args, scope, call.service.snapshot.defaultLocale);
+        }
+        throw error;
       }
-      const result = (await contentDeliveryService.listDelivery(call.service, call.apiKey, call.rawQuery, {
-        fallback: scope.fallback,
-        drafts: scope.drafts,
-      })) as contentDeliveryService.DeliveryList;
       return {
         // A row of a kind this caller's schema has no type for is left out (REST already leaves out kinds the
         // caller may not read, so this only guards against a type the schema could not resolve).
@@ -223,12 +229,10 @@ const singleQuery = (build: SchemaBuild, served: Served, singleton: boolean): Ro
     },
     resolve: async (_root, args, context) => {
       const scope = scopeOf(args, context);
-      const options = { fallback: scope.fallback, drafts: scope.drafts };
-      const call = await deliveryCall(build, context, owner, toRawQuery(readParams(args)));
-      if (!call) {
-        return null;
-      }
-      const { service, apiKey, rawQuery } = call;
+      const call = await deliveryCall(build, context, owner);
+      const { service, apiKey } = call;
+      const rawQuery = toRawQuery(readParams(args));
+      const options = { fallback: scope.fallback, drafts: scope.drafts, clientRoute: call.clientRoute };
       try {
         const result = singleton
           ? await contentDeliveryService.listDelivery(service, apiKey, rawQuery, options)
@@ -238,7 +242,7 @@ const singleQuery = (build: SchemaBuild, served: Served, singleton: boolean): Ro
         ]);
         return node ?? null;
       } catch (error) {
-        if (isNotFound(error)) {
+        if (isNotFound(error) || isGoneRead(call, error)) {
           return null;
         }
         throw error;

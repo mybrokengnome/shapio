@@ -9,7 +9,7 @@ import { operationUsage, type OperationUsage } from '../schema/codegen/graphql/u
 import type { SchemaVisibility } from '../schema/codegen/graphql/visibility.js';
 import type { RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
-import { usagePrincipalKey } from '../usage/keys.js';
+import { ANONYMOUS_PRINCIPAL_KEY, APP_USERS_PRINCIPAL_KEY, usagePrincipalKey } from '../usage/keys.js';
 import { getRequestSite } from './siteResolution.js';
 
 /** Route hooks and usage counting of `/api/graphql` (routes/graphql, controllers/graphql.ts). */
@@ -86,8 +86,16 @@ export const collectUsage = (
 };
 
 /**
+ * The schema version a request records for its principal: API tokens only. App users and anonymous callers
+ * are counted together, so one of them naming a version must not stand for (or push out) a real client's.
+ */
+export const recordedSchemaVersion = (principalKey: string, schemaVersion: number | null): number | null =>
+  principalKey === APP_USERS_PRINCIPAL_KEY || principalKey === ANONYMOUS_PRINCIPAL_KEY ? null : schemaVersion;
+
+/**
  * Step 2 (after execution): counts the reads once the operation returned data. `schemaVersion` is the version
- * the request named (today's included), null when it named none, as REST records it.
+ * the request named (today's included), null when it named none, as REST records it; recorded for API tokens
+ * only (`recordedSchemaVersion`).
  */
 export const recordUsage = (
   request: FastifyRequest,
@@ -100,7 +108,12 @@ export const recordUsage = (
   }
   const { principalKey, usage } = pending;
   const site = getRequestSite(request);
-  request.server.usage.recordRequest(site.id, principalKey, usage.snapshot, schemaVersion);
+  request.server.usage.recordRequest(
+    site.id,
+    principalKey,
+    usage.snapshot,
+    recordedSchemaVersion(principalKey, schemaVersion),
+  );
   for (const [modelId, reads] of usage.reads) {
     request.server.usage.recordFieldReads(site.id, principalKey, modelId, reads);
   }

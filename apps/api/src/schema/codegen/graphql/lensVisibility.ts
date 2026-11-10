@@ -1,27 +1,33 @@
 import { createHash } from 'node:crypto';
-import { isModelDefinition, type ResolvedModelDefinition } from '@shapio/schema';
+import {
+  embeddedComponentIds,
+  isComponentDefinition,
+  isModelDefinition,
+  type FieldDefinition,
+  type ResolvedModelDefinition,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import { liveFields } from '../../../content/model.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
 import type { ModelVisibility, SchemaVisibility } from './visibility.js';
 
 /**
- * What a caller's lens schema names (plan schema-lenses): the client's version of the workspace, with today's
- * permissions. A lens keeps old documents valid, so the client's fields stay in the schema where today's rules
- * would drop them; their reads are null and their writes are refused by the write path:
+ * What a caller's lens schema names (plan schema-lenses): the client's version of the workspace, under the
+ * invariant today's schema keeps (`controllers/graphql.ts`): a delivery caller's schema never names a field or
+ * model it cannot read today.
  *
- * - Admin callers (full visibility) see the client's version whole.
- * - Delivery callers see the models some policy allows them today (read queries when they may read, mutations
- *   as for today's schema). Outputs, filters and sorts name the fields of today's read mask (by stable ID) plus
- *   every field the client's version had public: one removed since, made private since, or outside the
- *   caller's grant today. Those were the client's public contract; the projection (`content/read.ts`) leaves
- *   their values out and they resolve to null (the build's `lens` flag). Inputs likewise name today's write
- *   mask plus the client's public fields when the caller may write the model at all; the write path
- *   (`services/contentDeliveryWrites.ts`) refuses what cannot be written. A field private in the client's
- *   version is named only when today's masks grant it.
- * - Models deleted since the client's version stay in its schema, reads only (`readOnly`): for admin callers,
- *   and for a delivery caller who may read some model today, with the fields it had public. Their reads are
- *   empty (`lensReads.ts`); they have no mutations, since nothing can be written to them.
- * - Component fields follow the client's `public` flags; the projection and the write path check today's.
+ * - Admin callers (full visibility) see the client's version whole; models deleted since are read only
+ *   (`readOnly`): their reads are empty and nothing can be written to them.
+ * - Delivery callers see the models some policy allows them today, as today's schema does (reads when they
+ *   may read, mutations as today). A model deleted since is not in their schema: a document naming it fails
+ *   validation, as REST answers 404.
+ * - A field that still exists today (by stable ID) is named when today's read mask allows it (today's grant and
+ *   today's `public`); in inputs, when today's write mask does. Its old name and type are the client's.
+ * - A field removed since is named only when it was public in the client's version and the caller's grant on
+ *   the model today is unrestricted (its mask holds every public field of the model today): it reads null.
+ * - Component fields: a component that exists today names the fields public today (by ID); a field removed
+ *   from it since, and every field of a component gone since, follow the removed-field rule for every model
+ *   that embeds the component.
  */
 const NO_FIELDS: ReadonlySet<string> = new Set();
 
@@ -29,24 +35,43 @@ const sorted = (ids: Iterable<string>) => [...ids].sort().join(',');
 
 const digest = (text: string) => createHash('sha256').update(text).digest('base64url');
 
-const keyOf = (models: ReadonlyMap<string, ModelVisibility>, readOnly: ReadonlySet<string>): string => {
+const keyOf = (
+  models: ReadonlyMap<string, ModelVisibility>,
+  components: ReadonlyMap<string, ReadonlySet<string>>,
+): string => {
   const canonical = [...models]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(
       ([id, model]) =>
         `${id}|${model.readable ? 'r' : '-'}|${sorted(model.readFields)}|${sorted(model.writeFields)}`,
-    )
-    .join('\n');
-  return `lens:${digest(`${canonical}\n${sorted(readOnly)}`)}`;
+    );
+  const componentLines = [...components]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, fields]) => `c:${id}|${sorted(fields)}`);
+  return `lens:${digest([...canonical, ...componentLines].join('\n'))}`;
 };
 
-/** The client's fields that are granted today, or were public in its version. */
-const namedFields = (model: ResolvedModelDefinition, granted: ReadonlySet<string>, withPublic: boolean) =>
-  new Set(
+/** Whether a mask holds every public field of today's model: the grant names no fields, so it sees them all. */
+const unrestricted = (mask: ReadonlySet<string>, today: SchemaDefinition | undefined): boolean =>
+  today !== undefined &&
+  liveFields(today.fields)
+    .filter((field) => field.public)
+    .every((field) => mask.has(field.id));
+
+/** The client's fields named for one mask: today's grant by ID, removed fields when the grant is unrestricted. */
+const namedFields = (
+  model: ResolvedModelDefinition,
+  today: ResolvedModelDefinition | undefined,
+  mask: ReadonlySet<string>,
+): Set<string> => {
+  const exists = new Set(today?.fields.map((field) => field.id) ?? []);
+  const withRemoved = unrestricted(mask, today);
+  return new Set(
     liveFields(model.fields)
-      .filter((field) => granted.has(field.id) || (withPublic && field.public))
+      .filter((field) => (exists.has(field.id) ? mask.has(field.id) : withRemoved && field.public))
       .map((field) => field.id),
   );
+};
 
 /** The client's models deleted since its version. */
 const goneModels = (view: SchemaSnapshot, current: SchemaSnapshot): Set<string> =>
@@ -56,52 +81,97 @@ const goneModels = (view: SchemaSnapshot, current: SchemaSnapshot): Set<string> 
     ),
   );
 
+/** The components a definition embeds in the client's version, transitively. */
+const componentsOf = (view: SchemaSnapshot, root: SchemaDefinition): Set<string> => {
+  const seen = new Set<string>();
+  const queue = embeddedComponentIds(root);
+  while (queue.length > 0) {
+    const id = queue.pop() as string;
+    const definition = view.byId.get(id)?.definition;
+    if (seen.has(id) || !definition || !isComponentDefinition(definition)) {
+      continue;
+    }
+    seen.add(id);
+    queue.push(...embeddedComponentIds(definition));
+  }
+  return seen;
+};
+
 /**
- * `visibility` (today's, resolved over `current`) widened for a schema built from `view`, the client's version
- * of the same workspace.
+ * The fields each of the client's components names: today's public ones by ID; removed ones (and a gone
+ * component's) when public in the client's version and every model embedding the component reads unrestricted.
+ */
+const componentFieldIds = (
+  view: SchemaSnapshot,
+  current: SchemaSnapshot,
+  embedders: ReadonlyMap<string, boolean[]>,
+): Map<string, ReadonlySet<string>> => {
+  const named = new Map<string, ReadonlySet<string>>();
+  for (const { definition } of view.definitions) {
+    if (!isComponentDefinition(definition)) {
+      continue;
+    }
+    const today = current.byId.get(definition.id)?.definition;
+    const todayFields = new Map<string, FieldDefinition>(
+      today && isComponentDefinition(today) ? today.fields.map((field) => [field.id, field]) : [],
+    );
+    const flags = embedders.get(definition.id) ?? [];
+    const removedAllowed = flags.length > 0 && flags.every(Boolean);
+    named.set(
+      definition.id,
+      new Set(
+        liveFields(definition.fields)
+          .filter((field) => {
+            const now = todayFields.get(field.id);
+            return now ? now.public && !now.deprecated : removedAllowed && field.public;
+          })
+          .map((field) => field.id),
+      ),
+    );
+  }
+  return named;
+};
+
+/**
+ * `visibility` (today's, resolved over `current`) for a schema built from `view`, the client's version of the
+ * same workspace.
  */
 export const lensVisibility = (
   visibility: SchemaVisibility,
   view: SchemaSnapshot,
   current: SchemaSnapshot,
 ): SchemaVisibility => {
-  const gone = goneModels(view, current);
   if (visibility.models === null) {
+    const gone = goneModels(view, current);
     return gone.size === 0
       ? visibility
       : { ...visibility, key: `${visibility.key}:lens:${digest(sorted(gone))}`, readOnly: gone };
   }
-  const readsSomething = [...visibility.models.values()].some((model) => model.readable);
   const models = new Map<string, ModelVisibility>();
-  const readOnly = new Set<string>();
+  /** Component ID → whether each model embedding it reads unrestricted today. */
+  const embedders = new Map<string, boolean[]>();
   for (const { definition } of view.definitions) {
-    if (!isModelDefinition(definition)) {
-      continue;
-    }
-    const model = view.resolve(definition.id);
     const today = visibility.models.get(definition.id);
-    if (!model) {
+    const model = isModelDefinition(definition) ? view.resolve(definition.id) : undefined;
+    if (!today || !model) {
       continue;
     }
-    if (today) {
-      models.set(definition.id, {
-        readable: today.readable,
-        readFields: today.readable ? namedFields(model, today.readFields, true) : NO_FIELDS,
-        writeFields: namedFields(model, today.writeFields, today.writeFields.size > 0),
-      });
-    } else if (gone.has(definition.id) && readsSomething) {
-      models.set(definition.id, {
-        readable: true,
-        readFields: namedFields(model, NO_FIELDS, true),
-        writeFields: NO_FIELDS,
-      });
-      readOnly.add(definition.id);
+    const todayModel = current.resolve(definition.id);
+    models.set(definition.id, {
+      readable: today.readable,
+      readFields: today.readable ? namedFields(model, todayModel, today.readFields) : NO_FIELDS,
+      writeFields: namedFields(model, todayModel, today.writeFields),
+    });
+    const open = today.readable && unrestricted(today.readFields, todayModel);
+    for (const componentId of componentsOf(view, model)) {
+      embedders.set(componentId, [...(embedders.get(componentId) ?? []), open]);
     }
   }
+  const components = componentFieldIds(view, current, embedders);
   return {
-    key: keyOf(models, readOnly),
+    key: keyOf(models, components),
     models,
     componentFields: visibility.componentFields,
-    ...(readOnly.size > 0 ? { readOnly } : {}),
+    componentFieldIds: components,
   };
 };

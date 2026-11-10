@@ -211,5 +211,23 @@ describe('GraphQL schema cache', () => {
       await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).rejects.toThrow('build failed');
       await expect(cache.getLens(lensView(5, 4), FULL_VISIBILITY)).resolves.toBeDefined();
     });
+
+    it('asks the build budget on a miss only, and refuses a build it does not admit with 429', async () => {
+      const { cache, builds } = setup();
+      let asked = 0;
+      const admit = (answer: boolean) => () => {
+        asked += 1;
+        return answer;
+      };
+      await cache.getLens(lensView(6, 1), FULL_VISIBILITY, { admit: admit(true) });
+      await cache.getLens(lensView(7, 1), FULL_VISIBILITY, { admit: admit(false) });
+      expect(asked).toBe(1);
+      await expect(
+        cache.getLens(lensView(6, 2), FULL_VISIBILITY, { admit: admit(false) }),
+      ).rejects.toMatchObject({ statusCode: 429, code: 'LENS_BUDGET_EXCEEDED' });
+      expect(asked).toBe(2);
+      expect(builds).toHaveLength(1);
+      expect(cache.listLens()).toHaveLength(1);
+    });
   });
 });
