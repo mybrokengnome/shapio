@@ -51,5 +51,10 @@ export type SnapshotChangesPage = {
 export type CurrentSnapshot = {
   snapshot: number;
   schemaVersion: number;
+  /**
+   * The current schema version as the token a client names (`<schemaId>:<version>`, the client's
+   * `schemaVersion` option). Server 0.9.0 or later; absent from older servers.
+   */
+  schemaVersionToken?: string;
   publishedAt: string | null;
 };

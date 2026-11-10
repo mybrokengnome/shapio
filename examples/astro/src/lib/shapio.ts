@@ -1,5 +1,6 @@
 import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
 import { configuredSnapshot, deliveryToken, isDev, isDraftsMode, shapioUrl, siteKey } from './config.js';
+import { SCHEMA_VERSION } from './schemaVersion.js';
 import type { Locale } from './site.js';
 import { cachedRead, cacheWindow, createSnapshotResolver } from './snapshotResolver.js';
 import type { Article, Page, SiteSettings } from './types.js';
@@ -36,6 +37,8 @@ const shapio = () =>
     token: deliveryToken(),
     workspace: siteKey(),
     drafts: isDraftsMode(),
+    // The schema version the site was built against (`npm run types`): reads keep that shape.
+    schemaVersion: SCHEMA_VERSION,
   }));
 
 let resolver: (() => Promise<number>) | undefined;

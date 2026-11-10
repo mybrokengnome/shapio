@@ -13,6 +13,7 @@
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "seed": "node --env-file-if-exists=.env --import tsx ../shared/scripts/seed.ts --site-url http://localhost:4321",
+    "types": "node --env-file-if-exists=.env --import tsx ../shared/scripts/types.ts",
     "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke.ts",
     "smoke:drafts": "node --env-file-if-exists=.env --import tsx ../shared/scripts/smokeDrafts.ts --url http://localhost:4321",
     "smoke:http": "node --import tsx ../shared/scripts/smokeHttp.ts --url http://localhost:4321",

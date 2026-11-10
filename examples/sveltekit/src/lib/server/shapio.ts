@@ -1,5 +1,6 @@
 import { createClient, ShapioApiError, type DeliveryListQuery, type DeliverySite } from '@shapio/client';
 import { dev } from '$app/env';
+import { SCHEMA_VERSION } from '../schemaVersion';
 import type { Locale } from '../site';
 import type { Article, Page, SiteSettings } from '../types';
 import { configuredSnapshot, deliveryToken, isDraftsMode, shapioUrl, siteKey } from './config';
@@ -31,6 +32,8 @@ const createShapio = () =>
     token: deliveryToken(),
     workspace: siteKey(),
     drafts: isDraftsMode(),
+    // The schema version the site was built against (`npm run types`): reads keep that shape.
+    schemaVersion: SCHEMA_VERSION,
   });
 
 let client: ReturnType<typeof createShapio> | undefined;

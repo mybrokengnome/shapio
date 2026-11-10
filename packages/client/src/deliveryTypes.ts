@@ -1,4 +1,5 @@
 import type { ContentListQuery } from './admin/contentTypes.js';
+import type { SchemaVersionMeta } from './schemaVersion.js';
 
 /**
  * The delivery API (`/api/content/:routeKey`): published content as websites and apps read it. `routeKey` is a
@@ -37,6 +38,11 @@ export type DeliveryMeta = {
   snapshot: number | null;
   /** Drafts mode reads only (`publicationState=draft`); published responses carry no such member. */
   publicationState?: 'draft';
+  /**
+   * Reads through a schema version only (the client's `schemaVersion`, server 0.9.0 or later): the version
+   * the response is shaped as and the instance's current one. Absent when no version was named.
+   */
+  schemaVersion?: SchemaVersionMeta;
 };
 
 export type DeliveryPagination = { page: number; pageSize: number; total: number; pageCount: number };

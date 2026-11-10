@@ -2,7 +2,10 @@ import type { CliCommand } from '../../types.js';
 import { COMMON_USAGE, parseSchemaOptions } from './options.js';
 import { printResults, readSiteState, sendApply } from './sync.js';
 
-/** `shapio schema diff`: what `apply` would do, per definition, without changing anything. */
+/**
+ * `shapio schema diff`: what `apply` would do, per definition, without changing anything. Each breaking change
+ * also says what clients naming an older schema version see once it is live.
+ */
 export const schemaDiffCommand: CliCommand = {
   summary: 'Show what `shapio schema apply` would change on the instance (dry run)',
   usage: `shapio schema diff ${COMMON_USAGE} [--prune]`,
@@ -16,7 +19,7 @@ export const schemaDiffCommand: CliCommand = {
     if (!response) {
       return 1;
     }
-    printResults(response, state, io, false);
+    printResults(response, state, io, false, { olderClients: true });
     const pending = response.results.filter((item) =>
       ['create', 'update', 'delete'].includes(item.decision.action),
     );

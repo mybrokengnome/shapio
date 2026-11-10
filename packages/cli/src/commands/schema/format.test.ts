@@ -1,7 +1,7 @@
 import { ShapioApiError, type SchemaSyncResult } from '@shapio/client';
-import type { DataType, SchemaChange } from '@shapio/schema';
+import type { ClassifiedChange, DataType, SchemaChange } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
-import { formatApiError, formatChange, formatItem, formatRequiredGaps } from './format.js';
+import { formatApiError, formatChange, formatItem, formatRequiredGaps, olderClientsNote } from './format.js';
 
 const names = new Map([['f1', 'price']]);
 const typeChange = (from: DataType, to: DataType): SchemaChange => ({
@@ -290,6 +290,72 @@ describe('interfaces', () => {
     expect(text).toContain('An interface’s field can’t be a component or a dynamic zone');
     expect(text).toContain('Remove the interface from "implements" on every type that names it');
     expect(text).toContain('Remove the references the message counts');
+  });
+});
+
+describe('what clients naming an older schema version see', () => {
+  /** A change as the server sends it: classified, breaking unless said otherwise. */
+  const classified = (change: SchemaChange, extra: Partial<ClassifiedChange> = {}): ClassifiedChange => ({
+    ...change,
+    category: 'contract',
+    breaking: true,
+    destructive: false,
+    supported: true,
+    dropsValues: false,
+    prerequisites: [],
+    cleanup: [],
+    ...extra,
+  });
+  const field = { definitionId: 'm1', fieldId: 'f1' } as const;
+  const item = (
+    changes: SchemaChange[],
+    kind: SchemaSyncResult['kind'] = 'collection',
+  ): SchemaSyncResult => ({
+    definitionId: 'm1',
+    apiKey: 'article',
+    kind,
+    decision: { action: 'update', expectedVersion: 3 },
+    changes,
+    plan: { summary: { breaking: true } },
+  });
+
+  it('says it on each breaking line of `schema diff`, in plain words', () => {
+    const changes = [
+      classified({ kind: 'field.apiKey', ...field, from: 'price', to: 'cost' }),
+      classified({ kind: 'field.removed', ...field, from: { apiKey: 'price' } }),
+      classified({ kind: 'field.type', ...field, from: 'integer', to: 'number' }),
+      classified({ kind: 'field.type', ...field, from: 'number', to: 'integer' }),
+      classified({ kind: 'model.localized', definitionId: 'm1', from: false, to: true }),
+    ];
+    expect(formatItem(item(changes), names, new Map(), new Map(), { olderClients: true })).toBe(
+      [
+        'model article: update [BREAKING]',
+        '    ~ field price apiKey: "price" → "cost" (clients naming an older schema version: keep working)',
+        '    - field price (clients naming an older schema version: this field reads empty)',
+        '    ~ field price type: "integer" → "number" (clients naming an older schema version: some values read empty)',
+        '    ~ field price type: "number" → "integer" (clients naming an older schema version: keep working)',
+        '    ~ localized: false → true (clients naming an older schema version: not covered)',
+      ].join('\n'),
+    );
+  });
+
+  it('names what a removed definition is', () => {
+    const removed = classified({ kind: 'definition.removed', definitionId: 'm1', from: 'article' });
+    expect(olderClientsNote(removed, 'model')).toBe(
+      ' (clients naming an older schema version: lose this content type)',
+    );
+    expect(olderClientsNote(removed, 'component')).toBe(
+      ' (clients naming an older schema version: lose this component)',
+    );
+  });
+
+  it('says nothing on changes that are not breaking, from servers that send no classification, or in apply', () => {
+    const rename = { kind: 'field.apiKey', ...field, from: 'price', to: 'cost' } as const;
+    expect(olderClientsNote(classified(rename, { breaking: false }), 'model')).toBe('');
+    expect(olderClientsNote(rename, 'model')).toBe('');
+    expect(formatItem(item([classified(rename)]), names)).toBe(
+      'model article: update [BREAKING]\n    ~ field price apiKey: "price" → "cost"',
+    );
   });
 });
 

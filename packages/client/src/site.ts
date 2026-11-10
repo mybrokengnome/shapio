@@ -27,7 +27,11 @@ const DELIVERY_READ_PREFIXES = [
   `${DELIVERY_WORKSPACE_PATH}?`,
 ] as const;
 
-const isDeliveryRead = (method: string, path: string) =>
+/**
+ * A delivery read: a GET of content, a snapshot, or the workspace. These requests name the workspace and the
+ * schema version in their URL; every other request names them with a header.
+ */
+export const isDeliveryRead = (method: string, path: string) =>
   method === 'GET' &&
   (path === DELIVERY_PATH ||
     path === DELIVERY_SITE_PATH ||
@@ -35,14 +39,21 @@ const isDeliveryRead = (method: string, path: string) =>
     Object.values(SNAPSHOT_PATHS).some((snapshotPath) => path === snapshotPath) ||
     DELIVERY_READ_PREFIXES.some((prefix) => path.startsWith(prefix)));
 
-const namesSite = (path: string) => {
+/** Whether the path's query string already carries any of `parameters`. */
+export const pathHasQueryParameter = (path: string, parameters: readonly string[]) => {
   const index = path.indexOf('?');
   if (index === -1) {
     return false;
   }
   const query = new URLSearchParams(path.slice(index + 1));
-  return WORKSPACE_QUERY_PARAMETERS.some((parameter) => query.has(parameter));
+  return parameters.some((parameter) => query.has(parameter));
 };
+
+/** `path` with `name=value` added to its query string (the value encoded). */
+export const withQueryParameter = (path: string, name: string, value: string) =>
+  `${path}${path.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}`;
+
+const namesSite = (path: string) => pathHasQueryParameter(path, WORKSPACE_QUERY_PARAMETERS);
 
 /**
  * Where a request names the client's workspace (sites plan §H). Delivery GETs put it in the query string: a
@@ -59,8 +70,7 @@ export const applySite = (
     return { path, headers: {} };
   }
   if (isDeliveryRead(method, path)) {
-    const parameter = `${SITE_QUERY_PARAMETER}=${encodeURIComponent(site)}`;
-    return { path: `${path}${path.includes('?') ? '&' : '?'}${parameter}`, headers: {} };
+    return { path: withQueryParameter(path, SITE_QUERY_PARAMETER, site), headers: {} };
   }
   return { path, headers: { [SITE_HEADER]: site } };
 };

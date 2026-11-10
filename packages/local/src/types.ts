@@ -41,6 +41,13 @@ export type LocalClientOptions = {
    * it on a production build.
    */
   drafts?: boolean;
+  /**
+   * The schema version this site was built against: the `SCHEMA_VERSION` token `shapio types generate` writes
+   * (as `@shapio/client`'s `schemaVersion`). Every read names it as `?schemaVersion=`, in process and over the
+   * `onVersionSkew: 'http'` fallback alike, and answers in that version's shape after the schema moves on.
+   * Leave it out to read today's schema. Errors as `@shapio/client`'s option describes.
+   */
+  schemaVersion?: string;
 };
 
 /** The server runs another Shapio release (503 `VERSION_SKEW`); null when the database predates this one. */

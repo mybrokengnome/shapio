@@ -2,7 +2,14 @@ import { createClient, ShapioApiError, type SchemaApplyResult } from '@shapio/cl
 import { LOCK_FILE_FORMAT_VERSION, lockCoversSite, type LockFile } from '@shapio/schema';
 import type { CliIo } from '../../types.js';
 import { displayPath, readLocalFiles, readLockFile, type LocalFile } from './files.js';
-import { formatApiError, formatItem, parentKeyOf, type ImplementedIds, type ParentIds } from './format.js';
+import {
+  formatApiError,
+  formatItem,
+  parentKeyOf,
+  type FormatItemOptions,
+  type ImplementedIds,
+  type ParentIds,
+} from './format.js';
 import type { ConnectionOptions, SchemaCommandOptions } from './options.js';
 import { baseForSite, filesForSite, scopesOf } from './siteTree.js';
 
@@ -191,10 +198,16 @@ export const sendApply = async (
   }
 };
 
-export const printResults = (response: SchemaApplyResult, state: LocalState, io: CliIo, verbose: boolean) => {
+export const printResults = (
+  response: SchemaApplyResult,
+  state: LocalState,
+  io: CliIo,
+  verbose: boolean,
+  options: FormatItemOptions = {},
+) => {
   for (const item of response.results) {
     if (verbose || item.decision.action !== 'skip' || item.decision.reason !== 'unchangedLocally') {
-      io.stdout(`${formatItem(item, state.names, state.parents, state.implemented)}\n`);
+      io.stdout(`${formatItem(item, state.names, state.parents, state.implemented, options)}\n`);
     }
   }
 };

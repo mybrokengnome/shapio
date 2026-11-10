@@ -34,6 +34,10 @@ instance with several. Next.js telemetry is off: `NEXT_TELEMETRY_DISABLED=1` in 
 | `src/lib/revalidation*.ts`   | the snapshot diff, and which pages and cache tags a change touches |
 | `shapio/`, `scripts/seed.ts` | the models and the seed                                            |
 
+Schema versions (Shapio 0.9.0 or later): `npm run types` (admin access, as for the seed) writes the types of the
+current schema to `src/lib/shapio.generated.ts` and its `SCHEMA_VERSION` to `src/lib/schemaVersion.ts`. The site
+names that version when it reads, so a build keeps working when the schema changes, and moves forward on the next `npm run types`.
+
 Drafts mode, for your development server: set `SHAPIO_DRAFTS=true` in `.env` and `npm run dev` shows saved
 drafts instead of published content, fresh on every reload, with a **Drafts** badge on every page. Save in
 Shapio, reload, and the change is there; publishing still rebuilds the live site. It reads with

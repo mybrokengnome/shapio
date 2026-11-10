@@ -40,7 +40,7 @@ export type LocalClient = ShapioDeliveryClient & {
  * `ShapioApiError`s, answered from the database without an HTTP hop. Reads as `token` (a delivery API token)
  * or, without one, as an anonymous caller (the workspace's `public` role). Model changes made in the admin
  * show on the next call. `drafts: true` reads drafts instead (drafts mode), when the token's role grants Read
- * drafts.
+ * drafts. `schemaVersion` reads in the shape of the schema version the site was built against.
  *
  * Needs PostgreSQL or MySQL, the Node.js runtime, and the same Shapio release as the server (`SHAPIO_VERSION`);
  * see `onVersionSkew`. Nothing is read until the first call.
@@ -50,6 +50,7 @@ export const createLocalClient = ({
   workspace,
   site: siteOption,
   drafts,
+  schemaVersion,
   ...runtimeOptions
 }: LocalClientOptions): LocalClient => {
   assertNodeRuntime();
@@ -68,6 +69,8 @@ export const createLocalClient = ({
     ...createDeliveryClient(request, {
       ...(site !== undefined ? { site } : {}),
       ...(drafts !== undefined ? { drafts } : {}),
+      // In the path, so the in-process read and its HTTP fallback both receive it.
+      ...(schemaVersion !== undefined ? { schemaVersion } : {}),
     }),
     close: release,
   };
