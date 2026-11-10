@@ -1,4 +1,4 @@
-import { isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
+import { compileLens, isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
@@ -18,6 +18,8 @@ import type {
 } from '../permissions/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import type { EntryRow } from '../repositories/entries.js';
+import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
+import { loadRequestLens, parseSchemaVersionToken, type RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
@@ -36,7 +38,66 @@ export type ContentServiceContext = {
   media?: ReadEnvironment['media'];
   requestId?: string;
   ip?: string;
+  /**
+   * Schema lenses (plan schema-lenses): the schema version the call names, and its lens. Absent: today's
+   * shape. An `identity` lens (nothing in the view changed since) reads exactly as without one.
+   */
+  lens?: RequestLens;
+  /**
+   * The client fields a lensed `fields=` named, by stable ID (gone ones included: they read null); null when
+   * it named none. Set with the lensed query (`services/contentDeliveryLens.ts`).
+   */
+  lensSelection?: readonly string[] | null;
+  /** This instance's schema ID (`<schemaId>:<version>` tokens); set on delivery contexts. */
+  schemaId?: string;
 };
+
+const schemaIds = new WeakMap<Database, Promise<string>>();
+
+/** The instance's schema ID: written once by a migration, so read once per database handle. */
+export const schemaIdOf = (db: Database): Promise<string> => {
+  let schemaId = schemaIds.get(db);
+  if (!schemaId) {
+    schemaId = schemaVersionsRepository.getSchemaId(db);
+    schemaIds.set(db, schemaId);
+    schemaId.catch(() => schemaIds.delete(db));
+  }
+  return schemaId;
+};
+
+/** The lens of a call naming today's version: nothing to translate. */
+const currentVersionLens = (snapshot: SchemaSnapshot): RequestLens => {
+  const side = { get: (id: string) => snapshot.byId.get(id)?.definition, resolve: snapshot.resolve };
+  return {
+    requested: snapshot.version,
+    current: snapshot.version,
+    view: snapshot,
+    identity: true,
+    lensFor: (id) => compileLens(side, side, id),
+  };
+};
+
+/**
+ * The context with the schema ID and, when the call names a schema version (`<schemaId>:<version>`), its lens:
+ * `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` or `SCHEMA_VERSION_AHEAD` when it cannot be served.
+ */
+export const withSchemaLens = async (
+  context: ContentServiceContext,
+  token: string | null,
+): Promise<ContentServiceContext> => {
+  const schemaId = await schemaIdOf(context.db);
+  if (token === null) {
+    return { ...context, schemaId };
+  }
+  const version = parseSchemaVersionToken(token, schemaId);
+  const lens =
+    (await loadRequestLens(context.db, context.snapshot, version)) ?? currentVersionLens(context.snapshot);
+  return { ...context, schemaId, lens };
+};
+
+/** Whether the call reads through a lens that translates anything (not today's version, not an identity). */
+export const activeLens = (context: Pick<ContentServiceContext, 'lens'>): RequestLens | undefined =>
+  context.lens && !context.lens.identity ? context.lens : undefined;
 
 const ACTION_LABELS: Readonly<Record<ContentAction, string>> = {
   read: 'reading',

@@ -45,6 +45,7 @@ import {
   modelWithPolicy,
   type ContentServiceContext,
 } from './contentAccess.js';
+import { knownToLens } from './contentDeliveryLens.js';
 import { listDetailsFor, type ListAuthor, type ListLocaleStatus } from './contentListDetails.js';
 
 /** Admin reads of content: drafts, per-locale status, revisions. */
@@ -310,7 +311,8 @@ export const familyMembersFor = (
 ): Promise<ReadMember[]> =>
   readableMembers(
     context.snapshot,
-    familyIdsOf(context.snapshot, model.definition.id),
+    // Through a lens, the kinds the client's version knows (plan schema-lenses).
+    familyIdsOf(context.snapshot, model.definition.id).filter((id) => knownToLens(context, id)),
     (modelId) =>
       modelId === model.definition.id
         ? Promise.resolve(policy)

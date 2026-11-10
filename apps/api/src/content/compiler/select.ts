@@ -48,6 +48,12 @@ export type ProjectionOptions = {
    */
   publicComponentFieldsOnly: boolean;
   /**
+   * Which component fields (at any depth) are shown, when the definitions projected are not today's (schema
+   * lenses: the client's version, with today's visibility by stable ID). Absent: live fields, and only public
+   * ones under `publicComponentFieldsOnly`.
+   */
+  componentFieldVisible?: (field: FieldDefinition) => boolean;
+  /**
    * Admin reads: an asset that no longer resolves (force-deleted) stays as its bare ID instead of being
    * dropped, so the editor sees it and can remove it.
    */
@@ -113,7 +119,8 @@ const projectComponent = (
   component && isRecord(value)
     ? projectFields(
         component.fields.filter(
-          (field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly),
+          options.componentFieldVisible ??
+            ((field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly)),
         ),
         value,
         options,

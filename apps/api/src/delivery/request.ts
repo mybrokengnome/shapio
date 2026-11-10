@@ -3,10 +3,16 @@ import { Value } from 'typebox/value';
 import { apiKeyOfRoute } from '../content/model.js';
 import { splitContentPath } from '../helpers/contentRoutes.js';
 import type { ErrorLike } from '../helpers/errorResponse.js';
+import {
+  pickSchemaVersionToken,
+  rawSchemaVersionCandidate,
+  withoutSchemaVersionParameter,
+} from '../helpers/schemaVersionQuery.js';
 import { pickSiteKey, rawSiteQueryCandidates, withoutSiteParameter } from '../helpers/siteQuery.js';
 import { SnapshotChangesQuerySchema, type SnapshotChangesQuery } from '../routes/snapshots/schemas.js';
-import type { ContentServiceContext } from '../services/contentAccess.js';
+import { withSchemaLens, type ContentServiceContext } from '../services/contentAccess.js';
 import { getDelivery, listDelivery } from '../services/contentDelivery.js';
+import { lensDeliveryRequest } from '../services/contentDeliveryLens.js';
 import { getDeliverySite } from '../services/siteSeo.js';
 import { currentSnapshot, listSnapshotChanges } from '../services/snapshotChanges.js';
 import { ShapioVersionSkewError, toShapioApiError } from './errors.js';
@@ -35,9 +41,15 @@ export type DeliveryRoute =
 
 /**
  * A matched path: the route, its querystring without `workspace` and `site`, and the workspace the path names
- * (`?workspace=` or `?site=`), if any.
+ * (`?workspace=` or `?site=`), if any, and the schema version it names (`?schemaVersion=`).
  */
-export type MatchedRequest = { route: DeliveryRoute; query: string; site: string | undefined };
+export type MatchedRequest = {
+  route: DeliveryRoute;
+  query: string;
+  site: string | undefined;
+  /** `?schemaVersion=` (plan schema-lenses): the shape the call reads in; null for today's. */
+  schemaVersion: string | null;
+};
 
 /**
  * `content/<routeKey>[/<id>]`: the route key may be nested (`products/digital`, or one encoded segment), split
@@ -100,7 +112,13 @@ export const matchDeliveryRequest = (method: string, path: string): MatchedReque
   }
   // An empty `?workspace=` or `?site=` names no workspace, as over HTTP.
   const site = pickSiteKey(rawSiteQueryCandidates(rawQuery));
-  return { route, query: withoutSiteParameter(rawQuery), site };
+  const schemaVersion = pickSchemaVersionToken([rawSchemaVersionCandidate(rawQuery)]);
+  return {
+    route,
+    query: withoutSchemaVersionParameter(withoutSiteParameter(rawQuery)),
+    site,
+    schemaVersion,
+  };
 };
 
 const notAvailable = (method: string, path: string) =>
@@ -142,15 +160,26 @@ const snapshotChangesQuery = (rawQuery: string): SnapshotChangesQuery => {
  */
 const asJson = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
 
+/** A content route's call in today's names when it names an older schema version (plan schema-lenses). */
+const lensed = (context: ContentServiceContext, routeKey: string, query: string) => {
+  const request = lensDeliveryRequest(context, routeKey, query);
+  return { ...request, apiKey: apiKeyOfRoute(request.context.snapshot, request.routeKey) };
+};
+
 const dispatch = async (
-  context: ContentServiceContext,
-  { route, query }: MatchedRequest,
+  base: ContentServiceContext,
+  { route, query, schemaVersion }: MatchedRequest,
 ): Promise<unknown> => {
+  const context = await withSchemaLens(base, schemaVersion);
   switch (route.kind) {
-    case 'list':
-      return listDelivery(context, apiKeyOfRoute(context.snapshot, route.routeKey), query);
-    case 'item':
-      return getDelivery(context, apiKeyOfRoute(context.snapshot, route.routeKey), route.id, query);
+    case 'list': {
+      const call = lensed(context, route.routeKey, query);
+      return listDelivery(call.context, call.apiKey, call.rawQuery);
+    }
+    case 'item': {
+      const call = lensed(context, route.routeKey, query);
+      return getDelivery(call.context, call.apiKey, route.id, call.rawQuery);
+    }
     case 'site':
       return getDeliverySite(context);
     case 'snapshotCurrent':

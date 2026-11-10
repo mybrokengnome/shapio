@@ -147,7 +147,7 @@ describe('workspace spellings', () => {
     });
 
     it('varies cacheable REST and GraphQL responses on both headers', async () => {
-      const vary = 'Authorization, Cookie, Shapio-Workspace, Shapio-Site';
+      const vary = 'Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version';
       expect((await get('/api/content/posts')).headers.vary).toBe(vary);
       expect((await get('/api/workspace')).headers.vary).toBe(vary);
       const query = new URLSearchParams({ query: '{ _snapshot { snapshot } }' }).toString();

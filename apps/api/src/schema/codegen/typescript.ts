@@ -10,6 +10,7 @@ import {
   type InterfaceDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
+import { schemaVersionToken } from '../../constants/schemaLens.js';
 import { relationTargetOf } from '../../content/relationTarget.js';
 import type { SchemaSnapshot } from '../snapshot.js';
 
@@ -248,7 +249,19 @@ const interfaceDeclarations = (definition: InterfaceDefinition, snapshot: Schema
  * and the delivery route key (`ShapioRouteKeys`, `{ article: 'articles', digitalProduct: 'products/digital',
  * featurable: 'featurables' }`).
  */
-export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
+/**
+ * `schemaId`: the instance's schema ID. With it the file exports `SCHEMA_VERSION` (`<schemaId>:<version>`),
+ * which a client passes as `createClient({ schemaVersion })` to keep reading in this shape (plan
+ * schema-lenses); `shapio types generate` finds it by this exact line.
+ */
+export type TypeScriptOptions = { schemaId?: string };
+
+const schemaVersionExport = (snapshot: SchemaSnapshot, schemaId: string | undefined): string =>
+  schemaId === undefined
+    ? ''
+    : `/** The schema version these types describe; pass it as \`createClient({ schemaVersion })\`. */\nexport const SCHEMA_VERSION = '${schemaVersionToken(schemaId, snapshot.version)}' as const;\n\n`;
+
+export const generateTypeScript = (snapshot: SchemaSnapshot, options: TypeScriptOptions = {}): string => {
   const definitions = [...snapshot.definitions]
     .map((active) => active.definition)
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
@@ -278,5 +291,5 @@ export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
     ...models.map((model) => `  ${model.apiKey}: '${routeKeyIn(snapshot, model)}';`),
     ...interfaces.map((contract) => `  ${contract.apiKey}: '${contract.pluralApiKey}';`),
   ].join('\n')}\n};\n`;
-  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${body.join('\n')}\n${anyEntry}\n${map}\n${routeKeys}`;
+  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${schemaVersionExport(snapshot, options.schemaId)}${body.join('\n')}\n${anyEntry}\n${map}\n${routeKeys}`;
 };

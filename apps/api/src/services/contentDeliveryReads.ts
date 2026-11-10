@@ -20,12 +20,13 @@ import {
   projectMemberRows,
   systemAttributes,
   type ReadEnvironment,
+  type ReadLens,
 } from '../content/read.js';
 import { visibleReferenceFilter } from '../content/visibleReferences.js';
 import type { Policy } from '../permissions/types.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as publicationsRepository from '../repositories/publications.js';
-import type { ContentServiceContext } from './contentAccess.js';
+import { activeLens, type ContentServiceContext } from './contentAccess.js';
 import {
   interfaceArms,
   interfaceOrderBy,
@@ -63,7 +64,22 @@ export const deliveryEnvironment = (
   ...(context.media ? { media: context.media } : {}),
   ...(richText ? { richText } : {}),
   ...(seo ? { seo } : {}),
+  ...readLensOf(context),
 });
+
+/** The projection's lens (plan schema-lenses): none for today's version or an identity lens. */
+const readLensOf = (context: ContentServiceContext): { lens?: ReadLens } => {
+  const lens = activeLens(context);
+  return lens
+    ? {
+        lens: {
+          view: lens.view,
+          lensFor: lens.lensFor,
+          selection: context.lensSelection ? new Set(context.lensSelection) : null,
+        },
+      }
+    : {};
+};
 
 /**
  * A delivery-shaped read of one model, once the caller is authorized and the query parsed. `source` is

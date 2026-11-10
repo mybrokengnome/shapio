@@ -7,11 +7,13 @@ describe('matchDeliveryRequest', () => {
       route: { kind: 'list', routeKey: 'articles' },
       query: 'locale=fr&populate=author',
       site: undefined,
+      schemaVersion: null,
     });
     expect(matchDeliveryRequest('GET', '/api/content/articles/abc%2Fdef')).toEqual({
       route: { kind: 'item', routeKey: 'articles', id: 'abc/def' },
       query: '',
       site: undefined,
+      schemaVersion: null,
     });
     expect(matchDeliveryRequest('GET', '/api/workspace')?.route).toEqual({ kind: 'site' });
     expect(matchDeliveryRequest('GET', '/api/site')?.route).toEqual({ kind: 'site' });
@@ -38,6 +40,25 @@ describe('matchDeliveryRequest', () => {
       id,
     });
     expect(matchDeliveryRequest('GET', `/api/content/products/digital/${id}/extra`)).toBeUndefined();
+  });
+
+  it('takes `schemaVersion` out of the query on every route, as the schema lens plugin does over HTTP', () => {
+    expect(
+      matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=abc-1:4&locale=fr'),
+    ).toMatchObject({
+      query: 'locale=fr',
+      schemaVersion: 'abc-1:4',
+    });
+    expect(matchDeliveryRequest('GET', '/api/snapshots/changes?from=1&schemaVersion=abc:2')).toMatchObject({
+      query: 'from=1',
+      schemaVersion: 'abc:2',
+    });
+    expect(() => matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=4')).toThrow(
+      expect.objectContaining({ code: 'SCHEMA_VERSION_INVALID' }),
+    );
+    expect(() =>
+      matchDeliveryRequest('GET', '/api/content/articles?schemaVersion=a:1&schemaVersion=a:2'),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_QUERY' }));
   });
 
   it('takes `site` out of the query, as site resolution does over HTTP', () => {

@@ -40,6 +40,7 @@ import { graphqlPlugin } from './plugins/graphql.js';
 import { mediaStoragePlugin } from './plugins/mediaStorage.js';
 import { publishingPlugin } from './plugins/publishing.js';
 import { requestLogPlugin } from './plugins/requestLog.js';
+import { schemaLensPlugin } from './plugins/schemaLens.js';
 import { schemaSnapshotPlugin } from './plugins/schemaSnapshot.js';
 import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
@@ -209,6 +210,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   });
   // After both authentication plugins (it narrows their principal to the request's site), before every route.
   await app.register(siteResolutionPlugin, { apiPrefix: urls.withBasePath('/api/') });
+  await app.register(schemaLensPlugin, { apiPrefix: urls.withBasePath('/api/') });
   await app.register(csrfPlugin);
   await app.register(adminBootstrapPlugin, {
     db: deps.db,
