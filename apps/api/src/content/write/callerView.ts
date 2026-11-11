@@ -43,6 +43,11 @@ export type CallerAccess = {
   visibleMedia: ReadonlySet<string> | null;
   /** A list is never refused (admin): items are paired only when that is certain, the rest are new. */
   neverRefuses: boolean;
+  /**
+   * The write adds a locale (no draft in it yet): its localized fields store nothing, so lists there are new items
+   * whatever the caller may read. Shared fields hold the other locales' values and keep the usual rule.
+   */
+  newLocale?: boolean;
 };
 
 /** The fields a client knows: today's (no version), or a schema version's, by today's stable field IDs. */
@@ -111,6 +116,8 @@ export type ViewScope = {
   reads: boolean;
   /** It may also have read the stored items here: `reads`, and it may have read the head written. */
   sees: boolean;
+  /** Nothing is stored here or below (a new item, a localized field of a new locale): there is nothing to see. */
+  fresh?: boolean;
 };
 
 export type CallerView = {
@@ -120,6 +127,11 @@ export type CallerView = {
   readonly top: ViewScope;
   /** The scope inside a field at `scope` (a top-level field when `topLevel`). */
   inside: (scope: ViewScope, field: FieldDefinition, topLevel: boolean) => ViewScope;
+  /**
+   * The scope inside an item: as `scope` when it continues a stored item; for a new item (nothing stored under it)
+   * the caller knows everything stored there, which is nothing, so its lists are new items.
+   */
+  within: (scope: ViewScope, continues: boolean) => ViewScope;
   /** Whether a read at `scope` shows this component field (at any depth). */
   shows: (scope: ViewScope, field: FieldDefinition) => boolean;
   /** A component field the write keeps from the stored item when the caller leaves it out. */
@@ -341,8 +353,10 @@ export const callerViewOf = (
     inside: (scope, field, topLevel) => {
       const readsHere =
         scope.reads && (topLevel ? access.readsField(field) && fields.knows(field) : reads(field));
-      return { reads: readsHere, sees: readsHere && scope.sees };
+      const fresh = scope.fresh === true || (topLevel && access.newLocale === true && field.localized);
+      return { reads: readsHere, sees: (readsHere && scope.sees) || fresh, fresh };
     },
+    within: (scope, continues) => (continues ? scope : { ...scope, sees: true, fresh: true }),
     shows,
     carried: (scope, field) => (scope.reads ? !reads(field) : !writes(field)) || !writes(field),
     holdsHidden,

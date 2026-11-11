@@ -270,8 +270,14 @@ const draftChanges = (
   main: {
     locale: string;
     previous: HeadRecord | undefined;
-    before: ContentData;
+    /**
+     * What the locale held and holds after, each item with its ID (stored, or derived for items saved before IDs):
+     * a shared field fans out only when its content or its items' IDs changed, never because an item that was
+     * sent back gained the ID a read already gave it.
+     */
+    beforeWithIds: ContentData;
     after: ContentData;
+    afterWithIds: ContentData;
     autosave: boolean;
   },
 ): DraftChange[] => {
@@ -286,7 +292,7 @@ const draftChanges = (
   if (!model.definition.localized) {
     return changes;
   }
-  const shared = changedSharedFieldIds(model.definition, main.before, main.after);
+  const shared = changedSharedFieldIds(model.definition, main.beforeWithIds, main.afterWithIds);
   if (shared.size === 0) {
     return changes;
   }
@@ -294,7 +300,12 @@ const draftChanges = (
     changes.push({
       previous: other,
       locale: other.locale,
-      data: withSharedValuesOf(model.definition, other.data, main.after, shared),
+      // The same uniqueness pass as the written locale: shared items copied in never repeat an ID there.
+      data: withUniqueItemIds(
+        withSharedValuesOf(model.definition, other.data, main.after, shared),
+        model.definition.fields,
+        componentLookupOf(model.components),
+      ),
       // A draft with unsaved autosaved work stays an autosave; otherwise the fan-out is a saved revision.
       mode: main.autosave || other.autosaved_at ? 'autosave' : 'revision',
     });
@@ -435,12 +446,8 @@ export const writeEntryUpdate = async (
   }
   const before = previous?.data ?? newLocaleBase(model, heads);
   const componentOf = componentLookupOf(model.components);
-  const beforeWithIds = withItemIds(
-    before,
-    model.definition.fields,
-    componentOf,
-    itemIdScopeOf(await itemIdKeyOf(trx), id, model, targetLocale),
-  );
+  const idScope = itemIdScopeOf(await itemIdKeyOf(trx), id, model, targetLocale);
+  const beforeWithIds = withItemIds(before, model.definition.fields, componentOf, idScope);
   const base: DraftUpdateBase = { before, beforeWithIds, previous, heads };
   let patch = input.patch;
   if (typeof patch === 'function') {
@@ -462,7 +469,10 @@ export const writeEntryUpdate = async (
     ...checked,
     data: withUniqueItemIds(checked.data, model.definition.fields, componentOf),
   };
-  if (isUnchangedSave(previous, beforeWithIds, outcome.data)) {
+  // Both sides with every item's ID: items the body left out (or sent back) of an entry saved before item IDs
+  // carry the IDs a read derives for them on both sides, so only content and IDs the body changed count.
+  const afterWithIds = withItemIds(outcome.data, model.definition.fields, componentOf, idScope);
+  if (isUnchangedSave(previous, beforeWithIds, afterWithIds)) {
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }
@@ -481,8 +491,9 @@ export const writeEntryUpdate = async (
   const changes = draftChanges(model, heads, {
     locale: targetLocale,
     previous,
-    before,
+    beforeWithIds,
     after: outcome.data,
+    afterWithIds,
     autosave,
   });
   const written = await saveDraftChanges(context, write, id, changes, previous ? 'save' : 'localize');
@@ -609,11 +620,14 @@ export const restoreRevision = async (
       ),
     );
     await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [previous.data]));
+    const idScope = itemIdScopeOf(await itemIdKeyOf(trx), id, model, targetLocale);
+    const componentOf = componentLookupOf(model.components);
     const changes = draftChanges(model, heads, {
       locale: targetLocale,
       previous,
-      before: previous.data,
+      beforeWithIds: withItemIds(previous.data, model.definition.fields, componentOf, idScope),
       after: outcome.data,
+      afterWithIds: withItemIds(outcome.data, model.definition.fields, componentOf, idScope),
       autosave: false,
     });
     await saveDraftChanges(context, write, id, changes, 'restore');

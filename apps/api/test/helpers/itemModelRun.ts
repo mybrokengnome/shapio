@@ -5,7 +5,6 @@ import {
   eventCount,
   headsOf,
   revisionCount,
-  setHeadData,
   type Caller,
   type Head,
   type Response,
@@ -73,8 +72,12 @@ export type EntryPlan = {
   draftEdit: boolean;
   /** Owned by this app user. */
   ownerId?: string;
-  /** Items stored without `__id` (legacy), by chance per item; values of the deprecated `old`; deleted targets. */
-  legacy: number;
+  /**
+   * How the entry is stored (the upgrade case is first-class): every component item with its `__id`, some without
+   * (`partial`), or none (`all`: stored before 0.9.0). Applied to every item at every depth, in every head.
+   */
+  legacy: 'with' | 'partial' | 'all';
+  /** Values of the deprecated `old`; relations to a deleted target. */
   oldValues: number;
   deletedTargets: number;
 };
@@ -95,6 +98,7 @@ const cardOf = (w: World, random: Random) => ({
     ? { rels: random.shuffle([w.things.published, w.things.draft]).slice(0, 1 + random.int(2)) }
     : {}),
   ...(random.chance(0.3) ? { pic: random.pick([w.media.public, w.media.private]) } : {}),
+  ...(random.chance(0.4) ? { pvt: tag('pvt') } : {}),
   ...(random.chance(0.3) ? { data: { k: random.int(3) } } : {}),
   chips: Array.from({ length: random.int(3) }, () => chipOf(random, ['a', 'b'])),
 });
@@ -126,12 +130,16 @@ export const planEntry = (w: World, random: Random, ownerId?: string): EntryPlan
           },
     ),
     ...(random.chance(0.6) ? { secretCard: { heading: 'S', note: tag('secret') } } : {}),
+    // Fields changed since V, at the top level: values a client on V reads (or does not) and sends back.
+    ...(random.chance(0.6) ? { madePrivate: tag('mp') } : {}),
+    ...(random.chance(0.6) ? { retypedTop: random.int(9) } : {}),
+    ...(random.chance(0.6) ? { addedTop: tag('at') } : {}),
   },
   publish: random.chance(0.8),
   french: random.chance(0.4),
   draftEdit: random.chance(0.25),
   ...(ownerId ? { ownerId } : {}),
-  legacy: random.chance(0.3) ? 0.5 : 0,
+  legacy: random.pick(['with', 'partial', 'all'] as const),
   oldValues: random.chance(0.5) ? 0.5 : 0,
   deletedTargets: random.chance(0.3) ? 0.5 : 0,
 });
@@ -151,7 +159,7 @@ const stripIds = (value: unknown): unknown =>
 const rawTouches = (w: World, data: Json, plan: EntryPlan, seed: number): Json => {
   const random = prng(seed);
   const cards = listOf(data[w.doc.cards]).map((card, index) => {
-    let next: Json = { ...card };
+    const next: Json = { ...card };
     if (plan.oldValues > 0 && random.chance(plan.oldValues)) {
       // The same value in every head (a value per entry and place, not per head).
       next[w.card.old] = `§old${seed}x${index}`;
@@ -159,12 +167,81 @@ const rawTouches = (w: World, data: Json, plan: EntryPlan, seed: number): Json =
     if (plan.deletedTargets > 0 && random.chance(plan.deletedTargets)) {
       next[w.card.rel] = w.things.deleted;
     }
-    if (plan.legacy > 0 && random.chance(plan.legacy)) {
-      next = stripIds(next) as Json;
-    }
     return next;
   });
-  return { ...data, ...(data[w.doc.cards] === undefined ? {} : { [w.doc.cards]: cards }) };
+  const touched: Json = { ...data, ...(data[w.doc.cards] === undefined ? {} : { [w.doc.cards]: cards }) };
+  // Values no API writes any more: a deprecated top-level field, a field removed since V (top and in a card).
+  if (plan.oldValues > 0) {
+    touched[w.doc.deprecatedTop] = `§dt${seed}`;
+    touched[w.removed[w.docKey]] = `§rt${seed}`;
+    const first = listOf(touched[w.doc.cards])[0];
+    if (first) {
+      first[w.removed.card] = `§rc${seed}`;
+    }
+  }
+  return legacyOf(touched, plan.legacy, seed);
+};
+
+/**
+ * `data` as 0.8.2 stored it: no `__id` on any component item (`all`), or on some (`partial`: chosen by a hash of
+ * the item's content and place, so the same item is chosen in every head).
+ */
+export const legacyOf = (data: Json, mode: EntryPlan['legacy'], seed: number): Json => {
+  if (mode === 'with') {
+    return data;
+  }
+  const hash = (text: string) =>
+    [...text].reduce((total, char) => (total * 31 + char.charCodeAt(0)) >>> 0, seed >>> 0);
+  const walk = (value: unknown, place: string): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item, index) => walk(item, `${place}/${index}`));
+    }
+    if (!isRecord(value)) {
+      return value;
+    }
+    const strip =
+      typeof value.__id === 'string' &&
+      (mode === 'all' || hash(`${place}:${JSON.stringify(stripIds(value))}`) % 2 === 0);
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !(strip && key === '__id'))
+        .map(([key, entry]) => [key, walk(entry, `${place}/${key}`)]),
+    );
+  };
+  return walk(data, '') as Json;
+};
+
+/**
+ * Rewrites an entry's heads as the server would have stored them: each new head data gets a revision of its own
+ * (a copy of the head's revision with that data, its parent the old one), so heads and revisions agree.
+ */
+export const storeHeads = async (w: World, entryId: string, change: (head: Head) => Json) => {
+  const made = new Map<string, string>();
+  for (const head of await headsOf(w, entryId)) {
+    const data = change(head);
+    const key = `${head.revision}:${JSON.stringify(data)}`;
+    let revision = made.get(key);
+    if (!revision) {
+      const old = await w.db
+        .selectFrom('content_revisions')
+        .selectAll()
+        .where('id', '=', head.revision)
+        .executeTakeFirstOrThrow();
+      revision = randomUUID();
+      await w.db
+        .insertInto('content_revisions')
+        .values({ ...old, id: revision, data: data as never, parent_revision_id: old.id })
+        .execute();
+      made.set(key, revision);
+    }
+    await w.db
+      .updateTable('entry_heads')
+      .set({ data: data as never, revision_id: revision })
+      .where('entry_id', '=', entryId)
+      .where('locale', '=', head.locale)
+      .where('state', '=', head.state as never)
+      .execute();
+  }
 };
 
 export type Entry = { id: string; plan: EntryPlan };
@@ -172,13 +249,13 @@ export type Entry = { id: string; plan: EntryPlan };
 /** Makes an entry from a plan, through the admin API, then the raw touches on every head. */
 export const createEntry = async (w: World, plan: EntryPlan, seed: number): Promise<Entry> => {
   const created = expectStatus(
-    await w.admin.post('/api/admin/content/doc?locale=en', { locale: 'en', data: plan.data }),
+    await w.admin.post(`/api/admin/content/${w.docKey}?locale=en`, { locale: 'en', data: plan.data }),
     201,
   ).json<{ id: string }>();
   const id = created.id;
   if (plan.french) {
     expectStatus(
-      await w.admin.put(`/api/admin/content/doc/${id}?locale=fr`, {
+      await w.admin.put(`/api/admin/content/${w.docKey}/${id}?locale=fr`, {
         locale: 'fr',
         expectedVersion: null,
         data: { title: 'fr', lchips: [{ zv: 'f', zh: tag('frzh') }] },
@@ -186,21 +263,21 @@ export const createEntry = async (w: World, plan: EntryPlan, seed: number): Prom
       200,
     );
   }
-  if (plan.publish) {
+  if (plan.publish && w.draftAndPublish) {
     expectStatus(
-      await w.admin.post(`/api/admin/content/doc/${id}/publish`, {
+      await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, {
         locales: plan.french ? ['en', 'fr'] : ['en'],
       }),
       200,
     );
   }
-  if (plan.draftEdit && plan.publish) {
+  if (plan.draftEdit && plan.publish && w.draftAndPublish) {
     // A draft-only edit through the admin API (a new draft revision): the published head differs.
-    const admin = await w.request('GET', `/api/admin/content/doc/${id}?locale=en`, w.adminToken);
+    const admin = await w.request('GET', `/api/admin/content/${w.docKey}/${id}?locale=en`, w.adminToken);
     const view = (admin.body as { version: number; data: Json }).data;
     const cards = listOf(view.cards).map((card) => asSent(card, true));
     expectStatus(
-      await w.admin.put(`/api/admin/content/doc/${id}?locale=en`, {
+      await w.admin.put(`/api/admin/content/${w.docKey}/${id}?locale=en`, {
         locale: 'en',
         expectedVersion: (admin.body as { version: number }).version,
         data: { cards: [...cards.slice(1), { id: null, heading: 'D', note: tag('draftonly') }] },
@@ -208,9 +285,7 @@ export const createEntry = async (w: World, plan: EntryPlan, seed: number): Prom
       200,
     );
   }
-  for (const head of await headsOf(w, id)) {
-    await setHeadData(w, id, head.locale, head.state, rawTouches(w, head.data, plan, seed));
-  }
+  await storeHeads(w, id, (head) => rawTouches(w, head.data, plan, seed));
   if (plan.ownerId) {
     await w.db.updateTable('entries').set({ owner_app_user_id: plan.ownerId }).where('id', '=', id).execute();
   }
@@ -243,7 +318,7 @@ export const readAs = async (
   if (caller.kind === 'admin') {
     const response = await w.request(
       'GET',
-      `/api/admin/content/doc/${entryId}?locale=${locale}`,
+      `/api/admin/content/${w.docKey}/${entryId}?locale=${locale}`,
       caller.token,
     );
     return response.status === 200 && isRecord(response.body) && isRecord(response.body.data)
@@ -251,7 +326,7 @@ export const readAs = async (
       : null;
   }
   const query = `?locale=${locale}${version || caller.pinned ? `&schemaVersion=${encodeURIComponent(w.versionToken)}` : ''}`;
-  const response = await w.request('GET', `/api/content/docs/${entryId}${query}`, caller.token);
+  const response = await w.request('GET', `/api/content/${w.docPlural}/${entryId}${query}`, caller.token);
   if (response.status !== 200 || !isRecord(response.body) || !isRecord(response.body.data)) {
     return null;
   }
@@ -666,10 +741,13 @@ export type WriteRequest = {
   body: Json;
 };
 
-const GRAPHQL_UPDATE = `mutation ($id: ID!, $v: Int, $data: DocInput, $locale: String) {
-  updateDoc(id: $id, expectedVersion: $v, data: $data, locale: $locale) { id version }
+const graphqlUpdate = (
+  w: World,
+) => `mutation ($id: ID!, $v: Int, $data: ${w.gqlNames.input}, $locale: String) {
+  ${w.gqlNames.update}(id: $id, expectedVersion: $v, data: $data, locale: $locale) { id version }
 }`;
-const GRAPHQL_CREATE = `mutation ($data: DocInput, $locale: String) { createDoc(data: $data, locale: $locale) { id version } }`;
+const graphqlCreate = (w: World) =>
+  `mutation ($data: ${w.gqlNames.input}, $locale: String) { ${w.gqlNames.create}(data: $data, locale: $locale) { id version } }`;
 
 /** Sends one write; returns the response (GraphQL folded to a status and an error code). */
 export const send = async (w: World, request: WriteRequest): Promise<Response> => {
@@ -677,12 +755,12 @@ export const send = async (w: World, request: WriteRequest): Promise<Response> =
   const query = `?locale=${locale}${request.version && !caller.pinned ? `&schemaVersion=${encodeURIComponent(w.versionToken)}` : ''}`;
   if (request.transport === 'adminApi') {
     return entryId
-      ? w.request('PUT', `/api/admin/content/doc/${entryId}${query}`, caller.token, {
+      ? w.request('PUT', `/api/admin/content/${w.docKey}/${entryId}${query}`, caller.token, {
           locale,
           expectedVersion: request.expectedVersion,
           data: body,
         })
-      : w.request('POST', `/api/admin/content/doc${query}`, caller.token, { locale, data: body });
+      : w.request('POST', `/api/admin/content/${w.docKey}${query}`, caller.token, { locale, data: body });
   }
   if (request.transport === 'graphql') {
     // GraphQL names a zone item by its component: { card: {...} }, not { __component: 'card', ... }.
@@ -702,20 +780,20 @@ export const send = async (w: World, request: WriteRequest): Promise<Response> =
       : body;
     return entryId
       ? w.gql(
-          GRAPHQL_UPDATE,
+          graphqlUpdate(w),
           { id: entryId, v: request.expectedVersion, data: gqlBody, locale },
           caller.token,
           request.version,
         )
-      : w.gql(GRAPHQL_CREATE, { data: gqlBody, locale }, caller.token, request.version);
+      : w.gql(graphqlCreate(w), { data: gqlBody, locale }, caller.token, request.version);
   }
   return entryId
-    ? w.request('PUT', `/api/content/docs/${entryId}${query}`, caller.token, {
+    ? w.request('PUT', `/api/content/${w.docPlural}/${entryId}${query}`, caller.token, {
         locale,
         ...(request.expectedVersion === undefined ? {} : { expectedVersion: request.expectedVersion }),
         data: body,
       })
-    : w.request('POST', `/api/content/docs${query}`, caller.token, { locale, data: body });
+    : w.request('POST', `/api/content/${w.docPlural}${query}`, caller.token, { locale, data: body });
 };
 
 /** Whether a write was accepted, and how it was refused (status, code, issue codes and paths). */
@@ -958,17 +1036,7 @@ export const acceptedWriteProblems = (
             detail: `${instance.list} ${instance.id} reused for other content: ${was} → ${now}`,
           });
         }
-      } else if (
-        sent &&
-        sent.id !== instance.id &&
-        // Look-alikes identical in every stored value (only their IDs differ): see LOOKSWAP.
-        !after.some(
-          (other) =>
-            other.id === sent.id &&
-            other.list === instance.list &&
-            isDeepStrictEqual(stripIds(other.raw), stripIds(instance.raw)),
-        )
-      ) {
+      } else if (sent && sent.id !== instance.id) {
         problems.push({
           property: '3 ID integrity',
           detail: `${instance.list} ${instance.id} reused for an item sent as ${String(sent.id)}`,
@@ -1293,7 +1361,7 @@ export const readAgreementProblems = async (w: World, entryId: string): Promise<
     problems.push({ property: '3 ID integrity', detail: `REST ${ids(rest)} vs REST@V ${ids(atV)}` });
   }
   const gql = await w.gql(
-    `query ($id: ID!) { doc(id: $id, locale: "en") { cards { id } } }`,
+    `query ($id: ID!) { ${w.gqlNames.query}(id: $id, locale: "en") { cards { id } } }`,
     { id: entryId },
     caller.token,
     false,

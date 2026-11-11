@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
 import { PLAYGROUND_QUERY_MAX_LENGTH, PLAYGROUND_THEMES } from '../../constants/graphql.js';
+import { MAX_GRAPHQL_BODY_DEPTH } from '../../constants/requestBody.js';
 import { SCHEMA_VERSION_HEADER, SCHEMA_VERSION_QUERY_PARAMETER } from '../../constants/schemaLens.js';
 import { SITE_KEY_PATTERN, SITE_QUERY_PARAMETER, WORKSPACE_QUERY_PARAMETER } from '../../constants/sites.js';
 import { getGraphql, graphqlErrorHandler, postGraphql } from '../../controllers/graphql.js';
@@ -52,6 +53,8 @@ export const graphqlRoutes: FastifyPluginAsyncTypebox = async (app) => {
   declareSiteScope(app, 'site');
   const options = {
     config: {
+      // `{ variables: { data } }`: the same content depth as a REST body's `{ data }`.
+      bodyDepth: MAX_GRAPHQL_BODY_DEPTH,
       audit: {
         exempt: 'GraphQL mutations call the content services, which record revisions and audit events',
       },

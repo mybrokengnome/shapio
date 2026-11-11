@@ -227,7 +227,7 @@ describe('htmlToRichText', () => {
     expect(JSON.stringify(result.document)).toContain('deep');
   });
 
-  it('keeps the document at most 58 JSON levels deep (the API body limit is 64)', () => {
+  it('keeps the document within the JSON depth the validator allows (86 levels: 40 node levels, marks and attrs)', () => {
     const jsonDepth = (value: unknown): number =>
       typeof value === 'object' && value !== null
         ? 1 + Math.max(0, ...Object.values(value).map(jsonDepth))
@@ -238,7 +238,7 @@ describe('htmlToRichText', () => {
       `${'<blockquote>'.repeat(80)}<p><a href="https://example.com"><strong>x</strong></a></p>${'</blockquote>'.repeat(80)}`,
       `${'<table><tr><td>'.repeat(30)}x${'</td></tr></table>'.repeat(30)}`,
     ]) {
-      expect(jsonDepth(htmlToRichText(html).document)).toBeLessThanOrEqual(58);
+      expect(jsonDepth(htmlToRichText(html).document)).toBeLessThanOrEqual(86);
     }
   });
 

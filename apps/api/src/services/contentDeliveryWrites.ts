@@ -23,9 +23,9 @@ import {
 import { writeLocaleFor } from '../content/locales.js';
 import { mediaIdsOf } from '../content/media.js';
 import { modelNotFound, resolveModel, type ContentModel } from '../content/model.js';
-import { visibleRelationTargetIds } from '../content/read.js';
+import { readsNullThroughLens, visibleRelationTargetIds } from '../content/read.js';
 import { sameContent } from '../content/sameContent.js';
-import { buildValidator } from '../content/validator/index.js';
+import { buildValidator, isMissingValue } from '../content/validator/index.js';
 import { contentInvalid, type ContentIssue } from '../content/validator/issues.js';
 import { callerViewOf, type CallerAccess, type CallerView } from '../content/write/callerView.js';
 import {
@@ -181,6 +181,11 @@ type ReadScope = {
   componentFieldVisible: (fieldId: string) => boolean;
   /** The caller may read drafts: a draft is one of the heads it may have read. */
   readsDrafts: boolean;
+  /**
+   * Whether a read through a schema version shows this client field as null to the caller (`readsNullThroughLens`,
+   * the read's own rule): public in the version, hidden since (private, deprecated, gone), grant unrestricted.
+   */
+  readsNull: (client: FieldDefinition, fieldId: string) => boolean;
 };
 
 /**
@@ -215,6 +220,7 @@ const readScopeOf = async (
   );
   return {
     readsDrafts,
+    readsNull: (client, fieldId) => readsNullThroughLens(client, today.get(fieldId), mask, policy),
     visible: (fieldId) => {
       const field = today.get(fieldId);
       return field !== undefined && maskAllows(mask, field);
@@ -501,9 +507,16 @@ const deliveryAccessOf = async (
   locale: string,
 ): Promise<CallerAccess> => {
   const documents = heads.flatMap((head) => (isRecord(head.data) ? [head.data] : []));
+  // What a read on this route shows this caller: a caller that may read drafts sees draft targets too (its reads
+  // can name them), anyone else the published ones.
   const visibleTargets = scope
     ? await visibleRelationTargetIds(
-        deliveryEnvironment(context, context.db, { kind: 'heads', state: 'published' }, locale),
+        deliveryEnvironment(
+          context,
+          context.db,
+          { kind: 'heads', state: scope.readsDrafts ? 'draft' : 'published' },
+          locale,
+        ),
         model,
         documents,
       )
@@ -526,6 +539,7 @@ const deliveryAccessOf = async (
     visibleTargets,
     visibleMedia,
     neverRefuses: false,
+    newLocale: !heads.some((head) => head.state === 'draft' && head.locale === locale),
   };
 };
 
@@ -741,9 +755,15 @@ export const updateDeliveryEntry = async (
     throw contentInvalid(checked.issues);
   }
   assertClientListCaps(lens, body);
+  // A top-level field the version's read shows as null (hidden since) sent back as that null is the read sent
+  // back: left out, its stored value kept, as inside components. Any other value keeps its refusal.
   const sent = Object.keys(body).flatMap((key) => {
     const field = lens.fields.find((candidate) => candidate.apiKey === key);
-    return field && field.kind !== 'null' ? [field] : [];
+    if (!field || field.kind === 'null') {
+      return [];
+    }
+    const echo = isMissingValue(body[key]) && scope !== null && scope.readsNull(field.client, field.fieldId);
+    return echo ? [] : [field];
   });
   await inClientNames(context, lens, async () =>
     assertWritable(

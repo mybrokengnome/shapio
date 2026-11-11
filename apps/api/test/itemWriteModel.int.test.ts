@@ -3,11 +3,14 @@ import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from './helpers/content.js';
+import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
 import {
   CANDIDATE_LABELS,
   graphqlLiteral,
   nested,
   POSITIONS,
+  echoThroughVersionProblems,
+  noopProblems,
   relationProbeProblems,
   resaveProblems,
   versionOfResponse,
@@ -20,6 +23,7 @@ import {
   idUniqueness,
   instancesOf,
   itemIdsProblems,
+  legacyOf,
   localeProblems,
   outcomeOf,
   planBody,
@@ -31,6 +35,7 @@ import {
   roundTripProblems,
   send,
   storedView,
+  storeHeads,
   tag,
   type Problem,
   type Random,
@@ -44,6 +49,7 @@ import {
   setHeadData,
   withAnonymousDocGrants,
   type Caller,
+  useModel,
   type World,
 } from './helpers/itemModelWorld.js';
 
@@ -160,7 +166,13 @@ const CALLERS = [
 const runOnce = async (w: World, seed: number): Promise<{ problems: Problem[]; log: string[] }> => {
   const random = prng(seed);
   const caller = w.callers[random.pick(CALLERS)];
-  return withAnonymousDocGrants(w, caller, () => runAs(w, seed, random, caller));
+  // A third of the runs write a model without draft and publish (every write publishes).
+  useModel(w, random.chance(0.33) ? 'ndoc' : 'doc');
+  try {
+    return await withAnonymousDocGrants(w, caller, () => runAs(w, seed, random, caller));
+  } finally {
+    useModel(w, 'doc');
+  }
 };
 
 const runAs = async (
@@ -217,10 +229,9 @@ const runAs = async (
     (plan.mode === 'echo' || plan.mode === 'none') &&
     !JSON.stringify(sentBody).includes('"id":null') &&
     // In a list sent with IDs an item without one is new every time: only lists all with or all without IDs.
-    !mixesIds(sentBody) &&
-    // Through a version, a field read-only there sent again after the first write moved the draft ahead is
-    // refused by design ("leave it out to keep the stored value").
-    !(version && /"(count|old)"/.test(JSON.stringify(sentBody)))
+    // Documented (delivery-api.md:551): in a list sent with IDs, every item without a string id is new, so a
+    // repeat of such a list adds new items again; only lists all with or all without IDs are repeat no-ops.
+    !mixesIds(sentBody)
   ) {
     problems.push(
       ...(await resaveProblems(
@@ -229,6 +240,24 @@ const runAs = async (
         response,
       )),
     );
+  }
+  // 9: no-op bodies on a fresh entry (legacy, partly, or with IDs; one or two locales), by this caller and route.
+  {
+    const noopEntry = await createEntry(
+      w,
+      { ...planEntry(w, random, caller.ownOnly ? caller.userId : undefined), draftEdit: false },
+      seed + 11_000_000,
+    );
+    problems.push(...(await noopProblems(w, random, caller, noopEntry.id, { version, transport })));
+  }
+  // 10: echo through V at the top level, by a caller that reads.
+  if (caller.reads && random.chance(0.5)) {
+    const echoEntry = await createEntry(
+      w,
+      { ...planEntry(w, random, caller.ownOnly ? caller.userId : undefined), draftEdit: false },
+      seed + 12_000_000,
+    );
+    problems.push(...(await echoThroughVersionProblems(w, caller, echoEntry.id)));
   }
   // N1: relation candidates.
   if (random.chance(0.3)) {
@@ -355,8 +384,9 @@ const noOracleProblems = async (w: World, random: Random, seed: number): Promise
     w.callers[random.pick(['reader', 'masked', 'updateOnly', 'anon', 'owner', 'limited'] as const)];
   const version = random.chance(0.5);
   const plan = planEntry(w, random);
-  const a = await createEntry(w, { ...plan, draftEdit: false, legacy: 0 }, seed + 1);
-  const b = await createEntry(w, { ...plan, draftEdit: false, legacy: 0 }, seed + 1);
+  // Legacy twins (no stored IDs) are sent no IDs: their derived IDs differ with what the items hold.
+  const a = await createEntry(w, { ...plan, draftEdit: false }, seed + 1);
+  const b = await createEntry(w, { ...plan, draftEdit: false }, seed + 1);
   // B: A's storage, then everything A's caller cannot see changed.
   const perturb = (value: unknown, unreadable: boolean): unknown => {
     if (Array.isArray(value)) {
@@ -444,7 +474,11 @@ const noOracleProblems = async (w: World, random: Random, seed: number): Promise
   if (JSON.stringify(read) !== JSON.stringify(readB)) {
     return [];
   }
-  const body = bodyOf(random, read, planBody(random), { admin: false, foreignIds: [randomUUID()] });
+  const bodyPlan = planBody(random);
+  const body = bodyOf(random, read, plan.legacy === 'with' ? bodyPlan : { ...bodyPlan, mode: 'none' }, {
+    admin: false,
+    foreignIds: [randomUUID()],
+  });
   const versionOf = async (id: string) =>
     (await headsOf(w, id)).find((head) => head.locale === 'en' && head.state === 'draft')?.version ?? null;
   const known = new Set(
@@ -1183,33 +1217,30 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
   it('N1 (relation candidates): every candidate in every relation position, for every reading caller', async () => {
     const problems: Problem[] = [];
     const random = prng(7);
-    // The full matrix with ITEM_MODEL_N1=full; by default a slice that keeps every candidate and position kind.
-    const full = process.env.ITEM_MODEL_N1 === 'full';
-    const callers = full
-      ? (['reader', 'masked', 'owner', 'updateOnly', 'adminToken', 'admin'] as const)
-      : (['reader', 'updateOnly', 'admin'] as const);
+    // Every caller (with and without a version) meets every candidate and every position; across callers every
+    // candidate meets every position (a rotation, not the whole product, to keep the default run short).
+    const callers = ['reader', 'masked', 'owner', 'updateOnly', 'adminToken', 'admin'] as const;
+    let turn = 0;
     for (const name of callers) {
       const caller = w.callers[name];
-      for (const version of caller.kind === 'admin' ? [false] : full ? [false, true] : [name === 'reader']) {
-        for (const candidate of CANDIDATE_LABELS) {
-          for (const position of full
-            ? POSITIONS
-            : POSITIONS.filter((entry) => entry.name === 'ref' || entry.name === 'cards[].anyRels')) {
-            problems.push(
-              ...(await relationProbeProblems(
-                w,
-                random,
-                caller,
-                version,
-                caller.kind === 'admin' ? 'adminApi' : 'rest',
-                {
-                  candidate,
-                  position: position.name,
-                },
-              )),
-            );
-          }
+      for (const version of caller.kind === 'admin' ? [false] : [false, true]) {
+        for (const [index, candidate] of CANDIDATE_LABELS.entries()) {
+          const position = POSITIONS[(index + turn) % POSITIONS.length] as (typeof POSITIONS)[number];
+          problems.push(
+            ...(await relationProbeProblems(
+              w,
+              random,
+              caller,
+              version,
+              caller.kind === 'admin' ? 'adminApi' : 'rest',
+              {
+                candidate,
+                position: position.name,
+              },
+            )),
+          );
         }
+        turn += 1;
       }
     }
     expect(report(problems)).toEqual([]);
@@ -1813,6 +1844,368 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
           detail: `${version ? '@V ' : ''}${problem.detail}`,
         })),
       );
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------------------------------------
+  // Review 8: legacy content first-class, strict no-ops, echoes through V, drafts mode, new locales, imports
+
+  /** An entry stored as 0.8.2 stored it (or partly, or with IDs), published where the model has a draft. */
+  const legacyEntry = async (
+    data: Record<string, unknown>,
+    mode: 'with' | 'partial' | 'all',
+    french = false,
+  ) => {
+    const id = expectStatus(
+      await w.admin.post(`/api/admin/content/${w.docKey}?locale=en`, { locale: 'en', data }),
+      201,
+    ).json<{ id: string }>().id;
+    if (french) {
+      expectStatus(
+        await w.admin.put(`/api/admin/content/${w.docKey}/${id}?locale=fr`, {
+          locale: 'fr',
+          expectedVersion: null,
+          data: { title: 'fr', lchips: [{ zv: 'f', zh: 'fz' }] },
+        }),
+        200,
+      );
+    }
+    if (w.draftAndPublish) {
+      expectStatus(
+        await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, {
+          locales: french ? ['en', 'fr'] : ['en'],
+        }),
+        200,
+      );
+    }
+    await storeHeads(w, id, (head) => legacyOf(head.data, mode, 99));
+    return id;
+  };
+  const SEED = {
+    title: 't',
+    cards: [{ heading: 'A', note: 'n1', chips: [{ zv: 'a', zh: 'z1' }] }, { heading: 'B' }],
+    hero: { label: 'L', items: [{ zv: 'i' }] },
+    lchips: [{ zv: 'l' }],
+    zone: [{ __component: 'tag', label: 'T' }],
+  };
+  const bothModels = async (run: () => Promise<void>) => {
+    for (const key of ['doc', 'ndoc'] as const) {
+      useModel(w, key);
+      try {
+        await run();
+      } finally {
+        useModel(w, 'doc');
+      }
+    }
+  };
+
+  it('LEGACYRESAVE (9 no-op): on entries stored before 0.9.0, partly, and after, a save that changes nothing changes nothing', async () => {
+    // Review 8 (mine/legacyresave): `PUT {title: same}` and `PUT {}` on an entry stored by 0.8.2 wrote a revision,
+    // bumped the version, fired events, and flipped published to modified, every time.
+    const problems: Problem[] = [];
+    await bothModels(async () => {
+      for (const mode of ['all', 'partial', 'with'] as const) {
+        for (const french of [false, true]) {
+          for (const name of ['admin', 'adminToken', 'reader', 'updateOnly'] as const) {
+            const caller = w.callers[name];
+            const id = await legacyEntry(SEED, mode, french);
+            const found = await noopProblems(w, prng(5), caller, id, {
+              version: false,
+              transport: caller.kind === 'admin' ? 'adminApi' : 'rest',
+            });
+            problems.push(
+              ...found.map((problem) => ({
+                ...problem,
+                detail: `${w.docKey} ${mode}${french ? ' en+fr' : ''}: ${problem.detail}`,
+              })),
+            );
+          }
+        }
+      }
+    });
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('ECHO (10 echo through V, H1): fields made private, deprecated, removed, retyped, or added since V: an echo is accepted and a no-op; one field edited, accepted', async () => {
+    // Review 8 (mine/echo): an old client sending back the entry it read through its version was refused.
+    const problems: Problem[] = [];
+    await bothModels(async () => {
+      for (const mode of ['all', 'with'] as const) {
+        for (const name of ['reader', 'masked', 'limited', 'adminToken', 'pinned'] as const) {
+          const plan = planEntry(w, prng(3));
+          const id = (
+            await createEntry(
+              w,
+              { ...plan, legacy: mode, draftEdit: false, oldValues: 1, deletedTargets: 0 },
+              42,
+            )
+          ).id;
+          problems.push(
+            ...(await echoThroughVersionProblems(w, w.callers[name], id)).map((problem) => ({
+              ...problem,
+              detail: `${w.docKey} ${mode}: ${problem.detail}`,
+            })),
+          );
+        }
+      }
+    });
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('NEWLOC (M2): the first write to a locale, for a localized list, is accepted without IDs', async () => {
+    // Review 8 (mine/newloc): a 0.8.2 client translating an entry into a new locale.
+    const problems: Problem[] = [];
+    await bothModels(async () => {
+      for (const mode of ['all', 'with'] as const) {
+        for (const data of [
+          { title: 'fr' },
+          { title: 'fr', lchips: [{ zv: 'fr-a' }] },
+          { title: 'fr', lchips: [{ zv: 'fr-a' }, { zv: 'fr-b' }] },
+        ]) {
+          const id = await legacyEntry(SEED, mode);
+          const response = await w.request(
+            'PUT',
+            `/api/content/${w.docPlural}/${id}?locale=fr`,
+            w.callers.reader.token,
+            { locale: 'fr', expectedVersion: null, data },
+          );
+          if (response.status >= 300) {
+            problems.push({
+              property: 'M2 new locale',
+              detail: `${w.docKey} ${mode} ${JSON.stringify(data)}: ${response.status} ${outcomeOf(response).code} ${outcomeOf(response).issues.join(' ')}`,
+            });
+          }
+        }
+      }
+    });
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('DRAFTMODE (M1): a caller that reads drafts on the delivery route is shown draft targets and can remove them', async () => {
+    // Review 8 (rel/kinds): an admin token on the delivery route with ?publicationState=draft.
+    const problems: Problem[] = [];
+    for (const mode of ['all', 'with'] as const) {
+      const id = await legacyEntry(
+        {
+          title: 't',
+          refs: [w.things.published, w.things.draft],
+          ref: w.things.draft,
+          cards: [{ heading: 'a', note: 'n', rels: [w.things.draft, w.things.published] }],
+        },
+        mode,
+      );
+      const read = (await w.request('GET', `/api/content/docs/${id}?publicationState=draft`, w.adminToken))
+        .body as { data?: Record<string, unknown> };
+      const flat = (value: unknown) =>
+        Array.isArray(value)
+          ? value.map((entry) => (typeof entry === 'string' ? entry : (entry as { id: string }).id))
+          : value && typeof value === 'object'
+            ? (value as { id: string }).id
+            : value;
+      const shown = JSON.stringify(read.data ?? {});
+      if (!shown.includes(w.things.draft)) {
+        problems.push({
+          property: 'M1 drafts mode',
+          detail: `${mode}: a drafts-mode read does not show the draft target`,
+        });
+        continue;
+      }
+      const cards = (read.data?.cards as Array<Record<string, unknown>>).map((card) => ({
+        id: card.id,
+        heading: card.heading,
+        rels: (flat(card.rels) as string[]).filter((target) => target !== w.things.draft),
+      }));
+      const version = (await headsOf(w, id)).find((head) => head.state === 'draft')?.version ?? null;
+      const response = await w.request(
+        'PUT',
+        `/api/content/docs/${id}?publicationState=draft`,
+        w.adminToken,
+        {
+          expectedVersion: version,
+          data: {
+            refs: (flat(read.data?.refs) as string[]).filter((target) => target !== w.things.draft),
+            ref: null,
+            cards,
+          },
+        },
+      );
+      const stored = JSON.stringify(
+        (await headsOf(w, id)).find((head) => head.state === 'draft')?.data ?? {},
+      );
+      if (response.status >= 300 || stored.includes(w.things.draft)) {
+        problems.push({
+          property: 'M1 drafts mode',
+          detail: `${mode}: removing the draft targets answered ${response.status}; still stored: ${stored.includes(w.things.draft)}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('CR (4 order and status): a GraphQL document nested past the limit is QUERY_TOO_DEEP, after any comment', async () => {
+    // Review 8 (mine/cr): a comment ended by a bare CR hid the depth from the check.
+    const problems: Problem[] = [];
+    for (const prefix of ['', '#c\n', '#c\r', '#c\r\n']) {
+      const query = `${prefix}${'{a'.repeat(3000)}${'}'.repeat(3000)}`;
+      const response = await w.request('POST', '/api/graphql', null, { query });
+      if (response.status !== 400 || outcomeOf(response).code !== 'QUERY_TOO_DEEP') {
+        problems.push({
+          property: '4 order and status',
+          detail: `prefix ${JSON.stringify(prefix)}: ${response.status} ${response.raw.slice(0, 120)}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('DEEP (4 order and status): a deep value stored before 0.9.0 reads, lists, exports, and re-saves without a 5xx', async () => {
+    // Review 8 (compat/deep2), with a JSON value standing in for deep rich text: 36 levels stored raw.
+    const deep = (depth: number): unknown =>
+      depth <= 1 ? 1 : depth % 2 ? [deep(depth - 1)] : { a: deep(depth - 1) };
+    const problems: Problem[] = [];
+    const id = await legacyEntry({ title: 't', cards: [{ heading: 'A' }] }, 'all');
+    await storeHeads(w, id, (head) => ({
+      ...head.data,
+      [w.doc.cards]: (head.data[w.doc.cards] as Array<Record<string, unknown>>).map((card) => ({
+        ...card,
+        [w.card.data]: deep(36),
+      })),
+    }));
+    const read = (await w.request('GET', `/api/admin/content/doc/${id}`, w.adminToken)).body as {
+      version?: number;
+      data?: Record<string, unknown>;
+    };
+    for (const [route, response] of [
+      ['delivery read', await w.request('GET', `/api/content/docs/${id}`, w.callers.reader.token)],
+      ['delivery list', await w.request('GET', '/api/content/docs?pageSize=100', w.callers.reader.token)],
+      ['admin read', await w.request('GET', `/api/admin/content/doc/${id}`, w.adminToken)],
+      ['export', await w.request('GET', '/api/admin/transfer/export', w.adminToken)],
+      [
+        'admin re-save as read',
+        await w.request('PUT', `/api/admin/content/doc/${id}`, w.adminToken, {
+          expectedVersion: read.version,
+          data: { cards: read.data?.cards },
+        }),
+      ],
+    ] as const) {
+      if (response.status >= 500) {
+        problems.push({
+          property: '4 order and status',
+          detail: `${route}: ${response.status} ${response.raw.slice(0, 120)}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it("IMPORTS (3 ID integrity): crafted bundles (repeated, moved, odd IDs; a stored ID equal to a legacy item's derived one; a shared ID reused in a localized list) never leave one ID on two items", async () => {
+    // Review 8 (dup/imp1, dup/imp2, dup/loc2).
+    const problems: Problem[] = [];
+    const cardsOf = (data: Record<string, unknown>) => data[w.doc.cards] as Array<Record<string, unknown>>;
+    const edits: Array<
+      [string, (data: Record<string, unknown>, head: { locale: string }) => Record<string, unknown>]
+    > = [
+      [
+        'repeated ID',
+        (data) => ({
+          ...data,
+          [w.doc.cards]: cardsOf(data).map((card, _index, all) => ({ ...card, __id: all[0]?.__id })),
+        }),
+      ],
+      [
+        'ID moved to the zone',
+        (data) => ({
+          ...data,
+          [w.doc.zone]: [
+            { __component: w.components.tag.definition.id, __id: cardsOf(data)[0]?.__id, [w.tag.label]: 'Z' },
+          ],
+        }),
+      ],
+      [
+        'odd IDs',
+        (data) => ({
+          ...data,
+          [w.doc.cards]: cardsOf(data).map((card, index) => ({
+            ...card,
+            __id: [5, '', 'x'.repeat(80)][index % 3],
+          })),
+        }),
+      ],
+      [
+        'id key instead of __id',
+        (data) => ({
+          ...data,
+          [w.doc.cards]: cardsOf(data).map((card) => ({ ...card, id: 'imported-id1' })),
+        }),
+      ],
+    ];
+    for (const [label, edit] of edits) {
+      const id = await legacyEntry(
+        {
+          title: 't',
+          cards: [
+            { heading: 'A', note: 'n1' },
+            { heading: 'B', note: 'n2' },
+          ],
+        },
+        'with',
+      );
+      const result = await importBundle(w, craftBundle(await exportBundle(w), id, edit));
+      if (!result.startsWith('succeeded')) {
+        continue; // refused by the import: nothing stored
+      }
+      problems.push(
+        ...idUniqueness(await headsOf(w, id)).map((problem) => ({
+          ...problem,
+          detail: `${label}: ${problem.detail}`,
+        })),
+      );
+      const read = (await w.request('GET', `/api/content/docs/${id}`, w.callers.reader.token)).body as {
+        data?: { cards?: Array<{ id: string }>; zone?: Array<{ id: string }> };
+      };
+      const ids = [...(read.data?.cards ?? []), ...(read.data?.zone ?? [])].map((item) => item.id);
+      if (new Set(ids).size !== ids.length) {
+        problems.push({
+          property: '3 ID integrity',
+          detail: `${label}: a read shows one ID on two items: ${ids.join(',')}`,
+        });
+      }
+    }
+    // A stored ID equal to the derived ID of a legacy item in the same list.
+    const legacy = await legacyEntry(
+      {
+        title: 't',
+        cards: [
+          { heading: 'A', note: 'n1' },
+          { heading: 'B', note: 'n2' },
+        ],
+      },
+      'all',
+    );
+    const derived = (
+      (await w.request('GET', `/api/admin/content/doc/${legacy}`, w.adminToken)).body as {
+        data: { cards: Array<{ id: string }> };
+      }
+    ).data.cards[0]?.id;
+    const result = await importBundle(
+      w,
+      craftBundle(await exportBundle(w), legacy, (data) => ({
+        ...data,
+        [w.doc.cards]: cardsOf(data).map((card, index) => (index === 1 ? { ...card, __id: derived } : card)),
+      })),
+    );
+    if (result.startsWith('succeeded')) {
+      const read = (await w.request('GET', `/api/content/docs/${legacy}`, w.callers.reader.token)).body as {
+        data?: { cards?: Array<{ id: string }> };
+      };
+      const ids = (read.data?.cards ?? []).map((item) => item.id);
+      if (new Set(ids).size !== ids.length) {
+        problems.push({
+          property: '3 ID integrity',
+          detail: `stored ID = a legacy item's derived ID: a read shows ${ids.join(',')}`,
+        });
+      }
     }
     expect(report(problems)).toEqual([]);
   });

@@ -911,7 +911,7 @@ function translateValue(
       walk,
       lens,
       value,
-      counterpartOf(walk.base, lens, instance, scope),
+      counterpartOf(walk.base, lens, instance, walk.view.within(scope, instance !== null)),
       path,
       inside,
     );
@@ -930,7 +930,7 @@ function translateValue(
     const storedItem = pair === -1 ? null : recordOrNull(kept[pair]);
     const lens = sentItemLensOf(field, item);
     const counterpart = lens
-      ? counterpartOf(walk.base, lens, storedItem, scope)
+      ? counterpartOf(walk.base, lens, storedItem, walk.view.within(scope, storedItem !== null))
       : { stored: null, reads: [], scope };
     const nested = new Map<string, Pairing>();
     inside.push(nested);

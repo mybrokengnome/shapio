@@ -139,6 +139,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | --- | --- | --- | --- |
 | `GRAPHQL_ENABLED` | `true` | `true`, `false` | GraphQL at /api/graphql. Shares REST's permissions, filters and page-size limits. |
 | `GRAPHQL_MAX_DEPTH` | `10` | integer 2–50 | Deepest query nesting GraphQL accepts. |
+| `GRAPHQL_MAX_TOKENS` | `5000` | integer 500–1000000 | Most tokens a GraphQL document may have (names, punctuation, and values; comments are not counted), checked before it is parsed or validated: 400 `QUERY_TOO_LARGE` beyond it. Full introspection is under 200; the API explorer's queries a few hundred. Validation time grows with the square of repeated fields, so keep it modest. |
 | `GRAPHQL_MAX_COMPLEXITY` | `20000` | integer 10–10000000 | Estimated cost ceiling per query: each field costs 1, multiplied by enclosing page sizes and lists. |
 | `GRAPHQL_PLAYGROUND_ENABLED` | `true` | `true`, `false` | GraphiQL for admins at /api/graphql/playground (self-hosted assets). |
 | `GRAPHQL_PUBLIC_INTROSPECTION` | `false` | `true`, `false` | Let anonymous callers and app users introspect the schema. Admins and API tokens always can. |

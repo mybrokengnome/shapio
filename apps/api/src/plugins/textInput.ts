@@ -15,16 +15,24 @@ import { nestsDeeperThan } from '../helpers/jsonDepth.js';
  * `BODY_TOO_DEEP`, every route, REST bodies and GraphQL variables alike): no database stores arbitrarily deep JSON
  * (MySQL stops at 100 levels), and nothing downstream should walk it.
  */
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /**
+     * The route's own body depth limit, where its body wraps content deeper than a REST body's `{ data }`
+     * (GraphQL: `{ variables: { data } }`). Default `MAX_BODY_DEPTH`.
+     */
+    bodyDepth?: number;
+  }
+}
+
 export const textInputPlugin = fp(
   async (app: FastifyInstance) => {
     app.addHook('preValidation', async (request) => {
-      if (nestsDeeperThan(request.body, MAX_BODY_DEPTH)) {
-        throw new AppError(
-          422,
-          'BODY_TOO_DEEP',
-          `The request body nests more than ${MAX_BODY_DEPTH} levels deep`,
-          { limit: MAX_BODY_DEPTH },
-        );
+      const limit = request.routeOptions.config.bodyDepth ?? MAX_BODY_DEPTH;
+      if (nestsDeeperThan(request.body, limit)) {
+        throw new AppError(422, 'BODY_TOO_DEEP', `The request body nests more than ${limit} levels deep`, {
+          limit,
+        });
       }
       for (const [part, value] of [
         ['params', request.params],

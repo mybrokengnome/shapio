@@ -97,7 +97,9 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   // read included): no lens is loaded or built for it, and no version error answers it.
   const authorized = !hasNoContentAccess(visibility);
   if (!authorized) {
-    // A caller allowed nothing gets exactly today's answer, headers included: no schema ID or version.
+    // A caller allowed nothing gets exactly today's answer, headers included: no schema ID or version. Its
+    // document is validated against its empty schema (a query that schema can answer still runs), within the
+    // same token limit as everyone's (GRAPHQL_MAX_TOKENS), which bounds what validation can cost.
     return runOperation(request, reply, input, {
       runtime,
       mayIntrospect,

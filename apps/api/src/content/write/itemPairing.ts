@@ -43,7 +43,17 @@ const pairInstance = (
   stored: unknown,
   path: string,
 ): FieldPairings =>
-  component ? pairFields(walk, scope, component.fields, written, stored, path, false) : NO_PAIRINGS;
+  component
+    ? pairFields(
+        walk,
+        walk.view.within(scope, isRecord(stored)),
+        component.fields,
+        written,
+        stored,
+        path,
+        false,
+      )
+    : NO_PAIRINGS;
 
 const pairValue = (
   walk: Walk,

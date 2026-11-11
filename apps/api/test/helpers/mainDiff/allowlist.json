@@ -1,0 +1,18 @@
+[
+  {
+    "id": "refused-unseen-or-ambiguous",
+    "cite": "documentation/upgrades.md:48-51: \"an app user's or anonymous caller's write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`) ... A caller that cannot see the stored items (for example an app user while the entry has unpublished changes) is refused for any list with items that holds a field it cannot write.\"",
+    "path": ".*",
+    "when": {
+      "branchIssues": "AMBIGUOUS_ITEMS"
+    }
+  },
+  {
+    "id": "hidden-values-kept",
+    "cite": "documentation/upgrades.md:56-60: \"Private and deprecated values inside components, and hidden relation targets and media, are kept when a client writes back what it read. Before, such a write wiped them ... It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what it read\"; CHANGELOG.md:125",
+    "path": "^/(entry|body)/",
+    "when": {
+      "keepsOnly": true
+    }
+  }
+]

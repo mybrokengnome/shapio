@@ -183,6 +183,12 @@ export const configSchema = Type.Object({
   /** GraphQL at /api/graphql (package J). Shares REST's permissions, filters and page-size limits. */
   GRAPHQL_ENABLED: Type.Boolean(),
   GRAPHQL_MAX_DEPTH: Type.Integer({ minimum: 2, maximum: 50 }),
+  /**
+   * Most tokens a GraphQL document may have (names, punctuation, and values; comments are not counted), checked
+   * before it is parsed or validated: 400 `QUERY_TOO_LARGE` beyond it. Full introspection is under 200; the API
+   * explorer's queries a few hundred. Validation time grows with the square of repeated fields, so keep it modest.
+   */
+  GRAPHQL_MAX_TOKENS: Type.Integer({ minimum: 500, maximum: 1_000_000 }),
   /** Estimated cost ceiling per query: each field costs 1, multiplied by enclosing page sizes and lists. */
   GRAPHQL_MAX_COMPLEXITY: Type.Integer({ minimum: 10, maximum: 10_000_000 }),
   /** GraphiQL for admins at /api/graphql/playground (self-hosted assets). */
@@ -270,6 +276,7 @@ export const CONFIG_DEFAULTS = {
   NETLIFY_API_URL: 'https://api.netlify.com',
   GRAPHQL_ENABLED: true,
   GRAPHQL_MAX_DEPTH: 10,
+  GRAPHQL_MAX_TOKENS: 5000,
   GRAPHQL_MAX_COMPLEXITY: 20_000,
   GRAPHQL_PLAYGROUND_ENABLED: true,
   GRAPHQL_PUBLIC_INTROSPECTION: false,

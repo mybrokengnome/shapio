@@ -58,6 +58,21 @@ export type Caller = {
 export type Response = { status: number; body: unknown; raw: string };
 
 type Fields<K extends string> = Record<K, string>;
+type DocFields = Fields<
+  | 'title'
+  | 'cards'
+  | 'lchips'
+  | 'hero'
+  | 'zone'
+  | 'secretCard'
+  | 'ref'
+  | 'refs'
+  | 'secretRef'
+  | 'madePrivate'
+  | 'deprecatedTop'
+  | 'retypedTop'
+  | 'addedTop'
+>;
 
 export type World = {
   testApp: TestApp;
@@ -67,10 +82,20 @@ export type World = {
   /** The older version's token (`?schemaVersion=`), and its number (a pin). */
   versionToken: string;
   versionNumber: number;
-  models: { doc: ModelBody; plain: ModelBody; thing: ModelBody };
+  models: { doc: ModelBody; ndoc: ModelBody; plain: ModelBody; thing: ModelBody };
+  /** The doc-like model the current run writes (`useModel`): its API ID, plural, GraphQL names, field IDs. */
+  docKey: 'doc' | 'ndoc';
+  docPlural: string;
+  gqlNames: { update: string; create: string; input: string; query: string };
+  draftAndPublish: boolean;
+  /** IDs of fields removed since V (their values may still be stored): per doc-like model, and in card. */
+  removed: { doc: string; ndoc: string; card: string };
+  /** Field IDs of both doc-like models. */
+  docs: Record<'doc' | 'ndoc', DocFields>;
   components: { chip: ModelBody; tag: ModelBody; box: ModelBody; card: ModelBody; line: ModelBody };
   /** Field IDs by API ID. */
-  doc: Fields<'title' | 'cards' | 'lchips' | 'hero' | 'zone' | 'secretCard' | 'ref' | 'refs' | 'secretRef'>;
+  /** The current model's field IDs (`useModel`). */
+  doc: DocFields;
   card: Fields<
     | 'heading'
     | 'note'
@@ -259,6 +284,9 @@ export const itemModelWorld = (): World => {
             settings: { target: thing.definition.id, cardinality: 'one' },
           },
           { apiKey: 'pic', label: 'Pic', type: 'media' },
+          // Public at V and private since; present at V and removed since.
+          { apiKey: 'pvt', label: 'Pvt', type: 'string' },
+          { apiKey: 'rmv', label: 'Rmv', type: 'string' },
           { apiKey: 'data', label: 'Data', type: 'json' },
           {
             apiKey: 'chips',
@@ -280,56 +308,71 @@ export const itemModelWorld = (): World => {
       },
       'components',
     );
+    // Doc (draft and publish) and ndoc (published on every write), the same fields. At V the top level also holds
+    // fields changed since: made private, deprecated, removed, retyped (number → integer); one is added since.
+    const docFields = () => [
+      { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+      {
+        apiKey: 'cards',
+        label: 'Cards',
+        type: 'component',
+        settings: { component: card.definition.id, repeatable: true },
+      },
+      {
+        apiKey: 'lchips',
+        label: 'Lchips',
+        type: 'component',
+        localized: true,
+        settings: { component: chip.definition.id, repeatable: true },
+      },
+      { apiKey: 'hero', label: 'Hero', type: 'component', settings: { component: box.definition.id } },
+      {
+        apiKey: 'zone',
+        label: 'Zone',
+        type: 'dynamiczone',
+        settings: { components: [card.definition.id, tag.definition.id] },
+      },
+      {
+        apiKey: 'secretCard',
+        label: 'Secret card',
+        type: 'component',
+        public: false,
+        settings: { component: card.definition.id },
+      },
+      // Top-level relations: one to a thing, many to any entry, and a private one.
+      {
+        apiKey: 'ref',
+        label: 'Ref',
+        type: 'relation',
+        settings: { target: thing.definition.id, cardinality: 'one' },
+      },
+      { apiKey: 'refs', label: 'Refs', type: 'relation', settings: { target: '*', cardinality: 'many' } },
+      {
+        apiKey: 'secretRef',
+        label: 'Secret ref',
+        type: 'relation',
+        public: false,
+        settings: { target: thing.definition.id, cardinality: 'one' },
+      },
+      { apiKey: 'madePrivate', label: 'Made private', type: 'string' },
+      { apiKey: 'deprecatedTop', label: 'Deprecated top', type: 'string' },
+      { apiKey: 'removedTop', label: 'Removed top', type: 'string' },
+      { apiKey: 'retypedTop', label: 'Retyped top', type: 'number' },
+    ];
     const doc = await createDefinition(w.admin, {
       kind: 'collection',
       apiKey: 'doc',
       label: 'Doc',
       localized: true,
-      fields: [
-        { apiKey: 'title', label: 'Title', type: 'string', localized: true },
-        {
-          apiKey: 'cards',
-          label: 'Cards',
-          type: 'component',
-          settings: { component: card.definition.id, repeatable: true },
-        },
-        {
-          apiKey: 'lchips',
-          label: 'Lchips',
-          type: 'component',
-          localized: true,
-          settings: { component: chip.definition.id, repeatable: true },
-        },
-        { apiKey: 'hero', label: 'Hero', type: 'component', settings: { component: box.definition.id } },
-        {
-          apiKey: 'zone',
-          label: 'Zone',
-          type: 'dynamiczone',
-          settings: { components: [card.definition.id, tag.definition.id] },
-        },
-        {
-          apiKey: 'secretCard',
-          label: 'Secret card',
-          type: 'component',
-          public: false,
-          settings: { component: card.definition.id },
-        },
-        // Top-level relations: one to a thing, many to any entry, and a private one.
-        {
-          apiKey: 'ref',
-          label: 'Ref',
-          type: 'relation',
-          settings: { target: thing.definition.id, cardinality: 'one' },
-        },
-        { apiKey: 'refs', label: 'Refs', type: 'relation', settings: { target: '*', cardinality: 'many' } },
-        {
-          apiKey: 'secretRef',
-          label: 'Secret ref',
-          type: 'relation',
-          public: false,
-          settings: { target: thing.definition.id, cardinality: 'one' },
-        },
-      ],
+      fields: docFields(),
+    });
+    const ndoc = await createDefinition(w.admin, {
+      kind: 'collection',
+      apiKey: 'ndoc',
+      label: 'Ndoc',
+      localized: true,
+      draftAndPublish: false,
+      fields: docFields(),
     });
     const plain = await createDefinition(w.admin, {
       kind: 'collection',
@@ -399,13 +442,17 @@ export const itemModelWorld = (): World => {
       definition: {
         ...current.definition,
         fields: [
-          ...current.definition.fields.map((field: FieldBody) =>
-            field.apiKey === 'count'
-              ? { ...field, type: 'integer' }
-              : field.apiKey === 'old'
-                ? { ...field, deprecated: true }
-                : field,
-          ),
+          ...current.definition.fields
+            .map((field: FieldBody) =>
+              field.apiKey === 'count'
+                ? { ...field, type: 'integer' }
+                : field.apiKey === 'old'
+                  ? { ...field, deprecated: true }
+                  : field.apiKey === 'pvt'
+                    ? { ...field, public: false }
+                    : field,
+            )
+            .filter((field: FieldBody) => field.apiKey !== 'rmv'),
           { apiKey: 'extra', label: 'Extra', type: 'string' },
         ],
       },
@@ -417,6 +464,47 @@ export const itemModelWorld = (): World => {
       throw new Error(`changing card: ${changed.body}`);
     }
     await runContentSchemaJobs(w.db);
+    const changeTop = async (model: ModelBody) => {
+      const now = expectStatus(await w.admin.get(`/api/admin/models/${model.definition.id}`), 200).json<{
+        definition: ModelBody['definition'];
+        version: number;
+      }>();
+      const response = await w.admin.put(`/api/admin/models/${model.definition.id}`, {
+        definition: {
+          ...now.definition,
+          fields: [
+            ...now.definition.fields
+              .filter((field: FieldBody) => field.apiKey !== 'removedTop')
+              .map((field: FieldBody) =>
+                field.apiKey === 'madePrivate'
+                  ? { ...field, public: false }
+                  : field.apiKey === 'deprecatedTop'
+                    ? { ...field, deprecated: true }
+                    : field.apiKey === 'retypedTop'
+                      ? { ...field, type: 'integer' }
+                      : field,
+              ),
+            { apiKey: 'addedTop', label: 'Added top', type: 'string' },
+          ],
+        },
+        expectedVersion: now.version,
+        acknowledgeBreaking: true,
+        acknowledgeDestructive: true,
+      });
+      if (response.statusCode >= 300) {
+        throw new Error(`changing ${model.definition.apiKey}: ${response.body}`);
+      }
+      await runContentSchemaJobs(w.db);
+      return expectStatus(
+        await w.admin.get(`/api/admin/models/${model.definition.id}`),
+        200,
+      ).json<ModelBody>();
+    };
+    const idOf = (model: ModelBody, key: string) =>
+      model.definition.fields.find((field) => field.apiKey === key)?.id as string;
+    w.removed = { doc: idOf(doc, 'removedTop'), ndoc: idOf(ndoc, 'removedTop'), card: idOf(card, 'rmv') };
+    const docNow = await changeTop(doc);
+    const ndocNow = await changeTop(ndoc);
     const cardNow = expectStatus(
       await w.admin.get(`/api/admin/components/${card.definition.id}`),
       200,
@@ -429,9 +517,9 @@ export const itemModelWorld = (): World => {
         component.definition.fields.map((field) => [field.id, field.apiKey] as [string, string]),
       ),
     );
-    w.models = { doc, plain, thing };
+    w.models = { doc: docNow, ndoc: ndocNow, plain, thing };
     w.components = { chip, tag, box, card: cardNow, line };
-    w.doc = fieldsOf(doc, [
+    const docKeys = [
       'title',
       'cards',
       'lchips',
@@ -441,7 +529,13 @@ export const itemModelWorld = (): World => {
       'ref',
       'refs',
       'secretRef',
-    ]);
+      'madePrivate',
+      'deprecatedTop',
+      'retypedTop',
+      'addedTop',
+    ] as const;
+    w.docs = { doc: fieldsOf(docNow, docKeys), ndoc: fieldsOf(ndocNow, docKeys) };
+    useModel(w, 'doc');
     w.card = fieldsOf(cardNow, [
       'heading',
       'note',
@@ -474,7 +568,7 @@ export const itemModelWorld = (): World => {
       return session;
     };
     const all = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
-      [doc, plain].flatMap((model) =>
+      [doc, ndoc, plain].flatMap((model) =>
         actions.map((action) => ({ action, modelId: model.definition.id, ...extra })),
       );
     // Readers may read relation targets that are published (the others stay invisible to them).
@@ -482,13 +576,15 @@ export const itemModelWorld = (): World => {
     const reader = await userWith([...all(['read', 'create', 'update']), things]);
     const updateOnly = await userWith(all(['create', 'update']));
     const masked = await userWith([
-      {
-        action: 'read',
-        modelId: doc.definition.id,
-        fieldIds: [w.doc.title, w.doc.cards, w.doc.lchips, w.doc.zone],
-      },
-      { action: 'update', modelId: doc.definition.id },
-      { action: 'create', modelId: doc.definition.id },
+      ...(['doc', 'ndoc'] as const).flatMap((key): GrantSpec[] => [
+        {
+          action: 'read',
+          modelId: w.models[key].definition.id,
+          fieldIds: [w.docs[key].title, w.docs[key].cards, w.docs[key].lchips, w.docs[key].zone],
+        },
+        { action: 'update', modelId: w.models[key].definition.id },
+        { action: 'create', modelId: w.models[key].definition.id },
+      ]),
       things,
     ]);
     const owner = await userWith([
@@ -498,12 +594,14 @@ export const itemModelWorld = (): World => {
     ]);
     // Reads everything, may write the component fields but not the title (a write grant naming fields).
     const limited = await userWith([
-      { action: 'read', modelId: doc.definition.id },
-      {
-        action: 'update',
-        modelId: doc.definition.id,
-        fieldIds: [w.doc.cards, w.doc.lchips, w.doc.hero, w.doc.zone],
-      },
+      ...(['doc', 'ndoc'] as const).flatMap((key): GrantSpec[] => [
+        { action: 'read', modelId: w.models[key].definition.id },
+        {
+          action: 'update',
+          modelId: w.models[key].definition.id,
+          fieldIds: [w.docs[key].cards, w.docs[key].lchips, w.docs[key].hero, w.docs[key].zone],
+        },
+      ]),
       things,
     ]);
     w.stranger = await userWith(all(['read', 'create', 'update'], { condition: 'ownedByPrincipal' }));
@@ -671,4 +769,14 @@ export const withAnonymousDocGrants = async <T>(
   } finally {
     await w.publicGrants(false);
   }
+};
+
+/** Points the world's current doc-like model at `doc` (draft and publish) or `ndoc` (published on every write). */
+export const useModel = (w: World, key: 'doc' | 'ndoc') => {
+  w.docKey = key;
+  w.docPlural = `${key}s`;
+  const type = key === 'doc' ? 'Doc' : 'Ndoc';
+  w.gqlNames = { update: `update${type}`, create: `create${type}`, input: `${type}Input`, query: key };
+  w.draftAndPublish = key === 'doc';
+  w.doc = w.docs[key];
 };

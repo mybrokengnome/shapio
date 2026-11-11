@@ -99,13 +99,8 @@ const HEADING_LEVELS: Readonly<Record<string, number>> = { h1: 1, h2: 2, h3: 3, 
 const LIST_TYPES = new Set(['1', 'a', 'A', 'i', 'I']);
 const LANGUAGE_PATTERN = /^[A-Za-z0-9_+#.-]{1,32}$/;
 const MAX_ATTR_TEXT = 1000;
-/**
- * Containers deeper than this are unwrapped. Each node level is two JSON levels (the node and its `content`), so
- * the document's JSON stays at most 58 levels deep (marks and links included): a request carrying it in a
- * field, even one inside a component list, stays within the API's 64-level body limit, and the node depth well
- * within MAX_RICHTEXT_DEPTH.
- */
-const MAX_BLOCK_DEPTH = MAX_RICHTEXT_DEPTH - 16;
+/** Containers deeper than this are unwrapped, so the document stays within MAX_RICHTEXT_DEPTH. */
+const MAX_BLOCK_DEPTH = MAX_RICHTEXT_DEPTH - 6;
 
 type Context = { options: HtmlToRichTextOptions; warnings: HtmlConversionWarning[] };
 

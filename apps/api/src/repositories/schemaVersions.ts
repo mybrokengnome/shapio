@@ -45,6 +45,19 @@ export const ensureItemIdKey = async (executor: Kysely<DB> = db): Promise<void> 
     .execute();
 };
 
+/** 32 bytes as hexadecimal, as the migration and `ensureItemIdKey` write it. */
+const ITEM_ID_KEY_PATTERN = /^[0-9a-f]{64}$/i;
+
+/** A stored key of any other shape is refused loudly: it must never become a short or empty HMAC key. */
+const checkedItemIdKey = (key: string): string => {
+  if (!ITEM_ID_KEY_PATTERN.test(key)) {
+    throw new Error(
+      'system_versions.item_id_key is not 64 hexadecimal characters; restore it from a backup (every item ID derived from it depends on it)',
+    );
+  }
+  return key;
+};
+
 const readItemIdKey = async (executor: Executor) =>
   (await executor.selectFrom('system_versions').select('item_id_key').executeTakeFirstOrThrow()).item_id_key;
 
@@ -52,17 +65,18 @@ const readItemIdKey = async (executor: Executor) =>
  * The instance's item ID key. Only read: inside a caller's transaction it is never written, since a key created
  * there would roll back with the caller's write while this process keeps using it. Still missing (startup did
  * not run against this database), it is created outside any transaction, on the base handle, and read from there.
+ * A stored key that is not 64 hexadecimal characters throws (startup reads it, so the server never starts).
  */
 export const getItemIdKey = async (executor: Executor = db): Promise<string> => {
   const key = await readItemIdKey(executor);
-  if (key) {
-    return key;
+  if (key !== null) {
+    return checkedItemIdKey(key);
   }
   const base = executor.isTransaction ? db : executor;
   await ensureItemIdKey(base);
   const created = await readItemIdKey(base);
-  if (!created) {
+  if (created === null) {
     throw new Error('system_versions.item_id_key could not be set; run the database migrations');
   }
-  return created;
+  return checkedItemIdKey(created);
 };

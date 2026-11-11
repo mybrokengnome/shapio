@@ -43,9 +43,16 @@ const cacheIdentityOf = (executor: NonNullable<KeyExecutor>): object => {
  * waits on a read started on the pool, which could only run once a connection is free (with every
  * connection held by reads waiting for it, nothing would ever free one: the 0.3.0 class of pool deadlock).
  */
-/** Gives the instance its item ID key if it has none, outside any transaction (startup). */
-export const ensureItemIdKey = (executor: Parameters<typeof schemaVersionsRepository.ensureItemIdKey>[0]) =>
-  schemaVersionsRepository.ensureItemIdKey(executor);
+/**
+ * Startup: gives the instance its item ID key if it has none (outside any transaction), then reads it, so a key
+ * of the wrong shape stops the server before any request uses it.
+ */
+export const ensureItemIdKey = async (
+  executor: Parameters<typeof schemaVersionsRepository.ensureItemIdKey>[0],
+): Promise<void> => {
+  await schemaVersionsRepository.ensureItemIdKey(executor);
+  await schemaVersionsRepository.getItemIdKey(executor);
+};
 
 export const itemIdKeyOf = async (executor: NonNullable<KeyExecutor>): Promise<Buffer> => {
   const identity = cacheIdentityOf(executor);
@@ -246,6 +253,8 @@ const valueWithIds = (
     return value;
   }
   const seen = new Map<string, number>();
+  // IDs the list's items store: a derived ID never takes one (a stored item could equal another's derivation).
+  const taken = new Set(value.flatMap((item: unknown) => (isRecord(item) ? (storedId(item) ?? []) : [])));
   return value.map((item: unknown) => {
     if (!isRecord(item)) {
       return item;
@@ -256,7 +265,13 @@ const valueWithIds = (
       const content = canonicalJson(item);
       const occurrence = seen.get(content) ?? 0;
       seen.set(content, occurrence + 1);
-      id = derive(scope, path, content, occurrence);
+      const derived = derive(scope, path, content, occurrence);
+      // Taken: the next renewal of it that is free, the same wherever the list is stored (draft, published).
+      id = derived;
+      for (let attempt = 1; taken.has(id); attempt += 1) {
+        id = renewedItemId(derived, attempt);
+      }
+      taken.add(id);
     }
     return instanceWithIds(scope, componentOfItem(field, componentOf, item), item, id, componentOf);
   });

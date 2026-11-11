@@ -16,6 +16,8 @@ export type GraphqlRuntime = {
   documents: DocumentCache;
   /** graphql-js's specified rules plus the depth, cost and alias limits, and valid text in string literals. */
   rules: readonly ValidationRule[];
+  /** The most tokens a document may have (`GRAPHQL_MAX_TOKENS`). */
+  maxTokens: number;
   /** Admin users and API tokens may introspect (anyone, with GRAPHQL_PUBLIC_INTROSPECTION=true). */
   mayIntrospect: (principal: Principal) => boolean;
 };
@@ -42,6 +44,7 @@ export const graphqlPlugin = fp<GraphqlPluginOptions>(
       schemas,
       documents: createDocumentCache(),
       rules: [...specifiedRules, createLimitsRule(config), textLiteralsRule],
+      maxTokens: config.maxTokens,
       mayIntrospect: (principal) =>
         config.publicIntrospection || principal.kind === 'admin' || principal.kind === 'token',
     });

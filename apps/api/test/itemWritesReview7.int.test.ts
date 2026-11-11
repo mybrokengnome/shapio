@@ -397,19 +397,14 @@ describe('item writes: seventh review', () => {
     });
   });
 
-  describe('N7 (reversed): on a delivery route, an admin token sees what the delivery read shows', () => {
-    it('a relation target that read hides stays behind what it sends back, a null included', async () => {
+  describe('N7 and M1: an admin token on a delivery route reads drafts, so draft targets are shown to it', () => {
+    it('what it sends is what is written: its null clears, a list without the draft target drops it (as on main)', async () => {
       const draft = await entryOf('thing', { name: 'draft' }, false);
       const pub = await entryOf('thing', { name: 'pub' });
       const id = await entryOf('page', { title: 't', rel: draft, rels: [draft, pub] });
-      const read = expectStatus(await request('GET', `/api/content/pages/${id}`, adminToken), 200).json<{
-        data: Record<string, unknown>;
-      }>().data;
-      expect([read.rel, read.rels]).toEqual([null, [pub]]);
-      const before = await adminView(id);
-      expectStatus(await put(id, adminToken, { rel: read.rel, rels: read.rels }), 200);
+      expectStatus(await put(id, adminToken, { rel: null, rels: [pub] }), 200);
       const after = await adminView(id);
-      expect([after.data.rel, after.data.rels, after.version]).toEqual([draft, [draft, pub], before.version]);
+      expect([after.data.rel, after.data.rels]).toEqual([null, [pub]]);
     });
   });
 

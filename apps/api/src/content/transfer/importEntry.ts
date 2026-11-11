@@ -14,9 +14,9 @@ import { resolveModelById, type ContentModel } from '../model.js';
 import { buildValidator } from '../validator/index.js';
 import { contentInvalid } from '../validator/issues.js';
 import { syncEntryUniqueValues, syncHeadDerivations, type WriteContext } from '../write/heads.js';
-import { withUniqueItemIds } from '../write/itemIdUniqueness.js';
 import { assertTargets } from '../write/references.js';
 import { runEntryWrite } from '../write/transaction.js';
+import { assertBundleItemIds } from './bundleItemIds.js';
 import { classifyEntry } from './classify.js';
 import type { EntryRecord, HeadRecordInBundle } from './format.js';
 
@@ -55,20 +55,6 @@ const validateHeads = (snapshot: SchemaSnapshot, model: ContentModel, entry: Ent
     }
     return { head, outcome };
   });
-};
-
-/**
- * The bundle entry with every head's and revision's item IDs unique (plan item-ids): a later instance
- * repeating an ID gets a renewed one, the same wherever the same data appears (a head and its revision, a
- * draft and its published version), so a head still matches its revision and a re-import is a no-op.
- */
-const withUniqueIds = (model: ContentModel, entry: EntryRecord): EntryRecord => {
-  const componentOf = componentLookupOf(model.components);
-  const unique = <T extends { data: EntryRecord['heads'][number]['data'] }>(record: T): T => {
-    const data = withUniqueItemIds(record.data, model.definition.fields, componentOf);
-    return data === record.data ? record : { ...record, data };
-  };
-  return { ...entry, heads: entry.heads.map(unique), revisions: entry.revisions.map(unique) };
 };
 
 const writeRevisions = async (trx: Transaction<DB>, model: ContentModel, entry: EntryRecord) => {
@@ -160,13 +146,14 @@ export type EntryImportContext = { db: Database; actor: Principal; siteId: strin
 export const importEntry = async (
   context: EntryImportContext,
   snapshot: SchemaSnapshot,
-  bundled: EntryRecord,
+  entry: EntryRecord,
 ): Promise<EntryOutcome> => {
-  const model = resolveModelById(snapshot, bundled.modelId);
+  const model = resolveModelById(snapshot, entry.modelId);
   if (!model) {
-    throw unknownModel(bundled);
+    throw unknownModel(entry);
   }
-  const entry = withUniqueIds(model, bundled);
+  // Item IDs are taken as the bundle states them, or the entry is refused (never renewed by position).
+  assertBundleItemIds(model, entry, componentLookupOf(model.components));
   const validated = validateHeads(snapshot, model, entry);
   const locales = [...new Set(entry.heads.map((head) => head.locale))];
   return runEntryWrite(context.db, model, context.siteId, locales, async (trx) => {

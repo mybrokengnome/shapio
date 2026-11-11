@@ -504,67 +504,93 @@ describe('item IDs: assignment, uniqueness and conversions', () => {
       expect(new Set(idsOf(live.cards)).size).toBe(2);
     });
 
-    it('imports a bundle repeating an ID with the repeat renewed, its head matching its revision', async () => {
+    it('refuses an import bundle whose item IDs are malformed or given twice, and takes valid ones as they are', async () => {
       const site = await db().selectFrom('sites').select('id').executeTakeFirstOrThrow();
       const snapshot = (await loadSnapshot(db())).forSite(site.id);
       const cardsId = fieldId(doc, 'cards');
+      const heroId = fieldId(doc, 'hero');
       const headingId = fieldId(card, 'heading');
-      const revisionId = randomUUID();
-      const now = new Date().toISOString();
-      const data = {
-        [cardsId]: [
-          { __id: 'AAAAAAAAAAAA', [headingId]: 'A' },
-          { __id: 'AAAAAAAAAAAA', [headingId]: 'B' },
-        ],
-      };
-      const entry = {
-        type: 'entry' as const,
-        id: randomUUID(),
-        modelId: doc.definition.id,
-        ownerAppUserId: null,
-        createdAt: now,
-        updatedAt: now,
-        revisions: [
-          {
-            id: revisionId,
-            locale: 'en',
-            parentRevisionId: null,
-            reason: 'create' as const,
-            data,
-            createdAt: now,
-          },
-        ],
-        heads: (['draft', 'published'] as const).map((state) => ({
-          locale: 'en',
-          state,
-          revisionId,
-          data,
-          autosavedAt: null,
-          version: 1,
-          createdAt: now,
-          updatedAt: now,
-          publishedAt: state === 'published' ? now : null,
-        })),
-      };
       const context = {
         db: db(),
         actor: { kind: 'system', component: 'transfer' } as const,
         siteId: site.id,
       };
-      expect(await importEntry(context, snapshot, entry)).toBe('added');
-      const stored = await heads(entry.id);
-      const storedRevision = await db()
-        .selectFrom('content_revisions')
-        .select('data')
-        .where('id', '=', revisionId)
-        .executeTakeFirstOrThrow();
-      for (const head of stored) {
-        const ids = (head.data[cardsId] as Stored[]).map((item) => item.__id);
-        expect(ids[0]).toBe('AAAAAAAAAAAA');
-        expect(new Set(ids).size).toBe(2);
-        expect(head.data).toEqual(storedRevision.data);
+      const bundleEntry = (data: Stored) => {
+        const revisionId = randomUUID();
+        const now = new Date().toISOString();
+        return {
+          type: 'entry' as const,
+          id: randomUUID(),
+          modelId: doc.definition.id,
+          ownerAppUserId: null,
+          createdAt: now,
+          updatedAt: now,
+          revisions: [
+            {
+              id: revisionId,
+              locale: 'en',
+              parentRevisionId: null,
+              reason: 'create' as const,
+              data,
+              createdAt: now,
+            },
+          ],
+          heads: (['draft', 'published'] as const).map((state) => ({
+            locale: 'en',
+            state,
+            revisionId,
+            data,
+            autosavedAt: null,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+            publishedAt: state === 'published' ? now : null,
+          })),
+        };
+      };
+      const refusal = async (data: Stored) => {
+        const entry = bundleEntry(data);
+        const error = await importEntry(context, snapshot, entry).then(
+          () => undefined,
+          (thrown: unknown) => thrown as { statusCode: number; code: string; details: { path: string } },
+        );
+        // Nothing of the entry is written.
+        expect(await heads(entry.id)).toEqual([]);
+        return error && [error.statusCode, error.code, error.details.path];
+      };
+      expect(
+        await refusal({
+          [cardsId]: [
+            { __id: 'AAAAAAAAAAAA', [headingId]: 'A' },
+            { __id: 'AAAAAAAAAAAA', [headingId]: 'B' },
+          ],
+        }),
+      ).toEqual([400, 'BUNDLE_INVALID', `/en/draft/${cardsId}/1/__id`]);
+      // Across fields of one version too.
+      expect(
+        await refusal({ [cardsId]: [{ __id: 'BBBBBBBBBBBB' }], [heroId]: { __id: 'BBBBBBBBBBBB' } }),
+      ).toEqual([400, 'BUNDLE_INVALID', `/en/draft/${heroId}/__id`]);
+      for (const odd of [5, null, '', 'x'.repeat(65), { a: 1 }, ['x'], true]) {
+        expect(await refusal({ [heroId]: { __id: odd, [headingId]: 'H' } })).toEqual([
+          400,
+          'BUNDLE_INVALID',
+          `/en/draft/${heroId}/__id`,
+        ]);
       }
-      expect(await importEntry(context, snapshot, entry)).toBe('unchanged');
+      const valid = bundleEntry({
+        [cardsId]: [
+          { __id: 'z'.repeat(64), [headingId]: 'A' },
+          { __id: 'AAAAAAAAAAAA', [headingId]: 'B' },
+        ],
+      });
+      expect(await importEntry(context, snapshot, valid)).toBe('added');
+      for (const head of await heads(valid.id)) {
+        expect((head.data[cardsId] as Stored[]).map((item) => item.__id)).toEqual([
+          'z'.repeat(64),
+          'AAAAAAAAAAAA',
+        ]);
+      }
+      expect(await importEntry(context, snapshot, valid)).toBe('unchanged');
     });
   });
 

@@ -4,6 +4,9 @@ import {
   getVariableValues,
   GraphQLError,
   Kind,
+  Lexer,
+  Source,
+  TokenKind,
   TypeInfo,
   visit,
   visitWithTypeInfo,
@@ -11,93 +14,69 @@ import {
   type GraphQLSchema,
   type OperationDefinitionNode,
 } from 'graphql';
-import { MAX_BODY_DEPTH } from '../../../constants/requestBody.js';
+import { MAX_CONTENT_DEPTH } from '../../../constants/requestBody.js';
 import { AppError } from '../../../helpers/appError.js';
 import { nestsDeeperThan } from '../../../helpers/jsonDepth.js';
 
 /**
- * The body depth limit (`MAX_BODY_DEPTH`, plugins/textInput.ts) for what a GraphQL document writes itself: a
- * value written as a literal in the query text is a string in the request body, so the body's own limit never
- * counts it. graphql-js has no nesting limit of its own: its parser and value coercion recurse, so a document
- * thousands of levels deep would overflow the stack (a 500).
+ * Bounds on what a GraphQL document may make the server do before it runs, beside the request body's own
+ * limits (plugins/textInput.ts): a value written as a literal in the query text is a string in the body, so the
+ * body's depth limit never counts it, and graphql-js has no nesting limit of its own (its parser and value
+ * coercion recurse, so a document thousands of levels deep would overflow the stack, a 500), and validation
+ * grows with the square of repeated fields.
  *
- * - Before parsing, the document's bracket nesting (`{`, `[`, `(` outside strings and comments) is capped at
- *   `MAX_DOCUMENT_NESTING`: room for the deepest selection `GRAPHQL_MAX_DEPTH` allows (50) around the deepest
- *   value an argument may hold.
+ * - Before parsing, the document is read with graphql-js's own lexer (so comments and strings end exactly where
+ *   the parser ends them, `\r` included): more than `maxTokens` tokens is 400 `QUERY_TOO_LARGE`, bracket nesting
+ *   (`{`, `[`, `(`) past `MAX_DOCUMENT_NESTING` is 400 `QUERY_TOO_DEEP`, as a selection too deep is.
  * - Before execution, every argument of every field of the operation, coerced as the resolvers will receive it
- *   (literals and variables together), may nest at most as deep as a REST body's `data` (`MAX_BODY_DEPTH - 1`).
- *
- * A document too deep is answered like a selection too deep (400 `QUERY_TOO_DEEP`); an argument too deep like
- * a body or variables nested too deep (422 `BODY_TOO_DEEP`).
+ *   (literals and variables together), may nest at most as deep as content may (`MAX_CONTENT_DEPTH`): 422
+ *   `BODY_TOO_DEEP`, as a body or variables nested too deep.
  */
-export const MAX_DOCUMENT_NESTING = 2 * MAX_BODY_DEPTH;
-export const MAX_ARGUMENT_DEPTH = MAX_BODY_DEPTH - 1;
+export const MAX_ARGUMENT_DEPTH = MAX_CONTENT_DEPTH;
+/** Room for the deepest selection `GRAPHQL_MAX_DEPTH` allows (50) around the deepest argument value. */
+export const MAX_DOCUMENT_NESTING = 2 * MAX_CONTENT_DEPTH;
 
 const tooDeep = (message: string, limit: number) => new AppError(422, 'BODY_TOO_DEEP', message, { limit });
 
-const OPENING = new Set(['{', '[', '(']);
-const CLOSING = new Set(['}', ']', ')']);
-
-/** Where the string or comment starting at `index` ends (the index after it). */
-const skipLiteral = (source: string, index: number): number => {
-  if (source[index] === '#') {
-    const end = source.indexOf('\n', index);
-    return end === -1 ? source.length : end;
-  }
-  if (source.startsWith('"""', index)) {
-    let at = index + 3;
-    for (;;) {
-      const end = source.indexOf('"""', at);
-      if (end === -1) {
-        return source.length;
-      }
-      // `\"""` is an escaped quote run inside a block string.
-      if (source[end - 1] !== '\\') {
-        return end + 3;
-      }
-      at = end + 3;
-    }
-  }
-  let at = index + 1;
-  while (at < source.length && source[at] !== '"' && source[at] !== '\n') {
-    at += source[at] === '\\' ? 2 : 1;
-  }
-  return at + 1;
-};
-
-/** Whether the document's brackets nest deeper than `limit`, outside strings and comments (no parsing). */
-export const documentNestsDeeperThan = (source: string, limit: number): boolean => {
-  let depth = 0;
-  let index = 0;
-  while (index < source.length) {
-    const char = source[index] as string;
-    if (char === '"' || char === '#') {
-      index = skipLiteral(source, index);
-      continue;
-    }
-    if (OPENING.has(char)) {
-      depth += 1;
-      if (depth > limit) {
-        return true;
-      }
-    } else if (CLOSING.has(char)) {
-      depth -= 1;
-    }
-    index += 1;
-  }
-  return false;
-};
+const OPENING: ReadonlySet<TokenKind> = new Set([TokenKind.BRACE_L, TokenKind.BRACKET_L, TokenKind.PAREN_L]);
+const CLOSING: ReadonlySet<TokenKind> = new Set([TokenKind.BRACE_R, TokenKind.BRACKET_R, TokenKind.PAREN_R]);
 
 /**
- * The error for a document nested deeper than `MAX_DOCUMENT_NESTING`, found before it is parsed: answered like
- * a selection deeper than `GRAPHQL_MAX_DEPTH` (a validation error, 400 `QUERY_TOO_DEEP`); undefined when it fits.
+ * The error for a document over `maxTokens` tokens (comments not counted, as graphql-js counts them) or nested
+ * deeper than `MAX_DOCUMENT_NESTING`, found in one pass of the lexer before parsing; undefined when it fits. A
+ * syntax error stops the pass: parsing reports it.
  */
-export const documentNestingError = (source: string): GraphQLError | undefined =>
-  documentNestsDeeperThan(source, MAX_DOCUMENT_NESTING)
-    ? new GraphQLError(`The query nests more than ${MAX_DOCUMENT_NESTING} levels deep`, {
-        extensions: { code: 'QUERY_TOO_DEEP', limit: MAX_DOCUMENT_NESTING },
-      })
-    : undefined;
+export const documentSizeError = (source: string, maxTokens: number): GraphQLError | undefined => {
+  const lexer = new Lexer(new Source(source));
+  let tokens = 0;
+  let depth = 0;
+  try {
+    for (let token = lexer.advance(); token.kind !== TokenKind.EOF; token = lexer.advance()) {
+      tokens += 1;
+      if (tokens > maxTokens) {
+        return new GraphQLError(`The query has more than ${maxTokens} tokens`, {
+          extensions: { code: 'QUERY_TOO_LARGE', limit: maxTokens },
+        });
+      }
+      if (OPENING.has(token.kind)) {
+        depth += 1;
+        if (depth > MAX_DOCUMENT_NESTING) {
+          return new GraphQLError(`The query nests more than ${MAX_DOCUMENT_NESTING} levels deep`, {
+            extensions: { code: 'QUERY_TOO_DEEP', limit: MAX_DOCUMENT_NESTING },
+          });
+        }
+      } else if (CLOSING.has(token.kind)) {
+        depth -= 1;
+      }
+    }
+  } catch (error) {
+    if (error instanceof GraphQLError) {
+      return undefined;
+    }
+    throw error;
+  }
+  return undefined;
+};
 
 /**
  * Refuses an operation one of whose field arguments, coerced with the request's variables, nests deeper than

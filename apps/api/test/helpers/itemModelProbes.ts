@@ -81,7 +81,7 @@ const plainOf = async (w: World) => {
 /** A doc whose hidden places (a private top-level relation, a private relation in a card) hold `hidden`. */
 const docHolding = async (w: World, hidden: string) => {
   const id = expectStatus(
-    await w.admin.post('/api/admin/content/doc?locale=en', {
+    await w.admin.post(`/api/admin/content/${w.docKey}?locale=en`, {
       locale: 'en',
       data: {
         title: 't',
@@ -91,7 +91,7 @@ const docHolding = async (w: World, hidden: string) => {
     }),
     201,
   ).json<{ id: string }>().id;
-  expectStatus(await w.admin.post(`/api/admin/content/doc/${id}/publish`, { locales: ['en'] }), 200);
+  expectStatus(await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, { locales: ['en'] }), 200);
   return id;
 };
 
@@ -273,7 +273,7 @@ export const relationProbeProblems = async (
     }
   }
   // The entry can still be published.
-  const published = await w.admin.post(`/api/admin/content/doc/${a}/publish`, { locales: ['en'] });
+  const published = await w.admin.post(`/api/admin/content/${w.docKey}/${a}/publish`, { locales: ['en'] });
   if (published.statusCode >= 300) {
     problems.push({
       property: '4 order and status (N1)',
@@ -367,6 +367,38 @@ export const resaveProblems = async (
           },
         ];
   }
+  // Documented (schema-lenses.md:318): through a version, a component field the caller cannot write is refused
+  // NOT_ALLOWED "while the entry has unpublished changes"; left out it keeps its stored value. So a re-save that
+  // sends one is refused, and the same body without those fields is then the no-op.
+  if (
+    request.version &&
+    againOutcome.code === 'LENS_WRITE_UNSUPPORTED' &&
+    againOutcome.issues.length > 0 &&
+    againOutcome.issues.every((issue) => /^NOT_ALLOWED \S*\/(count|old)$/.test(issue))
+  ) {
+    const withoutReadOnly = stripKeys(request.body, ['count', 'old']) as Json;
+    const resent = await send(w, { ...request, body: withoutReadOnly, expectedVersion: version });
+    const after2 = await headsOf(w, request.entryId);
+    const [revisions2, events2] = [
+      await revisionCount(w, request.entryId),
+      await eventCount(w, request.entryId),
+    ];
+    return resent.status < 300 &&
+      versionOfResponse(resent.body) === version &&
+      isDeepStrictEqual(
+        after2.map((head) => head.data),
+        heads.map((head) => head.data),
+      ) &&
+      revisions2 === revisions &&
+      events2 === events
+      ? []
+      : [
+          {
+            property: '5 round trip (N2)',
+            detail: `${label}: the same body without the fields read-only through V answered ${resent.status} v${String(versionOfResponse(resent.body))}, revisions ${revisions} → ${revisions2}, events ${events} → ${events2}`,
+          },
+        ];
+  }
   if (again.status >= 300 || !againOutcome.accepted) {
     return [
       {
@@ -420,11 +452,6 @@ export const resaveProblems = async (
     return Object.values(head.data).some((value) => walk(value, false));
   });
   const legacyNote = legacy ? ' (legacy items stored)' : '';
-  // Known and pinned by the fixed case LEGACYLOC: with legacy items stored, an identical re-save that changes no
-  // stored data still makes a revision. The random runs skip that class (set ITEM_MODEL_LEGACY_RESAVE=1 to see it).
-  if (legacy && changed.length === 0 && !process.env.ITEM_MODEL_LEGACY_RESAVE) {
-    return problems;
-  }
   if (versionOfResponse(again.body) !== null && versionOfResponse(again.body) !== version) {
     problems.push({
       property: '5 round trip (N2)',
@@ -488,4 +515,271 @@ export const withTreeIds = (body: unknown, tree: unknown): unknown => {
     output.id = node.id;
   }
   return output;
+};
+
+/** `value` without the given keys, at any depth. */
+export const stripKeys = (value: unknown, keys: readonly string[]): unknown =>
+  Array.isArray(value)
+    ? value.map((item) => stripKeys(item, keys))
+    : isRecord(value)
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => !keys.includes(key))
+            .map(([key, entry]) => [key, stripKeys(entry, keys)]),
+        )
+      : value;
+
+// ---------------------------------------------------------------------------------------------------------
+// No-op writes (review 8): a body that changes no content changes nothing
+
+/** What a no-op must leave alone: stored heads, version, revisions, events, and the admin's publish status. */
+export const entryState = async (w: World, entryId: string) => {
+  const heads = await headsOf(w, entryId);
+  const view = await w.request('GET', `/api/admin/content/${w.docKey}/${entryId}?locale=en`, w.adminToken);
+  const body = isRecord(view.body) ? view.body : {};
+  return {
+    heads: heads.map((head) => [head.locale, head.state, head.version, head.data]),
+    revisions: await revisionCount(w, entryId),
+    events: await eventCount(w, entryId),
+    status: body.status,
+    locales: body.locales,
+  };
+};
+
+export type NoopBody = 'empty' | 'sameScalar' | 'readWithIds' | 'readWithoutIds' | 'subset';
+export const NOOP_BODIES: readonly NoopBody[] = [
+  'empty',
+  'sameScalar',
+  'readWithIds',
+  'readWithoutIds',
+  'subset',
+];
+
+/**
+ * A body that changes no content, of one kind, from what the caller read (`read`, today's or V's shape) and what
+ * is stored (`title`): empty; a scalar sent with its stored value; the components as read, with or without
+ * their IDs; a random subset of the fields read.
+ */
+export const noopBody = (kind: NoopBody, read: Json | null, title: unknown, random: Random): Json => {
+  const meta = new Set([
+    'id',
+    '__model',
+    '__kinds',
+    'locale',
+    'createdAt',
+    'updatedAt',
+    'publishedAt',
+    'version',
+    'status',
+    'itemIds',
+  ]);
+  const fields = read ? Object.fromEntries(Object.entries(read).filter(([key]) => !meta.has(key))) : {};
+  const media = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(media)
+      : isRecord(value)
+        ? typeof value.id === 'string' && typeof value.mimeType === 'string'
+          ? value.id
+          : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, media(entry)]))
+        : value;
+  switch (kind) {
+    case 'empty':
+      return {};
+    case 'sameScalar':
+      return { title };
+    case 'readWithIds':
+      return media(
+        Object.fromEntries(
+          Object.entries(fields).filter(([, value]) => typeof value === 'object' && value !== null),
+        ),
+      ) as Json;
+    case 'readWithoutIds':
+      return stripKeys(
+        media(
+          Object.fromEntries(
+            Object.entries(fields).filter(([, value]) => typeof value === 'object' && value !== null),
+          ),
+        ),
+        ['id'],
+      ) as Json;
+    case 'subset':
+      return media(Object.fromEntries(Object.entries(fields).filter(() => random.chance(0.5)))) as Json;
+    default:
+      return {};
+  }
+};
+
+/**
+ * No-op (strict, review 8): every no-op body, on this entry, by this caller and route: nothing about the entry
+ * changes (heads, version, revisions, events, status), whether the write is accepted or refused.
+ */
+export const noopProblems = async (
+  w: World,
+  random: Random,
+  caller: Caller,
+  entryId: string,
+  { version, transport }: { version: boolean; transport: Transport },
+): Promise<Problem[]> => {
+  const problems: Problem[] = [];
+  const read = caller.reads ? await readAs(w, caller, entryId, 'en', version) : null;
+  const admin = await readAs(w, w.callers.admin, entryId, 'en', false);
+  for (const kind of NOOP_BODIES) {
+    if ((kind === 'readWithIds' || kind === 'readWithoutIds' || kind === 'subset') && !read) {
+      continue; // nothing read to send back
+    }
+    const before = await entryState(w, entryId);
+    const body = noopBody(kind, read, admin?.title, random);
+    const draft = before.heads.find((head) => head[0] === 'en' && head[1] === 'draft');
+    const response = await send(w, {
+      caller,
+      transport,
+      entryId,
+      locale: 'en',
+      version,
+      expectedVersion: (draft?.[2] as number | undefined) ?? null,
+      body,
+    });
+    const after = await entryState(w, entryId);
+    if (!isDeepStrictEqual(after, before)) {
+      const changed = [
+        ...(after.revisions !== before.revisions
+          ? [`revisions ${before.revisions} → ${after.revisions}`]
+          : []),
+        ...(after.events !== before.events ? [`events ${before.events} → ${after.events}`] : []),
+        ...(after.status !== before.status
+          ? [`status ${String(before.status)} → ${String(after.status)}`]
+          : []),
+        ...(!isDeepStrictEqual(
+          after.heads.map((head) => head[2]),
+          before.heads.map((head) => head[2]),
+        )
+          ? ['version bumped']
+          : []),
+        ...(!isDeepStrictEqual(
+          after.heads.map((head) => head[3]),
+          before.heads.map((head) => head[3]),
+        )
+          ? [
+              `data: ${differences(
+                before.heads.map((head) => head[3]),
+                after.heads.map((head) => head[3]),
+              )
+                .slice(0, 2)
+                .join('; ')}`,
+            ]
+          : []),
+      ];
+      problems.push({
+        property: '9 no-op',
+        detail: `${caller.name}${version ? '@V' : ''} ${transport} ${kind} (${response.status}): ${changed.join(', ')}; body ${JSON.stringify(body).slice(0, 160)}`,
+      });
+    }
+  }
+  return problems;
+};
+
+// ---------------------------------------------------------------------------------------------------------
+// Echo through a version at the top level (review 8, H1)
+
+/**
+ * H1: a caller that reads through V sends back what it read, unchanged (accepted, and a no-op), and with one field
+ * it may write edited (accepted). Fields made private, deprecated, removed, retyped, or added since V, at the top
+ * level and inside components, are all in what it read.
+ */
+export const echoThroughVersionProblems = async (
+  w: World,
+  caller: Caller,
+  entryId: string,
+): Promise<Problem[]> => {
+  const read = await readAs(w, caller, entryId, 'en', true);
+  if (!read) {
+    return [];
+  }
+  const media = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(media)
+      : isRecord(value)
+        ? typeof value.id === 'string' && typeof value.mimeType === 'string'
+          ? value.id
+          : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, media(entry)]))
+        : value;
+  const meta = new Set([
+    'id',
+    '__model',
+    '__kinds',
+    'locale',
+    'createdAt',
+    'updatedAt',
+    'publishedAt',
+    'version',
+    'status',
+    'itemIds',
+  ]);
+  const echoed = media(Object.fromEntries(Object.entries(read).filter(([key]) => !meta.has(key)))) as Json;
+  // The limited caller's write grant names only the component fields.
+  const unwritable =
+    caller.name === 'limited'
+      ? [
+          'title',
+          'secretCard',
+          'ref',
+          'refs',
+          'secretRef',
+          'madePrivate',
+          'deprecatedTop',
+          'removedTop',
+          'retypedTop',
+        ]
+      : [];
+  const body = Object.fromEntries(Object.entries(echoed).filter(([key]) => !unwritable.includes(key)));
+  const problems: Problem[] = [];
+  const draftVersion = async () =>
+    (await headsOf(w, entryId)).find((head) => head.locale === 'en' && head.state === 'draft')?.version ??
+    null;
+  const before = await entryState(w, entryId);
+  const unchanged = await send(w, {
+    caller,
+    transport: 'rest',
+    entryId,
+    locale: 'en',
+    version: true,
+    expectedVersion: await draftVersion(),
+    body,
+  });
+  if (unchanged.status >= 300) {
+    problems.push({
+      property: '10 echo through V (H1)',
+      detail: `${caller.name}: sending back what it read through V answered ${unchanged.status} ${unchanged.raw.slice(0, 300)}`,
+    });
+  } else if (!isDeepStrictEqual(await entryState(w, entryId), before)) {
+    problems.push({
+      property: '10 echo through V (H1)',
+      detail: `${caller.name}: sending back what it read through V changed the entry`,
+    });
+  }
+  const cards = listOf(body.cards);
+  const edited =
+    caller.name === 'limited'
+      ? cards.length > 0
+        ? { ...body, cards: [{ ...cards[0], heading: `${String(cards[0]?.heading)}+` }, ...cards.slice(1)] }
+        : null
+      : { ...body, title: `${String(body.title)}+` };
+  if (edited) {
+    const response = await send(w, {
+      caller,
+      transport: 'rest',
+      entryId,
+      locale: 'en',
+      version: true,
+      expectedVersion: await draftVersion(),
+      body: edited,
+    });
+    if (response.status >= 300) {
+      problems.push({
+        property: '10 echo through V (H1)',
+        detail: `${caller.name}: what it read through V with one field edited answered ${response.status} ${response.raw.slice(0, 300)}`,
+      });
+    }
+  }
+  return problems;
 };

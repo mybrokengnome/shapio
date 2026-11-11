@@ -275,6 +275,16 @@ const keepInInstance = (
   const output: Record<string, unknown> = { ...written, [ITEM_ID_KEY]: idFor(stored) };
   const sent = isRecord(raw) ? raw : {};
   const continues = isRecord(stored);
+  if (continues) {
+    // What a field removed since left in the item stays, as it does at the top level (a write names fields, and no
+    // caller can name a removed one): sending an item back as read changes nothing.
+    const known = new Set(component.fields.map((field) => field.id));
+    for (const [key, value] of Object.entries(stored)) {
+      if (!known.has(key) && key !== ITEM_ID_KEY && key !== COMPONENT_KEY && !(key in output)) {
+        output[key] = value;
+      }
+    }
+  }
   for (const field of component.fields) {
     const storedValue = continues ? stored[field.id] : undefined;
     const explicitNull = Object.hasOwn(sent, field.apiKey) && isMissingValue(sent[field.apiKey]);

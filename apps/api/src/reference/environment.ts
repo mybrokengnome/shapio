@@ -178,6 +178,7 @@ export const GROUPS: ReadonlyArray<{ title: string; keys: readonly string[] }> =
     keys: [
       'GRAPHQL_ENABLED',
       'GRAPHQL_MAX_DEPTH',
+      'GRAPHQL_MAX_TOKENS',
       'GRAPHQL_MAX_COMPLEXITY',
       'GRAPHQL_PLAYGROUND_ENABLED',
       'GRAPHQL_PUBLIC_INTROSPECTION',

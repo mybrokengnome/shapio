@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_BODY_DEPTH } from '../src/constants/requestBody.js';
+import { MAX_BODY_DEPTH, MAX_CONTENT_DEPTH } from '../src/constants/requestBody.js';
 import { nestsDeeperThan } from '../src/helpers/jsonDepth.js';
 import { bearer } from './helpers/appUsers.js';
 import { createDefinition, expectStatus, type EntryBody, type ModelBody } from './helpers/content.js';
@@ -17,18 +17,22 @@ const nested = (levels: number): unknown => {
   return value;
 };
 
-const text = (value: string) => ({ type: 'text', text: value });
-const paragraph = (value: string) => ({ type: 'paragraph', content: [text(value)] });
-/** A bullet list nested `levels` deep, one item per level. */
-const bulletList = (levels: number): unknown => ({
-  type: 'bulletList',
-  content: [
-    {
-      type: 'listItem',
-      content: [paragraph(`level ${levels}`), ...(levels > 1 ? [bulletList(levels - 1)] : [])],
-    },
-  ],
-});
+const link = { type: 'link', attrs: { href: 'https://example.com' } };
+/**
+ * Rich text as deep as the validator allows (`MAX_RICHTEXT_DEPTH` 40 node levels below the doc), the deepest
+ * text carrying a link: 86 JSON levels.
+ */
+const deepestRichText = () => {
+  let node: Record<string, unknown> = {
+    type: 'paragraph',
+    content: [{ type: 'text', text: 'deepest', marks: [link] }],
+  };
+  // doc (0) > 38 blockquotes (1-38) > paragraph (39) > text (40)
+  for (let level = 0; level < 38; level += 1) {
+    node = { type: 'blockquote', content: [node] };
+  }
+  return { format: 'shapio-richtext', version: 1, doc: { type: 'doc', content: [node] } };
+};
 
 /**
  * One body depth limit before any validation (`MAX_BODY_DEPTH`, plugins/textInput.ts): 422 `BODY_TOO_DEEP` on every
@@ -59,7 +63,7 @@ describe('request body depth', () => {
       },
       'components',
     );
-    for (const level of [4, 3, 2]) {
+    for (const level of [4, 3, 2, 1]) {
       inner = await createDefinition(
         admin,
         {
@@ -97,26 +101,49 @@ describe('request body depth', () => {
     await testApp.app.close();
   });
 
-  /** `data` with the innermost component holding rich text with six nested lists, and `doc`. */
-  const deepestData = (doc: unknown) => {
-    let item: Record<string, unknown> = {
-      body: { format: 'shapio-richtext', version: 1, doc: { type: 'doc', content: [bulletList(6)] } },
-      doc,
-    };
-    for (let level = 0; level < 3; level += 1) {
+  /** `data` with the innermost of five component lists holding `body` (rich text) and `doc`. */
+  const deepestData = (body: unknown, doc: unknown) => {
+    let item: Record<string, unknown> = { body, doc };
+    for (let level = 0; level < 4; level += 1) {
       item = { items: [item] };
     }
     return { items: [item] };
   };
 
-  it('stores the deepest content the schema invites, on every database, well under the limit', async () => {
-    const data = deepestData('x');
-    expect(nestsDeeperThan({ data }, MAX_BODY_DEPTH - 10)).toBe(false);
-    expectStatus(await admin.post('/api/admin/content/deep', { data }), 201);
+  it('stores the deepest content the validator accepts, on every database, within the limit', async () => {
+    // Five component lists (10 levels) around rich text 86 levels deep, in the data object: 97.
+    const data = deepestData(deepestRichText(), 'x');
+    expect(nestsDeeperThan(data, 97)).toBe(false);
+    expect(nestsDeeperThan(data, 96)).toBe(true);
+    const created = expectStatus(
+      await admin.post('/api/admin/content/deep', { data }),
+      201,
+    ).json<EntryBody>();
+    const read = expectStatus(
+      await admin.get(`/api/admin/content/deep/${created.id}`),
+      200,
+    ).json<EntryBody>();
+    // Saved back exactly as read (item IDs included), and published: every write path takes it.
+    expectStatus(
+      await admin.put(`/api/admin/content/deep/${created.id}`, {
+        expectedVersion: read.version,
+        data: read.data,
+      }),
+      200,
+    );
+    expectStatus(await admin.post(`/api/admin/content/deep/${created.id}/publish`, {}), 200);
+    const variables = await graphql(
+      testApp.app,
+      'mutation ($data: DeepInput) { createDeep(data: $data) { id } }',
+      { headers: bearer(adminToken), variables: { data: deepestData(deepestRichText(), 'x') } },
+    );
+    expect(variables.statusCode).toBe(200);
   });
 
   it('accepts a body exactly at the limit and stores it, and refuses one level more with 422', async () => {
-    // `{ data: { doc: … } }` adds two levels to the json value.
+    // `{ data: { doc: … } }` adds two levels to the json value: the data is `MAX_CONTENT_DEPTH` deep, as much
+    // as MySQL stores.
+    expect(MAX_BODY_DEPTH).toBe(MAX_CONTENT_DEPTH + 1);
     const atLimit = { data: { doc: nested(MAX_BODY_DEPTH - 2) } };
     expect(nestsDeeperThan(atLimit, MAX_BODY_DEPTH)).toBe(false);
     const created = expectStatus(await admin.post('/api/admin/content/deep', atLimit), 201).json<EntryBody>();
@@ -136,6 +163,30 @@ describe('request body depth', () => {
         'BODY_TOO_DEEP',
       ]);
     }
+  });
+
+  it('takes GraphQL variables and literals exactly as deep as a REST body, and refuses one level more', async () => {
+    const create = (doc: unknown) =>
+      graphql(testApp.app, 'mutation ($data: DeepInput) { createDeep(data: $data) { id } }', {
+        headers: bearer(adminToken),
+        variables: { data: { doc } },
+      });
+    expect((await create(nested(MAX_CONTENT_DEPTH - 1))).statusCode).toBe(200);
+    expect((await create(nested(MAX_CONTENT_DEPTH))).statusCode).toBe(422);
+    /** A GraphQL literal `levels` deep: `{a: [ ... ]}` alternating, as `nested` builds it. */
+    const literal = (levels: number): string => {
+      let text = '1';
+      for (let level = 1; level < levels; level += 1) {
+        text = level % 2 === 0 ? `[${text}]` : `{a: ${text}}`;
+      }
+      return text;
+    };
+    const inline = (levels: number) =>
+      graphql(testApp.app, `mutation { createDeep(data: { doc: ${literal(levels)} }) { id } }`, {
+        headers: bearer(adminToken),
+      });
+    expect((await inline(MAX_CONTENT_DEPTH - 1)).statusCode).toBe(200);
+    expect((await inline(MAX_CONTENT_DEPTH)).statusCode).toBe(422);
   });
 
   it('refuses GraphQL variables past the limit the same way, and any depth never answers 5xx', async () => {
