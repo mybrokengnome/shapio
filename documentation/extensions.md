@@ -113,8 +113,8 @@ The write holds one pooled database connection while your hook runs. Do every da
 | `eventId`, `idempotencyKey`, `attempt`                                                                                 |           | ✓                       |
 
 Hooks are trusted server code: `data` is the full document, not masked by the principal's permissions.
-Component instances the write wrote carry their item `id` in `data`; a list stored before 0.9.0 that the write
-did not touch has none there.
+Every component item in `data` carries its `id`. `before` is the stored draft as stored, so its items saved since
+0.9.0 carry `id` and older ones do not.
 
 ## Custom routes
 

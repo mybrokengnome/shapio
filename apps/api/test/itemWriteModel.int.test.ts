@@ -251,7 +251,8 @@ const runAs = async (
     problems.push(...(await noopProblems(w, random, caller, noopEntry.id, { version, transport })));
   }
   // 10: echo through V at the top level, by a caller that reads.
-  if (caller.reads && random.chance(0.5)) {
+  // (Not the admin API: its reads ignore schemaVersion, decision (b).)
+  if (caller.reads && caller.kind !== 'admin' && random.chance(0.5)) {
     const echoEntry = await createEntry(
       w,
       { ...planEntry(w, random, caller.ownOnly ? caller.userId : undefined), draftEdit: false },
@@ -411,6 +412,18 @@ const noOracleProblems = async (w: World, random: Random, seed: number): Promise
     }
     return value;
   };
+  // A copied item takes new IDs throughout, nested items included, so B never stores one ID twice.
+  const freshItemIds = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(freshItemIds)
+      : typeof value === 'object' && value !== null
+        ? Object.fromEntries(
+            Object.entries(value).map(([key, entry]) => [
+              key,
+              key === '__id' ? randomUUID().replaceAll('-', '').slice(0, 12) : freshItemIds(entry),
+            ]),
+          )
+        : value;
   const unseen = !caller.reads;
   for (const head of await headsOf(w, a.id)) {
     const data = Object.fromEntries(
@@ -421,12 +434,7 @@ const noOracleProblems = async (w: World, random: Random, seed: number): Promise
         if (unreadable && random.chance(0.3) && Array.isArray(value)) {
           return [
             fieldId,
-            [
-              ...(value as unknown[]),
-              ...(value as unknown[])
-                .slice(0, 1)
-                .map((item) => ({ ...(item as object), __id: randomUUID() })),
-            ],
+            [...(value as unknown[]), ...(value as unknown[]).slice(0, 1).map((item) => freshItemIds(item))],
           ];
         }
         return [fieldId, perturb(value, unreadable)];
@@ -1564,58 +1572,70 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
         }
       }
     }
-    // A document nested more than 128 levels: 400 QUERY_TOO_DEEP.
-    const deepDocument = `{ ${'docs { '.repeat(130)}id${' }'.repeat(130)} }`;
-    const tooDeep = await w.gql(deepDocument, {}, w.callers.reader.token, false);
-    if (tooDeep.status !== 400 || outcomeOf(tooDeep).code !== 'QUERY_TOO_DEEP') {
+    // Decision (e): a document over GRAPHQL_MAX_TOKENS (5,000 tokens) is 400 QUERY_TOO_LARGE.
+    const largeDocument = `{ docs { ${'id '.repeat(5200)}} }`; // flat: many tokens, no depth
+    const tooLarge = await w.gql(largeDocument, {}, w.callers.reader.token, false);
+    if (tooLarge.status !== 400 || outcomeOf(tooLarge).code !== 'QUERY_TOO_LARGE') {
       problems.push({
         property: '4 order and status (N4)',
-        detail: `a document 130 deep: ${tooDeep.status} ${outcomeOf(tooDeep).code} ${tooDeep.raw.slice(0, 160)}`,
+        detail: `a flat document of over 5,200 tokens: ${tooLarge.status} ${outcomeOf(tooLarge).code} ${tooLarge.raw.slice(0, 160)}`,
       });
     }
-    // Depth beyond 64: a json value nested 70 deep, as a literal, as variables, and on REST.
-    const deep = { cards: [{ heading: 'D', data: nested(70) }] };
-    const version = (await headsOf(w, id)).find((head) => head.state === 'draft')?.version ?? 1;
-    for (const [route, response] of [
-      [
-        'GraphQL literal',
-        await w.gql(
-          `mutation { updateDoc(id: "${id}", expectedVersion: ${version}, data: ${graphqlLiteral(deep)}) { id } }`,
-          {},
-          w.callers.reader.token,
-          false,
-        ),
-      ],
-      [
-        'GraphQL variables',
-        await w.gql(
-          `mutation ($id: ID!, $v: Int, $data: DocInput) { updateDoc(id: $id, expectedVersion: $v, data: $data) { id } }`,
-          { id, v: version, data: deep },
-          w.callers.reader.token,
-          false,
-        ),
-      ],
-      [
-        'REST',
-        await w.request('PUT', `/api/content/docs/${id}`, w.callers.reader.token, {
-          expectedVersion: version,
-          data: deep,
-        }),
-      ],
-      [
-        'admin REST',
-        await w.request('PUT', `/api/admin/content/doc/${id}`, w.adminToken, {
-          expectedVersion: version,
-          data: deep,
-        }),
-      ],
+    // Decision (e): bodies up to 100 levels (MySQL counting) are accepted; deeper is 422 BODY_TOO_DEEP, the same on
+    // REST, GraphQL variables, and literals. 90 levels of JSON inside a card is accepted; 110 is refused.
+    for (const [depth, refused] of [
+      [90, false],
+      [110, true],
     ] as const) {
-      const outcome = outcomeOf(response);
-      if (response.status >= 500 || outcome.code !== 'BODY_TOO_DEEP') {
-        problems.push({
-          property: '4 order and status (N4)',
-          detail: `${route} depth 70: ${response.status} ${outcome.code} ${response.raw.slice(0, 160)}`,
-        });
+      const deep = { cards: [{ heading: 'D', data: nested(depth) }] };
+      const version = (await headsOf(w, id)).find((head) => head.state === 'draft')?.version ?? 1;
+      for (const [route, response] of [
+        [
+          'GraphQL literal',
+          await w.gql(
+            `mutation { updateDoc(id: "${id}", expectedVersion: ${version}, data: ${graphqlLiteral(deep)}) { id } }`,
+            {},
+            w.callers.reader.token,
+            false,
+          ),
+        ],
+        [
+          'GraphQL variables',
+          await w.gql(
+            `mutation ($id: ID!, $v: Int, $data: DocInput) { updateDoc(id: $id, expectedVersion: $v, data: $data) { id } }`,
+            { id, v: version, data: deep },
+            w.callers.reader.token,
+            false,
+          ),
+        ],
+        [
+          'REST',
+          await w.request('PUT', `/api/content/docs/${id}`, w.callers.reader.token, {
+            expectedVersion: version,
+            data: deep,
+          }),
+        ],
+        [
+          'admin REST',
+          await w.request('PUT', `/api/admin/content/doc/${id}`, w.adminToken, {
+            expectedVersion: version,
+            data: deep,
+          }),
+        ],
+      ] as const) {
+        const outcome = outcomeOf(response);
+        // Not refused: anything but BODY_TOO_DEEP (and no 5xx); refused: exactly 422 BODY_TOO_DEEP.
+        if (
+          response.status >= 500 ||
+          (refused
+            ? outcome.code !== 'BODY_TOO_DEEP' || (route.includes('REST') && response.status !== 422)
+            : outcome.code === 'BODY_TOO_DEEP')
+        ) {
+          problems.push({
+            property: '4 order and status (N4)',
+            detail: `${route} depth ${depth}: ${response.status} ${outcome.code} ${response.raw.slice(0, 160)}`,
+          });
+        }
       }
     }
     expect(report(problems)).toEqual([]);
@@ -1737,14 +1757,16 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     expect(report(problems)).toEqual([]);
   });
 
-  it('ATRELS (1 conservation, 5 round trip): an admin token sending back a delivery read keeps the relation targets it hid', async () => {
-    // Found by run seed 4: the delivery read shows only published targets; sent back with the item's ID, the
-    // unpublished target in a many-relation was dropped.
+  it('ATRELS (decision (a)): an admin token sending back a delivery read replaces the targets that read left out, as on main', async () => {
+    // Was: the unpublished target kept. Decision (a): a caller that may read drafts is treated as shown every
+    // target, so what it sends replaces them, as on main; the rest of the entry stays.
     const id = await adminCreate({
       title: 't',
       cards: [{ heading: 'A', rels: [w.things.draft, w.things.published] }],
     });
     expect(report(await roundTripProblems(w, w.callers.adminToken, id, 'en', false))).toEqual([]);
+    const stored = JSON.stringify((await headsOf(w, id)).find((head) => head.state === 'draft')?.data ?? {});
+    expect(stored.includes(w.things.draft)).toBe(false);
   });
 
   it('LEGACYRT (5 round trip): sending back what was read of legacy items (no stored IDs) makes no revision', async () => {
@@ -1784,6 +1806,30 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
             detail: `id ${JSON.stringify(bad).slice(0, 20)}${stale ? ' (stale version)' : ''}: ${response.status} ${outcome.code} ${outcome.issues.join(' ')}`,
           });
         }
+      }
+    }
+    // Decision (h): on create, a non-string `id` is 422 INVALID_TYPE; a well-formed one is ignored (a new ID).
+    for (const [bad, want] of [
+      [5, 422],
+      ['wellFormedId', 201],
+    ] as const) {
+      const created = await w.request('POST', '/api/content/docs?locale=en', w.callers.reader.token, {
+        locale: 'en',
+        data: { title: 't', cards: [{ id: bad, heading: 'A' }] },
+      });
+      const createdId = (created.body as { data?: { id?: string } }).data?.id;
+      const storedIds = createdId
+        ? JSON.stringify((await headsOf(w, createdId)).map((head) => head.data))
+        : '';
+      if (
+        created.status !== want ||
+        (want === 422 && !outcomeOf(created).issues.includes('INVALID_TYPE /cards/0/id')) ||
+        storedIds.includes('wellFormedId')
+      ) {
+        problems.push({
+          property: '4 order and status',
+          detail: `create with id ${JSON.stringify(bad)}: ${created.status} ${outcomeOf(created).issues.join(' ')}${storedIds.includes('wellFormedId') ? ' (stored the sent id)' : ''}`,
+        });
       }
     }
     for (const [stale, want] of [
@@ -2043,7 +2089,7 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     expect(report(problems)).toEqual([]);
   });
 
-  it('CR (4 order and status): a GraphQL document nested past the limit is QUERY_TOO_DEEP, after any comment', async () => {
+  it('CR (4 order and status): a GraphQL document over the token limit is QUERY_TOO_LARGE, after any comment', async () => {
     // Review 8 (mine/cr): a comment ended by a bare CR hid the depth from the check.
     const problems: Problem[] = [];
     for (const prefix of ['', '#c\n', '#c\r', '#c\r\n']) {
@@ -2152,8 +2198,34 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
         'with',
       );
       const result = await importBundle(w, craftBundle(await exportBundle(w), id, edit));
+      // Decision (h): a bad or repeated `__id` makes the bundle 400 BUNDLE_INVALID; others import. The ID moved
+      // to the zone stays on its card too, so it is repeated.
+      const mustRefuse = label === 'repeated ID' || label === 'odd IDs' || label === 'ID moved to the zone';
+      if (mustRefuse) {
+        if (!/^refused 400 .*BUNDLE_INVALID/.test(result)) {
+          problems.push({
+            property: '3 ID integrity',
+            detail: `${label}: import answered ${result.slice(0, 160)}, not 400 BUNDLE_INVALID`,
+          });
+        }
+        continue;
+      }
+      const other = /Entry ([0-9a-f-]{36}):/.exec(result)?.[1];
+      if (!result.startsWith('succeeded') && other && other !== id) {
+        // Another stored entry already holds a repeated item ID: a property-3 finding of its own.
+        const heads = await headsOf(w, other);
+        problems.push({
+          property: '3 ID integrity',
+          detail: `${label}: the bundle was refused for another entry ${other}, which stores a repeated item ID: ${JSON.stringify(heads.map((head) => [head.locale, head.state, head.data])).slice(0, 1500)}`,
+        });
+        continue;
+      }
       if (!result.startsWith('succeeded')) {
-        continue; // refused by the import: nothing stored
+        problems.push({
+          property: '3 ID integrity',
+          detail: `${label}: import answered ${result.slice(0, 400)}`,
+        });
+        continue;
       }
       problems.push(
         ...idUniqueness(await headsOf(w, id)).map((problem) => ({

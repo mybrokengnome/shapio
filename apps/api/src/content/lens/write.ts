@@ -436,6 +436,13 @@ const mayNameRemoved = (base: LensWriteBase, field: FieldLens): boolean =>
 
 const UNKNOWN_FIELD = 'is not a field of this schema version';
 
+/**
+ * A field removed since, sent back empty by a caller a read through the client's version shows it to (as null):
+ * that read sent back, so left out, whatever the caller's write grant names. Never refused.
+ */
+const echoesRemovedNull = (base: LensWriteBase, field: FieldLens | undefined, item: unknown): boolean =>
+  field !== undefined && !field.stored && isMissingValue(item) && shownToWriter(base, field);
+
 /** Whether the caller reads a field today (one it does not reads empty through the lens). */
 const readsToday = (base: LensWriteBase, field: FieldLens, whole: boolean): boolean => {
   if (!field.stored || field.stored.deprecated) {
@@ -475,7 +482,9 @@ const translateObject = (
     // A field removed since resolves by its ID only (never by its API ID, which a field added since may reuse):
     // named as removed where the caller may learn it, else a field this version does not have.
     if (!field || (!field.stored && !mayNameRemoved(walk.base, field))) {
-      walk.issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
+      if (!echoesRemovedNull(walk.base, field, item)) {
+        walk.issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
+      }
       continue;
     }
     // A field inside a component the caller's audience cannot write today. If a read through the client's version
@@ -1025,7 +1034,9 @@ export const checkClientBody = (
       const fieldPath = pointer(path, key);
       const field = fieldByApiKey(current, key);
       if (!field || (!field.stored && !mayNameRemoved(base, field))) {
-        issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
+        if (!echoesRemovedNull(base, field, item)) {
+          issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
+        }
         continue;
       }
       if (

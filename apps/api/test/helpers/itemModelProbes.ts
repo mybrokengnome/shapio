@@ -8,11 +8,13 @@ import {
   instancesOf,
   outcomeOf,
   readAs,
+  refusedForMissingTarget,
   send,
   storedView,
   type Problem,
   type Random,
   type Transport,
+  targetsOnlyChanged,
 } from './itemModelRun.js';
 import {
   eventCount,
@@ -91,7 +93,12 @@ const docHolding = async (w: World, hidden: string) => {
     }),
     201,
   ).json<{ id: string }>().id;
-  expectStatus(await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, { locales: ['en'] }), 200);
+  if (w.draftAndPublish) {
+    expectStatus(
+      await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, { locales: ['en'] }),
+      200,
+    );
+  }
   return id;
 };
 
@@ -272,9 +279,11 @@ export const relationProbeProblems = async (
       }
     }
   }
-  // The entry can still be published.
-  const published = await w.admin.post(`/api/admin/content/${w.docKey}/${a}/publish`, { locales: ['en'] });
-  if (published.statusCode >= 300) {
+  // The entry can still be published (a model without drafts publishes on every save).
+  const published = w.draftAndPublish
+    ? await w.admin.post(`/api/admin/content/${w.docKey}/${a}/publish`, { locales: ['en'] })
+    : null;
+  if (published && published.statusCode >= 300) {
     problems.push({
       property: '4 order and status (N1)',
       detail: `${label}: accepted, then the admin cannot publish: ${published.statusCode} ${published.body.slice(0, 200)}`,
@@ -398,6 +407,9 @@ export const resaveProblems = async (
             detail: `${label}: the same body without the fields read-only through V answered ${resent.status} v${String(versionOfResponse(resent.body))}, revisions ${revisions} → ${revisions2}, events ${events} → ${events2}`,
           },
         ];
+  }
+  if (refusedForMissingTarget(again)) {
+    return []; // decision (c): the body names a target that no longer exists; refused as on main
   }
   if (again.status >= 300 || !againOutcome.accepted) {
     return [
@@ -630,6 +642,12 @@ export const noopProblems = async (
     const before = await entryState(w, entryId);
     const body = noopBody(kind, read, admin?.title, random);
     const draft = before.heads.find((head) => head[0] === 'en' && head[1] === 'draft');
+    if (process.env.ITEM_MODEL_DEBUG) {
+      writeFileSync(
+        `${process.env.ITEM_MODEL_DEBUG}.noop-${kind}`,
+        JSON.stringify({ caller: caller.name, version, transport, read, body, heads: before.heads }, null, 1),
+      );
+    }
     const response = await send(w, {
       caller,
       transport,
@@ -640,7 +658,21 @@ export const noopProblems = async (
       body,
     });
     const after = await entryState(w, entryId);
-    if (!isDeepStrictEqual(after, before)) {
+    // Decision (a): a caller that may read drafts is treated as shown every draft relation target and media, so
+    // echoing a published read drops the draft-only targets it hid (as on main). That is a real change: the
+    // write may make a revision, fire an event, move the status and store the items' IDs with it. Only the
+    // targets (and stored `__id`s) may differ.
+    const adminKind = caller.kind === 'adminToken' || caller.kind === 'pinned';
+    const relationsOnly =
+      adminKind &&
+      kind !== 'empty' &&
+      kind !== 'sameScalar' &&
+      targetsOnlyChanged(
+        w,
+        before.heads.map((head) => head[3]),
+        after.heads.map((head) => head[3]),
+      );
+    if (!isDeepStrictEqual(after, before) && !relationsOnly && !refusedForMissingTarget(response)) {
       const changed = [
         ...(after.revisions !== before.revisions
           ? [`revisions ${before.revisions} → ${after.revisions}`]
@@ -729,6 +761,7 @@ export const echoThroughVersionProblems = async (
           'deprecatedTop',
           'removedTop',
           'retypedTop',
+          'addedTop',
         ]
       : [];
   const body = Object.fromEntries(Object.entries(echoed).filter(([key]) => !unwritable.includes(key)));
@@ -746,12 +779,17 @@ export const echoThroughVersionProblems = async (
     expectedVersion: await draftVersion(),
     body,
   });
+  const adminKind = caller.kind === 'adminToken' || caller.kind === 'pinned';
+  if (refusedForMissingTarget(unchanged)) {
+    return problems; // decision (c): an echoed target that no longer exists is refused, as on main
+  }
   if (unchanged.status >= 300) {
     problems.push({
       property: '10 echo through V (H1)',
       detail: `${caller.name}: sending back what it read through V answered ${unchanged.status} ${unchanged.raw.slice(0, 300)}`,
     });
-  } else if (!isDeepStrictEqual(await entryState(w, entryId), before)) {
+  } else if (!adminKind && !isDeepStrictEqual(await entryState(w, entryId), before)) {
+    // (An admin-kind caller replaces the targets and media its delivery read left out, as on main: decision (a).)
     problems.push({
       property: '10 echo through V (H1)',
       detail: `${caller.name}: sending back what it read through V changed the entry`,
@@ -774,7 +812,7 @@ export const echoThroughVersionProblems = async (
       expectedVersion: await draftVersion(),
       body: edited,
     });
-    if (response.status >= 300) {
+    if (response.status >= 300 && !refusedForMissingTarget(response)) {
       problems.push({
         property: '10 echo through V (H1)',
         detail: `${caller.name}: what it read through V with one field edited answered ${response.status} ${response.raw.slice(0, 300)}`,

@@ -1,8 +1,9 @@
 import type { FieldDefinition } from '@shapio/schema';
 import { ITEM_ID_KEY } from '../../constants/itemIds.js';
 import { AppError } from '../../helpers/appError.js';
-import { componentOfItem, type ComponentLookup } from '../itemIds.js';
-import type { ContentModel } from '../model.js';
+import type { SchemaById } from '../../schema/snapshot.js';
+import { componentLookupOf, componentOfItem, type ComponentLookup } from '../itemIds.js';
+import { resolveModelById, type ContentModel } from '../model.js';
 import { pointer } from '../validator/issues.js';
 import type { EntryRecord } from './format.js';
 
@@ -93,4 +94,24 @@ export const assertBundleItemIds = (
       throw invalidItemId(entry.id, found.path, found.problem);
     }
   }
+};
+
+/**
+ * The same check for the import plan, against the target's models, so that a bundle with a bad item ID is
+ * refused before anything of it is applied. Entries of a model only the bundle defines are checked when the
+ * import job writes them.
+ */
+export const bundleItemIdCheckFor = (snapshot: SchemaById): ((entry: EntryRecord) => void) => {
+  const models = new Map<string, { model: ContentModel; componentOf: ComponentLookup } | null>();
+  return (entry) => {
+    let known = models.get(entry.modelId);
+    if (known === undefined) {
+      const model = resolveModelById(snapshot, entry.modelId);
+      known = model ? { model, componentOf: componentLookupOf(model.components) } : null;
+      models.set(entry.modelId, known);
+    }
+    if (known) {
+      assertBundleItemIds(known.model, entry, known.componentOf);
+    }
+  };
 };

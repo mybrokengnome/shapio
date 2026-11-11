@@ -56,9 +56,11 @@ All notable changes to Shapio are listed here. The format follows
     `__component` on dynamic zone items and nested component fields included. `{}` when the body sent none.
     GraphQL mutations do not return it. It always holds the `id`s stored after the write, so even a write that
     changes nothing answers the `id`s the next write accepts.
-  - In a list, `"id": null` marks a new item. A create gives every item a new `id`, whatever the body sent (a
-    repeated `id` on a create is not an error).
-  - Lifecycle hook `data` carries `id` on the component instances the write wrote; `seo=resolved` keeps the
+  - In a list, `"id": null` marks a new item. On a create, a well-formed `id` is ignored and every item gets a new
+    one (a repeated `id` is not an error); an `id` that is not a string, is empty, or is longer than 64
+    characters is `422 INVALID_TYPE`, as on an update.
+  - Lifecycle hook `data` carries `id` on every component item, and `before` is the stored draft as stored (items
+    saved since 0.9.0 carry `id`, older ones do not); `seo=resolved` keeps the
     stored SEO instance's `id`. Content export bundles carry item IDs, and an import into the same instance keeps
     them.
 - `shapio types generate --out <file>.d.ts` (or `.d.mts`, `.d.cts`) writes a declaration file, with
@@ -82,6 +84,16 @@ All notable changes to Shapio are listed here. The format follows
   so keeping them never fails a write.
 - Swapping two identical-looking items by their `id`s is now saved as a change, and their hidden values move
   with them.
+- Content nested too deeply for the database is refused with `422 BODY_TOO_DEEP` instead of failing with a `500`.
+  Stored content may be at most 100 levels deep, which was already the real limit on MySQL. Everything the
+  validator accepts (rich text 40 node levels deep inside five levels of components is 97 levels) is accepted on
+  every database as before. REST bodies, GraphQL variables, and GraphQL inline values accept the same content
+  depth, and a GraphQL document nested too deeply to parse answers `400 QUERY_TOO_DEEP`.
+- Through a schema version, a client can send back a top-level field its version showed as empty when that field
+  has since become private or deprecated, and an item that continues keeps the values of fields removed since the
+  client's version.
+- A content import refuses a bundle whose item `id` is not a string of 1 to 64 characters, is repeated within an
+  entry, or sits on the wrong kind of value, with `400 BUNDLE_INVALID` and the path.
 - A number field changed to decimal or big integer no longer fails on very large or very small stored numbers
   (`1e21`, `1e-7`); they convert to exact digits.
 
@@ -121,7 +133,13 @@ What changes for a client that names no schema version and sends no item `id`s
 - Any other list, and every admin API write, is never refused: an item keeps its `id` only when it equals
   exactly one stored item and no other sent item, and every other item is new with a new `id`. An edited item
   that is new does not keep relation targets or media its read left out; send `id`s to keep them. In an admin
-  write, an item that continues keeps its deprecated fields.
+  write, an item that continues keeps its deprecated fields. An admin API save without `id`s gives edited items
+  new `id`s, so a delivery client holding the old ones gets `UNKNOWN_ITEM_ID` and reads the entry again.
+- The first write to a locale that does not exist yet treats its localized lists as all new, for any caller, with
+  or without `id`s; shared fields follow the usual rules.
+- A caller that may read drafts on a route is treated as having been shown draft relation targets and media,
+  whichever view it read, so what it leaves out is removed; a caller that cannot read drafts keeps what it was
+  not shown.
 - Private and deprecated values inside components are kept when a client writes the component back; 0.8.2 wiped
   them. A caller that may update but not read keeps the private and deprecated fields it leaves out.
 - **Security:** a private field sent inside a component by a delivery caller, even as `null`, is refused with
@@ -140,8 +158,9 @@ What changes for a client that names no schema version and sends no item `id`s
   exactly as stored (as before 0.9.0). Where 0.8.2 wiped hidden values on such a re-save, it now changes nothing.
   A caller whose draft is ahead of what it can read is refused on a list with fields it cannot write; it sends
   the `itemIds` from the last write response. Anything else that differs is written.
-- Refusals come in one order, with and without a schema version: after authentication and the body depth
-  check, `403` for the content type and `404` (the entry does not exist or is not the caller's), then the body
+- Refusals come in one order, with and without a schema version: `429` (rate limit), `401` (a bearer token that
+  does not resolve), the workspace (`404` or `403`), the CSRF check (`403`), `422 BODY_TOO_DEEP`, the body schema
+  (`400`), admin authentication (`401` or `403`), `403` for the content type and `404` (the entry does not exist or is not the caller's), then the body
   (`422`: an unknown field or component, an item `id` that is not a non-empty string of at most 64 characters,
   as `INVALID_TYPE` at `…/id`, list caps), a forbidden field (`403`), a stale version (`409`), the items
   (`422`: `UNKNOWN_ITEM_ID` for any other `id` the list does not hold, and `AMBIGUOUS_ITEMS`), then the values
@@ -149,15 +168,12 @@ What changes for a client that names no schema version and sends no item `id`s
 - A refusal lists at most 100 issues; `details.issueCount` and `details.truncated: true` say when it was cut.
 - Lists are capped on every write, admin API included: the field's `max`, or 50,000 items when it sets none,
   else `422 CONTENT_INVALID` (`TOO_MANY`).
-- A request body nested deeper than 64 levels, or GraphQL argument values deeper than 64 levels, are refused with
-  `422 BODY_TOO_DEEP` (`details.limit`), on every route and before any validation; a GraphQL document nested more
-  than 128 levels answers `400 QUERY_TOO_DEEP`. This changes rich text: before 0.9.0 every database accepted rich
-  text up to 40 node levels; now rich text deeper than about 30 node levels (sooner inside components) is
-  refused. Import bundles are streamed and not covered by this limit, and the importers' HTML converter flattens
-  nesting past 24 levels.
 - New setting `REQUEST_BODY_MAX_BYTES` (default 1,048,576; at least 1 KiB, at most 1 GiB), checked at startup:
   the largest JSON request body. Item IDs add about 20 bytes to every component item, so an entry that was just
   under the 1 MiB limit can now answer `413`; raise the setting if you have such entries.
+- New setting `GRAPHQL_MAX_TOKENS` (default 5,000): a GraphQL document with more tokens answers
+  `400 QUERY_TOO_LARGE` before it is parsed. Full introspection is 184 tokens and the API explorer's largest
+  generated queries about 2,500, so ordinary clients are far under it. GraphQL authentication is unchanged.
 - A client that writes items back as it read them now sends their `id`s, and is matched by them. Such a write is
   refused when it repeats an item object in one list (`DUPLICATE_ITEM_ID`), copies one from another list,
   another parent item, or another entry, or sends an item someone else deleted (`UNKNOWN_ITEM_ID`), or changes a
@@ -173,6 +189,12 @@ gets a shape it was not built for.
 
 ### Known limits
 
+- On a many-relation with a `max`, targets the caller cannot see still count, so a write that looks valid to the
+  caller can answer `TOO_MANY`.
+- Reading through a schema version from before a kind (a content type that extends another) existed answers
+  `404` for entries of that kind, also under the parent's route.
+- When a save writes, items in component fields the body did not send keep `id`s derived on read until those
+  fields are saved; reads are unaffected.
 - A caller that may update an entry but not read it can tell from the version in the response whether what it
   sent equals what is stored (an unchanged version means it did), as before 0.9.0; this now also holds for
   single components.

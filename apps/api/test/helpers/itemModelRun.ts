@@ -898,6 +898,20 @@ const sentByWrittenId = (w: World, body: Json, after: Instance[]) => {
  * Conservation (1) and ID integrity (3) of one accepted write, from the written locale's draft before and after,
  * what the caller read before (null: it could not read), and the body.
  */
+/** Relation and media fields inside components (decision (a) treats them as shown to drafts readers). */
+const RELATION_OR_MEDIA = new Set(['rel', 'rels', 'anyRels', 'secretRel', 'pic']);
+
+/** Decision (c): relation values the body names are validated as on main, so echoing a target that no longer
+ * exists (raw-injected) is refused with RELATION_TARGET_MISSING, and nothing else. */
+export const refusedForMissingTarget = (response: Response): boolean => {
+  const outcome = outcomeOf(response);
+  return (
+    response.status === 422 &&
+    outcome.issues.length > 0 &&
+    outcome.issues.every((issue) => issue.startsWith('RELATION_TARGET_MISSING'))
+  );
+};
+
 export const acceptedWriteProblems = (
   w: World,
   {
@@ -931,12 +945,20 @@ export const acceptedWriteProblems = (
   // read otherwise: a relation to a target it cannot see).
   const hiddenOf = (instance: Instance): string[] => {
     const readItem = seen.get(instance.id);
-    return Object.entries(instance.raw)
-      .filter(
-        ([key, value]) => key !== '__id' && key !== '__component' && value !== null && !Array.isArray(value),
-      )
-      .filter(([key, value]) => !readItem || !isDeepStrictEqual(readItem[w.apiKeyOf.get(key) ?? key], value))
-      .map(([key]) => key);
+    return (
+      Object.entries(instance.raw)
+        .filter(
+          ([key, value]) =>
+            key !== '__id' && key !== '__component' && value !== null && !Array.isArray(value),
+        )
+        .filter(
+          ([key, value]) => !readItem || !isDeepStrictEqual(readItem[w.apiKeyOf.get(key) ?? key], value),
+        )
+        // Decision (a): a caller that may read drafts is shown every relation target and media, whatever view it
+        // read; what it sends replaces them (as on main).
+        .filter(([key]) => !(writesAll && RELATION_OR_MEDIA.has(w.apiKeyOf.get(key) ?? key)))
+        .map(([key]) => key)
+    );
   };
   // 3: a newly minted ID is 12 base62 characters.
   const beforeIds = new Set(before.map((instance) => instance.id));
@@ -999,7 +1021,13 @@ export const acceptedWriteProblems = (
       // nearest shown-and-resent target before it in stored order (at the start if none), in its own order.
       const relsKey = w.card.rels;
       const readItem = seen.get(instance.id);
-      if (!admin && sent && Array.isArray(sent.rels) && Array.isArray(instance.raw[relsKey]) && readItem) {
+      if (
+        !writesAll &&
+        sent &&
+        Array.isArray(sent.rels) &&
+        Array.isArray(instance.raw[relsKey]) &&
+        readItem
+      ) {
         const stored = instance.raw[relsKey] as string[];
         const shown = new Set(Array.isArray(readItem.rels) ? (readItem.rels as unknown[]).map(String) : []);
         const resent = (sent.rels as unknown[]).map(String);
@@ -1271,7 +1299,22 @@ export const roundTripProblems = async (
     return [];
   }
   // What it read, but top-level fields its write grant does not name (the limited caller's title).
-  const unwritable = caller.name === 'limited' ? ['title', 'secretCard', 'ref', 'refs', 'secretRef'] : [];
+  // The limited caller's write grant names only cards, lchips, hero and zone (403 for the rest: delivery-api.md:715).
+  const unwritable =
+    caller.name === 'limited'
+      ? [
+          'title',
+          'secretCard',
+          'ref',
+          'refs',
+          'secretRef',
+          'madePrivate',
+          'deprecatedTop',
+          'removedTop',
+          'retypedTop',
+          'addedTop',
+        ]
+      : [];
   const body = asSent(
     Object.fromEntries(
       Object.entries(read).filter(
@@ -1305,6 +1348,9 @@ export const roundTripProblems = async (
   }
   const response = await send(w, { caller, transport, entryId, locale, version, expectedVersion, body });
   const problems: Problem[] = [];
+  if (refusedForMissingTarget(response)) {
+    return problems; // decision (c): the echoed target no longer exists; main refuses it the same way
+  }
   if (response.status >= 300) {
     problems.push({
       property: '5 round trip',
@@ -1313,11 +1359,26 @@ export const roundTripProblems = async (
     return problems;
   }
   const after = await headsOf(w, entryId);
+  // Decision (a): an admin-kind caller sending back a delivery read replaces the relation targets and media the
+  // read left out (as on main); everything else must stay.
+  const adminKind = caller.kind === 'admin' || caller.kind === 'adminToken' || caller.kind === 'pinned';
+  // When the write dropped targets the read hid, it is a real change and stores the items' IDs with it.
+  const relationsChanged =
+    adminKind &&
+    after.some((head) =>
+      targetsOnlyChanged(
+        w,
+        heads.find((old) => old.locale === head.locale && old.state === head.state)?.data,
+        head.data,
+      ),
+    );
+  const comparable = (data: unknown): unknown =>
+    adminKind ? stripRelationsAndMedia(w, relationsChanged ? withoutItemIds(data) : data) : data;
   const changed = after.filter(
     (head) =>
       !isDeepStrictEqual(
-        head.data,
-        heads.find((old) => old.locale === head.locale && old.state === head.state)?.data,
+        comparable(head.data),
+        comparable(heads.find((old) => old.locale === head.locale && old.state === head.state)?.data),
       ),
   );
   if (changed.length > 0) {
@@ -1329,13 +1390,13 @@ export const roundTripProblems = async (
       detail: `${caller.name}${version ? '@V' : ''}: sending back what it read changed ${changed.map((head) => `${head.locale}/${head.state}`).join(',')}: ${differences(was, changed[0]?.data).slice(0, 4).join('; ')}`,
     });
   }
-  if ((await revisionCount(w, entryId)) !== revisions) {
+  if (!relationsChanged && (await revisionCount(w, entryId)) !== revisions) {
     problems.push({
       property: '5 round trip',
       detail: `${caller.name}${version ? '@V' : ''}: a revision was made for an unchanged write`,
     });
   }
-  if ((await eventCount(w, entryId)) !== events) {
+  if (!relationsChanged && (await eventCount(w, entryId)) !== events) {
     problems.push({
       property: '5 round trip',
       detail: `${caller.name}${version ? '@V' : ''}: an event fired for an unchanged write`,
@@ -1422,3 +1483,37 @@ export const differences = (a: unknown, b: unknown, path = ''): string[] => {
   }
   return [`${path || '/'}: ${JSON.stringify(a)?.slice(0, 60)} → ${JSON.stringify(b)?.slice(0, 60)}`];
 };
+
+/**
+ * True when relation or media targets changed and nothing else did, stored item IDs aside (decision (a)): a
+ * draft-capable caller's echo of a published read drops the draft-only targets, and that write stores the IDs.
+ */
+export const targetsOnlyChanged = (w: World, before: unknown, after: unknown): boolean =>
+  !isDeepStrictEqual(withoutItemIds(before), withoutItemIds(after)) &&
+  isDeepStrictEqual(
+    stripRelationsAndMedia(w, withoutItemIds(before)),
+    stripRelationsAndMedia(w, withoutItemIds(after)),
+  );
+
+const withoutItemIds = (data: unknown): unknown =>
+  Array.isArray(data)
+    ? data.map(withoutItemIds)
+    : isRecord(data)
+      ? Object.fromEntries(
+          Object.entries(data)
+            .filter(([key]) => key !== '__id')
+            .map(([key, value]) => [key, withoutItemIds(value)]),
+        )
+      : data;
+
+/** Stored data without relation and media values inside components (decision (a)). */
+const stripRelationsAndMedia = (w: World, data: unknown): unknown =>
+  Array.isArray(data)
+    ? data.map((item) => stripRelationsAndMedia(w, item))
+    : isRecord(data)
+      ? Object.fromEntries(
+          Object.entries(data)
+            .filter(([key]) => !RELATION_OR_MEDIA.has(w.apiKeyOf.get(key) ?? ''))
+            .map(([key, value]) => [key, stripRelationsAndMedia(w, value)]),
+        )
+      : data;

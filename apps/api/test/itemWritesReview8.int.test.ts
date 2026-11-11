@@ -542,6 +542,42 @@ describe('item writes: eighth review', () => {
       expect(response.statusCode, response.body).toBe(status);
     });
 
+    it.each(['with IDs', 'without IDs'])(
+      'legacy items in both locales, read and sent back %s, through each route: nothing is written',
+      async (mode) => {
+        const id = await createEn();
+        expectStatus(
+          await admin.put(`/api/admin/content/doc/${id}?locale=fr`, {
+            locale: 'fr',
+            expectedVersion: null,
+            data: { title: 'fr', lcards: [{ heading: 'fa', note: 'fn' }] },
+          }),
+          200,
+        );
+        expectStatus(
+          await admin.post(`/api/admin/content/doc/${id}/publish`, { locales: ['en', 'fr'] }),
+          200,
+        );
+        await inStorage(id, (data) => withoutIds(data));
+        const start = await footprint('doc', id);
+        for (const locale of ['en', 'fr']) {
+          const read = expectStatus(
+            await request('GET', `/api/content/docs/${id}?locale=${locale}`, adminToken),
+            200,
+          ).json<{ data: Record<string, unknown> }>().data;
+          const pick = (key: string) => (mode === 'with IDs' ? read[key] : withoutIds(read[key]));
+          const view = (await admin.get(`/api/admin/content/doc/${id}?locale=${locale}`)).json<EntryBody>();
+          const response = await request('PUT', `/api/content/docs/${id}?locale=${locale}`, adminToken, {
+            locale,
+            expectedVersion: view.version,
+            data: { cards: pick('cards'), lcards: pick('lcards') },
+          });
+          expect(response.statusCode, response.body).toBe(200);
+          expect([locale, await footprint('doc', id)]).toEqual([locale, start]);
+        }
+      },
+    );
+
     it('a shared list fanned out to another locale never repeats an ID there', async () => {
       const id = await createEn();
       expectStatus(
@@ -643,5 +679,232 @@ describe('item writes: eighth review', () => {
       expect(draft.map((item) => item.id)).toEqual(read.map((item) => item.id));
       expect(read[1]?.id).toBe(derived);
     });
+  });
+
+  describe('ninth round: echoes through a version, and bundles with bad item IDs', () => {
+    let doc: ModelBody;
+    let v0: string;
+    let limited: AppSessionBody;
+    const field = (definition: ModelBody['definition'], apiKey: string) =>
+      definition.fields.find((candidate) => candidate.apiKey === apiKey) as FieldBody;
+    beforeAll(async () => {
+      const locale = await admin.post('/api/admin/locales', { code: 'fr', label: 'French' });
+      expect([201, 409]).toContain(locale.statusCode);
+      const chip = await createDefinition(
+        admin,
+        {
+          kind: 'component',
+          apiKey: 'r9_chip',
+          label: 'R9 chip',
+          fields: [{ apiKey: 'label', label: 'Label', type: 'string' }],
+        },
+        'components',
+      );
+      const card = await createDefinition(
+        admin,
+        {
+          kind: 'component',
+          apiKey: 'r9_card',
+          label: 'R9 card',
+          fields: [
+            { apiKey: 'heading', label: 'Heading', type: 'string' },
+            { apiKey: 'rmv', label: 'Rmv', type: 'string' },
+            {
+              apiKey: 'chips',
+              label: 'Chips',
+              type: 'component',
+              settings: { component: chip.definition.id, repeatable: true },
+            },
+          ],
+        },
+        'components',
+      );
+      doc = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'r9doc',
+        label: 'R9 doc',
+        localized: true,
+        fields: [
+          { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+          {
+            apiKey: 'cards',
+            label: 'Cards',
+            type: 'component',
+            settings: { component: card.definition.id, repeatable: true },
+          },
+        ],
+      });
+      // An app user whose write grant names fields.
+      limited = await user([
+        { action: 'read', modelId: doc.definition.id },
+        {
+          action: 'update',
+          modelId: doc.definition.id,
+          fieldIds: [field(doc.definition, 'title').id, field(doc.definition, 'cards').id],
+        },
+      ]);
+      v0 = expectStatus(await request('GET', '/api/snapshots/current', adminToken), 200).json<{
+        schemaVersionToken: string;
+      }>().schemaVersionToken;
+      // Since v0, the card's `rmv` is removed.
+      const current = (await admin.get(`/api/admin/components/${card.definition.id}`)).json<ModelBody>();
+      const changed = await admin.put(`/api/admin/components/${card.definition.id}`, {
+        definition: {
+          ...current.definition,
+          fields: current.definition.fields.filter((candidate) => candidate.apiKey !== 'rmv'),
+        },
+        expectedVersion: current.version,
+        acknowledgeBreaking: true,
+        acknowledgeDestructive: true,
+      });
+      expect([200, 202]).toContain(changed.statusCode);
+      await runContentSchemaJobs(database.current.db);
+    });
+    /** An entry in `en` and `fr`, published; the first card and its chips stored as before item IDs. */
+    const entry = async () => {
+      const created = expectStatus(
+        await admin.post('/api/admin/content/r9doc?locale=en', {
+          locale: 'en',
+          data: {
+            title: 'en',
+            cards: [
+              { heading: 'A', chips: [{ label: 'x' }, { label: 'y' }] },
+              { heading: 'B', chips: [{ label: 'z' }] },
+            ],
+          },
+        }),
+        201,
+      ).json<EntryBody>();
+      expectStatus(
+        await admin.put(`/api/admin/content/r9doc/${created.id}?locale=fr`, {
+          locale: 'fr',
+          expectedVersion: null,
+          data: { title: 'fr' },
+        }),
+        200,
+      );
+      expectStatus(
+        await admin.post(`/api/admin/content/r9doc/${created.id}/publish`, { locales: ['en', 'fr'] }),
+        200,
+      );
+      const cardsId = field(doc.definition, 'cards').id;
+      await inStorage(created.id, (data) => {
+        const cards = data[cardsId] as Array<Record<string, unknown>>;
+        return { ...data, [cardsId]: [withoutIds(cards[0]), cards[1]] };
+      });
+      return created.id;
+    };
+    /** What a read through `version` shows, without the read's system attributes. */
+    const readBack = async (id: string, token: string, version: string | null) => {
+      const at = `/api/content/r9docs/${id}?locale=en${version ? `&schemaVersion=${encodeURIComponent(version)}` : ''}`;
+      const read = expectStatus(await request('GET', at, token), 200).json<{
+        data: Record<string, unknown>;
+      }>().data;
+      return { at, body: { title: read.title, cards: read.cards } };
+    };
+
+    it.each([
+      ['an admin token, through the version', 'adminToken', true],
+      ['an admin token, without a version', 'adminToken', false],
+      ['a field-limited app user, through the version', 'limited', true],
+    ] as const)('legacy nested items sent back as read by %s: a no-op', async (_name, caller, versioned) => {
+      const id = await entry();
+      const token = caller === 'adminToken' ? adminToken : limited.accessToken;
+      const { at, body } = await readBack(id, token, versioned ? v0 : null);
+      const before = await footprint('r9doc', id);
+      const response = await request('PUT', at, token, {
+        locale: 'en',
+        expectedVersion: before.version,
+        data: body,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(await footprint('r9doc', id)).toEqual(before);
+    });
+
+    it('a field-limited app user sends back a field removed since its version, with another field edited', async () => {
+      const id = await entry();
+      const { at, body } = await readBack(id, limited.accessToken, v0);
+      expect((body.cards as Item[])[0]).toHaveProperty('rmv', null);
+      const before = await footprint('r9doc', id);
+      const response = await request('PUT', at, limited.accessToken, {
+        locale: 'en',
+        expectedVersion: before.version,
+        data: { ...body, title: 'edited' },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect((await footprint('r9doc', id)).version).toBe(before.version + 1);
+      // A value for it is still refused: only the empty value the read showed is that read sent back.
+      const valued = await request('PUT', at, limited.accessToken, {
+        locale: 'en',
+        expectedVersion: before.version + 1,
+        data: { cards: (body.cards as Item[]).map((card) => ({ ...card, rmv: 'v' })) },
+      });
+      expect(valued.statusCode).toBe(422);
+    });
+
+    it.each([
+      [
+        'a repeated ID',
+        (cards: Array<Record<string, unknown>>) => cards.map((card) => ({ ...card, __id: cards[1]?.__id })),
+      ],
+      ['a number', (cards: Array<Record<string, unknown>>) => cards.map((card) => ({ ...card, __id: 5 }))],
+      [
+        'an empty string',
+        (cards: Array<Record<string, unknown>>) => cards.map((card) => ({ ...card, __id: '' })),
+      ],
+      [
+        '80 characters',
+        (cards: Array<Record<string, unknown>>) => cards.map((card) => ({ ...card, __id: 'x'.repeat(80) })),
+      ],
+    ])(
+      'an import bundle with %s as an item ID is refused before anything is applied',
+      async (_name, edit) => {
+        const id = await entry();
+        const cardsId = field(doc.definition, 'cards').id;
+        const bundle = (
+          await testApp.app.inject({
+            method: 'GET',
+            url: '/api/admin/transfer/export',
+            headers: bearer(adminToken),
+          })
+        ).body
+          .split('\n')
+          .map((line) => {
+            if (!line.includes('"type":"entry"') || !line.includes(id)) {
+              return line;
+            }
+            const record = JSON.parse(line) as {
+              id: string;
+              heads: Array<{ data: Record<string, unknown> }>;
+            };
+            if (record.id !== id) {
+              return line;
+            }
+            for (const head of record.heads) {
+              head.data = {
+                ...head.data,
+                [cardsId]: edit(head.data[cardsId] as Array<Record<string, unknown>>),
+              };
+            }
+            return JSON.stringify(record);
+          })
+          .join('\n');
+        for (const dryRun of [true, false]) {
+          const response = await testApp.app.inject({
+            method: 'POST',
+            url: `/api/admin/transfer/import${dryRun ? '?dryRun=true' : ''}`,
+            headers: { ...bearer(adminToken), 'content-type': 'application/x-ndjson' },
+            payload: bundle,
+          });
+          expect(response.statusCode, response.body).toBe(400);
+          const error = response.json<{
+            error: { code: string; details: { entryId: string; path: string } };
+          }>().error;
+          expect(error.code).toBe('BUNDLE_INVALID');
+          expect(error.details.entryId).toBe(id);
+          expect(error.details.path).toMatch(new RegExp(`/${cardsId}/\\d+/__id$`));
+        }
+      },
+    );
   });
 });

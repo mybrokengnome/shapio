@@ -211,5 +211,3 @@ Only **Strapi 5** exports are supported. A Strapi 4 export is refused: upgrade t
   automatically (about 1,000 entries in three minutes at the default `RATE_LIMIT_MAX` of 600 a minute). The
   limit counts per client address, so while `--map` runs, the admin opened from the same address can answer
   `RATE_LIMITED` for up to a minute. Wait for the import to finish, or raise `RATE_LIMIT_MAX` for its duration.
-- HTML nested more than 24 levels deep (WordPress post bodies, for example) is flattened past that depth when
-  it is converted to rich text, so the imported rich text stays within the API's nesting limit.

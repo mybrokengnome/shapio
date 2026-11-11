@@ -333,8 +333,14 @@ curl "$SHAPIO_URL/api/graphql" \
 ## Limits
 
 - Query depth: `GRAPHQL_MAX_DEPTH` (10).
-- Nesting: a document nested more than 128 levels answers `400 QUERY_TOO_DEEP`, and argument values (literals
-  and variables) nested deeper than a REST body allows answer `422 BODY_TOO_DEEP`.
+- Document size: at most `GRAPHQL_MAX_TOKENS` (5,000) tokens; a longer document answers `400 QUERY_TOO_LARGE`
+  before it is parsed. Full introspection is 184 tokens and the API explorer's largest generated queries about
+  2,500, so ordinary clients are far under it. A document nested too deeply to parse answers
+  `400 QUERY_TOO_DEEP`.
+- Content depth: variables and inline values accept content as deep as a REST body does (stored content may be
+  at most 100 levels deep); deeper ones answer `422 BODY_TOO_DEEP`.
+- GraphQL validates a document before it looks up entries or versions, so a validation error answers before a
+  `404` or a `409`.
 - Estimated cost: `GRAPHQL_MAX_COMPLEXITY` (20 000). Each field costs 1, multiplied by the page sizes and lists
   around it; a collection query also costs its page size (the rows it reads) and `totalCount` costs 10 (a
   count query). Ask for smaller pages or fewer nested lists if you hit it (`QUERY_TOO_COMPLEX`).

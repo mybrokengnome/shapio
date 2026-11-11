@@ -551,8 +551,9 @@ order, and its hidden fields go with it:
 A list in which any item sends an `id` (a string, or `null`) is paired by `id`: there, every item without a
 string `id` is new. A list in which no item has an `id` key is paired as described in
 [Writes without item IDs](#writes-without-item-ids). A single (not repeatable) component always continues its
-stored instance: send its `id` back, or `"id": null`, or no `id`. A create gives every item a new `id`, whatever
-the body sent: an `id` repeated on a create is not an error.
+stored instance: send its `id` back, or `"id": null`, or no `id`. On a create, a well-formed `id` is ignored and
+every item gets a new one (an `id` repeated on a create is not an error); a malformed one is refused as on an
+update.
 
 These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per problem, and nothing is written:
 
@@ -613,6 +614,9 @@ every item is new. A list that holds anything the caller cannot write is refused
 items: `422 CONTENT_INVALID` with `AMBIGUOUS_ITEMS` on the list's path. Nothing about the answer depends on what
 is stored.
 
+**A new locale.** The first write to a locale that does not exist yet treats its localized lists as all new, for
+any caller, with or without `id`s; shared fields follow the usual rules.
+
 **2. The list can hold something hidden from the caller:** a field private to its audience or deprecated, at any
 depth; through a [schema version](schema-lenses.md#writes), also a field added since that version or one the
 caller cannot write. Relation fields do not make a list hidden, even when a read leaves out some of their
@@ -661,8 +665,9 @@ other item is new and gets a new `id`.
 Being new costs something even when nothing is refused: the item gets a new `id`, so a client holding the old one
 gets `UNKNOWN_ITEM_ID`. With `id`s, or for an item sent exactly as read, relation targets and media the caller
 could not see are kept; an item edited without `id`s is a new item, and they are not carried over (as before
-0.9.0). In an admin write, an item that continues keeps its deprecated fields; the admin editor always
-sends `id`s.
+0.9.0). In an admin write, an item that continues keeps its deprecated fields. An admin API save without `id`s
+gives edited items new `id`s, so a delivery client holding the old ones gets `UNKNOWN_ITEM_ID` and reads the
+entry again; the admin editor always sends `id`s.
 
 With `id`s, every row of every table is certain: an edited item keeps its hidden values, and `"id": null` marks a
 new item. Sending `[]`, leaving the field out, and sending back the `id`s read are always allowed.
@@ -681,9 +686,9 @@ refused only when the components hold deprecated fields; admin API writes (`/api
 
 #### What a write keeps that the read hid
 
-- What counts as shown is what a read on the same route gives the same caller, admin tokens included. So on the
-  delivery API, a relation target or media that the delivery read does not show cannot be removed by a delivery
-  write; remove it through the admin API.
+- What counts as shown is what the caller may read on the route it writes through. A caller that may read drafts
+  there is treated as having been shown draft relation targets and media, whichever view it read, so what it
+  leaves out is removed. A caller that cannot read drafts keeps the targets and media it was not shown.
 - A relation or media value sent back as read keeps what the read left out: a relation read as `null` because
   its target is unpublished or not readable stays, and so does media the caller could not see. This holds at
   the top level and inside components, with and without `id`s (for items that continue), and through a schema
@@ -698,24 +703,34 @@ refused only when the components hold deprecated fields; admin API writes (`/api
   read, or fields you did not send) are not checked again.
 - Through a schema version, a field that changed since the client's version (a dynamic zone that gained a
   component, for example) can be sent back exactly as read, with or without the `id`s read, and nothing changes.
+  So can a top-level field the version showed as empty that has since become private or deprecated. An item that
+  continues keeps the values of fields removed since the client's version.
 
 #### Order of refusals
 
 A delivery write, with and without a schema version, answers in this order:
 
-1. Rate limiting (`429`), authentication (`401`), the CSRF check, and the workspace.
-2. `422 BODY_TOO_DEEP`: a request body nested deeper than 64 levels (`details.limit`), on every route, before
-   any validation. Rich text counts too: a document nested deeper than about 30 node levels is refused, and
-   sooner inside components. In GraphQL, argument values deeper than 64 levels answer `BODY_TOO_DEEP`, and a
-   document nested more than 128 levels answers `400 QUERY_TOO_DEEP`.
-3. `403` for a content type the caller may not write, and `404`: the entry does not exist, or is not the
+1. `429`: the rate limit.
+2. `401`: a bearer token that does not resolve.
+3. `404` or `403`: the workspace.
+4. `403`: the CSRF check.
+5. `422 BODY_TOO_DEEP`: a body nested deeper than stored content may be (`details.limit`).
+6. `400`: a body the route's schema refuses.
+7. `401` or `403`: admin authentication, on admin routes.
+8. `403` for a content type the caller may not write, and `404`: the entry does not exist, or is not the
    caller's.
-4. `422 CONTENT_INVALID` for the body: an unknown field or component, an item `id` that is not a non-empty
+9. `422 CONTENT_INVALID` for the body: an unknown field or component, an item `id` that is not a non-empty
    string of at most 64 characters (`INVALID_TYPE` at `…/id`), a list longer than its cap.
-5. `403 FORBIDDEN_FIELD`: a field the caller may not write.
-6. `409`: a stale `expectedVersion`. Items are matched only after this check, so a stale write costs no matching.
-7. `422 CONTENT_INVALID` for the items: `UNKNOWN_ITEM_ID`, the other item ID issues, and `AMBIGUOUS_ITEMS`.
-8. `422 CONTENT_INVALID` for the values: `INVALID_TYPE` and the like, as before 0.9.0.
+10. `403 FORBIDDEN_FIELD`: a field the caller may not write.
+11. `409`: a stale `expectedVersion`. Items are matched only after this check, so a stale write costs no
+    matching.
+12. `422 CONTENT_INVALID` for the items: `UNKNOWN_ITEM_ID`, the other item ID issues, and `AMBIGUOUS_ITEMS`.
+13. `422 CONTENT_INVALID` for the values: `INVALID_TYPE` and the like, as before 0.9.0.
+
+Stored content may be at most 100 levels deep, which was already the real limit on MySQL. Everything the content
+validator accepts fits (rich text 40 node levels deep inside five levels of components is 97 levels) and is
+accepted on every database as before; a deeper body is refused with `422 BODY_TOO_DEEP` instead of failing with
+a `500`. REST bodies, GraphQL variables, and GraphQL inline values accept the same content depth.
 
 The status and code are the same with and without a version, except `422 LENS_WRITE_UNSUPPORTED` for fields that
 changed since the client's version. A refusal lists at most 100 issues; when there were more, `details.issueCount`

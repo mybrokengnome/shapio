@@ -48,7 +48,8 @@ for every write change below is the same: send back the `id` of each item you re
    write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`): editing an
    item, deleting one item and adding another, changing a list that holds look-alikes, or changing a nested list.
    A caller that cannot see the stored items (for example an app user while the entry has unpublished changes)
-   is refused for any list with items that holds a field it cannot write.
+   is refused for any list with items that holds a field it cannot write. The first write to a new locale treats
+   its localized lists as all new, for any caller, with or without `id`s.
 3. A private field sent inside a component by a delivery caller, even as `null`, is refused with
    `403 FORBIDDEN_FIELD`; a deprecated one, with `422` and an `UNKNOWN_FIELD` issue. Before, the value was stored.
    Through a schema version that showed the field, sending back the `null` a read gives is accepted and keeps the
@@ -63,19 +64,19 @@ for every write change below is the same: send back the `id` of each item you re
      is ahead of the published version) and the list holds a field it cannot write. Send the `itemIds` from the
      last write response.
    - Anything else that differs from what is stored is written.
-5. On a list with nothing hidden, an item edited without its `id` gets a new `id`, and so do look-alikes in a
-   changed list.
-6. Refusals come in a fixed order: after authentication and the body depth check, `403` for the content type
-   and `404`, then the body (`422`), a forbidden field (`403`), `409`, the items (`422`), and the values (`422`).
+5. On a list with nothing hidden, and in every admin API save, an item edited without its `id` gets a new `id`,
+   and so do look-alikes in a changed list. A delivery client holding the old `id` gets `UNKNOWN_ITEM_ID` and
+   reads the entry again.
+6. Refusals come in a fixed order: after the rate limit, authentication, the workspace, the CSRF check, the
+   body depth check, and the body schema, `403` for the content type and `404`, then the body (`422`), a forbidden field (`403`), `409`, the items (`422`), and the values (`422`).
    They list at most 100 issues ([Order of refusals](delivery-api.md#order-of-refusals)). Lists
    over their `max`, or over 50,000 items, are refused on the admin API too.
-7. A request body nested deeper than 64 levels is refused with `422 BODY_TOO_DEEP`, on every route. This is a
-   behavior change for rich text: before 0.9.0 every database accepted rich text up to 40 node levels; now rich
-   text deeper than about 30 node levels (sooner inside components) is refused. Import bundles are streamed and
-   not covered, and the importers' HTML converter flattens nesting past 24 levels.
-8. Item IDs add about 20 bytes to every component item, so an entry that was just under the 1 MiB request limit
+7. Item IDs add about 20 bytes to every component item, so an entry that was just under the 1 MiB request limit
    can now answer `413`. If you have such entries, raise `REQUEST_BODY_MAX_BYTES` (default 1,048,576; 1 KiB to
    1 GiB).
+8. A GraphQL document longer than `GRAPHQL_MAX_TOKENS` (default 5,000 tokens) answers `400 QUERY_TOO_LARGE`. Full
+   introspection is 184 tokens and the API explorer's largest generated queries about 2,500, so ordinary clients
+   are far under it.
 
 ## Going back
 
