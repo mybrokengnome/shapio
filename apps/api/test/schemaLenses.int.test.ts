@@ -327,7 +327,7 @@ describe('schema lenses', () => {
   it('never shows what is not visible today (rule 7)', async () => {
     const one = await json<Delivered>(at(`/api/content/articles/${first.id}`));
     expect(one.data.secret).toBeNull();
-    expect(one.data.hero).toEqual({ heading: 'Hi', note: null });
+    expect(one.data.hero).toEqual({ id: expect.any(String) as unknown, heading: 'Hi', note: null });
     expect(JSON.stringify(one)).not.toMatch(/shh|private soon/);
     // A role that lost a field since the client's version does not see it through the lens.
     expect(before.narrow.data).toMatchObject({ title: 'First', restricted: 'r1' });

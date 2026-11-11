@@ -27,6 +27,7 @@ import { populateRelations, type PopulateEnvironment } from './compiler/populate
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
+import { componentLookupOf, itemIdKeyOf, withItemIds } from './itemIds.js';
 import { readThroughLens } from './lens/read.js';
 import { readableThroughLens } from './lens/write.js';
 import { readScopeFor } from './locales.js';
@@ -67,6 +68,11 @@ export type ReadEnvironment = {
    * on `snapshot`, today's view.
    */
   lens?: ReadLens;
+  /**
+   * The instance's item ID key (plan item-ids), when the caller already holds it; read from `executor` (once per
+   * handle) otherwise. Reads that run without a database (tests of the projection) pass one.
+   */
+  itemIdKey?: Buffer;
 };
 
 export type ReadLens = {
@@ -484,16 +490,46 @@ const fieldsOnRow = (
   return fields.filter((field) => maskAllows(mask, field));
 };
 
+/**
+ * Rows with an ID on every component instance (plan item-ids): the stored one, or the one derived for an item
+ * stored without one, so every read shows the same `id` for the same stored item.
+ */
+const withRowItemIds = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  rows: readonly HeadRow[],
+): Promise<HeadRow[]> => {
+  const key = env.itemIdKey ?? (await itemIdKeyOf(env.executor));
+  const componentOf = componentLookupOf(model.components);
+  return rows.map((row) => ({
+    ...row,
+    data: withItemIds(row.data, model.definition.fields, componentOf, { key, entryId: row.entry_id }),
+  }));
+};
+
 export const projectRows = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  policy: Policy,
+  storedRows: readonly HeadRow[],
+  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
+  const rows = await withRowItemIds(env, model, storedRows);
+  // Callers key results by the row objects they passed in: each result names its stored row.
+  const original = new Map(rows.map((row, index) => [row, storedRows[index] as HeadRow]));
+  const projected = env.lens
+    ? await projectRowsThroughLens(env, env.lens, model, policy, rows, query)
+    : await projectStoredRows(env, model, policy, rows, query);
+  return projected.map((result) => ({ ...result, row: original.get(result.row) ?? result.row }));
+};
+
+const projectStoredRows = async (
   env: ReadEnvironment,
   model: ContentModel,
   policy: Policy,
   rows: readonly HeadRow[],
   query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
 ): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
-  if (env.lens) {
-    return projectRowsThroughLens(env, env.lens, model, policy, rows, query);
-  }
   const fields = selectFields(model, policy.readMask, query.fields);
   const { visible: visibleTargets, fetched } = await relationTargets(env, model, rows, fields);
   const populateEnv: PopulateEnvironment = {

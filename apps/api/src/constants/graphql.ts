@@ -14,19 +14,28 @@ export const GRAPHQL_SITE_SCHEMA_IDLE_MS = 10 * 60 * 1000;
 export const GRAPHQL_SCHEMA_VARIANTS_MAX = 32;
 
 /**
- * Lens schemas (plan schema-lenses) are cached per (workspace, visibility): each such cache is a segmented LRU
- * (`createSegmentedLru`) of this many entries on probation (built once) and this many protected (read again).
- * A caller walking versions churns probation only; versions real clients keep reading stay protected. Lens
- * schemas never displace current-version schemas and never count against GRAPHQL_SCHEMA_VARIANTS_MAX.
+ * Lens schemas (plan schema-lenses), cached per workspace, then per caller visibility TODAY (which does not
+ * change with the version a request names), then per version's look (`lensSchemaKey`) in a segmented LRU:
+ * this many entries on probation (built once) and this many protected (read again). A caller walking
+ * versions churns only its own visibility's cache in its own workspace; nothing it does evicts another
+ * workspace's lens schemas, and within a workspace another visibility's cache only as one of the
+ * GRAPHQL_LENS_SPACES_PER_WORKSPACE least recently used. Never counted against GRAPHQL_SCHEMA_VARIANTS_MAX;
+ * current-version schemas are never displaced.
  */
-export const GRAPHQL_LENS_SCHEMAS_PROBATION = 4;
+export const GRAPHQL_LENS_SCHEMAS_PROBATION = 2;
 export const GRAPHQL_LENS_SCHEMAS_PROTECTED = 4;
 
 /**
- * (workspace, visibility) lens caches kept at most, themselves a segmented LRU (half on probation): one caller
- * cannot make another workspace's or another visibility's lens schemas be dropped by walking versions.
+ * Visibility caches kept per workspace (least recently used dropped whole). Visibilities come from roles, so a
+ * caller cannot mint new ones by naming versions.
  */
-export const GRAPHQL_LENS_SCHEMA_SPACES_MAX = 32;
+export const GRAPHQL_LENS_SPACES_PER_WORKSPACE = 4;
+
+/**
+ * Workspaces with lens schemas kept per process (least recently used dropped whole). At most
+ * 16 × 4 × (2 + 4) = 384 lens schemas in the worst case; real use is far below.
+ */
+export const GRAPHQL_LENS_WORKSPACES_MAX = 16;
 
 /** `/api/graphql/playground?query=`: the longest operation the page opens with (it travels in the URL). */
 export const PLAYGROUND_QUERY_MAX_LENGTH = 8192;

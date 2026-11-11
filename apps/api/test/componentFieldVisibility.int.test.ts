@@ -218,8 +218,9 @@ describe('component fields with public: false', () => {
         { headers: bearer(token) },
       ),
     );
-    expect(types.address?.fields?.map((field) => field.name)).toEqual(['city', 'inner']);
-    expect(types.box?.fields?.map((field) => field.name)).toEqual(['open']);
+    // Every component instance has an `id` (plan item-ids); it is no field the caller could not see.
+    expect(types.address?.fields?.map((field) => field.name)).toEqual(['id', 'city', 'inner']);
+    expect(types.box?.fields?.map((field) => field.name)).toEqual(['id', 'open']);
     // A delivery token writes nothing, so its schema has no inputs to name them either.
     expect(types.input).toBeNull();
   });

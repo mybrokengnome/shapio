@@ -96,10 +96,46 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
   // content gets exactly the answer it gets without a version, whatever version it names (one that cannot be
   // read included): no lens is loaded or built for it, and no version error answers it.
   const authorized = !hasNoContentAccess(visibility);
-  if (authorized && request.schemaVersionError) {
+  if (!authorized) {
+    // A caller allowed nothing gets exactly today's answer, headers included: no schema ID or version.
+    return runOperation(request, reply, input, {
+      runtime,
+      mayIntrospect,
+      view,
+      visibility,
+      lensed: undefined,
+    });
+  }
+  if (request.schemaVersionError) {
     throw request.schemaVersionError;
   }
-  const lensed = await graphqlLensOf(request, view, authorized);
+  const lensed = await graphqlLensOf(request, view);
+  return runOperation(request, reply, input, { runtime, mayIntrospect, view, visibility, lensed });
+};
+
+type OperationState = {
+  runtime: FastifyRequest['server']['graphqlRuntime'];
+  mayIntrospect: boolean;
+  view: Awaited<ReturnType<typeof getRequestSchema>>;
+  visibility: Awaited<ReturnType<typeof resolveSchemaVisibility>>;
+  lensed: Awaited<ReturnType<typeof graphqlLensOf>>;
+};
+
+/** Validates and executes the operation against the request's schema (the lens schema when one is active). */
+const runOperation = async (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  input: GraphqlOperationInput,
+  { runtime, mayIntrospect, view, visibility, lensed }: OperationState,
+) => {
+  // A caller allowed nothing never learns the schema ID or version (`Shapio-Schema-Version-Current`), even
+  // when a resolver built a content context for it (`_snapshot`, `_site`).
+  const answer = (result: FormattedResult) => {
+    if (hasNoContentAccess(visibility)) {
+      request.schemaVersionCurrent = null;
+    }
+    return send(reply, result);
+  };
   const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed, lensBuildAdmission(request));
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
@@ -112,8 +148,7 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
     if (prepared.document && hasNoContentAccess(visibility)) {
       throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
     }
-    return send(
-      reply,
+    return answer(
       withSchemaVersion(
         formatGraphqlResult(
           { errors: prepared.errors },
@@ -150,7 +185,7 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
     // Drafts (plan drafts-mode §3) are never stored by a cache, as REST draft reads.
     reply.header('cache-control', DRAFTS_CACHE_CONTROL);
   }
-  return send(reply, withSchemaVersion(formatGraphqlResult(result, { log: request.log }), lensed));
+  return answer(withSchemaVersion(formatGraphqlResult(result, { log: request.log }), lensed));
 };
 
 export const postGraphql = async (

@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SITE_HEADER } from '../src/constants/sites.js';
+import {
+  createLensHistoryBackfillHandler,
+  LENS_HISTORY_FAILED_NOTICE,
+} from '../src/jobs/handlers/lensHistoryBackfill.js';
+import type { JobContext } from '../src/jobs/types.js';
 import * as schemaActivationsRepository from '../src/repositories/schemaActivations.js';
 import { backfillActivationHistory } from '../src/schema/lens/history.js';
 import { expectStatus, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
+import { silentLogger } from './helpers/silentLogger.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
 
 /** A crash right after the backfill's writes: `crash.next` makes the next write throw once it is done. */
@@ -97,5 +103,25 @@ describe('schema lens history backfill: atomicity', () => {
 
     await backfillActivationHistory(db);
     expect(await schemaActivationsRepository.findRowsPage(null, 1000, db)).toHaveLength(before.length + 1);
+  });
+
+  it('says in the failed job what a failed rebuild means', async () => {
+    crash.next = true;
+    const handler = createLensHistoryBackfillHandler(database.current.db);
+    // Something to write, so the write runs and crashes.
+    const row = await database.current.db
+      .selectFrom('schema_activations')
+      .select(['model_id', 'schema_version'])
+      .orderBy('schema_version')
+      .executeTakeFirstOrThrow();
+    await database.current.db
+      .deleteFrom('schema_activations')
+      .where('model_id', '=', row.model_id)
+      .where('schema_version', '=', row.schema_version)
+      .execute();
+    await expect(handler({ log: silentLogger } as unknown as JobContext)).rejects.toThrow(
+      `${LENS_HISTORY_FAILED_NOTICE}: crashed after writing a batch`,
+    );
+    crash.next = false;
   });
 });

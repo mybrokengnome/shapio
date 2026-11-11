@@ -90,6 +90,20 @@ it), a component is its own type, and a dynamic zone is a list of a union of its
 A code field is a `String`, exactly as saved; its description ends with its language (`Code: html`), so
 introspection tells a site how to treat it.
 
+Every component type has `id: ID!`, the item's stable ID, on a single component, on each item of a repeatable
+component, and on each item of a dynamic zone (server 0.9.0 or later). Component input types take an optional
+`id`: send back the `id` of each item you read, so it is paired with the stored item it continues and keeps the
+fields you cannot see ([Writing components](delivery-api.md#writing-components)). Mutations return
+`EntryState`, which carries no item IDs; the REST write response's `itemIds` has no GraphQL counterpart.
+
+**Caching clients.** Apollo Client, Relay, and urql's Graphcache store objects by `__typename` and `id`. An item
+keeps its `id` when it is edited, and an unchanged item has the same `id` in the draft and the published
+version, so a client that reads both (drafts mode and published reads, or a snapshot and today) would merge two
+versions of an item into one cache record. Keep component types out of the normalized cache: in Apollo Client,
+set `keyFields: false` for each component type in `typePolicies` (`{ Hero: { keyFields: false } }`); in urql's
+Graphcache, `keys: { Hero: () => null }`; in Relay, give the environment a `getDataID` that returns no ID for
+component types. Entries share their `id` between the draft and the published version too.
+
 ### Types that extend a type
 
 A type with kinds ([Modeling](modeling.md#types-that-extend-a-type)) gets an **interface** named after it:
@@ -303,7 +317,7 @@ curl "$SHAPIO_URL/api/graphql" \
   is refused (`LENS_QUERY_UNSUPPORTED`).
 - Introspection with the header shows that version's schema, so a client generated from it keeps validating,
   mutations included.
-- The response carries `extensions.schemaVersion: { requested, current }` (both tokens), and `_schemaVersion`
+- The response carries `extensions.schemaVersion: { requested, current }` (both as `<schemaId>:<version>`), and `_schemaVersion`
   answers the version the request named (the number), today's when it names none.
 - **Mutations** that name a schema version take that version's names and input types, under today's
   permissions, and write as [REST writes through an older version](schema-lenses.md#writes) do: fields unchanged

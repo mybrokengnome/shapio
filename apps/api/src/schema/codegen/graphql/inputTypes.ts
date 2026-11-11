@@ -34,6 +34,9 @@ import { writableFields } from './visibility.js';
  */
 const list = (type: GraphQLInputType) => new GraphQLList(new GraphQLNonNull(type));
 
+const ITEM_ID_INPUT_DESCRIPTION =
+  'The ID of the item you read, to keep that item; leave it out for a new item';
+
 const componentById = (build: SchemaBuild, id: string): ComponentDefinition | undefined => {
   const definition = build.snapshot.byId.get(id)?.definition;
   return definition && isComponentDefinition(definition) ? definition : undefined;
@@ -105,10 +108,17 @@ const inputObject = (
     return Object.keys(resolved).length === 0 ? null : new GraphQLInputObjectType({ name, fields: resolved });
   });
 
+/**
+ * A component item's input: its optional `id` (the one read, to keep the item; left out for a new item), then
+ * the fields the caller may write. Null when it may write none of them (the `id` alone writes nothing).
+ */
 export const componentInput = (build: SchemaBuild, component: ComponentDefinition) =>
-  inputObject(build, `component:${component.id}`, componentTypeName(component, 'Input'), () =>
-    inputFields(build, component),
-  );
+  inputObject(build, `component:${component.id}`, componentTypeName(component, 'Input'), () => {
+    const fields = inputFields(build, component);
+    return Object.keys(fields).length === 0
+      ? fields
+      : { id: { type: GraphQLID, description: ITEM_ID_INPUT_DESCRIPTION }, ...fields };
+  });
 
 /** A zone's input, keyed and named by the model that declares the field (shared down a family). */
 const zoneInput = (build: SchemaBuild, owner: SchemaDefinition, field: FieldDefinition<'dynamiczone'>) => {
@@ -171,7 +181,10 @@ const toWriteValue = (build: SchemaBuild, field: FieldDefinition, value: unknown
   }
 };
 
-/** A GraphQL input object → the REST write shape (fields by API key; zone items with `__component`). */
+/**
+ * A GraphQL input object → the REST write shape (fields by API key; zone items with `__component`). A
+ * component item's `id` is not a field and passes through as sent: the write path checks and pairs it.
+ */
 export const toWriteData = (
   build: SchemaBuild,
   owner: SchemaDefinition,

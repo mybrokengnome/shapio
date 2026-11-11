@@ -1,41 +1,49 @@
-import {
-  canonicalJson,
-  type ComponentDefinition,
-  type DefinitionLens,
-  type FieldDefinition,
-} from '@shapio/schema';
+import { type ComponentDefinition, type DefinitionLens, type FieldDefinition } from '@shapio/schema';
+import { ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { ContentData } from '../../db/contentData.js';
+import { newItemId, type ComponentLookup } from '../itemIds.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { contentInvalid, pointer } from '../validator/issues.js';
+import { pairComponentItems, type ItemView } from './itemPairing.js';
+import { CARRY_MAX_ITEMS, listCapOf, listTooLong, NO_PAIRINGS, type FieldPairings } from './listPairing.js';
 
 /**
- * A component instance is written whole, so a delivery caller that cannot read one of its fields (private to
- * its audience, or deprecated), or through a schema lens does not know it (added since its version) or cannot
- * write it (changed since), would wipe that field's stored value just by sending back what it read. Such fields
- * are carried over from the stored instance instead, in storage form (never through today's input validator):
+ * A component instance is written whole, so a caller that cannot read one of its fields (private to its
+ * audience, or deprecated), or through a schema version does not know it (added since) or cannot write it
+ * (changed since), would wipe that field's stored value just by sending back what it read. Such fields are
+ * carried over from the stored instance the written one continues, in storage form (never through today's
+ * input validator), and every written instance keeps that instance's ID (plan item-ids):
  *
- * - A single component: carried over from the stored instance.
- * - Repeatable components and dynamic zones: each item sent is matched to a stored item first by what the caller
- *   sees of it (the fields it may read, deep-equal; the same component for zone items; stored items taken in
- *   order for duplicates), which follows deletes, inserts and reorders of untouched items exactly. An item left
- *   over is matched to the stored item at its position only when the list kept its length, that stored item
- *   was not matched elsewhere, and (zones) it holds the same component: an edit in place. Any other item is new
- *   and carries nothing (its hidden fields take their defaults); stored items left over are deleted with what
- *   they held.
- * - A caller that may not read the entry compares by what it may write, and a sub-field it sends as an explicit
- *   null is cleared; one it leaves out is kept.
+ * - Which stored instance each written one continues is decided once per write (`pairComponentItems`, or the
+ *   write through a schema version), by the item IDs the client sent, else by what the caller sees of each item.
+ * - A single component continues the stored instance. A list item continues the stored item it was paired
+ *   with; any other item is new, carries nothing, and gets a new ID. Stored items no item continues are deleted
+ *   with what they held.
+ * - What is carried: the fields the caller cannot read. A caller that may not read the entry at all sees
+ *   nothing, so only what it cannot write (deprecated fields) is carried: a sub-field it leaves out, or sends as
+ *   an explicit null, is cleared, as for any field it writes.
  *
- * Admin writes never need it (admins read everything).
+ * Admin writes carry nothing (admins read everything), but keep their items' IDs the same way.
  */
-export type ComponentLookup = (componentId: string) => ComponentDefinition | undefined;
+export type { ComponentLookup };
 
 export type KeepOptions = {
   /** The caller may read the entry (default true). Without, comparisons use what it may write. */
   mayRead?: boolean;
   /** The body the patch was made from (today's API IDs): tells an explicit null from a field left out. */
   input?: Readonly<Record<string, unknown>>;
-  /** Through a schema lens: fields the client's version does not know or cannot write are carried too. */
+  /**
+   * Through a schema lens: fields the client's version does not know or cannot write are carried too, and the
+   * items are paired by the lens's write (`writeThroughLens`'s `pairings`, which must then be given).
+   */
   lens?: DefinitionLens | null;
+  /**
+   * The pairing of every component value in the patch, made once from what the caller sees. Required through a
+   * lens; without one, made here from `before` (refusals thrown as `CONTENT_INVALID`) when left out.
+   */
+  pairings?: FieldPairings;
+  /** Carry nothing (admin writes): only the items' IDs are kept. */
+  carryNothing?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -44,7 +52,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const at = (value: unknown, index: number): unknown => (Array.isArray(value) ? value[index] : undefined);
 
 /** Component fields, at any depth, a lens says the client does not know or cannot write: carried, never sent. */
-const lensCarriedIds = (lens: DefinitionLens | null | undefined): Set<string> => {
+export const lensCarriedIds = (lens: DefinitionLens | null | undefined): Set<string> => {
   const ids = new Set<string>();
   const seen = new Set<string>();
   const walk = (current: DefinitionLens, nested: boolean) => {
@@ -79,60 +87,123 @@ type Rules = {
   componentOf: ComponentLookup;
   /** Carried from storage when the caller leaves it out. */
   carried: (field: FieldDefinition) => boolean;
-  /** What the caller sees of an item, to match sent items with stored ones. */
-  compared: (field: FieldDefinition) => boolean;
   /** An explicit null clears (a caller that read nothing cannot have read the value it would keep). */
   nullClears: boolean;
 };
 
-/** What the caller sees of an instance (storage form), at any depth: the key items are matched by. */
-const seenOf = (rules: Rules, component: ComponentDefinition | undefined, item: unknown): unknown => {
-  if (!component || !isRecord(item)) {
-    return item;
+const zoneComponentOf = (componentOf: ComponentLookup, item: unknown) =>
+  isRecord(item) && typeof item[COMPONENT_KEY] === 'string' ? componentOf(item[COMPONENT_KEY]) : undefined;
+
+const isListField = (field: FieldDefinition) =>
+  (field.type === 'component' && field.settings.repeatable) || field.type === 'dynamiczone';
+
+const isComponentField = (field: FieldDefinition) =>
+  field.type === 'component' || field.type === 'dynamiczone';
+
+/**
+ * What a caller sees and cannot see of an item, for the pairing: reads only what it may read (deprecated
+ * fields never); with no read access, nothing is seen and only what it cannot write is hidden.
+ */
+export const itemViewOf = (
+  componentOf: ComponentLookup,
+  readable: (field: FieldDefinition) => boolean,
+  {
+    mayRead = true,
+    unseen = false,
+    lensIds = new Set<string>(),
+  }: {
+    mayRead?: boolean;
+    unseen?: boolean;
+    lensIds?: ReadonlySet<string>;
+  } = {},
+): ItemView => ({
+  componentOf,
+  seen: (field) => mayRead && readable(field) && !lensIds.has(field.id),
+  hidden: (field) => (mayRead ? !readable(field) : field.deprecated) || lensIds.has(field.id),
+  unseen: unseen || !mayRead,
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// List sizes: checked with the body, before the write.
+// ---------------------------------------------------------------------------------------------------------
+
+const assertCapsIn = (
+  componentOf: ComponentLookup,
+  fields: readonly FieldDefinition[],
+  value: unknown,
+  path: string,
+): void => {
+  if (!isRecord(value)) {
+    return;
   }
-  const output: Record<string, unknown> = {};
-  for (const field of component.fields) {
-    const value = item[field.id];
-    if (rules.compared(field) && !isMissingValue(value)) {
-      output[field.id] = seenValue(rules, field, value);
+  for (const field of fields) {
+    const written = value[field.id];
+    if (!isComponentField(field) || written === undefined) {
+      continue;
     }
+    const fieldPath = pointer(path, field.apiKey);
+    if (isListField(field) && Array.isArray(written)) {
+      const cap = listCapOf(field.settings);
+      if (written.length > cap) {
+        throw listTooLong(fieldPath, cap);
+      }
+    }
+    const items = Array.isArray(written) ? written : [written];
+    items.forEach((item: unknown, index) => {
+      const component =
+        field.type === 'component'
+          ? componentOf(field.settings.component)
+          : zoneComponentOf(componentOf, item);
+      if (component) {
+        assertCapsIn(
+          componentOf,
+          component.fields,
+          item,
+          Array.isArray(written) ? pointer(fieldPath, index) : fieldPath,
+        );
+      }
+    });
   }
-  return output;
 };
 
-const seenValue = (rules: Rules, field: FieldDefinition, value: unknown): unknown => {
-  if (field.type === 'component') {
-    const component = rules.componentOf(field.settings.component);
-    return Array.isArray(value)
-      ? value.map((item) => seenOf(rules, component, item))
-      : seenOf(rules, component, value);
-  }
-  if (field.type === 'dynamiczone' && Array.isArray(value)) {
-    return value.map((item: unknown) =>
-      isRecord(item) && typeof item[COMPONENT_KEY] === 'string'
-        ? {
-            ...(seenOf(rules, rules.componentOf(item[COMPONENT_KEY]), item) as object),
-            [COMPONENT_KEY]: item[COMPONENT_KEY],
-          }
-        : item,
-    );
-  }
-  return value;
+/**
+ * Every component list and dynamic zone in `patch` (storage form, at any depth) holds at most the items a
+ * write pairs (`CARRY_MAX_ITEMS`, or the field's `max` when lower); a longer one is refused with the
+ * validator's `TOO_MANY`, its path in today's API IDs. Run with the body, before the write.
+ */
+export const assertComponentListCaps = (
+  patch: Readonly<ContentData>,
+  fields: readonly FieldDefinition[],
+  componentOf: ComponentLookup,
+): void => assertCapsIn(componentOf, fields, patch, '');
+
+// ---------------------------------------------------------------------------------------------------------
+// The carry-over and the items' IDs, along a pairing made once.
+// ---------------------------------------------------------------------------------------------------------
+
+const missingPairing = (path: string) =>
+  new Error(`A component value at ${path || '/'} was written without its item pairing`);
+
+/** The ID a written instance keeps: the stored instance's it continues, else a new one. */
+const idFor = (stored: unknown): string => {
+  const id = isRecord(stored) ? stored[ITEM_ID_KEY] : undefined;
+  return typeof id === 'string' && id !== '' ? id : newItemId();
 };
 
-/** One instance written over its matched stored instance (or none: a new item, nothing carried). */
+/** One instance written over the stored instance it continues (or none: a new item, nothing carried). */
 const keepInInstance = (
   rules: Rules,
   component: ComponentDefinition | undefined,
   written: unknown,
   stored: unknown,
   raw: unknown,
+  pairings: FieldPairings,
   path: string,
 ): unknown => {
   if (!component || !isRecord(written)) {
     return written;
   }
-  const output: Record<string, unknown> = { ...written };
+  const output: Record<string, unknown> = { ...written, [ITEM_ID_KEY]: idFor(stored) };
   const sent = isRecord(raw) ? raw : {};
   for (const field of component.fields) {
     const storedValue = isRecord(stored) ? stored[field.id] : undefined;
@@ -148,105 +219,12 @@ const keepInInstance = (
         output[field.id],
         storedValue,
         sent[field.apiKey],
+        pairings,
         pointer(path, field.apiKey),
       );
     }
   }
   return output;
-};
-
-/**
- * Items a carried-over list may hold (a list's own `max` when lower): a longer one is refused with the
- * validator's own `TOO_MANY` before any matching, so matching never runs on unbounded input.
- */
-export const CARRY_MAX_ITEMS = 50_000;
-/** Past this many characters, an item's key is not computed: it is unmatched by content (in place at most). */
-export const CARRY_MAX_ITEM_KEY = 65_536;
-
-/** The `TOO_MANY` refusal the validator answers, for a list longer than the carry-over considers. */
-export const listTooLong = (path: string, max: number) =>
-  contentInvalid([{ path, code: 'TOO_MANY', message: `allows at most ${max} item(s)` }]);
-
-const listCapOf = (field: FieldDefinition): number => {
-  const max = (field.settings as { max?: number }).max;
-  return max !== undefined && max < CARRY_MAX_ITEMS ? max : CARRY_MAX_ITEMS;
-};
-
-/** A key for an item, or null when it is too large to be matched by content. */
-const boundedKey = (key: string): string | null => (key.length > CARRY_MAX_ITEM_KEY ? null : key);
-
-/**
- * Pairs each sent item with the stored item it continues (index into `stored`), or -1 for a new item: by key
- * first (equal keys taken in stored order), then in place when the list kept its length. Linear: one key per
- * item, a map from key to the stored indexes still free.
- */
-export const pairItems = (
-  sentKeys: ReadonlyArray<string | null>,
-  storedKeys: ReadonlyArray<string | null>,
-  sameKindAt: (position: number) => boolean,
-): number[] => {
-  const free = new Map<string, number[]>();
-  storedKeys.forEach((key, index) => {
-    if (key !== null) {
-      const queue = free.get(key);
-      if (queue) {
-        queue.push(index);
-      } else {
-        free.set(key, [index]);
-      }
-    }
-  });
-  const cursor = new Map<string, number>();
-  const taken = new Set<number>();
-  const pairs = sentKeys.map((key) => {
-    if (key === null) {
-      return -1;
-    }
-    const queue = free.get(key);
-    const at = cursor.get(key) ?? 0;
-    if (!queue || at >= queue.length) {
-      return -1;
-    }
-    cursor.set(key, at + 1);
-    const index = queue[at] as number;
-    taken.add(index);
-    return index;
-  });
-  if (sentKeys.length === storedKeys.length) {
-    pairs.forEach((pair, position) => {
-      if (pair === -1 && !taken.has(position) && sameKindAt(position)) {
-        pairs[position] = position;
-        taken.add(position);
-      }
-    });
-  }
-  return pairs;
-};
-
-const matchItems = (
-  rules: Rules,
-  written: readonly unknown[],
-  stored: readonly unknown[],
-  componentOfItem: (item: unknown) => ComponentDefinition | undefined,
-  sameKind: (sent: unknown, kept: unknown) => boolean,
-): number[] => {
-  const keyOf = (item: unknown) =>
-    boundedKey(
-      canonicalJson({
-        kind: isRecord(item) ? (item[COMPONENT_KEY] ?? null) : null,
-        seen: seenOf(rules, componentOfItem(item), item),
-      }),
-    );
-  return pairItems(written.map(keyOf), stored.map(keyOf), (position) =>
-    sameKind(written[position], stored[position]),
-  );
-};
-
-const assertListSize = (field: FieldDefinition, written: readonly unknown[], path: string) => {
-  const cap = listCapOf(field);
-  if (written.length > cap) {
-    throw listTooLong(path, cap);
-  }
 };
 
 const keepInValue = (
@@ -255,67 +233,56 @@ const keepInValue = (
   written: unknown,
   stored: unknown,
   raw: unknown,
+  pairings: FieldPairings,
   path: string,
 ): unknown => {
-  if (field.type === 'component') {
-    const component = rules.componentOf(field.settings.component);
-    if (!Array.isArray(written)) {
-      return keepInInstance(rules, component, written, stored, raw, path);
-    }
-    assertListSize(field, written, path);
-    const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
-    const pairs = matchItems(
-      rules,
-      written,
-      kept,
-      () => component,
-      () => true,
-    );
-    return written.map((item, index) => {
-      const pair = pairs[index] ?? -1;
-      return keepInInstance(
-        rules,
-        component,
-        item,
-        pair === -1 ? undefined : kept[pair],
-        at(raw, index),
-        pointer(path, index),
-      );
-    });
+  if (!isComponentField(field) || (field.type === 'dynamiczone' && !Array.isArray(written))) {
+    return written;
   }
-  if (field.type === 'dynamiczone' && Array.isArray(written)) {
-    assertListSize(field, written, path);
-    const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
-    const componentOfItem = (item: unknown) =>
-      isRecord(item) && typeof item[COMPONENT_KEY] === 'string'
-        ? rules.componentOf(item[COMPONENT_KEY])
-        : undefined;
-    const pairs = matchItems(
-      rules,
-      written,
-      kept,
-      componentOfItem,
-      (sent, old) => isRecord(sent) && isRecord(old) && sent[COMPONENT_KEY] === old[COMPONENT_KEY],
-    );
-    return written.map((item: unknown, index) => {
-      const pair = pairs[index] ?? -1;
-      return keepInInstance(
-        rules,
-        componentOfItem(item),
-        item,
-        pair === -1 ? undefined : kept[pair],
-        at(raw, index),
-        pointer(path, index),
-      );
-    });
+  if (isMissingValue(written)) {
+    return written;
   }
-  return written;
+  const pairing = pairings.get(field.id);
+  if (!pairing) {
+    throw missingPairing(path);
+  }
+  if (field.type === 'component' && !Array.isArray(written)) {
+    return keepInInstance(
+      rules,
+      rules.componentOf(field.settings.component),
+      written,
+      pairing.pairs[0] === 0 ? stored : undefined,
+      raw,
+      pairing.inside[0] ?? NO_PAIRINGS,
+      path,
+    );
+  }
+  const list = written as unknown[];
+  const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
+  return list.map((item: unknown, index) => {
+    const pair = pairing.pairs[index] ?? -1;
+    const component =
+      field.type === 'component'
+        ? rules.componentOf(field.settings.component)
+        : zoneComponentOf(rules.componentOf, item);
+    return keepInInstance(
+      rules,
+      component,
+      item,
+      pair === -1 ? undefined : kept[pair],
+      at(raw, index),
+      pairing.inside[index] ?? NO_PAIRINGS,
+      pointer(path, index),
+    );
+  });
 };
 
 /**
  * `patch` (field IDs, storage form) with every component field the caller cannot read (or, through a lens,
- * does not know or cannot write) carried over from `before` (the draft the write starts from), at any depth,
- * items matched as described above. Top-level fields are untouched: a patch only changes the fields it names.
+ * does not know or cannot write) carried over from `before` (what the write starts from, every instance with
+ * its ID: `withItemIds`), at any depth, each instance from the stored one `pairings` says it continues, and
+ * every instance with its ID (the one it continues, or a new one). Top-level fields are untouched: a patch only
+ * changes the fields it names.
  */
 export const keepUnreadableComponentFields = (
   patch: Readonly<ContentData>,
@@ -326,25 +293,38 @@ export const keepUnreadableComponentFields = (
   options: KeepOptions = {},
 ): ContentData => {
   const mayRead = options.mayRead ?? true;
+  if (options.lens && !options.pairings) {
+    throw new Error('A write through a schema lens carries over along the pairing of its translation');
+  }
   const lensIds = lensCarriedIds(options.lens);
   const rules: Rules = {
     componentOf,
-    carried: (field) => !readable(field) || lensIds.has(field.id),
-    // What the caller sees: what it may read; without read access, what it may write (deprecated fields
-    // cannot be written); never what its version does not know or cannot write.
-    compared: (field) => (mayRead ? readable(field) : !field.deprecated) && !lensIds.has(field.id),
+    // What the caller cannot read; with no read access, what it cannot write (it sees nothing, so what it
+    // leaves out of a field it may write is cleared, as for any field it writes).
+    carried: options.carryNothing
+      ? () => false
+      : (field) => (mayRead ? !readable(field) : field.deprecated) || lensIds.has(field.id),
     nullClears: !mayRead,
   };
+  let pairings = options.pairings;
+  if (!pairings) {
+    const result = pairComponentItems(patch, before, fields, itemViewOf(componentOf, readable, { mayRead }));
+    if (result.issues.length > 0) {
+      throw contentInvalid(result.issues);
+    }
+    pairings = result.pairings;
+  }
   const input = options.input ?? {};
   const output: ContentData = { ...patch };
   for (const field of fields) {
-    if (field.id in output && (field.type === 'component' || field.type === 'dynamiczone')) {
+    if (field.id in output && isComponentField(field)) {
       output[field.id] = keepInValue(
         rules,
         field,
         output[field.id],
         before[field.id],
         input[field.apiKey],
+        pairings,
         pointer('', field.apiKey),
       );
     }

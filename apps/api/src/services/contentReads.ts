@@ -24,6 +24,7 @@ import {
   type KindMeta,
   type ReadMember,
 } from '../content/family.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { outdatedSharedLocales, readScopeFor } from '../content/locales.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
 import { planMembers, projectMemberRows, projectRows, type ReadEnvironment } from '../content/read.js';
@@ -116,6 +117,7 @@ const localeStates = (model: ContentModel, heads: readonly HeadRecord[]): Locale
           ...(published ? { published: published.data } : {}),
         };
       }),
+      componentLookupOf(model.components),
     ),
   );
   return drafts.map((draft) => {

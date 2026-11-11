@@ -9,6 +9,7 @@ import {
 import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { relationTargetOf } from '../content/relationTarget.js';
 import { COMPONENT_KEY } from '../content/validator/index.js';
+import { valueWithoutItemIds } from '../content/withoutItemIds.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
@@ -20,7 +21,7 @@ import type { ContentServiceContext } from './contentAccess.js';
  * Readable one-line summaries of stored field values for the change set review (rich text as its text, media
  * as file names, relations as titles, components and zones as labeled outlines), so the admin never shows
  * raw JSON for structured values. Values are in storage form (keyed by field IDs; zone items carry the
- * component ID in `__component`). A value whose shape does not match its field (a `before` value the set
+ * component ID in `__component`, and every item its ID in `__id`, which is never summarized). A value whose shape does not match its field (a `before` value the set
  * converts on ship) falls back to compact JSON rather than failing the review.
  */
 export type FieldSummary = { before: string | null; after: string | null };
@@ -166,11 +167,13 @@ export const summarizeValue = (
   value: unknown,
   lookups: SummaryLookups,
 ): string | null => {
-  if (isEmpty(value)) {
+  // Item IDs (plan item-ids) are not content: an instance holding nothing else is empty.
+  const content = valueWithoutItemIds(field, value, lookups.component);
+  if (isEmpty(content)) {
     return null;
   }
-  const summary = structuredSummary(field, value, lookups);
-  return summary === undefined ? rawText(value) : truncate(summary);
+  const summary = structuredSummary(field, content, lookups);
+  return summary === undefined ? rawText(content) : truncate(summary);
 };
 
 /** Media and related entry IDs a value refers to directly (top-level media and relation fields). */

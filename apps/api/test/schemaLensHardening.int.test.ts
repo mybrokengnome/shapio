@@ -1,7 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PRIMARY_SITE_ID, SITE_HEADER } from '../src/constants/sites.js';
 import { AppError } from '../src/helpers/appError.js';
 import type { UrlBuilder } from '../src/helpers/publicUrl.js';
+import {
+  LENS_HISTORY_REQUEUE_AFTER_MS,
+  requeueDeadLensHistoryBackfill,
+} from '../src/jobs/handlers/lensHistoryBackfill.js';
 import { enqueueJob } from '../src/jobs/queue.js';
 import * as schemaActivationsRepository from '../src/repositories/schemaActivations.js';
 import { getSchemaVersion } from '../src/repositories/schemaVersions.js';
@@ -15,9 +20,9 @@ import {
   LENS_HISTORY_BACKFILL_JOB,
   LENS_HISTORY_BACKFILL_KEY,
 } from '../src/schema/lens/history.js';
-import { clearLensCaches, loadRequestLens } from '../src/schema/lens/views.js';
+import { clearLensCaches, loadRequestLens, SETTLE_CHECK_TTL_MS } from '../src/schema/lens/views.js';
 import { loadSnapshot } from '../src/schema/loadSnapshot.js';
-import { getOpenApiDocument } from '../src/services/apiDocs.js';
+import { API_DOCS_CACHE_SIZE, getOpenApiDocument } from '../src/services/apiDocs.js';
 import { expectStatus, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { createRoleToken, runSchemaJobs, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
@@ -302,7 +307,12 @@ describe('schema lens hardening', () => {
     expect((await lensAt(db, await currentView(), atV))?.view).toBe(first?.view);
 
     await db.updateTable('jobs').set({ status: 'succeeded' }).where('id', '=', job.id).execute();
+    // The job is read at most once per SETTLE_CHECK_TTL_MS, not on every lensed request.
+    expect((await lensAt(db, await currentView(), atV))?.view).toBe(first?.view);
+    const realNow = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(realNow + SETTLE_CHECK_TTL_MS + 1);
     const settled = await lensAt(db, await currentView(), atV);
+    clock.mockRestore();
     expect(settled?.view).not.toBe(first?.view);
     expect(getOpenApiDocument(settled?.view as NonNullable<typeof settled>['view'], URLS)).not.toBe(
       documentBefore,
@@ -414,5 +424,48 @@ describe('schema lens hardening', () => {
     }
     expect((await loadRequestLens(db, today, atV, key))?.view).toBe(first?.view);
     resetLensBuildBudgets();
+  });
+
+  it('queues a dead history rebuild again once a day, never sooner', async () => {
+    const { db } = database.current;
+    const { job } = await enqueueJob(
+      { type: LENS_HISTORY_BACKFILL_JOB, idempotencyKey: LENS_HISTORY_BACKFILL_KEY, maxAttempts: 5 },
+      db,
+    );
+    const diedAt = new Date('2026-11-01T00:00:00Z');
+    await db
+      .updateTable('jobs')
+      .set({ status: 'dead', attempts: 5, finished_at: diedAt, last_error: 'boom' })
+      .where('id', '=', job.id)
+      .execute();
+    expect(await requeueDeadLensHistoryBackfill(db, new Date(diedAt.getTime() + 60_000))).toBe(false);
+    expect(
+      await requeueDeadLensHistoryBackfill(db, new Date(diedAt.getTime() + LENS_HISTORY_REQUEUE_AFTER_MS)),
+    ).toBe(true);
+    expect(await db.selectFrom('jobs').selectAll().where('id', '=', job.id).executeTakeFirst()).toMatchObject(
+      {
+        status: 'pending',
+        attempts: 0,
+        last_error: 'Queued again a day after: boom',
+      },
+    );
+    // Not dead: nothing to do.
+    expect(
+      await requeueDeadLensHistoryBackfill(
+        db,
+        new Date(diedAt.getTime() + 2 * LENS_HISTORY_REQUEUE_AFTER_MS),
+      ),
+    ).toBe(false);
+    await db.deleteFrom('jobs').where('id', '=', job.id).execute();
+  });
+
+  it("keeps every workspace's current contract however many workspaces read older versions", async () => {
+    const network = await loadSnapshot(database.current.db);
+    const views = Array.from({ length: API_DOCS_CACHE_SIZE + 4 }, () => network.forSite(randomUUID()));
+    const first = getOpenApiDocument(views[0] as (typeof views)[number], URLS);
+    for (const view of views.slice(1)) {
+      getOpenApiDocument(view, URLS);
+    }
+    expect(getOpenApiDocument(views[0] as (typeof views)[number], URLS)).toBe(first);
   });
 });

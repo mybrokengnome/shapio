@@ -2,13 +2,19 @@ import { newStableId } from '@/helpers/stableId';
 import { isUnparsed } from './unparsed';
 
 /**
- * Field values as the entry form holds them: keyed by API key, like the admin API. List items of
- * repeatable components and dynamic zones carry a client-only `__key` so React can keep each item's
- * state (collapsed, focus) across reorders and saves; it is stripped before anything is sent.
+ * Field values as the entry form holds them: keyed by API key, like the admin API. Component items (single
+ * instances, items of repeatable components and dynamic zones) carry a client-only `__key` so React can keep
+ * each item's state (collapsed, focus) across reorders and saves; it is stripped before anything is sent.
+ * A saved item's `__key` is its server-assigned `id`; a new item has a temporary one until it is saved.
  */
 export const CLIENT_KEY = '__key';
 /** A dynamic-zone item's component API key (the API's `__component`). */
 export const COMPONENT_KEY = '__component';
+/**
+ * A component item's stable ID, assigned by the server. It is kept and sent back so the server knows which
+ * stored item each sent item is; new items have none (the server assigns it on save).
+ */
+export const ITEM_ID_KEY = 'id';
 
 export type FormValues = Record<string, unknown>;
 export type ItemValues = Record<string, unknown>;
@@ -88,7 +94,11 @@ export const stripClientKeys = (value: unknown): unknown => {
 export const isSameContent = (left: unknown, right: unknown): boolean =>
   (isEmptyValue(left) && isEmptyValue(right)) || isDeepEqual(stripClientKeys(left), stripClientKeys(right));
 
-export const withClientKey = (item: ItemValues): ItemValues => ({ ...item, [CLIENT_KEY]: newStableId() });
+/** The item with a client key: its `id` when it has one (saved), else a fresh temporary key. */
+export const withClientKey = (item: ItemValues): ItemValues => ({
+  ...item,
+  [CLIENT_KEY]: typeof item[ITEM_ID_KEY] === 'string' ? item[ITEM_ID_KEY] : newStableId(),
+});
 
 export const clientKeyOf = (item: unknown, fallback: number): string =>
   isRecord(item) && typeof item[CLIENT_KEY] === 'string' ? item[CLIENT_KEY] : `item-${fallback}`;

@@ -25,8 +25,22 @@ declare module 'fastify' {
     schemaVersionError: AppError | null;
     /** Set when the request's content context is built: the current version's token, sent back as a header. */
     schemaVersionCurrent: string | null;
+    /** The code of the error a lensed route answered with, if any (when the current version is sent back). */
+    schemaLensErrorCode: string | null;
   }
 }
+
+/**
+ * Whether an answer goes only to a caller authorized for the route, so it may carry the current schema version:
+ * a success, and the errors a route answers only after authorization (a stale or invalid write, `409` and
+ * `422`, and every schema version and lens error). A `400`, `401`, `403`, `404` or anything else never does: a
+ * caller with no grant learns nothing about the schema from it.
+ */
+export const answersAuthorizedCaller = (statusCode: number, errorCode: string | null): boolean =>
+  statusCode < 400 ||
+  statusCode === 409 ||
+  statusCode === 422 ||
+  (errorCode !== null && /^(SCHEMA_VERSION_|LENS_)/.test(errorCode));
 
 type SchemaLensPluginOptions = {
   /** The API prefix (`/api/`, under the base path): lens routes are named below it. */
@@ -57,8 +71,9 @@ export const isSchemaLensPath = (path: string, apiPrefix: string): boolean => {
  * Schema lenses (plan schema-lenses): reads the schema version a delivery, preview, snapshot, contract or
  * GraphQL request names, from `?schemaVersion=` or the `Shapio-Schema-Version` header, and removes the
  * parameter from the parsed query so a route's strict querystring schema never sees it. Building the lens is
- * the content context's work (`controllers/contentContext.ts`); this only reads. Responses of those requests
- * carry `Shapio-Schema-Version-Current` once the context named it.
+ * the content context's work (`controllers/contentContext.ts`); this only reads. Answers of those requests to a
+ * caller authorized for the route carry `Shapio-Schema-Version-Current` once the context named it
+ * (`answersAuthorizedCaller`).
  */
 export const schemaLensPlugin = fp<SchemaLensPluginOptions>(
   async (app: FastifyInstance, { apiPrefix }) => {
@@ -66,6 +81,7 @@ export const schemaLensPlugin = fp<SchemaLensPluginOptions>(
     app.decorateRequest('schemaVersionToken', null);
     app.decorateRequest('schemaVersionError', null);
     app.decorateRequest('schemaVersionCurrent', null);
+    app.decorateRequest('schemaLensErrorCode', null);
     app.addHook('onRequest', async (request) => {
       if (!isSchemaLensPath(pathOf(request), apiPrefix)) {
         return;
@@ -94,6 +110,11 @@ export const schemaLensPlugin = fp<SchemaLensPluginOptions>(
         delete query[SCHEMA_VERSION_QUERY_PARAMETER];
       }
     });
+    app.addHook('onError', async (request, _reply, error) => {
+      if (request.schemaLensRoute) {
+        request.schemaLensErrorCode = typeof error.code === 'string' ? error.code : null;
+      }
+    });
     app.addHook('onSend', async (request, reply) => {
       if (request.schemaLensRoute) {
         // Every answer of a lensed route depends on the version, errors included: no cache may serve one
@@ -107,7 +128,10 @@ export const schemaLensPlugin = fp<SchemaLensPluginOptions>(
           );
         }
       }
-      if (request.schemaVersionCurrent !== null) {
+      if (
+        request.schemaVersionCurrent !== null &&
+        answersAuthorizedCaller(reply.statusCode, request.schemaLensErrorCode)
+      ) {
         reply.header(SCHEMA_VERSION_CURRENT_HEADER, request.schemaVersionCurrent);
       }
     });

@@ -19,7 +19,12 @@ export type IssueCode =
   | 'NOT_UNIQUE'
   | 'RELATION_TARGET_MISSING'
   | 'MEDIA_MISSING'
-  | 'INVALID_TEXT';
+  | 'INVALID_TEXT'
+  // Item IDs (plan item-ids): a written list's items and the stored items they continue.
+  | 'UNKNOWN_ITEM_ID'
+  | 'DUPLICATE_ITEM_ID'
+  | 'ITEM_COMPONENT_CHANGED'
+  | 'AMBIGUOUS_ITEMS';
 
 /** One problem with a content value. `path` is a JSON pointer in API keys, e.g. `/sections/0/title`. */
 export type ContentIssue = { path: string; code: IssueCode; message: string };

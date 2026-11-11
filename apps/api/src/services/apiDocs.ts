@@ -16,25 +16,39 @@ import { schemaIdOf } from './contentAccess.js';
 /**
  * Generated API contracts (OpenAPI, TypeScript) of one workspace's view, rebuilt in memory when the schema
  * version changes: a model change is reflected on the next request, with no restart (CONTRIBUTING.md rule 1).
- * Cached per workspace and version (`?schemaVersion=` renders an older version's contract, plan
- * schema-lenses), least recently used dropped first.
+ * The current contract is kept per workspace, as many as there are workspaces, and replaced when the version
+ * moves. Older versions' contracts (`?schemaVersion=`, plan schema-lenses) are kept apart in a small LRU, so
+ * walking versions never evicts a workspace's current contract.
  */
 type Cached = { version: number; openApi: Record<string, unknown>; html?: string; typescript?: string };
 
-/** Contracts kept: the current one per workspace in use, plus older versions clients asked for. */
+const current = new Map<string | null, Cached>();
+
+/** Older versions' contracts kept, across workspaces. */
 export const API_DOCS_CACHE_SIZE = 16;
-const cache = createLru<string, Cached>(API_DOCS_CACHE_SIZE);
+const older = createLru<string, Cached>(API_DOCS_CACHE_SIZE);
+
+const build = (snapshot: SchemaSnapshot, urls: UrlBuilder): Cached => ({
+  version: snapshot.version,
+  openApi: generateOpenApi(snapshot, { serverUrl: urls.absoluteUrl('/'), version: SHAPIO_VERSION }),
+});
 
 const forSnapshot = (snapshot: SchemaSnapshot, urls: UrlBuilder): Cached => {
+  const generation = lensViewGeneration(snapshot);
+  if (generation === 0) {
+    let cached = current.get(snapshot.siteId);
+    if (!cached || cached.version !== snapshot.version) {
+      cached = build(snapshot, urls);
+      current.set(snapshot.siteId, cached);
+    }
+    return cached;
+  }
   // A lens view's generation: contracts rendered from it go when its caches do (the history backfill).
-  const key = `${snapshot.siteId ?? ''}|${snapshot.version}|${lensViewGeneration(snapshot)}`;
-  let cached = cache.get(key);
+  const key = `${snapshot.siteId ?? ''}|${snapshot.version}|${generation}`;
+  let cached = older.get(key);
   if (!cached) {
-    cached = {
-      version: snapshot.version,
-      openApi: generateOpenApi(snapshot, { serverUrl: urls.absoluteUrl('/'), version: SHAPIO_VERSION }),
-    };
-    cache.set(key, cached);
+    cached = build(snapshot, urls);
+    older.set(key, cached);
   }
   return cached;
 };

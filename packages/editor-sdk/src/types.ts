@@ -21,8 +21,12 @@ export type RichTextValue = {
   doc: { type: 'doc'; content?: JsonValue[] };
 };
 
-/** A component value: its fields keyed by API key. */
-export type ComponentValue = { [apiKey: string]: unknown };
+/**
+ * A component value: its fields keyed by API ID, plus `id`, the item's stable ID, on every item the server has
+ * stored (server 0.9.0 or later). Keep `id` on an item that is edited or moved, so it stays the same item; a
+ * new item has none, and a copy of an item must drop it (nested items included).
+ */
+export type ComponentValue = { id?: string; [apiKey: string]: unknown };
 
 /** A dynamic-zone item: a component value plus the component's API key in `__component`. */
 export type DynamicZoneItem = ComponentValue & { __component: string };

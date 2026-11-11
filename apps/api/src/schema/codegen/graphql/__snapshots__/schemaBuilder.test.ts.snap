@@ -189,6 +189,11 @@ type MediaVariant {
 
 """Hero"""
 type Hero {
+  """
+  This item's ID. Send it back when you write the field so the item is kept
+  """
+  id: ID!
+
   """Heading"""
   heading: String
 
@@ -198,6 +203,11 @@ type Hero {
 
 """Quote"""
 type Quote {
+  """
+  This item's ID. Send it back when you write the field so the item is kept
+  """
+  id: ID!
+
   """Text"""
   text: String
 }
@@ -1079,6 +1089,11 @@ input PageInput {
 }
 
 input HeroInput {
+  """
+  The ID of the item you read, to keep that item; leave it out for a new item
+  """
+  id: ID
+
   """Heading"""
   heading: String
 
@@ -1087,6 +1102,11 @@ input HeroInput {
 }
 
 input QuoteInput {
+  """
+  The ID of the item you read, to keep that item; leave it out for a new item
+  """
+  id: ID
+
   """Text"""
   text: String
 }

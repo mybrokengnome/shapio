@@ -19,7 +19,8 @@ const setup = (
   options: {
     idleMs?: number;
     maxEntries?: number;
-    maxLensSpaces?: number;
+    maxLensSpacesPerWorkspace?: number;
+    maxLensWorkspaces?: number;
     lensSegments?: { probation: number; protected: number };
   } = {},
 ) => {
@@ -242,16 +243,51 @@ describe('GraphQL schema cache', () => {
       expect(inA.filter((entry) => entry.segment === 'protected')).toHaveLength(1);
     });
 
-    it('bounds the workspaces and visibilities it keeps lens schemas for', async () => {
-      const { cache } = setup({ maxLensSpaces: 2, lensSegments: { probation: 1, protected: 1 } });
-      for (const key of ['lens:a', 'lens:b', 'lens:c']) {
-        await cache.getLens(lensView(5, 1), { ...noteOnly, key });
+    it('isolates workspaces and visibilities from a caller reading each of 100 versions twice', async () => {
+      const { cache } = setup();
+      const walker = { todayVisibilityKey: 'delivery:walker' };
+      const other = { todayVisibilityKey: 'delivery:other' };
+      // Promoted entries of another workspace and of another visibility in the walker's workspace.
+      const inB = await cache.getLens(lensView(5, 1, 1000, SITE_B), noteOnly, walker);
+      await cache.getLens(lensView(5, 1, 1000, SITE_B), noteOnly, walker);
+      const otherInA = await cache.getLens(lensView(5, 1), noteOnly, other);
+      await cache.getLens(lensView(5, 1), noteOnly, other);
+      for (let revision = 100; revision < 200; revision += 1) {
+        // Each version's lens visibility differs (its key varies with the version); today's does not.
+        const visibility = { ...noteOnly, key: `lens:walk-${revision}` };
+        await cache.getLens(lensView(6, revision), visibility, walker);
+        await cache.getLens(lensView(6, revision), visibility, walker);
       }
-      expect(new Set(held(cache).map((entry) => entry.visibility)).size).toBeLessThanOrEqual(2);
+      expect(await cache.getLens(lensView(5, 1, 1000, SITE_B), noteOnly, walker)).toBe(inB);
+      expect(await cache.getLens(lensView(5, 1), noteOnly, other)).toBe(otherInA);
+      const walkerEntries = held(cache).filter(
+        (entry) => entry.siteId === SITE_A && entry.visibility === walker.todayVisibilityKey,
+      );
+      expect(walkerEntries.length).toBeLessThanOrEqual(
+        GRAPHQL_LENS_SCHEMAS_PROBATION + GRAPHQL_LENS_SCHEMAS_PROTECTED,
+      );
+    });
+
+    it('bounds visibilities per workspace and workspaces, dropping whole least recently used ones', async () => {
+      const { cache } = setup({
+        maxLensSpacesPerWorkspace: 2,
+        maxLensWorkspaces: 2,
+        lensSegments: { probation: 1, protected: 1 },
+      });
+      for (const todayVisibilityKey of ['delivery:a', 'delivery:b', 'delivery:c']) {
+        await cache.getLens(lensView(5, 1), noteOnly, { todayVisibilityKey });
+      }
+      expect(new Set(held(cache).map((entry) => entry.visibility))).toEqual(
+        new Set(['delivery:b', 'delivery:c']),
+      );
+      for (const site of [SITE_B, 'site-c']) {
+        await cache.getLens(lensView(5, 1, 1000, site), noteOnly);
+      }
+      expect(new Set(held(cache).map((entry) => entry.siteId))).toEqual(new Set([SITE_B, 'site-c']));
       for (let revision = 1; revision <= 4; revision += 1) {
-        await cache.getLens(lensView(5, revision), noteOnly);
+        await cache.getLens(lensView(5, revision, 1000, SITE_B), noteOnly);
       }
-      expect(held(cache).filter((entry) => entry.visibility === noteOnly.key).length).toBeLessThanOrEqual(2);
+      expect(held(cache).filter((entry) => entry.siteId === SITE_B).length).toBeLessThanOrEqual(2);
     });
 
     it('retries a failed build', async () => {

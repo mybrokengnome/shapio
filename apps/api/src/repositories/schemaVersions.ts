@@ -30,3 +30,15 @@ export const getSchemaId = async (executor: Executor = db): Promise<string> => {
   const row = await executor.selectFrom('system_versions').select('schema_id').executeTakeFirstOrThrow();
   return row.schema_id;
 };
+
+/**
+ * The instance's item ID key (plan item-ids), written once by the migration: what IDs derived for items stored
+ * without one are keyed with.
+ */
+export const getItemIdKey = async (executor: Executor = db): Promise<string> => {
+  const row = await executor.selectFrom('system_versions').select('item_id_key').executeTakeFirstOrThrow();
+  if (!row.item_id_key) {
+    throw new Error('system_versions.item_id_key is not set; run the database migrations');
+  }
+  return row.item_id_key;
+};

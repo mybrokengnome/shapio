@@ -94,6 +94,9 @@ const RICH_TEXT_SAMPLE = {
 
 const MEDIA_SAMPLE = { id: '<uuid>', url: '<url>', mimeType: '<mime type>', alt: '' };
 
+/** Every component item (single, repeatable or a zone's) carries the stable ID the server gave it. */
+const ITEM_SAMPLE = { id: '<item id>' };
+
 /** Nesting depth for component samples (components inside components show as `{}` below it). */
 const MAX_SAMPLE_DEPTH = 2;
 
@@ -117,13 +120,16 @@ const sampleValue = (field: FieldDefinition, lookup: DefinitionLookup, depth: nu
       return many(field.settings.cardinality === 'many', '<entry id>');
     case 'component': {
       const component = lookup.get(field.settings.component);
-      return many(field.settings.repeatable, component ? sampleObject(component, lookup, depth + 1) : {});
+      return many(field.settings.repeatable, {
+        ...ITEM_SAMPLE,
+        ...(component ? sampleObject(component, lookup, depth + 1) : {}),
+      });
     }
     case 'dynamiczone':
       return field.settings.components.slice(0, 1).flatMap((id) => {
         const component = lookup.get(id);
         return component
-          ? [{ __component: component.apiKey, ...sampleObject(component, lookup, depth + 1) }]
+          ? [{ __component: component.apiKey, ...ITEM_SAMPLE, ...sampleObject(component, lookup, depth + 1) }]
           : [];
       });
     default:
@@ -166,7 +172,7 @@ export const restResponseSample = (stored: SchemaDefinition, lookup: DefinitionL
     );
   }
   if (!isModelDefinition(definition)) {
-    return JSON.stringify(sampleObject(definition, lookup, 0), null, 2);
+    return JSON.stringify({ ...ITEM_SAMPLE, ...sampleObject(definition, lookup, 0) }, null, 2);
   }
   const meta = { locale: '<locale>', snapshot: 0 };
   const body =
@@ -248,6 +254,9 @@ const ENTRY_SYSTEM_FIELDS = [
   'publishedAt: String',
 ];
 
+/** A component type's own field: each item's stable ID. */
+const COMPONENT_SYSTEM_FIELDS = ['id: ID!'];
+
 /** An interface's GraphQL interface type (its contract) and its list and single queries, as SDL. */
 const interfaceSdl = (definition: SchemaDefinition & { kind: 'interface' }, lookup: DefinitionLookup) => {
   const name = toTypeName(definition.apiKey);
@@ -269,7 +278,11 @@ export const graphqlSdl = (stored: SchemaDefinition, lookup: DefinitionLookup): 
   }
   const definition = effectiveDefinition(stored, lookup);
   const name = toTypeName(definition.apiKey);
-  const system = isModelDefinition(definition) ? [...ENTRY_SYSTEM_FIELDS, `localizations: [${name}!]`] : [];
+  const system = isModelDefinition(definition)
+    ? [...ENTRY_SYSTEM_FIELDS, `localizations: [${name}!]`]
+    : definition.kind === 'component'
+      ? COMPONENT_SYSTEM_FIELDS
+      : [];
   const fields = liveFields(definition).map(
     (field) => `${field.apiKey}: ${graphqlFieldType(definition, field, lookup)}`,
   );

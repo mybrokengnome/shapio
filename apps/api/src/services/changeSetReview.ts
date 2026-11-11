@@ -1,4 +1,5 @@
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
 import { dropForeignTypedValues } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
@@ -153,7 +154,7 @@ const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): 
     sourceRevisionId: item.source_revision_id,
     draftVersion: item.action === 'publish' && !item.source_revision_id ? (draft?.version ?? null) : null,
     liveState: liveStateOf(draft, published),
-    fields: fieldDiff(readable, before, after),
+    fields: fieldDiff(readable, before, after, componentLookupOf(model?.components ?? new Map())),
     issues,
   };
 };

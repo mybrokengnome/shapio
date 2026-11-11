@@ -4,6 +4,7 @@ import {
   type FieldDefinition,
   type RichTextDocument,
 } from '@shapio/schema';
+import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { FieldMask } from '../../permissions/types.js';
 import type { ContentModel } from '../model.js';
 import { COMPONENT_KEY } from '../validator/index.js';
@@ -111,21 +112,30 @@ const projectRelation = (
   return field.settings.cardinality === 'many' ? shown : (shown[0] ?? null);
 };
 
+/** An instance's ID as the API shows it (`id`), first; reads give every instance one (`withItemIds`). */
+const itemIdOf = (value: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const id = value[ITEM_ID_KEY];
+  return typeof id === 'string' ? { [ITEM_ID_FIELD]: id } : {};
+};
+
 const projectComponent = (
   component: ComponentDefinition | undefined,
   value: unknown,
   options: ProjectionOptions,
 ): Record<string, unknown> | null =>
   component && isRecord(value)
-    ? projectFields(
-        component.fields.filter(
-          options.componentFieldVisible ??
-            ((field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly)),
+    ? {
+        ...itemIdOf(value),
+        ...projectFields(
+          component.fields.filter(
+            options.componentFieldVisible ??
+              ((field) => !field.deprecated && (field.public || !options.publicComponentFieldsOnly)),
+          ),
+          value,
+          options,
+          false,
         ),
-        value,
-        options,
-        false,
-      )
+      }
     : null;
 
 const isStringOrStrings = (value: unknown) =>

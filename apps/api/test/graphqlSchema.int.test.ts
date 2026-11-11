@@ -719,11 +719,11 @@ describe('GraphQL schema and runtime', () => {
       await gql<{ landing: unknown }>(
         `query ($id: ID!) { landing(id: $id) {
           id locale createdAt updatedAt publishedAt tone tags meta
-          links { label href }
+          links { id label href }
           sections {
             __typename
-            ... on Hero { heading image { ${media} } }
-            ... on Quote { text }
+            ... on Hero { id heading image { ${media} } }
+            ... on Quote { id text }
           }
         } }`,
         { id: created.id },
@@ -732,7 +732,8 @@ describe('GraphQL schema and runtime', () => {
     expect(toRestShape(viaGraphql)).toEqual(withoutModelKey(rest.data));
     const [heroSection, quoteSection] = rest.data.sections as Array<Record<string, unknown>>;
     expect(heroSection).toMatchObject({ __component: 'hero', heading: 'Welcome', image: { id: image.id } });
-    expect(quoteSection).toEqual({ __component: 'quote', text: 'Ship it' });
+    expect(quoteSection).toMatchObject({ __component: 'quote', text: 'Ship it' });
+    expect(Object.keys(quoteSection ?? {}).sort()).toEqual(['__component', 'id', 'text']);
     const invalidZone = await gql(
       'mutation { createLanding(data: { sections: [{ hero: { heading: "x" }, quote: { text: "y" } }] }) { id } }',
       undefined,

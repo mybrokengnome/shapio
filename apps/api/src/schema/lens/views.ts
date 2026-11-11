@@ -39,6 +39,11 @@ import { createLru, createSegmentedLru, type Lru, type SegmentedLru } from './lr
 export const LENS_VIEW_CACHE_SIZE = { probation: 16, protected: 32 } as const;
 /** Compiled definition lenses kept per process (keys are revision IDs, unique across instances). */
 export const DEFINITION_LENS_CACHE_SIZE = 256;
+/**
+ * How long a request trusts the last look at the history backfill job before reading it again (until it
+ * succeeds; then never again).
+ */
+export const SETTLE_CHECK_TTL_MS = 5_000;
 /** History rows at one version, per workspace. */
 const HISTORY_CACHE_SIZE = { probation: 16, protected: 32 } as const;
 
@@ -98,6 +103,8 @@ type LensState = {
    * it finished: everything they hold may predate rows it wrote or repaired.
    */
   settled: boolean;
+  /** When an unsettled state last read the job (`Date.now()`); re-read after `SETTLE_CHECK_TTL_MS`. */
+  checkedAt: number;
   /** Per workspace (`siteId ?? ''`); workspaces are few, so the map is not bounded beyond them. */
   sites: Map<string, SiteCaches>;
 };
@@ -115,6 +122,7 @@ const freshState = (db: Database, settled: boolean): LensState => {
     generation: generations,
     cleared: clearCount,
     settled,
+    checkedAt: 0,
     sites: new Map(),
   };
   states.set(db, state);
@@ -157,14 +165,16 @@ const stateOf = async (db: Database): Promise<LensState> => {
  * The backfill writes everything it proves in one transaction, so a read sees history either as the
  * migration left it (baseline rows: unavailable where they do not reach) or complete, never in between.
  * Caches count as final only once the job succeeded; until then (pending, running, failed, dead) they are
- * dropped the first time a request sees it succeed.
+ * dropped the first time a request sees it succeed. The job is read at most once per `SETTLE_CHECK_TTL_MS`.
  */
 const refreshSettled = async (db: Database, state: LensState): Promise<LensState> => {
-  if (state.settled) {
+  const now = Date.now();
+  if (state.settled || now - state.checkedAt < SETTLE_CHECK_TTL_MS) {
     return state;
   }
   const job = await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db);
   const settled = !job || job.status === 'succeeded';
+  state.checkedAt = now;
   return settled ? freshState(db, true) : state;
 };
 

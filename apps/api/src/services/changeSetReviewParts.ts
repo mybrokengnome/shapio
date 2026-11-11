@@ -1,7 +1,9 @@
 import type { DataType, DefinitionCategory, FieldDefinition, LensEffect } from '@shapio/schema';
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
 import { everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
+import type { ComponentLookup } from '../content/itemIds.js';
 import type { ContentModel } from '../content/model.js';
+import { valueWithoutItemIds } from '../content/withoutItemIds.js';
 import type { ChangeSetRow } from '../repositories/changeSets.js';
 import type { PlanImpact } from '../schema/planner/impact.js';
 import type { ChangePlan } from '../schema/planner/plan.js';
@@ -107,17 +109,28 @@ export type ChangeSetReview = {
   notices: string[];
 };
 
-const sameValue = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const NO_COMPONENTS: ComponentLookup = () => undefined;
 
+/**
+ * Whether a field holds the same content on both sides. Item IDs (plan item-ids) are not content: an item that
+ * only gained its persisted ID (stored before IDs existed on one side) is unchanged, so they are left out of
+ * the comparison. The values reported keep them.
+ */
+const sameValue = (field: FieldDefinition, a: unknown, b: unknown, componentOf: ComponentLookup) =>
+  JSON.stringify(valueWithoutItemIds(field, a ?? null, componentOf)) ===
+  JSON.stringify(valueWithoutItemIds(field, b ?? null, componentOf));
+
+/** `componentOf`: the model's components, so item IDs inside nested components are left out too. */
 export const fieldDiff = (
   fields: readonly FieldDefinition[],
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
+  componentOf: ComponentLookup = NO_COMPONENTS,
 ) =>
   fields.flatMap((field) => {
     const old = before?.[field.id] ?? null;
     const next = after?.[field.id] ?? null;
-    return sameValue(old, next) ? [] : [{ field, before: old, after: next }];
+    return sameValue(field, old, next, componentOf) ? [] : [{ field, before: old, after: next }];
   });
 
 type RawFieldDiff = ReturnType<typeof fieldDiff>[number];

@@ -2203,7 +2203,11 @@
       "notUnique": "Another entry already uses this value.",
       "relationMissing": "A linked entry no longer exists.",
       "mediaMissing": "A chosen file no longer exists or isn't allowed here.",
-      "invalidJson": "Not valid JSON."
+      "invalidJson": "Not valid JSON.",
+      "unknownItemId": "An item here was removed or replaced since this entry was loaded. Reload the entry and make the change again.",
+      "duplicateItemId": "The same item appears twice here. Reload the entry and make the change again.",
+      "itemComponentChanged": "An item here changed its type since this entry was loaded. Reload the entry and make the change again.",
+      "ambiguousItems": "Shapio couldn't tell which saved items these are. Reload the entry and make the change again."
     },
     "media": {
       "empty": "No file chosen.",

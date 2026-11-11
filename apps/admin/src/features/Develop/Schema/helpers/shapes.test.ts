@@ -23,9 +23,11 @@ describe('API shapes from the naming helpers', () => {
       title: '<string>',
       author: '<entry id>',
       stage: 'draft',
-      seo: { metaTitle: '<string>' },
+      seo: { id: '<item id>', metaTitle: '<string>' },
     });
     expect(sample.meta).toHaveProperty('pagination');
+    expect(JSON.parse(restResponseSample(SEO, lookup))).toMatchObject({ id: '<item id>' });
+    expect(graphqlSdl(SEO, lookup)).toContain('  id: ID!');
   });
 
   it('writes the GraphQL type and root fields with the registry’s names', () => {

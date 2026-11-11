@@ -30,20 +30,18 @@ import { contentContextFor } from './contentContext.js';
 
 /**
  * The content context of a request naming a schema version (or made with a pinned token), with its lens
- * (built once, before the schema is chosen); undefined when it names none. Every GraphQL response carries the
- * current version's token.
+ * (built once, before the schema is chosen); undefined when it names none. Called only for a caller allowed
+ * some content: only its responses carry the current version's token (`Shapio-Schema-Version-Current`).
  */
 export const graphqlLensOf = async (
   request: FastifyRequest,
   view: SchemaSnapshot,
-  /** false: answer as if no version were named (a caller allowed no content); the header is still sent. */
-  loadLens = true,
 ): Promise<ContentServiceContext | undefined> => {
   request.schemaVersionCurrent = schemaVersionToken(await schemaIdOf(request.server.db), view.version);
   // An API token pinned to a schema version names it when the request names none.
   const namesVersion =
     request.schemaVersionToken !== null || pinnedSchemaVersionOf(request.principal) !== null;
-  return namesVersion && loadLens ? contentContextFor(request) : undefined;
+  return namesVersion ? contentContextFor(request) : undefined;
 };
 
 /** The schema a request executes against: the client's version through an active lens, else the current one. */
@@ -60,7 +58,7 @@ export const graphqlSchemaFor = (
     ? runtime.schemas.getLens(
         lens.view,
         lensVisibility(visibility, lens.view, lensed.snapshot, lens.unavailable),
-        admit ? { admit } : {},
+        { todayVisibilityKey: visibility.key, ...(admit ? { admit } : {}) },
       )
     : runtime.schemas.get(view, visibility);
 };

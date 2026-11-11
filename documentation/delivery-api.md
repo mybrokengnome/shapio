@@ -134,7 +134,8 @@ sends `Shapio-Site` and `?site=` on the wire, so a newer `@shapio/client` works 
 - **Relations** are target IDs unless you `populate` them. A target that is not published, or that your token
   may not read, is left out (never its ID).
 - **Components** are objects; **dynamic zones** are arrays of objects with `__component` (the component's
-  API ID).
+  API ID). Every component item, single or in a list or a dynamic zone, carries `id`, its stable ID (server
+  0.9.0 or later): send it back when you write the item ([Writing components](#writing-components)).
 - **Code** fields are strings, exactly as saved. Their language (`html`, `css`, `json`, …) is in the OpenAPI
   document as `x-shapio-language` (with `contentMediaType`), in the GraphQL field description (`Code: html`)
   and in the comment of the field in generated types (`shapio types generate`).
@@ -390,7 +391,7 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
 - `filters`, `sort`, `fields`, and `populate` take that version's API IDs. Fields removed since read `null`
   (`[]` for lists). Visibility and permissions are always today's.
 - A read that names a version, today's included, reports `meta.schemaVersion: { requested, current }`, both
-  as tokens. Every delivery, preview, and snapshot response carries the current token (`<schemaId>:<version>`)
+  as `<schemaId>:<version>`. Every delivery, preview, and snapshot response carries the current schema version
   in the `Shapio-Schema-Version-Current` header, so a client can tell that a newer schema exists; a request
   refused before Shapio reads its schema (an invalid credential, a request a route's schema refuses, an
   invalid, foreign, or newer schema version) gets no such header.
@@ -516,21 +517,169 @@ build tools use the admin API (`/api/admin/content/<key>`) with admin credential
 ### Writing components
 
 A component is written whole: an update sends the full instance (or the full list of items) a field holds.
-Fields of an instance the caller cannot read (private to its audience, or deprecated) are never wiped by that:
-left out, they keep their stored values. Items of repeatable components and dynamic zones have no IDs, so each
-item sent is matched to the stored item it continues:
+Fields of an item the caller cannot read (private to its audience, or deprecated) are never wiped by that: left
+out, they keep their stored values, carried over from the stored item that the item sent continues. From server
+0.9.0, the item's `id` says which stored item that is.
 
-1. By what the caller sees of it: an item equal to a stored item in every field the caller may read (the same
-   component, for dynamic zone items) continues that item; equal items are taken in order. Deleting an item,
-   inserting one anywhere, or reordering untouched items keeps every item's hidden values with it.
-2. In place: when the list keeps its length, an edited item continues the stored item at its position, if that
-   one was not matched already (and, in a dynamic zone, holds the same component).
-3. Any other item is new: its hidden fields start empty. Stored items no item continues are deleted, with
-   their hidden values.
+#### Item IDs
 
-A list is matched only up to its field's `max`, or 50,000 items when the field sets none. A longer list is refused with `TOO_MANY` before anything is matched.
+Every component item has an `id`, assigned by the server: a single component, each item of a repeatable
+component, and each item of a dynamic zone, at any depth. Like an entry's `id`, it is not a field. An item keeps
+its `id` through edits and moves, and an unchanged item has the same `id` in the draft and the published version,
+in every locale of a shared field, and after a restore.
 
-A single (not repeatable) component always continues the stored instance. A caller that may update an entry but
-not read it matches by the fields it may write; an explicit `null` it sends for a field inside a component
-clears that field, and a field it leaves out keeps its value. Admin writes are not affected: admins read
-everything.
+```json
+"links": [
+  { "id": "3b0d6c1e-8f2a-4c55-9e10-7a4b2d9c6e31", "label": "Docs", "url": "https://example.com/docs" },
+  { "id": "9a1c4e7b-2d3f-4a68-b5c0-1e9f8d7a6b42", "label": "Blog", "url": "https://example.com/blog" }
+]
+```
+
+**Send back the `id` of each item you read.** Each item is then paired with the stored item it continues, in any
+order, and its hidden fields go with it:
+
+- Edit an item: change its fields and keep its `id`.
+- Reorder: send the items in the new order with their `id`s.
+- Delete an item: leave it out. Its hidden values are deleted with it.
+- Add an item: send it without `id`, or with `"id": null`. It is new, and its hidden fields start empty.
+- Replace an item with a different one: leave the old one out and send the new one without `id`.
+- Move an item into another list, or under another parent item: send it there without `id`. It is new in its
+  new place.
+
+A list in which any item sends an `id` (a string, or `null`) is paired by `id`: there, every item without a
+string `id` is new. A list in which no item has an `id` key is paired as described in
+[Writes without item IDs](#writes-without-item-ids). A single (not repeatable) component always continues its
+stored instance: send its `id` back, or `"id": null`, or no `id`. On a create, every `id` sent is ignored and the
+server assigns new ones.
+
+These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per problem, and nothing is written:
+
+| Issue code               | Path            | Message                                                                                                                     |
+| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item |
+| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                               |
+| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                           |
+
+`UNKNOWN_ITEM_ID` answers an `id` that is not one of the stored items of that list (for a single component, not
+its stored instance): an item from another list or another parent item, or one that someone else's write
+deleted. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with a known `id` and a different
+`__component`. The path is a JSON pointer in your API IDs, such as `/links/2/id`. The order of refusals is: an
+invalid body (`422`), item refusals (`422`), a forbidden field (`403`), then a stale version (`409`).
+
+The write response names the `id` of each item it wrote, in `data.itemIds`, so a caller that cannot read the
+entry back (an app user while the entry has unpublished changes, for example) can send them on its next write.
+It holds only the component fields the body sent, by your API IDs (the client's own through a
+[schema version](schema-lenses.md#writes)): each instance as `{ "id" }`, dynamic zone items with `__component`
+too, and component fields nested inside them when the body sent those. It is `{}` when the body sent no component
+field. GraphQL mutations do not return it.
+
+```json
+{
+  "data": {
+    "id": "6f2c0a1e-4b7d-4f3a-9c55-1e8d2b7a9f40",
+    "locale": "en",
+    "version": 3,
+    "status": "modified",
+    "createdAt": "2026-10-01T09:12:44.512Z",
+    "updatedAt": "2026-11-11T10:04:31.207Z",
+    "publishedAt": "2026-10-02T08:00:00.000Z",
+    "itemIds": {
+      "cards": [{ "id": "6b…" }, { "id": "9c…", "chips": [{ "id": "1f…" }] }],
+      "hero": { "id": "a2…" },
+      "blocks": [{ "id": "e4…", "__component": "quote" }]
+    }
+  },
+  "meta": {}
+}
+```
+
+#### Writes without item IDs
+
+A client that sends no `id` (a client written before 0.9.0, for example) has its items paired with the stored
+items by what the caller can read of each item. When the list can hold fields hidden from the caller, Shapio
+pairs only what it can be certain of:
+
+1. **The list sent back unchanged:** every item continues its stored item.
+2. **An edit in place:** the list kept its length, every place holds the same component as before, no changed
+   item's old content appears at another place, and the list is not just a reordering. Each changed item
+   continues the stored item at its place and keeps its hidden values. Replacing the only item (`[A]` sent as
+   `[X]`) is such an edit; send `X` with `"id": null` to make it new instead.
+3. **Anything else:** only an item exactly equal to a stored item, as the caller reads it, continues that item:
+   an item that appears once in each list wherever it moved, and items that look alike in order. Stored items
+   left over are deleted with their hidden values, and sent items left over are new and carry nothing. When
+   left-over stored items and new items fall in the same stretch between matched items, Shapio cannot tell an
+   edit from a delete plus an insert, and refuses the list.
+4. A list inside an item is paired the same way, under the stored item its parent continues. Items under a new
+   parent are new.
+
+A refused list answers `422 CONTENT_INVALID` with the issue `AMBIGUOUS_ITEMS` on the list's path and no other issue
+under that path, and nothing is written. Whether a list can hold hidden fields is decided from
+the content type alone: some component the list allows has, at any depth, a field private to its audience or
+deprecated (through a [schema version](schema-lenses.md#writes), also a field added since that version or one
+the caller cannot write). Stored values never decide it, so a refusal tells the caller nothing about values it
+cannot see. Through a schema version, a value sent back for a field the client cannot write, on an item Shapio
+could not match to a stored one, is also reported as `AMBIGUOUS_ITEMS` for the list. A list that cannot hold
+hidden fields is never refused, and neither is an admin API write: items are paired as closely as possible, and
+an item Shapio is unsure of gets a new `id`. The message is:
+
+- "cannot be matched to the stored items with certainty, and its items can hold values this caller cannot see;
+  send back the id of each item as you read it, or change one thing at a time"
+- or, when the caller cannot see the stored items at all (see below): "replaces items this caller cannot read,
+  and they can hold values it cannot see; send back the id of each item as you read it, leave the field out to
+  keep it, or send an empty list to clear it"
+
+| Change                                                              | Example                                           | Without `id`, on a list that can hold hidden fields                                        |
+| ------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| No change                                                           |                                                   | every item continues                                                                       |
+| Edits in place                                                      | `[A, B]` → `[A2, B2]`                             | each edited item keeps its hidden values                                                   |
+| Replace the only item                                               | `[A]` → `[X]`                                     | an edit in place: `X` keeps `A`'s hidden values                                            |
+| Delete one item                                                     | `[A, B, C]` → `[A, C]`                            | `B` deleted                                                                                |
+| Insert an item away from edits                                      | `[A, B]` → `[A, X, B]`                            | `X` new                                                                                    |
+| Reorder items that differ                                           | `[A, B]` → `[B, A]`                               | every item continues                                                                       |
+| Delete the first item and add one at the end                        | `[A, B]` → `[B, X]`                               | `A` deleted, `X` new                                                                       |
+| Move and edit an item in one write                                  | `[A, B]` → `[B2, A]`                              | read the same way: `B` deleted, `B2` new, keeping nothing of `B`                           |
+| Move one item and replace the others                                |                                                   | the moved item keeps its hidden values; replaced items are deleted, new ones carry nothing |
+| Delete one of several items that look the same                      | `[A, A]` → `[A]`                                  | refused                                                                                    |
+| Duplicate an item                                                   | `[A]` → `[A, A]`                                  | refused                                                                                    |
+| Edit an item and delete another                                     | `[A, B, C]` → `[A2, B]`                           | refused, whether or not the two are next to each other                                     |
+| Insert next to an edited item                                       | `[A]` → `[X, A2]`                                 | refused                                                                                    |
+| Reorder look-alikes across a moved item                             | `[A, B, A]` → `[A, A, B]`                         | refused                                                                                    |
+| An edit mixed with a move                                           |                                                   | refused when the changed item and a left-over stored item fall in the same stretch         |
+| Swap and edit both, through a schema version where `w` is read-only | `[{p, w:1}, {q, w:2}]` → `[{q2, w:2}, {p2, w:1}]` | refused; with `id`s it is accepted and each `w` stays with its item                        |
+
+With `id`s every row is certain. To move and edit an item in one write and keep its hidden values, send its `id`.
+To replace the only item with a new one, send the new item with `"id": null`: `A` and its hidden values are
+deleted.
+
+**Who can be refused.** Fields private to their audience inside a component are hidden from every delivery
+caller, whatever its role grants, and deprecated fields are hidden from every caller. Delivery tokens cannot
+write. So on a content type whose components hold a private or deprecated field, at any depth, app users and
+anonymous callers with an update grant can be refused, when they send no `id`s, for:
+
+- deleting one of several items that look the same to the caller;
+- duplicating an item;
+- editing an item and deleting another in the same write, next to it or not;
+- editing an item and inserting a new one next to it;
+- reordering look-alike items so that one crosses a moved item;
+- an edit mixed with a move, so that a changed item and a left-over stored item share a stretch;
+- any list with items while the caller cannot see the draft it writes. App users and anonymous callers never
+  read drafts, so this covers every entry with unpublished changes or never published, including an app user's
+  own second edit before an editor publishes the entry.
+
+Sending `[]`, leaving the field out, and sending back the `id`s read are always allowed. Content types whose
+components hold no private or deprecated field never see these refusals. An admin writing through the delivery
+routes can be refused only when the components hold deprecated fields; admin API writes (`/api/admin/content`)
+never are.
+
+#### Limits and single components
+
+Every delivery update that sends a component value, with or without `id`s, and every write through a
+[schema version](schema-lenses.md#writes), may hold at most a component list or dynamic zone's `max` items, at any
+depth, or 50,000 when the field sets none. A longer one is refused with `422 CONTENT_INVALID` (`TOO_MANY`) with
+the body, before a forbidden field (`403`) or a stale version (`409`) is answered. Admin writes and delivery
+creates that name no schema version have no such cap beyond the field's own `max`.
+
+A single (not repeatable) component always continues the stored instance. The fields kept are the ones the
+caller cannot read. A caller that may update an entry but not read it sees nothing, so only what it cannot write
+(deprecated fields) is kept: a field inside a component that it leaves out, or sends as `null`, is cleared, as
+for every field it writes.

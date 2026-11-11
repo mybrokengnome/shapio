@@ -8,6 +8,7 @@ import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { ActivationContext, StepOutcome } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
 import type { SchemaById } from '../../schema/snapshot.js';
+import { componentLookupOf, itemIdKeyOf, transferItemIds, withItemIds } from '../itemIds.js';
 import { resolveModelById, type HeadState } from '../model.js';
 import { syncUniqueValues, uniqueFields } from '../unique.js';
 import { syncHeadDerivations } from '../write/heads.js';
@@ -195,11 +196,22 @@ const rewriteEntry = async (
   const valueSteps = transforms.filter((step) => !entryLevel.includes(step));
   const proposal = proposeEntry(heads, valueSteps, proposed.defaultLocale);
   const cache: RevisionCache = new Map();
+  const key = await itemIdKeyOf(trx);
   for (const head of proposal.heads.filter((candidate) => candidate.changed)) {
     const original = heads.find(
       (candidate) => candidate.locale === head.locale && candidate.state === head.state,
     );
-    if (original) {
+    const model = resolveModelById(proposed, head.model_id);
+    if (original && model) {
+      // The rewritten lists keep the IDs their items read with before (plan item-ids).
+      const componentOf = componentLookupOf(model.components);
+      const before = withItemIds(original.data, model.definition.fields, componentOf, {
+        key,
+        entryId: original.entry_id,
+      });
+      const data = transferItemIds(before, head.data, model.definition.fields, componentOf);
+      await rewriteHead(context, original, data, cache);
+    } else if (original) {
       await rewriteHead(context, original, head.data, cache);
     }
   }

@@ -1,4 +1,5 @@
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { resolveModelById } from '../content/model.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow } from '../repositories/changeSetItems.js';
@@ -93,7 +94,12 @@ const shippedEntries = async (
       draftVersion: null,
       // The state before the ship: live or not (missing when nothing of it is left in the log).
       liveState: before ? 'published' : after ? 'unpublished' : 'missing',
-      fields: fieldDiff(await readableFields(context, model, modelId), before, after),
+      fields: fieldDiff(
+        await readableFields(context, model, modelId),
+        before,
+        after,
+        componentLookupOf(model?.components ?? new Map()),
+      ),
       issues: [],
     });
   }

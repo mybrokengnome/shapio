@@ -31,6 +31,11 @@ export const isEmptyApiValue = (value: unknown): boolean =>
 type ShapeOptions = {
   /** Delivery output: media fields are asset objects with an `id`, rich text may carry `html` instead of `doc`. */
   delivery?: boolean;
+  /**
+   * The object is a component instance (single, list item or zone item): it must carry its item `id`, a
+   * non-empty string, a system field in every version (plan item-ids). Set by the component and zone checks.
+   */
+  instance?: boolean;
 };
 
 const scalarIssue = (field: FieldDefinition, value: unknown): string | null => {
@@ -129,7 +134,10 @@ export const apiShapeIssues = (
       const component = components(field.settings.component);
       const items = list ? (value as unknown[]) : [value];
       return items.flatMap((item, index) =>
-        instanceIssues(component, item, components, list ? `${path}/${index}` : path, options),
+        instanceIssues(component, item, components, list ? `${path}/${index}` : path, {
+          ...options,
+          instance: true,
+        }),
       );
     }
     case 'dynamiczone':
@@ -147,7 +155,7 @@ export const apiShapeIssues = (
           ];
         }
         const { __component: _component, ...rest } = item;
-        return instanceIssues(component, rest, components, at, options);
+        return instanceIssues(component, rest, components, at, { ...options, instance: true });
       });
     default: {
       const problem = scalarIssue(field, value);
@@ -171,13 +179,79 @@ export const instanceIssues = (
     return [`${path}: ${JSON.stringify(value)} is not an object`];
   }
   const byApiKey = new Map(definition.fields.map((field) => [field.apiKey, field]));
-  return Object.entries(value).flatMap(([key, item]) => {
-    const field = byApiKey.get(key);
-    if (!field) {
-      return [`${path}/${key}: not a field of the client's ${definition.apiKey}`];
+  const idIssues =
+    options.instance && (typeof value.id !== 'string' || value.id === '')
+      ? [`${path}: component instance without its item id (${JSON.stringify(value.id)})`]
+      : [];
+  const fieldOptions = { ...options, instance: false };
+  return [
+    ...idIssues,
+    ...Object.entries(value).flatMap(([key, item]) => {
+      if (options.instance && key === 'id') {
+        return [];
+      }
+      const field = byApiKey.get(key);
+      if (!field) {
+        return [`${path}/${key}: not a field of the client's ${definition.apiKey}`];
+      }
+      return apiShapeIssues(field, item, components, `${path}/${key}`, fieldOptions);
+    }),
+  ];
+};
+
+/**
+ * `value` (a delivered object of `definition`) without the item `id` of any component instance in it, at any
+ * depth: for comparing values, which item IDs are not.
+ */
+export const withoutItemIds = (
+  definition: SchemaDefinition | undefined,
+  value: Record<string, unknown>,
+  components: ComponentLookup,
+): Record<string, unknown> => {
+  if (!definition) {
+    return value;
+  }
+  const output: Record<string, unknown> = { ...value };
+  for (const field of definition.fields) {
+    const item = value[field.apiKey];
+    if (field.type !== 'component' && field.type !== 'dynamiczone') {
+      continue;
     }
-    return apiShapeIssues(field, item, components, `${path}/${key}`, options);
-  });
+    const strip = (instance: unknown): unknown => {
+      if (!isRecord(instance)) {
+        return instance;
+      }
+      const { id: _id, ...rest } = instance;
+      const component =
+        field.type === 'component'
+          ? components(field.settings.component)
+          : field.settings.components
+              .map((id) => components(id))
+              .find((c) => c?.apiKey === instance.__component);
+      return withoutItemIds(component, rest, components);
+    };
+    if (Array.isArray(item)) {
+      output[field.apiKey] = item.map(strip);
+    } else if (isRecord(item)) {
+      output[field.apiKey] = strip(item);
+    }
+  }
+  return output;
+};
+
+/** Storage-form data without the `__id` of any component instance (at any depth): values only. */
+export const withoutStoredItemIds = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(withoutStoredItemIds);
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== '__id')
+        .map(([key, item]) => [key, withoutStoredItemIds(item)]),
+    );
+  }
+  return value;
 };
 
 /**

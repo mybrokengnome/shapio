@@ -56,10 +56,12 @@ gets the same shape it was built for:
 integer `4` (a value written since that is no whole number, such as `"about 5"`, reads `null`).
 The response also carries the header
 `Shapio-Schema-Version-Current: 0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:19`, so the site can tell that newer types
-exist. Every delivery, preview, snapshot, and GraphQL response carries it, whether or not the request names a
-version, except one refused before Shapio reads its schema (an invalid credential, a request a route's
-schema refuses, an invalid, foreign, or newer version). `meta.schemaVersion` is on every read that names a
-version, today's included.
+exist. Delivery, preview, snapshot, and GraphQL responses carry it, whether or not the request names a
+version, when they answer a caller authorized for the route: every success, and the errors given only after
+authorization (`409`, `422`, and the `SCHEMA_VERSION_*` and `LENS_*` errors answered once the caller is
+authorized). A `401`, `403`, `404`, or any other `400` never carries it, so a caller with no grant learns nothing
+about the schema. `meta.schemaVersion` is on every
+read that names a version, today's included.
 
 Without `schemaVersion`, the same request fails with `400 INVALID_QUERY` (`Unknown field "teaser"`), and a read
 without `fields=` returns `excerpt` and the text `"4"`, which code written for version 17 does not expect. A
@@ -102,7 +104,7 @@ The option needs server 0.9.0 or later. An older server refuses the `schemaVersi
 
 ### Over HTTP
 
-Send the token as the `?schemaVersion=` query parameter or as the `Shapio-Schema-Version` header. Both work on
+Send the schema version as the `?schemaVersion=` query parameter or as the `Shapio-Schema-Version` header. Both work on
 the delivery routes (reads and writes), previews, the snapshot routes, the API docs (`/api/docs`), and GraphQL;
 other routes ignore them.
 
@@ -167,15 +169,21 @@ knows.
 A value is shown in the old type whenever some conversion reaches it, directly or through text, so a client
 several versions back never reads less than it would after each change in turn: a number field made text
 and then a multi-value enum still reads `4` for an entry holding `["4"]`. A number read as a decimal or a big
-integer keeps its exact digits (`"0.0000001"`, never `1e-7`). Text is read the way a type change converts it:
-as written when it fits, else trimmed, else as the number it spells (`" 7 "` reads as the ID `7`, `"0x10"`
-reads 16, `"1e3"` reads 1000). Text of more than 64 characters, or with an exponent beyond 400, is not read
-as a number. An empty multi-value enum reads `null`, as it does for a client that names no version.
+integer keeps its exact digits (`"0.0000001"`, never `1e-7`). A number or integer field reads text exactly as
+a type change converts it (`"1e3"` reads 1000, `"0x10"` reads 16, `" 12 "` reads 12). Every other field reads
+text as written when it fits, else trimmed, else as the exact number it spells (`" 7 "` reads as the ID `7`,
+`"007"` as the big integer `7`); that last reading is skipped for text of more than 64 characters or with an
+exponent beyond 400, so such text reads only as written or trimmed. An empty multi-value enum reads `null`, as
+it does for a client that names no version.
 
 A component or dynamic zone takes the effect of what is inside it, with one difference: a field inside it that
 reads empty leaves the component and its items in place, so the component is **Some values read empty**, not
 **Reads empty**. It reads empty only when none of its items can be read (its component deleted, or no component
 both versions allow).
+
+Every component item reads with its `id` through every version, the same `id` it has without one. Like an
+entry's `id` it is not a field, so no schema change affects it, and a client can send it back on writes through
+its version ([Writes](#writes)).
 
 Two more things drop out of an old client's view rather than appear in a shape it never saw:
 
@@ -247,7 +255,11 @@ uses the old API IDs and Shapio stores the values under today's fields.
 Any other field in the body (one whose type or settings changed, or that was removed) is refused. One
 `422 LENS_WRITE_UNSUPPORTED` lists every such field in `details.issues`, each with a JSON pointer in the
 client's API IDs (`/count`) and how the field changed (`changed type (integer → string)`, `was removed`,
-`became per locale`), and nothing is written. The exception is a value equal to what a read through the same
+`became per locale`), and nothing is written. A field removed since is named `was removed` only where a read
+shows it (as `null`): for a caller whose write grant names no fields, and a field that was public in that
+version. For anyone else it is `UNKNOWN_FIELD`, as for a name the version never had. A removed field is known
+by its stable ID only: its value never lands in a field added since under the same API ID. A field the caller
+may not write today gets today's answer (`403 FORBIDDEN_FIELD`), never a reason the version gives. The exception is a value equal to what a read through the same
 version returns for that field: a client that sends back the entry it just read, with one field edited, is not
 refused for the fields it did not touch, and those keep their stored values (not the value sent back).
 
@@ -266,12 +278,36 @@ Shapio does not convert written values back to today's type: a write through a l
 data the old client could not see. To write such a field, move the client to the current version.
 
 A component instance is written whole. Fields inside it that the client cannot read, does not know (added
-since its version), or cannot write (changed since) keep their stored values. Items of repeatable components
-and dynamic zones have no IDs, so Shapio matches each item the client sends to the stored item it continues,
-the same way for every client, with or without a version ([Delivery API](delivery-api.md#writing-components)):
-by what the client sees of the item first (so deleting, inserting, and reordering untouched items keep each
-item's hidden values), then in place for an edited item when the list kept its length; any other item is new
-and its hidden fields start empty.
+since its version), or cannot write (changed since) keep their stored values, carried over from the stored item
+it continues. Shapio finds that item the same way for every client, with or without a version
+([Delivery API](delivery-api.md#writing-components)):
+
+- An item sent back with its `id` continues that stored item, in any order. This is the way to write lists
+  through an older version: read the entry, change what you need, and send each item back with its `id`.
+- Items sent without `id` are paired by what the client sees of each item through its version. When the list
+  can hold fields hidden from the client (fields added since its version, fields it cannot read, and fields it
+  cannot write), Shapio pairs only what it is certain of: the list sent back unchanged, an edit in place, and
+  items exactly equal to a stored item. A list it cannot be certain of is refused with `422 CONTENT_INVALID`
+  (`AMBIGUOUS_ITEMS`), the only issue reported under that list's path
+  ([Writes without item IDs](delivery-api.md#writes-without-item-ids)). Without item IDs, a value sent back for
+  a field the client cannot write, on an item Shapio could not match to a stored one, is also reported as
+  `AMBIGUOUS_ITEMS` for the list: with `w` read-only, `[{p, w:1}, {q, w:2}]` sent as `[{q2, w:2}, {p2, w:1}]`
+  (swapped, and both edited) is refused, and with `id`s it is accepted and each `w` stays with its item.
+- The write response's `itemIds` gives the `id` of each item in the component fields the body sent, by the
+  client's API IDs.
+
+Inside an item, a value the client sends back for a field it cannot write is compared with the stored item it
+continues, and that stored item is the one whose values are kept.
+
+The stored items are those of the draft the write lands on. A caller that may not read drafts sees them only
+when the draft is the published version. While the entry has unpublished changes, such a caller sends back the
+`id`s it read from the published version (an unchanged item has the same `id` in both) or got in `itemIds` from
+its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it can hold fields hidden
+from the caller, and otherwise its items are paired by the fields it may write. An item stored before 0.9.0
+and edited only in the draft since answers `UNKNOWN_ITEM_ID` to an `id` read from the published version, until a
+write stores its `id`. A field inside a component that the caller cannot write cannot be sent back: it is refused
+(`NOT_ALLOWED`, "while the entry has unpublished changes"), whatever it holds, and left out it keeps its stored
+value.
 
 ## GraphQL
 
@@ -293,7 +329,7 @@ caller a schema build; past a small budget per minute the request is answered `4
 
 ## Generated types for an older version
 
-`shapio types generate --schema-version <token>` writes the types of an older version (with that version's
+`shapio types generate --schema-version <schemaId>:<version>` writes the types of an older version (with that version's
 `SCHEMA_VERSION`), for a client you have to patch without moving it forward.
 
 ## Seeing who is still on an older version
@@ -306,11 +342,21 @@ counts a field that reads `null` because it is gone.
 
 ## Limits
 
-- **A lens never brings back data.** A removed field, a value a conversion dropped, and a field made private
-  read `null`.
+- **A schema version never brings back data.** A removed field, a value a conversion dropped, and a field made
+  private read `null`.
 - **Some changes are not hidden**: localization, drafts, locales, and switching between a collection and a
   single type (see the table).
 - **Filters and sorts on changed fields are refused**, not emulated.
+- **One value can read with another spelling, or empty, after a chain of type changes.** A client reads today's
+  value converted straight to its version's type, not stepped through each version in between:
+  - text too small to be a number (such as `1e-400`) reads as empty, not `0`, for a client on a version where
+    the field was a big integer or decimal and has since become a number and then text;
+  - number text such as `9E-7` reads as empty for a client on a version where the field was a slug and has since
+    become a number and then text;
+  - a number such as `5e-324` reads as `"5e-324"` for a client on a version where the field was text and has
+    since become a decimal and then a number, not as the full decimal digits (`"0.000…5"`); the value is the same;
+  - a time stored as the text `10:30` reads as `10:30` for a client on a version where the field was code and
+    has since become a time and then text, not as `10:30:00.000`; the time is the same.
 - **History from before 0.9.0.** Shapio 0.9.0 starts recording which version of each content type was live at
   each schema version, and rebuilds the earlier record from the audit log when it upgrades. Where the audit log
   has no record (it was pruned, say), a read of that content type through an older version answers
@@ -347,4 +393,4 @@ own build budget, by client address; previews build on the preview token's.
 
 A server older than 0.9.0 answers `400` to the `schemaVersion` query parameter.
 
-Behind a reverse proxy, set `TRUST_PROXY` so Shapio sees each client's own address. Without it, every anonymous request appears to come from the proxy, and all anonymous clients share one budget for reads of older schema versions.
+Behind a reverse proxy, set `TRUST_PROXY` so Shapio sees each client's own address. Without it, every anonymous request appears to come from the proxy, and all anonymous clients share one budget for reads of older schema versions. Set it to the number of proxies in front of Shapio (for example `1`), not `true`: with `true`, Shapio takes the left-most `X-Forwarded-For` entry, which any client can write, as the client's address.

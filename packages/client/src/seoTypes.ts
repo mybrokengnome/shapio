@@ -26,6 +26,11 @@ export type DeliveryAsset = {
 
 /** The built-in SEO component as delivered by default (`?seo=raw`): what the entry stores. */
 export type SeoFields = {
+  /**
+   * The stored instance's item ID (server 0.9.0 or later). `?seo=resolved` keeps it; a value made only from the
+   * workspace's defaults has none.
+   */
+  id?: string;
   title: string | null;
   description: string | null;
   image: DeliveryAsset | null;

@@ -124,4 +124,28 @@ describe('translate walker', () => {
     const { data: translated } = applyTranslations(model, codeFields, source, ['Bonjour']);
     expect(translated).toEqual({ title: 'Bonjour', embed: snippet });
   });
+
+  it('never offers an item ID for translation, and keeps each item ID when rebuilding', () => {
+    const withIds = {
+      single: { __id: 'item-single', heading: 'Lead' },
+      cards: [{ __id: 'item-card', heading: 'Card one', count: 2 }],
+      zone: [{ __component: 'card', __id: 'item-zone', heading: 'Zone card', count: 1 }],
+    };
+    const itemFields = [
+      field('single', 'component', { component: 'card' }),
+      field('cards', 'component', { component: 'card', repeatable: true }),
+      field('zone', 'dynamiczone', { components: ['card'] }),
+    ];
+    expect(collectTextLeaves(model, itemFields, withIds).map((leaf) => leaf.text)).toEqual([
+      'Lead',
+      'Card one',
+      'Zone card',
+    ]);
+    const { data: translated } = applyTranslations(model, itemFields, withIds, ['Tête', 'Carte un', 'Zone']);
+    expect(translated).toEqual({
+      single: { __id: 'item-single', heading: 'Tête' },
+      cards: [{ __id: 'item-card', heading: 'Carte un', count: 2 }],
+      zone: [{ __component: 'card', __id: 'item-zone', heading: 'Zone', count: 1 }],
+    });
+  });
 });

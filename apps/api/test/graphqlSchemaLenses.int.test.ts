@@ -507,7 +507,7 @@ describe('schema lenses: GraphQL', () => {
     // Private today: not named, whatever the old version had.
     expect(articleFields).not.toContain('secret');
     expect(await fieldNames('Story', v)).toBeNull();
-    expect(await fieldNames('Hero', v)).toEqual(['heading']);
+    expect(await fieldNames('Hero', v)).toEqual(['id', 'heading']);
     expect(await fieldNames('Gadget', v)).toBeNull();
     expect(await fieldNames('Story')).toContain('headline');
     // The old version's mutations, none for a model deleted since.
@@ -636,6 +636,8 @@ describe('schema lenses: GraphQL', () => {
       [plainUrl, { 'shapio-schema-version': 'elsewhere:1' }],
       [plainUrl, { 'shapio-schema-version': `${schemaId}:99999999` }],
       [plainUrl, { 'shapio-schema-version': 'not a version' }],
+      // Longer than any version: checked after authorization too, never by the route's schema.
+      [plainUrl, { 'shapio-schema-version': `${schemaId}:${'9'.repeat(81)}` }],
       [`${plainUrl}&schemaVersion=${schemaId}:1`, { 'shapio-schema-version': v }],
       [`${plainUrl}&schemaVersion=${encodeURIComponent(v)}&schemaVersion=${schemaId}:1`, {}],
     ];
@@ -650,9 +652,37 @@ describe('schema lenses: GraphQL', () => {
       }
     }
     // An authorized caller is told what is wrong with the version.
-    const malformed = await gql('{ _schemaVersion }', { version: 'not a version' });
-    expect(malformed.statusCode).toBe(400);
-    expect(errorCodes(malformed)).toEqual(['SCHEMA_VERSION_INVALID']);
+    for (const version of ['not a version', `${schemaId}:${'9'.repeat(81)}`]) {
+      const malformed = await gql('{ _schemaVersion }', { version });
+      expect(malformed.statusCode).toBe(400);
+      expect(errorCodes(malformed)).toEqual(['SCHEMA_VERSION_INVALID']);
+    }
+  });
+
+  it('never tells a caller allowed nothing the schema ID or version, headers included', async () => {
+    /** Headers that differ between any two requests (the clock, the rate-limit counter). */
+    const withoutDate = (headers: Record<string, unknown>) => {
+      const { date: _date, 'x-ratelimit-remaining': _remaining, ...rest } = headers;
+      return rest;
+    };
+    // Queries that answer 200 (or an error from a resolver) on an empty schema.
+    for (const query of ['{ __typename }', '{ _schemaVersion }', '{ _snapshot { snapshot } }']) {
+      const url = `/api/graphql?query=${encodeURIComponent(query)}`;
+      const plain = await testApp.app.inject({ method: 'GET', url });
+      const named = await testApp.app.inject({
+        method: 'GET',
+        url,
+        headers: { 'shapio-schema-version': v },
+      });
+      expect(plain.headers['shapio-schema-version-current'], query).toBeUndefined();
+      expect(named.headers['shapio-schema-version-current'], query).toBeUndefined();
+      expect(named.statusCode).toBe(plain.statusCode);
+      expect(named.body).toBe(plain.body);
+      expect(withoutDate(named.headers)).toEqual(withoutDate(plain.headers));
+    }
+    // A caller allowed some content is told the current version.
+    const allowed = await gql('{ __typename }');
+    expect(allowed.response.headers['shapio-schema-version-current']).toBe(await currentToken());
   });
 
   it('authorizes a mutation as without a version before any lens answer', async () => {

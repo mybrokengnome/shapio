@@ -25,10 +25,9 @@ const postBody = Type.Object({
  * removed from the query by plugins/schemaLens.ts before validation; declared here so the contract shows it.
  */
 const schemaVersion = Type.Optional(
-  Type.String({
-    maxLength: 80,
-    description: 'Read in the shape of this schema version (`<schemaId>:<version>`)',
-  }),
+  // No shape or length check here: those come after authorization (the plugin's deferred
+  // `SCHEMA_VERSION_INVALID`), so a caller that may not read gets the same answer whatever value it sends.
+  Type.String({ description: 'Read in the shape of this schema version (`<schemaId>:<version>`)' }),
 );
 
 /** `Shapio-Schema-Version`: queries and mutations in that version's names (plan schema-lenses). */

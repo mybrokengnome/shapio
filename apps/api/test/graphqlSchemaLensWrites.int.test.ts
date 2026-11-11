@@ -324,7 +324,15 @@ describe('schema lens writes: GraphQL', () => {
   });
 
   it('keeps what components and zone items gained when the old client writes them whole', async () => {
-    dataOf(await updateNote({ card: { label: 'L2' }, blocks: [{ card: { label: 'B2' } }] }));
+    // Alice cannot read the draft (it has unpublished changes), so a zone sent without item IDs is refused:
+    // the zone's component holds a field she cannot see, and nothing says which item she means.
+    const unnamed = await updateNote({ card: { label: 'L2' }, blocks: [{ card: { label: 'B2' } }] });
+    expect(errorCodes(unnamed)).toEqual(['CONTENT_INVALID']);
+    const { issues } = unnamed.body.errors?.[0]?.extensions?.details as { issues: Issue[] };
+    expect(issues.map((issue) => [issue.path, issue.code])).toEqual([['/blocks', 'AMBIGUOUS_ITEMS']]);
+    // Named by its ID, the zone item is kept with what it gained.
+    const [block] = (await adminView(pre.id)).data.blocks as Array<{ id: string }>;
+    dataOf(await updateNote({ card: { label: 'L2' }, blocks: [{ card: { id: block?.id, label: 'B2' } }] }));
     expect((await adminView(pre.id)).data).toMatchObject({
       subtitle: 'S',
       card: { caption: 'L2', extra: 'E' },

@@ -4,7 +4,9 @@ import type { ContentData } from '../db/contentData.js';
 import type { SchemaById } from '../schema/snapshot.js';
 import type { LocaleScope } from './compiler/compile.js';
 import { queryInvalid } from './compiler/types.js';
+import type { ComponentLookup } from './itemIds.js';
 import { isLocalizedField } from './model.js';
+import { valueWithoutItemIds } from './withoutItemIds.js';
 
 /**
  * Localization rules (ADR 0004). Every locale's head holds the complete document; shared (non-localized)
@@ -100,16 +102,37 @@ export type LocaleHeads = {
   published?: Readonly<ContentData>;
 };
 
+/** Whether a shared field's content differs, item IDs (plan item-ids) left out: they are not content. */
+const sharedContentChanged = (
+  model: ModelDefinition,
+  before: Readonly<ContentData>,
+  after: Readonly<ContentData>,
+  componentOf: ComponentLookup,
+) =>
+  sharedFields(model).some(
+    (field) =>
+      !isDeepStrictEqual(
+        valueWithoutItemIds(field, before[field.id], componentOf),
+        valueWithoutItemIds(field, after[field.id], componentOf),
+      ),
+  );
+
 /**
  * Published locales whose live shared values are older than their draft's (which always holds the latest
- * shared values). The admin offers to publish these too after a shared field changed (ADR 0004).
+ * shared values). The admin offers to publish these too after a shared field changed (ADR 0004). An item that
+ * only gained its persisted ID in the draft does not make a locale outdated (`componentOf`: the model's
+ * components, so nested instances are compared without their IDs too).
  */
-export const outdatedSharedLocales = (model: ModelDefinition, heads: readonly LocaleHeads[]): string[] =>
+export const outdatedSharedLocales = (
+  model: ModelDefinition,
+  heads: readonly LocaleHeads[],
+  componentOf: ComponentLookup = () => undefined,
+): string[] =>
   model.localized
     ? heads
         .filter(
           ({ draft, published }) =>
-            draft && published && changedSharedFieldIds(model, published, draft).size > 0,
+            draft && published && sharedContentChanged(model, published, draft, componentOf),
         )
         .map(({ locale }) => locale)
     : [];

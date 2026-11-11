@@ -321,10 +321,12 @@ describe('schema lens writes', () => {
   });
 
   it('keeps what components and zone items gained when the old client writes them whole', async () => {
+    // Alice cannot read the draft (it has unpublished changes), so she names the zone item by its ID.
+    const [block] = (await adminView(pre.id)).data.blocks as Array<{ id: string }>;
     expectStatus(
       await request('PUT', at(`/api/content/notes/${pre.id}`), alice.accessToken, {
         expectedVersion: await versionOf(pre.id),
-        data: { card: { label: 'L2' }, blocks: [{ __component: 'card', label: 'B2' }] },
+        data: { card: { label: 'L2' }, blocks: [{ __component: 'card', id: block?.id, label: 'B2' }] },
       }),
       200,
     );

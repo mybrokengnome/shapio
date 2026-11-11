@@ -174,9 +174,19 @@ const fieldLines = (fields: readonly FieldDefinition[], snapshot: SchemaSnapshot
 
 const objectType = (lines: readonly string[]) => (lines.length > 0 ? `{\n${lines.join('\n')}\n}` : '{}');
 
+/**
+ * Every component item's stable ID (plan item-ids): always present on output; optional on input, where sending
+ * back the `id` of each item read is what pairs it with the stored item it continues.
+ */
+const ITEM_ID_LINES: Readonly<Record<Mode, string>> = {
+  output: "  /** The item's ID, stable across saves. */\n  id: string;",
+  input: '  /** The `id` of the item read, to keep it; leave it out for a new item. */\n  id?: string;',
+};
+
 const componentDeclaration = (definition: ComponentDefinition, snapshot: SchemaSnapshot, mode: Mode) => {
   const name = `${toTypeName(definition.apiKey)}${mode === 'input' ? 'Input' : ''}`;
-  return `/** ${definition.label} (component \`${definition.apiKey}\`) */\nexport type ${name} = ${objectType(fieldLines(definition.fields, snapshot, mode))};\n`;
+  const lines = [ITEM_ID_LINES[mode], ...fieldLines(definition.fields, snapshot, mode)];
+  return `/** ${definition.label} (component \`${definition.apiKey}\`) */\nexport type ${name} = ${objectType(lines)};\n`;
 };
 
 const ancestorsOf = (snapshot: SchemaSnapshot, id: string): ModelDefinition[] =>

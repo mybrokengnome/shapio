@@ -1169,8 +1169,16 @@ export const MYSQL_TABLES: Readonly<Record<string, MysqlTableInfo>> = {
   },
   system_versions: {
     primaryKey: ['id'],
-    columns: ['id', 'schema_version', 'permissions_version', 'updated_at', 'release', 'schema_id'],
-    nullable: ['release'],
+    columns: [
+      'id',
+      'schema_version',
+      'permissions_version',
+      'updated_at',
+      'release',
+      'schema_id',
+      'item_id_key',
+    ],
+    nullable: ['release', 'item_id_key'],
     timestamps: ['updated_at'],
     uniqueKeys: [{ name: 'system_versions_pkey', columns: ['id'] }],
   },

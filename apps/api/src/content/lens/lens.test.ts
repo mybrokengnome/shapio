@@ -12,12 +12,26 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../helpers/appError.js';
 import { parseQueryTree } from '../compiler/querystring.js';
 import { COMPONENT_KEY } from '../validator/index.js';
-import { CARRY_MAX_ITEMS, keepUnreadableComponentFields } from '../write/keepUnreadable.js';
+import { keepUnreadableComponentFields } from '../write/keepUnreadable.js';
+import { CARRY_MAX_ITEMS } from '../write/listPairing.js';
 import { rewriteQueryTree, type QueryRewriteContext } from './query.js';
 import { readThroughLens } from './read.js';
 import { clientApiKey, issuesInClientNames, readableThroughLens, writeThroughLens } from './write.js';
 
 /** Deterministic UUIDs: id(1) = 00000000-0000-4000-8000-000000000001. */
+
+/** Stored data without item IDs (`__id`, at any depth): the tests compare content. */
+const noIds = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(noIds)
+    : typeof value === 'object' && value !== null
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== '__id')
+            .map(([key, item]) => [key, noIds(item)]),
+        )
+      : value;
+
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 
 type FieldSpec = {
@@ -26,6 +40,7 @@ type FieldSpec = {
   type?: string;
   settings?: Record<string, unknown>;
   localized?: boolean;
+  public?: boolean;
 };
 const toField = (spec: FieldSpec) => ({ label: spec.apiKey, type: 'string', ...spec });
 
@@ -345,7 +360,7 @@ describe('writeThroughLens', () => {
 
   it('translates renamed fields, inside components too', () => {
     const lens = lensOf(stored(), client);
-    expect(writeThroughLens(lens, { title: 'x', hero: { heading: 'h' } }, baseOf(stored()))).toEqual({
+    expect(writeThroughLens(lens, { title: 'x', hero: { heading: 'h' } }, baseOf(stored()))).toMatchObject({
       input: { headline: 'x', hero: { title: 'h' } },
       issues: [],
     });
@@ -362,7 +377,9 @@ describe('writeThroughLens', () => {
     expect(result.issues[0]?.message).toContain('changed type (integer → number)');
     expect(result.issues[1]?.message).toContain('became shared across locales');
     // Sent back as read: left out of the patch, so the stored value stays untouched.
-    expect(writeThroughLens(lens, { count: 3, summary: 's', title: 't' }, baseOf(stored(), entry))).toEqual({
+    expect(
+      writeThroughLens(lens, { count: 3, summary: 's', title: 't' }, baseOf(stored(), entry)),
+    ).toMatchObject({
       input: { headline: 't' },
       issues: [],
     });
@@ -389,7 +406,8 @@ describe('writeThroughLens', () => {
       read: { [id(6)]: { [HEADING]: 'old' } },
     };
     const base = baseOf(today, entry);
-    expect(writeThroughLens(lens, { hero: { heading: 'h' } }, base)).toEqual({
+    const written = writeThroughLens(lens, { hero: { heading: 'h' } }, base);
+    expect(written).toMatchObject({
       input: { hero: { heading: 'h' } },
       issues: [],
     });
@@ -397,15 +415,15 @@ describe('writeThroughLens', () => {
     const fields = (index.resolve(id(1)) as { fields: FieldDefinition[] }).fields;
     const componentOf = (componentId: string) => index.get(componentId) as ComponentDefinition | undefined;
     expect(
-      keepUnreadableComponentFields(
-        { [id(6)]: { [HEADING]: 'h' } },
-        entry.stored,
-        fields,
-        componentOf,
-        () => true,
-        {
-          lens,
-        },
+      noIds(
+        keepUnreadableComponentFields(
+          { [id(6)]: { [HEADING]: 'h' } },
+          entry.stored,
+          fields,
+          componentOf,
+          () => true,
+          { lens, pairings: written.pairings },
+        ),
       ),
     ).toEqual({ [id(6)]: { [HEADING]: 'h', [NEW]: 'kept', [id(9)]: 2.5 } });
     expect(writeThroughLens(lens, { hero: { heading: 'h', size: 3 } }, base).issues).toEqual([
@@ -424,18 +442,17 @@ describe('writeThroughLens', () => {
     ]);
     const lens = lensOf(today, zone('hero', [{ id: HEADING, apiKey: 'heading' }]));
     const stored = { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a', [NEW]: 'x' }] };
-    expect(
-      writeThroughLens(
-        lens,
-        {
-          blocks: [
-            { [COMPONENT_KEY]: 'hero', heading: 'new' },
-            { [COMPONENT_KEY]: 'hero', heading: 'a' },
-          ],
-        },
-        baseOf(today, { stored, read: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a' }] } }),
-      ),
-    ).toEqual({
+    const written = writeThroughLens(
+      lens,
+      {
+        blocks: [
+          { [COMPONENT_KEY]: 'hero', heading: 'new' },
+          { [COMPONENT_KEY]: 'hero', heading: 'a' },
+        ],
+      },
+      baseOf(today, { stored, read: { [F]: [{ [COMPONENT_KEY]: HERO, [HEADING]: 'a' }] } }),
+    );
+    expect(written).toMatchObject({
       input: {
         blocks: [
           { [COMPONENT_KEY]: 'banner', title: 'new' },
@@ -449,18 +466,20 @@ describe('writeThroughLens', () => {
     const componentOf = (componentId: string) => index.get(componentId) as ComponentDefinition | undefined;
     // The untouched item moved behind an inserted one keeps what the client does not know; the new one has none.
     expect(
-      keepUnreadableComponentFields(
-        {
-          [F]: [
-            { [COMPONENT_KEY]: HERO, [HEADING]: 'new' },
-            { [COMPONENT_KEY]: HERO, [HEADING]: 'a' },
-          ],
-        },
-        stored,
-        fields,
-        componentOf,
-        () => true,
-        { lens },
+      noIds(
+        keepUnreadableComponentFields(
+          {
+            [F]: [
+              { [COMPONENT_KEY]: HERO, [HEADING]: 'new' },
+              { [COMPONENT_KEY]: HERO, [HEADING]: 'a' },
+            ],
+          },
+          stored,
+          fields,
+          componentOf,
+          () => true,
+          { lens, pairings: written.pairings },
+        ),
       ),
     ).toEqual({
       [F]: [
@@ -564,7 +583,7 @@ describe('lens review findings', () => {
 
   it("never reads a zone item of a component today's zone no longer allows", () => {
     const hero = component(HERO, 'hero', [{ id: id(8), apiKey: 'title' }]);
-    const quote = component(QUOTE, 'quote', [{ id: id(9), apiKey: 'text', public: false } as FieldSpec]);
+    const quote = component(QUOTE, 'quote', [{ id: id(9), apiKey: 'text', public: false }]);
     const zone = (components: string[]) =>
       model([{ id: F, apiKey: 'blocks', type: 'dynamiczone', settings: { components } }]);
     const lens = lensOf([zone([HERO]), hero, quote], [zone([HERO, QUOTE]), hero, quote]);
@@ -614,7 +633,7 @@ describe('lens review findings', () => {
         { cover: { id: id(50), url: 'https://cdn.example/a.png' }, related: { id: id(60), title: 'x' } },
         base,
       ),
-    ).toEqual({ input: {}, issues: [] });
+    ).toMatchObject({ input: {}, issues: [] });
     // A value matching neither head is refused.
     expect(writeThroughLens(lens, { cover: { id: id(51) } }, base).issues).toHaveLength(1);
   });
@@ -665,19 +684,21 @@ describe('lens writes of lists (third review)', () => {
         base,
       ).issues,
     ).toEqual([]);
-    // A value that is not what the item it continues holds is refused.
-    expect(
-      writeThroughLens(
-        lens,
-        {
-          items: [
-            { label: 'A', size: 2 },
-            { label: 'B', size: 1 },
-          ],
-        },
-        base,
-      ).issues.map((issue) => issue.path),
-    ).toEqual(['/items/0/size', '/items/1/size']);
+    // Edited in place, each sending the value of the other: without IDs the items cannot be matched.
+    const swapped = writeThroughLens(
+      lens,
+      {
+        items: [
+          { label: 'A', size: 2 },
+          { label: 'B', size: 1 },
+        ],
+      },
+      base,
+    );
+    expect(swapped.issues).toEqual([]);
+    expect(swapped.itemIssues.map((issue) => [issue.path, issue.code])).toEqual([
+      ['/items', 'AMBIGUOUS_ITEMS'],
+    ]);
   });
 
   it('refuses a list longer than the write path considers before matching', () => {
@@ -705,7 +726,390 @@ describe('lens writes of lists (third review)', () => {
         writesEverything: false,
       },
     );
-    // Passed on untranslated, for today's validator and write mask to answer as without a version.
-    expect(result).toEqual({ input: { title: 't', count: 1, gone: 'x' }, issues: [] });
+    // A field that exists today is passed on untranslated, for today's validator and write mask to answer as
+    // without a version; one removed since is a field this version does not have (never today's `gone`).
+    expect(result).toMatchObject({
+      input: { title: 't', count: 1 },
+      issues: [{ path: '/gone', code: 'UNKNOWN_FIELD', message: 'is not a field of this schema version' }],
+    });
+  });
+});
+
+describe('one pairing per written list (fourth review)', () => {
+  // `card {label, size}`: `size` was an integer at the client's version and is text today, so the client reads
+  // it (as a number) but cannot write it.
+  const CARD = id(5);
+  const CARDS = id(6);
+  const LABEL = id(7);
+  const SIZE = id(8);
+  const BOX = id(9);
+  const BOXES = id(10);
+  const NAME = id(11);
+  const ZONE = id(12);
+  const definitions = (sizeType: string) => [
+    model([
+      { id: CARDS, apiKey: 'cards', type: 'component', settings: { component: CARD, repeatable: true } },
+      { id: BOXES, apiKey: 'boxes', type: 'component', settings: { component: BOX, repeatable: true } },
+      { id: ZONE, apiKey: 'blocks', type: 'dynamiczone', settings: { components: [CARD] } },
+    ]),
+    component(CARD, 'card', [
+      { id: LABEL, apiKey: 'label' },
+      { id: SIZE, apiKey: 'size', type: sizeType },
+    ]),
+    component(BOX, 'box', [
+      { id: NAME, apiKey: 'name' },
+      { id: id(13), apiKey: 'cards', type: 'component', settings: { component: CARD, repeatable: true } },
+    ]),
+  ];
+  const today = definitions('string');
+  const lens = lensOf(today, definitions('integer'));
+  const index = createDefinitionIndex(today);
+  const fields = (index.resolve(id(1)) as { fields: FieldDefinition[] }).fields;
+  const componentOf = (componentId: string) => index.get(componentId) as ComponentDefinition | undefined;
+  const twoAs = [
+    { [LABEL]: 'A', [SIZE]: '1' },
+    { [LABEL]: 'A', [SIZE]: '2' },
+  ];
+
+  /** The lens's write of `body` over `stored`, then the carry-over along its pairing: what would be stored. */
+  const written = (body: Record<string, unknown>, stored: Record<string, unknown>, seesStored = true) => {
+    const result = writeThroughLens(lens, body, {
+      stored,
+      reads: seesStored ? [readThroughLens(lens, stored)] : [],
+      seesStored,
+      definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
+    });
+    const issues = [...result.issues, ...result.itemIssues];
+    if (issues.length > 0) {
+      return issues.map((issue) => [issue.path, issue.code, issue.message]);
+    }
+    // Today's API IDs → field IDs, as `fromInput` maps them (the shapes here are flat enough to do by hand).
+    const patch = JSON.parse(
+      JSON.stringify(result.input)
+        .replaceAll('"cards"', `"${CARDS}"`)
+        .replaceAll('"boxes"', `"${BOXES}"`)
+        .replaceAll('"blocks"', `"${ZONE}"`)
+        .replaceAll('"label"', `"${LABEL}"`)
+        .replaceAll('"size"', `"${SIZE}"`)
+        .replaceAll('"name"', `"${NAME}"`)
+        .replaceAll('"card"', `"${CARD}"`)
+        .replaceAll('"id"', '"__id"'),
+    ) as Record<string, unknown>;
+    // Nested `cards` inside a box is field id(13), not the top-level CARDS.
+    const boxes = patch[BOXES];
+    if (Array.isArray(boxes)) {
+      for (const box of boxes as Array<Record<string, unknown>>) {
+        if (CARDS in box) {
+          box[id(13)] = box[CARDS];
+          delete box[CARDS];
+        }
+      }
+    }
+    return noIds(
+      keepUnreadableComponentFields(patch, stored, fields, componentOf, () => true, {
+        input: result.input,
+        lens,
+        pairings: result.pairings,
+      }),
+    );
+  };
+
+  it('keeps the value of the item the client kept, not of the first equal-looking one', () => {
+    // The client read [{A,1},{A,2}], deleted the first, and sent the second back.
+    expect(written({ cards: [{ label: 'A', size: 2 }] }, { [CARDS]: twoAs })).toEqual({
+      [CARDS]: [{ [LABEL]: 'A', [SIZE]: '2' }],
+    });
+  });
+
+  it('applies a swap of two items that differ only in a field the client cannot write', () => {
+    expect(
+      written(
+        {
+          cards: [
+            { label: 'A', size: 2 },
+            { label: 'A', size: 1 },
+          ],
+        },
+        { [CARDS]: twoAs },
+      ),
+    ).toEqual({
+      [CARDS]: [
+        { [LABEL]: 'A', [SIZE]: '2' },
+        { [LABEL]: 'A', [SIZE]: '1' },
+      ],
+    });
+  });
+
+  it('pairs a nested list under the item its parent continues', () => {
+    const stored = {
+      [BOXES]: [
+        { [NAME]: 'x', [id(13)]: [{ [LABEL]: 'B', [SIZE]: '9' }] },
+        { [NAME]: 'y', [id(13)]: twoAs },
+      ],
+    };
+    // The first box untouched; inside the second (edited in place), the first card deleted.
+    expect(
+      written(
+        {
+          boxes: [
+            { name: 'x', cards: [{ label: 'B', size: 9 }] },
+            { name: 'y', cards: [{ label: 'A', size: 2 }] },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual({
+      [BOXES]: [
+        { [NAME]: 'x', [id(13)]: [{ [LABEL]: 'B', [SIZE]: '9' }] },
+        { [NAME]: 'y', [id(13)]: [{ [LABEL]: 'A', [SIZE]: '2' }] },
+      ],
+    });
+  });
+
+  it('pairs dynamic-zone items the same way', () => {
+    const stored = { [ZONE]: twoAs.map((item) => ({ [COMPONENT_KEY]: CARD, ...item })) };
+    expect(written({ blocks: [{ [COMPONENT_KEY]: 'card', label: 'A', size: 2 }] }, stored)).toEqual({
+      [ZONE]: [{ [COMPONENT_KEY]: CARD, [LABEL]: 'A', [SIZE]: '2' }],
+    });
+  });
+
+  it('an edit that could continue either of two items is refused; with IDs it is certain', () => {
+    // Deleting one item and editing the other: which one was edited cannot be told from the body, and the items
+    // hold a value the client cannot write, so the write is refused whole.
+    // The ambiguity answers for the list: a field inside an item judged against no stored item says nothing true.
+    expect(written({ cards: [{ label: 'A', size: 3 }] }, { [CARDS]: twoAs })).toEqual([
+      ['/cards', 'AMBIGUOUS_ITEMS', expect.stringContaining('send back the id of each item')],
+    ]);
+    // With the IDs it read, the item is known: a value it does not hold is refused, the one it holds kept.
+    const withIds = { [CARDS]: twoAs.map((item, index) => ({ ...item, __id: `i${index}` })) };
+    expect(written({ cards: [{ id: 'i1', label: 'A', size: 3 }] }, withIds)).toEqual([
+      ['/cards/0/size', 'NOT_ALLOWED', expect.stringContaining('changed type')],
+    ]);
+    expect(written({ cards: [{ id: 'i1', label: 'B', size: 2 }] }, withIds)).toEqual({
+      [CARDS]: [{ [LABEL]: 'B', [SIZE]: '2' }],
+    });
+  });
+
+  it('X: an ambiguous list reports its ambiguity, not a refusal of a field inside its items', () => {
+    const stored = {
+      [CARDS]: [{ [LABEL]: 'p', [SIZE]: '0' }, { [LABEL]: 'p' }],
+    };
+    expect(written({ cards: [{ label: 'p', size: 0 }, { label: 'n' }, { label: 'n' }] }, stored)).toEqual([
+      ['/cards', 'AMBIGUOUS_ITEMS', expect.stringContaining('send back the id of each item')],
+    ]);
+  });
+
+  it('X2: a value sent back on an item that matches no stored item is the list being ambiguous', () => {
+    const stored = {
+      [CARDS]: [
+        { [LABEL]: 'p', __id: 'a' },
+        { [LABEL]: 'q', [SIZE]: '1', __id: 'b' },
+        { [LABEL]: 'q', __id: 'c' },
+      ],
+    };
+    // `p` was sent at another place, so the second item is new: the size it sends back cannot be matched.
+    expect(written({ cards: [{ label: 'e' }, { label: 'p', size: 1 }, { label: 'p' }] }, stored)).toEqual([
+      ['/cards', 'AMBIGUOUS_ITEMS', expect.stringContaining('send back the id of each item')],
+    ]);
+    // With IDs: the item it names keeps its value; a new one sending a read-only value is refused for it.
+    expect(
+      written(
+        {
+          cards: [
+            { id: null, label: 'e' },
+            { id: 'b', label: 'p', size: 1 },
+            { id: 'a', label: 'p' },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual({
+      [CARDS]: [{ [LABEL]: 'e' }, { [LABEL]: 'p', [SIZE]: '1' }, { [LABEL]: 'p' }],
+    });
+    expect(written({ cards: [{ id: null, label: 'e', size: 1 }] }, stored)).toEqual([
+      ['/cards/0/size', 'NOT_ALLOWED', expect.stringContaining('changed type')],
+    ]);
+  });
+
+  it('AB: two items swapped and edited, each sending back what it read, is ambiguous without IDs', () => {
+    const stored = {
+      [CARDS]: [
+        { [LABEL]: 'p', [SIZE]: '100', __id: 'a' },
+        { [LABEL]: 'q', [SIZE]: '101', __id: 'b' },
+      ],
+    };
+    // Read as an edit in place, each item would send back the other's value: the server cannot match them.
+    expect(
+      written(
+        {
+          cards: [
+            { label: 'q2', size: 101 },
+            { label: 'p2', size: 100 },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual([['/cards', 'AMBIGUOUS_ITEMS', expect.stringContaining('send back the id of each item')]]);
+    // With IDs it is certain, and each value stays with its item.
+    expect(
+      written(
+        {
+          cards: [
+            { id: 'b', label: 'q2', size: 101 },
+            { id: 'a', label: 'p2', size: 100 },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual({
+      [CARDS]: [
+        { [LABEL]: 'q2', [SIZE]: '101' },
+        { [LABEL]: 'p2', [SIZE]: '100' },
+      ],
+    });
+    // A known ID with a changed value it cannot write stays that refusal.
+    expect(
+      written(
+        {
+          cards: [
+            { id: 'b', label: 'q2', size: 7 },
+            { id: 'a', label: 'p2', size: 100 },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual([['/cards/0/size', 'NOT_ALLOWED', expect.stringContaining('changed type')]]);
+  });
+
+  it('refuses an unknown or repeated ID, and takes a null ID as a new item', () => {
+    const withIds = { [CARDS]: twoAs.map((item, index) => ({ ...item, __id: `i${index}` })) };
+    expect(written({ cards: [{ id: 'nope', label: 'A' }] }, withIds)).toEqual([
+      ['/cards/0/id', 'UNKNOWN_ITEM_ID', expect.stringContaining('is not the ID of an item this list holds')],
+    ]);
+    expect(
+      written(
+        {
+          cards: [
+            { id: 'i0', label: 'A' },
+            { id: 'i0', label: 'A' },
+          ],
+        },
+        withIds,
+      ),
+    ).toEqual([
+      ['/cards/0/id', 'DUPLICATE_ITEM_ID', expect.stringContaining('more than one item')],
+      ['/cards/1/id', 'DUPLICATE_ITEM_ID', expect.stringContaining('more than one item')],
+    ]);
+    // `id: null` names a new item: nothing is carried into it, so its value cannot have been read.
+    expect(
+      written(
+        {
+          cards: [
+            { id: null, label: 'A', size: 1 },
+            { id: 'i1', label: 'A', size: 2 },
+          ],
+        },
+        withIds,
+      ),
+    ).toEqual([['/cards/0/size', 'NOT_ALLOWED', expect.stringContaining('changed type')]]);
+  });
+
+  it('for a caller that may not have read the draft: without IDs refused, with IDs certain', () => {
+    const stored = {
+      [CARDS]: [
+        { [LABEL]: 'A', [SIZE]: '1', __id: 'a' },
+        { [LABEL]: 'B', [SIZE]: '2', __id: 'b' },
+      ],
+    };
+    // Without IDs it cannot say which items it replaces, and they hold a value it cannot write: refused.
+    expect(written({ cards: [{ label: 'B' }, { label: 'A' }] }, stored, false)).toEqual([
+      ['/cards', 'AMBIGUOUS_ITEMS', expect.stringContaining('replaces items this caller cannot read')],
+    ]);
+    // With the IDs it read, reordered, the field it cannot write left out: each item keeps its own value.
+    expect(
+      written(
+        {
+          cards: [
+            { id: 'b', label: 'B' },
+            { id: 'a', label: 'A' },
+          ],
+        },
+        stored,
+        false,
+      ),
+    ).toEqual({
+      [CARDS]: [
+        { [LABEL]: 'B', [SIZE]: '2' },
+        { [LABEL]: 'A', [SIZE]: '1' },
+      ],
+    });
+    // Sent with the value the draft holds, or any other: refused alike (no guess of the draft is tested).
+    for (const size of [1, 7]) {
+      expect(
+        written(
+          {
+            cards: [
+              { id: 'a', label: 'A', size },
+              { id: 'b', label: 'B' },
+            ],
+          },
+          stored,
+          false,
+        ),
+      ).toEqual([['/cards/0/size', 'NOT_ALLOWED', expect.stringContaining('unpublished changes')]]);
+    }
+  });
+});
+
+describe('fields removed since the client version (fourth review)', () => {
+  const GONE = id(3);
+  const REUSED = id(4);
+  const then = (isPublic: boolean) => [
+    model([
+      { id: F, apiKey: 'title' },
+      { id: GONE, apiKey: 'gone', public: isPublic },
+    ]),
+  ];
+  const now = [
+    model([
+      { id: F, apiKey: 'title' },
+      { id: REUSED, apiKey: 'gone' },
+    ]),
+  ];
+  const index = createDefinitionIndex(now);
+  const base = (grant: { writesEverything: boolean }) => ({
+    stored: null,
+    reads: [],
+    definitionOf: (definitionId: string) => index.resolve(definitionId) ?? index.get(definitionId),
+    writable: () => true,
+    ...grant,
+  });
+
+  it('never lands in a field added since under the same API ID', () => {
+    const result = writeThroughLens(
+      lensOf(now, then(true)),
+      { gone: 'x' },
+      base({ writesEverything: false }),
+    );
+    expect(result.input).toEqual({});
+    expect(result.issues).toEqual([
+      { path: '/gone', code: 'UNKNOWN_FIELD', message: 'is not a field of this schema version' },
+    ]);
+  });
+
+  it('is named as removed only for a grant naming no fields, and only if it was public at the version', () => {
+    const named = writeThroughLens(lensOf(now, then(true)), { gone: 'x' }, base({ writesEverything: true }));
+    expect(named.input).toEqual({});
+    expect(named.issues.map((issue) => [issue.path, issue.message.startsWith('was removed')])).toEqual([
+      ['/gone', true],
+    ]);
+    const privateThen = writeThroughLens(
+      lensOf(now, then(false)),
+      { gone: 'x' },
+      base({ writesEverything: true }),
+    );
+    expect(privateThen.issues).toEqual([
+      { path: '/gone', code: 'UNKNOWN_FIELD', message: 'is not a field of this schema version' },
+    ]);
   });
 });

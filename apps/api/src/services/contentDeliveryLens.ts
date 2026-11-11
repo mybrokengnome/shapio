@@ -137,8 +137,10 @@ const isRefusal = (error: unknown) =>
 /**
  * Authorizes a request that names a schema version exactly as the same request without one would be: a caller
  * refused for the client's model gets the answer today's resolution of the same route key gives it (404 for an
- * unknown key, its 401/403 otherwise), and a model gone since is a 404 only once the caller is authorized for
- * what the key names today. `authorize` is the service's own check by today's API ID (it throws when refused).
+ * unknown key, its 401/403 otherwise). A caller that today's resolution lets through gets a plain 404: the key
+ * names, in the version it sent, a content type it may not act on (a route key reused since, or a model renamed
+ * since), and a 404 says only that, never that the key was reused. `authorize` is the service's own check by
+ * today's API ID (it throws when refused).
  */
 export const authorizeClientRoute = async <T>(
   context: ContentServiceContext,
@@ -161,20 +163,9 @@ export const authorizeClientRoute = async <T>(
       throw error;
     }
     await asWithoutVersion();
-    // Authorized for what the key names today, refused for what it named then: the refusal names only the
-    // route key the caller sent, never an API ID it did not send.
-    throw renamedRefusal(error as AppError, route.apiKey, route.clientRouteKey);
+    throw modelNotFound(route.clientRouteKey);
   }
 };
-
-const renamedRefusal = (error: AppError, apiKey: string, routeKey: string): AppError =>
-  new AppError(
-    error.statusCode,
-    error.code,
-    error.message.split(`"${apiKey}"`).join(`"${routeKey}"`),
-    error.details,
-    { cause: error },
-  );
 
 /**
  * The gate every call naming a schema version passes before anything lens-specific happens (no lens loaded, no

@@ -18,7 +18,7 @@ const captureIo = (env: Record<string, string> = {}) => {
 const SCHEMA_ID = '9f1c2a7e-0d3b-4c55-9a51-6b3f0e2d7c11';
 
 describe('schemaVersionTokenOf', () => {
-  it('reads the SCHEMA_VERSION token from the source, and nothing from an older server’s', () => {
+  it('reads the SCHEMA_VERSION from the source, and nothing from an older server’s', () => {
     expect(schemaVersionTokenOf(`// x\nexport const SCHEMA_VERSION = '${SCHEMA_ID}:42' as const;\n`)).toBe(
       `${SCHEMA_ID}:42`,
     );
@@ -75,7 +75,7 @@ describe('shapio types generate', () => {
     expect(seen.at(-1)).toBe('Bearer shp_good');
   });
 
-  it('writes the SCHEMA_VERSION the server sends and prints the token', async () => {
+  it('writes the SCHEMA_VERSION the server sends and prints it', async () => {
     const out = join(dir, 'lens', 'types.ts');
     const { io, out: stdout } = captureIo({ SHAPIO_TOKEN: 'shp_lens' });
     expect(await typesCommand.run(['generate', '--url', baseUrl, '--out', out], io)).toBe(0);
@@ -112,7 +112,7 @@ describe('shapio types generate', () => {
         io,
       ),
     ).toBe(1);
-    expect(err.join('')).toContain('--schema-version needs a token');
+    expect(err.join('')).toContain('--schema-version needs a schema version');
   });
 
   it('needs a token and reports API errors', async () => {

@@ -39,8 +39,16 @@ export const countByStatus = (trx: Executor = db) =>
 export const distinctTypes = async (trx: Executor = db): Promise<string[]> =>
   (await trx.selectFrom('jobs').select('type').distinct().orderBy('type').execute()).map((row) => row.type);
 
-/** Puts a dead job back in the queue as if new. Only dead jobs; returns undefined otherwise. */
-export const requeueDead = (id: string, now: Date, trx: Executor = db) =>
+/**
+ * Puts a dead job back in the queue as if new. Only dead jobs; returns undefined otherwise. `retriedBy` heads
+ * the kept error (an admin's retry by default).
+ */
+export const requeueDead = (
+  id: string,
+  now: Date,
+  trx: Executor = db,
+  retriedBy = 'Retried by an admin after: ',
+) =>
   trx
     .updateTable('jobs')
     .set((eb) => ({
@@ -55,7 +63,7 @@ export const requeueDead = (id: string, now: Date, trx: Executor = db) =>
         .case()
         .when('last_error', 'is', null)
         .then(null)
-        .else(concat('Retried by an admin after: ', eb.ref('last_error')))
+        .else(concat(retriedBy, eb.ref('last_error')))
         .end(),
     }))
     .where('id', '=', id)

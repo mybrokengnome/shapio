@@ -7,6 +7,7 @@ import * as assistRunsRepository from '../repositories/assistRuns.js';
 import * as retentionRepository from '../repositories/retention.js';
 import * as usageRepository from '../repositories/usage.js';
 import { usageDayOf } from '../usage/keys.js';
+import { requeueDeadLensHistoryBackfill } from './handlers/lensHistoryBackfill.js';
 import { enqueueJob } from './queue.js';
 import type { JobHandler } from './types.js';
 
@@ -128,13 +129,15 @@ export const createRetentionJobHandlers = (
           ? await removeDeadImportBundles(db, storage, before, { signal: job.signal, log: job.log })
           : 0,
       };
+      // A schema history rebuild that died gets a new round of attempts, at most once a day (plan schema-lenses).
+      const lensHistoryRequeued = await requeueDeadLensHistoryBackfill(db, at);
       const next = new Date(at.getTime() + DAY_MS);
       await enqueueJob(
         { type: RETENTION_JOB, runAt: next, priority: JOB_PRIORITY.background, idempotencyKey: dayKey(next) },
         db,
       );
-      job.log.info({ before, removed }, 'retention pruned finished bookkeeping');
-      return { before: before.toISOString(), removed };
+      job.log.info({ before, removed, lensHistoryRequeued }, 'retention pruned finished bookkeeping');
+      return { before: before.toISOString(), removed, lensHistoryRequeued };
     },
   ],
 ];

@@ -253,6 +253,19 @@ const objectSchema = (
   };
 };
 
+/**
+ * Every component item's stable ID (plan item-ids): required on output; optional on input, where sending back
+ * the `id` of each item read is what pairs it with the stored item it continues.
+ */
+const ITEM_ID_PROPERTY: Readonly<Record<Mode, JsonSchema>> = {
+  output: { ...uuid, description: "The item's ID, stable across saves" },
+  input: {
+    ...uuid,
+    description:
+      'The `id` of the item read, to keep it (its hidden fields follow it); leave it out for a new item',
+  },
+};
+
 const SYSTEM_PROPERTIES: Record<string, JsonSchema> = {
   id: uuid,
   locale: { type: 'string' },
@@ -800,9 +813,14 @@ export const generateOpenApi = (
               description: "The API IDs of the entry's type and the types it extends, root first",
             },
           }
-        : {},
+        : { id: ITEM_ID_PROPERTY.output },
     );
-    schemas[`${name}Input`] = objectSchema(definition, snapshot, 'input');
+    schemas[`${name}Input`] = objectSchema(
+      definition,
+      snapshot,
+      'input',
+      isComponentDefinition(definition) ? { id: ITEM_ID_PROPERTY.input } : {},
+    );
     if (isModelDefinition(definition) && snapshot.childrenOf(definition.id).length > 0) {
       schemas[`${name}Any`] = unionSchema(snapshot, snapshot.family(definition.id));
     }

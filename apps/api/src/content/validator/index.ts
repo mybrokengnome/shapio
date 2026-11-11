@@ -10,6 +10,7 @@ import {
   type SchemaDefinition,
   validateRichText,
 } from '@shapio/schema';
+import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { ContentData } from '../../db/contentData.js';
 import type { SchemaById } from '../../schema/snapshot.js';
 import { findFieldByApiKey, type ContentModel } from '../model.js';
@@ -33,6 +34,9 @@ import { checkLength, checkScalar, isReferenceId } from './scalars.js';
  * keeps values until an explicit cleanup); deprecated fields' values are kept but not validated.
  */
 export const COMPONENT_KEY = '__component';
+
+/** The longest item ID a write may send (they are UUIDs). */
+const MAX_ITEM_ID_LENGTH = 64;
 /**
  * The API ID of an entry's own model on every delivered entry (plan polymorphic-types). A system attribute:
  * never a field (API IDs may not start with `__`), so a write naming it fails as an unknown field.
@@ -355,6 +359,19 @@ const mapInput = (
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     if (key === COMPONENT_KEY && isComponentDefinition(definition)) {
+      continue;
+    }
+    if (key === ITEM_ID_FIELD && isComponentDefinition(definition)) {
+      // The item's ID (plan item-ids): which stored item it continues. Null: a new item, named as one (the
+      // client sends IDs); left out: no ID at all.
+      if (
+        value === null ||
+        (typeof value === 'string' && value !== '' && value.length <= MAX_ITEM_ID_LENGTH)
+      ) {
+        output[ITEM_ID_KEY] = value;
+      } else if (value !== undefined) {
+        issues.push({ path: pointer(path, key), code: 'INVALID_TYPE', message: 'must be an item ID' });
+      }
       continue;
     }
     const field = findFieldByApiKey(definition.fields, key);

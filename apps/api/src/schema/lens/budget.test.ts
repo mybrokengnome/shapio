@@ -34,20 +34,25 @@ describe('takeLensBuildBudget', () => {
     expect(takeLensBuildBudget('token:a', now - 3_600_000 + 60_000 / LENS_BUILDS_PER_MINUTE)).toBe(true);
   });
 
-  it('gives each app user a small budget of its own, so other app users cannot drain it', () => {
+  it('gives each app user a small budget, and caps all accounts from one network together', () => {
     const now = 1_000_000;
-    const appUser = (id: string) =>
-      lensBudgetKeyOf({ kind: 'appUser', appUserId: id } as Principal, 's1') as string;
-    for (let user = 0; user < 20; user += 1) {
-      while (takeLensBuildBudget(appUser(`drainer-${user}`), now)) {
-        // drain
-      }
-    }
+    const appUser = (id: string, address: string) =>
+      lensBudgetKeyOf({ kind: 'appUser', appUserId: id } as Principal, 's1', address) as string;
     let builds = 0;
-    while (takeLensBuildBudget(appUser('real'), now)) {
+    while (takeLensBuildBudget(appUser('one', '198.51.100.1'), now)) {
       builds += 1;
     }
     expect(builds).toBe(LENS_APP_USER_BUILDS_PER_MINUTE);
+    // Sixty accounts signed up from one network share its ceiling.
+    let fromOneNetwork = 0;
+    for (let user = 0; user < 60; user += 1) {
+      while (takeLensBuildBudget(appUser(`sock-${user}`, '203.0.113.9'), now)) {
+        fromOneNetwork += 1;
+      }
+    }
+    expect(fromOneNetwork).toBe(LENS_BUILDS_PER_MINUTE);
+    // An account on another network is unaffected.
+    expect(takeLensBuildBudget(appUser('real', '2001:db8:1:2::5'), now)).toBe(true);
   });
 });
 
@@ -60,7 +65,11 @@ describe('clientNetworkOf', () => {
     expect(clientNetworkOf('2001:0db8:00aa:00bb::1%eth0')).toBe('2001:db8:aa:bb::/64');
     expect(clientNetworkOf('2001:db8:aa:bc::1')).not.toBe(clientNetworkOf('2001:db8:aa:bb::1'));
     expect(clientNetworkOf('::1')).toBe('0:0:0:0::/64');
-    expect(clientNetworkOf('not an address')).toBe('not an address');
+    // Not an IP address (a forged forwarded header): one shared network, whatever the string.
+    expect(clientNetworkOf('not an address')).toBe('unknown');
+    expect(clientNetworkOf('1.2.3.4, 5.6.7.8')).toBe('unknown');
+    expect(clientNetworkOf(`::1${'x'.repeat(10_000)}`)).toBe('unknown');
+    expect(clientNetworkOf('999.1.1.1')).toBe('unknown');
   });
 });
 
@@ -69,7 +78,9 @@ describe('lensBudgetKeyOf', () => {
     const anonymous: Principal = { kind: 'anonymous', siteId: null };
     expect(lensBudgetKeyOf({ kind: 'token', tokenId: 't1' } as Principal, 's1')).toBe('token:t1');
     expect(lensBudgetKeyOf({ kind: 'admin', adminUserId: 'a1' } as Principal, 's1')).toBe('admin:a1');
-    expect(lensBudgetKeyOf({ kind: 'appUser', appUserId: 'u1' } as Principal, 's1')).toBe('app_user:u1');
+    expect(lensBudgetKeyOf({ kind: 'appUser', appUserId: 'u1' } as Principal, 's1', '10.0.0.1')).toBe(
+      'app_user:u1|network:s1:10.0.0.1',
+    );
     expect(lensBudgetKeyOf(anonymous, 's1', '10.0.0.1')).toBe('anonymous:s1:10.0.0.1');
     expect(lensBudgetKeyOf(anonymous, 's1', '10.0.0.2')).toBe('anonymous:s1:10.0.0.2');
     expect(lensBudgetKeyOf(anonymous, null, '2001:db8:1:2::1')).toBe('anonymous:shared:2001:db8:1:2::/64');

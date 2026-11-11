@@ -1,4 +1,4 @@
-import { isIPv4, isIPv6 } from 'node:net';
+import { isIP } from 'node:net';
 import type { Principal } from '../../permissions/types.js';
 import { createLru } from './lru.js';
 
@@ -6,12 +6,16 @@ import { createLru } from './lru.js';
  * How many lens builds a caller may cause (plan schema-lenses, review hardening). Building a lens view on a
  * cache miss reads a workspace's definitions at a version and builds its schema view; a client cycling
  * through versions could make every request do that. A caller draws cache-miss builds (hits are free) from
- * its own small token bucket. App users get a smaller one (open sign-up mints app users cheaply); the
- * segmented view cache keeps the versions real clients read hot, so they rarely need a build at all.
+ * its own small token bucket. App users get a smaller one (open sign-up mints app users cheaply) and also
+ * draw from their client network's bucket, so many accounts signed up from one network share one ceiling
+ * while accounts on other networks are unaffected; the segmented view cache keeps the versions real
+ * clients read hot, so they rarely need a build at all.
  * Anonymous callers are told apart by network: an IPv4 address, or an IPv6 /64 (one subscriber's usual
  * allocation), so one cannot spend another's budget nor mint budget by rotating addresses within its
  * prefix. Behind a reverse proxy without `TRUST_PROXY`, the client address is the proxy's and every
- * anonymous caller shares one bucket: set `TRUST_PROXY` there. In memory per process: the cost it bounds is
+ * anonymous caller shares one bucket: set `TRUST_PROXY` there, to the number of proxy hops (with `true`,
+ * the left-most `X-Forwarded-For` entry, which the client writes, is taken as its address). A value that is
+ * not an IP address counts as one shared `unknown` network, so forged strings never mint buckets. In memory per process: the cost it bounds is
  * this process's. Callers charge only after the request is authorized (a rejected request builds nothing).
  */
 export const LENS_BUILDS_PER_MINUTE = 30;
@@ -22,12 +26,17 @@ export const LENS_BUDGET_TRACKED_CALLERS = 10_000;
 
 /**
  * The buckets one request draws from, joined by `|` (every one must have a build left): `token:<id>`,
- * `admin:<id>`, `app_user:<id>`, `anonymous:<workspace>:<network>`, `preview:<id>`.
+ * `admin:<id>`, `app_user:<id>|network:<workspace>:<network>`, `anonymous:<workspace>:<network>`,
+ * `preview:<id>`.
  */
 export type LensBudgetKey = string;
 
 const BUCKET_SEPARATOR = '|';
 const APP_USER_PREFIX = 'app_user:';
+/** What a value that is not an IP address counts as. */
+const UNKNOWN_NETWORK = 'unknown';
+/** Longer than any IP address with a zone: not one. */
+const MAX_ADDRESS_LENGTH = 64;
 
 type Bucket = { tokens: number; at: number };
 
@@ -52,16 +61,21 @@ const hextetsOf = (address: string): string[] => {
 };
 
 /**
- * The network an anonymous caller is budgeted as: an IPv4 address (an IPv4-mapped IPv6 one included) or an
- * IPv6 /64; anything unparseable as itself.
+ * The network a caller is budgeted as: an IPv4 address (an IPv4-mapped IPv6 one included) or an IPv6 /64.
+ * Anything that is not a syntactically valid IP address (a forged `X-Forwarded-For` value) is `unknown`, one
+ * shared network, so arbitrary strings never become bucket keys.
  */
 export const clientNetworkOf = (address: string): string => {
-  const bare = address.split('%')[0] ?? address;
-  if (isIPv4(bare)) {
+  if (address.length > MAX_ADDRESS_LENGTH) {
+    return UNKNOWN_NETWORK;
+  }
+  const bare = address.split('%')[0] ?? '';
+  const family = isIP(bare);
+  if (family === 4) {
     return bare;
   }
-  if (!isIPv6(bare)) {
-    return bare;
+  if (family !== 6) {
+    return UNKNOWN_NETWORK;
   }
   const hextets = hextetsOf(bare.toLowerCase());
   const mapped = hextets.slice(0, 5).every((hextet) => hextet === '0') && hextets[5] === 'ffff';
@@ -71,6 +85,9 @@ export const clientNetworkOf = (address: string): string => {
   }
   return `${hextets.slice(0, 4).join(':')}::/64`;
 };
+
+const networkOf = (clientAddress: string | undefined) =>
+  clientAddress === undefined ? UNKNOWN_NETWORK : clientNetworkOf(clientAddress);
 
 /** The builds a bucket holds at `now`; a clock that went backwards refills nothing. */
 const tokensAt = (bucket: string, now: number): number => {
@@ -96,8 +113,8 @@ export const takeLensBuildBudget = (budget: LensBudgetKey, now: number = Date.no
 };
 
 /**
- * The budget a caller draws from on a workspace: per token, per admin, per app user, and per workspace and
- * client network (`clientNetworkOf`) for anonymous callers. null for system work, which is never limited.
+ * The budget a caller draws from on a workspace: per token, per admin, per app user together with its client
+ * network's ceiling, and per workspace and client network (`clientNetworkOf`) for anonymous callers. null for system work, which is never limited.
  */
 export const lensBudgetKeyOf = (
   principal: Principal,
@@ -111,9 +128,12 @@ export const lensBudgetKeyOf = (
     case 'admin':
       return `admin:${principal.adminUserId}`;
     case 'appUser':
-      return `${APP_USER_PREFIX}${principal.appUserId}`;
+      return [
+        `${APP_USER_PREFIX}${principal.appUserId}`,
+        `network:${workspace}:${networkOf(clientAddress)}`,
+      ].join(BUCKET_SEPARATOR);
     case 'anonymous':
-      return `anonymous:${workspace}:${clientAddress === undefined ? 'unknown' : clientNetworkOf(clientAddress)}`;
+      return `anonymous:${workspace}:${networkOf(clientAddress)}`;
     default:
       return null;
   }

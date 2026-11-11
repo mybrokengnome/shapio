@@ -1,4 +1,5 @@
 import type { DefinitionLens, FieldDefinition, FieldLens, NestedLens } from '@shapio/schema';
+import { ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import { fitValue, toCardinality } from './values.js';
@@ -15,12 +16,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isMissing = (value: unknown) => value === undefined || value === null;
 
-/** One component instance through its component's lens; undefined when the component is gone. */
+/**
+ * One component instance through its component's lens, with its ID (plan item-ids); undefined when the
+ * component is gone.
+ */
 const readInstance = (
   lens: DefinitionLens | null | undefined,
   value: unknown,
-): Readonly<ContentData> | undefined =>
-  lens && lens.status !== 'gone' && isRecord(value) ? readThroughLens(lens, value) : undefined;
+): Readonly<ContentData> | undefined => {
+  if (!lens || lens.status === 'gone' || !isRecord(value)) {
+    return undefined;
+  }
+  const read = readThroughLens(lens, value);
+  return value[ITEM_ID_KEY] === undefined || read === value
+    ? read
+    : { ...read, [ITEM_ID_KEY]: value[ITEM_ID_KEY] };
+};
 
 const readComponent = (
   client: FieldDefinition<'component'>,

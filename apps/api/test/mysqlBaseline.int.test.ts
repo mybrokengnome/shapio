@@ -258,7 +258,7 @@ const readMysql = async (db: Kysely<DB>): Promise<LogicalSchema> => {
 };
 
 /** Columns every database fills with its own random value (the instance's schema ID). */
-const RANDOM_COLUMNS = new Set(['schema_id']);
+const RANDOM_COLUMNS = new Set(['schema_id', 'item_id_key']);
 
 /** Every row of every seeded table, without the times they were written or random IDs (they differ by run). */
 const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {

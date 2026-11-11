@@ -364,6 +364,7 @@ describe('schema lenses and authorization', () => {
     );
     for (const locale of ['en', 'fr']) {
       expect((await adminEntry(shared.id, locale)).data.seo, locale).toEqual({
+        id: expect.any(String) as unknown,
         title: 'x',
         canonicalUrl: 'c',
       });
@@ -378,7 +379,11 @@ describe('schema lenses and authorization', () => {
       }),
       200,
     );
-    expect((await adminEntry(shared.id, 'en')).data.seo).toEqual({ title: 'y', canonicalUrl: 'c' });
+    expect((await adminEntry(shared.id, 'en')).data.seo).toEqual({
+      id: expect.any(String) as unknown,
+      title: 'y',
+      canonicalUrl: 'c',
+    });
   });
 
   it('accepts a value echoed from the published read when the draft differs, and keeps the draft', async () => {
@@ -569,12 +574,17 @@ describe('schema lenses and authorization', () => {
     const versionOf = async () =>
       expectStatus(await admin.get(`/api/admin/content/card/${entry.id}`), 200).json<EntryBody>().version;
     for (const suffix of ['', `?schemaVersion=${encodeURIComponent(cardV)}`]) {
+      // The user cannot read the draft, so it names the zone item it continues by its ID (plan item-ids).
+      const [block] = expectStatus(
+        await admin.get(`/api/admin/content/card/${entry.id}`),
+        200,
+      ).json<EntryBody>().data.blocks as Array<{ id: string }>;
       expectStatus(
         await request('PUT', `/api/content/cards/${entry.id}${suffix}`, user.accessToken, {
           expectedVersion: await versionOf(),
           data: {
             profile: { name: `edited${suffix.length}` },
-            blocks: [{ __component: 'profile', name: 'b2' }],
+            blocks: [{ __component: 'profile', id: block?.id, name: 'b2' }],
           },
         }),
         200,
@@ -587,7 +597,9 @@ describe('schema lenses and authorization', () => {
         name: `edited${suffix.length}`,
         internal: 'secret',
       });
-      expect(after.data.blocks, suffix).toEqual([{ __component: 'profile', name: 'b2', internal: 'z' }]);
+      expect(after.data.blocks, suffix).toEqual([
+        { __component: 'profile', id: expect.any(String) as unknown, name: 'b2', internal: 'z' },
+      ]);
     }
   });
 

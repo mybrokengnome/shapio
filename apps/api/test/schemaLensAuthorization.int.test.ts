@@ -340,11 +340,37 @@ describe('schema lenses: authorization before anything lens-specific', () => {
     expect(resolved.body).not.toContain('Old headline');
   });
 
-  it('names only the route key the caller sent when it may read what that key names today', async () => {
+  it('answers a route key reused since with a plain 404 to a caller that may not read what it named then', async () => {
+    // `essays` named the essay at V and names the pamphlet today; the token reads only pamphlets. In the version
+    // it sent, the key names a type it may not read: a 404, which says nothing about the key's reuse.
     const response = await get(at('/api/content/essays'), essayBlindToken);
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(404);
+    expect(response.json<ErrorBody>().error.code).toBe('MODEL_NOT_FOUND');
     expect(response.json<ErrorBody>().error.message).toContain('"essays"');
     expect(response.body).not.toContain('"essay"');
+    // Without a version, the same key reads today's pamphlets.
+    expect((await get('/api/content/essays', essayBlindToken)).statusCode).toBe(200);
+  });
+
+  it('sends the current schema version only to callers authorized for the route', async () => {
+    const header = 'shapio-schema-version-current';
+    for (const url of ['/api/content/memos', at('/api/content/memos')]) {
+      const allowed = await get(url, unrestrictedToken);
+      expect([allowed.statusCode, typeof allowed.headers[header]], url).toEqual([200, 'string']);
+      // No grant on the route (401/403), or an unknown route (404): no schema ID, no version counter.
+      for (const [credential, status] of [
+        [null, 401],
+        [essayBlindToken, 403],
+      ] as const) {
+        const refused = await get(url, credential);
+        expect([refused.statusCode, refused.headers[header]], url).toEqual([status, undefined]);
+      }
+      const unknown = await get(url.replace('memos', 'nothings'), unrestrictedToken);
+      expect([unknown.statusCode, unknown.headers[header]]).toEqual([404, undefined]);
+    }
+    // An error answered only after authorization carries it.
+    const unavailable = await get(at('/api/content/bases/kids'), unrestrictedToken);
+    expect([unavailable.statusCode, typeof unavailable.headers[header]]).toEqual([409, 'string']);
   });
 
   describe.skipIf(isSqliteRun())('in-process delivery', () => {

@@ -1,8 +1,9 @@
 import type { FastifyBaseLogger } from 'fastify';
 import {
-  GRAPHQL_LENS_SCHEMA_SPACES_MAX,
   GRAPHQL_LENS_SCHEMAS_PROBATION,
   GRAPHQL_LENS_SCHEMAS_PROTECTED,
+  GRAPHQL_LENS_SPACES_PER_WORKSPACE,
+  GRAPHQL_LENS_WORKSPACES_MAX,
   GRAPHQL_SCHEMA_VARIANTS_MAX,
   GRAPHQL_SITE_SCHEMA_IDLE_MS,
 } from '../../../constants/graphql.js';
@@ -38,16 +39,17 @@ export type GraphqlSchemaCache = {
   /**
    * The schema of a client's version of a workspace (plan schema-lenses; `view` is `RequestLens.view`,
    * `visibility` from `lensVisibility`), built on first use and kept by exact match on what shapes it for this
-   * visibility (`lensSchemaKey`): versions that look the same to the caller share one schema. Each
-   * (workspace, visibility) has its own segmented cache, so walking versions churns only that cache's
-   * probation, never a version clients keep reading, another workspace's, or a current-version schema.
+   * visibility (`lensSchemaKey`): versions that look the same to the caller share one schema. Cached per
+   * workspace, then per the caller's visibility today (`todayVisibilityKey`), each a segmented LRU: walking
+   * versions churns only that cache. One workspace never evicts another's entries (workspaces are dropped
+   * whole, least recently used, past `GRAPHQL_LENS_WORKSPACES_MAX`); current-version schemas are never touched.
    */
   getLens: (
     view: SchemaSnapshot,
     visibility: SchemaVisibility,
     options?: LensBuildOptions,
   ) => Promise<BuiltSchema>;
-  /** The lens schemas held, per cache least recently used first within each segment (tests). */
+  /** The lens schemas held, with their workspace and today's visibility key, per segment (tests). */
   listLens: () => Array<{ siteId: string | null; visibility: string; view: string; segment: LruSegment }>;
   /** Stops background rebuilds (app shutdown). */
   close: () => void;
@@ -68,8 +70,9 @@ type SchemaCacheOptions = {
   maxEntries?: number;
   /** Per (workspace, visibility) lens cache: entries on probation and protected. */
   lensSegments?: { probation: number; protected: number };
-  /** (workspace, visibility) lens caches kept. */
-  maxLensSpaces?: number;
+  /** Visibility caches kept per workspace, and workspaces kept. */
+  maxLensSpacesPerWorkspace?: number;
+  maxLensWorkspaces?: number;
   build?: (view: SchemaSnapshot, visibility: SchemaVisibility, options?: BuildOptions) => BuiltSchema;
 };
 
@@ -80,11 +83,19 @@ export type LensBuildOptions = {
    * per-principal lens build budget, `schema/lens/budget.ts`).
    */
   admit?: () => boolean;
+  /**
+   * The caller's visibility key TODAY (not the lens visibility's, which varies with the version): its cache
+   * within the workspace. Default: the lens visibility's key.
+   */
+  todayVisibilityKey?: string;
 };
 
 type LensEntry = { schema: Promise<BuiltSchema> };
 
 type LensSpace = { siteId: string | null; visibility: string; schemas: SegmentedLru<string, LensEntry> };
+
+/** A workspace's lens caches by today's visibility key; Map order is use order (least recent first). */
+type LensWorkspace = { spaces: Map<string, LensSpace> };
 
 const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -96,18 +107,18 @@ export const createGraphqlSchemaCache = ({
   idleMs = GRAPHQL_SITE_SCHEMA_IDLE_MS,
   maxEntries = GRAPHQL_SCHEMA_VARIANTS_MAX,
   lensSegments = { probation: GRAPHQL_LENS_SCHEMAS_PROBATION, protected: GRAPHQL_LENS_SCHEMAS_PROTECTED },
-  maxLensSpaces = GRAPHQL_LENS_SCHEMA_SPACES_MAX,
+  maxLensSpacesPerWorkspace = GRAPHQL_LENS_SPACES_PER_WORKSPACE,
+  maxLensWorkspaces = GRAPHQL_LENS_WORKSPACES_MAX,
   build = buildGraphqlSchema,
 }: SchemaCacheOptions): GraphqlSchemaCache => {
   // Map order is use order (re-inserted on every request), so the first entries are the least recently used.
   const entries = new Map<string, Entry>();
-  // Lens caches by (workspace, visibility); `spaceUse` bounds and orders them (a segmented LRU of its own),
-  // `spaces` finds one without counting a use.
-  const spaces = new Map<string, LensSpace>();
-  const spaceUse = createSegmentedLru<string, true>({
-    probation: Math.ceil(maxLensSpaces / 2),
-    protected: Math.floor(maxLensSpaces / 2),
-  });
+  // Lens caches: workspace → today's visibility → version look. Isolation by structure (review): a workspace's
+  // caches are evicted only whole, as the least recently used of `maxLensWorkspaces`, so nothing done in one
+  // workspace evicts another's entries; inside it, a visibility's cache only as the least recently used of
+  // `maxLensSpacesPerWorkspace`. Promotion inside a cache is free on a hit, so a caller can churn its own
+  // visibility's cache, which only callers with the very same permissions in the same workspace share.
+  const workspaces = new Map<string, LensWorkspace>();
   let lastSweep = now();
   let closed = false;
 
@@ -214,42 +225,58 @@ export const createGraphqlSchemaCache = ({
     })();
   };
 
-  /** The lens cache of a workspace and visibility, created (and the oldest caches past the bound dropped). */
-  const lensSpaceFor = (spaceKey: string, siteId: string | null, visibility: string): LensSpace => {
-    let space = spaces.get(spaceKey);
-    if (space) {
-      spaceUse.get(spaceKey);
-      return space;
-    }
-    space = { siteId, visibility, schemas: createSegmentedLru(lensSegments) };
-    spaces.set(spaceKey, space);
-    spaceUse.set(spaceKey, true);
-    for (const key of spaces.keys()) {
-      if (!spaceUse.has(key)) {
-        spaces.delete(key);
+  /** Marks a Map entry most recently used (Map order is use order). */
+  const touch = <K, V>(map: Map<K, V>, key: K, value: V) => {
+    map.delete(key);
+    map.set(key, value);
+  };
+
+  /** Drops the least recently used entries of a Map beyond `max`. */
+  const trim = <K, V>(map: Map<K, V>, max: number) => {
+    for (const key of map.keys()) {
+      if (map.size <= max) {
+        break;
       }
+      map.delete(key);
     }
+  };
+
+  /** The lens cache of a workspace and today's visibility, created (dropping whole least recent ones). */
+  const lensSpaceFor = (siteKey: string, siteId: string | null, visibility: string): LensSpace => {
+    let workspace = workspaces.get(siteKey);
+    if (!workspace) {
+      workspace = { spaces: new Map() };
+    }
+    touch(workspaces, siteKey, workspace);
+    trim(workspaces, maxLensWorkspaces);
+    let space = workspace.spaces.get(visibility);
+    if (!space) {
+      space = { siteId, visibility, schemas: createSegmentedLru(lensSegments) };
+    }
+    touch(workspace.spaces, visibility, space);
+    trim(workspace.spaces, maxLensSpacesPerWorkspace);
     return space;
   };
 
   const getLens = (
     view: SchemaSnapshot,
     visibility: SchemaVisibility,
-    { admit }: LensBuildOptions = {},
+    { admit, todayVisibilityKey = visibility.key }: LensBuildOptions = {},
   ): Promise<BuiltSchema> => {
-    const spaceKey = entryKey(view.siteId, visibility.key);
-    const key = lensSchemaKey(view, visibility);
-    const cached = spaces.get(spaceKey);
+    const siteKey = view.siteId ?? '';
+    const key = `${visibility.key}\u0000${lensSchemaKey(view, visibility)}`;
+    const cached = workspaces.get(siteKey)?.spaces.get(todayVisibilityKey);
     if (cached?.schemas.has(key)) {
-      // A hit costs no budget; it counts a use of the cache and of the schema (read again: protected).
-      spaceUse.get(spaceKey);
+      // A hit costs no budget; it counts a use of the workspace, the cache and the schema (read again:
+      // protected).
+      lensSpaceFor(siteKey, view.siteId, todayVisibilityKey);
       return (cached.schemas.get(key) as LensEntry).schema;
     }
     // Refused before any cache is touched: an exhausted caller evicts nothing.
     if (admit && !admit()) {
       return Promise.reject(lensBudgetExceeded());
     }
-    const space = lensSpaceFor(spaceKey, view.siteId, visibility.key);
+    const space = lensSpaceFor(siteKey, view.siteId, todayVisibilityKey);
     const schema = Promise.resolve().then(() => {
       const started = performance.now();
       const built = build(view, visibility, { lens: true });
@@ -268,7 +295,7 @@ export const createGraphqlSchemaCache = ({
     space.schemas.set(key, entry);
     // A failed build is forgotten, so the next request retries.
     schema.catch(() => {
-      if (space.schemas.has(key) && space.schemas.entries().some(([, value]) => value === entry)) {
+      if (space.schemas.entries().some(([, value]) => value === entry)) {
         space.schemas.delete(key);
       }
     });
@@ -276,8 +303,10 @@ export const createGraphqlSchemaCache = ({
   };
 
   const listLens = () =>
-    [...spaces.values()].flatMap(({ siteId, visibility, schemas }) =>
-      schemas.entries().map(([view, , segment]) => ({ siteId, visibility, view, segment })),
+    [...workspaces.values()].flatMap(({ spaces }) =>
+      [...spaces.values()].flatMap(({ siteId, visibility, schemas }) =>
+        schemas.entries().map(([view, , segment]) => ({ siteId, visibility, view, segment })),
+      ),
     );
 
   return {

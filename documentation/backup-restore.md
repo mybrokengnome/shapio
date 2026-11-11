@@ -92,7 +92,9 @@ plus a lock), locales, app roles and custom delivery roles with their grants on 
 shared by every workspace, so their grants on another workspace's models stay behind), media folders and media metadata with each file's key, size
 and SHA-256, and every entry with its full revision history and its draft and published versions in every
 locale. IDs and timestamps are kept, so an import into an empty instance answers the delivery API (REST and
-GraphQL) exactly like the source. Timestamps keep their microseconds (bundle format 2; Shapio still imports
+GraphQL) exactly like the source. Component item IDs travel in the bundle and an import into the same instance
+keeps them; items stored before 0.9.0 and never written since read with different IDs on another instance until
+their first write there. Timestamps keep their microseconds (bundle format 2; Shapio still imports
 format 1 bundles, which carry milliseconds). SQLite stores milliseconds, so a PostgreSQL bundle imported into
 SQLite is cut to the millisecond, and entries created within the same millisecond are then listed by ID.
 

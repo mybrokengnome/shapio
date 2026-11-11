@@ -1,6 +1,7 @@
 import { appendFileSync } from 'node:fs';
 import type { FieldDefinition, SchemaDefinition } from '@shapio/schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAppRole, signUp } from './helpers/appUsers.js';
 import {
   createDefinition,
   createDeliveryToken,
@@ -171,7 +172,14 @@ const changed = (
   run: number,
 ): Definition | null => {
   const fields = definition.fields;
-  const index = random.int(fields.length);
+  // The `parts` component list is the item-ID check's: schema changes leave it alone.
+  const changeable = fields.flatMap((candidate, position) =>
+    candidate.apiKey === 'parts' ? [] : [position],
+  );
+  if (changeable.length === 0 && kind !== 'renameModel' && kind !== 'addField') {
+    return null;
+  }
+  const index = changeable[random.int(changeable.length)] ?? 0;
   const field = fields[index] as unknown as FieldBody;
   const replace = (next: Record<string, unknown>) => ({
     ...definition,
@@ -199,13 +207,13 @@ const changed = (
     case 'addField':
       return { ...definition, fields: [...fields, newField(definition, random)] };
     case 'removeField':
-      return fields.length < 2
+      return changeable.length < 2
         ? null
         : { ...definition, fields: fields.filter((_, position) => position !== index) };
     case 'removeReadd':
       // Two activations (the loop adds it back under the same API ID): in one PUT, a field sent without its ID
       // under an existing API ID keeps that field's ID, which is a type change, not a new field.
-      return fields.length < 2
+      return changeable.length < 2
         ? null
         : { ...definition, fields: fields.filter((_, position) => position !== index), readd: field.apiKey };
     case 'retype': {
@@ -274,13 +282,16 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
     admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
   });
   /** Activations and V reads across the runs, so a fuzz that silently does nothing fails. */
-  const totals = { activated: 0, reads: 0, entries: 0 };
+  const totals = { activated: 0, reads: 0, entries: 0, writes: 0, idWrites: 0, ambiguous: 0 };
   afterAll(async () => {
     await testApp.app.close();
     if (!SINGLE) {
       expect(totals.entries).toBeGreaterThan(RUNS);
       expect(totals.activated).toBeGreaterThan(RUNS * 2);
       expect(totals.reads).toBe(totals.entries);
+      // Item-ID writes ran, about half of them echoing IDs.
+      expect(totals.writes).toBe(totals.entries);
+      expect(totals.idWrites).toBeGreaterThan(RUNS / 4);
     }
   });
 
@@ -301,13 +312,36 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
         for (let index = 0; index < fieldCount; index += 1) {
           start.fields.push(newField(start, random));
         }
+        // A component list for the item-ID writes: a public `label`, a private `note` (hidden from delivery).
+        const part = await createDefinition(
+          admin,
+          {
+            kind: 'component',
+            apiKey: `r${run}part`,
+            label: `Part ${run}`,
+            fields: [
+              { apiKey: 'label', label: 'Label', type: 'string' },
+              { apiKey: 'note', label: 'Note', type: 'string', public: false },
+            ],
+          },
+          'components',
+        );
         let model = await createDefinition(admin, {
           kind: 'collection',
           apiKey: start.apiKey,
           pluralApiKey: `r${run}pages`,
           label: `Run ${run}`,
-          fields: start.fields,
+          fields: [
+            ...start.fields,
+            {
+              apiKey: 'parts',
+              label: 'Parts',
+              type: 'component',
+              settings: { component: part.definition.id, repeatable: true },
+            },
+          ],
         });
+        const partDefinition = part.definition as unknown as SchemaDefinition;
         log.push(
           `V model: ${JSON.stringify(model.definition.fields.map((f) => [f.apiKey, f.type, f.settings]))}`,
         );
@@ -316,7 +350,15 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
           let data = Object.fromEntries(
             model.definition.fields
               .filter(() => random.chance(0.8))
-              .map((field) => [field.apiKey, valueFor(field, random)]),
+              .map((field) => [
+                field.apiKey,
+                field.apiKey === 'parts'
+                  ? Array.from({ length: random.int(4) }, (_, index) => ({
+                      label: random.pick(['a', 'b']),
+                      note: `n${run}-${totals.entries}-${index}`,
+                    }))
+                  : valueFor(field, random),
+              ]),
           );
           for (let attempt = 0; attempt < 5; attempt += 1) {
             const created = await admin.post(`/api/admin/content/${model.definition.apiKey}`, {
@@ -407,7 +449,13 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
           );
           expect(body.data.__model, fail('__model is not V’s API ID')).toBe(`r${run}page`);
           expect(
-            instanceIssues(clientDefinition, values, () => undefined, '', { delivery: true }),
+            instanceIssues(
+              clientDefinition,
+              values,
+              (componentId) => (componentId === part.definition.id ? partDefinition : undefined),
+              '',
+              { delivery: true },
+            ),
             fail('values are not V-shaped'),
           ).toEqual([]);
           const resurrected = (clientDefinition.fields as FieldDefinition[]).filter(
@@ -426,6 +474,106 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
         const list = await get(at(`${clientRoute}?pageSize=100`));
         expect(list.statusCode, fail(`list: ${list.body}`)).toBe(200);
         expect(list.json<{ data: unknown[] }>().data).toHaveLength(entryIds.length);
+
+        // 4. Item IDs: an app user that may read and update reads each entry naming V, deletes, reorders and inserts parts, and
+        // sends them back naming V; on about half the writes it echoes the item IDs. Private notes must stay
+        // with the item ID they were stored under (without IDs, a refusal for ambiguity is also fine).
+        const appUser = await signUp(testApp.app);
+        expectStatus(
+          await admin.request({
+            method: 'PATCH',
+            url: `/api/admin/app-users/${appUser.user.id}`,
+            payload: {
+              roleIds: [
+                await createAppRole(database.current.db, [
+                  { action: 'read', modelId: model.definition.id },
+                  { action: 'update', modelId: model.definition.id },
+                ]),
+              ],
+            },
+          }),
+          200,
+        );
+        const writer = appUser.accessToken;
+        const request = (method: 'GET' | 'PUT', url: string, payload?: unknown) =>
+          testApp.app.inject({
+            method,
+            url,
+            headers: { authorization: `Bearer ${writer}` },
+            ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+          });
+        for (const id of entryIds) {
+          const adminBefore = expectStatus(
+            await admin.get(`/api/admin/content/${model.definition.apiKey}/${id}`),
+            200,
+          ).json<EntryBody>();
+          const notes = new Map(
+            ((adminBefore.data.parts ?? []) as Array<Record<string, unknown>>).map((item) => [
+              item.id,
+              item.note ?? undefined,
+            ]),
+          );
+          const read = expectStatus(await request('GET', at(`${clientRoute}/${id}`)), 200).json<{
+            data: Record<string, unknown>;
+          }>().data;
+          const parts = (read.parts ?? []) as Array<Record<string, unknown>>;
+          const echoIds = random.chance(0.5);
+          const kept = parts.filter(() => random.chance(0.7));
+          if (random.chance(0.5)) {
+            kept.reverse();
+          }
+          const sent: Array<Record<string, unknown>> = kept.map((item) =>
+            echoIds ? { id: item.id, label: item.label } : { label: item.label },
+          );
+          if (random.chance(0.5)) {
+            sent.splice(random.int(sent.length + 1), 0, {
+              ...(echoIds ? { id: null } : {}),
+              label: random.pick(['a', 'n']),
+            });
+          }
+          const response = await request('PUT', at(`${clientRoute}/${id}`), {
+            expectedVersion: adminBefore.version,
+            data: { parts: sent },
+          });
+          totals.writes += 1;
+          log.push(`write ${id.slice(-4)} ids ${echoIds}: ${JSON.stringify(sent)} → ${response.statusCode}`);
+          if (response.statusCode === 422 && !echoIds) {
+            const codes = (
+              response.json<{ error: { details?: { issues?: Array<{ code: string }> } } }>().error.details
+                ?.issues ?? []
+            ).map((issue) => issue.code);
+            expect(codes, fail(`refused: ${response.body}`)).toContain('AMBIGUOUS_ITEMS');
+            totals.ambiguous += 1;
+            continue;
+          }
+          expect(response.statusCode, fail(`write: ${response.body}`)).toBe(200);
+          if (echoIds) {
+            totals.idWrites += 1;
+          }
+          const after = expectStatus(
+            await admin.get(`/api/admin/content/${model.definition.apiKey}/${id}`),
+            200,
+          ).json<EntryBody>();
+          const written = (after.data.parts ?? []) as Array<Record<string, unknown>>;
+          expect(
+            written.map((item) => item.label),
+            fail('parts labels'),
+          ).toEqual(sent.map((item) => item.label));
+          written.forEach((item, position) => {
+            const sentItem = sent[position] ?? {};
+            const own = notes.get(item.id);
+            // A note sits only on the item it was stored under; a new item holds none.
+            expect(item.note ?? undefined, fail(`part ${position}: note on item ${String(item.id)}`)).toBe(
+              own,
+            );
+            if (echoIds && typeof sentItem.id === 'string') {
+              expect(item.id, fail(`part ${position}: id`)).toBe(sentItem.id);
+            }
+            if (echoIds && sentItem.id === null) {
+              expect(own, fail(`part ${position}: a new item took a stored ID`)).toBeUndefined();
+            }
+          });
+        }
         if (LOG_FILE) {
           appendFileSync(LOG_FILE, `${log.join('\n')}\n\n`);
         }

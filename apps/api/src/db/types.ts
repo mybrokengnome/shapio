@@ -787,6 +787,7 @@ export interface SystemSettings {
 
 export interface SystemVersions {
   id: Generated<boolean>;
+  item_id_key: string | null;
   permissions_version: Generated<number>;
   release: string | null;
   schema_id: Generated<string>;

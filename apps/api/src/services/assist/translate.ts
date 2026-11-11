@@ -8,8 +8,10 @@ import {
 import { ASSIST_TRANSLATE_CHUNK_CHARS } from '../../constants/assist.js';
 import { everyRowReadMask, maskAllows, rowWriteMask } from '../../content/compiler/policy.js';
 import { projectData } from '../../content/compiler/select.js';
+import { componentLookupOf } from '../../content/itemIds.js';
 import { isLocalizedField, type ContentModel } from '../../content/model.js';
 import { buildValidator } from '../../content/validator/index.js';
+import { fieldsWithoutItemIds } from '../../content/withoutItemIds.js';
 import type { ContentData } from '../../db/contentData.js';
 import { AppError } from '../../helpers/appError.js';
 import type { FieldMask, Policy } from '../../permissions/types.js';
@@ -140,14 +142,18 @@ export const issuesOf = (
     .validate({ ...source, ...translated }, { skipRequired: true })
     .issues.map((issue) => ({ path: issue.path, code: issue.code, message: issue.message }));
 
-/** Stored values → the editor's input format (API IDs, media and relation IDs, components by API ID). */
+/**
+ * Stored values → the editor's input format (API IDs, media and relation IDs, components by API ID). Item IDs
+ * (plan item-ids) are left out: they name the source locale's items, which the target locale does not hold,
+ * so the translated items are new there.
+ */
 export const toInputFormat = (
   model: ContentModel,
   fields: readonly FieldDefinition[],
   data: Readonly<ContentData>,
 ) => {
   const present = fields.filter((field) => data[field.id] !== undefined);
-  return projectData(data, {
+  return projectData(fieldsWithoutItemIds(present, data, componentLookupOf(model.components)), {
     model,
     fields: present,
     visibleTargets: null,

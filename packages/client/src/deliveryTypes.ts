@@ -56,6 +56,20 @@ export type DeliveryPagination = { page: number; pageSize: number; total: number
  */
 export type DeliveryEntryAttributes = { __model: string; __kinds: readonly string[] };
 
+/**
+ * What every component item carries besides its fields (server 0.9.0 or later): `id`, its stable ID. A single
+ * component, each item of a repeatable component, and each item of a dynamic zone have one, and an unchanged
+ * item has the same `id` in the draft and the published version. On a write, send back the `id` of each item
+ * you read so the server pairs it with the item it continues; leave it out for a new item.
+ */
+export type DeliveryComponentAttributes = { id: string };
+
+/** A component item as delivery returns it: the caller's type with its `id`. */
+export type DeliveryComponent<T = Record<string, unknown>> = T & DeliveryComponentAttributes;
+
+/** A dynamic zone item: a component item plus its component's API ID in `__component`. */
+export type DeliveryZoneItem<T = Record<string, unknown>> = DeliveryComponent<T> & { __component: string };
+
 /** One kind of a family list (`meta.kinds`): its API ID, label, parent's API ID and route key. */
 export type DeliveryKind = { apiKey: string; label: string; parent: string | null; routeKey: string };
 
