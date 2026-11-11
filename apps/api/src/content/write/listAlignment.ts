@@ -12,12 +12,22 @@
  * 4. The alignment is certain when every sent item has exactly one option (a stored item, or new) over every
  *    least-cost alignment of its gap. Otherwise it is ambiguous; the first least-cost alignment is returned.
  *
- * Bounded: steps 1 to 3 are O(n log n); step 4 fills at most `ALIGNMENT_CELL_BUDGET` cells over all gaps, and a
- * gap that would need more is ambiguous, aligned in place.
+ * Bounded: steps 1 to 3 are O(n log n); step 4 fills at most `ALIGNMENT_CELL_BUDGET` cells over all the gaps of
+ * every list of one write, and a gap that would need more is aligned in place. Used only for lists that cannot
+ * hold values the caller cannot see, to keep items' IDs (`listPairing.ts`).
  */
 
-/** The most cells the gap alignments of one list may fill (two tables of this many 32-bit costs at most). */
+/**
+ * The most cells the gap alignments of one write may fill, over all its lists (two tables of 32-bit costs per
+ * gap): about 16 MB and a few tens of milliseconds at most. A write past it aligns the rest in place, which only
+ * costs some items their IDs (they get new ones); lists that can hold hidden values never align at all.
+ */
 export const ALIGNMENT_CELL_BUDGET = 2_000_000;
+
+/** The cells a write may still fill. */
+export type AlignmentBudget = { cells: number };
+
+export const newAlignmentBudget = (): AlignmentBudget => ({ cells: ALIGNMENT_CELL_BUDGET });
 
 const MATCH = 0;
 const EDIT = 4;
@@ -103,18 +113,13 @@ const longestRun = (pairs: ReadonlyArray<[number, number]>): Array<[number, numb
 
 type Gap = { sent: number[]; stored: number[] };
 
-/**
- * One gap aligned with the least edits; whether any of its sent items has more than one option. With
- * `exactOnly`, items pair only when equal (no edit in place), and a gap left with both sent and stored items
- * is ambiguous too: which new item continues which stored one cannot be told.
- */
+/** One gap aligned with the least edits; whether any of its sent items has more than one option. */
 const alignGap = (
   gap: Gap,
   sent: AlignmentSide,
   stored: AlignmentSide,
   pairs: number[],
-  budget: { cells: number },
-  exactOnly: boolean,
+  budget: AlignmentBudget,
 ): boolean => {
   const s = gap.sent.length;
   const t = gap.stored.length;
@@ -147,7 +152,7 @@ const alignGap = (
       return MATCH;
     }
     const kind = sent.kinds[sentAt];
-    return !exactOnly && kind !== null && kind !== undefined && kind === stored.kinds[storedAt] ? EDIT : NONE;
+    return kind !== null && kind !== undefined && kind === stored.kinds[storedAt] ? EDIT : NONE;
   };
   const forward = new Int32Array(cells);
   const backward = new Int32Array(cells);
@@ -231,62 +236,11 @@ const alignGap = (
       j += 1;
     }
   }
-  if (exactOnly) {
-    const matched = new Set(gap.sent.map((sentAt) => pairs[sentAt]));
-    const newItems = gap.sent.some((sentAt) => pairs[sentAt] === -1);
-    const deleted = gap.stored.some((storedAt) => !matched.has(storedAt));
-    return ambiguous || (newItems && deleted);
-  }
   return ambiguous;
 };
 
-/** Whether the sent list holds exactly the stored items' keys, rearranged (a pure reorder). */
-const isRearrangement = (sent: AlignmentSide, stored: AlignmentSide): boolean => {
-  if (sent.keys.length !== stored.keys.length || sent.keys.some((key) => key === null)) {
-    return false;
-  }
-  const counts = new Map<string, number>();
-  stored.keys.forEach((key) => {
-    if (key !== null) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  });
-  return sent.keys.every((key) => {
-    const left = counts.get(key as string) ?? 0;
-    counts.set(key as string, left - 1);
-    return left > 0;
-  });
-};
-
-/**
- * A pure edit in place: the same length, every item the same component as the stored item at its place, and
- * no stored item that changed at its place shows up again elsewhere in what was sent (it could have moved
- * there: then which item continues which cannot be told).
- */
-const isInPlace = (sent: AlignmentSide, stored: AlignmentSide): boolean => {
-  if (
-    sent.kinds.length !== stored.kinds.length ||
-    !sent.kinds.every((kind, index) => kind !== null && kind === stored.kinds[index])
-  ) {
-    return false;
-  }
-  const sentKeys = new Map<string, number>();
-  sent.keys.forEach((key) => {
-    if (key !== null) {
-      sentKeys.set(key, (sentKeys.get(key) ?? 0) + 1);
-    }
-  });
-  return stored.keys.every((key, index) => {
-    if (key === null || key === sent.keys[index]) {
-      return true;
-    }
-    // Changed here: its old content must not be sent at another place.
-    return !sentKeys.has(key);
-  });
-};
-
 /** Unique pairs, then each gap between the ones that stay in order (see above). */
-const alignAround = (sent: AlignmentSide, stored: AlignmentSide, exactOnly: boolean): Alignment => {
+const alignAround = (sent: AlignmentSide, stored: AlignmentSide, budget: AlignmentBudget): Alignment => {
   const pairs = new Array<number>(sent.keys.length).fill(-1);
   const unique = uniquePairs(sent, stored);
   const fixed = longestRun(unique);
@@ -297,7 +251,6 @@ const alignAround = (sent: AlignmentSide, stored: AlignmentSide, exactOnly: bool
     pairedSent.add(sentAt);
     pairedStored.add(storedAt);
   }
-  const budget = { cells: ALIGNMENT_CELL_BUDGET };
   let ambiguous = false;
   let sentFrom = 0;
   let storedFrom = 0;
@@ -313,7 +266,7 @@ const alignAround = (sent: AlignmentSide, stored: AlignmentSide, exactOnly: bool
         gap.stored.push(index);
       }
     }
-    ambiguous = alignGap(gap, sent, stored, pairs, budget, exactOnly) || ambiguous;
+    ambiguous = alignGap(gap, sent, stored, pairs, budget) || ambiguous;
     sentFrom = sentAt + 1;
     storedFrom = storedAt + 1;
   }
@@ -322,27 +275,10 @@ const alignAround = (sent: AlignmentSide, stored: AlignmentSide, exactOnly: bool
 
 /**
  * The alignment of a sent list with a stored one, for a list whose items cannot hold values the caller cannot
- * see: the least edits (see above), never refused for it.
+ * see (and admin writes): the least edits (see above), only to keep items' IDs; never refused for it. `budget`
+ * is the whole request's (`newAlignmentBudget`): every list of one write draws on it.
  */
-export const alignItems = (sent: AlignmentSide, stored: AlignmentSide): Alignment =>
+export const alignItems = (sent: AlignmentSide, stored: AlignmentSide, budget: AlignmentBudget): Alignment =>
   sameSequence(sent, stored)
     ? { pairs: sent.keys.map((_, index) => index), ambiguous: false }
-    : alignAround(sent, stored, false);
-
-/**
- * The alignment for a list whose items can hold values the caller cannot see (plan item-ids, never guess): an
- * item continues a stored item it does not equal only in a pure edit in place, where the list kept its length,
- * every item stands where it stood (the same component at every place), no changed item's old content was sent
- * at another place, and the list is no rearrangement of the stored items. Anything else pairs equal items only (unique ones wherever they moved, duplicates in order
- * between them); a gap left with both new and stored items, or with more than one way to pair, is ambiguous.
- * A rearrangement is a reorder, never an edit of every item into another's content.
- */
-export const alignItemsStrictly = (sent: AlignmentSide, stored: AlignmentSide): Alignment => {
-  if (sameSequence(sent, stored)) {
-    return { pairs: sent.keys.map((_, index) => index), ambiguous: false };
-  }
-  if (!isRearrangement(sent, stored) && isInPlace(sent, stored)) {
-    return { pairs: sent.keys.map((_, index) => index), ambiguous: false };
-  }
-  return alignAround(sent, stored, true);
-};
+    : alignAround(sent, stored, budget);

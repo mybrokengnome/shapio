@@ -62,13 +62,13 @@ describe('TypeScript for component items', () => {
   it('gives every component output type a required id, and its input type an optional one', () => {
     expect(output).toMatch(/export type Link = \{\n.*\n {2}id: string;\n.*\n {2}url: string \| null;\n\};/);
     expect(output).toMatch(
-      /export type LinkInput = \{\n.*\n {2}id\?: string;\n.*\n {2}url\?: string \| null;\n\};/,
+      /export type LinkInput = \{\n.*\n {2}id\?: string \| null;\n.*\n {2}url\?: string \| null;\n\};/,
     );
   });
 
   it('gives a component with no fields an id too', () => {
     expect(output).toMatch(/export type Spacer = \{\n.*\n {2}id: string;\n\};/);
-    expect(output).toMatch(/export type SpacerInput = \{\n.*\n {2}id\?: string;\n\};/);
+    expect(output).toMatch(/export type SpacerInput = \{\n.*\n {2}id\?: string \| null;\n\};/);
   });
 
   it('adds no id field to the entry types beyond the entry system fields', () => {
@@ -97,7 +97,9 @@ describe('OpenAPI for component items', () => {
   });
 
   it('accepts an optional id on component input schemas, which allow no other unknown key', () => {
-    expect(schemas.LinkInput?.properties?.id).toMatchObject({ type: 'string', format: 'uuid' });
+    expect(schemas.LinkInput?.properties?.id).toMatchObject({
+      anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }],
+    });
     expect(schemas.LinkInput?.required).toBeUndefined();
     expect(schemas.LinkInput?.additionalProperties).toBe(false);
   });

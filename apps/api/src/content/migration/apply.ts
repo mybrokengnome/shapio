@@ -8,7 +8,7 @@ import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { ActivationContext, StepOutcome } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
 import type { SchemaById } from '../../schema/snapshot.js';
-import { componentLookupOf, itemIdKeyOf, transferItemIds, withItemIds } from '../itemIds.js';
+import { componentLookupOf, itemIdKeyOf, itemIdScopeOf, transferItemIds, withItemIds } from '../itemIds.js';
 import { resolveModelById, type HeadState } from '../model.js';
 import { syncUniqueValues, uniqueFields } from '../unique.js';
 import { syncHeadDerivations } from '../write/heads.js';
@@ -205,10 +205,12 @@ const rewriteEntry = async (
     if (original && model) {
       // The rewritten lists keep the IDs their items read with before (plan item-ids).
       const componentOf = componentLookupOf(model.components);
-      const before = withItemIds(original.data, model.definition.fields, componentOf, {
-        key,
-        entryId: original.entry_id,
-      });
+      const before = withItemIds(
+        original.data,
+        model.definition.fields,
+        componentOf,
+        itemIdScopeOf(key, original.entry_id, model, original.locale),
+      );
       const data = transferItemIds(before, head.data, model.definition.fields, componentOf);
       await rewriteHead(context, original, data, cache);
     } else if (original) {

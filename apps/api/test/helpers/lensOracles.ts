@@ -293,3 +293,26 @@ export const walkDelivered = (
     }
   }
 };
+
+/**
+ * The no-ID rule (plan item-ids, review 5) for a list whose items can hold values the caller cannot see, as an
+ * independent set rule over what the caller sees of each item (`callerView`): the sent list equal to the stored
+ * one item for item continues it; nothing stored makes every item new; otherwise every item must be distinct on
+ * both sides and the write must not both delete and add: equal items continue wherever they moved, a stored item
+ * with no equal is deleted, a sent item with no equal is new. Anything else: null (AMBIGUOUS_ITEMS).
+ */
+export const setRulePairs = (sent: readonly string[], stored: readonly string[]): number[] | null => {
+  if (stored.length === 0) {
+    return sent.map(() => -1);
+  }
+  if (sent.length === stored.length && sent.every((view, index) => view === stored[index])) {
+    return sent.map((_, index) => index);
+  }
+  if (new Set(stored).size !== stored.length || new Set(sent).size !== sent.length) {
+    return null;
+  }
+  const pairs = sent.map((view) => stored.indexOf(view));
+  const added = pairs.includes(-1);
+  const deleted = pairs.filter((pair) => pair !== -1).length < stored.length;
+  return added && deleted ? null : pairs;
+};

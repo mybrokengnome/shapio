@@ -260,9 +260,9 @@ const objectSchema = (
 const ITEM_ID_PROPERTY: Readonly<Record<Mode, JsonSchema>> = {
   output: { ...uuid, description: "The item's ID, stable across saves" },
   input: {
-    ...uuid,
+    ...nullable(uuid),
     description:
-      'The `id` of the item read, to keep it (its hidden fields follow it); leave it out for a new item',
+      'The `id` of the item read, to keep it (its hidden fields follow it); `null` marks a new item',
   },
 };
 

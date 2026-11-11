@@ -1,7 +1,9 @@
 import { findInvalidText, INVALID_TEXT_MESSAGE } from '@shapio/schema';
 import { Type, type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
+import { REVISION_REASONS } from '../../constants/revisions.js';
 import { AppError } from '../../helpers/appError.js';
+import { HEAD_STATES } from '../model.js';
 
 /**
  * The content export bundle (package L): newline-delimited JSON, one record per line, in this order:
@@ -228,7 +230,8 @@ const RevisionSchema = Type.Object(
     id: Uuid,
     locale: Type.String({ minLength: 1, maxLength: 35 }),
     parentRevisionId: NullableUuid,
-    reason: Type.Enum(['create', 'save', 'publish', 'restore', 'duplicate', 'localize']),
+    // Every reason a revision can be written for (a schema conversion writes `conversion`).
+    reason: Type.Enum([...REVISION_REASONS]),
     data: JsonObject,
     createdAt: DateTime,
   },
@@ -238,7 +241,7 @@ const RevisionSchema = Type.Object(
 const HeadSchema = Type.Object(
   {
     locale: Type.String({ minLength: 1, maxLength: 35 }),
-    state: Type.Union([Type.Literal('draft'), Type.Literal('published')]),
+    state: Type.Enum([...HEAD_STATES]),
     revisionId: Uuid,
     data: JsonObject,
     autosavedAt: NullableDateTime,

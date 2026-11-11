@@ -12,7 +12,7 @@ import {
   type ModelBody,
 } from './helpers/content.js';
 import type { TestApp } from './helpers/createTestApp.js';
-import { instanceIssues, isEmptyApiValue } from './helpers/lensOracles.js';
+import { instanceIssues, isEmptyApiValue, setRulePairs } from './helpers/lensOracles.js';
 import { createPublishingTestApp } from './helpers/publishing.js';
 import { createRoleToken, schemaClient, type SchemaClient } from './helpers/schemaAdmin.js';
 import { useTestDatabase } from './helpers/testDatabase.js';
@@ -282,7 +282,17 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
     admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
   });
   /** Activations and V reads across the runs, so a fuzz that silently does nothing fails. */
-  const totals = { activated: 0, reads: 0, entries: 0, writes: 0, idWrites: 0, ambiguous: 0 };
+  const totals = {
+    activated: 0,
+    reads: 0,
+    entries: 0,
+    writes: 0,
+    idWrites: 0,
+    ambiguous: 0,
+    reorders: 0,
+    forbidden: 0,
+    secondWrites: 0,
+  };
   afterAll(async () => {
     await testApp.app.close();
     if (!SINGLE) {
@@ -292,6 +302,11 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
       // Item-ID writes ran, about half of them echoing IDs.
       expect(totals.writes).toBe(totals.entries);
       expect(totals.idWrites).toBeGreaterThan(RUNS / 4);
+      // Pure reorders without IDs (look-alikes among them), private-field refusals, and writes that send back the
+      // response's item IDs all ran.
+      expect(totals.reorders).toBeGreaterThan(0);
+      expect(totals.forbidden).toBeGreaterThan(0);
+      expect(totals.secondWrites).toBeGreaterThan(0);
     }
   });
 
@@ -518,31 +533,63 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
           }>().data;
           const parts = (read.parts ?? []) as Array<Record<string, unknown>>;
           const echoIds = random.chance(0.5);
-          const kept = parts.filter(() => random.chance(0.7));
-          if (random.chance(0.5)) {
+          // A pure reorder (labels are 'a' or 'b': look-alikes are common), or deletes, a reorder and an insert.
+          const reorderOnly = random.chance(0.3);
+          const kept = reorderOnly ? [...parts] : parts.filter(() => random.chance(0.7));
+          if (reorderOnly) {
+            for (let index = kept.length - 1; index > 0; index -= 1) {
+              const other = random.int(index + 1);
+              [kept[index], kept[other]] = [
+                kept[other] as Record<string, unknown>,
+                kept[index] as Record<string, unknown>,
+              ];
+            }
+            totals.reorders += 1;
+          } else if (random.chance(0.5)) {
             kept.reverse();
           }
           const sent: Array<Record<string, unknown>> = kept.map((item) =>
             echoIds ? { id: item.id, label: item.label } : { label: item.label },
           );
-          if (random.chance(0.5)) {
+          if (!reorderOnly && random.chance(0.5)) {
             sent.splice(random.int(sent.length + 1), 0, {
               ...(echoIds ? { id: null } : {}),
               label: random.pick(['a', 'n']),
             });
           }
+          // A value for the private note inside a part: 403 FORBIDDEN_FIELD, nothing written.
+          if (sent.length > 0 && random.chance(0.2)) {
+            const leaking = sent.map((item, index) => (index === 0 ? { ...item, note: 'leak' } : item));
+            const refused = await request('PUT', at(`${clientRoute}/${id}`), {
+              expectedVersion: adminBefore.version,
+              data: { parts: leaking },
+            });
+            expect(refused.statusCode, fail(`private note: ${refused.body}`)).toBe(403);
+            expect(refused.json<{ error: { code: string } }>().error.code).toBe('FORBIDDEN_FIELD');
+            const unchanged = expectStatus(
+              await admin.get(`/api/admin/content/${model.definition.apiKey}/${id}`),
+              200,
+            ).json<EntryBody>();
+            expect(unchanged.version, fail('a refused write changed the entry')).toBe(adminBefore.version);
+            totals.forbidden += 1;
+          }
+          // Without IDs the answer is the set rule's (from what the caller sees: the labels).
+          const viewOf = (item: Record<string, unknown>) => JSON.stringify({ label: item.label });
+          const rule =
+            echoIds || sent.length === 0 ? null : setRulePairs(sent.map(viewOf), parts.map(viewOf));
           const response = await request('PUT', at(`${clientRoute}/${id}`), {
             expectedVersion: adminBefore.version,
             data: { parts: sent },
           });
           totals.writes += 1;
           log.push(`write ${id.slice(-4)} ids ${echoIds}: ${JSON.stringify(sent)} → ${response.statusCode}`);
-          if (response.statusCode === 422 && !echoIds) {
+          if (!echoIds && sent.length > 0 && rule === null) {
+            expect(response.statusCode, fail(`the rule refuses: ${response.body}`)).toBe(422);
             const codes = (
               response.json<{ error: { details?: { issues?: Array<{ code: string }> } } }>().error.details
                 ?.issues ?? []
             ).map((issue) => issue.code);
-            expect(codes, fail(`refused: ${response.body}`)).toContain('AMBIGUOUS_ITEMS');
+            expect(codes, fail(`refused: ${response.body}`)).toEqual(['AMBIGUOUS_ITEMS']);
             totals.ambiguous += 1;
             continue;
           }
@@ -559,6 +606,44 @@ describe('schema lenses, fuzzed through the HTTP API', () => {
             written.map((item) => item.label),
             fail('parts labels'),
           ).toEqual(sent.map((item) => item.label));
+          // The set rule's pairing, without IDs: an equal item continues its stored one, another is new.
+          if (rule) {
+            const storedIds = new Set(parts.map((item) => item.id));
+            written.forEach((item, position) => {
+              const pair = rule[position] ?? -1;
+              if (pair === -1) {
+                expect(storedIds.has(item.id), fail(`part ${position}: new, yet a stored ID`)).toBe(false);
+              } else {
+                expect(item.id, fail(`part ${position}: continues`)).toBe(parts[pair]?.id);
+              }
+            });
+          }
+          // itemIds truth: the response names exactly the IDs stored, in order; sending them back is accepted.
+          const tree = response.json<{ data: { itemIds?: { parts?: Array<{ id: string }> } } }>().data
+            .itemIds;
+          expect(
+            (tree?.parts ?? []).map((node) => node.id),
+            fail('itemIds'),
+          ).toEqual(written.map((item) => item.id));
+          if (random.chance(0.5)) {
+            const again = await request('PUT', at(`${clientRoute}/${id}`), {
+              expectedVersion: after.version,
+              data: { parts: written.map((item) => ({ id: item.id, label: item.label })) },
+            });
+            expect(again.statusCode, fail(`sending the response's IDs back: ${again.body}`)).toBe(200);
+            const reread = expectStatus(
+              await admin.get(`/api/admin/content/${model.definition.apiKey}/${id}`),
+              200,
+            ).json<EntryBody>();
+            expect(
+              ((reread.data.parts ?? []) as Array<Record<string, unknown>>).map((item) => [
+                item.id,
+                item.note ?? null,
+              ]),
+              fail('notes after sending the IDs back'),
+            ).toEqual(written.map((item) => [item.id, item.note ?? null]));
+            totals.secondWrites += 1;
+          }
           written.forEach((item, position) => {
             const sentItem = sent[position] ?? {};
             const own = notes.get(item.id);

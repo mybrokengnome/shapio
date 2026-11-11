@@ -27,9 +27,9 @@ import { populateRelations, type PopulateEnvironment } from './compiler/populate
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
-import { componentLookupOf, itemIdKeyOf, withItemIds } from './itemIds.js';
+import { componentLookupOf, itemIdKeyOf, itemIdScopeOf, withItemIds } from './itemIds.js';
 import { readThroughLens } from './lens/read.js';
-import { readableThroughLens } from './lens/write.js';
+import { componentFieldShownThroughLens, readableThroughLens } from './lens/write.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
@@ -498,13 +498,34 @@ const withRowItemIds = async (
   env: ReadEnvironment,
   model: ContentModel,
   rows: readonly HeadRow[],
+  selected: (fieldId: string) => boolean,
 ): Promise<HeadRow[]> => {
+  // Only the component fields the read shows: a field it does not select never costs a derivation.
+  const fields = model.definition.fields.filter(
+    (field) => (field.type === 'component' || field.type === 'dynamiczone') && selected(field.id),
+  );
+  if (fields.length === 0 || rows.length === 0) {
+    return [...rows];
+  }
   const key = env.itemIdKey ?? (await itemIdKeyOf(env.executor));
   const componentOf = componentLookupOf(model.components);
   return rows.map((row) => ({
     ...row,
-    data: withItemIds(row.data, model.definition.fields, componentOf, { key, entryId: row.entry_id }),
+    data: withItemIds(row.data, fields, componentOf, itemIdScopeOf(key, row.entry_id, model, row.locale)),
   }));
+};
+
+/** The fields a read selects, by ID (`fields=`, or a lensed selection); every field without one. */
+const selectionOf = (
+  env: ReadEnvironment,
+  query: { fields: readonly FieldDefinition[] | null },
+): ((fieldId: string) => boolean) => {
+  const selection = env.lens
+    ? (env.lens.selection ?? (query.fields ? new Set(query.fields.map((field) => field.id)) : null))
+    : query.fields
+      ? new Set(query.fields.map((field) => field.id))
+      : null;
+  return (fieldId) => selection === null || selection.has(fieldId);
 };
 
 export const projectRows = async (
@@ -514,7 +535,7 @@ export const projectRows = async (
   storedRows: readonly HeadRow[],
   query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
 ): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
-  const rows = await withRowItemIds(env, model, storedRows);
+  const rows = await withRowItemIds(env, model, storedRows, selectionOf(env, query));
   // Callers key results by the row objects they passed in: each result names its stored row.
   const original = new Map(rows.map((row, index) => [row, storedRows[index] as HeadRow]));
   const projected = env.lens
@@ -728,7 +749,7 @@ const projectRowsThroughLens = async (
       publicComponentFieldsOnly: publicOnly,
       // Readable today, or (unrestricted) public in the client's version: then it holds no value, reads null.
       componentFieldVisible: (field) =>
-        componentFieldReadable(field.id) || (unrestricted && field.public && !field.deprecated),
+        componentFieldShownThroughLens(field, componentFieldReadable(field.id), unrestricted),
     });
     return {
       row,

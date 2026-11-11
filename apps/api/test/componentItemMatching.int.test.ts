@@ -69,7 +69,10 @@ describe('component items written by a caller that cannot see all of them', () =
     ((await stored(entryId))[field] as Array<{ id: string }>).map((item) => item.id);
 
   beforeAll(async () => {
-    testApp = await createTestApp(database.current, { schemaListen: false });
+    testApp = await createTestApp(database.current, {
+      schemaListen: false,
+      env: { RATE_LIMIT_MAX: '10000' },
+    });
     admin = schemaClient(testApp.app, await createRoleToken(database.current.db));
     const card = await createDefinition(
       admin,
@@ -296,10 +299,8 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'A2', from: 0 },
         { label: 'B', from: 1 },
       ],
-      withoutIds: [
-        { label: 'A2', note: 'nA' },
-        { label: 'B', note: 'nB' },
-      ],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [
         { label: 'A2', note: 'nA' },
         { label: 'B', note: 'nB' },
@@ -312,10 +313,8 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'q', from: 0 },
         { label: 'q', from: 1 },
       ],
-      withoutIds: [
-        { label: 'q', note: 'h0' },
-        { label: 'q', note: null },
-      ],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [
         { label: 'q', note: 'h0' },
         { label: 'q', note: null },
@@ -329,10 +328,8 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'A', from: 0 },
       ],
       // Least edits: B deleted and B2 new (an edited item is never taken for a moved one), so B2 carries nothing.
-      withoutIds: [
-        { label: 'B2', note: null },
-        { label: 'A', note: 'nA' },
-      ],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [
         { label: 'B2', note: 'nB' },
         { label: 'A', note: 'nA' },
@@ -342,7 +339,8 @@ describe('component items written by a caller that cannot see all of them', () =
       name: 'P: replace the only item with a new one (an edit in place without IDs)',
       start: [{ label: 'p', note: 'h' }],
       sent: [{ label: 'new item' }],
-      withoutIds: [{ label: 'new item', note: 'h' }],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [{ label: 'new item', note: null }],
     },
     {
@@ -419,10 +417,8 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'q', note: 'n2' },
       ],
       sent: [{ label: 'q', from: 1 }, { label: 'x' }],
-      withoutIds: [
-        { label: 'q', note: 'n2' },
-        { label: 'x', note: null },
-      ],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [
         { label: 'q', note: 'n2' },
         { label: 'x', note: null },
@@ -457,11 +453,8 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'q', note: 'C-private' },
       ],
       sent: [{ label: 'e' }, { label: 'r' }, { label: 'p', from: 0 }],
-      withoutIds: [
-        { label: 'e', note: null },
-        { label: 'r', note: null },
-        { label: 'p', note: 'A-private' },
-      ],
+      // Without IDs an edit is never matched (plan item-ids, never guess).
+      withoutIds: AMBIGUOUS,
       withIds: [
         { label: 'e', note: null },
         { label: 'r', note: null },
@@ -646,7 +639,7 @@ describe('component items written by a caller that cannot see all of them', () =
         expect(after.map((item) => ids.includes(item.id))).toEqual([false, false]);
       });
 
-      it('answers an invalid body (422), then the items (422), then a forbidden field (403), then a stale version (409)', async () => {
+      it('answers an invalid body (422), then a forbidden field (403), then a stale version (409), then the items (422)', async () => {
         const entry = await create({ title: 't', cards: base });
         const stale = { expectedVersion: 999 };
         const invalid = await request('PUT', url(entry.id), reader.accessToken, {
@@ -658,24 +651,30 @@ describe('component items written by a caller that cannot see all of them', () =
           422,
           suffix ? 'LENS_WRITE_UNSUPPORTED' : 'CONTENT_INVALID',
         ]);
-        const unknownId = await request('PUT', url(entry.id), reader.accessToken, {
+        // A field the caller may not change answers before anything about the items (or the version).
+        const forbidden = await request('PUT', url(entry.id), titleOnly.accessToken, {
           ...stale,
+          data: { cards: [{ id: 'gone', label: 'A' }] },
+        });
+        expect([forbidden.statusCode, errorOf(forbidden).code]).toEqual([403, 'FORBIDDEN_FIELD']);
+        // A stale version answers before any work on the items.
+        const conflict = await request('PUT', url(entry.id), reader.accessToken, {
+          ...stale,
+          data: { cards: [{ id: 'gone', label: 'A' }] },
+        });
+        expect(conflict.statusCode).toBe(409);
+        const version = expectStatus(
+          await admin.get(`/api/admin/content/deck/${entry.id}`),
+          200,
+        ).json<EntryBody>().version;
+        const unknownId = await request('PUT', url(entry.id), reader.accessToken, {
+          expectedVersion: version,
           data: { cards: [{ id: 'gone', label: 'A' }] },
         });
         expect([unknownId.statusCode, errorOf(unknownId).details?.issues?.[0]?.code]).toEqual([
           422,
           'UNKNOWN_ITEM_ID',
         ]);
-        const forbidden = await request('PUT', url(entry.id), titleOnly.accessToken, {
-          ...stale,
-          data: { cards: [{ label: 'A' }] },
-        });
-        expect([forbidden.statusCode, errorOf(forbidden).code]).toEqual([403, 'FORBIDDEN_FIELD']);
-        const conflict = await request('PUT', url(entry.id), reader.accessToken, {
-          ...stale,
-          data: { cards: [{ label: 'A' }, { label: 'B' }] },
-        });
-        expect(conflict.statusCode).toBe(409);
       });
 
       it('a caller that may not read clears a field with null and a list with []: never a success that keeps it', async () => {
@@ -686,21 +685,25 @@ describe('component items written by a caller that cannot see all of them', () =
         expect(after.cards).toEqual([]);
       });
 
-      it('a caller that may not read clears what it leaves out of a field it may write, as on any type', async () => {
+      it('a caller that may not read keeps the private fields it may not write, and may not send them', async () => {
         const entry = await create({ cards: base });
         const ids = await idsOf(entry.id, 'cards');
+        // `note` is private: a delivery caller's audience cannot read it, so it may not write it either.
+        const refused = await request('PUT', url(entry.id), writerOnly.accessToken, {
+          expectedVersion: expectStatus(
+            await admin.get(`/api/admin/content/deck/${entry.id}`),
+            200,
+          ).json<EntryBody>().version,
+          data: { cards: [{ id: ids[0], label: 'A', note: null }] },
+        });
+        expect([refused.statusCode, errorOf(refused).code]).toEqual([403, 'FORBIDDEN_FIELD']);
         await write(entry.id, writerOnly.accessToken, {
           cards: [
-            { id: ids[0], label: 'A', note: null },
+            { id: ids[0], label: 'A' },
             { id: ids[1], label: 'B' },
           ],
         });
-        // `note` is private, but the caller sees nothing, so nothing is kept for it: the same as on a content type
-        // whose components hold no private field.
-        expect(content((await stored(entry.id)).cards)).toEqual([
-          { label: 'A', note: null },
-          { label: 'B', note: null },
-        ]);
+        expect(content((await stored(entry.id)).cards)).toEqual(base);
       });
 
       it('with unpublished changes it may not read: a list sent without IDs is refused, with IDs it is certain', async () => {
@@ -796,18 +799,28 @@ describe('component items written by a caller that cannot see all of them', () =
       ]);
     });
 
-    it('pairs a nested list under the item its parent continues', async () => {
+    it('pairs a nested list under the item its parent continues: with IDs once a nested list changes', async () => {
       const entry = await published({
         boxes: [
           { name: 'x', chips: [{ label: 'B', size: '9' }] },
           { name: 'y', chips: twoAs },
         ],
       });
+      const sent = {
+        boxes: [
+          { name: 'x', chips: [{ label: 'B', size: 9 }] },
+          { name: 'y', chips: [{ label: 'A', size: 2 }] },
+        ],
+      };
+      // Without IDs a box whose chips changed is no longer the box it was: refused.
+      const refused = await put(entry.id, sent);
+      expect(refused.statusCode).toBe(422);
+      const boxes = (await stored(entry.id)).boxes as Array<{ id: string; chips: Array<{ id: string }> }>;
       expectStatus(
         await put(entry.id, {
           boxes: [
-            { name: 'x', chips: [{ label: 'B', size: 9 }] },
-            { name: 'y', chips: [{ label: 'A', size: 2 }] },
+            { id: boxes[0]?.id, name: 'x', chips: [{ id: boxes[0]?.chips[0]?.id, label: 'B', size: 9 }] },
+            { id: boxes[1]?.id, name: 'y', chips: [{ id: boxes[1]?.chips[1]?.id, label: 'A', size: 2 }] },
           ],
         }),
         200,
@@ -924,6 +937,32 @@ describe('component items written by a caller that cannot see all of them', () =
         { label: 'q2', size: '101' },
         { label: 'p2', size: '100' },
       ]);
+    });
+
+    it('a new item may not send a value for a field the client cannot write, with or without IDs', async () => {
+      const entry = await published({ chips: [{ label: 'p', size: '1' }] });
+      const ids = await idsOf(entry.id, 'chips');
+      for (const chips of [
+        [
+          { id: ids[0], label: 'p', size: 1 },
+          { id: null, label: 'n', size: 5 },
+        ],
+        // Without IDs, an appended item distinct from the stored one is new.
+        [
+          { label: 'p', size: 1 },
+          { label: 'n', size: 5 },
+        ],
+      ]) {
+        const response = await put(entry.id, { chips });
+        expect(response.statusCode, response.body).toBe(422);
+        expect(response.json<{ error: { code: string; details: { issues: Item[] } } }>().error).toMatchObject(
+          {
+            code: 'LENS_WRITE_UNSUPPORTED',
+            details: { issues: [{ path: '/chips/1/size', code: 'NOT_ALLOWED' }] },
+          },
+        );
+      }
+      expect(content((await stored(entry.id)).chips)).toEqual([{ label: 'p', size: '1' }]);
     });
 
     it('V and V2: a caller that may only update is refused without IDs, and certain with them', async () => {

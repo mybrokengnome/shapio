@@ -180,7 +180,7 @@ const objectType = (lines: readonly string[]) => (lines.length > 0 ? `{\n${lines
  */
 const ITEM_ID_LINES: Readonly<Record<Mode, string>> = {
   output: "  /** The item's ID, stable across saves. */\n  id: string;",
-  input: '  /** The `id` of the item read, to keep it; leave it out for a new item. */\n  id?: string;',
+  input: '  /** The `id` of the item read, to keep it; `null` marks a new item. */\n  id?: string | null;',
 };
 
 const componentDeclaration = (definition: ComponentDefinition, snapshot: SchemaSnapshot, mode: Mode) => {

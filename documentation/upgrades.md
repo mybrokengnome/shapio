@@ -40,6 +40,11 @@ again once their lease expires; scheduled publishes still run exactly once.
 Restarting an older version on a database migrated by a newer one is not supported. To go back, restore the
 backup you took before upgrading.
 
+Running the 0.9.0 migrations down and up again creates a new item ID key and a new schema ID. Item IDs not yet
+stored (items saved before 0.9.0 and not written since) then change, and schema version values issued before
+(the `SCHEMA_VERSION` in generated types, and what clients send) answer `400 SCHEMA_VERSION_FOREIGN`: regenerate
+your clients' types.
+
 ## Compatibility promises
 
 Shapio follows semantic versioning. Breaking changes to these come with a major version and upgrade notes in the

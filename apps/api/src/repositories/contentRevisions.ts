@@ -1,12 +1,13 @@
 import type { Kysely, Transaction } from 'kysely';
+import type { RevisionReason } from '../constants/revisions.js';
 import type { ContentData } from '../db/contentData.js';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
-export type RevisionReason =
-  'create' | 'save' | 'publish' | 'restore' | 'duplicate' | 'localize' | 'conversion';
+/** Why a revision was written (`constants/revisions.ts`, the one list). */
+export type { RevisionReason };
 
 export type NewRevision = {
   entryId: string;

@@ -16,6 +16,19 @@ type TypesResponse = { schemaVersion: number; source: string };
 export const schemaVersionTokenOf = (source: string): string | undefined =>
   /^export const SCHEMA_VERSION = '([^']+)'/m.exec(source)?.[1];
 
+/** A declaration file (`.d.ts`, `.d.mts`, `.d.cts`): it may declare the constant but not initialize it. */
+const DECLARATION_FILE = /\.d\.[cm]?ts$/;
+
+/**
+ * The source as a declaration file holds it: `export declare const SCHEMA_VERSION: '<schemaId>:<version>';`
+ * instead of the module's `as const` initializer, which `tsc` refuses in a `.d.ts`. Everything else is types.
+ */
+export const asDeclarationFile = (source: string): string =>
+  source.replace(
+    /^export const SCHEMA_VERSION = ('[^'\n]+') as const;$/m,
+    'export declare const SCHEMA_VERSION: $1;',
+  );
+
 /** The types path: today's schema, or the version `--schema-version` names. */
 const typesPath = (schemaVersion: string | undefined) =>
   schemaVersion === undefined
@@ -64,7 +77,7 @@ export const typesGenerateCommand: CliCommand = {
         typesPath(requested),
       );
       await mkdir(dirname(out), { recursive: true });
-      await writeFile(out, source, 'utf8');
+      await writeFile(out, DECLARATION_FILE.test(out) ? asDeclarationFile(source) : source, 'utf8');
       const written = schemaVersionTokenOf(source);
       const versionNote = written === undefined ? '' : ` (SCHEMA_VERSION ${written})`;
       io.stdout(

@@ -1,8 +1,15 @@
-import { canonicalJson, type DefinitionLens, type FieldLens, type SchemaDefinition } from '@shapio/schema';
+import {
+  canonicalJson,
+  type DefinitionLens,
+  type FieldDefinition,
+  type FieldLens,
+  type SchemaDefinition,
+} from '@shapio/schema';
 import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { ContentData } from '../../db/contentData.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
+import { newAlignmentBudget, type AlignmentBudget } from '../write/listAlignment.js';
 import {
   CARRY_MAX_ITEMS,
   itemIssueOf,
@@ -42,6 +49,11 @@ export type LensWriteResult = {
    * `AMBIGUOUS_ITEMS`), as today's `CONTENT_INVALID` issues in the client's API IDs.
    */
   itemIssues: ContentIssue[];
+  /**
+   * Fields inside components the caller may not write (its audience cannot read them: private, deprecated),
+   * sent with a value: JSON pointers in the client's API IDs, for today's `403 FORBIDDEN_FIELD`.
+   */
+  forbidden: string[];
 };
 
 /** What a write through the lens is checked against. */
@@ -91,12 +103,39 @@ export type LensWriteBase = {
    */
   writable?: (fieldId: string) => boolean;
   /**
+   * Whether the caller may write a field inside a component (at any depth): its audience can read it. Absent:
+   * every field (admin writes).
+   */
+  componentFieldWritable?: (fieldId: string) => boolean;
+  /**
    * The caller's write grant names no fields (default: true when `writable` is absent). Only then, and only for
    * a field that was public at the client's version, is a field removed since refused with the lens's reason;
    * for anyone else it is a field the version does not have (the unknown-field answer).
    */
   writesEverything?: boolean;
+  /**
+   * The caller's read grant names no fields (default: it may read the entry, `mayRead`). Only then does a read
+   * through the client's version show a component field public at that version and hidden since, as null
+   * (`componentFieldShownThroughLens`).
+   */
+  readsEverything?: boolean;
 };
+
+/**
+ * Whether a read through the client's version shows a component field (at any depth) to the caller, as a value
+ * or as null: one it reads today, or, for a caller whose read grant names no fields, one public at that version
+ * (hidden since, it reads null). The lensed read and the write's echo rule both ask this, so they cannot drift.
+ */
+export const componentFieldShownThroughLens = (
+  client: FieldDefinition,
+  readableToday: boolean,
+  readsEverything: boolean,
+): boolean => readableToday || (readsEverything && client.public && !client.deprecated);
+
+/** `componentFieldShownThroughLens` for a write's caller: a caller that may not read the entry is shown nothing. */
+const shownToWriter = (base: LensWriteBase, field: FieldLens): boolean =>
+  base.mayRead !== false &&
+  componentFieldShownThroughLens(field.client, readsToday(base, field, true), base.readsEverything ?? true);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -342,8 +381,10 @@ type Walk = {
   issues: ContentIssue[];
   /** Refusals about item IDs and pairing: today's `CONTENT_INVALID` issues, in the client's API IDs. */
   itemIssues: ContentIssue[];
-  /** How many refusals so far were of a value the caller reads but did not send back as read. */
-  notSentBack: number;
+  /** The write's alignment budget, shared by every list it writes (`listAlignment.ts`). */
+  budget: AlignmentBudget;
+  /** Fields inside components the caller may not write (JSON pointers in the client's API IDs). */
+  forbidden: string[];
   base: LensWriteBase;
 };
 
@@ -431,6 +472,22 @@ const translateObject = (
       walk.issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
       continue;
     }
+    // A field inside a component the caller's audience cannot write today. If a read through the client's version
+    // shows it to this caller (as null, since today hides it), an empty value is that read sent back: left out,
+    // so the stored value stays, whatever changed since (deprecated, made private). Anything else, and any value
+    // at all for a field that read never shows (private at the version), is refused (403), as without a version.
+    if (
+      whole &&
+      field.stored &&
+      item !== undefined &&
+      walk.base.componentFieldWritable &&
+      !walk.base.componentFieldWritable(field.fieldId)
+    ) {
+      if (!(isMissingValue(item) && shownToWriter(walk.base, field))) {
+        walk.forbidden.push(fieldPath);
+      }
+      continue;
+    }
     // A caller that read nothing (no read access, or no head to read) cannot send anything back: its empty values
     // clear what they name, through the rules below, never keep it.
     if (!readNothing && field.stored && !readsToday(walk.base, field, whole) && isMissingValue(item)) {
@@ -443,12 +500,19 @@ const translateObject = (
       continue;
     }
     if (isWritable(field)) {
-      output[field.stored.apiKey] = translateValue(walk, field, item, counterpart, fieldPath, pairings);
+      // A top-level list the caller cannot read: it cannot see the items it replaces (never compared by content).
+      const unreadable = !whole && !readsToday(walk.base, field, false);
+      output[field.stored.apiKey] = translateValue(
+        walk,
+        field,
+        item,
+        counterpart,
+        fieldPath,
+        pairings,
+        unreadable,
+      );
     } else if (!sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       walk.issues.push(counterpart.unseen ? unseenRefusal(fieldPath) : refusal(field, fieldPath));
-      if (field.stored && readsToday(walk.base, field, whole)) {
-        walk.notSentBack += 1;
-      }
     }
     // Sent back as read: left out. What a written instance leaves out (fields the client cannot read, write or
     // does not know) is carried over in storage form by the write path (`keepUnreadableComponentFields`).
@@ -719,7 +783,8 @@ const pairWrittenList = (
   sent: readonly unknown[],
   stored: readonly unknown[],
   path: string,
-): WrittenListPairing => {
+  unreadable: boolean,
+): number[] => {
   const { base } = walk;
   const side = (
     items: readonly unknown[],
@@ -732,7 +797,7 @@ const pairWrittenList = (
     }),
     kinds: items.map((item) => lensOf(item)?.definitionId ?? null),
   });
-  const unseen = base.mayRead === false || base.seesStored === false;
+  const unseen = unreadable || base.mayRead === false || base.seesStored === false;
   const sentIds = sent.map(sentIdOf);
   const sentSide = side(
     sent,
@@ -746,28 +811,47 @@ const pairWrittenList = (
   );
   const { pairs, issues } = pairList(
     { sentIds, sent: sentSide, storedIds: stored.map(storedIdOf), stored: storedSide },
-    { hidden: listHoldsHidden(base, field), unseen },
+    { hidden: unreadable || listHoldsHidden(base, field), unseen },
+    walk.budget,
   );
   walk.itemIssues.push(...issues.map((issue) => itemIssueOf(issue, path, { unseen })));
-  return {
-    pairs,
-    byIds: sentIds.some((id) => id !== undefined),
-    unseen,
-    exact: pairs.map((pair, index) => {
-      const key = sentSide.keys[index];
-      return pair !== -1 && key !== null && key !== undefined && key === storedSide.keys[pair];
-    }),
-  };
+  return pairs;
 };
 
-/** The one pairing of a written list, and what it says about each sent item. */
-type WrittenListPairing = {
-  pairs: number[];
-  /** The client named its items by ID (any `id`, null included). */
-  byIds: boolean;
-  unseen: boolean;
-  /** Per sent item: it continues a stored item it equals in everything the caller sees (an exact match). */
-  exact: boolean[];
+/**
+ * Every component list and zone in a body in the client's API IDs, at any depth, holds at most the items a write
+ * pairs (today's field's `max`, at most `CARRY_MAX_ITEMS`): the validator's own `TOO_MANY` otherwise, checked
+ * with the body before anything else is (`assertListCap` checks the same during the translation).
+ */
+export const assertClientListCaps = (lens: DefinitionLens, body: unknown, path = ''): void => {
+  if (!isRecord(body)) {
+    return;
+  }
+  for (const [key, value] of Object.entries(body)) {
+    const field = key === COMPONENT_KEY ? undefined : fieldByApiKey(lens, key);
+    if (!field || field.kind === 'null') {
+      continue;
+    }
+    const { client } = field;
+    if (client.type !== 'component' && client.type !== 'dynamiczone') {
+      continue;
+    }
+    const fieldPath = pointer(path, key);
+    const items = Array.isArray(value) ? value : [value];
+    if (Array.isArray(value)) {
+      const cap = listCapOf(field.stored.settings);
+      if (value.length > cap) {
+        throw listTooLong(fieldPath, cap);
+      }
+    }
+    items.forEach((item: unknown, index) => {
+      const nested =
+        client.type === 'component' ? nestedOf(field, client.settings.component) : zoneLensOf(field, item);
+      if (usable(nested)) {
+        assertClientListCaps(nested, item, Array.isArray(value) ? pointer(fieldPath, index) : fieldPath);
+      }
+    });
+  }
 };
 
 /** A list longer than the write path considers: the validator's own `TOO_MANY`, before any pairing. */
@@ -785,6 +869,7 @@ function translateValue(
   parent: Counterpart,
   path: string,
   pairings: Map<string, Pairing>,
+  unreadable = false,
 ): unknown {
   const { client } = field;
   const stored = parent.stored?.[field.fieldId];
@@ -813,10 +898,8 @@ function translateValue(
   }
   assertListCap(field, value, path);
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
-  const pairing = pairWrittenList(walk, field, value, kept, path);
-  const { pairs } = pairing;
+  const pairs = pairWrittenList(walk, field, value, kept, path, unreadable);
   const inside: Array<Map<string, Pairing>> = [];
-  let unmatchedRefusal = false;
   const translated = value.map((item: unknown, index) => {
     const pair = pairs[index] ?? -1;
     const storedItem = pair === -1 ? null : recordOrNull(kept[pair]);
@@ -825,25 +908,11 @@ function translateValue(
     const nested = new Map<string, Pairing>();
     inside.push(nested);
     const itemPath = pointer(path, index);
-    const before = walk.notSentBack;
-    const result =
-      client.type === 'dynamiczone'
-        ? translateZoneItem(walk, field, item, counterpart, itemPath, nested)
-        : lens
-          ? translateInstance(walk, lens, item, counterpart, itemPath, nested)
-          : item;
-    // Without IDs, a value refused as "not what it read" on an item that continues no stored item it equals
-    // (new, or edited at its place) means the server could not match the item: that is the reason to give.
-    if (!pairing.byIds && !pairing.exact[index] && walk.notSentBack > before) {
-      unmatchedRefusal = true;
+    if (client.type === 'dynamiczone') {
+      return translateZoneItem(walk, field, item, counterpart, itemPath, nested);
     }
-    return result;
+    return lens ? translateInstance(walk, lens, item, counterpart, itemPath, nested) : item;
   });
-  if (unmatchedRefusal && !walk.itemIssues.some((issue) => issue.path === path)) {
-    walk.itemIssues.push(
-      itemIssueOf({ index: null, code: 'AMBIGUOUS_ITEMS' }, path, { unseen: pairing.unseen }),
-    );
-  }
   pairings.set(field.fieldId, { pairs, inside });
   return translated;
 }
@@ -860,7 +929,8 @@ export const writeThroughLens = (
   const walk: Walk = {
     issues: [],
     itemIssues: [],
-    notSentBack: 0,
+    budget: newAlignmentBudget(),
+    forbidden: [],
     base: withComponentReadability(lens, base),
   };
   const pairings = new Map<string, Pairing>();
@@ -881,7 +951,7 @@ export const writeThroughLens = (
   const issues = walk.issues.filter(
     (issue) => !ambiguous.some((list) => issue.path === list || issue.path.startsWith(`${list}/`)),
   );
-  return { input: output, issues, itemIssues: walk.itemIssues, pairings };
+  return { input: output, issues, itemIssues: walk.itemIssues, forbidden: walk.forbidden, pairings };
 };
 
 /**

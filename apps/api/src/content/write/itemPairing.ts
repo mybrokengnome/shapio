@@ -4,6 +4,7 @@ import type { ContentData } from '../../db/contentData.js';
 import type { ComponentLookup } from '../itemIds.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
+import { newAlignmentBudget, type AlignmentBudget } from './listAlignment.js';
 import {
   CARRY_MAX_ITEMS,
   itemIssueOf,
@@ -30,6 +31,11 @@ export type ItemView = {
   hidden: (field: FieldDefinition) => boolean;
   /** The caller cannot see the stored items (it may not read the entry, or not the draft written). */
   unseen: boolean;
+  /**
+   * Whether the caller reads a top-level field (its read mask). A list in a field it cannot read is one whose
+   * items it cannot see: never compared by content, refused without IDs. Absent: every field.
+   */
+  topLevelReadable?: (field: FieldDefinition) => boolean;
 };
 
 export type ItemPairingResult = { pairings: FieldPairings; issues: ContentIssue[] };
@@ -119,9 +125,17 @@ const seenValue = (view: ItemView, field: FieldDefinition, value: unknown): unkn
 const keyOf = (view: ItemView, component: ComponentDefinition | undefined, item: unknown): string | null =>
   component && isRecord(item) ? itemKey({ kind: component.id, seen: seenOf(view, component, item) }) : null;
 
-type Walk = { view: ItemView; issues: ContentIssue[]; hiddenByField: Map<string, boolean> };
+type Walk = {
+  view: ItemView;
+  issues: ContentIssue[];
+  hiddenByField: Map<string, boolean>;
+  budget: AlignmentBudget;
+};
 
-const listPolicyOf = (walk: Walk, field: FieldDefinition): ListPolicy => {
+const listPolicyOf = (walk: Walk, field: FieldDefinition, unreadable: boolean): ListPolicy => {
+  if (unreadable) {
+    return { hidden: true, unseen: true };
+  }
   let hidden = walk.hiddenByField.get(field.id);
   if (hidden === undefined) {
     hidden = holdsHidden(
@@ -148,6 +162,7 @@ const pairValue = (
   written: unknown,
   stored: unknown,
   path: string,
+  unreadable: boolean,
 ): Pairing | null => {
   const { componentOf } = walk.view;
   if (field.type === 'component' && !field.settings.repeatable) {
@@ -174,10 +189,11 @@ const pairValue = (
     keys: items.map((item) => keyOf(walk.view, componentOfItem(item), item)),
     kinds: items.map((item) => componentOfItem(item)?.id ?? null),
   });
-  const policy = listPolicyOf(walk, field);
+  const policy = listPolicyOf(walk, field, unreadable);
   const { pairs, issues } = pairList(
     { sentIds: written.map(sentIdOf), sent: side(written), storedIds: kept.map(idOf), stored: side(kept) },
     policy,
+    walk.budget,
   );
   walk.issues.push(...issues.map((issue) => itemIssueOf(issue, path, { unseen: policy.unseen })));
   return {
@@ -201,6 +217,7 @@ const pairFields = (
   written: unknown,
   stored: unknown,
   path: string,
+  topLevel = false,
 ): FieldPairings => {
   if (!isRecord(written)) {
     return NO_PAIRINGS;
@@ -214,6 +231,7 @@ const pairFields = (
         written[field.id],
         isRecord(stored) ? stored[field.id] : undefined,
         pointer(path, field.apiKey),
+        topLevel && walk.view.topLevelReadable !== undefined && !walk.view.topLevelReadable(field),
       );
       if (pairing) {
         pairings.set(field.id, pairing);
@@ -234,7 +252,7 @@ export const pairComponentItems = (
   fields: readonly FieldDefinition[],
   view: ItemView,
 ): ItemPairingResult => {
-  const walk: Walk = { view, issues: [], hiddenByField: new Map() };
-  const pairings = pairFields(walk, fields, patch, base, '');
+  const walk: Walk = { view, issues: [], hiddenByField: new Map(), budget: newAlignmentBudget() };
+  const pairings = pairFields(walk, fields, patch, base, '', true);
   return { pairings, issues: walk.issues };
 };

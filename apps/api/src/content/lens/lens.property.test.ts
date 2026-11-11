@@ -43,6 +43,7 @@ import {
 import {
   instanceIssues,
   isEmptyApiValue,
+  setRulePairs,
   walkDelivered,
   withoutItemIds,
   withoutStoredItemIds,
@@ -59,6 +60,8 @@ import { projectRows, type ReadEnvironment } from '../read.js';
 import { COMPONENT_KEY } from '../validator/index.js';
 import type { ContentIssue } from '../validator/issues.js';
 import { canonicalDate, canonicalDatetime, canonicalTime } from '../validator/scalars.js';
+import { unwritableComponentFields } from '../write/componentWriteMask.js';
+import { itemIdTreeOf, todayLevel } from '../write/itemIdTree.js';
 import { pairComponentItems } from '../write/itemPairing.js';
 import { itemViewOf, keepUnreadableComponentFields } from '../write/keepUnreadable.js';
 import type { FieldPairings } from '../write/listPairing.js';
@@ -114,6 +117,9 @@ const policyOf = (readMask: FieldMask): Policy => ({
 });
 
 const ALL: FieldMask = { mode: 'all' };
+
+/** Whether a read mask comes from a grant that names no fields (`hasUnrestrictedGrant`, as `policyOf` builds it). */
+const readsEverythingOf = (mask: FieldMask): boolean => mask.mode === 'all' || WILDCARD_MASKS.has(mask);
 
 /** The item-ID key of these tests (an instance's is random, from the database). */
 const ITEM_ID_TEST_KEY = Buffer.alloc(32);
@@ -857,11 +863,21 @@ type DeliveryWrite = {
   readable: (fieldId: string) => boolean;
   /** Component fields (any depth) the caller reads today. */
   componentReadable: (fieldId: string) => boolean;
+  /**
+   * Component fields (any depth) the caller may write: what its audience reads (a delivery caller: public, never
+   * deprecated). Absent: what it reads, or (a caller that may not read) public fields that are not deprecated.
+   */
+  componentWritable?: (fieldId: string) => boolean;
+  /**
+   * The caller's read grant names no fields (a wildcard delivery grant, or every field): through a version it is
+   * shown, as null, a component field public at that version and hidden since (default true).
+   */
+  readsEverything?: boolean;
 };
 
 type DeliveryWriteOutcome = {
   /** Who refused, or null when written. */
-  refusedBy: 'lens' | 'items' | 'fromInput' | null;
+  refusedBy: 'lens' | 'forbidden' | 'items' | 'fromInput' | null;
   issues: ContentIssue[];
   /** The lens's translation, when a version was named. */
   result: ReturnType<typeof writeThroughLens> | null;
@@ -882,6 +898,23 @@ const deliveryWrite = (write: DeliveryWrite): DeliveryWriteOutcome => {
   const componentOf = componentLookup(today);
   const withIds = storedWithIds(today, stored);
   const seesStored = write.seesStored ?? true;
+  const all = fieldsById(today);
+  const componentWritable =
+    write.componentWritable ??
+    ((fieldId: string) => {
+      if (mayRead) {
+        return componentReadable(fieldId);
+      }
+      const field = all.get(fieldId)?.field;
+      return field !== undefined && field.public && !field.deprecated;
+    });
+  const forbiddenOf = (paths: readonly string[]): DeliveryWriteOutcome => ({
+    refusedBy: 'forbidden',
+    issues: paths.map((path) => ({ path, code: 'FORBIDDEN_FIELD' as ContentIssue['code'], message: '403' })),
+    result,
+    written: null,
+    patched: [],
+  });
   let input = body;
   let pairings: FieldPairings | undefined;
   let result: ReturnType<typeof writeThroughLens> | null = null;
@@ -895,10 +928,15 @@ const deliveryWrite = (write: DeliveryWrite): DeliveryWriteOutcome => {
       definitionOf: definitionOfToday(today),
       readable,
       componentFieldReadable: componentReadable,
+      componentFieldWritable: componentWritable,
+      readsEverything: write.readsEverything ?? true,
       mayRead,
     });
     if (result.issues.length > 0) {
       return { refusedBy: 'lens', issues: result.issues, result, written: null, patched: [] };
+    }
+    if (result.forbidden.length > 0) {
+      return forbiddenOf(result.forbidden);
     }
     if (result.itemIssues.length > 0) {
       return { refusedBy: 'items', issues: result.itemIssues, result, written: null, patched: [] };
@@ -911,9 +949,18 @@ const deliveryWrite = (write: DeliveryWrite): DeliveryWriteOutcome => {
     return { refusedBy: 'fromInput', issues, result, written: null, patched: [] };
   }
   if (!lens) {
+    // A value (or a null) for a component field the caller may not write: 403, before anything about items.
+    const denied = unwritableComponentFields(patch, today.model.fields, componentOf, (field) =>
+      componentWritable(field.id),
+    );
+    if (denied.length > 0) {
+      return forbiddenOf(denied);
+    }
     const view = itemViewOf(componentOf, (field) => componentReadable(field.id), {
       mayRead,
       unseen: !seesStored,
+      topLevelReadable: (field) => readable(field.id),
+      writable: (field) => componentWritable(field.id),
     });
     const paired = pairComponentItems(patch, withIds, today.model.fields, view);
     if (paired.issues.length > 0) {
@@ -927,7 +974,13 @@ const deliveryWrite = (write: DeliveryWrite): DeliveryWriteOutcome => {
     today.model.fields,
     componentOf,
     (field) => componentReadable(field.id),
-    { mayRead, input, ...(lens ? { lens } : {}), ...(pairings ? { pairings } : {}) },
+    {
+      mayRead,
+      input,
+      writable: (field) => componentWritable(field.id),
+      ...(lens ? { lens } : {}),
+      ...(pairings ? { pairings } : {}),
+    },
   );
   return {
     refusedBy: null,
@@ -970,6 +1023,7 @@ const writeThrough = (
     mayRead: true,
     readable,
     componentReadable,
+    readsEverything: readsEverythingOf(readMask),
   });
   const result = outcome.result as ReturnType<typeof writeThroughLens>;
   if (outcome.refusedBy === 'lens') {
@@ -1763,14 +1817,17 @@ type SentItem = {
   origin: { type: 'kept' | 'edited'; from: number } | { type: 'new' };
 };
 
-/** The fields a caller of `mode` sees (and so sends, and is matched by) in an item of `kind`. */
+/**
+ * The fields a caller of `mode` sees (and so sends, and is matched by) in an item of `kind`. A delivery caller
+ * writes only public component fields (a private one is 403, plan item-ids M2), so a caller that may not read
+ * sends the same public fields as one that may.
+ */
 const seenFields = (mode: ListMode, kind: 'x' | 'y'): Array<'v' | 'h' | 'u'> => {
-  const read = mode === 'public' || mode === 'lens';
   const lens = mode === 'lens' || mode === 'noReadLens';
   if (kind === 'y') {
-    return read ? ['v'] : ['v', 'h'];
+    return ['v'];
   }
-  return [...(['v'] as const), ...(read ? [] : (['h'] as const)), ...(lens ? [] : (['u'] as const))];
+  return [...(['v'] as const), ...(lens ? [] : (['u'] as const))];
 };
 /** The hidden fields of an item of `kind` for a caller of `mode`: what must travel with the item. */
 const hiddenFields = (mode: ListMode, kind: 'x' | 'y'): Array<'h' | 'd' | 'u'> =>
@@ -1892,12 +1949,6 @@ const writeListsOutcome = (mode: ListMode, stored: ContentData, body: Record<str
 };
 
 /** `writeListsOutcome`'s written data, values only; refused writes fail the calling test. */
-const writeLists = (mode: ListMode, stored: ContentData, body: Record<string, unknown>) => {
-  const outcome = writeListsOutcome(mode, stored, body);
-  expect(outcome.issues, 'refused').toEqual([]);
-  return withoutStoredItemIds(outcome.written) as ContentData;
-};
-
 /** Problems with where hidden values ended up, for one list. */
 const provenanceProblems = (
   mode: ListMode,
@@ -2120,22 +2171,18 @@ describe('item matching in component lists', { timeout: 300_000 }, () => {
     );
   });
 
-  it.fails(
-    '12b. without IDs, a new or edited-and-moved item carries nothing (as stated; the documented substitution breaks it)',
-    () => {
-      // Recorded by decision (plan item-ids, 9 and "after implementation"): without IDs, a moved-and-edited item
-      // is "deleted plus a new item" and carries nothing, and cases with more than one least-edit alignment
-      // are refused; but an item read as edited where a stored item stood (the substitution, P) carries that
-      // item's values. Sending `id` makes every case certain (ID1).
-      fc.assert(
-        fc.property(caseArb, (input) => {
-          const { inPlace, message } = run(input);
-          expect(inPlace, message).toEqual([]);
-        }),
-        { numRuns: RUNS },
-      );
-    },
-  );
+  it('12b. without IDs, a new or edited-and-moved item carries nothing: no item continues a stored item it does not equal', () => {
+    // Was the documented substitution (an item read as edited where a stored item stood carried its values).
+    // The no-ID rule has no in-place carry: an edit, look-alikes in a changed list, or a delete with an add is
+    // refused (AMBIGUOUS_ITEMS); with IDs, certain (ID1).
+    fc.assert(
+      fc.property(caseArb, (input) => {
+        const { inPlace, message } = run(input);
+        expect(inPlace, message).toEqual([]);
+      }),
+      { numRuns: RUNS },
+    );
+  });
 });
 
 describe('schema lens counterexamples, property 5', () => {
@@ -2197,19 +2244,14 @@ describe('schema lens counterexamples, property 5', () => {
     expect(applyPatch(stored, patch)).toEqual({});
   });
 
-  it.fails(
-    "P. delete an item and insert a new one in its place: the new item inherits the deleted one's hidden values",
-    () => {
-      // Property 12b (as stated: a new or edited-and-moved item carries nothing), minimized. By the documented rule
-      // (delivery-api.md "Writing components", 2: in place when the list keeps its length), a new item sent where
-      // a deleted item stood is taken for an edit of it and keeps its private value `h`. The server cannot tell the
-      // two apart from a body without IDs; recorded so the trade-off stays visible. Decision (plan item-ids, 9):
-      // documented without IDs; with IDs certain (`id: null` marks the new item: "P with IDs").
-      const items = { [ITEMS]: [{ [LIST_FIELDS.v]: 'p', [LIST_FIELDS.h]: 'h0' }] };
-      const written = writeLists('public', items, { items: [{ v: 'new item' }], blocks: [] });
-      expect(written[ITEMS]).toEqual([{ [LIST_FIELDS.v]: 'new item' }]); // actual: h: 'h0' carried over
-    },
-  );
+  it('P. delete an item and insert a new one in its place: refused without IDs (AMBIGUOUS_ITEMS); with IDs the new item carries nothing', () => {
+    // Was a recorded trade-off: a new item sent where a deleted item stood was taken for an edit of it and kept
+    // its private value. The no-ID rule refuses a delete with an add. With IDs: "P with IDs".
+    const items = { [ITEMS]: [{ [LIST_FIELDS.v]: 'p', [LIST_FIELDS.h]: 'h0' }] };
+    const outcome = writeListsOutcome('public', items, { items: [{ v: 'new item' }], blocks: [] });
+    expect(outcome.issues.map((issue) => [issue.code, issue.path])).toEqual([['AMBIGUOUS_ITEMS', '/items']]);
+    expect(outcome.written).toBeNull();
+  });
 
   it('Q. numeric text that is not canonical ("00012", " 12 ") reads as a big integer, exactly, as a replay does', () => {
     // Property 5 (the direct lens never returns less than a replay), found with LENS_PROPERTY_SEED=1809 at
@@ -2711,46 +2753,29 @@ const runPairCase = async ({ mode, items, blocks, itemsOp, blocksOp }: PairCase)
   const outcome = writePairs(mode, stored, body);
   const message = `mode ${mode}\n  ops ${JSON.stringify({ itemsOp, blocksOp, origins: { items: itemsBody.origins, blocks: blocksBody.origins } })}\n  stored ${JSON.stringify(stored)}\n  read ${JSON.stringify(read)}\n  body ${JSON.stringify(body)}\n  outcome ${JSON.stringify({ refusedBy: outcome.refusedBy, issues: outcome.issues, written: outcome.withIds })}`;
   const problems: string[] = [];
+  // The no-ID set rule (review 5) decides accept or refuse and which stored item each sent item continues.
+  const answers = setRuleAnswers(read, body, {
+    unseen: mode === 'lensUpdateOnly',
+    subHidden: false,
+    names: ['items', 'blocks'],
+  });
+  const storedIds = storedWithIds(today, stored);
+  problems.push(
+    ...setRuleProblems(answers, outcome, (path) =>
+      outcome.withIds
+        ? continuedIndexes(storedIds, outcome.withIds, path === '/blocks' ? BLOCKS : ITEMS)
+        : [],
+    ),
+  );
   if (outcome.written === null || outcome.withIds === null) {
-    // The documented refusal (plan item-ids, strict alignment): AMBIGUOUS_ITEMS at the list only (a gap with
-    // leftovers on both sides, a caller that cannot see the items it replaces, or a read-only value sent back as
-    // read on an item that is no exact-match continuation: X2, AB). Any other refusal of a body sent back as read
-    // is wrong.
-    problems.push(...strictRefusalProblems(outcome.issues));
     return { problems, message, refused: true };
   }
-  const storedIds = storedWithIds(today, stored);
   const lists = [
     ['items', ITEMS, items, itemsBody.origins, false],
     ['blocks', BLOCKS, blocks, blocksBody.origins, true],
   ] as const;
-  // Which written items substitute for a stored item: continue one whose view differs from what was sent (the
-  // documented P, as the alignment reads it: a stored item read as edited where it stood).
+  // No substitutes under the rule: an accepted item continues only a stored item it equals.
   const substitutes = new Map<string, Set<number>>();
-  for (const [name, fieldId] of lists) {
-    const continued = continuedIndexes(storedIds, outcome.withIds, fieldId);
-    const readList = (read[name] ?? []) as unknown[];
-    const sentList = body[name];
-    substitutes.set(
-      name,
-      new Set(
-        continued.flatMap((stored, position) =>
-          stored !== -1 && callerView(readList[stored]) !== callerView(sentList[position]) ? [position] : [],
-        ),
-      ),
-    );
-  }
-  // The strict rule: an item continues a stored item it does not equal only in a pure edit in place, at its
-  // place; the only item of its view in both lists continues that one; no gap keeps new and deleted items.
-  for (const [name, fieldId] of lists) {
-    problems.push(
-      ...strictListProblems(
-        name,
-        strictListOf(body[name], (read[name] ?? []) as unknown[]),
-        continuedIndexes(storedIds, outcome.withIds, fieldId),
-      ),
-    );
-  }
   if (mode !== 'lensUpdateOnly') {
     // Read back through the version: equal to what was sent, item by item, in order (but a substitute, which
     // also shows the read-only values of the item it continues).
@@ -2945,18 +2970,23 @@ describe('round trips through a version with read-only fields', { timeout: 600_0
     );
   });
 
-  it('U. an item edited in place into a copy of another item keeps its own hidden value, with or without IDs', async () => {
-    // Was a counterexample (h0 deleted). Plan item-ids: no unique pairs; one optimal alignment costs 1, sent 0
-    // continues stored 0. With IDs, certain.
+  it('U. an item edited into a copy of another item: refused without IDs; with IDs it keeps its own hidden value', async () => {
+    // Was a counterexample (h0 deleted), then an in-place carry. The no-ID rule refuses look-alikes in a changed
+    // list. With IDs, certain.
     const stored = {
       [ITEMS]: [
         pairStored({ kind: 'x', v: 'p', w: false, t: false, h: true }, 0, false),
         pairStored({ kind: 'x', v: 'q', w: false, t: false, h: false }, 1, false),
       ],
     };
+    // Without IDs: look-alikes in a changed list, refused (no in-place carry).
     for (const mode of ['lensRead', 'noLens'] as const) {
-      const written = writePairs(mode, stored, { items: [{ v: 'q' }, { v: 'q' }], blocks: [] }).written;
-      expect(written?.[ITEMS], mode).toEqual([{ [PAIR.v]: 'q', [PAIR.h]: 'h0' }, { [PAIR.v]: 'q' }]);
+      const refused = writePairs(mode, stored, { items: [{ v: 'q' }, { v: 'q' }], blocks: [] });
+      expect(
+        refused.issues.map((issue) => [issue.code, issue.path]),
+        mode,
+      ).toEqual([['AMBIGUOUS_ITEMS', '/items']]);
+      expect(refused.written, mode).toBeNull();
     }
     const { today } = pairSchemas();
     const ids = ((storedWithIds(today, stored)[ITEMS] ?? []) as Array<Record<string, unknown>>).map(
@@ -2991,7 +3021,7 @@ describe('round trips through a version with read-only fields', { timeout: 600_0
     expect(refused.issues.map((issue) => issue.code)).toEqual(['AMBIGUOUS_ITEMS']);
     const [, second] = vIds();
     const written = writePairs('lensUpdateOnly', vStored(), {
-      items: [{ id: second, v: 'q', h: 'h1' }],
+      items: [{ id: second, v: 'q' }],
       blocks: [],
     });
     expect(written.written?.[ITEMS]).toEqual([{ [PAIR.v]: 'q', [PAIR.t]: 't1', [PAIR.h]: 'h1' }]);
@@ -3004,8 +3034,8 @@ describe('round trips through a version with read-only fields', { timeout: 600_0
     const [first, second] = vIds();
     const written = writePairs('lensUpdateOnly', vStored(), {
       items: [
-        { id: second, v: 'q', h: 'h1' },
-        { id: first, v: 'p', h: 'h0' },
+        { id: second, v: 'q' },
+        { id: first, v: 'p' },
       ],
       blocks: [],
     });
@@ -3034,6 +3064,9 @@ const IDF = {
 const ID_X = F(0xe1);
 const ID_Y = F(0xe2);
 const ID_Z = F(0xe3);
+/** A private top-level field of the ID model (a top-level value hidden from delivery callers). */
+const ID_SECRET = F(0x13);
+const ID_ADDED = F(0x12);
 
 /**
  * X: a writable `xv`, `xw` (number at V, integer today: read-only through V), a private `xh`, a deprecated
@@ -3064,6 +3097,7 @@ const idSchemas = ({ hidden = true }: { hidden?: boolean } = {}) => {
       { id: ITEMS, apiKey: 'items', type: 'component', settings: { component: ID_X, repeatable: true } },
       { id: BLOCKS, apiKey: 'blocks', type: 'dynamiczone', settings: { components: [ID_X, ID_Y] } },
       ...(atV ? [] : [{ id: F(0x12), apiKey: 'added' }]),
+      { id: ID_SECRET, apiKey: 'secret', public: !hidden },
     ]);
   return { today: schemaOf(model(false), [x(false), y, z]), atV: schemaOf(model(true), [x(true), y, z]) };
 };
@@ -3149,6 +3183,8 @@ type IdScript = {
   /** Per read item: how its `sub` list changes (survivors in order, one inserted value or none). */
   subs: Array<{ kept: number[]; insert?: string }>;
   inserts: Array<{ at: number; kind: 'x' | 'y'; v: string; copyOf?: number }>;
+  /** Nested items moved to another parent (by sent positions, applied last): review 5, M1. */
+  subMoves?: Array<{ from: number; to: number; pick: number }>;
 };
 
 const idScriptArb = (stored: IdItem[], zone: boolean): fc.Arbitrary<IdScript> =>
@@ -3186,6 +3222,12 @@ const idScriptArb = (stored: IdItem[], zone: boolean): fc.Arbitrary<IdScript> =>
       ),
       { maxLength: 2 },
     ),
+    subMoves: fc.array(
+      fc.record({ from: fc.nat({ max: 4 }), to: fc.nat({ max: 4 }), pick: fc.nat({ max: 3 }) }),
+      {
+        maxLength: 2,
+      },
+    ),
   });
 
 type IdCase = {
@@ -3194,6 +3236,8 @@ type IdCase = {
   blocks: IdItem[];
   itemsScript: IdScript;
   blocksScript: IdScript;
+  /** Top-level values: `secret` (private), `added` (added since V: unknown through V). */
+  top?: { secret?: string; added?: string };
 };
 
 const idCaseArb = (modes: readonly IdMode[] = ID_MODES): fc.Arbitrary<IdCase> =>
@@ -3210,6 +3254,10 @@ const idCaseArb = (modes: readonly IdMode[] = ID_MODES): fc.Arbitrary<IdCase> =>
         blocks: fc.constant(blocks),
         itemsScript: idScriptArb(items, false),
         blocksScript: idScriptArb(blocks, true),
+        top: fc.record(
+          { secret: fc.constantFrom('s1', 's2'), added: fc.constantFrom('a1', 'a2') },
+          { requiredKeys: [] },
+        ),
       }),
     );
 
@@ -3314,6 +3362,20 @@ const idListBody = (
     sent.splice(at, 0, item);
     origins.splice(at, 0, -1);
   }
+  // A nested item moved to another parent: new there (`id: null` with IDs), gone from where it was.
+  for (const move of script.subMoves ?? []) {
+    const from = sent[move.from];
+    const to = sent[move.to];
+    if (!from || !to || move.from === move.to || !Array.isArray(from.sub) || !Array.isArray(to.sub)) {
+      continue;
+    }
+    const subs = [...(from.sub as Array<Record<string, unknown>>)];
+    const [moved] = subs.splice(move.pick % Math.max(subs.length, 1), 1);
+    if (moved) {
+      from.sub = subs;
+      to.sub = [...(to.sub as Array<Record<string, unknown>>), strip(moved, true)];
+    }
+  }
   return { sent, origins };
 };
 
@@ -3335,7 +3397,7 @@ const writerView = (
       (component?.fields ?? [])
         .filter((field) => {
           const now = todayComponent?.fields.find((candidate) => candidate.id === field.id);
-          return now !== undefined && !now.deprecated && now.type === field.type;
+          return now !== undefined && !now.deprecated && now.public && now.type === field.type;
         })
         .map((field) => field.id),
     );
@@ -3390,7 +3452,21 @@ type IdRun = {
 
 const runIdCase = async (
   input: IdCase,
-  { ids, hiddenTags = '', hidden = true }: { ids: boolean; hiddenTags?: string; hidden?: boolean },
+  {
+    ids,
+    hiddenTags = '',
+    hidden = true,
+    editBody,
+  }: {
+    ids: boolean;
+    hiddenTags?: string;
+    hidden?: boolean;
+    /** A last change to the body (a value injected for a field the caller may not write). */
+    editBody?: (body: {
+      items: Array<Record<string, unknown>>;
+      blocks: Array<Record<string, unknown>>;
+    }) => void;
+  },
 ): Promise<IdRun> => {
   const { today, atV } = idSchemas({ hidden });
   const client = input.mode.version ? atV : today;
@@ -3403,6 +3479,8 @@ const runIdCase = async (
       field === 'd' || (field === 'u' && input.mode.version) || (field === 'h' && privateHidden),
   };
   const stored: ContentData = {
+    ...(input.top?.secret === undefined ? {} : { [ID_SECRET]: input.top.secret }),
+    ...(input.top?.added === undefined ? {} : { [ID_ADDED]: input.top.added }),
     ...(input.items.length > 0
       ? { [ITEMS]: input.items.map((item, index) => idStored(item, 'items', index, opts)) }
       : {}),
@@ -3438,6 +3516,7 @@ const runIdCase = async (
     items: items.sent.map((item) => omitKeys(item, omit)),
     blocks: blocks.sent.map((item) => omitKeys(item, omit)),
   };
+  editBody?.(body);
   const outcome = deliveryWrite({
     today,
     client: input.mode.version ? atV : null,
@@ -3447,6 +3526,7 @@ const runIdCase = async (
     seesStored: access.seesStored,
     readable: () => access.mayRead,
     componentReadable: access.componentReadable,
+    readsEverything: readsEverythingOf(access.mask),
   });
   const message = `mode ${JSON.stringify(input.mode)} ids ${ids}\n  stored ${JSON.stringify(stored)}\n  read ${JSON.stringify(read)}\n  body ${JSON.stringify(body)}\n  outcome ${JSON.stringify({ refusedBy: outcome.refusedBy, issues: outcome.issues, written: outcome.written })}`;
   return {
@@ -3681,188 +3761,365 @@ const continuedIndexes = (storedIds: ContentData, written: ContentData, fieldId:
   );
 };
 
-/**
- * The strict no-ID rule (plan item-ids, `alignItemsStrictly`) for one list that can hold values its caller cannot
- * see, from what the caller sees of each item: the views it sent and read, and each item's component.
- */
-type StrictList = { sent: string[]; stored: string[]; sentKinds: unknown[]; storedKinds: unknown[] };
-
-const countsOf = (views: readonly string[]) => {
-  const counts = new Map<string, number>();
-  views.forEach((view) => counts.set(view, (counts.get(view) ?? 0) + 1));
-  return counts;
-};
+/** One list a no-ID body writes, and what the set rule answers for it (null: AMBIGUOUS_ITEMS). */
+type ListAnswer = { path: string; pairs: number[] | null; underRefused?: boolean };
 
 /**
- * A pure edit in place: the list kept its length, every place holds the same component, no item that changed at
- * its place had its old content sent at another place, and the list is not a rearrangement of the stored items.
- * Identity counts too.
+ * What the rule answers for every list a no-ID body writes that can hold hidden values: the top-level `names`
+ * and, with `subHidden`, the `sub` list of every item the top-level answer continues (a new parent's sub items
+ * are all new). `unseen`: the caller cannot see the stored items, so any non-empty list is refused.
  */
-const strictInPlace = (list: StrictList): boolean => {
-  const { sent, stored } = list;
-  if (sent.length !== stored.length) {
-    return false;
-  }
-  if (sent.every((view, index) => view === stored[index])) {
-    return true;
-  }
-  if (!list.sentKinds.every((kind, index) => kind === list.storedKinds[index])) {
-    return false;
-  }
-  const sentCounts = countsOf(sent);
-  if (stored.some((view, index) => view !== sent[index] && sentCounts.has(view))) {
-    return false;
-  }
-  const storedCounts = countsOf(stored);
-  const rearranged =
-    sentCounts.size === storedCounts.size &&
-    [...sentCounts].every(([view, count]) => storedCounts.get(view) === count);
-  return !rearranged;
-};
-
-/**
- * What an accepted no-ID write of one such list may do under the strict rule, from per sent item the stored item
- * it continues (-1: new):
- * - carry: an item continues a stored item only when the caller sees them equal, or in a pure edit in place at
- *   the same place (so a hidden value never sits on any other item);
- * - certain: an item that is the only one of its view in both lists continues that stored item;
- * - gaps: no new item and deleted stored item share a gap (no continued pair stands between them in both lists).
- */
-const strictListProblems = (
-  name: string,
-  list: StrictList,
-  continued: readonly number[],
-  checks: { carry?: boolean; certain?: boolean; gaps?: boolean } = { carry: true, certain: true, gaps: true },
-): string[] => {
-  const problems: string[] = [];
-  const inPlace = strictInPlace(list);
-  if (checks.carry) {
-    continued.forEach((storedAt, sentAt) => {
-      if (
-        storedAt !== -1 &&
-        list.sent[sentAt] !== list.stored[storedAt] &&
-        !(inPlace && storedAt === sentAt)
-      ) {
-        problems.push(
-          `${name}#${sentAt} continues stored ${storedAt} (${list.stored[storedAt]}) but was sent as ${list.sent[sentAt]}${inPlace ? ', not at its place' : ', not an edit in place'}`,
-        );
-      }
-    });
-  }
-  if (checks.certain) {
-    const sentCounts = countsOf(list.sent);
-    const storedCounts = countsOf(list.stored);
-    list.sent.forEach((view, sentAt) => {
-      if (sentCounts.get(view) === 1 && storedCounts.get(view) === 1) {
-        const storedAt = list.stored.indexOf(view);
-        if (continued[sentAt] !== storedAt) {
-          problems.push(
-            `${name}#${sentAt}: the only ${view} in both lists continues ${continued[sentAt] ?? -1}, not stored ${storedAt}`,
-          );
-        }
-      }
-    });
-  }
-  if (checks.gaps) {
-    const pairs = continued.flatMap((storedAt, sentAt) =>
-      storedAt === -1 ? [] : [[sentAt, storedAt] as const],
-    );
-    const kept = new Set(continued);
-    const deleted = list.stored.flatMap((_, storedAt) => (kept.has(storedAt) ? [] : [storedAt]));
-    continued.forEach((storedAt, sentAt) => {
-      if (storedAt !== -1) {
-        return;
-      }
-      for (const gone of deleted) {
-        const apart = pairs.some(
-          ([pairSent, pairStored]) =>
-            (pairSent < sentAt && pairStored > gone) || (pairSent > sentAt && pairStored < gone),
-        );
-        if (!apart) {
-          problems.push(
-            `${name}: new #${sentAt} and deleted stored ${gone} share a gap, yet the list was accepted`,
-          );
-          return;
-        }
-      }
-    });
-  }
-  return problems;
-};
-
-/** The strict list of a sent and a read list (API form; a zone's items name their component). */
-const strictListOf = (sent: readonly unknown[], read: readonly unknown[]): StrictList => ({
-  sent: sent.map(callerView),
-  stored: read.map(callerView),
-  sentKinds: sent.map((item) => (isObject(item) ? (item[COMPONENT_KEY] ?? null) : null)),
-  storedKinds: read.map((item) => (isObject(item) ? (item[COMPONENT_KEY] ?? null) : null)),
-});
-
-/** Whether an issue path names a list itself (`/items`, `/blocks`, `/items/0/sub`), not a value under it. */
-const isListPath = (path: string): boolean => /^\/(items|blocks)(\/\d+\/sub)?$/.test(path);
-
-/**
- * A no-ID refusal the strict rule explains, for bodies that only send back read-only values as read: the lists
- * answer AMBIGUOUS_ITEMS at the list and nothing else. A "send back the value it read" NOT_ALLOWED on an item that
- * is no exact-match continuation (made new, or edited at its place) is answered that way too (X2, AB), so no
- * NOT_ALLOWED and no other version issue under a list ever shows.
- */
-const strictRefusalProblems = (issues: readonly ContentIssue[]): string[] =>
-  issues.length > 0 && issues.every((issue) => issue.code === 'AMBIGUOUS_ITEMS' && isListPath(issue.path))
-    ? []
-    : issues
-        .filter((issue) => !(issue.code === 'AMBIGUOUS_ITEMS' && isListPath(issue.path)))
-        .map((issue) => `refused: ${issue.code} ${issue.path}`)
-        .concat(issues.length === 0 ? ['refused without an issue'] : []);
-
-/**
- * Every list of an accepted no-ID ID-model write checked against the strict rule: `items` and `blocks` (they
- * hold a deprecated or private field for every caller), and each continued X item's `sub` when its private `zh`
- * is hidden from the caller (otherwise `sub` holds nothing hidden and keeps the least-edit alignment).
- */
-const strictProblems = (
-  run: IdRun,
-  mode: IdMode,
-  checks?: { carry?: boolean; certain?: boolean; gaps?: boolean },
-): string[] => {
-  const written = run.outcome.written as ContentData;
-  const subHidden = mode.access === 'public' || mode.access === 'noDraft';
-  const problems: string[] = [];
-  for (const [name, fieldId] of [
-    ['items', ITEMS],
-    ['blocks', BLOCKS],
-  ] as const) {
-    const read = (run.read[name] ?? []) as unknown[];
-    const sent = run.body[name];
-    const continued = continuedIndexes(run.storedIds, written, fieldId);
-    problems.push(...strictListProblems(name, strictListOf(sent, read), continued, checks));
+const setRuleAnswers = (
+  read: Readonly<Record<string, unknown>>,
+  body: Readonly<Record<string, readonly unknown[]>>,
+  { unseen, subHidden, names }: { unseen: boolean; subHidden: boolean; names: readonly string[] },
+): ListAnswer[] => {
+  const answer = (sent: readonly unknown[], stored: readonly unknown[]): number[] | null =>
+    sent.length === 0 ? [] : unseen ? null : setRulePairs(sent.map(callerView), stored.map(callerView));
+  const answers: ListAnswer[] = [];
+  for (const name of names) {
+    const sent = body[name];
+    if (sent === undefined) {
+      continue;
+    }
+    const stored = (read[name] ?? []) as unknown[];
+    const pairs = answer(sent, stored);
+    answers.push({ path: `/${name}`, pairs });
     if (!subHidden) {
       continue;
     }
-    const storedList = (run.storedIds[fieldId] ?? []) as Array<Record<string, unknown>>;
-    const writtenList = (written[fieldId] ?? []) as Array<Record<string, unknown>>;
-    continued.forEach((storedAt, sentAt) => {
-      const readItem = read[storedAt];
-      const sentItem = sent[sentAt];
-      if (storedAt === -1 || !isObject(readItem) || !isObject(sentItem) || !Array.isArray(sentItem.sub)) {
+    // Under a refused list every item is taken as new: its sub list replaces nothing (still refused for a caller
+    // that cannot see the stored items).
+    sent.forEach((item, index) => {
+      if (!isObject(item) || !Array.isArray(item.sub)) {
         return;
       }
-      const subContinued = continuedIndexes(
-        { [IDF.sub]: storedList[storedAt]?.[IDF.sub] ?? [] },
-        { [IDF.sub]: writtenList[sentAt]?.[IDF.sub] ?? [] },
-        IDF.sub,
-      );
-      problems.push(
-        ...strictListProblems(
-          `${name}#${sentAt}.sub`,
-          strictListOf(sentItem.sub as unknown[], (readItem.sub ?? []) as unknown[]),
-          subContinued,
-          checks,
-        ),
-      );
+      const parent = pairs?.[index] ?? -1;
+      const storedParent = parent === -1 ? undefined : stored[parent];
+      const storedSub = isObject(storedParent) && Array.isArray(storedParent.sub) ? storedParent.sub : [];
+      answers.push({
+        path: `/${name}/${index}/sub`,
+        pairs: answer(item.sub as unknown[], storedSub),
+        underRefused: pairs === null,
+      });
     });
   }
+  return answers;
+};
+
+/**
+ * The outcome of a no-ID write measured against the rule's answers: refused exactly when some list is ambiguous
+ * (AMBIGUOUS_ITEMS at exactly those lists, nothing else), else accepted with every list continuing exactly the
+ * stored items the rule pairs. `continuedAt(path)`: per sent item of that list, the stored index it continues.
+ */
+const setRuleProblems = (
+  answers: readonly ListAnswer[],
+  outcome: { refusedBy: string | null; issues: readonly ContentIssue[] },
+  continuedAt: (path: string) => number[],
+): string[] => {
+  const ambiguous = answers.filter((answer) => answer.pairs === null).map((answer) => answer.path);
+  if (outcome.refusedBy !== null) {
+    // Every list the rule refuses is named, but a list under a refused one may go unnamed (a write through a
+    // version names only the outer list; noted, not a data question).
+    const got = outcome.issues.map((issue) => `${issue.code} ${issue.path}`).sort();
+    const may = new Set(ambiguous.map((path) => `AMBIGUOUS_ITEMS ${path}`));
+    const must = answers
+      .filter((answer) => answer.pairs === null && !answer.underRefused)
+      .map((answer) => `AMBIGUOUS_ITEMS ${answer.path}`);
+    return got.length > 0 && got.every((line) => may.has(line)) && must.every((line) => got.includes(line))
+      ? []
+      : [`refused with ${JSON.stringify(got)}, the rule answers ${JSON.stringify([...may].sort())}`];
+  }
+  if (ambiguous.length > 0) {
+    return [`accepted, the rule refuses ${ambiguous.join(', ')}`];
+  }
+  return answers.flatMap((answer) => {
+    const got = continuedAt(answer.path);
+    return canonicalJson(got) === canonicalJson(answer.pairs)
+      ? []
+      : [`${answer.path} continues ${JSON.stringify(got)}, the rule pairs ${JSON.stringify(answer.pairs)}`];
+  });
+};
+
+/** Per sent item of a list at `path` (`/items`, `/items/2/sub`), the stored index its written item continues. */
+const continuedOf = (
+  storedIds: Readonly<ContentData>,
+  written: Readonly<ContentData>,
+  path: string,
+): number[] => {
+  const [, name, index] = path.split('/');
+  const fieldId = name === 'blocks' ? BLOCKS : ITEMS;
+  if (index === undefined) {
+    return continuedIndexes(storedIds, written, fieldId);
+  }
+  const writtenParent = ((written[fieldId] ?? []) as Array<Record<string, unknown>>)[Number(index)];
+  const storedParent = ((storedIds[fieldId] ?? []) as Array<Record<string, unknown>>).find(
+    (item) => item.__id === writtenParent?.__id,
+  );
+  return continuedIndexes(
+    { [IDF.sub]: storedParent?.[IDF.sub] ?? [] },
+    { [IDF.sub]: writtenParent?.[IDF.sub] ?? [] },
+    IDF.sub,
+  );
+};
+
+/** The rule's check of one ID-model run without IDs. */
+const idRuleProblems = (run: IdRun, mode: IdMode): string[] => {
+  const unseen = mode.access === 'updateOnly' || mode.access === 'noDraft';
+  const subHidden = mode.access !== 'all';
+  const answers = setRuleAnswers(run.read, run.body, { unseen, subHidden, names: ['items', 'blocks'] });
+  return setRuleProblems(answers, run.outcome, (path) =>
+    continuedOf(run.storedIds, run.outcome.written as ContentData, path),
+  );
+};
+
+/**
+ * Conservation (review 5, B2): after an accepted write, with or without IDs, a stored item the result continues
+ * holds exactly the hidden values it held (none moved off it, none moved onto it), and a stored item holding
+ * hidden values is gone only when its list as sent holds no item equal to it (in the caller's view) and no item
+ * anywhere carries its ID. Hidden: a value the body did not send. Lists are located by their parent's stored ID.
+ */
+const conservationProblems = (input: {
+  storedIds: Readonly<ContentData>;
+  read: Readonly<Record<string, unknown>>;
+  body: Readonly<Record<string, readonly unknown[]>>;
+  written: Readonly<ContentData>;
+}): string[] => {
+  const problems: string[] = [];
+  const sent = sentTags(input.body);
+  const before = tagsByItem(input.storedIds);
+  const after = tagsByItem(input.written);
+  const writtenIds = new Set(collectIds(input.written));
+  for (const [tag, id] of after) {
+    if (!sent.has(tag) && before.get(tag) !== id) {
+      problems.push(`${tag}: stored on ${before.get(tag) ?? 'nothing'}, now on ${id}`);
+    }
+  }
+  // Where each read item lives (its list, by the parent's ID) and how the caller sees it.
+  const storedAt = new Map<string, { list: string; view: string }>();
+  const walkRead = (list: string, items: unknown) => {
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      if (isObject(item) && typeof item.id === 'string') {
+        storedAt.set(item.id, { list, view: callerView(item) });
+        walkRead(`${list}/${item.id}/sub`, item.sub);
+      }
+    });
+  };
+  walkRead('items', input.read.items);
+  walkRead('blocks', input.read.blocks);
+  // The sent lists, by the stored ID their parent's written item continues; and every ID sent.
+  const sentViews = new Map<string, Set<string>>();
+  const sentIds = new Set<string>();
+  const walkSent = (list: string, items: unknown, written: unknown) => {
+    const views = sentViews.get(list) ?? new Set<string>();
+    sentViews.set(list, views);
+    const writtenItems = Array.isArray(written) ? (written as unknown[]) : [];
+    // A list sent with IDs says itself which items are new (`id: null`): only a list without them is matched by
+    // what the caller sees.
+    const withIds = (Array.isArray(items) ? items : []).some((item) => isObject(item) && 'id' in item);
+    (Array.isArray(items) ? items : []).forEach((item, index) => {
+      if (!isObject(item)) {
+        return;
+      }
+      if (!withIds) {
+        views.add(callerView(item));
+      }
+      if (typeof item.id === 'string') {
+        sentIds.add(item.id);
+      }
+      const writtenItem = writtenItems[index];
+      if (isObject(writtenItem) && typeof writtenItem.__id === 'string') {
+        walkSent(`${list}/${writtenItem.__id}/sub`, item.sub, writtenItem[IDF.sub]);
+      }
+    });
+  };
+  walkSent('items', input.body.items, input.written[ITEMS]);
+  walkSent('blocks', input.body.blocks, input.written[BLOCKS]);
+  const hiddenOf = new Map<string, string[]>();
+  for (const [tag, id] of before) {
+    if (!sent.has(tag)) {
+      hiddenOf.set(id, [...(hiddenOf.get(id) ?? []), tag]);
+    }
+  }
+  for (const [id, tags] of hiddenOf) {
+    if (writtenIds.has(id)) {
+      const lost = tags.filter((tag) => after.get(tag) !== id);
+      if (lost.length > 0) {
+        problems.push(`${id} continues, yet lost ${lost.join(', ')}`);
+      }
+      continue;
+    }
+    const place = storedAt.get(id);
+    if (sentIds.has(id)) {
+      problems.push(`${id} was sent by its ID, yet deleted with ${tags.join(', ')}`);
+    } else if (place && sentViews.get(place.list)?.has(place.view)) {
+      problems.push(
+        `${id} (${place.view}) was sent back unchanged in ${place.list}, yet deleted with ${tags.join(', ')}`,
+      );
+    }
+  }
   return problems;
+};
+
+/**
+ * Cross-parent (review 5, M1), for a write without IDs: a nested item continues only under the parent it was
+ * stored under, and every item holding a hidden value it held before was sent as the caller read it (without IDs
+ * nothing is edited in place), so no hidden value changes which item, as the caller sees items, it sits with.
+ */
+const crossParentProblems = (input: {
+  storedIds: Readonly<ContentData>;
+  read: Readonly<Record<string, unknown>>;
+  body: Readonly<Record<string, readonly unknown[]>>;
+  written: Readonly<ContentData>;
+}): string[] => {
+  const parents = (data: Readonly<ContentData>) => {
+    const parentOf = new Map<string, string>();
+    for (const fieldId of [ITEMS, BLOCKS]) {
+      for (const item of (data[fieldId] ?? []) as Array<Record<string, unknown>>) {
+        for (const sub of (item[IDF.sub] ?? []) as Array<Record<string, unknown>>) {
+          if (typeof sub.__id === 'string' && typeof item.__id === 'string') {
+            parentOf.set(sub.__id, item.__id);
+          }
+        }
+      }
+    }
+    return parentOf;
+  };
+  const before = parents(input.storedIds);
+  const problems = [...parents(input.written)].flatMap(([id, parent]) =>
+    before.has(id) && before.get(id) !== parent
+      ? [`nested ${id} moved from parent ${String(before.get(id))} to ${parent}`]
+      : [],
+  );
+  // How the caller read each stored instance, and how it sent the instance each written one is.
+  const readView = new Map<string, string>();
+  const walkRead = (items: unknown) =>
+    (Array.isArray(items) ? items : []).forEach((item: unknown) => {
+      if (isObject(item) && typeof item.id === 'string') {
+        readView.set(item.id, callerView({ ...item, sub: undefined }));
+        walkRead(item.sub);
+      }
+    });
+  walkRead(input.read.items);
+  walkRead(input.read.blocks);
+  const sentView = new Map<string, string>();
+  const walkSent = (items: unknown, written: unknown) => {
+    const writtenItems = Array.isArray(written) ? (written as unknown[]) : [];
+    (Array.isArray(items) ? items : []).forEach((item: unknown, index) => {
+      const writtenItem = writtenItems[index];
+      if (isObject(item) && isObject(writtenItem) && typeof writtenItem.__id === 'string') {
+        sentView.set(writtenItem.__id, callerView({ ...item, sub: undefined }));
+        walkSent(item.sub, writtenItem[IDF.sub]);
+      }
+    });
+  };
+  walkSent(input.body.items, input.written[ITEMS]);
+  walkSent(input.body.blocks, input.written[BLOCKS]);
+  const sent = sentTags(input.body);
+  for (const [tag, id] of tagsByItem(input.written)) {
+    if (sent.has(tag) || !readView.has(id)) {
+      continue;
+    }
+    if (sentView.get(id) !== readView.get(id)) {
+      problems.push(
+        `${tag} stays on ${id}, read as ${String(readView.get(id))} but sent as ${String(sentView.get(id))}`,
+      );
+    }
+  }
+  return problems;
+};
+
+/** What a caller is answered (status and issues), for comparing two writes. */
+const answerOf = (outcome: { refusedBy: string | null; issues: readonly ContentIssue[] }) => ({
+  refusedBy: outcome.refusedBy,
+  issues: outcome.issues.map((issue) => `${issue.code} ${issue.path}`).sort(),
+});
+
+const sameAnswerProblems = (a: ReturnType<typeof answerOf>, b: ReturnType<typeof answerOf>): string[] =>
+  canonicalJson(a) === canonicalJson(b) ? [] : [`answered ${JSON.stringify(a)} and ${JSON.stringify(b)}`];
+
+/** Every `id` a write response's item ID tree names. */
+const treeIds = (tree: unknown, into: string[] = []): string[] => {
+  if (Array.isArray(tree)) {
+    tree.forEach((node) => treeIds(node, into));
+  } else if (isObject(tree)) {
+    for (const [key, value] of Object.entries(tree)) {
+      if (key === 'id' && typeof value === 'string') {
+        into.push(value);
+      } else {
+        treeIds(value, into);
+      }
+    }
+  }
+  return into;
+};
+
+/** itemIds truth (review 5, M2): every ID the response names is an ID stored. */
+const itemIdTreeProblems = (tree: unknown, written: Readonly<ContentData>): string[] => {
+  const stored = new Set(collectIds(written));
+  return treeIds(tree).flatMap((id) => (stored.has(id) ? [] : [`itemIds names ${id}, never stored`]));
+};
+
+/** `body` with every item's `id` taken from the response's item ID tree (the client's next write). */
+const withTreeIds = (body: unknown, tree: unknown): unknown => {
+  if (Array.isArray(body)) {
+    return body.map((item: unknown, index) =>
+      withTreeIds(item, Array.isArray(tree) ? tree[index] : undefined),
+    );
+  }
+  if (!isObject(body)) {
+    return body;
+  }
+  const node = isObject(tree) ? tree : {};
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    output[key] = key === 'id' ? value : Array.isArray(value) ? withTreeIds(value, node[key]) : value;
+  }
+  if (typeof node.id === 'string') {
+    output.id = node.id;
+  }
+  return output;
+};
+
+/** A write that sent a value (or a null) for a component field the caller may not write: refused 403, unwritten. */
+const privateWriteProblems = (
+  outcome: { refusedBy: string | null; issues: readonly ContentIssue[]; written: unknown },
+  path: string,
+): string[] =>
+  outcome.refusedBy === 'forbidden' &&
+  outcome.written === null &&
+  outcome.issues.some((issue) => (issue.code as string) === 'FORBIDDEN_FIELD' && issue.path === path)
+    ? []
+    : [
+        `sent ${path}: answered ${JSON.stringify(answerOf(outcome))}, ${outcome.written ? 'written' : 'not written'}`,
+      ];
+
+/**
+ * Where each written instance's ID came from, at any depth: the place of the stored instance it continues
+ * (`items.0.sub.1`), or `new`. Compares two writes whose stored IDs differ (derived IDs hash hidden values).
+ */
+const idShape = (storedIds: Readonly<ContentData>, written: Readonly<ContentData>): unknown => {
+  const placeOf = new Map<string, string>();
+  const walkStored = (value: unknown, place: string) => {
+    (Array.isArray(value) ? value : []).forEach((item: unknown, index) => {
+      if (isObject(item) && typeof item.__id === 'string') {
+        placeOf.set(item.__id, `${place}.${index}`);
+        walkStored(item[IDF.sub], `${place}.${index}.sub`);
+      }
+    });
+  };
+  walkStored(storedIds[ITEMS], 'items');
+  walkStored(storedIds[BLOCKS], 'blocks');
+  const shapeOf = (value: unknown): unknown =>
+    (Array.isArray(value) ? value : []).map((item: unknown) =>
+      isObject(item)
+        ? {
+            at: typeof item.__id === 'string' ? (placeOf.get(item.__id) ?? 'new') : 'none',
+            sub: shapeOf(item[IDF.sub]),
+          }
+        : null,
+    );
+  return { items: shapeOf(written[ITEMS]), blocks: shapeOf(written[BLOCKS]) };
 };
 
 /** `item` with the hidden values of `access` drawn again (presence and value), the visible part unchanged. */
@@ -3880,32 +4137,21 @@ const redrawHidden = (item: IdItem, mode: IdMode, flips: readonly boolean[]): Id
 };
 
 describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 }, () => {
-  it('ID2. without IDs, a write is refused or follows the strict rule: values stay on their IDs, equal items or a pure edit in place only', async () => {
+  it('ID2. without IDs, accept or refuse, and which items continue, are exactly the set rule; values stay on their IDs', async () => {
     await fc.assert(
       fc.asyncProperty(idCaseArb(), async (input) => {
         const run = await runIdCase(input, { ids: false });
-        if (run.outcome.refusedBy !== null) {
-          expect(strictRefusalProblems(run.outcome.issues), run.message).toEqual([]);
-          return;
+        const problems = idRuleProblems(run, input.mode);
+        if (run.outcome.written) {
+          problems.push(...conservationProblems({ ...run, written: run.outcome.written }));
         }
-        const written = run.outcome.written as ContentData;
-        const problems: string[] = [];
-        // Values follow the ID they were stored under.
-        const before = tagsByItem(run.storedIds);
-        const sent = sentTags(run.body);
-        for (const [tag, id] of tagsByItem(written)) {
-          if (!sent.has(tag) && before.get(tag) !== id) {
-            problems.push(`${tag}: stored on ${before.get(tag) ?? 'nothing'}, now on ${id}`);
-          }
-        }
-        problems.push(...strictProblems(run, input.mode));
         expect(problems, run.message).toEqual([]);
       }),
       { numRuns: RUNS },
     );
   });
 
-  it('ID3. no oracle: with what the caller sees fixed, hidden values never change accept or refuse, nor which items continue', async () => {
+  it('ID3. no oracle: with what the caller sees fixed, hidden values (in components and top-level) never change accept or refuse, the issues, nor where each ID comes from', async () => {
     await fc.assert(
       fc.asyncProperty(
         idCaseArb().chain((input) =>
@@ -3913,10 +4159,22 @@ describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 },
         ),
         async ([input, flips]) => {
           const a = await runIdCase(input, { ids: false });
+          // Hidden from the caller: private, deprecated and (through V) added fields inside components, and
+          // top-level fields it cannot read (private `secret`; `added` through V).
+          const redrawTop = (value: string | undefined, hidden: boolean, other: string) =>
+            !hidden || !flips[4] ? value : value === undefined ? other : flips[5] ? undefined : `${value}*`;
           const redrawn: IdCase = {
             ...input,
             items: input.items.map((item) => redrawHidden(item, input.mode, flips)),
             blocks: input.blocks.map((item) => redrawHidden(item, input.mode, flips)),
+            top: {
+              ...(redrawTop(input.top?.secret, input.mode.access !== 'all', 's9') === undefined
+                ? {}
+                : { secret: redrawTop(input.top?.secret, input.mode.access !== 'all', 's9') as string }),
+              ...(redrawTop(input.top?.added, input.mode.version, 'a9') === undefined
+                ? {}
+                : { added: redrawTop(input.top?.added, input.mode.version, 'a9') as string }),
+            },
           };
           const b = await runIdCase(redrawn, { ids: false, hiddenTags: ':redrawn' });
           const message = `A\n${a.message}\nB\n${b.message}`;
@@ -3927,8 +4185,7 @@ describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 },
           const outcomeOf = (run: IdRun) => ({
             refusedBy: run.outcome.refusedBy,
             issues: run.outcome.issues.map((issue) => `${issue.code} ${issue.path}`),
-            items: run.outcome.written ? continuedIndexes(run.storedIds, run.outcome.written, ITEMS) : null,
-            blocks: run.outcome.written ? continuedIndexes(run.storedIds, run.outcome.written, BLOCKS) : null,
+            ids: run.outcome.written ? idShape(run.storedIds, run.outcome.written) : null,
           });
           expect(outcomeOf(b), message).toEqual(outcomeOf(a));
         },
@@ -3940,65 +4197,57 @@ describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 },
   /** Modes a no-ID write can be accepted in (update-only and no-draft callers cannot see what they replace). */
   const seeingModes = ID_MODES.filter((mode) => mode.access === 'public' || mode.access === 'all');
 
-  it('NI1. without IDs, an accepted write leaves a hidden value only on its own item, sent as the caller saw it or edited where it stood', async () => {
+  it('NI1. conservation without IDs: an accepted write keeps every hidden value on its item, and drops one only with an item the caller left out', async () => {
     await fc.assert(
       fc.asyncProperty(idCaseArb(seeingModes), async (input) => {
         const run = await runIdCase(input, { ids: false });
-        if (run.outcome.refusedBy !== null) {
-          expect(strictRefusalProblems(run.outcome.issues), run.message).toEqual([]);
+        if (!run.outcome.written) {
           return;
         }
-        const written = run.outcome.written as ContentData;
-        const before = tagsByItem(run.storedIds);
-        const sent = sentTags(run.body);
-        const problems: string[] = [];
-        const holders = new Set<string>();
-        for (const [tag, id] of tagsByItem(written)) {
-          if (sent.has(tag)) {
-            continue;
-          }
-          holders.add(id);
-          if (before.get(tag) !== id) {
-            problems.push(`${tag}: stored on ${before.get(tag) ?? 'nothing'}, now on ${id}`);
-          }
-        }
-        // Every item that holds a hidden value continues a stored item it equals, or stands where it stood in a
-        // pure edit in place.
-        problems.push(...strictProblems(run, input.mode, { carry: true }));
-        expect(problems, run.message).toEqual([]);
+        expect(conservationProblems({ ...run, written: run.outcome.written }), run.message).toEqual([]);
       }),
       { numRuns: RUNS },
     );
   });
 
-  it('NI2. without IDs, a list with a gap holding both new items and leftover stored items is refused', async () => {
+  it('NI2. without IDs, every list that deletes and adds, holds look-alikes in a change, or edits an item is refused, at exactly those lists', async () => {
     await fc.assert(
       fc.asyncProperty(idCaseArb(seeingModes), async (input) => {
         const run = await runIdCase(input, { ids: false });
-        if (run.outcome.refusedBy !== null) {
-          expect(strictRefusalProblems(run.outcome.issues), run.message).toEqual([]);
+        const answers = setRuleAnswers(run.read, run.body, {
+          unseen: false,
+          subHidden: input.mode.access !== 'all',
+          names: ['items', 'blocks'],
+        });
+        if (answers.every((answer) => answer.pairs !== null)) {
           return;
         }
-        expect(strictProblems(run, input.mode, { gaps: true }), run.message).toEqual([]);
+        expect(
+          setRuleProblems(answers, run.outcome, () => []),
+          run.message,
+        ).toEqual([]);
       }),
       { numRuns: RUNS },
     );
   });
 
-  it('NI3. without IDs, a "send back the value it read" refusal never lands on an item that is no exact-match continuation: the list answers AMBIGUOUS_ITEMS', async () => {
+  it('NI3. without IDs, through a version: read-only values refused (NOT_ALLOWED) exactly on the items the set rule makes new; an ambiguous list answers AMBIGUOUS_ITEMS, never NOT_ALLOWED', async () => {
     const { today, atV } = sentBackSchemas();
     const all = fieldsById(today);
     const componentReadable = (fieldId: string) => {
       const field = all.get(fieldId)?.field;
       return field !== undefined && field.public && !field.deprecated;
     };
+    // What the caller sees today of an item (v, and w and t read-only through V); r is gone, h is private.
+    const viewOf = (item: Readonly<Record<string, unknown>>) =>
+      callerView({ v: item.v, w: item.w, t: item.t });
     await fc.assert(
       fc.asyncProperty(sentBackCaseArb, async ({ stored: specs, sent: picks }) => {
         const stored: ContentData =
           specs.length > 0 ? { [ITEMS]: specs.map((item, index) => pairStored(item, index, false)) } : {};
-        const read = (await projectThrough(today, atV, stored, deliveryMask(today), { ids: false })).items as
-          Array<Record<string, unknown>> | undefined;
-        const items = picks.map((pick) => sentBackItem(read ?? [], pick));
+        const read = ((await projectThrough(today, atV, stored, deliveryMask(today), { ids: false })).items ??
+          []) as Array<Record<string, unknown>>;
+        const items = picks.map((pick) => sentBackItem(read, pick));
         const outcome = deliveryWrite({
           today,
           client: atV,
@@ -4008,33 +4257,55 @@ describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 },
           readable: () => true,
           componentReadable,
         });
-        const message = `stored ${JSON.stringify(stored)}\n  read ${JSON.stringify(read)}\n  body ${JSON.stringify({ items })}\n  outcome ${JSON.stringify({ refusedBy: outcome.refusedBy, issues: outcome.issues, written: outcome.written })}`;
-        const problems: string[] = [];
-        // A value the caller reads today and that still exists (w, t), sent on an item: refused as NOT_ALLOWED
-        // only on an exact-match continuation, which sends it back as read, so never.
-        for (const issue of outcome.issues) {
-          if (issue.code === 'NOT_ALLOWED' && /^\/items\/\d+\/(w|t)$/.test(issue.path)) {
-            problems.push(`NOT_ALLOWED ${issue.path}: ${issue.message}`);
-          }
-          if (issue.code === 'AMBIGUOUS_ITEMS' && issue.path !== '/items') {
-            problems.push(`AMBIGUOUS_ITEMS at ${issue.path}`);
-          }
-        }
-        // A sent w or t that no stored item holds (a change, or a value on a new item) cannot continue anything
-        // exactly: the write is refused, at the list (or for its own removed or unreadable field).
-        const changed = items.some((item) =>
-          (['w', 't'] as const).some(
-            (key) =>
-              item[key] !== undefined && !(read ?? []).some((candidate) => candidate[key] === item[key]),
-          ),
+        const message = `read ${JSON.stringify(read)}\n  body ${JSON.stringify({ items })}\n  outcome ${JSON.stringify({ refusedBy: outcome.refusedBy, issues: outcome.issues })}`;
+        const got = outcome.issues.map((issue) => `${issue.code} ${issue.path}`).sort();
+        const pairs = items.length === 0 ? [] : setRulePairs(items.map(viewOf), read.map(viewOf));
+        const removed = items.flatMap((item, index) =>
+          item.r === undefined ? [] : [`NOT_ALLOWED /items/${index}/r`],
         );
-        const ownAnswer = outcome.issues.some((issue) => /^\/items\/\d+\/(r|h)$/.test(issue.path));
-        if (
-          changed &&
-          !ownAnswer &&
-          !outcome.issues.some((issue) => issue.code === 'AMBIGUOUS_ITEMS' && issue.path === '/items')
-        ) {
-          problems.push(`a changed read-only value was not answered AMBIGUOUS_ITEMS (${outcome.refusedBy})`);
+        const privateSent = items.flatMap((item, index) =>
+          item.h === undefined ? [] : [`FORBIDDEN_FIELD /items/${index}/h`],
+        );
+        const problems: string[] = [];
+        if (pairs === null) {
+          // Never a "send back what it read" on w or t; the list answers AMBIGUOUS_ITEMS unless an answer of
+          // its own (a removed field, a private one) comes first.
+          if (got.some((line) => /^NOT_ALLOWED \/items\/\d+\/(w|t)$/.test(line))) {
+            problems.push(`NOT_ALLOWED on a read-only value in an ambiguous list: ${JSON.stringify(got)}`);
+          }
+          const allowed = new Set(['AMBIGUOUS_ITEMS /items', ...removed, ...privateSent]);
+          if (got.length === 0 || got.some((line) => !allowed.has(line))) {
+            problems.push(`ambiguous list answered ${JSON.stringify(got)}`);
+          }
+          if (
+            removed.length === 0 &&
+            privateSent.length === 0 &&
+            canonicalJson(got) !== canonicalJson(['AMBIGUOUS_ITEMS /items'])
+          ) {
+            problems.push(`ambiguous list answered ${JSON.stringify(got)}, not AMBIGUOUS_ITEMS at /items`);
+          }
+        } else {
+          // Read-only values on new items (the rule's -1) are refused; a continued item equals what it read.
+          const readOnly = items.flatMap((item, index) =>
+            pairs[index] === -1
+              ? (['w', 't'] as const).flatMap((key) =>
+                  item[key] === undefined ? [] : [`NOT_ALLOWED /items/${index}/${key}`],
+                )
+              : [],
+          );
+          const lens = [...readOnly, ...removed].sort();
+          const want = lens.length > 0 ? lens : [...privateSent].sort();
+          if (canonicalJson(got) !== canonicalJson(want)) {
+            problems.push(`answered ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
+          }
+          if (want.length === 0 && outcome.written) {
+            const continued = continuedIndexes(storedWithIds(today, stored), outcome.written, ITEMS);
+            if (canonicalJson(continued) !== canonicalJson(pairs)) {
+              problems.push(
+                `continues ${JSON.stringify(continued)}, the rule pairs ${JSON.stringify(pairs)}`,
+              );
+            }
+          }
         }
         expect(problems, message).toEqual([]);
       }),
@@ -4146,9 +4417,477 @@ describe('item IDs: no-ID safety, no oracle, derived IDs', { timeout: 900_000 },
   });
 });
 
+// ---------------------------------------------------------------------------------------------------------
+// Review 5: properties for the holes a fifth review found, each shown to catch the old outcome.
+
+/** A public delivery caller of the ID model, without a version: what `deliveryWrite` needs besides the data. */
+const publicIdCaller = () => {
+  const { today } = idSchemas();
+  const access = idAccessOf('public', today);
+  return { today, access };
+};
+
+/** The ID model's `items`: X items `{xv, xh?, sub?}` with fixed IDs, for the fixtures. */
+const fixtureItems = (
+  items: ReadonlyArray<{
+    id: string;
+    v: string;
+    h?: string;
+    sub?: ReadonlyArray<{ id: string; v: string; h?: string }>;
+  }>,
+): ContentData => ({
+  [ITEMS]: items.map((item) => ({
+    __id: item.id,
+    [IDF.xv]: item.v,
+    ...(item.h ? { [IDF.xh]: item.h } : {}),
+    ...(item.sub
+      ? {
+          [IDF.sub]: item.sub.map((sub) => ({
+            __id: sub.id,
+            [IDF.zv]: sub.v,
+            ...(sub.h ? { [IDF.zh]: sub.h } : {}),
+          })),
+        }
+      : {}),
+  })),
+});
+
+/** What a public caller reads of fixture data (with IDs), and the outcome of a body without IDs. */
+const publicFixture = async (stored: ContentData, items: unknown[]) => {
+  const { today, access } = publicIdCaller();
+  const read = await projectThrough(today, null, stored, access.mask, { ids: true });
+  const outcome = deliveryWrite({
+    today,
+    client: null,
+    stored,
+    body: { items, blocks: [] },
+    mayRead: true,
+    readable: () => true,
+    componentReadable: access.componentReadable,
+  });
+  return { read, outcome, storedIds: storedWithIds(today, stored), body: { items, blocks: [] as unknown[] } };
+};
+
+describe(
+  'review 5: conservation, read masks, cross-parent, item IDs, private fields, budget',
+  { timeout: 900_000 },
+  () => {
+    it('C1. conservation, with and without IDs: a continued item keeps exactly its hidden values; one is dropped only with an item the caller left out', async () => {
+      await fc.assert(
+        fc.asyncProperty(idCaseArb(), fc.boolean(), async (input, ids) => {
+          const run = await runIdCase(input, { ids });
+          if (!run.outcome.written) {
+            return;
+          }
+          expect(conservationProblems({ ...run, written: run.outcome.written }), run.message).toEqual([]);
+        }),
+        { numRuns: RUNS },
+      );
+    });
+
+    it('C1 catches B2: the old outcome of each reviewer reorder fails conservation; today each is refused', async () => {
+      // Review 5, B2: a multiset-equal reorder (or a change) of look-alikes was accepted and the look-alikes lost
+      // their private values (they were taken as new). The old outcome: unique items continue, look-alikes new.
+      const cases: Array<{ stored: Array<[string, string, string]>; sent: string[] }> = [
+        {
+          stored: [
+            ['i', 'Intro', 'xh:intro'],
+            ['s1', 'Spacer', 'xh:s1'],
+            ['s2', 'Spacer', 'xh:s2'],
+          ],
+          sent: ['Spacer', 'Spacer', 'Intro'],
+        },
+        {
+          stored: [
+            ['s1', 'S', 'xh:s1'],
+            ['a', 'A', 'xh:a'],
+            ['s2', 'S', 'xh:s2'],
+            ['b', 'B', 'xh:b'],
+          ],
+          sent: ['A', 'B', 'S', 'S'],
+        },
+        {
+          stored: [
+            ['b', 'B', 'xh:b'],
+            ['a', 'A', 'xh:a'],
+          ],
+          sent: ['A', 'B', 'B'],
+        },
+        {
+          stored: [
+            ['b1', 'B', 'xh:b1'],
+            ['b2', 'B', 'xh:b2'],
+            ['a', 'A', 'xh:a'],
+          ],
+          sent: ['A', 'B'],
+        },
+      ];
+      for (const { stored: specs, sent } of cases) {
+        const stored = fixtureItems(specs.map(([, v, h], index) => ({ id: F(0xa00 + index), v, h })));
+        const items = sent.map((v) => ({ xv: v }));
+        const { read, outcome, storedIds, body } = await publicFixture(stored, items);
+        const storedList = storedIds[ITEMS] as Array<Record<string, unknown>>;
+        // Unique on both sides: continued (a certain pair); look-alikes: new.
+        const unique = (v: string) =>
+          storedList.filter((item) => item[IDF.xv] === v).length === 1 &&
+          sent.filter((other) => other === v).length === 1;
+        const old: ContentData = {
+          [ITEMS]: sent.map((v, index) => {
+            const twin = storedList.find((item) => item[IDF.xv] === v);
+            return unique(v) && twin ? { ...twin } : { __id: F(0xf00 + index), [IDF.xv]: v };
+          }),
+        };
+        const label = `${specs.map((spec) => spec[1]).join(',')} → ${sent.join(',')}`;
+        expect(conservationProblems({ storedIds, read, body, written: old }), label).not.toEqual([]);
+        expect(
+          outcome.issues.map((issue) => `${issue.code} ${issue.path}`),
+          label,
+        ).toEqual(['AMBIGUOUS_ITEMS /items']);
+      }
+    });
+
+    it('TM. with the list field unreadable to the caller, the answer never depends on the stored list (content or length)', async () => {
+      const { today, atV } = idSchemas();
+      const all = fieldsById(today);
+      const componentReadable = (fieldId: string) => {
+        const field = all.get(fieldId)?.field;
+        return field !== undefined && field.public && !field.deprecated;
+      };
+      const readable = (fieldId: string) => fieldId !== ITEMS && fieldId !== BLOCKS && fieldId !== ID_SECRET;
+      fc.assert(
+        fc.property(
+          fc.record({
+            version: fc.boolean(),
+            zone: fc.boolean(),
+            a: fc.array(idItemArb(true), { maxLength: 4 }),
+            b: fc.array(idItemArb(true), { maxLength: 4 }),
+            sent: fc.array(
+              fc.record({
+                v: fc.constantFrom('p', 'q', 'n'),
+                sub: fc.array(fc.constantFrom('a', 'b'), { maxLength: 2 }),
+              }),
+              { maxLength: 3 },
+            ),
+          }),
+          ({ version, zone, a, b, sent }) => {
+            const list = zone ? 'blocks' : 'items';
+            const storedOf = (items: IdItem[]): ContentData =>
+              items.length === 0
+                ? {}
+                : {
+                    [zone ? BLOCKS : ITEMS]: items.map((item, index) =>
+                      idStored(zone ? item : { ...item, kind: 'x' }, list, index, { hidden: true }),
+                    ),
+                  };
+            const body = {
+              [list]: sent.map((item) => ({
+                ...(zone ? { [COMPONENT_KEY]: 'x' } : {}),
+                xv: item.v,
+                sub: item.sub.map((v) => ({ zv: v })),
+              })),
+            };
+            const answer = (stored: ContentData) =>
+              answerOf(
+                deliveryWrite({
+                  today,
+                  client: version ? atV : null,
+                  stored,
+                  body,
+                  mayRead: true,
+                  readable,
+                  componentReadable,
+                }),
+              );
+            const message = JSON.stringify({ version, a: storedOf(a), b: storedOf(b), body });
+            expect(sameAnswerProblems(answer(storedOf(a)), answer(storedOf(b))), message).toEqual([]);
+          },
+        ),
+        { numRuns: RUNS },
+      );
+    });
+
+    it('TM catches B1: two answers that differ by the stored list fail it', () => {
+      // Review 5, B1: pairing compared content in a top-level field the caller cannot read, so the same body was
+      // accepted for one stored list and refused for another.
+      expect(
+        sameAnswerProblems(
+          answerOf({ refusedBy: null, issues: [] }),
+          answerOf({
+            refusedBy: 'items',
+            issues: [{ path: '/items', code: 'AMBIGUOUS_ITEMS', message: '' } as unknown as ContentIssue],
+          }),
+        ),
+      ).not.toEqual([]);
+    });
+
+    it('CP. without IDs, nested items moved or exchanged between parents never move a hidden value to another item or parent', async () => {
+      const modes = ID_MODES.filter((mode) => mode.access === 'public' || mode.access === 'all');
+      await fc.assert(
+        fc.asyncProperty(idCaseArb(modes), async (input) => {
+          const run = await runIdCase(input, { ids: false });
+          if (!run.outcome.written) {
+            return;
+          }
+          const data = { ...run, written: run.outcome.written };
+          expect([...crossParentProblems(data), ...conservationProblems(data)], run.message).toEqual([]);
+        }),
+        { numRuns: RUNS },
+      );
+    });
+
+    it('CP catches M1: nested items exchanged between parents with their notes left behind, or moved with their IDs', async () => {
+      const n1 = F(0xb01);
+      const n2 = F(0xb02);
+      const stored = fixtureItems([
+        { id: F(0xa01), v: 'P1', sub: [{ id: n1, v: 'n1', h: 'zh:n1' }] },
+        { id: F(0xa02), v: 'P2', sub: [{ id: n2, v: 'n2', h: 'zh:n2' }] },
+      ]);
+      const items = [
+        { xv: 'P1', sub: [{ zv: 'n2' }] },
+        { xv: 'P2', sub: [{ zv: 'n1' }] },
+      ];
+      const { read, outcome, storedIds, body } = await publicFixture(stored, items);
+      // The old outcome: each parent's nested item continued in place, keeping the note of the item it replaced.
+      const notesSwapped = fixtureItems([
+        { id: F(0xa01), v: 'P1', sub: [{ id: n1, v: 'n2', h: 'zh:n1' }] },
+        { id: F(0xa02), v: 'P2', sub: [{ id: n2, v: 'n1', h: 'zh:n2' }] },
+      ]);
+      expect(crossParentProblems({ storedIds, read, body, written: notesSwapped })).not.toEqual([]);
+      // Or the nested items continued across parents.
+      const idsMoved = fixtureItems([
+        { id: F(0xa01), v: 'P1', sub: [{ id: n2, v: 'n2', h: 'zh:n2' }] },
+        { id: F(0xa02), v: 'P2', sub: [{ id: n1, v: 'n1', h: 'zh:n1' }] },
+      ]);
+      expect(crossParentProblems({ storedIds, read, body, written: idsMoved })).not.toEqual([]);
+      // Today: what the caller sees of a parent includes its nested items, so both parents changed: the list
+      // deletes and adds, refused.
+      expect(outcome.issues.map((issue) => `${issue.code} ${issue.path}`)).toEqual([
+        'AMBIGUOUS_ITEMS /items',
+      ]);
+    });
+
+    it('IT. itemIds truth: an accepted write names only stored IDs, and sending exactly those IDs next is never UNKNOWN_ITEM_ID', async () => {
+      const modes = ID_MODES.filter((mode) => !mode.version);
+      const { today } = idSchemas();
+      const byApiKey = new Map(today.components.map((component) => [component.apiKey, component.id]));
+      const level = todayLevel(today.model.fields, componentLookup(today), (key) => byApiKey.get(key));
+      await fc.assert(
+        fc.asyncProperty(idCaseArb(modes), fc.boolean(), async (input, ids) => {
+          const run = await runIdCase(input, { ids });
+          if (!run.outcome.written) {
+            return;
+          }
+          const written = run.outcome.written;
+          const tree = itemIdTreeOf(run.body, written, level);
+          const problems = itemIdTreeProblems(tree, written);
+          const access = idAccessOf(input.mode.access, today);
+          const next = withTreeIds(run.body, tree) as Record<string, unknown>;
+          const again = deliveryWrite({
+            today,
+            client: null,
+            stored: written,
+            body: next,
+            mayRead: access.mayRead,
+            seesStored: access.seesStored,
+            readable: () => access.mayRead,
+            componentReadable: access.componentReadable,
+          });
+          problems.push(
+            ...again.issues
+              .filter((issue) => issue.code === 'UNKNOWN_ITEM_ID' || issue.code === 'DUPLICATE_ITEM_ID')
+              .map((issue) => `next write: ${issue.code} ${issue.path}`),
+          );
+          expect(
+            problems,
+            `${run.message}\n  tree ${JSON.stringify(tree)}\n  next ${JSON.stringify(next)}`,
+          ).toEqual([]);
+        }),
+        { numRuns: RUNS },
+      );
+    });
+
+    it('IT catches M2: a response naming an ID never stored fails it', () => {
+      const written = fixtureItems([{ id: F(0xa01), v: 'p' }]);
+      expect(itemIdTreeProblems({ items: [{ id: F(0xa01) }, { id: F(0xdead) }] }, written)).not.toEqual([]);
+      expect(itemIdTreeProblems({ items: [{ id: F(0xa01) }] }, written)).toEqual([]);
+    });
+
+    it('PR. a delivery caller sending any value (or null) for a component field it may not write is refused 403, nothing written', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          idCaseArb(),
+          fc.boolean(),
+          fc.record({
+            list: fc.constantFrom<'items' | 'blocks'>('items', 'blocks'),
+            at: fc.nat({ max: 5 }),
+            field: fc.constantFrom('xh', 'xd', 'zh', 'yh'),
+            value: fc.constantFrom<string | null>('injected', null),
+          }),
+          async (input, ids, inject) => {
+            let path = null as string | null;
+            const writable = (key: string) => key !== 'xd' && input.mode.access === 'all';
+            const run = await runIdCase(input, {
+              ids,
+              editBody: (body) => {
+                const list = body[inject.list];
+                const item = list[inject.at % Math.max(list.length, 1)];
+                if (!item || writable(inject.field)) {
+                  return;
+                }
+                const index = list.indexOf(item);
+                const isY = item[COMPONENT_KEY] === 'y';
+                if (inject.field === 'yh' ? !isY : isY) {
+                  return;
+                }
+                if (inject.field === 'zh') {
+                  const sub = Array.isArray(item.sub) ? (item.sub as Array<Record<string, unknown>>) : [];
+                  if (sub.length === 0) {
+                    return;
+                  }
+                  item.sub = [{ ...sub[0], zh: inject.value }, ...sub.slice(1)];
+                  path = `/${inject.list}/${index}/sub/0/zh`;
+                  return;
+                }
+                list[index] = { ...item, [inject.field]: inject.value };
+                path = `/${inject.list}/${index}/${inject.field}`;
+              },
+            });
+            if (path === null) {
+              return;
+            }
+            // A deprecated field is no field of the API without a version: 422 UNKNOWN_FIELD (the body's shape,
+            // before any 403); through a version it is 403 like a private one. In this model no field was public
+            // at V and is private today, so the one null that passes (property K's echo) never applies.
+            const deprecatedWithout = inject.field === 'xd' && !input.mode.version;
+            const unknownProblems =
+              run.outcome.written === null &&
+              run.outcome.issues.some((issue) => issue.code === 'UNKNOWN_FIELD' && issue.path === path)
+                ? []
+                : [`sent ${path}: answered ${JSON.stringify(answerOf(run.outcome))}, not 422 UNKNOWN_FIELD`];
+            expect(
+              deprecatedWithout ? unknownProblems : privateWriteProblems(run.outcome, path),
+              run.message,
+            ).toEqual([]);
+          },
+        ),
+        { numRuns: RUNS },
+      );
+    });
+
+    it('PR catches the old write: a private sub-field value written fails it', () => {
+      expect(
+        privateWriteProblems({ refusedBy: null, issues: [], written: { [ITEMS]: [] } }, '/items/0/xh'),
+      ).not.toEqual([]);
+    });
+
+    it('BG. pairing a body of many nested lists stays bounded (time; the cell budget is not observable from outside)', () => {
+      // Lists that hold nothing hidden are aligned with the least edits on one budget per write
+      // (`ALIGNMENT_CELL_BUDGET`, 2,000,000 cells); a gap past it is aligned in place. Not observable through
+      // `pairComponentItems`, so this bounds the time: 60 parents of 300 look-alike nested items, each list
+      // reversed (no unique anchors: one 300 x 300 gap each, 5.4 million cells unbudgeted).
+      const { today } = idSchemas({ hidden: false });
+      const parents = 60;
+      const width = 300;
+      const stored: ContentData = {
+        [ITEMS]: Array.from({ length: parents }, (_, p) => ({
+          __id: `00000000-0000-4000-a000-${p.toString(16).padStart(12, '0')}`,
+          [IDF.xv]: `p${p}`,
+          [IDF.sub]: Array.from({ length: width }, (_, i) => ({ [IDF.zv]: i % 3 === 0 ? 'a' : 'b' })),
+        })),
+      };
+      const body = {
+        items: Array.from({ length: parents }, (_, p) => ({
+          xv: `p${p}`,
+          sub: Array.from({ length: width }, (_, i) => ({ zv: (width - 1 - i) % 3 === 0 ? 'b' : 'a' })),
+        })),
+      };
+      const all = fieldsById(today);
+      const started = performance.now();
+      const outcome = deliveryWrite({
+        today,
+        client: null,
+        stored,
+        body,
+        mayRead: true,
+        readable: () => true,
+        componentReadable: (fieldId) => all.get(fieldId)?.field.deprecated === false,
+      });
+      const elapsed = performance.now() - started;
+      expect(outcome.refusedBy).toBeNull();
+      expect(elapsed).toBeLessThan(10_000);
+    });
+  },
+);
+
+describe('review 5: fixed counterexamples', () => {
+  it('CC. a null for a private field inside a component is 403 through a version, as without one', () => {
+    // Property PR, minimized; a counterexample before the fix. A public delivery caller writes
+    // [{id, xv:'p', xh:null}] (xh private) through a version: it was accepted ("sent back as read"), while
+    // without a version the same body is 403 FORBIDDEN_FIELD. Now 403 on both paths. (A null for a field that
+    // was public and not deprecated at the client's version, and is not deprecated today, still passes: K.)
+    const { today, atV } = idSchemas();
+    const access = idAccessOf('public', today);
+    const stored = { [ITEMS]: [{ __id: F(0xa1), [IDF.xv]: 'p', [IDF.xh]: 'secret' }] };
+    const write = (client: Schema | null, item: Record<string, unknown>) =>
+      deliveryWrite({
+        today,
+        client,
+        stored,
+        body: { items: [{ id: F(0xa1), xv: 'p', ...item }] },
+        mayRead: true,
+        readable: () => true,
+        componentReadable: access.componentReadable,
+      });
+    const forbidden = (field: string) => ({
+      refusedBy: 'forbidden',
+      issues: [`FORBIDDEN_FIELD /items/0/${field}`],
+    });
+    expect(answerOf(write(null, { xh: null }))).toEqual(forbidden('xh'));
+    expect(answerOf(write(atV, { xh: null }))).toEqual(forbidden('xh'));
+    // Deprecated: no field of the API without a version (422), 403 through one.
+    expect(answerOf(write(null, { xd: null }))).toEqual({
+      refusedBy: 'fromInput',
+      issues: ['UNKNOWN_FIELD /items/0/xd'],
+    });
+    expect(answerOf(write(atV, { xd: null }))).toEqual(forbidden('xd'));
+  });
+});
+
+describe('review 5: counterexamples after the fixes', () => {
+  it('DD. a component field deprecated since V reads null, and echoing the read back is accepted unchanged', () => {
+    // Property 9, found on seeds 11, 22 and 33 at LENS_PROPERTY_RUNS=5000 right after the CC fix (then 403 at
+    // /hero/note). V: a component field `note` (public, not deprecated); today: `note` deprecated. A public client
+    // reads {hero: {note: null}} through V and sends it back unchanged: a null for a field the version's read
+    // shows this caller is the echo, accepted, nothing changed. (A field the read never showed: 403, CC.)
+    const hero = (deprecated: boolean) =>
+      componentOf(C1, 'hero', [
+        { id: F(0x20), apiKey: 'heading' },
+        { id: F(0x21), apiKey: 'note', deprecated },
+      ]);
+    const model = pageOf([{ id: F(0x10), apiKey: 'hero', type: 'component', settings: { component: C1 } }]);
+    const client = schemaOf(model, [hero(false)]);
+    const today = schemaOf(model, [hero(true)]);
+    const stored = { [F(0x10)]: { [F(0x20)]: 'Hi', [F(0x21)]: 'kept' } };
+    const body = { hero: { heading: 'Hi', note: null } };
+    const outcome = writeThrough(today, client, stored, body, deliveryMask(today), deliveryMask(today));
+    expect(outcome.refusedBy).toBeNull();
+    expect(outcome.written).toEqual(stored);
+    // A value for it is no echo: 403.
+    const changed = writeThrough(
+      today,
+      client,
+      stored,
+      { hero: { heading: 'Hi', note: 'x' } },
+      deliveryMask(today),
+      deliveryMask(today),
+    );
+    expect(changed.refusedBy).toBe('forbidden');
+  });
+});
+
 describe('item IDs: recorded trade-offs', () => {
   it('P with IDs: a new item sent with `id: null` where another stood carries nothing; the replaced item is deleted', () => {
-    // P stays a documented trade-off without IDs (the in-place substitution); with IDs it is certain.
+    // P is refused without IDs (a delete with an add); with IDs it is certain.
     const { today } = idSchemas();
     const access = idAccessOf('public', today);
     const stored = { [ITEMS]: [{ __id: F(0xa1), [IDF.xv]: 'p', [IDF.xh]: 'h' }] };
@@ -4166,9 +4905,10 @@ describe('item IDs: recorded trade-offs', () => {
     const item = (withIds.written?.[ITEMS] as Array<Record<string, unknown>>)[0] ?? {};
     expect(item[IDF.xh]).toBeUndefined();
     expect(item.__id).not.toBe(F(0xa1));
-    // Without IDs: the substitution (documented), the private value carried.
+    // Without IDs: a delete with an add, refused.
     const noIds = write([{ xv: 'new' }]);
-    expect((noIds.written?.[ITEMS] as Array<Record<string, unknown>>)[0]?.[IDF.xh]).toBe('h');
+    expect(noIds.issues.map((issue) => [issue.code, issue.path])).toEqual([['AMBIGUOUS_ITEMS', '/items']]);
+    expect(noIds.written).toBeNull();
   });
 
   it('W with IDs: move-and-edit plus an append keeps each private value with its item', () => {
@@ -4266,11 +5006,11 @@ describe('item IDs: counterexamples', () => {
     expect(outcome.written).toBeNull();
   });
 
-  it('Y. without IDs, every item edited where it stands, one into a copy of another: a move, nothing else carried', () => {
+  it('Y. every item edited where it stands, one into a copy of another: refused without IDs; with IDs each keeps its own', () => {
     // Found while minimizing X2. Stored [A{xv:p, xh:A-private}, B{xv:q, xh:B-private}, C{xv:q, xh:C-private}]
-    // (xh private); a public caller sends without IDs [{xv:e}, {xv:p, xu:b}, {xv:p}]. An old value sent at another
-    // place is a move (decision 2026-11-11): the sent {xv:p} continues A and keeps A-private; B and C are deleted
-    // with their values; the new items carry nothing; no private value sits on another item.
+    // (xh private); a public caller edits all three where they stand: [{xv:e}, {xv:p, xu:b}, {xv:p}]. Was accepted
+    // as a move of A (B and C deleted with their values). Without IDs: look-alikes on the stored side in a changed
+    // list, refused. With IDs: each item keeps its own private value.
     const { today } = idSchemas();
     const access = idAccessOf('public', today);
     const stored = {
@@ -4280,25 +5020,30 @@ describe('item IDs: counterexamples', () => {
         { __id: F(0xa3), [IDF.xv]: 'q', [IDF.xh]: 'C-private' },
       ],
     };
-    const outcome = deliveryWrite({
-      today,
-      client: null,
-      stored,
-      body: { items: [{ xv: 'e' }, { xv: 'p', xu: 'b' }, { xv: 'p' }] },
-      mayRead: true,
-      readable: () => true,
-      componentReadable: access.componentReadable,
-    });
-    expect(outcome.refusedBy).toBeNull();
-    const written = (outcome.written?.[ITEMS] ?? []) as Array<Record<string, unknown>>;
-    expect(written.map((item) => [item[IDF.xv], item[IDF.xh]])).toEqual([
-      ['e', undefined],
-      ['p', undefined],
-      ['p', 'A-private'],
+    const write = (items: unknown[]) =>
+      deliveryWrite({
+        today,
+        client: null,
+        stored,
+        body: { items },
+        mayRead: true,
+        readable: () => true,
+        componentReadable: access.componentReadable,
+      });
+    const noIds = write([{ xv: 'e' }, { xv: 'p', xu: 'b' }, { xv: 'p' }]);
+    expect(noIds.issues.map((issue) => [issue.code, issue.path])).toEqual([['AMBIGUOUS_ITEMS', '/items']]);
+    expect(noIds.written).toBeNull();
+    const withIds = write([
+      { id: F(0xa1), xv: 'e' },
+      { id: F(0xa2), xv: 'p', xu: 'b' },
+      { id: F(0xa3), xv: 'p' },
     ]);
-    expect(written[2]?.__id).toBe(F(0xa1));
-    expect(written.slice(0, 2).map((item) => item.__id)).not.toContain(F(0xa2));
-    expect(written.slice(0, 2).map((item) => item.__id)).not.toContain(F(0xa3));
+    const written = (withIds.written?.[ITEMS] ?? []) as Array<Record<string, unknown>>;
+    expect(written.map((item) => [item.__id, item[IDF.xh]])).toEqual([
+      [F(0xa1), 'A-private'],
+      [F(0xa2), 'B-private'],
+      [F(0xa3), 'C-private'],
+    ]);
   });
 
   it('AB. through a version, items swapped and both edited: AMBIGUOUS_ITEMS without IDs; with IDs each w stays with its item', async () => {

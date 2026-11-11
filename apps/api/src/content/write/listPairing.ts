@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ITEM_ID_FIELD } from '../../constants/itemIds.js';
 import { contentInvalid, pointer, type ContentIssue } from '../validator/issues.js';
-import { alignItems, alignItemsStrictly, type AlignmentSide } from './listAlignment.js';
+import { alignItems, type AlignmentBudget, type AlignmentSide } from './listAlignment.js';
 
 /**
  * Which stored item each item of a written component list continues (delivery-api.md, "Writing components").
@@ -139,12 +139,58 @@ const pairByIds = (sides: ListSides): { pairs: number[]; issues: ListIssue[] } =
 };
 
 /**
- * The one pairing of a written list (plan item-ids): by item ID when the client sends any, else aligned by
- * what it sees of each item (`alignItems`). A list that may hold values the caller cannot see is refused when
- * the alignment is not certain, or when the caller cannot see the stored items (`unseenItemsPolicy`); any other
- * list is never refused for its alignment (its uncertain items are new and get new IDs).
+ * A list sent without IDs whose items can hold values the caller cannot see (plan item-ids, never guess): no
+ * alignment at all. The sent list continues the stored one item by item when they are equal in everything the
+ * caller sees (identity), and every item is new when nothing is stored; otherwise it is accepted only when every
+ * item is distinct by what the caller sees, on
+ * both sides, and the change only reorders, deletes, or only adds: an item equal to a stored one continues it
+ * (wherever it moved), a stored item no sent item equals is deleted, a sent item no stored item equals is new
+ * and carries nothing. Deleting and adding in one write, any edit, and any look-alikes in a changed list need
+ * the items' IDs. Hashing and set comparison: O(n).
  */
-export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
+const pairDistinct = (sent: AlignmentSide, stored: AlignmentSide): number[] | null => {
+  // Nothing stored (a new list, or a list under a new item): every item is new, nothing to keep or move.
+  if (stored.keys.length === 0) {
+    return sent.keys.map(() => -1);
+  }
+  if (
+    sent.keys.length === stored.keys.length &&
+    sent.keys.every((key, index) => key !== null && key === stored.keys[index])
+  ) {
+    return sent.keys.map((_, index) => index);
+  }
+  const storedAt = new Map<string, number>();
+  for (const [index, key] of stored.keys.entries()) {
+    if (key === null || storedAt.has(key)) {
+      return null;
+    }
+    storedAt.set(key, index);
+  }
+  const seen = new Set<string>();
+  const pairs: number[] = [];
+  for (const key of sent.keys) {
+    if (key === null || seen.has(key)) {
+      return null;
+    }
+    seen.add(key);
+    pairs.push(storedAt.get(key) ?? -1);
+  }
+  const added = pairs.some((pair) => pair === -1);
+  const deleted = pairs.filter((pair) => pair !== -1).length < stored.keys.length;
+  return added && deleted ? null : pairs;
+};
+
+/**
+ * The one pairing of a written list (plan item-ids): by item ID when the client sends any. Without IDs, a list
+ * whose items can hold values the caller cannot see is refused when the caller cannot see the stored items
+ * (`unseenItemsPolicy`) or when it is not certain (`pairDistinct`); any other list is aligned with the least
+ * edits only to keep its items' IDs (`alignItems`, on the write's shared `budget`), and never refused.
+ */
+export const pairList = (
+  sides: ListSides,
+  policy: ListPolicy,
+  budget: AlignmentBudget,
+): { pairs: number[]; issues: ListIssue[] } => {
   if (sides.sentIds.some((id) => id !== undefined)) {
     return pairByIds(sides);
   }
@@ -152,17 +198,15 @@ export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[
   if (sides.sentIds.length === 0) {
     return { pairs: none, issues: [] };
   }
+  if (!policy.hidden) {
+    return { pairs: alignItems(sides.sent, sides.stored, budget).pairs, issues: [] };
+  }
   const unseen = unseenItemsPolicy(policy, sides.sentIds.length);
   if (unseen.length > 0) {
     return { pairs: none, issues: unseen };
   }
-  const { pairs, ambiguous } = policy.hidden
-    ? alignItemsStrictly(sides.sent, sides.stored)
-    : alignItems(sides.sent, sides.stored);
-  if (ambiguous && policy.hidden) {
-    return { pairs: none, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
-  }
-  return { pairs, issues: [] };
+  const pairs = pairDistinct(sides.sent, sides.stored);
+  return pairs ? { pairs, issues: [] } : { pairs: none, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
 };
 
 /** A single (not repeatable) component always continues the stored instance; an ID it sends must be that one's. */
@@ -182,7 +226,7 @@ const ITEM_MESSAGES: Readonly<Record<ItemIssueCode, string>> = {
     "is sent for more than one item; send each item's id once, and leave the id out for a new item",
   ITEM_COMPONENT_CHANGED: 'names an item that holds another component; to replace the item, leave its id out',
   AMBIGUOUS_ITEMS:
-    'cannot be matched to the stored items with certainty, and its items can hold values this caller cannot see; send back the id of each item as you read it, or change one thing at a time',
+    'cannot be matched to the stored items with certainty, and its items can hold values this caller cannot see; send back the id of each item as you read it (without IDs, a write may only reorder, delete, or add items that differ from each other, never edit one)',
 };
 
 const UNSEEN_MESSAGE =

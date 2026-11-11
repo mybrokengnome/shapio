@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
-import { isComponentDefinition, type DefinitionLens } from '@shapio/schema';
+import { isComponentDefinition, type DefinitionLens, type FieldDefinition } from '@shapio/schema';
 import {
+  assertWritable,
   matchesRowFilter,
   maskAllows,
   ownershipOfNewEntry,
@@ -9,9 +10,10 @@ import {
   hidesPrivateComponentFields,
 } from '../content/compiler/policy.js';
 import { contentVersionConflict, entryNotFound } from '../content/errors.js';
-import { componentLookupOf, itemIdKeyOf, withItemIds } from '../content/itemIds.js';
+import { componentLookupOf, itemIdKeyOf, itemIdScopeOf, withItemIds } from '../content/itemIds.js';
 import { readThroughLens } from '../content/lens/read.js';
 import {
+  assertClientListCaps,
   clientApiKey,
   issuesInClientNames,
   readableThroughLens,
@@ -23,6 +25,10 @@ import { modelNotFound, resolveModel, type ContentModel } from '../content/model
 import { visibleRelationTargetIds } from '../content/read.js';
 import { buildValidator } from '../content/validator/index.js';
 import { contentInvalid, type ContentIssue } from '../content/validator/issues.js';
+import {
+  assertComponentFieldsWritable,
+  forbiddenComponentFields,
+} from '../content/write/componentWriteMask.js';
 import { itemIdTreeOf, lensLevel, todayLevel, type ItemIdTree } from '../content/write/itemIdTree.js';
 import { pairComponentItems } from '../content/write/itemPairing.js';
 import {
@@ -34,7 +40,7 @@ import {
 import type { FieldPairings } from '../content/write/listPairing.js';
 import type { ContentData } from '../db/contentData.js';
 import { AppError } from '../helpers/appError.js';
-import type { ContentAction } from '../permissions/types.js';
+import type { ContentAction, FieldMask } from '../permissions/types.js';
 import { hasUnrestrictedGrant } from '../permissions/unrestrictedGrant.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as entryHeadsRepository from '../repositories/entryHeads.js';
@@ -256,15 +262,70 @@ const translateBody = (
   if (!isRecord(data)) {
     return { data, pairings: new Map() };
   }
-  const { input, issues, itemIssues, pairings } = writeThroughLens(lens, data, base);
+  const { input, issues, itemIssues, forbidden, pairings } = writeThroughLens(lens, data, base);
   if (issues.length > 0) {
     throw lensWriteIssues(issues);
+  }
+  // A field inside a component the caller may not write: today's 403, before anything about the items.
+  if (forbidden.length > 0) {
+    throw forbiddenComponentFields('Your role may not change some of these fields', forbidden);
   }
   // Item ID and pairing refusals are today's `CONTENT_INVALID`, already in the client's API IDs.
   if (itemIssues.length > 0) {
     throw contentInvalid(itemIssues);
   }
   return { data: input, pairings };
+};
+
+/**
+ * Whether a delivery caller may write a field inside a component: what its audience can read (public fields,
+ * never deprecated ones; plan item-ids, finding H2).
+ */
+const componentFieldWritableBy =
+  (writeMask: FieldMask) =>
+  (field: FieldDefinition): boolean =>
+    !field.deprecated && (field.public || !hidesPrivateComponentFields(writeMask));
+
+/** The same by field ID, for a write through a schema version. */
+const componentFieldWritableById = (context: ContentServiceContext, writeMask: FieldMask) => {
+  const writable = componentFieldWritableBy(writeMask);
+  return (fieldId: string): boolean => {
+    for (const { definition } of context.snapshot.byId.values()) {
+      if (isComponentDefinition(definition)) {
+        const field = definition.fields.find((candidate) => candidate.id === fieldId);
+        if (field) {
+          return writable(field);
+        }
+      }
+    }
+    return false;
+  };
+};
+
+/**
+ * A body without a version, mapped to today's fields (its own 422s), with what it may not change refused:
+ * top-level fields outside the write mask and fields inside components the audience cannot read (403), before
+ * anything about its items is decided.
+ */
+const checkedBody = (
+  context: ContentServiceContext,
+  model: ContentModel,
+  body: Readonly<Record<string, unknown>>,
+  writeMask: FieldMask,
+): ContentData => {
+  const { patch, issues } = buildValidator(context.snapshot, model).fromInput(body);
+  if (issues.length > 0) {
+    throw contentInvalid(issues);
+  }
+  assertComponentListCaps(patch, model.definition.fields, componentsOf(context));
+  assertWritable(writeMask, model.definition.fields, Object.keys(patch));
+  assertComponentFieldsWritable(
+    patch,
+    model.definition.fields,
+    componentsOf(context),
+    componentFieldWritableBy(writeMask),
+  );
+  return patch;
 };
 
 /** Components by ID in today's schema, for the carry-over. */
@@ -329,6 +390,15 @@ export const createDeliveryEntry = async (
     written.data = data;
   };
   if (!activeLens(context)) {
+    if (isRecord(input.data)) {
+      const { model, policy } = await modelWithCreatePolicy(context, modelKey);
+      checkedBody(
+        context,
+        model,
+        input.data,
+        rowWriteMask(policy, context.actor, ownershipOfNewEntry(context.actor)),
+      );
+    }
     const view = await contentEntriesService.createEntry(context, modelKey, { ...input, onWritten });
     const model = resolveModel(context.snapshot, view.model);
     return toResult(context, view, todayItemIds(model, input.data, written));
@@ -349,6 +419,8 @@ export const createDeliveryEntry = async (
       return field !== undefined && maskAllows(writeMask, field);
     },
     writesEverything: hasUnrestrictedGrant(policy, 'write'),
+    readsEverything: hasUnrestrictedGrant(policy, 'read'),
+    componentFieldWritable: componentFieldWritableById(context, writeMask),
   });
   const view = await inClientNames(context, lens, () =>
     contentEntriesService.createEntry(context, model.definition.apiKey, {
@@ -378,7 +450,7 @@ const carryOver =
     scope: ReadScope | null,
     paired: Paired,
     expectedVersion: number | null,
-    written: Written,
+    writable: (field: FieldDefinition) => boolean,
   ): NonNullable<UpdateEntryInput['carry']> =>
   (patch, base, model) => {
     const moved = Object.keys(patch).some(
@@ -388,7 +460,7 @@ const carryOver =
     if (moved) {
       throw contentVersionConflict(expectedVersion, base.previous?.version ?? null);
     }
-    const kept = keepUnreadableComponentFields(
+    return keepUnreadableComponentFields(
       patch,
       base.beforeWithIds,
       model.definition.fields,
@@ -398,11 +470,10 @@ const carryOver =
         mayRead: scope !== null,
         input,
         pairings: paired.pairings,
+        writable,
         ...(paired.lens ? { lens: paired.lens } : {}),
       },
     );
-    written.data = kept;
-    return kept;
   };
 
 /** What a delivery update starts from: the written locale's draft, or a new locale's starting values. */
@@ -440,10 +511,12 @@ const writeStartOf = async (
     ? writeLocaleFor(context.snapshot, model.definition, requestedLocale)
     : (heads.find((head) => head.state === 'draft')?.locale ?? context.snapshot.defaultLocale);
   const base = writeBaseOf(model, heads, locale);
-  const withIds = withItemIds(base, model.definition.fields, componentsOf(context), {
-    key: await itemIdKeyOf(context.db),
-    entryId: id,
-  });
+  const withIds = withItemIds(
+    base,
+    model.definition.fields,
+    componentsOf(context),
+    itemIdScopeOf(await itemIdKeyOf(context.db), id, model, locale),
+  );
   return { entry, heads, locale, base, withIds };
 };
 
@@ -452,10 +525,58 @@ const sendsComponents = (model: ContentModel, patch: Readonly<ContentData>): boo
     (field) => (field.type === 'component' || field.type === 'dynamiczone') && field.id in patch,
   );
 
+/** A stale version answers 409 before any work on the items (the write's own check stays authoritative). */
+const assertFreshVersion = (
+  heads: readonly HeadRecord[],
+  locale: string,
+  expectedVersion: number | null,
+): void => {
+  const draft = heads.find((head) => head.state === 'draft' && head.locale === locale);
+  if (draft && draft.version !== expectedVersion) {
+    throw contentVersionConflict(expectedVersion, draft.version);
+  }
+};
+
 /**
- * A delivery update without a schema version that sends component values: the body is mapped and checked as the
- * write would (its own 422s, the size of every component list), then its items are paired with the stored
- * ones once (their refusals, 422), all after authorization and before the write's 403 and 409.
+ * The IDs a write answers (`itemIds`): those stored after it, read back (a write that changed nothing stored
+ * nothing new; an item stored without an ID reads with the one derived for it, which the next write accepts).
+ */
+const storedItemIds = async (
+  context: ContentServiceContext,
+  model: ContentModel,
+  id: string,
+  locale: string,
+  body: unknown,
+  level: Parameters<typeof itemIdTreeOf>[2],
+): Promise<ItemIdTree> => {
+  if (!isRecord(body)) {
+    return {};
+  }
+  const heads = await entryHeadsRepository.findForEntry(id, context.db);
+  const draft = heads.find((head) => head.state === 'draft' && head.locale === locale);
+  if (!draft || !isRecord(draft.data)) {
+    return {};
+  }
+  const stored = withItemIds(
+    draft.data,
+    model.definition.fields,
+    componentsOf(context),
+    itemIdScopeOf(await itemIdKeyOf(context.db), id, model, locale),
+  );
+  return itemIdTreeOf(body, stored, level);
+};
+
+const todayLevelOf = (model: ContentModel) => {
+  const byApiKey = new Map(
+    [...model.components.values()].map(({ definition }) => [definition.apiKey, definition.id]),
+  );
+  return todayLevel(model.definition.fields, componentLookupOf(model.components), (key) => byApiKey.get(key));
+};
+
+/**
+ * A delivery update without a schema version that sends component values. In order: the body's shape (422),
+ * what the caller may not change (403), a stale version (409), then its items paired with the stored ones once
+ * (422), all before the write, which checks the version again.
  */
 const updateWithItems = async (
   context: ContentServiceContext,
@@ -464,28 +585,27 @@ const updateWithItems = async (
   input: DeliveryUpdateInput,
   update: (data: unknown, carry?: UpdateEntryInput['carry']) => Promise<AdminEntryView>,
 ): Promise<DeliveryWriteResult> => {
-  const { model } = await entryModelWithPolicy(context, modelKey, id, 'update');
+  const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const body = isRecord(input.data) ? input.data : {};
-  const { patch, issues } = buildValidator(context.snapshot, model).fromInput(body);
-  if (issues.length > 0) {
-    throw contentInvalid(issues);
-  }
+  const start = await writeStartOf(context, model, id, input.locale);
+  const writeMask = start.entry ? rowWriteMask(policy, context.actor, start.entry) : policy.writeMask;
+  const patch = checkedBody(context, model, body, writeMask);
   if (!sendsComponents(model, patch)) {
     return toResult(context, await update(input.data));
   }
+  assertFreshVersion(start.heads, start.locale, input.expectedVersion);
   const componentOf = componentsOf(context);
-  assertComponentListCaps(patch, model.definition.fields, componentOf);
   const scope = await readScopeOf(context, model, id);
-  const start = await writeStartOf(context, model, id, input.locale);
   const view = itemViewOf(componentOf, (field) => scope?.componentFieldVisible(field.id) ?? false, {
     mayRead: scope !== null,
     unseen: !seesDraft(scope, start.heads, start.locale),
+    topLevelReadable: (field) => scope?.visible(field.id) ?? false,
+    writable: componentFieldWritableBy(writeMask),
   });
   const paired = pairComponentItems(patch, start.withIds, model.definition.fields, view);
   if (paired.issues.length > 0) {
     throw contentInvalid(paired.issues);
   }
-  const written: Written = { data: null };
   const result = await update(
     input.data,
     carryOver(
@@ -494,10 +614,14 @@ const updateWithItems = async (
       scope,
       { lens: null, pairings: paired.pairings, base: start.base },
       input.expectedVersion,
-      written,
+      componentFieldWritableBy(writeMask),
     ),
   );
-  return toResult(context, result, todayItemIds(model, body, written));
+  return toResult(
+    context,
+    result,
+    await storedItemIds(context, model, id, result.locale, body, todayLevelOf(model)),
+  );
 };
 
 export const updateDeliveryEntry = async (
@@ -538,7 +662,30 @@ export const updateDeliveryEntry = async (
     : null;
   const writeMask = entry ? rowWriteMask(policy, context.actor, entry) : policy.writeMask;
   const today = new Map(model.definition.fields.map((field) => [field.id, field]));
-  // Translated before the write, so its refusals come in today's order (422 before a stale version's 409).
+  const body = isRecord(input.data) ? input.data : {};
+  assertClientListCaps(lens, body);
+  // What the caller may not change (403), then a stale version (409) when it sends components, before any work
+  // on the items; the version's own refusals and the items' come with the translation.
+  const sent = Object.keys(body).flatMap((key) => {
+    const field = lens.fields.find((candidate) => candidate.apiKey === key);
+    return field && field.kind !== 'null' ? [field] : [];
+  });
+  await inClientNames(context, lens, async () =>
+    assertWritable(
+      writeMask,
+      model.definition.fields,
+      sent.map((field) => field.fieldId),
+    ),
+  );
+  // A top-level name the version does not have is the body's own refusal, answered first by the translation.
+  const unknown = Object.keys(body).some((key) => !lens.apiKeyToFieldId.has(key));
+  if (
+    !unknown &&
+    sent.some((field) => field.client.type === 'component' || field.client.type === 'dynamiczone')
+  ) {
+    assertFreshVersion(heads, locale, input.expectedVersion);
+  }
+  // Translated before the write: its refusals come before the write's own checks.
   const { data, pairings } = translateBody(lens, input.data ?? {}, {
     stored: withIds,
     seesStored: seesDraft(scope, heads, locale),
@@ -551,11 +698,12 @@ export const updateDeliveryEntry = async (
       return field !== undefined && maskAllows(writeMask, field);
     },
     writesEverything: hasUnrestrictedGrant(policy, 'write'),
+    readsEverything: hasUnrestrictedGrant(policy, 'read'),
+    componentFieldWritable: componentFieldWritableById(context, writeMask),
     ...(scope
       ? { readable: scope.visible, componentFieldReadable: scope.componentFieldVisible }
       : { readable: () => false, componentFieldReadable: () => false }),
   });
-  const written: Written = { data: null };
   const result = await inClientNames(context, lens, () =>
     update(
       data,
@@ -565,12 +713,16 @@ export const updateDeliveryEntry = async (
         scope,
         { lens, pairings, base },
         input.expectedVersion,
-        written,
+        componentFieldWritableBy(writeMask),
       ),
       routeApiKey,
     ),
   );
-  return toResult(context, result, clientItemIds(lens, input.data, written));
+  return toResult(
+    context,
+    result,
+    await storedItemIds(context, model, id, result.locale, input.data, lensLevel(lens)),
+  );
 };
 
 /**

@@ -15,7 +15,13 @@ import {
   revisionNotFound,
   singletonExists,
 } from '../content/errors.js';
-import { assignItemIds, componentLookupOf, itemIdKeyOf, withItemIds } from '../content/itemIds.js';
+import {
+  assignItemIds,
+  componentLookupOf,
+  itemIdKeyOf,
+  itemIdScopeOf,
+  withItemIds,
+} from '../content/itemIds.js';
 import {
   changedFieldIds,
   changedSharedFieldIds,
@@ -424,10 +430,12 @@ export const writeEntryUpdate = async (
   }
   const before = previous?.data ?? newLocaleBase(model, heads);
   const componentOf = componentLookupOf(model.components);
-  const beforeWithIds = withItemIds(before, model.definition.fields, componentOf, {
-    key: await itemIdKeyOf(trx),
-    entryId: id,
-  });
+  const beforeWithIds = withItemIds(
+    before,
+    model.definition.fields,
+    componentOf,
+    itemIdScopeOf(await itemIdKeyOf(trx), id, model, targetLocale),
+  );
   const base: DraftUpdateBase = { before, beforeWithIds, previous, heads };
   let patch = input.patch;
   if (typeof patch === 'function') {
@@ -686,7 +694,12 @@ export const duplicateEntry = async (
     const componentOf = componentLookupOf(model.components);
     const key = await itemIdKeyOf(trx);
     for (const draft of drafts) {
-      const withIds = withItemIds(draft.data, model.definition.fields, componentOf, { key, entryId: id });
+      const withIds = withItemIds(
+        draft.data,
+        model.definition.fields,
+        componentOf,
+        itemIdScopeOf(key, id, model, draft.locale),
+      );
       const copy = assignItemIds(
         Object.fromEntries(
           Object.entries(pickMasked(readable, withIds)).filter(([field]) => !unique.has(field)),

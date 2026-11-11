@@ -44,6 +44,11 @@ export type KeepOptions = {
   pairings?: FieldPairings;
   /** Carry nothing (admin writes): only the items' IDs are kept. */
   carryNothing?: boolean;
+  /**
+   * Whether the caller may write a field inside a component: its audience can read it (default: any field that
+   * is not deprecated). A caller that may not read the entry keeps what it cannot write.
+   */
+  writable?: (field: FieldDefinition) => boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -111,16 +116,23 @@ export const itemViewOf = (
     mayRead = true,
     unseen = false,
     lensIds = new Set<string>(),
+    topLevelReadable,
+    writable = (field) => !field.deprecated,
   }: {
     mayRead?: boolean;
     unseen?: boolean;
     lensIds?: ReadonlySet<string>;
+    /** Whether the caller reads a top-level field (absent: every field). */
+    topLevelReadable?: (field: FieldDefinition) => boolean;
+    /** Whether the caller may write a field inside a component (absent: any field that is not deprecated). */
+    writable?: (field: FieldDefinition) => boolean;
   } = {},
 ): ItemView => ({
   componentOf,
   seen: (field) => mayRead && readable(field) && !lensIds.has(field.id),
-  hidden: (field) => (mayRead ? !readable(field) : field.deprecated) || lensIds.has(field.id),
+  hidden: (field) => (mayRead ? !readable(field) : !writable(field)) || lensIds.has(field.id),
   unseen: unseen || !mayRead,
+  ...(topLevelReadable ? { topLevelReadable } : {}),
 });
 
 // ---------------------------------------------------------------------------------------------------------
@@ -303,7 +315,10 @@ export const keepUnreadableComponentFields = (
     // leaves out of a field it may write is cleared, as for any field it writes).
     carried: options.carryNothing
       ? () => false
-      : (field) => (mayRead ? !readable(field) : field.deprecated) || lensIds.has(field.id),
+      : (field) =>
+          (mayRead
+            ? !readable(field)
+            : !(options.writable ?? ((candidate) => !candidate.deprecated))(field)) || lensIds.has(field.id),
     nullClears: !mayRead,
   };
   let pairings = options.pairings;

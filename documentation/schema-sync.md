@@ -113,8 +113,13 @@ Wrote types for schema version 17 (SCHEMA_VERSION 0d5c8f2a-6b1e-4c3d-9f70-2e8a4b
 
 Generate them against the instance your client reads from: the version is only valid there. A client that
 passes `SCHEMA_VERSION` keeps working after you apply a breaking change, and moves to the new shape when you
-regenerate. `--schema-version <schemaId>:<version>` writes the types of an older version instead, for a client you have to
-patch without moving it forward. See [Schema lenses](schema-lenses.md#turning-it-on).
+regenerate. `--schema-version <schemaId>:<version>` writes the types of an older version instead, for a client you
+have to patch without moving it forward. See [Schema lenses](schema-lenses.md#turning-it-on).
+
+The file is a TypeScript module (`.ts`): `SCHEMA_VERSION` is a constant your code imports. With an `--out` ending
+in `.d.ts` (or `.d.mts`, `.d.cts`), the command writes a declaration file instead, with
+`export declare const SCHEMA_VERSION: '<schemaId>:<version>';`, which `tsc --strict` accepts; your code then has
+to supply the value itself.
 
 ### Types that extend a type
 

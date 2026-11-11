@@ -99,10 +99,12 @@ fields you cannot see ([Writing components](delivery-api.md#writing-components))
 **Caching clients.** Apollo Client, Relay, and urql's Graphcache store objects by `__typename` and `id`. An item
 keeps its `id` when it is edited, and an unchanged item has the same `id` in the draft and the published
 version, so a client that reads both (drafts mode and published reads, or a snapshot and today) would merge two
-versions of an item into one cache record. Keep component types out of the normalized cache: in Apollo Client,
-set `keyFields: false` for each component type in `typePolicies` (`{ Hero: { keyFields: false } }`); in urql's
-Graphcache, `keys: { Hero: () => null }`; in Relay, give the environment a `getDataID` that returns no ID for
-component types. Entries share their `id` between the draft and the published version too.
+versions of an item into one cache record. (A shared field's items have the same `id`, and the same content, in
+every locale; a localized field's items have their own `id` in each locale.) Keep component types out of the
+normalized cache: in Apollo Client, set `keyFields: false` for each component type in `typePolicies`
+(`{ Hero: { keyFields: false } }`); in urql's Graphcache, `keys: { Hero: () => null }`; in Relay, give the
+environment a `getDataID` that returns no ID for component types. Entries share their `id` between the draft and
+the published version too.
 
 ### Types that extend a type
 

@@ -103,6 +103,23 @@ describe('withItemIds', () => {
   });
 });
 
+describe('withItemIds on a localized content type', () => {
+  const localizedHero = { ...field(HERO, false), localized: true } as FieldDefinition;
+  const sharedCards = { ...field(CARDS, true), localized: false } as FieldDefinition;
+  const both = [sharedCards, localizedHero];
+  const data = { [CARDS]: [{ [LABEL]: 'A' }], [HERO]: { [LABEL]: 'h' } };
+  const read = (locale: string) => withItemIds(data, both, componentOf, { ...scope, locale });
+
+  it('derives a localized field per locale, a shared one alike in every locale', () => {
+    const en = read('en');
+    const fr = read('fr');
+    expect((en[HERO] as Record<string, unknown>).__id).not.toBe((fr[HERO] as Record<string, unknown>).__id);
+    expect(idsOf(en)).toEqual(idsOf(fr));
+    // The same locale reads the same IDs (a draft and its published version).
+    expect(read('en')).toEqual(en);
+  });
+});
+
 describe('assignItemIds', () => {
   it('gives instances without an ID a new one and keeps the others', () => {
     const data = assignItemIds(

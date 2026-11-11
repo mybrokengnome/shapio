@@ -135,7 +135,7 @@ describe('keepUnreadableComponentFields', () => {
     });
   });
 
-  it('follows deletes and reorders by what the caller sees, and drops a hidden value for a new item', () => {
+  it('follows deletes and reorders of distinct items, and refuses a delete with an add', () => {
     const before = {
       [CARDS]: [
         { [LABEL]: 'A', [NOTE]: 'nA' },
@@ -151,8 +151,9 @@ describe('keepUnreadableComponentFields', () => {
         { [LABEL]: 'A', [NOTE]: 'nA' },
       ],
     });
-    expect(keep({ [CARDS]: [{ [LABEL]: 'B' }, { [LABEL]: 'A2' }, { [LABEL]: 'C' }] }, before)).toEqual({
-      [CARDS]: [{ [LABEL]: 'B', [NOTE]: 'nB' }, { [LABEL]: 'A2' }, { [LABEL]: 'C' }],
-    });
+    // A stored item deleted and new ones added in one write, without IDs: refused (never guess).
+    expect(
+      codeOf(() => keep({ [CARDS]: [{ [LABEL]: 'B' }, { [LABEL]: 'A2' }, { [LABEL]: 'C' }] }, before)),
+    ).toEqual(['CONTENT_INVALID', [expect.objectContaining({ path: '/cards', code: 'AMBIGUOUS_ITEMS' })]]);
   });
 });

@@ -3,9 +3,10 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CliIo } from '../../types.js';
-import { schemaVersionTokenOf } from './generate.js';
+import { asDeclarationFile, schemaVersionTokenOf } from './generate.js';
 import { typesCommand } from './index.js';
 
 const captureIo = (env: Record<string, string> = {}) => {
@@ -83,6 +84,23 @@ describe('shapio types generate', () => {
     expect(source).toContain(`export const SCHEMA_VERSION = '${SCHEMA_ID}:9' as const;`);
     expect(source.startsWith('// Schema version 9\n')).toBe(true);
     expect(stdout.join('')).toContain(`schema version 9 (SCHEMA_VERSION ${SCHEMA_ID}:9)`);
+  });
+
+  it('writes a .d.ts that passes tsc --strict: the constant declared, not initialized', async () => {
+    const out = join(dir, 'declared', 'shapio-types.d.ts');
+    const { io, out: stdout } = captureIo({ SHAPIO_TOKEN: 'shp_lens' });
+    expect(await typesCommand.run(['generate', '--url', baseUrl, '--out', out], io)).toBe(0);
+    const source = await readFile(out, 'utf8');
+    expect(source).toContain(`export declare const SCHEMA_VERSION: '${SCHEMA_ID}:9';`);
+    expect(source).not.toContain('as const');
+    expect(stdout.join('')).toContain(`(SCHEMA_VERSION ${SCHEMA_ID}:9)`);
+    const program = ts.createProgram([out], { strict: true, noEmit: true, types: [] });
+    expect(ts.getPreEmitDiagnostics(program).map((diagnostic) => diagnostic.messageText)).toEqual([]);
+  });
+
+  it('leaves a source without SCHEMA_VERSION as it is in a .d.ts', () => {
+    const source = 'export type Page = { title: string | null };\n';
+    expect(asDeclarationFile(source)).toBe(source);
   });
 
   it('renders an older version’s types with --schema-version', async () => {

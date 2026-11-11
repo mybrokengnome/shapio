@@ -42,7 +42,8 @@ All notable changes to Shapio are listed here. The format follows
   a dynamic zone, at any depth) has a stable `id`, assigned by the server. It is in every read: REST, GraphQL
   (`id: ID!` on component types), the admin API, in-process delivery, snapshot reads, and reads through a schema
   version. An item keeps its `id` through edits and moves, and an unchanged item has the same `id` in the draft
-  and the published version. A write that sends back the `id` of each item it read is paired with the stored
+  and the published version. A shared field's items have the same `id` in every locale; a localized field's
+  items have their own in each locale. A write that sends back the `id` of each item it read is paired with the stored
   items with certainty, in any order, so fields the caller cannot see stay with their item. Generated types
   (`shapio types generate`), `/api/docs`, `@shapio/client`, `@shapio/editor-sdk`, and the starters' types
   include it. See [Writing components](documentation/delivery-api.md#writing-components).
@@ -52,11 +53,15 @@ All notable changes to Shapio are listed here. The format follows
   - REST delivery write responses carry `data.itemIds`: the `id` of each item in the component fields the body
     sent, by the caller's API IDs (the client's own through a schema version), as `{ "id" }`, with
     `__component` on dynamic zone items and nested component fields included. `{}` when the body sent none.
-    GraphQL mutations do not return it.
+    GraphQL mutations do not return it. It always holds the `id`s stored after the write, so even a write that
+    changes nothing answers the `id`s the next write accepts.
   - In a list, `"id": null` marks a new item. IDs sent on a create are ignored; the server assigns new ones.
   - Lifecycle hook `data` carries `id` on the component instances the write wrote; `seo=resolved` keeps the
     stored SEO instance's `id`. Content export bundles carry item IDs, and an import into the same instance keeps
     them.
+- `shapio types generate --out <file>.d.ts` (or `.d.mts`, `.d.cts`) writes a declaration file, with
+  `export declare const SCHEMA_VERSION`, that passes `tsc --strict`. Any other `--out` is a `.ts` module, as
+  before.
 - Shapio now records which version of each content type was live at each schema version. The upgrade rebuilds
   the earlier record from the audit log; where that is missing, a read through an older version answers
   `409 SCHEMA_VERSION_UNAVAILABLE` with the oldest version that works.
@@ -68,6 +73,7 @@ All notable changes to Shapio are listed here. The format follows
   items they continue, by their `id` or, for a client that sends none, by comparing the lists, so a hidden value
   never moves to another item. A write that cannot be matched with certainty is refused, never guessed
   ([Delivery API](documentation/delivery-api.md#writing-components)).
+- A content export and import after a field type change works again.
 - A number field changed to decimal or big integer no longer fails on very large or very small stored numbers
   (`1e21`, `1e-7`); they convert to exact digits.
 
@@ -83,8 +89,14 @@ All notable changes to Shapio are listed here. The format follows
   `<schemaId>:<version>`.
 - A delivery update that sends a component, on a content type whose components hold a field some callers cannot
   read (private or deprecated), reads the entry's read permissions first, and keeps such fields' stored values
-  for callers that cannot read them (see Fixed). A caller that may update but not read keeps only what it cannot
-  write (deprecated fields): what it leaves out of a component is cleared, as on every other content type.
+  for callers that cannot read them (see Fixed). A caller that may update but not read now keeps the private and
+  deprecated fields it leaves out of a component; before, it cleared the private ones.
+- **Security:** a delivery caller that sends a field private to its audience inside a component (even as
+  `null`) is now refused with `403 FORBIDDEN_FIELD`, on create and update, with and without a schema version;
+  `details.fields` lists JSON pointers such as `/cards/0/note`. A deprecated field inside a component is refused
+  with `422 CONTENT_INVALID` (`UNKNOWN_FIELD`) without a schema version, and with `403 FORBIDDEN_FIELD` through a
+  version that still had it. Before, a private value sent this way was stored. Over GraphQL, such a caller's input types never
+  named these fields.
 - An empty `schemaVersion` query parameter (or header) is `400 SCHEMA_VERSION_INVALID` instead of being
   ignored.
 - A delivery update that sends a component value, and any write through a schema version, whose component list
@@ -104,39 +116,34 @@ All notable changes to Shapio are listed here. The format follows
   dynamic zone item's `__component` in place (`ITEM_COMPONENT_CHANGED`). Drop `id` from copies and replacements.
   This applies to admin API writes too.
 - A delivery write that sends no item `id`s can now be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`),
-  only on a content type whose components hold a private or deprecated field at any depth. On such a list,
-  Shapio pairs only what it is certain of: the list sent back unchanged, an edit in place, and items exactly
-  equal to a stored item. This affects app users and anonymous callers with an update grant (delivery tokens
-  cannot write). Sending `[]`, leaving the field out, and sending back the `id`s read (or `itemIds` from the last
-  write) are always allowed. These cases are refused:
-  - deleting one of several items that look the same to the caller;
-  - duplicating an item;
-  - editing an item and deleting another in the same write, next to it or not (`[A, B, C]` sent as `[A2, B]`);
-  - editing an item and inserting a new one next to it;
-  - reordering look-alike items so that one crosses a moved item;
-  - an edit mixed with a move, so that a changed item and a left-over stored item fall in the same stretch;
-  - writing any list with items while the caller cannot see the draft. App users never read drafts, so this
-    covers every entry with unpublished changes or never published, including an app user's own second edit
-    before an editor publishes the entry.
-- An admin writing through the delivery routes and sending no item `id`s can be refused the same way only when
-  the components hold deprecated fields; admin API writes never are.
-- Still accepted without item `id`s: the unchanged list, deleting one item, inserting away from edits,
-  reordering items that differ, edits in place, deleting the first item and adding one at the end, and a moved
-  item with the others replaced (the moved item keeps its hidden values; new items carry nothing). A refused
-  list reports only `AMBIGUOUS_ITEMS` under its path. Through a schema version, a value sent back for a field the
-  client cannot write, on an item Shapio could not match to a stored one, is also reported as `AMBIGUOUS_ITEMS`
-  for the list (swapping two items and editing both, `[{p, w:1}, {q, w:2}]` sent as `[{q2, w:2}, {p2, w:1}]`
-  with `w` read-only, is refused; with `id`s it is accepted).
-- Without item `id`s, an item moved and edited in one write (`[A, B]` sent as `[B2, A]`) is read as `B` deleted
-  and `B2` new, so `B2` keeps none of `B`'s hidden values; send its `id` to keep them. Replacing the only item
-  (`[A]` sent as `[X]`) is read as an edit in place and keeps `A`'s hidden values; send `"id": null` on `X` to
-  make it new.
+  but only for a list whose items can hold a value the caller cannot see: a private or deprecated field at any
+  depth, and through a schema version also a field added since that version or one the caller cannot write.
+  This reaches app users and anonymous callers with an update grant (delivery tokens cannot write). For such a
+  list, without `id`s, Shapio accepts the list unchanged (look-alikes included), a new list, and a write that
+  only reorders, deletes, or adds items that all differ from each other. It refuses:
+  - any edit of an item, in place or moved;
+  - deleting one item and adding another in the same write;
+  - a changed list that holds look-alikes: deleting one of two, duplicating an item, or reordering them;
+  - any change inside a nested list (it counts as editing the parent item, so nested items change only with
+    `id`s);
+  - any list with items from a caller that cannot see the stored items: one that may update but not read, one
+    writing a draft it cannot read (app users never read drafts, so every entry with unpublished changes or
+    never published, including an app user's own second edit before an editor publishes it), or one writing a
+    top-level field it cannot read. Nothing about that answer depends on what is stored.
+- Sending `[]`, leaving the field out, and sending back the `id`s read (or `itemIds` from the last write) are
+  always allowed. An admin writing through the delivery routes can be refused only when the components hold
+  deprecated fields; admin API writes, and lists whose items cannot hold hidden values, are never refused.
+- The order of refusals on a delivery update is: a body the route refuses as a whole (`422`, list caps
+  included), then a forbidden field (`403`), then a stale version (`409`), then the items (`422`). A stale
+  `expectedVersion` is answered before any item matching, and the matching work of one request has one limit.
+  An invalid value (`INVALID_TYPE` and the like) is still answered after `403` and `409`, as before.
+- Lists saved before 0.9.0 work out their item IDs on each read until the entry is next saved (the draft) and
+  published (the published version). Reads are about as fast as before.
 
-Apart from item IDs and the refusals above, nothing else changes for clients that name no schema version:
-reads, writes (with the same order of refusals: invalid body, then item refusals, then forbidden field, then a
-stale version), and snapshot reads answer as before. A server older than 0.9.0 refuses the `schemaVersion`
-query parameter with `400`, on purpose, so a newer client that names a version never silently gets a shape it
-was not built for.
+Apart from item IDs and the refusals above, nothing else changes for clients that name no schema version: reads,
+writes (with the order of refusals above), and snapshot reads answer as before. A server older than 0.9.0
+refuses the `schemaVersion` query parameter with `400`, on purpose, so a newer client that names a version never
+silently gets a shape it was not built for.
 
 ### Known limits
 

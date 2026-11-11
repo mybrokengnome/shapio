@@ -47,7 +47,13 @@ void test('runs when invoked through a symlinked folder (never a silent no-op)',
       ['--import', import.meta.resolve('tsx'), join(linked, 'types.ts')],
       {
         cwd: scratch,
-        env: { PATH: process.env.PATH ?? '', SHAPIO_URL: 'http://127.0.0.1:9', SHAPIO_TOKEN: 'shp_test' },
+        // NODE_ENV too: a Next project types the environment with it required (this file ships in the starters).
+        env: {
+          NODE_ENV: 'test',
+          PATH: process.env.PATH ?? '',
+          SHAPIO_URL: 'http://127.0.0.1:9',
+          SHAPIO_TOKEN: 'shp_test',
+        },
         encoding: 'utf8',
       },
     );

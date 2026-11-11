@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { Kysely, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB } from '../db/types.js';
@@ -32,13 +33,22 @@ export const getSchemaId = async (executor: Executor = db): Promise<string> => {
 };
 
 /**
- * The instance's item ID key (plan item-ids), written once by the migration: what IDs derived for items stored
- * without one are keyed with.
+ * The instance's item ID key (plan item-ids), written by the migration. A database left without one (a
+ * migration stopped between its two statements) gets one here, once: never a key that changes between reads.
  */
 export const getItemIdKey = async (executor: Executor = db): Promise<string> => {
   const row = await executor.selectFrom('system_versions').select('item_id_key').executeTakeFirstOrThrow();
-  if (!row.item_id_key) {
-    throw new Error('system_versions.item_id_key is not set; run the database migrations');
+  if (row.item_id_key) {
+    return row.item_id_key;
   }
-  return row.item_id_key;
+  await executor
+    .updateTable('system_versions')
+    .set({ item_id_key: randomBytes(32).toString('hex') })
+    .where('item_id_key', 'is', null)
+    .execute();
+  const filled = await executor.selectFrom('system_versions').select('item_id_key').executeTakeFirstOrThrow();
+  if (!filled.item_id_key) {
+    throw new Error('system_versions.item_id_key could not be set; run the database migrations');
+  }
+  return filled.item_id_key;
 };

@@ -1,6 +1,8 @@
 import type { RequestFn } from '@shapio/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SHAPIO_VERSION } from '../src/constants/version.js';
+import { itemIdKeyOf } from '../src/content/itemIds.js';
+import { createDb } from '../src/db/index.js';
 import {
   createDeliveryRuntime,
   createInProcessRequest,
@@ -338,18 +340,171 @@ describe('component item IDs', () => {
     expect(JSON.stringify(head.data)).toContain(before[0] as string);
   });
 
+  it('derives IDs per locale for localized fields, alike in every locale for shared ones', async () => {
+    expectStatus(await admin.post('/api/admin/locales', { code: 'fr', label: 'French' }), 201);
+    const doc = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'doc',
+      label: 'Doc',
+      localized: true,
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+        {
+          apiKey: 'cards',
+          label: 'Cards',
+          type: 'component',
+          localized: false,
+          settings: { component: card.definition.id, repeatable: true },
+        },
+        {
+          apiKey: 'hero',
+          label: 'Hero',
+          type: 'component',
+          localized: true,
+          settings: { component: card.definition.id },
+        },
+      ],
+    });
+    const entry = expectStatus(
+      await admin.post('/api/admin/content/doc', {
+        locale: 'en',
+        data: { title: 'en', cards: [{ heading: 'A', note: 'nA' }], hero: { heading: 'H-en' } },
+      }),
+      201,
+    ).json<EntryBody>();
+    const view = async (locale: string) =>
+      expectStatus(
+        await admin.get(`/api/admin/content/doc/${entry.id}?locale=${locale}`),
+        200,
+      ).json<EntryBody>();
+    expectStatus(
+      await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+        locale: 'fr',
+        expectedVersion: null,
+        data: { title: 'fr', hero: { heading: 'H-fr' } },
+      }),
+      200,
+    );
+    for (const locale of ['en', 'fr']) {
+      expectStatus(await admin.post(`/api/admin/content/doc/${entry.id}/publish?locale=${locale}`, {}), 200);
+    }
+    // Stored without IDs (content saved before item IDs existed): every read derives them.
+    const fieldId = (apiKey: string) =>
+      doc.definition.fields.find((field) => field.apiKey === apiKey)?.id as string;
+    const heads = await database.current.db
+      .selectFrom('entry_heads')
+      .select(['locale', 'state', 'data'])
+      .where('entry_id', '=', entry.id)
+      .execute();
+    for (const head of heads) {
+      await database.current.db
+        .updateTable('entry_heads')
+        .set({ data: legacy(head.data) as never })
+        .where('entry_id', '=', entry.id)
+        .where('locale', '=', head.locale)
+        .where('state', '=', head.state as never)
+        .execute();
+    }
+    expect(fieldId('hero')).toBeTruthy();
+    const en = (await view('en')).data as Delivered['data'];
+    const fr = (await view('fr')).data as Delivered['data'];
+    // A localized single component is its own instance in each locale; the shared list is the same everywhere.
+    expect(en.hero?.id).not.toBe(fr.hero?.id);
+    expect(en.cards.map((item) => item.id)).toEqual(fr.cards.map((item) => item.id));
+    // The published version of a locale reads the same IDs as its draft.
+    const published = expectStatus(
+      await request('GET', `/api/content/docs/${entry.id}?locale=en`, adminToken),
+      200,
+    ).json<Delivered>().data;
+    expect(published.hero?.id).toBe(en.hero?.id);
+    expect(published.cards.map((item) => item.id)).toEqual(en.cards.map((item) => item.id));
+    // An ID from another locale of a localized field names no item there.
+    const foreign = await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+      locale: 'fr',
+      expectedVersion: (await view('fr')).version,
+      data: { hero: { id: en.hero?.id, heading: 'H-fr' } },
+    });
+    expect([
+      foreign.statusCode,
+      foreign.json<{ error: { details: { issues: Array<{ code: string }> } } }>().error.details.issues[0]
+        ?.code,
+    ]).toEqual([422, 'UNKNOWN_ITEM_ID']);
+    // A shared list written in one locale (its IDs persisted) reads the same IDs in every locale.
+    expectStatus(
+      await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+        locale: 'fr',
+        expectedVersion: (await view('fr')).version,
+        data: { cards: [{ id: fr.cards[0]?.id, heading: 'A2' }, { heading: 'B' }] },
+      }),
+      200,
+    );
+    const enAfter = (await view('en')).data as Delivered['data'];
+    const frAfter = (await view('fr')).data as Delivered['data'];
+    expect(enAfter.cards.map((item) => item.id)).toEqual(frAfter.cards.map((item) => item.id));
+    expect(enAfter.cards[0]?.id).toBe(fr.cards[0]?.id);
+  });
+
+  it.skipIf(isSqliteRun())(
+    'reads the item ID key through the executor a read holds: never waits on a load that needs another connection',
+    async () => {
+      // A pool of one: a read that holds it in a transaction must not wait for a key load started on the pool,
+      // which can only run once that same connection is free (the starters' in-process build hung on it).
+      const tight = createDb({ connectionString: database.current.url, poolMax: 1, acquireTimeoutMs: 3_000 });
+      try {
+        let release: () => void = () => undefined;
+        const holding = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const inTransaction = tight.transaction().execute(async (trx) => {
+          await holding;
+          return itemIdKeyOf(trx);
+        });
+        // Started on the pool while the transaction holds its only connection.
+        const onPool = itemIdKeyOf(tight);
+        await new Promise((resolve) => setImmediate(resolve));
+        release();
+        const [held, pooled] = await Promise.all([inTransaction, onPool]);
+        expect(held.equals(pooled)).toBe(true);
+      } finally {
+        await tight.destroy();
+      }
+    },
+  );
+
   describe.skipIf(isSqliteRun())('in-process delivery', () => {
     let runtime: DeliveryRuntime;
     let local: RequestFn;
     let token: string;
     beforeAll(async () => {
       await publishServerRelease(database.current.db, SHAPIO_VERSION, testApp.config);
-      runtime = createDeliveryRuntime({ databaseUrl: database.current.url, poolMax: 2 });
+      // A pool of one: every read below must finish without a second connection.
+      runtime = createDeliveryRuntime({ databaseUrl: database.current.url, poolMax: 1 });
       token = await createDeliveryToken(database.current.db, [{ modelId: page.definition.id }]);
       local = createInProcessRequest(runtime, { token });
     });
     afterAll(async () => {
       await runtime?.close();
+    });
+
+    it('serves many concurrent reads on a pool of one: no read holds a connection while it waits for another', async () => {
+      const entries = await Promise.all(
+        Array.from({ length: 3 }, () => create({ cards: [{ heading: 'A', note: 'nA' }, { heading: 'B' }] })),
+      );
+      // The runtime is cold (its first reads), and its pool holds one connection: reads that run in a
+      // transaction and reads on the pool, all at once, must all finish.
+      const { snapshot } = await local<{ snapshot: number }>('/api/snapshots/current');
+      // Plain list reads run on the pool (no transaction); populated and pinned reads hold a transaction.
+      const paths = [
+        '/api/content/pages',
+        '/api/content/pages?populate=*',
+        `/api/content/pages?snapshot=${snapshot}&populate=*`,
+        `/api/content/pages/${entries[0]?.id ?? ''}?snapshot=${snapshot}`,
+        `/api/content/pages/${entries[1]?.id ?? ''}`,
+      ];
+      const results = await Promise.all(
+        Array.from({ length: 12 }, (_, index) => local<Delivered>(paths[index % paths.length] as string)),
+      );
+      expect(results).toHaveLength(12);
     });
 
     it('shows the same IDs as the HTTP API, for items stored with and without one', async () => {

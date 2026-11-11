@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALIGNMENT_CELL_BUDGET, alignItems } from './listAlignment.js';
+import { ALIGNMENT_CELL_BUDGET, alignItems, newAlignmentBudget } from './listAlignment.js';
 import { pairList, unseenItemsPolicy, type ListPolicy } from './listPairing.js';
 
 /** A list side from item keys (one letter each, all the same component). */
@@ -18,71 +18,112 @@ const pair = (stored: string, sent: string, policy = hidden) =>
       stored: side(stored),
     },
     policy,
+    newAlignmentBudget(),
   );
 
-describe('pairList without item IDs (the never-guess table)', () => {
+const AMBIGUOUS = [{ index: null, code: 'AMBIGUOUS_ITEMS' }];
+
+describe('pairList without item IDs, for a list that can hold hidden values (the never-guess rule)', () => {
   it.each([
     ['unchanged', 'ab', 'ab', [0, 1]],
-    ['unchanged, duplicates included', 'aa', 'aa', [0, 1]],
-    ['delete one', 'ab', 'b', [1]],
-    ['insert at front', 'ab', 'xab', [-1, 0, 1]],
-    ['reorder unique items', 'ab', 'ba', [1, 0]],
-    ['edit in place', 'ab', 'xb', [0, 1]],
-    ['U: edit in place into a copy of the next item', 'pq', 'qq', [0, 1]],
-    ['P: replace the only item (an edit in place)', 'p', 'x', [0]],
-    ['12b: move and edit (a delete and a new item)', 'ab', 'xa', [-1, 0]],
-    ['delete the first and append a new one', 'pq', 'qx', [1, -1]],
-    // Y: `p` was sent at another place, so this is no edit in place: A moved, B and C deleted, two new items.
-    ['Y: an old value sent at another place is a move', 'pqq', 'erp', [-1, -1, 0]],
-  ])('%s is certain', (_name, stored, sent, pairs) => {
+    ['unchanged, look-alikes included', 'aa', 'aa', [0, 1]],
+    ['reorder distinct items', 'abc', 'cab', [2, 0, 1]],
+    ['delete one', 'abc', 'ac', [0, 2]],
+    ['delete and reorder', 'abc', 'ca', [2, 0]],
+    ['add at the front', 'ab', 'xab', [-1, 0, 1]],
+    ['add and reorder', 'ab', 'bxa', [1, -1, 0]],
+    ['delete everything but one', 'abc', 'b', [1]],
+    ['delete several distinct items', 'abcd', 'bd', [1, 3]],
+    ['nothing stored: every item is new, look-alikes included', '', 'aab', [-1, -1, -1]],
+  ])('%s is accepted', (_name, stored, sent, pairs) => {
     expect(pair(stored, sent)).toEqual({ pairs, issues: [] });
   });
 
   it.each([
-    ['delete one of two items that look the same', 'aa', 'a'],
+    ['U: edit an item into a copy of another', 'pq', 'qq'],
+    ['P: replace the only item', 'p', 'x'],
+    ['12b: move and edit', 'ab', 'xa'],
+    ['Y: edit two, move one', 'pqq', 'erp'],
+    ['X2: look-alikes stored, edited', 'pqq', 'erp'],
+    ['AB: swap and edit both', 'pq', 'xy'],
+    ['edit in place', 'ab', 'xb'],
+    ['delete one and add one', 'pq', 'qx'],
+    ['delete one of two look-alikes', 'aa', 'a'],
     ['duplicate an item', 'a', 'aa'],
-    ['edit an item and delete its neighbor', 'abc', 'xc'],
-    ['insert next to an edited item', 'a', 'xy'],
-    ['reorder with duplicates across a moved item', 'aba', 'aab'],
-    ['edit one item and delete another, apart', 'abc', 'xb'],
-    ['W: edit, keep, and add with a delete in one gap', 'pq', 'xpn'],
-    ['the 742367977 case: one echoed item among look-alikes', 'pqq', 'qppp'],
-    ['edit one of two look-alikes while its old value stays', 'qq', 'xq'],
-  ])('%s is refused when the items can hold hidden values', (_name, stored, sent) => {
-    expect(pair(stored, sent).issues).toEqual([{ index: null, code: 'AMBIGUOUS_ITEMS' }]);
-    // Nothing hidden: never refused (its uncertain items are new or edited in place).
-    expect(pair(stored, sent, visible).issues).toEqual([]);
+    ['B2: reorder with look-alikes [Intro, S, S] to [S, S, Intro]', 'iss', 'ssi'],
+    ['B2: [S, A, S, B] to [A, B, S, S]', 'sasb', 'abss'],
+    ['B2: [B, A] to [A, B, B]', 'ba', 'abb'],
+    ['B2: [B, B, A] to [A, B]', 'bba', 'ab'],
+    ['W: edit, keep, and add', 'pq', 'xpn'],
+    ['742367977: one echoed among look-alikes', 'pqq', 'qppp'],
+  ])('%s needs IDs', (_name, stored, sent) => {
+    expect(pair(stored, sent).issues).toEqual(AMBIGUOUS);
   });
 
   it('refuses a caller that cannot see the stored items, unless it sends nothing (the one named branch)', () => {
-    expect(unseenItemsPolicy({ hidden: true, unseen: true }, 1)).toEqual([
-      { index: null, code: 'AMBIGUOUS_ITEMS' },
-    ]);
+    expect(unseenItemsPolicy({ hidden: true, unseen: true }, 1)).toEqual(AMBIGUOUS);
     expect(unseenItemsPolicy({ hidden: true, unseen: true }, 0)).toEqual([]);
     expect(unseenItemsPolicy({ hidden: false, unseen: true }, 3)).toEqual([]);
-    expect(pair('ab', 'ab', { hidden: true, unseen: true }).issues).toEqual([
-      { index: null, code: 'AMBIGUOUS_ITEMS' },
-    ]);
+    expect(pair('ab', 'ab', { hidden: true, unseen: true }).issues).toEqual(AMBIGUOUS);
+  });
+
+  it('decides 50,000 items in linear time', () => {
+    const count = 50_000;
+    const keys = Array.from({ length: count }, (_, index) => `k${index}`);
+    const started = performance.now();
+    const result = pairList(
+      {
+        sentIds: keys.map(() => undefined),
+        sent: { keys: [...keys].reverse(), kinds: keys.map(() => 'c') },
+        storedIds: keys,
+        stored: { keys, kinds: keys.map(() => 'c') },
+      },
+      hidden,
+      newAlignmentBudget(),
+    );
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(result.pairs[0]).toBe(count - 1);
   });
 });
 
 describe('pairList without item IDs, for a list that cannot hold hidden values', () => {
   it.each([
-    ['W', 'pq', 'xpn'],
-    ['Y', 'pqq', 'erp'],
-    ['the 742367977 case', 'pqq', 'qppp'],
+    ['U', 'pq', 'qq'],
+    ['12b', 'ab', 'xa'],
+    ['B2', 'iss', 'ssi'],
     ['edit one item and delete another', 'abc', 'xb'],
-  ])('%s keeps the least-edit alignment and is never refused', (_name, stored, sent) => {
+  ])('%s keeps the least-edit alignment (for IDs only) and is never refused', (_name, stored, sent) => {
     const { issues, pairs } = pair(stored, sent, visible);
     expect(issues).toEqual([]);
     expect(pairs).toHaveLength(sent.length);
+  });
+
+  it('shares one alignment budget across every list of a write', () => {
+    const budget = newAlignmentBudget();
+    const keys = (n: number, prefix: string) => Array.from({ length: n }, (_, index) => `${prefix}${index}`);
+    // Lists that need a full table: once the budget is spent, the rest align in place, at no cost.
+    const size = Math.ceil(Math.sqrt(ALIGNMENT_CELL_BUDGET)) - 1;
+    for (let list = 0; list < 5; list += 1) {
+      const stored = keys(size, 's');
+      const sent = keys(size - 1, 't');
+      alignItems(
+        { keys: sent, kinds: sent.map(() => 'c') },
+        { keys: stored, kinds: stored.map(() => 'c') },
+        budget,
+      );
+    }
+    expect(budget.cells).toBeLessThan(ALIGNMENT_CELL_BUDGET / 2);
   });
 });
 
 describe('pairList with item IDs', () => {
   const stored = { storedIds: ['a', 'b', 'c'], stored: side('xyz') };
   const withIds = (ids: Array<string | null>, kinds = ids.map(() => 'card')) =>
-    pairList({ sentIds: ids, sent: { keys: ids.map(() => 'q'), kinds }, ...stored }, hidden);
+    pairList(
+      { sentIds: ids, sent: { keys: ids.map(() => 'q'), kinds }, ...stored },
+      hidden,
+      newAlignmentBudget(),
+    );
 
   it('pairs by ID in any order; null is a new item', () => {
     expect(withIds(['c', null, 'a'])).toEqual({ pairs: [2, -1, 0], issues: [] });
@@ -95,33 +136,5 @@ describe('pairList with item IDs', () => {
       { index: 1, code: 'DUPLICATE_ITEM_ID' },
     ]);
     expect(withIds(['b'], ['quote']).issues).toEqual([{ index: 0, code: 'ITEM_COMPONENT_CHANGED' }]);
-  });
-});
-
-describe('alignItems bounds', () => {
-  it('aligns 50,000 identical items with one deleted without filling more than its budget', () => {
-    const count = 50_000;
-    const stored = {
-      keys: Array.from({ length: count }, () => 'k'),
-      kinds: Array.from({ length: count }, () => 'c'),
-    };
-    const sent = { keys: stored.keys.slice(1), kinds: stored.kinds.slice(1) };
-    const started = performance.now();
-    const result = alignItems(sent, stored);
-    expect(result.ambiguous).toBe(true);
-    expect(performance.now() - started).toBeLessThan(5_000);
-    expect(ALIGNMENT_CELL_BUDGET).toBeLessThan(count * count);
-  });
-
-  it('aligns 50,000 unique items, reordered and edited, in linearithmic time', () => {
-    const count = 50_000;
-    const keys = Array.from({ length: count }, (_, index) => `k${index}`);
-    const stored = { keys, kinds: keys.map(() => 'c') };
-    const sentKeys = [...keys].reverse();
-    sentKeys[10] = 'edited';
-    const started = performance.now();
-    const result = alignItems({ keys: sentKeys, kinds: sentKeys.map(() => 'c') }, stored);
-    expect(performance.now() - started).toBeLessThan(5_000);
-    expect(result.pairs[0]).toBe(count - 1);
   });
 });

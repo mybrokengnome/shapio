@@ -840,20 +840,36 @@ describe('one pairing per written list (fourth review)', () => {
     });
   });
 
-  it('pairs a nested list under the item its parent continues', () => {
+  it('pairs a nested list under the item its parent continues, which needs IDs when the nested list changes', () => {
     const stored = {
       [BOXES]: [
-        { [NAME]: 'x', [id(13)]: [{ [LABEL]: 'B', [SIZE]: '9' }] },
-        { [NAME]: 'y', [id(13)]: twoAs },
+        { [NAME]: 'x', __id: 'bx', [id(13)]: [{ [LABEL]: 'B', [SIZE]: '9', __id: 'c0' }] },
+        {
+          [NAME]: 'y',
+          __id: 'by',
+          [id(13)]: twoAs.map((item, index) => ({ ...item, __id: `c${index + 1}` })),
+        },
       ],
     };
-    // The first box untouched; inside the second (edited in place), the first card deleted.
+    // Without IDs: a change inside a box changes what the caller sees of the box, so the boxes cannot be told apart.
     expect(
       written(
         {
           boxes: [
             { name: 'x', cards: [{ label: 'B', size: 9 }] },
             { name: 'y', cards: [{ label: 'A', size: 2 }] },
+          ],
+        },
+        stored,
+      ),
+    ).toEqual([['/boxes', 'AMBIGUOUS_ITEMS', expect.stringContaining('send back the id of each item')]]);
+    // With IDs: the first box untouched; inside the second, the first card deleted.
+    expect(
+      written(
+        {
+          boxes: [
+            { id: 'bx', name: 'x', cards: [{ id: 'c0', label: 'B', size: 9 }] },
+            { id: 'by', name: 'y', cards: [{ id: 'c2', label: 'A', size: 2 }] },
           ],
         },
         stored,

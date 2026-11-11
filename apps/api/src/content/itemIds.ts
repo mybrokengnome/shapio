@@ -1,10 +1,9 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, hash, randomUUID } from 'node:crypto';
 import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
 import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../constants/itemIds.js';
 import type { ContentData } from '../db/contentData.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
 import { COMPONENT_KEY } from './validator/index.js';
-import { compactCanonical } from './write/listPairing.js';
 
 /**
  * Item IDs (plan item-ids): every component instance (a single component, an item of a repeatable component
@@ -24,10 +23,13 @@ export type ComponentLookup = (componentId: string) => ComponentDefinition | und
 
 type KeyExecutor = Parameters<typeof schemaVersionsRepository.getItemIdKey>[0];
 
-const keys = new WeakMap<object, Promise<Buffer>>();
+/** Keys read, by database (whichever handle read them). */
+const keys = new WeakMap<object, Buffer>();
+/** Reads under way, by the handle running each: never shared with another handle. */
+const loading = new WeakMap<object, Promise<Buffer>>();
 
 /**
- * What the key is cached by: the database, whichever handle reads it. A transaction shares its database's
+ * What a read key is cached by: the database, whichever handle reads it. A transaction shares its database's
  * dialect adapter, so a read inside one finds the key its database already read.
  */
 const cacheIdentityOf = (executor: NonNullable<KeyExecutor>): object => {
@@ -35,16 +37,30 @@ const cacheIdentityOf = (executor: NonNullable<KeyExecutor>): object => {
   return typeof adapter === 'object' && adapter !== null ? adapter : executor;
 };
 
-/** The instance's item ID key, read once per database. */
-export const itemIdKeyOf = (executor: NonNullable<KeyExecutor>): Promise<Buffer> => {
+/**
+ * The instance's item ID key, read once per database. A read not yet finished is only waited on by the handle
+ * that runs it: a read holding a connection (a transaction) reads the key through that connection, never
+ * waits on a read started on the pool, which could only run once a connection is free (with every
+ * connection held by reads waiting for it, nothing would ever free one: the 0.3.0 class of pool deadlock).
+ */
+export const itemIdKeyOf = async (executor: NonNullable<KeyExecutor>): Promise<Buffer> => {
   const identity = cacheIdentityOf(executor);
-  let key = keys.get(identity);
-  if (!key) {
-    key = schemaVersionsRepository.getItemIdKey(executor).then((hex) => Buffer.from(hex, 'hex'));
-    keys.set(identity, key);
-    key.catch(() => keys.delete(identity));
+  const known = keys.get(identity);
+  if (known) {
+    return known;
   }
-  return key;
+  let pending = loading.get(executor);
+  if (!pending) {
+    pending = schemaVersionsRepository.getItemIdKey(executor).then((hex) => Buffer.from(hex, 'hex'));
+    loading.set(executor, pending);
+  }
+  try {
+    const key = await pending;
+    keys.set(identity, key);
+    return key;
+  } finally {
+    loading.delete(executor);
+  }
 };
 
 /** A fresh ID for a new item. */
@@ -60,13 +76,52 @@ const uuidOf = (bytes: Buffer): string => {
 };
 
 /** Where items are derived for: the entry, under the instance key. */
-export type ItemIdScope = { key: Buffer; entryId: string };
+export type ItemIdScope = {
+  key: Buffer;
+  entryId: string;
+  /**
+   * The locale of the head read, for a localized content type: instances of its localized fields derive with it
+   * (each locale's instances are its own), those of shared fields without it (the same instance in every locale).
+   */
+  locale?: string;
+};
+
+/**
+ * The entry's derivation secret: an HMAC of the entry under the instance key, computed once per entry and read.
+ * Each item's ID is then one SHA-256 over that secret and the item (`crypto.hash`, one call, no HMAC object
+ * per item): still keyed, so no ID can be computed (or a hidden value tested) without the instance key.
+ */
+const entrySecrets = new WeakMap<Buffer, Map<string, string>>();
+
+const entrySecretOf = (scope: ItemIdScope): string => {
+  let secrets = entrySecrets.get(scope.key);
+  if (!secrets) {
+    secrets = new Map();
+    entrySecrets.set(scope.key, secrets);
+  }
+  let secret = secrets.get(scope.entryId);
+  if (!secret) {
+    if (secrets.size >= MAX_ENTRY_SECRETS) {
+      secrets.clear();
+    }
+    secret = createHmac('sha256', scope.key).update(scope.entryId).digest('hex');
+    secrets.set(scope.entryId, secret);
+  }
+  return secret;
+};
+
+/** Entry secrets kept per key (a bounded memo: recomputing one is a single HMAC). */
+const MAX_ENTRY_SECRETS = 10_000;
 
 const derive = (scope: ItemIdScope, path: readonly string[], content: string, occurrence: number) =>
+  // Field IDs and item IDs in the path are UUIDs, the occurrence a number: neither holds a NUL, so the parts stay
+  // apart; the content (the item's JSON) comes last.
   uuidOf(
-    createHmac('sha256', scope.key)
-      .update(JSON.stringify([scope.entryId, path, content, occurrence]))
-      .digest(),
+    hash(
+      'sha256',
+      `${entrySecretOf(scope)}\u0000${scope.locale ?? ''}\u0000${path.join('\u0000')}\u0000${occurrence}\u0000${content}`,
+      'buffer',
+    ),
   );
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -95,10 +150,19 @@ const instanceWithIds = (
   item: Readonly<Record<string, unknown>>,
   id: string,
   componentOf: ComponentLookup,
-): Record<string, unknown> => ({
-  ...(component ? fieldsWithIds(scope, component.fields, item, [id], componentOf) : item),
-  [ITEM_ID_KEY]: id,
-});
+): Readonly<Record<string, unknown>> => {
+  const nested = component?.fields.some(
+    (field) => (field.type === 'component' || field.type === 'dynamiczone') && item[field.id] !== undefined,
+  );
+  // An item that stores its ID and holds no component values is read as stored (no copy).
+  if (!nested && item[ITEM_ID_KEY] === id) {
+    return item;
+  }
+  return {
+    ...(component && nested ? fieldsWithIds(scope, component.fields, item, [id], componentOf) : item),
+    [ITEM_ID_KEY]: id,
+  };
+};
 
 const valueWithIds = (
   scope: ItemIdScope,
@@ -124,7 +188,8 @@ const valueWithIds = (
     }
     let id = storedId(item);
     if (!id) {
-      const content = compactCanonical(item);
+      // The stored item as stored (one native serialization): the same stored item always reads the same.
+      const content = JSON.stringify(item);
       const occurrence = seen.get(content) ?? 0;
       seen.set(content, occurrence + 1);
       id = derive(scope, path, content, occurrence);
@@ -159,7 +224,35 @@ export const withItemIds = (
   fields: readonly FieldDefinition[],
   componentOf: ComponentLookup,
   scope: ItemIdScope,
-): ContentData => fieldsWithIds(scope, fields, data, [], componentOf);
+): ContentData => {
+  if (scope.locale === undefined) {
+    return fieldsWithIds(scope, fields, data, [], componentOf);
+  }
+  // Localized fields derive per locale (with everything nested in them), shared ones as in every locale.
+  const shared: ItemIdScope = { key: scope.key, entryId: scope.entryId };
+  const localized = fieldsWithIds(
+    scope,
+    fields.filter((field) => field.localized),
+    data,
+    [],
+    componentOf,
+  );
+  return fieldsWithIds(
+    shared,
+    fields.filter((field) => !field.localized),
+    localized,
+    [],
+    componentOf,
+  );
+};
+
+/** The derivation scope of a head: its locale only on a localized content type. */
+export const itemIdScopeOf = (
+  key: Buffer,
+  entryId: string,
+  model: { definition: { localized: boolean } },
+  locale: string,
+): ItemIdScope => (model.definition.localized ? { key, entryId, locale } : { key, entryId });
 
 /**
  * `data` (storage form) with an ID on every component instance, at any depth: one without gets a fresh ID.
