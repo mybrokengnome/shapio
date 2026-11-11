@@ -14,6 +14,7 @@ import {
   type ModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
+import { ITEM_ID_PATTERN } from '../../constants/itemIds.js';
 import { operatorsFor } from '../../content/compiler/operators.js';
 import {
   DEFAULT_RICH_TEXT_MODE,
@@ -257,10 +258,12 @@ const objectSchema = (
  * Every component item's stable ID (plan item-ids): required on output; optional on input, where sending back
  * the `id` of each item read is what pairs it with the stored item it continues.
  */
+const ITEM_ID: JsonSchema = { type: 'string', pattern: ITEM_ID_PATTERN.source };
+
 const ITEM_ID_PROPERTY: Readonly<Record<Mode, JsonSchema>> = {
-  output: { ...uuid, description: "The item's ID, stable across saves" },
+  output: { ...ITEM_ID, description: "The item's ID, stable across saves" },
   input: {
-    ...nullable(uuid),
+    ...nullable(ITEM_ID),
     description:
       'The `id` of the item read, to keep it (its hidden fields follow it); `null` marks a new item',
   },

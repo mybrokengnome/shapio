@@ -24,6 +24,14 @@ const COLUMNS = [
   'updated_at',
 ] as const;
 
+/** Every column but `data`: a head write answers with the data it was given, never reads it back. */
+const WRITTEN_COLUMNS = COLUMNS.filter(
+  (column): column is Exclude<(typeof COLUMNS)[number], 'data'> => column !== 'data',
+);
+
+/** The written row with the data the write stored (the caller's object, not a copy parsed back). */
+const withData = <T>(row: T, data: ContentData) => ({ ...row, data });
+
 /** Every head of an entry, locked for the rest of the transaction. */
 export const lockForEntry = (entryId: string, trx: Transaction<DB>) =>
   trx
@@ -68,44 +76,54 @@ export const findForEntriesOnSite = (
         .where('entry_id', 'in', entryIds)
         .execute();
 
-export const insert = (head: HeadWrite, trx: Executor = db) =>
-  trx
-    .insertInto('entry_heads')
-    .values({
-      entry_id: head.entryId,
-      // A copy of the entry's site (the composite foreign key keeps them equal).
-      site_id: entrySiteOf(trx, head.entryId),
-      // A copy of the entry's creation time, which never changes (the default list order's index).
-      entry_created_at: entryCreatedAtOf(trx, head.entryId),
-      model_id: head.modelId,
-      locale: head.locale,
-      state: head.state,
-      revision_id: head.revisionId,
-      data: head.data,
-      autosaved_at: head.autosavedAt,
-      created_at: head.now,
-      updated_at: head.now,
-    })
-    .returning(COLUMNS)
-    .executeTakeFirstOrThrow();
+/** Inserts a head; answers its row with the data written (`head.data`). */
+export const insert = async (head: HeadWrite, trx: Executor = db) =>
+  withData(
+    await trx
+      .insertInto('entry_heads')
+      .values({
+        entry_id: head.entryId,
+        // A copy of the entry's site (the composite foreign key keeps them equal).
+        site_id: entrySiteOf(trx, head.entryId),
+        // A copy of the entry's creation time, which never changes (the default list order's index).
+        entry_created_at: entryCreatedAtOf(trx, head.entryId),
+        model_id: head.modelId,
+        locale: head.locale,
+        state: head.state,
+        revision_id: head.revisionId,
+        data: head.data,
+        autosaved_at: head.autosavedAt,
+        created_at: head.now,
+        updated_at: head.now,
+      })
+      .returning(WRITTEN_COLUMNS)
+      .executeTakeFirstOrThrow(),
+    head.data,
+  );
 
-/** Moves a head: new data and revision, version + 1, a fresh change sequence number. */
-export const update = (head: HeadWrite, trx: Executor = db) =>
-  trx
-    .updateTable('entry_heads')
-    .set((eb) => ({
-      revision_id: head.revisionId,
-      data: head.data,
-      autosaved_at: head.autosavedAt,
-      version: eb('version', '+', eb.lit(1)),
-      change_seq: nextSequenceValue('entry_heads_change_seq'),
-      updated_at: head.now,
-    }))
-    .where('entry_id', '=', head.entryId)
-    .where('locale', '=', head.locale)
-    .where('state', '=', head.state)
-    .returning(COLUMNS)
-    .executeTakeFirstOrThrow();
+/**
+ * Moves a head: new data and revision, version + 1, a fresh change sequence number. Answers its row with the
+ * data written (`head.data`).
+ */
+export const update = async (head: HeadWrite, trx: Executor = db) =>
+  withData(
+    await trx
+      .updateTable('entry_heads')
+      .set((eb) => ({
+        revision_id: head.revisionId,
+        data: head.data,
+        autosaved_at: head.autosavedAt,
+        version: eb('version', '+', eb.lit(1)),
+        change_seq: nextSequenceValue('entry_heads_change_seq'),
+        updated_at: head.now,
+      }))
+      .where('entry_id', '=', head.entryId)
+      .where('locale', '=', head.locale)
+      .where('state', '=', head.state)
+      .returning(WRITTEN_COLUMNS)
+      .executeTakeFirstOrThrow(),
+    head.data,
+  );
 
 /**
  * Rewrites stored data in place for a schema migration step, only if the head has not moved since it was

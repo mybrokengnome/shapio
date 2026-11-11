@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { itemKeysComputed } from '../src/content/write/listPairing.js';
 import { bearer, createAppRole, signUp, type AppSessionBody } from './helpers/appUsers.js';
 import {
   createDefinition,
@@ -520,7 +521,7 @@ describe('item IDs: fifth review', () => {
     });
   });
 
-  it('H1: a stale write of many large lists answers at once, and a fresh one is bounded', async () => {
+  it('H1: a stale write of many large lists does no work on the items, and a fresh one is bounded', async () => {
     const plain = await createDefinition(
       admin,
       {
@@ -587,22 +588,24 @@ describe('item IDs: fifth review', () => {
       200,
     );
     const attack = sections.map((section) => ({ name: section.name, items: section.items.slice(0, 1412) }));
-    let started = performance.now();
+    // Counted, never timed: the item keys hashed. A stale write hashes none; a fresh one hashes each item once on
+    // each side at most (pairing is hashing and set lookups, never a table per list).
+    let before = itemKeysComputed();
     const stale = await request('PUT', `/api/content/sheets/${entry.id}`, alice.accessToken, {
       expectedVersion: 999,
       data: { sections: attack },
     });
     expect(stale.statusCode).toBe(409);
-    // Before the fix this took over ten seconds; the version is checked before any work on the items now.
-    expect(performance.now() - started).toBeLessThan(3_000);
-    started = performance.now();
+    expect(itemKeysComputed() - before).toBe(0);
+    before = itemKeysComputed();
     const fresh = await request('PUT', `/api/content/sheets/${entry.id}`, alice.accessToken, {
       expectedVersion: await sheetVersion(),
       data: { sections: attack },
     });
-    expect(fresh.statusCode).toBeLessThan(500);
-    // One alignment budget for the whole body: a fresh write is bounded too.
-    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(fresh.statusCode, fresh.body).toBe(200);
+    const items = (list: typeof sections) =>
+      list.length + list.reduce((sum, section) => sum + section.items.length, 0);
+    expect(itemKeysComputed() - before).toBeLessThanOrEqual(items(sections) + items(attack));
   }, 60_000);
 
   describe('H2: a delivery caller may not set a component field its audience cannot read', () => {

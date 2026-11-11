@@ -282,7 +282,7 @@ describe('schema lens writes', () => {
     const version = await versionOf(pre.id);
     const refused = await request('PUT', at(`/api/content/notes/${pre.id}`), alice.accessToken, {
       expectedVersion: version,
-      data: { count: 4, body: 'changed plain', summary: 'x', headline: 'today' },
+      data: { count: 4, body: 'changed plain', summary: 'x' },
     });
     expect(refused.statusCode).toBe(422);
     expect(refused.json<ErrorBody>().error.code).toBe('LENS_WRITE_UNSUPPORTED');
@@ -290,8 +290,14 @@ describe('schema lens writes', () => {
       ['/count', 'NOT_ALLOWED'],
       ['/body', 'NOT_ALLOWED'],
       ['/summary', 'NOT_ALLOWED'],
-      ['/headline', 'UNKNOWN_FIELD'],
     ]);
+    // A name the version does not have is the body's own refusal, answered first with today's code.
+    const unknown = await request('PUT', at(`/api/content/notes/${pre.id}`), alice.accessToken, {
+      expectedVersion: version,
+      data: { count: 4, headline: 'today' },
+    });
+    expect([unknown.statusCode, unknown.json<ErrorBody>().error.code]).toEqual([422, 'CONTENT_INVALID']);
+    expect(issuesOf(unknown)).toEqual([['/headline', 'UNKNOWN_FIELD']]);
     const messages = refused.json<ErrorBody>().error.details?.issues?.map((issue) => issue.message) ?? [];
     expect(messages[0]).toContain('changed type (integer → string)');
     expect(messages[1]).toContain('changed type (text → richtext)');

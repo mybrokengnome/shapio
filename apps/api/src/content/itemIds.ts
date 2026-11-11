@@ -1,4 +1,4 @@
-import { createHmac, hash, randomUUID } from 'node:crypto';
+import { createHmac, hash, randomBytes } from 'node:crypto';
 import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
 import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../constants/itemIds.js';
 import type { ContentData } from '../db/contentData.js';
@@ -63,16 +63,76 @@ export const itemIdKeyOf = async (executor: NonNullable<KeyExecutor>): Promise<B
   }
 };
 
-/** A fresh ID for a new item. */
-export const newItemId = (): string => randomUUID();
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+/** Characters in an item ID: 12 base62 characters, about 71 bits (`ITEM_ID_PATTERN`). */
+const ITEM_ID_LENGTH = 12;
+/** Bytes an ID is made from: 128 bits reduced to 62^12 values, a bias below 2^-56 (none a caller can use). */
+const ITEM_ID_SOURCE_BYTES = 16;
 
-/** Bytes in UUID form (version 8, the custom layout), so derived IDs look like the random ones. */
-const uuidOf = (bytes: Buffer): string => {
-  const b = Buffer.from(bytes.subarray(0, 16));
-  b[6] = ((b[6] as number) & 0x0f) | 0x80;
-  b[8] = ((b[8] as number) & 0x3f) | 0x80;
-  const hex = b.toString('hex');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+/** An item ID from (at least 16) uniformly distributed bytes: their first 16 as a number, in base62. */
+const itemIdOf = (bytes: Uint8Array): string => {
+  let value = BigInt(`0x${Buffer.from(bytes.subarray(0, ITEM_ID_SOURCE_BYTES)).toString('hex')}`);
+  let id = '';
+  for (let index = 0; index < ITEM_ID_LENGTH; index += 1) {
+    id += BASE62[Number(value % 62n)];
+    value /= 62n;
+  }
+  return id;
+};
+
+/** A fresh ID for a new item: 12 base62 characters from 16 random bytes. */
+export const newItemId = (): string => itemIdOf(randomBytes(ITEM_ID_SOURCE_BYTES));
+
+/**
+ * The ID a later instance repeating `id` in one entry's data gets instead (`n`: the attempt, from 1), the same
+ * for the same data wherever it is persisted: a draft and its published version, a head and its revision.
+ */
+export const renewedItemId = (id: string, attempt: number): string =>
+  itemIdOf(hash('sha256', `renew\u0000${id}\u0000${attempt}`, 'buffer'));
+
+type SerializeTask = { text: string } | { value: unknown };
+
+/**
+ * `value` as JSON with every object's keys sorted (code unit order), at any depth without recursion: the same
+ * stored item serializes the same on every database, whatever key order the database returns (MySQL
+ * normalizes it, PostgreSQL's jsonb sorts it its own way, SQLite keeps what was written).
+ */
+export const canonicalJson = (value: unknown): string => {
+  const output: string[] = [];
+  const stack: SerializeTask[] = [{ value }];
+  for (let task = stack.pop(); task; task = stack.pop()) {
+    if ('text' in task) {
+      output.push(task.text);
+      continue;
+    }
+    const current = task.value;
+    if (typeof current !== 'object' || current === null) {
+      output.push(JSON.stringify(current) ?? 'null');
+      continue;
+    }
+    const parts: SerializeTask[] = [];
+    if (Array.isArray(current)) {
+      parts.push({ text: '[' });
+      current.forEach((item: unknown, index) => {
+        parts.push(...(index > 0 ? [{ text: ',' }] : []), { value: item === undefined ? null : item });
+      });
+      parts.push({ text: ']' });
+    } else {
+      const record = current as Record<string, unknown>;
+      const keys = Object.keys(record)
+        .filter((key) => record[key] !== undefined)
+        .sort();
+      parts.push({ text: '{' });
+      keys.forEach((key, index) => {
+        parts.push({ text: `${index > 0 ? ',' : ''}${JSON.stringify(key)}:` }, { value: record[key] });
+      });
+      parts.push({ text: '}' });
+    }
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      stack.push(parts[index] as SerializeTask);
+    }
+  }
+  return output.join('');
 };
 
 /** Where items are derived for: the entry, under the instance key. */
@@ -114,9 +174,9 @@ const entrySecretOf = (scope: ItemIdScope): string => {
 const MAX_ENTRY_SECRETS = 10_000;
 
 const derive = (scope: ItemIdScope, path: readonly string[], content: string, occurrence: number) =>
-  // Field IDs and item IDs in the path are UUIDs, the occurrence a number: neither holds a NUL, so the parts stay
-  // apart; the content (the item's JSON) comes last.
-  uuidOf(
+  // Field IDs (UUIDs) and item IDs (base62) in the path and the occurrence (a number) hold no NUL, so the parts
+  // stay apart; the content (the item's canonical JSON) comes last.
+  itemIdOf(
     hash(
       'sha256',
       `${entrySecretOf(scope)}\u0000${scope.locale ?? ''}\u0000${path.join('\u0000')}\u0000${occurrence}\u0000${content}`,
@@ -132,7 +192,7 @@ const storedId = (item: Readonly<Record<string, unknown>>): string | undefined =
   return typeof id === 'string' && id !== '' ? id : undefined;
 };
 
-const componentOfItem = (
+export const componentOfItem = (
   field: FieldDefinition,
   componentOf: ComponentLookup,
   item: unknown,
@@ -188,8 +248,8 @@ const valueWithIds = (
     }
     let id = storedId(item);
     if (!id) {
-      // The stored item as stored (one native serialization): the same stored item always reads the same.
-      const content = JSON.stringify(item);
+      // The stored item in canonical form: the same stored item reads the same on every database.
+      const content = canonicalJson(item);
       const occurrence = seen.get(content) ?? 0;
       seen.set(content, occurrence + 1);
       id = derive(scope, path, content, occurrence);
@@ -254,32 +314,42 @@ export const itemIdScopeOf = (
   locale: string,
 ): ItemIdScope => (model.definition.localized ? { key, entryId, locale } : { key, entryId });
 
+export type AssignItemIdOptions = {
+  /** Every instance gets a new ID, whatever it holds (a new entry: its IDs are the server's, never the caller's). */
+  fresh?: boolean;
+  /**
+   * Every instance gets a new ID, the same new ID for the same old ID across calls (a copy of an entry, its
+   * locales sharing items). Within one call an old ID seen again is another instance: it gets its own new ID.
+   */
+  renew?: Map<string, string>;
+};
+
 /**
- * `data` (storage form) with an ID on every component instance, at any depth: one without gets a fresh ID.
- * With `renew`, every instance gets a new ID instead, the same new ID wherever the same old ID appears (a copy
- * of an entry, its locales sharing items; a new entry, whose IDs are the server's, never the caller's).
+ * `data` (storage form) with an ID on every component instance, at any depth: one without gets a fresh ID, the
+ * others keep theirs unless `options` says to renew them.
  */
 export const assignItemIds = (
   data: Readonly<ContentData>,
   fields: readonly FieldDefinition[],
   componentOf: ComponentLookup,
-  { renew }: { renew?: Map<string, string> } = {},
+  { fresh = false, renew }: AssignItemIdOptions = {},
 ): ContentData => {
+  const renewedHere = new Set<string>();
   const idFor = (item: Readonly<Record<string, unknown>>): string => {
     const old = storedId(item);
-    if (!renew) {
-      return old ?? newItemId();
-    }
-    if (old === undefined) {
+    if (old === undefined || fresh) {
       return newItemId();
     }
-    const known = renew.get(old);
-    if (known) {
-      return known;
+    if (!renew) {
+      return old;
     }
-    const fresh = newItemId();
-    renew.set(old, fresh);
-    return fresh;
+    if (renewedHere.has(old)) {
+      return newItemId();
+    }
+    renewedHere.add(old);
+    const known = renew.get(old) ?? newItemId();
+    renew.set(old, known);
+    return known;
   };
   const instance = (component: ComponentDefinition | undefined, item: unknown): unknown =>
     isRecord(item)
@@ -303,55 +373,6 @@ export const assignItemIds = (
     return output;
   };
   return walk(fields, data);
-};
-
-/**
- * `to` (data a schema conversion produced from `from`) with the IDs `from`'s instances read with (`from` with
- * its IDs: `withItemIds`), instance by instance at the same place: a conversion persists the IDs of the items
- * it rewrites, so a client holding them can still send them back (plan item-ids). A list made single keeps its
- * first item's ID, a single instance made a list keeps its own; a zone item keeps its ID only while it holds the
- * same component. Instances still without an ID get a new one.
- */
-export const transferItemIds = (
-  from: Readonly<ContentData>,
-  to: Readonly<ContentData>,
-  fields: readonly FieldDefinition[],
-  componentOf: ComponentLookup,
-): ContentData => {
-  const asList = (value: unknown): unknown[] =>
-    Array.isArray(value) ? value : value === undefined ? [] : [value];
-  const instance = (component: ComponentDefinition | undefined, item: unknown, source: unknown): unknown => {
-    if (!isRecord(item)) {
-      return item;
-    }
-    const sameKind = !isRecord(source) || source[COMPONENT_KEY] === item[COMPONENT_KEY];
-    const id = storedId(item) ?? (isRecord(source) && sameKind ? storedId(source) : undefined) ?? newItemId();
-    return {
-      ...(component ? walk(component.fields, item, isRecord(source) && sameKind ? source : {}) : item),
-      [ITEM_ID_KEY]: id,
-    };
-  };
-  const walk = (
-    current: readonly FieldDefinition[],
-    value: Readonly<Record<string, unknown>>,
-    source: Readonly<Record<string, unknown>>,
-  ): Record<string, unknown> => {
-    const output: Record<string, unknown> = { ...value };
-    for (const field of current) {
-      const held = value[field.id];
-      const before = asList(source[field.id]);
-      if (field.type === 'component' && !field.settings.repeatable) {
-        output[field.id] =
-          held === undefined ? held : instance(componentOf(field.settings.component), held, before[0]);
-      } else if ((field.type === 'component' || field.type === 'dynamiczone') && Array.isArray(held)) {
-        output[field.id] = held.map((item: unknown, index) =>
-          instance(componentOfItem(field, componentOf, item), item, before[index]),
-        );
-      }
-    }
-    return output;
-  };
-  return walk(fields, to, from);
 };
 
 /** The components of a content model by ID, as the walkers above look them up. */

@@ -1,5 +1,5 @@
 import type { ValidationIssue } from '@shapio/schema';
-import type { ContentIssue } from '../content/validator/issues.js';
+import { reportedIssues, type ContentIssue } from '../content/validator/issues.js';
 import { AppError } from '../helpers/appError.js';
 
 /** Errors the schema services throw; the central error handler renders them. */
@@ -154,7 +154,7 @@ export const lensWriteIssues = (issues: readonly ContentIssue[]) =>
     422,
     'LENS_WRITE_UNSUPPORTED',
     "Some fields changed since this client's schema version and cannot be written through it. Update the client to the current schema version to change them.",
-    { issues },
+    reportedIssues(issues),
   );
 
 /** Too many lens builds by one caller (schema/lens/budget.ts): cache misses cost a view build each. */

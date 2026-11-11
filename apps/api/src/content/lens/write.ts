@@ -1,5 +1,7 @@
 import {
   canonicalJson,
+  isComponentDefinition,
+  type ComponentDefinition,
   type DefinitionLens,
   type FieldDefinition,
   type FieldLens,
@@ -7,9 +9,16 @@ import {
 } from '@shapio/schema';
 import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
 import type { ContentData } from '../../db/contentData.js';
+import { matchesFieldType } from '../compiler/select.js';
 import { COMPONENT_KEY, isMissingValue } from '../validator/index.js';
 import { pointer, type ContentIssue } from '../validator/issues.js';
-import { newAlignmentBudget, type AlignmentBudget } from '../write/listAlignment.js';
+import {
+  callerViewOf,
+  lensFieldSet,
+  type CallerAccess,
+  type CallerView,
+  type ViewScope,
+} from '../write/callerView.js';
 import {
   CARRY_MAX_ITEMS,
   itemIssueOf,
@@ -119,6 +128,11 @@ export type LensWriteBase = {
    * (`componentFieldShownThroughLens`).
    */
   readsEverything?: boolean;
+  /**
+   * The caller's view (`callerView.ts`), made with this version's field set: what it sees of the items, their
+   * keys, and which lists can hold what it cannot see. Absent: made from the fields above (tests).
+   */
+  view?: CallerView;
 };
 
 /**
@@ -381,11 +395,10 @@ type Walk = {
   issues: ContentIssue[];
   /** Refusals about item IDs and pairing: today's `CONTENT_INVALID` issues, in the client's API IDs. */
   itemIssues: ContentIssue[];
-  /** The write's alignment budget, shared by every list it writes (`listAlignment.ts`). */
-  budget: AlignmentBudget;
   /** Fields inside components the caller may not write (JSON pointers in the client's API IDs). */
   forbidden: string[];
   base: LensWriteBase;
+  view: CallerView;
 };
 
 /**
@@ -398,6 +411,8 @@ type Counterpart = {
   reads: ReadonlyArray<Readonly<ContentData>>;
   /** A stored item the caller may not have read (the draft, without draft access): nothing is sent back. */
   unseen?: boolean;
+  /** Where the object sits, for the caller's view: whether it reads there and sees the stored items. */
+  scope: ViewScope;
 };
 
 const recordOrNull = (value: unknown): Readonly<ContentData> | null => (isRecord(value) ? value : null);
@@ -427,17 +442,6 @@ const readsToday = (base: LensWriteBase, field: FieldLens, whole: boolean): bool
   const check = whole ? base.componentFieldReadable : base.readable;
   return check ? check(field.fieldId) : field.stored.public;
 };
-
-/**
- * Whether a field inside a component item is part of what the caller sees of the item, the key items are
- * paired by: every field it reads today, those it cannot write included (it sends them back as read). A caller
- * that may not have read the stored items (a draft it may not read) can only leave those out, so its items are
- * paired by what it reads and may write; one with no read access at all, by what it may write.
- */
-const inView = (base: LensWriteBase, field: FieldLens): boolean =>
-  base.mayRead === false
-    ? isWritable(field) && !field.stored.deprecated
-    : readsToday(base, field, true) && (base.seesStored !== false || isWritable(field));
 
 /**
  * One written object (the entry, or a component instance) in today's API IDs, recording the pairing of every
@@ -500,8 +504,6 @@ const translateObject = (
       continue;
     }
     if (isWritable(field)) {
-      // A top-level list the caller cannot read: it cannot see the items it replaces (never compared by content).
-      const unreadable = !whole && !readsToday(walk.base, field, false);
       output[field.stored.apiKey] = translateValue(
         walk,
         field,
@@ -509,7 +511,7 @@ const translateObject = (
         counterpart,
         fieldPath,
         pairings,
-        unreadable,
+        walk.view.inside(counterpart.scope, field.stored, !whole),
       );
     } else if (!sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       walk.issues.push(counterpart.unseen ? unseenRefusal(fieldPath) : refusal(field, fieldPath));
@@ -586,41 +588,79 @@ const sentItemLensOf = (field: FieldLens & { kind: 'same' }, item: unknown): Def
 };
 
 /** What the caller sees of a sent instance (client API IDs, as echoed from a read): its pairing key's content. */
-const sentView = (base: LensWriteBase, lens: DefinitionLens, item: Readonly<Record<string, unknown>>) => {
+const sentView = (
+  walk: Walk,
+  scope: ViewScope,
+  lens: DefinitionLens,
+  item: Readonly<Record<string, unknown>>,
+) => {
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item)) {
     const field = key === COMPONENT_KEY ? undefined : fieldByApiKey(lens, key);
-    if (!field || field.kind === 'null' || !inView(base, field) || isMissingValue(value)) {
+    if (!field || field.kind === 'null' || !shownIn(walk, scope, field) || isMissingValue(value)) {
       continue;
     }
     output[key] = viewOf(
-      base,
       field,
       value,
-      (nested, instance) => sentView(base, nested, instance),
+      (nested, instance) => sentView(walk, scope, nested, instance),
       (v) => echoed(field, v),
     );
   }
   return output;
 };
 
+/** Whether a read at `scope` shows this field of an item (`CallerView.shows`, by today's definition). */
+const shownIn = (walk: Walk, scope: ViewScope, field: FieldLens): boolean =>
+  field.stored !== undefined && field.stored !== null && walk.view.shows(scope, field.stored);
+
 /** What the caller sees of a stored instance through the lens (read, cut to its view, in input form). */
-const readView = (base: LensWriteBase, lens: DefinitionLens, read: Readonly<Record<string, unknown>>) => {
+const readView = (
+  walk: Walk,
+  scope: ViewScope,
+  lens: DefinitionLens,
+  read: Readonly<Record<string, unknown>>,
+) => {
   const output: Record<string, unknown> = {};
   for (const field of lens.fields) {
     const value = read[field.fieldId];
-    if (field.kind === 'null' || !inView(base, field) || isMissingValue(value)) {
+    // A value that does not fit the client's field reads as empty (the projection's own test: `matchesFieldType`).
+    if (
+      field.kind === 'null' ||
+      !shownIn(walk, scope, field) ||
+      isMissingValue(value) ||
+      !matchesFieldType(field.client, value)
+    ) {
+      continue;
+    }
+    const leaf = fieldInputForm(field, cutRead(walk.view.access, field, value));
+    if (isMissingValue(leaf) || (Array.isArray(leaf) && leaf.length === 0)) {
       continue;
     }
     output[field.apiKey] = viewOf(
-      base,
       field,
       value,
-      (nested, instance) => readView(base, nested, instance),
-      (v) => fieldInputForm(field, visibleRead(field, v, base.visibleTargets ?? null)),
+      (nested, instance) => readView(walk, scope, nested, instance),
+      () => leaf,
     );
   }
   return output;
+};
+
+/** A lensed leaf value as the caller's read shows it: relation targets and media it cannot see left out. */
+const cutRead = (access: CallerAccess, field: FieldLens, value: unknown): unknown => {
+  if (field.kind === 'null') {
+    return value;
+  }
+  if (field.client.type === 'media' && access.visibleMedia !== null) {
+    const visible = access.visibleMedia;
+    return Array.isArray(value)
+      ? value.filter((id) => typeof id === 'string' && visible.has(id))
+      : typeof value === 'string' && visible.has(value)
+        ? value
+        : undefined;
+  }
+  return visibleRead(field, value, access.visibleTargets);
 };
 
 /**
@@ -628,7 +668,6 @@ const readView = (base: LensWriteBase, lens: DefinitionLens, read: Readonly<Reco
  * definition ID, so a sent item and a stored one compare alike), anything else by `leaf`.
  */
 const viewOf = (
-  base: LensWriteBase,
   field: FieldLens & { kind: 'same' | 'convert' },
   value: unknown,
   instance: (lens: DefinitionLens, item: Readonly<Record<string, unknown>>) => unknown,
@@ -716,48 +755,17 @@ const counterpartOf = (
   base: LensWriteBase,
   lens: DefinitionLens,
   stored: Readonly<ContentData> | null,
+  scope: ViewScope,
 ): Counterpart => {
   if (!stored) {
-    return { stored: null, reads: [] };
+    return { stored: null, reads: [], scope };
   }
-  const seen = base.seesStored !== false && base.mayRead !== false;
   return {
     stored,
-    reads: seen ? [readOfStored(base, lens, stored)] : [],
-    unseen: base.seesStored === false && base.mayRead !== false,
+    reads: scope.sees ? [readOfStored(base, lens, stored)] : [],
+    unseen: !scope.sees && scope.reads,
+    scope,
   };
-};
-
-/**
- * Whether items of a list field, as the client's version knows it, can hold a value this caller cannot see:
- * a field it cannot read today, does not know (added since its version), or cannot write (changed since), at any
- * depth; with no read access, one it cannot write. From the schema alone, never from what is stored.
- */
-const listHoldsHidden = (base: LensWriteBase, field: FieldLens & { kind: 'same' }): boolean => {
-  const seen = new Set<string>();
-  const hides = (lens: DefinitionLens): boolean => {
-    if (seen.has(lens.definitionId)) {
-      return false;
-    }
-    seen.add(lens.definitionId);
-    return (
-      lens.addedFieldIds.length > 0 ||
-      lens.fields.some((nested) => {
-        if (!isWritable(nested) || nested.stored.deprecated) {
-          return true;
-        }
-        if (base.mayRead !== false && !readsToday(base, nested, true)) {
-          return true;
-        }
-        return [...(nested.nested?.components.values() ?? [])].some(
-          (component) => usable(component) && hides(component),
-        );
-      })
-    );
-  };
-  return [...(field.nested?.components.values() ?? [])].some(
-    (component) => usable(component) && hides(component),
-  );
 };
 
 /** The ID a sent item names (`id`): a string, null when sent as new, undefined when it sends none. */
@@ -783,9 +791,8 @@ const pairWrittenList = (
   sent: readonly unknown[],
   stored: readonly unknown[],
   path: string,
-  unreadable: boolean,
+  scope: ViewScope,
 ): number[] => {
-  const { base } = walk;
   const side = (
     items: readonly unknown[],
     lensOf: (item: unknown) => DefinitionLens | undefined,
@@ -797,22 +804,30 @@ const pairWrittenList = (
     }),
     kinds: items.map((item) => lensOf(item)?.definitionId ?? null),
   });
-  const unseen = unreadable || base.mayRead === false || base.seesStored === false;
+  const unseen = !scope.sees;
   const sentIds = sent.map(sentIdOf);
+  // Keys are made only where the caller sees the items: anywhere else nothing is compared.
+  const compares = scope.sees && sentIds.every((id) => id === undefined);
   const sentSide = side(
-    sent,
+    compares ? sent : [],
     (item) => sentItemLensOf(field, item),
-    (lens, item) => sentView(base, lens, item),
+    (lens, item) => sentView(walk, scope, lens, item),
   );
   const storedSide = side(
-    stored,
+    compares ? stored : [],
     (item) => storedItemLensOf(field, item),
-    (lens, item) => readView(base, lens, readThroughLens(lens, item)),
+    (lens, item) => readView(walk, scope, lens, readThroughLens(lens, item)),
   );
+  const kinds = (items: readonly unknown[], lensOf: (item: unknown) => DefinitionLens | undefined) =>
+    items.map((item) => lensOf(item)?.definitionId ?? null);
   const { pairs, issues } = pairList(
-    { sentIds, sent: sentSide, storedIds: stored.map(storedIdOf), stored: storedSide },
-    { hidden: unreadable || listHoldsHidden(base, field), unseen },
-    walk.budget,
+    {
+      sentIds,
+      sent: { keys: sentSide.keys, kinds: kinds(sent, (item) => sentItemLensOf(field, item)) },
+      storedIds: stored.map(storedIdOf),
+      stored: { keys: storedSide.keys, kinds: kinds(stored, (item) => storedItemLensOf(field, item)) },
+    },
+    { hidden: walk.view.holdsHidden(scope, field.stored), unseen },
   );
   walk.itemIssues.push(...issues.map((issue) => itemIssueOf(issue, path, { unseen })));
   return pairs;
@@ -869,7 +884,7 @@ function translateValue(
   parent: Counterpart,
   path: string,
   pairings: Map<string, Pairing>,
-  unreadable = false,
+  scope: ViewScope,
 ): unknown {
   const { client } = field;
   const stored = parent.stored?.[field.fieldId];
@@ -886,7 +901,7 @@ function translateValue(
       walk,
       lens,
       value,
-      counterpartOf(walk.base, lens, instance),
+      counterpartOf(walk.base, lens, instance, scope),
       path,
       inside,
     );
@@ -898,13 +913,15 @@ function translateValue(
   }
   assertListCap(field, value, path);
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
-  const pairs = pairWrittenList(walk, field, value, kept, path, unreadable);
+  const pairs = pairWrittenList(walk, field, value, kept, path, scope);
   const inside: Array<Map<string, Pairing>> = [];
   const translated = value.map((item: unknown, index) => {
     const pair = pairs[index] ?? -1;
     const storedItem = pair === -1 ? null : recordOrNull(kept[pair]);
     const lens = sentItemLensOf(field, item);
-    const counterpart = lens ? counterpartOf(walk.base, lens, storedItem) : { stored: null, reads: [] };
+    const counterpart = lens
+      ? counterpartOf(walk.base, lens, storedItem, scope)
+      : { stored: null, reads: [], scope };
     const nested = new Map<string, Pairing>();
     inside.push(nested);
     const itemPath = pointer(path, index);
@@ -926,32 +943,163 @@ export const writeThroughLens = (
   input: Readonly<Record<string, unknown>>,
   base: LensWriteBase,
 ): LensWriteResult => {
-  const walk: Walk = {
-    issues: [],
-    itemIssues: [],
-    budget: newAlignmentBudget(),
-    forbidden: [],
-    base: withComponentReadability(lens, base),
-  };
+  const withReadability = withComponentReadability(lens, base);
+  const view = base.view ?? viewOfBase(lens, withReadability);
+  const walk: Walk = { issues: [], itemIssues: [], forbidden: [], base: withReadability, view };
   const pairings = new Map<string, Pairing>();
   const output = translateObject(
     walk,
     lens,
     input,
-    { stored: base.stored, reads: base.reads },
+    { stored: base.stored, reads: base.reads, scope: view.top },
     '',
     false,
     pairings,
   );
   // A list refused as ambiguous answers for itself: a field inside its items was judged against no stored item,
   // so the version's refusals there say nothing true (they are left out, the ambiguity is reported).
-  const ambiguous = walk.itemIssues
-    .filter((issue) => issue.code === 'AMBIGUOUS_ITEMS')
-    .map((issue) => issue.path);
-  const issues = walk.issues.filter(
-    (issue) => !ambiguous.some((list) => issue.path === list || issue.path.startsWith(`${list}/`)),
+  const ambiguous = new Set(
+    walk.itemIssues.filter((issue) => issue.code === 'AMBIGUOUS_ITEMS').map((issue) => issue.path),
   );
+  // Each issue looks its own path's prefixes up (linear in the issues and their depth, never issues x lists).
+  const underAmbiguous = (path: string) => {
+    for (let at = path.length; at > 0; at = path.lastIndexOf('/', at - 1)) {
+      if (ambiguous.has(path.slice(0, at))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const issues =
+    ambiguous.size === 0 ? walk.issues : walk.issues.filter((issue) => !underAmbiguous(issue.path));
   return { input: output, issues, itemIssues: walk.itemIssues, forbidden: walk.forbidden, pairings };
+};
+
+/** The longest item ID a body may name (the validator's own limit). */
+const MAX_ITEM_ID_LENGTH = 64;
+
+/**
+ * What a body through a schema version answers before anything else is decided, in the order a body without a
+ * version does (delivery-api.md): the body's own refusals (`issues`: an unknown field, an unknown component in a
+ * zone, an item ID of the wrong type; `CONTENT_INVALID`, 422), then fields inside components the caller may not
+ * write (`forbidden`, 403). Nothing is paired and nothing stored is read: a stale version is answered right after.
+ * The translation repeats these checks; this pass only answers them first.
+ */
+export const checkClientBody = (
+  lens: DefinitionLens,
+  body: Readonly<Record<string, unknown>>,
+  base: LensWriteBase,
+): { issues: ContentIssue[]; forbidden: string[] } => {
+  const issues: ContentIssue[] = [];
+  const forbidden: string[] = [];
+  const objectOf = (
+    current: DefinitionLens,
+    value: Readonly<Record<string, unknown>>,
+    path: string,
+    whole: boolean,
+  ) => {
+    for (const [key, item] of Object.entries(value)) {
+      if (key === COMPONENT_KEY) {
+        continue;
+      }
+      if (whole && key === ITEM_ID_FIELD) {
+        if (
+          item !== undefined &&
+          item !== null &&
+          !(typeof item === 'string' && item !== '' && item.length <= MAX_ITEM_ID_LENGTH)
+        ) {
+          issues.push({ path: pointer(path, key), code: 'INVALID_TYPE', message: 'must be an item ID' });
+        }
+        continue;
+      }
+      const fieldPath = pointer(path, key);
+      const field = fieldByApiKey(current, key);
+      if (!field || (!field.stored && !mayNameRemoved(base, field))) {
+        issues.push({ path: fieldPath, code: 'UNKNOWN_FIELD', message: UNKNOWN_FIELD });
+        continue;
+      }
+      if (
+        whole &&
+        field.stored &&
+        item !== undefined &&
+        base.componentFieldWritable &&
+        !base.componentFieldWritable(field.fieldId)
+      ) {
+        if (!(isMissingValue(item) && shownToWriter(base, field))) {
+          forbidden.push(fieldPath);
+        }
+        continue;
+      }
+      if (field.kind === 'null' || !field.stored) {
+        continue;
+      }
+      const { client } = field;
+      if (client.type === 'component') {
+        const nested = nestedOf(field, client.settings.component);
+        if (!usable(nested)) {
+          continue;
+        }
+        if (Array.isArray(item)) {
+          item.forEach((entry: unknown, index) => {
+            if (isRecord(entry)) {
+              objectOf(nested, entry, pointer(fieldPath, index), true);
+            }
+          });
+        } else if (isRecord(item)) {
+          objectOf(nested, item, fieldPath, true);
+        }
+      } else if (client.type === 'dynamiczone' && Array.isArray(item)) {
+        item.forEach((entry: unknown, index) => {
+          const at = pointer(fieldPath, index);
+          const nested = zoneLensOf(field, entry);
+          if (!usable(nested) || nested.storedApiKey === null) {
+            issues.push({
+              path: pointer(at, COMPONENT_KEY),
+              code: 'UNKNOWN_COMPONENT',
+              message: 'is not a component this field allows in this schema version',
+            });
+          } else if (isRecord(entry)) {
+            objectOf(nested, entry, at, true);
+          }
+        });
+      }
+    }
+  };
+  objectOf(lens, body, '', false);
+  return { issues, forbidden };
+};
+
+/** A caller view from a write base (when the write path did not give one): its checks, the version's fields. */
+const viewOfBase = (lens: DefinitionLens, base: LensWriteBase): CallerView => {
+  const access: CallerAccess = {
+    mayRead: base.mayRead !== false,
+    seesStored: base.seesStored !== false,
+    readsField: (field) => !field.deprecated && (base.readable ? base.readable(field.id) : field.public),
+    readsComponentField: (field) =>
+      !field.deprecated &&
+      (base.componentFieldReadable ? base.componentFieldReadable(field.id) : field.public),
+    writesComponentField: (field) =>
+      !field.deprecated && (base.componentFieldWritable ? base.componentFieldWritable(field.id) : true),
+    visibleTargets: base.visibleTargets ?? null,
+    visibleMedia: null,
+    neverRefuses: false,
+  };
+  const components = new Map<string, ComponentDefinition>();
+  const definition = (id: string) => {
+    const found = base.definitionOf(id);
+    return found && isComponentDefinition(found) ? found : undefined;
+  };
+  return callerViewOf(
+    access,
+    (id) => {
+      const known = components.get(id) ?? definition(id);
+      if (known) {
+        components.set(id, known);
+      }
+      return known;
+    },
+    lensFieldSet(lens),
+  );
 };
 
 /**

@@ -262,9 +262,10 @@ by its stable ID only: its value never lands in a field added since under the sa
 may not write today gets today's answer (`403 FORBIDDEN_FIELD`), never a reason the version gives. The exception
 is a value equal to what a read through the same version returns for that field: a client that sends back the
 entry it just read, with one field edited, is not refused for the fields it did not touch, and those keep their
-stored values (not the value sent back). A field inside a component that is private to the caller's audience,
-or deprecated since the version, has no such exception: sent at all, even as `null`, it answers
-`403 FORBIDDEN_FIELD`.
+stored values (not the value sent back). The same holds for a field inside a component that is private to the
+caller's audience, or deprecated, today: when the client's version showed the field, sending back the `null` a
+read gives is accepted and keeps the stored value. Any other value for it, or any value for such a field the
+client's version never showed, answers `403 FORBIDDEN_FIELD`.
 
 Only the delivery routes (`/api/content`) and [GraphQL](#graphql) take a schema version on writes. The admin content API
 (`/api/admin/content`) ignores the header and refuses the parameter (`400 INVALID_QUERY`, as any unknown query
@@ -287,12 +288,14 @@ it continues. Shapio finds that item the same way for every client, with or with
 
 - An item sent back with its `id` continues that stored item, in any order. This is the way to write lists
   through an older version: read the entry, change what you need, and send each item back with its `id`.
-- Items sent without `id` are matched by what the client sees of each item through its version. When the items
-  can hold values hidden from the client (fields added since its version, fields it cannot read, and fields it
-  cannot write), Shapio accepts only a list sent back unchanged, or one that only reorders, deletes, or adds
-  items that differ from each other; any edit of an item, including any change inside its nested lists, needs
-  its `id`, and anything else is refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`)
-  ([Writes without item IDs](delivery-api.md#writes-without-item-ids)).
+- Items sent without `id` are matched by what the client sees of each item through its version, in one of
+  three ways ([Writes without item IDs](delivery-api.md#writes-without-item-ids)). A client that cannot see the
+  stored items writes a list as all-new items when it can write every field in it, and is refused when the list
+  holds anything it cannot. A list that can hold something hidden from the client (a field added since its
+  version, or one it cannot read or write) accepts only the list sent back unchanged, or a write that only
+  reorders, deletes, or adds items that differ from each other; any edit of an item, including any change inside
+  its nested lists, needs its `id`, and anything else is refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`).
+  Any other list is never refused: an item that cannot be matched with certainty is new, with a new `id`.
 - A new item (sent without `id`, or with `"id": null`) that sends a value for a field the client cannot write is
   refused with `NOT_ALLOWED`: a new item has no stored value to send back.
 - The write response's `itemIds` gives the `id` of each item in the component fields the body sent, by the
@@ -304,8 +307,8 @@ continues, and that stored item is the one whose values are kept.
 The stored items are those of the draft the write lands on. A caller that may not read drafts sees them only
 when the draft is the published version. While the entry has unpublished changes, such a caller sends back the
 `id`s it read from the published version (an unchanged item has the same `id` in both) or got in `itemIds` from
-its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it can hold fields hidden
-from the caller, and otherwise its items are matched by the fields it may write. An item stored before 0.9.0
+its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it holds anything the
+caller cannot write, and is otherwise written as all-new items. An item stored before 0.9.0
 and edited only in the draft since answers `UNKNOWN_ITEM_ID` to an `id` read from the published version, until a
 write stores its `id`. A field inside a component that the caller cannot write cannot be sent back: it is refused
 (`NOT_ALLOWED`, "while the entry has unpublished changes"), whatever it holds, and left out it keeps its stored
@@ -359,6 +362,11 @@ counts a field that reads `null` because it is gone.
     since become a decimal and then a number, not as the full decimal digits (`"0.000…5"`); the value is the same;
   - a time stored as the text `10:30` reads as `10:30` for a client on a version where the field was code and
     has since become a time and then text, not as `10:30:00.000`; the time is the same.
+- **Item IDs and localization.** An item saved before 0.9.0 and not written since has an `id` derived on read,
+  and for a localized field that `id` includes the locale. So making a shared field localized, or making a
+  content type localized, changes the `id`s of exactly those items; a client holding the old ones gets
+  `UNKNOWN_ITEM_ID` and reads again. IDs that are stored never change, and making a field shared or a content
+  type not localized keeps them.
 - **History from before 0.9.0.** Shapio 0.9.0 starts recording which version of each content type was live at
   each schema version, and rebuilds the earlier record from the audit log when it upgrades. Where the audit log
   has no record (it was pruned, say), a read of that content type through an older version answers

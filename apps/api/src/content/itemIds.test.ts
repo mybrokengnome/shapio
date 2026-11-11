@@ -1,6 +1,7 @@
 import { normalizeDefinition, type ComponentDefinition, type FieldDefinition } from '@shapio/schema';
 import { describe, expect, it } from 'vitest';
-import { assignItemIds, transferItemIds, withItemIds } from './itemIds.js';
+import { ITEM_ID_PATTERN } from '../constants/itemIds.js';
+import { assignItemIds, canonicalJson, newItemId, withItemIds } from './itemIds.js';
 
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 const CARD = id(1);
@@ -66,7 +67,7 @@ describe('withItemIds', () => {
   it('derives an ID for every instance stored without one, the same on every read', () => {
     const read = withItemIds(stored, fields, componentOf, scope);
     const ids = idsOf(read);
-    expect(ids.every((value) => typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value))).toBe(true);
+    expect(ids.every((value) => typeof value === 'string' && ITEM_ID_PATTERN.test(value))).toBe(true);
     // Identical items get distinct IDs (in order); the single instance has one too.
     expect(new Set(ids).size).toBe(3);
     expect((read[HERO] as Record<string, unknown>).__id).toEqual(expect.any(String));
@@ -131,6 +132,33 @@ describe('assignItemIds', () => {
     expect(idsOf(data)[1]).toEqual(expect.any(String));
   });
 
+  it('gives every instance a new ID when fresh, two sent with one ID included', () => {
+    const data = assignItemIds(
+      {
+        [CARDS]: [
+          { __id: 'x', [LABEL]: 'A' },
+          { __id: 'x', [LABEL]: 'B' },
+        ],
+        [HERO]: { __id: 'x' },
+      },
+      fields,
+      componentOf,
+      { fresh: true },
+    );
+    const ids = [...idsOf(data), (data[HERO] as Record<string, unknown>).__id];
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).not.toContain('x');
+  });
+
+  it('renews an ID repeated within one call as two instances', () => {
+    const renew = new Map<string, string>();
+    const ids = idsOf(
+      assignItemIds({ [CARDS]: [{ __id: 'a' }, { __id: 'a' }] }, fields, componentOf, { renew }),
+    );
+    expect(new Set(ids).size).toBe(2);
+    expect(ids[0]).toBe(renew.get('a'));
+  });
+
   it('renews every ID consistently (a copy: the same item in every locale gets the same new ID)', () => {
     const renew = new Map<string, string>();
     const en = assignItemIds({ [CARDS]: [{ __id: 'a' }, { __id: 'b' }] }, fields, componentOf, { renew });
@@ -140,19 +168,53 @@ describe('assignItemIds', () => {
   });
 });
 
-describe('transferItemIds', () => {
-  it('persists the IDs items read with before a conversion, place by place', () => {
-    const before = withItemIds(
-      { [CARDS]: [{ [LABEL]: 'A' }, { [LABEL]: 'B' }], [HERO]: { [LABEL]: 'h' } },
-      fields,
-      componentOf,
-      scope,
+describe('newItemId', () => {
+  it('makes 12 base62 characters, every character in use, never the same ID twice', () => {
+    const ids = Array.from({ length: 2000 }, () => newItemId());
+    expect(ids.every((value) => ITEM_ID_PATTERN.test(value))).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(ids.join('')).size).toBe(62);
+  });
+});
+
+describe('canonicalJson', () => {
+  it('serializes objects with sorted keys, whatever order they were built in', () => {
+    expect(canonicalJson({ b: 1, a: [{ d: null, c: 'x' }, 2], e: undefined })).toBe(
+      '{"a":[{"c":"x","d":null},2],"b":1}',
     );
-    const converted = { [CARDS]: [{ [LABEL]: 'A!' }, { [LABEL]: 'B!' }], [HERO]: { [LABEL]: 'h!' } };
-    const after = transferItemIds(before, converted, fields, componentOf);
-    expect(idsOf(after)).toEqual(idsOf(before));
-    expect((after[HERO] as Record<string, unknown>).__id).toBe(
-      (before[HERO] as Record<string, unknown>).__id,
+    expect(canonicalJson({ a: 1, b: { y: true, x: 1.5 } })).toBe(
+      canonicalJson({ b: { x: 1.5, y: true }, a: 1 }),
     );
+  });
+
+  it('serializes a value nested thousands of levels deep without recursion', () => {
+    let deep: unknown = 'leaf';
+    for (let level = 0; level < 100_000; level += 1) {
+      deep = level % 2 === 0 ? [deep] : { k: deep };
+    }
+    const text = canonicalJson(deep);
+    expect(text.startsWith('{"k":[{"k":[')).toBe(true);
+    expect(text.length).toBeGreaterThan(300_000);
+  });
+});
+
+describe('derivation independent of stored key order', () => {
+  it('derives the same ID for the same item whatever order its keys were stored in', () => {
+    const one = { [CARDS]: [{ [LABEL]: 'A', [NOTE]: 'n', __component: 'x' }] };
+    const other = { [CARDS]: [{ __component: 'x', [NOTE]: 'n', [LABEL]: 'A' }] };
+    expect(idsOf(withItemIds(one, fields, componentOf, scope))).toEqual(
+      idsOf(withItemIds(other, fields, componentOf, scope)),
+    );
+  });
+
+  it('reads an item holding a json value 3,000 levels deep', () => {
+    let deep: unknown = 1;
+    for (let level = 0; level < 3000; level += 1) {
+      deep = { next: deep };
+    }
+    const [read] = idsOf(
+      withItemIds({ [CARDS]: [{ [LABEL]: 'A', [NOTE]: deep }] }, fields, componentOf, scope),
+    );
+    expect(read).toMatch(ITEM_ID_PATTERN);
   });
 });

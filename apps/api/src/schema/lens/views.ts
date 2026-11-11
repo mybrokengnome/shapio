@@ -105,6 +105,12 @@ type LensState = {
   settled: boolean;
   /** When an unsettled state last read the job (`Date.now()`); re-read after `SETTLE_CHECK_TTL_MS`. */
   checkedAt: number;
+  /**
+   * The job read under way, shared by every request arriving meanwhile: each would otherwise read it too and,
+   * seeing it finished, start caches of its own, so a cold burst would miss (and charge a build) once per
+   * request and leave the caches of whichever finished last, possibly empty.
+   */
+  refreshing?: Promise<LensState>;
   /** Per workspace (`siteId ?? ''`); workspaces are few, so the map is not bounded beyond them. */
   sites: Map<string, SiteCaches>;
 };
@@ -167,15 +173,22 @@ const stateOf = async (db: Database): Promise<LensState> => {
  * Caches count as final only once the job succeeded; until then (pending, running, failed, dead) they are
  * dropped the first time a request sees it succeed. The job is read at most once per `SETTLE_CHECK_TTL_MS`.
  */
-const refreshSettled = async (db: Database, state: LensState): Promise<LensState> => {
+const refreshSettled = (db: Database, state: LensState): Promise<LensState> => {
   const now = Date.now();
   if (state.settled || now - state.checkedAt < SETTLE_CHECK_TTL_MS) {
-    return state;
+    return Promise.resolve(state);
   }
-  const job = await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db);
-  const settled = !job || job.status === 'succeeded';
-  state.checkedAt = now;
-  return settled ? freshState(db, true) : state;
+  state.refreshing ??= (async () => {
+    try {
+      const job = await jobsRepository.findByIdempotencyKey(LENS_HISTORY_BACKFILL_KEY, db);
+      const settled = !job || job.status === 'succeeded';
+      state.checkedAt = now;
+      return settled ? freshState(db, true) : state;
+    } finally {
+      state.refreshing = undefined;
+    }
+  })();
+  return state.refreshing;
 };
 
 const siteCachesOf = (state: LensState, siteKey: string): SiteCaches => {

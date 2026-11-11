@@ -1,0 +1,1174 @@
+import { randomUUID } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
+import { describe, expect, it } from 'vitest';
+import { createDefinition, expectStatus, runContentSchemaJobs } from './helpers/content.js';
+import {
+  acceptedWriteProblems,
+  answerShape,
+  bodyOf,
+  createEntry,
+  idUniqueness,
+  instancesOf,
+  itemIdsProblems,
+  localeProblems,
+  outcomeOf,
+  planBody,
+  planEntry,
+  prng,
+  readAgreementProblems,
+  readAs,
+  refusalProblems,
+  roundTripProblems,
+  send,
+  storedView,
+  tag,
+  type Problem,
+  type Random,
+  type Transport,
+} from './helpers/itemModelRun.js';
+import {
+  eventCount,
+  headsOf,
+  itemModelWorld,
+  revisionCount,
+  setHeadData,
+  withAnonymousDocGrants,
+  type Caller,
+  type World,
+} from './helpers/itemModelWorld.js';
+
+/**
+ * Model-based fuzz of item writes at the HTTP and service level (review 6): every request goes through the real
+ * app (REST, GraphQL, the admin API) on a real database (SQLite by default; PostgreSQL or MySQL through
+ * `TEST_DATABASE_URL`), and every property is checked against raw storage and the admin API after it:
+ *
+ *   1 conservation, 2 no oracle, 3 ID integrity, 4 order and status, 5 round trip, 6 compatibility,
+ *   7 multi-locale, 8 concurrency.
+ *
+ * `ITEM_MODEL_RUNS` (default 6) runs from `ITEM_MODEL_SEED` (default 1); `ITEM_MODEL_SEED=<n> ITEM_MODEL_RUNS=1`
+ * replays one. The fixed cases below are the reviewer's repros, each named after the property that catches it.
+ */
+
+const RUNS = Number(process.env.ITEM_MODEL_RUNS ?? 6);
+const BASE_SEED = Number(process.env.ITEM_MODEL_SEED ?? 1);
+
+const report = (problems: readonly Problem[]) =>
+  problems.map((problem) => `[${problem.property}] ${problem.detail}`);
+
+/** One request and every property it can break. */
+const checkedWrite = async (
+  w: World,
+  {
+    caller,
+    transport,
+    entryId,
+    locale,
+    version,
+    expectedVersion,
+    body,
+    read,
+  }: {
+    caller: Caller;
+    transport: Transport;
+    entryId: string;
+    locale: string;
+    version: boolean;
+    expectedVersion: number | null | undefined;
+    body: Record<string, unknown>;
+    read: Record<string, unknown> | null;
+  },
+) => {
+  const before = await storedView(w, entryId, locale);
+  const response = await send(w, { caller, transport, entryId, locale, version, expectedVersion, body });
+  const after = await storedView(w, entryId, locale);
+  if (process.env.ITEM_MODEL_DEBUG) {
+    writeFileSync(
+      process.env.ITEM_MODEL_DEBUG,
+      JSON.stringify(
+        {
+          read,
+          body,
+          response: response.raw,
+          before: before.draft?.data,
+          after: after.draft?.data,
+          adminBefore: before.admin,
+          adminAfter: after.admin,
+        },
+        null,
+        1,
+      ),
+    );
+  }
+  const problems = refusalProblems(response, before.heads, after.heads);
+  if (outcomeOf(response).accepted) {
+    const beforeInstances = instancesOf(w, before.draft?.data, before.admin);
+    const afterInstances = instancesOf(w, after.draft?.data, after.admin);
+    problems.push(
+      ...acceptedWriteProblems(w, {
+        before: beforeInstances,
+        after: afterInstances,
+        read,
+        body,
+        admin: caller.kind === 'admin',
+        writesAll: caller.kind === 'admin' || caller.kind === 'adminToken' || caller.kind === 'pinned',
+        version: version || caller.pinned === true,
+      }),
+      ...idUniqueness(after.heads),
+      ...(transport === 'rest' ? itemIdsProblems(response, body, afterInstances) : []),
+      ...localeProblems(w, before.heads, after.heads, locale, body),
+    );
+  }
+  return { response, problems };
+};
+
+const CALLERS = [
+  'admin',
+  'adminToken',
+  'reader',
+  'updateOnly',
+  'masked',
+  'owner',
+  'anon',
+  'pinned',
+  'limited',
+] as const;
+
+/** One random run: an entry, a caller, a body, a request; then round trip, no oracle, compatibility, concurrency. */
+const runOnce = async (w: World, seed: number): Promise<{ problems: Problem[]; log: string[] }> => {
+  const random = prng(seed);
+  const caller = w.callers[random.pick(CALLERS)];
+  return withAnonymousDocGrants(w, caller, () => runAs(w, seed, random, caller));
+};
+
+const runAs = async (
+  w: World,
+  seed: number,
+  random: Random,
+  caller: Caller,
+): Promise<{ problems: Problem[]; log: string[] }> => {
+  const log: string[] = [];
+  const problems: Problem[] = [];
+  const transport: Transport =
+    caller.kind === 'admin' ? 'adminApi' : random.chance(0.15) ? 'graphql' : 'rest';
+  const version = caller.kind !== 'admin' && (caller.pinned === true || random.chance(0.5));
+  const locale = random.chance(0.2) ? 'fr' : 'en';
+  const owner = caller.ownOnly ? (random.chance(0.7) ? caller.userId : w.stranger.user.id) : undefined;
+  const entry = await createEntry(w, planEntry(w, random, owner), seed);
+  const read = caller.reads ? await readAs(w, caller, entry.id, locale, version) : null;
+  const plan = planBody(random);
+  const foreignIds = [
+    randomUUID(),
+    ...(read
+      ? (Array.isArray(read.lchips) ? read.lchips : []).map((item) => (item as { id: string }).id)
+      : []),
+  ];
+  const body = bodyOf(random, read, plan, { admin: caller.kind === 'admin', foreignIds });
+  const heads = await headsOf(w, entry.id);
+  const draft = heads.find((head) => head.locale === locale && head.state === 'draft');
+  const fresh = draft?.version ?? null;
+  // A new locale is written with `expectedVersion: null`; an existing one with the version, fresh or stale.
+  const expectedVersion =
+    fresh === null ? null : random.chance(0.85) ? fresh : random.chance(0.5) ? fresh + 3 : null;
+  const sentBody = body;
+  const { response, problems: found } = await checkedWrite(w, {
+    caller,
+    transport,
+    entryId: entry.id,
+    locale,
+    version,
+    expectedVersion,
+    body: sentBody,
+    read,
+  });
+  problems.push(
+    ...found.map((problem) => ({
+      ...problem,
+      detail: `${caller.name}${version ? '@V' : ''} ${transport}: ${problem.detail}`,
+    })),
+  );
+  const outcome = outcomeOf(response);
+  log.push(
+    `seed ${seed}: ${caller.name} ${transport}${version ? '@V' : ''} ${locale} plan ${JSON.stringify(plan)} → ${outcome.status} ${outcome.code} ${outcome.issues.join(' ')}`,
+  );
+  // 4: existence and ownership first: an entry the caller does not own answers 404/403 whatever the body.
+  if (
+    caller.ownOnly &&
+    owner !== caller.userId &&
+    ![403, 404].includes(response.status) &&
+    transport === 'rest'
+  ) {
+    problems.push({
+      property: '4 order and status',
+      detail: `${caller.name} on another's entry answered ${response.status} ${outcome.code}`,
+    });
+  }
+  // 4: parity: a refusal is the same with and without a version (bodies valid in both shapes).
+  if (
+    !outcome.accepted &&
+    transport === 'rest' &&
+    !caller.pinned &&
+    response.status < 500 &&
+    !/"(old|extra)"/.test(JSON.stringify(sentBody))
+  ) {
+    const other = await send(w, {
+      caller,
+      transport,
+      entryId: entry.id,
+      locale,
+      version: !version,
+      expectedVersion,
+      body: sentBody,
+    });
+    const flipped = outcomeOf(other);
+    // Status and code the same, except LENS_WRITE_UNSUPPORTED through V (a field changed since the version).
+    const atV = version ? outcome : flipped;
+    const lensOnly = atV.code === 'LENS_WRITE_UNSUPPORTED';
+    if (!lensOnly && (flipped.status !== outcome.status || flipped.code !== outcome.code)) {
+      problems.push({
+        property: '4 order and status',
+        detail: `${caller.name}: ${version ? 'through V' : 'today'} ${outcome.status} ${outcome.code} ${outcome.issues.join(' ')}; ${version ? 'today' : 'through V'} ${flipped.status} ${flipped.code} ${flipped.issues.join(' ')}`,
+      });
+    }
+  }
+  if (random.chance(0.3)) {
+    problems.push(...(await readAgreementProblems(w, entry.id)));
+  }
+  // 3 on create: the same body as a new entry (IDs it names are the server's to replace): unique IDs, itemIds as stored.
+  if (random.chance(0.25) && caller.updates) {
+    const created = await withAnonymousDocGrants(w, caller, () =>
+      send(w, {
+        caller,
+        transport,
+        entryId: null,
+        locale: 'en',
+        version,
+        expectedVersion: undefined,
+        body: sentBody,
+      }),
+    );
+    if (created.status >= 500) {
+      problems.push({
+        property: '4 order and status',
+        detail: `${caller.name} create: ${created.status} ${created.raw.slice(0, 200)}`,
+      });
+    }
+    const createdBody = created.body as { id?: string; data?: { id?: string; createDoc?: { id?: string } } };
+    const newId = createdBody.data?.id ?? createdBody.id ?? createdBody.data?.createDoc?.id;
+    if (created.status < 300 && typeof newId === 'string') {
+      const view = await storedView(w, newId, 'en');
+      problems.push(
+        ...idUniqueness(view.heads).map((problem) => ({
+          ...problem,
+          detail: `${caller.name} create: ${problem.detail}`,
+        })),
+        ...(transport === 'rest'
+          ? itemIdsProblems(created, sentBody, instancesOf(w, view.draft?.data, view.admin))
+          : []),
+      );
+    }
+  }
+  // 5: round trip by a caller that reads.
+  if (random.chance(0.4)) {
+    const reader =
+      w.callers[random.pick(['admin', 'adminToken', 'reader', 'masked', 'pinned', 'limited'] as const)];
+    const fresh2 = await createEntry(w, planEntry(w, random), seed + 7_000_000);
+    problems.push(
+      ...(await roundTripProblems(w, reader, fresh2.id, 'en', reader.kind !== 'admin' && random.chance(0.5))),
+    );
+  }
+  // 2: no oracle.
+  if (random.chance(0.35)) {
+    problems.push(...(await noOracleProblems(w, random, seed)));
+  }
+  // 6: compatibility.
+  if (random.chance(0.4)) {
+    problems.push(...(await compatibilityProblems(w, random)));
+  }
+  // 8: concurrency.
+  if (random.chance(0.15)) {
+    problems.push(...(await concurrencyProblems(w, random, seed)));
+  }
+  return { problems, log };
+};
+
+/**
+ * 2: two entries whose stored states differ only in what the caller cannot see answer the same body the same.
+ * The twins share every item ID (copied raw), so the same body names the same items in both.
+ */
+const noOracleProblems = async (w: World, random: Random, seed: number): Promise<Problem[]> => {
+  const caller =
+    w.callers[random.pick(['reader', 'masked', 'updateOnly', 'anon', 'owner', 'limited'] as const)];
+  const version = random.chance(0.5);
+  const plan = planEntry(w, random);
+  const a = await createEntry(w, { ...plan, draftEdit: false, legacy: 0 }, seed + 1);
+  const b = await createEntry(w, { ...plan, draftEdit: false, legacy: 0 }, seed + 1);
+  // B: A's storage, then everything A's caller cannot see changed.
+  const perturb = (value: unknown, unreadable: boolean): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item) => perturb(item, unreadable));
+    }
+    if (typeof value === 'object' && value !== null) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => {
+          const apiKey = w.apiKeyOf.get(key);
+          if (typeof entry === 'string' && entry.startsWith('§')) {
+            return [key, tag('twin')];
+          }
+          if (apiKey === 'rel' && entry === w.things.draft) {
+            return [key, w.things.deleted];
+          }
+          if (unreadable && (apiKey === 'zv' || apiKey === 'label' || apiKey === 'heading')) {
+            return [key, `${String(entry)}~`];
+          }
+          return [key, perturb(entry, unreadable)];
+        }),
+      );
+    }
+    return value;
+  };
+  const unseen = !caller.reads;
+  for (const head of await headsOf(w, a.id)) {
+    const data = Object.fromEntries(
+      Object.entries(head.data).map(([fieldId, value]) => {
+        // Unreadable to the caller: everything (no read), or the masked caller's hero and secretCard.
+        const unreadable =
+          unseen || (caller.name === 'masked' && (fieldId === w.doc.hero || fieldId === w.doc.secretCard));
+        if (unreadable && random.chance(0.3) && Array.isArray(value)) {
+          return [
+            fieldId,
+            [
+              ...(value as unknown[]),
+              ...(value as unknown[])
+                .slice(0, 1)
+                .map((item) => ({ ...(item as object), __id: randomUUID() })),
+            ],
+          ];
+        }
+        return [fieldId, perturb(value, unreadable)];
+      }),
+    );
+    await setHeadData(w, b.id, head.locale, head.state, data);
+    await setHeadData(w, a.id, head.locale, head.state, head.data);
+  }
+  // Draft-only differences: both twins get a new draft through the admin API (same versions), then B's draft
+  // alone has its hidden values changed raw: a caller that reads the published head sees the same of both.
+  if (random.chance(0.4)) {
+    for (const id of [a.id, b.id]) {
+      const view = await w.request('GET', `/api/admin/content/doc/${id}?locale=en`, w.adminToken);
+      if (view.status === 200) {
+        await w.admin.put(`/api/admin/content/doc/${id}?locale=en`, {
+          locale: 'en',
+          expectedVersion: (view.body as { version: number }).version,
+          data: { title: 'draft-only' },
+        });
+      }
+    }
+    for (const head of (await headsOf(w, b.id)).filter((candidate) => candidate.state === 'draft')) {
+      await setHeadData(
+        w,
+        b.id,
+        head.locale,
+        head.state,
+        perturb(head.data, false) as Record<string, unknown>,
+      );
+    }
+  }
+  if (caller.ownOnly) {
+    const owner = random.chance(0.5) ? caller.userId : w.stranger.user.id;
+    for (const id of [a.id, b.id]) {
+      await w.db
+        .updateTable('entries')
+        .set({ owner_app_user_id: owner ?? null })
+        .where('id', '=', id)
+        .execute();
+    }
+  }
+  const read = caller.reads ? await readAs(w, caller, a.id, 'en', version) : null;
+  const readB = caller.reads ? await readAs(w, caller, b.id, 'en', version) : null;
+  // The precondition: the caller sees the same of both (up to the entry's own ID).
+  if (JSON.stringify(read) !== JSON.stringify(readB)) {
+    return [];
+  }
+  const body = bodyOf(random, read, planBody(random), { admin: false, foreignIds: [randomUUID()] });
+  const versionOf = async (id: string) =>
+    (await headsOf(w, id)).find((head) => head.locale === 'en' && head.state === 'draft')?.version ?? null;
+  const known = new Set(
+    instancesOf(
+      w,
+      (await headsOf(w, a.id)).find((head) => head.state === 'draft')?.data,
+      await readAs(w, w.callers.admin, a.id, 'en', false),
+    ).map((instance) => instance.id),
+  );
+  const answer = async (id: string) =>
+    answerShape(
+      await send(w, {
+        caller,
+        transport: 'rest',
+        entryId: id,
+        locale: 'en',
+        version,
+        expectedVersion: await versionOf(id),
+        body,
+      }),
+      known,
+    );
+  const [first, second] = await withAnonymousDocGrants(w, caller, async () => [
+    await answer(a.id),
+    await answer(b.id),
+  ]);
+  return isDeepStrictEqual(first, second)
+    ? []
+    : [
+        {
+          property: '2 no oracle',
+          detail: `${caller.name}${version ? '@V' : ''} body ${JSON.stringify(body).slice(0, 300)}: ${JSON.stringify(first)} vs ${JSON.stringify(second)}`,
+        },
+      ];
+};
+
+/** 6: a type with nothing hidden from the caller: a no-version, no-ID write is never refused. */
+const compatibilityProblems = async (w: World, random: Random): Promise<Problem[]> => {
+  const caller = w.callers[random.pick(['reader', 'updateOnly', 'anon', 'adminToken'] as const)];
+  const created = expectStatus(
+    await w.admin.post('/api/admin/content/plain', {
+      data: { title: 't', links: [{ label: 'x' }, { label: 'x' }, { label: 'y' }], one: { label: 'o' } },
+    }),
+    201,
+  ).json<{ id: string; version: number }>();
+  if (random.chance(0.7)) {
+    expectStatus(await w.admin.post(`/api/admin/content/plain/${created.id}/publish`, {}), 200);
+  }
+  const labels = ['x', 'y', 'z'];
+  const links = Array.from({ length: random.int(4) }, () => ({ label: random.pick(labels) }));
+  const data = random.chance(0.5) ? { links } : { one: { label: random.pick(labels) }, links };
+  const response = await w.request('PUT', `/api/content/plains/${created.id}`, caller.token, {
+    expectedVersion: created.version,
+    data,
+  });
+  return response.status < 300
+    ? []
+    : [
+        {
+          property: '6 compatibility',
+          detail: `${caller.name}: ${JSON.stringify(data)} → ${response.status} ${response.raw.slice(0, 200)}`,
+        },
+      ];
+};
+
+/** 8: concurrent writers on one version: one winner, and the winner's write keeps every property. */
+const concurrencyProblems = async (w: World, random: Random, seed: number): Promise<Problem[]> => {
+  const caller = w.callers.reader;
+  const entry = await createEntry(w, { ...planEntry(w, random), publish: true, draftEdit: false }, seed + 3);
+  const read = await readAs(w, caller, entry.id, 'en', false);
+  const before = await storedView(w, entry.id, 'en');
+  const version = before.draft?.version ?? null;
+  const bodies = [0, 1, 2].map(() =>
+    bodyOf(
+      random,
+      read,
+      { ...planBody(random), corrupt: null, forbidden: false },
+      { admin: false, foreignIds: [] },
+    ),
+  );
+  const responses = await Promise.all(
+    bodies.map((body) =>
+      send(w, {
+        caller,
+        transport: 'rest',
+        entryId: entry.id,
+        locale: 'en',
+        version: false,
+        expectedVersion: version,
+        body,
+      }),
+    ),
+  );
+  const problems: Problem[] = [];
+  const winners = responses.filter((response) => response.status < 300);
+  // One winner that changes the entry; another 200 must have changed nothing (it answers the version it read).
+  const versionOf = (response: (typeof responses)[number]) =>
+    (response.body as { data?: { version?: number } }).data?.version;
+  const effective = winners.filter((response) => versionOf(response) !== version);
+  if (effective.length > 1) {
+    problems.push({
+      property: '8 concurrency',
+      detail: `${effective.length} writers on version ${String(version)} each wrote (answered ${effective.map(versionOf).join(', ')})`,
+    });
+  }
+  for (const response of responses) {
+    if (response.status >= 500) {
+      problems.push({
+        property: '8 concurrency',
+        detail: `${response.status} ${response.raw.slice(0, 200)}`,
+      });
+    }
+  }
+  // The write that changed the entry (a 200 answering a new version); the post-checks are against its body.
+  const winner = responses.findIndex(
+    (response) =>
+      response.status < 300 && (response.body as { data?: { version?: number } }).data?.version !== version,
+  );
+  if (winner !== -1) {
+    const after = await storedView(w, entry.id, 'en');
+    if (process.env.ITEM_MODEL_DEBUG) {
+      writeFileSync(
+        `${process.env.ITEM_MODEL_DEBUG}.race`,
+        JSON.stringify(
+          {
+            read,
+            bodies,
+            winner,
+            responses: responses.map((r) => r.raw.slice(0, 300)),
+            adminBefore: before.admin,
+            adminAfter: after.admin,
+            rawBefore: before.draft?.data,
+          },
+          null,
+          1,
+        ),
+      );
+    }
+    problems.push(
+      ...acceptedWriteProblems(w, {
+        before: instancesOf(w, before.draft?.data, before.admin),
+        after: instancesOf(w, after.draft?.data, after.admin),
+        read,
+        body: bodies[winner] as Record<string, unknown>,
+        admin: false,
+      }).map((problem) => ({ ...problem, property: `8 concurrency / ${problem.property}` })),
+      ...idUniqueness(after.heads),
+    );
+  }
+  return problems;
+};
+
+describe('item writes, model-based (HTTP and services, real database)', { timeout: 600_000 }, () => {
+  const w = itemModelWorld();
+  const seeds = Array.from({ length: RUNS }, (_, run) => BASE_SEED + run);
+  it.each(seeds)('run %i', async (seed) => {
+    const { problems, log } = await runOnce(w, seed);
+    expect(report(problems), log.join('\n')).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------------------------------------
+  // The reviewer's repros (review 6), each checked by the property that should catch it.
+
+  const putAs = async (
+    caller: Caller,
+    id: string,
+    data: Record<string, unknown>,
+    version = false,
+    locale = 'en',
+  ) => {
+    const heads = await headsOf(w, id);
+    const draft = heads.find((head) => head.locale === locale && head.state === 'draft');
+    return send(w, {
+      caller,
+      transport: caller.kind === 'admin' ? 'adminApi' : 'rest',
+      entryId: id,
+      locale,
+      version,
+      expectedVersion: draft?.version ?? null,
+      body: data,
+    });
+  };
+  const adminCreate = async (data: Record<string, unknown>, publish = true) => {
+    const id = expectStatus(
+      await w.admin.post('/api/admin/content/doc?locale=en', { locale: 'en', data }),
+      201,
+    ).json<{ id: string }>().id;
+    if (publish) {
+      expectStatus(await w.admin.post(`/api/admin/content/doc/${id}/publish`, { locales: ['en'] }), 200);
+    }
+    return id;
+  };
+  /** Twins: the same entry twice, B's hidden or unreadable parts changed raw; same body; answers compared. */
+  const twinAnswers = async (
+    caller: Caller,
+    a: Record<string, unknown>,
+    b: Record<string, unknown>,
+    body: Record<string, unknown>,
+    version = false,
+  ) => {
+    const ids = [await adminCreate(a), await adminCreate(b)];
+    // Same item IDs in both: B takes A's IDs place by place.
+    const [headA] = (await headsOf(w, ids[0] as string)).filter((head) => head.state === 'draft');
+    for (const head of await headsOf(w, ids[1] as string)) {
+      const copyIds = (from: unknown, to: unknown): unknown =>
+        Array.isArray(to)
+          ? to.map((item, index) => copyIds(Array.isArray(from) ? from[index] : undefined, item))
+          : typeof to === 'object' && to !== null
+            ? Object.fromEntries(
+                Object.entries(to).map(([key, value]) => [
+                  key,
+                  key === '__id' && typeof from === 'object' && from !== null && '__id' in from
+                    ? from.__id
+                    : copyIds((from as Record<string, unknown> | undefined)?.[key], value),
+                ]),
+              )
+            : to;
+      await setHeadData(
+        w,
+        ids[1] as string,
+        head.locale,
+        head.state,
+        copyIds(headA?.data, head.data) as Record<string, unknown>,
+      );
+    }
+    const known = new Set(
+      instancesOf(w, headA?.data, await readAs(w, w.callers.admin, ids[0] as string, 'en', false)).map(
+        (instance) => instance.id,
+      ),
+    );
+    const answers = [];
+    for (const id of ids) {
+      answers.push(answerShape(await putAs(caller, id, body, version), known));
+    }
+    return answers;
+  };
+  const noOracle = (answers: unknown[]): Problem[] =>
+    isDeepStrictEqual(answers[0], answers[1])
+      ? []
+      : [
+          {
+            property: '2 no oracle',
+            detail: `${JSON.stringify(answers[0])} vs ${JSON.stringify(answers[1])}`,
+          },
+        ];
+
+  it('hidden2 (2 no oracle): a write-only caller through V: pairing a hidden nested list does not depend on the hidden note', async () => {
+    const problems: Problem[] = [];
+    for (const version of [false, true]) {
+      problems.push(
+        ...noOracle(
+          await twinAnswers(
+            w.callers.updateOnly,
+            { title: 't', hero: { label: 'L', items: [{ zv: 'A', zh: 'n1' }, { zv: 'A' }] } },
+            { title: 't', hero: { label: 'L', items: [{ zv: 'A' }, { zv: 'A', zh: 'n2' }] } },
+            { hero: { label: 'L', items: [{ zv: 'A' }] } },
+            version,
+          ),
+        ),
+      );
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('V1 (2 no oracle): a caller that may write but not read the single component cannot test a guess of its nested items', async () => {
+    const problems: Problem[] = [];
+    for (const version of [false, true]) {
+      problems.push(
+        ...noOracle(
+          await twinAnswers(
+            w.callers.masked,
+            {
+              title: 't',
+              hero: {
+                label: 'L',
+                items: [
+                  { zv: 'secret-A', zh: 'n1' },
+                  { zv: 'secret-B', zh: 'n2' },
+                ],
+              },
+            },
+            {
+              title: 't',
+              hero: {
+                label: 'L',
+                items: [
+                  { zv: 'other', zh: 'n1' },
+                  { zv: 'other2', zh: 'n2' },
+                ],
+              },
+            },
+            { hero: { label: 'L', items: [{ zv: 'secret-A' }, { zv: 'secret-B' }] } },
+            version,
+          ),
+        ),
+      );
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('K1 (2 no oracle): look-alikes that differ only in a relation to an unpublished entry', async () => {
+    const answers = await twinAnswers(
+      w.callers.reader,
+      {
+        title: 't',
+        cards: [
+          { heading: 'X', note: 'n-first', rel: w.things.draft },
+          { heading: 'X', note: 'n-second' },
+        ],
+      },
+      {
+        title: 't',
+        cards: [
+          { heading: 'X', note: 'n-first' },
+          { heading: 'X', note: 'n-second' },
+        ],
+      },
+      { cards: [{ heading: 'X' }] },
+    );
+    expect(report(noOracle(answers))).toEqual([]);
+  });
+
+  it('K2 (4 order and status): not the owner: 404/403 before any item or body issue', async () => {
+    const id = await adminCreate({
+      title: 't',
+      cards: [
+        { heading: 'A', note: 'n1' },
+        { heading: 'B', note: 'n2' },
+      ],
+    });
+    await w.db
+      .updateTable('entries')
+      .set({ owner_app_user_id: w.stranger.user.id })
+      .where('id', '=', id)
+      .execute();
+    const problems: Problem[] = [];
+    for (const data of [
+      { title: 'x' },
+      { cards: [{ heading: 'A2' }, { heading: 'B' }] },
+      { cards: [{ id: randomUUID(), heading: 'A' }] },
+      { cards: 'nope' },
+    ]) {
+      const response = await putAs(w.callers.owner, id, data);
+      const missing = await w.request('PUT', `/api/content/docs/${randomUUID()}`, w.callers.owner.token, {
+        expectedVersion: 1,
+        data,
+      });
+      if (![403, 404].includes(response.status) || response.status !== missing.status) {
+        problems.push({
+          property: '4 order and status',
+          detail: `${JSON.stringify(data)}: another's entry ${response.status} ${outcomeOf(response).code}, a missing one ${missing.status} ${outcomeOf(missing).code}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('DUPID (3 ID integrity): a create body that repeats an ID never stores two items under one ID', async () => {
+    const problems: Problem[] = [];
+    const x = randomUUID();
+    const bodies = [
+      {
+        title: 'mine',
+        cards: [
+          { id: x, heading: 'A' },
+          { id: x, heading: 'B' },
+        ],
+      },
+      {
+        title: 'mine',
+        cards: [{ id: x, heading: 'A' }],
+        hero: { id: x, label: 'H' },
+        lchips: [{ id: x, zv: 'c' }],
+      },
+    ];
+    for (const data of bodies) {
+      for (const [who, created] of [
+        [
+          'delivery',
+          await w.request('POST', '/api/content/docs?locale=en', w.callers.reader.token, {
+            locale: 'en',
+            data,
+          }),
+        ],
+        [
+          'admin',
+          await w.request('POST', '/api/admin/content/doc?locale=en', w.adminToken, { locale: 'en', data }),
+        ],
+      ] as const) {
+        const body = created.body as { id?: string; data?: { id?: string } };
+        const id = body.data?.id ?? body.id;
+        if (created.status < 300 && id) {
+          problems.push(
+            ...idUniqueness(await headsOf(w, id)).map((problem) => ({
+              ...problem,
+              detail: `${who} create: ${problem.detail}`,
+            })),
+          );
+        }
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('ADM2/5/6 (3 ID integrity): an admin write without IDs never reuses an ID for different content', async () => {
+    const problems: Problem[] = [];
+    const A = { heading: 'A', note: 'n1' };
+    const B = { heading: 'B', note: 'n2' };
+    const C = { heading: 'C', note: 'n3' };
+    const D = { heading: 'D', note: 'n4' };
+    for (const [name, start, sent] of [
+      ['ADM2', [A, B, C], [A, { heading: 'C2', note: 'n3' }]],
+      ['ADM5', [A, B, C], [A, D]],
+      ['ADM6', [A, B], [D, { heading: 'A2', note: 'n1' }, B]],
+    ] as const) {
+      const id = await adminCreate({ title: 't', cards: start });
+      const before = await storedView(w, id, 'en');
+      const response = await putAs(w.callers.admin, id, { cards: sent });
+      const after = await storedView(w, id, 'en');
+      if (response.status < 300) {
+        const beforeIds = new Map(
+          instancesOf(w, before.draft?.data, before.admin).map((instance) => [instance.id, instance]),
+        );
+        for (const instance of instancesOf(w, after.draft?.data, after.admin)) {
+          const was = beforeIds.get(instance.id);
+          if (was && was.raw[w.card.heading] !== instance.raw[w.card.heading]) {
+            problems.push({
+              property: '3 ID integrity',
+              detail: `${name}: ID of ${String(was.raw[w.card.heading])} now holds ${String(instance.raw[w.card.heading])}`,
+            });
+          }
+        }
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('VER1 (5 round trip): a delivery reader sends back what it read, with the version a 409 tells it', async () => {
+    // A delivery read never shows the entry's version (as on main): the client learns it from its last write
+    // response, or from a 409's details.currentVersion. Then sending back what it read is accepted unchanged.
+    const id = await adminCreate({
+      title: 't',
+      cards: [
+        { heading: 'A', note: 'n1' },
+        { heading: 'B', note: 'n2' },
+      ],
+    });
+    expect(report(await roundTripProblems(w, w.callers.reader, id, 'en', false))).toEqual([]);
+    expect(report(await roundTripProblems(w, w.callers.reader, id, 'en', true))).toEqual([]);
+  });
+
+  it('shape500 (4 order and status): no body shape answers 5xx, on any route', async () => {
+    const id = await adminCreate({
+      title: 't',
+      cards: [{ heading: 'A', chips: [{ zv: 'a' }] }],
+      hero: { label: 'L', items: [{ zv: 'i' }] },
+    });
+    const plain = expectStatus(
+      await w.admin.post('/api/admin/content/plain', {
+        data: { title: 't', links: [{ label: 'x' }], one: { label: 'o' } },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    const shapes: unknown[] = [
+      { cards: 'nope' },
+      { cards: { heading: 'x' } },
+      { cards: 5 },
+      { cards: true },
+      { cards: ['a'] },
+      { cards: [[]] },
+      { cards: '' },
+      { hero: [{ label: 'x' }] },
+      { hero: 'x' },
+      { hero: [] },
+      { hero: 0 },
+      { hero: false },
+      { hero: '' },
+      { zone: 'x' },
+      { zone: { __component: 'card' } },
+      { zone: ['x'] },
+      { cards: [{ heading: 'b', chips: 'nope' }] },
+      { cards: [{ heading: 'b', chips: { zv: 'i' } }] },
+      { hero: { label: 'b', items: 'nope' } },
+      { zone: [{ __component: 'card', chips: 'nope' }] },
+    ];
+    const problems: Problem[] = [];
+    for (const data of shapes) {
+      for (const [route, response] of [
+        [
+          'delivery PUT',
+          await w.request('PUT', `/api/content/docs/${id}`, w.callers.reader.token, {
+            expectedVersion: 1,
+            data,
+          }),
+        ],
+        [
+          'delivery PUT @V',
+          await w.request(
+            'PUT',
+            `/api/content/docs/${id}?schemaVersion=${encodeURIComponent(w.versionToken)}`,
+            w.callers.reader.token,
+            { expectedVersion: 1, data },
+          ),
+        ],
+        ['delivery POST', await w.request('POST', '/api/content/docs', w.callers.reader.token, { data })],
+        [
+          'admin PUT',
+          await w.request('PUT', `/api/admin/content/doc/${id}`, w.adminToken, { expectedVersion: 1, data }),
+        ],
+        [
+          'admin autosave',
+          await w.request('PUT', `/api/admin/content/doc/${id}`, w.adminToken, {
+            expectedVersion: 1,
+            data,
+            autosave: true,
+          }),
+        ],
+        ['admin POST', await w.request('POST', '/api/admin/content/doc', w.adminToken, { data })],
+        [
+          'plain PUT',
+          await w.request('PUT', `/api/content/plains/${plain}`, w.callers.reader.token, {
+            expectedVersion: 1,
+            data: { links: (data as { cards?: unknown }).cards ?? 'x' },
+          }),
+        ],
+      ] as const) {
+        if (response.status >= 500) {
+          problems.push({
+            property: '4 order and status',
+            detail: `${route} ${JSON.stringify(data)} → ${response.status}`,
+          });
+        }
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('noread (6 compatibility): a type with nothing hidden: callers that cannot read still write without IDs', async () => {
+    const problems: Problem[] = [];
+    for (const caller of [w.callers.updateOnly, w.callers.anon, w.callers.reader]) {
+      for (const data of [
+        { links: [{ label: 'x' }, { label: 'y' }] },
+        { links: [{ label: 'x2' }, { label: 'y' }] },
+        { links: [{ label: 'x' }, { label: 'y' }, { label: 'z' }] },
+        { links: [{ label: 'p' }] },
+        { links: [] },
+        { one: { label: 'o2' } },
+      ]) {
+        const id = expectStatus(
+          await w.admin.post('/api/admin/content/plain', {
+            data: { title: 't', links: [{ label: 'x' }, { label: 'y' }], one: { label: 'o' } },
+          }),
+          201,
+        ).json<{ id: string }>().id;
+        expectStatus(await w.admin.post(`/api/admin/content/plain/${id}/publish`, {}), 200);
+        const response = await w.request('PUT', `/api/content/plains/${id}`, caller.token, {
+          expectedVersion: 1,
+          data,
+        });
+        if (response.status >= 300) {
+          problems.push({
+            property: '6 compatibility',
+            detail: `${caller.name} ${JSON.stringify(data)} → ${response.status} ${outcomeOf(response).code} ${outcomeOf(response).issues.join(' ')}`,
+          });
+        }
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('CONV5 (3 ID integrity): a legacy single component made a list reads with one ID in the draft and the published head', async () => {
+    const conv = await createDefinition(w.admin, {
+      kind: 'collection',
+      apiKey: `conv${seedSuffix()}`,
+      label: 'Conv',
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        {
+          apiKey: 'hero',
+          label: 'Hero',
+          type: 'component',
+          settings: { component: w.components.chip.definition.id },
+        },
+      ],
+    });
+    const key = conv.definition.apiKey;
+    const id = expectStatus(
+      await w.admin.post(`/api/admin/content/${key}`, { data: { title: 't', hero: { zv: 'H', zh: 'nh' } } }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(await w.admin.post(`/api/admin/content/${key}/${id}/publish`, {}), 200);
+    for (const head of await headsOf(w, id)) {
+      const strip = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(strip)
+          : typeof value === 'object' && value !== null
+            ? Object.fromEntries(
+                Object.entries(value)
+                  .filter(([k]) => k !== '__id')
+                  .map(([k, v]) => [k, strip(v)]),
+              )
+            : value;
+      await setHeadData(w, id, head.locale, head.state, strip(head.data) as Record<string, unknown>);
+    }
+    const current = expectStatus(await w.admin.get(`/api/admin/models/${conv.definition.id}`), 200).json<{
+      definition: { fields: Array<Record<string, unknown>> };
+      version: number;
+    }>();
+    const changed = await w.admin.put(`/api/admin/models/${conv.definition.id}`, {
+      definition: {
+        ...current.definition,
+        fields: current.definition.fields.map((field) =>
+          field.apiKey === 'hero'
+            ? { ...field, settings: { ...(field.settings as object), repeatable: true } }
+            : field,
+        ),
+      },
+      expectedVersion: current.version,
+      acknowledgeBreaking: true,
+      acknowledgeDestructive: true,
+    });
+    expect(changed.statusCode).toBeLessThan(300);
+    await runContentSchemaJobs(w.db);
+    const admin = (await w.request('GET', `/api/admin/content/${key}/${id}`, w.adminToken)).body as {
+      data: { hero: Array<{ id: string }> };
+    };
+    const delivered = (await w.request('GET', `/api/content/${key}s/${id}`, w.adminToken)).body as {
+      data: { hero: Array<{ id: string }> };
+    };
+    const problems: Problem[] =
+      admin.data.hero[0]?.id === delivered.data.hero[0]?.id
+        ? []
+        : [
+            {
+              property: '3 ID integrity',
+              detail: `draft reads ${String(admin.data.hero[0]?.id)}, published ${String(delivered.data.hero[0]?.id)}`,
+            },
+          ];
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('DEP1 (1 conservation): an admin saving back what it read keeps the values of a field deprecated since', async () => {
+    const id = await adminCreate({ title: 't', cards: [{ heading: 'A' }, { heading: 'B' }] });
+    for (const head of await headsOf(w, id)) {
+      const cards = (head.data[w.doc.cards] as Array<Record<string, unknown>>).map((card, index) => ({
+        ...card,
+        [w.card.old]: `§old${index}`,
+      }));
+      await setHeadData(w, id, head.locale, head.state, { ...head.data, [w.doc.cards]: cards });
+    }
+    const read = await readAs(w, w.callers.admin, id, 'en', false);
+    const before = await storedView(w, id, 'en');
+    const cards = (read?.cards as Array<Record<string, unknown>>).map((card, index) =>
+      index === 0 ? { ...card, heading: 'A2' } : card,
+    );
+    const { problems } = await checkedWrite(w, {
+      caller: w.callers.admin,
+      transport: 'adminApi',
+      entryId: id,
+      locale: 'en',
+      version: false,
+      expectedVersion: before.draft?.version ?? null,
+      body: { cards },
+      read,
+    });
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('RELNULL (1 conservation, 5 round trip): sending back a relation read as null (its target unpublished) keeps it', async () => {
+    // Found by run seed 5 (a round trip through V by the limited caller). The relation's target is unpublished,
+    // so a delivery read shows it as null; sent back as read, with the item's ID, it must stay stored.
+    const problems: Problem[] = [];
+    for (const version of [false, true]) {
+      const id = await adminCreate({ title: 't', cards: [{ heading: 'A', rel: w.things.draft }] });
+      const read = await readAs(w, w.callers.reader, id, 'en', version);
+      const before = await storedView(w, id, 'en');
+      const { problems: found } = await checkedWrite(w, {
+        caller: w.callers.reader,
+        transport: 'rest',
+        entryId: id,
+        locale: 'en',
+        version,
+        expectedVersion: before.draft?.version ?? null,
+        body: { cards: read?.cards },
+        read,
+      });
+      problems.push(
+        ...found.map((problem) => ({ ...problem, detail: `${version ? '@V ' : ''}${problem.detail}` })),
+      );
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('LOOKSWAP (3 ID integrity): swapping two identical items by their IDs writes them in the order sent', async () => {
+    // Found by run seed 99 (a nested swap of look-alikes, IDs echoed): answered 200 with no new version, the
+    // stored order unchanged, so the item sent first holds the other's ID.
+    const id = await adminCreate({
+      title: 't',
+      cards: [{ heading: 'A', chips: [{ zv: 'a' }, { zv: 'a' }] }],
+    });
+    const read = await readAs(w, w.callers.reader, id, 'en', false);
+    const card = (
+      read?.cards as Array<{ id: string; heading: string; chips: Array<{ id: string; zv: string }> }>
+    )[0];
+    const swapped = [...(card?.chips ?? [])].reverse();
+    await putAs(w.callers.reader, id, { cards: [{ id: card?.id, heading: 'A', chips: swapped }] });
+    const after = await readAs(w, w.callers.admin, id, 'en', false);
+    const order = ((after?.cards as Array<{ chips: Array<{ id: string }> }>)[0]?.chips ?? []).map(
+      (chip) => chip.id,
+    );
+    expect(order).toEqual(swapped.map((chip) => chip.id));
+  });
+
+  it('NOOP (5 round trip): a write that changes nothing makes no revision and fires no event', async () => {
+    const problems: Problem[] = [];
+    for (const data of [{}, { title: 't' }]) {
+      const id = await adminCreate({ title: 't', cards: [{ heading: 'A', note: 'n1' }] });
+      const [revisions, events] = [await revisionCount(w, id), await eventCount(w, id)];
+      const response = await putAs(w.callers.reader, id, data);
+      if (response.status >= 300) {
+        problems.push({ property: '5 round trip', detail: `${JSON.stringify(data)}: ${response.status}` });
+      }
+      if ((await revisionCount(w, id)) !== revisions || (await eventCount(w, id)) !== events) {
+        problems.push({
+          property: '5 round trip',
+          detail: `${JSON.stringify(data)}: revisions ${revisions} → ${await revisionCount(w, id)}, events ${events} → ${await eventCount(w, id)}, answered version ${String((response.body as { data?: { version?: number } }).data?.version)}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('out-order (4 order and status): the order of refusals is the same with and without a version', async () => {
+    const problems: Problem[] = [];
+    const parts: Record<string, Record<string, unknown>> = {
+      SG: { bogus: 1, title: 'forbidden for limited' },
+      FV: { hero: { label: 'H', items: [{ zv: 'i', zh: 'hack' }] } },
+      FVI: {
+        hero: { label: 'H', items: [{ zv: 'i', zh: 'hack' }] },
+        cards: [{ heading: 'A2' }, { heading: 'B' }],
+      },
+    };
+    for (const [name, data] of Object.entries(parts)) {
+      const id = await adminCreate({
+        title: 't',
+        cards: [
+          { heading: 'A', note: 'nA' },
+          { heading: 'B', note: 'nB' },
+        ],
+        hero: { label: 'H', items: [{ zv: 'i', zh: 'z' }] },
+      });
+      const stale = name.includes('V');
+      const answers = [];
+      for (const version of [false, true]) {
+        const heads = await headsOf(w, id);
+        const draft = heads.find((head) => head.locale === 'en' && head.state === 'draft');
+        const response = await send(w, {
+          caller: w.callers.limited,
+          transport: 'rest',
+          entryId: id,
+          locale: 'en',
+          version,
+          expectedVersion: (draft?.version ?? 1) + (stale ? 7 : 0),
+          body: data,
+        });
+        answers.push(`${response.status} ${outcomeOf(response).code}`);
+      }
+      if (answers[0] !== answers[1]) {
+        problems.push({
+          property: '4 order and status',
+          detail: `${name}: today ${String(answers[0])}, through V ${String(answers[1])}`,
+        });
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+});
+
+let suffix = 0;
+const seedSuffix = () =>
+  `${Date.now().toString(36).replace(/[0-9]/g, '')}x${'abcdefghij'[(suffix += 1) % 10]}`;

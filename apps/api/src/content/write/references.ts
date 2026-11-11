@@ -6,6 +6,7 @@ import * as contentGuardsRepository from '../../repositories/contentGuards.js';
 import * as entriesRepository from '../../repositories/entries.js';
 import { imageUsesOf } from '../health/imageUses.js';
 import type { ContentModel } from '../model.js';
+import { walkRelations } from '../relations.js';
 import type { MediaReferenceCheck, RelationReference } from '../validator/index.js';
 import { contentInvalid, type ContentIssue } from '../validator/issues.js';
 
@@ -23,7 +24,25 @@ type TargetOutcome = { relations: readonly RelationReference[]; media: readonly 
  * force-deleted it) is not reported as missing, so the entry stays editable and publishable; only media the
  * write adds must exist (documentation/media.md).
  */
-export type TargetCheckOptions = { siteId: string; lock: boolean; storedMediaIds?: ReadonlySet<string> };
+export type TargetCheckOptions = {
+  siteId: string;
+  lock: boolean;
+  storedMediaIds?: ReadonlySet<string>;
+  /**
+   * Relation targets the entry already stored: kept even when they no longer resolve (a deleted entry), as stored
+   * media are, so a write that keeps a value it did not send (a hidden field carried over) is never refused for it.
+   */
+  storedRelationIds?: ReadonlySet<string>;
+};
+
+/** Every relation target the given documents store, components included. */
+export const relationIdsOf = (model: ContentModel, documents: readonly Readonly<ContentData>[]) => {
+  const ids = new Set<string>();
+  documents.forEach((data) =>
+    walkRelations(model, data, ({ entryIds }) => entryIds.forEach((id) => ids.add(id))),
+  );
+  return ids;
+};
 
 /** Every asset the given documents point at (media fields and rich-text images, components included). */
 export const mediaIdsOf = (model: ContentModel, documents: readonly Readonly<ContentData>[]) =>
@@ -47,6 +66,7 @@ const findRelationIssues = async (
   executor: Executor,
   references: readonly RelationReference[],
   siteId: string,
+  stored: ReadonlySet<string> = new Set(),
 ): Promise<ContentIssue[]> => {
   const byTarget = new Map<string, { modelIds: readonly string[] | null; ids: Set<string> }>();
   for (const reference of references) {
@@ -67,7 +87,7 @@ const findRelationIssues = async (
   }
   return references.flatMap((reference) =>
     reference.entryIds
-      .filter((id) => !live.has(`${reference.targetModelId}:${id}`))
+      .filter((id) => !live.has(`${reference.targetModelId}:${id}`) && !stored.has(id))
       .map((id) => ({
         path: reference.path,
         code: 'RELATION_TARGET_MISSING' as const,
@@ -127,7 +147,7 @@ export const findTargetIssues = async (
   outcome: TargetOutcome,
   options: TargetCheckOptions,
 ): Promise<ContentIssue[]> => [
-  ...(await findRelationIssues(executor, outcome.relations, options.siteId)),
+  ...(await findRelationIssues(executor, outcome.relations, options.siteId, options.storedRelationIds)),
   ...(await findMediaIssues(executor, outcome.media, options)),
 ];
 
@@ -140,8 +160,14 @@ export const assertTargets = async (
   outcome: TargetOutcome,
   siteId: string,
   storedMediaIds?: ReadonlySet<string>,
+  storedRelationIds?: ReadonlySet<string>,
 ) => {
-  const issues = await findTargetIssues(trx, outcome, { siteId, lock: true, storedMediaIds });
+  const issues = await findTargetIssues(trx, outcome, {
+    siteId,
+    lock: true,
+    ...(storedMediaIds ? { storedMediaIds } : {}),
+    ...(storedRelationIds ? { storedRelationIds } : {}),
+  });
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }

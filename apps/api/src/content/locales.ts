@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
 import type { ContentData } from '../db/contentData.js';
 import type { SchemaById } from '../schema/snapshot.js';
@@ -6,6 +5,7 @@ import type { LocaleScope } from './compiler/compile.js';
 import { queryInvalid } from './compiler/types.js';
 import type { ComponentLookup } from './itemIds.js';
 import { isLocalizedField } from './model.js';
+import { sameContent } from './sameContent.js';
 import { valueWithoutItemIds } from './withoutItemIds.js';
 
 /**
@@ -85,9 +85,7 @@ export const changedFieldIds = (
   before: Readonly<ContentData>,
   after: Readonly<ContentData>,
 ): Set<string> =>
-  new Set(
-    fields.filter((field) => !isDeepStrictEqual(before[field.id], after[field.id])).map((field) => field.id),
-  );
+  new Set(fields.filter((field) => !sameContent(before[field.id], after[field.id])).map((field) => field.id));
 
 /** Shared fields whose values differ between two documents. */
 export const changedSharedFieldIds = (
@@ -111,7 +109,7 @@ const sharedContentChanged = (
 ) =>
   sharedFields(model).some(
     (field) =>
-      !isDeepStrictEqual(
+      !sameContent(
         valueWithoutItemIds(field, before[field.id], componentOf),
         valueWithoutItemIds(field, after[field.id], componentOf),
       ),

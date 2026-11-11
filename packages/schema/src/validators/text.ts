@@ -20,33 +20,36 @@ const escapeSegment = (segment: string) => segment.replaceAll('~', '~0').replace
 
 /**
  * The JSON pointer (relative to `value`, `''` for the value itself) of the first string, or object key, that
- * is not valid text; undefined when everything is. Walks arrays and plain objects; other values (numbers,
- * buffers, dates) hold no text.
+ * is not valid text; undefined when everything is. Walks arrays and plain objects in document order, without
+ * recursion (no depth of a body can exhaust the stack); other values (numbers, buffers, dates) hold no text.
  */
+type TextTask = { value: unknown; path: string; invalidKey?: boolean };
+
 export const findInvalidText = (value: unknown, path = ''): string | undefined => {
-  if (typeof value === 'string') {
-    return isValidText(value) ? undefined : path;
-  }
-  if (Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      const found = findInvalidText(item, `${path}/${index}`);
-      if (found !== undefined) {
-        return found;
+  const stack: TextTask[] = [{ value, path }];
+  for (let next = stack.pop(); next; next = stack.pop()) {
+    const current = next.value;
+    if (next.invalidKey === true || (typeof current === 'string' && !isValidText(current))) {
+      return next.path;
+    }
+    const children: TextTask[] = [];
+    if (Array.isArray(current)) {
+      current.forEach((item: unknown, index) =>
+        children.push({ value: item, path: `${next.path}/${index}` }),
+      );
+    } else if (typeof current === 'object' && current !== null && isPlainObject(current)) {
+      for (const [key, item] of Object.entries(current)) {
+        const at = `${next.path}/${escapeSegment(key)}`;
+        if (!isValidText(key)) {
+          // Answered once everything before it was walked, as a recursive walk would.
+          children.push({ value: undefined, path: at, invalidKey: true });
+          break;
+        }
+        children.push({ value: item, path: at });
       }
     }
-    return undefined;
-  }
-  if (typeof value !== 'object' || value === null || !isPlainObject(value)) {
-    return undefined;
-  }
-  for (const [key, item] of Object.entries(value)) {
-    const at = `${path}/${escapeSegment(key)}`;
-    if (!isValidText(key)) {
-      return at;
-    }
-    const found = findInvalidText(item, at);
-    if (found !== undefined) {
-      return found;
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push(children[index] as TextTask);
     }
   }
   return undefined;

@@ -91,14 +91,15 @@ describe('OpenAPI for component items', () => {
     .components;
 
   it('requires id on component output schemas', () => {
-    expect(schemas.Link?.properties?.id).toMatchObject({ type: 'string', format: 'uuid' });
+    expect(schemas.Link?.properties?.id).toMatchObject({ type: 'string', pattern: '^[0-9A-Za-z]{12}$' });
+    expect(schemas.Link?.properties?.id).not.toHaveProperty('format');
     expect(schemas.Link?.required).toEqual(['id', 'url']);
     expect(schemas.Spacer?.required).toEqual(['id']);
   });
 
   it('accepts an optional id on component input schemas, which allow no other unknown key', () => {
     expect(schemas.LinkInput?.properties?.id).toMatchObject({
-      anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }],
+      anyOf: [{ type: 'string', pattern: '^[0-9A-Za-z]{12}$' }, { type: 'null' }],
     });
     expect(schemas.LinkInput?.required).toBeUndefined();
     expect(schemas.LinkInput?.additionalProperties).toBe(false);

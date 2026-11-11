@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ITEM_ID_FIELD } from '../../constants/itemIds.js';
+import { canonicalJson } from '../itemIds.js';
 import { contentInvalid, pointer, type ContentIssue } from '../validator/issues.js';
-import { alignItems, type AlignmentBudget, type AlignmentSide } from './listAlignment.js';
 
 /**
  * Which stored item each item of a written component list continues (delivery-api.md, "Writing components").
@@ -41,36 +41,41 @@ export const listCapOf = (settings: unknown): number => {
   return typeof max === 'number' && max < CARRY_MAX_ITEMS ? max : CARRY_MAX_ITEMS;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** Object keys sorted, so equal values serialize alike whatever order their keys came in. */
-const sortedKeys = (_key: string, value: unknown): unknown =>
-  isRecord(value)
-    ? Object.fromEntries(
-        Object.keys(value)
-          .sort()
-          .map((key) => [key, value[key]]),
-      )
-    : value;
+let keysComputed = 0;
 
 /**
- * The key an item is paired by: a SHA-256 of a compact canonical serialization of what the caller sees of it.
- * One pass over the item, whatever its size; a cryptographic hash, so a body cannot be crafted to make two
- * different items collide (a fast hash would need a full comparison on every collision, which a crafted body
- * could make quadratic).
+ * The key an item is paired by: a SHA-256 of a canonical serialization of what the caller sees of it (keys sorted,
+ * built without recursion, so no depth of a value can exhaust the stack). One pass over the item, whatever its
+ * size; a cryptographic hash, so a body cannot be crafted to make two different items collide (a fast hash would
+ * need a full comparison on every collision, which a crafted body could make quadratic).
  */
-export const itemKey = (view: unknown): string =>
-  createHash('sha256').update(compactCanonical(view)).digest('base64');
+export const itemKey = (view: unknown): string => {
+  keysComputed += 1;
+  return createHash('sha256').update(canonicalJson(view)).digest('base64');
+};
 
-/** A compact canonical serialization: object keys sorted, no whitespace (`undefined` reads as "undefined"). */
-export const compactCanonical = (value: unknown): string => JSON.stringify(value, sortedKeys) ?? 'undefined';
+/**
+ * Item keys computed in this process so far: how tests show a write did no work on its items (a stale version is
+ * answered before any), by counting, never by timing.
+ */
+export const itemKeysComputed = (): number => keysComputed;
+
+/** A compact canonical serialization: object keys sorted, no whitespace, at any depth. */
+export const compactCanonical = (value: unknown): string => canonicalJson(value);
 
 export type ItemIssueCode =
   'UNKNOWN_ITEM_ID' | 'DUPLICATE_ITEM_ID' | 'ITEM_COMPONENT_CHANGED' | 'AMBIGUOUS_ITEMS';
 
 /** A refusal of a written list: about one sent item (`index`), or the whole list (null). */
 export type ListIssue = { index: number | null; code: ItemIssueCode };
+
+/** One side of a written list: what the caller sees of each item, and the component each holds. */
+export type ListSide = {
+  /** Each item's key (what the caller sees of it); null: never matched by content. */
+  keys: ReadonlyArray<string | null>;
+  /** The component each item holds. */
+  kinds: ReadonlyArray<string | null>;
+};
 
 /** One written list and the stored one it replaces. */
 export type ListSides = {
@@ -79,18 +84,20 @@ export type ListSides = {
    * none. A list where any item names an ID or null is paired by IDs; otherwise it is aligned.
    */
   sentIds: ReadonlyArray<string | null | undefined>;
-  sent: AlignmentSide;
+  sent: ListSide;
   /** Every stored item's ID (stored, or derived: `withItemIds`). */
   storedIds: ReadonlyArray<string | null>;
-  stored: AlignmentSide;
+  stored: ListSide;
 };
 
 /** What decides whether a list may be refused, from the caller's view and the schema only (never values). */
 export type ListPolicy = {
   /** The list's components can hold, at any depth, a value this caller cannot see (or, with no read, write). */
   hidden: boolean;
-  /** The caller cannot see the stored items: it may not read the entry, or not the draft written. */
+  /** The caller cannot see the stored items: it may not read the entry, the draft written, or a field above. */
   unseen: boolean;
+  /** Never refused (admin writes): items continue stored ones only where that is certain, the rest are new. */
+  neverRefuses?: boolean;
 };
 
 /**
@@ -99,16 +106,28 @@ export type ListPolicy = {
  * decides it, so it can change in one place (the 0.8 behavior would carry nothing over instead).
  */
 export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIssue[] =>
-  policy.unseen && policy.hidden && sentCount > 0 ? [{ index: null, code: 'AMBIGUOUS_ITEMS' }] : [];
+  policy.unseen && policy.hidden && !policy.neverRefuses && sentCount > 0
+    ? [{ index: null, code: 'AMBIGUOUS_ITEMS' }]
+    : [];
 
-/** Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. */
+/**
+ * Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. A stored ID that two
+ * stored items share names neither (it is unknown): which one the client meant cannot be told.
+ */
 const pairByIds = (sides: ListSides): { pairs: number[]; issues: ListIssue[] } => {
   const stored = new Map<string, number>();
+  const shared = new Set<string>();
   sides.storedIds.forEach((id, index) => {
-    if (id !== null && !stored.has(id)) {
+    if (id === null) {
+      return;
+    }
+    if (stored.has(id)) {
+      shared.add(id);
+    } else {
       stored.set(id, index);
     }
   });
+  shared.forEach((id) => stored.delete(id));
   const sentCount = new Map<string, number>();
   sides.sentIds.forEach((id) => {
     if (typeof id === 'string') {
@@ -148,7 +167,7 @@ const pairByIds = (sides: ListSides): { pairs: number[]; issues: ListIssue[] } =
  * and carries nothing. Deleting and adding in one write, any edit, and any look-alikes in a changed list need
  * the items' IDs. Hashing and set comparison: O(n).
  */
-const pairDistinct = (sent: AlignmentSide, stored: AlignmentSide): number[] | null => {
+const pairDistinct = (sent: ListSide, stored: ListSide): number[] | null => {
   // Nothing stored (a new list, or a list under a new item): every item is new, nothing to keep or move.
   if (stored.keys.length === 0) {
     return sent.keys.map(() => -1);
@@ -181,16 +200,44 @@ const pairDistinct = (sent: AlignmentSide, stored: AlignmentSide): number[] | nu
 };
 
 /**
- * The one pairing of a written list (plan item-ids): by item ID when the client sends any. Without IDs, a list
- * whose items can hold values the caller cannot see is refused when the caller cannot see the stored items
- * (`unseenItemsPolicy`) or when it is not certain (`pairDistinct`); any other list is aligned with the least
- * edits only to keep its items' IDs (`alignItems`, on the write's shared `budget`), and never refused.
+ * Items paired only where that is certain (lists that hold nothing the caller cannot see, admin writes): the whole
+ * list when it is sent exactly as stored, else each item whose key appears exactly once on each side; every other
+ * item is new (a new ID), never an existing item's.
  */
-export const pairList = (
-  sides: ListSides,
-  policy: ListPolicy,
-  budget: AlignmentBudget,
-): { pairs: number[]; issues: ListIssue[] } => {
+const pairCertain = (sent: ListSide, stored: ListSide): number[] => {
+  if (
+    sent.keys.length === stored.keys.length &&
+    sent.keys.every((key, index) => key !== null && key === stored.keys[index])
+  ) {
+    return sent.keys.map((_, index) => index);
+  }
+  const count = (keys: ReadonlyArray<string | null>) => {
+    const counts = new Map<string, { count: number; at: number }>();
+    keys.forEach((key, index) => {
+      if (key !== null) {
+        const known = counts.get(key);
+        counts.set(key, { count: (known?.count ?? 0) + 1, at: known?.at ?? index });
+      }
+    });
+    return counts;
+  };
+  const storedCounts = count(stored.keys);
+  const sentCounts = count(sent.keys);
+  return sent.keys.map((key) => {
+    const onStored = key === null ? undefined : storedCounts.get(key);
+    return key !== null && onStored?.count === 1 && sentCounts.get(key)?.count === 1 ? onStored.at : -1;
+  });
+};
+
+/**
+ * The one pairing of a written list (plan item-ids): by item ID when the client sends any. Without IDs:
+ * - where the caller cannot see the stored items, nothing is compared: a list that can hold a value it cannot
+ *   write is refused (`unseenItemsPolicy`), any other is written as new items;
+ * - a list that can hold a value outside the caller's view continues only on certainty (`pairDistinct`), else
+ *   it is refused;
+ * - any other list (and every admin write) keeps an item's ID only where that is certain (`pairCertain`).
+ */
+export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
   if (sides.sentIds.some((id) => id !== undefined)) {
     return pairByIds(sides);
   }
@@ -198,12 +245,12 @@ export const pairList = (
   if (sides.sentIds.length === 0) {
     return { pairs: none, issues: [] };
   }
-  if (!policy.hidden) {
-    return { pairs: alignItems(sides.sent, sides.stored, budget).pairs, issues: [] };
-  }
-  const unseen = unseenItemsPolicy(policy, sides.sentIds.length);
-  if (unseen.length > 0) {
+  if (policy.unseen) {
+    const unseen = unseenItemsPolicy(policy, sides.sentIds.length);
     return { pairs: none, issues: unseen };
+  }
+  if (!policy.hidden || policy.neverRefuses) {
+    return { pairs: pairCertain(sides.sent, sides.stored), issues: [] };
   }
   const pairs = pairDistinct(sides.sent, sides.stored);
   return pairs ? { pairs, issues: [] } : { pairs: none, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };

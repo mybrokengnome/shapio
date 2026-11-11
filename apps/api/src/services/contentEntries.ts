@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import {
@@ -30,13 +29,15 @@ import {
 } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
 import { validateRevisionData } from '../content/revisionData.js';
+import { sameContent } from '../content/sameContent.js';
 import { uniqueFields } from '../content/unique.js';
 import { buildValidator, type ModelValidator, type ValidationOutcome } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import { fieldsWithoutItemIds } from '../content/withoutItemIds.js';
 import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from '../content/write/heads.js';
-import { keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
-import { assertTargets, mediaIdsOf } from '../content/write/references.js';
+import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
+import { assertComponentListCaps, keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
+import { assertTargets, mediaIdsOf, relationIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
@@ -105,12 +106,17 @@ const applyPatch = (base: Readonly<ContentData>, patch: Readonly<ContentData>): 
   return output;
 };
 
-/** The input as a validated patch. Callers check its fields against the entry's write mask (`rowWriteMask`). */
-const inputPatch = (validator: ModelValidator, data: unknown) => {
+/**
+ * The input as a validated patch. Callers check its fields against the entry's write mask (`rowWriteMask`).
+ * A component list longer than a write pairs (the field's `max`, at most `CARRY_MAX_ITEMS`) is refused here
+ * (`TOO_MANY` at its path), before any pairing or item ID work.
+ */
+const inputPatch = (validator: ModelValidator, model: ContentModel, data: unknown) => {
   const { patch, issues } = validator.fromInput((data ?? {}) as Record<string, unknown>);
   if (issues.length > 0) {
     throw contentInvalid(issues);
   }
+  assertComponentListCaps(patch, model.definition.fields, componentLookupOf(model.components));
   return patch;
 };
 
@@ -158,18 +164,16 @@ export const createEntry = async (
   }
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, input.data);
+  const patch = inputPatch(validator, model, input.data);
   assertWritable(newEntryWriteMask(context, policy), model.definition.fields, Object.keys(patch));
-  // A new entry's items get the server's IDs, whatever the body sent (plan item-ids).
+  // A new entry's items get the server's IDs, a new one per instance, whatever the body sent (plan item-ids).
   const outcome = validated(
     validator,
     assignItemIds(
       applyPatch(defaultsOf(model.definition), patch),
       model.definition.fields,
       componentLookupOf(model.components),
-      {
-        renew: new Map(),
-      },
+      { fresh: true },
     ),
     false,
   );
@@ -347,14 +351,15 @@ const saveDraftChanges = async (
  * revision), and the validated data is what it already has.
  */
 const isUnchangedSave = (
-  model: ContentModel,
   previous: HeadRecord | undefined,
+  beforeWithIds: Readonly<ContentData>,
   after: ContentData,
 ): previous is HeadRecord =>
   previous !== undefined &&
   previous.autosaved_at === null &&
-  // Item IDs alone are no change (plan item-ids): a list sent back as it was, its IDs persisted or not.
-  isDeepStrictEqual(withoutIds(model, previous.data), withoutIds(model, after));
+  // Compared with every item's ID (stored, or derived for items saved before IDs): a list sent back as it was
+  // is no change whether its IDs were persisted or not, while look-alikes swapped by their IDs are one.
+  sameContent(beforeWithIds, after);
 
 /** Stored data without item IDs, for comparisons of content (plan item-ids). */
 const withoutIds = (model: ContentModel, data: Readonly<ContentData>): ContentData =>
@@ -449,12 +454,23 @@ export const writeEntryUpdate = async (
     : keepUnreadableComponentFields(patch, beforeWithIds, model.definition.fields, componentOf, () => true, {
         carryNothing: true,
       });
-  const outcome = validated(input.validator, applyPatch(before, patch), autosave);
-  if (isUnchangedSave(model, previous, outcome.data)) {
+  const checked = validated(input.validator, applyPatch(before, patch), autosave);
+  // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.
+  const outcome = {
+    ...checked,
+    data: withUniqueItemIds(checked.data, model.definition.fields, componentOf),
+  };
+  if (isUnchangedSave(previous, beforeWithIds, outcome.data)) {
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }
-  await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]));
+  await assertTargets(
+    trx,
+    outcome,
+    context.site.id,
+    mediaIdsOf(model, [before]),
+    relationIdsOf(model, [before]),
+  );
   const hook = {
     trx,
     site: context.site,
@@ -488,16 +504,20 @@ export const writeEntryUpdate = async (
   return { locale: targetLocale, head: written[0] };
 };
 
-export const updateEntry = async (
+/**
+ * `updateEntry`, also answering the draft head of the written locale as the write left it: the head it wrote,
+ * or the draft as it was when the save changed nothing. Its `data` is what was stored (never read back).
+ */
+export const updateEntryWithHead = async (
   context: ContentServiceContext,
   modelKey: string,
   id: string,
   input: UpdateEntryInput,
-): Promise<AdminEntryView> => {
+): Promise<{ view: AdminEntryView; head: HeadRecord | undefined }> => {
   const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
-  const patch = inputPatch(validator, input.data);
+  const patch = inputPatch(validator, model, input.data);
   const { carry } = input;
   const written = await runEntryWrite(context.db, model, context.site.id, [locale], (trx) =>
     writeEntryUpdate(trx, context, {
@@ -512,8 +532,15 @@ export const updateEntry = async (
       ...(carry ? { carry: (current, base) => carry(current, base, model) } : {}),
     }),
   );
-  return viewAfterWrite(context, model, policy, id, written.locale);
+  return { view: await viewAfterWrite(context, model, policy, id, written.locale), head: written.head };
 };
+
+export const updateEntry = async (
+  context: ContentServiceContext,
+  modelKey: string,
+  id: string,
+  input: UpdateEntryInput,
+): Promise<AdminEntryView> => (await updateEntryWithHead(context, modelKey, id, input)).view;
 
 /** Brings back an older revision as the new draft of its locale (a new revision; history is never rewritten). */
 export const restoreRevision = async (
@@ -564,8 +591,16 @@ export const restoreRevision = async (
     }
     // Only the entry's current fields come back: a revision written under another kind (or before a field
     // was removed) holds keys this kind lacks, which must not hide in the draft and reappear after a later
-    // change of kind (plan polymorphic-types, decision 6).
-    const outcome = { ...validated, data: currentFieldsOf(model, validated.data) };
+    // change of kind (plan polymorphic-types, decision 6). A revision repeating an item ID (stored before IDs
+    // were checked) comes back with the later repeats renewed (plan item-ids).
+    const outcome = {
+      ...validated,
+      data: withUniqueItemIds(
+        currentFieldsOf(model, validated.data),
+        model.definition.fields,
+        componentLookupOf(model.components),
+      ),
+    };
     // Every field the restore changes in this locale (shared ones fan out from it), issue #103.
     assertWritable(
       rowWriteMask(policy, context.actor, entry),
@@ -689,16 +724,21 @@ export const duplicateEntry = async (
       { siteId: context.site.id, modelId: model.definition.id, ...ownerOf(context) },
       trx,
     );
-    // The copy's items get new IDs, the same new ID for the same item in every locale (shared fields).
+    // The copy's items get new IDs, the same new ID for the same item in every locale (shared fields), and a
+    // new one per instance: two source items repeating an ID are two items of the copy.
     const renew = new Map<string, string>();
     const componentOf = componentLookupOf(model.components);
     const key = await itemIdKeyOf(trx);
     for (const draft of drafts) {
-      const withIds = withItemIds(
-        draft.data,
+      const withIds = withUniqueItemIds(
+        withItemIds(
+          draft.data,
+          model.definition.fields,
+          componentOf,
+          itemIdScopeOf(key, id, model, draft.locale),
+        ),
         model.definition.fields,
         componentOf,
-        itemIdScopeOf(key, id, model, draft.locale),
       );
       const copy = assignItemIds(
         Object.fromEntries(

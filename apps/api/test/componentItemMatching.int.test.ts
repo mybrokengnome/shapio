@@ -646,11 +646,8 @@ describe('component items written by a caller that cannot see all of them', () =
           ...stale,
           data: { nope: 1, cards: [{ label: 'A' }] },
         });
-        // A key the client's version does not know is the version's refusal; without one, today's validator's.
-        expect([invalid.statusCode, errorOf(invalid).code]).toEqual([
-          422,
-          suffix ? 'LENS_WRITE_UNSUPPORTED' : 'CONTENT_INVALID',
-        ]);
+        // A key the version does not know is the body's own refusal, with the same code as without a version.
+        expect([invalid.statusCode, errorOf(invalid).code]).toEqual([422, 'CONTENT_INVALID']);
         // A field the caller may not change answers before anything about the items (or the version).
         const forbidden = await request('PUT', url(entry.id), titleOnly.accessToken, {
           ...stale,
@@ -846,18 +843,20 @@ describe('component items written by a caller that cannot see all of them', () =
           { label: 'B', size: '2' },
         ],
       });
-      // An editor changes the draft; the reader (no draft access) still reads the published version.
+      // An editor changes the draft (the admin sends its items' IDs, as the admin app does); the reader (no
+      // draft access) still reads the published version.
       const draft = expectStatus(
         await admin.get(`/api/admin/content/deck/${entry.id}`),
         200,
       ).json<EntryBody>();
+      const [chipA, chipB] = draft.data.chips as Array<{ id: string }>;
       expectStatus(
         await admin.put(`/api/admin/content/deck/${entry.id}`, {
           expectedVersion: draft.version,
           data: {
             chips: [
-              { label: 'A', size: '1' },
-              { label: 'B', size: '3' },
+              { id: chipA?.id, label: 'A', size: '1' },
+              { id: chipB?.id, label: 'B', size: '3' },
             ],
           },
         }),
