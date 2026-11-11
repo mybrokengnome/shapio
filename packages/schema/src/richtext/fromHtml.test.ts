@@ -227,6 +227,21 @@ describe('htmlToRichText', () => {
     expect(JSON.stringify(result.document)).toContain('deep');
   });
 
+  it('keeps the document at most 58 JSON levels deep (the API body limit is 64)', () => {
+    const jsonDepth = (value: unknown): number =>
+      typeof value === 'object' && value !== null
+        ? 1 + Math.max(0, ...Object.values(value).map(jsonDepth))
+        : 1;
+    for (const html of [
+      `${'<ul><li>a'.repeat(60)}${'</li></ul>'.repeat(60)}`,
+      `${'<ol><li><a href="https://example.com"><strong><em><code>a</code></em></strong></a>'.repeat(60)}${'</li></ol>'.repeat(60)}`,
+      `${'<blockquote>'.repeat(80)}<p><a href="https://example.com"><strong>x</strong></a></p>${'</blockquote>'.repeat(80)}`,
+      `${'<table><tr><td>'.repeat(30)}x${'</td></tr></table>'.repeat(30)}`,
+    ]) {
+      expect(jsonDepth(htmlToRichText(html).document)).toBeLessThanOrEqual(58);
+    }
+  });
+
   it('returns an empty document for empty input', () => {
     expect(htmlToRichText('  ').document).toEqual({
       format: 'shapio-richtext',

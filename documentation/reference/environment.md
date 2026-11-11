@@ -32,6 +32,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `RATE_LIMIT_MAX` | `600` | integer ≥ 1 | Requests per window and client IP, for every route without a stricter limit of its own. Requests for the admin's own files under the admin prefix (scripts, styles, `theme-init.js`, fonts, and favicons) are not counted; the admin page itself and every API route are. |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | integer ≥ 1000 | The rate-limit window, in milliseconds. |
 | `MEDIA_RATE_LIMIT_MAX` | `6000` | integer ≥ 1 | Requests per window and IP for public media files (`/api/media/f/*` without a signature). |
+| `REQUEST_BODY_MAX_BYTES` | `1048576` | integer 1024–1073741824 | Largest JSON request body, in bytes (413 beyond it). Raise it for very large entries: every component item a client reads carries its `id`, so an entry saved back as read is a little larger than it was written. Media uploads and `schema apply` have limits of their own. |
 
 ## HTTPS without a reverse proxy
 

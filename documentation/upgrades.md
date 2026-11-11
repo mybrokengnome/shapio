@@ -51,18 +51,31 @@ for every write change below is the same: send back the `id` of each item you re
    is refused for any list with items that holds a field it cannot write.
 3. A private field sent inside a component by a delivery caller, even as `null`, is refused with
    `403 FORBIDDEN_FIELD`; a deprecated one, with `422` and an `UNKNOWN_FIELD` issue. Before, the value was stored.
+   Through a schema version that showed the field, sending back the `null` a read gives is accepted and keeps the
+   stored value; any other value, or a field that version never showed, is `403`.
 4. Private and deprecated values inside components, and hidden relation targets and media, are kept when a
-   client writes back what it read. Before, such a write wiped them.
-   So a re-save without `id`s that changes nothing a caller can see no longer fires `entry.updated`: nothing
-   changes anymore.
+   client writes back what it read. Before, such a write wiped them, so re-saving what a caller read changed the
+   entry. A re-save without `id`s now goes one of three ways:
+   - It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what
+     it read and can see the stored items, or when it cannot see them but can write the whole list and sends it
+     exactly as stored, as before 0.9.0.
+   - It is refused with `AMBIGUOUS_ITEMS` when the caller cannot see the draft it writes (an app user whose draft
+     is ahead of the published version) and the list holds a field it cannot write. Send the `itemIds` from the
+     last write response.
+   - Anything else that differs from what is stored is written.
 5. On a list with nothing hidden, an item edited without its `id` gets a new `id`, and so do look-alikes in a
    changed list.
-6. Refusals come in a fixed order, `404` first, then the body (`422`), `403`, `409`, the items (`422`), and the
-   values (`422`), and list at most 100 issues ([Order of refusals](delivery-api.md#order-of-refusals)). Lists
+6. Refusals come in a fixed order: after authentication and the body depth check, `403` for the content type
+   and `404`, then the body (`422`), a forbidden field (`403`), `409`, the items (`422`), and the values (`422`).
+   They list at most 100 issues ([Order of refusals](delivery-api.md#order-of-refusals)). Lists
    over their `max`, or over 50,000 items, are refused on the admin API too.
-7. A request body nested deeper than 64 levels is refused with `422 BODY_TOO_DEEP`, on every route. Rich text
-   nested deeper than about 29 node levels is therefore refused on every database (before, PostgreSQL and SQLite
-   accepted up to 40 node levels and MySQL failed). Import bundles are streamed and not covered.
+7. A request body nested deeper than 64 levels is refused with `422 BODY_TOO_DEEP`, on every route. This is a
+   behavior change for rich text: before 0.9.0 every database accepted rich text up to 40 node levels; now rich
+   text deeper than about 30 node levels (sooner inside components) is refused. Import bundles are streamed and
+   not covered, and the importers' HTML converter flattens nesting past 24 levels.
+8. Item IDs add about 20 bytes to every component item, so an entry that was just under the 1 MiB request limit
+   can now answer `413`. If you have such entries, raise `REQUEST_BODY_MAX_BYTES` (default 1,048,576; 1 KiB to
+   1 GiB).
 
 ## Going back
 

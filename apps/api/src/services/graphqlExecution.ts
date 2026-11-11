@@ -14,6 +14,7 @@ import {
 import { fragmentsOf, selectsIntrospection } from '../schema/codegen/graphql/complexity.js';
 import type { GraphqlRequestContext } from '../schema/codegen/graphql/context.js';
 import type { DocumentCache, PreparedDocument } from '../schema/codegen/graphql/documentCache.js';
+import { assertArgumentDepth, documentNestingError } from '../schema/codegen/graphql/documentDepth.js';
 
 /** One GraphQL request as received over HTTP (GraphQL-over-HTTP: query, variables, operation name). */
 export type GraphqlOperationInput = {
@@ -53,6 +54,11 @@ const prepareDocument = (
   const cached = documents.get(schema, source);
   if (cached) {
     return cached;
+  }
+  // Before parsing: graphql-js parses nesting by recursion, with no limit of its own.
+  const tooDeep = documentNestingError(source);
+  if (tooDeep) {
+    return { errors: [tooDeep] };
   }
   let document: DocumentNode;
   try {
@@ -96,11 +102,14 @@ export const executeOperation = async (
   prepared: PreparedDocument & { operation: OperationDefinitionNode },
   input: GraphqlOperationInput,
   context: GraphqlRequestContext,
-): Promise<ExecutionResult> =>
-  execute({
+): Promise<ExecutionResult> => {
+  // Literals in the document count toward the body depth limit like variables (422 BODY_TOO_DEEP).
+  assertArgumentDepth(schema, prepared.document, prepared.operation, input.variables ?? undefined);
+  return execute({
     schema,
     document: prepared.document,
     operationName: prepared.operation.name?.value,
     variableValues: input.variables ?? undefined,
     contextValue: context,
   });
+};

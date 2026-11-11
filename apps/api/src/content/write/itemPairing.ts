@@ -85,18 +85,31 @@ const pairValue = (
     unseen: !scope.sees,
     neverRefuses: view.access.neverRefuses,
   };
-  // Keys are made only where the caller sees the items: anywhere else nothing is compared.
-  const compares = scope.sees && written.every((item) => sentIdOf(item) === undefined);
+  // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
+  // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
+  const noIds = written.every((item) => sentIdOf(item) === undefined);
+  const keyOf = !noIds
+    ? null
+    : scope.sees
+      ? { sent: view.sentKey, stored: view.storedKey }
+      : policy.hidden
+        ? null
+        : {
+            sent: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
+              view.wholeKey(component, item),
+            stored: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
+              view.wholeKey(component, item),
+          };
   const { pairs, issues } = pairList(
     {
       sentIds: written.map(sentIdOf),
       sent: {
-        keys: compares ? written.map((item) => view.sentKey(scope, componentOf(item), item)) : [],
+        keys: keyOf ? written.map((item) => keyOf.sent(scope, componentOf(item), item)) : [],
         kinds: written.map((item) => componentOf(item)?.id ?? null),
       },
       storedIds: kept.map(storedItemId),
       stored: {
-        keys: compares ? kept.map((item) => view.storedKey(scope, componentOf(item), item)) : [],
+        keys: keyOf ? kept.map((item) => keyOf.stored(scope, componentOf(item), item)) : [],
         kinds: kept.map((item) => componentOf(item)?.id ?? null),
       },
     },

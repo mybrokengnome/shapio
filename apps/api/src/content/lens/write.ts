@@ -313,7 +313,9 @@ const echoedInstance = (lens: DefinitionLens, item: unknown): unknown => {
   }
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item)) {
-    if (key === COMPONENT_KEY) {
+    // An item's `id` says which stored item it is, not what it holds: the read's input form leaves it out too
+    // (`inputFormOf`), so a value sent back as read, with the IDs read, matches.
+    if (key === COMPONENT_KEY || key === ITEM_ID_FIELD) {
       continue;
     }
     const field = fieldByApiKey(lens, key);
@@ -590,7 +592,7 @@ const sentItemLensOf = (field: FieldLens & { kind: 'same' }, item: unknown): Def
 /** What the caller sees of a sent instance (client API IDs, as echoed from a read): its pairing key's content. */
 const sentView = (
   walk: Walk,
-  scope: ViewScope,
+  scope: ViewScope | 'whole',
   lens: DefinitionLens,
   item: Readonly<Record<string, unknown>>,
 ) => {
@@ -610,14 +612,19 @@ const sentView = (
   return output;
 };
 
-/** Whether a read at `scope` shows this field of an item (`CallerView.shows`, by today's definition). */
-const shownIn = (walk: Walk, scope: ViewScope, field: FieldLens): boolean =>
-  field.stored !== undefined && field.stored !== null && walk.view.shows(scope, field.stored);
+/**
+ * Whether a read at `scope` shows this field of an item (`CallerView.shows`, by today's definition). `whole`: every
+ * field, nothing cut (a list the caller writes in full where it cannot see the items: `CallerView.wholeKey`).
+ */
+const shownIn = (walk: Walk, scope: ViewScope | 'whole', field: FieldLens): boolean =>
+  field.stored !== undefined &&
+  field.stored !== null &&
+  (scope === 'whole' || walk.view.shows(scope, field.stored));
 
 /** What the caller sees of a stored instance through the lens (read, cut to its view, in input form). */
 const readView = (
   walk: Walk,
-  scope: ViewScope,
+  scope: ViewScope | 'whole',
   lens: DefinitionLens,
   read: Readonly<Record<string, unknown>>,
 ) => {
@@ -633,7 +640,7 @@ const readView = (
     ) {
       continue;
     }
-    const leaf = fieldInputForm(field, cutRead(walk.view.access, field, value));
+    const leaf = fieldInputForm(field, scope === 'whole' ? value : cutRead(walk.view.access, field, value));
     if (isMissingValue(leaf) || (Array.isArray(leaf) && leaf.length === 0)) {
       continue;
     }
@@ -805,18 +812,21 @@ const pairWrittenList = (
     kinds: items.map((item) => lensOf(item)?.definitionId ?? null),
   });
   const unseen = !scope.sees;
+  const hidden = walk.view.holdsHidden(scope, field.stored);
   const sentIds = sent.map(sentIdOf);
-  // Keys are made only where the caller sees the items: anywhere else nothing is compared.
-  const compares = scope.sees && sentIds.every((id) => id === undefined);
+  // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
+  // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
+  const compares = sentIds.every((id) => id === undefined) && (scope.sees || !hidden);
+  const keyScope: ViewScope | 'whole' = scope.sees ? scope : 'whole';
   const sentSide = side(
     compares ? sent : [],
     (item) => sentItemLensOf(field, item),
-    (lens, item) => sentView(walk, scope, lens, item),
+    (lens, item) => sentView(walk, keyScope, lens, item),
   );
   const storedSide = side(
     compares ? stored : [],
     (item) => storedItemLensOf(field, item),
-    (lens, item) => readView(walk, scope, lens, readThroughLens(lens, item)),
+    (lens, item) => readView(walk, keyScope, lens, readThroughLens(lens, item)),
   );
   const kinds = (items: readonly unknown[], lensOf: (item: unknown) => DefinitionLens | undefined) =>
     items.map((item) => lensOf(item)?.definitionId ?? null);
@@ -827,7 +837,7 @@ const pairWrittenList = (
       storedIds: stored.map(storedIdOf),
       stored: { keys: storedSide.keys, kinds: kinds(stored, (item) => storedItemLensOf(field, item)) },
     },
-    { hidden: walk.view.holdsHidden(scope, field.stored), unseen },
+    { hidden, unseen },
   );
   walk.itemIssues.push(...issues.map((issue) => itemIssueOf(issue, path, { unseen })));
   return pairs;

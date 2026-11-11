@@ -70,8 +70,21 @@ export type World = {
   models: { doc: ModelBody; plain: ModelBody; thing: ModelBody };
   components: { chip: ModelBody; tag: ModelBody; box: ModelBody; card: ModelBody; line: ModelBody };
   /** Field IDs by API ID. */
-  doc: Fields<'title' | 'cards' | 'lchips' | 'hero' | 'zone' | 'secretCard'>;
-  card: Fields<'heading' | 'note' | 'count' | 'old' | 'extra' | 'rel' | 'rels' | 'pic' | 'data' | 'chips'>;
+  doc: Fields<'title' | 'cards' | 'lchips' | 'hero' | 'zone' | 'secretCard' | 'ref' | 'refs' | 'secretRef'>;
+  card: Fields<
+    | 'heading'
+    | 'note'
+    | 'count'
+    | 'old'
+    | 'extra'
+    | 'rel'
+    | 'rels'
+    | 'anyRels'
+    | 'secretRel'
+    | 'pic'
+    | 'data'
+    | 'chips'
+  >;
   chip: Fields<'zv' | 'zh'>;
   tag: Fields<'label' | 'tnote'>;
   box: Fields<'label' | 'items'>;
@@ -231,6 +244,20 @@ export const itemModelWorld = (): World => {
             type: 'relation',
             settings: { target: thing.definition.id, cardinality: 'many' },
           },
+          // Any entry (polymorphic), many; and a private relation (a hidden place an entry ID can sit in).
+          {
+            apiKey: 'anyRels',
+            label: 'Any rels',
+            type: 'relation',
+            settings: { target: '*', cardinality: 'many' },
+          },
+          {
+            apiKey: 'secretRel',
+            label: 'Secret rel',
+            type: 'relation',
+            public: false,
+            settings: { target: thing.definition.id, cardinality: 'one' },
+          },
           { apiKey: 'pic', label: 'Pic', type: 'media' },
           { apiKey: 'data', label: 'Data', type: 'json' },
           {
@@ -286,6 +313,21 @@ export const itemModelWorld = (): World => {
           type: 'component',
           public: false,
           settings: { component: card.definition.id },
+        },
+        // Top-level relations: one to a thing, many to any entry, and a private one.
+        {
+          apiKey: 'ref',
+          label: 'Ref',
+          type: 'relation',
+          settings: { target: thing.definition.id, cardinality: 'one' },
+        },
+        { apiKey: 'refs', label: 'Refs', type: 'relation', settings: { target: '*', cardinality: 'many' } },
+        {
+          apiKey: 'secretRef',
+          label: 'Secret ref',
+          type: 'relation',
+          public: false,
+          settings: { target: thing.definition.id, cardinality: 'one' },
         },
       ],
     });
@@ -389,7 +431,17 @@ export const itemModelWorld = (): World => {
     );
     w.models = { doc, plain, thing };
     w.components = { chip, tag, box, card: cardNow, line };
-    w.doc = fieldsOf(doc, ['title', 'cards', 'lchips', 'hero', 'zone', 'secretCard']);
+    w.doc = fieldsOf(doc, [
+      'title',
+      'cards',
+      'lchips',
+      'hero',
+      'zone',
+      'secretCard',
+      'ref',
+      'refs',
+      'secretRef',
+    ]);
     w.card = fieldsOf(cardNow, [
       'heading',
       'note',
@@ -398,6 +450,8 @@ export const itemModelWorld = (): World => {
       'extra',
       'rel',
       'rels',
+      'anyRels',
+      'secretRel',
       'pic',
       'data',
       'chips',

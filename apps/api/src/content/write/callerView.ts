@@ -128,6 +128,11 @@ export type CallerView = {
   holdsHidden: (scope: ViewScope, field: FieldDefinition) => boolean;
   /** (b) The key of a stored item: what a read at `scope` returns of it. Null when it holds no component. */
   storedKey: (scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) => string | null;
+  /**
+   * The key of a whole item, stored or sent (storage form, IDs left out, nothing cut): only for a list the caller
+   * writes in full where it cannot see the items, whose items it may send back exactly as stored.
+   */
+  wholeKey: (component: ComponentDefinition | undefined, item: unknown) => string | null;
   /** (b) The key of a sent item (storage form): what it says about what that read returns. */
   sentKey: (scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) => string | null;
   /** A stored value as a read at `scope` returns it (storage form): targets and misfits left out. */
@@ -174,7 +179,7 @@ const cutTargets = (value: unknown, visible: ReadonlySet<string> | null, many: b
     return value;
   }
   if (many) {
-    const shown = (Array.isArray(value) ? value : []).filter(
+    const shown = (Array.isArray(value) ? value : [value]).filter(
       (id): id is string => typeof id === 'string' && visible.has(id),
     );
     return shown.length > 0 ? shown : undefined;
@@ -300,6 +305,35 @@ export const callerViewOf = (
     return output;
   };
 
+  /** An item without its IDs and empty values, at any depth through its components. */
+  const wholeItem = (
+    component: ComponentDefinition,
+    item: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> => {
+    const output: Record<string, unknown> = { [COMPONENT_KEY]: component.id };
+    for (const field of component.fields) {
+      const value = item[field.id];
+      if (isMissingValue(value)) {
+        continue;
+      }
+      if (!isComponentField(field)) {
+        output[field.id] = value;
+        continue;
+      }
+      const one = (nested: unknown) => {
+        const nestedComponent = componentOfItem(field, nested, componentOf);
+        return nestedComponent && isRecord(nested) ? wholeItem(nestedComponent, nested) : nested;
+      };
+      output[field.id] =
+        field.type === 'component' && !field.settings.repeatable
+          ? one(value)
+          : Array.isArray(value)
+            ? value.map(one)
+            : value;
+    }
+    return output;
+  };
+
   return {
     access,
     componentOf,
@@ -314,6 +348,7 @@ export const callerViewOf = (
     holdsHidden,
     storedKey: (scope, component, item) =>
       component && isRecord(item) ? itemKey(shownItem(scope, component, item)) : null,
+    wholeKey: (component, item) => (component && isRecord(item) ? itemKey(wholeItem(component, item)) : null),
     sentKey: (scope, component, item) =>
       component && isRecord(item) ? itemKey(sentItem(scope, component, item)) : null,
     shownValue,

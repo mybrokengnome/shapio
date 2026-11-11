@@ -99,7 +99,7 @@ describe('OpenAPI for component items', () => {
 
   it('accepts an optional id on component input schemas, which allow no other unknown key', () => {
     expect(schemas.LinkInput?.properties?.id).toMatchObject({
-      anyOf: [{ type: 'string', pattern: '^[0-9A-Za-z]{12}$' }, { type: 'null' }],
+      anyOf: [{ type: 'string', minLength: 1, maxLength: 64 }, { type: 'null' }],
     });
     expect(schemas.LinkInput?.required).toBeUndefined();
     expect(schemas.LinkInput?.additionalProperties).toBe(false);

@@ -43,6 +43,10 @@ const cacheIdentityOf = (executor: NonNullable<KeyExecutor>): object => {
  * waits on a read started on the pool, which could only run once a connection is free (with every
  * connection held by reads waiting for it, nothing would ever free one: the 0.3.0 class of pool deadlock).
  */
+/** Gives the instance its item ID key if it has none, outside any transaction (startup). */
+export const ensureItemIdKey = (executor: Parameters<typeof schemaVersionsRepository.ensureItemIdKey>[0]) =>
+  schemaVersionsRepository.ensureItemIdKey(executor);
+
 export const itemIdKeyOf = async (executor: NonNullable<KeyExecutor>): Promise<Buffer> => {
   const identity = cacheIdentityOf(executor);
   const known = keys.get(identity);

@@ -37,7 +37,7 @@ import { fieldsWithoutItemIds } from '../content/withoutItemIds.js';
 import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from '../content/write/heads.js';
 import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
 import { assertComponentListCaps, keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
-import { assertTargets, mediaIdsOf, relationIdsOf } from '../content/write/references.js';
+import { assertTargets, mediaIdsOf, relationsByPath } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
@@ -447,6 +447,8 @@ export const writeEntryUpdate = async (
     patch = patch(base);
     assertWritable(writeMask, model.definition.fields, Object.keys(patch));
   }
+  // The relation targets the body itself names, by position, before anything is carried over (`assertTargets`).
+  const sentRelations = relationsByPath(model, patch);
   // Every written component instance continues a stored one, or is new (plan item-ids): delivery writes carry
   // over what their caller cannot see along a pairing made with the body; any other write keeps the IDs only.
   patch = input.carry
@@ -464,13 +466,7 @@ export const writeEntryUpdate = async (
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }
-  await assertTargets(
-    trx,
-    outcome,
-    context.site.id,
-    mediaIdsOf(model, [before]),
-    relationIdsOf(model, [before]),
-  );
+  await assertTargets(trx, outcome, context.site.id, mediaIdsOf(model, [before]), sentRelations);
   const hook = {
     trx,
     site: context.site,

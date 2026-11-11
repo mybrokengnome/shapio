@@ -267,9 +267,10 @@ caller's audience, or deprecated, today: when the client's version showed the fi
 read gives is accepted and keeps the stored value. Any other value for it, or any value for such a field the
 client's version never showed, answers `403 FORBIDDEN_FIELD`.
 
-Only the delivery routes (`/api/content`) and [GraphQL](#graphql) take a schema version on writes. The admin content API
-(`/api/admin/content`) ignores the header and refuses the parameter (`400 INVALID_QUERY`, as any unknown query
-parameter): it always reads and writes today's shape.
+Only the delivery routes (`/api/content`) and [GraphQL](#graphql) take a schema version on writes. The admin
+content API (`/api/admin/content`) always reads and writes today's shape: it ignores the header, and a route that
+accepts only known query parameters refuses `?schemaVersion=` with `400 VALIDATION_ERROR`, as any unknown one;
+others ignore it.
 
 A write through a version starts from what the write itself starts from today, a locale's first draft included
 (its shared values come from the entry's other locales), whether or not the caller may read the entry. Fields a
@@ -288,31 +289,34 @@ it continues. Shapio finds that item the same way for every client, with or with
 
 - An item sent back with its `id` continues that stored item, in any order. This is the way to write lists
   through an older version: read the entry, change what you need, and send each item back with its `id`.
-- Items sent without `id` are matched by what the client sees of each item through its version, in one of
-  three ways ([Writes without item IDs](delivery-api.md#writes-without-item-ids)). A client that cannot see the
-  stored items writes a list as all-new items when it can write every field in it, and is refused when the list
-  holds anything it cannot. A list that can hold something hidden from the client (a field added since its
-  version, or one it cannot read or write) accepts only the list sent back unchanged, or a write that only
-  reorders, deletes, or adds items that differ from each other; any edit of an item, including any change inside
-  its nested lists, needs its `id`, and anything else is refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`).
-  Any other list is never refused: an item that cannot be matched with certainty is new, with a new `id`.
+- Items sent without `id` are matched by what the client sees of each item through its version, in one of three
+  ways ([Writes without item IDs](delivery-api.md#writes-without-item-ids)). A client that cannot see the stored
+  items, but can write every field in a list, changes nothing by sending it exactly as stored and writes all-new
+  items otherwise; it is refused when the list holds anything it cannot write. A list that can hold something
+  hidden from the client (a field added since its version, or one it cannot read or write) accepts only the list
+  sent back unchanged, or a write that only reorders, deletes, or adds items that differ from each other; any
+  edit of an item, including any change inside its nested lists, needs its `id`, and anything else is refused
+  with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`). Any other list is never refused: an item that cannot be
+  matched with certainty is new, with a new `id`.
 - A new item (sent without `id`, or with `"id": null`) that sends a value for a field the client cannot write is
   refused with `NOT_ALLOWED`: a new item has no stored value to send back.
 - The write response's `itemIds` gives the `id` of each item in the component fields the body sent, by the
   client's API IDs.
 
 Inside an item, a value the client sends back for a field it cannot write is compared with the stored item it
-continues, and that stored item is the one whose values are kept.
+continues, and that stored item is the one whose values are kept. A field that changed since the client's version
+(a dynamic zone that gained a component, for example) can be sent back exactly as read, with or without the
+`id`s read, and nothing changes.
 
 The stored items are those of the draft the write lands on. A caller that may not read drafts sees them only
 when the draft is the published version. While the entry has unpublished changes, such a caller sends back the
 `id`s it read from the published version (an unchanged item has the same `id` in both) or got in `itemIds` from
 its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it holds anything the
-caller cannot write, and is otherwise written as all-new items. An item stored before 0.9.0
-and edited only in the draft since answers `UNKNOWN_ITEM_ID` to an `id` read from the published version, until a
-write stores its `id`. A field inside a component that the caller cannot write cannot be sent back: it is refused
-(`NOT_ALLOWED`, "while the entry has unpublished changes"), whatever it holds, and left out it keeps its stored
-value.
+caller cannot write; otherwise it changes nothing when sent exactly as stored, and is written as all-new items
+when it differs. An item stored before 0.9.0 and edited only in the draft since answers `UNKNOWN_ITEM_ID` to an
+`id` read from the published version, until a write stores its `id`. A field inside a component that the caller
+cannot write cannot be sent back: it is refused (`NOT_ALLOWED`, "while the entry has unpublished changes"),
+whatever it holds, and left out it keeps its stored value.
 
 ## GraphQL
 

@@ -199,6 +199,12 @@ const pairDistinct = (sent: ListSide, stored: ListSide): number[] | null => {
   return added && deleted ? null : pairs;
 };
 
+/** Both sides hold the same keys in the same order (none of them null). */
+const sameKeys = (sent: ListSide, stored: ListSide) =>
+  sent.keys.length > 0 &&
+  sent.keys.length === stored.keys.length &&
+  sent.keys.every((key, index) => key !== null && key === stored.keys[index]);
+
 /**
  * Items paired only where that is certain (lists that hold nothing the caller cannot see, admin writes): the whole
  * list when it is sent exactly as stored, else each item whose key appears exactly once on each side; every other
@@ -231,8 +237,9 @@ const pairCertain = (sent: ListSide, stored: ListSide): number[] => {
 
 /**
  * The one pairing of a written list (plan item-ids): by item ID when the client sends any. Without IDs:
- * - where the caller cannot see the stored items, nothing is compared: a list that can hold a value it cannot
- *   write is refused (`unseenItemsPolicy`), any other is written as new items;
+ * - where the caller cannot see the stored items, a list that can hold a value it cannot write is refused without
+ *   any comparison (`unseenItemsPolicy`); any other (it writes every field of every item) continues item by item
+ *   when sent exactly as stored, whole items compared, and is new items otherwise;
  * - a list that can hold a value outside the caller's view continues only on certainty (`pairDistinct`), else
  *   it is refused;
  * - any other list (and every admin write) keeps an item's ID only where that is certain (`pairCertain`).
@@ -247,7 +254,15 @@ export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[
   }
   if (policy.unseen) {
     const unseen = unseenItemsPolicy(policy, sides.sentIds.length);
-    return { pairs: none, issues: unseen };
+    if (unseen.length > 0) {
+      return { pairs: none, issues: unseen };
+    }
+    // Nothing compared but the whole items (keys given only for a list the caller can write in full): the same
+    // list sent back continues item by item, a no-op as before item IDs; anything else is new items.
+    return {
+      pairs: sameKeys(sides.sent, sides.stored) ? sides.sentIds.map((_, index) => index) : none,
+      issues: [],
+    };
   }
   if (!policy.hidden || policy.neverRefuses) {
     return { pairs: pairCertain(sides.sent, sides.stored), issues: [] };

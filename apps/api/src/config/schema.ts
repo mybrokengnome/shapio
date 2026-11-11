@@ -30,6 +30,12 @@ export const configSchema = Type.Object({
   RATE_LIMIT_WINDOW_MS: Type.Integer({ minimum: 1000 }),
   /** Requests per window and IP for public media files (`/api/media/f/*` without a signature). */
   MEDIA_RATE_LIMIT_MAX: Type.Integer({ minimum: 1 }),
+  /**
+   * Largest JSON request body, in bytes (413 beyond it). Raise it for very large entries: every component item
+   * a client reads carries its `id`, so an entry saved back as read is a little larger than it was written.
+   * Media uploads and `schema apply` have limits of their own.
+   */
+  REQUEST_BODY_MAX_BYTES: Type.Integer({ minimum: 1024, maximum: 1024 * 1024 * 1024 }),
 
   /** HTTPS from certificate files. Both or neither. */
   TLS_CERT_FILE: Type.Optional(Type.String({ minLength: 1 })),
@@ -229,6 +235,7 @@ export const CONFIG_DEFAULTS = {
   RATE_LIMIT_MAX: 600,
   RATE_LIMIT_WINDOW_MS: 60_000,
   MEDIA_RATE_LIMIT_MAX: 6000,
+  REQUEST_BODY_MAX_BYTES: 1024 * 1024,
   TLS_RELOAD_INTERVAL_MS: 60_000,
   DATABASE_POOL_MAX: 10,
   DATABASE_POOL_ACQUIRE_TIMEOUT_MS: DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,

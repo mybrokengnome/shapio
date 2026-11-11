@@ -565,8 +565,10 @@ These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per 
 `UNKNOWN_ITEM_ID` answers an `id` that is not one of the stored items of that list (for a single component, not
 its stored instance): an item from another list or another parent item, one that someone else's write deleted,
 or a stored `id` that somehow belongs to two items. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with
-a known `id` and a different `__component`. An `id` that is not a string of 12 letters and digits (or `null`) is
-an invalid body. The path is a JSON pointer in your API IDs, such as `/links/2/id`.
+a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write does
+not check that shape: an `id` that is not a string, is empty, or is longer than 64 characters is refused with an
+`INVALID_TYPE` issue at `…/id`, with the body's other problems, and any other string the list does not hold is
+`UNKNOWN_ITEM_ID`, with the item refusals ([Order of refusals](#order-of-refusals)). The path is a JSON pointer in your API IDs, such as `/links/2/id`.
 
 The write response names the `id` of each item it wrote, in `data.itemIds`, so a caller that cannot read the
 entry back (an app user while the entry has unpublished changes, for example) can send them on its next write.
@@ -606,7 +608,8 @@ item you read.**
 **1. The caller cannot see the stored items:** it may not read the entry, it cannot read a field at or above the
 list, or it writes a draft it cannot read (app users and anonymous callers never read drafts, so this is every
 entry with unpublished changes or never published). A list whose every sub-field the caller can write is
-accepted, and every item is new. A list that holds anything the caller cannot write is refused when it has
+accepted: sent exactly as stored, it changes nothing and its items keep their `id`s, as before 0.9.0; otherwise
+every item is new. A list that holds anything the caller cannot write is refused when it has
 items: `422 CONTENT_INVALID` with `AMBIGUOUS_ITEMS` on the list's path. Nothing about the answer depends on what
 is stored.
 
@@ -678,6 +681,9 @@ refused only when the components hold deprecated fields; admin API writes (`/api
 
 #### What a write keeps that the read hid
 
+- What counts as shown is what a read on the same route gives the same caller, admin tokens included. So on the
+  delivery API, a relation target or media that the delivery read does not show cannot be removed by a delivery
+  write; remove it through the admin API.
 - A relation or media value sent back as read keeps what the read left out: a relation read as `null` because
   its target is unpublished or not readable stays, and so does media the caller could not see. This holds at
   the top level and inside components, with and without `id`s (for items that continue), and through a schema
@@ -686,26 +692,34 @@ refused only when the components hold deprecated fields; admin API writes (`/api
   stays right after the nearest target before it that the read showed and the client sent again, or at the start
   when there is none; hidden targets keep their order. For example, with `b` hidden, `[a, b, c]` read as
   `[a, c]` and sent as `[c, a]` is stored as `[c, a, b]`.
-- An update never refuses a relation target that is already stored with `RELATION_TARGET_MISSING`.
+- Relation targets a write names are checked as before 0.9.0: an unpublished entry of the right type is
+  accepted; a deleted entry, an entry of the wrong type, or an ID with no entry is refused with
+  `422 CONTENT_INVALID` (`RELATION_TARGET_MISSING`). Targets the server keeps for you (hidden ones behind what you
+  read, or fields you did not send) are not checked again.
+- Through a schema version, a field that changed since the client's version (a dynamic zone that gained a
+  component, for example) can be sent back exactly as read, with or without the `id`s read, and nothing changes.
 
 #### Order of refusals
 
-With and without a schema version, a delivery write answers, in this order:
+A delivery write, with and without a schema version, answers in this order:
 
-1. `404`: the entry does not exist, or is not the caller's.
-2. `422 CONTENT_INVALID` for the body: an unknown field or component, an item `id` of the wrong shape, a list
-   longer than its cap.
-3. `403 FORBIDDEN_FIELD`: a field the caller may not write.
-4. `409`: a stale `expectedVersion`. Items are matched only after this check, so a stale write costs no matching.
-5. `422 CONTENT_INVALID` for the items: the item ID issues and `AMBIGUOUS_ITEMS`.
-6. `422 CONTENT_INVALID` for the values: `INVALID_TYPE` and the like.
+1. Rate limiting (`429`), authentication (`401`), the CSRF check, and the workspace.
+2. `422 BODY_TOO_DEEP`: a request body nested deeper than 64 levels (`details.limit`), on every route, before
+   any validation. Rich text counts too: a document nested deeper than about 30 node levels is refused, and
+   sooner inside components. In GraphQL, argument values deeper than 64 levels answer `BODY_TOO_DEEP`, and a
+   document nested more than 128 levels answers `400 QUERY_TOO_DEEP`.
+3. `403` for a content type the caller may not write, and `404`: the entry does not exist, or is not the
+   caller's.
+4. `422 CONTENT_INVALID` for the body: an unknown field or component, an item `id` that is not a non-empty
+   string of at most 64 characters (`INVALID_TYPE` at `…/id`), a list longer than its cap.
+5. `403 FORBIDDEN_FIELD`: a field the caller may not write.
+6. `409`: a stale `expectedVersion`. Items are matched only after this check, so a stale write costs no matching.
+7. `422 CONTENT_INVALID` for the items: `UNKNOWN_ITEM_ID`, the other item ID issues, and `AMBIGUOUS_ITEMS`.
+8. `422 CONTENT_INVALID` for the values: `INVALID_TYPE` and the like, as before 0.9.0.
 
 The status and code are the same with and without a version, except `422 LENS_WRITE_UNSUPPORTED` for fields that
 changed since the client's version. A refusal lists at most 100 issues; when there were more, `details.issueCount`
 says how many and `details.truncated` is `true`.
-Before any of these, on every route (REST bodies and GraphQL variables alike), a request body nested deeper than
-64 levels is refused with `422 BODY_TOO_DEEP`, and `details.limit` gives the limit. Rich text counts too: a
-document nested deeper than about 29 node levels is refused.
 
 #### Limits and single components
 
@@ -723,3 +737,7 @@ with `422 CONTENT_INVALID` and an `UNKNOWN_FIELD` issue; sent through a schema v
 A single (not repeatable) component always continues the stored instance. The fields the caller cannot read are
 kept, for every caller: one that may update the entry but not read it keeps the private and deprecated fields it
 leaves out.
+
+A caller that may update an entry but not read it can tell from the version in the response whether what it sent
+equals what is stored (an unchanged version means it did), as before 0.9.0; this now also holds for single
+components.

@@ -76,7 +76,10 @@ All notable changes to Shapio are listed here. The format follows
   never moves to another item. A write that cannot be matched with certainty is refused, never guessed
   ([Delivery API](documentation/delivery-api.md#writing-components)).
 - A content export and import after a field type change works again.
-- An update no longer fails with `RELATION_TARGET_MISSING` for a relation target that is already stored.
+- Relation targets a write names are checked as before 0.9.0 (an unpublished entry of the right type is accepted;
+  a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`), and targets
+  the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again,
+  so keeping them never fails a write.
 - Swapping two identical-looking items by their `id`s is now saved as a change, and their hidden values move
   with them.
 - A number field changed to decimal or big integer no longer fails on very large or very small stored numbers
@@ -122,27 +125,39 @@ What changes for a client that names no schema version and sends no item `id`s
 - Private and deprecated values inside components are kept when a client writes the component back; 0.8.2 wiped
   them. A caller that may update but not read keeps the private and deprecated fields it leaves out.
 - **Security:** a private field sent inside a component by a delivery caller, even as `null`, is refused with
-  `403 FORBIDDEN_FIELD` (on create and update, with and without a schema version); `details.fields` lists JSON
-  pointers such as `/cards/0/note`. A deprecated one is refused with `422 CONTENT_INVALID` (`UNKNOWN_FIELD`), or
-  with `403 FORBIDDEN_FIELD` through a schema version that still had it. Before, a private value sent this way
+  `403 FORBIDDEN_FIELD` (on create and update); `details.fields` lists JSON pointers such as `/cards/0/note`.
+  Through a schema version that showed the field, sending back the `null` a read gives is accepted and keeps the
+  stored value; any other value, or a field that version never showed, is `403`. The same holds for a deprecated
+  field through a version that still had it; without a version, a deprecated one is refused with
+  `422 CONTENT_INVALID` (`UNKNOWN_FIELD`). Before, a private value sent this way
   was stored. Over GraphQL, such a caller's input types never named these fields.
 - Relation targets and media a read left out are kept when the value is sent back as read, at the top level and
   inside components. In a many-relation, the targets the caller sees follow what was sent, and each hidden
   target stays right after the nearest visible target before it that was sent again (or at the start). 0.8.2
   dropped them.
-- So a re-save without `id`s that changes nothing the caller can see no longer fires `entry.updated`: nothing
-  changes anymore.
-- Refusals come in one order, with and without a schema version: `404` (the entry does not exist or is not the
-  caller's), the body (`422`: an unknown field or component, an item `id` of the wrong shape, list caps), a
-  forbidden field (`403`), a stale version (`409`), the items (`422`), then the values (`422`). Items are
-  matched only after the version check, within one limit per request.
+- A re-save without `id`s of exactly what the caller read changes nothing (no revision, no `entry.updated`, `id`s
+  kept) when the caller can see the stored items, or when it cannot but can write the whole list and sends it
+  exactly as stored (as before 0.9.0). Where 0.8.2 wiped hidden values on such a re-save, it now changes nothing.
+  A caller whose draft is ahead of what it can read is refused on a list with fields it cannot write; it sends
+  the `itemIds` from the last write response. Anything else that differs is written.
+- Refusals come in one order, with and without a schema version: after authentication and the body depth
+  check, `403` for the content type and `404` (the entry does not exist or is not the caller's), then the body
+  (`422`: an unknown field or component, an item `id` that is not a non-empty string of at most 64 characters,
+  as `INVALID_TYPE` at `…/id`, list caps), a forbidden field (`403`), a stale version (`409`), the items
+  (`422`: `UNKNOWN_ITEM_ID` for any other `id` the list does not hold, and `AMBIGUOUS_ITEMS`), then the values
+  (`422`, as before). Items are matched only after the version check.
 - A refusal lists at most 100 issues; `details.issueCount` and `details.truncated: true` say when it was cut.
 - Lists are capped on every write, admin API included: the field's `max`, or 50,000 items when it sets none,
   else `422 CONTENT_INVALID` (`TOO_MANY`).
-- A request body nested deeper than 64 levels is refused with `422 BODY_TOO_DEEP` (`details.limit`), on every
-  route and before any validation, instead of failing. So rich text nested deeper than about 29 node levels is
-  now refused on every database; before, PostgreSQL and SQLite accepted up to 40 node levels and MySQL failed.
-  Import bundles are streamed and not covered by this limit.
+- A request body nested deeper than 64 levels, or GraphQL argument values deeper than 64 levels, are refused with
+  `422 BODY_TOO_DEEP` (`details.limit`), on every route and before any validation; a GraphQL document nested more
+  than 128 levels answers `400 QUERY_TOO_DEEP`. This changes rich text: before 0.9.0 every database accepted rich
+  text up to 40 node levels; now rich text deeper than about 30 node levels (sooner inside components) is
+  refused. Import bundles are streamed and not covered by this limit, and the importers' HTML converter flattens
+  nesting past 24 levels.
+- New setting `REQUEST_BODY_MAX_BYTES` (default 1,048,576; at least 1 KiB, at most 1 GiB), checked at startup:
+  the largest JSON request body. Item IDs add about 20 bytes to every component item, so an entry that was just
+  under the 1 MiB limit can now answer `413`; raise the setting if you have such entries.
 - A client that writes items back as it read them now sends their `id`s, and is matched by them. Such a write is
   refused when it repeats an item object in one list (`DUPLICATE_ITEM_ID`), copies one from another list,
   another parent item, or another entry, or sends an item someone else deleted (`UNKNOWN_ITEM_ID`), or changes a
@@ -158,6 +173,9 @@ gets a shape it was not built for.
 
 ### Known limits
 
+- A caller that may update an entry but not read it can tell from the version in the response whether what it
+  sent equals what is stored (an unchanged version means it did), as before 0.9.0; this now also holds for
+  single components.
 - A client reading through an older schema version gets today's value converted straight to its version's type,
   not stepped through each version in between, so after a chain of type changes one value can read with another
   spelling, or empty ([Schema lenses](documentation/schema-lenses.md#limits)):

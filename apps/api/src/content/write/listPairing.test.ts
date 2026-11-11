@@ -63,8 +63,9 @@ describe('pairList without item IDs, for a list that can hold hidden values (the
     expect(unseenItemsPolicy({ hidden: true, unseen: true }, 0)).toEqual([]);
     expect(unseenItemsPolicy({ hidden: false, unseen: true }, 3)).toEqual([]);
     expect(pair('ab', 'ab', { hidden: true, unseen: true }).issues).toEqual(AMBIGUOUS);
-    // Nothing the caller cannot write: nothing is compared, every item is new.
-    expect(pair('ab', 'ab', { hidden: false, unseen: true })).toEqual({ pairs: [-1, -1], issues: [] });
+    // Nothing the caller cannot write: whole items compared, the same list continues, anything else is new.
+    expect(pair('ab', 'ab', { hidden: false, unseen: true })).toEqual({ pairs: [0, 1], issues: [] });
+    expect(pair('ab', 'ba', { hidden: false, unseen: true })).toEqual({ pairs: [-1, -1], issues: [] });
   });
 
   it('decides 50,000 items by hashing and set lookups', () => {

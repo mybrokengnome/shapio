@@ -243,7 +243,8 @@ export const keepBehindRead = (
   if (!many) {
     return shown === undefined && isMissingValue(sent) ? stored : sent;
   }
-  const storedIds = stored as unknown[];
+  // A many-relation stored as one ID (hand-edited data) is read as a list of one.
+  const storedIds: unknown[] = Array.isArray(stored) ? stored : [stored];
   const shownIds = new Set(Array.isArray(shown) ? shown : []);
   if (storedIds.every((id) => shownIds.has(id))) {
     return sent;

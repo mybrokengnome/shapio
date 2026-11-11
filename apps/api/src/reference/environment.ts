@@ -81,7 +81,13 @@ export const GROUPS: ReadonlyArray<{ title: string; keys: readonly string[] }> =
   },
   {
     title: 'HTTP and limits',
-    keys: ['CORS_ORIGINS', 'RATE_LIMIT_MAX', 'RATE_LIMIT_WINDOW_MS', 'MEDIA_RATE_LIMIT_MAX'],
+    keys: [
+      'CORS_ORIGINS',
+      'RATE_LIMIT_MAX',
+      'RATE_LIMIT_WINDOW_MS',
+      'MEDIA_RATE_LIMIT_MAX',
+      'REQUEST_BODY_MAX_BYTES',
+    ],
   },
   {
     title: 'HTTPS without a reverse proxy',

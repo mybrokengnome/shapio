@@ -729,7 +729,9 @@ export const outcomeOf = (response: Response) => {
       accepted: false,
       status: response.status,
       code: typeof extensions.code === 'string' ? extensions.code : 'GRAPHQL_ERROR',
-      issues: listOf(extensions.issues)
+      issues: listOf(
+        extensions.issues ?? (isRecord(extensions.details) ? extensions.details.issues : undefined),
+      )
         .map((issue) => `${String(issue.code)} ${String(issue.path)}`)
         .sort(),
     };
@@ -1201,7 +1203,7 @@ export const roundTripProblems = async (
     return [];
   }
   // What it read, but top-level fields its write grant does not name (the limited caller's title).
-  const unwritable = caller.name === 'limited' ? ['title', 'secretCard'] : [];
+  const unwritable = caller.name === 'limited' ? ['title', 'secretCard', 'ref', 'refs', 'secretRef'] : [];
   const body = asSent(
     Object.fromEntries(
       Object.entries(read).filter(
