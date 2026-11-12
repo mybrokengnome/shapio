@@ -45,7 +45,7 @@ const prng = (seed: number) => {
 type Manifest = {
   adminToken: string;
   users: Record<'reader' | 'updateOnly' | 'owner', string>;
-  entries: Array<{ id: string; model: 'doc' | 'ndoc'; ahead?: string }>;
+  entries: Array<{ id: string; model: 'doc' | 'ndoc' | 'ldoc'; ahead?: string; owned?: boolean }>;
   things: { published: string; unpublished: string };
   /** Field ID → API ID, so stored data compares by field name (diff.mjs keeps comparing untouched fields). */
   fieldKeys: Record<string, string>;
@@ -162,7 +162,35 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     return id;
   };
   const things = { published: await thingOf('p', true), unpublished: await thingOf('d', false) };
-  const models: ModelBody[] = [doc, ndoc];
+  // Review 10: a localized model whose localized list's component has a private sub-field, beside a shared list.
+  expectStatus(await admin.post('/api/admin/locales', { code: 'de', label: 'German' }), 201);
+  const litem = await component('litem', [
+    { apiKey: 'label', label: 'Label', type: 'string' },
+    { apiKey: 'secret', label: 'Secret', type: 'string', public: false },
+  ]);
+  const ldoc = await createDefinition(admin, {
+    kind: 'collection',
+    apiKey: 'ldoc',
+    label: 'Ldoc',
+    localized: true,
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+      {
+        apiKey: 'litems',
+        label: 'Litems',
+        type: 'component',
+        localized: true,
+        settings: { component: litem.definition.id, repeatable: true },
+      },
+      {
+        apiKey: 'sitems',
+        label: 'Sitems',
+        type: 'component',
+        settings: { component: chip.definition.id, repeatable: true },
+      },
+    ],
+  });
+  const models: ModelBody[] = [doc, ndoc, ldoc];
   const grants = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
     models.flatMap((model) => actions.map((action) => ({ action, modelId: model.definition.id, ...extra })));
   const user = async (name: string, list: GrantSpec[]) => {
@@ -247,7 +275,7 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
         .where('id', '=', id)
         .execute();
     }
-    entries.push({ id, model });
+    entries.push({ id, model, owned: index % 5 === 0 });
   }
   // Review 9: entries whose draft is ahead of the published head in one place (a list item, a nested list, a
   // single component, a zone), equal to it, never published, and in a second locale. Saved by main: legacy.
@@ -315,8 +343,51 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     }
     entries.push({ id, model: 'doc', ahead });
   }
+  // Review 10: ldoc entries in en and de, one fully published, one with de ahead of its published head.
+  for (const ahead of ['published', 'deAhead']) {
+    const id = expectStatus(
+      await admin.post('/api/admin/content/ldoc?locale=en', {
+        locale: 'en',
+        data: {
+          title: 'en',
+          litems: [
+            { label: 'e1', secret: 's1' },
+            { label: 'e2', secret: 's2' },
+          ],
+          sitems: [{ zv: 's' }],
+        },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(
+      await admin.put(`/api/admin/content/ldoc/${id}?locale=de`, {
+        locale: 'de',
+        expectedVersion: null,
+        data: { title: 'de', litems: [{ label: 'd1', secret: 'ds1' }] },
+      }),
+      200,
+    );
+    expectStatus(await admin.post(`/api/admin/content/ldoc/${id}/publish`, { locales: ['en', 'de'] }), 200);
+    if (ahead === 'deAhead') {
+      const view = (await admin.get(`/api/admin/content/ldoc/${id}?locale=de`)).json<{ version: number }>();
+      expectStatus(
+        await admin.put(`/api/admin/content/ldoc/${id}?locale=de`, {
+          locale: 'de',
+          expectedVersion: view.version,
+          data: {
+            litems: [
+              { label: 'd1', secret: 'ds1' },
+              { label: 'd2', secret: 'ds2' },
+            ],
+          },
+        }),
+        200,
+      );
+    }
+    entries.push({ id, model: 'ldoc', ahead });
+  }
   const fieldKeys = Object.fromEntries(
-    [chip, card, box, doc, ndoc].flatMap((model) =>
+    [chip, card, box, doc, ndoc, litem, ldoc].flatMap((model) =>
       model.definition.fields.map((field) => [field.id, field.apiKey]),
     ),
   );
@@ -476,7 +547,146 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
   };
   const steps: Json[] = [];
   const random = prng(SEED * 7919);
-  const ahead = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.ahead);
+  const ahead = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.ahead && entry.model !== 'ldoc');
+  const ldocs = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.model === 'ldoc');
+  /**
+   * What the docs' conditions need, worked out from the stored data and the caller (never from the response):
+   * whether the caller sees the draft it writes (it may read the entry, and the draft is not ahead of the
+   * published head it reads), the fields whose items can hold values hidden from it, and the stored values hidden
+   * from it (private sub-fields; relation targets it cannot read). An admin-kind caller sees everything.
+   */
+  const preOf = async (
+    caller: (typeof callers)[number],
+    target: (typeof entries)[number],
+    locale: string,
+    body: unknown,
+  ) => {
+    // Top-level fields where the body sends a list item (at any depth) without an `id`.
+    const missing = (entry: unknown): boolean =>
+      Array.isArray(entry)
+        ? entry.some((item) => (isRecord(item) && !('id' in item)) || missing(item))
+        : isRecord(entry) && Object.values(entry).some(missing);
+    const withoutIds = isRecord(body)
+      ? Object.entries(body)
+          .filter(([, value]) => missing(value))
+          .map(([key]) => key)
+      : [];
+    const notTheirs = caller === 'owner' && target.owned !== true;
+    if (caller === 'admin' || caller === 'adminToken') {
+      return {
+        seesDraft: true,
+        notTheirs,
+        withoutIds,
+        hiddenFields: [],
+        hiddenLeaves: [],
+        hiddenTargets: [],
+      };
+    }
+    const reads = caller === 'reader' || caller === 'anon' || (caller === 'owner' && target.owned === true);
+    const heads = await db
+      .selectFrom('entry_heads')
+      .select(['locale', 'state', 'data'])
+      .where('entry_id', '=', target.id)
+      .execute();
+    const dataOf = (at: string, state: string, only?: Set<string>) => {
+      const head = heads.find((row) => row.locale === at && row.state === state);
+      if (!head) {
+        return null;
+      }
+      const data = byApiId(
+        typeof head.data === 'string' ? JSON.parse(head.data) : head.data,
+        manifest.fieldKeys,
+      );
+      return JSON.stringify(
+        normal(
+          isRecord(data) && only
+            ? Object.fromEntries(Object.entries(data).filter(([key]) => only.has(key)))
+            : data,
+          created,
+        ),
+      );
+    };
+    // The draft it writes is ahead when that locale's draft differs from its published head, or (for a locale
+    // with no head yet) when a shared field's draft differs from its published value in another locale.
+    const shared = new Set(['cards', 'hero', 'zone', 'ref', 'sitems']);
+    const own = dataOf(locale, 'draft');
+    const ahead =
+      own !== null
+        ? own !== dataOf(locale, 'published')
+        : heads.some(
+            (row) =>
+              row.state === 'draft' &&
+              dataOf(row.locale, 'draft', shared) !== dataOf(row.locale, 'published', shared),
+          );
+    return {
+      seesDraft: reads && !ahead,
+      notTheirs,
+      withoutIds,
+      hiddenFields: ['cards', 'zone', 'litems'],
+      hiddenLeaves: ['note', 'secret'],
+      // Callers without a read grant on things (update-only, anonymous) cannot read any relation target.
+      hiddenTargets:
+        caller === 'updateOnly' || caller === 'anon'
+          ? [manifest.things.published, manifest.things.unpublished]
+          : [manifest.things.unpublished],
+    };
+  };
+  /**
+   * Review 10: copies between locales. Read `en` and `de`; write `de` with its own items plus `en`'s, or `en` with
+   * `de`'s (on the branch with the reads' `id`s, on main with none).
+   */
+  const locCopyStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const { entry: target, index } = random.pick(ldocs);
+    const variant = random.pick(['toDe', 'toEn'] as const);
+    const readLocale = async (locale: string) => {
+      const response =
+        caller === 'admin'
+          ? await request('GET', `/api/admin/content/ldoc/${target.id}?locale=${locale}`, token)
+          : await request('GET', `/api/content/ldocs/${target.id}?locale=${locale}`, token);
+      return isRecord(response.body) && isRecord(response.body.data) ? response.body.data : {};
+    };
+    const en = await readLocale('en');
+    const de = await readLocale('de');
+    const items = (data: Json) => (Array.isArray(data.litems) ? (data.litems as Json[]) : []);
+    const whole = (data: Json) =>
+      Object.fromEntries(Object.entries(data).filter(([key]) => ['title', 'litems', 'sitems'].includes(key)));
+    const locale = variant === 'toDe' ? 'de' : 'en';
+    const body =
+      variant === 'toDe'
+        ? { ...whole(de), litems: [...items(de), ...items(en)] }
+        : { ...whole(en), litems: items(de) };
+    const adminView = await request(
+      'GET',
+      `/api/admin/content/ldoc/${target.id}?locale=${locale}`,
+      manifest.adminToken,
+    );
+    const version =
+      isRecord(adminView.body) && typeof adminView.body.version === 'number' ? adminView.body.version : null;
+    const pre = await preOf(caller, target, locale, body);
+    const response =
+      caller === 'admin'
+        ? await request('PUT', `/api/admin/content/ldoc/${target.id}?locale=${locale}`, token, {
+            locale,
+            expectedVersion: version,
+            data: body,
+          })
+        : await request('PUT', `/api/content/ldocs/${target.id}?locale=${locale}`, token, {
+            locale,
+            expectedVersion: version,
+            data: body,
+          });
+    return {
+      label: `${step} ${caller} loccopy e${index} ldoc ${locale} ${target.ahead ?? '-'} ${variant}`,
+      pre,
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, 'ldoc'),
+    };
+  };
   /**
    * Review 9: how old clients really save. Read (the caller's default view, or the draft view where it may read
    * drafts), change nothing or one scalar or one item field, and PUT the whole read back otherwise unmodified:
@@ -549,6 +759,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     );
     const version =
       isRecord(adminView.body) && typeof adminView.body.version === 'number' ? adminView.body.version : null;
+    const pre = await preOf(caller, target, locale, body);
     const response =
       caller === 'admin'
         ? await request('PUT', `/api/admin/content/${target.model}/${target.id}?locale=${locale}`, token, {
@@ -564,6 +775,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     return {
       label,
       readStatus: read.status,
+      pre,
       sent: normal(body, created),
       ...outcomeOf(response),
       entry: await observeEntry(target.id, target.model),
@@ -576,7 +788,11 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     const target = entries[entryIndex] as (typeof entries)[number];
     const plural = `${target.model}s`;
     const locale = random.chance(0.2) ? 'fr' : 'en';
-    const op = random.pick(['read', 'write', 'write', 'write', 'create', 'echo', 'echo'] as const);
+    const op = random.pick(['read', 'write', 'write', 'write', 'create', 'echo', 'echo', 'loccopy'] as const);
+    if (op === 'loccopy') {
+      steps.push(await locCopyStep(step, caller, token));
+      continue;
+    }
     if (op === 'echo') {
       steps.push(await echoStep(step, caller, token, locale));
       continue;
@@ -663,6 +879,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       manifest.adminToken,
     );
     const version = isRecord(view.body) && typeof view.body.version === 'number' ? view.body.version : null;
+    const pre = op === 'create' ? null : await preOf(caller, target, locale, body);
     const response =
       op === 'create'
         ? caller === 'admin'
@@ -714,6 +931,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     steps.push({
       label: `${label} ${edit}`,
       ...(op === 'create' && observedId !== target.id ? { createdEntry: entries.length - 1 } : {}),
+      pre,
       sent: body,
       ...outcomeOf(response),
       entry: await observeEntry(observedId, observedModel),

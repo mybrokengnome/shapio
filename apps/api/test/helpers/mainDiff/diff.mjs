@@ -29,8 +29,13 @@ const differences = (a, b, path = '') => {
 
 /**
  * Whether an allowlist entry covers a difference: its step label, path and values match, and its `when` holds for
- * the whole step (`branchIssues`: the branch's issues match; `keepsOnly`: every stored-data difference of the step is
- * a value the branch kept that main lost, so the branch wrote less than main).
+ * the step. The `when` conditions come from what the workload worked out before the write, from the stored data
+ * and the caller (`pre`), never from the response:
+ * - `unseenHidden`: the caller cannot see the draft it writes (the draft is ahead of what it may read, or it
+ *   cannot read the entry), and every AMBIGUOUS_ITEMS issue of the branch is on a field whose items can hold
+ *   values hidden from it;
+ * - `hiddenKept`: the branch accepted the write, and every stored-data difference of the step is a value hidden
+ *   from the caller (a private sub-field, or a relation target it cannot read) that the branch kept and main lost.
  */
 const matches = (entry, label, difference, step) =>
   new RegExp(entry.step ?? '.*').test(label) &&
@@ -39,17 +44,65 @@ const matches = (entry, label, difference, step) =>
   (entry.branch === undefined || new RegExp(entry.branch).test(JSON.stringify(difference.branch))) &&
   (entry.when?.branchIssues === undefined ||
     new RegExp(entry.when.branchIssues).test(JSON.stringify(step.branchIssues))) &&
-  (entry.when?.keepsOnly !== true || step.keepsOnly);
+  (entry.when?.unseenHidden !== true || step.unseenHidden) &&
+  (entry.when?.noIdItems !== true || step.noIdItems) &&
+  (entry.when?.refusalOrder !== true || step.refusalOrder) &&
+  (entry.when?.hiddenKept !== true || step.hiddenKept);
 
-/** A stored-data difference where the branch holds what main lost (main has nothing there, or fewer targets). */
-const isKeep = (difference) =>
-  difference.main === undefined ||
-  (Array.isArray(difference.main) &&
-    Array.isArray(difference.branch) &&
-    difference.main.every((item) =>
-      difference.branch.some((other) => JSON.stringify(other) === JSON.stringify(item)),
-    ) &&
-    difference.branch.length > difference.main.length);
+const RELATIONS = new Set(['rel', 'rels', 'ref']);
+/** The last named segment of a path (`/entry/heads/en|draft/data/cards/0/rels/1` → `rels`). */
+const leafOf = (path) =>
+  path
+    .split('/')
+    .filter((segment) => !/^\d+$/.test(segment))
+    .at(-1);
+
+/** A stored-data difference where the branch holds a value hidden from the caller that main lost. */
+const isHiddenKeep = (difference, pre) => {
+  if (!pre) return false;
+  const leaf = leafOf(difference.path);
+  if (pre.hiddenLeaves.includes(leaf)) {
+    return difference.main === undefined && difference.branch !== undefined;
+  }
+  if (!RELATIONS.has(leaf)) return false;
+  const hidden = (value) => pre.hiddenTargets.includes(value);
+  if (!Array.isArray(difference.branch)) {
+    return difference.main === undefined && hidden(difference.branch);
+  }
+  const main = Array.isArray(difference.main) ? difference.main : [];
+  const kept = difference.branch.filter((target) => !main.includes(target));
+  return main.every((target) => difference.branch.includes(target)) && kept.length > 0 && kept.every(hidden);
+};
+
+/** The step-level conditions of the allowlist, from the branch's `pre` and issues. */
+const conditionsOf = (main, b, dataDifferences) => {
+  const pre = b?.pre ?? null;
+  const ambiguous = (b?.issues ?? []).filter((issue) => issue.startsWith('AMBIGUOUS_ITEMS '));
+  return {
+    branchIssues: b?.issues ?? [],
+    unseenHidden:
+      pre !== null &&
+      !pre.seesDraft &&
+      ambiguous.length > 0 &&
+      ambiguous.every((issue) => pre.hiddenFields.includes(issue.split(' ')[1].split('/')[1])),
+    // upgrades.md:48-50: an app user's or anonymous caller's list sent without `id`s, on a field whose items can
+    // hold values hidden from it.
+    noIdItems:
+      pre !== null &&
+      ambiguous.length > 0 &&
+      ambiguous.every((issue) => {
+        const field = issue.split(' ')[1].split('/')[1];
+        return pre.hiddenFields.includes(field) && pre.withoutIds.includes(field);
+      }),
+    // upgrades.md:72-73: existence and ownership come before the body, so an entry that is not the caller's is
+    // 404 (or 403) where main, which checked the body first, answered a body error.
+    refusalOrder: pre !== null && pre.notTheirs && main?.status === 422 && [403, 404].includes(b?.status),
+    hiddenKept:
+      (b?.status ?? 500) < 300 &&
+      dataDifferences.length > 0 &&
+      dataDifferences.every((difference) => isHiddenKeep(difference, pre)),
+  };
+};
 
 const unlisted = [];
 const listed = new Map();
@@ -60,13 +113,20 @@ const listed = new Map();
 // change of the counters. A create copies what its source read, so it inherits the source's touched fields.
 const touched = new Map(); // entry → Set of top-level field names
 const ABSOLUTE =
-  /^\/(entry\/(revisions|events|audit|status)|entry\/heads\/[^/]+\/version|body\/meta\/snapshot|body\/locales\/\d+\/(version|status|publishedAt|sharedOutdated)|body\/(data\/)?(version|status|updatedAt|publishedAt))(\/|$)/;
+  /^\/(entry\/(revisions|events|audit|status)|entry\/heads\/[^/]+\/version|body\/meta\/snapshot|body\/locales\/\d+\/(version|status|publishedAt)|body\/(data\/)?(version|status|updatedAt|publishedAt))(\/|$)/;
 const fieldOf = (path) =>
   /^\/entry\/heads\/[^/]+\/data\/([^/]+)/.exec(path)?.[1] ??
   /^\/(?:body\/data|body|sent)\/([^/]+)/.exec(path)?.[1];
 /** A head present on one side only: `/entry/heads/fr|draft`. */
 const headOf = (path) => /^\/entry\/heads\/([^/]+)$/.exec(path)?.[1];
-const isTouched = (fields, path) => {
+// Fields shared by every locale (not localized) in the seed's models.
+const SHARED = new Set(['cards', 'hero', 'zone', 'ref', 'sitems']);
+// Entries where a hidden value was kept on a shared field (allowed `hidden-values-kept`): main wiped it in every
+// locale's draft, so main reports those locales outdated against their published heads and the branch does not.
+// Only there is a `sharedOutdated` difference a consequence (upgrades.md:56-60, CHANGELOG.md:125).
+const keptShared = new Set();
+const isTouched = (fields, path, entry) => {
+  if (/sharedOutdated/.test(path)) return keptShared.has(entry);
   if (ABSOLUTE.test(path)) return true;
   const head = /^\/entry\/heads\/([^/]+)/.exec(path)?.[1];
   if (head !== undefined && fields.has(`head:${head}`)) return true;
@@ -79,6 +139,7 @@ const keyed = (step) =>
   step && {
     ...step,
     label: undefined,
+    pre: undefined,
     entry: step.entry && {
       ...step.entry,
       heads: Object.fromEntries(step.entry.heads.map((head) => [`${head.locale}|${head.state}`, head])),
@@ -146,7 +207,7 @@ for (let index = 0; index < count; index += 1) {
     found = localeGone
       ? []
       : [
-          ...found.filter((difference) => !isTouched(fields, difference.path)),
+          ...found.filter((difference) => !isTouched(fields, difference.path, entry)),
           ...(headSides.length === 0 && !writesTouched ? differences(deltaA, deltaB, '/entry/perStep') : []),
         ];
     consequences +=
@@ -159,10 +220,7 @@ for (let index = 0; index < count; index += 1) {
   const dataDifferences = found.filter((difference) =>
     /^\/entry\/heads\/[^/]+\/data\//.test(difference.path),
   );
-  const step = {
-    branchIssues: b?.issues ?? [],
-    keepsOnly: (b?.status ?? 500) < 300 && dataDifferences.length > 0 && dataDifferences.every(isKeep),
-  };
+  const step = conditionsOf(a, b, dataDifferences);
   for (const difference of found) {
     if (touched.size > 0 && difference.path === '/body/meta/snapshot') {
       consequences += 1;
@@ -171,6 +229,13 @@ for (let index = 0; index < count; index += 1) {
     const allowed = allow.find((candidate) => matches(candidate, label, difference, step));
     if (allowed) {
       listed.set(allowed.id, (listed.get(allowed.id) ?? 0) + 1);
+      if (
+        allowed.id === 'hidden-values-kept' &&
+        entry !== undefined &&
+        SHARED.has(fieldOf(difference.path))
+      ) {
+        keptShared.add(entry);
+      }
     } else {
       unlisted.push({ label, ...difference });
     }

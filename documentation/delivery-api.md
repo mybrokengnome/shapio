@@ -571,6 +571,11 @@ cannot read or write. Then the write is refused (`AMBIGUOUS_ITEMS`, "replaces it
 because replacing the draft's items would lose them; leave the field out to keep it, or send an empty list to
 clear it. A localized list written to a locale for the first time holds new items, whatever `id`s it carries.
 
+On the admin API, an `id` that any version of the entry shows (any locale, draft or published) is never unknown:
+if the draft you save lacks it, the item is saved as new. An `id` no version shows is `UNKNOWN_ITEM_ID`. On both
+APIs, an item copied with another version's `id` into a draft that already holds the same item, once and
+unambiguously, continues that item, so the same copy saved twice changes nothing.
+
 An `id` that no version you may read shows is `UNKNOWN_ITEM_ID`, and so is a stored `id` that somehow belongs to
 two items. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with
 a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write does

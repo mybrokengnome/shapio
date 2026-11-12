@@ -126,14 +126,14 @@ export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIs
  * An ID the draft does not hold at this position, but which another head of the entry the caller may read shows
  * here (any locale; the published head while the draft has unpublished changes, another locale it copied from):
  * the server gave it to this caller, so it is never an unknown ID. The item is new (a new ID, nothing carried
- * over), as the list replaced on main, where nothing it can hold is hidden from the caller, where nothing is
- * stored (a new item, a localized list of a new locale), or for a caller that may read drafts (it saw the
- * draft's items: what it sends replaces them, as on main). Otherwise replacing the draft's items would drop what
- * the caller never saw: refused, saying why. Decided from the IDs of heads the caller may read, the draft's IDs
- * (membership only), and the schema; never from a value the caller cannot read.
+ * over), exactly as the same item sent with `id: null`. Refused, saying why, only for a caller that cannot see the
+ * draft it writes (`unseen`: no draft access, and the draft is ahead of what it may read) in a list that can hold
+ * values hidden from it, where something is stored: replacing items it never saw would drop what it cannot see.
+ * Decided from the IDs of heads the caller may read, the draft's IDs (membership only), and the schema; never
+ * from a value the caller cannot read.
  */
 const shownElsewhere = (policy: ListPolicy, index: number | null): ListIssue | null =>
-  policy.hidden && !policy.fresh && !policy.neverRefuses && !policy.readsDrafts
+  policy.unseen && policy.hidden && !policy.fresh && !policy.neverRefuses && !policy.readsDrafts
     ? { index, code: 'AMBIGUOUS_ITEMS', draftAhead: true }
     : null;
 
@@ -163,6 +163,7 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
     }
   });
   const issues: ListIssue[] = [];
+  const foreign: number[] = [];
   const pairs = sides.sentIds.map((id, index) => {
     if (typeof id !== 'string') {
       return -1;
@@ -177,6 +178,7 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
       if (refused && !issues.some((issue) => issue.draftAhead)) {
         issues.push(refused);
       }
+      foreign.push(index);
       return -1;
     }
     if (at === undefined) {
@@ -189,7 +191,35 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
     }
     return at;
   });
-  return { pairs, issues };
+  return { pairs: issues.length > 0 ? pairs : withForeignContinued(sides, pairs, foreign), issues };
+};
+
+/**
+ * Items whose IDs only another head shows (`shownElsewhere`) are what the same items sent without IDs would be:
+ * where keys were made for the list (a caller that sees its items, in a list that holds nothing hidden from it, or
+ * an admin write), each continues the stored item no other sent item names when that is certain (`pairCertain`
+ * over those items: equal in everything the caller sees, once on each side), so copying back what a draft already
+ * holds changes nothing. The others stay new items.
+ */
+const withForeignContinued = (sides: ListSides, pairs: number[], foreign: readonly number[]): number[] => {
+  const keyed =
+    sides.sent.keys.length === sides.sentIds.length && sides.stored.keys.length === sides.storedIds.length;
+  if (foreign.length === 0 || !keyed) {
+    return pairs;
+  }
+  const claimed = new Set(pairs.filter((pair) => pair !== -1));
+  const free = sides.storedIds.flatMap((_, index) => (claimed.has(index) ? [] : [index]));
+  const continued = pairCertain(
+    { keys: foreign.map((index) => sides.sent.keys[index] ?? null), kinds: [] },
+    { keys: free.map((index) => sides.stored.keys[index] ?? null), kinds: [] },
+  );
+  const output = [...pairs];
+  continued.forEach((at, position) => {
+    if (at !== -1) {
+      output[foreign[position] as number] = free[at] as number;
+    }
+  });
+  return output;
 };
 
 /**

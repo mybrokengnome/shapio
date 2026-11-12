@@ -20,6 +20,7 @@ import {
   itemIdKeyOf,
   itemIdScopeOf,
   withItemIds,
+  type ItemIdScope,
 } from '../content/itemIds.js';
 import {
   changedFieldIds,
@@ -376,6 +377,38 @@ const isUnchangedSave = (
 const withoutIds = (model: ContentModel, data: Readonly<ContentData>): ContentData =>
   fieldsWithoutItemIds(model.definition.fields, data, componentLookupOf(model.components));
 
+/**
+ * Every head of the entry but the draft written, each with its items' IDs (derived in its own locale): an admin
+ * reads them all, so an item ID one of them shows where the written draft lacks it (an item copied from another
+ * locale, or from the published version) is a new item, never an unknown ID (`shownElsewhere` in
+ * content/write/listPairing.ts). Only made when the patch sends a component value.
+ */
+const otherHeadsWithIds = (
+  model: ContentModel,
+  heads: readonly HeadRecord[],
+  written: HeadRecord | undefined,
+  idScope: ItemIdScope,
+  patch: Readonly<ContentData>,
+): ContentData[] => {
+  const sendsItems = model.definition.fields.some(
+    (field) => (field.type === 'component' || field.type === 'dynamiczone') && field.id in patch,
+  );
+  if (!sendsItems) {
+    return [];
+  }
+  const componentOf = componentLookupOf(model.components);
+  return heads.flatMap((head) =>
+    head !== written && typeof head.data === 'object' && head.data !== null && !Array.isArray(head.data)
+      ? [
+          withItemIds(head.data, model.definition.fields, componentOf, {
+            ...idScope,
+            ...(idScope.locale === undefined ? {} : { locale: head.locale }),
+          }),
+        ]
+      : [],
+  );
+};
+
 /** What a draft update reads before it decides its patch (the locked heads and the draft it replaces). */
 export type DraftUpdateBase = {
   before: Readonly<ContentData>;
@@ -462,6 +495,7 @@ export const writeEntryUpdate = async (
     ? input.carry(patch, base)
     : keepUnreadableComponentFields(patch, beforeWithIds, model.definition.fields, componentOf, () => true, {
         carryNothing: true,
+        shown: otherHeadsWithIds(model, heads, previous, idScope, patch),
       });
   const checked = validated(input.validator, applyPatch(before, patch), autosave);
   // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.

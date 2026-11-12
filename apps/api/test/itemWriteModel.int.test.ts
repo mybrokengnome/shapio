@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import { setPublicGrants } from './helpers/appUsers.js';
 import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from './helpers/content.js';
 import { AHEAD_KINDS, aheadEntry, echoAheadProblems } from './helpers/itemModelEchoAhead.js';
 import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
+import { locCopyEntry, locCopyProblems } from './helpers/itemModelLocCopy.js';
 import {
   CANDIDATE_LABELS,
   graphqlLiteral,
@@ -1959,6 +1961,44 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
       }
     }
   };
+
+  it('LOCCOPY (5 round trip, review 10): items copied between locales with the ids read are accepted for a caller that sees the draft', async () => {
+    const problems: Problem[] = [];
+    // The anonymous caller gets a read and update grant on docs for this case.
+    const probe = await locCopyEntry(w, 'published', 'with');
+    const { model_id: modelId } = await w.db
+      .selectFrom('entries')
+      .select('model_id')
+      .where('id', '=', probe)
+      .executeTakeFirstOrThrow();
+    await setPublicGrants(w.db, [
+      { action: 'read', modelId },
+      { action: 'update', modelId },
+    ]);
+    try {
+      for (const name of ['reader', 'anon', 'adminToken'] as const) {
+        const caller = { ...w.callers[name], reads: true };
+        for (const kind of ['published', 'frAhead'] as const) {
+          for (const variant of ['toFr', 'toEn'] as const) {
+            for (const version of [false, true]) {
+              for (const legacy of ['all', 'with'] as const) {
+                const id = await locCopyEntry(w, kind, legacy);
+                problems.push(
+                  ...(await locCopyProblems(w, caller, id, { kind, variant, version })).map((problem) => ({
+                    ...problem,
+                    detail: `${legacy}: ${problem.detail}`,
+                  })),
+                );
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      await w.publicGrants(false);
+    }
+    expect(report(problems)).toEqual([]);
+  });
 
   it('ECHOAHEAD (5 round trip, review 9): an old client sends the whole read back with its ids while the draft is ahead of what it read', async () => {
     const problems: Problem[] = [];

@@ -57,6 +57,11 @@ export type KeepOptions = {
   carryNothing?: boolean;
   /** Whether the caller may write a field inside a component (default: any field that is not deprecated). */
   writable?: (field: FieldDefinition) => boolean;
+  /**
+   * The entry's other heads the caller may read, every instance with its ID (`pairComponentItems`): an ID one of
+   * them shows where the written draft lacks it is a new item, never an unknown ID.
+   */
+  shown?: ReadonlyArray<Readonly<ContentData>>;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -394,7 +399,7 @@ export const keepUnreadableComponentFields = (
         }));
   let pairings = options.pairings;
   if (!pairings) {
-    const result = pairComponentItems(patch, before, fields, view);
+    const result = pairComponentItems(patch, before, fields, view, options.shown);
     if (result.issues.length > 0) {
       throw contentInvalid(result.issues);
     }

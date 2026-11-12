@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAdmin, login } from './helpers/adminIdentity.js';
 import { bearer, createAppRole, signUp, type AppSessionBody } from './helpers/appUsers.js';
 import { createDefinition, expectStatus, type EntryBody, type ModelBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
@@ -431,5 +432,352 @@ describe('item writes: ninth review, IDs a published read gave while the draft i
     const after = await footprint(id);
     expect(after.revisions).toBe(before.revisions + 1);
     expect(headings(after.data.plains)).toEqual(['a', 'b']);
+  });
+
+  describe('tenth review: items copied from another locale, by a caller that sees the draft', () => {
+    let v1: string;
+    let bob: AppSessionBody;
+    beforeAll(async () => {
+      const locale = await admin.post('/api/admin/locales', { code: 'de', label: 'German' });
+      expect([201, 409]).toContain(locale.statusCode);
+      const card = await createDefinition(
+        admin,
+        {
+          kind: 'component',
+          apiKey: 'p10_card',
+          label: 'P10 card',
+          fields: [
+            { apiKey: 'heading', label: 'Heading', type: 'string' },
+            { apiKey: 'note', label: 'Note', type: 'string', public: false },
+          ],
+        },
+        'components',
+      );
+      const lpage = await createDefinition(admin, {
+        kind: 'collection',
+        apiKey: 'p10page',
+        label: 'P10 page',
+        localized: true,
+        fields: [
+          { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+          {
+            apiKey: 'lcards',
+            label: 'LCards',
+            localized: true,
+            type: 'component',
+            settings: { component: card.definition.id, repeatable: true },
+          },
+          {
+            apiKey: 'lhero',
+            label: 'LHero',
+            localized: true,
+            type: 'component',
+            settings: { component: card.definition.id },
+          },
+        ],
+      });
+      bob = await signUp(testApp.app);
+      expectStatus(
+        await admin.request({
+          method: 'PATCH',
+          url: `/api/admin/app-users/${bob.user.id}`,
+          payload: {
+            roleIds: [
+              await createAppRole(database.current.db, [
+                { action: 'read', modelId: lpage.definition.id },
+                { action: 'update', modelId: lpage.definition.id },
+              ]),
+            ],
+          },
+        }),
+        200,
+      );
+      v1 = expectStatus(await request('GET', '/api/snapshots/current', adminToken), 200).json<{
+        schemaVersionToken: string;
+      }>().schemaVersionToken;
+      const current = (await admin.get(`/api/admin/models/${lpage.definition.id}`)).json<ModelBody>();
+      expect(
+        (
+          await admin.put(`/api/admin/models/${lpage.definition.id}`, {
+            definition: {
+              ...current.definition,
+              fields: [...current.definition.fields, { apiKey: 'extra', label: 'Extra', type: 'string' }],
+            },
+            expectedVersion: current.version,
+          })
+        ).statusCode,
+      ).toBeLessThan(300);
+    });
+    /** Published in `en` and `de`, draft equal to published in both. */
+    const entry = async () => {
+      const created = expectStatus(
+        await admin.post('/api/admin/content/p10page?locale=en', {
+          locale: 'en',
+          data: {
+            title: 'en',
+            lcards: [
+              { heading: 'c1', note: 'n1' },
+              { heading: 'c2', note: 'n2' },
+            ],
+            lhero: { heading: 'h', note: 'hn' },
+          },
+        }),
+        201,
+      ).json<EntryBody>();
+      expectStatus(
+        await admin.put(`/api/admin/content/p10page/${created.id}?locale=de`, {
+          locale: 'de',
+          expectedVersion: null,
+          data: {
+            title: 'de',
+            lcards: [
+              { heading: 'd1', note: 'dn1' },
+              { heading: 'd2', note: 'dn2' },
+            ],
+            lhero: { heading: 'dh', note: 'dhn' },
+          },
+        }),
+        200,
+      );
+      expectStatus(
+        await admin.post(`/api/admin/content/p10page/${created.id}/publish`, { locales: ['en', 'de'] }),
+        200,
+      );
+      return created.id;
+    };
+    const at = (id: string, locale: string, version: boolean) =>
+      `/api/content/p10pages/${id}?locale=${locale}${version ? `&schemaVersion=${encodeURIComponent(v1)}` : ''}`;
+    const readOf = async (id: string, locale: string, token: string, version: boolean) =>
+      expectStatus(await request('GET', at(id, locale, version), token), 200).json<{ data: Data }>().data;
+    const draftOf = async (id: string, locale: string) =>
+      expectStatus(
+        await admin.get(`/api/admin/content/p10page/${id}?locale=${locale}`),
+        200,
+      ).json<EntryBody>();
+    type Row = (en: Data, de: Data) => { locale: string; data: Data; expected: string[] | string };
+    const rows: Array<[string, Row]> = [
+      [
+        'en items with their ids appended to de',
+        (en, de) => ({
+          locale: 'de',
+          data: { lcards: [...(de.lcards as Item[]), ...(en.lcards as Item[])] },
+          expected: ['d1', 'd2', 'c1', 'c2'],
+        }),
+      ],
+      [
+        'en items without ids appended to de',
+        (en, de) => ({
+          locale: 'de',
+          data: { lcards: [...(de.lcards as Item[]), ...(withoutIds(en.lcards) as Item[])] },
+          expected: ['d1', 'd2', 'c1', 'c2'],
+        }),
+      ],
+      [
+        'both without ids',
+        (en, de) => ({
+          locale: 'de',
+          data: { lcards: withoutIds([...(de.lcards as Item[]), ...(en.lcards as Item[])]) },
+          expected: ['d1', 'd2', 'c1', 'c2'],
+        }),
+      ],
+      [
+        'en replaced by de items with their ids',
+        (_en, de) => ({ locale: 'en', data: { lcards: de.lcards }, expected: ['d1', 'd2'] }),
+      ],
+      [
+        'en replaced by de items sent as new',
+        (_en, de) => ({
+          locale: 'en',
+          data: { lcards: (withoutIds(de.lcards) as Item[]).map((item) => ({ ...item, id: null })) },
+          expected: ['d1', 'd2'],
+        }),
+      ],
+      [
+        'the en single component sent to de with its id',
+        (en) => ({ locale: 'de', data: { lhero: en.lhero }, expected: 'h' }),
+      ],
+    ];
+    it.each(
+      (['adminToken', 'appUser'] as const).flatMap((caller) =>
+        [false, true].flatMap((version) => rows.map(([name, row]) => [caller, version, name, row] as const)),
+      ),
+    )('%s (version %s): %s: accepted, as on main', async (caller, version, _name, row) => {
+      const token = caller === 'adminToken' ? adminToken : bob.accessToken;
+      const id = await entry();
+      const en = await readOf(id, 'en', token, version);
+      const de = await readOf(id, 'de', token, version);
+      const { locale, data, expected } = row(en, de);
+      const before = await draftOf(id, locale);
+      const response = await request('PUT', at(id, locale, version), token, {
+        locale,
+        expectedVersion: before.version,
+        data,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const after = await draftOf(id, locale);
+      expect(after.version).toBe(before.version + 1);
+      if (Array.isArray(expected)) {
+        const items = after.data.lcards as Item[];
+        expect(headings(items)).toEqual(expected);
+        expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+      } else {
+        expect((after.data.lhero as Item).heading).toBe(expected);
+      }
+    });
+
+    describe('eleventh review: the admin API', () => {
+      let sessionHeaders: Record<string, string>;
+      beforeAll(async () => {
+        sessionHeaders = (await login(testApp.app, await createAdmin(database.current.db))).headers;
+      });
+      const adminRequest = (
+        caller: 'session' | 'token',
+        method: 'GET' | 'PUT',
+        url: string,
+        payload?: unknown,
+      ) =>
+        testApp.app.inject({
+          method,
+          url,
+          headers: caller === 'session' ? sessionHeaders : bearer(adminToken),
+          ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+        });
+      const adminRead = async (caller: 'session' | 'token', id: string, locale: string) =>
+        expectStatus(
+          await adminRequest(caller, 'GET', `/api/admin/content/p10page/${id}?locale=${locale}`),
+          200,
+        ).json<EntryBody>();
+      type AdminRow = (en: Data, de: Data) => { locale: string; data: Data; expected: string[] | string };
+      const adminRows: Array<[string, boolean, AdminRow]> = [
+        [
+          'en items with their ids appended to de',
+          false,
+          (en, de) => ({
+            locale: 'de',
+            data: { lcards: [...(de.lcards as Item[]), ...(en.lcards as Item[])] },
+            expected: ['d1', 'd2', 'c1', 'c2'],
+          }),
+        ],
+        [
+          'en items with their ids appended to de, its draft ahead',
+          true,
+          (en, de) => ({
+            locale: 'de',
+            data: { lcards: [...(de.lcards as Item[]), ...(en.lcards as Item[])] },
+            expected: ['d1x', 'd2', 'c1', 'c2'],
+          }),
+        ],
+        [
+          'en replaced by de items with their ids',
+          false,
+          (_en, de) => ({ locale: 'en', data: { lcards: de.lcards }, expected: ['d1', 'd2'] }),
+        ],
+        [
+          'en replaced by de items with their ids, de ahead',
+          true,
+          (_en, de) => ({ locale: 'en', data: { lcards: de.lcards }, expected: ['d1x', 'd2'] }),
+        ],
+        [
+          'the en single component sent to de with its id',
+          false,
+          (en) => ({ locale: 'de', data: { lhero: en.lhero }, expected: 'h' }),
+        ],
+      ];
+      it.each(
+        (['session', 'token'] as const).flatMap((caller) =>
+          adminRows.map(([name, ahead, row]) => [caller, name, ahead, row] as const),
+        ),
+      )('%s: %s: accepted, as on main', async (caller, _name, ahead, row) => {
+        const id = await entry();
+        if (ahead) {
+          const de = await adminRead(caller, id, 'de');
+          const lcards = (de.data.lcards as Item[]).map((item, index) =>
+            index === 0 ? { ...item, heading: 'd1x' } : item,
+          );
+          expectStatus(
+            await adminRequest(caller, 'PUT', `/api/admin/content/p10page/${id}?locale=de`, {
+              locale: 'de',
+              expectedVersion: de.version,
+              data: { lcards },
+            }),
+            200,
+          );
+        }
+        const en = (await adminRead(caller, id, 'en')).data;
+        const de = (await adminRead(caller, id, 'de')).data;
+        const { locale, data, expected } = row(en, de);
+        const before = await adminRead(caller, id, locale);
+        const response = await adminRequest(
+          caller,
+          'PUT',
+          `/api/admin/content/p10page/${id}?locale=${locale}`,
+          {
+            locale,
+            expectedVersion: before.version,
+            data,
+          },
+        );
+        expect(response.statusCode, response.body).toBe(200);
+        const after = await adminRead(caller, id, locale);
+        expect(after.version).toBe(before.version + 1);
+        if (Array.isArray(expected)) {
+          const items = after.data.lcards as Item[];
+          expect(headings(items)).toEqual(expected);
+          expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+        } else {
+          expect((after.data.lhero as Item).heading).toBe(expected);
+        }
+      });
+
+      it.each(['session', 'token', 'delivery'] as const)(
+        '%s: the same copy of de items sent to en twice: the second changes nothing',
+        async (caller) => {
+          const id = await entry();
+          const copy = async () => {
+            const de =
+              caller === 'delivery'
+                ? await readOf(id, 'de', adminToken, false)
+                : (await adminRead(caller, id, 'de')).data;
+            const before = await adminRead('token', id, 'en');
+            const body = { locale: 'en', expectedVersion: before.version, data: { lcards: de.lcards } };
+            const response =
+              caller === 'delivery'
+                ? await request('PUT', at(id, 'en', false), adminToken, body)
+                : await adminRequest(caller, 'PUT', `/api/admin/content/p10page/${id}?locale=en`, body);
+            expect(response.statusCode, response.body).toBe(200);
+            return { before, after: await adminRead('token', id, 'en') };
+          };
+          const first = await copy();
+          expect(first.after.version).toBe(first.before.version + 1);
+          const second = await copy();
+          expect(second.after.version).toBe(second.before.version);
+          expect(second.after.data.lcards).toEqual(first.after.data.lcards);
+        },
+      );
+
+      it.each(['session', 'token'] as const)(
+        '%s: an ID no head of the entry shows is still unknown',
+        async (caller) => {
+          const id = await entry();
+          const before = await adminRead(caller, id, 'de');
+          const lcards = (before.data.lcards as Item[]).map((item, index) =>
+            index === 0 ? { ...item, id: 'ZZZZZZZZZZZZ' } : item,
+          );
+          const response = await adminRequest(caller, 'PUT', `/api/admin/content/p10page/${id}?locale=de`, {
+            locale: 'de',
+            expectedVersion: before.version,
+            data: { lcards },
+          });
+          expect(response.statusCode, response.body).toBe(422);
+          const issues = response.json<{
+            error: { details: { issues: Array<{ path: string; code: string }> } };
+          }>().error.details.issues;
+          expect(issues.map((issue) => [issue.path, issue.code])).toEqual([
+            ['/lcards/0/id', 'UNKNOWN_ITEM_ID'],
+          ]);
+          expect((await adminRead(caller, id, 'de')).version).toBe(before.version);
+        },
+      );
+    });
   });
 });

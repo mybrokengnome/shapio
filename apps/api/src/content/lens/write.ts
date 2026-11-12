@@ -845,7 +845,14 @@ const pairWrittenList = (
   const sentIds = sent.map(sentIdOf);
   // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
   // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
-  const compares = sentIds.every((id) => id === undefined) && (scope.sees || !hidden);
+  // A list naming IDs only another head shows is keyed too where the caller sees its items and nothing in them is
+  // hidden from it: those items pair as they would without IDs (listPairing.ts).
+  const storedIds = new Set(stored.map(storedIdOf));
+  const copiesItems =
+    scope.sees &&
+    !hidden &&
+    sentIds.some((id) => typeof id === 'string' && !storedIds.has(id) && shownIds.has(id));
+  const compares = (sentIds.every((id) => id === undefined) && (scope.sees || !hidden)) || copiesItems;
   const keyScope: ViewScope | 'whole' = scope.sees ? scope : 'whole';
   const sentSide = side(
     compares ? sent : [],

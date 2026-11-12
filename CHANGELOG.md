@@ -54,6 +54,9 @@ All notable changes to Shapio are listed here. The format follows
     and the field's items can hold values it cannot read or write: then the write is refused (`AMBIGUOUS_ITEMS`);
     leave the field out to keep it, or send an empty list to clear it. A localized list written to a locale for
     the first time holds new items, whatever `id`s it carries.
+  - On the admin API, an `id` any version of the entry shows (any locale, draft or published) is never unknown.
+    On both APIs, an item copied with another version's `id` into a draft that already holds that item once
+    continues it, so saving the same copy twice changes nothing.
   - New issues inside `422 CONTENT_INVALID`: `UNKNOWN_ITEM_ID` (an `id` no version the caller may read shows),
     `DUPLICATE_ITEM_ID` (the same `id` twice in one list), `ITEM_COMPONENT_CHANGED` (a known dynamic zone item
     sent with another component), and `AMBIGUOUS_ITEMS` (see Changed).
@@ -148,6 +151,9 @@ What changes for a client that names no schema version and sends no item `id`s
   not shown.
 - Private and deprecated values inside components are kept when a client writes the component back; 0.8.2 wiped
   them. A caller that may update but not read keeps the private and deprecated fields it leaves out.
+  For a shared (non-localized) component field, 0.8.2's wipe also changed the other locales' drafts, and the
+  admin then reported those locales as having outdated shared values; now nothing changes there, so they are
+  not reported.
 - **Security:** a private field sent inside a component by a delivery caller, even as `null`, is refused with
   `403 FORBIDDEN_FIELD` (on create and update); `details.fields` lists JSON pointers such as `/cards/0/note`.
   Through a schema version that showed the field, sending back the `null` a read gives is accepted and keeps the

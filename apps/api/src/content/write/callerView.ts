@@ -113,6 +113,7 @@ export const ADMIN_ACCESS: CallerAccess = {
   visibleTargets: null,
   visibleMedia: null,
   neverRefuses: true,
+  readsDrafts: true,
 };
 
 /** Where in the entry a value sits, for the caller: whether it may read there, and see the stored items. */

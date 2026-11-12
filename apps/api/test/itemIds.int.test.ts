@@ -418,15 +418,29 @@ describe('component item IDs', () => {
     ).json<Delivered>().data;
     expect(published.hero?.id).toBe(en.hero?.id);
     expect(published.cards.map((item) => item.id)).toEqual(en.cards.map((item) => item.id));
-    // An ID from another locale of a localized field names no item there.
-    const foreign = await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+    // An ID from another locale of a localized field is an item that locale shows: copied, it is saved as a new
+    // item with an ID of its own, and the other locale's item is untouched.
+    expectStatus(
+      await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+        locale: 'fr',
+        expectedVersion: (await view('fr')).version,
+        data: { hero: { id: en.hero?.id, heading: 'H-copied' } },
+      }),
+      200,
+    );
+    const copied = (await view('fr')).data as Delivered['data'];
+    expect(copied.hero?.heading).toBe('H-copied');
+    expect([en.hero?.id, fr.hero?.id]).not.toContain(copied.hero?.id);
+    expect((await view('en')).data).toEqual(en);
+    // An ID no version of the entry shows names no item.
+    const nowhere = await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
       locale: 'fr',
       expectedVersion: (await view('fr')).version,
-      data: { hero: { id: en.hero?.id, heading: 'H-fr' } },
+      data: { hero: { id: 'ZZZZZZZZZZZZ', heading: 'H-fr' } },
     });
     expect([
-      foreign.statusCode,
-      foreign.json<{ error: { details: { issues: Array<{ code: string }> } } }>().error.details.issues[0]
+      nowhere.statusCode,
+      nowhere.json<{ error: { details: { issues: Array<{ code: string }> } } }>().error.details.issues[0]
         ?.code,
     ]).toEqual([422, 'UNKNOWN_ITEM_ID']);
     // A shared list written in one locale (its IDs persisted) reads the same IDs in every locale.
