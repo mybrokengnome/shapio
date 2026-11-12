@@ -53,15 +53,17 @@ type Manifest = {
   users: Record<'reader' | 'updateOnly' | 'owner', string>;
   entries: Array<{
     id: string;
-    model: 'doc' | 'ndoc' | 'ldoc' | 'cmove' | 'dref' | 'drefn';
+    model: 'doc' | 'ndoc' | 'ldoc' | 'cmove' | 'dref' | 'drefn' | 'dmtop' | 'dmtopn';
     ahead?: string;
     owned?: boolean;
   }>;
   things: { published: string; unpublished: string };
   /** Field ID → API ID, so stored data compares by field name (diff.mjs keeps comparing untouched fields). */
   fieldKeys: Record<string, string>;
-  /** Relation targets that are no longer live entries (review 15). */
+  /** Relation targets that are no longer live entries (review 15), and the force-deleted asset (review 16). */
   deadTargets: string[];
+  /** Review 16: the live values a `deadmax` step sends. */
+  dmax: { live: string; other: string; livePic: string; otherPic: string; deadPic?: string };
 };
 
 const open = async () => {
@@ -250,7 +252,44 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     });
   const dref = await drefModel('dref', true);
   const drefn = await drefModel('drefn', false);
-  const models: ModelBody[] = [doc, ndoc, ldoc, cmove, dref, drefn];
+  // Review 16: count rules with dead targets: a many-relation and a multi-media field with `max: 2`, at the top
+  // level and in `dmitem`, on a type with drafts (`dmtop`) and one without (`dmtopn`).
+  const dmitem = await component('dmitem', [
+    { apiKey: 'label', label: 'Label', type: 'string' },
+    {
+      apiKey: 'rels',
+      label: 'Rels',
+      type: 'relation',
+      settings: { target: '*', cardinality: 'many', max: 2 },
+    },
+    { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true, max: 2 } },
+  ]);
+  const dmModel = (apiKey: string, draftAndPublish: boolean) =>
+    createDefinition(admin, {
+      kind: 'collection',
+      apiKey,
+      label: apiKey,
+      draftAndPublish,
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        {
+          apiKey: 'rels',
+          label: 'Rels',
+          type: 'relation',
+          settings: { target: '*', cardinality: 'many', max: 2 },
+        },
+        { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true, max: 2 } },
+        {
+          apiKey: 'items',
+          label: 'Items',
+          type: 'component',
+          settings: { component: dmitem.definition.id, repeatable: true },
+        },
+      ],
+    });
+  const dmtop = await dmModel('dmtop', true);
+  const dmtopn = await dmModel('dmtopn', false);
+  const models: ModelBody[] = [doc, ndoc, ldoc, cmove, dref, drefn, dmtop, dmtopn];
   const grants = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
     models.flatMap((model) => actions.map((action) => ({ action, modelId: model.definition.id, ...extra })));
   const user = async (name: string, list: GrantSpec[]) => {
@@ -499,6 +538,62 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
       entries.push({ id, model, ahead });
     }
   }
+  // Review 16 entries: [live, dead] beside an alive hidden twin (unpublished target, private asset).
+  const asset = async (visibility: 'public' | 'private') => {
+    const id = crypto.randomUUID();
+    await db
+      .insertInto('media_assets')
+      .values({
+        id,
+        site_id: '00000000-0000-4000-b000-000000000001',
+        storage_driver: 'local',
+        storage_key: `${visibility}/${id}/0123456789abcdef01234567/${visibility}.png`,
+        original_filename: `${visibility}.png`,
+        mime_type: 'image/png',
+        size_bytes: 1,
+        status: 'ready',
+        visibility,
+      })
+      .execute();
+    return id;
+  };
+  const dmax = {
+    live: things.published,
+    other: await thingOf('other', true),
+    livePic: await asset('public'),
+    otherPic: await asset('public'),
+  };
+  const deadPic = await asset('public');
+  const privatePic = await asset('private');
+  for (const model of ['dmtop', 'dmtopn'] as const) {
+    for (const [ahead, rel, pic] of [
+      ['maxDead', localeOnly, deadPic],
+      ['maxAlive', things.unpublished, privatePic],
+    ] as const) {
+      const id = expectStatus(
+        await admin.post(`/api/admin/content/${model}`, {
+          data: {
+            title: ahead,
+            rels: [dmax.live, rel],
+            pics: [dmax.livePic, pic],
+            items: [{ label: 'A', rels: [dmax.live, rel], pics: [dmax.livePic, pic] }],
+          },
+        }),
+        201,
+      ).json<{ id: string }>().id;
+      if (model === 'dmtop') {
+        expectStatus(await admin.post(`/api/admin/content/dmtop/${id}/publish`, {}), 200);
+      }
+      entries.push({ id, model, ahead });
+    }
+  }
+  // The asset force-deleted as `deleteAsset(force)` does: its references gone, the row soft-deleted.
+  await db.deleteFrom('media_references').where('asset_id', '=', deadPic).execute();
+  await db
+    .updateTable('media_assets')
+    .set({ deleted_at: new Date().toISOString() })
+    .where('id', '=', deadPic)
+    .execute();
   expectStatus(await admin.delete('/api/admin/locales/xx?acknowledgeDestructive=true'), 200);
   await runContentSchemaJobs(db);
   await db
@@ -507,8 +602,8 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     .where('id', '=', rawDead)
     .execute();
   const fieldKeys = Object.fromEntries(
-    [chip, card, box, doc, ndoc, litem, ldoc, cmove, dcard, dref, drefn].flatMap((model) =>
-      model.definition.fields.map((field) => [field.id, field.apiKey]),
+    [chip, card, box, doc, ndoc, litem, ldoc, cmove, dcard, dref, drefn, dmitem, dmtop, dmtopn].flatMap(
+      (model) => model.definition.fields.map((field) => [field.id, field.apiKey]),
     ),
   );
   return {
@@ -517,14 +612,16 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     entries,
     things,
     fieldKeys,
-    deadTargets: [localeOnly, rawDead],
+    deadTargets: [localeOnly, rawDead, deadPic],
+    dmax: { ...dmax, deadPic },
   };
 };
 
 // ---------------------------------------------------------------------------------------------------------
 // Replay (main, then the branch on an upgraded copy)
 
-const META = new Set(['createdAt', 'updatedAt', 'publishedAt', 'revisionId', 'autosavedAt']);
+// (`urlExpiresAt` and a signed URL's query change with the clock: a private asset's link is signed per read.)
+const META = new Set(['createdAt', 'updatedAt', 'publishedAt', 'revisionId', 'autosavedAt', 'urlExpiresAt']);
 
 /** A response or stored value with what may differ between the sides by design left out: item IDs, times. */
 const normal = (value: unknown, created: Map<string, string>): unknown => {
@@ -565,7 +662,7 @@ const normal = (value: unknown, created: Map<string, string>): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
-  let text = value;
+  let text = /[?&]signature=/.test(value) ? (value.split('?')[0] ?? value) : value;
   for (const [id, name] of created) {
     text = text.split(id).join(name);
   }
@@ -960,6 +1057,64 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       ),
     };
   };
+  const dmtops = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.model === 'dmtop' || entry.model === 'dmtopn');
+  /** Review 16: a caller reads [live] and sends [live, other] at the top level and inside the item. */
+  const deadMaxStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const { entry: target, index } = random.pick(dmtops);
+    const url =
+      caller === 'admin'
+        ? `/api/admin/content/${target.model}/${target.id}`
+        : `/api/content/${target.model}s/${target.id}`;
+    const read = await request('GET', url, token);
+    const data = isRecord(read.body) && isRecord(read.body.data) ? read.body.data : {};
+    const { live, other, livePic, otherPic } = manifest.dmax;
+    const body: Json = {
+      rels: [live, other],
+      pics: [livePic, otherPic],
+      items: (Array.isArray(data.items) ? (data.items as Json[]) : []).map((item) => ({
+        id: item.id,
+        label: item.label,
+        rels: [live, other],
+        pics: [livePic, otherPic],
+      })),
+    };
+    const view = await request('GET', `/api/admin/content/${target.model}/${target.id}`, manifest.adminToken);
+    const version = isRecord(view.body) ? (view.body.version ?? null) : null;
+    // The fields where the stored value keeps live values hidden from the caller (in the stored draft, not in the
+    // caller's read, not dead) that, with what is sent, exceed `max: 2` while what is sent alone does not.
+    const baseline = await baselineOf(target.id, target.model);
+    const draft = (baseline.heads.find((head) => head.state === 'draft') ?? baseline.heads[0])?.data as
+      Json | undefined;
+    const dead = new Set([...manifest.deadTargets, manifest.dmax.deadPic ?? '']);
+    const idsOf = (value: unknown) =>
+      (Array.isArray(value) ? value : []).map((entry) =>
+        isRecord(entry) ? String(entry.id) : String(entry),
+      );
+    const overMax: string[] = [];
+    const check = (path: string, stored: unknown, shown: unknown, sent: unknown[]) => {
+      const hiddenLive = idsOf(stored).filter((id) => !idsOf(shown).includes(id) && !dead.has(id));
+      if (sent.length <= 2 && sent.length + hiddenLive.length > 2) overMax.push(path);
+    };
+    for (const field of ['rels', 'pics']) {
+      check(`/${field}`, draft?.[field], data[field], body[field] as unknown[]);
+      const storedItem = (Array.isArray(draft?.items) ? (draft.items as Json[]) : [])[0];
+      const shownItem = (Array.isArray(data.items) ? (data.items as Json[]) : [])[0];
+      if (storedItem)
+        check(`/items/0/${field}`, storedItem[field], shownItem?.[field], body[field] as unknown[]);
+    }
+    const pre = { ...(await preOf(caller, target, 'en', body)), overMax };
+    const response = await request('PUT', url, token, { expectedVersion: version, data: body });
+    return {
+      label: `${step} ${caller} deadmax e${index} ${target.model} en ${target.ahead ?? '-'}`,
+      baseline,
+      pre,
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, target.model),
+    };
+  };
   const drefs = entries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.model === 'dref' || entry.model === 'drefn');
@@ -1277,7 +1432,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       'twins',
       'copymove',
       'deadrel',
+      'deadmax',
     ] as const);
+    if (op === 'deadmax') {
+      steps.push(await deadMaxStep(step, caller, token));
+      continue;
+    }
     if (op === 'deadrel') {
       steps.push(await deadRelStep(step, caller, token));
       continue;

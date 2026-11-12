@@ -6,7 +6,12 @@ import * as contentGuardsRepository from '../../repositories/contentGuards.js';
 import * as entriesRepository from '../../repositories/entries.js';
 import { imageUsesOf } from '../health/imageUses.js';
 import type { ContentModel } from '../model.js';
-import { COMPONENT_KEY, type MediaReferenceCheck, type RelationReference } from '../validator/index.js';
+import {
+  COMPONENT_KEY,
+  isMissingValue,
+  type MediaReferenceCheck,
+  type RelationReference,
+} from '../validator/index.js';
 import { contentInvalid, pointer, type ContentIssue } from '../validator/issues.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -37,144 +42,187 @@ export type TargetCheckOptions = {
   sentRelations?: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
-/**
- * The relation targets a document (storage form) names, by their JSON pointer in API IDs (`/cards/0/rel`, as the
- * validator reports them), components and zone items included.
- */
-export const relationsByPath = (model: ContentModel, data: Readonly<ContentData>) => {
-  const byPath = new Map<string, Set<string>>();
-  const walk = (
-    fields: readonly FieldDefinition[],
-    value: Readonly<Record<string, unknown>>,
-    path: string,
-  ) => {
-    for (const field of fields) {
-      const fieldValue = value[field.id];
-      if (fieldValue === undefined || fieldValue === null) {
-        continue;
-      }
-      const at = pointer(path, field.apiKey);
-      if (field.type === 'relation') {
-        byPath.set(
-          at,
-          new Set(
-            (Array.isArray(fieldValue) ? fieldValue : [fieldValue]).filter((id) => typeof id === 'string'),
-          ),
-        );
-      } else if (field.type === 'component') {
-        const component = model.components.get(field.settings.component)?.definition;
-        if (!component) {
-          continue;
-        }
-        if (Array.isArray(fieldValue)) {
-          fieldValue.forEach((item: unknown, index) => {
-            if (isRecord(item)) {
-              walk(component.fields, item, pointer(at, index));
-            }
-          });
-        } else if (isRecord(fieldValue)) {
-          walk(component.fields, fieldValue, at);
-        }
-      } else if (field.type === 'dynamiczone' && Array.isArray(fieldValue)) {
-        fieldValue.forEach((item: unknown, index) => {
-          const component = isRecord(item)
-            ? model.components.get(String(item[COMPONENT_KEY]))?.definition
-            : undefined;
-          if (component && isRecord(item)) {
-            walk(component.fields, item, pointer(at, index));
-          }
-        });
-      }
-    }
-  };
-  walk(model.definition.fields, data, '');
-  return byPath;
-};
+/** The kind of target a field points at: an entry (relation) or an asset (media field). */
+type TargetKind = 'relation' | 'media';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** What `visit` returns to remove a value's key (`walkTargets`). */
+const REMOVE = Symbol('remove');
+
 /**
- * Rewrites every relation value of a document (storage form) along the same walk as `relationsByPath`: `keep`
- * decides, per target, whether it stays at that position. A single relation whose target goes is null.
+ * Walks every relation or media value of a document (storage form), components and zone items included, by its
+ * JSON pointer in API IDs (`/cards/0/rel`, as the validator reports them): `visit` returns the value to write
+ * there (undefined: unchanged; `REMOVE`: the key goes). `topLevel`: the value is an entry field's, not an item's.
+ * Returns the document with those values.
  */
-const mapRelations = (
+const walkTargets = (
   model: ContentModel,
   data: Readonly<ContentData>,
-  keep: (path: string, id: string) => boolean,
+  kind: TargetKind,
+  visit: (path: string, value: unknown, topLevel: boolean) => unknown,
 ): ContentData => {
   const walk = (
     fields: readonly FieldDefinition[],
     value: Readonly<Record<string, unknown>>,
     path: string,
   ): Record<string, unknown> => {
-    const output: Record<string, unknown> = { ...value };
+    let output: Record<string, unknown> | null = null;
+    const set = (fieldId: string, next: unknown) => {
+      if (next !== undefined && next !== value[fieldId]) {
+        output ??= { ...value };
+        if (next === REMOVE) {
+          delete output[fieldId];
+        } else {
+          output[fieldId] = next;
+        }
+      }
+    };
     for (const field of fields) {
       const fieldValue = value[field.id];
       if (fieldValue === undefined || fieldValue === null) {
         continue;
       }
       const at = pointer(path, field.apiKey);
-      if (field.type === 'relation') {
-        output[field.id] = Array.isArray(fieldValue)
-          ? fieldValue.filter((id) => typeof id !== 'string' || keep(at, id))
-          : typeof fieldValue === 'string' && !keep(at, fieldValue)
-            ? null
-            : fieldValue;
+      if (field.type === kind) {
+        set(field.id, visit(at, fieldValue, path === ''));
       } else if (field.type === 'component') {
         const component = model.components.get(field.settings.component)?.definition;
         if (!component) {
           continue;
         }
-        output[field.id] = Array.isArray(fieldValue)
-          ? fieldValue.map((item: unknown, index) =>
-              isRecord(item) ? walk(component.fields, item, pointer(at, index)) : item,
-            )
-          : isRecord(fieldValue)
-            ? walk(component.fields, fieldValue, at)
-            : fieldValue;
+        if (Array.isArray(fieldValue)) {
+          const items = fieldValue.map((item: unknown, index) =>
+            isRecord(item) ? walk(component.fields, item, pointer(at, index)) : item,
+          );
+          set(field.id, items.some((item, index) => item !== fieldValue[index]) ? items : undefined);
+        } else if (isRecord(fieldValue)) {
+          set(field.id, walk(component.fields, fieldValue, at));
+        }
       } else if (field.type === 'dynamiczone' && Array.isArray(fieldValue)) {
-        output[field.id] = fieldValue.map((item: unknown, index) => {
+        const items = fieldValue.map((item: unknown, index) => {
           const component = isRecord(item)
             ? model.components.get(String(item[COMPONENT_KEY]))?.definition
             : undefined;
           return component && isRecord(item) ? walk(component.fields, item, pointer(at, index)) : item;
         });
+        set(field.id, items.some((item, index) => item !== fieldValue[index]) ? items : undefined);
       }
     }
-    return output;
+    return output ?? value;
   };
   return walk(model.definition.fields, data, '');
 };
 
+/** The IDs one relation or media value names (one, or a list). */
+const idsIn = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : [value]).filter((id): id is string => typeof id === 'string');
+
+/** The targets of one kind a document names, by position (`walkTargets`). */
+const targetsByPath = (model: ContentModel, data: Readonly<ContentData>, kind: TargetKind) => {
+  const byPath = new Map<string, Set<string>>();
+  walkTargets(model, data, kind, (path, value) => {
+    byPath.set(path, new Set(idsIn(value)));
+    return undefined;
+  });
+  return byPath;
+};
+
 /**
- * `patch` (storage form, after the carry-over) without the relation targets the server put back (at a position the
- * body did not name them, `sentRelations`) that no longer resolve to a live entry of the site: a deleted entry, or
- * none. A write keeps targets the caller cannot see, but never a dead one: it is dropped as a write that sends
- * the read back without it drops it, so dead references do not accumulate and no answer depends on them. Targets
- * the body names are left for `assertTargets`, which checks them in full; unpublished targets stay. Only what the
- * patch holds is touched: a field the body did not send keeps its stored value.
+ * The relation targets a document (storage form) names, by their JSON pointer in API IDs (`/cards/0/rel`, as the
+ * validator reports them), components and zone items included.
+ */
+export const relationsByPath = (model: ContentModel, data: Readonly<ContentData>) =>
+  targetsByPath(model, data, 'relation');
+
+/**
+ * A relation or media value without the IDs `keep` refuses (undefined: unchanged). One left empty is removed, as
+ * the validator stores an empty value (absent), except at the top level of a patch (`asPatch`), where only null
+ * clears a field.
+ */
+const keptTargets = (
+  value: unknown,
+  topLevel: boolean,
+  asPatch: boolean,
+  keep: (id: unknown) => boolean,
+): unknown => {
+  const kept = Array.isArray(value) ? value.filter(keep) : keep(value) ? value : null;
+  if (Array.isArray(value) ? (kept as unknown[]).length === value.length : kept === value) {
+    return undefined;
+  }
+  return !isMissingValue(kept) ? kept : topLevel && asPatch ? null : REMOVE;
+};
+
+/**
+ * Stored data (storage form) without the given IDs in any relation or media value, emptied values removed as
+ * stored: what the stored data would be without those targets, for comparisons.
+ */
+export const withoutTargetIds = (
+  model: ContentModel,
+  data: Readonly<ContentData>,
+  ids: ReadonlySet<string>,
+): ContentData =>
+  (['relation', 'media'] as const).reduce(
+    (current, kind) =>
+      walkTargets(model, current, kind, (_path, value, topLevel) =>
+        keptTargets(value, topLevel, false, (id) => typeof id !== 'string' || !ids.has(id)),
+      ),
+    data as ContentData,
+  );
+
+/**
+ * What a write stores of the targets the server put back: `data` is the patch (storage form) after the carry-over,
+ * `sent` the patch as the body sent it. A relation target or media asset at a position the body did not name it
+ * (kept behind what the caller read, or carried over with a field it cannot see) that is no longer live (a deleted
+ * entry or asset, or none) is dropped, as a write that sends the read back without it drops it: dead references do
+ * not accumulate, and nothing a write is checked against (`max`, `min`, required) counts them. What the body names
+ * is left for `assertTargets` and the validator; unpublished entries and private assets stay. Only what the patch
+ * holds is touched: a field the body did not send keeps its stored value. `dropped`: the IDs dropped.
  */
 export const withoutDeadPutBackTargets = async (
   executor: Executor,
   model: ContentModel,
-  patch: Readonly<ContentData>,
-  sentRelations: ReadonlyMap<string, ReadonlySet<string>>,
+  data: Readonly<ContentData>,
+  sent: Readonly<ContentData>,
   siteId: string,
-): Promise<Readonly<ContentData>> => {
-  const named = (path: string, id: string) => sentRelations.get(path)?.has(id) ?? false;
-  const putBack = [
-    ...new Set(
-      [...relationsByPath(model, patch)].flatMap(([path, ids]) => [...ids].filter((id) => !named(path, id))),
-    ),
-  ];
-  if (putBack.length === 0) {
-    return patch;
+): Promise<{ data: Readonly<ContentData>; dropped: ReadonlySet<string> }> => {
+  const dead = new Set<string>();
+  for (const kind of ['relation', 'media'] as const) {
+    const named = targetsByPath(model, sent, kind);
+    const putBack = [
+      ...new Set(
+        [...targetsByPath(model, data, kind)].flatMap(([path, ids]) =>
+          [...ids].filter((id) => !(named.get(path)?.has(id) ?? false)),
+        ),
+      ),
+    ];
+    if (putBack.length === 0) {
+      continue;
+    }
+    const live = new Set(
+      kind === 'relation'
+        ? await liveIdsOfAnyModel(putBack, siteId, executor)
+        : (await contentGuardsRepository.findLiveMedia(putBack, siteId, executor)).map((row) => row.id),
+    );
+    putBack.filter((id) => !live.has(id)).forEach((id) => dead.add(id));
   }
-  const live = new Set(await liveIdsOfAnyModel(putBack, siteId, executor));
-  return putBack.every((id) => live.has(id))
-    ? patch
-    : mapRelations(model, patch, (path, id) => named(path, id) || live.has(id));
+  if (dead.size === 0) {
+    return { data, dropped: dead };
+  }
+  // A dead ID is dropped only where it was put back: where the body names it, it stays for the checks to answer.
+  const output = (['relation', 'media'] as const).reduce((current, kind) => {
+    const named = targetsByPath(model, sent, kind);
+    return walkTargets(model, current, kind, (path, value, topLevel) =>
+      keptTargets(
+        value,
+        topLevel,
+        true,
+        (id) => typeof id !== 'string' || !dead.has(id) || (named.get(path)?.has(id) ?? false),
+      ),
+    );
+  }, data as ContentData);
+  return { data: output, dropped: dead };
 };
 
 /** Every asset the given documents point at (media fields and rich-text images, components included). */

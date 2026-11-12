@@ -1023,9 +1023,21 @@ export const acceptedWriteProblems = (
   // otherwise it is new." So a stored item may continue under a sent item with another `id` only when the list
   // does not hold that `id`, and the sent item equals, in the caller's view, exactly one stored item of the list
   // that no sent `id` claims (this one).
-  const viewOf = (instance: Instance): string | null => {
+  // An item the caller read is judged as it read it. One whose stored id it never read (a stale read: the item has
+  // a new id since) is judged by content: the stored item's fields the caller sent (what it can see and write).
+  const viewOf = (instance: Instance, sent?: Json): string | null => {
     const readItem = seen.get(instance.id);
-    return admin ? leafView(instance.api) : readItem ? leafView(readItem) : null;
+    if (admin) {
+      return leafView(instance.api);
+    }
+    if (readItem) {
+      return leafView(readItem);
+    }
+    if (!sent) {
+      return null;
+    }
+    const keys = new Set(Object.keys(asSent(sent, false)));
+    return leafView(Object.fromEntries(Object.entries(instance.api).filter(([key]) => keys.has(key))));
   };
   const continuesByContent = (instance: Instance, sent: Json): boolean => {
     // (The draft holds an `id` for this purpose when this list holds it: an `id` from another list of the entry is a
@@ -1038,9 +1050,40 @@ export const acceptedWriteProblems = (
     }
     const now = leafView(asSent(sent, false));
     const equal = before.filter(
-      (other) => other.list === instance.list && !sentIds.has(other.id) && viewOf(other) === now,
+      (other) => other.list === instance.list && !sentIds.has(other.id) && viewOf(other, sent) === now,
     );
     return equal.length === 1 && equal[0]?.id === instance.id;
+  };
+  // delivery-api.md: "Swapping two items that are identical in everything stored changes nothing on the admin API,
+  // and on the delivery API where your token can read and write every field of those items and can see every
+  // relation target and media asset they may hold." So for such a caller (admin-kind), a stored item may keep its
+  // place under the `id` of another item of its list that is identical to it in everything stored.
+  const identicalSwap = (instance: Instance, sent: Json): boolean => {
+    if (!writesAll || typeof sent.id !== 'string') {
+      return false;
+    }
+    const other = before.find((candidate) => candidate.list === instance.list && candidate.id === sent.id);
+    const stored = (item: Instance) => JSON.stringify(stripIds(item.raw));
+    if (other !== undefined && stored(other) === stored(instance)) {
+      return true;
+    }
+    // Review 16 (the rule as built): "where nothing in the items is hidden from the caller, and on admin writes,
+    // the list sent exactly as stored continues as a whole" — each stored item continues at its place, whatever
+    // ids were sent (for example a read's ids for legacy items that the draft derives differently).
+    const sentList = sentLists.get(instance.list);
+    const storedList = before.filter((candidate) => candidate.list === instance.list);
+    return (
+      sentList !== undefined &&
+      sentList.length === storedList.length &&
+      sentList.every((item, index) => {
+        const storedItem = storedList[index];
+        return (
+          storedItem !== undefined &&
+          leafView(asSent(item, false)) === leafView(asSent(storedItem.api, false))
+        );
+      }) &&
+      sentList.indexOf(sent) === storedList.indexOf(instance)
+    );
   };
   // 1: no hidden value sits on another item.
   for (const instance of after) {
@@ -1069,8 +1112,8 @@ export const acceptedWriteProblems = (
         if (sent && sent[apiKey] !== undefined && sent[apiKey] !== null) {
           continue;
         }
-        // CHANGELOG.md: "A kept target that has since been deleted is not kept: it is dropped with the next change
-        // you make". A hidden relation to a target that is no longer a live entry goes with a write that changes
+        // CHANGELOG.md: "A kept target that has since been deleted is not kept: the next write that changes
+        // something drops it, as before 0.9.0". A hidden relation to a target that is no longer a live entry goes with a write that changes
         // the entry, and stays with a no-op.
         // (A field the body did not send keeps its stored value untouched, dead targets included.)
         const fieldSent = body[instance.list.split('/')[0] ?? ''] !== undefined;
@@ -1135,7 +1178,12 @@ export const acceptedWriteProblems = (
             detail: `${instance.list} ${instance.id} reused for other content: ${was} → ${now}`,
           });
         }
-      } else if (sent && sent.id !== instance.id && !continuesByContent(instance, sent)) {
+      } else if (
+        sent &&
+        sent.id !== instance.id &&
+        !continuesByContent(instance, sent) &&
+        !identicalSwap(instance, sent)
+      ) {
         problems.push({
           property: '3 ID integrity',
           detail: `${instance.list} ${instance.id} reused for an item sent as ${String(sent.id)}`,

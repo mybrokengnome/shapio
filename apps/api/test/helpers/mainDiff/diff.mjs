@@ -66,6 +66,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.unclaimedHidden !== true || step.unclaimedHidden) &&
   (entry.when?.noopHiddenKept !== true || step.noopHiddenKept) &&
   (entry.when?.unsentDeadTarget !== true || step.unsentDeadTarget) &&
+  (entry.when?.hiddenOverMax !== true || step.hiddenOverMax) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 const RELATIONS = new Set(['rel', 'rels', 'ref']);
@@ -97,10 +98,10 @@ const isHiddenKeep = (difference, pre) => {
 /** Whether every stored difference from `before` to `after` (one side's observations) is a hidden value lost. */
 /**
  * A relation value that lost only targets that are no longer live entries (review 15: "A kept target that has
- * since been deleted is not kept: it is dropped with the next change you make").
+ * since been deleted is not kept: the next write that changes something drops it, as before 0.9.0").
  */
 const lostDeadTargets = (difference, deadTargets) => {
-  if (!RELATIONS.has(leafOf(difference.path))) return false;
+  if (!RELATIONS.has(leafOf(difference.path)) && leafOf(difference.path) !== 'pics') return false;
   const before = Array.isArray(difference.main) ? difference.main : [difference.main];
   const after = Array.isArray(difference.branch)
     ? difference.branch
@@ -281,6 +282,8 @@ const recordTouched = (entry, raw, createdEntry) => {
   }
 };
 let consequences = 0;
+// Entries whose branch kept dead targets through an allowed no-op (review 16), and which ones.
+const keptDead = new Map();
 const count = Math.max(main.length, branch.length);
 for (let index = 0; index < count; index += 1) {
   const a = main[index];
@@ -369,6 +372,31 @@ for (let index = 0; index < count; index += 1) {
     recordTouched(entry, raw, createdEntry);
     continue;
   }
+  // An admin API echo of dead ids the branch kept through an allowed no-op (review 16): its refusal on exactly those
+  // ids is a consequence (main had dropped them, so its echo held none). Anything else on the entry still compares.
+  const kept = entry !== undefined ? keptDead.get(entry) : undefined;
+  if (
+    kept &&
+    / admin /.test(label) &&
+    (b?.issues ?? []).length > 0 &&
+    b.issues.every((issue) => {
+      const [code, path] = issue.split(' ');
+      if (code !== 'RELATION_TARGET_MISSING' && code !== 'MEDIA_MISSING') return false;
+      const value = path
+        .split('/')
+        .filter(Boolean)
+        .reduce((at, key) => (at === undefined || at === null ? undefined : at[key]), b?.sent);
+      const ids = (Array.isArray(value) ? value : [value]).map(String);
+      return (
+        ids.some((id) => kept.has(id)) &&
+        ids.every((id) => kept.has(id) || !(b?.pre?.deadTargets ?? []).includes(id))
+      );
+    })
+  ) {
+    consequences += found.length;
+    recordTouched(entry, raw, createdEntry);
+    continue;
+  }
   const dataDifferences = found.filter((difference) =>
     /^\/entry\/heads\/[^/]+\/data\//.test(difference.path),
   );
@@ -386,6 +414,15 @@ for (let index = 0; index < count; index += 1) {
     // A write main refused only because a field the body did not send holds a dead target (review 15): main's
     // issues are all RELATION_TARGET_MISSING on fields the body did not send, the branch accepted, and the branch
     // changed only fields the body sent.
+    // Known limit (review 16): every branch issue is TOO_MANY on a field where what is sent fits `max` but the live
+    // values hidden from the caller that the branch keeps push it over (worked out from the stored draft).
+    hiddenOverMax:
+      Array.isArray(b?.pre?.overMax) &&
+      (b?.issues ?? []).length > 0 &&
+      b.issues.every((issue) => {
+        const [code, path] = issue.split(' ');
+        return code === 'TOO_MANY' && b.pre.overMax.includes(path);
+      }),
     unsentDeadTarget:
       a?.status === 422 &&
       (a?.issues ?? []).length > 0 &&
@@ -403,6 +440,12 @@ for (let index = 0; index < count; index += 1) {
       continue;
     }
     const allowed = allow.find((candidate) => matches(candidate, label, difference, step));
+    if (allowed?.id === 'noop-hidden-kept' && entry !== undefined) {
+      // The kept value holds dead targets or assets: remember them (main dropped them, the branch kept them).
+      const kept = JSON.stringify(b?.entry?.heads ?? []);
+      const deadKept = (b?.pre?.deadTargets ?? []).filter((id) => kept.includes(id));
+      if (deadKept.length > 0) keptDead.set(entry, new Set([...(keptDead.get(entry) ?? []), ...deadKept]));
+    }
     if (allowed) {
       listed.set(allowed.id, (listed.get(allowed.id) ?? 0) + 1);
       if (

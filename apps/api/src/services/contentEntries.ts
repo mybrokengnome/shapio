@@ -45,6 +45,7 @@ import {
   mediaIdsOf,
   relationsByPath,
   withoutDeadPutBackTargets,
+  withoutTargetIds,
 } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
@@ -525,7 +526,8 @@ export const writeEntryUpdate = async (
     assertWritable(writeMask, model.definition.fields, Object.keys(patch));
   }
   // The relation targets the body itself names, by position, before anything is carried over (`assertTargets`).
-  const sentRelations = relationsByPath(model, patch);
+  const sent = patch;
+  const sentRelations = relationsByPath(model, sent);
   // Every written component instance continues a stored one, or is new (plan item-ids): delivery writes carry
   // over what their caller cannot see along a pairing made with the body; any other write keeps the IDs only.
   patch = input.carry
@@ -534,24 +536,41 @@ export const writeEntryUpdate = async (
         carryNothing: true,
         shown: otherHeadsWithIds(model, heads, previous, idScope, patch),
       });
-  // Targets the server put back that are deleted are dropped, never kept (`withoutDeadPutBackTargets`).
-  const kept = patch;
-  patch = await withoutDeadPutBackTargets(trx, model, patch, sentRelations, context.site.id);
-  const outcomeOf = (written: ContentData) => {
-    const checked = validated(input.validator, applyPatch(before, written), autosave);
-    // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.
-    return { ...checked, data: withUniqueItemIds(checked.data, model.definition.fields, componentOf) };
-  };
-  // Both sides with every item's ID: items the body left out (or sent back) of an entry saved before item IDs
-  // carry the IDs a read derives for them on both sides, so only content and IDs the body changed count.
-  const withIdsOf = (data: ContentData) => withItemIds(data, model.definition.fields, componentOf, idScope);
+  // Targets and assets the server put back that are deleted are dropped, never kept (`withoutDeadPutBackTargets`).
+  // Only the document that will be stored is validated, once: `max`, `min` and required see exactly it.
+  const live = await withoutDeadPutBackTargets(trx, model, patch, sent, context.site.id);
+  const toStore = applyPatch(before, live.data);
+  // Whether the save changes anything: what will be stored against the stored draft, both with every item's ID
+  // (items the body left out, or sent back, of an entry saved before item IDs carry the IDs a read derives for them
+  // on both sides, so only content and IDs the body changed count), the stored draft without the dead targets the
+  // save drops: a save whose only difference is dropping them changes nothing, so whether a hidden target was
+  // deleted or is only unpublished never makes a no-op a change.
+  const storedWithoutDropped =
+    live.dropped.size === 0 ? beforeWithIds : withoutTargetIds(model, beforeWithIds, live.dropped);
   const unchanged = (data: ContentData) =>
-    isUnchangedSave(model, previous, beforeWithIds, withIdsOf(data), input.seesAllStoredIn);
-  const outcome = outcomeOf(patch);
-  const afterWithIds = withIdsOf(outcome.data);
-  // A save that would change nothing but drop a dead target the caller cannot see changes nothing either: whether
-  // a hidden target was deleted or is only unpublished never changes the answer (the next real change drops it).
-  if (unchanged(outcome.data) || (kept !== patch && unchanged(outcomeOf(kept).data))) {
+    isUnchangedSave(
+      model,
+      previous,
+      storedWithoutDropped,
+      withItemIds(data, model.definition.fields, componentOf, idScope),
+      input.seesAllStoredIn,
+    );
+  const checked = input.validator.validate(toStore, { skipRequired: autosave });
+  if (checked.issues.length > 0) {
+    // Without its dead targets the stored draft may fall short of `min` or required: sending it back unchanged
+    // is still no change (the same comparison, on what would be stored), never a refusal.
+    if (previous && live.dropped.size > 0 && unchanged(toStore)) {
+      return { locale: targetLocale, head: previous };
+    }
+    throw contentInvalid(checked.issues);
+  }
+  // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.
+  const outcome = {
+    ...checked,
+    data: withUniqueItemIds(checked.data, model.definition.fields, componentOf),
+  };
+  const afterWithIds = withItemIds(outcome.data, model.definition.fields, componentOf, idScope);
+  if (previous && unchanged(outcome.data)) {
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }

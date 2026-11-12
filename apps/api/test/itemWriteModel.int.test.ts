@@ -14,6 +14,7 @@ import {
   echoChurnProblems,
   targetSwapProblems,
 } from './helpers/itemModelChurn.js';
+import { deadMaxProblems } from './helpers/itemModelDeadMax.js';
 import { AHEAD_KINDS, aheadEntry, echoAheadProblems } from './helpers/itemModelEchoAhead.js';
 import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
 import { locCopyEntry, locCopyProblems } from './helpers/itemModelLocCopy.js';
@@ -2081,6 +2082,10 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     expect(report(problems)).toEqual([]);
   });
 
+  it('DEADMAX (1 conservation, review 16): count rules with dead relation targets and deleted assets answer as on main', async () => {
+    expect(report(await deadMaxProblems(w))).toEqual([]);
+  });
+
   it('DEADREL (1 conservation, review 15): a hidden relation target that was soft-deleted never fails a write, is dropped as on main, and answers like an unpublished one', async () => {
     expect(report(await deadRelProblems(w, ['doc', 'ndoc']))).toEqual([]);
   });
@@ -2100,7 +2105,8 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
 
   // Review 15: 1550 (a kept hidden relation target pointing at a deleted entry on a no-draft type), 1628 and 1796 (a
   // chip moved by its id under another card is new there).
-  it.each([1550, 1628, 1796])('SEED%i (regression, review 15)', async (seed) => {
+  // Review 16: 2384 (an admin-kind token swaps two items identical in everything stored: a no-op).
+  it.each([1550, 1628, 1796, 2384])('SEED%i (regression, reviews 15 and 16)', async (seed) => {
     const { problems, log } = await runOnce(w, seed);
     expect(report(problems), log.join('\n')).toEqual([]);
   });

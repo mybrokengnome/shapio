@@ -110,7 +110,7 @@
       },
       {
         "file": "CHANGELOG.md",
-        "text": "A kept target that has since been deleted is not kept: it is dropped with the next change you make"
+        "text": "A kept target that has since been deleted is not kept: the next write that changes something drops it, as before 0.9.0"
       }
     ],
     "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view and every other sent field equals what it read (from the caller's read), the branch recorded no revision or event, and main's only stored changes are the loss of values hidden from the caller and the loss of relation targets that are no longer live entries.",
@@ -131,6 +131,24 @@
     "path": ".*",
     "when": {
       "unsentDeadTarget": true
+    }
+  },
+  {
+    "id": "hidden-over-max",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`."
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`."
+      }
+    ],
+    "condition": "Every branch issue is TOO_MANY on a relation or media field where the sent values fit `max` but, with the live values hidden from the caller that the stored draft keeps (not in the caller's read, not dead), exceed it (from the stored draft and the caller's read).",
+    "path": ".*",
+    "when": {
+      "hiddenOverMax": true
     }
   }
 ]

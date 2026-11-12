@@ -67,8 +67,11 @@ for every write change below is the same: send back the `id` of each item you re
    stored value; any other value, or a field that version never showed, is `403`.
 4. Private and deprecated values inside components, and hidden relation targets and media, are kept when a
    client writes back what it read. Before, such a write wiped them, so re-saving what a caller read changed the
-   entry. A kept relation target whose entry has since been deleted is dropped with the next change, as before
-   0.9.0. A re-save without `id`s now goes one of three ways:
+   entry. A kept target that has since been deleted is not kept: the next write that changes something drops it,
+   as before 0.9.0, and only the targets that remain count toward `max`, `min`, and required. Sending back what
+   you read unchanged never writes anything, whether a target you cannot see was deleted or is only unpublished.
+   A change can then be refused `TOO_FEW` or `REQUIRED` when the field no longer has enough live targets without
+   the deleted one. A re-save without `id`s now goes one of three ways:
    - It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what
      it read and can see the stored items, or when it cannot see them but can write the whole list and sends it
      exactly as stored, as before 0.9.0.

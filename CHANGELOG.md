@@ -95,12 +95,18 @@ All notable changes to Shapio are listed here. The format follows
   never moves to another item. A write that cannot be matched with certainty is refused, never guessed
   ([Delivery API](documentation/delivery-api.md#writing-components)).
 - A content export and import after a field type change works again.
-- Relation targets a write names are checked as before 0.9.0 (an unpublished entry of the right type is accepted;
-  a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`). Targets the
-  server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so
-  keeping them never fails a write. A kept target that has since been deleted is not kept: it is dropped with the
-  next change you make, as it was before 0.9.0, and whether a target you cannot see was deleted or is only
-  unpublished never changes the answer.
+- Relation targets a write names are checked as before 0.9.0 (an unpublished entry of the right type is
+  accepted; a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`).
+  Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not
+  checked again, so keeping them never fails a write. A kept target that has since been deleted is not kept: the
+  next write that changes something drops it, as before 0.9.0, and only the targets that remain count toward
+  `max`, `min`, and required. Sending back what you read unchanged never writes anything, whether a target you
+  cannot see was deleted or is only unpublished. A change can then be refused `TOO_FEW` or `REQUIRED` when the
+  field no longer has enough live targets without the deleted one.
+- A media asset an owner force-deleted is not kept on a write: where you did not send it (a field or item
+  carried over for you), the next write that changes something drops the dangling ID, as before 0.9.0, and it no
+  longer counts toward `max`. An asset you send yourself is checked as before. A private asset that still exists
+  is kept for callers who cannot see it.
 - Swapping two items that look identical to the caller but differ in values it cannot see is saved as a change,
   and their hidden values move with them. (Items identical in everything stored are covered under Added.)
 - Content nested too deeply for the database is refused with `422 BODY_TOO_DEEP` instead of failing with a `500`.
@@ -220,8 +226,9 @@ gets a shape it was not built for.
 - On a field whose items can hold values the caller cannot see, if its token cannot read drafts, the
   `AMBIGUOUS_ITEMS` refusal for an `id` the draft no longer holds tells it the field has unpublished changes, not
   what they are.
-- On a many-relation with a `max`, targets the caller cannot see still count, so a write that looks valid to the
-  caller can answer `TOO_MANY`.
+- With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the
+  caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`.
+- Dangling image references inside rich text are not dropped by a write.
 - Reading through a schema version from before a kind (a content type that extends another) existed answers
   `404` for entries of that kind, also under the parent's route.
 - When a save writes, items in component fields the body did not send keep `id`s derived on read until those

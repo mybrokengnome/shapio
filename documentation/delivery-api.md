@@ -743,9 +743,17 @@ refused only when the components hold deprecated fields; admin API writes (`/api
 - Relation targets a write names are checked as before 0.9.0: an unpublished entry of the right type is
   accepted; a deleted entry, an entry of the wrong type, or an ID with no entry is refused with
   `422 CONTENT_INVALID` (`RELATION_TARGET_MISSING`). Targets the server keeps for you (hidden ones behind what you
-  read, or fields you did not send) are not checked again. A kept target whose entry has been deleted is dropped
-  with the next change to the entry; a write that changes nothing else leaves it. The answer never depends on
-  whether a hidden target was deleted or is only unpublished.
+  read, or fields you did not send) are not checked again. A kept target that has since been deleted is not
+  kept: the next write that changes something drops it, as before 0.9.0, and only the targets that remain count
+  toward `max`, `min`, and required. Sending back what you read unchanged never writes anything, whether a
+  target you cannot see was deleted or is only unpublished. A change can then be refused `TOO_FEW` or `REQUIRED`
+  when the field no longer has enough live targets without the deleted one.
+- A media asset an owner force-deleted is not kept on a write: where you did not send it (a field or item
+  carried over for you), the next write that changes something drops the dangling ID, as before 0.9.0, and it no
+  longer counts toward `max`. An asset you send yourself is checked as before. A private asset that still exists
+  is kept for callers who cannot see it.
+- With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the
+  caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`.
 - Through a schema version, a field that changed since the client's version (a dynamic zone that gained a
   component, for example) can be sent back exactly as read, with or without the `id`s read, and nothing changes.
   So can a top-level field the version showed as empty that has since become private or deprecated. An item that
