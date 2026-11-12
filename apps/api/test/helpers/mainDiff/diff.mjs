@@ -67,9 +67,12 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.noopHiddenKept !== true || step.noopHiddenKept) &&
   (entry.when?.unsentDeadTarget !== true || step.unsentDeadTarget) &&
   (entry.when?.hiddenOverMax !== true || step.hiddenOverMax) &&
+  (entry.when?.unsentNotRechecked !== true || step.unsentNotRechecked) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
-const RELATIONS = new Set(['rel', 'rels', 'ref']);
+// Relation fields of the seed's types (`dref`, `dmtop`, `mixd`/`mixn`, `dlow` included), and media fields.
+const RELATIONS = new Set(['rel', 'rels', 'ref', 'relsA', 'relsB', 'refB']);
+const MEDIA = new Set(['pics', 'picsA', 'picsB', 'picB']);
 /** The last named segment of a path (`/entry/heads/en|draft/data/cards/0/rels/1` → `rels`). */
 const leafOf = (path) =>
   path
@@ -85,7 +88,8 @@ const isHiddenKeep = (difference, pre) => {
     return difference.main === undefined && difference.branch !== undefined;
   }
   if (!RELATIONS.has(leaf)) return false;
-  const hidden = (value) => pre.hiddenTargets.includes(value);
+  // (A caller without a read grant on things can see no relation target at all.)
+  const hidden = (value) => pre.allTargetsHidden === true || pre.hiddenTargets.includes(value);
   if (!Array.isArray(difference.branch)) {
     return difference.main === undefined && hidden(difference.branch);
   }
@@ -97,11 +101,11 @@ const isHiddenKeep = (difference, pre) => {
 /** The step-level conditions of the allowlist, from the branch's `pre` and issues. */
 /** Whether every stored difference from `before` to `after` (one side's observations) is a hidden value lost. */
 /**
- * A relation value that lost only targets that are no longer live entries (review 15: "A kept target that has
+ * A relation or media value that lost only targets hidden from the caller or no longer live (review 15: "A kept target that has
  * since been deleted is not kept: the next write that changes something drops it, as before 0.9.0").
  */
-const lostDeadTargets = (difference, deadTargets) => {
-  if (!RELATIONS.has(leafOf(difference.path)) && leafOf(difference.path) !== 'pics') return false;
+const lostDeadTargets = (difference, deadTargets, hidden = { targets: [], all: false }) => {
+  if (!RELATIONS.has(leafOf(difference.path)) && !MEDIA.has(leafOf(difference.path))) return false;
   const before = Array.isArray(difference.main) ? difference.main : [difference.main];
   const after = Array.isArray(difference.branch)
     ? difference.branch
@@ -111,7 +115,11 @@ const lostDeadTargets = (difference, deadTargets) => {
   const removed = before.filter((target) => !after.includes(target));
   return (
     removed.length > 0 &&
-    removed.every((target) => deadTargets.includes(target)) &&
+    removed.every(
+      (target) =>
+        deadTargets.includes(target) ||
+        (RELATIONS.has(leafOf(difference.path)) && (hidden.all || hidden.targets.includes(target))),
+    ) &&
     after.every((target) => before.includes(target))
   );
 };
@@ -126,7 +134,13 @@ const onlyFields = (before, after, fields) => {
   );
 };
 
-const onlyLostHidden = (before, after, hiddenLeaves, deadTargets = []) => {
+const onlyLostHidden = (
+  before,
+  after,
+  hiddenLeaves,
+  deadTargets = [],
+  hidden = { targets: [], all: false },
+) => {
   if (!after) return false;
   const heads = (observed) =>
     Object.fromEntries(observed.heads.map((head) => [`${head.locale}|${head.state}`, head.data]));
@@ -136,7 +150,7 @@ const onlyLostHidden = (before, after, hiddenLeaves, deadTargets = []) => {
     changed.every(
       (difference) =>
         (hiddenLeaves.includes(leafOf(difference.path)) && difference.branch === undefined) ||
-        lostDeadTargets(difference, deadTargets),
+        lostDeadTargets(difference, deadTargets, hidden),
     )
   );
 };
@@ -410,10 +424,25 @@ for (let index = 0; index < count; index += 1) {
       deltaB?.revisions === 0 &&
       deltaB?.events === 0 &&
       mainBefore !== undefined &&
-      onlyLostHidden(mainBefore, a?.entry, b.pre.hiddenLeaves, b.pre.deadTargets ?? []),
-    // A write main refused only because a field the body did not send holds a dead target (review 15): main's
-    // issues are all RELATION_TARGET_MISSING on fields the body did not send, the branch accepted, and the branch
-    // changed only fields the body sent.
+      onlyLostHidden(mainBefore, a?.entry, b.pre.hiddenLeaves, b.pre.deadTargets ?? [], {
+        targets: b.pre.hiddenTargets ?? [],
+        all: b.pre.allTargetsHidden === true,
+      }),
+    // Both sides refuse; the branch names a subset of main's issues, and every issue only main names is a dead
+    // relation target or asset in a field the body did not send (not checked again on the branch).
+    unsentNotRechecked:
+      a?.status === 422 &&
+      b?.status === 422 &&
+      (b?.issues ?? []).every((issue) => (a?.issues ?? []).includes(issue)) &&
+      (a?.issues ?? [])
+        .filter((issue) => !(b?.issues ?? []).includes(issue))
+        .every((issue) => {
+          const [code, path] = issue.split(' ');
+          return (
+            (code === 'RELATION_TARGET_MISSING' || code === 'MEDIA_MISSING') &&
+            !Object.keys(b?.sent ?? {}).includes(path.split('/')[1])
+          );
+        }),
     // Known limit (review 16): every branch issue is TOO_MANY on a field where what is sent fits `max` but the live
     // values hidden from the caller that the branch keeps push it over (worked out from the stored draft).
     hiddenOverMax:
@@ -423,6 +452,9 @@ for (let index = 0; index < count; index += 1) {
         const [code, path] = issue.split(' ');
         return code === 'TOO_MANY' && b.pre.overMax.includes(path);
       }),
+    // A write main refused only because a field the body did not send holds a dead target (review 15): main's
+    // issues are all RELATION_TARGET_MISSING on fields the body did not send, the branch accepted, and the branch
+    // changed only fields the body sent.
     unsentDeadTarget:
       a?.status === 422 &&
       (a?.issues ?? []).length > 0 &&

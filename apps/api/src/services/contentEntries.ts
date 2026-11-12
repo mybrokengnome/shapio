@@ -558,8 +558,14 @@ export const writeEntryUpdate = async (
   const checked = input.validator.validate(toStore, { skipRequired: autosave });
   if (checked.issues.length > 0) {
     // Without its dead targets the stored draft may fall short of `min` or required: sending it back unchanged
-    // is still no change (the same comparison, on what would be stored), never a refusal.
-    if (previous && live.dropped.size > 0 && unchanged(toStore)) {
+    // is still no change (the same comparison, on what would be stored), never a refusal, when the dead targets
+    // are the only reason (the stored draft, with them, is valid); an entry already invalid answers as before.
+    if (
+      previous &&
+      live.dropped.size > 0 &&
+      unchanged(toStore) &&
+      input.validator.validate(before, { skipRequired: autosave }).issues.length === 0
+    ) {
       return { locale: targetLocale, head: previous };
     }
     throw contentInvalid(checked.issues);

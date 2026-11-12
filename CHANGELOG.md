@@ -98,7 +98,7 @@ All notable changes to Shapio are listed here. The format follows
 - Relation targets a write names are checked as before 0.9.0 (an unpublished entry of the right type is
   accepted; a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`).
   Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not
-  checked again, so keeping them never fails a write. A kept target that has since been deleted is not kept: the
+  checked again, so keeping them never fails a write. On a content type without drafts, a kept deleted target in a field you did not send still fails the write, as before 0.9.0; clear that field to save. A kept target that has since been deleted is not kept: the
   next write that changes something drops it, as before 0.9.0, and only the targets that remain count toward
   `max`, `min`, and required. Sending back what you read unchanged never writes anything, whether a target you
   cannot see was deleted or is only unpublished. A change can then be refused `TOO_FEW` or `REQUIRED` when the

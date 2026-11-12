@@ -317,3 +317,290 @@ export const deadMaxProblems = async (w: World): Promise<Problem[]> => {
   }
   return problems;
 };
+
+/**
+ * DEADMIX (review 17), relations and media. (a) An entry already invalid as stored (a many-relation and a
+ * multi-media field over a `max` lowered after the save) holding a hidden value: an unchanged echo answers the same
+ * for both twins (hidden value deleted versus alive) and writes nothing when refused. (b) A deleted hidden value in
+ * a field the caller sends and in one it does not send, in four layouts (two top-level many fields; a many and a
+ * single field; top level and inside a component; a component and a top-level field), drafts on and off: an
+ * unchanged echo is a no-op for both twins; an edit drops the deleted value only where the body sent it.
+ */
+export const deadMixProblems = async (w: World): Promise<Problem[]> => {
+  const thing = w.models.thing.definition.id;
+  const item = await createDefinition(
+    w.admin,
+    {
+      kind: 'component',
+      apiKey: 'mxitem',
+      label: 'Mxitem',
+      fields: [
+        { apiKey: 'label', label: 'Label', type: 'string' },
+        { apiKey: 'rels', label: 'Rels', type: 'relation', settings: { target: thing, cardinality: 'many' } },
+        { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true } },
+      ],
+    },
+    'components',
+  );
+  const fields = [
+    { apiKey: 'title', label: 'Title', type: 'string' },
+    { apiKey: 'relsA', label: 'RelsA', type: 'relation', settings: { target: thing, cardinality: 'many' } },
+    { apiKey: 'relsB', label: 'RelsB', type: 'relation', settings: { target: thing, cardinality: 'many' } },
+    { apiKey: 'refB', label: 'RefB', type: 'relation', settings: { target: thing, cardinality: 'one' } },
+    { apiKey: 'picsA', label: 'PicsA', type: 'media', settings: { multiple: true } },
+    { apiKey: 'picsB', label: 'PicsB', type: 'media', settings: { multiple: true } },
+    { apiKey: 'picB', label: 'PicB', type: 'media' },
+    {
+      apiKey: 'items',
+      label: 'Items',
+      type: 'component',
+      settings: { component: item.definition.id, repeatable: true },
+    },
+  ];
+  const mixModels = [
+    await createDefinition(w.admin, { kind: 'collection', apiKey: 'mixd', label: 'Mixd', fields }),
+    await createDefinition(w.admin, {
+      kind: 'collection',
+      apiKey: 'mixn',
+      label: 'Mixn',
+      draftAndPublish: false,
+      fields,
+    }),
+  ];
+  const lowModel = await createDefinition(w.admin, {
+    kind: 'collection',
+    apiKey: 'dlow',
+    label: 'Dlow',
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string' },
+      {
+        apiKey: 'rels',
+        label: 'Rels',
+        type: 'relation',
+        settings: { target: thing, cardinality: 'many', max: 3 },
+      },
+      { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true, max: 3 } },
+    ],
+  });
+  const thingOf = async (name: string, publish: boolean) => {
+    const id = expectStatus(await w.admin.post('/api/admin/content/thing', { data: { name } }), 201).json<{
+      id: string;
+    }>().id;
+    if (publish) {
+      expectStatus(await w.admin.post(`/api/admin/content/thing/${id}/publish`, {}), 200);
+    }
+    return id;
+  };
+  const live = await thingOf('mix live', true);
+  const other = await thingOf('mix other', true);
+  const unpublished = await thingOf('mix unpublished', false);
+  const deadThing = await thingOf('mix dead', true);
+  const livePic = await insertAsset(w, 'public');
+  const otherPic = await insertAsset(w, 'public');
+  const privatePic = await insertAsset(w, 'private');
+  const deadPic = await insertAsset(w, 'public');
+  const twins = [
+    { name: 'deleted', rel: deadThing, pic: deadPic },
+    { name: 'alive', rel: unpublished, pic: privatePic },
+  ];
+  const publish = async (key: string, id: string, drafts: boolean) => {
+    if (drafts) {
+      expectStatus(await w.admin.post(`/api/admin/content/${key}/${id}/publish`, {}), 200);
+    }
+  };
+  // (b) the layouts: which fields hold the hidden value, which one the caller sends.
+  type Layout = { name: string; sent: string; unsent: string };
+  const layouts: Layout[] = [
+    { name: 'two many fields', sent: 'relsA', unsent: 'relsB' },
+    { name: 'many and single', sent: 'relsA', unsent: 'refB' },
+    { name: 'top level and component', sent: 'relsA', unsent: 'items' },
+    { name: 'component and top level', sent: 'items', unsent: 'relsA' },
+    { name: 'two media fields', sent: 'picsA', unsent: 'picsB' },
+    { name: 'media many and single', sent: 'picsA', unsent: 'picB' },
+  ];
+  const dataFor = (hidden: { rel: string; pic: string }) => ({
+    title: 't',
+    relsA: [live, hidden.rel],
+    relsB: [live, hidden.rel],
+    refB: hidden.rel,
+    picsA: [livePic, hidden.pic],
+    picsB: [livePic, hidden.pic],
+    picB: hidden.pic,
+    items: [{ label: 'A', rels: [live, hidden.rel], pics: [livePic, hidden.pic] }],
+  });
+  const mixEntries: Array<{ key: string; layout: Layout; twin: string; id: string; hidden: string }> = [];
+  for (const model of mixModels) {
+    const key = model.definition.apiKey;
+    for (const layout of layouts) {
+      for (const twin of twins) {
+        const id = expectStatus(
+          await w.admin.post(`/api/admin/content/${key}`, { data: dataFor(twin) }),
+          201,
+        ).json<{
+          id: string;
+        }>().id;
+        await publish(key, id, key === 'mixd');
+        mixEntries.push({
+          key,
+          layout,
+          twin: twin.name,
+          id,
+          hidden:
+            layout.name.startsWith('media') || layout.name.startsWith('two media') ? twin.pic : twin.rel,
+        });
+      }
+    }
+  }
+  // (a) already invalid: three values stored, then `max` lowered to 2.
+  const lowEntries: Array<{ twin: string; id: string }> = [];
+  for (const twin of twins) {
+    const id = expectStatus(
+      await w.admin.post('/api/admin/content/dlow', {
+        data: { title: 't', rels: [live, other, twin.rel], pics: [livePic, otherPic, twin.pic] },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    await publish('dlow', id, true);
+    lowEntries.push({ twin: twin.name, id });
+  }
+  const current = expectStatus(await w.admin.get(`/api/admin/models/${lowModel.definition.id}`), 200).json<{
+    definition: { fields: Array<Record<string, unknown>> } & Record<string, unknown>;
+    version: number;
+  }>();
+  const lowered = await w.admin.put(`/api/admin/models/${lowModel.definition.id}`, {
+    definition: {
+      ...current.definition,
+      fields: current.definition.fields.map((field) =>
+        field.apiKey === 'rels' || field.apiKey === 'pics'
+          ? { ...field, settings: { ...(field.settings as Json), max: 2 } }
+          : field,
+      ),
+    },
+    expectedVersion: current.version,
+    acknowledgeBreaking: true,
+    acknowledgeDestructive: true,
+  });
+  if (lowered.statusCode !== 200 && lowered.statusCode !== 202) {
+    throw new Error(`lowering max: ${lowered.statusCode} ${lowered.body}`);
+  }
+  await runContentSchemaJobs(w.db);
+  // The deaths.
+  await w.db
+    .updateTable('entries')
+    .set({ deleted_at: new Date().toISOString() })
+    .where('id', '=', deadThing)
+    .execute();
+  await forceDeleteAsset(w, deadPic);
+
+  const problems: Problem[] = [];
+  const draftOf = async (id: string) => (await headsOf(w, id)).find((head) => head.state === 'draft');
+  const fieldIdOf = (key: string, apiKey: string) =>
+    (key === 'dlow'
+      ? lowModel
+      : (mixModels.find((model) => model.definition.apiKey === key) ?? mixModels[0])
+    )?.definition.fields.find((field) => field.apiKey === apiKey)?.id ?? apiKey;
+  const holds = async (key: string, id: string, field: string, value: string) => {
+    const draft = await draftOf(id);
+    return JSON.stringify(draft?.data[fieldIdOf(key, field)] ?? null).includes(value);
+  };
+  await setPublicGrants(
+    w.db,
+    [...mixModels, lowModel].flatMap((model) => [
+      { action: 'read' as const, modelId: model.definition.id },
+      { action: 'update' as const, modelId: model.definition.id },
+    ]),
+  );
+  try {
+    const echo = async (key: string, id: string, send: string[], edit: boolean) => {
+      const read = (await w.request('GET', `/api/content/${key}s/${id}`, w.callers.reader.token))
+        .body as Json;
+      const data = (read.data as Json | undefined) ?? {};
+      // Media as the client sends them back: by id.
+      const asIds = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(asIds)
+          : isRecord(value)
+            ? typeof value.id === 'string' && typeof value.mimeType === 'string'
+              ? value.id
+              : Object.fromEntries(Object.entries(value).map(([field, entry]) => [field, asIds(entry)]))
+            : value;
+      const body = {
+        ...Object.fromEntries(send.map((field) => [field, asIds(data[field])])),
+        ...(edit ? { title: 't~' } : {}),
+      };
+      const before = await headsOf(w, id);
+      const response = await w.request('PUT', `/api/content/${key}s/${id}`, w.callers.reader.token, {
+        expectedVersion: (await draftOf(id))?.version ?? null,
+        data: body,
+      });
+      return { response, unchanged: isDeepStrictEqual(await headsOf(w, id), before) };
+    };
+    // (a)
+    const lowAnswers: string[] = [];
+    for (const { twin, id } of lowEntries) {
+      const { response, unchanged } = await echo('dlow', id, ['title', 'rels', 'pics'], false);
+      lowAnswers.push(`${response.status} ${codesOf(response.raw).join(',')}`);
+      if (response.status >= 300 && !unchanged) {
+        problems.push({
+          property: '1 conservation (DEADMIX)',
+          detail: `dlow ${twin}: refused, yet the entry changed`,
+        });
+      }
+    }
+    if (lowAnswers[0] !== lowAnswers[1]) {
+      problems.push({
+        property: '2 no oracle (DEADMIX)',
+        detail: `already invalid: deleted twin ${lowAnswers[0]}, alive twin ${lowAnswers[1]}`,
+      });
+    }
+    // (b)
+    for (const entry of mixEntries) {
+      const label = `${entry.key} ${entry.layout.name} (${entry.twin})`;
+      const unchanged = await echo(entry.key, entry.id, [entry.layout.sent], false);
+      if (unchanged.response.status >= 300 || !unchanged.unchanged) {
+        problems.push({
+          property: '9 no-op (DEADMIX)',
+          detail: `${label}: an unchanged echo answered ${unchanged.response.status} ${codesOf(unchanged.response.raw).join(',')}${unchanged.unchanged ? '' : ' and changed the entry'}`,
+        });
+        continue;
+      }
+      const edited = await echo(entry.key, entry.id, [entry.layout.sent], true);
+      // CHANGELOG.md: "On a content type without drafts, a kept deleted target in a field you did not send still
+      // fails the write, as before 0.9.0; clear that field to save." (every save also publishes, and the publish
+      // checks unsent fields in full).
+      if (entry.key === 'mixn' && entry.twin === 'deleted') {
+        const codes = codesOf(edited.response.raw).filter((code) => code !== 'CONTENT_INVALID');
+        if (
+          edited.response.status !== 422 ||
+          !codes.every((code) => code === 'RELATION_TARGET_MISSING' || code === 'MEDIA_MISSING') ||
+          !edited.unchanged
+        ) {
+          problems.push({
+            property: '1 conservation (DEADMIX)',
+            detail: `${label}: an edit answered ${edited.response.status} ${codes.join(',')}, not a RELATION_TARGET_MISSING refusal that writes nothing`,
+          });
+        }
+        continue;
+      }
+      if (edited.response.status >= 300) {
+        problems.push({
+          property: '1 conservation (DEADMIX)',
+          detail: `${label}: an edit answered ${edited.response.status} ${edited.response.raw.slice(0, 200)}`,
+        });
+        continue;
+      }
+      const atSent = await holds(entry.key, entry.id, entry.layout.sent, entry.hidden);
+      const atUnsent = await holds(entry.key, entry.id, entry.layout.unsent, entry.hidden);
+      const want = entry.twin === 'deleted' ? [false, true] : [true, true];
+      if (!isDeepStrictEqual([atSent, atUnsent], want)) {
+        problems.push({
+          property: '1 conservation (DEADMIX)',
+          detail: `${label}: after an edit the hidden value is ${atSent ? 'kept' : 'gone'} where it was sent and ${atUnsent ? 'kept' : 'gone'} where it was not (want ${want.map((keep) => (keep ? 'kept' : 'gone')).join('/')})`,
+        });
+      }
+    }
+  } finally {
+    await w.publicGrants(false);
+  }
+  return problems;
+};

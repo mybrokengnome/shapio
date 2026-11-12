@@ -113,7 +113,7 @@
         "text": "A kept target that has since been deleted is not kept: the next write that changes something drops it, as before 0.9.0"
       }
     ],
-    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view and every other sent field equals what it read (from the caller's read), the branch recorded no revision or event, and main's only stored changes are the loss of values hidden from the caller and the loss of relation targets that are no longer live entries.",
+    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view and every other sent field equals what it read (media compared by id), the branch recorded no revision or event, and main's only stored changes are the loss of values hidden from the caller (private sub-fields, relation targets it cannot read) and of relation targets and assets that are no longer live.",
     "path": "^/entry/|^/body/(data/)?(version|status|updatedAt|publishedAt)$",
     "when": {
       "noopHiddenKept": true
@@ -149,6 +149,20 @@
     "path": ".*",
     "when": {
       "hiddenOverMax": true
+    }
+  },
+  {
+    "id": "unsent-not-rechecked",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so keeping them never fails a write"
+      }
+    ],
+    "condition": "Both sides answer 422; the branch's issues are a subset of main's, and every issue only main names is RELATION_TARGET_MISSING or MEDIA_MISSING on a top-level field the body did not send.",
+    "path": "^/(issues|body/error/details/issues)(/|$)",
+    "when": {
+      "unsentNotRechecked": true
     }
   }
 ]

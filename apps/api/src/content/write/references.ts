@@ -154,19 +154,23 @@ const keptTargets = (
   return !isMissingValue(kept) ? kept : topLevel && asPatch ? null : REMOVE;
 };
 
+/** Target IDs by the position (`walkTargets` path) they sit at. */
+export type TargetPositions = ReadonlyMap<string, ReadonlySet<string>>;
+
 /**
- * Stored data (storage form) without the given IDs in any relation or media value, emptied values removed as
- * stored: what the stored data would be without those targets, for comparisons.
+ * Stored data (storage form) without the given IDs at the given positions only (`withoutDeadPutBackTargets`'s
+ * `dropped`), emptied values removed as stored: what the stored data would be without those targets, for
+ * comparisons. A field the body did not send keeps its value, as the write keeps it.
  */
 export const withoutTargetIds = (
   model: ContentModel,
   data: Readonly<ContentData>,
-  ids: ReadonlySet<string>,
+  positions: TargetPositions,
 ): ContentData =>
   (['relation', 'media'] as const).reduce(
     (current, kind) =>
-      walkTargets(model, current, kind, (_path, value, topLevel) =>
-        keptTargets(value, topLevel, false, (id) => typeof id !== 'string' || !ids.has(id)),
+      walkTargets(model, current, kind, (path, value, topLevel) =>
+        keptTargets(value, topLevel, false, (id) => typeof id !== 'string' || !positions.get(path)?.has(id)),
       ),
     data as ContentData,
   );
@@ -178,7 +182,7 @@ export const withoutTargetIds = (
  * entry or asset, or none) is dropped, as a write that sends the read back without it drops it: dead references do
  * not accumulate, and nothing a write is checked against (`max`, `min`, required) counts them. What the body names
  * is left for `assertTargets` and the validator; unpublished entries and private assets stay. Only what the patch
- * holds is touched: a field the body did not send keeps its stored value. `dropped`: the IDs dropped.
+ * holds is touched: a field the body did not send keeps its stored value. `dropped`: the IDs dropped, by position.
  */
 export const withoutDeadPutBackTargets = async (
   executor: Executor,
@@ -186,7 +190,7 @@ export const withoutDeadPutBackTargets = async (
   data: Readonly<ContentData>,
   sent: Readonly<ContentData>,
   siteId: string,
-): Promise<{ data: Readonly<ContentData>; dropped: ReadonlySet<string> }> => {
+): Promise<{ data: Readonly<ContentData>; dropped: TargetPositions }> => {
   const dead = new Set<string>();
   for (const kind of ['relation', 'media'] as const) {
     const named = targetsByPath(model, sent, kind);
@@ -207,22 +211,24 @@ export const withoutDeadPutBackTargets = async (
     );
     putBack.filter((id) => !live.has(id)).forEach((id) => dead.add(id));
   }
+  const dropped = new Map<string, Set<string>>();
   if (dead.size === 0) {
-    return { data, dropped: dead };
+    return { data, dropped };
   }
   // A dead ID is dropped only where it was put back: where the body names it, it stays for the checks to answer.
   const output = (['relation', 'media'] as const).reduce((current, kind) => {
     const named = targetsByPath(model, sent, kind);
     return walkTargets(model, current, kind, (path, value, topLevel) =>
-      keptTargets(
-        value,
-        topLevel,
-        true,
-        (id) => typeof id !== 'string' || !dead.has(id) || (named.get(path)?.has(id) ?? false),
-      ),
+      keptTargets(value, topLevel, true, (id) => {
+        const keep = typeof id !== 'string' || !dead.has(id) || (named.get(path)?.has(id) ?? false);
+        if (!keep) {
+          dropped.set(path, (dropped.get(path) ?? new Set()).add(id));
+        }
+        return keep;
+      }),
     );
   }, data as ContentData);
-  return { data: output, dropped: dead };
+  return { data: output, dropped };
 };
 
 /** Every asset the given documents point at (media fields and rich-text images, components included). */

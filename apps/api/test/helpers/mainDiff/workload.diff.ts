@@ -53,7 +53,8 @@ type Manifest = {
   users: Record<'reader' | 'updateOnly' | 'owner', string>;
   entries: Array<{
     id: string;
-    model: 'doc' | 'ndoc' | 'ldoc' | 'cmove' | 'dref' | 'drefn' | 'dmtop' | 'dmtopn';
+    model:
+      'doc' | 'ndoc' | 'ldoc' | 'cmove' | 'dref' | 'drefn' | 'dmtop' | 'dmtopn' | 'mixd' | 'mixn' | 'dlow';
     ahead?: string;
     owned?: boolean;
   }>;
@@ -289,7 +290,75 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     });
   const dmtop = await dmModel('dmtop', true);
   const dmtopn = await dmModel('dmtopn', false);
-  const models: ModelBody[] = [doc, ndoc, ldoc, cmove, dref, drefn, dmtop, dmtopn];
+  // Review 17: deleted hidden values in sent and unsent fields (`mixd` with drafts, `mixn` without), and an entry
+  // already over a lowered `max` (`dlow`).
+  const mxitem = await component('mxitem', [
+    { apiKey: 'label', label: 'Label', type: 'string' },
+    {
+      apiKey: 'rels',
+      label: 'Rels',
+      type: 'relation',
+      settings: { target: thing.definition.id, cardinality: 'many' },
+    },
+    { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true } },
+  ]);
+  const mixFields = [
+    { apiKey: 'title', label: 'Title', type: 'string' },
+    ...['relsA', 'relsB'].map((apiKey) => ({
+      apiKey,
+      label: apiKey,
+      type: 'relation',
+      settings: { target: thing.definition.id, cardinality: 'many' },
+    })),
+    {
+      apiKey: 'refB',
+      label: 'RefB',
+      type: 'relation',
+      settings: { target: thing.definition.id, cardinality: 'one' },
+    },
+    ...['picsA', 'picsB'].map((apiKey) => ({
+      apiKey,
+      label: apiKey,
+      type: 'media',
+      settings: { multiple: true },
+    })),
+    { apiKey: 'picB', label: 'PicB', type: 'media' },
+    {
+      apiKey: 'items',
+      label: 'Items',
+      type: 'component',
+      settings: { component: mxitem.definition.id, repeatable: true },
+    },
+  ];
+  const mixd = await createDefinition(admin, {
+    kind: 'collection',
+    apiKey: 'mixd',
+    label: 'Mixd',
+    fields: mixFields,
+  });
+  const mixn = await createDefinition(admin, {
+    kind: 'collection',
+    apiKey: 'mixn',
+    label: 'Mixn',
+    draftAndPublish: false,
+    fields: mixFields,
+  });
+  const dlow = await createDefinition(admin, {
+    kind: 'collection',
+    apiKey: 'dlow',
+    label: 'Dlow',
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string' },
+      {
+        apiKey: 'rels',
+        label: 'Rels',
+        type: 'relation',
+        settings: { target: thing.definition.id, cardinality: 'many', max: 3 },
+      },
+      { apiKey: 'pics', label: 'Pics', type: 'media', settings: { multiple: true, max: 3 } },
+    ],
+  });
+  const models: ModelBody[] = [doc, ndoc, ldoc, cmove, dref, drefn, dmtop, dmtopn, mixd, mixn, dlow];
   const grants = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
     models.flatMap((model) => actions.map((action) => ({ action, modelId: model.definition.id, ...extra })));
   const user = async (name: string, list: GrantSpec[]) => {
@@ -587,6 +656,71 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
       entries.push({ id, model, ahead });
     }
   }
+  // Review 17 entries: every relation and media field holds [live, hidden]; the twins differ in the hidden value
+  // (deleted below, or alive: unpublished, private).
+  for (const model of ['mixd', 'mixn'] as const) {
+    for (const [ahead, rel, pic] of [
+      ['mixDead', rawDead, deadPic],
+      ['mixAlive', things.unpublished, privatePic],
+    ] as const) {
+      const id = expectStatus(
+        await admin.post(`/api/admin/content/${model}`, {
+          data: {
+            title: 't',
+            relsA: [dmax.live, rel],
+            relsB: [dmax.live, rel],
+            refB: rel,
+            picsA: [dmax.livePic, pic],
+            picsB: [dmax.livePic, pic],
+            picB: pic,
+            items: [{ label: 'A', rels: [dmax.live, rel], pics: [dmax.livePic, pic] }],
+          },
+        }),
+        201,
+      ).json<{ id: string }>().id;
+      if (model === 'mixd') {
+        expectStatus(await admin.post(`/api/admin/content/mixd/${id}/publish`, {}), 200);
+      }
+      entries.push({ id, model, ahead });
+    }
+  }
+  for (const [ahead, rel, pic] of [
+    ['lowDead', rawDead, deadPic],
+    ['lowAlive', things.unpublished, privatePic],
+  ] as const) {
+    const id = expectStatus(
+      await admin.post('/api/admin/content/dlow', {
+        data: { title: 't', rels: [dmax.live, dmax.other, rel], pics: [dmax.livePic, dmax.otherPic, pic] },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(await admin.post(`/api/admin/content/dlow/${id}/publish`, {}), 200);
+    entries.push({ id, model: 'dlow', ahead });
+  }
+  {
+    // `max` lowered to 2 after the save: both entries are now over it.
+    const now = (await admin.get(`/api/admin/models/${dlow.definition.id}`)).json<{
+      definition: { fields: Json[] } & Json;
+      version: number;
+    }>();
+    const lowered = await admin.put(`/api/admin/models/${dlow.definition.id}`, {
+      definition: {
+        ...now.definition,
+        fields: now.definition.fields.map((field) =>
+          field.apiKey === 'rels' || field.apiKey === 'pics'
+            ? { ...field, settings: { ...(field.settings as Json), max: 2 } }
+            : field,
+        ),
+      },
+      expectedVersion: now.version,
+      acknowledgeBreaking: true,
+      acknowledgeDestructive: true,
+    });
+    if (lowered.statusCode !== 200 && lowered.statusCode !== 202) {
+      throw new Error(`lowering max: ${lowered.statusCode} ${lowered.body}`);
+    }
+    await runContentSchemaJobs(db);
+  }
   // The asset force-deleted as `deleteAsset(force)` does: its references gone, the row soft-deleted.
   await db.deleteFrom('media_references').where('asset_id', '=', deadPic).execute();
   await db
@@ -602,9 +736,26 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     .where('id', '=', rawDead)
     .execute();
   const fieldKeys = Object.fromEntries(
-    [chip, card, box, doc, ndoc, litem, ldoc, cmove, dcard, dref, drefn, dmitem, dmtop, dmtopn].flatMap(
-      (model) => model.definition.fields.map((field) => [field.id, field.apiKey]),
-    ),
+    [
+      chip,
+      card,
+      box,
+      doc,
+      ndoc,
+      litem,
+      ldoc,
+      cmove,
+      dcard,
+      dref,
+      drefn,
+      dmitem,
+      dmtop,
+      dmtopn,
+      mxitem,
+      mixd,
+      mixn,
+      dlow,
+    ].flatMap((model) => model.definition.fields.map((field) => [field.id, field.apiKey])),
   );
   return {
     adminToken,
@@ -695,9 +846,20 @@ const withoutIds = (value: unknown): unknown =>
  * Whether a body sends back what the caller read, ids aside: every list it sends holds the read's items, each
  * equal to exactly one read item and each read item sent once; every other field equals what was read.
  */
+const mediaAsIds = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(mediaAsIds)
+    : isRecord(value)
+      ? typeof value.id === 'string' && typeof value.mimeType === 'string'
+        ? value.id
+        : Object.fromEntries(Object.entries(value).map(([field, entry]) => [field, mediaAsIds(entry)]))
+      : value;
+
 const contentMatchOf = (read: Json, body: Json): boolean =>
   Object.entries(body).every(([field, sent]) => {
-    const stored = read[field];
+    // (Media read as objects are sent back by id.)
+    // (A list the read shows as null, every target hidden, is sent back as [].)
+    const stored = mediaAsIds(read[field] ?? (Array.isArray(sent) ? [] : read[field]));
     if (Array.isArray(sent) && Array.isArray(stored)) {
       const a = sent.map((item) => JSON.stringify(withoutIds(item)));
       const b = stored.map((item) => JSON.stringify(withoutIds(item)));
@@ -876,6 +1038,8 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       hiddenLeaves: ['note', 'secret'],
       deadTargets: manifest.deadTargets ?? [],
       // Callers without a read grant on things (update-only, anonymous) cannot read any relation target.
+      // Callers without a read grant on things cannot read any relation target.
+      allTargetsHidden: caller === 'updateOnly' || caller === 'anon',
       hiddenTargets:
         caller === 'updateOnly' || caller === 'anon'
           ? [manifest.things.published, manifest.things.unpublished]
@@ -1055,6 +1219,72 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
         (await request('GET', `/api/admin/content/ldoc/${target.id}?locale=de`, manifest.adminToken)).body,
         created,
       ),
+    };
+  };
+  const mixes = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.model === 'mixd' || entry.model === 'mixn' || entry.model === 'dlow');
+  /**
+   * Review 17: a caller echoes one field of its read (or, on `dlow`, the whole read), unchanged or with the title
+   * edited too; media as ids.
+   */
+  const deadMixStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const { entry: target, index } = random.pick(mixes);
+    const send =
+      target.model === 'dlow'
+        ? ['title', 'rels', 'pics']
+        : [random.pick(['relsA', 'items', 'picsA'] as const)];
+    const edit = random.chance(0.5);
+    const url =
+      caller === 'admin'
+        ? `/api/admin/content/${target.model}/${target.id}`
+        : `/api/content/${target.model}s/${target.id}`;
+    const read = await request('GET', url, token);
+    const data = isRecord(read.body) && isRecord(read.body.data) ? read.body.data : {};
+    const asIds = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(asIds)
+        : isRecord(value)
+          ? typeof value.id === 'string' && typeof value.mimeType === 'string'
+            ? value.id
+            : Object.fromEntries(Object.entries(value).map(([field, entry]) => [field, asIds(entry)]))
+          : value;
+    const body: Json = {
+      ...Object.fromEntries(send.map((field) => [field, asIds(data[field])])),
+      ...(edit ? { title: 't~' } : {}),
+    };
+    const view = await request('GET', `/api/admin/content/${target.model}/${target.id}`, manifest.adminToken);
+    const version = isRecord(view.body) ? (view.body.version ?? null) : null;
+    const baseline = await baselineOf(target.id, target.model);
+    const base = await preOf(caller, target, 'en', body);
+    // The body equals what is stored in the caller's view: what it read, or (a caller that reads the published head
+    // while the draft moved on) the stored draft with the values it cannot see, and dead ones, left out.
+    const draftData = (baseline.heads.find((head) => head.state === 'draft') ?? baseline.heads[0])?.data as
+      Json | undefined;
+    const visible = (field: string, value: unknown): unknown => {
+      const relation = /^(rels|relsA|relsB|refB)$/.test(field);
+      const keep = (id: unknown) =>
+        !base.deadTargets.includes(String(id)) &&
+        !(relation && 'allTargetsHidden' in base && base.allTargetsHidden) &&
+        !(base.hiddenTargets as string[]).includes(String(id));
+      return Array.isArray(value) ? value.filter(keep) : value;
+    };
+    const draftMatch =
+      draftData !== undefined &&
+      Object.entries(body).every(
+        ([field, sent]) =>
+          JSON.stringify(sent) ===
+          JSON.stringify(visible(field, draftData[field] ?? (Array.isArray(sent) ? [] : null))),
+      );
+    const pre = { ...base, contentMatch: contentMatchOf(data, body) || draftMatch };
+    const response = await request('PUT', url, token, { expectedVersion: version, data: body });
+    return {
+      label: `${step} ${caller} deadmix e${index} ${target.model} en ${target.ahead ?? '-'} ${send.join('+')}${edit ? ' edit' : ''}`,
+      baseline,
+      pre,
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, target.model),
     };
   };
   const dmtops = entries
@@ -1433,7 +1663,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       'copymove',
       'deadrel',
       'deadmax',
+      'deadmix',
     ] as const);
+    if (op === 'deadmix') {
+      steps.push(await deadMixStep(step, caller, token));
+      continue;
+    }
     if (op === 'deadmax') {
       steps.push(await deadMaxStep(step, caller, token));
       continue;
@@ -1602,7 +1837,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       ...(op === 'create' && observedId !== target.id ? { createdEntry: entries.length - 1 } : {}),
       pre,
       ...(baseline ? { baseline } : {}),
-      sent: body,
+      sent: normal(body, created),
       ...outcomeOf(response),
       entry: await observeEntry(observedId, observedModel),
     });

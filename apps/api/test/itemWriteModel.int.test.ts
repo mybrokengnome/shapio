@@ -14,7 +14,7 @@ import {
   echoChurnProblems,
   targetSwapProblems,
 } from './helpers/itemModelChurn.js';
-import { deadMaxProblems } from './helpers/itemModelDeadMax.js';
+import { deadMaxProblems, deadMixProblems } from './helpers/itemModelDeadMax.js';
 import { AHEAD_KINDS, aheadEntry, echoAheadProblems } from './helpers/itemModelEchoAhead.js';
 import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
 import { locCopyEntry, locCopyProblems } from './helpers/itemModelLocCopy.js';
@@ -2080,6 +2080,10 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     }
     problems.push(...(await adminSingleCopyProblems(w)));
     expect(report(problems)).toEqual([]);
+  });
+
+  it('DEADMIX (1 conservation, review 17): deleted hidden values in sent and unsent fields, and an entry already over a lowered max', async () => {
+    expect(report(await deadMixProblems(w))).toEqual([]);
   });
 
   it('DEADMAX (1 conservation, review 16): count rules with dead relation targets and deleted assets answer as on main', async () => {
