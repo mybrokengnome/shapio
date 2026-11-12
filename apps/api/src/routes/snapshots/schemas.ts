@@ -63,6 +63,8 @@ export const currentSnapshotSchema = {
       snapshot: Type.Integer(),
       schemaVersion: Type.Integer(),
       publishedAt: NullableDateTimeSchema,
+      /** `<schemaId>:<version>`: what a client names to read in this shape (plan schema-lenses). */
+      schemaVersionToken: Type.Optional(Type.String()),
     }),
     ...ERRORS,
   },

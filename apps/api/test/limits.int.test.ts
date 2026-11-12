@@ -103,7 +103,8 @@ describe('limits under abuse', { timeout: 60_000 }, () => {
     measure('10,000 aliased counts refused in', counts.ms);
     expect(counts.ms).toBeLessThan(QUICK_MS);
     expect(counts.status).toBe(400);
-    expect(counts.codes).toEqual(expect.arrayContaining(['QUERY_TOO_MANY_ALIASES', 'QUERY_TOO_COMPLEX']));
+    // 60,000 tokens: refused before parsing (GRAPHQL_MAX_TOKENS), so neither validated nor counted.
+    expect(counts.codes).toEqual(['QUERY_TOO_LARGE']);
 
     const justOver = await graphql(`{ ${aliases(31, 'folders { totalCount }')} }`);
     expect(justOver.codes).toEqual(['QUERY_TOO_MANY_ALIASES']);

@@ -64,3 +64,24 @@ export const isForeignKeyViolation = (error: unknown, constraint?: string): bool
   }
   return false;
 };
+
+/** PostgreSQL SQLSTATE for lock_not_available (a `lock_timeout` or `NOWAIT` gave up). */
+const LOCK_NOT_AVAILABLE = '55P03';
+
+/** Whether `error` is a lock wait that gave up (PostgreSQL `lock_timeout`). */
+export const isLockTimeout = (error: unknown): boolean => fieldsOf(error)?.code === LOCK_NOT_AVAILABLE;
+
+/** PostgreSQL SQLSTATE for undefined_column. */
+const UNDEFINED_COLUMN = '42703';
+
+/**
+ * Whether `error` says a column does not exist (PostgreSQL), optionally one named `column`: PostgreSQL names it
+ * in the message, quoted, in every language it reports in.
+ */
+export const isUndefinedColumn = (error: unknown, column?: string): boolean => {
+  if (fieldsOf(error)?.code !== UNDEFINED_COLUMN) {
+    return false;
+  }
+  const message: unknown = (error as { message?: unknown }).message;
+  return column === undefined || (typeof message === 'string' && message.includes(column));
+};

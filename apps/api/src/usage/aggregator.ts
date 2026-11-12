@@ -18,8 +18,17 @@ export type UsageRecorder = {
     modelId: string,
     fields: readonly FieldRead[],
   ) => void;
-  /** One delivery request on `siteId` by `principalKey`; `snapshot` when it pinned `?snapshot=N`. */
-  recordRequest: (siteId: string, principalKey: string, snapshot: number | null) => void;
+  /**
+   * One delivery request on `siteId` by `principalKey`; `snapshot` when it pinned `?snapshot=N`;
+   * `schemaVersion` the schema version it named (plan schema-lenses: the integer of `<schemaId>:<version>`,
+   * the current one included), null or omitted when it named none. REST and GraphQL reads both call this.
+   */
+  recordRequest: (
+    siteId: string,
+    principalKey: string,
+    snapshot: number | null,
+    schemaVersion?: number | null,
+  ) => void;
 };
 
 export type UsageBatch = { fieldReads: FieldReadRow[]; tokenReads: TokenReadRow[] };
@@ -87,6 +96,8 @@ const addTokenRow = (counters: Counters, row: TokenReadRow) => {
   if (row.lastReadAt >= known.lastReadAt) {
     known.lastReadAt = row.lastReadAt;
     known.lastSnapshot = row.lastSnapshot ?? known.lastSnapshot;
+    // The schema version is what the latest request named: a request that names none clears it.
+    known.lastSchemaVersion = row.lastSchemaVersion;
   } else {
     known.lastSnapshot ??= row.lastSnapshot;
   }
@@ -167,7 +178,7 @@ export const createUsageAggregator = ({
       }
       checkCapacity();
     },
-    recordRequest: (siteId, principalKey, snapshot) => {
+    recordRequest: (siteId, principalKey, snapshot, schemaVersion = null) => {
       const at = now();
       addTokenRow(counters, {
         day: usageDayOf(at),
@@ -175,6 +186,7 @@ export const createUsageAggregator = ({
         principalKey,
         requests: 1,
         lastSnapshot: snapshot,
+        lastSchemaVersion: schemaVersion,
         lastReadAt: at,
       });
       checkCapacity();

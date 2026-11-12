@@ -9,6 +9,7 @@ import * as transferImportRepository from '../../repositories/transferImport.js'
 import * as webhooksRepository from '../../repositories/webhooks.js';
 import type { SchemaServiceContext } from '../../services/schemaAccess.js';
 import { applySchema, type SyncResultItem } from '../../services/schemaSync.js';
+import { bundleItemIdCheckFor } from './bundleItemIds.js';
 import { classifyEntry, type EntryClassification } from './classify.js';
 import type {
   AppRoleRecord,
@@ -297,6 +298,7 @@ const scanBundle = async (context: SchemaServiceContext, input: Readable, acc: A
   const modelKey = (id: string) => definitionKeys.get(id) ?? context.snapshot.byId.get(id)?.definition.apiKey;
   const knownLocale = (code: string) =>
     bundleLocales.has(code) || context.snapshot.locales.some((locale) => locale.code === code);
+  const checkItemIds = bundleItemIdCheckFor(context.snapshot);
   const flush = async (force: boolean) => {
     if (users.length >= BATCH || (force && users.length > 0)) {
       await planUsers(acc, users.splice(0));
@@ -343,6 +345,7 @@ const scanBundle = async (context: SchemaServiceContext, input: Readable, acc: A
         assets.push(record);
         break;
       case 'entry':
+        checkItemIds(record);
         entries.push(record);
         break;
       default:

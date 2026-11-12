@@ -31,6 +31,11 @@ export type GraphqlRequestContext = {
    */
   site: SiteRef;
   loaders: GraphqlLoaders;
+  /**
+   * The schema version the request named (plan schema-lenses), which `_schemaVersion` reports; absent when it
+   * named none.
+   */
+  schemaVersion?: number;
   /** The content service context of this request, built on first use. */
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>;
 };

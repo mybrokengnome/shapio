@@ -20,3 +20,19 @@ describe('findInvalidText', () => {
     expect(findInvalidText(Object.assign(empty, { q: '\u0000' }))).toBe('/q');
   });
 });
+
+describe('findInvalidText at depth', () => {
+  it('walks a value nested 200,000 deep without exhausting the stack', () => {
+    let deep: unknown = 'ok';
+    for (let depth = 0; depth < 200_000; depth += 1) {
+      deep = depth % 2 === 0 ? [deep] : { d: deep };
+    }
+    expect(findInvalidText(deep)).toBeUndefined();
+    expect(findInvalidText({ a: [deep, 'bad\u0000'] })).toBe('/a/1');
+  });
+
+  it('answers the first invalid string or key in document order', () => {
+    expect(findInvalidText({ a: ['x', { b: 'bad\u0000' }], ['k\u0000']: 1, c: 'bad\u0000' })).toBe('/a/1/b');
+    expect(findInvalidText({ a: 'x', ['k\u0000']: 'fine', c: 'bad\u0000' })).toBe('/k\u0000');
+  });
+});

@@ -32,6 +32,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | `RATE_LIMIT_MAX` | `600` | integer ≥ 1 | Requests per window and client IP, for every route without a stricter limit of its own. Requests for the admin's own files under the admin prefix (scripts, styles, `theme-init.js`, fonts, and favicons) are not counted; the admin page itself and every API route are. |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | integer ≥ 1000 | The rate-limit window, in milliseconds. |
 | `MEDIA_RATE_LIMIT_MAX` | `6000` | integer ≥ 1 | Requests per window and IP for public media files (`/api/media/f/*` without a signature). |
+| `REQUEST_BODY_MAX_BYTES` | `1048576` | integer 1024–1073741824 | Largest JSON request body, in bytes (413 beyond it). Raise it for very large entries: every component item a client reads carries its `id`, so an entry saved back as read is a little larger than it was written. Media uploads and `schema apply` have limits of their own. |
 
 ## HTTPS without a reverse proxy
 
@@ -138,6 +139,7 @@ Variables only the CLI reads (`SHAPIO_URL`, `SHAPIO_TOKEN`, `SHAPIO_ADMIN_PASSWO
 | --- | --- | --- | --- |
 | `GRAPHQL_ENABLED` | `true` | `true`, `false` | GraphQL at /api/graphql. Shares REST's permissions, filters and page-size limits. |
 | `GRAPHQL_MAX_DEPTH` | `10` | integer 2–50 | Deepest query nesting GraphQL accepts. |
+| `GRAPHQL_MAX_TOKENS` | `5000` | integer 500–1000000 | Most tokens a GraphQL document may have (names, punctuation, and values; comments are not counted), checked before it is parsed or validated: 400 `QUERY_TOO_LARGE` beyond it. Full introspection is under 200; the API explorer's queries a few hundred. Validation time grows with the square of repeated fields, so keep it modest. |
 | `GRAPHQL_MAX_COMPLEXITY` | `20000` | integer 10–10000000 | Estimated cost ceiling per query: each field costs 1, multiplied by enclosing page sizes and lists. |
 | `GRAPHQL_PLAYGROUND_ENABLED` | `true` | `true`, `false` | GraphiQL for admins at /api/graphql/playground (self-hosted assets). |
 | `GRAPHQL_PUBLIC_INTROSPECTION` | `false` | `true`, `false` | Let anonymous callers and app users introspect the schema. Admins and API tokens always can. |

@@ -1,5 +1,6 @@
-import { isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
+import { compileLens, isInterfaceDefinition, routeKeyOf } from '@shapio/schema';
 import type { Transaction } from 'kysely';
+import { schemaVersionToken } from '../constants/schemaLens.js';
 import { allowsNewEntry, assertAllowed, forbidden, matchesRowFilter } from '../content/compiler/policy.js';
 import { entryNotFound } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
@@ -18,6 +19,9 @@ import type {
 } from '../permissions/types.js';
 import * as entriesRepository from '../repositories/entries.js';
 import type { EntryRow } from '../repositories/entries.js';
+import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
+import { lensBudgetKeyOf, type LensBudgetKey } from '../schema/lens/budget.js';
+import { loadRequestLens, parseSchemaVersionToken, type RequestLens } from '../schema/lens/views.js';
 import type { SchemaSnapshot } from '../schema/snapshot.js';
 import type { SiteRef } from './actorContext.js';
 import { recordAudit } from './audit.js';
@@ -36,7 +40,146 @@ export type ContentServiceContext = {
   media?: ReadEnvironment['media'];
   requestId?: string;
   ip?: string;
+  /**
+   * Schema lenses (plan schema-lenses): the schema version the call names, and its lens. Absent: today's
+   * shape. An `identity` lens (nothing in the view changed since) reads exactly as without one.
+   */
+  lens?: RequestLens;
+  /**
+   * The client fields a lensed `fields=` named, by stable ID (gone ones included: they read null); null when
+   * it named none. Set with the lensed query (`services/contentDeliveryLens.ts`).
+   */
+  lensSelection?: readonly string[] | null;
+  /** This instance's schema ID (`<schemaId>:<version>` tokens); set on delivery contexts. */
+  schemaId?: string;
+  /**
+   * The schema version the call names (or its token's pin), not read yet: nothing about it is read, loaded or
+   * charged to a lens build budget until the caller is authorized (`loadSchemaLens`).
+   */
+  lensRequest?: LensRequest;
 };
+
+/** A schema version a call names, kept until the caller is authorized. */
+export type LensRequest = {
+  /** `<schemaId>:<version>` as sent; null when only the API token's pin names one. */
+  token: string | null;
+  /** Who pays for a lens build on a cache miss (`lensBudgetKeyOf`). */
+  budgetKey: LensBudgetKey | null;
+};
+
+const schemaIds = new WeakMap<Database, Promise<string>>();
+
+/** The instance's schema ID: written once by a migration, so read once per database handle. */
+export const schemaIdOf = (db: Database): Promise<string> => {
+  let schemaId = schemaIds.get(db);
+  if (!schemaId) {
+    schemaId = schemaVersionsRepository.getSchemaId(db);
+    schemaIds.set(db, schemaId);
+    schemaId.catch(() => schemaIds.delete(db));
+  }
+  return schemaId;
+};
+
+/** The lens of a call naming today's version: nothing to translate. */
+const currentVersionLens = (snapshot: SchemaSnapshot): RequestLens => {
+  const side = { get: (id: string) => snapshot.byId.get(id)?.definition, resolve: snapshot.resolve };
+  return {
+    requested: snapshot.version,
+    current: snapshot.version,
+    view: snapshot,
+    identity: true,
+    lensFor: (id) => compileLens(side, side, id),
+    unavailable: new Map(),
+  };
+};
+
+/** The schema version an API token is pinned to (plan schema-lenses); null for every other caller. */
+export const pinnedSchemaVersionOf = (actor: Principal): number | null =>
+  actor.kind === 'token' ? (actor.pinnedSchemaVersion ?? null) : null;
+
+/**
+ * The `<schemaId>:<version>` a call names, or the one of the API token's pin when it names none; null when
+ * neither. For callers that take the token rather than a content context (the generated contracts).
+ */
+export const schemaVersionTokenWithPin = async (
+  db: Database,
+  actor: Principal,
+  token: string | null,
+): Promise<string | null> => {
+  const pinned = token === null ? pinnedSchemaVersionOf(actor) : null;
+  return pinned === null ? token : schemaVersionToken(await schemaIdOf(db), pinned);
+};
+
+/**
+ * The context with the schema ID and, when the call names a schema version (`<schemaId>:<version>`), its lens:
+ * `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` or `SCHEMA_VERSION_AHEAD` when it cannot be served. A call
+ * that names none, made with an API token pinned to a version, is served as if it had named the pin; a version
+ * the call names wins over the pin.
+ */
+export const withSchemaLens = async (
+  context: ContentServiceContext,
+  token: string | null,
+  budgetKey: LensBudgetKey | null = budgetKeyOf(context),
+): Promise<ContentServiceContext> => {
+  const schemaId = await schemaIdOf(context.db);
+  const version =
+    token === null ? pinnedSchemaVersionOf(context.actor) : parseSchemaVersionToken(token, schemaId);
+  if (version === null) {
+    return { ...context, schemaId };
+  }
+  const lens =
+    (await loadRequestLens(context.db, context.snapshot, version, budgetKey)) ??
+    currentVersionLens(context.snapshot);
+  return { ...context, schemaId, lens };
+};
+
+/** Who pays for this call's lens builds: its principal, an anonymous caller by its client address. */
+const budgetKeyOf = (context: ContentServiceContext): LensBudgetKey | null =>
+  lensBudgetKeyOf(context.actor, context.snapshot.siteId, context.ip);
+
+/**
+ * The context with the schema ID and, when the call names a schema version (or its API token is pinned to one),
+ * that request kept for later: nothing is parsed, loaded or charged yet. `loadSchemaLens` reads it once the
+ * caller is authorized, so a caller that may not read never learns anything about versions or lens budgets.
+ */
+export const deferSchemaLens = async (
+  context: ContentServiceContext,
+  token: string | null,
+): Promise<ContentServiceContext> => {
+  const schemaId = await schemaIdOf(context.db);
+  if (token === null && pinnedSchemaVersionOf(context.actor) === null) {
+    return { ...context, schemaId };
+  }
+  return {
+    ...context,
+    schemaId,
+    lensRequest: { token, budgetKey: budgetKeyOf(context) },
+  };
+};
+
+/** Whether the call names a schema version (loaded or not yet). */
+export const namesSchemaVersion = (context: ContentServiceContext): boolean =>
+  context.lens !== undefined || context.lensRequest !== undefined;
+
+/**
+ * The context with the lens of the version it names, once the caller is authorized: `SCHEMA_VERSION_INVALID`,
+ * `_FOREIGN`, `_AHEAD`, or `LENS_BUDGET_EXCEEDED` here and only here. `budgetKey` overrides who pays (a preview
+ * token). Without a pending request, the context as it is.
+ */
+export const loadSchemaLens = async (
+  context: ContentServiceContext,
+  budgetKey?: LensBudgetKey | null,
+): Promise<ContentServiceContext> => {
+  const { lensRequest, ...rest } = context;
+  if (!lensRequest) {
+    return context;
+  }
+  return withSchemaLens(rest, lensRequest.token, budgetKey === undefined ? lensRequest.budgetKey : budgetKey);
+};
+
+/** Whether the call reads through a lens that translates anything (not today's version, not an identity). */
+export const activeLens = (context: Pick<ContentServiceContext, 'lens'>): RequestLens | undefined =>
+  context.lens && !context.lens.identity ? context.lens : undefined;
 
 const ACTION_LABELS: Readonly<Record<ContentAction, string>> = {
   read: 'reading',

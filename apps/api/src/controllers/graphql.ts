@@ -6,18 +6,27 @@ import { AppError } from '../helpers/appError.js';
 import { collectUsage, recordUsage } from '../plugins/graphqlHooks.js';
 import { getRequestPermissions } from '../plugins/requestState.js';
 import { getRequestSchema } from '../plugins/schemaSnapshot.js';
+import { getRequestSite } from '../plugins/siteResolution.js';
 import {
   formatGraphqlRequestError,
   formatGraphqlResult,
   type FormattedResult,
 } from '../schema/codegen/graphql/errors.js';
 import { hasNoContentAccess, resolveSchemaVisibility } from '../schema/codegen/graphql/visibility.js';
+import { lensBudgetKeyOf, takeLensBuildBudget } from '../schema/lens/budget.js';
 import {
   executeOperation,
   prepareOperation,
   type GraphqlOperationInput,
 } from '../services/graphqlExecution.js';
 import { createGraphqlRequestContext } from './graphqlContext.js';
+import {
+  graphqlLensOf,
+  graphqlSchemaFor,
+  unavailableDefinitionError,
+  usageLensOf,
+  withSchemaVersion,
+} from './graphqlLens.js';
 
 export type GraphqlQuerystring = { query: string; variables?: string; operationName?: string };
 
@@ -68,21 +77,87 @@ const variablesOf = (raw: string | undefined): Record<string, unknown> | undefin
   return parsed as Record<string, unknown>;
 };
 
+/**
+ * The caller's lens build budget (plan schema-lenses): a lens GraphQL schema not cached yet is built only while
+ * the caller's bucket of cache-miss builds lasts (429 beyond it); undefined for work that is never limited.
+ */
+const lensBuildAdmission = (request: FastifyRequest): (() => boolean) | undefined => {
+  const key = lensBudgetKeyOf(request.principal, getRequestSite(request).id, request.ip);
+  return key === null ? undefined : () => takeLensBuildBudget(key);
+};
+
 const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: GraphqlOperationInput) => {
   const runtime = request.server.graphqlRuntime;
   const mayIntrospect = runtime.mayIntrospect(request.principal);
   const view = await getRequestSchema(request);
   // The schema as this caller may see it: a delivery caller's never names a field or model it cannot read.
   const visibility = await resolveSchemaVisibility(view, getRequestPermissions(request), request.principal);
-  const { schema } = await runtime.schemas.get(view, visibility);
+  // A request naming a schema version reads in that version's shape (plan schema-lenses). A caller allowed no
+  // content gets exactly the answer it gets without a version, whatever version it names (one that cannot be
+  // read included): no lens is loaded or built for it, and no version error answers it.
+  const authorized = !hasNoContentAccess(visibility);
+  if (!authorized) {
+    // A caller allowed nothing gets exactly today's answer, headers included: no schema ID or version. Its
+    // document is validated against its empty schema (a query that schema can answer still runs), within the
+    // same token limit as everyone's (GRAPHQL_MAX_TOKENS), which bounds what validation can cost.
+    return runOperation(request, reply, input, {
+      runtime,
+      mayIntrospect,
+      view,
+      visibility,
+      lensed: undefined,
+    });
+  }
+  if (request.schemaVersionError) {
+    throw request.schemaVersionError;
+  }
+  const lensed = await graphqlLensOf(request, view);
+  return runOperation(request, reply, input, { runtime, mayIntrospect, view, visibility, lensed });
+};
+
+type OperationState = {
+  runtime: FastifyRequest['server']['graphqlRuntime'];
+  mayIntrospect: boolean;
+  view: Awaited<ReturnType<typeof getRequestSchema>>;
+  visibility: Awaited<ReturnType<typeof resolveSchemaVisibility>>;
+  lensed: Awaited<ReturnType<typeof graphqlLensOf>>;
+};
+
+/** Validates and executes the operation against the request's schema (the lens schema when one is active). */
+const runOperation = async (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  input: GraphqlOperationInput,
+  { runtime, mayIntrospect, view, visibility, lensed }: OperationState,
+) => {
+  // A caller allowed nothing never learns the schema ID or version (`Shapio-Schema-Version-Current`), even
+  // when a resolver built a content context for it (`_snapshot`, `_site`).
+  const answer = (result: FormattedResult) => {
+    if (hasNoContentAccess(visibility)) {
+      request.schemaVersionCurrent = null;
+    }
+    return send(reply, result);
+  };
+  const { schema } = await graphqlSchemaFor(runtime, view, visibility, lensed, lensBuildAdmission(request));
   const prepared = prepareOperation(schema, input, runtime);
   if (!prepared.ok) {
+    const unavailable =
+      prepared.document &&
+      unavailableDefinitionError(lensed, visibility, prepared.document, input.operationName);
+    if (unavailable) {
+      throw unavailable;
+    }
     if (prepared.document && hasNoContentAccess(visibility)) {
       throw noContentAccess(request.principal.kind === 'anonymous', prepared.document, input.operationName);
     }
-    return send(
-      reply,
-      formatGraphqlResult({ errors: prepared.errors }, { log: request.log, hideSuggestions: !mayIntrospect }),
+    return answer(
+      withSchemaVersion(
+        formatGraphqlResult(
+          { errors: prepared.errors },
+          { log: request.log, hideSuggestions: !mayIntrospect },
+        ),
+        lensed,
+      ),
     );
   }
   if (request.method === 'GET' && prepared.operation.operation !== OperationTypeNode.QUERY) {
@@ -98,15 +173,21 @@ const runGraphql = async (request: FastifyRequest, reply: FastifyReply, input: G
     prepared.document,
     prepared.operation,
     input.variables ?? undefined,
+    usageLensOf(lensed, visibility),
   );
-  const context = createGraphqlRequestContext(request);
+  const context = createGraphqlRequestContext(request, lensed);
   const result = await executeOperation(schema, prepared, input, context);
-  recordUsage(request, usage, result.data !== null && result.data !== undefined);
+  recordUsage(
+    request,
+    usage,
+    result.data !== null && result.data !== undefined,
+    lensed?.lens?.requested ?? null,
+  );
   if (context.readDrafts()) {
     // Drafts (plan drafts-mode §3) are never stored by a cache, as REST draft reads.
     reply.header('cache-control', DRAFTS_CACHE_CONTROL);
   }
-  return send(reply, formatGraphqlResult(result, { log: request.log }));
+  return answer(withSchemaVersion(formatGraphqlResult(result, { log: request.log }), lensed));
 };
 
 export const postGraphql = async (

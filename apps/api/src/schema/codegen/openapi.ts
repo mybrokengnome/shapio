@@ -14,6 +14,7 @@ import {
   type ModelDefinition,
   type SchemaDefinition,
 } from '@shapio/schema';
+import { ITEM_ID_PATTERN } from '../../constants/itemIds.js';
 import { operatorsFor } from '../../content/compiler/operators.js';
 import {
   DEFAULT_RICH_TEXT_MODE,
@@ -251,6 +252,24 @@ const objectSchema = (
     properties,
     ...(mode === 'output' ? { required: Object.keys(properties) } : { additionalProperties: false }),
   };
+};
+
+/**
+ * Every component item's stable ID (plan item-ids): required on output; optional on input, where sending back
+ * the `id` of each item read is what pairs it with the stored item it continues.
+ */
+/** What the server issues: 12 letters and digits. */
+const ITEM_ID: JsonSchema = { type: 'string', pattern: ITEM_ID_PATTERN.source };
+/** What a write accepts as an `id` (validator `MAX_ITEM_ID_LENGTH`): a non-empty string of at most 64 characters. */
+const SENT_ITEM_ID: JsonSchema = { type: 'string', minLength: 1, maxLength: 64 };
+
+const ITEM_ID_PROPERTY: Readonly<Record<Mode, JsonSchema>> = {
+  output: { ...ITEM_ID, description: "The item's ID, stable across saves" },
+  input: {
+    ...nullable(SENT_ITEM_ID),
+    description:
+      'The `id` of the item read, to keep it (its hidden fields follow it); `null` marks a new item',
+  },
 };
 
 const SYSTEM_PROPERTIES: Record<string, JsonSchema> = {
@@ -800,9 +819,14 @@ export const generateOpenApi = (
               description: "The API IDs of the entry's type and the types it extends, root first",
             },
           }
-        : {},
+        : { id: ITEM_ID_PROPERTY.output },
     );
-    schemas[`${name}Input`] = objectSchema(definition, snapshot, 'input');
+    schemas[`${name}Input`] = objectSchema(
+      definition,
+      snapshot,
+      'input',
+      isComponentDefinition(definition) ? { id: ITEM_ID_PROPERTY.input } : {},
+    );
     if (isModelDefinition(definition) && snapshot.childrenOf(definition.id).length > 0) {
       schemas[`${name}Any`] = unionSchema(snapshot, snapshot.family(definition.id));
     }

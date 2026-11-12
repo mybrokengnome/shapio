@@ -134,7 +134,8 @@ sends `Shapio-Site` and `?site=` on the wire, so a newer `@shapio/client` works 
 - **Relations** are target IDs unless you `populate` them. A target that is not published, or that your token
   may not read, is left out (never its ID).
 - **Components** are objects; **dynamic zones** are arrays of objects with `__component` (the component's
-  API ID).
+  API ID). Every component item, single or in a list or a dynamic zone, carries `id`, its stable ID (server
+  0.9.0 or later): send it back when you write the item ([Writing components](#writing-components)).
 - **Code** fields are strings, exactly as saved. Their language (`html`, `css`, `json`, …) is in the OpenAPI
   document as `x-shapio-language` (with `contentMediaType`), in the GraphQL field description (`Code: html`)
   and in the comment of the field in generated types (`shapio types generate`).
@@ -302,18 +303,19 @@ own.
 
 ## Query parameters
 
-| Parameter          | Example                               | Notes                                                                             |
-| ------------------ | ------------------------------------- | --------------------------------------------------------------------------------- |
-| `locale`           | `locale=fr`                           | falls back along the locale chain ([Localization](localization.md))               |
-| `filters`          | `filters[slug][$eq]=about`            | see below                                                                         |
-| `sort`             | `sort=publishedOn:desc,createdAt:asc` | fields marked sortable, `id`, `createdAt`, `updatedAt`                            |
-| `page`, `pageSize` | `page=2&pageSize=50`                  | `pageSize` 25 by default, at most 100                                             |
-| `fields`           | `fields=title,slug`                   | top-level fields to return (system attributes always come)                        |
-| `populate`         | `populate=author`                     | relation paths: `author`, `author,tags.author`, or `*`; at most 3 levels          |
-| `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one) |
-| `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                         |
-| `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                |
-| `publicationState` | `publicationState=draft`              | `published` (default) or `draft`: [drafts mode](#drafts-in-development)           |
+| Parameter          | Example                               | Notes                                                                                          |
+| ------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `locale`           | `locale=fr`                           | falls back along the locale chain ([Localization](localization.md))                            |
+| `filters`          | `filters[slug][$eq]=about`            | see below                                                                                      |
+| `sort`             | `sort=publishedOn:desc,createdAt:asc` | fields marked sortable, `id`, `createdAt`, `updatedAt`                                         |
+| `page`, `pageSize` | `page=2&pageSize=50`                  | `pageSize` 25 by default, at most 100                                                          |
+| `fields`           | `fields=title,slug`                   | top-level fields to return (system attributes always come)                                     |
+| `populate`         | `populate=author`                     | relation paths: `author`, `author,tags.author`, or `*`; at most 3 levels                       |
+| `q`                | `q=snapshot`                          | searches the title field chosen in the model's display settings (400 without one)              |
+| `snapshot`         | `snapshot=10`                         | read as of a publication snapshot (below)                                                      |
+| `richText`         | `richText=html`                       | rich-text shape: `json` (default, the document), `html`, or `both`                             |
+| `publicationState` | `publicationState=draft`              | `published` (default) or `draft`: [drafts mode](#drafts-in-development)                        |
+| `schemaVersion`    | `schemaVersion=0d5c…:17`              | answer in an older schema version's shape ([below](#schema-versions-old-clients-keep-working)) |
 
 ### Filters
 
@@ -357,7 +359,8 @@ moment after `meta.snapshot` may already appear; an unpublished one never does. 
 [example site](example-site.md) does exactly this, and Shapio's deployment triggers carry the snapshot to build.
 
 Old snapshots are read through the current schema (a value stored under an earlier field type comes back as
-`null`). A [change set](change-sets.md) goes live as one snapshot, schema and entries together, so a pinned
+`null`), unless the request names a [schema version](#schema-versions-old-clients-keep-working). A
+[change set](change-sets.md) goes live as one snapshot, schema and entries together, so a pinned
 build sees all of it or none of it.
 
 Two endpoints serve builds, with the same tokens as `/api/content` and only for models the token may read:
@@ -370,15 +373,43 @@ Two endpoints serve builds, with the same tokens as `/api/content` and only for 
 Details, the change classification and incremental-build recipes are in
 [Snapshots and the changes API](snapshots.md).
 
+## Schema versions: old clients keep working
+
+A client can name the schema version it was built against, and every read then answers in that version's shape:
+its routes, API IDs, field types, and components, whatever changed since. Server 0.9.0 or later. What each kind of
+change looks like to such a client is in [Schema lenses](schema-lenses.md).
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
+  "$SHAPIO_URL/api/content/articles?schemaVersion=0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:17"
+```
+
+- The value is `<schemaId>:<version>`, exported as `SCHEMA_VERSION` by `shapio types generate`. Send it as
+  `?schemaVersion=` on reads (always, behind a CDN that keys on the URL) or as the `Shapio-Schema-Version`
+  header. Both, with different values, is `400 SCHEMA_VERSION_MISMATCH`. With `@shapio/client`,
+  `createClient({ …, schemaVersion: SCHEMA_VERSION })`.
+- `filters`, `sort`, `fields`, and `populate` take that version's API IDs. Fields removed since read `null`
+  (`[]` for lists). Visibility and permissions are always today's.
+- A read that names a version, today's included, reports `meta.schemaVersion: { requested, current }`, both
+  as `<schemaId>:<version>`. Every delivery, preview, and snapshot response carries the current schema version
+  in the `Shapio-Schema-Version-Current` header, so a client can tell that a newer schema exists; a request
+  refused before Shapio reads its schema (an invalid credential, a request a route's schema refuses, an
+  invalid, foreign, or newer schema version) gets no such header.
+- It pairs with `snapshot`: the snapshot picks the content, the schema version picks the shape.
+- Errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` (a version from another instance),
+  `SCHEMA_VERSION_AHEAD`, and `LENS_QUERY_UNSUPPORTED` (a filter or sort on a field that changed);
+  `409 LENS_UNCOVERED` and `SCHEMA_VERSION_UNAVAILABLE`; `422 LENS_WRITE_UNSUPPORTED` on writes
+  ([Errors](schema-lenses.md#errors)).
+
 ## Caching
 
 Responses carry a strong `ETag` over the exact body and
-`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site`. Send
+`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`. Send
 `If-None-Match` to get `304 Not Modified` when nothing changed. Anonymous responses are `Cache-Control: public,
 max-age=0, must-revalidate`; authenticated ones `private`. A CDN that keys its cache on the URL alone and
 ignores `Vary` must be given the workspace as `?workspace=` (or `?site=`), not as the header, so that two
-workspaces never share a cached
-response.
+workspaces never share a cached response. The same goes for a
+[schema version](#schema-versions-old-clients-keep-working): send it as `?schemaVersion=`.
 
 ### Next.js cache tags
 
@@ -482,3 +513,299 @@ field can be empty): render drafts defensively. For one entry in the admin's Pre
 The same routes accept `POST`, `PUT` and `DELETE` from app users whose roles allow it (for example, members
 editing their own entries). Delivery tokens cannot write. See [End users](end-users.md). Editors and your
 build tools use the admin API (`/api/admin/content/<key>`) with admin credentials.
+
+### Writing components
+
+A component is written whole: an update sends the full instance (or the full list of items) a field holds.
+Fields of an item the caller cannot read (private to its audience, or deprecated) are never wiped by that: left
+out, they keep their stored values, carried over from the stored item that the item sent continues. From server
+0.9.0, the item's `id` says which stored item that is.
+
+#### Item IDs
+
+Every component item has an `id`, assigned by the server: a single component, each item of a repeatable
+component, and each item of a dynamic zone, at any depth. It is 12 letters and digits (`^[0-9A-Za-z]{12}$`). Like
+an entry's `id`, it is not a field. An item keeps its `id` through edits and moves, and an unchanged item has the
+same `id` in the draft and the published version and after a restore. A shared field's items have the same `id`
+in every locale; a localized field's items are each locale's own, so the same field in `en` and `fr` has
+different `id`s.
+
+```json
+"links": [
+  { "id": "k3Xf8Qm2Lp0a", "label": "Docs", "url": "https://example.com/docs" },
+  { "id": "9ZcT4rWb7NvE", "label": "Blog", "url": "https://example.com/blog" }
+]
+```
+
+**Send back the `id` of each item you read.** Each item is then paired with the stored item it continues, in any
+order, and its hidden fields go with it:
+
+- Edit an item: change its fields and keep its `id`.
+- Reorder: send the items in the new order with their `id`s.
+- Delete an item: leave it out. Its hidden values are deleted with it.
+- Add an item: send it with `"id": null`, or without `id`. It is new, and its hidden fields start empty.
+- Replace an item with a different one: leave the old one out and send the new one without `id`.
+- Move an item into another list, or under another parent item: send it there without `id`. It is new in its
+  new place.
+
+A list in which any item sends an `id` (a string, or `null`) is paired by `id`: there, an item sent with
+`"id": null`, or with no `id`, is new. A list in which no item has an
+`id` key is paired as described in [Writes without item IDs](#writes-without-item-ids). A single (not
+repeatable) component always continues its stored instance: send its `id` back, or `"id": null`, or no `id`. A
+single component sent with an `id` that is not refused always continues the stored instance. On a create, a well-formed `id` is ignored and
+every item gets a new one (an `id` repeated on a create is not an error); a malformed one is refused as on an
+update.
+
+These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per problem, and nothing is written:
+
+| Issue code               | Path            | Message                                                                                                                                           |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item                       |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it with "id": null. |
+| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                                                     |
+| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                                                 |
+
+An `id` the draft holds continues that item. For an `id` the draft does not hold:
+
+- On a field whose items hold nothing you cannot read or write, an `id` is never refused: it continues the item
+  that has it, or the item is saved as new (or continues an identical item when that match is certain). This is
+  what happens when another writer changed the list after you read it, when the `id` came from another locale or
+  from the published version, or when it is simply unknown.
+- Where items can hold values you cannot read or write: an `id` that a version of the entry you may read shows is
+  saved as a new item, unless you cannot read the draft (then `AMBIGUOUS_ITEMS`, "replaces items this caller
+  cannot read"; leave the field out to keep it, or send an empty list to clear it). An `id` no version shows (an
+  item copied or moved with its `id` from another entry or another field, or one from a stale read) is saved as a
+  new item when every item the list holds is still sent, by its `id` or as an equal item, so the write only adds
+  items. If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current
+  `id`s, or send a copied item with `"id": null`. (Leaving the `id` out works only when another item in the list
+  still carries one; a list with no `id`s at all follows the rules for writes without item IDs.) If you cannot
+  read the draft, it is always
+  `UNKNOWN_ITEM_ID`.
+- Tokens that may read drafts, and the admin API, are never refused for such an `id`: the item continues the one
+  stored item that equals it, otherwise it is new.
+
+| You can read the draft | Items can hold values hidden from you | An `id` a readable version shows | An `id` no version shows                                                   |
+| ---------------------- | ------------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| yes                    | no                                    | new item                         | new item                                                                   |
+| yes                    | yes                                   | new item                         | new item when every stored item is still sent; otherwise `UNKNOWN_ITEM_ID` |
+| no                     | no                                    | new item                         | new item                                                                   |
+| no                     | yes                                   | `AMBIGUOUS_ITEMS`                | `UNKNOWN_ITEM_ID`                                                          |
+
+An item sent with an `id` the draft does not hold, and that is not refused, is matched by content like an item
+sent without an `id`: it continues the one stored item that equals it, otherwise it is new.
+Sending back what you read, while the draft holds the same content under other `id`s, changes nothing, unless
+you cannot read the draft and the field's items can hold values you cannot see, where it is refused as the table
+says.
+
+A localized list written to a locale for the first time holds new items, whatever `id`s it carries. Items under a
+new item are new, whatever `id`s they carry. A stored `id` that somehow belongs to two items is
+`UNKNOWN_ITEM_ID`.
+
+Swapping two items that are identical in everything stored changes nothing on the admin API, and on the delivery
+API where your token can read and write every field of those items and can see every relation target and media
+asset they may hold. Otherwise a swap by `id` is always saved as a change. Reordering identical items of a shared list does not change the other locales.
+
+`DUPLICATE_ITEM_ID` answers the same `id` twice in one list, and `ITEM_COMPONENT_CHANGED` a dynamic zone item sent
+with a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write
+does not check that shape: an `id` that is not a string, is empty, or is longer than 64 characters is refused
+with an `INVALID_TYPE` issue at `…/id`, with the body's other problems; the item refusals come later
+([Order of refusals](#order-of-refusals)). The path is a JSON pointer in your API IDs, such as `/links/2/id`.
+
+On a field whose items can hold values you cannot see, if your token cannot read drafts, an `AMBIGUOUS_ITEMS`
+refusal for an `id` a readable version shows tells you the field has unpublished changes, not what they are.
+
+The write response names the `id` of each item it wrote, in `data.itemIds`, so a caller that cannot read the
+entry back (an app user while the entry has unpublished changes, for example) can send them on its next write.
+They are always the `id`s stored after the write: even a write that changes nothing answers the `id`s the next
+write accepts. It holds only the component fields the body sent, by your API IDs (the client's own through a
+[schema version](schema-lenses.md#writes)): each instance as `{ "id" }`, dynamic zone items with `__component`
+too, and component fields nested inside them when the body sent those. It is `{}` when the body sent no component
+field. GraphQL mutations do not return it.
+
+```json
+{
+  "data": {
+    "id": "6f2c0a1e-4b7d-4f3a-9c55-1e8d2b7a9f40",
+    "locale": "en",
+    "version": 3,
+    "status": "modified",
+    "createdAt": "2026-10-01T09:12:44.512Z",
+    "updatedAt": "2026-11-11T10:04:31.207Z",
+    "publishedAt": "2026-10-02T08:00:00.000Z",
+    "itemIds": {
+      "cards": [{ "id": "6bQ2mX9aLr4T" }, { "id": "9cV7nK3pWd8E", "chips": [{ "id": "1fH5sJ0tYb2U" }] }],
+      "hero": { "id": "a2R8gN6eCq1Z" },
+      "blocks": [{ "id": "e4P3kM7wDx5F", "__component": "quote" }]
+    }
+  },
+  "meta": {}
+}
+```
+
+#### Writes without item IDs
+
+A client that sends no `id` (a client written before 0.9.0, for example) has its items matched to the stored
+items by what the caller can read of each item: its fields, and its nested lists item by item. What happens
+depends on what the caller can see. **To edit an item in a list with hidden values, send back the `id` of each
+item you read.**
+
+**1. The caller cannot see the stored items:** it may not read the entry, it cannot read a field at or above the
+list, or it writes a draft it cannot read (app users and anonymous callers never read drafts, so this is every
+entry with unpublished changes or never published). A list whose every sub-field the caller can write is
+accepted: sent exactly as stored, it changes nothing and its items keep their `id`s, as before 0.9.0; otherwise
+each item that equals exactly one stored item continues it and the rest are new. A list that holds anything the caller cannot write is refused when it has
+items: `422 CONTENT_INVALID` with `AMBIGUOUS_ITEMS` on the list's path. Nothing about the answer depends on what
+is stored.
+
+**A new locale.** The first write to a locale that does not exist yet treats its localized lists as all new, for
+any caller, with or without `id`s; shared fields follow the usual rules.
+
+**2. The list can hold something hidden from the caller:** a field private to its audience or deprecated, at any
+depth; through a [schema version](schema-lenses.md#writes), also a field added since that version or one the
+caller cannot write. Relation fields do not make a list hidden, even when a read leaves out some of their
+targets. Then:
+
+- Sent exactly as read, item for item: every item continues, look-alikes included.
+- Nothing stored (a new list, or a list under a new item): every item is new.
+- Otherwise the write is accepted only when every item is distinct by what the caller sees, in the stored list
+  and in the sent list, and the write does not both remove a stored item and add a new one. An item equal to a
+  stored item continues it wherever it moved, a stored item with no equal is deleted with its hidden values, and
+  a sent item with no equal is new and carries nothing.
+- Anything else is refused: `422 CONTENT_INVALID` with `AMBIGUOUS_ITEMS` on the list's path, and nothing is
+  written.
+
+An item's nested lists are part of what the caller sees of it, so changing anything inside a nested list without
+`id`s counts as editing the parent item: nested items can only be changed with `id`s.
+
+| Accepted without `id`                     | Example                   | Result                                       |
+| ----------------------------------------- | ------------------------- | -------------------------------------------- |
+| The list unchanged, look-alikes included  | `[A, A]` → `[A, A]`       | every item continues                         |
+| Reorder items that differ                 | `[A, B]` → `[B, A]`       | every item continues                         |
+| Delete items that differ from the others  | `[A, B, C]` → `[B]`       | `A` and `C` deleted with their hidden values |
+| Add new items that differ from the others | `[A, B]` → `[X, A, B]`    | `X` new, the others continue                 |
+| A new list, or a list under a new item    | nothing stored → `[A, B]` | every item new                               |
+
+| Refused without `id` (`AMBIGUOUS_ITEMS`)          | Example                                              |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| Edit an item, in place or moved                   | `[A, B]` → `[A2, B]`, `[A, B]` → `[B2, A]`           |
+| Delete one item and add another in the same write | `[A, B]` → `[B, X]`                                  |
+| Delete one of two items that look the same        | `[A, A]` → `[A]`                                     |
+| Duplicate an item                                 | `[A]` → `[A, A]`                                     |
+| Reorder a list that holds look-alikes             | `[A, B, A]` → `[A, A, B]`                            |
+| Any change inside a nested list                   | a list inside an item edited, or moved between items |
+
+**3. Any other list, and every admin API write:** never refused. Sent exactly as read, every item continues.
+Otherwise an item continues only when it equals exactly one stored item and no other sent item equals it; every
+other item is new and gets a new `id`.
+
+| Without `id`, nothing hidden        | Example                | Result                                  |
+| ----------------------------------- | ---------------------- | --------------------------------------- |
+| The list unchanged                  | `[A, A]` → `[A, A]`    | every item continues                    |
+| Reorder or delete items that differ | `[A, B, C]` → `[C, A]` | `C` and `A` continue, `B` deleted       |
+| Edit an item                        | `[A, B]` → `[A2, B]`   | `B` continues, `A2` new with a new `id` |
+| Look-alikes in a changed list       | `[A, A, B]` → `[A, A]` | both `A`s new, with new `id`s           |
+
+Being new costs something even when nothing is refused: the item gets a new `id`. A client that later sends back
+the old one gets what the table above gives for an `id` the draft does not hold. With `id`s, or for an item sent exactly as read, relation targets and media the caller
+could not see are kept; an item edited without `id`s is a new item, and they are not carried over (as before
+0.9.0). In an admin write, an item that continues keeps its deprecated fields. An admin API save without `id`s
+gives edited items new `id`s; a delivery client that sends back the old ones gets what the table above gives. The
+admin editor always sends `id`s.
+
+With `id`s, every row of every table is certain: an edited item keeps its hidden values, and `"id": null` marks a
+new item. Sending `[]`, leaving the field out, and sending back the `id`s read are always allowed.
+
+The messages are "cannot be matched to the stored items with certainty, and its items can hold values this
+caller cannot see; send back the id of each item as you read it (without IDs, a write may only reorder, delete,
+or add items that differ from each other, never edit one)" and, for a caller that cannot see the stored items,
+"replaces items this caller cannot read, and they can hold values it cannot see; send back the id of each item
+as you read it, leave the field out to keep it, or send an empty list to clear it".
+
+**Who can be refused.** Fields private to their audience inside a component are hidden from every delivery
+caller, whatever its role grants, and deprecated fields are hidden from every caller. Delivery tokens cannot
+write. So the refusals above reach app users and anonymous callers with an update grant, on content types whose
+components hold a private or deprecated field at any depth. An admin writing through the delivery routes can be
+refused only when the components hold deprecated fields; admin API writes (`/api/admin/content`) never are.
+
+#### What a write keeps that the read hid
+
+- What counts as shown is what the caller may read on the route it writes through. A caller that may read drafts
+  there is treated as having been shown draft relation targets and media, whichever view it read, so what it
+  leaves out is removed. A caller that cannot read drafts keeps the targets and media it was not shown.
+- A relation or media value sent back as read keeps what the read left out: a relation read as `null` because
+  its target is unpublished or not readable stays, and so does media the caller could not see. This holds at
+  the top level and inside components, with and without `id`s (for items that continue), and through a schema
+  version.
+- In a many-relation, the targets the caller sees follow what was sent. Each stored target the caller cannot see
+  stays right after the nearest target before it that the read showed and the client sent again, or at the start
+  when there is none; hidden targets keep their order. For example, with `b` hidden, `[a, b, c]` read as
+  `[a, c]` and sent as `[c, a]` is stored as `[c, a, b]`.
+- Relation targets a write names are checked as before 0.9.0: an unpublished entry of the right type is
+  accepted; a deleted entry, an entry of the wrong type, or an ID with no entry is refused with
+  `422 CONTENT_INVALID` (`RELATION_TARGET_MISSING`). Targets the server keeps for you (hidden ones behind what you
+  read, or fields you did not send) are not checked again. A kept target that has since been deleted is not
+  kept: the next write that changes something drops it, as before 0.9.0, and only the targets that remain count
+  toward `max`, `min`, and required. Sending back what you read unchanged never writes anything, whether a
+  target you cannot see was deleted or is only unpublished. A change can then be refused `TOO_FEW` or `REQUIRED`
+  when the field no longer has enough live targets without the deleted one.
+- A media asset an owner force-deleted is not kept on a write: where you did not send it (a field or item
+  carried over for you), the next write that changes something drops the dangling ID, as before 0.9.0, and it no
+  longer counts toward `max`. An asset you send yourself is checked as before. A private asset that still exists
+  is kept for callers who cannot see it.
+- With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the
+  caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`.
+- Through a schema version, a field that changed since the client's version (a dynamic zone that gained a
+  component, for example) can be sent back exactly as read, with or without the `id`s read, and nothing changes.
+  So can a top-level field the version showed as empty that has since become private or deprecated. An item that
+  continues keeps the values of fields removed since the client's version.
+
+#### Order of refusals
+
+A delivery write, with and without a schema version, answers in this order:
+
+1. `429`: the rate limit.
+2. `401`: a bearer token that does not resolve.
+3. `404` or `403`: the workspace.
+4. `403`: the CSRF check.
+5. `422 BODY_TOO_DEEP`: a body nested deeper than stored content may be (`details.limit`).
+6. `400`: a body the route's schema refuses.
+7. `401` or `403`: admin authentication, on admin routes.
+8. `403` for a content type the caller may not write, and `404`: the entry does not exist, or is not the
+   caller's.
+9. `422 CONTENT_INVALID` for the body: an unknown field or component, an item `id` that is not a non-empty
+   string of at most 64 characters (`INVALID_TYPE` at `…/id`), a list longer than its cap.
+10. `403 FORBIDDEN_FIELD`: a field the caller may not write.
+11. `409`: a stale `expectedVersion`. Items are matched only after this check, so a stale write costs no
+    matching.
+12. `422 CONTENT_INVALID` for the items: `UNKNOWN_ITEM_ID`, the other item ID issues, and `AMBIGUOUS_ITEMS`.
+13. `422 CONTENT_INVALID` for the values: `INVALID_TYPE` and the like, as before 0.9.0.
+
+Stored content may be at most 100 levels deep, which was already the real limit on MySQL. Everything the content
+validator accepts fits (rich text 40 node levels deep inside five levels of components is 97 levels) and is
+accepted on every database as before; a deeper body is refused with `422 BODY_TOO_DEEP` instead of failing with
+a `500`. REST bodies, GraphQL variables, and GraphQL inline values accept the same content depth.
+
+The status and code are the same with and without a version, except `422 LENS_WRITE_UNSUPPORTED` for fields that
+changed since the client's version. A refusal lists at most 100 issues; when there were more, `details.issueCount`
+says how many and `details.truncated` is `true`.
+
+#### Limits and single components
+
+Every write, admin API included, may hold at most a component list or dynamic zone's `max` items, at any depth,
+or 50,000 when the field sets none. A longer one is refused with `422 CONTENT_INVALID` (`TOO_MANY`) with the body,
+before a forbidden field (`403`) or a stale version (`409`) is answered.
+
+A delivery caller may not send a field private to its audience inside a component, not even as `null`: on a
+create or an update, with or without a schema version, the write is refused with `403 FORBIDDEN_FIELD`, and
+`details.fields` lists each such field as a JSON pointer in the caller's API IDs (`/cards/0/note`, `/hero/note`).
+A deprecated field inside a component is no longer part of the API: sent without a schema version, it is refused
+with `422 CONTENT_INVALID` and an `UNKNOWN_FIELD` issue; sent through a schema version that still had it, with
+`403 FORBIDDEN_FIELD`. Over GraphQL, such a caller's input types do not name those fields at all.
+
+A single (not repeatable) component always continues the stored instance. The fields the caller cannot read are
+kept, for every caller: one that may update the entry but not read it keeps the private and deprecated fields it
+leaves out.
+
+A caller that may update an entry but not read it can tell from the version in the response whether what it sent
+equals what is stored (an unchanged version means it did), as before 0.9.0; this now also holds for single
+components.

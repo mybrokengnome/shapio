@@ -59,7 +59,18 @@ Open a set to review it, shaped like a pull request:
   findings, and the acknowledgement checkboxes for breaking or destructive changes. **Blocking** issues stop
   the ship; **warnings** do not.
 - **Consumers**: for breaking changes, the API tokens (and app users and anonymous callers, as groups) that read
-  the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage).
+  the affected fields in the last 7 days, with counts and last read. See [Field usage](#field-usage). Below
+  them, **Readers on older schema versions** lists each reader that names an older
+  [schema version](schema-lenses.md), the version it sends, and what it sees once the set ships (_Keeps
+  working_, _Some values empty_, _Fields empty_, _Content type gone_, _Not covered_, or _No record of this
+  version_), at most the most recently used versions. A reviewer without `tokens.manage` sees counts, not token
+  names.
+- **Older schema versions** on the Changes tab: each breaking change line says what clients naming an older
+  schema version will see ("Clients naming an older schema version keep working", "…get this field empty",
+  "…lose this content type"), worked out from each version your tokens actually send to the schema the set
+  ships. The acknowledgement for breaking changes on the Checks tab says which readers are protected that way
+  and lists those that are not, readers that name no schema version included. The model builder's review sheet
+  shows the same.
 - **Timeline**: created, items added and removed, drafts saved, approval steps with their notes, scheduled, entries changed after review (on a
   scheduled ship), shipped (with a link to the snapshot) and the deployment run.
 
@@ -163,7 +174,8 @@ deployment runs that built it. Snapshots taken before Shapio recorded this show 
 A schema change that only renames labels or similar metadata does not take a snapshot: every API response stays
 the same. A change that converts stored values does: converted published content is recorded at that number,
 so `?snapshot=N` returns converted values for every snapshot from then on. Older snapshots are read through the
-current schema; a value stored under an earlier field type comes back as `null`.
+current schema, unless the request names a [schema version](schema-lenses.md#with-snapshots); a value stored
+under an earlier field type comes back as `null`.
 
 An entry that [changed kind](content.md#changing-an-entrys-kind) keeps its old kind in older snapshots: a build
 pinned to a snapshot from before the change still finds it under its old route and in its old shape, and
@@ -253,6 +265,7 @@ curl -X POST "$SHAPIO_URL/api/admin/change-sets/<set id>/ship" -H "Authorization
 | `GET /api/admin/snapshots`, `GET …/snapshots/:seq` | the snapshot ledger (`cursor`, `limit`) with the current number                        |
 | `POST /api/admin/snapshots/:seq/restore`           | creates the restore set                                                                |
 | `GET /api/admin/usage/fields?modelId&days=7`       | reads per field and reader for one model (needs `tokens.manage`)                       |
+| `GET /api/admin/usage/schema-versions`             | readers whose latest read named a schema version, and which (`tokens.manage`)          |
 
 `ship` answers `200` when the set shipped (or failed: see `status` and `error`) and `202` while it is shipping
 in the background; poll the set until it is `shipped` or `failed`. `itemVersions` (`[{ itemId, draftVersion }]`,

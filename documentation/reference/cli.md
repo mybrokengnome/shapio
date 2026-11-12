@@ -173,7 +173,7 @@ shapio types generate [options]
 
 ```text
 Usage:
-  shapio types generate [--url <origin>] [--token <admin token>] [--out shapio-types.ts]
+  shapio types generate [--url <origin>] [--token <admin token>] [--out shapio-types.ts] [--schema-version <schemaId>:<version>]
       Write TypeScript types for the instance’s models and components
 ```
 

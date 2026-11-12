@@ -66,7 +66,11 @@ const mysqlType = (columnType: string, charset: string | null): string => {
 };
 
 /** Deliberate differences (each explained in the baseline's header). */
-const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin'];
+const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin', 'entry_heads_filter_data_gin'];
+/** `entry_heads.filter_data`, its check and its trigger serve the containment index only (ADR 0001, "Filter data"). */
+const POSTGRES_ONLY_COLUMNS = ['entry_heads.filter_data'];
+const POSTGRES_ONLY_CHECKS = ['entry_heads_filter_data_present'];
+const POSTGRES_ONLY_TRIGGERS = ['entry_heads_filter_data'];
 /** InnoDB indexes an AUTO_INCREMENT column; PostgreSQL's identity tiebreaker needs none. */
 const MYSQL_ONLY_INDEXES = ['audit_events_seq_key'];
 const MYSQL_ONLY_TABLES = ['advisory_locks', 'notifications', 'sequence_entry_heads_change_seq'];
@@ -103,7 +107,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     from pg_attribute a join pg_class c on c.oid = a.attrelid
     where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
   `.execute(db);
-  for (const column of columns.rows.filter((row) => !skippedTable(row.tbl))) {
+  for (const column of columns.rows.filter(
+    (row) => !skippedTable(row.tbl) && !POSTGRES_ONLY_COLUMNS.includes(`${row.tbl}.${row.col}`),
+  )) {
     (schema.tables[column.tbl] ??= {})[column.col] = {
       type: POSTGRES_TYPES[column.typ] ?? `unmapped ${column.typ}`,
       notNull: column.nn,
@@ -139,7 +145,7 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
         references: constraint.ref ?? '',
         onDelete: columnListSetNull ? 'no action' : (ON_DELETE[constraint.del] ?? constraint.del),
       });
-    } else if (constraint.typ === 'c') {
+    } else if (constraint.typ === 'c' && !POSTGRES_ONLY_CHECKS.includes(constraint.name)) {
       schema.checks.push(constraint.name);
     }
   }
@@ -175,7 +181,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     select tgname as name from pg_trigger t join pg_class c on c.oid = t.tgrelid
     where c.relnamespace = 'public'::regnamespace and not t.tgisinternal
   `.execute(db);
-  schema.triggers = triggers.rows.map((row) => row.name);
+  schema.triggers = triggers.rows
+    .map((row) => row.name)
+    .filter((name) => !POSTGRES_ONLY_TRIGGERS.includes(name));
   return schema;
 };
 
@@ -257,7 +265,10 @@ const readMysql = async (db: Kysely<DB>): Promise<LogicalSchema> => {
   return schema;
 };
 
-/** Every row of every seeded table, without the times they were written (they differ by run). */
+/** Columns every database fills with its own random value (the instance's schema ID). */
+const RANDOM_COLUMNS = new Set(['schema_id', 'item_id_key']);
+
+/** Every row of every seeded table, without the times they were written or random IDs (they differ by run). */
 const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
   const rows: Record<string, unknown[]> = {};
   for (const table of tables) {
@@ -267,7 +278,13 @@ const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
       .execute();
     if (found.length > 0) {
       rows[table] = found
-        .map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => !(value instanceof Date))))
+        .map((row) =>
+          Object.fromEntries(
+            Object.entries(row).filter(
+              ([column, value]) => !(value instanceof Date) && !RANDOM_COLUMNS.has(column),
+            ),
+          ),
+        )
         .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     }
   }

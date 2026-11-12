@@ -8,7 +8,9 @@ import * as uniqueValuesRepository from '../../repositories/uniqueValues.js';
 import type { ActivationContext, StepOutcome } from '../../schema/planner/contentPorts.js';
 import type { ContentStep } from '../../schema/planner/steps.js';
 import type { SchemaById } from '../../schema/snapshot.js';
+import { itemIdKeyOf } from '../itemIds.js';
 import { resolveModelById, type HeadState } from '../model.js';
+import { sameContent } from '../sameContent.js';
 import { syncUniqueValues, uniqueFields } from '../unique.js';
 import { syncHeadDerivations } from '../write/heads.js';
 import {
@@ -22,11 +24,12 @@ import {
   tallyFailures,
   type Tallies,
 } from './checks.js';
+import { idsAfter, idsBefore, itemIdsMove, type ConversionItemIds } from './conversionItemIds.js';
 import { CONVERSION_ACTOR, isEntryLevelConversion } from './convert.js';
 import { contentModelIds } from './dryRun.js';
 import { convertEntry } from './entryConversions.js';
 import { isTransformStep, proposalChangesStorage, proposeEntry, type TransformStep } from './propose.js';
-import { loadProposedSnapshot } from './proposed.js';
+import { loadActiveSnapshot, loadProposedSnapshot } from './proposed.js';
 import { scanEntries } from './scan.js';
 
 /**
@@ -43,6 +46,8 @@ type Context = {
   steps: readonly ContentStep[];
   proposed: SchemaById;
   activation: ActivationContext;
+  /** What item IDs are derived under before and after the change (plan item-ids). */
+  itemIds: ConversionItemIds;
 };
 
 type Recheck = { tallies: Tallies; gaps: Tallies };
@@ -79,7 +84,7 @@ const recheckChanged = async (context: Context, watermark: string): Promise<Rech
  * unmodified entry stays unmodified. Converted published heads roll their publication-log row at the
  * activation's sequence number once every rewrite is done.
  */
-type RevisionCache = Map<string, { data: string; revisionId: string }>;
+type RevisionCache = Map<string, { data: ScannedHead['data']; revisionId: string }>;
 
 const conversionRevision = async (
   context: Context,
@@ -87,9 +92,9 @@ const conversionRevision = async (
   data: ScannedHead['data'],
   cache: RevisionCache,
 ) => {
-  const serialized = JSON.stringify(data);
   const cached = cache.get(head.revision_id);
-  if (cached && cached.data === serialized) {
+  // Equal content, whatever order its keys were built or read in.
+  if (cached && sameContent(cached.data, data)) {
     return cached.revisionId;
   }
   const model = resolveModelById(context.proposed, head.model_id);
@@ -106,7 +111,7 @@ const conversionRevision = async (
     },
     context.trx,
   );
-  cache.set(head.revision_id, { data: serialized, revisionId: revision.id });
+  cache.set(head.revision_id, { data, revisionId: revision.id });
   return revision.id;
 };
 
@@ -163,13 +168,20 @@ const rewriteHead = async (
   }
 };
 
-/** Writes one entry in its proposed form: entry-level conversions first, then converted values. */
+const headKey = (head: { locale: string; state: string }) => `${head.locale}|${head.state}`;
+
+/**
+ * Writes one entry in its proposed form: entry-level conversions first, then converted values. Every head the
+ * change rewrites, or whose instances would read with other IDs under the new schema, stores the IDs its
+ * instances read with before (plan item-ids), carried through the conversion: the same instance keeps one ID
+ * in the draft and the published version, and a client holding it can send it back.
+ */
 const rewriteEntry = async (
   context: Context,
   stored: ScannedHead[],
   transforms: readonly TransformStep[],
 ) => {
-  const { trx, proposed } = context;
+  const { trx, proposed, itemIds } = context;
   const [first] = stored;
   if (!first) {
     return;
@@ -187,20 +199,32 @@ const rewriteEntry = async (
           change: step.change,
           proposed,
           seqFor: context.activation.seqFor,
+          idsBefore: (head) => idsBefore(itemIds, head),
         });
       }
     }
     heads = await entryHeadsRepository.findForEntry(first.entry_id, trx);
   }
+  const before = new Map(heads.map((head) => [headKey(head), idsBefore(itemIds, head)]));
   const valueSteps = transforms.filter((step) => !entryLevel.includes(step));
-  const proposal = proposeEntry(heads, valueSteps, proposed.defaultLocale);
+  const proposal = proposeEntry(
+    heads.map((head) => ({ ...head, data: before.get(headKey(head)) ?? head.data })),
+    valueSteps,
+    proposed.defaultLocale,
+  );
+  const original = new Map(stored.map((head) => [headKey(head), head]));
   const cache: RevisionCache = new Map();
-  for (const head of proposal.heads.filter((candidate) => candidate.changed)) {
-    const original = heads.find(
-      (candidate) => candidate.locale === head.locale && candidate.state === head.state,
-    );
-    if (original) {
-      await rewriteHead(context, original, head.data, cache);
+  for (const head of proposal.heads) {
+    const current = heads.find((candidate) => headKey(candidate) === headKey(head));
+    if (!current) {
+      continue;
+    }
+    const was = original.get(headKey(current));
+    // An entry-level conversion moved the head's data without a revision (a field made shared): it gets one.
+    const movedInPlace =
+      was !== undefined && was.revision_id === current.revision_id && !sameContent(was.data, current.data);
+    if (head.changed || movedInPlace || itemIdsMove(itemIds, current)) {
+      await rewriteHead(context, current, idsAfter(itemIds, head), cache);
     }
   }
   // Registry rows follow the stored values (a conversion can change a unique value's normalized form).
@@ -224,7 +248,10 @@ const rewriteAll = async (context: Context) => {
     context.trx,
     { modelIds: contentModelIds(context.steps), cursor: null },
     async (heads) => {
-      if (proposalChangesStorage(proposeEntry(heads, transforms, context.proposed.defaultLocale))) {
+      if (
+        proposalChangesStorage(proposeEntry(heads, transforms, context.proposed.defaultLocale)) ||
+        heads.some((head) => itemIdsMove(context.itemIds, head))
+      ) {
         await rewriteEntry(context, heads, transforms);
       }
     },
@@ -242,7 +269,13 @@ export const applyChange = async (
   if (singleton) {
     return singleton;
   }
-  const context: Context = { trx, steps, proposed, activation };
+  const context: Context = {
+    trx,
+    steps,
+    proposed,
+    activation,
+    itemIds: { key: await itemIdKeyOf(trx), active: await loadActiveSnapshot(trx), proposed },
+  };
   const recheck = await recheckChanged(context, typeof watermark === 'string' ? watermark : '0');
   const outcome = outcomeOf(steps, recheck.tallies);
   if (!outcome.ok) {

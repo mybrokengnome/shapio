@@ -1,7 +1,8 @@
-import type { FieldDefinition, SeoDefaults } from '@shapio/schema';
+import type { DefinitionLens, FieldDefinition, SeoDefaults } from '@shapio/schema';
 import type { Kysely, RawBuilder, Transaction } from 'kysely';
 import type { DB } from '../db/types.js';
-import type { PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
+import type { FieldMask, PermissionEvaluator, Policy, Principal } from '../permissions/types.js';
+import { hasUnrestrictedGrant } from '../permissions/unrestrictedGrant.js';
 import * as contentQueriesRepository from '../repositories/contentQueries.js';
 import * as entriesRepository from '../repositories/entries.js';
 import * as mediaAssetsRepository from '../repositories/mediaAssets.js';
@@ -15,11 +16,21 @@ import {
   type LocaleScope,
 } from './compiler/compile.js';
 import { entryIdIn } from './compiler/conditions.js';
-import { compileRowFilter, hidesPrivateComponentFields, maskAllows, rowReadMask } from './compiler/policy.js';
+import {
+  compileRowFilter,
+  everyRowReadMask,
+  hidesPrivateComponentFields,
+  maskAllows,
+  rowReadMask,
+} from './compiler/policy.js';
 import { populateRelations, type PopulateEnvironment } from './compiler/populate.js';
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
+import { withItemIdsCached } from './itemIdCache.js';
+import { itemIdKeyOf, itemIdScopeOf } from './itemIds.js';
+import { readThroughLens } from './lens/read.js';
+import { componentFieldShownThroughLens, readableThroughLens } from './lens/write.js';
 import { readScopeFor } from './locales.js';
 import { mediaIdsOf } from './media.js';
 import { resolveModelById, type ContentModel } from './model.js';
@@ -52,6 +63,29 @@ export type ReadEnvironment = {
   richText?: RichTextMode;
   /** Delivery reads with `?seo=resolved`: the site's SEO defaults, merged into SEO fields. */
   seo?: SeoDefaults;
+  /**
+   * Schema lenses (plan schema-lenses): rows are projected in the shape of the client's schema version, with
+   * today's visibility. Everything before projection (queries, policies, relation visibility, populate) stays
+   * on `snapshot`, today's view.
+   */
+  lens?: ReadLens;
+  /**
+   * The instance's item ID key (plan item-ids), when the caller already holds it; read from `executor` (once per
+   * handle) otherwise. Reads that run without a database (tests of the projection) pass one.
+   */
+  itemIdKey?: Buffer;
+};
+
+export type ReadLens = {
+  /** The client's version of the request's workspace (names of models, kinds and components). */
+  view: SchemaSnapshot;
+  /** Today's definition read as the client's; null when the client's version does not know it. */
+  lensFor: (definitionId: string) => DefinitionLens | null;
+  /**
+   * The client fields a lensed `fields=` named, by stable ID (gone ones read null); null: no selection. Applies
+   * to the request's own rows only, never to populated targets.
+   */
+  selection: ReadonlySet<string> | null;
 };
 
 /** Evaluated through the read's executor: a read inside a transaction never asks the pool for a second connection. */
@@ -260,6 +294,27 @@ const relationTargets = async (
 };
 
 /**
+ * The relation targets a delivery caller may see among these documents' relations, at any depth: published and
+ * readable under their model's policy today. Null for admin reads (every ID shows). A write through a lens
+ * compares a value sent back with the read without the others (plan schema-lenses).
+ */
+export const visibleRelationTargetIds = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  documents: ReadonlyArray<Readonly<Record<string, unknown>>>,
+): Promise<Set<string> | null> => {
+  if (env.audience === 'admin') {
+    return null;
+  }
+  const visible = new Set<string>();
+  for (const [targetKey, ids] of targetsByModel(model, documents, model.definition.fields)) {
+    const heads = await fetchTargetHeadsByIds(env, relationTargetFor(env.snapshot, targetKey), [...ids]);
+    heads.rows.forEach((row) => visible.add(row.entry_id));
+  }
+  return visible;
+};
+
+/**
  * `fetchFamilyHeadsByIds` for populate, answered from the heads relation visibility already read when it
  * asked for every one of these IDs under the same policies and locale scope (populate's default), else from
  * the database.
@@ -410,8 +465,9 @@ export const kindLineage = (snapshot: ReadEnvironment['snapshot'], modelId: stri
  */
 export const systemAttributes = (env: ReadEnvironment, row: HeadRow): Record<string, unknown> => ({
   id: row.entry_id,
-  [MODEL_KEY]: env.snapshot.byId.get(row.model_id)?.definition.apiKey ?? null,
-  [KINDS_KEY]: kindLineage(env.snapshot, row.model_id),
+  // Through a lens, the names the client's version gave the model and its lineage.
+  [MODEL_KEY]: (env.lens?.view ?? env.snapshot).byId.get(row.model_id)?.definition.apiKey ?? null,
+  [KINDS_KEY]: kindLineage(env.lens?.view ?? env.snapshot, row.model_id),
   locale: row.locale,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -435,7 +491,66 @@ const fieldsOnRow = (
   return fields.filter((field) => maskAllows(mask, field));
 };
 
+/**
+ * Rows with an ID on every component instance (plan item-ids): the stored one, or the one derived for an item
+ * stored without one, so every read shows the same `id` for the same stored item.
+ */
+const withRowItemIds = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  rows: readonly HeadRow[],
+  selected: (fieldId: string) => boolean,
+): Promise<HeadRow[]> => {
+  // Only the component fields the read shows: a field it does not select never costs a derivation.
+  const fields = model.definition.fields.filter(
+    (field) => (field.type === 'component' || field.type === 'dynamiczone') && selected(field.id),
+  );
+  if (fields.length === 0 || rows.length === 0) {
+    return [...rows];
+  }
+  const key = env.itemIdKey ?? (await itemIdKeyOf(env.executor));
+  // Cached per stored value, schema and scope (content/itemIdCache.ts): the same IDs `withItemIds` derives.
+  return rows.map((row) => ({
+    ...row,
+    data: withItemIdsCached(
+      row.data,
+      fields,
+      model.components,
+      itemIdScopeOf(key, row.entry_id, model, row.locale),
+    ),
+  }));
+};
+
+/** The fields a read selects, by ID (`fields=`, or a lensed selection); every field without one. */
+const selectionOf = (
+  env: ReadEnvironment,
+  query: { fields: readonly FieldDefinition[] | null },
+): ((fieldId: string) => boolean) => {
+  const selection = env.lens
+    ? (env.lens.selection ?? (query.fields ? new Set(query.fields.map((field) => field.id)) : null))
+    : query.fields
+      ? new Set(query.fields.map((field) => field.id))
+      : null;
+  return (fieldId) => selection === null || selection.has(fieldId);
+};
+
 export const projectRows = async (
+  env: ReadEnvironment,
+  model: ContentModel,
+  policy: Policy,
+  storedRows: readonly HeadRow[],
+  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
+  const rows = await withRowItemIds(env, model, storedRows, selectionOf(env, query));
+  // Callers key results by the row objects they passed in: each result names its stored row.
+  const original = new Map(rows.map((row, index) => [row, storedRows[index] as HeadRow]));
+  const projected = env.lens
+    ? await projectRowsThroughLens(env, env.lens, model, policy, rows, query)
+    : await projectStoredRows(env, model, policy, rows, query);
+  return projected.map((result) => ({ ...result, row: original.get(result.row) ?? result.row }));
+};
+
+const projectStoredRows = async (
   env: ReadEnvironment,
   model: ContentModel,
   policy: Policy,
@@ -475,6 +590,185 @@ export const projectRows = async (
             policy,
             rowFields,
             row,
+            data,
+          )
+        : data,
+    };
+  });
+};
+
+/** Visible today by the mask, by stable ID: exactly what the caller sees without a version, deprecation included. */
+const visibleToday = (mask: FieldMask, field: FieldDefinition): boolean => maskAllows(mask, field);
+
+/** A relation the client's version pointed elsewhere: today's IDs are not its target's entries. */
+const targetMoved = (lens: DefinitionLens, fieldId: string): boolean => {
+  const field = lens.fields.find((candidate) => candidate.fieldId === fieldId);
+  return (
+    field !== undefined &&
+    field.kind !== 'null' &&
+    field.client.type === 'relation' &&
+    field.stored.type === 'relation' &&
+    field.client.settings.target !== field.stored.settings.target
+  );
+};
+
+/** Today's component fields by ID, for today's visibility of the client's component fields. */
+const componentFieldsOf = (model: ContentModel): Map<string, FieldDefinition> =>
+  new Map(
+    [...model.components.values()].flatMap(({ definition }) =>
+      definition.fields.map((field) => [field.id, field] as const),
+    ),
+  );
+
+/**
+ * Whether a client field reads null through a lens (never a value): public in the client's version, gone or
+ * not readable today, and the caller's grant on the model unrestricted. `fields=` may name it; filters and
+ * sorts on it are refused as they are today.
+ */
+export const readsNullThroughLens = (
+  clientField: FieldDefinition,
+  today: FieldDefinition | undefined,
+  mask: FieldMask,
+  policy: Policy,
+): boolean =>
+  clientField.public &&
+  !clientField.deprecated &&
+  (today === undefined || !visibleToday(mask, today)) &&
+  // The grant's shape decides, never what the mask happens to cover today (permissions/unrestrictedGrant.ts).
+  hasUnrestrictedGrant(policy, 'read');
+/**
+ * What a lensed query may name on a model for this caller (plan schema-lenses): `readsNull`, the client fields
+ * it reads as null (`fields=` may name them); `mayName`, the client fields whose fate since the version it may
+ * learn (a grant naming no fields, the field public at the version). Anything else is answered as a field that
+ * never existed.
+ */
+export const lensQueryVisibility = (
+  clientModel: ContentModel | undefined,
+  model: ContentModel,
+  policy: Policy,
+): { readsNull: (fieldId: string) => boolean; mayName: (fieldId: string) => boolean } => {
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
+  const mask = everyRowReadMask(policy);
+  const unrestricted = hasUnrestrictedGrant(policy, 'read');
+  const clientField = (fieldId: string) =>
+    clientModel?.definition.fields.find((candidate) => candidate.id === fieldId);
+  return {
+    readsNull: (fieldId) => {
+      const field = clientField(fieldId);
+      return field !== undefined && readsNullThroughLens(field, today.get(fieldId), mask, policy);
+    },
+    mayName: (fieldId) => {
+      const field = clientField(fieldId);
+      return unrestricted && field !== undefined && field.public && !field.deprecated;
+    },
+  };
+};
+
+/**
+ * `projectRows` through a schema lens (plan schema-lenses): today's rows, read with today's policies, relation
+ * visibility, populate and asset views, then translated (`readThroughLens`), cut to what the caller may read
+ * today (by stable ID, at every depth; never by the client's flags), and projected through the client's
+ * definition. A client field public in its version that the caller cannot read today (gone, or private since)
+ * shows as null for a caller with an unrestricted grant, and not at all otherwise. Rows of a model the client's
+ * version does not know are left out, and so are relation targets of such models.
+ */
+const projectRowsThroughLens = async (
+  env: ReadEnvironment,
+  readLens: ReadLens,
+  model: ContentModel,
+  policy: Policy,
+  rows: readonly HeadRow[],
+  query: { fields: readonly FieldDefinition[] | null; populate: PopulateTree },
+): Promise<Array<{ row: HeadRow; data: ProjectedEntry }>> => {
+  const lens = readLens.lensFor(model.definition.id);
+  const clientModel = resolveModelById(readLens.view, model.definition.id);
+  if (!lens || !clientModel || lens.status === 'gone') {
+    return [];
+  }
+  const selection =
+    readLens.selection ?? (query.fields ? new Set(query.fields.map((field) => field.id)) : null);
+  const isSelected = (fieldId: string) => selection === null || selection.has(fieldId);
+  const today = new Map(model.definition.fields.map((field) => [field.id, field]));
+  // Today's fields behind the client's, for relation visibility, populate and asset views.
+  const fields = lens.fields.flatMap((field) => {
+    const current = today.get(field.fieldId);
+    return current &&
+      field.kind !== 'null' &&
+      isSelected(field.fieldId) &&
+      visibleToday(policy.readMask, current) &&
+      !targetMoved(lens, field.fieldId)
+      ? [current]
+      : [];
+  });
+  const { visible, fetched } = await relationTargets(env, model, rows, fields);
+  // A target of a model (a kind) the client's version does not know is not an entry it can read.
+  const unknownTargets = new Set(
+    [...fetched.values()].flatMap(({ heads }) =>
+      heads.rows.filter((row) => !readLens.view.byId.has(row.model_id)).map((row) => row.entry_id),
+    ),
+  );
+  const visibleTargets = visible && new Set([...visible].filter((id) => !unknownTargets.has(id)));
+  const populateEnv: PopulateEnvironment = {
+    ...env,
+    // A `fields=` selection is the request's own rows', never a populated target's.
+    lens: { ...readLens, selection: null },
+    project: projectRows,
+    fetch: fetchReusing(fetched),
+    system: systemAttributes,
+  };
+  const populated = await populateRelations(populateEnv, rows, fields, query.populate);
+  const media = await loadMediaViews(env, model, rows, fields);
+  const publicOnly = hidesPrivateComponentFields(policy.readMask);
+  const componentsToday = componentFieldsOf(model);
+  const componentFieldReadable = (fieldId: string) => {
+    const current = componentsToday.get(fieldId);
+    return current !== undefined && !current.deprecated && (current.public || !publicOnly);
+  };
+  return rows.map((row) => {
+    const mask = policy.rowReadMasks ? rowReadMask(policy, env.actor, row) : policy.readMask;
+    const unrestricted = hasUnrestrictedGrant(policy, 'read');
+    const readable = (fieldId: string) => {
+      const current = today.get(fieldId);
+      return current !== undefined && visibleToday(mask, current);
+    };
+    const clientFields = clientModel.definition.fields.filter(
+      (field) =>
+        isSelected(field.id) &&
+        (readable(field.id) || readsNullThroughLens(field, today.get(field.id), mask, policy)),
+    );
+    // Only what the caller may read today keeps a value, at every depth.
+    const read = readableThroughLens(lens, readThroughLens(lens, row.data), readable, componentFieldReadable);
+    for (const field of clientFields) {
+      if (targetMoved(lens, field.id)) {
+        delete read[field.id];
+      }
+    }
+    const data = projectData(read, {
+      model: clientModel,
+      fields: clientFields,
+      visibleTargets,
+      populated,
+      ...(env.audience === 'delivery'
+        ? { richText: env.richText ?? DEFAULT_RICH_TEXT_MODE }
+        : { keepUnresolvedMedia: true }),
+      mediaAssets: media.byId,
+      publicComponentFieldsOnly: publicOnly,
+      // Readable today, or (unrestricted) public in the client's version: then it holds no value, reads null.
+      componentFieldVisible: (field) =>
+        componentFieldShownThroughLens(field, componentFieldReadable(field.id), unrestricted),
+    });
+    return {
+      row,
+      data: env.seo
+        ? resolveSeoFields(
+            env,
+            { defaults: env.seo, image: media.seoImage },
+            clientModel,
+            policy,
+            clientFields,
+            // Resolved from what the lens reads and the caller may see, never the raw stored row (a title field
+            // removed since keeps its stored value there).
+            { ...row, data: read },
             data,
           )
         : data,

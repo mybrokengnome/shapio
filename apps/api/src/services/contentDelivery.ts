@@ -4,14 +4,24 @@ import { paginationMeta, type Pagination } from '../content/compiler/paginate.js
 import { queryInvalid, type ContentQuery } from '../content/compiler/types.js';
 import { entryNotFound, snapshotInvalid } from '../content/errors.js';
 import { kindsMetaOf, readableMembers, type KindMeta, type ReadMember } from '../content/family.js';
-import { modelRouteOf, resolveContentRoute, type ContentModel } from '../content/model.js';
+import { modelRouteOf, resolveContentRoute, resolveModelById, type ContentModel } from '../content/model.js';
+import { lensQueryVisibility } from '../content/read.js';
 import { MODEL_KEY } from '../content/validator/index.js';
 import { AppError } from '../helpers/appError.js';
-import type { Policy } from '../permissions/types.js';
+import type { ContentAction, Policy } from '../permissions/types.js';
 import type { UsageRecorder } from '../usage/aggregator.js';
 import { usagePrincipalKey } from '../usage/keys.js';
-import { restFieldReads } from '../usage/restFieldReads.js';
-import type { ContentServiceContext } from './contentAccess.js';
+import { lensReadLimit, restFieldReads } from '../usage/restFieldReads.js';
+import { activeLens, type ContentServiceContext } from './contentAccess.js';
+import {
+  authorizeClientRoute,
+  openClientRoute,
+  lensQueryOf,
+  schemaVersionMetaOf,
+  withClientQueryNames,
+  type ClientRoute,
+  type SchemaVersionMeta,
+} from './contentDeliveryLens.js';
 import { readEntryPage, readOneEntry, type DeliveryRead } from './contentDeliveryReads.js';
 import { parseInterfaceQuery, queryMembers, type InterfaceRoute } from './contentInterfaceReads.js';
 import { familyMembersFor, parseQueryFor } from './contentReads.js';
@@ -32,7 +42,7 @@ export type DeliveryMeta = {
   snapshot: number | null;
   /** Draft reads only (`?publicationState=draft`); published responses carry no such member. */
   publicationState?: 'draft';
-};
+} & SchemaVersionMeta;
 
 /** One member of an interface list, for `meta.members` (plan interfaces). */
 export type MemberMeta = { apiKey: string; label: string; routeKey: string };
@@ -66,6 +76,12 @@ export type DeliveryReadOptions = {
    * it the read records before returning.
    */
   defer?: (task: () => Promise<void>) => void;
+  /**
+   * Schema lenses: the request names a schema version, and its route key and query are the client's
+   * (`clientRouteOf`). The read is authorized exactly as without a version, then translated (plan
+   * schema-lenses). Absent: the query is today's (GraphQL translates its own arguments).
+   */
+  clientRoute?: ClientRoute | null;
 };
 
 const readRefused = (context: ContentServiceContext, modelKey: string) =>
@@ -84,7 +100,8 @@ const readableRoute = async (context: ContentServiceContext, modelKey: string): 
   if (route.kind === 'interface') {
     const policyFor = (modelId: string) =>
       context.permissions.evaluate(context.actor, { action: 'read', modelId });
-    const members = await readableMembers(context.snapshot, route.memberIds, policyFor);
+    // Through a lens, the members the client's version knows as members (plan schema-lenses).
+    const members = await readableMembers(context.snapshot, lensMemberIds(context, route), policyFor);
     // No type implements the interface yet: an empty list for anyone who may read some type of the site;
     // with members, a caller who may read none of them is refused (plan interfaces, D6).
     const [first] = route.memberIds.length === 0 ? await someReadableModel(context, policyFor) : members;
@@ -108,6 +125,60 @@ const readableRoute = async (context: ContentServiceContext, modelKey: string): 
   }
   return { model, policy, members: await familyMembersFor(context, model, policy) };
 };
+
+/** An interface's members, through a lens those it had in the client's version only. */
+const lensMemberIds = (
+  context: ContentServiceContext,
+  route: { definition: { id: string }; memberIds: readonly string[] },
+): readonly string[] => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return route.memberIds;
+  }
+  const known = new Set(lens.view.implementedBy(route.definition.id));
+  return route.memberIds.filter((id) => known.has(id));
+};
+
+/** Whether the caller may read a route (401/403 when it may not), with nothing else: a read's authorization. */
+export const authorizeDeliveryRead = async (
+  context: ContentServiceContext,
+  modelKey: string,
+): Promise<void> => {
+  await readableRoute(context, modelKey);
+};
+
+/** Whether the caller may perform any of `actions` on some content type of the workspace today. */
+export const holdsAnyGrant = async (
+  context: ContentServiceContext,
+  actions: readonly ContentAction[],
+): Promise<boolean> => {
+  for (const { definition } of context.snapshot.definitions) {
+    if (!isModelDefinition(definition)) {
+      continue;
+    }
+    for (const action of actions) {
+      if ((await context.permissions.evaluate(context.actor, { action, modelId: definition.id })).allowed) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+/** A delivery read of the route key a request sent (REST and in-process): `openClientRoute` for reads. */
+export const openDeliveryRead = (
+  base: ContentServiceContext,
+  routeKey: string,
+  versionError: AppError | null = null,
+) =>
+  openClientRoute(
+    base,
+    routeKey,
+    versionError,
+    (apiKey) => readableRoute(base, apiKey),
+    () => holdsAnyGrant(base, ['read']),
+    ['read'],
+  );
 
 /** The first collection or singleton of the view the caller may read, if any. */
 const someReadableModel = async (
@@ -135,12 +206,15 @@ type ReadableRoute = {
 
 /** The query of a route: parsed against the model, or against the interface's contract. */
 const parseRouteQuery = (context: ContentServiceContext, route: ReadableRoute, rawQuery: string) =>
-  route.contract
-    ? parseInterfaceQuery(context, route.contract, rawQuery, DELIVERY_PARSE)
-    : parseQueryFor(context, route.model, route.policy, rawQuery, {
-        ...DELIVERY_PARSE,
-        members: route.members,
-      });
+  // Through a schema lens the query was rewritten into today's names; its errors name the client's.
+  withClientQueryNames(context, route.contract?.definition.id ?? route.model.definition.id, () =>
+    route.contract
+      ? parseInterfaceQuery(context, route.contract, rawQuery, DELIVERY_PARSE)
+      : parseQueryFor(context, route.model, route.policy, rawQuery, {
+          ...DELIVERY_PARSE,
+          members: route.members,
+        }),
+  );
 
 /** The read of a route: an interface read carries its members' own queries. */
 const routeRead = (
@@ -168,12 +242,36 @@ const routeRead = (
 });
 
 /** `meta.members` of an interface list: the members the caller may read. */
-const membersMetaOf = (context: ContentServiceContext, route: ReadableRoute): MemberMeta[] | undefined =>
-  route.contract?.members.map(({ model }) => ({
-    apiKey: model.definition.apiKey,
-    label: model.definition.label,
-    routeKey: model.route?.key ?? modelRouteOf(context.snapshot, model.definition).key,
-  }));
+const membersMetaOf = (context: ContentServiceContext, route: ReadableRoute): MemberMeta[] | undefined => {
+  const view = activeLens(context)?.view;
+  return route.contract?.members.flatMap(({ model }) => {
+    // Through a lens, the names the client's version gave them.
+    const named = view ? resolveModelById(view, model.definition.id) : model;
+    return named
+      ? [
+          {
+            apiKey: named.definition.apiKey,
+            label: named.definition.label,
+            routeKey: named.route?.key ?? modelRouteOf(context.snapshot, named.definition).key,
+          },
+        ]
+      : [];
+  });
+};
+
+/** `meta.kinds` of a family list, through a lens in the client's version's names. */
+const kindsMetaFor = (context: ContentServiceContext, route: ReadableRoute): KindMeta[] | undefined => {
+  const view = activeLens(context)?.view;
+  if (!view) {
+    return kindsMetaOf(context.snapshot, route.model, route.members);
+  }
+  const model = resolveModelById(view, route.model.definition.id);
+  const members = route.members.flatMap((member) => {
+    const named = resolveModelById(view, member.model.definition.id);
+    return named ? [{ ...member, model: named }] : [];
+  });
+  return model ? kindsMetaOf(view, model, members) : undefined;
+};
 
 /** Whether a read asks for drafts: GraphQL's option, or `?publicationState=draft`. */
 const readsDrafts = (query: ContentQuery, options: DeliveryReadOptions): boolean =>
@@ -232,7 +330,10 @@ const recordUsage = async (
   if (!options.usage || readsDrafts(query, options) || principalKey === null) {
     return;
   }
-  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null);
+  // Only API tokens record the version they read: the app-user and anonymous aggregates are no one client,
+  // and would crowd tokens out of the review's list of older versions.
+  const schemaVersion = context.actor.kind === 'token' ? context.lens?.requested : undefined;
+  options.usage.recordRequest(context.site.id, principalKey, query.snapshot ?? null, schemaVersion);
   // An interface read counts each member's own fields under that member (plan interfaces).
   const members: readonly (ReadMember & { query?: ContentQuery })[] = read.contract?.members ??
     read.members ?? [{ model: read.model, policy: read.policy }];
@@ -241,15 +342,51 @@ const recordUsage = async (
       ? members
       : members.filter((member) => shown.has(member.model.definition.apiKey));
   for (const { model, policy, query: own } of counted) {
+    const usageQuery = lensUsageQuery(context, model, own ?? query);
+    if (!usageQuery) {
+      continue;
+    }
     const reads = await restFieldReads({
       snapshot: context.snapshot,
       model,
       policy,
-      query: own ?? query,
+      query: usageQuery,
       policyFor: (modelId) => context.permissions.evaluate(context.actor, { action: 'read', modelId }),
+      limitTo: lensReadLimit(activeLens(context), context.snapshot, model, usageQuery.populate),
     });
     options.usage.recordFieldReads(context.site.id, principalKey, model.definition.id, reads);
   }
+};
+
+/**
+ * What a lensed read counts (plan schema-lenses): today's fields by stable ID, never one the client's version
+ * reads as null because it is gone. A `fields=` selection counts its fields that still exist; null when the
+ * client's version does not know the model.
+ */
+const lensUsageQuery = (
+  context: ContentServiceContext,
+  model: ContentModel,
+  query: ContentQuery,
+): ContentQuery | null => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return query;
+  }
+  const definitionLens = lens.lensFor(model.definition.id);
+  if (!definitionLens) {
+    return null;
+  }
+  const selection = context.lensSelection ?? query.fields?.map((field) => field.id) ?? null;
+  if (selection === null) {
+    return query;
+  }
+  const live = new Set(
+    definitionLens.fields.filter((field) => field.kind !== 'null').map((field) => field.fieldId),
+  );
+  return {
+    ...query,
+    fields: model.definition.fields.filter((field) => live.has(field.id) && selection.includes(field.id)),
+  };
 };
 
 /** The kinds (API IDs) among delivered entries. */
@@ -286,8 +423,15 @@ const DELIVERY_PARSE = {
  * Meta every delivery response carries. Draft reads report `snapshot: null` (drafts cannot be pinned, as in
  * GraphQL) and add `publicationState`; published ones are unchanged.
  */
-const metaOf = (locale: string, snapshot: number, drafts: boolean): DeliveryMeta =>
-  drafts ? { locale, snapshot: null, publicationState: 'draft' } : { locale, snapshot };
+const metaOf = (
+  context: ContentServiceContext,
+  locale: string,
+  snapshot: number,
+  drafts: boolean,
+): DeliveryMeta => ({
+  ...(drafts ? { locale, snapshot: null, publicationState: 'draft' } : { locale, snapshot }),
+  ...schemaVersionMetaOf(context),
+});
 
 /** Reading one entry takes only these query parameters; anything else is refused, not ignored. */
 export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<string>): void => {
@@ -299,14 +443,51 @@ export const assertItemParameters = (rawQuery: string, allowed: ReadonlySet<stri
   }
 };
 
-/** `GET /api/content/:modelKey`: a page of a collection, or a singleton's one entry. */
-export const listDelivery = async (
+/** What a lensed query may name on the route's model, for this caller. */
+const lensVisibilityOf = (context: ContentServiceContext, model: ContentModel, policy: Policy) => {
+  const view = activeLens(context)?.view;
+  return lensQueryVisibility(view ? resolveModelById(view, model.definition.id) : undefined, model, policy);
+};
+
+/**
+ * The route a read covers, authorized, with the context and query it then runs with: through a schema lens the
+ * lens's own checks and the query's translation come only after the caller is authorized, so a caller that may
+ * not read gets exactly the answer it gets without a version (plan schema-lenses).
+ */
+const authorizedRead = async (
   context: ContentServiceContext,
   modelKey: string,
   rawQuery: string,
+  options: DeliveryReadOptions,
+): Promise<{ route: ReadableRoute; context: ContentServiceContext; rawQuery: string }> => {
+  const clientRoute = options.clientRoute ?? null;
+  const route = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
+    readableRoute(context, apiKey),
+  );
+  if (!clientRoute) {
+    return { route, context, rawQuery };
+  }
+  const definitionId = route.contract?.definition.id ?? route.model.definition.id;
+  return {
+    route,
+    ...lensQueryOf(
+      context,
+      definitionId,
+      clientRoute.clientRouteKey,
+      rawQuery,
+      route.contract ? undefined : lensVisibilityOf(context, route.model, route.policy),
+    ),
+  };
+};
+
+/** `GET /api/content/:modelKey`: a page of a collection, or a singleton's one entry. */
+export const listDelivery = async (
+  base: ContentServiceContext,
+  modelKey: string,
+  clientQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryList | DeliveryItem> => {
-  const route = await readableRoute(context, modelKey);
+  const { route, context, rawQuery } = await authorizedRead(base, modelKey, clientQuery, options);
   const { model } = route;
   const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
@@ -327,14 +508,14 @@ export const listDelivery = async (
     if (!entry) {
       throw entryNotFound(modelKey);
     }
-    result = { data: entry, meta: metaOf(locale, snapshot, drafts) };
+    result = { data: entry, meta: metaOf(context, locale, snapshot, drafts) };
   } else {
-    const kinds = route.contract ? undefined : kindsMetaOf(context.snapshot, model, route.members);
+    const kinds = route.contract ? undefined : kindsMetaFor(context, route);
     const members = membersMetaOf(context, route);
     result = {
       data: entries,
       meta: {
-        ...metaOf(locale, snapshot, drafts),
+        ...metaOf(context, locale, snapshot, drafts),
         pagination: paginationMeta(query.page, limit, total),
         ...(kinds ? { kinds } : {}),
         ...(members ? { members } : {}),
@@ -350,14 +531,14 @@ export const listDelivery = async (
  * with drafts, the entry's draft.
  */
 export const getDelivery = async (
-  context: ContentServiceContext,
+  base: ContentServiceContext,
   modelKey: string,
   id: string,
-  rawQuery: string,
+  clientQuery: string,
   options: DeliveryReadOptions = {},
 ): Promise<DeliveryItem> => {
-  assertItemParameters(rawQuery, ITEM_PARAMETERS);
-  const route = await readableRoute(context, modelKey);
+  assertItemParameters(clientQuery, ITEM_PARAMETERS);
+  const { route, context, rawQuery } = await authorizedRead(base, modelKey, clientQuery, options);
   const query = parseRouteQuery(context, route, rawQuery);
   const drafts = readsDrafts(query, options);
   const source = sourceOf(query, drafts);
@@ -370,6 +551,6 @@ export const getDelivery = async (
   await afterRead(options, () => recordUsage(context, options, read, kindsOf([entry])));
   return {
     data: entry,
-    meta: metaOf(query.locale ?? context.snapshot.defaultLocale, query.snapshot ?? seq, drafts),
+    meta: metaOf(context, query.locale ?? context.snapshot.defaultLocale, query.snapshot ?? seq, drafts),
   };
 };

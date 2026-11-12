@@ -132,6 +132,9 @@ Settings → API tokens creates a token bound to one role. It is shown once; Sha
 - A **delivery** token (bound to a delivery role, which can only grant `read`) is what your site's build uses
   to read published content. See [Delivery API](delivery-api.md#tokens).
 
+The list shows, under each token's name, when it was last used and, when its latest reads named a
+[schema version](schema-lenses.md), which one ("Sends schema version 17").
+
 Tokens belong to the workspace they are created in. An admin with `users.manage` can instead create a
 **network** admin token, which works in every workspace ([Workspaces](workspaces.md#api-tokens)).
 

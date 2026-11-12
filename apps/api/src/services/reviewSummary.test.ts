@@ -82,6 +82,14 @@ describe('summarizeValue', () => {
     ).toBe('3 blocks: Hero (Welcome), Link, c-gone');
   });
 
+  it('item IDs are never summarized: an instance holding nothing else is empty', () => {
+    expect(summary('component', { __id: 'i-1' }, { component: 'c-link' })).toBeNull();
+    expect(
+      summary('component', [{ __id: 'i-1', 'f-text': 'Home' }], { component: 'c-link', repeatable: true }),
+    ).toBe('1 item (Link): Home');
+    expect(summary('dynamiczone', [{ __component: 'c-link', __id: 'i-2' }])).toBe('1 block: Link');
+  });
+
   it('code: language and lines', () => {
     expect(summary('code', '<div>\n  <p>Hi</p>\n</div>', { language: 'html' })).toBe('HTML, 3 lines');
     expect(summary('code', 'x', { language: 'plain' })).toBe('Plain text, 1 line');

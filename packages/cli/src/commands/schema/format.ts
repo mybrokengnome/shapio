@@ -3,7 +3,11 @@ import {
   ANY_TARGET,
   categoryOfKind,
   isDataType,
+  lensEffectOfChange,
   typeChangeDropsValues,
+  type ClassifiedChange,
+  type DefinitionCategory,
+  type LensEffect,
   type PlannedChange,
   type SchemaChange,
 } from '@shapio/schema';
@@ -164,6 +168,47 @@ export const formatChange = (
   }
 };
 
+/**
+ * A change as the server classified it (every server since 0.5.6 sends the classification with each change;
+ * the client's type only promises `PlannedChange`).
+ */
+const isClassified = (change: PlannedChange): change is ClassifiedChange =>
+  typeof (change as { breaking?: unknown }).breaking === 'boolean';
+
+const OLDER_CLIENTS = 'clients naming an older schema version';
+
+const EFFECT_WORDING: Readonly<Record<Exclude<LensEffect, 'gone'>, string>> = {
+  transparent: 'keep working',
+  converted: 'keep working',
+  lossy: 'some values read empty',
+  nulled: 'this field reads empty',
+  uncovered: 'not covered',
+};
+
+const GONE_WORDING: Readonly<Record<DefinitionCategory, string>> = {
+  model: 'lose this content type',
+  component: 'lose this component',
+  interface: 'lose this interface',
+};
+
+/**
+ * What a client that names the schema version before this change sees once it is live, for a breaking change:
+ * ` (clients naming an older schema version: this field reads empty)`. Empty for any other change, and for a
+ * server that sends no classification.
+ */
+export const olderClientsNote = (change: PlannedChange, category: DefinitionCategory): string => {
+  if (!isClassified(change) || !change.breaking) {
+    return '';
+  }
+  const effect = lensEffectOfChange(change);
+  return ` (${OLDER_CLIENTS}: ${effect === 'gone' ? GONE_WORDING[category] : EFFECT_WORDING[effect]})`;
+};
+
+export type FormatItemOptions = {
+  /** Add to each breaking change what clients naming an older schema version see (`shapio schema diff`). */
+  olderClients?: boolean;
+};
+
 const DECISION_LABELS: Readonly<Record<string, string>> = {
   unchangedLocally: 'unchanged locally',
   alreadyApplied: 'already identical on the target',
@@ -208,6 +253,7 @@ export const formatItem = (
   names: ReadonlyMap<string, string>,
   parents: ParentIds = new Map(),
   implemented: ImplementedIds = new Map(),
+  { olderClients = false }: FormatItemOptions = {},
 ): string => {
   const flags = [
     item.plan?.summary?.breaking ? 'BREAKING' : '',
@@ -222,7 +268,8 @@ export const formatItem = (
     const member = onMember(change, item, names);
     // A change the server reports on a member (a type implementing the interface) is about that type's fields.
     const contract = category === 'interface' && member === '';
-    return formatChange(change, names, { contract }).map((line) => `    ${line}${member}`);
+    const note = olderClients ? olderClientsNote(change, category) : '';
+    return formatChange(change, names, { contract }).map((line) => `    ${line}${member}${note}`);
   });
   return [header, ...lines].join('\n');
 };

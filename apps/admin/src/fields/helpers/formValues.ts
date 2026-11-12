@@ -1,8 +1,10 @@
 import type { MediaAsset } from '@shapio/client';
 import type { ComponentDefinition, FieldDefinition } from '@shapio/schema';
+import { savedItemIds, withItemIds } from './itemIds';
 import { containsUnparsed } from './unparsed';
 import {
   COMPONENT_KEY,
+  ITEM_ID_KEY,
   isEmptyValue,
   isRecord,
   isSameContent,
@@ -46,6 +48,10 @@ const componentOfItem = (
     .map((id) => components.get(id))
     .find((component) => component?.apiKey === item[COMPONENT_KEY]);
 
+/** The item's server-assigned ID, kept so the save sends it back (the form never shows it). */
+const itemIdOf = (item: unknown): ItemValues =>
+  isRecord(item) && typeof item[ITEM_ID_KEY] === 'string' ? { [ITEM_ID_KEY]: item[ITEM_ID_KEY] } : {};
+
 const fromApiValue = (
   field: FieldDefinition,
   value: unknown,
@@ -63,9 +69,10 @@ const fromApiValue = (
     case 'component': {
       const component = components.get(field.settings.component);
       const convert = (item: unknown) =>
-        withClientKey(
-          component && isRecord(item) ? toFormValues(component.fields, item, components, collect) : {},
-        );
+        withClientKey({
+          ...itemIdOf(item),
+          ...(component && isRecord(item) ? toFormValues(component.fields, item, components, collect) : {}),
+        });
       return field.settings.repeatable ? (Array.isArray(value) ? value.map(convert) : []) : convert(value);
     }
     case 'dynamiczone':
@@ -73,6 +80,7 @@ const fromApiValue = (
         const component = componentOfItem(field, item, components);
         return withClientKey({
           [COMPONENT_KEY]: item[COMPONENT_KEY],
+          ...itemIdOf(item),
           ...(component ? toFormValues(component.fields, item, components, collect) : {}),
         });
       });
@@ -143,24 +151,30 @@ export const buildCreateData = (values: FormValues): Record<string, unknown> =>
   );
 
 /**
- * After a save: the server's values become the baseline. Fields the person did not touch while the save
- * was in flight take the server's (canonical) value, keeping the current object when the content is the
- * same so list items keep their client keys; fields edited meanwhile keep the newer local value.
+ * After a save: the server's values become the baseline. Items the save created take the IDs the server
+ * gave them (matched by client key, so they keep their client keys and don't remount), in every field,
+ * edited meanwhile or not. Fields the person did not touch while the save was in flight take the server's
+ * (canonical) value, keeping the current object when the content is the same; fields edited meanwhile keep
+ * the newer local value.
  */
 export const mergeSaved = (
   current: FormValues,
   sent: FormValues,
   saved: FormValues,
 ): { values: FormValues; baseline: FormValues } => {
+  const ids = savedItemIds(sent, saved);
   const values: FormValues = { ...current };
   const baseline: FormValues = { ...saved };
   for (const key of Object.keys(saved)) {
     const editedMeanwhile = !Object.is(current[key], sent[key]);
+    const withIds = withItemIds(current[key], ids);
     if (editedMeanwhile) {
+      values[key] = withIds;
       continue;
     }
-    if (isSameContent(current[key], saved[key])) {
-      baseline[key] = current[key];
+    if (isSameContent(withIds, saved[key])) {
+      values[key] = withIds;
+      baseline[key] = withIds;
     } else {
       values[key] = saved[key];
     }

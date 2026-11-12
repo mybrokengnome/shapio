@@ -183,7 +183,7 @@ describe('GraphQL schema visibility', () => {
     );
     expect(fieldNames(schema, 'ArticleFilter')).not.toContain('internalNote');
     expect(fieldNames(schema, 'ArticleSort')).not.toContain('internalNote');
-    expect(fieldNames(schema, 'Card')).toEqual(['heading']);
+    expect(fieldNames(schema, 'Card')).toEqual(['id', 'heading']);
     // A zone member the caller sees no field of is dropped from the union.
     const zone = schema.getType('ArticleSectionsZone');
     expect(isUnionType(zone) && zone.getTypes().map((type) => type.name)).toEqual(['Card']);
@@ -212,7 +212,7 @@ describe('GraphQL schema visibility', () => {
     });
     expect(fieldNames(schema, 'Article')).toContain('internalNote');
     expect(fieldNames(schema, 'ArticleFilter')).toContain('internalNote');
-    expect(fieldNames(schema, 'Card')).toEqual(['heading']);
+    expect(fieldNames(schema, 'Card')).toEqual(['id', 'heading']);
   });
 
   it('gives the same key to the same masks and another key to other masks', async () => {

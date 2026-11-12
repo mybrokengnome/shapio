@@ -1,5 +1,6 @@
 import { ShapioApiError } from './errors.js';
 import type { NextFetchInit } from './nextCache.js';
+import { applySchemaVersion } from './schemaVersion.js';
 import { applySite } from './site.js';
 
 /** Fetch's `credentials` mode (spelled out: the DOM lib type is not available to Node consumers). */
@@ -24,6 +25,11 @@ export type RequestConfig = {
    * primary one.
    */
   site: string | undefined;
+  /**
+   * The schema version token every request names (see schemaVersion.ts); undefined: today's schema. Optional
+   * so callers that build a transport by hand need not pass it.
+   */
+  schemaVersion?: string | undefined;
 };
 
 const parseBody = async (response: Response): Promise<unknown> => {
@@ -46,16 +52,19 @@ export const createRequest = ({
   credentials,
   headers,
   site,
+  schemaVersion,
 }: RequestConfig): RequestFn => {
   const origin = baseUrl.replace(/\/+$/, '');
   return async <T>(
     requestPath: string,
     { method = 'GET', body, signal, cache, next }: RequestOptions = {},
   ): Promise<T> => {
-    const { path, headers: siteHeaders } = applySite(site, method, requestPath);
+    const named = applySite(site, method, requestPath);
+    const { path, headers: versionHeaders } = applySchemaVersion(schemaVersion, method, named.path);
     const requestHeaders: Record<string, string> = {
       accept: 'application/json',
-      ...siteHeaders,
+      ...named.headers,
+      ...versionHeaders,
       ...headers?.(),
     };
     if (token) {

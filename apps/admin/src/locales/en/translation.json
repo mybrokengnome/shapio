@@ -70,7 +70,8 @@
     "titleTemplate": "Use %s exactly once where the page title goes, e.g. \"%s · Acme\".",
     "twitterHandle": "Use @ followed by up to 15 letters, digits or underscores.",
     "approvalRequired": "Enter a whole number from 1 to 20.",
-    "approvalDeletedRole": "Uncheck the deleted role before saving."
+    "approvalDeletedRole": "Uncheck the deleted role before saving.",
+    "schemaVersion": "Enter a whole number from 1 up, or leave it empty."
   },
   "errors": {
     "unexpected": "Something went wrong. Please try again.",
@@ -731,7 +732,16 @@
     "scopeSite": "This workspace ({{name}})",
     "scopeSiteDescription": "The token's role applies on this workspace only.",
     "scopeNetwork": "Every workspace (network token)",
-    "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users."
+    "scopeNetworkDescription": "Its role applies on every workspace, including network actions such as managing users.",
+    "sendsSchemaVersion": "Sends schema version {{version}}",
+    "pinnedToSchemaVersion": "Pinned to schema version {{version}}",
+    "pinUnavailable": "Pinned version unavailable",
+    "schemaVersion": "Schema version",
+    "schemaVersionPlaceholder": "Always the current schema",
+    "schemaVersionHint": "Pins the token to a schema version: requests made with it read content in that version's shape, as if the client had sent it, and can write only the fields that read unchanged at that version, over REST and GraphQL alike. A schema version the client sends wins over the pin. Clear the pin once the client is updated to the current schema.",
+    "pinCurrent": "Pin to the current version ({{version}})",
+    "editTitle": "Edit {{name}}",
+    "saved": "Token saved."
   },
   "audit": {
     "title": "Audit log",
@@ -761,6 +771,7 @@
       "adminUserUpdate": "Updated admin user",
       "apiTokenCreate": "Created API token",
       "apiTokenRevoke": "Revoked API token",
+      "apiTokenUpdate": "Changed API token",
       "appAuthRefreshReuse": "Reused a revoked refresh token",
       "appRoleCreate": "Created app role",
       "appRoleDelete": "Deleted app role",
@@ -2192,7 +2203,11 @@
       "notUnique": "Another entry already uses this value.",
       "relationMissing": "A linked entry no longer exists.",
       "mediaMissing": "A chosen file no longer exists or isn't allowed here.",
-      "invalidJson": "Not valid JSON."
+      "invalidJson": "Not valid JSON.",
+      "unknownItemId": "An item here was removed or replaced since this entry was loaded. Reload the entry and make the change again.",
+      "duplicateItemId": "The same item appears twice here. Reload the entry and make the change again.",
+      "itemComponentChanged": "An item here changed its type since this entry was loaded. Reload the entry and make the change again.",
+      "ambiguousItems": "Shapio couldn't tell which saved items these are. Reload the entry and make the change again."
     },
     "media": {
       "empty": "No file chosen.",
@@ -2942,7 +2957,21 @@
       "implicit": "Reads the whole model",
       "site": "Workspace",
       "otherSites_one": "Other workspaces: {{count}} reader, {{reads}} reads",
-      "otherSites_other": "Other workspaces: {{count}} readers, {{reads}} reads"
+      "otherSites_other": "Other workspaces: {{count}} readers, {{reads}} reads",
+      "olderVersions": {
+        "title": "Readers on older schema versions",
+        "description": "What each reader sees once this change set ships",
+        "truncated_one": "The {{count}} most recently used schema version, and what its readers see",
+        "truncated_other": "The {{count}} most recently used schema versions, and what their readers see",
+        "hint": "These readers name the schema version they were built against, or use a token pinned to one. Shapio keeps answering them in that shape, so a breaking change reaches them only as the effect shown here.",
+        "pinned": "Pinned",
+        "networkToken": "Network token",
+        "schemaVersion": "Schema version",
+        "outcome": "Once shipped",
+        "otherSites_one": "Other workspaces: {{count}} reader",
+        "otherSites_other": "Other workspaces: {{count}} readers",
+        "historyTruncated": "Some content types changed too often since a reader’s schema version to check every change, so what they show may leave out values an earlier change emptied"
+      }
     },
     "timeline": {
       "empty": "Nothing has happened yet.",
@@ -3264,6 +3293,9 @@
         "localeOption": "{{label}} ({{code}})",
         "snapshot": "Snapshot",
         "snapshotHint": "Read content as of this publication snapshot (meta.snapshot), as a pinned site build does.",
+        "schemaVersion": "Schema version",
+        "schemaVersionHint": "Read as a client built against this schema version: its API IDs, routes, and field types. Empty reads today's shape.",
+        "schemaVersionPlaceholder": "{{version}} (current)",
         "fields": "Fields",
         "fieldsHint": "Comma-separated API IDs to return, e.g. title,cover. Empty returns every field you may read.",
         "populate": "Populate",
@@ -3633,6 +3665,40 @@
       "customDescription": "Stages of this workspace's own.",
       "inheritedOff": "The network default has no approval, so change sets ship without it.",
       "readOnly": "Only admins who may change workspace settings can change this."
+    }
+  },
+  "olderClients": {
+    "lines": {
+      "unchanged": "No change for clients naming an older schema version",
+      "transparent": "Clients naming an older schema version keep working",
+      "converted": "Clients naming an older schema version keep working, with values converted to their type",
+      "lossy": "Clients naming an older schema version get some values empty",
+      "nulled": "Clients naming an older schema version get this field empty",
+      "gone": "Clients naming an older schema version lose this content type",
+      "uncovered": "Clients naming an older schema version are not covered"
+    },
+    "chips": {
+      "transparent": "Keeps working",
+      "converted": "Keeps working, converted",
+      "lossy": "Some values empty",
+      "nulled": "Fields empty",
+      "gone": "Content type gone",
+      "uncovered": "Not covered",
+      "unavailable": "No record of this version"
+    },
+    "past": {
+      "lossy": "Already reads some values empty since schema version {{version}}",
+      "lossyUndated": "Already reads some values empty",
+      "nulled": "Already reads fields empty since schema version {{version}}",
+      "nulledUndated": "Already reads fields empty"
+    },
+    "ack": {
+      "none": "No reader names an older schema version, so every reader gets the new shape.",
+      "protectedOnly": "Protected: readers naming schema version {{versions}} keep working. Not protected: readers that name no schema version.",
+      "unprotectedOnly": "Not protected: readers naming schema version {{versions}}, and readers that name no schema version.",
+      "mixed": "Protected: readers naming schema version {{protected}} keep working. Not protected: readers naming schema version {{unprotected}}, and readers that name no schema version.",
+      "about": "older schema versions",
+      "hint": "A client can name the schema version it was built against and keep reading content in that shape, with renamed fields under their old API IDs and changed types converted back where they fit. Removed fields and values that do not fit read empty. A client that names no schema version gets the new shape at once."
     }
   }
 }

@@ -22,17 +22,20 @@ type RequestBuilderProps = {
   draft: RequestDraft;
   onDraftChange: (draft: RequestDraft) => void;
   path: string;
+  /** The instance's schema version now (the schema version control's placeholder). */
+  currentSchemaVersion?: number;
   sendable: boolean;
   sending: boolean;
   onSend: () => void;
 };
 
-/** Path parameter, locale, snapshot, projection, filters and the token, then Send. */
+/** Path parameter, locale, snapshot, schema version, projection, filters and the token, then Send. */
 export const RequestBuilder = ({
   operation,
   draft,
   onDraftChange,
   path,
+  currentSchemaVersion,
   sendable,
   sending,
   onSend,
@@ -102,6 +105,18 @@ export const RequestBuilder = ({
               inputMode="numeric"
             />
           ) : null}
+          <TextParam
+            label={t('develop.api.request.schemaVersion')}
+            hint={t('develop.api.request.schemaVersionHint')}
+            value={draft.schemaVersion}
+            onChange={(schemaVersion) => set({ schemaVersion })}
+            inputMode="numeric"
+            placeholder={
+              currentSchemaVersion === undefined
+                ? undefined
+                : t('develop.api.request.schemaVersionPlaceholder', { version: currentSchemaVersion })
+            }
+          />
           <TextParam
             label={t('develop.api.request.fields')}
             hint={t('develop.api.request.fieldsHint')}

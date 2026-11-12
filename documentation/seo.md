@@ -73,6 +73,9 @@ locale:
   canonical URL from its address and the path;
 - `noindex`: `true` or `false`, never `null`.
 
+A stored SEO instance keeps its item `id` when resolved; a value made only from the workspace's defaults has no
+`id`.
+
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "https://cms.example.com/api/content/articles/<id>?seo=resolved&locale=fr"

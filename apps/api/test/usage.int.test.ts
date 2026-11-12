@@ -233,6 +233,7 @@ describe('field usage', () => {
           principalKey: 'anonymous',
           requests: 1,
           lastSnapshot: null,
+          lastSchemaVersion: null,
           lastReadAt: new Date(),
         },
       ],
@@ -280,6 +281,7 @@ describe('field usage', () => {
         principalKey: `retention-${day}`,
         requests: 1,
         lastSnapshot: null,
+        lastSchemaVersion: null,
         lastReadAt: new Date(),
       })),
     });

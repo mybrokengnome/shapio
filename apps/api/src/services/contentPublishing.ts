@@ -6,6 +6,7 @@ import {
   publishingDisabled,
 } from '../content/errors.js';
 import type { ContentHooks } from '../content/hooks.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { writeLocaleFor } from '../content/locales.js';
 import type { ContentModel } from '../content/model.js';
 import { validateRevisionData } from '../content/revisionData.js';
@@ -19,6 +20,7 @@ import {
   unpublishLocale,
   type WriteContext,
 } from '../content/write/heads.js';
+import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
 import { assertTargets, mediaIdsOf } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
@@ -130,12 +132,17 @@ export const publishRevisionInTransaction = async (
 ): Promise<PublishedLocale> => {
   const { write, snapshot, hooks, site } = tx;
   const { model, trx, actor } = write;
-  const outcome = validateRevisionData(buildValidator(snapshot, model), source.data);
-  if (outcome.issues.length > 0) {
+  const validated = validateRevisionData(buildValidator(snapshot, model), source.data);
+  if (validated.issues.length > 0) {
     throw contentInvalid(
-      outcome.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
+      validated.issues.map((issue) => ({ ...issue, message: `${issue.message} (${locale})` })),
     );
   }
+  // A revision repeating an item ID (stored before IDs were checked) goes live with the repeats renewed.
+  const outcome = {
+    ...validated,
+    data: withUniqueItemIds(validated.data, model.definition.fields, componentLookupOf(model.components)),
+  };
   await assertTargets(
     trx,
     outcome,

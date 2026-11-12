@@ -1,6 +1,7 @@
 import type { Kysely, Selectable, Transaction } from 'kysely';
 import { db } from '../db/index.js';
 import type { DB, SchemaRevisions } from '../db/types.js';
+import * as schemaActivationsRepository from './schemaActivations.js';
 import type { SchemaChangeStatus } from './schemaChangeJobs.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
@@ -80,7 +81,7 @@ export const findDeletedIdsOfSite = async (siteId: string, executor: Executor = 
 
 /**
  * Purges deleted definitions with their history (`deleteSite`, once the site has no live definition and the
- * definitions' deleted entries are purged): change rows, revisions, then the models rows.
+ * definitions' deleted entries are purged): change rows, activation history, revisions, then the models rows.
  */
 export const purgeDefinitions = async (ids: readonly string[], trx: Executor = db): Promise<void> => {
   if (ids.length === 0) {
@@ -88,6 +89,8 @@ export const purgeDefinitions = async (ids: readonly string[], trx: Executor = d
   }
   await trx.deleteFrom('schema_change_jobs').where('model_id', 'in', ids).execute();
   await trx.deleteFrom('model_active_versions').where('model_id', 'in', ids).execute();
+  // Activation history names revisions, so it goes before them.
+  await schemaActivationsRepository.deleteForModels(ids, trx);
   // Newest first, one row at a time: a revision's parent always has a lower version, and MySQL checks the
   // self-reference row by row.
   const revisions = await trx

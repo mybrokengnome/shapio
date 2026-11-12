@@ -30,6 +30,10 @@ import * as interfaceKind from './20261021120000_interface_kind.js';
 import * as changeSetApproval from './20261028120000_change_set_approval.js';
 import * as schemaChangeOutcome from './20261029120000_schema_change_outcome.js';
 import * as assistWriteAndFill from './20261104120000_assist_write_and_fill.js';
+import * as schemaLenses from './20261110120000_schema_lenses.js';
+import * as apiTokenSchemaPin from './20261110130000_api_token_schema_pin.js';
+import * as itemIdKey from './20261111120000_item_id_key.js';
+import * as entryHeadsScalarsGin from './20261112120000_entry_heads_scalars_gin.js';
 import { MYSQL_MIGRATIONS } from './mysql/index.js';
 import { SQLITE_MIGRATIONS } from './sqlite/index.js';
 
@@ -69,6 +73,10 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261028120000_change_set_approval': changeSetApproval,
   '20261029120000_schema_change_outcome': schemaChangeOutcome,
   '20261104120000_assist_write_and_fill': assistWriteAndFill,
+  '20261110120000_schema_lenses': schemaLenses,
+  '20261110130000_api_token_schema_pin': apiTokenSchemaPin,
+  '20261111120000_item_id_key': itemIdKey,
+  '20261112120000_entry_heads_scalars_gin': entryHeadsScalarsGin,
 };
 
 export const staticMigrationProvider: MigrationProvider = {

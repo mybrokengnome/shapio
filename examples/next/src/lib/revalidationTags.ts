@@ -4,6 +4,8 @@ import { shapioTags, type SnapshotChange } from '@shapio/client';
  * What a set of Shapio changes means for Next's data cache: the arguments for `revalidateTag`, matching the
  * tags `@shapio/client` puts on every delivery read (`shapioTags`). Pure, so the mapping is unit-tested;
  * src/lib/revalidation.ts feeds it from the snapshot diff, which names each changed entry by its route key.
+ * The diff is read through the site's schema version (the client's `schemaVersion`), so a route renamed since
+ * keeps the key the site's reads were tagged with. A webhook's own names are today's: never use them for tags.
  */
 export type ChangedEntryRef = Pick<SnapshotChange, 'routeKey' | 'id'> & {
   /**

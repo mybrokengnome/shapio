@@ -1,12 +1,22 @@
 import { createClient, ShapioApiError, type RequestFn, type RequestOptions } from '@shapio/client';
 import { Value } from 'typebox/value';
-import { apiKeyOfRoute } from '../content/model.js';
+import { AppError } from '../helpers/appError.js';
 import { splitContentPath } from '../helpers/contentRoutes.js';
 import type { ErrorLike } from '../helpers/errorResponse.js';
+import {
+  pickSchemaVersionToken,
+  rawSchemaVersionCandidate,
+  withoutSchemaVersionParameter,
+} from '../helpers/schemaVersionQuery.js';
 import { pickSiteKey, rawSiteQueryCandidates, withoutSiteParameter } from '../helpers/siteQuery.js';
 import { SnapshotChangesQuerySchema, type SnapshotChangesQuery } from '../routes/snapshots/schemas.js';
-import type { ContentServiceContext } from '../services/contentAccess.js';
-import { getDelivery, listDelivery } from '../services/contentDelivery.js';
+import {
+  deferSchemaLens,
+  loadSchemaLens,
+  namesSchemaVersion,
+  type ContentServiceContext,
+} from '../services/contentAccess.js';
+import { getDelivery, listDelivery, openDeliveryRead } from '../services/contentDelivery.js';
 import { getDeliverySite } from '../services/siteSeo.js';
 import { currentSnapshot, listSnapshotChanges } from '../services/snapshotChanges.js';
 import { ShapioVersionSkewError, toShapioApiError } from './errors.js';
@@ -35,9 +45,20 @@ export type DeliveryRoute =
 
 /**
  * A matched path: the route, its querystring without `workspace` and `site`, and the workspace the path names
- * (`?workspace=` or `?site=`), if any.
+ * (`?workspace=` or `?site=`), if any, and the schema version it names (`?schemaVersion=`).
  */
-export type MatchedRequest = { route: DeliveryRoute; query: string; site: string | undefined };
+export type MatchedRequest = {
+  route: DeliveryRoute;
+  query: string;
+  site: string | undefined;
+  /** `?schemaVersion=` (plan schema-lenses): the shape the call reads in; null for today's. */
+  schemaVersion: string | null;
+  /**
+   * A version the path could not name (malformed, repeated): answered, like every lens-specific error, only
+   * once the call is authorized, as over HTTP.
+   */
+  schemaVersionError: AppError | null;
+};
 
 /**
  * `content/<routeKey>[/<id>]`: the route key may be nested (`products/digital`, or one encoded segment), split
@@ -100,7 +121,23 @@ export const matchDeliveryRequest = (method: string, path: string): MatchedReque
   }
   // An empty `?workspace=` or `?site=` names no workspace, as over HTTP.
   const site = pickSiteKey(rawSiteQueryCandidates(rawQuery));
-  return { route, query: withoutSiteParameter(rawQuery), site };
+  let schemaVersion: string | null = null;
+  let schemaVersionError: AppError | null = null;
+  try {
+    schemaVersion = pickSchemaVersionToken([rawSchemaVersionCandidate(rawQuery)]);
+  } catch (error) {
+    if (!(error instanceof AppError)) {
+      throw error;
+    }
+    schemaVersionError = error;
+  }
+  return {
+    route,
+    query: withoutSchemaVersionParameter(withoutSiteParameter(rawQuery)),
+    site,
+    schemaVersion,
+    schemaVersionError,
+  };
 };
 
 const notAvailable = (method: string, path: string) =>
@@ -143,21 +180,53 @@ const snapshotChangesQuery = (rawQuery: string): SnapshotChangesQuery => {
 const asJson = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
 
 const dispatch = async (
-  context: ContentServiceContext,
-  { route, query }: MatchedRequest,
+  unloaded: ContentServiceContext,
+  { route, query, schemaVersion, schemaVersionError }: MatchedRequest,
 ): Promise<unknown> => {
+  // A version is read only after the call is authorized, as over HTTP (plan schema-lenses).
+  const base = await deferSchemaLens(unloaded, schemaVersion);
   switch (route.kind) {
-    case 'list':
-      return listDelivery(context, apiKeyOfRoute(context.snapshot, route.routeKey), query);
-    case 'item':
-      return getDelivery(context, apiKeyOfRoute(context.snapshot, route.routeKey), route.id, query);
+    case 'list': {
+      const { context, apiKey, clientRoute } = await openDeliveryRead(
+        base,
+        route.routeKey,
+        schemaVersionError,
+      );
+      return listDelivery(context, apiKey, query, { clientRoute });
+    }
+    case 'item': {
+      const { context, apiKey, clientRoute } = await openDeliveryRead(
+        base,
+        route.routeKey,
+        schemaVersionError,
+      );
+      return getDelivery(context, apiKey, route.id, query, { clientRoute });
+    }
     case 'site':
-      return getDeliverySite(context);
+      return getDeliverySite(base);
     case 'snapshotCurrent':
-      return currentSnapshot(context);
+      return currentSnapshot(await snapshotContextOf(base, schemaVersionError));
     case 'snapshotChanges':
-      return listSnapshotChanges(context, snapshotChangesQuery(query));
+      return listSnapshotChanges(
+        await snapshotContextOf(base, schemaVersionError),
+        snapshotChangesQuery(query),
+      );
   }
+};
+
+/** A snapshot call's context: the lens loaded once the caller may read snapshots, as over HTTP. */
+const snapshotContextOf = async (
+  base: ContentServiceContext,
+  versionError: AppError | null,
+): Promise<ContentServiceContext> => {
+  if (!versionError && !namesSchemaVersion(base)) {
+    return base;
+  }
+  await currentSnapshot(base);
+  if (versionError) {
+    throw versionError;
+  }
+  return loadSchemaLens(base);
 };
 
 /**

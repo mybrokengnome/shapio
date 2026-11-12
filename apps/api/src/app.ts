@@ -12,7 +12,9 @@ import Fastify, {
 import type { OAuthEndpoints, OAuthProviderId } from './appAuth/oauth/types.js';
 import type { AppConfig } from './config/index.js';
 import type { ContentHooks } from './content/hooks.js';
+import { ensureItemIdKey } from './content/itemIds.js';
 import { createContentPorts } from './content/ports.js';
+import { watchContentIndexForm } from './db/contentFilterIndex.js';
 import { setDb, type Database } from './db/index.js';
 import { buildEditorManifest, type EditorManifest } from './extensions/editorManifest.js';
 import { loadExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
@@ -40,6 +42,7 @@ import { graphqlPlugin } from './plugins/graphql.js';
 import { mediaStoragePlugin } from './plugins/mediaStorage.js';
 import { publishingPlugin } from './plugins/publishing.js';
 import { requestLogPlugin } from './plugins/requestLog.js';
+import { schemaLensPlugin } from './plugins/schemaLens.js';
 import { schemaSnapshotPlugin } from './plugins/schemaSnapshot.js';
 import { securityPlugin } from './plugins/security.js';
 import { servicesPlugin } from './plugins/services.js';
@@ -76,6 +79,7 @@ import { previewRoutes } from './routes/preview/index.js';
 import { siteRoutes } from './routes/site/index.js';
 import { snapshotsRoutes } from './routes/snapshots/index.js';
 import { createSchemaFieldVisibility } from './schema/fieldVisibility.js';
+import { keepContentIndexJobsQueued } from './schema/planner/contentFilterIndex.js';
 import type { SchemaContentPorts } from './schema/planner/contentPorts.js';
 import { createSchemaRegistry } from './schema/registry.js';
 import { createPreviewFrameSources } from './services/previewOrigins.js';
@@ -153,6 +157,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
     ...(deps.tls ? { https: { key: deps.tls.key, cert: deps.tls.cert } } : {}),
     trustProxy: toFastifyTrustProxy(config.server.trustProxy),
     genReqId: () => randomUUID(),
+    bodyLimit: config.http.bodyLimit,
     // plugins/requestLog.ts writes one line per request instead of Fastify's two.
     logController: new LogController({ disableRequestLogging: true }),
     ajv: { customOptions: { removeAdditional: false } },
@@ -193,6 +198,15 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   });
 
   app.decorate('schemaLookup', schemaLookup);
+  // The item ID key exists before any request uses it (never first created inside a write that may roll back).
+  await ensureItemIdKey(deps.db);
+  // Which GIN index containment is emitted for (ADR 0001, "Filter data"): the first catalog read finishes
+  // before any route exists; while the old form is live, the job that switches it is kept queued.
+  const contentIndexWatch = watchContentIndexForm(deps.db, app.log, {
+    onLook: (form) => keepContentIndexJobsQueued(deps.db, app.log, form),
+  });
+  app.addHook('onClose', async () => contentIndexWatch.stop());
+  await contentIndexWatch.ready;
   app.decorate(
     'signingSecret',
     deps.signingSecret ?? (await resolveSigningSecret(deps.db, config.sessionSecret, app.log)),
@@ -209,6 +223,7 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   });
   // After both authentication plugins (it narrows their principal to the request's site), before every route.
   await app.register(siteResolutionPlugin, { apiPrefix: urls.withBasePath('/api/') });
+  await app.register(schemaLensPlugin, { apiPrefix: urls.withBasePath('/api/') });
   await app.register(csrfPlugin);
   await app.register(adminBootstrapPlugin, {
     db: deps.db,

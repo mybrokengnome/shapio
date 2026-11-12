@@ -27,6 +27,9 @@ see [SECURITY.md](../SECURITY.md).
 - `shp_…` tokens are shown once and stored as SHA-256 hashes; each has a role, an optional expiry and a last-used
   time, and can be revoked at once.
 - A token bound to a **delivery** role can only read, whatever the role says.
+- A token can be pinned to a schema version: requests made with it that name no version read and write in that
+  version's shape ([Schema lenses](schema-lenses.md#pinning-a-token)). The pin never widens what the token's
+  role allows, and setting or clearing it is audited (`api_token.update`).
 - A token answers to the admin who created it (or who created the token it was made with): while that admin is
   disabled it is refused, and deleting the admin revokes it. A token left without a recorded creator, because
   its admin was deleted by an earlier release, keeps working until you revoke it.

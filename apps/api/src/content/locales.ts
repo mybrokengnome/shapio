@@ -1,10 +1,13 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import { ITEM_ID_KEY } from '../constants/itemIds.js';
 import type { ContentData } from '../db/contentData.js';
 import type { SchemaById } from '../schema/snapshot.js';
 import type { LocaleScope } from './compiler/compile.js';
 import { queryInvalid } from './compiler/types.js';
+import type { ComponentLookup } from './itemIds.js';
 import { isLocalizedField } from './model.js';
+import { sameContent } from './sameContent.js';
+import { valueWithoutItemIds } from './withoutItemIds.js';
 
 /**
  * Localization rules (ADR 0004). Every locale's head holds the complete document; shared (non-localized)
@@ -83,9 +86,7 @@ export const changedFieldIds = (
   before: Readonly<ContentData>,
   after: Readonly<ContentData>,
 ): Set<string> =>
-  new Set(
-    fields.filter((field) => !isDeepStrictEqual(before[field.id], after[field.id])).map((field) => field.id),
-  );
+  new Set(fields.filter((field) => !sameContent(before[field.id], after[field.id])).map((field) => field.id));
 
 /** Shared fields whose values differ between two documents. */
 export const changedSharedFieldIds = (
@@ -94,22 +95,83 @@ export const changedSharedFieldIds = (
   after: Readonly<ContentData>,
 ): Set<string> => changedFieldIds(sharedFields(model), before, after);
 
+/** Every item ID stored in a value, at any depth, sorted (a multiset). */
+const storedItemIdsOf = (value: unknown): string[] => {
+  const ids: string[] = [];
+  const stack: unknown[] = [value];
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
+    if (Array.isArray(current)) {
+      stack.push(...(current as unknown[]));
+    } else if (typeof current === 'object' && current !== null) {
+      const record = current as Record<string, unknown>;
+      if (typeof record[ITEM_ID_KEY] === 'string') {
+        ids.push(record[ITEM_ID_KEY]);
+      }
+      stack.push(...Object.values(record));
+    }
+  }
+  return ids.sort();
+};
+
+/**
+ * Whether a locale's shared values would change only in which of its identical items carries which ID (identical
+ * items reordered in another locale): the same content and the same IDs, so the locale is not rewritten for it.
+ * Every locale keeps the same items and IDs; only the order of look-alikes may differ between them.
+ */
+export const sharedValuesOnlyRenumbered = (
+  model: ModelDefinition,
+  current: Readonly<ContentData>,
+  next: Readonly<ContentData>,
+  fieldIds: ReadonlySet<string>,
+  componentOf: ComponentLookup,
+): boolean =>
+  sharedFields(model)
+    .filter((field) => fieldIds.has(field.id))
+    .every(
+      (field) =>
+        sameContent(
+          valueWithoutItemIds(field, current[field.id], componentOf),
+          valueWithoutItemIds(field, next[field.id], componentOf),
+        ) && sameContent(storedItemIdsOf(current[field.id]), storedItemIdsOf(next[field.id])),
+    );
+
 export type LocaleHeads = {
   locale: string;
   draft?: Readonly<ContentData>;
   published?: Readonly<ContentData>;
 };
 
+/** Whether a shared field's content differs, item IDs (plan item-ids) left out: they are not content. */
+const sharedContentChanged = (
+  model: ModelDefinition,
+  before: Readonly<ContentData>,
+  after: Readonly<ContentData>,
+  componentOf: ComponentLookup,
+) =>
+  sharedFields(model).some(
+    (field) =>
+      !sameContent(
+        valueWithoutItemIds(field, before[field.id], componentOf),
+        valueWithoutItemIds(field, after[field.id], componentOf),
+      ),
+  );
+
 /**
  * Published locales whose live shared values are older than their draft's (which always holds the latest
- * shared values). The admin offers to publish these too after a shared field changed (ADR 0004).
+ * shared values). The admin offers to publish these too after a shared field changed (ADR 0004). An item that
+ * only gained its persisted ID in the draft does not make a locale outdated (`componentOf`: the model's
+ * components, so nested instances are compared without their IDs too).
  */
-export const outdatedSharedLocales = (model: ModelDefinition, heads: readonly LocaleHeads[]): string[] =>
+export const outdatedSharedLocales = (
+  model: ModelDefinition,
+  heads: readonly LocaleHeads[],
+  componentOf: ComponentLookup = () => undefined,
+): string[] =>
   model.localized
     ? heads
         .filter(
           ({ draft, published }) =>
-            draft && published && changedSharedFieldIds(model, published, draft).size > 0,
+            draft && published && sharedContentChanged(model, published, draft, componentOf),
         )
         .map(({ locale }) => locale)
     : [];

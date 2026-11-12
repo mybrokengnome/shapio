@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DELIVERY_VARY, DRAFTS_CACHE_CONTROL } from '../constants/sites.js';
-import { apiKeyOfRoute } from '../content/model.js';
+import { type AppError } from '../helpers/appError.js';
 import { appendVary } from '../helpers/vary.js';
+import type { ContentServiceContext } from '../services/contentAccess.js';
 import * as contentDeliveryService from '../services/contentDelivery.js';
 import { contentContextFor, rawQueryOf } from './contentContext.js';
 
@@ -22,7 +23,8 @@ const cacheControlOf = (request: FastifyRequest, noStore: boolean) => {
 /**
  * Delivery responses are cacheable by validators: a strong ETag over the exact body (so it changes whenever
  * a head version, a populated target or the projection changes), `Vary` on the credentials that select the
- * principal and on the `Shapio-Site` header that selects the site (`?site=` is part of the URL), and `private`
+ * principal, on the `Shapio-Site` header that selects the site (`?site=` is part of the URL) and on the
+ * `Shapio-Schema-Version` header that selects the shape (`?schemaVersion=` likewise), and `private`
  * caching whenever a principal is authenticated (build plan §4.E6). `noStore`: draft reads, never stored.
  */
 export const sendCacheable = (
@@ -56,19 +58,48 @@ const sendDelivery = (
   result: contentDeliveryService.DeliveryList | contentDeliveryService.DeliveryItem,
 ) => sendCacheable(request, reply, result, { noStore: result.meta.publicationState === 'draft' });
 
+/** Why a schema version cannot be served: answered only to a caller that is authorized without one. */
+/**
+ * The content context of a delivery, preview, write or snapshot request, with the schema version it names kept
+ * for after authorization (nothing parsed, loaded or charged yet), and the error of a version the request could
+ * not even name (malformed, repeated, header and parameter disagreeing), answered only once the caller is
+ * authorized (plan schema-lenses).
+ */
+export const contextDeferringVersion = async (
+  request: FastifyRequest,
+): Promise<{ context: ContentServiceContext; versionError: AppError | null }> => {
+  const versionError = request.schemaVersionError;
+  if (versionError) {
+    request.schemaVersionToken = null;
+  }
+  return { context: await contentContextFor(request, { deferLens: true }), versionError };
+};
+
+/**
+ * The route a request reads: today's API ID, or through a schema lens the client's route, once the caller is
+ * authorized as without a version (`openDeliveryRead`).
+ */
+const routeOf = async (request: FastifyRequest<{ Params: ModelParams }>) => {
+  const { context: base, versionError } = await contextDeferringVersion(request);
+  const { context, apiKey, clientRoute } = await contentDeliveryService.openDeliveryRead(
+    base,
+    request.params.modelKey,
+    versionError,
+  );
+  return { context, apiKey, options: { ...usageOptions(request), clientRoute } };
+};
+
 export const listDelivery = async (request: FastifyRequest<{ Params: ModelParams }>, reply: FastifyReply) => {
-  const context = await contentContextFor(request);
-  const apiKey = apiKeyOfRoute(context.snapshot, request.params.modelKey);
+  const { context, apiKey, options } = await routeOf(request);
   return sendDelivery(
     request,
     reply,
-    await contentDeliveryService.listDelivery(context, apiKey, rawQueryOf(request), usageOptions(request)),
+    await contentDeliveryService.listDelivery(context, apiKey, rawQueryOf(request), options),
   );
 };
 
 export const getDelivery = async (request: FastifyRequest<{ Params: EntryParams }>, reply: FastifyReply) => {
-  const context = await contentContextFor(request);
-  const apiKey = apiKeyOfRoute(context.snapshot, request.params.modelKey);
+  const { context, apiKey, options } = await routeOf(request);
   return sendDelivery(
     request,
     reply,
@@ -77,7 +108,7 @@ export const getDelivery = async (request: FastifyRequest<{ Params: EntryParams 
       apiKey,
       request.params.id,
       rawQueryOf(request),
-      usageOptions(request),
+      options,
     ),
   );
 };

@@ -312,3 +312,28 @@ describe('graphqlQuery over interfaces', () => {
     expect(query).toContain('subject { id __typename ... on Post { title } }');
   });
 });
+
+describe('component selections', () => {
+  it('selects each component item’s ID, and only __typename on a zone (a union)', () => {
+    const page = normalizeDefinition({
+      id: uuid(3),
+      kind: 'singleton',
+      apiKey: 'page',
+      label: 'Page',
+      fields: [
+        { id: uuid(31), apiKey: 'hero', label: 'Hero', type: 'component', settings: { component: uuid(9) } },
+        {
+          id: uuid(32),
+          apiKey: 'sections',
+          label: 'Sections',
+          type: 'dynamiczone',
+          settings: { components: [uuid(9)] },
+        },
+      ],
+    }) as ModelDefinition;
+    const [operation] = graphqlOperations(page);
+    const { query } = graphqlQuery(page, operation!, draft({}));
+    expect(query).toContain('hero { __typename id }');
+    expect(query).toContain('sections { __typename }');
+  });
+});

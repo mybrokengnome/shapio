@@ -6,6 +6,7 @@ import { useDeliverySiteKey } from '@/hooks/useDeliverySiteKey';
 import { EndpointNav } from '../EndpointNav';
 import type { DeliveryOperation, OperationGroup } from '../helpers/operations';
 import { isSendable, requestPath, type RequestDraft } from '../helpers/request';
+import { useSchemaIdAndVersion } from '../hooks/useSchemaIdAndVersion';
 import { absoluteApiUrl, useSendRequest } from '../hooks/useSendRequest';
 import { RequestBuilder } from '../RequestBuilder';
 import { ResponseView } from '../ResponseView';
@@ -35,8 +36,9 @@ export const RestTab = ({ groups, operation, draft, onDraftChange }: RestTabProp
     [definitions, operation.routeKey],
   );
   const siteKey = useDeliverySiteKey();
+  const { schemaId, currentVersion } = useSchemaIdAndVersion();
   // A site other than the primary one is named in the URL, as a site's own requests would (sites plan §H).
-  const path = withSiteParameter(requestPath(operation, draft), siteKey);
+  const path = withSiteParameter(requestPath(operation, draft, schemaId), siteKey);
   // The last response belongs to the operation it was sent for.
   const response = send.data && send.variables?.operationId === operation.id ? send.data : undefined;
   return (
@@ -49,6 +51,7 @@ export const RestTab = ({ groups, operation, draft, onDraftChange }: RestTabProp
             draft={draft}
             onDraftChange={onDraftChange}
             path={path}
+            currentSchemaVersion={currentVersion}
             sendable={isSendable(operation, draft)}
             sending={send.isPending}
             onSend={() => send.mutate({ operationId: operation.id, path, token })}

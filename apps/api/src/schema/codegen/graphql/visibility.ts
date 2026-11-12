@@ -15,6 +15,7 @@ import type {
   Policy,
   Principal,
 } from '../../../permissions/types.js';
+import { hasUnrestrictedGrant } from '../../../permissions/unrestrictedGrant.js';
 import type { SchemaSnapshot } from '../../snapshot.js';
 
 /**
@@ -34,6 +35,12 @@ export type ModelVisibility = {
   readable: boolean;
   readFields: ReadonlySet<string>;
   writeFields: ReadonlySet<string>;
+  /**
+   * Whether a read (write) grant names no fields (`hasUnrestrictedGrant`): the grant's shape, not what the
+   * mask covers. Schema lenses name a field removed since the client's version only for such a grant.
+   */
+  unrestrictedRead?: boolean;
+  unrestrictedWrite?: boolean;
 };
 
 export type SchemaVisibility = {
@@ -43,6 +50,22 @@ export type SchemaVisibility = {
   models: ReadonlyMap<string, ModelVisibility> | null;
   /** Inside components: every live field, or only `public` ones (delivery callers). */
   componentFields: 'all' | 'public';
+  /**
+   * Models that get read queries but no mutations (schema lenses: models deleted since the client's version,
+   * which nothing can write). Absent: every model in the schema gets its mutations.
+   */
+  readOnly?: ReadonlySet<string>;
+  /**
+   * Schema lenses: the fields each component of the client's version may name, by component ID, decided by
+   * today's rules (`lensVisibility`); a component missing here names none. Absent: `componentFields` decides.
+   */
+  componentFieldIds?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * Schema lenses: models and interface definitions left out of the schema entirely, whatever the caller may
+   * do, because the client's version cannot be served for them (history that does not reach it). Never in a
+   * schema of today's version.
+   */
+  omitted?: ReadonlySet<string>;
 };
 
 export const FULL_VISIBILITY: SchemaVisibility = Object.freeze({
@@ -84,17 +107,25 @@ const modelVisibility = (
     readable: policies.read.allowed,
     readFields: new Set(policies.read.allowed ? maskFieldIds(model, policies.read.readMask) : []),
     writeFields,
+    unrestrictedRead: hasUnrestrictedGrant(policies.read, 'read'),
+    unrestrictedWrite: (['create', 'update'] as const).some((action) =>
+      hasUnrestrictedGrant(policies[action], 'write'),
+    ),
   };
 };
 
 const sorted = (ids: ReadonlySet<string>) => [...ids].sort().join(',');
 
-/** A stable digest of the visible models and fields, so equal visibility gives an equal key. */
+/**
+ * A stable digest of the visible models and fields, so equal visibility gives an equal key. The grants' shape
+ * is part of it: a lens schema derived from this visibility depends on it (lensVisibility.ts).
+ */
 const visibilityKey = (models: ReadonlyMap<string, ModelVisibility>): string => {
   const canonical = [...models]
     .map(
       ([id, model]) =>
-        `${id}|${model.readable ? 'r' : '-'}|${sorted(model.readFields)}|${sorted(model.writeFields)}`,
+        `${id}|${model.readable ? 'r' : '-'}|${sorted(model.readFields)}|${sorted(model.writeFields)}|` +
+        `${model.unrestrictedRead === true ? 'R' : '-'}${model.unrestrictedWrite === true ? 'W' : '-'}`,
     )
     .join('\n');
   return `delivery:${createHash('sha256').update(canonical).digest('base64url')}`;
@@ -147,11 +178,12 @@ export const hasNoContentAccess = (visibility: SchemaVisibility): boolean =>
 
 /** Whether a model is in the schema at all (read queries or mutations). */
 export const modelInSchema = (visibility: SchemaVisibility, modelId: string): boolean =>
-  visibility.models === null || visibility.models.has(modelId);
+  visibility.omitted?.has(modelId) !== true && (visibility.models === null || visibility.models.has(modelId));
 
 /** Whether a model's read queries and entry type are in the schema (relation fields to it too). */
 export const modelReadable = (visibility: SchemaVisibility, modelId: string): boolean =>
-  visibility.models === null || visibility.models.get(modelId)?.readable === true;
+  visibility.omitted?.has(modelId) !== true &&
+  (visibility.models === null || visibility.models.get(modelId)?.readable === true);
 
 const visibleFields = (
   visibility: SchemaVisibility,
@@ -160,6 +192,10 @@ const visibleFields = (
 ): FieldDefinition[] => {
   const live = liveFields(owner.fields);
   if (isComponentDefinition(owner)) {
+    if (visibility.componentFieldIds) {
+      const named = visibility.componentFieldIds.get(owner.id);
+      return live.filter((field) => named?.has(field.id) === true);
+    }
     return visibility.componentFields === 'all' ? live : live.filter((field) => field.public);
   }
   if (visibility.models === null) {

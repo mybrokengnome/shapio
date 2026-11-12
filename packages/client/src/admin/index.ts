@@ -36,6 +36,7 @@ import type {
   SetupInput,
   SetupStatusResponse,
   UpdateAdminUserInput,
+  UpdateApiTokenInput,
   UpdateProfileInput,
   UpdateRoleInput,
 } from './types.js';
@@ -103,6 +104,8 @@ export const createAdminApi = (request: RequestFn) => ({
     list: () => request<ApiToken[]>(ADMIN_PATHS.tokens),
     create: (body: CreateApiTokenInput) =>
       request<CreatedApiToken>(ADMIN_PATHS.tokens, { method: 'POST', body }),
+    update: (id: string, body: UpdateApiTokenInput) =>
+      request<ApiToken>(withId(ADMIN_PATHS.tokens, id), { method: 'PATCH', body }),
     revoke: (id: string) => request<void>(withId(ADMIN_PATHS.tokens, id), { method: 'DELETE' }),
   },
   audit: {

@@ -33,8 +33,8 @@ On an instance with several [workspaces](workspaces.md), a request reads one wor
 ([Delivery API](delivery-api.md#workspaces)): the token's workspace, else the `Shapio-Workspace` header or
 `?workspace=`, else the primary workspace. Server 0.8.2 or later; `Shapio-Site` and `?site=` work on every
 version. Naming another workspace than the token's is refused with `403 SITE_MISMATCH`. The entries,
-`_snapshot` and `_changes` are the request workspace's. GET responses vary on `Shapio-Workspace` and
-`Shapio-Site` as well as on the credentials.
+`_snapshot` and `_changes` are the request workspace's. GET responses vary on `Shapio-Workspace`,
+`Shapio-Site`, and `Shapio-Schema-Version` as well as on the credentials.
 
 Each workspace has its own schema: its own content types and the shared ones. Within a workspace, the schema
 follows the caller's role ([below](#what-each-caller-sees)). Two workspaces can each have a `post` with different
@@ -89,6 +89,22 @@ it), a component is its own type, and a dynamic zone is a list of a union of its
 `__typename`). Every entry also has `localizations` (its versions in the other locales).
 A code field is a `String`, exactly as saved; its description ends with its language (`Code: html`), so
 introspection tells a site how to treat it.
+
+Every component type has `id: ID!`, the item's stable ID, on a single component, on each item of a repeatable
+component, and on each item of a dynamic zone (server 0.9.0 or later). Component input types take an optional
+`id`: send back the `id` of each item you read, so it is paired with the stored item it continues and keeps the
+fields you cannot see ([Writing components](delivery-api.md#writing-components)). Mutations return
+`EntryState`, which carries no item IDs; the REST write response's `itemIds` has no GraphQL counterpart.
+
+**Caching clients.** Apollo Client, Relay, and urql's Graphcache store objects by `__typename` and `id`. An item
+keeps its `id` when it is edited, and an unchanged item has the same `id` in the draft and the published
+version, so a client that reads both (drafts mode and published reads, or a snapshot and today) would merge two
+versions of an item into one cache record. (A shared field's items have the same `id`, and the same content, in
+every locale; a localized field's items have their own `id` in each locale.) Keep component types out of the
+normalized cache: in Apollo Client, set `keyFields: false` for each component type in `typePolicies`
+(`{ Hero: { keyFields: false } }`); in urql's Graphcache, `keys: { Hero: () => null }`; in Relay, give the
+environment a `getDataID` that returns no ID for component types. Entries share their `id` between the draft and
+the published version too.
 
 ### Types that extend a type
 
@@ -276,9 +292,55 @@ These names are reserved: `_changes`, `_snapshot` and `_schemaVersion` as query 
 and `Node` as type names. A model or interface whose generated names would collide with them is refused when
 you save it.
 
+## Older schema versions
+
+A request that names a schema version, with the `Shapio-Schema-Version` header (or `?schemaVersion=` on GET),
+is answered by **that version's schema**: its type names, fields, and arguments, with today's content read into
+it as REST does ([Schema lenses](schema-lenses.md)). Server 0.9.0 or later. A client whose queries were
+written and validated against version 17 keeps validating after a field is renamed or a type changes:
+
+```sh
+curl "$SHAPIO_URL/api/graphql" \
+  -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" -H 'Content-Type: application/json' \
+  -H "Shapio-Schema-Version: $SCHEMA_VERSION" \
+  -d '{"query":"{ articles(pageSize: 5) { nodes { title teaser } } }"}'
+```
+
+- What your role may see is always today's, as for any query: a field private now, or outside your grant now,
+  is not in that version's schema, and a query naming it fails validation as it would today. A field removed
+  since reads `null` (`[]` for lists) when it was public in that version and your grant covers every public
+  field of the content type today; a grant that names fields does not see removed ones.
+- A content type deleted since is not in the schema for delivery tokens, app users, and anonymous callers: a
+  query naming it fails validation (REST answers `404`). Admin callers see it, reading as empty (no nodes, a
+  single read `null`). One that switched between a collection and a single type is refused (`LENS_UNCOVERED`).
+- A version not used recently costs a schema build; past a small budget of such builds per caller and minute
+  the request is answered `429 LENS_BUDGET_EXCEEDED`.
+- Filters and sorts follow REST: one on a field whose stored form changed since the version, or that is gone,
+  is refused (`LENS_QUERY_UNSUPPORTED`).
+- Introspection with the header shows that version's schema, so a client generated from it keeps validating,
+  mutations included.
+- The response carries `extensions.schemaVersion: { requested, current }` (both as `<schemaId>:<version>`), and `_schemaVersion`
+  answers the version the request named (the number), today's when it names none.
+- **Mutations** that name a schema version take that version's names and input types, under today's
+  permissions, and write as [REST writes through an older version](schema-lenses.md#writes) do: fields unchanged
+  or only renamed are written, values the client does not know are kept, and validation errors name the
+  client's fields. Any other field is refused with `extensions.code: LENS_WRITE_UNSUPPORTED` and every refused
+  field in `extensions.issues` (a JSON pointer in the client's names and how it changed), unless its value is
+  what a read returns, which keeps the stored value. A content type deleted since has no mutations (a document
+  naming one fails validation); one that switched between a collection and a single type is refused
+  (`LENS_UNCOVERED`).
+
 ## Limits
 
 - Query depth: `GRAPHQL_MAX_DEPTH` (10).
+- Document size: at most `GRAPHQL_MAX_TOKENS` (5,000) tokens; a longer document answers `400 QUERY_TOO_LARGE`
+  before it is parsed. Full introspection is 184 tokens and the API explorer's largest generated queries about
+  2,500, so ordinary clients are far under it. A document nested too deeply to parse answers
+  `400 QUERY_TOO_DEEP`.
+- Content depth: variables and inline values accept content as deep as a REST body does (stored content may be
+  at most 100 levels deep); deeper ones answer `422 BODY_TOO_DEEP`.
+- GraphQL validates a document before it looks up entries or versions, so a validation error answers before a
+  `404` or a `409`.
 - Estimated cost: `GRAPHQL_MAX_COMPLEXITY` (20 000). Each field costs 1, multiplied by the page sizes and lists
   around it; a collection query also costs its page size (the rows it reads) and `totalCount` costs 10 (a
   count query). Ask for smaller pages or fewer nested lists if you hit it (`QUERY_TOO_COMPLEX`).

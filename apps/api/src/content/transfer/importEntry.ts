@@ -9,12 +9,14 @@ import * as transferImportRepository from '../../repositories/transferImport.js'
 import type { TargetHeadRow } from '../../repositories/transferImport.js';
 import type { SchemaSnapshot } from '../../schema/snapshot.js';
 import * as mediaReferencesService from '../../services/mediaReferences.js';
+import { componentLookupOf } from '../itemIds.js';
 import { resolveModelById, type ContentModel } from '../model.js';
 import { buildValidator } from '../validator/index.js';
 import { contentInvalid } from '../validator/issues.js';
 import { syncEntryUniqueValues, syncHeadDerivations, type WriteContext } from '../write/heads.js';
 import { assertTargets } from '../write/references.js';
 import { runEntryWrite } from '../write/transaction.js';
+import { assertBundleItemIds } from './bundleItemIds.js';
 import { classifyEntry } from './classify.js';
 import type { EntryRecord, HeadRecordInBundle } from './format.js';
 
@@ -150,6 +152,8 @@ export const importEntry = async (
   if (!model) {
     throw unknownModel(entry);
   }
+  // Item IDs are taken as the bundle states them, or the entry is refused (never renewed by position).
+  assertBundleItemIds(model, entry, componentLookupOf(model.components));
   const validated = validateHeads(snapshot, model, entry);
   const locales = [...new Set(entry.heads.map((head) => head.locale))];
   return runEntryWrite(context.db, model, context.siteId, locales, async (trx) => {

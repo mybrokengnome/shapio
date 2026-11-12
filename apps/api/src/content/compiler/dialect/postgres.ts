@@ -12,11 +12,43 @@ import type {
 
 /**
  * PostgreSQL content SQL (ADR 0001): JSONB with a GIN `jsonb_path_ops` index serving containment, so
- * equality on a field without an index is emitted as `data @> {...}`; ranges, sorts and equality on indexed
- * fields (filterable or sortable) use per-field B-tree expression indexes built `CONCURRENTLY` with a
+ * equality on a field without an index is emitted as `filter_data @> {...}`; ranges, sorts and equality on
+ * indexed fields (filterable or sortable) use per-field B-tree expression indexes built `CONCURRENTLY` with a
  * matching `CREATE STATISTICS` object.
  */
 const DATA = sql.ref(CONTENT_HEADS_COLUMNS.data);
+
+/**
+ * `filter_data`: `shapio_scalar_fields(data)`, the top-level fields of `data` a containment can match (it drops
+ * nulls, objects, and arrays without a scalar element: component items, their item IDs, rich text and JSON
+ * objects). A trigger keeps it for every write (migration `20261112120000_entry_heads_scalars_gin`); the GIN
+ * index `entry_heads_filter_data_gin` covers it.
+ */
+const FILTER_DATA = sql.ref(CONTENT_HEADS_COLUMNS.filterData);
+
+/**
+ * The longest top-level string (or string element of a top-level array) `filter_data` holds: `shapio_scalar_fields`
+ * (migration `20261112120000_entry_heads_scalars_gin`) leaves out a string whose `length(text)` exceeds this.
+ * `length` counts characters in the database's server encoding, except SQL_ASCII, where it counts bytes.
+ */
+export const FILTER_STRING_MAX_CHARS = 1000;
+
+/**
+ * Whether a query value may be a string `filter_data` leaves out, so `fieldEquals` matches it against `data` in
+ * either form: its UTF-8 byte length exceeds `FILTER_STRING_MAX_CHARS`. That is never less than what
+ * `length(text)` gives for the same string stored in any server encoding PostgreSQL supports:
+ * - UTF8 and the other multi-byte server encodings (EUC_*, MULE_INTERNAL): `length` counts characters, and every
+ *   character is at least one UTF-8 byte;
+ * - single-byte encodings (LATIN1 to LATIN10, WIN*, ISO_8859_*, KOI8*): one byte per character, the same count;
+ * - SQL_ASCII: `length` counts the stored bytes, which are the UTF-8 bytes the client sent.
+ * So `length(s) <= byteLength(s)`: every string the function may drop is caught (some it keeps are matched
+ * against `data` too, which answers the same rows, only without the smaller index).
+ */
+export const isLongFilterString = (value: unknown): boolean =>
+  typeof value === 'string' &&
+  // At most three UTF-8 bytes per UTF-16 code unit: a string this short is never long.
+  value.length * 3 > FILTER_STRING_MAX_CHARS &&
+  Buffer.byteLength(value, 'utf8') > FILTER_STRING_MAX_CHARS;
 
 const ARRAY_TYPES: Readonly<Record<ListElement, RawBuilder<unknown>>> = {
   uuid: sql`uuid[]`,
@@ -43,6 +75,8 @@ const likePattern = (operator: TextMatchOperator | '$containsi', text: string) =
 
 const fieldText = (fieldId: string): RawBuilder<unknown> => sql`(${DATA} ->> ${sql.lit(fieldId)})`;
 
+const fieldJson = (fieldId: string): RawBuilder<unknown> => sql`(${DATA} -> ${sql.lit(fieldId)})`;
+
 const fieldValue = (fieldId: string, cast: ValueCast): RawBuilder<unknown> => {
   const text = fieldText(fieldId);
   switch (cast) {
@@ -66,16 +100,30 @@ const castParameter = (value: unknown, cast: ValueCast): RawBuilder<unknown> => 
   }
 };
 
+type Containment = (document: Readonly<Record<string, unknown>>) => RawBuilder<unknown>;
+
 /**
- * `data @> $1::jsonb`: the only form the GIN index serves. The document is a parameter, field IDs included,
- * so nothing from the request is ever spliced into the SQL text.
+ * `<target> @> $1::jsonb`: the only form a GIN index serves. The document is a parameter, field IDs included,
+ * so nothing from the request is ever spliced into the SQL text. Every document is `{fieldId: scalar}` or
+ * `{fieldId: [scalar]}` (`fieldEquals`), which `data` and `shapio_scalar_fields(data)` contain alike.
  */
-export const containment = (document: Readonly<Record<string, unknown>>): RawBuilder<unknown> =>
-  sql`(${DATA} @> ${JSON.stringify(document)}::jsonb)`;
+const containmentOn =
+  (target: RawBuilder<unknown>): Containment =>
+  (document) =>
+    sql`(${target} @> ${JSON.stringify(document)}::jsonb)`;
+
+/** Against `filter_data`, served by `entry_heads_filter_data_gin`. */
+export const filterContainment: Containment = containmentOn(FILTER_DATA);
+
+/** Against the whole `data`, served by `entry_heads_data_gin` (an upgraded instance until the switch). */
+export const documentContainment: Containment = containmentOn(DATA);
 
 /** Published revisions of a model (or a family) as of a publication sequence (`snapshotCte`, relation targets). */
+// Revisions have no `filter_data`; their `data` stands in for it, which every containment the compiler emits
+// answers the same as `shapio_scalar_fields(data)` (and costs nothing: no index serves a snapshot anyway).
 const snapshotRows = ({ siteId, modelIds, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data,
+      r.data as filter_data, 0 as version,
       r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
       en.created_at as entry_created_at
     from publication_log pl
@@ -103,7 +151,7 @@ const referenceIds = (fieldId: string, list: boolean): ReferenceIds => {
       };
 };
 
-export const postgresContentDialect: ContentSqlDialect = {
+const postgresDialectWith = (containment: Containment): ContentSqlDialect => ({
   name: 'postgres',
 
   uuid: (value) => sql`${value}::uuid`,
@@ -113,7 +161,7 @@ export const postgresContentDialect: ContentSqlDialect = {
 
   fieldValue,
   fieldText,
-  fieldJson: (fieldId) => sql`(${DATA} -> ${sql.lit(fieldId)})`,
+  fieldJson,
   castParameter,
 
   fieldEquals: (target, value) => {
@@ -128,10 +176,12 @@ export const postgresContentDialect: ContentSqlDialect = {
       const expression = fieldValue(target.fieldId, target.cast);
       return sql`(${expression} = ${castParameter(value, target.cast)} and ${expression} is not null)`;
     }
-    return containment({ [target.fieldId]: target.list ? [value] : value });
+    const document = { [target.fieldId]: target.list ? [value] : value };
+    // `filter_data` leaves long strings out: such a value is matched against the whole document in either form.
+    return isLongFilterString(value) ? documentContainment(document) : containment(document);
   },
   fieldMissing: (fieldId) => {
-    const json = postgresContentDialect.fieldJson(fieldId);
+    const json = fieldJson(fieldId);
     return sql`(${json} is null or ${json} in ${MISSING_JSON})`;
   },
   textMatch: (fieldId, operator, text) =>
@@ -155,4 +205,13 @@ export const postgresContentDialect: ContentSqlDialect = {
   dropFieldIndex: (name) => sql`drop index concurrently if exists ${sql.id(name)}`,
   dropFieldStatistics: (name) => sql`drop statistics if exists ${sql.id(name)}`,
   analyze: (table) => sql`analyze ${sql.table(table)}`,
-};
+});
+
+/** PostgreSQL content SQL, containment against `filter_data` (but long strings against `data`). */
+export const postgresContentDialect: ContentSqlDialect = postgresDialectWith(filterContainment);
+
+/**
+ * The same, with containment against the whole `data` (`db/contentIndexForm.ts`): what an upgraded instance
+ * runs until `filter_data` is proved complete and indexed. Every query answers exactly as with `postgresContentDialect`.
+ */
+export const postgresDocumentContainmentDialect: ContentSqlDialect = postgresDialectWith(documentContainment);

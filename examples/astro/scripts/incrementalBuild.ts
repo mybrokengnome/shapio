@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createClient, ShapioApiError, type SnapshotChange } from '@shapio/client';
+import { SCHEMA_VERSION } from '../src/lib/schemaVersion.js';
 
 /**
  * `npm run build:incremental [--dry-run]`: skips a build that would change nothing. A local and CI tool, for
@@ -34,6 +35,8 @@ const requireEnv = (name: string): string => {
 const client = createClient({
   baseUrl: process.env.SHAPIO_URL ?? 'http://localhost:4300',
   token: requireEnv('SHAPIO_DELIVERY_TOKEN'),
+  // The site's schema version: the snapshot diff names route keys as the site reads them.
+  schemaVersion: SCHEMA_VERSION,
 });
 
 /** The snapshot the previous build showed, if there was one. */

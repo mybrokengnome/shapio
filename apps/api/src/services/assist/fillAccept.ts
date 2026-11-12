@@ -1,7 +1,7 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { Transaction } from 'kysely';
 import { isFillRule, type FillRule } from '../../constants/assist.js';
 import { resolveModel, type ContentModel } from '../../content/model.js';
+import { sameContent } from '../../content/sameContent.js';
 import { buildValidator, isMissingValue } from '../../content/validator/index.js';
 import { guardEntryWrite } from '../../content/write/transaction.js';
 import type { ContentData } from '../../db/contentData.js';
@@ -126,7 +126,7 @@ const fillPatch = (
   const patch: ContentData = {};
   for (const { target, value } of fills) {
     const current = targetValue(base.before, target);
-    if (!isMissingValue(current) && !isDeepStrictEqual(current, value)) {
+    if (!isMissingValue(current) && !sameContent(current, value)) {
       throw new AppError(409, 'ASSIST_FIELD_FILLED_MEANWHILE', `"${target.path}" was filled meanwhile`, {
         fieldPath: target.path,
       });

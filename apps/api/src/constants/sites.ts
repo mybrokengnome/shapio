@@ -37,10 +37,10 @@ export const SITE_QUERY_PARAMETERS = [WORKSPACE_QUERY_PARAMETER, SITE_QUERY_PARA
 
 /**
  * `Vary` of cacheable delivery responses (REST and GraphQL GETs): the credentials that select the principal,
- * and both headers that select the workspace. CDNs that key on the URL only need `?workspace=` (or `?site=`)
- * instead of a header.
+ * both headers that select the workspace, and the schema version header (plan schema-lenses). CDNs that key on
+ * the URL only need `?workspace=` (or `?site=`) and `?schemaVersion=` instead of headers.
  */
-export const DELIVERY_VARY = 'Authorization, Cookie, Shapio-Workspace, Shapio-Site';
+export const DELIVERY_VARY = 'Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version';
 
 /** `Cache-Control` of delivery responses carrying drafts (REST and GraphQL; plan drafts-mode): never stored. */
 export const DRAFTS_CACHE_CONTROL = 'private, no-store';

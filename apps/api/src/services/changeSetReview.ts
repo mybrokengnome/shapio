@@ -1,4 +1,5 @@
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { resolveModelById, type ContentModel } from '../content/model.js';
 import { dropForeignTypedValues } from '../content/revisionData.js';
 import { buildValidator } from '../content/validator/index.js';
@@ -7,8 +8,13 @@ import type { ChangeSetItemRow, EntryHeadRow } from '../repositories/changeSetIt
 import * as contentRevisionsRepository from '../repositories/contentRevisions.js';
 import * as schemaDraftsRepository from '../repositories/schemaDrafts.js';
 import { computeImpact } from '../schema/planner/impact.js';
-import { buildSnapshot, type SchemaSnapshot } from '../schema/snapshot.js';
+import type { SchemaSnapshot } from '../schema/snapshot.js';
 import { planDrafts, type DraftPlan } from './changeSetPlanning.js';
+import {
+  olderClientsOf,
+  olderClientsEffectsOf,
+  proposedSnapshotWith,
+} from './changeSetReviewOlderClients.js';
 import {
   consumersFor,
   fieldDiff,
@@ -46,29 +52,20 @@ export const NOTICE_NEW_FIELDS_AFTER_SHIP = 'NEW_FIELDS_AFTER_SHIP';
 export const NOTICE_CONVERTED_ON_SHIP = 'CONVERTED_ON_SHIP';
 
 /** The schema the set ships with: the active schema with every valid draft applied. */
-const proposedSnapshotOf = (snapshot: SchemaSnapshot, plans: readonly DraftPlan[]): SchemaSnapshot => {
-  const byId = new Map(snapshot.definitions.map((entry) => [entry.definition.id, entry]));
-  for (const planned of plans) {
-    if (planned.issues.length > 0) {
-      continue;
-    }
-    if (planned.after) {
-      byId.set(planned.draft.definition_id, {
+const proposedSnapshotOf = (snapshot: SchemaSnapshot, plans: readonly DraftPlan[]): SchemaSnapshot =>
+  proposedSnapshotWith(
+    snapshot,
+    plans
+      .filter((planned) => planned.issues.length === 0)
+      .map((planned) => ({
+        id: planned.draft.definition_id,
         definition: planned.after,
-        // A new definition belongs to the set's site unless its draft creates a shared one.
-        siteId:
-          byId.get(planned.draft.definition_id)?.siteId ?? (planned.draft.shared ? null : snapshot.siteId),
         version: (planned.activeVersion ?? 0) + 1,
+        // A new definition belongs to the set's site unless its draft creates a shared one.
+        siteId: planned.draft.shared ? null : snapshot.siteId,
         revisionId: planned.draft.id,
-        hash: '',
-        activatedAt: new Date(),
-      });
-    } else {
-      byId.delete(planned.draft.definition_id);
-    }
-  }
-  return buildSnapshot(snapshot.version, [...byId.values()], snapshot.locales, snapshot.siteId);
-};
+      })),
+  );
 
 /** Models whose stored values the set converts or backfills (their drafts are checked after conversion). */
 const convertedModelIds = (plans: readonly DraftPlan[]): Set<string> =>
@@ -157,7 +154,7 @@ const reviewEntry = async (review: EntryReviewContext, item: ChangeSetItemRow): 
     sourceRevisionId: item.source_revision_id,
     draftVersion: item.action === 'publish' && !item.source_revision_id ? (draft?.version ?? null) : null,
     liveState: liveStateOf(draft, published),
-    fields: fieldDiff(readable, before, after),
+    fields: fieldDiff(readable, before, after, componentLookupOf(model?.components ?? new Map())),
     issues,
   };
 };
@@ -185,6 +182,7 @@ const reviewSchema = async (
       activeVersion: planned.activeVersion,
       stale: planned.stale,
       plan: planned.plan,
+      olderClientsEffects: olderClientsEffectsOf(planned.plan?.changes),
       impact: planned.plan ? await computeImpact(planned.plan, context.ports) : null,
       affectedEntriesBySite: planned.plan
         ? await changeSetItemsRepository
@@ -284,6 +282,17 @@ export const getChangeSetReview = async (
     notRestorable: notRestorableOf(row),
     consumers: await consumersFor(context, plans),
     usageDays: REVIEW_USAGE_DAYS,
+    olderClients: await olderClientsOf({
+      db: context.db,
+      permissions: context.permissions,
+      actor: context.actor,
+      current: context.snapshot,
+      proposed: review.proposed,
+      definitionIds: plans
+        .filter((planned) => planned.plan !== null)
+        .map((planned) => planned.draft.definition_id),
+      siteId: context.site.id,
+    }),
     checks: checksOf(entries, schema, plans),
     notices,
   };

@@ -3,10 +3,12 @@ import type { Transaction } from 'kysely';
 import { assertWritable, rowWriteMask } from '../content/compiler/policy.js';
 import { contentVersionConflict, entryLocaleNotFound } from '../content/errors.js';
 import { familyIdsOf } from '../content/family.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { modelNotFound, resolveModel, type ContentModel, type HeadState } from '../content/model.js';
 import { buildValidator } from '../content/validator/index.js';
 import { contentInvalid } from '../content/validator/issues.js';
 import { syncEntryUniqueValues, syncHeadDerivations, type WriteContext } from '../content/write/heads.js';
+import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
 import { assertTargets } from '../content/write/references.js';
 import { guardModelVersions } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
@@ -231,7 +233,12 @@ const moveHeads = async (
   const revisions = new Map<string, string>();
   const published: Array<{ locale: string; revisionId: string }> = [];
   for (const head of heads) {
-    const data = dataForTarget(head.data, dropped, source, target);
+    // Item IDs stay unique in what is written (plan item-ids): a repeat stored before IDs were checked is renewed.
+    const data = withUniqueItemIds(
+      dataForTarget(head.data, dropped, source, target),
+      target.definition.fields,
+      componentLookupOf(target.components),
+    );
     const strict = validator.validate(data, { skipRequired: false });
     // A published head must be complete as its new kind; a draft may lack a required value the new kind adds,
     // and is then flagged for the editor to complete (as a duplicate is).

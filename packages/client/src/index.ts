@@ -63,6 +63,12 @@ export {
   WORKSPACE_QUERY_PARAMETER,
   type WorkspaceOption,
 } from './site.js';
+export {
+  SCHEMA_VERSION_CURRENT_HEADER,
+  SCHEMA_VERSION_HEADER,
+  SCHEMA_VERSION_QUERY_PARAMETER,
+  type SchemaVersionMeta,
+} from './schemaVersion.js';
 export type * from './deliveryTypes.js';
 export type * from './seoTypes.js';
 export { DELIVERY_SITE_PATH, type SiteApi, type WorkspaceApi } from './siteDelivery.js';

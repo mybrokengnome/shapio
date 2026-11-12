@@ -23,6 +23,12 @@ export type FieldControlOptions = {
 /** Component and dynamic-zone editors render nested fields, which show their own issues. */
 const NESTING_TYPES: ReadonlySet<string> = new Set(['component', 'dynamiczone']);
 
+/**
+ * Issues below a component or zone field that no nested field shows, so the field shows them: its
+ * `__component`, an item as a whole (`/0`), or an item's ID (`/id`, `/0/id`; the item ID refusals).
+ */
+const OWN_NESTED_ISSUE = /^\/(__component|id|\d+|\d+\/id)$/;
+
 const useFieldMessages = (field: FieldDefinition, value: unknown, path: string): string[] => {
   const serverIssues = useEntryForm((state) => state.issues);
   const revealed = useEntryForm((state) => state.revealAll || state.touched.has(path));
@@ -31,7 +37,8 @@ const useFieldMessages = (field: FieldDefinition, value: unknown, path: string):
     const server = serverIssues.filter(
       (issue) =>
         issue.path === path ||
-        (issue.path.startsWith(`${path}/`) && (!nesting || issue.path === `${path}/__component`)),
+        (issue.path.startsWith(`${path}/`) &&
+          (!nesting || OWN_NESTED_ISSUE.test(issue.path.slice(path.length)))),
     );
     const client = revealed
       ? clientIssuesOf(field, value).filter((issue) => !server.some((known) => known.code === issue.code))

@@ -129,6 +129,11 @@ add, and the entry shows up in the Inbox under "Files deleted from the library".
 file out. In the admin API, a media value is an asset view, or the bare asset ID when the library no longer
 resolves it, so the editor can see the missing file and remove it.
 
+A media asset an owner force-deleted is not kept on a write: where you did not send it (a field or item carried
+over for you), the next write that changes something drops the dangling ID, as before 0.9.0, and it no longer
+counts toward `max`. An asset you send yourself is checked as before. A private asset that still exists is kept
+for callers who cannot see it. Dangling image references inside rich text are not dropped by a write.
+
 ## Moving between local disk and S3
 
 `shapio media migrate` copies every asset and its variants to the other storage, verifies checksums and

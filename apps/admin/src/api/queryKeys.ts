@@ -131,6 +131,8 @@ export const queryKeys = {
     usage: {
       all: ['develop', 'usage'] as const,
       model: (modelId: string, days: number) => ['develop', 'usage', 'model', modelId, days] as const,
+      /** The schema version each reader of the workspace names now (plan schema-lenses). */
+      schemaVersions: ['develop', 'usage', 'schemaVersions'] as const,
     },
   },
   /** Editor assists: on/off and usage (rarely changes), and content-ops runs by ID. */

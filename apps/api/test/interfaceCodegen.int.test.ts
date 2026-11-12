@@ -100,7 +100,8 @@ describe('interfaces: TypeScript and OpenAPI', () => {
     expect(source).toContain('export type FeaturableAny = About | Guide | Post;');
     expect(source).toContain('  featured: Array<Related<FeaturableAny>> | null;');
     expect(source).toContain('  spotlight: Related<AnyEntry> | null;');
-    expect(source).toMatchSnapshot();
+    // The schema ID is random per instance (plan schema-lenses).
+    expect(source.replace(/SCHEMA_VERSION = '[^:']+:/, "SCHEMA_VERSION = '<schemaId>:")).toMatchSnapshot();
   });
 
   it('generates OpenAPI with the contract, its members by __model, any entry and the list route', async () => {

@@ -33,6 +33,8 @@ model never needs a rebuild, a restart or a deploy.
 - [GraphQL](graphql.md)
 - [Snapshots and the changes API](snapshots.md): pinning builds, what changed between two snapshots,
   incremental builds and `revalidatePath`.
+- [Schema lenses](schema-lenses.md): clients name the schema version they were built against and keep
+  working when models change; what each kind of change looks like to them.
 - [End users](end-users.md): sign-up, sign-in, Google and GitHub, roles, owner-only writes.
 - [Webhooks, deployments and preview](publishing.md): the generic signed hook, Cloudflare Pages, Vercel, Netlify,
   preview links.

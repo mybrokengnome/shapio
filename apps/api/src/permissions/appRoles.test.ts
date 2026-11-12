@@ -56,6 +56,7 @@ describe('app-user and anonymous principals', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: true, write: false },
     });
     expect((await evaluator.evaluate(anonymous, { action: 'create', modelId: MODEL })).allowed).toBe(false);
   });
@@ -77,6 +78,7 @@ describe('app-user and anonymous principals', () => {
       rowReadMasks: null,
       writeMask: { mode: 'only', fieldIds: ['f-notes'], componentFields: 'public' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: true, write: false },
     });
     // `authenticated` is never an anonymous caller's role.
     expect((await evaluator.evaluate(anonymous, { action: 'read', modelId: MODEL })).allowed).toBe(false);
@@ -131,6 +133,7 @@ describe('app-user and anonymous principals', () => {
       },
       writeMask: { mode: 'only', fieldIds: [], componentFields: 'public' },
       rowWriteMasks: null,
+      unrestrictedFields: { read: true, write: false },
     });
     expect(await evaluator.evaluate(appUser(), { action: 'update', modelId: MODEL })).toMatchObject({
       allowed: true,

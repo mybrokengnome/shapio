@@ -85,6 +85,42 @@ the new base), use `git diff` to bring your change back on top of the target's, 
 - Deleting a file does nothing on the target unless you pass `--prune`. With `--prune`, a model whose file you
   deleted is deleted on the target (guarded the same way: refused if the target changed it since your pull).
 
+`shapio schema diff` says on each breaking line what a client that names the schema version before the change
+will see once it is live ([Schema lenses](schema-lenses.md)):
+
+```text
+model product: update
+    ~ field price apiKey: "price" → "cost" (clients naming an older schema version: keep working)
+    ~ field stock type: "integer" → "number" (clients naming an older schema version: some values read empty)
+    - field legacySku (clients naming an older schema version: this field reads empty)
+```
+
+The wording is "keep working", "some values read empty", "this field reads empty", "lose this content type"
+(or component, or interface), or "not covered" for the changes a schema version does not hide.
+
+### Types for your clients
+
+`shapio types generate` writes TypeScript types for the instance's current schema, and with server 0.9.0 or
+later the `SCHEMA_VERSION` they describe, for `createClient({ schemaVersion: SCHEMA_VERSION })`:
+
+```sh
+npx @shapio/cms types generate --out src/shapio-types.ts
+```
+
+```text
+Wrote types for schema version 17 (SCHEMA_VERSION 0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:17) to src/shapio-types.ts
+```
+
+Generate them against the instance your client reads from: the version is only valid there. A client that
+passes `SCHEMA_VERSION` keeps working after you apply a breaking change, and moves to the new shape when you
+regenerate. `--schema-version <schemaId>:<version>` writes the types of an older version instead, for a client you
+have to patch without moving it forward. See [Schema lenses](schema-lenses.md#turning-it-on).
+
+The file is a TypeScript module (`.ts`): `SCHEMA_VERSION` is a constant your code imports. With an `--out` ending
+in `.d.ts` (or `.d.mts`, `.d.cts`), the command writes a declaration file instead, with
+`export declare const SCHEMA_VERSION: '<schemaId>:<version>';`, which `tsc --strict` accepts; your code then has
+to supply the value itself.
+
 ### Types that extend a type
 
 A type that extends another ([Modeling](modeling.md#types-that-extend-a-type)) has `extends` in its file:

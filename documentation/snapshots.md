@@ -14,7 +14,8 @@ Read the current snapshot once, when the build starts, and pass it with every re
 
 ```sh
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/snapshots/current"
-# {"snapshot":42,"schemaVersion":17,"publishedAt":"2026-10-02T09:30:00.000Z"}
+# {"snapshot":42,"schemaVersion":17,"publishedAt":"2026-10-02T09:30:00.000Z",
+#  "schemaVersionToken":"0d5c8f2a-6b1e-4c3d-9f70-2e8a4b6c1d95:17"}
 
 curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/articles?snapshot=42&fields=title,slug"
 ```
@@ -22,10 +23,30 @@ curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" "$SHAPIO_URL/api/content/
 A publish in the middle of the build then cannot produce a site that mixes two moments. Deployment triggers
 carry the snapshot to build, and the [example site](example-site.md) pins every build this way.
 
-`schemaVersion` is the schema delivery serves now. Old snapshots are read through the **current** schema:
-fields added since then are empty, removed fields are gone, and a value stored under an earlier field type
-(text that has since become rich text, say) is returned as `null` (`[]` for list fields), never passed off
-as the new type.
+`schemaVersion` is the schema delivery serves now; `schemaVersionToken` (server 0.9.0 or later) is the same
+version as a client names it ([Schema lenses](schema-lenses.md)). Old snapshots are read through the **current** schema,
+unless the request names a schema version: fields added since then are empty, removed fields are gone, and a
+value stored under an earlier field type (text that has since become rich text, say) is returned as `null`
+(`[]` for list fields), never passed off as the new type.
+
+### Pinning the shape too
+
+A build can pin the shape of the content as well as the moment. Name the schema version the site was built
+against (the `SCHEMA_VERSION` that `shapio types generate` writes) next to the snapshot: **the snapshot picks
+the content, the schema version picks the shape**.
+
+```sh
+curl -H "Authorization: Bearer $SHAPIO_DELIVERY_TOKEN" \
+  "$SHAPIO_URL/api/content/articles?snapshot=42&schemaVersion=$SCHEMA_VERSION&fields=title,slug"
+```
+
+Renamed fields and routes then read under the names the site knows, and a model change made in the middle of
+the build cannot change the shape any page sees. Visibility and permissions are still today's, so this is not
+a replay of what the instance served at snapshot 42. A snapshot read that names no schema version reads exactly
+as described above. Details in [Schema lenses](schema-lenses.md#with-snapshots).
+
+The diff below honors a schema version too: with one named, entries are reported under the route keys and API
+IDs of that version, and content types it does not know are left out.
 
 ## What changed between two snapshots
 

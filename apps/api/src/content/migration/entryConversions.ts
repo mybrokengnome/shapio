@@ -1,5 +1,6 @@
 import type { SchemaChange } from '@shapio/schema';
 import type { Transaction } from 'kysely';
+import type { ContentData } from '../../db/contentData.js';
 import type { DB } from '../../db/types.js';
 import * as entriesRepository from '../../repositories/entries.js';
 import * as entryHeadsRepository from '../../repositories/entryHeads.js';
@@ -36,9 +37,13 @@ const conversionWrite = (
   return model ? { trx, siteId: entry.siteId, model, actor: CONVERSION_ACTOR, now: new Date() } : undefined;
 };
 
+/** A head's data with the IDs its instances read with before the change (plan item-ids). */
+type IdsBefore = (head: HeadRecord) => ContentData;
+
 /**
  * A field becomes shared: every draft takes the primary locale's value (its relation edges and media
- * references with it). Published heads stay as published.
+ * references with it), its instances with the IDs they read with in the primary locale. Published heads stay
+ * as published.
  */
 const unifyField = async (
   trx: Transaction<DB>,
@@ -46,8 +51,10 @@ const unifyField = async (
   heads: readonly HeadRecord[],
   fieldId: string,
   defaultLocale: string,
+  idsBefore: IdsBefore,
 ) => {
-  const primary = draftsOf(heads).find((head) => head.locale === primaryLocale(heads, defaultLocale));
+  const found = draftsOf(heads).find((head) => head.locale === primaryLocale(heads, defaultLocale));
+  const primary = found ? { ...found, data: idsBefore(found) } : undefined;
   for (const draft of draftsOf(heads)) {
     const data = unifiedData(draft, primary, fieldId);
     if (!data) {
@@ -124,6 +131,8 @@ export const convertEntry = async (
     proposed: SchemaById;
     /** The activation's publication sequence number of a site (the entry's). */
     seqFor: (siteId: string) => SeqAllocator;
+    /** A head's data with the IDs its instances read with before the change; as stored when left out. */
+    idsBefore?: IdsBefore;
   },
 ): Promise<void> => {
   const { entryId, modelId, change, proposed } = input;
@@ -142,6 +151,7 @@ export const convertEntry = async (
       heads,
       change.fieldId,
       proposed.defaultLocale,
+      input.idsBefore ?? ((head) => head.data),
     );
   } else if (change.kind === 'model.localized' && change.to === false) {
     await keepOneLocale(trx, input.seqFor(entry.site_id), entryId, heads, proposed.defaultLocale);

@@ -5,6 +5,7 @@ import sensible from '@fastify/sensible';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import type { AppConfig } from '../config/index.js';
+import { SCHEMA_VERSION_CURRENT_HEADER } from '../constants/schemaLens.js';
 import { isAdminFileRequest } from './staticAdmin.js';
 
 const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -50,6 +51,8 @@ export const securityPlugin = fp<SecurityPluginOptions>(
       credentials: false,
       // The delivery API takes app-user updates and deletes, not only GET and POST.
       methods: CORS_METHODS,
+      // A browser client may read the current schema version token (plan schema-lenses).
+      exposedHeaders: [SCHEMA_VERSION_CURRENT_HEADER],
     });
     await app.register(rateLimit, {
       global: true,

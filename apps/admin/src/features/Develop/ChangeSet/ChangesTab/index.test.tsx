@@ -83,6 +83,7 @@ const reviewOf = (changeSet: ChangeSet): ChangeSetReview => ({
   notRestorable: [],
   consumers: [],
   usageDays: 7,
+  olderClients: null,
   checks: { breaking: false, destructive: false, blocking: [], warnings: [] },
   notices: [],
 });

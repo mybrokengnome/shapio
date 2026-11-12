@@ -240,6 +240,10 @@ export const buildPolicy = (
     rowReadMasks: combineRowFieldMasks(readGrants, audience, fields),
     writeMask: writes ? combineFieldMasks(matching, audience, fields) : EMPTY_MASK,
     rowWriteMasks: writes ? combineRowFieldMasks(matching, audience, fields) : null,
+    unrestrictedFields: {
+      read: readGrants.some((grant) => grant.fieldIds === null),
+      write: writes && matching.some((grant) => grant.fieldIds === null),
+    },
   };
 };
 

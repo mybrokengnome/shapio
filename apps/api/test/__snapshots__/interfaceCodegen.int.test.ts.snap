@@ -651,6 +651,9 @@ export type EntrySystemFields = {
 
 // Schema version 5
 
+/** The schema version these types describe; pass it as \`createClient({ schemaVersion })\`. */
+export const SCHEMA_VERSION = '<schemaId>:5' as const;
+
 /** About: every field (singleton \`about\`) */
 export type AboutFields = EntrySystemFields & {
   /** Title */

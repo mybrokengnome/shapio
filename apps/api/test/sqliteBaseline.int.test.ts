@@ -73,7 +73,11 @@ const ON_DELETE: Readonly<Record<string, string>> = {
 };
 
 /** Deliberate differences (each explained in the baseline's header). */
-const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin'];
+const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin', 'entry_heads_filter_data_gin'];
+/** `entry_heads.filter_data`, its check and its trigger serve the containment index only (ADR 0001, "Filter data"). */
+const POSTGRES_ONLY_COLUMNS = ['entry_heads.filter_data'];
+const POSTGRES_ONLY_CHECKS = ['entry_heads_filter_data_present'];
+const POSTGRES_ONLY_TRIGGERS = ['entry_heads_filter_data'];
 const SQLITE_ONLY_TABLES = ['sequences', 'sqlite_sequence'];
 const SQLITE_ONLY_TRIGGERS = ['media_assets_folder_id_fkey_set_null'];
 /** PostgreSQL's `ON DELETE SET NULL (folder_id)`; SQLite keeps NO ACTION and nulls the column by trigger. */
@@ -133,7 +137,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     checks: [],
     triggers: [],
   };
-  for (const column of columns.rows.filter((row) => !skippedTable(row.tbl))) {
+  for (const column of columns.rows.filter(
+    (row) => !skippedTable(row.tbl) && !POSTGRES_ONLY_COLUMNS.includes(`${row.tbl}.${row.col}`),
+  )) {
     (schema.tables[column.tbl] ??= {})[column.col] = {
       type: POSTGRES_TYPES[column.typ] ?? `unmapped ${column.typ}`,
       notNull: column.nn,
@@ -151,7 +157,7 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
         references: constraint.ref ?? '',
         onDelete: isColumnListSetNull ? 'no action' : (ON_DELETE[constraint.del] ?? constraint.del),
       });
-    } else if (constraint.typ === 'c') {
+    } else if (constraint.typ === 'c' && !POSTGRES_ONLY_CHECKS.includes(constraint.name)) {
       schema.checks.push(constraint.name);
     }
   }
@@ -167,7 +173,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
       : index.cols;
     schema.indexes[index.name] = { unique: index.uniq, partial: index.partial, columns: columnList };
   }
-  schema.triggers = triggers.rows.map((row) => row.name);
+  schema.triggers = triggers.rows
+    .map((row) => row.name)
+    .filter((name) => !POSTGRES_ONLY_TRIGGERS.includes(name));
   return schema;
 };
 
@@ -259,7 +267,10 @@ const readSqlite = async (db: Kysely<DB>): Promise<LogicalSchema> => {
   return schema;
 };
 
-/** Every row of every seeded table, without the times they were written (they differ by run). */
+/** Columns every database fills with its own random value (the instance's schema ID). */
+const RANDOM_COLUMNS = new Set(['schema_id', 'item_id_key']);
+
+/** Every row of every seeded table, without the times they were written or random IDs (they differ by run). */
 const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
   const rows: Record<string, unknown[]> = {};
   for (const table of tables) {
@@ -269,7 +280,13 @@ const seededRows = async (db: Kysely<DB>, tables: readonly string[]) => {
       .execute();
     if (found.length > 0) {
       rows[table] = found
-        .map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => !(value instanceof Date))))
+        .map((row) =>
+          Object.fromEntries(
+            Object.entries(row).filter(
+              ([column, value]) => !(value instanceof Date) && !RANDOM_COLUMNS.has(column),
+            ),
+          ),
+        )
         .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     }
   }

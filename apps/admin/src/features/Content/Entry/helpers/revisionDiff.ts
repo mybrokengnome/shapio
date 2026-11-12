@@ -1,5 +1,6 @@
 import type { ComponentDefinition, FieldDefinition, ModelDefinition } from '@shapio/schema';
 import { liveFields, toFormValues } from '@/fields/helpers/formValues';
+import { withoutItemIds } from '@/fields/helpers/itemIds';
 import { summarizeValue } from '@/fields/helpers/summary';
 import { isEmptyValue, isSameContent, type FormValues } from '@/fields/helpers/values';
 
@@ -26,7 +27,8 @@ export const diffRevision = (
   return liveFields(model.fields).flatMap((field): FieldChange[] => {
     const now = current[field.apiKey];
     const then = revision[field.apiKey];
-    if (isSameContent(now, then)) {
+    // Item IDs are not content: the same items under other IDs are no change to show.
+    if (isSameContent(withoutItemIds(now), withoutItemIds(then))) {
       return [];
     }
     const kind = isEmptyValue(now) ? 'added' : isEmptyValue(then) ? 'removed' : 'changed';

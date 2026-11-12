@@ -1,8 +1,8 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { SchemaChange } from '@shapio/schema';
 import type { ContentData } from '../../db/contentData.js';
 import type { ScannedHead } from '../../repositories/entryHeads.js';
 import { stepKey, type ContentStep } from '../../schema/planner/steps.js';
+import { sameContent } from '../sameContent.js';
 import { isMissingValue } from '../validator/index.js';
 import { convertValue, isEntryLevelConversion } from './convert.js';
 import { ownerContainers } from './paths.js';
@@ -51,7 +51,7 @@ export const unifiedData = (
   primary: HeadLike | undefined,
   fieldId: string,
 ): ContentData | undefined => {
-  if (!primary || draft === primary || isDeepStrictEqual(draft.data[fieldId], primary.data[fieldId])) {
+  if (!primary || draft === primary || sameContent(draft.data[fieldId], primary.data[fieldId])) {
     return undefined;
   }
   const data = { ...draft.data };
@@ -189,7 +189,7 @@ export const proposeEntry = (
         !original ||
         original.revision_id !== head.revision_id ||
         original.autosaved_at !== head.autosaved_at ||
-        !isDeepStrictEqual(original.data, head.data);
+        !sameContent(original.data, head.data);
       return { ...head, changed };
     }),
     removed: stored.filter((head) => !heads.some((kept) => headKey(kept) === headKey(head))),

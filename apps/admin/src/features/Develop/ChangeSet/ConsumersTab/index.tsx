@@ -8,12 +8,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDateTime, formatRelativeTime } from '@/helpers/formatDate';
 import { useSchemaScopeAccess } from '@/hooks/useSchemaScopeAccess';
 import { usePrincipalLabel } from '../../Changes/hooks/usePrincipalLabel';
+import { OlderVersions } from './OlderVersions';
 
 type ConsumersTabProps = { review: ChangeSetReview };
 
 /**
  * Who read the fields this set's breaking changes affect, from real delivery traffic: each reader with
  * the site it read on (where there is more than one), and readers on sites the admin can't see as totals.
+ * Readers that name an older schema version come first, with what they see once the set ships.
  */
 export const ConsumersTab = ({ review }: ConsumersTabProps) => {
   const { t } = useTranslation();
@@ -22,7 +24,8 @@ export const ConsumersTab = ({ review }: ConsumersTabProps) => {
   const fields = review.consumers.filter(
     (field) => field.consumers.length > 0 || (field.otherSites?.consumers ?? 0) > 0,
   );
-  if (fields.length === 0) {
+  const olderVersions = (review.olderClients?.versions.length ?? 0) > 0;
+  if (fields.length === 0 && !olderVersions) {
     return (
       <EmptyState
         icon={Users}
@@ -36,6 +39,7 @@ export const ConsumersTab = ({ review }: ConsumersTabProps) => {
       <p className="text-meta text-muted-foreground">
         {t('changes.consumers.window', { count: review.usageDays })}
       </p>
+      {olderVersions ? <OlderVersions review={review} /> : null}
       {fields.map((field) => (
         <Panel
           key={`${field.modelId}:${field.fieldId}`}

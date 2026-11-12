@@ -9,10 +9,10 @@ import type { LocalClientOptions } from './types.js';
 type SameType<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
- * `drafts` is the client's option (it shapes the paths the client sends), not the runtime's. `workspace` is
- * resolved into the runtime's `site` before the call.
+ * `drafts` and `schemaVersion` are the client's options (they shape the paths the client sends), not the
+ * runtime's. `workspace` is resolved into the runtime's `site` before the call.
  */
 export const optionsMatchRuntime: SameType<
-  Omit<LocalClientOptions, 'drafts' | 'workspace'>,
+  Omit<LocalClientOptions, 'drafts' | 'schemaVersion' | 'workspace'>,
   DeliveryRuntimeOptions & CallCredentials
 > = true;

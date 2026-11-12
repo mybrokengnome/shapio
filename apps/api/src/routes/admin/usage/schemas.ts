@@ -1,6 +1,8 @@
+import { LENS_EFFECTS } from '@shapio/schema';
 import { Type, type Static } from 'typebox';
-import { DateTimeSchema, UuidSchema } from '../../schemas/adminIdentity.js';
+import { DateTimeSchema, NullableDateTimeSchema, UuidSchema } from '../../schemas/adminIdentity.js';
 import { ErrorResponseSchema } from '../../schemas/error.js';
+import { SiteRefSchema } from '../../schemas/publishing.js';
 
 export const FieldUsageQuerySchema = Type.Object(
   {
@@ -57,3 +59,98 @@ export const fieldUsageSchema = {
   querystring: FieldUsageQuerySchema,
   response: { 200: FieldUsageResponseSchema, 400: ErrorResponseSchema, 404: ErrorResponseSchema },
 };
+
+const PrincipalKeyField = Type.String({ description: '`token:<id>`, `app_users` or `anonymous`' });
+
+export const SchemaVersionsResponseSchema = Type.Object({
+  /** USAGE_TRACKING: false means nothing new is being counted. */
+  tracking: Type.Boolean(),
+  /** Readers on the request's workspace whose latest request named a schema version (plan schema-lenses). */
+  principals: Type.Array(
+    Type.Object({
+      principalKey: PrincipalKeyField,
+      tokenName: Type.Optional(Type.String()),
+      /** The schema version the reader's latest request was served at: one it named, or its token's pin. */
+      schemaVersion: Type.Integer(),
+      /** The version is the token's pin, not one the client sends. */
+      pinned: Type.Boolean(),
+      lastReadAt: DateTimeSchema,
+    }),
+  ),
+});
+
+export const schemaVersionsSchema = {
+  response: { 200: SchemaVersionsResponseSchema, 400: ErrorResponseSchema },
+};
+
+/** What a client naming an older schema version sees (plan schema-lenses; `LensEffect` in @shapio/schema). */
+export const LensEffectSchema = Type.Enum([...LENS_EFFECTS]);
+
+const OlderClientDefinitionSchema = Type.Object({
+  definitionId: Type.String(),
+  /** The definition's API ID in the client's version. */
+  apiKey: Type.String(),
+  /** `unavailable`: no record of the definition at that version (reads of it answer 409). */
+  status: Type.Enum(['available', 'unavailable']),
+  /** The worst effect over its fields; null when unavailable. */
+  effect: Type.Union([LensEffectSchema, Type.Null()]),
+  /** The oldest version reads of it work from, when unavailable. */
+  oldestVersion: Type.Union([Type.Integer(), Type.Null()]),
+  /** The client's fields that do not keep working unchanged; every other field reads as before. */
+  fields: Type.Array(
+    Type.Object({
+      fieldId: Type.String(),
+      /** The field's API ID in the client's version. */
+      apiKey: Type.String(),
+      /** What the client sees once the change is live: shape and every step's effect on stored values. */
+      effect: LensEffectSchema,
+      /** The proposed change's own part: what it makes worse than today. */
+      proposedEffect: LensEffectSchema,
+      /** What the client already sees today (shape since its version, values activations dropped or cut). */
+      pastEffect: LensEffectSchema,
+      /** The schema version since which `pastEffect` holds; null when transparent or not datable. */
+      pastSince: Type.Union([Type.Integer(), Type.Null()]),
+    }),
+  ),
+  /** Too many changes since the version to check what they did to stored values: `effect` is the shape's. */
+  historyTruncated: Type.Boolean(),
+});
+
+/**
+ * Readers on older schema versions and what they see once a proposed change is live (plan schema-lenses): per
+ * version readers are on now, the composite effect from that version to the proposal.
+ */
+export const OlderClientsSchema = Type.Object({
+  /** Most recently used first; at most a fixed number of versions. */
+  versions: Type.Array(
+    Type.Object({
+      schemaVersion: Type.Integer(),
+      /** Readers on that version; null when the viewer may not see token names (needs `tokens.manage`). */
+      readers: Type.Union([
+        Type.Array(
+          Type.Object({
+            /** The workspace the reads were made on. */
+            site: SiteRefSchema,
+            principalKey: PrincipalKeyField,
+            /** The token's name; null for app users, anonymous readers and deleted tokens. */
+            label: Type.Union([Type.String(), Type.Null()]),
+            /** The version is the token's pin, not one the client sends. */
+            pinned: Type.Boolean(),
+            /** A network token: listed on each workspace the change reaches, read there or not. */
+            network: Type.Boolean(),
+            /** Null: a token pinned to the version that has not read since (a declared older client). */
+            lastReadAt: NullableDateTimeSchema,
+          }),
+        ),
+        Type.Null(),
+      ]),
+      /** Readers on that version the viewer sees in detail (with or without names). */
+      readerCount: Type.Integer(),
+      /** Readers on workspaces the viewer does not see in detail; null when it sees every workspace. */
+      otherSites: Type.Union([Type.Object({ consumers: Type.Integer() }), Type.Null()]),
+      definitions: Type.Array(OlderClientDefinitionSchema),
+    }),
+  ),
+  /** More versions are in use than the review compiled. */
+  truncated: Type.Boolean(),
+});

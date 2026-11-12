@@ -6,6 +6,8 @@ export type GraphqlConfig = {
   enabled: boolean;
   /** Deepest field nesting a query may have. */
   maxDepth: number;
+  /** Most tokens a document may have, checked before parsing. */
+  maxTokens: number;
   /** Highest estimated cost a query may have (schema/codegen/graphql/complexity.ts). */
   maxComplexity: number;
   /** Serve GraphiQL at `/api/graphql/playground` (admin principals only). */
@@ -17,6 +19,7 @@ export type GraphqlConfig = {
 export const toGraphqlConfig = (raw: RawConfig): GraphqlConfig => ({
   enabled: raw.GRAPHQL_ENABLED,
   maxDepth: raw.GRAPHQL_MAX_DEPTH,
+  maxTokens: raw.GRAPHQL_MAX_TOKENS,
   maxComplexity: raw.GRAPHQL_MAX_COMPLEXITY,
   playgroundEnabled: raw.GRAPHQL_PLAYGROUND_ENABLED,
   publicIntrospection: raw.GRAPHQL_PUBLIC_INTROSPECTION,

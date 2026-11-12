@@ -1,4 +1,5 @@
 import { REVIEW_USAGE_DAYS } from '../constants/publishing.js';
+import { componentLookupOf } from '../content/itemIds.js';
 import { resolveModelById } from '../content/model.js';
 import * as changeSetItemsRepository from '../repositories/changeSetItems.js';
 import type { ChangeSetItemRow } from '../repositories/changeSetItems.js';
@@ -9,6 +10,7 @@ import type { SchemaDraftRow } from '../repositories/schemaDrafts.js';
 import * as schemaModelsRepository from '../repositories/schemaModels.js';
 import { readStoredDefinition } from '../schema/storedDefinition.js';
 import { planShippedDraft, type DraftPlan } from './changeSetPlanning.js';
+import { olderClientsEffectsOf } from './changeSetReviewOlderClients.js';
 import {
   consumersFor,
   fieldDiff,
@@ -92,7 +94,12 @@ const shippedEntries = async (
       draftVersion: null,
       // The state before the ship: live or not (missing when nothing of it is left in the log).
       liveState: before ? 'published' : after ? 'unpublished' : 'missing',
-      fields: fieldDiff(await readableFields(context, model, modelId), before, after),
+      fields: fieldDiff(
+        await readableFields(context, model, modelId),
+        before,
+        after,
+        componentLookupOf(model?.components ?? new Map()),
+      ),
       issues: [],
     });
   }
@@ -141,6 +148,7 @@ const shippedSchemaItem = (
   activeVersion: planned.activeVersion,
   stale: false,
   plan: planned.plan,
+  olderClientsEffects: olderClientsEffectsOf(planned.plan?.changes),
   impact: null,
   affectedEntriesBySite: [],
   issues: [],
@@ -167,6 +175,7 @@ export const getShippedReview = async (
     notRestorable: notRestorableOf(row),
     consumers: await consumersFor(context, plans),
     usageDays: REVIEW_USAGE_DAYS,
+    olderClients: null,
     checks: {
       breaking: plans.some((planned) => planned.plan?.summary.breaking ?? false),
       destructive: plans.some((planned) => planned.plan?.summary.destructive ?? false),

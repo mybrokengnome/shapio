@@ -6,6 +6,7 @@ import {
   type ModelDefinition,
 } from '@shapio/schema';
 import type { Transaction } from 'kysely';
+import { schemaVersionToken } from '../constants/schemaLens.js';
 import { compileModelRowFilters, everyRowReadMask, maskAllows } from '../content/compiler/policy.js';
 import { queryInvalid } from '../content/compiler/types.js';
 import { snapshotInvalid } from '../content/errors.js';
@@ -19,7 +20,8 @@ import * as publicationsRepository from '../repositories/publications.js';
 import * as schemaVersionsRepository from '../repositories/schemaVersions.js';
 import * as snapshotDiffRepository from '../repositories/snapshotDiff.js';
 import type { SnapshotChangeKind, SnapshotEntryChange } from '../repositories/snapshotDiff.js';
-import type { ContentServiceContext } from './contentAccess.js';
+import type { SchemaSnapshot } from '../schema/snapshot.js';
+import { activeLens, type ContentServiceContext } from './contentAccess.js';
 
 /**
  * The snapshot diff API (plan developer-face §5): which entries' live content changed between two
@@ -167,11 +169,27 @@ const describeEntries = async (
 };
 
 /** The route keys (plurals) of the interfaces a model implements in the view, its ancestors' included. */
-const interfacePluralsOf = (context: ContentServiceContext, modelId: string): string[] =>
-  context.snapshot.interfacesOf(modelId).flatMap((interfaceId) => {
-    const definition = context.snapshot.byId.get(interfaceId)?.definition;
+const interfacePluralsOf = (view: SchemaSnapshot, modelId: string): string[] =>
+  view.interfacesOf(modelId).flatMap((interfaceId) => {
+    const definition = view.byId.get(interfaceId)?.definition;
     return definition && isInterfaceDefinition(definition) ? [definition.pluralApiKey] : [];
   });
+
+/**
+ * A model as the call names it: today's, or through a schema lens the client's version's (plan schema-lenses);
+ * undefined when that version does not know it.
+ */
+const namedModel = (
+  context: ContentServiceContext,
+  model: ModelDefinition,
+): { view: SchemaSnapshot; definition: ModelDefinition } | undefined => {
+  const lens = activeLens(context);
+  if (!lens) {
+    return { view: context.snapshot, definition: model };
+  }
+  const definition = lens.view.byId.get(model.id)?.definition;
+  return definition && isModelDefinition(definition) ? { view: lens.view, definition } : undefined;
+};
 
 const boundedLimit = (limit: number | undefined) =>
   Math.min(Math.max(limit ?? SNAPSHOT_CHANGES_DEFAULT_LIMIT, 1), SNAPSHOT_CHANGES_MAX_LIMIT);
@@ -229,15 +247,17 @@ export const listSnapshotChanges = async (
       schemaVersions: { from: versions.get(from) ?? null, to: versions.get(to) ?? null },
       items: page.items.flatMap((item) => {
         const model = byId.get(item.modelId)?.definition;
-        return model
+        // Through a lens, in the names of the client's version; models it does not know are left out.
+        const named = model ? namedModel(context, model) : undefined;
+        return model && named
           ? [
               {
                 id: item.entryId,
                 modelId: item.modelId,
-                modelKey: model.apiKey,
-                routeKey: modelRouteOf(context.snapshot, model).key,
+                modelKey: named.definition.apiKey,
+                routeKey: modelRouteOf(named.view, named.definition).key,
                 ...describe(item),
-                interfaces: interfacePluralsOf(context, item.modelId),
+                interfaces: interfacePluralsOf(named.view, item.modelId),
                 locales: item.locales.map(({ locale, change, fromRevisionId, toRevisionId }) => ({
                   locale,
                   change,
@@ -259,6 +279,11 @@ export type CurrentSnapshot = {
   schemaVersion: number;
   /** When the latest snapshot was published; null when the ledger has no row for it (snapshot 0). */
   publishedAt: Date | null;
+  /**
+   * The active schema version as `<schemaId>:<version>`, what a client names to read in this shape later
+   * (plan schema-lenses); absent where the caller has no schema ID at hand.
+   */
+  schemaVersionToken?: string;
 };
 
 /** `GET /api/snapshots/current`, GraphQL `_snapshot`. */
@@ -271,6 +296,12 @@ export const currentSnapshot = async (context: ContentServiceContext): Promise<C
     // metadata-only activations (a label rename) take no snapshot number, so the newest ledger row can
     // carry an older schema version than the live one.
     const schemaVersion = await schemaVersionsRepository.getSchemaVersion(trx);
-    return { snapshot, schemaVersion, publishedAt: publishedAt ?? null };
+    const schemaId = context.schemaId ?? (await schemaVersionsRepository.getSchemaId(trx));
+    return {
+      snapshot,
+      schemaVersion,
+      publishedAt: publishedAt ?? null,
+      schemaVersionToken: schemaVersionToken(schemaId, schemaVersion),
+    };
   }, context.db);
 };

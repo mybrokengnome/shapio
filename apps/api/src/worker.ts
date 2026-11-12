@@ -1,5 +1,6 @@
 import closeWithGrace from 'close-with-grace';
 import type { AppConfig } from './config/index.js';
+import { watchContentIndexForm } from './db/contentFilterIndex.js';
 import { dialectOfUrl } from './db/dialect.js';
 import { createDb } from './db/index.js';
 import { getPendingMigrations } from './db/migrator.js';
@@ -9,6 +10,7 @@ import { loadProjectConfig } from './extensions/loader.js';
 import { ensureHealthSweepScheduled } from './jobs/contentHealth.js';
 import { ensureRetentionScheduled } from './jobs/retention.js';
 import { createLogger } from './logger.js';
+import { keepContentIndexJobsQueued } from './schema/planner/contentFilterIndex.js';
 import { createConfiguredWorker, startExtensions } from './server.js';
 import { resolveSigningSecret } from './services/signingSecret.js';
 
@@ -47,6 +49,10 @@ export const startDedicatedWorker = async (config: AppConfig) => {
     throw new Error('Pending migrations');
   }
   const signingSecret = await resolveSigningSecret(db, config.sessionSecret, logger);
+  const contentIndexWatch = watchContentIndexForm(db, logger, {
+    onLook: (form) => keepContentIndexJobsQueued(db, logger, form),
+  });
+  await contentIndexWatch.ready;
   const extensions = await startExtensions(config, db, logger, project);
   const worker = await createConfiguredWorker(config, db, logger, signingSecret, extensions);
   await ensureRetentionScheduled(db);
@@ -60,6 +66,7 @@ export const startDedicatedWorker = async (config: AppConfig) => {
     }
     await worker.stop(config.shutdownTimeoutMs);
     extensions.close();
+    contentIndexWatch.stop();
     await db.destroy();
   });
   return worker;

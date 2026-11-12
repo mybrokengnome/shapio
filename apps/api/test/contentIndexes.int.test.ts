@@ -10,9 +10,11 @@ import {
 import { parseContentQuery } from '../src/content/compiler/parse.js';
 import { parseQueryTree } from '../src/content/compiler/querystring.js';
 import { compileOrderBy } from '../src/content/compiler/sort.js';
+import type { FilterNode } from '../src/content/compiler/types.js';
 import { readScopeFor } from '../src/content/locales.js';
 import { resolveModel, type ContentModel } from '../src/content/model.js';
 import { createContentPorts } from '../src/content/ports.js';
+import { FILTER_INDEX } from '../src/db/contentFilterIndex.js';
 import { ENTRY_ORDER_INDEX } from '../src/db/entryOrderIndex.js';
 import { getIndexState } from '../src/db/indexCatalog.js';
 import { up as enqueueFieldIndexLayout } from '../src/db/migrations/20261003140200_enqueue_field_index_layout.js';
@@ -153,7 +155,39 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
   });
 
   it('equality on a field without an index compiles to containment and uses the GIN index', async () => {
-    expect(await planOf('listing', 'filters[title][$eq]=abc')).toContain('entry_heads_data_gin');
+    expect(await planOf('listing', 'filters[title][$eq]=abc')).toContain(FILTER_INDEX);
+  });
+
+  it('containment uses the GIN index in a generic plan too (parameters unknown when planned)', async () => {
+    const { db } = database.current;
+    const filter = (search: string) => {
+      const model = resolveModel(snapshot, 'catalog');
+      const query = parseContentQuery(parseQueryTree(search), {
+        model: model.definition,
+        locales: ['en'],
+        isReadable: () => true,
+        isQueryable: () => true,
+        allowSnapshot: false,
+        resolveModel: () => undefined,
+      });
+      return compileFilter(query.filter as FilterNode);
+    };
+    for (const search of [
+      'filters[title][$eq]=abc',
+      'filters[title][$in][0]=abc&filters[title][$in][1]=def',
+    ]) {
+      const { sql: text } = sql`select count(*) from entry_heads where ${filter(search)}`.compile(db);
+      expect(text).toContain('("filter_data" @> $1::jsonb)');
+      // As for the literal plans: whether the index can serve it (a small table may rightly be scanned).
+      const plan = await db.transaction().execute(async (trx) => {
+        await sql`set local enable_seqscan = off`.execute(trx);
+        const { rows } = await sql<{
+          'QUERY PLAN': unknown;
+        }>`explain (generic_plan, format json) ${sql.raw(text)}`.execute(trx);
+        return JSON.stringify(rows[0]?.['QUERY PLAN']);
+      });
+      expect(plan).toContain(FILTER_INDEX);
+    }
   });
 
   it('equality on an indexed field uses the field index, not the GIN index', async () => {
@@ -164,10 +198,10 @@ describe.skipIf(sqliteSkip)(withSkipReason('content indexes serve compiled queri
       const definition = apiKey === 'listing' ? listing : catalog;
       const eq = await planOf(apiKey, 'filters[rank][$eq]=5');
       expect(eq).toContain(indexOf(definition, localized));
-      expect(eq).not.toContain('entry_heads_data_gin');
+      expect(eq).not.toContain(FILTER_INDEX);
       const oneOf = await planOf(apiKey, 'filters[rank][$in][0]=5&filters[rank][$in][1]=6');
       expect(oneOf).toContain(indexOf(definition, localized));
-      expect(oneOf).not.toContain('entry_heads_data_gin');
+      expect(oneOf).not.toContain(FILTER_INDEX);
     }
   });
 

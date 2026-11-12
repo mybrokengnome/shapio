@@ -10,6 +10,7 @@ import { FormSheet } from '@/components/FormSheet';
 import { FormTextField } from '@/components/FormTextField';
 import { TOKEN_EXPIRY_OPTIONS } from '../constants';
 import { useCreateTokenForm } from '../hooks/useCreateTokenForm';
+import { SchemaVersionField } from '../SchemaVersionField';
 
 type CreateSheetProps = {
   open: boolean;
@@ -26,7 +27,7 @@ export const CreateSheet = ({ open, onOpenChange, onCreated, onCloseAutoFocus }:
   const mayCreateNetwork = me?.networkPermissions.includes('users.manage') ?? false;
   const canChooseNetwork = (roleId: string) =>
     mayCreateNetwork && roles.data?.find((role) => role.id === roleId)?.kind === 'admin';
-  const { form, onSubmit, createToken } = useCreateTokenForm(open, onCreated, canChooseNetwork);
+  const { form, onSubmit, createToken, pinCurrent } = useCreateTokenForm(open, onCreated, canChooseNetwork);
   const roleId = useWatch({ control: form.control, name: 'roleId' });
   const scopeOptions = [
     {
@@ -80,6 +81,7 @@ export const CreateSheet = ({ open, onOpenChange, onCreated, onCloseAutoFocus }:
         label={t('apiTokens.expiry')}
         options={expiryOptions}
       />
+      <SchemaVersionField control={form.control} name="pinnedSchemaVersion" onPinCurrent={pinCurrent} />
       <FormError error={createToken.error ?? roles.error} />
     </FormSheet>
   );

@@ -37,7 +37,7 @@ export type IndexBuildOutcome = 'built' | 'exists' | 'skipped';
 const executeIfAny = (db: Database, statement: RawBuilder<unknown> | null): Promise<void> =>
   executeIdempotentDdl(db, statement);
 
-const withIndexBuildLock = <T>(db: Database, fn: () => Promise<T>): Promise<T> =>
+export const withIndexBuildLock = <T>(db: Database, fn: () => Promise<T>): Promise<T> =>
   withPolledSessionAdvisoryLock(db, LOCK_NAMESPACE.indexBuilds, INDEX_BUILD_LOCK_KEY, fn);
 
 /**

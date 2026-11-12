@@ -1,5 +1,7 @@
 import type { Migration } from 'kysely/migration';
 import * as systemVersionsRelease from '../20261006120000_system_versions_release.js';
+import * as apiTokenSchemaPin from '../20261110130000_api_token_schema_pin.js';
+import * as itemIdKey from '../20261111120000_item_id_key.js';
 import * as baseline from './0001_baseline.js';
 import * as auditEventsSeq from './20261003170000_audit_events_seq.js';
 import * as modelsSiteScope from './20261004120000_models_site_scope.js';
@@ -10,6 +12,8 @@ import * as interfaceKind from './20261021120000_interface_kind.js';
 import * as changeSetApproval from './20261028120000_change_set_approval.js';
 import * as schemaChangeOutcome from './20261029120000_schema_change_outcome.js';
 import * as assistWriteAndFill from './20261104120000_assist_write_and_fill.js';
+import * as schemaLenses from './20261110120000_schema_lenses.js';
+import * as entryHeadsScalarsGin from './20261112120000_entry_heads_scalars_gin.js';
 
 /**
  * SQLite migrations. `0001_baseline` creates the schema the PostgreSQL migrations up to and including
@@ -31,4 +35,8 @@ export const SQLITE_MIGRATIONS: Readonly<Record<string, Migration>> = {
   '20261028120000_change_set_approval': changeSetApproval,
   '20261029120000_schema_change_outcome': schemaChangeOutcome,
   '20261104120000_assist_write_and_fill': assistWriteAndFill,
+  '20261110120000_schema_lenses': schemaLenses,
+  '20261110130000_api_token_schema_pin': apiTokenSchemaPin,
+  '20261111120000_item_id_key': itemIdKey,
+  '20261112120000_entry_heads_scalars_gin': entryHeadsScalarsGin,
 };

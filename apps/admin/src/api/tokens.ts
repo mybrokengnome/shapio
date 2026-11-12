@@ -1,4 +1,4 @@
-import type { CreateApiTokenInput } from '@shapio/client';
+import type { CreateApiTokenInput, UpdateApiTokenInput } from '@shapio/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from './client';
 import { withCsrf } from './csrf';
@@ -13,6 +13,17 @@ export const useCreateApiToken = () => {
     mutationKey: ['tokens', 'create'],
     meta: { silent: true },
     mutationFn: (input: CreateApiTokenInput) => withCsrf(() => adminApi.tokens.create(input)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.tokens }),
+  });
+};
+
+export const useUpdateApiToken = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['tokens', 'update'],
+    meta: { silent: true },
+    mutationFn: ({ id, input }: { id: string; input: UpdateApiTokenInput }) =>
+      withCsrf(() => adminApi.tokens.update(id, input)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.tokens }),
   });
 };

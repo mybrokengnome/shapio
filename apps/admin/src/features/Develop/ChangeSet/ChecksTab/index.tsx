@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { RULE_TITLE_KEYS } from '@/features/Inbox/constants';
+import { OlderClientsAck } from '@/features/Models/Builder/ReviewSheet/OlderClientsAck';
 import { EDITABLE_STATUSES } from '../../Changes/constants';
 import { HealthChip } from '../../Changes/HealthChip';
 import { useSetHealthFindings } from '../hooks/useSetHealthFindings';
@@ -150,6 +151,7 @@ export const ChecksTab = ({ review, flow }: ChecksTabProps) => {
               </FieldLabel>
             </Field>
           ) : null}
+          {flow.needsBreaking ? <OlderClientsAck olderClients={review.olderClients} /> : null}
           {flow.needsDestructive ? (
             <Field orientation="horizontal">
               <Checkbox

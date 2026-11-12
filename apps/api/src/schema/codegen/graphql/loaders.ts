@@ -28,11 +28,23 @@ export type GraphqlLoaders = {
   ) => DataLoader<string, DeliveryEntry[]>;
 };
 
-/** `subject` is a model ID (`localizations`) or a relation target's key (`relationTargetKey`). */
-const keyOf = (kind: string, siteId: string, snapshot: SchemaSnapshot, subject: string, scope: ReadScope) =>
+/**
+ * `subject` is a model ID (`localizations`) or a relation target's key (`relationTargetKey`). `lens`: the
+ * schema version a lensed request reads in (plan schema-lenses), so its entries, shaped for that version, are
+ * never shared with a read in another shape.
+ */
+const keyOf = (
+  kind: string,
+  siteId: string,
+  lens: number | null,
+  snapshot: SchemaSnapshot,
+  subject: string,
+  scope: ReadScope,
+) =>
   JSON.stringify([
     kind,
     siteId,
+    lens,
     snapshot.version,
     subject,
     scope.locale ?? null,
@@ -44,6 +56,7 @@ const keyOf = (kind: string, siteId: string, snapshot: SchemaSnapshot, subject: 
 export const createLoaders = (
   siteId: () => string,
   content: (snapshot: SchemaSnapshot) => Promise<ContentServiceContext>,
+  lens: number | null = null,
 ): GraphqlLoaders => {
   const loaders = new Map<string, DataLoader<string, unknown>>();
   const memo = <V>(key: string, create: () => DataLoader<string, V>): DataLoader<string, V> => {
@@ -57,7 +70,7 @@ export const createLoaders = (
   return {
     entries: (snapshot, target, scope) =>
       memo(
-        keyOf('entries', siteId(), snapshot, relationTargetKey(target), scope),
+        keyOf('entries', siteId(), lens, snapshot, relationTargetKey(target), scope),
         () =>
           new DataLoader<string, DeliveryEntry | null>(async (ids) => {
             const found = await loadDeliveryEntries(await content(snapshot), target, ids, scope);
@@ -66,7 +79,7 @@ export const createLoaders = (
       ),
     localizations: (snapshot, modelId, scope) =>
       memo(
-        keyOf('localizations', siteId(), snapshot, modelId, scope),
+        keyOf('localizations', siteId(), lens, snapshot, modelId, scope),
         () =>
           new DataLoader<string, DeliveryEntry[]>(async (ids) => {
             const found = await loadDeliveryLocalizations(await content(snapshot), modelId, ids, scope);

@@ -15,3 +15,9 @@ export const getFieldUsage = async (request: FastifyRequest<{ Querystring: Field
   );
   return { tracking: config.usage.enabled, ...usage };
 };
+
+/** `GET /api/admin/usage/schema-versions`: the schema version each reader of the workspace names now. */
+export const getSchemaVersions = async (request: FastifyRequest) => ({
+  tracking: request.server.config.usage.enabled,
+  principals: await usageService.schemaVersionReaders(getRequestSite(request)),
+});

@@ -25,6 +25,8 @@ const write = (root: string, path: string, content: string) => {
   writeFileSync(join(root, path), content);
 };
 
+const UNPINNED = '/** Doc. */\nexport const SCHEMA_VERSION: string | undefined = undefined;\n';
+
 /** A miniature repository: workspace config, one workspace package, the shared assets and three starters. */
 const makeRepo = () => {
   const root = makeTemp();
@@ -58,6 +60,8 @@ const makeRepo = () => {
     write(root, `examples/${starter}/node_modules/x/index.js`, '');
     write(root, `examples/${starter}/dist/index.html`, '');
     write(root, `examples/${starter}/tsconfig.tsbuildinfo`, '');
+    write(root, `examples/${starter}/src/lib/shapio.generated.ts`, "export const SCHEMA_VERSION = 'x:1';\n");
+    write(root, `examples/${starter}/src/lib/schemaVersion.ts`, UNPINNED);
   }
   return root;
 };
@@ -70,6 +74,7 @@ describe('listFiles', () => {
       '.gitignore',
       'package.json',
       'scripts/smoke.ts',
+      'src/lib/schemaVersion.ts',
       'tsconfig.json',
     ]);
   });
@@ -79,7 +84,7 @@ describe('packTemplates', () => {
   it('writes each starter plus the shared files as a standalone project', () => {
     const root = makeRepo();
     const outDir = join(root, 'out');
-    expect(packTemplates({ repoRoot: root, outDir })).toEqual({ astro: 8, next: 8, sveltekit: 8 });
+    expect(packTemplates({ repoRoot: root, outDir })).toEqual({ astro: 9, next: 9, sveltekit: 9 });
     const next = join(outDir, 'next');
     expect(listFiles(next).sort()).toEqual(
       [
@@ -90,6 +95,7 @@ describe('packTemplates', () => {
         'scripts/seed.ts',
         'scripts/smoke.ts',
         'shapio/models/article.json',
+        'src/lib/schemaVersion.ts',
         'tsconfig.json',
       ].sort(),
     );
@@ -114,6 +120,21 @@ describe('packTemplates', () => {
     const root = makeRepo();
     write(root, 'examples/astro/README.md', 'Run node ../shared/scripts/seed.ts');
     expect(() => packTemplates({ repoRoot: root, outDir: join(root, 'out') })).toThrow(TemplateError);
+  });
+
+  it('leaves out the generated types and refuses a schema version module that names a version', () => {
+    const root = makeRepo();
+    const outDir = join(root, 'out');
+    packTemplates({ repoRoot: root, outDir });
+    expect(readFileSync(join(outDir, 'astro/src/lib/schemaVersion.ts'), 'utf8')).toBe(UNPINNED);
+    write(
+      root,
+      'examples/next/src/lib/schemaVersion.ts',
+      "export const SCHEMA_VERSION: string | undefined = '0d5c8f2a:17';\n",
+    );
+    expect(() => packTemplates({ repoRoot: root, outDir })).toThrow(
+      /next\/src\/lib\/schemaVersion.ts names a schema version/,
+    );
   });
 
   it('carries .gitignore under a name npm publishes', () => {

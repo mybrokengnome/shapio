@@ -281,7 +281,8 @@ export const fieldConfigs = (
       description: describeField(field),
       resolve: (node, args, context, info) => {
         if (masked && !Object.hasOwn(node.data, field.apiKey)) {
-          if (field.required) {
+          // Through a lens a missing field is one the client's version had and today's visibility hides.
+          if (field.required && !build.lens) {
             throw maskedFieldError(field);
           }
           return null;
@@ -297,8 +298,21 @@ export const fieldConfigs = (
 const definitionFields = (build: SchemaBuild, owner: SchemaDefinition, masked: boolean) =>
   fieldConfigs(build, owner, readableFields(build.visibility, owner), masked);
 
+const ITEM_ID_DESCRIPTION = "This item's ID. Send it back when you write the field so the item is kept";
+
+/**
+ * Every component item's `id` (plan item-ids), stored as `__id` and served as `id` by the delivery projection.
+ * A system field like the entry `id`: no user field can take the name (`RESERVED_FIELD_API_KEYS`).
+ */
+const COMPONENT_ITEM_ID: FieldConfig = {
+  type: new GraphQLNonNull(GraphQLID),
+  description: ITEM_ID_DESCRIPTION,
+  resolve: (node) => node.data.id,
+};
+
 /**
  * A component's type, or null when the caller sees none of its fields (GraphQL forbids empty object types).
+ * Its `id` does not count: a component whose every field is hidden from the caller stays out of its schema.
  * Its fields are resolved eagerly to know that; components never nest cyclically (the registry validator
  * rejects cycles), and relation targets are thunked entry types, so this terminates.
  */
@@ -315,7 +329,7 @@ const componentType = (
     const type = new GraphQLObjectType<ValueNode, GraphqlContext>({
       name: componentTypeName(component),
       description: describeDefinition(component),
-      fields,
+      fields: { id: COMPONENT_ITEM_ID, ...fields },
     });
     build.objects.set(component.id, type);
     return type;

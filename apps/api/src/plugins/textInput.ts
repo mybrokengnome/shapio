@@ -1,17 +1,39 @@
 import { findInvalidText, INVALID_TEXT_MESSAGE } from '@shapio/schema';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
+import { MAX_BODY_DEPTH } from '../constants/requestBody.js';
 import { AppError } from '../helpers/appError.js';
+import { nestsDeeperThan } from '../helpers/jsonDepth.js';
 
 /**
  * Refuses a NUL character or an unpaired surrogate anywhere in a request's parsed body, querystring or route
  * params (422 `INVALID_TEXT`, with a JSON pointer such as `/query/filters[title][$eq]`). No database stores
  * them as is, so without this they surface as internal errors, including on anonymous delivery routes.
  * File uploads are not parsed into objects and are not affected.
+ *
+ * Before that, and before any validation, a body nested deeper than `MAX_BODY_DEPTH` is refused (422
+ * `BODY_TOO_DEEP`, every route, REST bodies and GraphQL variables alike): no database stores arbitrarily deep JSON
+ * (MySQL stops at 100 levels), and nothing downstream should walk it.
  */
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /**
+     * The route's own body depth limit, where its body wraps content deeper than a REST body's `{ data }`
+     * (GraphQL: `{ variables: { data } }`). Default `MAX_BODY_DEPTH`.
+     */
+    bodyDepth?: number;
+  }
+}
+
 export const textInputPlugin = fp(
   async (app: FastifyInstance) => {
     app.addHook('preValidation', async (request) => {
+      const limit = request.routeOptions.config.bodyDepth ?? MAX_BODY_DEPTH;
+      if (nestsDeeperThan(request.body, limit)) {
+        throw new AppError(422, 'BODY_TOO_DEEP', `The request body nests more than ${limit} levels deep`, {
+          limit,
+        });
+      }
       for (const [part, value] of [
         ['params', request.params],
         ['query', request.query],

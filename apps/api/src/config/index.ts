@@ -90,6 +90,8 @@ export type AppConfig = {
     rateLimitWindowMs: number;
     /** Public media files get their own, higher limit (pages load many images). */
     mediaRateLimitMax: number;
+    /** Largest JSON request body, in bytes (Fastify's `bodyLimit`). */
+    bodyLimit: number;
   };
   sessionSecret: string | undefined;
   /** First-run setup: `requireToken` = the endpoint also needs the one-time token logged at boot. */
@@ -245,6 +247,7 @@ const toAppConfig = (raw: RawConfig): AppConfig => {
       rateLimitMax: raw.RATE_LIMIT_MAX,
       rateLimitWindowMs: raw.RATE_LIMIT_WINDOW_MS,
       mediaRateLimitMax: raw.MEDIA_RATE_LIMIT_MAX,
+      bodyLimit: raw.REQUEST_BODY_MAX_BYTES,
     },
     sessionSecret: raw.SESSION_SECRET,
     setup: { requireToken: raw.SETUP_REQUIRE_TOKEN },

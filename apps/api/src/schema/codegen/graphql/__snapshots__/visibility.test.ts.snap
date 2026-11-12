@@ -28,6 +28,11 @@ type Article implements Entry {
 
 """Card"""
 type Card {
+  """
+  This item's ID. Send it back when you write the field so the item is kept
+  """
+  id: ID!
+
   """Heading"""
   heading: String
 }

@@ -10,6 +10,7 @@ import {
   type InterfaceDefinition,
   type ModelDefinition,
 } from '@shapio/schema';
+import { schemaVersionToken } from '../../constants/schemaLens.js';
 import { relationTargetOf } from '../../content/relationTarget.js';
 import type { SchemaSnapshot } from '../snapshot.js';
 
@@ -173,9 +174,19 @@ const fieldLines = (fields: readonly FieldDefinition[], snapshot: SchemaSnapshot
 
 const objectType = (lines: readonly string[]) => (lines.length > 0 ? `{\n${lines.join('\n')}\n}` : '{}');
 
+/**
+ * Every component item's stable ID (plan item-ids): always present on output; optional on input, where sending
+ * back the `id` of each item read is what pairs it with the stored item it continues.
+ */
+const ITEM_ID_LINES: Readonly<Record<Mode, string>> = {
+  output: "  /** The item's ID, stable across saves. */\n  id: string;",
+  input: '  /** The `id` of the item read, to keep it; `null` marks a new item. */\n  id?: string | null;',
+};
+
 const componentDeclaration = (definition: ComponentDefinition, snapshot: SchemaSnapshot, mode: Mode) => {
   const name = `${toTypeName(definition.apiKey)}${mode === 'input' ? 'Input' : ''}`;
-  return `/** ${definition.label} (component \`${definition.apiKey}\`) */\nexport type ${name} = ${objectType(fieldLines(definition.fields, snapshot, mode))};\n`;
+  const lines = [ITEM_ID_LINES[mode], ...fieldLines(definition.fields, snapshot, mode)];
+  return `/** ${definition.label} (component \`${definition.apiKey}\`) */\nexport type ${name} = ${objectType(lines)};\n`;
 };
 
 const ancestorsOf = (snapshot: SchemaSnapshot, id: string): ModelDefinition[] =>
@@ -248,7 +259,19 @@ const interfaceDeclarations = (definition: InterfaceDefinition, snapshot: Schema
  * and the delivery route key (`ShapioRouteKeys`, `{ article: 'articles', digitalProduct: 'products/digital',
  * featurable: 'featurables' }`).
  */
-export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
+/**
+ * `schemaId`: the instance's schema ID. With it the file exports `SCHEMA_VERSION` (`<schemaId>:<version>`),
+ * which a client passes as `createClient({ schemaVersion })` to keep reading in this shape (plan
+ * schema-lenses); `shapio types generate` finds it by this exact line.
+ */
+export type TypeScriptOptions = { schemaId?: string };
+
+const schemaVersionExport = (snapshot: SchemaSnapshot, schemaId: string | undefined): string =>
+  schemaId === undefined
+    ? ''
+    : `/** The schema version these types describe; pass it as \`createClient({ schemaVersion })\`. */\nexport const SCHEMA_VERSION = '${schemaVersionToken(schemaId, snapshot.version)}' as const;\n\n`;
+
+export const generateTypeScript = (snapshot: SchemaSnapshot, options: TypeScriptOptions = {}): string => {
   const definitions = [...snapshot.definitions]
     .map((active) => active.definition)
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
@@ -278,5 +301,5 @@ export const generateTypeScript = (snapshot: SchemaSnapshot): string => {
     ...models.map((model) => `  ${model.apiKey}: '${routeKeyIn(snapshot, model)}';`),
     ...interfaces.map((contract) => `  ${contract.apiKey}: '${contract.pluralApiKey}';`),
   ].join('\n')}\n};\n`;
-  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${body.join('\n')}\n${anyEntry}\n${map}\n${routeKeys}`;
+  return `${PRELUDE}\n// Schema version ${snapshot.version}\n\n${schemaVersionExport(snapshot, options.schemaId)}${body.join('\n')}\n${anyEntry}\n${map}\n${routeKeys}`;
 };

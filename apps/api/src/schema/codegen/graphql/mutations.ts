@@ -16,13 +16,16 @@ import type { AdminEntryView } from '../../../services/contentReads.js';
 import type { SchemaBuild } from './build.js';
 import type { GraphqlContext } from './context.js';
 import { modelInput, toWriteData } from './inputTypes.js';
+import { deliveryCall } from './lensReads.js';
 import { mutationName } from './names.js';
 import { assertId, type RootField } from './operations.js';
 
 /**
  * `createPage`, `updatePage`, `deletePage`, `publishPage`, `unpublishPage` (names from naming.ts). They call
  * the content services REST's delivery writes and publish endpoints call, under the same evaluator, and
- * return the entry's identity and state (`EntryState`), never values: writes create drafts.
+ * return the entry's identity and state (`EntryState`), never values: writes create drafts. In a lens schema
+ * (plan schema-lenses) names and inputs are the client's version's; the delivery write service translates
+ * them in the limited form REST writes have (`LENS_WRITE_UNSUPPORTED` for fields that cannot be written).
  */
 type EntryResult = deliveryWritesService.DeliveryWriteResult['data'];
 
@@ -60,18 +63,21 @@ export const mutationFields = (
       type: entry,
       description: `Creates a ${model.label} entry (a draft unless \`publish\` is true)`,
       args: { ...data, locale: { type: GraphQLString }, publish: { type: GraphQLBoolean } },
-      resolve: async (_root, args, context) =>
-        (
+      resolve: async (_root, args, context) => {
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
+        return (
           await deliveryWritesService.createDeliveryEntry(
-            await context.content(build.snapshot),
-            model.apiKey,
+            service,
+            apiKey,
             {
               ...(args.locale ? { locale: args.locale as string } : {}),
               data: writeData(build, model, args),
               publish: Boolean(args.publish),
             },
+            clientRoute,
           )
-        ).data,
+        ).data;
+      },
     },
     [mutationName('update', model)]: {
       type: entry,
@@ -81,16 +87,18 @@ export const mutationFields = (
         if (!Object.hasOwn(args, 'expectedVersion')) {
           throw missingExpectedVersion();
         }
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
         return (
           await deliveryWritesService.updateDeliveryEntry(
-            await context.content(build.snapshot),
-            model.apiKey,
+            service,
+            apiKey,
             assertId(args.id),
             {
               ...(args.locale ? { locale: args.locale as string } : {}),
               expectedVersion: (args.expectedVersion as number | null) ?? null,
               data: writeData(build, model, args),
             },
+            clientRoute,
           )
         ).data;
       },
@@ -100,11 +108,8 @@ export const mutationFields = (
       args: id,
       resolve: async (_root, args, context) => {
         const entryId = assertId(args.id);
-        await deliveryWritesService.deleteDeliveryEntry(
-          await context.content(build.snapshot),
-          model.apiKey,
-          entryId,
-        );
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
+        await deliveryWritesService.deleteDeliveryEntry(service, apiKey, entryId, clientRoute);
         return entryId;
       },
     },
@@ -123,12 +128,15 @@ export const mutationFields = (
         ...(operation === 'publish' ? { expectedVersion: { type: GraphQLInt } } : {}),
       },
       resolve: async (_root, args, context) => {
-        const service = await context.content(build.snapshot);
+        const { service, apiKey, clientRoute } = await deliveryCall(build, context, model);
+        const entryId = assertId(args.id);
+        // Through a lens: authorized as without a version first, then the entry checked against the lens.
+        await deliveryWritesService.assertEntryThroughLens(service, apiKey, entryId, 'publish', clientRoute);
         const change =
           operation === 'publish'
             ? contentPublishingService.publishEntry
             : contentPublishingService.unpublishEntry;
-        const view = await change(service, model.apiKey, assertId(args.id), {
+        const view = await change(service, apiKey, entryId, {
           ...(args.locales ? { locales: args.locales as string[] } : {}),
           ...(typeof args.expectedVersion === 'number' ? { expectedVersion: args.expectedVersion } : {}),
         });

@@ -21,8 +21,16 @@ const DeliveryWriteResponseSchema = Type.Object({
     createdAt: Type.String({ format: 'date-time' }),
     updatedAt: Type.String({ format: 'date-time' }),
     publishedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /**
+     * The IDs of the component instances the body sent (plan item-ids): the body's component fields, each
+     * instance as `{ id }` (zone items with `__component`) and the component fields sent inside it.
+     */
+    itemIds: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   }),
-  meta: Type.Object({}),
+  /** Through a schema lens (plan schema-lenses): the versions the write was translated between. */
+  meta: Type.Object({
+    schemaVersion: Type.Optional(Type.Object({ requested: Type.String(), current: Type.String() })),
+  }),
 });
 
 const errors = {

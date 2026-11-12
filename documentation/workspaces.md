@@ -271,9 +271,10 @@ an older server.
 ### Caches and CDNs
 
 Cacheable delivery responses (REST and GraphQL `GET`s) send
-`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site`. A CDN that keys its cache on the URL alone and
-ignores `Vary` must be given the workspace in the query string, never only as a header, or two workspaces could
-share a cached response. Pick one spelling (`?workspace=` or `?site=`) per front end so each URL is cached once.
+`Vary: Authorization, Cookie, Shapio-Workspace, Shapio-Site, Shapio-Schema-Version`. A CDN that keys its cache
+on the URL alone and ignores `Vary` must be given the workspace in the query string, never only as a header, or
+two workspaces could share a cached response. Pick one spelling (`?workspace=` or `?site=`) per front end so
+each URL is cached once.
 
 ### Snapshots
 

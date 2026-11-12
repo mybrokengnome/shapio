@@ -45,6 +45,7 @@ export const ChangesTab = ({ review, editable }: ChangesTabProps) => {
           changeSetId={setId}
           item={item}
           outcome={outcomeOf(review, item.itemId)}
+          olderClients={review.olderClients}
         />
       ))}
       {review.entries.map((item) => (

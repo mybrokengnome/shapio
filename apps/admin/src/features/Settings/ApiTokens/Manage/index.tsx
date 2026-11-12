@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useMe } from '@/api/auth';
 import { useDraftRoleIds, useRoleNames } from '@/api/roles';
 import { useApiTokens, useRevokeApiToken } from '@/api/tokens';
+import { useTokenSchemaVersions } from '@/api/usage';
 import { EmptyState } from '@/components/EmptyState';
 import { Page } from '@/components/Page';
 import { PageHeader } from '@/components/PageHeader';
@@ -13,6 +14,7 @@ import { QueryView } from '@/components/QueryView';
 import { SecretReveal } from '@/components/SecretReveal';
 import { Button } from '@/components/ui/button';
 import { CreateSheet } from '../CreateSheet';
+import { EditSheet } from '../EditSheet';
 import { listedTokens } from '../helpers/tokenState';
 import { Table } from '../Table';
 
@@ -22,9 +24,17 @@ export const Manage = () => {
   const tokens = useApiTokens();
   const { names: roleNames } = useRoleNames();
   const { draftRoleIds } = useDraftRoleIds();
+  const { schemaVersions } = useTokenSchemaVersions();
   const siteName = useMe().data?.site.name ?? '';
   const revoke = useRevokeApiToken();
   const [creating, setCreating] = useState(false);
+  // The token being edited stays set while its sheet closes, so the title doesn't flicker.
+  const [editing, setEditing] = useState<ApiToken | undefined>(undefined);
+  const [editOpen, setEditOpen] = useState(false);
+  const editToken = (token: ApiToken) => {
+    setEditing(token);
+    setEditOpen(true);
+  };
   // The new token's secret, held only in memory until the admin says they've copied it.
   const [secret, setSecret] = useState<string | undefined>(undefined);
   const revokeToken = async (token: ApiToken) => {
@@ -69,10 +79,21 @@ export const Manage = () => {
             roleNames={roleNames}
             draftRoleIds={draftRoleIds}
             siteName={siteName}
+            schemaVersions={schemaVersions}
+            onEdit={editToken}
             onRevoke={revokeToken}
           />
         )}
       </QueryView>
+      <EditSheet
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        token={editing}
+        onSaved={() => {
+          setEditOpen(false);
+          toast.success(t('apiTokens.saved'));
+        }}
+      />
       <CreateSheet
         open={creating}
         onOpenChange={setCreating}

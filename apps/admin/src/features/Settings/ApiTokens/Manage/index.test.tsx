@@ -13,7 +13,15 @@ vi.mock('@/api/roles', () => ({
 }));
 vi.mock('../CreateSheet', () => ({ CreateSheet: () => null }));
 
-const token = (id: string, name: string, revokedAt: string | null = null) =>
+const token = (
+  id: string,
+  name: string,
+  revokedAt: string | null = null,
+  pin: Pick<ApiToken, 'pinnedSchemaVersion' | 'pinnedSchemaVersionAvailable'> = {
+    pinnedSchemaVersion: null,
+    pinnedSchemaVersionAvailable: true,
+  },
+) =>
   ({
     id,
     name,
@@ -25,9 +33,10 @@ const token = (id: string, name: string, revokedAt: string | null = null) =>
     revokedAt,
     creatorDisabled: false,
     createdAt: '2026-10-01T00:00:00.000Z',
+    ...pin,
   }) as unknown as ApiToken;
 
-const renderWith = (tokens: ApiToken[]) => {
+const renderWith = (tokens: ApiToken[], sent: Array<{ tokenId: string; schemaVersion: number }> = []) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   queryClient.setQueryData(queryKeys.me, {
     site: { name: 'Main' },
@@ -35,6 +44,15 @@ const renderWith = (tokens: ApiToken[]) => {
     modelPermissions: {},
   });
   queryClient.setQueryData(queryKeys.tokens, tokens);
+  queryClient.setQueryData(queryKeys.develop.usage.schemaVersions, {
+    tracking: true,
+    principals: sent.map(({ tokenId, schemaVersion }) => ({
+      principalKey: `token:${tokenId}`,
+      schemaVersion,
+      pinned: false,
+      lastReadAt: '2026-10-02T00:00:00.000Z',
+    })),
+  });
   render(
     <QueryClientProvider client={queryClient}>
       <Manage />
@@ -56,5 +74,26 @@ describe('the API token list', () => {
     renderWith([token('b', 'Old preview', '2026-10-10T00:00:00.000Z')]);
     expect(screen.getByText('No API tokens yet.')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('says whether a token is pinned to a schema version or sends one, and when a pin cannot be served', () => {
+    renderWith(
+      [
+        token('a', 'Pinned build', null, { pinnedSchemaVersion: 3, pinnedSchemaVersionAvailable: true }),
+        token('b', 'Overriding build', null, { pinnedSchemaVersion: 3, pinnedSchemaVersionAvailable: true }),
+        token('c', 'Old pin', null, { pinnedSchemaVersion: 1, pinnedSchemaVersionAvailable: false }),
+        token('d', 'Plain build'),
+      ],
+      [
+        { tokenId: 'b', schemaVersion: 5 },
+        { tokenId: 'd', schemaVersion: 4 },
+      ],
+    );
+    expect(screen.getByText('Pinned to schema version 3')).toBeTruthy();
+    expect(screen.getByText('Sends schema version 5')).toBeTruthy();
+    expect(screen.getByText('Sends schema version 4')).toBeTruthy();
+    expect(screen.getByText('Pinned to schema version 1')).toBeTruthy();
+    expect(screen.getAllByText('Pinned version unavailable')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^Edit: / })).toHaveLength(4);
   });
 });

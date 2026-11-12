@@ -7,6 +7,7 @@ import type {
   SchemaDefinition,
   ValidationIssue,
 } from '@shapio/schema';
+import type { LensEffect, OlderClients } from './usageTypes.js';
 
 /**
  * Schema registry API shapes (package D), mirroring the TypeBox route schemas in
@@ -123,7 +124,14 @@ export type PlanImpact = {
   steps: PlanStepImpact[];
 };
 
-export type PlanPreview = { plan: ChangePlan; impact: PlanImpact };
+export type PlanPreview = {
+  plan: ChangePlan;
+  impact: PlanImpact;
+  /** Per change of `plan.changes`, in order: what a client on the schema version before it sees. */
+  olderClientsEffects: LensEffect[];
+  /** Readers on older schema versions and what they see once the change is live (plan schema-lenses). */
+  olderClients: OlderClients;
+};
 
 export type ChangeOutcome = {
   status: 'activated' | 'unchanged' | 'pending';

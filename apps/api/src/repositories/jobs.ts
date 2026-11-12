@@ -137,6 +137,28 @@ export const release = async (fence: LeaseFence, now: Date, trx: Executor = db) 
       .executeTakeFirst(),
   );
 
+/** Returns a leased job to the queue until `runAt` without counting the attempt (`RescheduleJobError`). */
+export const postpone = async (
+  fence: LeaseFence,
+  error: string,
+  runAt: Date,
+  now: Date,
+  trx: Executor = db,
+) =>
+  applied(
+    await fenced(trx, fence)
+      .set((eb) => ({
+        status: 'pending',
+        run_at: runAt,
+        attempts: greatestOf(eb('attempts', '-', eb.lit(1)), eb.lit(0)),
+        locked_by: null,
+        locked_until: null,
+        last_error: error,
+        updated_at: now,
+      }))
+      .executeTakeFirst(),
+  );
+
 export const extendLease = async (fence: LeaseFence, leaseUntil: Date, now: Date, trx: Executor = db) =>
   applied(await fenced(trx, fence).set({ locked_until: leaseUntil, updated_at: now }).executeTakeFirst());
 

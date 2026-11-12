@@ -38,9 +38,12 @@ type EntryBase = {
   publishedAt?: string;
 };
 
-export type Feature = { title: string; description: string | null };
+/** What every component item carries: its stable ID (server 0.9.0 or later), the same in drafts and published. */
+type ItemBase = { id: string };
 
-export type HeroSection = {
+export type Feature = ItemBase & { title: string; description: string | null };
+
+export type HeroSection = ItemBase & {
   __component: 'hero';
   heading: string;
   subheading: string | null;
@@ -48,9 +51,13 @@ export type HeroSection = {
   ctaLabel: string | null;
   ctaUrl: string | null;
 };
-export type FeatureGridSection = { __component: 'featureGrid'; heading: string | null; features: Feature[] };
-export type GallerySection = { __component: 'gallery'; heading: string | null; images: Media[] };
-export type CallToActionSection = {
+export type FeatureGridSection = ItemBase & {
+  __component: 'featureGrid';
+  heading: string | null;
+  features: Feature[];
+};
+export type GallerySection = ItemBase & { __component: 'gallery'; heading: string | null; images: Media[] };
+export type CallToActionSection = ItemBase & {
   __component: 'callToAction';
   heading: string;
   text: string | null;

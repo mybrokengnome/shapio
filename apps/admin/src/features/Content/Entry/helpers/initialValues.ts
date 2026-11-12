@@ -1,6 +1,7 @@
 import type { AdminEntry, MediaAsset } from '@shapio/client';
 import type { ComponentDefinition, ModelDefinition } from '@shapio/schema';
 import { defaultFormValues, liveFields, toFormValues } from '@/fields/helpers/formValues';
+import { asNewItems } from '@/fields/helpers/itemIds';
 import type { FormValues } from '@/fields/helpers/values';
 
 type Collect = (asset: MediaAsset) => void;
@@ -25,7 +26,10 @@ export const newLocaleValues = (
   );
 };
 
-/** Localized fields' values of another locale (for "copy from the default locale"). */
+/**
+ * Localized fields' values of another locale (for "copy from the default locale"). Their component items
+ * are that locale's, so they come over as new items (no IDs): saving creates them in this locale.
+ */
 export const localizedValuesOf = (
   model: ModelDefinition,
   source: AdminEntry,
@@ -36,6 +40,6 @@ export const localizedValuesOf = (
   return Object.fromEntries(
     liveFields(model.fields)
       .filter((field) => field.localized)
-      .map((field) => [field.apiKey, values[field.apiKey]]),
+      .map((field) => [field.apiKey, asNewItems(values[field.apiKey])]),
   );
 };

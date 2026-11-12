@@ -1,4 +1,5 @@
 import type { ContentListQuery } from './admin/contentTypes.js';
+import type { SchemaVersionMeta } from './schemaVersion.js';
 
 /**
  * The delivery API (`/api/content/:routeKey`): published content as websites and apps read it. `routeKey` is a
@@ -37,6 +38,11 @@ export type DeliveryMeta = {
   snapshot: number | null;
   /** Drafts mode reads only (`publicationState=draft`); published responses carry no such member. */
   publicationState?: 'draft';
+  /**
+   * Reads through a schema version only (the client's `schemaVersion`, server 0.9.0 or later): the version
+   * the response is shaped as and the instance's current one. Absent when no version was named.
+   */
+  schemaVersion?: SchemaVersionMeta;
 };
 
 export type DeliveryPagination = { page: number; pageSize: number; total: number; pageCount: number };
@@ -49,6 +55,20 @@ export type DeliveryPagination = { page: number; pageSize: number; total: number
  * to any level of the family.
  */
 export type DeliveryEntryAttributes = { __model: string; __kinds: readonly string[] };
+
+/**
+ * What every component item carries besides its fields (server 0.9.0 or later): `id`, its stable ID. A single
+ * component, each item of a repeatable component, and each item of a dynamic zone have one, and an unchanged
+ * item has the same `id` in the draft and the published version. On a write, send back the `id` of each item
+ * you read so the server pairs it with the item it continues; leave it out for a new item.
+ */
+export type DeliveryComponentAttributes = { id: string };
+
+/** A component item as delivery returns it: the caller's type with its `id`. */
+export type DeliveryComponent<T = Record<string, unknown>> = T & DeliveryComponentAttributes;
+
+/** A dynamic zone item: a component item plus its component's API ID in `__component`. */
+export type DeliveryZoneItem<T = Record<string, unknown>> = DeliveryComponent<T> & { __component: string };
 
 /** One kind of a family list (`meta.kinds`): its API ID, label, parent's API ID and route key. */
 export type DeliveryKind = { apiKey: string; label: string; parent: string | null; routeKey: string };

@@ -110,6 +110,14 @@ export const describeIssue = (
       return t('content.issues.mediaMissing');
     case 'INVALID_JSON':
       return t('content.issues.invalidJson');
+    case 'UNKNOWN_ITEM_ID':
+      return t('content.issues.unknownItemId');
+    case 'DUPLICATE_ITEM_ID':
+      return t('content.issues.duplicateItemId');
+    case 'ITEM_COMPONENT_CHANGED':
+      return t('content.issues.itemComponentChanged');
+    case 'AMBIGUOUS_ITEMS':
+      return t('content.issues.ambiguousItems');
     default:
       return issue.message;
   }

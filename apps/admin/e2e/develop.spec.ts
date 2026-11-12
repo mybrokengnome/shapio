@@ -99,6 +99,31 @@ const replaceText = async (target: Locator, text: string) => {
   await target.blur();
 };
 
+/**
+ * CodeMirror renders only the lines near its viewport, so most of a long file is not in the DOM. Scrolls the
+ * editor from the top, a screen at a time, until `text` is rendered; false once the end shows without it.
+ */
+const scrollEditorTo = (target: Locator, text: string) =>
+  target.evaluate(async (content, wanted) => {
+    const scroller = content.closest('.cm-scroller');
+    if (!scroller) {
+      throw new Error('Not a CodeMirror editor');
+    }
+    // CodeMirror reads the scroll position and renders the new lines in an animation frame.
+    const rendered = () =>
+      new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    scroller.scrollTop = 0;
+    await rendered();
+    while (!content.textContent?.includes(wanted)) {
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight) {
+        return false;
+      }
+      scroller.scrollTop += scroller.clientHeight;
+      await rendered();
+    }
+    return true;
+  }, text);
+
 const openArticleFile = async () => {
   await page.goto(`${ADMIN_URL}schema?file=${encodeURIComponent(ARTICLE_FILE)}`);
   await expect(page.getByRole('heading', { level: 1, name: 'Schema' })).toBeVisible();
@@ -127,7 +152,11 @@ test('schema as code lists the pulled files and previews the open one', async ()
   await captureScreen(page, 'develop-02-schema-types', { viewports: ['desktop'] });
 
   await files.getByRole('link', { name: 'schema-lock.json' }).click();
-  await expect(page.getByRole('textbox', { name: '.shapio/schema-lock.json (JSON)' })).toContainText(modelId);
+  const lock = page.getByRole('textbox', { name: '.shapio/schema-lock.json (JSON)' });
+  await expect(lock).toContainText('"definitions"');
+  // With other specs' models on the server the lock file is longer than the editor renders at once.
+  expect(await scrollEditorTo(lock, modelId)).toBe(true);
+  await expect(lock).toContainText(modelId);
 });
 
 test('the editor checks a file with the server’s validators and plans the change', async () => {

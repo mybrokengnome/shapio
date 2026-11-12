@@ -17,6 +17,7 @@ const LIST_COLUMNS = [
   'api_tokens.revoked_at',
   'api_tokens.created_at',
   'api_tokens.site_id',
+  'api_tokens.pinned_schema_version',
   'admin_roles.kind as role_kind',
   'admin_users.status as creator_status',
 ] as const;
@@ -117,6 +118,86 @@ export const revoke = async (
     )
     .executeTakeFirst();
   return result.numUpdatedRows > 0n;
+};
+
+/**
+ * Sets the schema version a live token of one site (or a network token, when `includeNetwork` is set) is
+ * pinned to; null clears it. False when no such token is live.
+ */
+export const updatePinnedSchemaVersion = async (
+  id: string,
+  scope: { siteId: string; includeNetwork: boolean },
+  pinnedSchemaVersion: number | null,
+  now: Date,
+  trx: Executor = db,
+): Promise<boolean> => {
+  const result = await trx
+    .updateTable('api_tokens')
+    .set({ pinned_schema_version: pinnedSchemaVersion, updated_at: now })
+    .where('id', '=', id)
+    .where('revoked_at', 'is', null)
+    .where((eb) =>
+      scope.includeNetwork
+        ? eb.or([eb('site_id', '=', scope.siteId), eb('site_id', 'is', null)])
+        : eb('site_id', '=', scope.siteId),
+    )
+    .executeTakeFirst();
+  return result.numUpdatedRows > 0n;
+};
+
+export type PinnedTokenRow = {
+  id: string;
+  name: string;
+  /** The token's workspace and its key; null for a network token. */
+  siteId: string | null;
+  siteKey: string | null;
+  pinnedSchemaVersion: number;
+  /** The token's last change (setting the pin bumps it): reads before it may be at an earlier pin. */
+  updatedAt: Date;
+};
+
+/**
+ * Live (not revoked, not expired) tokens pinned to a schema version: those of these workspaces (every
+ * workspace when omitted) and every network token. Declared older clients, whether or not they read yet.
+ */
+export const listPinned = async (
+  siteIds: readonly string[] | undefined,
+  now: Date,
+  trx: Executor = db,
+): Promise<PinnedTokenRow[]> => {
+  const rows = await trx
+    .selectFrom('api_tokens')
+    .leftJoin('sites', 'sites.id', 'api_tokens.site_id')
+    .select([
+      'api_tokens.id',
+      'api_tokens.name',
+      'api_tokens.site_id',
+      'sites.key as site_key',
+      'api_tokens.pinned_schema_version',
+      'api_tokens.updated_at',
+    ])
+    .where('api_tokens.pinned_schema_version', 'is not', null)
+    .$narrowType<{ pinned_schema_version: number }>()
+    .where('api_tokens.revoked_at', 'is', null)
+    .where((eb) => eb.or([eb('api_tokens.expires_at', 'is', null), eb('api_tokens.expires_at', '>', now)]))
+    .$if(siteIds !== undefined, (query) =>
+      query.where((eb) =>
+        siteIds && siteIds.length > 0
+          ? eb.or([eb('api_tokens.site_id', 'in', [...siteIds]), eb('api_tokens.site_id', 'is', null)])
+          : eb('api_tokens.site_id', 'is', null),
+      ),
+    )
+    .orderBy('api_tokens.created_at')
+    .orderBy('api_tokens.id')
+    .execute();
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    siteId: row.site_id,
+    siteKey: row.site_key,
+    pinnedSchemaVersion: Number(row.pinned_schema_version),
+    updatedAt: row.updated_at,
+  }));
 };
 
 /** Revoked tokens hold no permissions; they are removed with the role they referenced. */

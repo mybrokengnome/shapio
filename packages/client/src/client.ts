@@ -40,6 +40,21 @@ export type ShapioClientOptions = {
    * never set it on a production build. Reads pinned to a `snapshot` are refused. `snapshots` is unaffected.
    */
   drafts?: boolean;
+  /**
+   * The schema version this client was built against: the `SCHEMA_VERSION` token `shapio types generate`
+   * writes next to the types (`<schemaId>:<version>`). Every read then answers in that version's shape (its
+   * route keys, API IDs, and field types) after the schema moves on; fields removed since read `null` (`[]`
+   * for lists). Delivery reads send it as `?schemaVersion=`, every other request as the
+   * `Shapio-Schema-Version` header. Leave it out to read today's schema.
+   *
+   * Needs server 0.9.0 or later: an older server refuses the query parameter with 400 (an unknown query
+   * parameter), on purpose, so a client never silently gets a shape it was not built for. The server may
+   * answer 400 `SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN` (a token from another instance),
+   * `SCHEMA_VERSION_AHEAD`, or `LENS_QUERY_UNSUPPORTED` (a filter or sort on a field whose storage changed);
+   * 409 `SCHEMA_VERSION_UNAVAILABLE` or `LENS_UNCOVERED`; 422 `LENS_WRITE_UNSUPPORTED` on a write (GraphQL
+   * mutations: the same code in `extensions.code`).
+   */
+  schemaVersion?: string;
 };
 
 export const createClient = ({
@@ -52,9 +67,11 @@ export const createClient = ({
   site: siteOption,
   next,
   drafts,
+  schemaVersion,
 }: ShapioClientOptions) => {
   const site = resolveWorkspaceOption({ workspace, site: siteOption }, 'createClient');
-  const request = createRequest({ baseUrl, token, fetch, credentials, headers, site });
+  const request = createRequest({ baseUrl, token, fetch, credentials, headers, site, schemaVersion });
+  // The transport names the schema version on every request (query on delivery reads, header elsewhere).
   const reads = createDeliveryClient(request, { site, next, ...(drafts !== undefined ? { drafts } : {}) });
 
   return {

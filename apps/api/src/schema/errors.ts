@@ -1,4 +1,5 @@
 import type { ValidationIssue } from '@shapio/schema';
+import { reportedIssues, type ContentIssue } from '../content/validator/issues.js';
 import { AppError } from '../helpers/appError.js';
 
 /** Errors the schema services throw; the central error handler renders them. */
@@ -94,4 +95,72 @@ export const prerequisiteFailed = (details: unknown) =>
     'SCHEMA_PREREQUISITE_FAILED',
     'Existing content does not satisfy the new definition.',
     details,
+  );
+
+/** Schema lenses (plan schema-lenses): a client names the schema version it was built against. */
+export const schemaVersionInvalid = (value: string) =>
+  new AppError(
+    400,
+    'SCHEMA_VERSION_INVALID',
+    'The schema version must look like "<schemaId>:<version>", as `shapio types generate` writes it.',
+    { value },
+  );
+
+export const schemaVersionAhead = (requested: number, current: number) =>
+  new AppError(
+    400,
+    'SCHEMA_VERSION_AHEAD',
+    `Schema version ${requested} is newer than this instance's current version ${current}.`,
+    { requested, current },
+  );
+
+export const schemaVersionForeign = () =>
+  new AppError(
+    400,
+    'SCHEMA_VERSION_FOREIGN',
+    'The schema version was issued by another Shapio instance. Generate your types against this instance.',
+  );
+
+export const schemaVersionUnavailable = (modelKey: string, oldestVersion: number) =>
+  new AppError(
+    409,
+    'SCHEMA_VERSION_UNAVAILABLE',
+    `This instance has no record of "${modelKey}" at that schema version. The oldest version it can serve for it is ${oldestVersion}.`,
+    { modelKey, oldestVersion },
+  );
+
+export const lensQueryUnsupported = (apiKey: string) =>
+  new AppError(
+    400,
+    'LENS_QUERY_UNSUPPORTED',
+    `"${apiKey}" changed or was removed since your schema version, so it cannot be filtered or sorted on. Update your client to the current schema version.`,
+    { apiKey },
+  );
+
+export const lensUncovered = (modelKey: string) =>
+  new AppError(
+    409,
+    'LENS_UNCOVERED',
+    `"${modelKey}" changed in a way an older schema version cannot show (it switched between a collection and a single entry). Update your client to the current schema version.`,
+    { modelKey },
+  );
+
+/**
+ * Every field of a write through a schema lens that cannot be written in the client's shape, with JSON pointers
+ * in the client's API IDs and how each changed since its version.
+ */
+export const lensWriteIssues = (issues: readonly ContentIssue[]) =>
+  new AppError(
+    422,
+    'LENS_WRITE_UNSUPPORTED',
+    "Some fields changed since this client's schema version and cannot be written through it. Update the client to the current schema version to change them.",
+    reportedIssues(issues),
+  );
+
+/** Too many lens builds by one caller (schema/lens/budget.ts): cache misses cost a view build each. */
+export const lensBudgetExceeded = () =>
+  new AppError(
+    429,
+    'LENS_BUDGET_EXCEEDED',
+    'Too many requests for older schema versions that are not cached. Wait a minute, or read through fewer versions.',
   );

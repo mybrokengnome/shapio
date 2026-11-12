@@ -256,6 +256,13 @@ export type ApiToken = {
   lastUsedAt: string | null;
   revokedAt: string | null;
   createdAt: string;
+  /**
+   * The schema version the token is pinned to: a request made with it that names no schema version is served
+   * as if it had named this one (a version the request names wins). Null: today's shape.
+   */
+  pinnedSchemaVersion: number | null;
+  /** False when the history does not reach the pin for some model: reads of it answer 409. */
+  pinnedSchemaVersionAvailable: boolean;
 };
 
 export type CreateApiTokenInput = {
@@ -268,6 +275,13 @@ export type CreateApiTokenInput = {
    * always per workspace.
    */
   network?: boolean;
+  /** A schema version from 1 to the current one to pin the token to; omitted or null: no pin. */
+  pinnedSchemaVersion?: number | null;
+};
+
+export type UpdateApiTokenInput = {
+  /** A schema version from 1 to the current one to pin the token to; null clears the pin. */
+  pinnedSchemaVersion: number | null;
 };
 
 /** `token` is the plain secret, returned once at creation and never again. */

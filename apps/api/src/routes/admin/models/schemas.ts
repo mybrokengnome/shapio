@@ -14,6 +14,7 @@ import {
   RevisionSummarySchema,
   StableIdSchema,
 } from '../../schemas/schemaRegistry.js';
+import { LensEffectSchema, OlderClientsSchema } from '../usage/schemas.js';
 
 const closed = { additionalProperties: false } as const;
 const ExpectedVersion = Type.Integer({ minimum: 1 });
@@ -22,7 +23,16 @@ const ExpectedVersion = Type.Integer({ minimum: 1 });
 export const definitionRouteSchemas = (category: DefinitionCategory) => {
   const definition = definitionInputFor(category);
   const outcome = { 200: ChangeOutcomeSchema, 201: ChangeOutcomeSchema, 202: ChangeOutcomeSchema };
-  const preview = { 200: Type.Object({ plan: ChangePlanSchema, impact: ImpactSchema }) };
+  const preview = {
+    200: Type.Object({
+      plan: ChangePlanSchema,
+      impact: ImpactSchema,
+      /** Per change of `plan.changes`, in order: what a client on the version before it sees. */
+      olderClientsEffects: Type.Array(LensEffectSchema),
+      /** Readers on older schema versions and what they see once the change is live (plan schema-lenses). */
+      olderClients: OlderClientsSchema,
+    }),
+  };
   /** Where a create lands: the request's site (default) or every site (`network`). */
   const scope = { scope: Type.Optional(DefinitionScopeSchema) };
   return {

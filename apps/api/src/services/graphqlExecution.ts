@@ -14,6 +14,7 @@ import {
 import { fragmentsOf, selectsIntrospection } from '../schema/codegen/graphql/complexity.js';
 import type { GraphqlRequestContext } from '../schema/codegen/graphql/context.js';
 import type { DocumentCache, PreparedDocument } from '../schema/codegen/graphql/documentCache.js';
+import { assertArgumentDepth, documentSizeError } from '../schema/codegen/graphql/documentDepth.js';
 
 /** One GraphQL request as received over HTTP (GraphQL-over-HTTP: query, variables, operation name). */
 export type GraphqlOperationInput = {
@@ -31,7 +32,52 @@ export type PreparedOperation =
       document?: DocumentNode;
     };
 
-type PrepareDependencies = { documents: DocumentCache; rules: readonly ValidationRule[] };
+type PrepareDependencies = {
+  documents: DocumentCache;
+  rules: readonly ValidationRule[];
+  /** The most tokens a document may have (`GRAPHQL_MAX_TOKENS`). */
+  maxTokens: number;
+};
+
+/**
+ * A stack overflow while parsing or validating (a document nested or chained past what the server's stack
+ * takes, which the limits above should already refuse) is the caller's document, never a 500.
+ */
+const tooComplex = () =>
+  new GraphQLError('The query nests too deeply to be processed', { extensions: { code: 'QUERY_TOO_DEEP' } });
+
+/** `work()`, with a stack overflow answered as `tooComplex` errors. */
+const boundedByStack = <T>(work: () => T): T | { errors: readonly GraphQLError[] } => {
+  try {
+    return work();
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return { errors: [tooComplex()] };
+    }
+    throw error;
+  }
+};
+
+/** Parses `source` within the document limits (size and nesting first, then graphql-js's own token limit). */
+export const parseDocument = (
+  source: string,
+  maxTokens: number,
+): { document: DocumentNode } | { errors: readonly GraphQLError[] } => {
+  const tooLarge = documentSizeError(source, maxTokens);
+  if (tooLarge) {
+    return { errors: [tooLarge] };
+  }
+  return boundedByStack(() => {
+    try {
+      return { document: parse(source, { maxTokens }) };
+    } catch (error) {
+      if (error instanceof GraphQLError) {
+        return { errors: [error] };
+      }
+      throw error;
+    }
+  });
+};
 
 const operationsOf = (document: DocumentNode) =>
   document.definitions.filter(
@@ -48,22 +94,19 @@ const documentSelectsIntrospection = (document: DocumentNode) => {
 const prepareDocument = (
   schema: GraphQLSchema,
   source: string,
-  { documents, rules }: PrepareDependencies,
+  { documents, rules, maxTokens }: PrepareDependencies,
 ): PreparedDocument | { errors: readonly GraphQLError[]; document?: DocumentNode } => {
   const cached = documents.get(schema, source);
   if (cached) {
     return cached;
   }
-  let document: DocumentNode;
-  try {
-    document = parse(source);
-  } catch (error) {
-    if (error instanceof GraphQLError) {
-      return { errors: [error] };
-    }
-    throw error;
+  const parsed = parseDocument(source, maxTokens);
+  if ('errors' in parsed) {
+    return parsed;
   }
-  const errors = validate(schema, document, rules);
+  const { document } = parsed;
+  const validated = boundedByStack(() => validate(schema, document, rules));
+  const errors = 'errors' in validated ? validated.errors : validated;
   if (errors.length > 0) {
     return { errors, document };
   }
@@ -96,11 +139,18 @@ export const executeOperation = async (
   prepared: PreparedDocument & { operation: OperationDefinitionNode },
   input: GraphqlOperationInput,
   context: GraphqlRequestContext,
-): Promise<ExecutionResult> =>
-  execute({
-    schema,
-    document: prepared.document,
-    operationName: prepared.operation.name?.value,
-    variableValues: input.variables ?? undefined,
-    contextValue: context,
-  });
+): Promise<ExecutionResult> => {
+  // Literals in the document count toward the body depth limit like variables (422 BODY_TOO_DEEP).
+  assertArgumentDepth(schema, prepared.document, prepared.operation, input.variables ?? undefined);
+  const result = boundedByStack(() =>
+    execute({
+      schema,
+      document: prepared.document,
+      operationName: prepared.operation.name?.value,
+      variableValues: input.variables ?? undefined,
+      contextValue: context,
+    }),
+  );
+  // `{ errors }` is an execution result too (no data: the operation never ran).
+  return result;
+};

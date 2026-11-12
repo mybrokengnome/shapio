@@ -17,7 +17,7 @@ import { filterParamName, type RequestDraft } from './request';
  * The GraphQL tab's operations per model and the query each one sends, built from the REST tab's request
  * for the same endpoint (same filters, sort, search, page, locale, snapshot and fields), so the two read
  * the same rows. Field selections follow the server's types: scalars as they are, rich text as `html`,
- * media as `url alt`, relations as `id`, components and zones as `__typename`. With the schema's definition
+ * media as `url alt`, relations as `id`, components as `__typename id` and zones (unions) as `__typename`. With the schema's definition
  * index, a kind's inherited fields count as its own, a kind's REST endpoint is its nested path, and a type
  * with kinds reads `__typename` and an inline fragment per kind (its interface returns every kind's rows).
  * An interface (plan interfaces) has the same two operations over its members' entries: the contract
@@ -144,6 +144,7 @@ const selectionOf = (field: FieldDefinition, context: SelectionContext = NO_CONT
     case 'relation':
       return `${field.apiKey} { id${targetFragments(field.settings.target, context)} }`;
     case 'component':
+      return `${field.apiKey} { __typename id }`;
     case 'dynamiczone':
       return `${field.apiKey} { __typename }`;
     default:

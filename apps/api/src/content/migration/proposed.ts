@@ -9,6 +9,14 @@ import { readStoredRevision } from '../../schema/storedDefinition.js';
 
 type Executor = Kysely<DB> | Transaction<DB>;
 
+/** The active schema as it is before an activation's changes take effect (what reads used until now). */
+export const loadActiveSnapshot = async (executor: Executor): Promise<NetworkSchema> =>
+  buildNetworkSchema(
+    -1,
+    await toActiveDefinitions(await schemaModelsRepository.findActiveDefinitions(executor)),
+    (await localesRepository.list(executor)).map(toLocaleDefinition),
+  );
+
 /**
  * The schema a prerequisite step checks content against: the active schema with the owner's pending
  * revision (the change being prepared) swapped in, and, when the change belongs to a change set, every other

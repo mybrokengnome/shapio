@@ -2,9 +2,10 @@
 
 A site's server can read Shapio's delivery API as function calls in its own process, from Shapio's database,
 with no HTTP request to Shapio. The calls, the answers and the errors are the same as over HTTP: the same
-permissions, the same response shapes (`populate`, `richText`, `seo=resolved`, pinned snapshots) and the same
-`ShapioApiError`s, because the same code answers them. Use it when the site runs beside the database (one
-server, one container network, one VPC) and every request counts.
+permissions, the same response shapes (`populate`, `richText`, `seo=resolved`, pinned snapshots, older
+[schema versions](schema-lenses.md)) and the same `ShapioApiError`s, because the same code answers them. Use
+it when the site runs beside the database (one server, one container network, one VPC) and every request
+counts.
 
 ```sh
 npm install @shapio/local@<the release your Shapio server runs>
@@ -12,11 +13,13 @@ npm install @shapio/local@<the release your Shapio server runs>
 
 ```ts
 import { createLocalClient } from '@shapio/local';
+import { SCHEMA_VERSION } from './shapio-types'; // written by `shapio types generate`
 
 export const shapio = createLocalClient({
   databaseUrl: process.env.DATABASE_URL!, // Shapio's own database
   token: process.env.SHAPIO_DELIVERY_TOKEN, // a delivery token; leave it out to read as an anonymous caller
   workspace: process.env.SHAPIO_WORKSPACE, // optional, as over HTTP
+  schemaVersion: SCHEMA_VERSION, // optional: from your generated types, as over HTTP
 });
 
 const { data } = await shapio.delivery.list<Article>('articles', { locale: 'fr', populate: ['author'] });
@@ -161,16 +164,17 @@ back is automatic. Pages rendered at build time are unaffected; only reads made 
 
 ## Options
 
-| Option             | Default                             | Meaning                                                                                                     |
-| ------------------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `databaseUrl`      | required                            | Shapio's database (`postgres://…` or `mysql://…`)                                                           |
-| `token`            | none (anonymous)                    | a delivery API token                                                                                        |
-| `workspace`        | the token's workspace, else primary | the workspace key (`site` is also accepted)                                                                 |
-| `poolMax`          | 4                                   | connections in the process's pool                                                                           |
-| `acquireTimeoutMs` | 10000                               | wait for a pooled connection before a 503                                                                   |
-| `signingSecret`    | the server's stored secret          | private local media; the server's `SESSION_SECRET` when it sets it                                          |
-| `s3Credentials`    | the AWS SDK's credential chain      | private S3 media                                                                                            |
-| `onVersionSkew`    | `'throw'`                           | `'http'` reads over HTTP from `fallbackUrl` during a release skew                                           |
-| `fallbackUrl`      | none                                | the Shapio server's URL, with `BASE_PATH`                                                                   |
-| `logger`           | pino, warnings and errors only      | a pino logger for failures                                                                                  |
-| `drafts`           | `false`                             | [drafts mode](delivery-api.md#drafts-in-development): read saved drafts; the token's role needs Read drafts |
+| Option             | Default                             | Meaning                                                                                                               |
+| ------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `databaseUrl`      | required                            | Shapio's database (`postgres://…` or `mysql://…`)                                                                     |
+| `token`            | none (anonymous)                    | a delivery API token                                                                                                  |
+| `workspace`        | the token's workspace, else primary | the workspace key (`site` is also accepted)                                                                           |
+| `poolMax`          | 4                                   | connections in the process's pool                                                                                     |
+| `acquireTimeoutMs` | 10000                               | wait for a pooled connection before a 503                                                                             |
+| `signingSecret`    | the server's stored secret          | private local media; the server's `SESSION_SECRET` when it sets it                                                    |
+| `s3Credentials`    | the AWS SDK's credential chain      | private S3 media                                                                                                      |
+| `onVersionSkew`    | `'throw'`                           | `'http'` reads over HTTP from `fallbackUrl` during a release skew                                                     |
+| `fallbackUrl`      | none                                | the Shapio server's URL, with `BASE_PATH`                                                                             |
+| `logger`           | pino, warnings and errors only      | a pino logger for failures                                                                                            |
+| `drafts`           | `false`                             | [drafts mode](delivery-api.md#drafts-in-development): read saved drafts; the token's role needs Read drafts           |
+| `schemaVersion`    | none (today's schema)               | the `SCHEMA_VERSION` your types were generated with: read in that version's shape ([Schema lenses](schema-lenses.md)) |

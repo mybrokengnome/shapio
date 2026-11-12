@@ -18,8 +18,8 @@ Each starter has:
   `/en/colophon/`;
 - English and French, with a language switch;
 - responsive images from the WebP variants Shapio renders;
-- one pinned publication snapshot per build, and the workspace key for instances with several workspaces
-  (below);
+- one pinned publication snapshot per build, the schema version the site was built against, and the workspace
+  key for instances with several workspaces (below);
 - [SEO fields](seo.md) on pages and articles: each page's `<head>` has its title through the site's title
   template, the description, Open Graph and Twitter tags (the cover or the site's default image), `robots` when
   the entry hides itself from search engines, and, with `SITE_URL`, the canonical URL. Entries are read with
@@ -95,6 +95,23 @@ servers (`npm run dev`) pin nothing: in dev, a publish shows on reload (unless `
 includes a page published for the first time after the dev server started: Astro caches each route's list of
 pages in dev, so the Astro starter clears that cache before a page request, at most once a second
 (`src/integrations/devStaticPaths.ts`), and the new page renders without a restart.
+
+### Schema version
+
+Each starter passes the `SCHEMA_VERSION` in `src/lib/schemaVersion.ts` to its Shapio client, over HTTP and in
+process, so a built site keeps reading content in the shape it was built for while the models change
+([Schema lenses](schema-lenses.md)). A new project's file names no version (`undefined`: today's shape).
+`npm run types` (admin access, as for the seed) writes the current schema's types to
+`src/lib/shapio.generated.ts` and their `SCHEMA_VERSION` to `src/lib/schemaVersion.ts`:
+
+```sh
+SHAPIO_URL=http://localhost:4300 SHAPIO_ADMIN_EMAIL=you@example.com SHAPIO_ADMIN_PASSWORD='…' npm run types
+```
+
+From then on, renaming a field or changing its type in the admin breaks neither the live site nor its next
+build. The site moves to the new shape when you run `npm run types` again, update the pages that use what
+changed, and build. Run it against the instance the site reads from: the version names that instance. Needs
+Shapio 0.9.0 or later.
 
 ### Drafts mode
 

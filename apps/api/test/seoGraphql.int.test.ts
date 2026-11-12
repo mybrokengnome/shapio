@@ -1,5 +1,6 @@
+import { SEO_COMPONENT_ID } from '@shapio/schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createDefinition, createDeliveryToken, expectStatus } from './helpers/content.js';
+import { createDefinition, createDeliveryToken, expectStatus, type EntryBody } from './helpers/content.js';
 import { createTestApp, type TestApp } from './helpers/createTestApp.js';
 import { graphql, GRAPHQL_ENV } from './helpers/graphql.js';
 import { createPng, uploadAsset, type MediaAssetBody } from './helpers/media.js';
@@ -42,6 +43,9 @@ describe('GraphQL _site field', () => {
   let admin: SchemaClient;
   let image: MediaAssetBody;
   let token: string;
+  /** Published pages: one with no SEO stored (only the site defaults apply), one with its own SEO. */
+  let bare: string;
+  let withSeo: string;
 
   beforeAll(async () => {
     testApp = await createTestApp(database.current, { schemaListen: false, env: GRAPHQL_ENV });
@@ -52,11 +56,15 @@ describe('GraphQL _site field', () => {
       { authorization: `Bearer ${adminToken}` },
       { file: await createPng(16, 16), filename: 'og.png', mimeType: 'image/png' },
     );
+    expectStatus(await admin.post('/api/admin/components/builtin/seo/ensure', {}), 201);
     const page = await createDefinition(admin, {
       kind: 'collection',
       apiKey: 'page',
       label: 'Page',
-      fields: [{ apiKey: 'title', label: 'Title', type: 'string' }],
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        { apiKey: 'seo', label: 'SEO', type: 'component', settings: { component: SEO_COMPONENT_ID } },
+      ],
     });
     token = await createDeliveryToken(database.current.db, [{ modelId: page.definition.id }]);
     const current = expectStatus(await admin.get('/api/admin/site/seo'), 200).json<{ version: number }>();
@@ -71,6 +79,16 @@ describe('GraphQL _site field', () => {
       }),
       200,
     );
+    const publish = async (data: Record<string, unknown>) => {
+      const { id } = expectStatus(
+        await admin.post('/api/admin/content/page', { data }),
+        201,
+      ).json<EntryBody>();
+      expectStatus(await admin.post(`/api/admin/content/page/${id}/publish`, {}), 200);
+      return id;
+    };
+    bare = await publish({ title: 'Bare' });
+    withSeo = await publish({ title: 'Own', seo: { title: 'Own SEO title' } });
   });
 
   afterAll(async () => {
@@ -90,6 +108,28 @@ describe('GraphQL _site field', () => {
         image: { id: image.id, url: image.url },
         locales: [{ locale: 'en', siteName: 'Acme', titleTemplate: '%s · Acme', description: null }],
       },
+    });
+  });
+
+  it("reads an entry's SEO raw: null with nothing stored (the defaults are `_site`'s), with its `id` when stored", async () => {
+    const query = `query ($id: ID!) { page(id: $id) { title seo { id title } } }`;
+    const read = (id: string) =>
+      graphql<{ page: { title: string; seo: { id: string; title: string | null } | null } }>(
+        testApp.app,
+        query,
+        {
+          headers: { authorization: `Bearer ${token}` },
+          variables: { id },
+        },
+      );
+    const bareRead = await read(bare);
+    expect(bareRead.body.errors).toBeUndefined();
+    expect(bareRead.body.data?.page).toEqual({ title: 'Bare', seo: null });
+    const ownRead = await read(withSeo);
+    expect(ownRead.body.errors).toBeUndefined();
+    expect(ownRead.body.data?.page).toEqual({
+      title: 'Own',
+      seo: { id: expect.any(String) as string, title: 'Own SEO title' },
     });
   });
 

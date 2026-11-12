@@ -1,0 +1,182 @@
+[
+  {
+    "id": "refused-unseen-or-ambiguous",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It is refused with `AMBIGUOUS_ITEMS` when the caller cannot see the draft it writes"
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "unless you cannot read the draft (then `AMBIGUOUS_ITEMS`, \"replaces items this caller cannot read\""
+      }
+    ],
+    "condition": "Condition worked out from the stored data and the caller: it cannot see the draft it writes, and every refused list's items can hold values hidden from it.",
+    "path": ".*",
+    "when": {
+      "branchIssues": "AMBIGUOUS_ITEMS",
+      "unseenHidden": true
+    }
+  },
+  {
+    "id": "refused-no-id-items",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "an app user's or anonymous caller's write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`)"
+      }
+    ],
+    "condition": "Condition worked out from the body and the caller: an app user or anonymous caller, and every refused list was sent with an item without `id` and its items can hold values hidden from it.",
+    "path": ".*",
+    "when": {
+      "branchIssues": "AMBIGUOUS_ITEMS",
+      "noIdItems": true
+    }
+  },
+  {
+    "id": "hidden-values-kept",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "Private and deprecated values inside components, and hidden relation targets and media, are kept when a client writes back what it read"
+      },
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what it read"
+      }
+    ],
+    "condition": "Every stored difference of the step is a private sub-field or a relation target hidden from the caller that the branch kept and main lost; besides those, only counters and versions differ.",
+    "path": "^/entry/|^/body/(data/)?(version|status|updatedAt|publishedAt)$|^/body/meta/",
+    "when": {
+      "hiddenKept": true
+    }
+  },
+  {
+    "id": "refusal-order",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "`403` for the content type and `404`, then the body (`422`)"
+      },
+      {
+        "file": "CHANGELOG.md",
+        "text": "`404` (the entry does not exist or is not the caller's), then the body"
+      }
+    ],
+    "condition": "The entry is not the caller's (from the seed's ownership); the branch answered 404 or 403 and main a body error (422).",
+    "path": ".*",
+    "when": {
+      "refusalOrder": true
+    }
+  },
+  {
+    "id": "stale-unknown-hidden",
+    "cites": [
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current `id`s, or send a copied item with `\"id\": null`."
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "Where items can hold values you cannot read or write"
+      }
+    ],
+    "condition": "A stale retry whose every UNKNOWN_ITEM_ID is on a list whose items can hold values hidden from the caller (from the seed and the caller).",
+    "path": ".*",
+    "when": {
+      "staleHidden": true
+    }
+  },
+  {
+    "id": "copy-move-unclaimed",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "copied or moved with its `id`"
+      }
+    ],
+    "condition": "A copy or move of items with their ids that would leave a stored item unclaimed, on a list whose items can hold values hidden from a caller that sees the draft; every issue is UNKNOWN_ITEM_ID on such a list (worked out from what the caller read and the stored heads).",
+    "path": ".*",
+    "when": {
+      "unclaimedHidden": true
+    }
+  },
+  {
+    "id": "noop-hidden-kept",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It changes nothing (no new revision, no `entry.updated`, `id`s kept)"
+      },
+      {
+        "file": "CHANGELOG.md",
+        "text": "A kept target that has since been deleted is not kept: the next write that changes something drops it, as before 0.9.0"
+      }
+    ],
+    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view and every other sent field equals what it read (media compared by id), the branch recorded no revision or event, and main's only stored changes are the loss of values hidden from the caller (private sub-fields, relation targets it cannot read) and of relation targets and assets that are no longer live.",
+    "path": "^/entry/|^/body/(data/)?(version|status|updatedAt|publishedAt)$",
+    "when": {
+      "noopHiddenKept": true
+    }
+  },
+  {
+    "id": "unsent-dead-target",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so keeping them never fails a write"
+      }
+    ],
+    "condition": "Main refused with RELATION_TARGET_MISSING issues only, each on a field the body did not send; the branch accepted, and changed only fields the body sent (the unsent fields untouched).",
+    "path": ".*",
+    "when": {
+      "unsentDeadTarget": true
+    }
+  },
+  {
+    "id": "hidden-over-max",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`."
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "With `max` on a many-relation or a multiple-media field, targets and assets that still exist but that the caller cannot see count, so a write that looks valid to the caller can answer `TOO_MANY`."
+      }
+    ],
+    "condition": "Every branch issue is TOO_MANY on a relation or media field where the sent values fit `max` but, with the live values hidden from the caller that the stored draft keeps (not in the caller's read, not dead), exceed it (from the stored draft and the caller's read).",
+    "path": ".*",
+    "when": {
+      "hiddenOverMax": true
+    }
+  },
+  {
+    "id": "unsent-not-rechecked",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so keeping them never fails a write"
+      }
+    ],
+    "condition": "Both sides answer 422; the branch's issues are a subset of main's, and every issue only main names is RELATION_TARGET_MISSING or MEDIA_MISSING on a top-level field the body did not send.",
+    "path": "^/(issues|body/error/details/issues)(/|$)",
+    "when": {
+      "unsentNotRechecked": true
+    }
+  },
+  {
+    "id": "noop-after-allowed",
+    "cites": [
+      {
+        "file": "documentation/content.md",
+        "text": "A save that changes nothing records no revision: the API answers with the same version and sends no `entry.updated` event."
+      }
+    ],
+    "condition": "An admin API save that equals the branch's stored draft in every field it sends (computed from the stored draft and the body); the branch stored nothing (no revision, no event, heads unchanged). Main's draft differs from the body only in fields an earlier allowed difference on the same entry stored differently, and main refused only with RELATION_TARGET_MISSING or MEDIA_MISSING on a dead target or asset: main validated a change that the branch had already stored.",
+    "path": ".*",
+    "when": {
+      "noopAfterAllowed": true
+    }
+  }
+]

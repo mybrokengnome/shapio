@@ -31,6 +31,15 @@ const SCHEMA_VERSION_FIELD = RESERVED_QUERY_NAMES[0] as string;
 
 export type BuiltSchema = { version: number; schema: GraphQLSchema };
 
+export type BuildOptions = {
+  /**
+   * A schema lens (plan schema-lenses): `snapshot` is the client's version of the workspace, `visibility`
+   * today's widened by `lensVisibility`. Fields today's visibility hides read null; mutations are the client
+   * version's, written through the lens (`lensReads.ts`).
+   */
+  lens?: boolean;
+};
+
 /**
  * The GraphQL schema of one schema snapshot as one caller may see it (visibility.ts; admin callers and tools
  * see everything), built programmatically (never from SDL strings, ADR 0006). A model no policy allows is
@@ -41,8 +50,9 @@ export type BuiltSchema = { version: number; schema: GraphQLSchema };
 export const buildGraphqlSchema = (
   snapshot: SchemaSnapshot,
   visibility: SchemaVisibility = FULL_VISIBILITY,
+  { lens = false }: BuildOptions = {},
 ): BuiltSchema => {
-  const build = createBuild(snapshot, visibility, createFixedTypes());
+  const build = createBuild(snapshot, visibility, createFixedTypes(), lens);
   // Effective definitions (inherited fields first): types, inputs, filters and sorts hold every field a kind has.
   const models = snapshot.definitions
     .map((active) => resolvedModelById(snapshot, active.definition.id))
@@ -59,7 +69,9 @@ export const buildGraphqlSchema = (
         entryType(build, model);
       }
     }
-    Object.assign(mutation, mutationFields(build, model));
+    if (!visibility.readOnly?.has(model.id)) {
+      Object.assign(mutation, mutationFields(build, model));
+    }
   }
   // Interface definitions with a readable member (plan interfaces D8): their interface and two queries.
   const interfaces = snapshot.definitions
@@ -67,13 +79,16 @@ export const buildGraphqlSchema = (
     .filter((definition): definition is InterfaceDefinition => isInterfaceDefinition(definition))
     .sort((a, b) => a.apiKey.localeCompare(b.apiKey));
   for (const definition of interfaces) {
-    Object.assign(query, interfaceQueryFields(build, definition));
+    if (!visibility.omitted?.has(definition.id)) {
+      Object.assign(query, interfaceQueryFields(build, definition));
+    }
   }
   // Reserved in naming.ts (RESERVED_QUERY_NAMES), so no model can take it.
   query[SCHEMA_VERSION_FIELD] = {
     type: new GraphQLNonNull(GraphQLInt),
     description: 'The schema version this API reflects; it changes whenever a model changes',
-    resolve: () => snapshot.version,
+    // A request naming a schema version reads in that version's shape and reports it (plan schema-lenses).
+    resolve: (_root, _args, context) => context.schemaVersion ?? snapshot.version,
   };
   Object.assign(query, snapshotQueryFields(snapshot), siteQueryFields(snapshot, build.fixed));
   const entry = entryInterface(build);
@@ -83,7 +98,9 @@ export const buildGraphqlSchema = (
   );
   const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: query }),
-    ...(models.length > 0 ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) } : {}),
+    ...(Object.keys(mutation).length > 0
+      ? { mutation: new GraphQLObjectType({ name: 'Mutation', fields: mutation }) }
+      : {}),
     // Every generated object type, including those reachable only as dynamic-zone union members or as an
     // interface's implementations, and every interface; `Entry` always.
     types: [...build.objects.values(), ...build.interfaces.values(), entry, ...contracts],
