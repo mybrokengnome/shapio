@@ -63,9 +63,37 @@ describe('pairList without item IDs, for a list that can hold hidden values (the
     expect(unseenItemsPolicy({ hidden: true, unseen: true }, 0)).toEqual([]);
     expect(unseenItemsPolicy({ hidden: false, unseen: true }, 3)).toEqual([]);
     expect(pair('ab', 'ab', { hidden: true, unseen: true }).issues).toEqual(AMBIGUOUS);
-    // Nothing the caller cannot write: whole items compared, the same list continues, anything else is new.
+    // Nothing the caller cannot write: whole items compared, the same list continues, and so does each item found
+    // once on each side (the one content pairing, `pairCertain`).
     expect(pair('ab', 'ab', { hidden: false, unseen: true })).toEqual({ pairs: [0, 1], issues: [] });
-    expect(pair('ab', 'ba', { hidden: false, unseen: true })).toEqual({ pairs: [-1, -1], issues: [] });
+    expect(pair('ab', 'ba', { hidden: false, unseen: true })).toEqual({ pairs: [1, 0], issues: [] });
+    expect(pair('aa', 'aa', { hidden: false, unseen: true })).toEqual({ pairs: [0, 1], issues: [] });
+    expect(pair('aab', 'baa', { hidden: false, unseen: true })).toEqual({ pairs: [2, -1, -1], issues: [] });
+  });
+
+  it('an ID the draft lacks continues an identical unclaimed item; its `id: null` twin in the same write is new', () => {
+    const result = pairList(
+      {
+        sentIds: ['gone00000000', null, 'b'],
+        sent: { keys: ['A', 'A', 'B'], kinds: ['c', 'c', 'c'] },
+        storedIds: ['a', 'b'],
+        stored: { keys: ['A', 'B'], kinds: ['c', 'c'] },
+      },
+      { hidden: false, unseen: false },
+    );
+    expect(result).toEqual({ pairs: [0, -1, 1], issues: [] });
+    // The same with the twins in the other order: still only the string ID continues.
+    expect(
+      pairList(
+        {
+          sentIds: [null, 'gone00000000', 'b'],
+          sent: { keys: ['A', 'A', 'B'], kinds: ['c', 'c', 'c'] },
+          storedIds: ['a', 'b'],
+          stored: { keys: ['A', 'B'], kinds: ['c', 'c'] },
+        },
+        { hidden: false, unseen: false },
+      ),
+    ).toEqual({ pairs: [-1, 0, 1], issues: [] });
   });
 
   it('decides 50,000 items by hashing and set lookups', () => {

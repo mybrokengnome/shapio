@@ -159,11 +159,12 @@ const shownNowhere = (policy: ListPolicy, id: string, index: number | null): Lis
     : { index, code: 'UNKNOWN_ITEM_ID' };
 
 /**
- * Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. A stored ID that two
- * stored items share names neither (it is unknown): which one the client meant cannot be told. An ID only a head
- * the caller may read holds here: `shownElsewhere`.
+ * The IDs the client sent that the draft holds pair with those items: certain. A repeated or re-typed ID is
+ * refused, and so is an ID two stored items share (which one the client meant cannot be told). An ID the draft
+ * lacks that the table above does not refuse is left to the content pairing (`pairByContent`), with the stored
+ * items no sent ID claims; `id: null` and an item without an `id` are new.
  */
-const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
+const resolveIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
   const stored = new Map<string, number>();
   const shared = new Set<string>();
   sides.storedIds.forEach((id, index) => {
@@ -184,7 +185,6 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
     }
   });
   const issues: ListIssue[] = [];
-  const foreign: number[] = [];
   const pairs = sides.sentIds.map((id, index) => {
     if (typeof id !== 'string') {
       return -1;
@@ -194,22 +194,14 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
       return -1;
     }
     const at = stored.get(id);
-    if (at === undefined && !shared.has(id) && sides.shownIds?.has(id)) {
-      const refused = shownElsewhere(policy, null);
-      if (refused && !issues.some((issue) => issue.draftAhead)) {
-        issues.push(refused);
-      }
-      foreign.push(index);
-      return -1;
-    }
     if (at === undefined) {
       const refused = shared.has(id)
         ? { index, code: 'UNKNOWN_ITEM_ID' as const }
-        : shownNowhere(policy, id, index);
-      if (refused) {
+        : sides.shownIds?.has(id)
+          ? shownElsewhere(policy, null)
+          : shownNowhere(policy, id, index);
+      if (refused && !(refused.draftAhead && issues.some((issue) => issue.draftAhead))) {
         issues.push(refused);
-      } else {
-        foreign.push(index);
       }
       return -1;
     }
@@ -219,36 +211,31 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
     }
     return at;
   });
-  return { pairs: issues.length > 0 ? pairs : withForeignContinued(sides, pairs, foreign), issues };
+  return { pairs, issues };
 };
 
+/** Whether keys were made for both sides of a list (`ListSide.keys`: one per item). */
+const keyed = (sides: ListSides): boolean =>
+  sides.sent.keys.length === sides.sentIds.length && sides.stored.keys.length === sides.storedIds.length;
+
 /**
- * Items whose IDs the draft lacks and that are new (`shownElsewhere`, `shownNowhere`) are what the same items
- * sent without IDs would be:
- * where keys were made for the list (a caller that sees its items, in a list that holds nothing hidden from it, or
- * an admin write), each continues the stored item no other sent item names when that is certain (`pairCertain`
- * over those items: equal in everything the caller sees, once on each side), so copying back what a draft already
- * holds changes nothing. The others stay new items.
+ * The one content pairing (plan item-ids): for a list sent without IDs, every item; for a list that names IDs,
+ * every sent item whose ID the draft lacks (and the table accepts), against the stored items no sent ID claims.
+ * In both: the same keys (what the caller sees of each item; whole items, targets it cannot see cut, where it
+ * cannot see the draft but writes every field; none where it can do neither) and the same outcomes. Where nothing in the items is hidden from the caller, and on an admin write:
+ * `pairCertain`. Where items can hold hidden values: `pairDistinct` (null: it cannot be certain). Without keys:
+ * every item is new.
  */
-const withForeignContinued = (sides: ListSides, pairs: number[], foreign: readonly number[]): number[] => {
-  const keyed =
-    sides.sent.keys.length === sides.sentIds.length && sides.stored.keys.length === sides.storedIds.length;
-  if (foreign.length === 0 || !keyed) {
-    return pairs;
+const pairByContent = (
+  sent: ListSide,
+  stored: ListSide,
+  policy: ListPolicy,
+  hasKeys: boolean,
+): number[] | null => {
+  if (!hasKeys) {
+    return sent.keys.map(() => -1);
   }
-  const claimed = new Set(pairs.filter((pair) => pair !== -1));
-  const free = sides.storedIds.flatMap((_, index) => (claimed.has(index) ? [] : [index]));
-  const continued = pairCertain(
-    { keys: foreign.map((index) => sides.sent.keys[index] ?? null), kinds: [] },
-    { keys: free.map((index) => sides.stored.keys[index] ?? null), kinds: [] },
-  );
-  const output = [...pairs];
-  continued.forEach((at, position) => {
-    if (at !== -1) {
-      output[foreign[position] as number] = free[at] as number;
-    }
-  });
-  return output;
+  return !policy.hidden || policy.neverRefuses ? pairCertain(sent, stored) : pairDistinct(sent, stored);
 };
 
 /**
@@ -293,12 +280,6 @@ const pairDistinct = (sent: ListSide, stored: ListSide): number[] | null => {
   return added && deleted ? null : pairs;
 };
 
-/** Both sides hold the same keys in the same order (none of them null). */
-const sameKeys = (sent: ListSide, stored: ListSide) =>
-  sent.keys.length > 0 &&
-  sent.keys.length === stored.keys.length &&
-  sent.keys.every((key, index) => key !== null && key === stored.keys[index]);
-
 /**
  * Items paired only where that is certain (lists that hold nothing the caller cannot see, admin writes): the whole
  * list when it is sent exactly as stored, else each item whose key appears exactly once on each side; every other
@@ -330,44 +311,62 @@ const pairCertain = (sent: ListSide, stored: ListSide): number[] => {
 };
 
 /**
- * The one pairing of a written list (plan item-ids): by item ID when the client sends any. Without IDs:
- * - where the caller cannot see the stored items, a list that can hold a value it cannot write is refused without
- *   any comparison (`unseenItemsPolicy`); any other (it writes every field of every item) continues item by item
- *   when sent exactly as stored, whole items compared, and is new items otherwise;
- * - a list that can hold a value outside the caller's view continues only on certainty (`pairDistinct`), else
- *   it is refused;
- * - any other list (and every admin write) keeps an item's ID only where that is certain (`pairCertain`).
+ * The one pairing of a written list (plan item-ids). First the IDs the draft holds (`resolveIds`, with the table
+ * above for those it lacks); then every other sent item and every unclaimed stored item go through the one
+ * content pairing (`pairByContent`). A list sent without any ID can be refused as a whole: where the caller cannot
+ * see the stored items and they can hold values it cannot write (`unseenItemsPolicy`), and where items can hold
+ * hidden values and the content pairing cannot be certain (`AMBIGUOUS_ITEMS`). In a list that names IDs, an item
+ * the content pairing cannot place for certain is new.
  */
 export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
-  if (sides.sentIds.some((id) => id !== undefined)) {
-    return pairByIds(sides, policy);
-  }
-  const none = sides.sentIds.map(() => -1);
+  const namesIds = sides.sentIds.some((id) => id !== undefined);
   if (sides.sentIds.length === 0) {
-    return { pairs: none, issues: [] };
+    return { pairs: [], issues: [] };
   }
-  if (policy.unseen) {
+  if (!namesIds) {
     const unseen = unseenItemsPolicy(policy, sides.sentIds.length);
     if (unseen.length > 0) {
-      return { pairs: none, issues: unseen };
+      return { pairs: sides.sentIds.map(() => -1), issues: unseen };
     }
-    // Nothing compared but the whole items (keys given only for a list the caller can write in full): the same
-    // list sent back continues item by item, a no-op as before item IDs; anything else is new items.
-    return {
-      pairs: sameKeys(sides.sent, sides.stored) ? sides.sentIds.map((_, index) => index) : none,
-      issues: [],
-    };
   }
-  if (!policy.hidden || policy.neverRefuses) {
-    return { pairs: pairCertain(sides.sent, sides.stored), issues: [] };
+  const resolved = namesIds
+    ? resolveIds(sides, policy)
+    : { pairs: sides.sentIds.map(() => -1), issues: [] as ListIssue[] };
+  if (resolved.issues.length > 0) {
+    return resolved;
   }
-  const pairs = pairDistinct(sides.sent, sides.stored);
-  return pairs ? { pairs, issues: [] } : { pairs: none, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
+  const claimed = new Set(resolved.pairs.filter((pair) => pair !== -1));
+  // In a list that names IDs, only items whose ID is a string the draft lacks (and the table accepts) are matched
+  // by content; `id: null` and an item without an `id` are new, as the client declared.
+  const rest = resolved.pairs.flatMap((pair, index) =>
+    pair === -1 && (!namesIds || typeof sides.sentIds[index] === 'string') ? [index] : [],
+  );
+  const free = sides.storedIds.flatMap((_, index) => (claimed.has(index) ? [] : [index]));
+  const hasKeys = keyed(sides);
+  const continued = pairByContent(
+    { keys: rest.map((index) => (hasKeys ? (sides.sent.keys[index] ?? null) : null)), kinds: [] },
+    { keys: free.map((index) => (hasKeys ? (sides.stored.keys[index] ?? null) : null)), kinds: [] },
+    policy,
+    hasKeys,
+  );
+  if (continued === null) {
+    return namesIds
+      ? resolved
+      : { pairs: resolved.pairs, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
+  }
+  const pairs = [...resolved.pairs];
+  continued.forEach((at, position) => {
+    if (at !== -1) {
+      pairs[rest[position] as number] = free[at] as number;
+    }
+  });
+  return { pairs, issues: [] };
 };
 
 /**
- * A single (not repeatable) component always continues the stored instance; an ID it sends must be that one's,
- * or one another head the caller may read shows there (`shownElsewhere`: a new instance, or refused).
+ * A single (not repeatable) component always continues the stored instance when its ID is not refused: its own ID,
+ * or one the table above accepts (shown by another head the caller may read, or by none); never new while an
+ * instance is stored. Without `shown` (no table), any other ID is unknown.
  */
 export const pairSingle = (
   sentId: string | null | undefined,
@@ -375,17 +374,16 @@ export const pairSingle = (
   stored: boolean,
   shown: { ids: ReadonlySet<string>; policy: ListPolicy } | null = null,
 ): { pairs: number[]; issues: ListIssue[] } => {
+  const continues = { pairs: [stored ? 0 : -1], issues: [] };
   if (typeof sentId !== 'string' || sentId === storedId) {
-    return { pairs: [stored ? 0 : -1], issues: [] };
+    return continues;
   }
-  if (shown?.ids.has(sentId)) {
-    const refused = shownElsewhere(shown.policy, null);
-    return { pairs: [-1], issues: refused ? [refused] : [] };
-  }
-  const refused = shown
-    ? shownNowhere(shown.policy, sentId, null)
-    : { index: null, code: 'UNKNOWN_ITEM_ID' as const };
-  return { pairs: [-1], issues: refused ? [refused] : [] };
+  const refused = !shown
+    ? ({ index: null, code: 'UNKNOWN_ITEM_ID' } as const)
+    : shown.ids.has(sentId)
+      ? shownElsewhere(shown.policy, null)
+      : shownNowhere(shown.policy, sentId, null);
+  return refused ? { pairs: [-1], issues: [refused] } : continues;
 };
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

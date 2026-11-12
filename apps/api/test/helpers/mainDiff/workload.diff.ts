@@ -736,6 +736,8 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
             expectedVersion: before.version ?? null,
             data: change,
           });
+    // Whether B's change moved the version on this side (an earlier allowed difference can make it a no-op).
+    const otherMoved = (await adminView()).version !== before.version;
     if (publish) {
       await request('POST', `/api/admin/content/${target.model}/${target.id}/publish`, manifest.adminToken, {
         locales: [locale],
@@ -760,6 +762,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       label,
       pre,
       otherStatus: changed.status,
+      otherMoved,
       firstStatus: first.status,
       sent: normal(body, created),
       ...outcomeOf(retry),

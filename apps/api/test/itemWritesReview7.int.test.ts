@@ -334,7 +334,7 @@ describe('item writes: seventh review', () => {
   });
 
   describe('N2: a caller that cannot see the items, re-saving a list it writes in full', () => {
-    it('sent exactly as stored: the items keep their IDs and nothing is written; anything else is new items', async () => {
+    it('sent exactly as stored: nothing is written; items found once on each side keep their IDs; others are new', async () => {
       const id = await entryOf('page', { title: 't', links: [{ label: 'x' }, { label: 'y' }] });
       const before = await adminView(id);
       const ids = (before.data.links as Item[]).map((link) => link.id);
@@ -342,10 +342,16 @@ describe('item writes: seventh review', () => {
       const same = await adminView(id);
       expect(same.version).toBe(before.version);
       expect((same.data.links as Item[]).map((link) => link.id)).toEqual(ids);
+      // Reordered: each item found once on each side continues (whole items compared), so the IDs move with them.
       expectStatus(await put(id, updater.accessToken, { links: [{ label: 'y' }, { label: 'x' }] }), 200);
       const changed = await adminView(id);
       expect(changed.version).toBe(before.version + 1);
-      expect((changed.data.links as Item[]).some((link) => ids.includes(link.id))).toBe(false);
+      expect((changed.data.links as Item[]).map((link) => link.id)).toEqual([ids[1], ids[0]]);
+      // An edited item matches nothing stored: it is new.
+      expectStatus(await put(id, updater.accessToken, { links: [{ label: 'y' }, { label: 'z' }] }), 200);
+      const edited = (await adminView(id)).data.links as Item[];
+      expect(edited[0]?.id).toBe(ids[1]);
+      expect(ids).not.toContain(edited[1]?.id);
     });
 
     it('a list that can hold what it cannot write is still refused, never compared', async () => {

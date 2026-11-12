@@ -291,8 +291,8 @@ it continues. Shapio finds that item the same way for every client, with or with
   through an older version: read the entry, change what you need, and send each item back with its `id`.
 - Items sent without `id` are matched by what the client sees of each item through its version, in one of three
   ways ([Writes without item IDs](delivery-api.md#writes-without-item-ids)). A client that cannot see the stored
-  items, but can write every field in a list, changes nothing by sending it exactly as stored and writes all-new
-  items otherwise; it is refused when the list holds anything it cannot write. A list that can hold something
+  items, but can write every field in a list, changes nothing by sending it exactly as stored; otherwise each
+  item that equals exactly one stored item continues it and the rest are new; it is refused when the list holds anything it cannot write. A list that can hold something
   hidden from the client (a field added since its version, or one it cannot read or write) accepts only the list
   sent back unchanged, or a write that only reorders, deletes, or adds items that differ from each other; any
   edit of an item, including any change inside its nested lists, needs its `id`, and anything else is refused
@@ -312,8 +312,9 @@ The stored items are those of the draft the write lands on. A caller that may no
 when the draft is the published version. While the entry has unpublished changes, such a caller sends back the
 `id`s it read from the published version (an unchanged item has the same `id` in both) or got in `itemIds` from
 its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it holds anything the
-caller cannot write; otherwise it changes nothing when sent exactly as stored, and is written as all-new items
-when it differs. An `id` read from the published version that the draft no longer holds is saved as a new item,
+caller cannot write; otherwise it changes nothing when sent exactly as stored, and when it differs each item that equals exactly one
+stored item continues it and the rest are new. An `id` read from the published version that the draft no longer
+holds is matched by content (it continues the one stored item that equals it, otherwise it is new),
 or refused with `AMBIGUOUS_ITEMS` where the field's items can hold values the caller cannot see, which tells it
 the field has unpublished changes, not what they are ([Item IDs](delivery-api.md#item-ids)). A field inside a
 component that the caller cannot write cannot be sent back: it is refused (`NOT_ALLOWED`, "while the entry has

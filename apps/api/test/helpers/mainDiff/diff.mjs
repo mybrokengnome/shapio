@@ -12,6 +12,24 @@ const main = JSON.parse(readFileSync(mainPath, 'utf8'));
 const branch = JSON.parse(readFileSync(branchPath, 'utf8'));
 const allow = JSON.parse(readFileSync(allowPath, 'utf8'));
 
+// Every allowlist entry cites the docs by quoted text (whitespace-insensitive): a cited phrase that is no longer
+// in its file fails the run, so the docs and the allowlist cannot drift apart.
+const repo = new URL('../../../../../', import.meta.url);
+const flat = (text) => text.replace(/\s+/g, ' ');
+const stale = allow.flatMap((entry) =>
+  (entry.cites ?? [])
+    .filter(({ file, text }) => !flat(readFileSync(new URL(file, repo), 'utf8')).includes(flat(text)))
+    .map(({ file, text }) => `${entry.id}: "${text}" is not in ${file}`),
+);
+if (allow.some((entry) => !Array.isArray(entry.cites) || entry.cites.length === 0)) {
+  say('every allowlist entry needs at least one citation (cites: [{ file, text }])');
+  process.exit(1);
+}
+if (stale.length > 0) {
+  for (const line of stale) say(`cited text missing: ${line}`);
+  process.exit(1);
+}
+
 /** Every leaf path where two values differ, with both values. */
 const differences = (a, b, path = '') => {
   if (JSON.stringify(a) === JSON.stringify(b)) return [];
@@ -149,16 +167,27 @@ const isTouched = (fields, path, entry) => {
   return field !== undefined && fields.has(field);
 };
 /** A step with its heads keyed by locale and state (`en|draft`), so a head on one side only is one path. */
-const keyed = (step) =>
-  step && {
+// The audit log is one count for the whole database, so after any difference anywhere its absolute value differs on
+// every later step: each step's audit rows are compared as the number that step added.
+const lastAudit = new Map();
+const keyed = (step, side) => {
+  if (!step) return step;
+  let audit;
+  if (step.entry && typeof step.entry.audit === 'number') {
+    audit = step.entry.audit - (lastAudit.get(side) ?? step.entry.audit);
+    lastAudit.set(side, step.entry.audit);
+  }
+  return {
     ...step,
     label: undefined,
     pre: undefined,
     entry: step.entry && {
       ...step.entry,
+      audit,
       heads: Object.fromEntries(step.entry.heads.map((head) => [`${head.locale}|${head.state}`, head])),
     },
   };
+};
 const previous = { main: new Map(), branch: new Map() };
 const deltas = (side, entry, observed) => {
   if (!observed) return undefined;
@@ -201,7 +230,7 @@ for (let index = 0; index < count; index += 1) {
   const observedKey = createdEntry !== undefined ? String(createdEntry) : entry;
   const deltaA = observedKey !== undefined ? deltas('main', observedKey, a?.entry) : undefined;
   const deltaB = observedKey !== undefined ? deltas('branch', observedKey, b?.entry) : undefined;
-  let found = differences(keyed(a), keyed(b));
+  let found = differences(keyed(a, 'main'), keyed(b, 'branch'));
   const raw = found;
   const fields = entry !== undefined ? touched.get(entry) : undefined;
   if (fields) {
@@ -209,6 +238,11 @@ for (let index = 0; index < count; index += 1) {
       touched.set(String(createdEntry), new Set(fields));
     }
     const before = found.length;
+    // A stale step whose other writer changed the entry on one side only (an earlier allowed difference made its
+    // change a no-op there): whether the first write is stale follows from that, so it is a consequence.
+    if (a?.otherMoved !== b?.otherMoved) {
+      found = found.filter((difference) => !/^\/(firstStatus|otherMoved|otherStatus)$/.test(difference.path));
+    }
     // A locale whose head exists on one side only: every step in that locale is a consequence, and so are the
     // per-step counters (a shared field's write reaches that locale's head on one side only).
     const locale = /\b(?:doc|ndoc|ldoc) (\w+)\b/.exec(label)?.[1];

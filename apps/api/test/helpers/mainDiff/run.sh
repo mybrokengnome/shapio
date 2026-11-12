@@ -1,7 +1,10 @@
 #!/bin/zsh
 # Differential against main: the local gate for "nothing major breaks for current users".
 #
-#   apps/api/test/helpers/mainDiff/run.sh [sqlite|pg|mysql] [seed] [steps]
+#   apps/api/test/helpers/mainDiff/run.sh [sqlite|pg|mysql] [seed or seeds: 1,7,8,9] [steps]
+#
+# Several seeds run one after another (never in parallel: every run extracts main into the same directory); the
+# run fails if any seed does.
 #
 # 1. Extracts main (`git archive main | tar -x`, read-only on the repository) into the scratch directory, with
 #    links to this repository's installed packages (main's own @shapio packages linked to main's sources).
@@ -20,6 +23,15 @@ HERE=${0:A:h}
 REPO=${HERE:h:h:h:h:h}
 SCRATCH=${MAIN_DIFF_SCRATCH:-/private/tmp/claude-501/-Users-brad-Development-shapio/bd7733ea-70bf-4c12-8f20-ba7388cf8dcd/scratchpad/maindiff}
 DIALECT=${1:-sqlite}
+if [[ "${2:-}" == *,* ]]; then
+  failed=()
+  for seed in ${(s:,:)2}; do
+    echo "== seed $seed"
+    $0 $DIALECT $seed ${3:-120} || failed+=($seed)
+  done
+  [ ${#failed} -eq 0 ] || { echo "failed seeds: ${failed[*]}"; exit 1; }
+  exit 0
+fi
 SEED=${2:-1}
 STEPS=${3:-120}
 MAIN=$SCRATCH/main

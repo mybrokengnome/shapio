@@ -543,15 +543,16 @@ order, and its hidden fields go with it:
 - Edit an item: change its fields and keep its `id`.
 - Reorder: send the items in the new order with their `id`s.
 - Delete an item: leave it out. Its hidden values are deleted with it.
-- Add an item: send it without `id`, or with `"id": null`. It is new, and its hidden fields start empty.
+- Add an item: send it with `"id": null`, or without `id`. It is new, and its hidden fields start empty.
 - Replace an item with a different one: leave the old one out and send the new one without `id`.
 - Move an item into another list, or under another parent item: send it there without `id`. It is new in its
   new place.
 
-A list in which any item sends an `id` (a string, or `null`) is paired by `id`: there, every item without a
-string `id` is new. A list in which no item has an `id` key is paired as described in
-[Writes without item IDs](#writes-without-item-ids). A single (not repeatable) component always continues its
-stored instance: send its `id` back, or `"id": null`, or no `id`. On a create, a well-formed `id` is ignored and
+A list in which any item sends an `id` (a string, or `null`) is paired by `id`: there, an item sent with
+`"id": null`, or with no `id`, is new. A list in which no item has an
+`id` key is paired as described in [Writes without item IDs](#writes-without-item-ids). A single (not
+repeatable) component always continues its stored instance: send its `id` back, or `"id": null`, or no `id`. A
+single component sent with an `id` that is not refused always continues the stored instance. On a create, a well-formed `id` is ignored and
 every item gets a new one (an `id` repeated on a create is not an error); a malformed one is refused as on an
 update.
 
@@ -582,12 +583,17 @@ An `id` the draft holds continues that item. For an `id` the draft does not hold
 | no                     | no                                    | new item                         | new item                 |
 | no                     | yes                                   | `AMBIGUOUS_ITEMS`                | `UNKNOWN_ITEM_ID`        |
 
-A localized list written to a locale for the first time holds new items, whatever `id`s it carries. A stored `id`
-that somehow belongs to two items is `UNKNOWN_ITEM_ID`.
+An item sent with an `id` the draft does not hold, and that is not refused, is matched by content like an item
+sent without an `id`: it continues the one stored item that equals it, otherwise it is new.
+Sending back what you read, while the draft holds the same content under other `id`s, changes nothing.
+
+A localized list written to a locale for the first time holds new items, whatever `id`s it carries. Items under a
+new item are new, whatever `id`s they carry. A stored `id` that somehow belongs to two items is
+`UNKNOWN_ITEM_ID`.
 
 Swapping two items that are identical in everything stored changes nothing on the admin API, and on the delivery
-API where your token can read and write every field of those items. Otherwise a swap by `id` is always saved as a
-change. Reordering identical items of a shared list does not change the other locales.
+API where your token can read and write every field of those items and can see every relation target and media
+asset they may hold. Otherwise a swap by `id` is always saved as a change. Reordering identical items of a shared list does not change the other locales.
 
 `DUPLICATE_ITEM_ID` answers the same `id` twice in one list, and `ITEM_COMPONENT_CHANGED` a dynamic zone item sent
 with a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write
@@ -637,7 +643,7 @@ item you read.**
 list, or it writes a draft it cannot read (app users and anonymous callers never read drafts, so this is every
 entry with unpublished changes or never published). A list whose every sub-field the caller can write is
 accepted: sent exactly as stored, it changes nothing and its items keep their `id`s, as before 0.9.0; otherwise
-every item is new. A list that holds anything the caller cannot write is refused when it has
+each item that equals exactly one stored item continues it and the rest are new. A list that holds anything the caller cannot write is refused when it has
 items: `422 CONTENT_INVALID` with `AMBIGUOUS_ITEMS` on the list's path. Nothing about the answer depends on what
 is stored.
 

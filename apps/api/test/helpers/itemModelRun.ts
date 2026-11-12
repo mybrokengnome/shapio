@@ -941,6 +941,20 @@ export const acceptedWriteProblems = (
   for (const items of sentLists.values()) {
     items.forEach((item) => typeof item.id === 'string' && sentIds.add(item.id));
   }
+  // delivery-api.md, Item IDs: "Items under a new item are new, whatever `id`s they carry." An `id` sent inside a
+  // list item sent without one names nothing, so the stored item it once named may be gone.
+  const underNewItem = new Set<string>();
+  const walk = (value: unknown, insideNew: boolean): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, insideNew || (isRecord(item) && typeof item.id !== 'string')));
+    } else if (isRecord(value)) {
+      if (insideNew && typeof value.id === 'string') {
+        underNewItem.add(value.id);
+      }
+      Object.values(value).forEach((entry) => walk(entry, insideNew));
+    }
+  };
+  walk(body, false);
   // Hidden: a stored value the caller did not read exactly (its item unread, the key missing, read as null, or
   // read otherwise: a relation to a target it cannot see).
   const hiddenOf = (instance: Instance): string[] => {
@@ -1074,7 +1088,7 @@ export const acceptedWriteProblems = (
     }
     // Gone: only with certainty (by ID: a list sent with IDs that leaves it out; without IDs: no equal item sent).
     if (hidden.length === 0 || sentIds.has(instance.id)) {
-      if (sentIds.has(instance.id)) {
+      if (sentIds.has(instance.id) && !underNewItem.has(instance.id)) {
         problems.push({
           property: '1 conservation',
           detail: `${instance.list} ${instance.id} was sent by its ID, yet is gone`,

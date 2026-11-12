@@ -323,6 +323,9 @@ export const callerViewOf = (
     return output;
   };
 
+  /** A scope for `shownValue` on a relation or media value alone (it only cuts targets there). */
+  const TARGETS_ONLY: ViewScope = { reads: true, sees: true };
+
   /** An item without its IDs and empty values, at any depth through its components. */
   const wholeItem = (
     component: ComponentDefinition,
@@ -335,7 +338,14 @@ export const callerViewOf = (
         continue;
       }
       if (!isComponentField(field)) {
-        output[field.id] = value;
+        // Relation targets and media the caller's read leaves out are cut, so no key depends on them.
+        const kept =
+          field.type === 'relation' || field.type === 'media'
+            ? shownValue(TARGETS_ONLY, field, value)
+            : value;
+        if (kept !== undefined) {
+          output[field.id] = kept;
+        }
         continue;
       }
       const one = (nested: unknown) => {

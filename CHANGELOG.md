@@ -50,12 +50,13 @@ All notable changes to Shapio are listed here. The format follows
   include it. See [Writing components](documentation/delivery-api.md#writing-components).
   - An `id` the draft holds continues that item. An `id` it does not hold is never refused on a field whose
     items hold nothing the caller cannot read or write: the item is saved as new, or continues an identical item
-    when that match is certain. Where items can hold such values, an `id` a readable version shows is saved as a
-    new item, or refused with `AMBIGUOUS_ITEMS` when the caller cannot read the draft, and an `id` no version shows
-    is `UNKNOWN_ITEM_ID` (read again and retry). Tokens that may read drafts, and the admin API, always save such
-    an item as new. A localized list written to a locale for the first time holds new items.
+    when that match is certain. Where items can hold such values, an `id` a readable version shows is matched by
+    content as below, or refused with `AMBIGUOUS_ITEMS` when the caller cannot read the draft, and an `id` no version shows
+    is `UNKNOWN_ITEM_ID` (read again and retry). Tokens that may read drafts, and the admin API, never refuse such
+    an item. A localized list written to a locale for the first time holds new items.
   - Swapping two items identical in everything stored changes nothing on the admin API, and on the delivery API
-    where the token can read and write every field of those items; otherwise a swap by `id` is saved as a change.
+    where the token can read and write every field of those items and can see every relation target and media
+    asset they may hold; otherwise a swap by `id` is saved as a change.
     Reordering identical items of a shared list does not change the other locales.
   - New issues inside `422 CONTENT_INVALID`: `UNKNOWN_ITEM_ID` (an `id` no version shows, where items can hold
     values hidden from the caller),
@@ -66,7 +67,11 @@ All notable changes to Shapio are listed here. The format follows
     `__component` on dynamic zone items and nested component fields included. `{}` when the body sent none.
     GraphQL mutations do not return it. It always holds the `id`s stored after the write, so even a write that
     changes nothing answers the `id`s the next write accepts.
-  - In a list, `"id": null` marks a new item. On a create, a well-formed `id` is ignored and every item gets a new
+  - In a list, `"id": null` marks a new item, and so does a missing `id` where another item carries one. An item
+    sent with an `id` the draft does not hold, and that is not refused, is matched by content: it continues the one
+    stored item that equals it, otherwise it is new. A single component sent with
+    an `id` that is not refused always continues the stored instance. Sending back what you read, while the draft
+    holds the same content under other `id`s, changes nothing. On a create, a well-formed `id` is ignored and every item gets a new
     one (a repeated `id` is not an error); an `id` that is not a string, is empty, or is longer than 64
     characters is `422 INVALID_TYPE`, as on an update.
   - Lifecycle hook `data` carries `id` on every component item, and `before` is the stored draft as stored (items
@@ -138,7 +143,8 @@ What changes for a client that names no schema version and sends no item `id`s
   delivery routes only when the components hold deprecated fields.
 - A caller that cannot see the stored items (it may not read the entry, cannot read a field at or above the
   list, or writes a draft it cannot read, which for app users is every entry with unpublished changes or never
-  published) writes a list as all-new items when it can write every field in it, and is refused with
+  published) can write a list it can write completely: sent exactly as stored it changes nothing; otherwise each
+  item that equals exactly one stored item continues it and the rest are new. It is refused with
   `AMBIGUOUS_ITEMS` when the list has items and holds anything it cannot write.
 - Any other list, and every admin API write, is never refused: an item keeps its `id` only when it equals
   exactly one stored item and no other sent item, and every other item is new with a new `id`. An edited item

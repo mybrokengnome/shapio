@@ -109,34 +109,27 @@ const pairValue = (
   }
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
   const componentOf = (item: unknown) => componentOfItem(field, item, view.componentOf);
-  // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
-  // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
-  // A list that names IDs the draft lacks gets them too where the caller sees the items and nothing in
-  // them is hidden from it (or an admin writes): those items pair as they would without IDs (listPairing.ts).
-  const noIds = written.every((item) => sentIdOf(item) === undefined);
+  // Keys for the content pairing (listPairing.ts `pairByContent`), made when some sent item is not one of the
+  // draft's by its ID (or the list names none): where the caller sees the items, of what it sees; where it does
+  // not, of whole items (targets it cannot see cut), and only for a list it writes in full (one that can hold
+  // more is never compared).
   const storedIds = new Set(kept.map(storedItemId));
-  const copiesItems =
-    !noIds &&
-    scope.sees &&
-    (!policy.hidden || policy.neverRefuses) &&
-    written.some((item) => {
-      const id = sentIdOf(item);
-      return typeof id === 'string' && !storedIds.has(id);
-    });
-  const keyOf = copiesItems
-    ? { sent: view.sentKey, stored: view.storedKey }
-    : !noIds
-      ? null
-      : scope.sees
-        ? { sent: view.sentKey, stored: view.storedKey }
-        : policy.hidden
-          ? null
-          : {
-              sent: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
-                view.wholeKey(component, item),
-              stored: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
-                view.wholeKey(component, item),
-            };
+  const needsContent = written.some((item) => {
+    const id = sentIdOf(item);
+    return typeof id !== 'string' || !storedIds.has(id);
+  });
+  const keyOf = !needsContent
+    ? null
+    : scope.sees
+      ? { sent: view.sentKey, stored: view.storedKey }
+      : policy.hidden
+        ? null
+        : {
+            sent: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
+              view.wholeKey(component, item),
+            stored: (_scope: ViewScope, component: ComponentDefinition | undefined, item: unknown) =>
+              view.wholeKey(component, item),
+          };
   const { pairs, issues } = pairList(
     {
       sentIds: written.map(sentIdOf),

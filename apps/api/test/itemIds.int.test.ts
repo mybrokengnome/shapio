@@ -418,8 +418,8 @@ describe('component item IDs', () => {
     ).json<Delivered>().data;
     expect(published.hero?.id).toBe(en.hero?.id);
     expect(published.cards.map((item) => item.id)).toEqual(en.cards.map((item) => item.id));
-    // An ID from another locale of a localized field is an item that locale shows: copied, it is saved as a new
-    // item with an ID of its own, and the other locale's item is untouched.
+    // An ID from another locale of a localized field is an item that locale shows: a single component sent with it
+    // continues this locale's instance (it keeps its ID), and the other locale's item is untouched.
     expectStatus(
       await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
         locale: 'fr',
@@ -430,9 +430,10 @@ describe('component item IDs', () => {
     );
     const copied = (await view('fr')).data as Delivered['data'];
     expect(copied.hero?.heading).toBe('H-copied');
-    expect([en.hero?.id, fr.hero?.id]).not.toContain(copied.hero?.id);
+    expect(copied.hero?.id).toBe(fr.hero?.id);
     expect((await view('en')).data).toEqual(en);
-    // An admin's ID that no version of the entry shows (a stale read) is a new item too; a malformed one names none.
+    // An admin's ID that no version of the entry shows (a stale read) continues the instance too; a malformed one
+    // names none.
     expectStatus(
       await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
         locale: 'fr',
@@ -443,7 +444,7 @@ describe('component item IDs', () => {
     );
     const stale = (await view('fr')).data as Delivered['data'];
     expect(stale.hero?.heading).toBe('H-stale');
-    expect(stale.hero?.id).not.toBe('ZZZZZZZZZZZZ');
+    expect(stale.hero?.id).toBe(fr.hero?.id);
     const nowhere = await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
       locale: 'fr',
       expectedVersion: (await view('fr')).version,

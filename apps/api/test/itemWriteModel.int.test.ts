@@ -4,6 +4,12 @@ import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { setPublicGrants } from './helpers/appUsers.js';
 import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from './helpers/content.js';
+import {
+  churnCases,
+  adminSingleCopyProblems,
+  echoChurnProblems,
+  targetSwapProblems,
+} from './helpers/itemModelChurn.js';
 import { AHEAD_KINDS, aheadEntry, echoAheadProblems } from './helpers/itemModelEchoAhead.js';
 import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
 import { locCopyEntry, locCopyProblems } from './helpers/itemModelLocCopy.js';
@@ -2052,6 +2058,19 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
       }
     }
   };
+
+  it('ECHOCHURN (9 no-op, review 12): echoing the published read while the draft holds the same content under other ids is a no-op where nothing is hidden, and exactly AMBIGUOUS_ITEMS where items can hold hidden values', async () => {
+    const problems: Problem[] = [];
+    for (const spec of await churnCases(w)) {
+      problems.push(...(await echoChurnProblems(w, spec)));
+    }
+    problems.push(...(await adminSingleCopyProblems(w)));
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('TARGETSWAP (2 no oracle, review 12): swapping look-alikes by id answers the same whether their hidden targets are equal or not', async () => {
+    expect(report(await targetSwapProblems(w))).toEqual([]);
+  });
 
   it('STALERETRY (8 concurrency, review 11): a stale write retried with the version its 409 named keeps the ids it read', async () => {
     const problems: Problem[] = [];

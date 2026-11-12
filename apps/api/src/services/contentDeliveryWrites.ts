@@ -27,7 +27,12 @@ import { readsNullThroughLens, visibleRelationTargetIds } from '../content/read.
 import { sameContent } from '../content/sameContent.js';
 import { buildValidator, isMissingValue } from '../content/validator/index.js';
 import { contentInvalid, type ContentIssue } from '../content/validator/issues.js';
-import { callerViewOf, type CallerAccess, type CallerView } from '../content/write/callerView.js';
+import {
+  callerViewOf,
+  componentsOfField,
+  type CallerAccess,
+  type CallerView,
+} from '../content/write/callerView.js';
 import {
   assertComponentFieldsWritable,
   forbiddenComponentFields,
@@ -636,14 +641,31 @@ const sendsCarried = (model: ContentModel, patch: Readonly<ContentData>): boolea
       field.id in patch,
   );
 
+/** Whether a list's components hold, at any depth, a relation (`relation`) or media (`media`) field. */
+const holdsFieldOfType = (view: CallerView, field: FieldDefinition, type: 'relation' | 'media'): boolean => {
+  const visited = new Set<string>();
+  const holds = (current: FieldDefinition): boolean =>
+    componentsOfField(current, view.componentOf).some((component) => {
+      if (visited.has(component.id)) {
+        return false;
+      }
+      visited.add(component.id);
+      return component.fields.some((nested) => nested.type === type || holds(nested));
+    });
+  return holds(field);
+};
+
 /**
- * Whether the caller sees everything stored in a list's items, at any depth (nothing in them hidden from it, nor
- * unknown to its version): only there may swapping identical items be an unchanged save (`isUnchangedSave`).
+ * Whether the caller sees everything stored in a list's items, at any depth: nothing in them hidden from it or
+ * unknown to its version, and no relation target or media it cannot see (its read cuts those). Only there may
+ * swapping identical items be an unchanged save (`isUnchangedSave`), so no answer depends on what it cannot see.
  */
 const seesAllStoredOf =
   (view: CallerView) =>
   (field: FieldDefinition): boolean =>
-    !view.holdsHidden({ reads: true, sees: true }, field);
+    !view.holdsHidden({ reads: true, sees: true }, field) &&
+    (view.access.visibleTargets === null || !holdsFieldOfType(view, field, 'relation')) &&
+    (view.access.visibleMedia === null || !holdsFieldOfType(view, field, 'media'));
 
 /** A stale version answers 409 before any work on the items (the write's own check stays authoritative). */
 const assertFreshVersion = (

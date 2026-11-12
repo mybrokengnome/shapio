@@ -1,7 +1,17 @@
 [
   {
     "id": "refused-unseen-or-ambiguous",
-    "cite": "documentation/upgrades.md:64-66 and 68-71: \"It is refused with `AMBIGUOUS_ITEMS` when the caller cannot see the draft it writes (an app user whose draft is ahead of the published version) and the list holds a field it cannot write\"; \"refused with `AMBIGUOUS_ITEMS` only when the caller cannot read the draft and the field's items can hold values it cannot see\". Condition worked out from the stored data and the caller: it cannot see the draft it writes, and every refused list's items can hold values hidden from it.",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It is refused with `AMBIGUOUS_ITEMS` when the caller cannot see the draft it writes"
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "unless you cannot read the draft (then `AMBIGUOUS_ITEMS`, \"replaces items this caller cannot read\""
+      }
+    ],
+    "condition": "Condition worked out from the stored data and the caller: it cannot see the draft it writes, and every refused list's items can hold values hidden from it.",
     "path": ".*",
     "when": {
       "branchIssues": "AMBIGUOUS_ITEMS",
@@ -10,7 +20,13 @@
   },
   {
     "id": "refused-no-id-items",
-    "cite": "documentation/upgrades.md:48-50: \"On a content type whose components hold a private or deprecated field, an app user's or anonymous caller's write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`)\". Condition worked out from the body and the caller: an app user or anonymous caller, and every refused list was sent with an item without `id` and its items can hold values hidden from it.",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "an app user's or anonymous caller's write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`)"
+      }
+    ],
+    "condition": "Condition worked out from the body and the caller: an app user or anonymous caller, and every refused list was sent with an item without `id` and its items can hold values hidden from it.",
     "path": ".*",
     "when": {
       "branchIssues": "AMBIGUOUS_ITEMS",
@@ -19,7 +35,17 @@
   },
   {
     "id": "hidden-values-kept",
-    "cite": "documentation/upgrades.md:56-60: \"Private and deprecated values inside components, and hidden relation targets and media, are kept when a client writes back what it read. Before, such a write wiped them ... It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what it read\"; CHANGELOG.md:125. Narrowed to that: every stored difference is a private sub-field or a relation target hidden from the caller that the branch kept, plus the counters and versions that follow from writing less.",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "Private and deprecated values inside components, and hidden relation targets and media, are kept when a client writes back what it read"
+      },
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It changes nothing (no new revision, no `entry.updated`, `id`s kept) when the caller sends back exactly what it read"
+      }
+    ],
+    "condition": "Every stored difference of the step is a private sub-field or a relation target hidden from the caller that the branch kept and main lost; besides those, only counters and versions differ.",
     "path": "^/entry/|^/body/(data/)?(version|status|updatedAt|publishedAt)$|^/body/meta/",
     "when": {
       "hiddenKept": true
@@ -27,7 +53,17 @@
   },
   {
     "id": "refusal-order",
-    "cite": "documentation/upgrades.md:72-73: \"Refusals come in a fixed order: ... `403` for the content type and `404`, then the body (`422`)\"; CHANGELOG.md:167-169 (\"`404` (the entry does not exist or is not the caller's), then the body\"). Condition: the entry is not the caller's (worked out from the seed's ownership), the branch answered 404 or 403 and main a body error (422).",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "`403` for the content type and `404`, then the body (`422`)"
+      },
+      {
+        "file": "CHANGELOG.md",
+        "text": "`404` (the entry does not exist or is not the caller's), then the body"
+      }
+    ],
+    "condition": "The entry is not the caller's (from the seed's ownership); the branch answered 404 or 403 and main a body error (422).",
     "path": ".*",
     "when": {
       "refusalOrder": true
@@ -35,7 +71,17 @@
   },
   {
     "id": "stale-unknown-hidden",
-    "cite": "documentation/upgrades.md:68-71 (item 5, until the stale-id item exists): \"A delivery client that later sends back an old `id` is not refused for it: the item is saved as new, or the write is refused ... only when the caller cannot read the draft and the field's items can hold values it cannot see.\" Narrowed to: a stale retry whose every UNKNOWN_ITEM_ID is on a list whose items can hold values hidden from the caller (worked out from the seed and the caller).",
+    "cites": [
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "An `id` no version shows is `UNKNOWN_ITEM_ID`; read the entry again for current `id`s and retry."
+      },
+      {
+        "file": "documentation/delivery-api.md",
+        "text": "Where items can hold values you cannot read or write"
+      }
+    ],
+    "condition": "A stale retry whose every UNKNOWN_ITEM_ID is on a list whose items can hold values hidden from the caller (from the seed and the caller).",
     "path": ".*",
     "when": {
       "staleHidden": true

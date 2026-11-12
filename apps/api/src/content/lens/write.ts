@@ -658,7 +658,8 @@ const readView = (
     ) {
       continue;
     }
-    const leaf = fieldInputForm(field, scope === 'whole' ? value : cutRead(walk.view.access, field, value));
+    // Targets the caller cannot see are cut on both sides of every key, so no pairing depends on them.
+    const leaf = fieldInputForm(field, cutRead(walk.view.access, field, value));
     if (isMissingValue(leaf) || (Array.isArray(leaf) && leaf.length === 0)) {
       continue;
     }
@@ -843,14 +844,12 @@ const pairWrittenList = (
   const unseen = !scope.sees;
   const hidden = walk.view.holdsHidden(scope, field.stored);
   const sentIds = sent.map(sentIdOf);
-  // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
-  // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
-  // A list naming IDs the draft lacks is keyed too where the caller sees its items and nothing in them is
-  // hidden from it: those items pair as they would without IDs (listPairing.ts).
+  // Keys for the content pairing (listPairing.ts `pairByContent`), made when some sent item is not one of the
+  // draft's by its ID (or the list names none): of what the caller sees, or of whole items (targets it cannot see
+  // cut) for a list it writes in full where it cannot see the draft.
   const storedIds = new Set(stored.map(storedIdOf));
-  const copiesItems =
-    scope.sees && !hidden && sentIds.some((id) => typeof id === 'string' && !storedIds.has(id));
-  const compares = (sentIds.every((id) => id === undefined) && (scope.sees || !hidden)) || copiesItems;
+  const needsContent = sentIds.some((id) => typeof id !== 'string' || !storedIds.has(id));
+  const compares = needsContent && (scope.sees || !hidden);
   const keyScope: ViewScope | 'whole' = scope.sees ? scope : 'whole';
   const sentSide = side(
     compares ? sent : [],
