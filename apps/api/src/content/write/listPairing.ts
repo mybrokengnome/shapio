@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
+import { ITEM_ID_FIELD, ITEM_ID_KEY, ITEM_ID_PATTERN } from '../../constants/itemIds.js';
 import { canonicalJson } from '../itemIds.js';
 import { contentInvalid, pointer, type ContentIssue } from '../validator/issues.js';
 
@@ -123,19 +123,40 @@ export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIs
     : [];
 
 /**
- * An ID the draft does not hold at this position, but which another head of the entry the caller may read shows
- * here (any locale; the published head while the draft has unpublished changes, another locale it copied from):
- * the server gave it to this caller, so it is never an unknown ID. The item is new (a new ID, nothing carried
- * over), exactly as the same item sent with `id: null`. Refused, saying why, only for a caller that cannot see the
- * draft it writes (`unseen`: no draft access, and the draft is ahead of what it may read) in a list that can hold
- * values hidden from it, where something is stored: replacing items it never saw would drop what it cannot see.
- * Decided from the IDs of heads the caller may read, the draft's IDs (membership only), and the schema; never
- * from a value the caller cannot read.
+ * An item ID the draft written does not hold at this position (plan item-ids). Decided from the caller's view,
+ * the schema, the draft's IDs (membership only), and the IDs of the entry's heads the caller may read; never
+ * from a value the caller cannot read. Any ID the draft holds pairs; malformed, repeated, and re-typed IDs, and an
+ * ID two draft items share, answer as before.
+ *
+ * | caller sees the draft | list can hold values hidden from it | ID a readable head shows | ID no head shows  |
+ * | --------------------- | ----------------------------------- | ------------------------ | ----------------- |
+ * | yes                   | no                                  | new                      | new               |
+ * | yes                   | yes                                 | new                      | UNKNOWN_ITEM_ID * |
+ * | no                    | no                                  | new                      | new               |
+ * | no                    | yes                                 | AMBIGUOUS_ITEMS          | UNKNOWN_ITEM_ID   |
+ *
+ * Always new: on an admin write (`neverRefuses`), for a caller that may read drafts (`readsDrafts`: it sees every
+ * head, so what it sends replaces the draft's items as on main, as a deleted item's values go), and where nothing
+ * is stored (`fresh`: under a new item, or a localized list of a new locale). "New" is a new ID with nothing
+ * carried over, unless the item continues the one draft item no other sent item names that equals it in everything the caller sees, when that is certain
+ * (`withForeignContinued`). On a list that holds nothing hidden from the caller a well-formed ID is never refused
+ * (nothing can be lost); where items can hold hidden values, an ID no head shows (a stale read) is refused, since
+ * the item it named may hold values the caller cannot see, and reading again gives current IDs.
+ * A caller that cannot see the draft (no draft access, the draft ahead) is refused rather than replace items it
+ * never saw where they can hold what it cannot see (`AMBIGUOUS_ITEMS`, "replaces items this caller cannot read").
+ * A caller that may read drafts always sees the draft. (*) New for a caller that may read drafts.
  */
 const shownElsewhere = (policy: ListPolicy, index: number | null): ListIssue | null =>
   policy.unseen && policy.hidden && !policy.fresh && !policy.neverRefuses && !policy.readsDrafts
     ? { index, code: 'AMBIGUOUS_ITEMS', draftAhead: true }
     : null;
+
+/** An ID no head of the entry shows (the table above): null when it is a new item, else the refusal. */
+const shownNowhere = (policy: ListPolicy, id: string, index: number | null): ListIssue | null =>
+  ITEM_ID_PATTERN.test(id) &&
+  (policy.neverRefuses === true || policy.fresh === true || policy.readsDrafts === true || !policy.hidden)
+    ? null
+    : { index, code: 'UNKNOWN_ITEM_ID' };
 
 /**
  * Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. A stored ID that two
@@ -182,7 +203,14 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
       return -1;
     }
     if (at === undefined) {
-      issues.push({ index, code: 'UNKNOWN_ITEM_ID' });
+      const refused = shared.has(id)
+        ? { index, code: 'UNKNOWN_ITEM_ID' as const }
+        : shownNowhere(policy, id, index);
+      if (refused) {
+        issues.push(refused);
+      } else {
+        foreign.push(index);
+      }
       return -1;
     }
     if (sides.sent.kinds[index] !== sides.stored.kinds[at]) {
@@ -195,7 +223,8 @@ const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; iss
 };
 
 /**
- * Items whose IDs only another head shows (`shownElsewhere`) are what the same items sent without IDs would be:
+ * Items whose IDs the draft lacks and that are new (`shownElsewhere`, `shownNowhere`) are what the same items
+ * sent without IDs would be:
  * where keys were made for the list (a caller that sees its items, in a list that holds nothing hidden from it, or
  * an admin write), each continues the stored item no other sent item names when that is certain (`pairCertain`
  * over those items: equal in everything the caller sees, once on each side), so copying back what a draft already
@@ -353,7 +382,10 @@ export const pairSingle = (
     const refused = shownElsewhere(shown.policy, null);
     return { pairs: [-1], issues: refused ? [refused] : [] };
   }
-  return { pairs: [-1], issues: [{ index: null, code: 'UNKNOWN_ITEM_ID' }] };
+  const refused = shown
+    ? shownNowhere(shown.policy, sentId, null)
+    : { index: null, code: 'UNKNOWN_ITEM_ID' as const };
+  return { pairs: [-1], issues: refused ? [refused] : [] };
 };
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

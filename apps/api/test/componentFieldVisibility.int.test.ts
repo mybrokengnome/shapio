@@ -26,10 +26,10 @@ import { useTestDatabase } from './helpers/testDatabase.js';
 type Delivered = { data: Record<string, unknown> };
 
 /** One stored address: `hidden` and the nested box's `secret` are `public: false`. */
-const ADDRESS = { city: 'Paris', hidden: 'h1', inner: { open: 'o', secret: 's3cret' } };
+const ADDRESS = { city: 'Paris', hidden: 'hid-den-1', inner: { open: 'o', secret: 's3cret' } };
 /** What delivery audiences see of it. */
 const SHOWN = { city: 'Paris', inner: { open: 'o' } };
-const HIDDEN_VALUES = ['h1', 's3cret'];
+const HIDDEN_VALUES = ['hid-den-1', 's3cret'];
 
 const ZONE_SELECTION = '__typename ... on Address { city inner { open } }';
 const GRAPHQL_ENTRY = `query ($id: ID!) { thing(id: $id) {
@@ -175,14 +175,14 @@ describe('component fields with public: false', () => {
 
   it('filters into a component stay refused', async () => {
     for (const url of [
-      '/api/content/things?filters[addr.hidden][$eq]=h1',
-      '/api/content/things?filters[addr][hidden][$eq]=h1',
+      '/api/content/things?filters[addr.hidden][$eq]=hid-den-1',
+      '/api/content/things?filters[addr][hidden][$eq]=hid-den-1',
       '/api/content/things?sort=addr.hidden:asc',
       '/api/content/things?fields=addr.hidden',
     ]) {
       const refused = await get(url, token);
       expect(refused.statusCode, url).toBe(400);
-      expect(refused.body, url).not.toMatch(/h1/);
+      expect(refused.body, url).not.toMatch(/hid-den-1/);
     }
   });
 
@@ -226,7 +226,7 @@ describe('component fields with public: false', () => {
   });
 
   it('admin audiences still see every component field (REST delivery, admin API and GraphQL)', async () => {
-    const full = { city: 'Paris', hidden: 'h1', inner: { open: 'o', secret: 's3cret' } };
+    const full = { city: 'Paris', hidden: 'hid-den-1', inner: { open: 'o', secret: 's3cret' } };
     const delivered = expectStatus(
       await get(`/api/content/things/${entry.id}`, adminToken),
       200,
@@ -249,7 +249,7 @@ describe('component fields with public: false', () => {
         headers: bearer(adminToken),
       },
     );
-    expect(dataOf(result)).toEqual({ thing: { addr: { hidden: 'h1', inner: { secret: 's3cret' } } } });
+    expect(dataOf(result)).toEqual({ thing: { addr: { hidden: 'hid-den-1', inner: { secret: 's3cret' } } } });
   });
 
   it('preview tokens show what the site would see', async () => {

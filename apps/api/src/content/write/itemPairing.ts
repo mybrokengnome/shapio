@@ -111,7 +111,7 @@ const pairValue = (
   const componentOf = (item: unknown) => componentOfItem(field, item, view.componentOf);
   // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
   // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
-  // A list that names IDs only another head shows gets them too where the caller sees the items and nothing in
+  // A list that names IDs the draft lacks gets them too where the caller sees the items and nothing in
   // them is hidden from it (or an admin writes): those items pair as they would without IDs (listPairing.ts).
   const noIds = written.every((item) => sentIdOf(item) === undefined);
   const storedIds = new Set(kept.map(storedItemId));
@@ -121,7 +121,7 @@ const pairValue = (
     (!policy.hidden || policy.neverRefuses) &&
     written.some((item) => {
       const id = sentIdOf(item);
-      return typeof id === 'string' && !storedIds.has(id) && shownHere.has(id);
+      return typeof id === 'string' && !storedIds.has(id);
     });
   const keyOf = copiesItems
     ? { sent: view.sentKey, stored: view.storedKey }

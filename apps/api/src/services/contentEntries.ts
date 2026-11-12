@@ -1,4 +1,4 @@
-import type { ModelDefinition } from '@shapio/schema';
+import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
 import type { Transaction } from 'kysely';
 import {
   assertWritable,
@@ -25,6 +25,7 @@ import {
 import {
   changedFieldIds,
   changedSharedFieldIds,
+  sharedValuesOnlyRenumbered,
   withSharedValuesOf,
   writeLocaleFor,
 } from '../content/locales.js';
@@ -38,6 +39,7 @@ import { fieldsWithoutItemIds } from '../content/withoutItemIds.js';
 import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from '../content/write/heads.js';
 import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
 import { assertComponentListCaps, keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
+import { withLookalikesInIdOrder } from '../content/write/lookalikeOrder.js';
 import { assertTargets, mediaIdsOf, relationsByPath } from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
@@ -255,6 +257,12 @@ export type UpdateEntryInput = {
    * It may only change values under keys the patch already names.
    */
   carry?: (patch: Readonly<ContentData>, base: DraftUpdateBase, model: ContentModel) => ContentData;
+  /**
+   * Whether the caller sees everything stored in the items of a component list (nothing in them hidden from it):
+   * only there is a swap of items identical in everything stored an unchanged save (`isUnchangedSave`), so the
+   * answer never tells a caller whether values hidden from it differ. Absent: every list (admin writes).
+   */
+  seesAllStoredIn?: (field: FieldDefinition) => boolean;
 };
 
 type DraftChange = {
@@ -280,6 +288,8 @@ const draftChanges = (
     after: ContentData;
     afterWithIds: ContentData;
     autosave: boolean;
+    /** Where the written locale's items derive their IDs: the other locales' drafts are read the same way. */
+    idScope: ItemIdScope;
   },
 ): DraftChange[] => {
   const changes: DraftChange[] = [
@@ -297,7 +307,16 @@ const draftChanges = (
   if (shared.size === 0) {
     return changes;
   }
+  const componentOf = componentLookupOf(model.components);
   for (const other of heads.filter((head) => head.state === 'draft' && head.locale !== main.locale)) {
+    const otherWithIds = withItemIds(other.data, model.definition.fields, componentOf, {
+      ...main.idScope,
+      ...(main.idScope.locale === undefined ? {} : { locale: other.locale }),
+    });
+    if (sharedValuesOnlyRenumbered(model.definition, otherWithIds, main.afterWithIds, shared, componentOf)) {
+      // Identical items reordered: the same content and IDs there, so nothing to write (no revision, no status).
+      continue;
+    }
     changes.push({
       previous: other,
       locale: other.locale,
@@ -305,7 +324,7 @@ const draftChanges = (
       data: withUniqueItemIds(
         withSharedValuesOf(model.definition, other.data, main.after, shared),
         model.definition.fields,
-        componentLookupOf(model.components),
+        componentOf,
       ),
       // A draft with unsaved autosaved work stays an autosave; otherwise the fan-out is a saved revision.
       mode: main.autosave || other.autosaved_at ? 'autosave' : 'revision',
@@ -363,15 +382,26 @@ const saveDraftChanges = async (
  * revision), and the validated data is what it already has.
  */
 const isUnchangedSave = (
+  model: ContentModel,
   previous: HeadRecord | undefined,
   beforeWithIds: Readonly<ContentData>,
   after: ContentData,
-): previous is HeadRecord =>
-  previous !== undefined &&
-  previous.autosaved_at === null &&
-  // Compared with every item's ID (stored, or derived for items saved before IDs): a list sent back as it was
-  // is no change whether its IDs were persisted or not, while look-alikes swapped by their IDs are one.
-  sameContent(beforeWithIds, after);
+  seesAllStoredIn: (field: FieldDefinition) => boolean = () => true,
+): previous is HeadRecord => {
+  if (previous === undefined || previous.autosaved_at !== null) {
+    return false;
+  }
+  // Compared with every item's ID (stored, or derived for items saved before IDs): a list sent back as it was is
+  // no change whether its IDs were persisted or not. Items swapped by their IDs are a change, unless the items
+  // are identical in everything stored (hidden values and nested items included) in a list the caller sees whole:
+  // then only which identical item carries which ID differs, which nothing shows. Where the list can hold values
+  // hidden from the caller the swap stays a change, so the answer says nothing about those values.
+  const componentOf = componentLookupOf(model.components);
+  return sameContent(
+    withLookalikesInIdOrder(beforeWithIds, model.definition.fields, componentOf, seesAllStoredIn),
+    withLookalikesInIdOrder(after, model.definition.fields, componentOf, seesAllStoredIn),
+  );
+};
 
 /** Stored data without item IDs, for comparisons of content (plan item-ids). */
 const withoutIds = (model: ContentModel, data: Readonly<ContentData>): ContentData =>
@@ -437,6 +467,8 @@ export type EntryUpdateWrite = {
   patch: Readonly<ContentData> | ((base: DraftUpdateBase) => ContentData);
   /** `UpdateEntryInput.carry`, applied once the version is checked. */
   carry?: (patch: Readonly<ContentData>, base: DraftUpdateBase) => ContentData;
+  /** `UpdateEntryInput.seesAllStoredIn`. */
+  seesAllStoredIn?: (field: FieldDefinition) => boolean;
 };
 
 /**
@@ -506,7 +538,7 @@ export const writeEntryUpdate = async (
   // Both sides with every item's ID: items the body left out (or sent back) of an entry saved before item IDs
   // carry the IDs a read derives for them on both sides, so only content and IDs the body changed count.
   const afterWithIds = withItemIds(outcome.data, model.definition.fields, componentOf, idScope);
-  if (isUnchangedSave(previous, beforeWithIds, afterWithIds)) {
+  if (isUnchangedSave(model, previous, beforeWithIds, afterWithIds, input.seesAllStoredIn)) {
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }
@@ -529,6 +561,7 @@ export const writeEntryUpdate = async (
     after: outcome.data,
     afterWithIds,
     autosave,
+    idScope,
   });
   const written = await saveDraftChanges(context, write, id, changes, previous ? 'save' : 'localize');
   await syncEntryUniqueValues(write, id);
@@ -559,7 +592,7 @@ export const updateEntryWithHead = async (
   const locale = writeLocaleFor(context.snapshot, model.definition, input.locale);
   const validator = buildValidator(context.snapshot, model);
   const patch = inputPatch(validator, model, input.data);
-  const { carry } = input;
+  const { carry, seesAllStoredIn } = input;
   const written = await runEntryWrite(context.db, model, context.site.id, [locale], (trx) =>
     writeEntryUpdate(trx, context, {
       model,
@@ -571,6 +604,7 @@ export const updateEntryWithHead = async (
       expectedVersion: input.expectedVersion,
       patch,
       ...(carry ? { carry: (current, base) => carry(current, base, model) } : {}),
+      ...(seesAllStoredIn ? { seesAllStoredIn } : {}),
     }),
   );
   return { view: await viewAfterWrite(context, model, policy, id, written.locale), head: written.head };
@@ -663,6 +697,7 @@ export const restoreRevision = async (
       after: outcome.data,
       afterWithIds: withItemIds(outcome.data, model.definition.fields, componentOf, idScope),
       autosave: false,
+      idScope,
     });
     await saveDraftChanges(context, write, id, changes, 'restore');
     await syncEntryUniqueValues(write, id);

@@ -45,6 +45,12 @@ import {
   type Transport,
 } from './helpers/itemModelRun.js';
 import {
+  STALE_LISTS,
+  STALE_WAYS,
+  staleRetryProblems,
+  twinReorderProblems,
+} from './helpers/itemModelStale.js';
+import {
   eventCount,
   headsOf,
   itemModelWorld,
@@ -274,6 +280,18 @@ const runAs = async (
     });
     problems.push(
       ...(await echoAheadProblems(w, caller, ahead.id, { locale: ahead.locale, version, view, kind })),
+    );
+  }
+  // STALERETRY (review 11): a stale write retried with the version its 409 named.
+  if (caller.reads && caller.updates && caller.name !== 'limited' && random.chance(0.3)) {
+    problems.push(
+      ...(await staleRetryProblems(w, caller, {
+        list: random.pick(STALE_LISTS),
+        way: random.pick(STALE_WAYS),
+        publish: random.chance(0.5),
+        version,
+        legacy: random.pick(['all', 'with'] as const),
+      })),
     );
   }
   // N1: relation candidates.
@@ -1196,24 +1214,97 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     expect(report(problems)).toEqual([]);
   });
 
-  it('LOOKSWAP (3 ID integrity): swapping two identical items by their IDs writes them in the order sent', async () => {
-    // Found by run seed 99 (a nested swap of look-alikes, IDs echoed): answered 200 with no new version, the
-    // stored order unchanged, so the item sent first holds the other's ID.
-    const id = await adminCreate({
-      title: 't',
-      cards: [{ heading: 'A', chips: [{ zv: 'a' }, { zv: 'a' }] }],
-    });
-    const read = await readAs(w, w.callers.reader, id, 'en', false);
-    const card = (
-      read?.cards as Array<{ id: string; heading: string; chips: Array<{ id: string; zv: string }> }>
-    )[0];
-    const swapped = [...(card?.chips ?? [])].reverse();
-    await putAs(w.callers.reader, id, { cards: [{ id: card?.id, heading: 'A', chips: swapped }] });
-    const after = await readAs(w, w.callers.admin, id, 'en', false);
-    const order = ((after?.cards as Array<{ chips: Array<{ id: string }> }>)[0]?.chips ?? []).map(
-      (chip) => chip.id,
+  it('LOOKSWAP (3 ID integrity): swapping two items by their IDs is a no-op when they are identical in full stored content, and a change when they differ in anything stored', async () => {
+    // Review 11 refinement: a swap of identical items by id is a no-op only where the caller sees everything
+    // stored (a list with nothing hidden from it, and the admin API); on a list that can hold hidden values it is
+    // always a change, so the response is not an oracle.
+    const problems: Problem[] = [];
+    for (const differ of [false, true]) {
+      const id = await adminCreate({
+        title: 't',
+        cards: [
+          {
+            heading: 'A',
+            chips: differ
+              ? [
+                  { zv: 'a', zh: '1' },
+                  { zv: 'a', zh: '2' },
+                ]
+              : [{ zv: 'a' }, { zv: 'a' }],
+          },
+        ],
+      });
+      const read = await readAs(w, w.callers.reader, id, 'en', false);
+      const card = (
+        read?.cards as Array<{ id: string; heading: string; chips: Array<{ id: string; zv: string }> }>
+      )[0];
+      const swapped = [...(card?.chips ?? [])].reverse();
+      const [revisions, beforeHeads] = [await revisionCount(w, id), await headsOf(w, id)];
+      const zh = (heads: typeof beforeHeads) =>
+        (
+          ((
+            heads.find((head) => head.locale === 'en' && head.state === 'draft')?.data[w.doc.cards] as
+              Array<Record<string, unknown>> | undefined
+          )?.[0]?.[w.card.chips] as Array<Record<string, unknown>> | undefined) ?? []
+        ).map((chip) => [chip.__id, chip[w.chip.zh]]);
+      const response = await putAs(w.callers.reader, id, {
+        cards: [{ id: card?.id, heading: 'A', chips: swapped }],
+      });
+      const afterHeads = await headsOf(w, id);
+      if (response.status >= 300) {
+        problems.push({
+          property: '3 ID integrity',
+          detail: `differ=${differ}: answered ${response.status}`,
+        });
+      } else if (
+        (await revisionCount(w, id)) === revisions ||
+        !isDeepStrictEqual(zh(afterHeads), [...zh(beforeHeads)].reverse())
+      ) {
+        // The chip list can hold a value hidden from the reader (private `zh`): a swap by id is always a change,
+        // stored in the order sent, whether or not the hidden values differ (review 11 refinement).
+        problems.push({
+          property: '3 ID integrity (LOOKSWAP)',
+          detail: `differ=${differ}: the swap by id stored ${JSON.stringify(zh(afterHeads))}, revisions ${revisions} → ${await revisionCount(w, id)}`,
+        });
+      }
+    }
+    // On a list that holds nothing hidden from the caller (`plain.links`), swapping two identical items by id is a
+    // no-op (main: no change).
+    const plainId = expectStatus(
+      await w.admin.post('/api/admin/content/plain?locale=en', {
+        locale: 'en',
+        data: { title: 'p', links: [{ label: 'x' }, { label: 'x' }] },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    const links = (await w.request('GET', `/api/admin/content/plain/${plainId}?locale=en`, w.adminToken))
+      .body as {
+      version: number;
+      data: { links: Array<{ id: string; label: string }> };
+    };
+    const plainRevisions = await revisionCount(w, plainId);
+    const plainHeads = await headsOf(w, plainId);
+    const swapped = await w.request(
+      'PUT',
+      `/api/content/plains/${plainId}?locale=en`,
+      w.callers.reader.token,
+      {
+        locale: 'en',
+        expectedVersion: links.version,
+        data: { links: [...links.data.links].reverse() },
+      },
     );
-    expect(order).toEqual(swapped.map((chip) => chip.id));
+    if (
+      swapped.status >= 300 ||
+      (await revisionCount(w, plainId)) !== plainRevisions ||
+      !isDeepStrictEqual(await headsOf(w, plainId), plainHeads)
+    ) {
+      problems.push({
+        property: '9 no-op (LOOKSWAP)',
+        detail: `reader on plain.links: swapping two identical items answered ${swapped.status}, revisions ${plainRevisions} → ${await revisionCount(w, plainId)}`,
+      });
+    }
+    expect(report(problems)).toEqual([]);
   });
 
   it('NOOP (5 round trip): a write that changes nothing makes no revision and fires no event', async () => {
@@ -1961,6 +2052,44 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
       }
     }
   };
+
+  it('STALERETRY (8 concurrency, review 11): a stale write retried with the version its 409 named keeps the ids it read', async () => {
+    const problems: Problem[] = [];
+    for (const model of ['doc', 'ndoc'] as const) {
+      useModel(w, model);
+      try {
+        for (const name of ['admin', 'adminToken', 'reader', 'pinned'] as const) {
+          for (const list of STALE_LISTS) {
+            for (const way of STALE_WAYS) {
+              for (const publish of model === 'doc' ? [false, true] : [false]) {
+                problems.push(
+                  ...(await staleRetryProblems(w, w.callers[name], {
+                    list,
+                    way,
+                    publish,
+                    version: name === 'reader' && way === 'deleteItem',
+                    legacy: way === 'adminNoIds' ? 'with' : 'all',
+                  })),
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        useModel(w, 'doc');
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
+
+  it('TWINREORDER (9 no-op, review 11): reordering two identical shared items with their ids leaves other locales alone', async () => {
+    const problems: Problem[] = [];
+    for (const name of ['admin', 'adminToken', 'reader'] as const) {
+      problems.push(...(await twinReorderProblems(w, w.callers[name])));
+      problems.push(...(await twinReorderProblems(w, w.callers[name], true)));
+    }
+    expect(report(problems)).toEqual([]);
+  });
 
   it('LOCCOPY (5 round trip, review 10): items copied between locales with the ids read are accepted for a caller that sees the draft', async () => {
     const problems: Problem[] = [];

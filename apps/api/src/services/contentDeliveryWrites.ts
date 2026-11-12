@@ -636,6 +636,15 @@ const sendsCarried = (model: ContentModel, patch: Readonly<ContentData>): boolea
       field.id in patch,
   );
 
+/**
+ * Whether the caller sees everything stored in a list's items, at any depth (nothing in them hidden from it, nor
+ * unknown to its version): only there may swapping identical items be an unchanged save (`isUnchangedSave`).
+ */
+const seesAllStoredOf =
+  (view: CallerView) =>
+  (field: FieldDefinition): boolean =>
+    !view.holdsHidden({ reads: true, sees: true }, field);
+
 /** A stale version answers 409 before any work on the items (the write's own check stays authoritative). */
 const assertFreshVersion = (
   heads: readonly HeadRecord[],
@@ -690,7 +699,7 @@ const updateWithItems = async (
   modelKey: string,
   id: string,
   input: DeliveryUpdateInput,
-  update: (data: unknown, carry?: UpdateEntryInput['carry']) => Promise<UpdateWritten>,
+  update: (data: unknown, carry?: UpdateEntryInput['carry'], view?: CallerView) => Promise<UpdateWritten>,
 ): Promise<DeliveryWriteResult> => {
   const { model, policy } = await entryModelWithPolicy(context, modelKey, id, 'update');
   const body = isRecord(input.data) ? input.data : {};
@@ -722,6 +731,7 @@ const updateWithItems = async (
       { lens: null, pairings: paired.pairings, base: start.base },
       input.expectedVersion,
     ),
+    view,
   );
   return toResult(
     context,
@@ -737,18 +747,21 @@ export const updateDeliveryEntry = async (
   input: DeliveryUpdateInput,
   clientRoute: ClientRoute | null = null,
 ): Promise<DeliveryWriteResult> => {
-  const update = (data: unknown, carry?: UpdateEntryInput['carry'], routeKey = modelKey) =>
+  const update = (data: unknown, carry?: UpdateEntryInput['carry'], routeKey = modelKey, view?: CallerView) =>
     contentEntriesService.updateEntryWithHead(context, routeKey, id, {
       ...input,
       ...(data === undefined ? {} : { data }),
       autosave: false,
       ...(carry ? { carry } : {}),
+      ...(view ? { seesAllStoredIn: seesAllStoredOf(view) } : {}),
     });
   if (!activeLens(context)) {
     if (!isRecord(input.data)) {
       return toResult(context, (await update(input.data)).view);
     }
-    return updateWithItems(context, modelKey, id, input, (data, carry) => update(data, carry));
+    return updateWithItems(context, modelKey, id, input, (data, carry, view) =>
+      update(data, carry, modelKey, view),
+    );
   }
   // The entry's own kind (a family route writes the kind), authorized first, exactly as without a version.
   const { model, policy } = await authorizeClientRoute(context, clientRoute, modelKey, (apiKey) =>
@@ -821,6 +834,7 @@ export const updateDeliveryEntry = async (
       data,
       carryOver(context, isRecord(data) ? data : {}, view, { lens, pairings, base }, input.expectedVersion),
       routeApiKey,
+      view,
     ),
   );
   return toResult(

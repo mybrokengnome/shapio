@@ -1,4 +1,5 @@
 import type { FieldDefinition, ModelDefinition } from '@shapio/schema';
+import { ITEM_ID_KEY } from '../constants/itemIds.js';
 import type { ContentData } from '../db/contentData.js';
 import type { SchemaById } from '../schema/snapshot.js';
 import type { LocaleScope } from './compiler/compile.js';
@@ -93,6 +94,46 @@ export const changedSharedFieldIds = (
   before: Readonly<ContentData>,
   after: Readonly<ContentData>,
 ): Set<string> => changedFieldIds(sharedFields(model), before, after);
+
+/** Every item ID stored in a value, at any depth, sorted (a multiset). */
+const storedItemIdsOf = (value: unknown): string[] => {
+  const ids: string[] = [];
+  const stack: unknown[] = [value];
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
+    if (Array.isArray(current)) {
+      stack.push(...(current as unknown[]));
+    } else if (typeof current === 'object' && current !== null) {
+      const record = current as Record<string, unknown>;
+      if (typeof record[ITEM_ID_KEY] === 'string') {
+        ids.push(record[ITEM_ID_KEY]);
+      }
+      stack.push(...Object.values(record));
+    }
+  }
+  return ids.sort();
+};
+
+/**
+ * Whether a locale's shared values would change only in which of its identical items carries which ID (identical
+ * items reordered in another locale): the same content and the same IDs, so the locale is not rewritten for it.
+ * Every locale keeps the same items and IDs; only the order of look-alikes may differ between them.
+ */
+export const sharedValuesOnlyRenumbered = (
+  model: ModelDefinition,
+  current: Readonly<ContentData>,
+  next: Readonly<ContentData>,
+  fieldIds: ReadonlySet<string>,
+  componentOf: ComponentLookup,
+): boolean =>
+  sharedFields(model)
+    .filter((field) => fieldIds.has(field.id))
+    .every(
+      (field) =>
+        sameContent(
+          valueWithoutItemIds(field, current[field.id], componentOf),
+          valueWithoutItemIds(field, next[field.id], componentOf),
+        ) && sameContent(storedItemIdsOf(current[field.id]), storedItemIdsOf(next[field.id])),
+    );
 
 export type LocaleHeads = {
   locale: string;

@@ -344,7 +344,7 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     entries.push({ id, model: 'doc', ahead });
   }
   // Review 10: ldoc entries in en and de, one fully published, one with de ahead of its published head.
-  for (const ahead of ['published', 'deAhead']) {
+  for (const ahead of ['published', 'deAhead', 'twins']) {
     const id = expectStatus(
       await admin.post('/api/admin/content/ldoc?locale=en', {
         locale: 'en',
@@ -354,7 +354,8 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
             { label: 'e1', secret: 's1' },
             { label: 'e2', secret: 's2' },
           ],
-          sitems: [{ zv: 's' }],
+          // Review 11 (low): the `twins` entry's shared list holds two identical items.
+          sitems: ahead === 'twins' ? [{ zv: 't' }, { zv: 't' }] : [{ zv: 's' }],
         },
       }),
       201,
@@ -552,7 +553,10 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     .filter(({ entry }) => entry.ahead && entry.model !== 'ldoc');
   const ldocs = entries
     .map((entry, index) => ({ entry, index }))
-    .filter(({ entry }) => entry.model === 'ldoc');
+    .filter(({ entry }) => entry.model === 'ldoc' && entry.ahead !== 'twins');
+  const twins = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.ahead === 'twins');
   /**
    * What the docs' conditions need, worked out from the stored data and the caller (never from the response):
    * whether the caller sees the draft it writes (it may read the entry, and the draft is not ahead of the
@@ -639,6 +643,164 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
    * Review 10: copies between locales. Read `en` and `de`; write `de` with its own items plus `en`'s, or `en` with
    * `de`'s (on the branch with the reads' `id`s, on main with none).
    */
+  /**
+   * Review 11: a stale retry. Caller A reads; caller B changes a list of the same entry (an admin API save without
+   * ids, an item deleted, another client's save without ids, or an admin API edit with ids), maybe publishing;
+   * A writes its old body (409 expected), then retries it with the version the 409 named.
+   */
+  const staleStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const index = random.int(entries.length);
+    const target = entries[index] as (typeof entries)[number];
+    const lists =
+      target.model === 'ldoc'
+        ? (['litems', 'sitems'] as const)
+        : (['cards', 'lchips', 'chips', 'heroItems'] as const);
+    const list = random.pick(lists);
+    const way = random.pick(['adminNoIds', 'deleteItem', 'otherClientNoIds', 'editWithIds'] as const);
+    const publish = target.model !== 'ndoc' && random.chance(0.5);
+    const locale = random.chance(0.3) ? (target.model === 'ldoc' ? 'de' : 'fr') : 'en';
+    const label = `${step} ${caller} stale e${index} ${target.model} ${locale} ${list} ${way}${publish ? ' publish' : ''}`;
+    const plural = `${target.model}s`;
+    const adminUrl = `/api/admin/content/${target.model}/${target.id}?locale=${locale}`;
+    const adminView = async () => {
+      const view = await request('GET', adminUrl, manifest.adminToken);
+      return isRecord(view.body) ? view.body : {};
+    };
+    const seen = (await adminView()).version ?? null;
+    const read =
+      caller === 'admin'
+        ? await request('GET', adminUrl, token)
+        : await request('GET', `/api/content/${plural}/${target.id}?locale=${locale}`, token);
+    const data = isRecord(read.body) && isRecord(read.body.data) ? read.body.data : {};
+    const fields =
+      target.model === 'ldoc' ? ['title', 'litems', 'sitems'] : ['title', 'cards', 'lchips', 'hero', 'zone'];
+    const body: Json = {
+      ...Object.fromEntries(Object.entries(data).filter(([key]) => fields.includes(key))),
+      title: `${typeof data.title === 'string' ? data.title : 't'}!`,
+    };
+    // B changes the list.
+    const stripIds = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(stripIds)
+        : isRecord(value)
+          ? Object.fromEntries(
+              Object.entries(value)
+                .filter(([key]) => key !== 'id')
+                .map(([key, entry]) => [key, stripIds(entry)]),
+            )
+          : value;
+    const asList = (value: unknown) => (Array.isArray(value) ? (value as Json[]) : []);
+    const editFirst = (items: Json[]) =>
+      items.map((item, at) => {
+        if (at !== 0) return item;
+        const field = 'heading' in item ? 'heading' : 'label' in item ? 'label' : 'zv';
+        return { ...item, [field]: `${String(item[field])}*` };
+      });
+    const patch = (current: Json, change: (items: Json[]) => Json[]): Json =>
+      list === 'chips'
+        ? {
+            cards: asList(current.cards).map((card, at) =>
+              at === 0 ? { ...card, chips: change(asList(card.chips)) } : card,
+            ),
+          }
+        : list === 'heroItems'
+          ? {
+              hero: {
+                ...(isRecord(current.hero) ? current.hero : {}),
+                items: change(asList(isRecord(current.hero) ? current.hero.items : [])),
+              },
+            }
+          : { [list]: change(asList(current[list])) };
+    const before = await adminView();
+    const current = isRecord(before.data) ? before.data : {};
+    const hiddenList = ['cards', 'litems'].includes(list);
+    const change =
+      way === 'adminNoIds'
+        ? (stripIds(patch(current, editFirst)) as Json)
+        : way === 'deleteItem'
+          ? patch(current, (items) => items.slice(0, 1))
+          : way === 'editWithIds'
+            ? patch(current, editFirst)
+            : list === 'chips'
+              ? patch(current, (items) => stripIds(items.slice(0, 1)) as Json[])
+              : (stripIds(patch(current, hiddenList ? (items) => items.slice(0, 1) : editFirst)) as Json);
+    const changed =
+      way === 'otherClientNoIds'
+        ? await request('PUT', `/api/content/${plural}/${target.id}?locale=${locale}`, manifest.adminToken, {
+            locale,
+            expectedVersion: before.version ?? null,
+            data: change,
+          })
+        : await request('PUT', adminUrl, manifest.adminToken, {
+            locale,
+            expectedVersion: before.version ?? null,
+            data: change,
+          });
+    if (publish) {
+      await request('POST', `/api/admin/content/${target.model}/${target.id}/publish`, manifest.adminToken, {
+        locales: [locale],
+      });
+    }
+    const pre = await preOf(caller, target, locale, body);
+    const write = (expectedVersion: unknown) =>
+      caller === 'admin'
+        ? request('PUT', adminUrl, token, { locale, expectedVersion, data: body })
+        : request('PUT', `/api/content/${plural}/${target.id}?locale=${locale}`, token, {
+            locale,
+            expectedVersion,
+            data: body,
+          });
+    const first = await write(seen);
+    const named =
+      isRecord(first.body) && isRecord(first.body.error) && isRecord(first.body.error.details)
+        ? first.body.error.details.currentVersion
+        : undefined;
+    const retry = first.status === 409 ? await write(named ?? null) : first;
+    return {
+      label,
+      pre,
+      otherStatus: changed.status,
+      firstStatus: first.status,
+      sent: normal(body, created),
+      ...outcomeOf(retry),
+      entry: await observeEntry(target.id, target.model),
+    };
+  };
+  /**
+   * Review 11 (low): with ids sent, reordering a shared list that holds two identical items (the content order is
+   * unchanged) changes nothing; on main, no change.
+   */
+  const twinsStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const { entry: target, index } = twins[0] as (typeof twins)[number];
+    const adminUrl = `/api/admin/content/ldoc/${target.id}?locale=en`;
+    const read =
+      caller === 'admin'
+        ? await request('GET', adminUrl, token)
+        : await request('GET', `/api/content/ldocs/${target.id}?locale=en`, token);
+    const data = isRecord(read.body) && isRecord(read.body.data) ? read.body.data : {};
+    const body = { sitems: [...(Array.isArray(data.sitems) ? (data.sitems as Json[]) : [])].reverse() };
+    const view = await request('GET', adminUrl, manifest.adminToken);
+    const version = isRecord(view.body) ? (view.body.version ?? null) : null;
+    const response =
+      caller === 'admin'
+        ? await request('PUT', adminUrl, token, { locale: 'en', expectedVersion: version, data: body })
+        : await request('PUT', `/api/content/ldocs/${target.id}?locale=en`, token, {
+            locale: 'en',
+            expectedVersion: version,
+            data: body,
+          });
+    return {
+      label: `${step} ${caller} twins e${index} ldoc en`,
+      pre: await preOf(caller, target, 'en', body),
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, 'ldoc'),
+      deView: normal(
+        (await request('GET', `/api/admin/content/ldoc/${target.id}?locale=de`, manifest.adminToken)).body,
+        created,
+      ),
+    };
+  };
   const locCopyStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
     const { entry: target, index } = random.pick(ldocs);
     const variant = random.pick(['toDe', 'toEn'] as const);
@@ -788,7 +950,27 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     const target = entries[entryIndex] as (typeof entries)[number];
     const plural = `${target.model}s`;
     const locale = random.chance(0.2) ? 'fr' : 'en';
-    const op = random.pick(['read', 'write', 'write', 'write', 'create', 'echo', 'echo', 'loccopy'] as const);
+    const op = random.pick([
+      'read',
+      'write',
+      'write',
+      'write',
+      'create',
+      'echo',
+      'echo',
+      'loccopy',
+      'stale',
+      'stale',
+      'twins',
+    ] as const);
+    if (op === 'stale') {
+      steps.push(await staleStep(step, caller, token));
+      continue;
+    }
+    if (op === 'twins') {
+      steps.push(await twinsStep(step, caller, token));
+      continue;
+    }
     if (op === 'loccopy') {
       steps.push(await locCopyStep(step, caller, token));
       continue;

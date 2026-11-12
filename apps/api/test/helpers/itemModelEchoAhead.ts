@@ -329,10 +329,16 @@ export const echoAheadProblems = async (
       ...sent,
       cards: cards.map((card, index) => (index === 0 ? { id: nowhere, heading: 'stray' } : card)),
     });
-    if (!issuesOf(stray).some((issue) => issue.code === 'UNKNOWN_ITEM_ID')) {
+    // Review 11: on the admin API, and for a caller that may read drafts (nothing is hidden from it), an id no
+    // head shows is a new item; for an app user, whose card list can hold values hidden from it, it stays
+    // UNKNOWN_ITEM_ID.
+    const wanted = adminKind
+      ? stray.status < 300
+      : issuesOf(stray).some((issue) => issue.code === 'UNKNOWN_ITEM_ID');
+    if (!wanted) {
       problems.push({
         property: '3 ID integrity (ECHOAHEAD)',
-        detail: `${label}: an item id from nowhere answered ${stray.status} ${stray.raw.slice(0, 200)}, not UNKNOWN_ITEM_ID`,
+        detail: `${label}: an item id from nowhere answered ${stray.status} ${stray.raw.slice(0, 200)}, not ${adminKind ? 'accepted as a new item' : 'UNKNOWN_ITEM_ID'}`,
       });
     }
   }

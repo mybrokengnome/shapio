@@ -42,7 +42,12 @@ for every write change below is the same: send back the `id` of each item you re
 ([Writing components](delivery-api.md#writing-components)). What an existing client can see, most likely first:
 
 1. Every component item in every read has one more key, `id`. A client that reads an entry and sends it back,
-   with the `id`s the read now includes, keeps working. Types regenerated with `shapio types generate`
+   with the `id`s the read now includes, keeps working, also after someone else changed the entry and it retries
+   after a `409`. The one exception is a field whose components have a private or deprecated field: there a stale
+   `id` answers `UNKNOWN_ITEM_ID`, and reading the entry again fixes it. A write retried after a 409 with `id`s no
+   version shows is saved with those items as new, except that it is refused with `UNKNOWN_ITEM_ID` on a list
+   whose items can hold values hidden from the caller, and with `AMBIGUOUS_ITEMS` when the caller cannot see the
+   draft. Types regenerated with `shapio types generate`
    require it on component items, so object literals in your own tests (fixtures) need an `id` too. GraphQL
    caching clients store component items by `__typename` and `id` ([GraphQL](graphql.md#schema-shape)).
 2. On a content type whose components hold a private or deprecated field, an app user's or anonymous caller's
@@ -66,9 +71,8 @@ for every write change below is the same: send back the `id` of each item you re
      last write response.
    - Anything else that differs from what is stored is written.
 5. On a list with nothing hidden, and in every admin API save, an item edited without its `id` gets a new `id`,
-   and so do look-alikes in a changed list. A delivery client that later sends back an old `id` is not refused
-   for it: the item is saved as new, or the write is refused with `AMBIGUOUS_ITEMS` only when the caller cannot
-   read the draft and the field's items can hold values it cannot see.
+   and so do look-alikes in a changed list. A delivery client that later sends back an old `id` gets what
+   [Item IDs](delivery-api.md#item-ids) gives for an `id` the draft does not hold (item 1).
 6. Refusals come in a fixed order: after the rate limit, authentication, the workspace, the CSRF check, the
    body depth check, and the body schema, `403` for the content type and `404`, then the body (`422`), a forbidden field (`403`), `409`, the items (`422`), and the values (`422`).
    They list at most 100 issues ([Order of refusals](delivery-api.md#order-of-refusals)). Lists

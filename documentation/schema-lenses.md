@@ -313,11 +313,11 @@ when the draft is the published version. While the entry has unpublished changes
 `id`s it read from the published version (an unchanged item has the same `id` in both) or got in `itemIds` from
 its last write; without them, a list with items is refused with `AMBIGUOUS_ITEMS` when it holds anything the
 caller cannot write; otherwise it changes nothing when sent exactly as stored, and is written as all-new items
-when it differs. An `id` read from the published version is never unknown, even after the draft changed; if the
-draft no longer holds that item and the field's items can hold values the caller cannot see, the write is
-refused (`AMBIGUOUS_ITEMS`), which tells the caller the field has unpublished changes, not what they are. A field inside a component that the caller
-cannot write cannot be sent back: it is refused (`NOT_ALLOWED`, "while the entry has unpublished changes"),
-whatever it holds, and left out it keeps its stored value.
+when it differs. An `id` read from the published version that the draft no longer holds is saved as a new item,
+or refused with `AMBIGUOUS_ITEMS` where the field's items can hold values the caller cannot see, which tells it
+the field has unpublished changes, not what they are ([Item IDs](delivery-api.md#item-ids)). A field inside a
+component that the caller cannot write cannot be sent back: it is refused (`NOT_ALLOWED`, "while the entry has
+unpublished changes"), whatever it holds, and left out it keeps its stored value.
 
 ## GraphQL
 
@@ -369,9 +369,9 @@ counts a field that reads `null` because it is gone.
     has since become a time and then text, not as `10:30:00.000`; the time is the same.
 - **Item IDs and localization.** An item saved before 0.9.0 and not written since has an `id` derived on read,
   and for a localized field that `id` includes the locale. So making a shared field localized, or making a
-  content type localized, changes the `id`s of exactly those items; a client that sends back the old ones has
-  those items saved as new (or refused, as above, where the field's items can hold values it cannot see). IDs that are stored never change, and making a field shared or a content
-  type not localized keeps them.
+  content type localized, changes the `id`s of exactly those items; a client that sends back the old ones gets
+  what [Item IDs](delivery-api.md#item-ids) gives for an `id` the draft does not hold. IDs that are stored never
+  change, and making a field shared or a content type not localized keeps them.
 - **History from before 0.9.0.** Shapio 0.9.0 starts recording which version of each content type was live at
   each schema version, and rebuilds the earlier record from the audit log when it upgrades. Where the audit log
   has no record (it was pruned, say), a read of that content type through an older version answers

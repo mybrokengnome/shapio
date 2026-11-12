@@ -563,29 +563,40 @@ These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per 
 | `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                               |
 | `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                           |
 
-An `id` that a read you may make showed for an item is never unknown to the server, even when the draft has
-changed since or the item came from another locale of the entry: every locale's published version counts, and
-every locale's draft when your token reads drafts. If the draft you write no longer holds that item, it is saved
-as a new item, as before item IDs, unless you cannot read the draft and the field's items can hold values you
-cannot read or write. Then the write is refused (`AMBIGUOUS_ITEMS`, "replaces items this caller cannot read"),
-because replacing the draft's items would lose them; leave the field out to keep it, or send an empty list to
-clear it. A localized list written to a locale for the first time holds new items, whatever `id`s it carries.
+An `id` the draft holds continues that item. For an `id` the draft does not hold:
 
-On the admin API, an `id` that any version of the entry shows (any locale, draft or published) is never unknown:
-if the draft you save lacks it, the item is saved as new. An `id` no version shows is `UNKNOWN_ITEM_ID`. On both
-APIs, an item copied with another version's `id` into a draft that already holds the same item, once and
-unambiguously, continues that item, so the same copy saved twice changes nothing.
+- On a field whose items hold nothing you cannot read or write, an `id` is never refused: it continues the item
+  that has it, or the item is saved as new (or continues an identical item when that match is certain). This is
+  what happens when another writer changed the list after you read it, when the `id` came from another locale or
+  from the published version, or when it is simply unknown.
+- Where items can hold values you cannot read or write: an `id` that a version of the entry you may read shows is
+  saved as a new item, unless you cannot read the draft (then `AMBIGUOUS_ITEMS`, "replaces items this caller
+  cannot read"; leave the field out to keep it, or send an empty list to clear it). An `id` no version shows is
+  `UNKNOWN_ITEM_ID`; read the entry again for current `id`s and retry.
+- Tokens that may read drafts, and the admin API, always save such an item as new.
 
-An `id` that no version you may read shows is `UNKNOWN_ITEM_ID`, and so is a stored `id` that somehow belongs to
-two items. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with
-a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write does
-not check that shape: an `id` that is not a string, is empty, or is longer than 64 characters is refused with an
-`INVALID_TYPE` issue at `…/id`, with the body's other problems, and any other string the list does not hold is
-`UNKNOWN_ITEM_ID`, with the item refusals ([Order of refusals](#order-of-refusals)). The path is a JSON pointer in
-your API IDs, such as `/links/2/id`.
+| You can read the draft | Items can hold values hidden from you | An `id` a readable version shows | An `id` no version shows |
+| ---------------------- | ------------------------------------- | -------------------------------- | ------------------------ |
+| yes                    | no                                    | new item                         | new item                 |
+| yes                    | yes                                   | new item                         | `UNKNOWN_ITEM_ID`        |
+| no                     | no                                    | new item                         | new item                 |
+| no                     | yes                                   | `AMBIGUOUS_ITEMS`                | `UNKNOWN_ITEM_ID`        |
 
-On a field whose items can hold values you cannot see, if your token cannot read drafts, that refusal tells you
-the field has unpublished changes, not what they are.
+A localized list written to a locale for the first time holds new items, whatever `id`s it carries. A stored `id`
+that somehow belongs to two items is `UNKNOWN_ITEM_ID`.
+
+Swapping two items that are identical in everything stored changes nothing on the admin API, and on the delivery
+API where your token can read and write every field of those items. Otherwise a swap by `id` is always saved as a
+change. Reordering identical items of a shared list does not change the other locales.
+
+`DUPLICATE_ITEM_ID` answers the same `id` twice in one list, and `ITEM_COMPONENT_CHANGED` a dynamic zone item sent
+with a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write
+does not check that shape: an `id` that is not a string, is empty, or is longer than 64 characters is refused
+with an `INVALID_TYPE` issue at `…/id`, with the body's other problems; the item refusals come later
+([Order of refusals](#order-of-refusals)). The path is a JSON pointer in your API IDs, such as `/links/2/id`.
+
+On a field whose items can hold values you cannot see, if your token cannot read drafts, an `AMBIGUOUS_ITEMS`
+refusal for an `id` a readable version shows tells you the field has unpublished changes, not what they are.
 
 The write response names the `id` of each item it wrote, in `data.itemIds`, so a caller that cannot read the
 entry back (an app user while the entry has unpublished changes, for example) can send them on its next write.
@@ -679,11 +690,10 @@ other item is new and gets a new `id`.
 | Look-alikes in a changed list       | `[A, A, B]` → `[A, A]` | both `A`s new, with new `id`s           |
 
 Being new costs something even when nothing is refused: the item gets a new `id`. A client that later sends back
-the old one is not refused for it; that item is saved as new (or refused only in the hidden-values case above).
-With `id`s, or for an item sent exactly as read, relation targets and media the caller
+the old one gets what the table above gives for an `id` the draft does not hold. With `id`s, or for an item sent exactly as read, relation targets and media the caller
 could not see are kept; an item edited without `id`s is a new item, and they are not carried over (as before
 0.9.0). In an admin write, an item that continues keeps its deprecated fields. An admin API save without `id`s
-gives edited items new `id`s; a delivery client that sends back the old ones has those items saved as new. The
+gives edited items new `id`s; a delivery client that sends back the old ones gets what the table above gives. The
 admin editor always sends `id`s.
 
 With `id`s, every row of every table is certain: an edited item keeps its hidden values, and `"id": null` marks a

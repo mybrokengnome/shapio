@@ -432,11 +432,22 @@ describe('component item IDs', () => {
     expect(copied.hero?.heading).toBe('H-copied');
     expect([en.hero?.id, fr.hero?.id]).not.toContain(copied.hero?.id);
     expect((await view('en')).data).toEqual(en);
-    // An ID no version of the entry shows names no item.
+    // An admin's ID that no version of the entry shows (a stale read) is a new item too; a malformed one names none.
+    expectStatus(
+      await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
+        locale: 'fr',
+        expectedVersion: (await view('fr')).version,
+        data: { hero: { id: 'ZZZZZZZZZZZZ', heading: 'H-stale' } },
+      }),
+      200,
+    );
+    const stale = (await view('fr')).data as Delivered['data'];
+    expect(stale.hero?.heading).toBe('H-stale');
+    expect(stale.hero?.id).not.toBe('ZZZZZZZZZZZZ');
     const nowhere = await admin.put(`/api/admin/content/doc/${entry.id}?locale=fr`, {
       locale: 'fr',
       expectedVersion: (await view('fr')).version,
-      data: { hero: { id: 'ZZZZZZZZZZZZ', heading: 'H-fr' } },
+      data: { hero: { id: 'not-an-id', heading: 'H-fr' } },
     });
     expect([
       nowhere.statusCode,

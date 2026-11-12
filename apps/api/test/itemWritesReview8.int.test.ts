@@ -235,8 +235,20 @@ describe('item writes: eighth review', () => {
       expect(await footprint(model, id)).toEqual(changed);
     });
 
-    it('LOOKSWAP: swapping two identical items by their IDs is still a change', async () => {
+    it.each([
+      ['identical in everything stored: no change', false],
+      ['differing in a stored value: a change', true],
+    ] as const)('LOOKSWAP: swapping two items by their IDs, %s', async (_name, differ) => {
       const id = await legacyEntry('article');
+      if (differ) {
+        // The second link differs in storage only in its url (what the swap moves).
+        await inStorage(id, (data) => {
+          const key = Object.keys(data).find((field) => Array.isArray(data[field])) as string;
+          const links = data[key] as Array<Record<string, unknown>>;
+          const urlKey = Object.keys(links[1] ?? {}).find((field) => links[1]?.[field] === '/a') as string;
+          return { ...data, [key]: [links[0], { ...links[1], [urlKey]: '/b' }] };
+        });
+      }
       const before = await footprint('article', id);
       const links = (
         expectStatus(await admin.get(`/api/admin/content/article/${id}`), 200).json<EntryBody>().data
@@ -249,6 +261,11 @@ describe('item writes: eighth review', () => {
         }),
         200,
       );
+      if (!differ) {
+        // Only which identical item carries which ID would differ: an unchanged save, as before item IDs.
+        expect(await footprint('article', id)).toEqual(before);
+        return;
+      }
       expect((await footprint('article', id)).version).toBe(before.version + 1);
       const after = expectStatus(await admin.get(`/api/admin/content/article/${id}`), 200).json<EntryBody>()
         .data.links as Item[];

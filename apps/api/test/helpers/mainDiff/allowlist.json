@@ -32,5 +32,13 @@
     "when": {
       "refusalOrder": true
     }
+  },
+  {
+    "id": "stale-unknown-hidden",
+    "cite": "documentation/upgrades.md:68-71 (item 5, until the stale-id item exists): \"A delivery client that later sends back an old `id` is not refused for it: the item is saved as new, or the write is refused ... only when the caller cannot read the draft and the field's items can hold values it cannot see.\" Narrowed to: a stale retry whose every UNKNOWN_ITEM_ID is on a list whose items can hold values hidden from the caller (worked out from the seed and the caller).",
+    "path": ".*",
+    "when": {
+      "staleHidden": true
+    }
   }
 ]

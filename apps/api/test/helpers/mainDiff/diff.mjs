@@ -47,6 +47,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.unseenHidden !== true || step.unseenHidden) &&
   (entry.when?.noIdItems !== true || step.noIdItems) &&
   (entry.when?.refusalOrder !== true || step.refusalOrder) &&
+  (entry.when?.staleHidden !== true || step.staleHidden) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 const RELATIONS = new Set(['rel', 'rels', 'ref']);
@@ -75,7 +76,7 @@ const isHiddenKeep = (difference, pre) => {
 };
 
 /** The step-level conditions of the allowlist, from the branch's `pre` and issues. */
-const conditionsOf = (main, b, dataDifferences) => {
+const conditionsOf = (label, main, b, dataDifferences) => {
   const pre = b?.pre ?? null;
   const ambiguous = (b?.issues ?? []).filter((issue) => issue.startsWith('AMBIGUOUS_ITEMS '));
   return {
@@ -97,6 +98,18 @@ const conditionsOf = (main, b, dataDifferences) => {
     // upgrades.md:72-73: existence and ownership come before the body, so an entry that is not the caller's is
     // 404 (or 403) where main, which checked the body first, answered a body error.
     refusalOrder: pre !== null && pre.notTheirs && main?.status === 422 && [403, 404].includes(b?.status),
+    // A stale retry (review 11): every UNKNOWN_ITEM_ID is on a list whose items can hold values hidden from the
+    // caller (the list's name: the last named segment before the item index).
+    staleHidden:
+      pre !== null &&
+      / stale /.test(label) &&
+      (b?.issues ?? []).length > 0 &&
+      (b?.issues ?? []).every((issue) => {
+        const [code, path] = issue.split(' ');
+        const segments = path.split('/').filter(Boolean);
+        const list = segments[segments.length - 3];
+        return code === 'UNKNOWN_ITEM_ID' && segments.at(-1) === 'id' && pre.hiddenFields.includes(list);
+      }),
     hiddenKept:
       (b?.status ?? 500) < 300 &&
       dataDifferences.length > 0 &&
@@ -113,17 +126,18 @@ const listed = new Map();
 // change of the counters. A create copies what its source read, so it inherits the source's touched fields.
 const touched = new Map(); // entry → Set of top-level field names
 const ABSOLUTE =
-  /^\/(entry\/(revisions|events|audit|status)|entry\/heads\/[^/]+\/version|body\/meta\/snapshot|body\/locales\/\d+\/(version|status|publishedAt)|body\/(data\/)?(version|status|updatedAt|publishedAt))(\/|$)/;
+  /^\/(entry\/(revisions|events|audit|status)|entry\/heads\/[^/]+\/version|body\/meta\/snapshot|(body|deView)\/locales\/\d+\/(version|status|publishedAt)|(body|deView)\/(data\/)?(version|status|updatedAt|publishedAt))(\/|$)/;
 const fieldOf = (path) =>
   /^\/entry\/heads\/[^/]+\/data\/([^/]+)/.exec(path)?.[1] ??
-  /^\/(?:body\/data|body|sent)\/([^/]+)/.exec(path)?.[1];
+  /^\/(?:body\/data|deView\/data|body|sent)\/([^/]+)/.exec(path)?.[1];
 /** A head present on one side only: `/entry/heads/fr|draft`. */
 const headOf = (path) => /^\/entry\/heads\/([^/]+)$/.exec(path)?.[1];
 // Fields shared by every locale (not localized) in the seed's models.
 const SHARED = new Set(['cards', 'hero', 'zone', 'ref', 'sitems']);
 // Entries where a hidden value was kept on a shared field (allowed `hidden-values-kept`): main wiped it in every
 // locale's draft, so main reports those locales outdated against their published heads and the branch does not.
-// Only there is a `sharedOutdated` difference a consequence (upgrades.md:56-60, CHANGELOG.md:125).
+// The same after an allowed refusal of a write to a shared list (main accepted it). Only there is a
+// `sharedOutdated` difference a consequence (upgrades.md:56-60, CHANGELOG.md:125).
 const keptShared = new Set();
 const isTouched = (fields, path, entry) => {
   if (/sharedOutdated/.test(path)) return keptShared.has(entry);
@@ -197,7 +211,7 @@ for (let index = 0; index < count; index += 1) {
     const before = found.length;
     // A locale whose head exists on one side only: every step in that locale is a consequence, and so are the
     // per-step counters (a shared field's write reaches that locale's head on one side only).
-    const locale = /\b(?:doc|ndoc) (\w+)\b/.exec(label)?.[1];
+    const locale = /\b(?:doc|ndoc|ldoc) (\w+)\b/.exec(label)?.[1];
     const headSides = [...fields].filter((key) => key.startsWith('head:'));
     // A write that names a touched field starts from different values: its counters are consequences too.
     const writesTouched = [a?.sent, b?.sent].some(
@@ -220,7 +234,7 @@ for (let index = 0; index < count; index += 1) {
   const dataDifferences = found.filter((difference) =>
     /^\/entry\/heads\/[^/]+\/data\//.test(difference.path),
   );
-  const step = conditionsOf(a, b, dataDifferences);
+  const step = conditionsOf(label, a, b, dataDifferences);
   for (const difference of found) {
     if (touched.size > 0 && difference.path === '/body/meta/snapshot') {
       consequences += 1;
@@ -233,6 +247,16 @@ for (let index = 0; index < count; index += 1) {
         allowed.id === 'hidden-values-kept' &&
         entry !== undefined &&
         SHARED.has(fieldOf(difference.path))
+      ) {
+        keptShared.add(entry);
+      }
+      // An allowed refusal of a write that named a shared field: main wrote it in every locale's draft, the branch
+      // did not.
+      if (
+        allowed.id !== 'hidden-values-kept' &&
+        entry !== undefined &&
+        (b?.status ?? 0) >= 400 &&
+        Object.keys(b?.sent ?? {}).some((field) => SHARED.has(field))
       ) {
         keptShared.add(entry);
       }
