@@ -48,7 +48,13 @@ All notable changes to Shapio are listed here. The format follows
   items with certainty, in any order, so fields the caller cannot see stay with their item. Generated types
   (`shapio types generate`), `/api/docs`, `@shapio/client`, `@shapio/editor-sdk`, and the starters' types
   include it. See [Writing components](documentation/delivery-api.md#writing-components).
-  - New issues inside `422 CONTENT_INVALID`: `UNKNOWN_ITEM_ID` (an `id` that is not a stored item of that list),
+  - An `id` that a read the caller may make showed is never unknown, even after the draft changed or from another
+    locale of the entry (every locale's published version counts, and every locale's draft for a token that reads
+    drafts). If the draft no longer holds that item, it is saved as new, unless the caller cannot read the draft
+    and the field's items can hold values it cannot read or write: then the write is refused (`AMBIGUOUS_ITEMS`);
+    leave the field out to keep it, or send an empty list to clear it. A localized list written to a locale for
+    the first time holds new items, whatever `id`s it carries.
+  - New issues inside `422 CONTENT_INVALID`: `UNKNOWN_ITEM_ID` (an `id` no version the caller may read shows),
     `DUPLICATE_ITEM_ID` (the same `id` twice in one list), `ITEM_COMPONENT_CHANGED` (a known dynamic zone item
     sent with another component), and `AMBIGUOUS_ITEMS` (see Changed).
   - REST delivery write responses carry `data.itemIds`: the `id` of each item in the component fields the body
@@ -134,7 +140,7 @@ What changes for a client that names no schema version and sends no item `id`s
   exactly one stored item and no other sent item, and every other item is new with a new `id`. An edited item
   that is new does not keep relation targets or media its read left out; send `id`s to keep them. In an admin
   write, an item that continues keeps its deprecated fields. An admin API save without `id`s gives edited items
-  new `id`s, so a delivery client holding the old ones gets `UNKNOWN_ITEM_ID` and reads the entry again.
+  new `id`s; a delivery client that sends back the old ones has those items saved as new.
 - The first write to a locale that does not exist yet treats its localized lists as all new, for any caller, with
   or without `id`s; shared fields follow the usual rules.
 - A caller that may read drafts on a route is treated as having been shown draft relation targets and media,
@@ -176,7 +182,8 @@ What changes for a client that names no schema version and sends no item `id`s
   generated queries about 2,500, so ordinary clients are far under it. GraphQL authentication is unchanged.
 - A client that writes items back as it read them now sends their `id`s, and is matched by them. Such a write is
   refused when it repeats an item object in one list (`DUPLICATE_ITEM_ID`), copies one from another list,
-  another parent item, or another entry, or sends an item someone else deleted (`UNKNOWN_ITEM_ID`), or changes a
+  another parent item, or another entry (`UNKNOWN_ITEM_ID` when no version the caller may read shows it), or
+  changes a
   dynamic zone item's `__component` in place (`ITEM_COMPONENT_CHANGED`). Drop `id` from copies and replacements.
   This applies to admin API writes too.
 - Lists saved before 0.9.0 work out their item IDs on each read until the entry is next saved (the draft) and
@@ -189,6 +196,9 @@ gets a shape it was not built for.
 
 ### Known limits
 
+- On a field whose items can hold values the caller cannot see, if its token cannot read drafts, the
+  `AMBIGUOUS_ITEMS` refusal for an `id` the draft no longer holds tells it the field has unpublished changes, not
+  what they are.
 - On a many-relation with a `max`, targets the caller cannot see still count, so a write that looks valid to the
   caller can answer `TOO_MANY`.
 - Reading through a schema version from before a kind (a content type that extends another) existed answers
@@ -211,7 +221,7 @@ gets a shape it was not built for.
     become a time and then text.
 - An item saved before 0.9.0 and not written since has an `id` derived on read, and for a localized field that
   `id` includes the locale. So making a shared field localized, or making a content type localized, changes the
-  `id`s of exactly those items; a client holding the old ones gets `UNKNOWN_ITEM_ID` and reads again. IDs that
+  `id`s of exactly those items; a client that sends back the old ones has those items saved as new. IDs that
   are stored never change, and making a field shared or a content type not localized keeps them.
 
 ## [0.8.2] - 2026-11-10

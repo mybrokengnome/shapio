@@ -27,6 +27,8 @@ import {
   listTooLong,
   pairList,
   pairSingle,
+  shownCounterparts,
+  shownItemsAt,
   type FieldPairings,
   type Pairing,
 } from '../write/listPairing.js';
@@ -73,6 +75,11 @@ export type LensWriteBase = {
    * on create. Component items are paired with its items.
    */
   stored: Readonly<ContentData> | null;
+  /**
+   * The other heads the caller may read on its route (`shownHeadsOf`), every instance with its ID: IDs they show
+   * are never unknown to the caller (`shownElsewhere` in listPairing.ts).
+   */
+  shown?: ReadonlyArray<Readonly<ContentData>>;
   /**
    * Whether the caller may have read `stored`: it may read drafts, or the draft is the published revision
    * (default true). Without, nothing inside a component is "sent back": a changed field there is refused (it
@@ -415,6 +422,8 @@ type Counterpart = {
   unseen?: boolean;
   /** Where the object sits, for the caller's view: whether it reads there and sees the stored items. */
   scope: ViewScope;
+  /** The same object in the other heads the caller may read (`LensWriteBase.shown`). */
+  shown?: ReadonlyArray<Readonly<Record<string, unknown>>>;
 };
 
 const recordOrNull = (value: unknown): Readonly<ContentData> | null => (isRecord(value) ? value : null);
@@ -772,15 +781,25 @@ const counterpartOf = (
   lens: DefinitionLens,
   stored: Readonly<ContentData> | null,
   scope: ViewScope,
+  shown: ReadonlyArray<Readonly<Record<string, unknown>>>,
 ): Counterpart => {
+  const elsewhere = shown.length > 0 ? { shown } : {};
   if (!stored) {
-    return { stored: null, reads: [], scope };
+    // A new item the client copied from another head it read (`shownElsewhere`): what it sends back of that read
+    // is that read sent back (a field it cannot write through its version is left out), never refused.
+    return {
+      stored: null,
+      reads: scope.reads ? shown.map((item) => readOfStored(base, lens, item)) : [],
+      scope,
+      ...elsewhere,
+    };
   }
   return {
     stored,
     reads: scope.sees ? [readOfStored(base, lens, stored)] : [],
     unseen: !scope.sees && scope.reads,
     scope,
+    ...elsewhere,
   };
 };
 
@@ -806,6 +825,7 @@ const pairWrittenList = (
   field: FieldLens & { kind: 'same' },
   sent: readonly unknown[],
   stored: readonly unknown[],
+  shownIds: ReadonlySet<string>,
   path: string,
   scope: ViewScope,
 ): number[] => {
@@ -845,8 +865,9 @@ const pairWrittenList = (
       sent: { keys: sentSide.keys, kinds: kinds(sent, (item) => sentItemLensOf(field, item)) },
       storedIds: stored.map(storedIdOf),
       stored: { keys: storedSide.keys, kinds: kinds(stored, (item) => storedItemLensOf(field, item)) },
+      shownIds,
     },
-    { hidden, unseen },
+    { hidden, unseen, fresh: scope.fresh === true, readsDrafts: walk.view.access.readsDrafts === true },
   );
   walk.itemIssues.push(...issues.map((issue) => itemIssueOf(issue, path, { unseen })));
   return pairs;
@@ -907,12 +928,26 @@ function translateValue(
 ): unknown {
   const { client } = field;
   const stored = parent.stored?.[field.fieldId];
+  // What another head the caller may read shows here (`shownElsewhere` in listPairing.ts), by item ID.
+  const shownHere = shownItemsAt(
+    (parent.shown ?? []).map((head) => head[field.fieldId]),
+    scope.reads,
+  );
   if (client.type === 'component' && !Array.isArray(value)) {
     const lens = nestedOf(field, client.settings.component);
     if (!usable(lens) || !isRecord(value)) {
       return value;
     }
-    const single = pairSingle(sentIdOf(value), storedIdOf(stored), isRecord(stored));
+    const sentId = sentIdOf(value);
+    const single = pairSingle(sentId, storedIdOf(stored), isRecord(stored), {
+      ids: new Set(shownHere.keys()),
+      policy: {
+        hidden: walk.view.holdsHidden(scope, field.stored),
+        unseen: !scope.sees,
+        fresh: scope.fresh === true,
+        readsDrafts: walk.view.access.readsDrafts === true,
+      },
+    });
     walk.itemIssues.push(...single.issues.map((issue) => itemIssueOf(issue, path)));
     const instance = single.pairs[0] === 0 ? recordOrNull(stored) : null;
     const inside = new Map<string, Pairing>();
@@ -920,7 +955,13 @@ function translateValue(
       walk,
       lens,
       value,
-      counterpartOf(walk.base, lens, instance, walk.view.within(scope, instance !== null)),
+      counterpartOf(
+        walk.base,
+        lens,
+        instance,
+        walk.view.within(scope, instance !== null),
+        shownCounterparts(shownHere, sentId, instance),
+      ),
       path,
       inside,
     );
@@ -932,14 +973,20 @@ function translateValue(
   }
   assertListCap(field, value, path);
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
-  const pairs = pairWrittenList(walk, field, value, kept, path, scope);
+  const pairs = pairWrittenList(walk, field, value, kept, new Set(shownHere.keys()), path, scope);
   const inside: Array<Map<string, Pairing>> = [];
   const translated = value.map((item: unknown, index) => {
     const pair = pairs[index] ?? -1;
     const storedItem = pair === -1 ? null : recordOrNull(kept[pair]);
     const lens = sentItemLensOf(field, item);
     const counterpart = lens
-      ? counterpartOf(walk.base, lens, storedItem, walk.view.within(scope, storedItem !== null))
+      ? counterpartOf(
+          walk.base,
+          lens,
+          storedItem,
+          walk.view.within(scope, storedItem !== null),
+          shownCounterparts(shownHere, sentIdOf(item), storedItem),
+        )
       : { stored: null, reads: [], scope };
     const nested = new Map<string, Pairing>();
     inside.push(nested);
@@ -970,7 +1017,7 @@ export const writeThroughLens = (
     walk,
     lens,
     input,
-    { stored: base.stored, reads: base.reads, scope: view.top },
+    { stored: base.stored, reads: base.reads, scope: view.top, ...(base.shown ? { shown: base.shown } : {}) },
     '',
     false,
     pairings,

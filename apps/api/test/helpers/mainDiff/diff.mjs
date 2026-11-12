@@ -53,10 +53,63 @@ const isKeep = (difference) =>
 
 const unlisted = [];
 const listed = new Map();
-// A difference in what a step stored makes every later observation of that entry differ too, and every later
-// snapshot number: those are consequences, counted but not reported. A root difference is the first difference of
-// an entry (or of a step that names no diverged entry); every unlisted root fails the run.
-const diverged = new Set();
+// After an allowed difference in what a step stored, the entry's later observations differ in what that step
+// touched: the fields it stored differently, and the counters (revisions, events, audit rows, versions, status,
+// snapshot numbers) it moved on one side only. Those are consequences, counted but not reported. Everything else
+// about the entry is still compared: other fields, every response's status, code and issues, and the per-step
+// change of the counters. A create copies what its source read, so it inherits the source's touched fields.
+const touched = new Map(); // entry → Set of top-level field names
+const ABSOLUTE =
+  /^\/(entry\/(revisions|events|audit|status)|entry\/heads\/[^/]+\/version|body\/meta\/snapshot|body\/locales\/\d+\/(version|status|publishedAt|sharedOutdated)|body\/(data\/)?(version|status|updatedAt|publishedAt))(\/|$)/;
+const fieldOf = (path) =>
+  /^\/entry\/heads\/[^/]+\/data\/([^/]+)/.exec(path)?.[1] ??
+  /^\/(?:body\/data|body|sent)\/([^/]+)/.exec(path)?.[1];
+/** A head present on one side only: `/entry/heads/fr|draft`. */
+const headOf = (path) => /^\/entry\/heads\/([^/]+)$/.exec(path)?.[1];
+const isTouched = (fields, path) => {
+  if (ABSOLUTE.test(path)) return true;
+  const head = /^\/entry\/heads\/([^/]+)/.exec(path)?.[1];
+  if (head !== undefined && fields.has(`head:${head}`)) return true;
+  if (headOf(path) !== undefined) return false;
+  const field = fieldOf(path);
+  return field !== undefined && fields.has(field);
+};
+/** A step with its heads keyed by locale and state (`en|draft`), so a head on one side only is one path. */
+const keyed = (step) =>
+  step && {
+    ...step,
+    label: undefined,
+    entry: step.entry && {
+      ...step.entry,
+      heads: Object.fromEntries(step.entry.heads.map((head) => [`${head.locale}|${head.state}`, head])),
+    },
+  };
+const previous = { main: new Map(), branch: new Map() };
+const deltas = (side, entry, observed) => {
+  if (!observed) return undefined;
+  const last = previous[side].get(entry);
+  previous[side].set(entry, observed);
+  return last
+    ? { revisions: observed.revisions - last.revisions, events: observed.events.length - last.events.length }
+    : undefined;
+};
+/** Remembers what a step stored differently on the two sides (its fields, and heads on one side only). */
+const recordTouched = (entry, raw, createdEntry) => {
+  if (entry !== undefined && raw.some((difference) => difference.path.startsWith('/entry'))) {
+    const set = touched.get(entry) ?? new Set();
+    for (const difference of raw) {
+      const head = headOf(difference.path);
+      if (head !== undefined) {
+        set.add(`head:${head}`);
+        set.add('locales');
+      }
+      const field = fieldOf(difference.path);
+      if (field !== undefined && difference.path.startsWith('/entry')) set.add(field);
+    }
+    touched.set(entry, set);
+    if (createdEntry !== undefined) touched.set(String(createdEntry), new Set(set));
+  }
+};
 let consequences = 0;
 const count = Math.max(main.length, branch.length);
 for (let index = 0; index < count; index += 1) {
@@ -68,26 +121,50 @@ for (let index = 0; index < count; index += 1) {
     break; // the workloads diverged: nothing after this compares
   }
   const entry = /\be(\d+)\b/.exec(label)?.[1];
-  const found = differences({ ...a, label: undefined }, { ...b, label: undefined });
-  if (found.length === 0) {
-    continue;
-  }
-  // A create copies what its source entry read: from a diverged source, the new entry diverges too.
   const createdEntry = a?.createdEntry ?? b?.createdEntry;
-  if (entry !== undefined && diverged.has(entry)) {
+  // A create observes the new entry: its counters start there.
+  const observedKey = createdEntry !== undefined ? String(createdEntry) : entry;
+  const deltaA = observedKey !== undefined ? deltas('main', observedKey, a?.entry) : undefined;
+  const deltaB = observedKey !== undefined ? deltas('branch', observedKey, b?.entry) : undefined;
+  let found = differences(keyed(a), keyed(b));
+  const raw = found;
+  const fields = entry !== undefined ? touched.get(entry) : undefined;
+  if (fields) {
     if (createdEntry !== undefined) {
-      diverged.add(String(createdEntry));
+      touched.set(String(createdEntry), new Set(fields));
     }
-    consequences += found.length;
+    const before = found.length;
+    // A locale whose head exists on one side only: every step in that locale is a consequence, and so are the
+    // per-step counters (a shared field's write reaches that locale's head on one side only).
+    const locale = /\b(?:doc|ndoc) (\w+)\b/.exec(label)?.[1];
+    const headSides = [...fields].filter((key) => key.startsWith('head:'));
+    // A write that names a touched field starts from different values: its counters are consequences too.
+    const writesTouched = [a?.sent, b?.sent].some(
+      (sent) => sent && typeof sent === 'object' && Object.keys(sent).some((key) => fields.has(key)),
+    );
+    const localeGone = headSides.some((key) => key.startsWith(`head:${locale}|`));
+    found = localeGone
+      ? []
+      : [
+          ...found.filter((difference) => !isTouched(fields, difference.path)),
+          ...(headSides.length === 0 && !writesTouched ? differences(deltaA, deltaB, '/entry/perStep') : []),
+        ];
+    consequences +=
+      before - found.filter((difference) => !difference.path.startsWith('/entry/perStep')).length;
+  }
+  if (found.length === 0) {
+    recordTouched(entry, raw, createdEntry);
     continue;
   }
-  const dataDifferences = found.filter((difference) => /^\/entry\/heads\/\d+\/data\//.test(difference.path));
+  const dataDifferences = found.filter((difference) =>
+    /^\/entry\/heads\/[^/]+\/data\//.test(difference.path),
+  );
   const step = {
     branchIssues: b?.issues ?? [],
     keepsOnly: (b?.status ?? 500) < 300 && dataDifferences.length > 0 && dataDifferences.every(isKeep),
   };
   for (const difference of found) {
-    if (diverged.size > 0 && difference.path === '/body/meta/snapshot') {
+    if (touched.size > 0 && difference.path === '/body/meta/snapshot') {
       consequences += 1;
       continue;
     }
@@ -98,9 +175,7 @@ for (let index = 0; index < count; index += 1) {
       unlisted.push({ label, ...difference });
     }
   }
-  if (entry !== undefined && found.some((difference) => difference.path.startsWith('/entry'))) {
-    diverged.add(entry);
-  }
+  recordTouched(entry, raw, createdEntry);
 }
 say(`${consequences} later difference(s) are consequences of an earlier one on the same entry`);
 for (const [id, times] of listed) say(`allowed ${id}: ${times}`);

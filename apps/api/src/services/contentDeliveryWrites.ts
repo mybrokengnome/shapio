@@ -539,6 +539,7 @@ const deliveryAccessOf = async (
     visibleTargets,
     visibleMedia,
     neverRefuses: false,
+    readsDrafts: scope?.readsDrafts === true,
     newLocale: !heads.some((head) => head.state === 'draft' && head.locale === locale),
   };
 };
@@ -585,6 +586,40 @@ const writeStartOf = async (
     itemIdScopeOf(await itemIdKeyOf(context.db), id, model, locale),
   );
   return { entry, heads, locale, base, withIds };
+};
+
+/**
+ * The heads a caller may read on the delivery route besides the draft written, each with its items' IDs: every
+ * locale's published head, and the other locales' drafts for a caller that reads drafts. The IDs its reads gave
+ * it, never unknown to it where it reads them (`shownElsewhere` in content/write/listPairing.ts). None for a
+ * caller that may not read the entry.
+ */
+const shownHeadsOf = async (
+  context: ContentServiceContext,
+  model: ContentModel,
+  id: string,
+  heads: readonly HeadRecord[],
+  locale: string,
+  scope: ReadScope | null,
+): Promise<ContentData[]> => {
+  if (!scope) {
+    return [];
+  }
+  const key = await itemIdKeyOf(context.db);
+  return heads
+    .filter((head) => head.state === 'published' || (scope.readsDrafts && head.locale !== locale))
+    .flatMap((head) =>
+      isRecord(head.data)
+        ? [
+            withItemIds(
+              head.data,
+              model.definition.fields,
+              componentsOf(context),
+              itemIdScopeOf(key, id, model, head.locale),
+            ),
+          ]
+        : [],
+    );
 };
 
 /**
@@ -673,7 +708,8 @@ const updateWithItems = async (
     await deliveryAccessOf(context, model, scope, writeMask, start.heads, start.locale),
     componentsOf(context),
   );
-  const paired = pairComponentItems(patch, start.withIds, model.definition.fields, view);
+  const shown = await shownHeadsOf(context, model, id, start.heads, start.locale, scope);
+  const paired = pairComponentItems(patch, start.withIds, model.definition.fields, view, shown);
   if (paired.issues.length > 0) {
     throw contentInvalid(paired.issues);
   }
@@ -731,6 +767,7 @@ export const updateDeliveryEntry = async (
   const body = isRecord(input.data) ? input.data : {};
   const writeBase: LensWriteBase = {
     stored: withIds,
+    shown: await shownHeadsOf(context, model, id, heads, locale, scope),
     seesStored: access.seesStored,
     reads: readsOf(lens, heads, locale, scope),
     definitionOf: definitionsOf(context),

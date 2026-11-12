@@ -44,6 +44,11 @@ export type CallerAccess = {
   /** A list is never refused (admin): items are paired only when that is certain, the rest are new. */
   neverRefuses: boolean;
   /**
+   * May read every head on its route, drafts included (admin-kind delivery callers): no item it names from a head
+   * it read is unseen, so `shownElsewhere` (listPairing.ts) never refuses it.
+   */
+  readsDrafts?: boolean;
+  /**
    * The write adds a locale (no draft in it yet): its localized fields store nothing, so lists there are new items
    * whatever the caller may read. Shared fields hold the other locales' values and keep the usual rule.
    */

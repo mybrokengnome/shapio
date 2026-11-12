@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ITEM_ID_FIELD } from '../../constants/itemIds.js';
+import { ITEM_ID_FIELD, ITEM_ID_KEY } from '../../constants/itemIds.js';
 import { canonicalJson } from '../itemIds.js';
 import { contentInvalid, pointer, type ContentIssue } from '../validator/issues.js';
 
@@ -66,8 +66,11 @@ export const compactCanonical = (value: unknown): string => canonicalJson(value)
 export type ItemIssueCode =
   'UNKNOWN_ITEM_ID' | 'DUPLICATE_ITEM_ID' | 'ITEM_COMPONENT_CHANGED' | 'AMBIGUOUS_ITEMS';
 
-/** A refusal of a written list: about one sent item (`index`), or the whole list (null). */
-export type ListIssue = { index: number | null; code: ItemIssueCode };
+/**
+ * A refusal of a written list: about one sent item (`index`), or the whole list (null). `draftAhead`: it names
+ * items a head the caller may read shows here that the draft no longer holds (`shownIds`).
+ */
+export type ListIssue = { index: number | null; code: ItemIssueCode; draftAhead?: boolean };
 
 /** One side of a written list: what the caller sees of each item, and the component each holds. */
 export type ListSide = {
@@ -88,6 +91,11 @@ export type ListSides = {
   /** Every stored item's ID (stored, or derived: `withItemIds`). */
   storedIds: ReadonlyArray<string | null>;
   stored: ListSide;
+  /**
+   * The IDs another head the caller may read on this route shows at this same position (`shownItemsAt`): for a
+   * caller that reads the published head while the draft is ahead, the IDs that read gave it.
+   */
+  shownIds?: ReadonlySet<string>;
 };
 
 /** What decides whether a list may be refused, from the caller's view and the schema only (never values). */
@@ -98,6 +106,10 @@ export type ListPolicy = {
   unseen: boolean;
   /** Never refused (admin writes): items continue stored ones only where that is certain, the rest are new. */
   neverRefuses?: boolean;
+  /** Nothing is stored here or below (under a new item): nothing can be lost, so nothing is refused for it. */
+  fresh?: boolean;
+  /** The caller may read drafts on its route: the draft's items were never unseen by it (`shownElsewhere`). */
+  readsDrafts?: boolean;
 };
 
 /**
@@ -111,10 +123,26 @@ export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIs
     : [];
 
 /**
- * Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. A stored ID that two
- * stored items share names neither (it is unknown): which one the client meant cannot be told.
+ * An ID the draft does not hold at this position, but which another head of the entry the caller may read shows
+ * here (any locale; the published head while the draft has unpublished changes, another locale it copied from):
+ * the server gave it to this caller, so it is never an unknown ID. The item is new (a new ID, nothing carried
+ * over), as the list replaced on main, where nothing it can hold is hidden from the caller, where nothing is
+ * stored (a new item, a localized list of a new locale), or for a caller that may read drafts (it saw the
+ * draft's items: what it sends replaces them, as on main). Otherwise replacing the draft's items would drop what
+ * the caller never saw: refused, saying why. Decided from the IDs of heads the caller may read, the draft's IDs
+ * (membership only), and the schema; never from a value the caller cannot read.
  */
-const pairByIds = (sides: ListSides): { pairs: number[]; issues: ListIssue[] } => {
+const shownElsewhere = (policy: ListPolicy, index: number | null): ListIssue | null =>
+  policy.hidden && !policy.fresh && !policy.neverRefuses && !policy.readsDrafts
+    ? { index, code: 'AMBIGUOUS_ITEMS', draftAhead: true }
+    : null;
+
+/**
+ * Pairs by the IDs the client sent: certain; an unknown, repeated or re-typed ID is refused. A stored ID that two
+ * stored items share names neither (it is unknown): which one the client meant cannot be told. An ID only a head
+ * the caller may read holds here: `shownElsewhere`.
+ */
+const pairByIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
   const stored = new Map<string, number>();
   const shared = new Set<string>();
   sides.storedIds.forEach((id, index) => {
@@ -144,6 +172,13 @@ const pairByIds = (sides: ListSides): { pairs: number[]; issues: ListIssue[] } =
       return -1;
     }
     const at = stored.get(id);
+    if (at === undefined && !shared.has(id) && sides.shownIds?.has(id)) {
+      const refused = shownElsewhere(policy, null);
+      if (refused && !issues.some((issue) => issue.draftAhead)) {
+        issues.push(refused);
+      }
+      return -1;
+    }
     if (at === undefined) {
       issues.push({ index, code: 'UNKNOWN_ITEM_ID' });
       return -1;
@@ -246,7 +281,7 @@ const pairCertain = (sent: ListSide, stored: ListSide): number[] => {
  */
 export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
   if (sides.sentIds.some((id) => id !== undefined)) {
-    return pairByIds(sides);
+    return pairByIds(sides, policy);
   }
   const none = sides.sentIds.map(() => -1);
   if (sides.sentIds.length === 0) {
@@ -271,15 +306,74 @@ export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[
   return pairs ? { pairs, issues: [] } : { pairs: none, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
 };
 
-/** A single (not repeatable) component always continues the stored instance; an ID it sends must be that one's. */
+/**
+ * A single (not repeatable) component always continues the stored instance; an ID it sends must be that one's,
+ * or one another head the caller may read shows there (`shownElsewhere`: a new instance, or refused).
+ */
 export const pairSingle = (
   sentId: string | null | undefined,
   storedId: string | null,
   stored: boolean,
-): { pairs: number[]; issues: ListIssue[] } =>
-  typeof sentId === 'string' && sentId !== storedId
-    ? { pairs: [-1], issues: [{ index: null, code: 'UNKNOWN_ITEM_ID' }] }
-    : { pairs: [stored ? 0 : -1], issues: [] };
+  shown: { ids: ReadonlySet<string>; policy: ListPolicy } | null = null,
+): { pairs: number[]; issues: ListIssue[] } => {
+  if (typeof sentId !== 'string' || sentId === storedId) {
+    return { pairs: [stored ? 0 : -1], issues: [] };
+  }
+  if (shown?.ids.has(sentId)) {
+    const refused = shownElsewhere(shown.policy, null);
+    return { pairs: [-1], issues: refused ? [refused] : [] };
+  }
+  return { pairs: [-1], issues: [{ index: null, code: 'UNKNOWN_ITEM_ID' }] };
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** An item's ID in a head read with every item's ID (`withItemIds`). */
+const idOf = (item: unknown): string | null =>
+  isRecord(item) && typeof item[ITEM_ID_KEY] === 'string' && item[ITEM_ID_KEY] !== ''
+    ? item[ITEM_ID_KEY]
+    : null;
+
+/** Items other heads the caller may read show at one position, by item ID (each head's item with that ID). */
+export type ShownItems = ReadonlyMap<string, ReadonlyArray<Readonly<Record<string, unknown>>>>;
+
+/**
+ * What the other heads the caller may read show at one position (a list, or a single component), by item ID:
+ * empty where the caller does not read that position. `values`: each head's value there, items with their IDs.
+ */
+export const shownItemsAt = (values: readonly unknown[], reads: boolean): ShownItems => {
+  const shown = new Map<string, Array<Readonly<Record<string, unknown>>>>();
+  if (!reads) {
+    return shown;
+  }
+  for (const value of values) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      const id = idOf(item);
+      if (id !== null && isRecord(item)) {
+        shown.set(id, [...(shown.get(id) ?? []), item]);
+      }
+    }
+  }
+  return shown;
+};
+
+/**
+ * The counterparts, in those heads, of a written item: the items they show under the ID sent, else under the ID
+ * of the stored item it continues (the same parent chain, by ID).
+ */
+export const shownCounterparts = (
+  shown: ShownItems,
+  sentId: string | null | undefined,
+  continued: unknown,
+): ReadonlyArray<Readonly<Record<string, unknown>>> => {
+  const continuedId = idOf(continued);
+  return (
+    (typeof sentId === 'string' ? shown.get(sentId) : undefined) ??
+    (continuedId === null ? undefined : shown.get(continuedId)) ??
+    []
+  );
+};
 
 const ITEM_MESSAGES: Readonly<Record<ItemIssueCode, string>> = {
   UNKNOWN_ITEM_ID:
@@ -290,6 +384,10 @@ const ITEM_MESSAGES: Readonly<Record<ItemIssueCode, string>> = {
   AMBIGUOUS_ITEMS:
     'cannot be matched to the stored items with certainty, and its items can hold values this caller cannot see; send back the id of each item as you read it (without IDs, a write may only reorder, delete, or add items that differ from each other, never edit one)',
 };
+
+// The "replaces items this caller cannot read" family, for IDs a published read gave while the draft is ahead.
+const DRAFT_AHEAD_MESSAGE =
+  'replaces items this caller cannot read (the entry has unpublished changes since what it read), and they can hold values it cannot see; leave the field out to keep it, or send an empty list to clear it';
 
 const UNSEEN_MESSAGE =
   'replaces items this caller cannot read, and they can hold values it cannot see; send back the id of each item as you read it, leave the field out to keep it, or send an empty list to clear it';
@@ -309,5 +407,9 @@ export const itemIssueOf = (
       ? listPath
       : pointer(issue.index === null ? listPath : pointer(listPath, issue.index), ITEM_ID_FIELD),
   code: issue.code,
-  message: issue.code === 'AMBIGUOUS_ITEMS' && unseen ? UNSEEN_MESSAGE : ITEM_MESSAGES[issue.code],
+  message: issue.draftAhead
+    ? DRAFT_AHEAD_MESSAGE
+    : issue.code === 'AMBIGUOUS_ITEMS' && unseen
+      ? UNSEEN_MESSAGE
+      : ITEM_MESSAGES[issue.code],
 });

@@ -563,13 +563,24 @@ These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per 
 | `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                               |
 | `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                           |
 
-`UNKNOWN_ITEM_ID` answers an `id` that is not one of the stored items of that list (for a single component, not
-its stored instance): an item from another list or another parent item, one that someone else's write deleted,
-or a stored `id` that somehow belongs to two items. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with
+An `id` that a read you may make showed for an item is never unknown to the server, even when the draft has
+changed since or the item came from another locale of the entry: every locale's published version counts, and
+every locale's draft when your token reads drafts. If the draft you write no longer holds that item, it is saved
+as a new item, as before item IDs, unless you cannot read the draft and the field's items can hold values you
+cannot read or write. Then the write is refused (`AMBIGUOUS_ITEMS`, "replaces items this caller cannot read"),
+because replacing the draft's items would lose them; leave the field out to keep it, or send an empty list to
+clear it. A localized list written to a locale for the first time holds new items, whatever `id`s it carries.
+
+An `id` that no version you may read shows is `UNKNOWN_ITEM_ID`, and so is a stored `id` that somehow belongs to
+two items. `ITEM_COMPONENT_CHANGED` answers a dynamic zone item sent with
 a known `id` and a different `__component`. The server issues `id`s of 12 letters and digits, but a write does
 not check that shape: an `id` that is not a string, is empty, or is longer than 64 characters is refused with an
 `INVALID_TYPE` issue at `…/id`, with the body's other problems, and any other string the list does not hold is
-`UNKNOWN_ITEM_ID`, with the item refusals ([Order of refusals](#order-of-refusals)). The path is a JSON pointer in your API IDs, such as `/links/2/id`.
+`UNKNOWN_ITEM_ID`, with the item refusals ([Order of refusals](#order-of-refusals)). The path is a JSON pointer in
+your API IDs, such as `/links/2/id`.
+
+On a field whose items can hold values you cannot see, if your token cannot read drafts, that refusal tells you
+the field has unpublished changes, not what they are.
 
 The write response names the `id` of each item it wrote, in `data.itemIds`, so a caller that cannot read the
 entry back (an app user while the entry has unpublished changes, for example) can send them on its next write.
@@ -662,12 +673,13 @@ other item is new and gets a new `id`.
 | Edit an item                        | `[A, B]` → `[A2, B]`   | `B` continues, `A2` new with a new `id` |
 | Look-alikes in a changed list       | `[A, A, B]` → `[A, A]` | both `A`s new, with new `id`s           |
 
-Being new costs something even when nothing is refused: the item gets a new `id`, so a client holding the old one
-gets `UNKNOWN_ITEM_ID`. With `id`s, or for an item sent exactly as read, relation targets and media the caller
+Being new costs something even when nothing is refused: the item gets a new `id`. A client that later sends back
+the old one is not refused for it; that item is saved as new (or refused only in the hidden-values case above).
+With `id`s, or for an item sent exactly as read, relation targets and media the caller
 could not see are kept; an item edited without `id`s is a new item, and they are not carried over (as before
 0.9.0). In an admin write, an item that continues keeps its deprecated fields. An admin API save without `id`s
-gives edited items new `id`s, so a delivery client holding the old ones gets `UNKNOWN_ITEM_ID` and reads the
-entry again; the admin editor always sends `id`s.
+gives edited items new `id`s; a delivery client that sends back the old ones has those items saved as new. The
+admin editor always sends `id`s.
 
 With `id`s, every row of every table is certain: an edited item keeps its hidden values, and `"id": null` marks a
 new item. Sending `[]`, leaving the field out, and sending back the `id`s read are always allowed.

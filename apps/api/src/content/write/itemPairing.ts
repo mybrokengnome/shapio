@@ -9,6 +9,8 @@ import {
   NO_PAIRINGS,
   pairList,
   pairSingle,
+  shownCounterparts,
+  shownItemsAt,
   type FieldPairings,
   type Pairing,
 } from './listPairing.js';
@@ -41,6 +43,7 @@ const pairInstance = (
   component: ComponentDefinition | undefined,
   written: unknown,
   stored: unknown,
+  shown: readonly unknown[],
   path: string,
 ): FieldPairings =>
   component
@@ -50,6 +53,7 @@ const pairInstance = (
         component.fields,
         written,
         stored,
+        shown,
         path,
         false,
       )
@@ -61,15 +65,29 @@ const pairValue = (
   field: FieldDefinition,
   written: unknown,
   stored: unknown,
+  shown: readonly unknown[],
   path: string,
 ): Pairing | null => {
   const { view } = walk;
+  // What another head the caller may read shows here (`shownElsewhere` in listPairing.ts), by item ID.
+  const shownHere = shownItemsAt(shown, scope.reads);
+  const policy = {
+    hidden: view.holdsHidden(scope, field),
+    unseen: !scope.sees,
+    neverRefuses: view.access.neverRefuses,
+    fresh: scope.fresh === true,
+    readsDrafts: view.access.readsDrafts === true,
+  };
   if (field.type === 'component' && !field.settings.repeatable) {
     if (!isRecord(written)) {
       return null;
     }
     const base = isRecord(stored) ? stored : undefined;
-    const { pairs, issues } = pairSingle(sentIdOf(written), storedItemId(base), base !== undefined);
+    const sentId = sentIdOf(written);
+    const { pairs, issues } = pairSingle(sentId, storedItemId(base), base !== undefined, {
+      ids: new Set(shownHere.keys()),
+      policy,
+    });
     walk.issues.push(...issues.map((issue) => itemIssueOf(issue, path)));
     return {
       pairs,
@@ -80,6 +98,7 @@ const pairValue = (
           view.componentOf(field.settings.component),
           written,
           pairs[0] === 0 ? base : undefined,
+          shownCounterparts(shownHere, sentId, pairs[0] === 0 ? base : undefined),
           path,
         ),
       ],
@@ -90,11 +109,6 @@ const pairValue = (
   }
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
   const componentOf = (item: unknown) => componentOfItem(field, item, view.componentOf);
-  const policy = {
-    hidden: view.holdsHidden(scope, field),
-    unseen: !scope.sees,
-    neverRefuses: view.access.neverRefuses,
-  };
   // Keys are made only for a list sent without IDs: where the caller sees the items, of what it sees; where it
   // does not, of whole items, and only for a list it writes in full (one that can hold more is never compared).
   const noIds = written.every((item) => sentIdOf(item) === undefined);
@@ -122,6 +136,7 @@ const pairValue = (
         keys: keyOf ? kept.map((item) => keyOf.stored(scope, componentOf(item), item)) : [],
         kinds: kept.map((item) => componentOf(item)?.id ?? null),
       },
+      shownIds: new Set(shownHere.keys()),
     },
     policy,
   );
@@ -130,12 +145,14 @@ const pairValue = (
     pairs,
     inside: written.map((item, index) => {
       const pair = pairs[index] ?? -1;
+      const continued: unknown = pair === -1 ? undefined : kept[pair];
       return pairInstance(
         walk,
         scope,
         componentOf(item),
         item,
-        pair === -1 ? undefined : kept[pair],
+        continued,
+        shownCounterparts(shownHere, sentIdOf(item), continued),
         pointer(path, index),
       );
     }),
@@ -148,6 +165,7 @@ const pairFields = (
   fields: readonly FieldDefinition[],
   written: unknown,
   stored: unknown,
+  shown: readonly unknown[],
   path: string,
   topLevel: boolean,
 ): FieldPairings => {
@@ -163,6 +181,7 @@ const pairFields = (
         field,
         written[field.id],
         isRecord(stored) ? stored[field.id] : undefined,
+        shown.map((head) => (isRecord(head) ? head[field.id] : undefined)),
         pointer(path, field.apiKey),
       );
       if (pairing) {
@@ -176,15 +195,17 @@ const pairFields = (
 /**
  * The pairing of every component value in `patch` (storage form, IDs the client sent under `__id`) with
  * `base` (what the write starts from, every instance with its ID: `withItemIds`), and the refusals it makes
- * (`CONTENT_INVALID` issues, paths in today's API IDs).
+ * (`CONTENT_INVALID` issues, paths in today's API IDs). `shown`: the other heads the caller may read on its
+ * route, every instance with its ID, whose IDs are never unknown to it (`shownElsewhere` in listPairing.ts).
  */
 export const pairComponentItems = (
   patch: Readonly<ContentData>,
   base: Readonly<ContentData>,
   fields: readonly FieldDefinition[],
   view: CallerView,
+  shown: ReadonlyArray<Readonly<ContentData>> = [],
 ): ItemPairingResult => {
   const walk: Walk = { view, issues: [] };
-  const pairings = pairFields(walk, view.top, fields, patch, base, '', true);
+  const pairings = pairFields(walk, view.top, fields, patch, base, shown, '', true);
   return { pairings, issues: walk.issues };
 };

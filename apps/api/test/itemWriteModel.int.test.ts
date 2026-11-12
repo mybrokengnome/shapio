@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from './helpers/content.js';
+import { AHEAD_KINDS, aheadEntry, echoAheadProblems } from './helpers/itemModelEchoAhead.js';
 import { craftBundle, exportBundle, importBundle } from './helpers/itemModelImports.js';
 import {
   CANDIDATE_LABELS,
@@ -259,6 +260,19 @@ const runAs = async (
       seed + 12_000_000,
     );
     problems.push(...(await echoThroughVersionProblems(w, caller, echoEntry.id)));
+  }
+  // ECHOAHEAD (review 9): an old client saves the whole read back, `id`s and all, while the draft may be ahead.
+  if (caller.reads && caller.updates && random.chance(0.4)) {
+    const kind = w.draftAndPublish ? random.pick(AHEAD_KINDS) : 'equal';
+    const view =
+      (caller.kind === 'adminToken' || caller.kind === 'pinned') && random.chance(0.5) ? 'draft' : 'default';
+    const ahead = await aheadEntry(w, kind, {
+      legacy: random.pick(['all', 'partial', 'with'] as const),
+      ownerId: caller.ownOnly ? caller.userId : undefined,
+    });
+    problems.push(
+      ...(await echoAheadProblems(w, caller, ahead.id, { locale: ahead.locale, version, view, kind })),
+    );
   }
   // N1: relation candidates.
   if (random.chance(0.3)) {
@@ -1945,6 +1959,33 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
       }
     }
   };
+
+  it('ECHOAHEAD (5 round trip, review 9): an old client sends the whole read back with its ids while the draft is ahead of what it read', async () => {
+    const problems: Problem[] = [];
+    const echoers = ['admin', 'adminToken', 'reader', 'masked', 'owner', 'pinned', 'limited'] as const;
+    for (const name of echoers) {
+      const caller = w.callers[name];
+      const draftCapable = caller.kind === 'adminToken' || caller.kind === 'pinned';
+      for (const kind of AHEAD_KINDS) {
+        for (const legacy of ['all', 'with'] as const) {
+          for (const version of caller.kind === 'admin' ? [false] : [false, true]) {
+            for (const view of draftCapable ? (['default', 'draft'] as const) : (['default'] as const)) {
+              const ahead = await aheadEntry(w, kind, {
+                legacy,
+                ownerId: caller.ownOnly ? caller.userId : undefined,
+              });
+              problems.push(
+                ...(
+                  await echoAheadProblems(w, caller, ahead.id, { locale: ahead.locale, version, view, kind })
+                ).map((problem) => ({ ...problem, detail: `${legacy}: ${problem.detail}` })),
+              );
+            }
+          }
+        }
+      }
+    }
+    expect(report(problems)).toEqual([]);
+  });
 
   it('LEGACYRESAVE (9 no-op): on entries stored before 0.9.0, partly, and after, a save that changes nothing changes nothing', async () => {
     // Review 8 (mine/legacyresave): `PUT {title: same}` and `PUT {}` on an entry stored by 0.8.2 wrote a revision,
