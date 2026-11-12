@@ -6,6 +6,8 @@ import { setPublicGrants } from './helpers/appUsers.js';
 import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from './helpers/content.js';
 import {
   churnCases,
+  copyMoveProblems,
+  lensNewProblems,
   adminSingleCopyProblems,
   echoChurnProblems,
   targetSwapProblems,
@@ -78,6 +80,11 @@ import {
  *
  * `ITEM_MODEL_RUNS` (default 6) runs from `ITEM_MODEL_SEED` (default 1); `ITEM_MODEL_SEED=<n> ITEM_MODEL_RUNS=1`
  * replays one. The fixed cases below are the reviewer's repros, each named after the property that catches it.
+ *
+ * Local gate (not CI; seeds 1 to 400 on SQLite in one invocation, about 25 seconds):
+ *
+ *   ITEM_MODEL_SEED=1 ITEM_MODEL_RUNS=400 TEST_DATABASE_URL=sqlite: \
+ *     npx vitest run --project integration apps/api/test/itemWriteModel.int.test.ts
  */
 
 const RUNS = Number(process.env.ITEM_MODEL_RUNS ?? 6);
@@ -1951,7 +1958,9 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     ] as const) {
       const response = await w.request('PUT', `/api/content/docs/${id}`, w.callers.reader.token, {
         expectedVersion: version + (stale ? 3 : 0),
-        data: { cards: [{ id: 'unknownIdAbc', heading: 'A' }] },
+        // Review 13: an unknown id on an item identical to the stored one (by content) continues it; with other
+        // content the stored item would be left unclaimed, so the unknown id is refused.
+        data: { cards: [{ id: 'unknownIdAbc', heading: 'Z' }] },
       });
       const outcome = outcomeOf(response);
       const got =
@@ -2066,6 +2075,19 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     }
     problems.push(...(await adminSingleCopyProblems(w)));
     expect(report(problems)).toEqual([]);
+  });
+
+  it('COPYMOVE (3 ID integrity, review 13): items copied or moved with their ids are accepted unless a stored item with hidden values would be left unclaimed', async () => {
+    expect(report(await copyMoveProblems(w))).toEqual([]);
+  });
+
+  it('LENSNEW (5 round trip, review 13): echoing through V an item the draft no longer holds stores what the no-version path stores, and the resend is a no-op', async () => {
+    expect(report(await lensNewProblems(w))).toEqual([]);
+  });
+
+  it('SEED266 (regression, review 13): ITEM_MODEL_SEED=266 run 266', async () => {
+    const { problems, log } = await runOnce(w, 266);
+    expect(report(problems), log.join('\n')).toEqual([]);
   });
 
   it('TARGETSWAP (2 no oracle, review 12): swapping look-alikes by id answers the same whether their hidden targets are equal or not', async () => {

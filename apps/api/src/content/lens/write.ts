@@ -424,6 +424,11 @@ type Counterpart = {
   scope: ViewScope;
   /** The same object in the other heads the caller may read (`LensWriteBase.shown`). */
   shown?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+  /**
+   * A new item copied from another head the caller read (`shown`, one per read): filled with the values it carries
+   * from that head (`copiedFrom`), by field ID, for the carry-over (`Pairing.copied`).
+   */
+  copied?: Record<string, unknown>;
 };
 
 const recordOrNull = (value: unknown): Readonly<ContentData> | null => (isRecord(value) ? value : null);
@@ -466,6 +471,21 @@ const readsToday = (base: LensWriteBase, field: FieldLens, whole: boolean): bool
  * component list it writes in `pairings`. `whole`: a component instance, written whole, so what the client
  * cannot write or does not know keeps its stored value.
  */
+/**
+ * The stored value a new item carries for a field it cannot write through the client's version and sent back as
+ * read: the value of the head whose read it echoes, when that read showed it whole (a scalar or a list of them,
+ * nothing cut) and it still fits today's field. Undefined: it cannot be carried exactly, so it is refused.
+ */
+const copiedFrom = (field: FieldLens, value: unknown, counterpart: Counterpart): unknown => {
+  const { stored } = field;
+  if (!stored || stored.type === 'component' || stored.type === 'dynamiczone') {
+    return undefined;
+  }
+  const at = counterpart.reads.findIndex((read) => matchesRead(field, value, read[field.fieldId], null));
+  const carried = at === -1 ? undefined : counterpart.shown?.[at]?.[field.fieldId];
+  return carried !== undefined && matchesFieldType(stored, carried) ? carried : undefined;
+};
+
 const translateObject = (
   walk: Walk,
   lens: DefinitionLens,
@@ -535,9 +555,19 @@ const translateObject = (
       );
     } else if (!sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       walk.issues.push(counterpart.unseen ? unseenRefusal(fieldPath) : refusal(field, fieldPath));
+    } else if (counterpart.copied && !isMissingValue(item)) {
+      // A new item copied from another head it read: what it sent back of that read is carried from that head's
+      // stored item, as the same write without a version stores it; what cannot be carried exactly is refused.
+      const carried = copiedFrom(field, item, counterpart);
+      if (carried === undefined) {
+        walk.issues.push(refusal(field, fieldPath));
+      } else {
+        counterpart.copied[field.fieldId] = carried;
+      }
     }
     // Sent back as read: left out. What a written instance leaves out (fields the client cannot read, write or
-    // does not know) is carried over in storage form by the write path (`keepUnreadableComponentFields`).
+    // does not know) is carried over in storage form by the write path (`keepUnreadableComponentFields`), from the
+    // stored item it continues, or for a new item copied from another head, from that head (`copied`).
   }
   return output;
 };
@@ -787,13 +817,10 @@ const counterpartOf = (
   const elsewhere = shown.length > 0 ? { shown } : {};
   if (!stored) {
     // A new item the client copied from another head it read (`shownElsewhere`): what it sends back of that read
-    // is that read sent back (a field it cannot write through its version is left out), never refused.
-    return {
-      stored: null,
-      reads: scope.reads ? shown.map((item) => readOfStored(base, lens, item)) : [],
-      scope,
-      ...elsewhere,
-    };
+    // is that read sent back (a field it cannot write through its version is carried from that head: `copied`).
+    return scope.reads && shown.length > 0
+      ? { stored: null, reads: shown.map((item) => readOfStored(base, lens, item)), scope, shown, copied: {} }
+      : { stored: null, reads: [], scope, ...elsewhere };
   }
   return {
     stored,
@@ -955,21 +982,19 @@ function translateValue(
     walk.itemIssues.push(...single.issues.map((issue) => itemIssueOf(issue, path)));
     const instance = single.pairs[0] === 0 ? recordOrNull(stored) : null;
     const inside = new Map<string, Pairing>();
-    const translated = translateInstance(
-      walk,
+    const counterpart = counterpartOf(
+      walk.base,
       lens,
-      value,
-      counterpartOf(
-        walk.base,
-        lens,
-        instance,
-        walk.view.within(scope, instance !== null),
-        shownCounterparts(shownHere, sentId, instance),
-      ),
-      path,
-      inside,
+      instance,
+      walk.view.within(scope, instance !== null),
+      shownCounterparts(shownHere, sentId, instance),
     );
-    pairings.set(field.fieldId, { pairs: single.pairs, inside: [inside] });
+    const translated = translateInstance(walk, lens, value, counterpart, path, inside);
+    pairings.set(field.fieldId, {
+      pairs: single.pairs,
+      inside: [inside],
+      ...copiedOf([counterpart.copied]),
+    });
     return translated;
   }
   if ((client.type !== 'component' && client.type !== 'dynamiczone') || !Array.isArray(value)) {
@@ -979,6 +1004,7 @@ function translateValue(
   const kept = Array.isArray(stored) ? stored.slice(0, CARRY_MAX_ITEMS) : [];
   const pairs = pairWrittenList(walk, field, value, kept, new Set(shownHere.keys()), path, scope);
   const inside: Array<Map<string, Pairing>> = [];
+  const copied: Array<Record<string, unknown> | undefined> = [];
   const translated = value.map((item: unknown, index) => {
     const pair = pairs[index] ?? -1;
     const storedItem = pair === -1 ? null : recordOrNull(kept[pair]);
@@ -994,15 +1020,22 @@ function translateValue(
       : { stored: null, reads: [], scope };
     const nested = new Map<string, Pairing>();
     inside.push(nested);
+    copied.push(counterpart.copied);
     const itemPath = pointer(path, index);
     if (client.type === 'dynamiczone') {
       return translateZoneItem(walk, field, item, counterpart, itemPath, nested);
     }
     return lens ? translateInstance(walk, lens, item, counterpart, itemPath, nested) : item;
   });
-  pairings.set(field.fieldId, { pairs, inside });
+  pairings.set(field.fieldId, { pairs, inside, ...copiedOf(copied) });
   return translated;
 }
+
+/** `Pairing.copied` of a written value: only when some new item carries something. */
+const copiedOf = (copied: ReadonlyArray<Record<string, unknown> | undefined>): Pick<Pairing, 'copied'> =>
+  copied.some((values) => values !== undefined && Object.keys(values).length > 0)
+    ? { copied: copied.map((values) => (values && Object.keys(values).length > 0 ? values : undefined)) }
+    : {};
 
 /**
  * `input` (the client's write body, keyed by its API IDs) for today's write path. On update, fields the client

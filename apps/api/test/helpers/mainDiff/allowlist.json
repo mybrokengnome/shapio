@@ -74,7 +74,7 @@
     "cites": [
       {
         "file": "documentation/delivery-api.md",
-        "text": "An `id` no version shows is `UNKNOWN_ITEM_ID`; read the entry again for current `id`s and retry."
+        "text": "If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current `id`s, or send a copied item without its `id` (or with `\"id\": null`)."
       },
       {
         "file": "documentation/delivery-api.md",
@@ -85,6 +85,20 @@
     "path": ".*",
     "when": {
       "staleHidden": true
+    }
+  },
+  {
+    "id": "copy-move-unclaimed",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "copied or moved with its `id`"
+      }
+    ],
+    "condition": "A copy or move of items with their ids that would leave a stored item unclaimed, on a list whose items can hold values hidden from a caller that sees the draft; every issue is UNKNOWN_ITEM_ID on such a list (worked out from what the caller read and the stored heads).",
+    "path": ".*",
+    "when": {
+      "unclaimedHidden": true
     }
   }
 ]

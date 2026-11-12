@@ -45,7 +45,7 @@ const prng = (seed: number) => {
 type Manifest = {
   adminToken: string;
   users: Record<'reader' | 'updateOnly' | 'owner', string>;
-  entries: Array<{ id: string; model: 'doc' | 'ndoc' | 'ldoc'; ahead?: string; owned?: boolean }>;
+  entries: Array<{ id: string; model: 'doc' | 'ndoc' | 'ldoc' | 'cmove'; ahead?: string; owned?: boolean }>;
   things: { published: string; unpublished: string };
   /** Field ID → API ID, so stored data compares by field name (diff.mjs keeps comparing untouched fields). */
   fieldKeys: Record<string, string>;
@@ -190,7 +190,29 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
       },
     ],
   });
-  const models: ModelBody[] = [doc, ndoc, ldoc];
+  // Review 13: copies and moves of items between entries and fields: `h1`/`h2` hold `chip` (nothing hidden),
+  // `p1`/`p2` hold `litem` (a private `secret`).
+  const cmove = await createDefinition(admin, {
+    kind: 'collection',
+    apiKey: 'cmove',
+    label: 'Cmove',
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string' },
+      ...['h1', 'h2'].map((apiKey) => ({
+        apiKey,
+        label: apiKey,
+        type: 'component',
+        settings: { component: chip.definition.id, repeatable: true },
+      })),
+      ...['p1', 'p2'].map((apiKey) => ({
+        apiKey,
+        label: apiKey,
+        type: 'component',
+        settings: { component: litem.definition.id, repeatable: true },
+      })),
+    ],
+  });
+  const models: ModelBody[] = [doc, ndoc, ldoc, cmove];
   const grants = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
     models.flatMap((model) => actions.map((action) => ({ action, modelId: model.definition.id, ...extra })));
   const user = async (name: string, list: GrantSpec[]) => {
@@ -387,8 +409,27 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     }
     entries.push({ id, model: 'ldoc', ahead });
   }
+  for (const name of ['a', 'b']) {
+    const id = expectStatus(
+      await admin.post('/api/admin/content/cmove', {
+        data: {
+          title: name,
+          h1: [{ zv: `${name}h1x` }, { zv: `${name}h1y` }],
+          h2: [{ zv: `${name}h2x` }],
+          p1: [
+            { label: `${name}p1x`, secret: `${name}s1` },
+            { label: `${name}p1y`, secret: `${name}s2` },
+          ],
+          p2: [{ label: `${name}p2x`, secret: `${name}s3` }],
+        },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(await admin.post(`/api/admin/content/cmove/${id}/publish`, {}), 200);
+    entries.push({ id, model: 'cmove' });
+  }
   const fieldKeys = Object.fromEntries(
-    [chip, card, box, doc, ndoc, litem, ldoc].flatMap((model) =>
+    [chip, card, box, doc, ndoc, litem, ldoc, cmove].flatMap((model) =>
       model.definition.fields.map((field) => [field.id, field.apiKey]),
     ),
   );
@@ -590,47 +631,30 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
         hiddenTargets: [],
       };
     }
-    const reads = caller === 'reader' || caller === 'anon' || (caller === 'owner' && target.owned === true);
+    // Every caller may read published entries: the seed's public read grants apply to anonymous and every signed-in
+    // user (the owner's own-entries condition only narrows its role's extra grants).
+    const reads = true;
+    // The server's notion (contentDeliveryWrites `seesDraft`, contentReads `statusOf`): the caller sees the draft it
+    // writes when that locale's draft is the published revision (same revision, not autosaved). A locale with no
+    // draft yet, or a never-published one, is not seen.
     const heads = await db
       .selectFrom('entry_heads')
-      .select(['locale', 'state', 'data'])
+      .selectAll()
       .where('entry_id', '=', target.id)
+      .where('locale', '=', locale)
       .execute();
-    const dataOf = (at: string, state: string, only?: Set<string>) => {
-      const head = heads.find((row) => row.locale === at && row.state === state);
-      if (!head) {
-        return null;
-      }
-      const data = byApiId(
-        typeof head.data === 'string' ? JSON.parse(head.data) : head.data,
-        manifest.fieldKeys,
-      );
-      return JSON.stringify(
-        normal(
-          isRecord(data) && only
-            ? Object.fromEntries(Object.entries(data).filter(([key]) => only.has(key)))
-            : data,
-          created,
-        ),
-      );
-    };
-    // The draft it writes is ahead when that locale's draft differs from its published head, or (for a locale
-    // with no head yet) when a shared field's draft differs from its published value in another locale.
-    const shared = new Set(['cards', 'hero', 'zone', 'ref', 'sitems']);
-    const own = dataOf(locale, 'draft');
+    const draft = heads.find((row) => row.state === 'draft');
+    const published = heads.find((row) => row.state === 'published');
     const ahead =
-      own !== null
-        ? own !== dataOf(locale, 'published')
-        : heads.some(
-            (row) =>
-              row.state === 'draft' &&
-              dataOf(row.locale, 'draft', shared) !== dataOf(row.locale, 'published', shared),
-          );
+      !draft ||
+      !published ||
+      draft.revision_id !== published.revision_id ||
+      ((draft as { autosaved_at?: unknown }).autosaved_at ?? null) !== null;
     return {
       seesDraft: reads && !ahead,
       notTheirs,
       withoutIds,
-      hiddenFields: ['cards', 'zone', 'litems'],
+      hiddenFields: ['cards', 'zone', 'litems', 'p1', 'p2'],
       hiddenLeaves: ['note', 'secret'],
       // Callers without a read grant on things (update-only, anonymous) cannot read any relation target.
       hiddenTargets:
@@ -743,6 +767,10 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
         locales: [locale],
       });
     }
+    // A's writes are measured from here: the other writer's change (and publish) can be a no-op on one side after an
+    // earlier allowed difference, and that is compared through `otherMoved`, not through the step's counters.
+    const prepared = await observeEntry(target.id, target.model);
+    const baseline = { revisions: prepared.revisions, events: prepared.events };
     const pre = await preOf(caller, target, locale, body);
     const write = (expectedVersion: unknown) =>
       caller === 'admin'
@@ -763,6 +791,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       pre,
       otherStatus: changed.status,
       otherMoved,
+      baseline,
       firstStatus: first.status,
       sent: normal(body, created),
       ...outcomeOf(retry),
@@ -802,6 +831,99 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
         (await request('GET', `/api/admin/content/ldoc/${target.id}?locale=de`, manifest.adminToken)).body,
         created,
       ),
+    };
+  };
+  const cmoves = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.model === 'cmove');
+  /**
+   * Review 13: copy another entry's items into this one (replace, or append), copy one field's items into another
+   * of the same entry (replace, or append), or move an item between fields: with the reads' `id`s on the branch, none
+   * on main. `pre.unclaimed` names the lists where a stored item is left unclaimed (its `id` sent nowhere in the
+   * body, and no item with its content sent in that list), worked out from what the caller read.
+   */
+  const copyMoveStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const [first, second] = random.chance(0.5) ? [cmoves[0], cmoves[1]] : [cmoves[1], cmoves[0]];
+    const { entry: target, index } = first as (typeof cmoves)[number];
+    const source = (second as (typeof cmoves)[number]).entry;
+    const variant = random.pick([
+      'otherReplace',
+      'otherAppend',
+      'fieldReplace',
+      'fieldAppend',
+      'move',
+    ] as const);
+    const [x1, x2] = random.chance(0.5) ? (['h1', 'h2'] as const) : (['p1', 'p2'] as const);
+    const readOf = async (id: string) => {
+      const response =
+        caller === 'admin'
+          ? await request('GET', `/api/admin/content/cmove/${id}`, token)
+          : await request('GET', `/api/content/cmoves/${id}`, token);
+      return isRecord(response.body) && isRecord(response.body.data) ? response.body.data : {};
+    };
+    // Both entries are published first, so the caller sees the draft it writes (the case the rule is about).
+    for (const id of [target.id, source.id]) {
+      await request('POST', `/api/admin/content/cmove/${id}/publish`, manifest.adminToken, {});
+    }
+    const prepared = await observeEntry(target.id, 'cmove');
+    const baseline = { revisions: prepared.revisions, events: prepared.events };
+    const own = await readOf(target.id);
+    const other = await readOf(source.id);
+    const list = (data: Json, field: string) => (Array.isArray(data[field]) ? (data[field] as Json[]) : []);
+    const body: Json =
+      variant === 'otherReplace'
+        ? { [x1]: list(other, x1) }
+        : variant === 'otherAppend'
+          ? { [x1]: [...list(own, x1), ...list(other, x1)] }
+          : variant === 'fieldReplace'
+            ? { [x2]: list(own, x1) }
+            : variant === 'fieldAppend'
+              ? { [x2]: [...list(own, x2), ...list(own, x1)] }
+              : { [x1]: list(own, x1).slice(1), [x2]: [...list(own, x2), ...list(own, x1).slice(0, 1)] };
+    const sentIds = new Set(
+      Object.values(body).flatMap((items) =>
+        (items as Json[]).map((item) => item.id).filter((id) => typeof id === 'string'),
+      ),
+    );
+    // A stored item is claimed by its id sent anywhere in the body, or by content: its visible content appears
+    // exactly once among the stored items and exactly once among the items sent to its list that the ids the draft
+    // holds do not already resolve (an item sent with another stored item's id is that item, copied or moved).
+    const contentOf = (item: Json) => JSON.stringify({ ...item, id: undefined });
+    const unclaimed = Object.keys(body).filter((field) => {
+      const stored = list(own, field);
+      const held = new Set(
+        ['h1', 'h2', 'p1', 'p2'].flatMap((name) => list(own, name).map((item) => String(item.id))),
+      );
+      const sent = (body[field] as Json[]).filter((item) => !held.has(String(item.id)));
+      return stored.some(
+        (item) =>
+          !sentIds.has(String(item.id)) &&
+          !(
+            stored.filter((other) => contentOf(other) === contentOf(item)).length === 1 &&
+            sent.filter((other) => contentOf(other) === contentOf(item)).length === 1
+          ),
+      );
+    });
+    const view = await request('GET', `/api/admin/content/cmove/${target.id}`, manifest.adminToken);
+    const version = isRecord(view.body) ? (view.body.version ?? null) : null;
+    const pre = { ...(await preOf(caller, target, 'en', body)), unclaimed };
+    const response =
+      caller === 'admin'
+        ? await request('PUT', `/api/admin/content/cmove/${target.id}`, token, {
+            expectedVersion: version,
+            data: body,
+          })
+        : await request('PUT', `/api/content/cmoves/${target.id}`, token, {
+            expectedVersion: version,
+            data: body,
+          });
+    return {
+      label: `${step} ${caller} copymove e${index} cmove en ${variant} ${x1}`,
+      baseline,
+      pre,
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, 'cmove'),
     };
   };
   const locCopyStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
@@ -965,7 +1087,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       'stale',
       'stale',
       'twins',
+      'copymove',
     ] as const);
+    if (op === 'copymove') {
+      steps.push(await copyMoveStep(step, caller, token));
+      continue;
+    }
     if (op === 'stale') {
       steps.push(await staleStep(step, caller, token));
       continue;

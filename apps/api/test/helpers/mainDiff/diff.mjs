@@ -25,10 +25,7 @@ if (allow.some((entry) => !Array.isArray(entry.cites) || entry.cites.length === 
   say('every allowlist entry needs at least one citation (cites: [{ file, text }])');
   process.exit(1);
 }
-if (stale.length > 0) {
-  for (const line of stale) say(`cited text missing: ${line}`);
-  process.exit(1);
-}
+for (const line of stale) say(`cited text missing: ${line}`);
 
 /** Every leaf path where two values differ, with both values. */
 const differences = (a, b, path = '') => {
@@ -66,6 +63,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.noIdItems !== true || step.noIdItems) &&
   (entry.when?.refusalOrder !== true || step.refusalOrder) &&
   (entry.when?.staleHidden !== true || step.staleHidden) &&
+  (entry.when?.unclaimedHidden !== true || step.unclaimedHidden) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 const RELATIONS = new Set(['rel', 'rels', 'ref']);
@@ -128,6 +126,18 @@ const conditionsOf = (label, main, b, dataDifferences) => {
         const list = segments[segments.length - 3];
         return code === 'UNKNOWN_ITEM_ID' && segments.at(-1) === 'id' && pre.hiddenFields.includes(list);
       }),
+    // A copy or move (review 13) that would leave a stored item unclaimed: every issue is UNKNOWN_ITEM_ID on such a
+    // list, the list's items can hold values hidden from the caller, and the caller sees the draft.
+    unclaimedHidden:
+      pre !== null &&
+      pre.seesDraft &&
+      Array.isArray(pre.unclaimed) &&
+      (b?.issues ?? []).length > 0 &&
+      (b?.issues ?? []).every((issue) => {
+        const [code, path] = issue.split(' ');
+        const list = path.split('/').filter(Boolean)[0];
+        return code === 'UNKNOWN_ITEM_ID' && pre.unclaimed.includes(list) && pre.hiddenFields.includes(list);
+      }),
     hiddenKept:
       (b?.status ?? 500) < 300 &&
       dataDifferences.length > 0 &&
@@ -181,6 +191,7 @@ const keyed = (step, side) => {
     ...step,
     label: undefined,
     pre: undefined,
+    baseline: undefined,
     entry: step.entry && {
       ...step.entry,
       audit,
@@ -189,9 +200,12 @@ const keyed = (step, side) => {
   };
 };
 const previous = { main: new Map(), branch: new Map() };
-const deltas = (side, entry, observed) => {
+// A step that prepares the entry itself first (the copy/move step publishes it) reports the counts after that
+// preparation as `baseline`: its own write is then measured from there, so an earlier allowed difference that left
+// the entry modified on one side only does not show as a difference in what the step's write did.
+const deltas = (side, entry, observed, baseline) => {
   if (!observed) return undefined;
-  const last = previous[side].get(entry);
+  const last = baseline ?? previous[side].get(entry);
   previous[side].set(entry, observed);
   return last
     ? { revisions: observed.revisions - last.revisions, events: observed.events.length - last.events.length }
@@ -228,8 +242,8 @@ for (let index = 0; index < count; index += 1) {
   const createdEntry = a?.createdEntry ?? b?.createdEntry;
   // A create observes the new entry: its counters start there.
   const observedKey = createdEntry !== undefined ? String(createdEntry) : entry;
-  const deltaA = observedKey !== undefined ? deltas('main', observedKey, a?.entry) : undefined;
-  const deltaB = observedKey !== undefined ? deltas('branch', observedKey, b?.entry) : undefined;
+  const deltaA = observedKey !== undefined ? deltas('main', observedKey, a?.entry, a?.baseline) : undefined;
+  const deltaB = observedKey !== undefined ? deltas('branch', observedKey, b?.entry, b?.baseline) : undefined;
   let found = differences(keyed(a, 'main'), keyed(b, 'branch'));
   const raw = found;
   const fields = entry !== undefined ? touched.get(entry) : undefined;
@@ -312,3 +326,4 @@ if (unlisted.length > 0) {
   process.exit(1);
 }
 say(`no unlisted differences over ${count} steps`);
+if (stale.length > 0) process.exit(1);

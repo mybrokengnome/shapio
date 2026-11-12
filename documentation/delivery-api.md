@@ -558,11 +558,12 @@ update.
 
 These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per problem, and nothing is written:
 
-| Issue code               | Path            | Message                                                                                                                     |
-| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item |
-| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                               |
-| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                           |
+| Issue code               | Path            | Message                                                                                                                                                               |
+| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item                                           |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it without its id (or with "id": null). |
+| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                                                                         |
+| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                                                                     |
 
 An `id` the draft holds continues that item. For an `id` the draft does not hold:
 
@@ -572,20 +573,26 @@ An `id` the draft holds continues that item. For an `id` the draft does not hold
   from the published version, or when it is simply unknown.
 - Where items can hold values you cannot read or write: an `id` that a version of the entry you may read shows is
   saved as a new item, unless you cannot read the draft (then `AMBIGUOUS_ITEMS`, "replaces items this caller
-  cannot read"; leave the field out to keep it, or send an empty list to clear it). An `id` no version shows is
-  `UNKNOWN_ITEM_ID`; read the entry again for current `id`s and retry.
+  cannot read"; leave the field out to keep it, or send an empty list to clear it). An `id` no version shows (an
+  item copied or moved with its `id` from another entry or another field, or one from a stale read) is saved as a
+  new item when every item the list holds is still sent, by its `id` or as an equal item, so the write only adds
+  items. If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current
+  `id`s, or send a copied item without its `id` (or with `"id": null`). If you cannot read the draft, it is always
+  `UNKNOWN_ITEM_ID`.
 - Tokens that may read drafts, and the admin API, always save such an item as new.
 
-| You can read the draft | Items can hold values hidden from you | An `id` a readable version shows | An `id` no version shows |
-| ---------------------- | ------------------------------------- | -------------------------------- | ------------------------ |
-| yes                    | no                                    | new item                         | new item                 |
-| yes                    | yes                                   | new item                         | `UNKNOWN_ITEM_ID`        |
-| no                     | no                                    | new item                         | new item                 |
-| no                     | yes                                   | `AMBIGUOUS_ITEMS`                | `UNKNOWN_ITEM_ID`        |
+| You can read the draft | Items can hold values hidden from you | An `id` a readable version shows | An `id` no version shows                                                   |
+| ---------------------- | ------------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| yes                    | no                                    | new item                         | new item                                                                   |
+| yes                    | yes                                   | new item                         | new item when every stored item is still sent; otherwise `UNKNOWN_ITEM_ID` |
+| no                     | no                                    | new item                         | new item                                                                   |
+| no                     | yes                                   | `AMBIGUOUS_ITEMS`                | `UNKNOWN_ITEM_ID`                                                          |
 
 An item sent with an `id` the draft does not hold, and that is not refused, is matched by content like an item
 sent without an `id`: it continues the one stored item that equals it, otherwise it is new.
-Sending back what you read, while the draft holds the same content under other `id`s, changes nothing.
+Sending back what you read, while the draft holds the same content under other `id`s, changes nothing, unless
+you cannot read the draft and the field's items can hold values you cannot see, where it is refused as the table
+says.
 
 A localized list written to a locale for the first time holds new items, whatever `id`s it carries. Items under a
 new item are new, whatever `id`s they carry. A stored `id` that somehow belongs to two items is

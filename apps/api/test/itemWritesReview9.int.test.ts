@@ -1012,11 +1012,7 @@ describe('item writes: ninth review, IDs a published read gave while the draft i
     );
 
     it.each(
-      models.flatMap((model) =>
-        (['adminApiNoIds', 'deleteItem'] as const).flatMap((other) =>
-          [false, true].map((version) => [model, other, version] as const),
-        ),
-      ),
+      models.flatMap((model) => [false, true].map((version) => [model, 'adminApiNoIds', version] as const)),
     )(
       '%s, changed by %s, a list with private values sent back stale (version %s): unknown, nothing written',
       async (model, other, version) => {
@@ -1042,6 +1038,36 @@ describe('item writes: ninth review, IDs a published read gave while the draft i
         expect(codes.length).toBeGreaterThan(0);
         expect(codes.every((code) => code === 'UNKNOWN_ITEM_ID')).toBe(true);
         expect(await adminView(model, id)).toEqual(before);
+      },
+    );
+
+    it.each(models.flatMap((model) => [false, true].map((version) => [model, version] as const)))(
+      '%s, changed by deleteItem, a list with private values sent back stale (version %s): the deleted item is added back as new, every stored item kept',
+      async (model, version) => {
+        const route = (id: string) =>
+          `/api/content/${model}s/${id}${version ? `?schemaVersion=${encodeURIComponent(v2)}` : ''}`;
+        const { id, data } = await staleRead(
+          model,
+          'secrets',
+          'deleteItem',
+          async (entryId) =>
+            expectStatus(await request('GET', route(entryId), bob.accessToken), 200).json<{ data: Data }>()
+              .data,
+        );
+        const before = await adminView(model, id);
+        const kept = (before.data.secrets as Item[])[0];
+        const response = await request('PUT', route(id), bob.accessToken, {
+          expectedVersion: before.version,
+          data: { title: 't!', secrets: data.secrets },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        const after = (await adminView(model, id)).data.secrets as Item[];
+        expect(after.map((item) => [item.label, item.note ?? null])).toEqual([
+          ['A', 'nA'],
+          ['B', null],
+        ]);
+        expect(after[0]?.id).toBe(kept?.id);
+        expect(after[1]?.id).not.toBe((data.secrets as Item[])[1]?.id);
       },
     );
 

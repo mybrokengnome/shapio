@@ -2,8 +2,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { setPublicGrants } from './appUsers.js';
 import { createDefinition, expectStatus } from './content.js';
 import { entryState } from './itemModelProbes.js';
-import { type Problem } from './itemModelRun.js';
-import { eventCount, headsOf, revisionCount, type World } from './itemModelWorld.js';
+import { readAs, send, type Problem } from './itemModelRun.js';
+import { eventCount, headsOf, revisionCount, type Caller, type World } from './itemModelWorld.js';
 
 type Json = Record<string, unknown>;
 
@@ -467,5 +467,244 @@ export const targetSwapProblems = async (w: World): Promise<Problem[]> => {
       }
     }
   });
+  return problems;
+};
+
+/**
+ * COPYMOVE (review 13): items copied or moved with their ids, from another entry or another field of the same
+ * entry. `h1`/`h2` hold `line` (nothing hidden); `p1`/`p2` hold `chip` (a private `zh`). For a caller that sees
+ * the draft: on a list with nothing hidden, always accepted (as on main); on a list whose items can hold hidden
+ * values, accepted when the write only adds items (every stored item still claimed by id or content), refused with
+ * UNKNOWN_ITEM_ID when a stored item would be left unclaimed (the two replace cases), and nothing is written then.
+ */
+export type CopyMoveVariant = 'otherReplace' | 'otherAppend' | 'fieldReplace' | 'fieldAppend' | 'move';
+export const COPY_MOVE_VARIANTS: readonly CopyMoveVariant[] = [
+  'otherReplace',
+  'otherAppend',
+  'fieldReplace',
+  'fieldAppend',
+  'move',
+];
+
+export const copyMoveProblems = async (w: World): Promise<Problem[]> => {
+  const line = w.components.line.definition.id;
+  const chip = w.components.chip.definition.id;
+  const model = await createDefinition(w.admin, {
+    kind: 'collection',
+    apiKey: 'cmove',
+    label: 'Cmove',
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string' },
+      ...['h1', 'h2'].map((apiKey) => ({
+        apiKey,
+        label: apiKey,
+        type: 'component',
+        settings: { component: line, repeatable: true },
+      })),
+      ...['p1', 'p2'].map((apiKey) => ({
+        apiKey,
+        label: apiKey,
+        type: 'component',
+        settings: { component: chip, repeatable: true },
+      })),
+    ],
+  });
+  const modelId = model.definition.id;
+  const entry = async (name: string) => {
+    const id = expectStatus(
+      await w.admin.post('/api/admin/content/cmove', {
+        data: {
+          title: name,
+          h1: [{ label: `${name}h1x` }, { label: `${name}h1y` }],
+          h2: [{ label: `${name}h2x` }],
+          p1: [
+            { zv: `${name}p1x`, zh: `${name}1` },
+            { zv: `${name}p1y`, zh: `${name}2` },
+          ],
+          p2: [{ zv: `${name}p2x`, zh: `${name}3` }],
+        },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(await w.admin.post(`/api/admin/content/cmove/${id}/publish`, {}), 200);
+    return id;
+  };
+  const problems: Problem[] = [];
+  const callers = [
+    { name: 'app user', token: w.callers.reader.token },
+    { name: 'anonymous', token: null },
+    // (No token can write without draft access: a delivery role grants only `read` and `readDrafts`, and an
+    // admin-scope token always reads drafts.)
+  ];
+  await withPublicReadUpdate(w, modelId, async () => {
+    for (const caller of callers) {
+      for (const [x1, x2, hidden] of [
+        ['h1', 'h2', false],
+        ['p1', 'p2', true],
+      ] as const) {
+        for (const variant of COPY_MOVE_VARIANTS) {
+          const target = await entry('a');
+          const source = await entry('b');
+          const readOf = async (id: string) =>
+            ((await w.request('GET', `/api/content/cmoves/${id}`, caller.token)).body as Json).data as Json;
+          const own = await readOf(target);
+          const other = await readOf(source);
+          const list = (data: Json, field: string) =>
+            Array.isArray(data[field]) ? (data[field] as Json[]) : [];
+          const body: Json =
+            variant === 'otherReplace'
+              ? { [x1]: list(other, x1) }
+              : variant === 'otherAppend'
+                ? { [x1]: [...list(own, x1), ...list(other, x1)] }
+                : variant === 'fieldReplace'
+                  ? { [x2]: list(own, x1) }
+                  : variant === 'fieldAppend'
+                    ? { [x2]: [...list(own, x2), ...list(own, x1)] }
+                    : {
+                        [x1]: list(own, x1).slice(1),
+                        [x2]: [...list(own, x2), ...list(own, x1).slice(0, 1)],
+                      };
+          const before = await headsOf(w, target);
+          const view = (await w.request('GET', `/api/admin/content/cmove/${target}`, w.adminToken))
+            .body as Json;
+          const response = await w.request('PUT', `/api/content/cmoves/${target}`, caller.token, {
+            expectedVersion: view.version,
+            data: body,
+          });
+          const label = `${caller.name} ${x1} ${variant}`;
+          const refuse = hidden && (variant === 'otherReplace' || variant === 'fieldReplace');
+          const codes = codesOf(response.raw);
+          if (refuse) {
+            const exactly =
+              response.status === 422 &&
+              codes.includes('UNKNOWN_ITEM_ID') &&
+              codes.every((code) => code === 'UNKNOWN_ITEM_ID' || code === 'CONTENT_INVALID');
+            if (!exactly || !isDeepStrictEqual(await headsOf(w, target), before)) {
+              problems.push({
+                property: '3 ID integrity (COPYMOVE)',
+                detail: `${label}: answered ${response.status} ${codes.join(',')}, not UNKNOWN_ITEM_ID with nothing written`,
+              });
+            }
+          } else if (response.status >= 300) {
+            problems.push({
+              property: '1 conservation (COPYMOVE)',
+              detail: `${label}: answered ${response.status} ${response.raw.slice(0, 200)}`,
+            });
+          }
+        }
+      }
+    }
+  });
+  return problems;
+};
+
+/**
+ * LENSNEW (review 13): a draft-capable token writing through V (REST), or a token pinned to V over GraphQL, echoes
+ * a published read whose item the draft no longer holds, where a sub-field cannot be written through V (`count`,
+ * retyped since V). The stored result keeps the values the client sent, equal to what the no-version path stores
+ * for the same echo, and the identical resend is a no-op.
+ */
+export const lensNewProblems = async (w: World): Promise<Problem[]> => {
+  const make = async () => {
+    const id = expectStatus(
+      await w.admin.post(`/api/admin/content/${w.docKey}?locale=en`, {
+        locale: 'en',
+        data: {
+          title: 't',
+          cards: [
+            { heading: 'A', count: 2 },
+            { heading: 'B', count: 3 },
+          ],
+        },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(
+      await w.admin.post(`/api/admin/content/${w.docKey}/${id}/publish`, { locales: ['en'] }),
+      200,
+    );
+    const view = (await w.request('GET', `/api/admin/content/${w.docKey}/${id}?locale=en`, w.adminToken))
+      .body as Json;
+    const cards = ((view.data as Json).cards as Json[]).slice(1);
+    expectStatus(
+      await w.admin.put(`/api/admin/content/${w.docKey}/${id}?locale=en`, {
+        locale: 'en',
+        expectedVersion: view.version,
+        data: { cards },
+      }),
+      200,
+    );
+    return id;
+  };
+  const visible = (heads: Awaited<ReturnType<typeof headsOf>>) =>
+    (
+      (heads.find((head) => head.locale === 'en' && head.state === 'draft')?.data[w.doc.cards] as
+        Json[] | undefined) ?? []
+    ).map((card) => [card[w.card.heading], card[w.card.count]]);
+  const echo = async (id: string, caller: Caller, transport: 'rest' | 'graphql', version: boolean) => {
+    const read = await readAs(w, caller, id, 'en', version);
+    const body = {
+      cards: ((read?.cards as Json[] | undefined) ?? []).map((card) => ({
+        id: card.id,
+        heading: card.heading,
+        count: card.count,
+      })),
+    };
+    const draftVersion = async () =>
+      (await headsOf(w, id)).find((head) => head.locale === 'en' && head.state === 'draft')?.version ?? null;
+    const first = await send(w, {
+      caller,
+      transport,
+      entryId: id,
+      locale: 'en',
+      version,
+      expectedVersion: await draftVersion(),
+      body,
+    });
+    const afterFirst = await entryState(w, id);
+    const again = await send(w, {
+      caller,
+      transport,
+      entryId: id,
+      locale: 'en',
+      version,
+      expectedVersion: await draftVersion(),
+      body,
+    });
+    return { first, again, afterFirst, afterAgain: await entryState(w, id) };
+  };
+  const problems: Problem[] = [];
+  const plain = await make();
+  const reference = await echo(plain, w.callers.adminToken, 'rest', false);
+  const expected = visible(await headsOf(w, plain));
+  for (const [name, caller, transport] of [
+    ['adminToken@V rest', w.callers.adminToken, 'rest'],
+    ['pinned graphql', w.callers.pinned, 'graphql'],
+  ] as const) {
+    const id = await make();
+    const result = await echo(id, caller, transport, true);
+    const failed = (response: Awaited<ReturnType<typeof send>>) =>
+      response.status >= 300 || /"errors"/.test(response.raw);
+    if (failed(reference.first) || failed(result.first)) {
+      problems.push({
+        property: '5 round trip (LENSNEW)',
+        detail: `${name}: answered ${result.first.status} ${result.first.raw.slice(0, 200)} (no-version path ${reference.first.status})`,
+      });
+      continue;
+    }
+    const stored = visible(await headsOf(w, id));
+    if (!isDeepStrictEqual(stored, expected)) {
+      problems.push({
+        property: '5 round trip (LENSNEW)',
+        detail: `${name}: stored ${JSON.stringify(stored)}, the no-version path stores ${JSON.stringify(expected)}`,
+      });
+    }
+    if (failed(result.again) || !isDeepStrictEqual(result.afterAgain, result.afterFirst)) {
+      problems.push({
+        property: '9 no-op (LENSNEW)',
+        detail: `${name}: the identical resend answered ${result.again.status}, revisions ${result.afterFirst.revisions} → ${result.afterAgain.revisions}`,
+      });
+    }
+  }
   return problems;
 };

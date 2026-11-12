@@ -68,12 +68,13 @@ All notable changes to Shapio are listed here. The format follows
     GraphQL mutations do not return it. It always holds the `id`s stored after the write, so even a write that
     changes nothing answers the `id`s the next write accepts.
   - In a list, `"id": null` marks a new item, and so does a missing `id` where another item carries one. An item
-    sent with an `id` the draft does not hold, and that is not refused, is matched by content: it continues the one
-    stored item that equals it, otherwise it is new. A single component sent with
-    an `id` that is not refused always continues the stored instance. Sending back what you read, while the draft
-    holds the same content under other `id`s, changes nothing. On a create, a well-formed `id` is ignored and every item gets a new
-    one (a repeated `id` is not an error); an `id` that is not a string, is empty, or is longer than 64
-    characters is `422 INVALID_TYPE`, as on an update.
+    sent with an `id` the draft does not hold, and that is not refused, is matched by content: it continues the
+    one stored item that equals it, otherwise it is new. A single component sent with an `id` that is not
+    refused always continues the stored instance. Sending back what you read, while the draft holds the same
+    content under other `id`s, changes nothing, unless the caller cannot read the draft and the field's items
+    can hold values it cannot see, where it is refused. On a create, a well-formed `id` is ignored and every
+    item gets a new one (a repeated `id` is not an error); an `id` that is not a string, is empty, or is longer
+    than 64 characters is `422 INVALID_TYPE`, as on an update.
   - Lifecycle hook `data` carries `id` on every component item, and `before` is the stored draft as stored (items
     saved since 0.9.0 carry `id`, older ones do not); `seo=resolved` keeps the
     stored SEO instance's `id`. Content export bundles carry item IDs, and an import into the same instance keeps
@@ -134,6 +135,9 @@ What changes for a client that names no schema version and sends no item `id`s
   clients (Apollo Client, Relay, urql's Graphcache) now store component items by `__typename` and `id`; a client
   that reads both drafts and published content should keep component types out of its cache
   ([GraphQL](documentation/graphql.md#schema-shape)).
+- An item copied or moved with its `id` from another entry or another field is saved as new when the write only
+  adds items, as before 0.9.0. On a field whose components have a private or deprecated field, a write that also
+  leaves out a stored item is refused with `UNKNOWN_ITEM_ID`; send the copied items without their `id`.
 - A list that can hold something the caller cannot see (a private or deprecated field at any depth; relation
   fields do not count) is matched only with certainty: sent back as read, a new list, or a write that only
   reorders, deletes, or adds items that all differ from each other. Anything else is refused with

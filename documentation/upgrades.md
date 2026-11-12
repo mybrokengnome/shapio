@@ -43,10 +43,13 @@ for every write change below is the same: send back the `id` of each item you re
 
 1. Every component item in every read has one more key, `id`. A client that reads an entry and sends it back,
    with the `id`s the read now includes, keeps working, also after someone else changed the entry and it retries
-   after a `409`. The one exception is a field whose components have a private or deprecated field: there a stale
-   `id` answers `UNKNOWN_ITEM_ID`, and reading the entry again fixes it. A write retried after a 409 with `id`s no
-   version shows is saved with those items as new, except that it is refused with `UNKNOWN_ITEM_ID` on a list
-   whose items can hold values hidden from the caller, and with `AMBIGUOUS_ITEMS` when the caller cannot see the
+   after a `409`. An item copied or moved with its `id` from another entry or another field is saved as new when
+   the write only adds items, as before 0.9.0. The one exception is a field whose components have a private or
+   deprecated field: there a write that sends a stale `id`, or a copied or moved one, and also leaves out a stored
+   item is refused with `UNKNOWN_ITEM_ID` (always, when the caller cannot see the draft). Reading the entry again
+   fixes a stale `id`; send copied items without their `id`. A write retried after a 409 with `id`s no version
+   shows is saved with those items as new, except that on a list whose items can hold values hidden from the
+   caller it is refused with `UNKNOWN_ITEM_ID` when it also leaves out a stored item or the caller cannot see the
    draft. Types regenerated with `shapio types generate`
    require it on component items, so object literals in your own tests (fixtures) need an `id` too. GraphQL
    caching clients store component items by `__typename` and `id` ([GraphQL](graphql.md#schema-shape)).

@@ -262,7 +262,10 @@ export const keepBehindRead = (
 
 type Carry = { view: CallerView; pairings: FieldPairings };
 
-/** One instance written over the stored instance it continues (or none: a new item, nothing carried). */
+/**
+ * One instance written over the stored instance it continues (or none: a new item, which carries only `copied`,
+ * the values a write through a schema version sent back from another head it read: `Pairing.copied`).
+ */
 const keepInInstance = (
   carry: Carry,
   scope: ViewScope,
@@ -272,6 +275,7 @@ const keepInInstance = (
   raw: unknown,
   pairings: FieldPairings,
   path: string,
+  copied?: Readonly<Record<string, unknown>>,
 ): unknown => {
   if (!component || !isRecord(written)) {
     return written;
@@ -280,6 +284,13 @@ const keepInInstance = (
   const output: Record<string, unknown> = { ...written, [ITEM_ID_KEY]: idFor(stored) };
   const sent = isRecord(raw) ? raw : {};
   const continues = isRecord(stored);
+  if (!continues && copied) {
+    for (const [fieldId, value] of Object.entries(copied)) {
+      if (isMissingValue(output[fieldId])) {
+        output[fieldId] = value;
+      }
+    }
+  }
   if (continues) {
     // What a field removed since left in the item stays, as it does at the top level (a write names fields, and no
     // caller can name a removed one): sending an item back as read changes nothing.
@@ -349,6 +360,7 @@ const keepInValue = (
       raw,
       pairing.inside[0] ?? NO_PAIRINGS,
       path,
+      pairing.copied?.[0],
     );
   }
   if (!Array.isArray(written)) {
@@ -366,6 +378,7 @@ const keepInValue = (
       at(raw, index),
       pairing.inside[index] ?? NO_PAIRINGS,
       pointer(path, index),
+      pair === -1 ? pairing.copied?.[index] : undefined,
     );
   });
 };

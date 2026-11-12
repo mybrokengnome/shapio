@@ -18,6 +18,12 @@ export type Pairing = {
   pairs: readonly number[];
   /** Per sent item, the pairings of the component fields inside it, by field ID. */
   inside: ReadonlyArray<FieldPairings>;
+  /**
+   * Per sent item that is new, values it carries in storage form (by field ID) from the item another head the
+   * caller may read shows under the ID it sent: through a schema version, the fields it cannot write there and
+   * sent back exactly as that head shows them (lens/write.ts, `copiedFrom`). Nothing else is carried to a new item.
+   */
+  copied?: ReadonlyArray<Readonly<Record<string, unknown>> | undefined>;
 };
 
 /** Pairings of the component fields of one object (an entry, or a component instance), by field ID. */
@@ -68,9 +74,15 @@ export type ItemIssueCode =
 
 /**
  * A refusal of a written list: about one sent item (`index`), or the whole list (null). `draftAhead`: it names
- * items a head the caller may read shows here that the draft no longer holds (`shownIds`).
+ * items a head the caller may read shows here that the draft no longer holds (`shownIds`). `notHere`: an ID no
+ * head shows, sent while the write also replaces stored items (`deferredRefusals`).
  */
-export type ListIssue = { index: number | null; code: ItemIssueCode; draftAhead?: boolean };
+export type ListIssue = {
+  index: number | null;
+  code: ItemIssueCode;
+  draftAhead?: boolean;
+  notHere?: boolean;
+};
 
 /** One side of a written list: what the caller sees of each item, and the component each holds. */
 export type ListSide = {
@@ -131,7 +143,7 @@ export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIs
  * | caller sees the draft | list can hold values hidden from it | ID a readable head shows | ID no head shows  |
  * | --------------------- | ----------------------------------- | ------------------------ | ----------------- |
  * | yes                   | no                                  | new                      | new               |
- * | yes                   | yes                                 | new                      | UNKNOWN_ITEM_ID * |
+ * | yes                   | yes                                 | new                      | see below *       |
  * | no                    | no                                  | new                      | new               |
  * | no                    | yes                                 | AMBIGUOUS_ITEMS          | UNKNOWN_ITEM_ID   |
  *
@@ -140,8 +152,12 @@ export const unseenItemsPolicy = (policy: ListPolicy, sentCount: number): ListIs
  * is stored (`fresh`: under a new item, or a localized list of a new locale). "New" is a new ID with nothing
  * carried over, unless the item continues the one draft item no other sent item names that equals it in everything the caller sees, when that is certain
  * (`withForeignContinued`). On a list that holds nothing hidden from the caller a well-formed ID is never refused
- * (nothing can be lost); where items can hold hidden values, an ID no head shows (a stale read) is refused, since
- * the item it named may hold values the caller cannot see, and reading again gives current IDs.
+ * (nothing can be lost). Where items can hold hidden values and the caller sees the draft, an ID no head shows
+ * (a stale read, or an item copied from another entry or field) is new when every stored item is still claimed,
+ * by an ID or by a match on what the caller sees (the write only adds items, so nothing hidden can be lost);
+ * otherwise UNKNOWN_ITEM_ID (`deferredRefusals`), since the item it named may be one the write replaces, holding
+ * values the caller cannot see, and reading again gives current IDs. Where the caller cannot see the draft, it is
+ * UNKNOWN_ITEM_ID outright.
  * A caller that cannot see the draft (no draft access, the draft ahead) is refused rather than replace items it
  * never saw where they can hold what it cannot see (`AMBIGUOUS_ITEMS`, "replaces items this caller cannot read").
  * A caller that may read drafts always sees the draft. (*) New for a caller that may read drafts.
@@ -159,12 +175,34 @@ const shownNowhere = (policy: ListPolicy, id: string, index: number | null): Lis
     : { index, code: 'UNKNOWN_ITEM_ID' };
 
 /**
+ * Whether the refusal of an ID no head shows waits for the content pairing (the table above): in a list, for a
+ * caller that sees the draft, where items can hold hidden values. Decided from the policy and the ID's shape only.
+ */
+const defersUnknown = (policy: ListPolicy, id: string): boolean => ITEM_ID_PATTERN.test(id) && !policy.unseen;
+
+/**
+ * The deferred IDs (`defersUnknown`) still new after the content pairing, refused when some stored item is left
+ * unclaimed (the write replaces it, with what it holds that the caller cannot see); none when every stored item
+ * is claimed (the write only adds). Claims come from IDs and from what the caller sees, never from hidden values.
+ */
+const deferredRefusals = (pairs: readonly number[], deferred: readonly number[], storedCount: number) => {
+  const claimed = new Set(pairs.filter((pair) => pair !== -1));
+  const left = deferred.filter((index) => pairs[index] === -1);
+  return claimed.size === storedCount
+    ? []
+    : left.map((index): ListIssue => ({ index, code: 'UNKNOWN_ITEM_ID', notHere: true }));
+};
+
+/**
  * The IDs the client sent that the draft holds pair with those items: certain. A repeated or re-typed ID is
  * refused, and so is an ID two stored items share (which one the client meant cannot be told). An ID the draft
  * lacks that the table above does not refuse is left to the content pairing (`pairByContent`), with the stored
  * items no sent ID claims; `id: null` and an item without an `id` are new.
  */
-const resolveIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; issues: ListIssue[] } => {
+const resolveIds = (
+  sides: ListSides,
+  policy: ListPolicy,
+): { pairs: number[]; issues: ListIssue[]; deferred: number[] } => {
   const stored = new Map<string, number>();
   const shared = new Set<string>();
   sides.storedIds.forEach((id, index) => {
@@ -185,6 +223,7 @@ const resolveIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; is
     }
   });
   const issues: ListIssue[] = [];
+  const deferred: number[] = [];
   const pairs = sides.sentIds.map((id, index) => {
     if (typeof id !== 'string') {
       return -1;
@@ -195,12 +234,15 @@ const resolveIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; is
     }
     const at = stored.get(id);
     if (at === undefined) {
+      const shown = sides.shownIds?.has(id) === true;
       const refused = shared.has(id)
         ? { index, code: 'UNKNOWN_ITEM_ID' as const }
-        : sides.shownIds?.has(id)
+        : shown
           ? shownElsewhere(policy, null)
           : shownNowhere(policy, id, index);
-      if (refused && !(refused.draftAhead && issues.some((issue) => issue.draftAhead))) {
+      if (refused && !shared.has(id) && !shown && defersUnknown(policy, id)) {
+        deferred.push(index);
+      } else if (refused && !(refused.draftAhead && issues.some((issue) => issue.draftAhead))) {
         issues.push(refused);
       }
       return -1;
@@ -211,7 +253,7 @@ const resolveIds = (sides: ListSides, policy: ListPolicy): { pairs: number[]; is
     }
     return at;
   });
-  return { pairs, issues };
+  return { pairs, issues, deferred };
 };
 
 /** Whether keys were made for both sides of a list (`ListSide.keys`: one per item). */
@@ -331,9 +373,9 @@ export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[
   }
   const resolved = namesIds
     ? resolveIds(sides, policy)
-    : { pairs: sides.sentIds.map(() => -1), issues: [] as ListIssue[] };
+    : { pairs: sides.sentIds.map(() => -1), issues: [] as ListIssue[], deferred: [] as number[] };
   if (resolved.issues.length > 0) {
-    return resolved;
+    return { pairs: resolved.pairs, issues: resolved.issues };
   }
   const claimed = new Set(resolved.pairs.filter((pair) => pair !== -1));
   // In a list that names IDs, only items whose ID is a string the draft lacks (and the table accepts) are matched
@@ -349,18 +391,16 @@ export const pairList = (sides: ListSides, policy: ListPolicy): { pairs: number[
     policy,
     hasKeys,
   );
-  if (continued === null) {
-    return namesIds
-      ? resolved
-      : { pairs: resolved.pairs, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
+  if (continued === null && !namesIds) {
+    return { pairs: resolved.pairs, issues: [{ index: null, code: 'AMBIGUOUS_ITEMS' }] };
   }
   const pairs = [...resolved.pairs];
-  continued.forEach((at, position) => {
+  continued?.forEach((at, position) => {
     if (at !== -1) {
       pairs[rest[position] as number] = free[at] as number;
     }
   });
-  return { pairs, issues: [] };
+  return { pairs, issues: deferredRefusals(pairs, resolved.deferred, sides.storedIds.length) };
 };
 
 /**
@@ -435,6 +475,9 @@ export const shownCounterparts = (
   );
 };
 
+const NOT_HERE_MESSAGE =
+  'is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it without its id (or with "id": null).';
+
 const ITEM_MESSAGES: Readonly<Record<ItemIssueCode, string>> = {
   UNKNOWN_ITEM_ID:
     'is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item',
@@ -469,7 +512,9 @@ export const itemIssueOf = (
   code: issue.code,
   message: issue.draftAhead
     ? DRAFT_AHEAD_MESSAGE
-    : issue.code === 'AMBIGUOUS_ITEMS' && unseen
-      ? UNSEEN_MESSAGE
-      : ITEM_MESSAGES[issue.code],
+    : issue.notHere
+      ? NOT_HERE_MESSAGE
+      : issue.code === 'AMBIGUOUS_ITEMS' && unseen
+        ? UNSEEN_MESSAGE
+        : ITEM_MESSAGES[issue.code],
 });
