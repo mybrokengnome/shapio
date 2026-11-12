@@ -558,12 +558,12 @@ update.
 
 These are refused with `422 CONTENT_INVALID`, one issue in `details.issues` per problem, and nothing is written:
 
-| Issue code               | Path            | Message                                                                                                                                                               |
-| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item                                           |
-| `UNKNOWN_ITEM_ID`        | the item's `id` | is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it without its id (or with "id": null). |
-| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                                                                         |
-| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                                                                     |
+| Issue code               | Path            | Message                                                                                                                                           |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not the ID of an item this list holds; send back the id of each item as you read it, and leave the id out for a new item                       |
+| `UNKNOWN_ITEM_ID`        | the item's `id` | is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it with "id": null. |
+| `DUPLICATE_ITEM_ID`      | the item's `id` | is sent for more than one item; send each item's id once, and leave the id out for a new item                                                     |
+| `ITEM_COMPONENT_CHANGED` | the item's `id` | names an item that holds another component; to replace the item, leave its id out                                                                 |
 
 An `id` the draft holds continues that item. For an `id` the draft does not hold:
 
@@ -577,9 +577,12 @@ An `id` the draft holds continues that item. For an `id` the draft does not hold
   item copied or moved with its `id` from another entry or another field, or one from a stale read) is saved as a
   new item when every item the list holds is still sent, by its `id` or as an equal item, so the write only adds
   items. If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current
-  `id`s, or send a copied item without its `id` (or with `"id": null`). If you cannot read the draft, it is always
+  `id`s, or send a copied item with `"id": null`. (Leaving the `id` out works only when another item in the list
+  still carries one; a list with no `id`s at all follows the rules for writes without item IDs.) If you cannot
+  read the draft, it is always
   `UNKNOWN_ITEM_ID`.
-- Tokens that may read drafts, and the admin API, always save such an item as new.
+- Tokens that may read drafts, and the admin API, are never refused for such an `id`: the item continues the one
+  stored item that equals it, otherwise it is new.
 
 | You can read the draft | Items can hold values hidden from you | An `id` a readable version shows | An `id` no version shows                                                   |
 | ---------------------- | ------------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |

@@ -298,12 +298,14 @@ it continues. Shapio finds that item the same way for every client, with or with
   edit of an item, including any change inside its nested lists, needs its `id`, and anything else is refused
   with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`). Any other list is never refused: an item that cannot be
   matched with certainty is new, with a new `id`.
-- A new item sent with the `id` a version of the entry you read showed (the published version, for example)
-  keeps the fields your schema version cannot write when you send them back exactly as that version showed them.
-  They are taken from that version's item, so the result is what the same write without a schema version stores,
-  and sending it again changes nothing. Any other value for such a field is refused with
-  `LENS_WRITE_UNSUPPORTED`, and so is such a field on an item sent with `"id": null`, without an `id`, or with an
-  `id` no version shows. On a new item, fields your version does not know and fields you cannot read start empty.
+- A new item sent with an `id` that another version of the entry you may read shows (the published version, or
+  another locale) takes, for each field your schema version knows and you can read but cannot write, that
+  version's stored value when you send the field back exactly as it was shown, even as `null` because your
+  version cannot show the current value. The result is what the same write without a schema version stores, and
+  sending it again changes nothing. If more than one version shows the item and they hold different values, or
+  the value cannot be kept exactly, the write is refused with `LENS_WRITE_UNSUPPORTED`. Any other value for such
+  a field is refused the same way, and so is such a field on an item sent with `"id": null`, without an `id`, or
+  with an `id` no version shows. Fields your version does not know and fields you cannot read start empty.
 - The write response's `itemIds` gives the `id` of each item in the component fields the body sent, by the
   client's API IDs.
 

@@ -269,7 +269,7 @@ export const echoAheadProblems = async (
       version &&
       readOnly.length > 0 &&
       readOnly.length === issuesOf(first).length &&
-      keys.every((key) => ['count', 'old', 'rmv'].includes(key))
+      keys.every((key) => ['count', 'ratio', 'old', 'rmv'].includes(key))
     ) {
       const without = stripKeys(data, keys) as Json;
       return { response: await save(without), sent: without };

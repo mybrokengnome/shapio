@@ -23,11 +23,12 @@ import { useTestDatabase } from './helpers/testDatabase.js';
  * public token reads at V, applies 3–5 random changes through `PUT /api/admin/models/:id` and the schema jobs,
  * then reads the same entries naming V: 200, only V's API IDs, V-typed values, removed fields empty, and with a
  * sequence of only renames, reorders, relabels and additions, exactly what V returned. A failure prints the seed;
- * `LENS_FUZZ_SEED=<n>` replays one run. `LENS_FUZZ_RUNS` changes the count (default 30).
+ * `LENS_FUZZ_SEED=<n>` replays one run. `LENS_FUZZ_RUNS` changes the count (default 30); with
+ * `LENS_FUZZ_BASE=<n>` the runs start from seed n (`LENS_FUZZ_BASE=5000 LENS_FUZZ_RUNS=300` runs seeds 5000 to 5299).
  */
 
 const RUNS = Number(process.env.LENS_FUZZ_RUNS ?? 30);
-const BASE_SEED = Number(process.env.LENS_FUZZ_SEED ?? 20261110);
+const BASE_SEED = Number(process.env.LENS_FUZZ_SEED ?? process.env.LENS_FUZZ_BASE ?? 20261110);
 const SINGLE = process.env.LENS_FUZZ_SEED !== undefined;
 /** `LENS_FUZZ_LOG=<file>` appends every run's log there (what was created, changed and read). */
 const LOG_FILE = process.env.LENS_FUZZ_LOG;

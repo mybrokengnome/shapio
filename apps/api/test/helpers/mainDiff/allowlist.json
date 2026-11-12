@@ -74,7 +74,7 @@
     "cites": [
       {
         "file": "documentation/delivery-api.md",
-        "text": "If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current `id`s, or send a copied item without its `id` (or with `\"id\": null`)."
+        "text": "If the write would leave out a stored item, it is `UNKNOWN_ITEM_ID`: read the entry again for current `id`s, or send a copied item with `\"id\": null`."
       },
       {
         "file": "documentation/delivery-api.md",
@@ -99,6 +99,20 @@
     "path": ".*",
     "when": {
       "unclaimedHidden": true
+    }
+  },
+  {
+    "id": "noop-hidden-kept",
+    "cites": [
+      {
+        "file": "documentation/upgrades.md",
+        "text": "It changes nothing (no new revision, no `entry.updated`, `id`s kept)"
+      }
+    ],
+    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view (from what the caller read), the branch recorded no revision or event, and main's only stored change is the loss of values hidden from the caller.",
+    "path": "^/entry/",
+    "when": {
+      "noopHiddenKept": true
     }
   }
 ]

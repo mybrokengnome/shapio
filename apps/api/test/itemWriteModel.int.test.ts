@@ -7,6 +7,7 @@ import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from
 import {
   churnCases,
   copyMoveProblems,
+  lensCopyProblems,
   lensNewProblems,
   adminSingleCopyProblems,
   echoChurnProblems,
@@ -2082,7 +2083,12 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
   });
 
   it('LENSNEW (5 round trip, review 13): echoing through V an item the draft no longer holds stores what the no-version path stores, and the resend is a no-op', async () => {
-    expect(report(await lensNewProblems(w))).toEqual([]);
+    expect(report([...(await lensNewProblems(w)), ...(await lensCopyProblems(w))])).toEqual([]);
+  });
+
+  it("SEED857 (regression, review 14): ITEM_MODEL_SEED=857 run 857 (an item sent with another list's id continues the one equal stored item)", async () => {
+    const { problems, log } = await runOnce(w, 857);
+    expect(report(problems), log.join('\n')).toEqual([]);
   });
 
   it('SEED266 (regression, review 13): ITEM_MODEL_SEED=266 run 266', async () => {

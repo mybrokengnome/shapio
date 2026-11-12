@@ -997,6 +997,30 @@ export const acceptedWriteProblems = (
     }
   }
   const sentText = JSON.stringify(body);
+  // delivery-api.md, Item IDs: "An item sent with an `id` the draft does not hold, and that is not refused, is
+  // matched by content like an item sent without an `id`: it continues the one stored item that equals it,
+  // otherwise it is new." So a stored item may continue under a sent item with another `id` only when the list
+  // does not hold that `id`, and the sent item equals, in the caller's view, exactly one stored item of the list
+  // that no sent `id` claims (this one).
+  const viewOf = (instance: Instance): string | null => {
+    const readItem = seen.get(instance.id);
+    return admin ? leafView(instance.api) : readItem ? leafView(readItem) : null;
+  };
+  const continuesByContent = (instance: Instance, sent: Json): boolean => {
+    // (The draft holds an `id` for this purpose when this list holds it: an `id` from another list of the entry is a
+    // copy here.)
+    if (
+      typeof sent.id !== 'string' ||
+      before.some((other) => other.list === instance.list && other.id === sent.id)
+    ) {
+      return false;
+    }
+    const now = leafView(asSent(sent, false));
+    const equal = before.filter(
+      (other) => other.list === instance.list && !sentIds.has(other.id) && viewOf(other) === now,
+    );
+    return equal.length === 1 && equal[0]?.id === instance.id;
+  };
   // 1: no hidden value sits on another item.
   for (const instance of after) {
     for (const value of Object.values(instance.raw)) {
@@ -1078,7 +1102,7 @@ export const acceptedWriteProblems = (
             detail: `${instance.list} ${instance.id} reused for other content: ${was} → ${now}`,
           });
         }
-      } else if (sent && sent.id !== instance.id) {
+      } else if (sent && sent.id !== instance.id && !continuesByContent(instance, sent)) {
         problems.push({
           property: '3 ID integrity',
           detail: `${instance.list} ${instance.id} reused for an item sent as ${String(sent.id)}`,
@@ -1123,7 +1147,8 @@ export const acceptedWriteProblems = (
     const readItem = seen.get(instance.id);
     // A caller that did not see the stored items may replace a list it can write completely (every item new).
     const writable = (key: string) =>
-      key !== w.card.old && !(version && (key === w.card.extra || key === w.card.count));
+      key !== w.card.old &&
+      !(version && (key === w.card.extra || key === w.card.count || key === w.card.ratio));
     const completely =
       writesAll && Object.keys(instance.raw).every((key) => key.startsWith('__') || writable(key));
     if (!readItem && exactList.length > 0 && !admin && !completely) {

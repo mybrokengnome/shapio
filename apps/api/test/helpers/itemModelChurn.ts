@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { setPublicGrants } from './appUsers.js';
-import { createDefinition, expectStatus } from './content.js';
+import { createDefinition, expectStatus, runContentSchemaJobs } from './content.js';
 import { entryState } from './itemModelProbes.js';
 import { readAs, send, type Problem } from './itemModelRun.js';
 import { eventCount, headsOf, revisionCount, type Caller, type World } from './itemModelWorld.js';
@@ -706,5 +706,163 @@ export const lensNewProblems = async (w: World): Promise<Problem[]> => {
       });
     }
   }
+  return problems;
+};
+
+/**
+ * LENSNEW, copies (review 14): through a version, a copied item whose sub-field cannot be written there reads as
+ * null at that version (`ratio`: integer at V2, number today, stored 2.5); sending it back keeps the stored value,
+ * equal to what the no-version write stores, and the identical resend is a no-op. Two copies: an admin token copies
+ * an item the draft no longer holds from the published read, and an app user copies another locale's published
+ * items into this locale (the `rline` list holds nothing hidden, so the copy is accepted as new items).
+ */
+export const lensCopyProblems = async (w: World): Promise<Problem[]> => {
+  const rline = await createDefinition(
+    w.admin,
+    {
+      kind: 'component',
+      apiKey: 'rline',
+      label: 'Rline',
+      fields: [
+        { apiKey: 'label', label: 'Label', type: 'string' },
+        { apiKey: 'ratio', label: 'Ratio', type: 'integer' },
+      ],
+    },
+    'components',
+  );
+  const model = await createDefinition(w.admin, {
+    kind: 'collection',
+    apiKey: 'lnew',
+    label: 'Lnew',
+    localized: true,
+    fields: [
+      { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+      {
+        apiKey: 'llines',
+        label: 'Llines',
+        type: 'component',
+        localized: true,
+        settings: { component: rline.definition.id, repeatable: true },
+      },
+    ],
+  });
+  const v2 = expectStatus(await w.admin.get('/api/snapshots/current'), 200).json<{
+    schemaVersionToken: string;
+  }>().schemaVersionToken;
+  const current = expectStatus(await w.admin.get(`/api/admin/components/${rline.definition.id}`), 200).json<{
+    definition: { fields: Array<Record<string, unknown>> } & Record<string, unknown>;
+    version: number;
+  }>();
+  expectStatus(
+    await w.admin.put(`/api/admin/components/${rline.definition.id}`, {
+      definition: {
+        ...current.definition,
+        fields: current.definition.fields.map((field) =>
+          field.apiKey === 'ratio' ? { ...field, type: 'number' } : field,
+        ),
+      },
+      expectedVersion: current.version,
+      acknowledgeBreaking: true,
+      acknowledgeDestructive: true,
+    }),
+    200,
+  );
+  await runContentSchemaJobs(w.db);
+  const lines = [
+    { label: 'A', ratio: 2.5 },
+    { label: 'B', ratio: 1 },
+  ];
+  const at = (version: boolean, locale: string) =>
+    `?locale=${locale}${version ? `&schemaVersion=${encodeURIComponent(v2)}` : ''}`;
+  const draftOf = async (id: string, locale: string) =>
+    (await headsOf(w, id)).find((head) => head.locale === locale && head.state === 'draft');
+  const stored = async (id: string, locale: string) => {
+    const view = (await w.request('GET', `/api/admin/content/lnew/${id}?locale=${locale}`, w.adminToken))
+      .body as Json;
+    return (((view.data as Json | undefined)?.llines as Json[] | undefined) ?? []).map((line) => [
+      line.label,
+      line.ratio,
+    ]);
+  };
+  /** An entry published in en (and fr); for `dropFirst`, the en draft then no longer holds the first line. */
+  const make = async (dropFirst: boolean) => {
+    const id = expectStatus(
+      await w.admin.post('/api/admin/content/lnew?locale=en', {
+        locale: 'en',
+        data: { title: 'en', llines: lines },
+      }),
+      201,
+    ).json<{ id: string }>().id;
+    expectStatus(
+      await w.admin.put(`/api/admin/content/lnew/${id}?locale=fr`, {
+        locale: 'fr',
+        expectedVersion: null,
+        data: { title: 'fr', llines: lines },
+      }),
+      200,
+    );
+    expectStatus(await w.admin.post(`/api/admin/content/lnew/${id}/publish`, { locales: ['en', 'fr'] }), 200);
+    if (dropFirst) {
+      const view = (await w.request('GET', `/api/admin/content/lnew/${id}?locale=en`, w.adminToken))
+        .body as Json;
+      expectStatus(
+        await w.admin.put(`/api/admin/content/lnew/${id}?locale=en`, {
+          locale: 'en',
+          expectedVersion: view.version,
+          data: { llines: ((view.data as Json).llines as Json[]).slice(1) },
+        }),
+        200,
+      );
+    }
+    return id;
+  };
+  /** Reads `from` (published) as `token`, writes its lines into en, twice; returns both answers and the states. */
+  const copy = async (id: string, token: string | null, from: string, version: boolean) => {
+    const read = (await w.request('GET', `/api/content/lnews/${id}${at(version, from)}`, token)).body as Json;
+    const body = { llines: ((read.data as Json | undefined)?.llines as Json[] | undefined) ?? [] };
+    const write = async () =>
+      w.request('PUT', `/api/content/lnews/${id}${at(version, 'en')}`, token, {
+        locale: 'en',
+        expectedVersion: (await draftOf(id, 'en'))?.version ?? null,
+        data: body,
+      });
+    const first = await write();
+    const afterFirst = await headsOf(w, id);
+    const again = await write();
+    return { first, again, afterFirst, afterAgain: await headsOf(w, id) };
+  };
+  const problems: Problem[] = [];
+  await withPublicReadUpdate(w, model.definition.id, async () => {
+    for (const [name, token, from, dropFirst] of [
+      ['admin token, copy from published', w.adminToken, 'en', true],
+      ['app user, copy from fr', w.callers.reader.token, 'fr', false],
+    ] as const) {
+      const reference = await make(dropFirst);
+      const plain = await copy(reference, token, from, false);
+      const viaV = await make(dropFirst);
+      const lensed = await copy(viaV, token, from, true);
+      if (plain.first.status >= 300 || lensed.first.status >= 300) {
+        problems.push({
+          property: '5 round trip (LENSNEW)',
+          detail: `${name}: no version ${plain.first.status}, through V2 ${lensed.first.status} ${lensed.first.raw.slice(0, 200)}`,
+        });
+        continue;
+      }
+      const want = await stored(reference, 'en');
+      const got = await stored(viaV, 'en');
+      if (!isDeepStrictEqual(got, want)) {
+        problems.push({
+          property: '5 round trip (LENSNEW)',
+          detail: `${name}: through V2 stored ${JSON.stringify(got)}, the no-version write stores ${JSON.stringify(want)}`,
+        });
+      }
+      if (lensed.again.status >= 300 || !isDeepStrictEqual(lensed.afterAgain, lensed.afterFirst)) {
+        problems.push({
+          property: '9 no-op (LENSNEW)',
+          detail: `${name}: the identical resend through V2 answered ${lensed.again.status} and ${isDeepStrictEqual(lensed.afterAgain, lensed.afterFirst) ? 'changed nothing' : 'changed the entry'}`,
+        });
+      }
+    }
+  });
   return problems;
 };

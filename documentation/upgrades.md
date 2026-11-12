@@ -45,14 +45,16 @@ for every write change below is the same: send back the `id` of each item you re
    with the `id`s the read now includes, keeps working, also after someone else changed the entry and it retries
    after a `409`. An item copied or moved with its `id` from another entry or another field is saved as new when
    the write only adds items, as before 0.9.0. The one exception is a field whose components have a private or
-   deprecated field: there a write that sends a stale `id`, or a copied or moved one, and also leaves out a stored
-   item is refused with `UNKNOWN_ITEM_ID` (always, when the caller cannot see the draft). Reading the entry again
-   fixes a stale `id`; send copied items without their `id`. A write retried after a 409 with `id`s no version
-   shows is saved with those items as new, except that on a list whose items can hold values hidden from the
-   caller it is refused with `UNKNOWN_ITEM_ID` when it also leaves out a stored item or the caller cannot see the
-   draft. Types regenerated with `shapio types generate`
-   require it on component items, so object literals in your own tests (fixtures) need an `id` too. GraphQL
-   caching clients store component items by `__typename` and `id` ([GraphQL](graphql.md#schema-shape)).
+   deprecated field: there a write that sends a stale `id`, or a copied or moved one, and also leaves out a
+   stored item is refused with `UNKNOWN_ITEM_ID` (always, when the caller cannot see the draft). Reading the
+   entry again fixes a stale `id`; send copied items with `"id": null`. (Leaving the `id` out works only when
+   another item in the list still carries one; a list with no `id`s at all follows the rules for writes without
+   item IDs.) A write retried after a 409 with `id`s no version shows is saved with those items as new, except
+   that on a list whose items can hold values hidden from the caller it is refused with `UNKNOWN_ITEM_ID` when
+   it also leaves out a stored item or the caller cannot see the draft. Types regenerated with
+   `shapio types generate` require it on component items, so object literals in your own tests (fixtures) need an
+   `id` too.
+   GraphQL caching clients store component items by `__typename` and `id` ([GraphQL](graphql.md#schema-shape)).
 2. On a content type whose components hold a private or deprecated field, an app user's or anonymous caller's
    write that sends a list without `id`s can be refused with `422 CONTENT_INVALID` (`AMBIGUOUS_ITEMS`): editing an
    item, deleting one item and adding another, changing a list that holds look-alikes, or changing a nested list.

@@ -64,6 +64,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.refusalOrder !== true || step.refusalOrder) &&
   (entry.when?.staleHidden !== true || step.staleHidden) &&
   (entry.when?.unclaimedHidden !== true || step.unclaimedHidden) &&
+  (entry.when?.noopHiddenKept !== true || step.noopHiddenKept) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 const RELATIONS = new Set(['rel', 'rels', 'ref']);
@@ -92,6 +93,20 @@ const isHiddenKeep = (difference, pre) => {
 };
 
 /** The step-level conditions of the allowlist, from the branch's `pre` and issues. */
+/** Whether every stored difference from `before` to `after` (one side's observations) is a hidden value lost. */
+const onlyLostHidden = (before, after, hiddenLeaves) => {
+  if (!after) return false;
+  const heads = (observed) =>
+    Object.fromEntries(observed.heads.map((head) => [`${head.locale}|${head.state}`, head.data]));
+  const changed = differences(heads(before), heads(after));
+  return (
+    changed.length > 0 &&
+    changed.every(
+      (difference) => hiddenLeaves.includes(leafOf(difference.path)) && difference.branch === undefined,
+    )
+  );
+};
+
 const conditionsOf = (label, main, b, dataDifferences) => {
   const pre = b?.pre ?? null;
   const ambiguous = (b?.issues ?? []).filter((issue) => issue.startsWith('AMBIGUOUS_ITEMS '));
@@ -192,6 +207,7 @@ const keyed = (step, side) => {
     label: undefined,
     pre: undefined,
     baseline: undefined,
+    copies: undefined,
     entry: step.entry && {
       ...step.entry,
       audit,
@@ -242,10 +258,33 @@ for (let index = 0; index < count; index += 1) {
   const createdEntry = a?.createdEntry ?? b?.createdEntry;
   // A create observes the new entry: its counters start there.
   const observedKey = createdEntry !== undefined ? String(createdEntry) : entry;
+  // What main stored when the step's own write began (after any preparation the step made itself).
+  const mainBefore = a?.baseline?.heads
+    ? a.baseline
+    : observedKey !== undefined
+      ? previous.main.get(observedKey)
+      : undefined;
   const deltaA = observedKey !== undefined ? deltas('main', observedKey, a?.entry, a?.baseline) : undefined;
   const deltaB = observedKey !== undefined ? deltas('branch', observedKey, b?.entry, b?.baseline) : undefined;
   let found = differences(keyed(a, 'main'), keyed(b, 'branch'));
   const raw = found;
+  // A copy (review 14) of a field that already differs between the sides (an earlier allowed difference touched it
+  // in the entry the step copies from, this one or another): what lands in the destination field differs as a
+  // consequence. Only that field's values are consequences; status, issues and every other field still compare.
+  const copiedFields = new Set(
+    (b?.copies ?? []).filter(({ from, field }) => touched.get(String(from))?.has(field)).map(({ to }) => to),
+  );
+  if (copiedFields.size > 0) {
+    const before = found.length;
+    found = found.filter(
+      (difference) =>
+        !(
+          /^\/(entry\/heads\/[^/]+\/data|body\/data|sent)\//.test(difference.path) &&
+          copiedFields.has(fieldOf(difference.path))
+        ),
+    );
+    consequences += before - found.length;
+  }
   const fields = entry !== undefined ? touched.get(entry) : undefined;
   if (fields) {
     if (createdEntry !== undefined) {
@@ -282,7 +321,18 @@ for (let index = 0; index < count; index += 1) {
   const dataDifferences = found.filter((difference) =>
     /^\/entry\/heads\/[^/]+\/data\//.test(difference.path),
   );
-  const step = conditionsOf(label, a, b, dataDifferences);
+  const step = {
+    ...conditionsOf(label, a, b, dataDifferences),
+    // A write the branch treats as a no-op that keeps hidden values (review 14): every sent item equals exactly one
+    // stored item in the caller's view (worked out by the workload from what the caller read), the branch recorded
+    // nothing, and main's only stored change is the loss of values hidden from the caller.
+    noopHiddenKept:
+      b?.pre?.contentMatch === true &&
+      deltaB?.revisions === 0 &&
+      deltaB?.events === 0 &&
+      mainBefore !== undefined &&
+      onlyLostHidden(mainBefore, a?.entry, b.pre.hiddenLeaves),
+  };
   for (const difference of found) {
     if (touched.size > 0 && difference.path === '/body/meta/snapshot') {
       consequences += 1;

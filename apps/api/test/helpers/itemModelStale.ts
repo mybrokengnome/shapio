@@ -215,9 +215,11 @@ export const staleRetryProblems = async (
   if (
     (viaV || (caller.pinned && !plain)) &&
     refusedFields.length > 0 &&
-    refusedFields.every((issue) => issue.code === 'NOT_ALLOWED' && /\/(count|old|rmv)$/.test(issue.path))
+    refusedFields.every(
+      (issue) => issue.code === 'NOT_ALLOWED' && /\/(count|ratio|old|rmv)$/.test(issue.path),
+    )
   ) {
-    retry = await put(currentVersion, stripKeys(body, ['count', 'old', 'rmv']) as Json);
+    retry = await put(currentVersion, stripKeys(body, ['count', 'ratio', 'old', 'rmv']) as Json);
   }
   const heads = await headsOf(w, id);
   const draft = heads.find((head) => head.locale === 'en' && head.state === 'draft');

@@ -770,7 +770,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     // A's writes are measured from here: the other writer's change (and publish) can be a no-op on one side after an
     // earlier allowed difference, and that is compared through `otherMoved`, not through the step's counters.
     const prepared = await observeEntry(target.id, target.model);
-    const baseline = { revisions: prepared.revisions, events: prepared.events };
+    const baseline = { revisions: prepared.revisions, events: prepared.events, heads: prepared.heads };
     const pre = await preOf(caller, target, locale, body);
     const write = (expectedVersion: unknown) =>
       caller === 'admin'
@@ -845,7 +845,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
   const copyMoveStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
     const [first, second] = random.chance(0.5) ? [cmoves[0], cmoves[1]] : [cmoves[1], cmoves[0]];
     const { entry: target, index } = first as (typeof cmoves)[number];
-    const source = (second as (typeof cmoves)[number]).entry;
+    const { entry: source, index: sourceIndex } = second as (typeof cmoves)[number];
     const variant = random.pick([
       'otherReplace',
       'otherAppend',
@@ -866,7 +866,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       await request('POST', `/api/admin/content/cmove/${id}/publish`, manifest.adminToken, {});
     }
     const prepared = await observeEntry(target.id, 'cmove');
-    const baseline = { revisions: prepared.revisions, events: prepared.events };
+    const baseline = { revisions: prepared.revisions, events: prepared.events, heads: prepared.heads };
     const own = await readOf(target.id);
     const other = await readOf(source.id);
     const list = (data: Json, field: string) => (Array.isArray(data[field]) ? (data[field] as Json[]) : []);
@@ -906,7 +906,18 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     });
     const view = await request('GET', `/api/admin/content/cmove/${target.id}`, manifest.adminToken);
     const version = isRecord(view.body) ? (view.body.version ?? null) : null;
-    const pre = { ...(await preOf(caller, target, 'en', body)), unclaimed };
+    // Every sent item equals exactly one stored item of its list in the caller's view, and each stored item is sent
+    // once: the stored content, hidden values aside, is what is sent.
+    const contentMatch = Object.keys(body).every((field) => {
+      const stored = list(own, field).map(contentOf);
+      const sent = (body[field] as Json[]).map(contentOf);
+      return (
+        stored.length === sent.length &&
+        sent.every((item) => stored.filter((other) => other === item).length === 1) &&
+        stored.every((item) => sent.filter((other) => other === item).length === 1)
+      );
+    });
+    const pre = { ...(await preOf(caller, target, 'en', body)), unclaimed, contentMatch };
     const response =
       caller === 'admin'
         ? await request('PUT', `/api/admin/content/cmove/${target.id}`, token, {
@@ -920,6 +931,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     return {
       label: `${step} ${caller} copymove e${index} cmove en ${variant} ${x1}`,
       baseline,
+      // What the step copies: from which entry's field into which field of this entry (diff.mjs treats a copy of a
+      // field that already differs between the sides as a consequence, for the field it lands in).
+      copies:
+        variant === 'otherReplace' || variant === 'otherAppend'
+          ? [{ from: sourceIndex, field: x1, to: x1 }]
+          : [{ from: index, field: x1, to: x2 }],
       pre,
       sent: normal(body, created),
       ...outcomeOf(response),

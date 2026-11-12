@@ -24,7 +24,8 @@ All notable changes to Shapio are listed here. The format follows
     `extensions.schemaVersion`. Its mutations are the named version's and write as REST writes do.
   - REST and GraphQL writes that name a version are accepted for fields unchanged or only renamed since; any
     other field is `422 LENS_WRITE_UNSUPPORTED` (GraphQL: `extensions.code`, with `extensions.issues`), unless
-    its value is what a read returns for it.
+    its value is what a read returns for it. A new item sent with an `id` another readable version shows takes
+    that version's value for such a field when the field is sent back exactly as shown.
   - New errors: `400 SCHEMA_VERSION_INVALID`, `SCHEMA_VERSION_FOREIGN`, `SCHEMA_VERSION_AHEAD`,
     `SCHEMA_VERSION_MISMATCH`, and `LENS_QUERY_UNSUPPORTED`; `409 LENS_UNCOVERED` and
     `SCHEMA_VERSION_UNAVAILABLE`; `422 LENS_WRITE_UNSUPPORTED`.
@@ -52,8 +53,8 @@ All notable changes to Shapio are listed here. The format follows
     items hold nothing the caller cannot read or write: the item is saved as new, or continues an identical item
     when that match is certain. Where items can hold such values, an `id` a readable version shows is matched by
     content as below, or refused with `AMBIGUOUS_ITEMS` when the caller cannot read the draft, and an `id` no version shows
-    is `UNKNOWN_ITEM_ID` (read again and retry). Tokens that may read drafts, and the admin API, never refuse such
-    an item. A localized list written to a locale for the first time holds new items.
+    is `UNKNOWN_ITEM_ID` (read again and retry). Tokens that may read drafts, and the admin API, are never refused
+    for such an `id`: the item continues the one stored item that equals it, otherwise it is new. A localized list written to a locale for the first time holds new items.
   - Swapping two items identical in everything stored changes nothing on the admin API, and on the delivery API
     where the token can read and write every field of those items and can see every relation target and media
     asset they may hold; otherwise a swap by `id` is saved as a change.
@@ -137,7 +138,9 @@ What changes for a client that names no schema version and sends no item `id`s
   ([GraphQL](documentation/graphql.md#schema-shape)).
 - An item copied or moved with its `id` from another entry or another field is saved as new when the write only
   adds items, as before 0.9.0. On a field whose components have a private or deprecated field, a write that also
-  leaves out a stored item is refused with `UNKNOWN_ITEM_ID`; send the copied items without their `id`.
+  leaves out a stored item is refused with `UNKNOWN_ITEM_ID`; send the copied items with `"id": null`. (Leaving
+  the `id` out works only when another item in the list still carries one; a list with no `id`s at all follows
+  the rules for writes without item IDs.)
 - A list that can hold something the caller cannot see (a private or deprecated field at any depth; relation
   fields do not count) is matched only with certainty: sent back as read, a new list, or a write that only
   reorders, deletes, or adds items that all differ from each other. Anything else is refused with

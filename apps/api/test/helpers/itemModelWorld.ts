@@ -28,7 +28,7 @@ import { useTestDatabase } from './testDatabase.js';
  *   tag  { label, tnote (private) }                 the zone's second component
  *   box  { label, items: chip[] }                   a single component holding a nested list
  *   card { heading, note (private), count (number at V, integer today: read-only through V), old (deprecated
- *          since V), extra (added since V), rel (relation → thing), pic (media), data (json), chips: chip[] }
+ *          since V), ratio (integer at V, number today: 2.5 reads as null through V), extra (added since V), rel (relation → thing), pic (media), data (json), chips: chip[] }
  *   doc (localized) { title (localized), cards: card[] (shared), lchips: chip[] (localized), hero: box,
  *          zone: [card | tag], secretCard: card (private top-level) }
  *   plain { title, links: line[], one: line }       nothing hidden from anyone (compatibility)
@@ -100,6 +100,7 @@ export type World = {
     | 'heading'
     | 'note'
     | 'count'
+    | 'ratio'
     | 'old'
     | 'extra'
     | 'rel'
@@ -256,6 +257,7 @@ export const itemModelWorld = (): World => {
           { apiKey: 'heading', label: 'Heading', type: 'string' },
           { apiKey: 'note', label: 'Note', type: 'string', public: false },
           { apiKey: 'count', label: 'Count', type: 'number' },
+          { apiKey: 'ratio', label: 'Ratio', type: 'integer' },
           { apiKey: 'old', label: 'Old', type: 'string' },
           {
             apiKey: 'rel',
@@ -446,11 +448,13 @@ export const itemModelWorld = (): World => {
             .map((field: FieldBody) =>
               field.apiKey === 'count'
                 ? { ...field, type: 'integer' }
-                : field.apiKey === 'old'
-                  ? { ...field, deprecated: true }
-                  : field.apiKey === 'pvt'
-                    ? { ...field, public: false }
-                    : field,
+                : field.apiKey === 'ratio'
+                  ? { ...field, type: 'number' }
+                  : field.apiKey === 'old'
+                    ? { ...field, deprecated: true }
+                    : field.apiKey === 'pvt'
+                      ? { ...field, public: false }
+                      : field,
             )
             .filter((field: FieldBody) => field.apiKey !== 'rmv'),
           { apiKey: 'extra', label: 'Extra', type: 'string' },
@@ -540,6 +544,7 @@ export const itemModelWorld = (): World => {
       'heading',
       'note',
       'count',
+      'ratio',
       'old',
       'extra',
       'rel',

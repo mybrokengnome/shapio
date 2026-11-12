@@ -354,7 +354,7 @@ export const resaveProblems = async (
     }
     // Through a version, fields read-only there are left out (an echoed null for one is refused while the entry
     // has unpublished changes, by design: "leave it out to keep the stored value").
-    const readOnly = request.version ? ['count', 'old'] : [];
+    const readOnly = request.version ? ['count', 'ratio', 'old'] : [];
     const strip = (value: unknown): unknown =>
       Array.isArray(value)
         ? value.map(strip)
@@ -383,9 +383,9 @@ export const resaveProblems = async (
     request.version &&
     againOutcome.code === 'LENS_WRITE_UNSUPPORTED' &&
     againOutcome.issues.length > 0 &&
-    againOutcome.issues.every((issue) => /^NOT_ALLOWED \S*\/(count|old)$/.test(issue))
+    againOutcome.issues.every((issue) => /^NOT_ALLOWED \S*\/(count|ratio|old)$/.test(issue))
   ) {
-    const withoutReadOnly = stripKeys(request.body, ['count', 'old']) as Json;
+    const withoutReadOnly = stripKeys(request.body, ['count', 'ratio', 'old']) as Json;
     const resent = await send(w, { ...request, body: withoutReadOnly, expectedVersion: version });
     const after2 = await headsOf(w, request.entryId);
     const [revisions2, events2] = [

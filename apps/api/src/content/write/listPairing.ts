@@ -476,7 +476,7 @@ export const shownCounterparts = (
 };
 
 const NOT_HERE_MESSAGE =
-  'is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it without its id (or with "id": null).';
+  'is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it with "id": null.';
 
 const ITEM_MESSAGES: Readonly<Record<ItemIssueCode, string>> = {
   UNKNOWN_ITEM_ID:

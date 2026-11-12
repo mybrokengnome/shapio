@@ -30,7 +30,7 @@ const withoutIds = (value: unknown): unknown =>
       : value;
 
 const NOT_HERE =
-  'is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it without its id (or with "id": null).';
+  'is not an item of this list. If the list changed since you read it, read it again; to add an item copied from elsewhere, send it with "id": null.';
 
 /**
  * The thirteenth review (plan item-ids). A new item a client copies, through an older schema version, from a head it
@@ -182,6 +182,40 @@ describe('item writes: thirteenth review', () => {
       label: 'R13 kinds',
       fields: lensFields(card.definition.id),
     });
+    // Values a version reads as null: `cnt` and `kn` are integers there and numbers today, holding fractions.
+    expect([201, 409]).toContain(
+      (await admin.post('/api/admin/locales', { code: 'de', label: 'German' })).statusCode,
+    );
+    const kid = await component('r13_kid', [
+      { apiKey: 'label', label: 'Label', type: 'string' },
+      { apiKey: 'kn', label: 'Kn', type: 'integer' },
+    ]);
+    const converted = await component('r13_conv', [
+      { apiKey: 'heading', label: 'Heading', type: 'string' },
+      { apiKey: 'cnt', label: 'Cnt', type: 'integer' },
+      { apiKey: 'pv', label: 'Private', type: 'string' },
+      { apiKey: 'dep', label: 'Deprecated', type: 'string' },
+      list('kids', kid.definition.id),
+    ]);
+    const convertedFields = (localized: boolean) => [
+      { apiKey: 'title', label: 'Title', type: 'string', localized: true },
+      { ...list('cards', converted.definition.id), ...(localized ? { localized: true } : {}) },
+    ];
+    models.r13lp = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'r13lp',
+      label: 'R13 published',
+      localized: true,
+      fields: convertedFields(false),
+    });
+    models.r13lo = await createDefinition(admin, {
+      kind: 'collection',
+      apiKey: 'r13lo',
+      label: 'R13 locales',
+      localized: true,
+      draftAndPublish: false,
+      fields: convertedFields(true),
+    });
     v = (await request('GET', '/api/content/r13eqs', adminToken)).headers[
       'shapio-schema-version-current'
     ] as string;
@@ -217,11 +251,26 @@ describe('item writes: thirteenth review', () => {
       { apiKey: 'extra', label: 'Extra', type: 'string' },
     ]);
 
-    const copiesModel = models.r13cp.definition.id;
-    const grants = [
-      { action: 'read' as const, modelId: copiesModel },
-      { action: 'update' as const, modelId: copiesModel },
-    ];
+    await changeComponent(converted.definition.id, (fields) => [
+      ...fields.map((field) =>
+        field.apiKey === 'cnt'
+          ? retyped(field, 'number')
+          : field.apiKey === 'pv'
+            ? { ...field, public: false }
+            : field.apiKey === 'dep'
+              ? { ...field, deprecated: true }
+              : field,
+      ),
+      { apiKey: 'extra', label: 'Extra', type: 'string' },
+    ]);
+    await changeComponent(kid.definition.id, (fields) =>
+      fields.map((field) => (field.apiKey === 'kn' ? retyped(field, 'number') : field)),
+    );
+
+    const grants = [models.r13cp.definition.id, models.r13lo.definition.id].flatMap((modelId) => [
+      { action: 'read' as const, modelId },
+      { action: 'update' as const, modelId },
+    ]);
     alice = await signUp(testApp.app);
     expectStatus(
       await admin.request({
@@ -409,6 +458,179 @@ describe('item writes: thirteenth review', () => {
         expect(await footprint(id)).toEqual(before);
       }
     });
+  });
+
+  describe('a copied item whose fields the version reads as null', () => {
+    const card = (heading: string, cnt: number, kn: number) => ({
+      heading,
+      cnt,
+      pv: `pv-${heading}`,
+      extra: `x-${heading}`,
+      kids: [{ label: `k-${heading}`, kn }],
+    });
+    const at = (via: 'version' | 'none') =>
+      via === 'version' ? `&schemaVersion=${encodeURIComponent(v)}` : '';
+    const readCards = async (
+      model: string,
+      id: string,
+      locale: string,
+      token: string | null,
+      via: 'version' | 'none',
+    ) =>
+      expectStatus(
+        await request('GET', `/api/content/${model}s/${id}?locale=${locale}${at(via)}`, token),
+        200,
+      ).json<{
+        data: { cards: Item[] };
+      }>().data.cards;
+    /** Writes `cards` to the `en` draft, then again: the second changes nothing. Returns what the admin reads. */
+    const writeTwice = async (
+      model: string,
+      id: string,
+      token: string | null,
+      via: 'version' | 'none',
+      cards: Item[],
+    ) => {
+      const put = async () =>
+        request('PUT', `/api/content/${model}s/${id}?locale=en${at(via)}`, token, {
+          locale: 'en',
+          expectedVersion: (await adminView(model, `${id}?locale=en`)).version,
+          data: { cards },
+        });
+      const first = await put();
+      expect(first.statusCode, first.body).toBe(200);
+      const after = await footprint(id);
+      const again = await put();
+      expect(again.statusCode, again.body).toBe(200);
+      expect(await footprint(id)).toEqual(after);
+      return withoutIds((await adminView(model, `${id}?locale=en`)).data.cards);
+    };
+    const stored = (heading: string, cnt: number, kn: number, rest: Data) => ({
+      heading,
+      cnt,
+      kids: [{ label: `k-${heading}`, kn }],
+      ...rest,
+    });
+
+    it('a draft-capable token copies the published items back over a draft that moved on', async () => {
+      const results: unknown[] = [];
+      for (const via of ['version', 'none'] as const) {
+        const created = expectStatus(
+          await admin.post('/api/admin/content/r13lp?locale=en', {
+            locale: 'en',
+            data: { title: 'en', cards: [card('P', 2.5, 3.5)] },
+          }),
+          201,
+        ).json<EntryBody>();
+        await publish('r13lp', created.id);
+        const published = await adminView('r13lp', `${created.id}?locale=en`);
+        expectStatus(
+          await admin.put(`/api/admin/content/r13lp/${created.id}?locale=en`, {
+            locale: 'en',
+            expectedVersion: published.version,
+            data: { cards: [{ heading: 'D' }] },
+          }),
+          200,
+        );
+        const cards = await readCards('r13lp', created.id, 'en', adminToken, via);
+        if (via === 'version') {
+          expect(cards[0]?.cnt).toBeNull();
+        }
+        results.push(await writeTwice('r13lp', created.id, adminToken, via, cards));
+      }
+      expect(results[0]).toEqual([stored('P', 2.5, 3.5, { pv: 'pv-P', extra: null })]);
+      expect(results[1]).toEqual([stored('P', 2.5, 3.5, { pv: 'pv-P', extra: 'x-P' })]);
+    });
+
+    it("an app user copies another locale's items, nested too; what it cannot read starts empty", async () => {
+      const results: unknown[] = [];
+      for (const via of ['version', 'none'] as const) {
+        const created = expectStatus(
+          await admin.post('/api/admin/content/r13lo?locale=en', {
+            locale: 'en',
+            data: { title: 'en', cards: [card('P', 2.5, 3.5)] },
+          }),
+          201,
+        ).json<EntryBody>();
+        expectStatus(
+          await admin.put(`/api/admin/content/r13lo/${created.id}?locale=de`, {
+            locale: 'de',
+            expectedVersion: null,
+            data: { title: 'de', cards: [card('G', 6.5, 4.5)] },
+          }),
+          200,
+        );
+        const en = await readCards('r13lo', created.id, 'en', alice.accessToken, via);
+        const de = await readCards('r13lo', created.id, 'de', alice.accessToken, via);
+        if (via === 'version') {
+          expect(de[0]?.cnt).toBeNull();
+          expect(de[0]?.kids).toEqual([expect.objectContaining({ kn: null })]);
+        }
+        results.push(await writeTwice('r13lo', created.id, alice.accessToken, via, [...en, ...de]));
+      }
+      const kept = stored('P', 2.5, 3.5, { pv: 'pv-P', extra: 'x-P' });
+      expect(results[0]).toEqual([kept, stored('G', 6.5, 4.5, { pv: null, extra: null })]);
+      expect(results[1]).toEqual([kept, stored('G', 6.5, 4.5, { pv: null, extra: 'x-G' })]);
+    });
+
+    it('heads that show the item and disagree on the value the version reads as null: refused', async () => {
+      const created = expectStatus(
+        await admin.post('/api/admin/content/r13lp?locale=en', {
+          locale: 'en',
+          data: { title: 'en', cards: [card('P', 2.5, 3.5)] },
+        }),
+        201,
+      ).json<EntryBody>();
+      await adminSaveDe(created.id);
+      expectStatus(
+        await admin.post(`/api/admin/content/r13lp/${created.id}/publish`, { locales: ['en', 'de'] }),
+        200,
+      );
+      // The shared list changes in `en` and is published there only: the `de` published head keeps 2.5.
+      const edit = async (cards: Item[]) => {
+        const current = await adminView('r13lp', `${created.id}?locale=en`);
+        expectStatus(
+          await admin.put(`/api/admin/content/r13lp/${created.id}?locale=en`, {
+            locale: 'en',
+            expectedVersion: current.version,
+            data: { cards },
+          }),
+          200,
+        );
+      };
+      const draft = (await adminView('r13lp', `${created.id}?locale=en`)).data.cards as Item[];
+      await edit(draft.map((item) => ({ ...item, cnt: 2.7 })));
+      expectStatus(
+        await admin.post(`/api/admin/content/r13lp/${created.id}/publish`, { locales: ['en'] }),
+        200,
+      );
+      await edit([{ heading: 'D' }]);
+      const cards = await readCards('r13lp', created.id, 'en', adminToken, 'version');
+      const before = await footprint(created.id);
+      const response = await request(
+        'PUT',
+        `/api/content/r13lps/${created.id}?locale=en${at('version')}`,
+        adminToken,
+        {
+          locale: 'en',
+          expectedVersion: (await adminView('r13lp', `${created.id}?locale=en`)).version,
+          data: { cards },
+        },
+      );
+      expect(response.statusCode, response.body).toBe(422);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe('LENS_WRITE_UNSUPPORTED');
+      expect(issuesOf(response.body).map((issue) => issue.path)).toEqual(['/cards/0/cnt']);
+      expect(await footprint(created.id)).toEqual(before);
+    });
+    const adminSaveDe = async (id: string) =>
+      expectStatus(
+        await admin.put(`/api/admin/content/r13lp/${id}?locale=de`, {
+          locale: 'de',
+          expectedVersion: null,
+          data: { title: 'de' },
+        }),
+        200,
+      );
   });
 
   describe('items copied or moved with their ids from another entry or another field', () => {

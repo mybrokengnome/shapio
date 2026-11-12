@@ -471,19 +471,41 @@ const readsToday = (base: LensWriteBase, field: FieldLens, whole: boolean): bool
  * component list it writes in `pairings`. `whole`: a component instance, written whole, so what the client
  * cannot write or does not know keeps its stored value.
  */
+/** What a new item copied from another head does with a field it cannot write through the client's version. */
+type CopiedField = { carry: unknown } | 'none' | 'refuse';
+
 /**
- * The stored value a new item carries for a field it cannot write through the client's version and sent back as
- * read: the value of the head whose read it echoes, when that read showed it whole (a scalar or a list of them,
- * nothing cut) and it still fits today's field. Undefined: it cannot be carried exactly, so it is refused.
+ * A field a new item cannot write through the client's version, sent back exactly as a head it was copied from
+ * showed it (whole, nothing cut), empty included: it takes that head's stored value, as the same write without a
+ * version stores it. Several heads showing the item that disagree on the stored value, a value that cannot be
+ * carried exactly (a component, or one that no longer fits today's field), and a value that echoes no head are
+ * refused. An empty value carries nothing where no head showed it whole (it cut what the caller cannot see), or
+ * where the stored value no longer fits today's field (without a version it reads, and is written, empty).
  */
-const copiedFrom = (field: FieldLens, value: unknown, counterpart: Counterpart): unknown => {
+const copiedFrom = (field: FieldLens, value: unknown, counterpart: Counterpart): CopiedField => {
+  const empty = isMissingValue(value);
   const { stored } = field;
-  if (!stored || stored.type === 'component' || stored.type === 'dynamiczone') {
-    return undefined;
+  const values = stored
+    ? counterpart.reads.flatMap((read, index) =>
+        matchesRead(field, value, read[field.fieldId], null)
+          ? [counterpart.shown?.[index]?.[field.fieldId] ?? null]
+          : [],
+      )
+    : [];
+  if (!stored || values.length === 0) {
+    return empty ? 'none' : 'refuse';
   }
-  const at = counterpart.reads.findIndex((read) => matchesRead(field, value, read[field.fieldId], null));
-  const carried = at === -1 ? undefined : counterpart.shown?.[at]?.[field.fieldId];
-  return carried !== undefined && matchesFieldType(stored, carried) ? carried : undefined;
+  if (new Set(values.map((held) => canonicalJson(isMissingValue(held) ? null : held))).size > 1) {
+    return 'refuse';
+  }
+  const carried = values[0];
+  if (isMissingValue(carried)) {
+    return 'none';
+  }
+  if (!matchesFieldType(stored, carried)) {
+    return empty ? 'none' : 'refuse';
+  }
+  return stored.type === 'component' || stored.type === 'dynamiczone' ? 'refuse' : { carry: carried };
 };
 
 const translateObject = (
@@ -555,14 +577,15 @@ const translateObject = (
       );
     } else if (!sentBackRead(field, item, counterpart.reads, walk.base.visibleTargets ?? null)) {
       walk.issues.push(counterpart.unseen ? unseenRefusal(fieldPath) : refusal(field, fieldPath));
-    } else if (counterpart.copied && !isMissingValue(item)) {
-      // A new item copied from another head it read: what it sent back of that read is carried from that head's
-      // stored item, as the same write without a version stores it; what cannot be carried exactly is refused.
-      const carried = copiedFrom(field, item, counterpart);
-      if (carried === undefined) {
+    } else if (counterpart.copied) {
+      // A new item copied from another head it read: what it sent back of that read (empty included) is carried
+      // from that head's stored item, as the same write without a version stores it; what cannot be carried
+      // exactly is refused.
+      const copied = copiedFrom(field, item, counterpart);
+      if (copied === 'refuse') {
         walk.issues.push(refusal(field, fieldPath));
-      } else {
-        counterpart.copied[field.fieldId] = carried;
+      } else if (copied !== 'none') {
+        counterpart.copied[field.fieldId] = copied.carry;
       }
     }
     // Sent back as read: left out. What a written instance leaves out (fields the client cannot read, write or
