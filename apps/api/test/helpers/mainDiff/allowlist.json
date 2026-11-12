@@ -107,12 +107,30 @@
       {
         "file": "documentation/upgrades.md",
         "text": "It changes nothing (no new revision, no `entry.updated`, `id`s kept)"
+      },
+      {
+        "file": "CHANGELOG.md",
+        "text": "A kept target that has since been deleted is not kept: it is dropped with the next change you make"
       }
     ],
-    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view (from what the caller read), the branch recorded no revision or event, and main's only stored change is the loss of values hidden from the caller.",
-    "path": "^/entry/",
+    "condition": "The no-op form of hidden values kept: every sent item equals exactly one stored item in the caller's view and every other sent field equals what it read (from the caller's read), the branch recorded no revision or event, and main's only stored changes are the loss of values hidden from the caller and the loss of relation targets that are no longer live entries.",
+    "path": "^/entry/|^/body/(data/)?(version|status|updatedAt|publishedAt)$",
     "when": {
       "noopHiddenKept": true
+    }
+  },
+  {
+    "id": "unsent-dead-target",
+    "cites": [
+      {
+        "file": "CHANGELOG.md",
+        "text": "Targets the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so keeping them never fails a write"
+      }
+    ],
+    "condition": "Main refused with RELATION_TARGET_MISSING issues only, each on a field the body did not send; the branch accepted, and changed only fields the body sent (the unsent fields untouched).",
+    "path": ".*",
+    "when": {
+      "unsentDeadTarget": true
     }
   }
 ]

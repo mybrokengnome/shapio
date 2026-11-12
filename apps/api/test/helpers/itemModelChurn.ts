@@ -3,7 +3,14 @@ import { setPublicGrants } from './appUsers.js';
 import { createDefinition, expectStatus, runContentSchemaJobs } from './content.js';
 import { entryState } from './itemModelProbes.js';
 import { readAs, send, type Problem } from './itemModelRun.js';
-import { eventCount, headsOf, revisionCount, type Caller, type World } from './itemModelWorld.js';
+import {
+  eventCount,
+  headsOf,
+  revisionCount,
+  useModel as useModelKey,
+  type Caller,
+  type World,
+} from './itemModelWorld.js';
 
 type Json = Record<string, unknown>;
 
@@ -864,5 +871,149 @@ export const lensCopyProblems = async (w: World): Promise<Problem[]> => {
       }
     }
   });
+  return problems;
+};
+
+/**
+ * DEADREL (review 15): a relation target that became soft-deleted (its only locale deleted, or deleted raw) and is
+ * hidden behind the caller's read. On doc (drafts) and ndoc (no drafts): an app user echoes its read with one field
+ * unchanged (a no-op: the dead target stays), then with a field edited (the dead target goes, as on main); both are
+ * accepted, and a twin whose target is unpublished instead (alive, hidden too) answers identically (status and body
+ * shape) in both cases.
+ */
+export const deadRelProblems = async (
+  w: World,
+  models: ReadonlyArray<'doc' | 'ndoc'>,
+): Promise<Problem[]> => {
+  // A target that exists only in locale `xx`, which is then deleted: the target entry is soft-deleted with it.
+  expectStatus(await w.admin.post('/api/admin/locales', { code: 'xx', label: 'Doomed' }), 201);
+  const localeOnly = expectStatus(
+    await w.admin.post('/api/admin/content/doc?locale=xx', { locale: 'xx', data: { title: 'only xx' } }),
+    201,
+  ).json<{ id: string }>().id;
+  expectStatus(await w.admin.post(`/api/admin/content/doc/${localeOnly}/publish`, { locales: ['xx'] }), 200);
+  // A target soft-deleted raw.
+  const rawDead = expectStatus(
+    await w.admin.post('/api/admin/content/thing', { data: { name: 'dead' } }),
+    201,
+  ).json<{
+    id: string;
+  }>().id;
+  expectStatus(await w.admin.post(`/api/admin/content/thing/${rawDead}/publish`, {}), 200);
+  const problems: Problem[] = [];
+  const entries: Array<{ model: 'doc' | 'ndoc'; how: string; id: string; twin: string; dead: string }> = [];
+  for (const model of models) {
+    useModelKey(w, model);
+    for (const [how, dead, card] of [
+      ['locale deleted', localeOnly, (target: string) => ({ heading: 'A', anyRels: [target] })],
+      ['deleted raw', rawDead, (target: string) => ({ heading: 'A', rel: target })],
+    ] as const) {
+      const make = async (target: string) => {
+        const id = expectStatus(
+          await w.admin.post(`/api/admin/content/${model}?locale=en`, {
+            locale: 'en',
+            data: { title: 't', cards: [card(target), { heading: 'B' }] },
+          }),
+          201,
+        ).json<{ id: string }>().id;
+        if (model === 'doc') {
+          expectStatus(await w.admin.post(`/api/admin/content/doc/${id}/publish`, { locales: ['en'] }), 200);
+        }
+        return id;
+      };
+      entries.push({ model, how, id: await make(dead), twin: await make(w.things.draft), dead });
+    }
+  }
+  useModelKey(w, 'doc');
+  const purged = expectStatus(await w.admin.delete('/api/admin/locales/xx?acknowledgeDestructive=true'), 200);
+  await runContentSchemaJobs(w.db);
+  const gone = await w.db
+    .selectFrom('entries')
+    .select('deleted_at')
+    .where('id', '=', localeOnly)
+    .executeTakeFirst();
+  // (localePurge: an entry that existed only in the deleted locale is deleted like a normal delete.)
+  if (gone && !gone.deleted_at) {
+    throw new Error(`deleting locale xx did not delete the entry that existed only in it: ${purged.body}`);
+  }
+  await w.db
+    .updateTable('entries')
+    .set({ deleted_at: new Date().toISOString() })
+    .where('id', '=', rawDead)
+    .execute();
+  const shape = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(shape)
+      : isRecord(value)
+        ? Object.fromEntries(
+            Object.keys(value)
+              .filter(
+                (key) =>
+                  !['id', 'version', 'revisionId', 'createdAt', 'updatedAt', 'publishedAt'].includes(key),
+              )
+              .sort()
+              .map((key) => [key, shape(value[key])]),
+          )
+        : typeof value;
+  for (const entry of entries) {
+    // First an unchanged echo (a no-op: the dead target stays), then one with a field edited (it goes).
+    for (const phase of ['unchanged', 'edited'] as const) {
+      const answers: Array<{ status: number; shape: string }> = [];
+      for (const id of [entry.id, entry.twin]) {
+        const plural = `${entry.model}s`;
+        const read = (
+          await w.request('GET', `/api/content/${plural}/${id}?locale=en`, w.callers.reader.token)
+        ).body as Json;
+        const cards = (((read.data as Json | undefined)?.cards as Json[] | undefined) ?? []).map(
+          (card, index) => (phase === 'edited' && index === 1 ? { ...card, heading: 'B~' } : card),
+        );
+        const before = await headsOf(w, id);
+        const draft = before.find((head) => head.locale === 'en' && head.state === 'draft');
+        const response = await w.request(
+          'PUT',
+          `/api/content/${plural}/${id}?locale=en`,
+          w.callers.reader.token,
+          {
+            locale: 'en',
+            expectedVersion: draft?.version ?? null,
+            data: { cards },
+          },
+        );
+        answers.push({ status: response.status, shape: JSON.stringify(shape(response.body)) });
+        const label = `${entry.model} ${entry.how} ${phase}${id === entry.twin ? ' (twin: unpublished target)' : ''}`;
+        if (response.status >= 300) {
+          problems.push({
+            property: '1 conservation (DEADREL)',
+            detail: `${label}: the echo answered ${response.status} ${response.raw.slice(0, 200)}`,
+          });
+          continue;
+        }
+        const after = await headsOf(w, id);
+        if (phase === 'unchanged' && !isDeepStrictEqual(after, before)) {
+          problems.push({
+            property: '9 no-op (DEADREL)',
+            detail: `${label}: an unchanged echo changed the entry`,
+          });
+        }
+        if (id === entry.id) {
+          const holds = JSON.stringify(
+            after.find((head) => head.locale === 'en' && head.state === 'draft')?.data ?? {},
+          ).includes(entry.dead);
+          if (holds !== (phase === 'unchanged')) {
+            problems.push({
+              property: '1 conservation (DEADREL)',
+              detail: `${label}: the stored result ${holds ? 'still holds' : 'lost'} the dead target`,
+            });
+          }
+        }
+      }
+      if (answers.length === 2 && !isDeepStrictEqual(answers[0], answers[1])) {
+        problems.push({
+          property: '2 no oracle (DEADREL)',
+          detail: `${entry.model} ${entry.how} ${phase}: dead ${JSON.stringify(answers[0])}, unpublished ${JSON.stringify(answers[1])}`,
+        });
+      }
+    }
+  }
   return problems;
 };

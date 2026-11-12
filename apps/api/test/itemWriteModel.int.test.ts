@@ -7,6 +7,7 @@ import { createDefinition, createRole, expectStatus, runContentSchemaJobs } from
 import {
   churnCases,
   copyMoveProblems,
+  deadRelProblems,
   lensCopyProblems,
   lensNewProblems,
   adminSingleCopyProblems,
@@ -164,6 +165,7 @@ const checkedWrite = async (
         admin: caller.kind === 'admin',
         writesAll: caller.kind === 'admin' || caller.kind === 'adminToken' || caller.kind === 'pinned',
         version: version || caller.pinned === true,
+        changed: before.draft?.revision !== after.draft?.revision,
       }),
       ...idUniqueness(after.heads),
       ...(transport === 'rest' ? itemIdsProblems(response, body, afterInstances) : []),
@@ -680,6 +682,7 @@ const concurrencyProblems = async (w: World, random: Random, seed: number): Prom
         read,
         body: bodies[winner] as Record<string, unknown>,
         admin: false,
+        // (Several writers: whether the winner's own write changed the entry cannot be told, so `changed` is open.)
       }).map((problem) => ({ ...problem, property: `8 concurrency / ${problem.property}` })),
       ...idUniqueness(after.heads),
     );
@@ -2078,6 +2081,10 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
     expect(report(problems)).toEqual([]);
   });
 
+  it('DEADREL (1 conservation, review 15): a hidden relation target that was soft-deleted never fails a write, is dropped as on main, and answers like an unpublished one', async () => {
+    expect(report(await deadRelProblems(w, ['doc', 'ndoc']))).toEqual([]);
+  });
+
   it('COPYMOVE (3 ID integrity, review 13): items copied or moved with their ids are accepted unless a stored item with hidden values would be left unclaimed', async () => {
     expect(report(await copyMoveProblems(w))).toEqual([]);
   });
@@ -2088,6 +2095,13 @@ describe('item writes, model-based (HTTP and services, real database)', { timeou
 
   it("SEED857 (regression, review 14): ITEM_MODEL_SEED=857 run 857 (an item sent with another list's id continues the one equal stored item)", async () => {
     const { problems, log } = await runOnce(w, 857);
+    expect(report(problems), log.join('\n')).toEqual([]);
+  });
+
+  // Review 15: 1550 (a kept hidden relation target pointing at a deleted entry on a no-draft type), 1628 and 1796 (a
+  // chip moved by its id under another card is new there).
+  it.each([1550, 1628, 1796])('SEED%i (regression, review 15)', async (seed) => {
+    const { problems, log } = await runOnce(w, seed);
     expect(report(problems), log.join('\n')).toEqual([]);
   });
 

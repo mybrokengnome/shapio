@@ -3,7 +3,13 @@ import { describe, it } from 'vitest';
 import { createDb } from '../../../src/db/index.js';
 import { migrateToLatest } from '../../../src/db/migrator.js';
 import { bearer, createAppRole, loginAppUser, setPublicGrants, signUp } from '../appUsers.js';
-import { createDefinition, expectStatus, type GrantSpec, type ModelBody } from '../content.js';
+import {
+  createDefinition,
+  expectStatus,
+  runContentSchemaJobs,
+  type GrantSpec,
+  type ModelBody,
+} from '../content.js';
 import { createTestApp, type TestApp } from '../createTestApp.js';
 import { createRoleToken, schemaClient } from '../schemaAdmin.js';
 import { silentLogger } from '../silentLogger.js';
@@ -45,10 +51,17 @@ const prng = (seed: number) => {
 type Manifest = {
   adminToken: string;
   users: Record<'reader' | 'updateOnly' | 'owner', string>;
-  entries: Array<{ id: string; model: 'doc' | 'ndoc' | 'ldoc' | 'cmove'; ahead?: string; owned?: boolean }>;
+  entries: Array<{
+    id: string;
+    model: 'doc' | 'ndoc' | 'ldoc' | 'cmove' | 'dref' | 'drefn';
+    ahead?: string;
+    owned?: boolean;
+  }>;
   things: { published: string; unpublished: string };
   /** Field ID → API ID, so stored data compares by field name (diff.mjs keeps comparing untouched fields). */
   fieldKeys: Record<string, string>;
+  /** Relation targets that are no longer live entries (review 15). */
+  deadTargets: string[];
 };
 
 const open = async () => {
@@ -212,7 +225,32 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
       })),
     ],
   });
-  const models: ModelBody[] = [doc, ndoc, ldoc, cmove];
+  // Review 15: relations to targets that die (their only locale deleted, or deleted raw), on a type with drafts
+  // (`dref`) and one without (`drefn`); `dcard` holds a private `secret` beside the relation.
+  const dcard = await component('dcard', [
+    { apiKey: 'label', label: 'Label', type: 'string' },
+    { apiKey: 'secret', label: 'Secret', type: 'string', public: false },
+    { apiKey: 'rels', label: 'Rels', type: 'relation', settings: { target: '*', cardinality: 'many' } },
+  ]);
+  const drefModel = (apiKey: string, draftAndPublish: boolean) =>
+    createDefinition(admin, {
+      kind: 'collection',
+      apiKey,
+      label: apiKey,
+      draftAndPublish,
+      fields: [
+        { apiKey: 'title', label: 'Title', type: 'string' },
+        {
+          apiKey: 'items',
+          label: 'Items',
+          type: 'component',
+          settings: { component: dcard.definition.id, repeatable: true },
+        },
+      ],
+    });
+  const dref = await drefModel('dref', true);
+  const drefn = await drefModel('drefn', false);
+  const models: ModelBody[] = [doc, ndoc, ldoc, cmove, dref, drefn];
   const grants = (actions: GrantSpec['action'][], extra: Partial<GrantSpec> = {}): GrantSpec[] =>
     models.flatMap((model) => actions.map((action) => ({ action, modelId: model.definition.id, ...extra })));
   const user = async (name: string, list: GrantSpec[]) => {
@@ -428,8 +466,48 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     expectStatus(await admin.post(`/api/admin/content/cmove/${id}/publish`, {}), 200);
     entries.push({ id, model: 'cmove' });
   }
+  // The targets: a doc entry that exists only in locale `xx` (deleted below), a thing deleted raw (below), and the
+  // unpublished thing (alive, hidden from app users) as the twin.
+  expectStatus(await admin.post('/api/admin/locales', { code: 'xx', label: 'Doomed' }), 201);
+  const localeOnly = expectStatus(
+    await admin.post('/api/admin/content/doc?locale=xx', { locale: 'xx', data: { title: 'only xx' } }),
+    201,
+  ).json<{ id: string }>().id;
+  expectStatus(await admin.post(`/api/admin/content/doc/${localeOnly}/publish`, { locales: ['xx'] }), 200);
+  const rawDead = await thingOf('dead', true);
+  for (const model of ['dref', 'drefn'] as const) {
+    for (const [ahead, target] of [
+      ['localeDead', localeOnly],
+      ['rawDead', rawDead],
+      ['unpublished', things.unpublished],
+    ] as const) {
+      const id = expectStatus(
+        await admin.post(`/api/admin/content/${model}`, {
+          data: {
+            title: ahead,
+            items: [
+              { label: 'A', secret: 's', rels: [target] },
+              { label: 'B', secret: 't' },
+            ],
+          },
+        }),
+        201,
+      ).json<{ id: string }>().id;
+      if (model === 'dref') {
+        expectStatus(await admin.post(`/api/admin/content/dref/${id}/publish`, {}), 200);
+      }
+      entries.push({ id, model, ahead });
+    }
+  }
+  expectStatus(await admin.delete('/api/admin/locales/xx?acknowledgeDestructive=true'), 200);
+  await runContentSchemaJobs(db);
+  await db
+    .updateTable('entries')
+    .set({ deleted_at: new Date().toISOString() })
+    .where('id', '=', rawDead)
+    .execute();
   const fieldKeys = Object.fromEntries(
-    [chip, card, box, doc, ndoc, litem, ldoc, cmove].flatMap((model) =>
+    [chip, card, box, doc, ndoc, litem, ldoc, cmove, dcard, dref, drefn].flatMap((model) =>
       model.definition.fields.map((field) => [field.id, field.apiKey]),
     ),
   );
@@ -439,6 +517,7 @@ const seed = async (testApp: TestApp, db: ReturnType<typeof createDb>): Promise<
     entries,
     things,
     fieldKeys,
+    deadTargets: [localeOnly, rawDead],
   };
 };
 
@@ -502,6 +581,37 @@ const byApiId = (value: unknown, keys: Record<string, string>): unknown =>
           Object.entries(value).map(([key, entry]) => [keys[key] ?? key, byApiId(entry, keys)]),
         )
       : value;
+
+/** A value without item `id`s (what the caller can compare, ids aside). */
+const withoutIds = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutIds)
+    : isRecord(value)
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== 'id')
+            .map(([key, entry]) => [key, withoutIds(entry)]),
+        )
+      : value;
+
+/**
+ * Whether a body sends back what the caller read, ids aside: every list it sends holds the read's items, each
+ * equal to exactly one read item and each read item sent once; every other field equals what was read.
+ */
+const contentMatchOf = (read: Json, body: Json): boolean =>
+  Object.entries(body).every(([field, sent]) => {
+    const stored = read[field];
+    if (Array.isArray(sent) && Array.isArray(stored)) {
+      const a = sent.map((item) => JSON.stringify(withoutIds(item)));
+      const b = stored.map((item) => JSON.stringify(withoutIds(item)));
+      return (
+        a.length === b.length &&
+        a.every((item) => b.filter((other) => other === item).length === 1) &&
+        b.every((item) => a.filter((other) => other === item).length === 1)
+      );
+    }
+    return JSON.stringify(withoutIds(sent)) === JSON.stringify(withoutIds(stored));
+  });
 
 const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifest: Manifest) => {
   const request = async (
@@ -587,11 +697,21 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       status: isRecord(view.body) ? view.body.status : null,
     };
   };
+  /** What a step's own write starts from: the entry as stored just before it (counts, heads, audit rows). */
+  const baselineOf = async (id: string, model: string) => {
+    const observed = await observeEntry(id, model);
+    return {
+      revisions: observed.revisions,
+      events: observed.events,
+      heads: observed.heads,
+      audit: observed.audit,
+    };
+  };
   const steps: Json[] = [];
   const random = prng(SEED * 7919);
   const ahead = entries
     .map((entry, index) => ({ entry, index }))
-    .filter(({ entry }) => entry.ahead && entry.model !== 'ldoc');
+    .filter(({ entry }) => entry.ahead && (entry.model === 'doc' || entry.model === 'ndoc'));
   const ldocs = entries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.model === 'ldoc' && entry.ahead !== 'twins');
@@ -629,6 +749,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
         hiddenFields: [],
         hiddenLeaves: [],
         hiddenTargets: [],
+        deadTargets: manifest.deadTargets ?? [],
       };
     }
     // Every caller may read published entries: the seed's public read grants apply to anonymous and every signed-in
@@ -654,8 +775,9 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       seesDraft: reads && !ahead,
       notTheirs,
       withoutIds,
-      hiddenFields: ['cards', 'zone', 'litems', 'p1', 'p2'],
+      hiddenFields: ['cards', 'zone', 'litems', 'p1', 'p2', 'items'],
       hiddenLeaves: ['note', 'secret'],
+      deadTargets: manifest.deadTargets ?? [],
       // Callers without a read grant on things (update-only, anonymous) cannot read any relation target.
       hiddenTargets:
         caller === 'updateOnly' || caller === 'anon'
@@ -770,7 +892,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     // A's writes are measured from here: the other writer's change (and publish) can be a no-op on one side after an
     // earlier allowed difference, and that is compared through `otherMoved`, not through the step's counters.
     const prepared = await observeEntry(target.id, target.model);
-    const baseline = { revisions: prepared.revisions, events: prepared.events, heads: prepared.heads };
+    const baseline = {
+      revisions: prepared.revisions,
+      events: prepared.events,
+      heads: prepared.heads,
+      audit: prepared.audit,
+    };
     const pre = await preOf(caller, target, locale, body);
     const write = (expectedVersion: unknown) =>
       caller === 'admin'
@@ -833,6 +960,40 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       ),
     };
   };
+  const drefs = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.model === 'dref' || entry.model === 'drefn');
+  /**
+   * Review 15: a caller echoes its read of an entry whose hidden relation target died (or, the twin, is
+   * unpublished), with the second item's label edited: on the branch with the read's ids.
+   */
+  const deadRelStep = async (step: number, caller: (typeof callers)[number], token: string | null) => {
+    const { entry: target, index } = random.pick(drefs);
+    const plural = `${target.model}s`;
+    const url =
+      caller === 'admin'
+        ? `/api/admin/content/${target.model}/${target.id}`
+        : `/api/content/${plural}/${target.id}`;
+    const read = await request('GET', url, token);
+    const data = isRecord(read.body) && isRecord(read.body.data) ? read.body.data : {};
+    const items = (Array.isArray(data.items) ? (data.items as Json[]) : []).map((item, at) =>
+      at === 1 ? { ...item, label: `${String(item.label)}~` } : item,
+    );
+    const body: Json = { items };
+    const view = await request('GET', `/api/admin/content/${target.model}/${target.id}`, manifest.adminToken);
+    const version = isRecord(view.body) ? (view.body.version ?? null) : null;
+    const pre = { ...(await preOf(caller, target, 'en', body)), contentMatch: contentMatchOf(data, body) };
+    const baseline = await baselineOf(target.id, target.model);
+    const response = await request('PUT', url, token, { expectedVersion: version, data: body });
+    return {
+      label: `${step} ${caller} deadrel e${index} ${target.model} en ${target.ahead ?? '-'}`,
+      baseline,
+      pre,
+      sent: normal(body, created),
+      ...outcomeOf(response),
+      entry: await observeEntry(target.id, target.model),
+    };
+  };
   const cmoves = entries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.model === 'cmove');
@@ -866,7 +1027,14 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       await request('POST', `/api/admin/content/cmove/${id}/publish`, manifest.adminToken, {});
     }
     const prepared = await observeEntry(target.id, 'cmove');
-    const baseline = { revisions: prepared.revisions, events: prepared.events, heads: prepared.heads };
+    // The source was published too: its counters move here, not in its next step (diff.mjs takes this observation).
+    const sourcePrepared = { entry: sourceIndex, observed: await observeEntry(source.id, 'cmove') };
+    const baseline = {
+      revisions: prepared.revisions,
+      events: prepared.events,
+      heads: prepared.heads,
+      audit: prepared.audit,
+    };
     const own = await readOf(target.id);
     const other = await readOf(source.id);
     const list = (data: Json, field: string) => (Array.isArray(data[field]) ? (data[field] as Json[]) : []);
@@ -931,6 +1099,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     return {
       label: `${step} ${caller} copymove e${index} cmove en ${variant} ${x1}`,
       baseline,
+      alsoObserved: [sourcePrepared],
       // What the step copies: from which entry's field into which field of this entry (diff.mjs treats a copy of a
       // field that already differs between the sides as a consequence, for the field it lands in).
       copies:
@@ -1063,7 +1232,8 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     );
     const version =
       isRecord(adminView.body) && typeof adminView.body.version === 'number' ? adminView.body.version : null;
-    const pre = await preOf(caller, target, locale, body);
+    const pre = { ...(await preOf(caller, target, locale, body)), contentMatch: contentMatchOf(data, body) };
+    const baseline = await baselineOf(target.id, target.model);
     const response =
       caller === 'admin'
         ? await request('PUT', `/api/admin/content/${target.model}/${target.id}?locale=${locale}`, token, {
@@ -1079,6 +1249,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
     return {
       label,
       readStatus: read.status,
+      baseline,
       pre,
       sent: normal(body, created),
       ...outcomeOf(response),
@@ -1105,7 +1276,12 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       'stale',
       'twins',
       'copymove',
+      'deadrel',
     ] as const);
+    if (op === 'deadrel') {
+      steps.push(await deadRelStep(step, caller, token));
+      continue;
+    }
     if (op === 'copymove') {
       steps.push(await copyMoveStep(step, caller, token));
       continue;
@@ -1208,7 +1384,11 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       manifest.adminToken,
     );
     const version = isRecord(view.body) && typeof view.body.version === 'number' ? view.body.version : null;
-    const pre = op === 'create' ? null : await preOf(caller, target, locale, body);
+    const pre =
+      op === 'create'
+        ? null
+        : { ...(await preOf(caller, target, locale, body)), contentMatch: contentMatchOf(data, body) };
+    const baseline = op === 'create' ? undefined : await baselineOf(target.id, target.model);
     const response =
       op === 'create'
         ? caller === 'admin'
@@ -1261,6 +1441,7 @@ const replay = async (testApp: TestApp, db: ReturnType<typeof createDb>, manifes
       label: `${label} ${edit}`,
       ...(op === 'create' && observedId !== target.id ? { createdEntry: entries.length - 1 } : {}),
       pre,
+      ...(baseline ? { baseline } : {}),
       sent: body,
       ...outcomeOf(response),
       entry: await observeEntry(observedId, observedModel),

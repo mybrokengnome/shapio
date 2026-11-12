@@ -438,7 +438,7 @@ describe('writes keep what the read hid', () => {
       expect(await storedMisfits(id)).toEqual({ title: 5, heading: 7 });
     });
 
-    it('a stored relation target that no longer resolves never fails an update; a new one does', async () => {
+    it('a stored relation target that no longer resolves never fails an update and is dropped; a new one fails', async () => {
       // A target deleted since it was stored (its row stays, marked deleted): it no longer resolves.
       const gone = expectStatus(
         await admin.post('/api/admin/content/target', { data: { name: 'gone' } }),
@@ -454,7 +454,9 @@ describe('writes keep what the read hid', () => {
         .execute();
       const read = await readAs(id, version);
       expectStatus(await write(id, version, { title: 't2', lead: read.lead, cards: read.cards }), 200);
-      expect((await draftData(id))[leadId]).toBe(gone);
+      // Kept for the caller while it resolved; deleted, it is dropped, as the same write before 0.9.0 drops it.
+      expect((await draftData(id))[leadId] ?? null).toBeNull();
+      expect(JSON.stringify(await draftData(id))).not.toContain(gone);
       const refused = await write(id, version, { lead: '00000000-0000-4000-8000-000000000003' });
       expect(refused.statusCode).toBe(422);
       expect(refused.json<ErrorBody>().error.details?.issues).toEqual([

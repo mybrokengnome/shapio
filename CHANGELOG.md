@@ -96,9 +96,11 @@ All notable changes to Shapio are listed here. The format follows
   ([Delivery API](documentation/delivery-api.md#writing-components)).
 - A content export and import after a field type change works again.
 - Relation targets a write names are checked as before 0.9.0 (an unpublished entry of the right type is accepted;
-  a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`), and targets
-  the server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again,
-  so keeping them never fails a write.
+  a deleted entry, one of the wrong type, or an ID with no entry is `422 RELATION_TARGET_MISSING`). Targets the
+  server keeps for you (hidden ones behind what you read, or fields you did not send) are not checked again, so
+  keeping them never fails a write. A kept target that has since been deleted is not kept: it is dropped with the
+  next change you make, as it was before 0.9.0, and whether a target you cannot see was deleted or is only
+  unpublished never changes the answer.
 - Swapping two items that look identical to the caller but differ in values it cannot see is saved as a change,
   and their hidden values move with them. (Items identical in everything stored are covered under Added.)
 - Content nested too deeply for the database is refused with `422 BODY_TOO_DEEP` instead of failing with a `500`.

@@ -922,6 +922,7 @@ export const acceptedWriteProblems = (
     admin,
     writesAll = admin,
     version = false,
+    changed,
   }: {
     before: Instance[];
     after: Instance[];
@@ -931,6 +932,12 @@ export const acceptedWriteProblems = (
     /** An admin-kind caller: may write every field that is not deprecated (and, through V, known to V). */
     writesAll?: boolean;
     version?: boolean;
+    /**
+     * Whether the write changed the entry (a new draft revision); a no-op keeps even dead targets. Undefined when it
+     * cannot be told (concurrent writers: another write may have made the revision): a dead target may then go or
+     * stay.
+     */
+    changed?: boolean;
   },
 ): Problem[] => {
   const problems: Problem[] = [];
@@ -955,6 +962,13 @@ export const acceptedWriteProblems = (
     }
   };
   walk(body, false);
+  // delivery-api.md, Item IDs: "Move an item into another list, or under another parent item: send it there
+  // without `id`. It is new in its new place." An `id` sent in another list than the one that holds it (under
+  // another parent card, for example) names nothing there, so the stored item may be gone.
+  const sentInList = new Map<string, string>();
+  for (const [listKey, items] of sentLists) {
+    items.forEach((item) => typeof item.id === 'string' && sentInList.set(item.id, listKey));
+  }
   // Hidden: a stored value the caller did not read exactly (its item unread, the key missing, read as null, or
   // read otherwise: a relation to a target it cannot see).
   const hiddenOf = (instance: Instance): string[] => {
@@ -997,6 +1011,13 @@ export const acceptedWriteProblems = (
     }
   }
   const sentText = JSON.stringify(body);
+  const dead = new Set([w.things.deleted]);
+  const dropDead = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.filter((target) => !dead.has(String(target)))
+      : typeof value === 'string' && dead.has(value)
+        ? null
+        : value;
   // delivery-api.md, Item IDs: "An item sent with an `id` the draft does not hold, and that is not refused, is
   // matched by content like an item sent without an `id`: it continues the one stored item that equals it,
   // otherwise it is new." So a stored item may continue under a sent item with another `id` only when the list
@@ -1048,10 +1069,19 @@ export const acceptedWriteProblems = (
         if (sent && sent[apiKey] !== undefined && sent[apiKey] !== null) {
           continue;
         }
-        if (!isDeepStrictEqual(next.raw[key], instance.raw[key])) {
+        // CHANGELOG.md: "A kept target that has since been deleted is not kept: it is dropped with the next change
+        // you make". A hidden relation to a target that is no longer a live entry goes with a write that changes
+        // the entry, and stays with a no-op.
+        // (A field the body did not send keeps its stored value untouched, dead targets included.)
+        const fieldSent = body[instance.list.split('/')[0] ?? ''] !== undefined;
+        const dropped = dropDead(instance.raw[key]);
+        const expected = changed && fieldSent ? dropped : instance.raw[key];
+        const either =
+          changed === undefined && fieldSent && isDeepStrictEqual(next.raw[key] ?? null, dropped ?? null);
+        if (!either && !isDeepStrictEqual(next.raw[key] ?? null, expected ?? null)) {
           problems.push({
             property: '1 conservation',
-            detail: `${instance.list} ${instance.id}: hidden ${key} ${JSON.stringify(instance.raw[key])} → ${JSON.stringify(next.raw[key])}`,
+            detail: `${instance.list} ${instance.id}: hidden ${key} ${JSON.stringify(instance.raw[key])} → ${JSON.stringify(next.raw[key])}${expected === instance.raw[key] ? '' : `, expected ${JSON.stringify(expected)} (a dead target goes with a change)`}`,
           });
         }
       }
@@ -1080,11 +1110,14 @@ export const acceptedWriteProblems = (
             groups.set(anchor, [...(groups.get(anchor) ?? []), target]);
           }
         }
-        const want = [
+        const kept = [
           ...(groups.get('') ?? []),
           ...resent.flatMap((target) => [target, ...(groups.get(target) ?? [])]),
         ];
-        if (!isDeepStrictEqual(next.raw[relsKey] ?? [], want)) {
+        const dropAll = dropDead(kept) as string[];
+        const want = changed ? dropAll : kept;
+        const wantEither = changed === undefined && isDeepStrictEqual(next.raw[relsKey] ?? [], dropAll);
+        if (!wantEither && !isDeepStrictEqual(next.raw[relsKey] ?? [], want)) {
           problems.push({
             property: '1 conservation',
             detail: `${instance.list} ${instance.id}: rels ${JSON.stringify(stored)} shown ${JSON.stringify([...shown])} sent ${JSON.stringify(resent)} → ${JSON.stringify(next.raw[relsKey])}, expected ${JSON.stringify(want)}`,
@@ -1112,7 +1145,11 @@ export const acceptedWriteProblems = (
     }
     // Gone: only with certainty (by ID: a list sent with IDs that leaves it out; without IDs: no equal item sent).
     if (hidden.length === 0 || sentIds.has(instance.id)) {
-      if (sentIds.has(instance.id) && !underNewItem.has(instance.id)) {
+      if (
+        sentIds.has(instance.id) &&
+        !underNewItem.has(instance.id) &&
+        sentInList.get(instance.id) === instance.list
+      ) {
         problems.push({
           property: '1 conservation',
           detail: `${instance.list} ${instance.id} was sent by its ID, yet is gone`,

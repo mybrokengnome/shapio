@@ -65,6 +65,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.staleHidden !== true || step.staleHidden) &&
   (entry.when?.unclaimedHidden !== true || step.unclaimedHidden) &&
   (entry.when?.noopHiddenKept !== true || step.noopHiddenKept) &&
+  (entry.when?.unsentDeadTarget !== true || step.unsentDeadTarget) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 const RELATIONS = new Set(['rel', 'rels', 'ref']);
@@ -94,7 +95,37 @@ const isHiddenKeep = (difference, pre) => {
 
 /** The step-level conditions of the allowlist, from the branch's `pre` and issues. */
 /** Whether every stored difference from `before` to `after` (one side's observations) is a hidden value lost. */
-const onlyLostHidden = (before, after, hiddenLeaves) => {
+/**
+ * A relation value that lost only targets that are no longer live entries (review 15: "A kept target that has
+ * since been deleted is not kept: it is dropped with the next change you make").
+ */
+const lostDeadTargets = (difference, deadTargets) => {
+  if (!RELATIONS.has(leafOf(difference.path))) return false;
+  const before = Array.isArray(difference.main) ? difference.main : [difference.main];
+  const after = Array.isArray(difference.branch)
+    ? difference.branch
+    : difference.branch == null
+      ? []
+      : [difference.branch];
+  const removed = before.filter((target) => !after.includes(target));
+  return (
+    removed.length > 0 &&
+    removed.every((target) => deadTargets.includes(target)) &&
+    after.every((target) => before.includes(target))
+  );
+};
+
+/** Whether every stored difference from `before` to `after` is in one of `fields` (a draft's top-level field). */
+const onlyFields = (before, after, fields) => {
+  if (!after) return false;
+  const heads = (observed) =>
+    Object.fromEntries(observed.heads.map((head) => [`${head.locale}|${head.state}`, head.data]));
+  return differences(heads(before), heads(after)).every((difference) =>
+    fields.includes(difference.path.split('/')[2]),
+  );
+};
+
+const onlyLostHidden = (before, after, hiddenLeaves, deadTargets = []) => {
   if (!after) return false;
   const heads = (observed) =>
     Object.fromEntries(observed.heads.map((head) => [`${head.locale}|${head.state}`, head.data]));
@@ -102,7 +133,9 @@ const onlyLostHidden = (before, after, hiddenLeaves) => {
   return (
     changed.length > 0 &&
     changed.every(
-      (difference) => hiddenLeaves.includes(leafOf(difference.path)) && difference.branch === undefined,
+      (difference) =>
+        (hiddenLeaves.includes(leafOf(difference.path)) && difference.branch === undefined) ||
+        lostDeadTargets(difference, deadTargets),
     )
   );
 };
@@ -199,7 +232,9 @@ const keyed = (step, side) => {
   if (!step) return step;
   let audit;
   if (step.entry && typeof step.entry.audit === 'number') {
-    audit = step.entry.audit - (lastAudit.get(side) ?? step.entry.audit);
+    // A step that prepares itself (a setup publish) is charged only the rows its own write added.
+    const from = typeof step.baseline?.audit === 'number' ? step.baseline.audit : lastAudit.get(side);
+    audit = step.entry.audit - (from ?? step.entry.audit);
     lastAudit.set(side, step.entry.audit);
   }
   return {
@@ -208,6 +243,7 @@ const keyed = (step, side) => {
     pre: undefined,
     baseline: undefined,
     copies: undefined,
+    alsoObserved: undefined,
     entry: step.entry && {
       ...step.entry,
       audit,
@@ -258,7 +294,22 @@ for (let index = 0; index < count; index += 1) {
   const createdEntry = a?.createdEntry ?? b?.createdEntry;
   // A create observes the new entry: its counters start there.
   const observedKey = createdEntry !== undefined ? String(createdEntry) : entry;
+  const branchBefore = b?.baseline?.heads
+    ? b.baseline
+    : observedKey !== undefined
+      ? previous.branch.get(observedKey)
+      : undefined;
   // What main stored when the step's own write began (after any preparation the step made itself).
+  // Observations a step made of other entries (a copy's source after the step's setup publish): they move those
+  // entries' counters, so their next step is measured from here.
+  for (const [side, step] of [
+    ['main', a],
+    ['branch', b],
+  ]) {
+    for (const { entry: other, observed } of step?.alsoObserved ?? []) {
+      if (String(other) !== entry) previous[side].set(String(other), observed);
+    }
+  }
   const mainBefore = a?.baseline?.heads
     ? a.baseline
     : observedKey !== undefined
@@ -331,7 +382,20 @@ for (let index = 0; index < count; index += 1) {
       deltaB?.revisions === 0 &&
       deltaB?.events === 0 &&
       mainBefore !== undefined &&
-      onlyLostHidden(mainBefore, a?.entry, b.pre.hiddenLeaves),
+      onlyLostHidden(mainBefore, a?.entry, b.pre.hiddenLeaves, b.pre.deadTargets ?? []),
+    // A write main refused only because a field the body did not send holds a dead target (review 15): main's
+    // issues are all RELATION_TARGET_MISSING on fields the body did not send, the branch accepted, and the branch
+    // changed only fields the body sent.
+    unsentDeadTarget:
+      a?.status === 422 &&
+      (a?.issues ?? []).length > 0 &&
+      a.issues.every((issue) => {
+        const [code, path] = issue.split(' ');
+        return code === 'RELATION_TARGET_MISSING' && !Object.keys(b?.sent ?? {}).includes(path.split('/')[1]);
+      }) &&
+      (b?.status ?? 500) < 300 &&
+      branchBefore !== undefined &&
+      onlyFields(branchBefore, b?.entry, Object.keys(b?.sent ?? {})),
   };
   for (const difference of found) {
     if (touched.size > 0 && difference.path === '/body/meta/snapshot') {

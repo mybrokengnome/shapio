@@ -94,6 +94,89 @@ export const relationsByPath = (model: ContentModel, data: Readonly<ContentData>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/**
+ * Rewrites every relation value of a document (storage form) along the same walk as `relationsByPath`: `keep`
+ * decides, per target, whether it stays at that position. A single relation whose target goes is null.
+ */
+const mapRelations = (
+  model: ContentModel,
+  data: Readonly<ContentData>,
+  keep: (path: string, id: string) => boolean,
+): ContentData => {
+  const walk = (
+    fields: readonly FieldDefinition[],
+    value: Readonly<Record<string, unknown>>,
+    path: string,
+  ): Record<string, unknown> => {
+    const output: Record<string, unknown> = { ...value };
+    for (const field of fields) {
+      const fieldValue = value[field.id];
+      if (fieldValue === undefined || fieldValue === null) {
+        continue;
+      }
+      const at = pointer(path, field.apiKey);
+      if (field.type === 'relation') {
+        output[field.id] = Array.isArray(fieldValue)
+          ? fieldValue.filter((id) => typeof id !== 'string' || keep(at, id))
+          : typeof fieldValue === 'string' && !keep(at, fieldValue)
+            ? null
+            : fieldValue;
+      } else if (field.type === 'component') {
+        const component = model.components.get(field.settings.component)?.definition;
+        if (!component) {
+          continue;
+        }
+        output[field.id] = Array.isArray(fieldValue)
+          ? fieldValue.map((item: unknown, index) =>
+              isRecord(item) ? walk(component.fields, item, pointer(at, index)) : item,
+            )
+          : isRecord(fieldValue)
+            ? walk(component.fields, fieldValue, at)
+            : fieldValue;
+      } else if (field.type === 'dynamiczone' && Array.isArray(fieldValue)) {
+        output[field.id] = fieldValue.map((item: unknown, index) => {
+          const component = isRecord(item)
+            ? model.components.get(String(item[COMPONENT_KEY]))?.definition
+            : undefined;
+          return component && isRecord(item) ? walk(component.fields, item, pointer(at, index)) : item;
+        });
+      }
+    }
+    return output;
+  };
+  return walk(model.definition.fields, data, '');
+};
+
+/**
+ * `patch` (storage form, after the carry-over) without the relation targets the server put back (at a position the
+ * body did not name them, `sentRelations`) that no longer resolve to a live entry of the site: a deleted entry, or
+ * none. A write keeps targets the caller cannot see, but never a dead one: it is dropped as a write that sends
+ * the read back without it drops it, so dead references do not accumulate and no answer depends on them. Targets
+ * the body names are left for `assertTargets`, which checks them in full; unpublished targets stay. Only what the
+ * patch holds is touched: a field the body did not send keeps its stored value.
+ */
+export const withoutDeadPutBackTargets = async (
+  executor: Executor,
+  model: ContentModel,
+  patch: Readonly<ContentData>,
+  sentRelations: ReadonlyMap<string, ReadonlySet<string>>,
+  siteId: string,
+): Promise<Readonly<ContentData>> => {
+  const named = (path: string, id: string) => sentRelations.get(path)?.has(id) ?? false;
+  const putBack = [
+    ...new Set(
+      [...relationsByPath(model, patch)].flatMap(([path, ids]) => [...ids].filter((id) => !named(path, id))),
+    ),
+  ];
+  if (putBack.length === 0) {
+    return patch;
+  }
+  const live = new Set(await liveIdsOfAnyModel(putBack, siteId, executor));
+  return putBack.every((id) => live.has(id))
+    ? patch
+    : mapRelations(model, patch, (path, id) => named(path, id) || live.has(id));
+};
+
 /** Every asset the given documents point at (media fields and rich-text images, components included). */
 export const mediaIdsOf = (model: ContentModel, documents: readonly Readonly<ContentData>[]) =>
   new Set(documents.flatMap((data) => imageUsesOf(model, data).map((use) => use.assetId)));

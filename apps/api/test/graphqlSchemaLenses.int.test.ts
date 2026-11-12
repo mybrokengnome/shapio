@@ -61,6 +61,12 @@ const NARROW_ONE = 'query ($id: ID!) { article(id: $id) { title restricted } }';
  * executed against the workspace's GraphQL schema at that version, reads only, with today's visibility
  * (rule 7), from a separate bounded cache that never disturbs the current schema.
  */
+/** The error messages of a GraphQL answer, without request IDs or other random values that could match by chance. */
+const messagesOf = (body: unknown): string =>
+  ((body as { errors?: Array<{ message?: string }> } | null)?.errors ?? [])
+    .map((e) => e.message ?? '')
+    .join('\n');
+
 describe('schema lenses: GraphQL', () => {
   const database = useTestDatabase();
   let testApp: TestApp;
@@ -595,7 +601,7 @@ describe('schema lenses: GraphQL', () => {
       expect(result.statusCode).toBe(400);
       expect(errorCodes(result)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
     }
-    expect(JSON.stringify(old_.body)).not.toContain('r1');
+    expect(messagesOf(old_.body)).not.toContain('r1');
     // A field removed since is not named for a restricted grant either; the title still reads.
     const removed = await old('query ($id: ID!) { article(id: $id) { summary } }', {
       credential: narrowToken,
@@ -771,7 +777,8 @@ describe('schema lenses: GraphQL', () => {
         expect(result.statusCode, selection).toBe(400);
         expect(errorCodes(result)).toEqual(['GRAPHQL_VALIDATION_FAILED']);
       }
-      expect(JSON.stringify(old_.body)).not.toMatch(/100|"P"/);
+      // Only the messages: a random request ID elsewhere in the body may contain the digits by chance.
+      expect(messagesOf(old_.body)).not.toMatch(/\b100\b|"P"/);
     }
     expect(dataOf(await old('{ profiles { nodes { name } } }', { credential: nameOnlyToken }))).toEqual({
       profiles: { nodes: [{ name: 'Pat' }] },

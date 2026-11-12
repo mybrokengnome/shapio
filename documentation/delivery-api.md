@@ -743,7 +743,9 @@ refused only when the components hold deprecated fields; admin API writes (`/api
 - Relation targets a write names are checked as before 0.9.0: an unpublished entry of the right type is
   accepted; a deleted entry, an entry of the wrong type, or an ID with no entry is refused with
   `422 CONTENT_INVALID` (`RELATION_TARGET_MISSING`). Targets the server keeps for you (hidden ones behind what you
-  read, or fields you did not send) are not checked again.
+  read, or fields you did not send) are not checked again. A kept target whose entry has been deleted is dropped
+  with the next change to the entry; a write that changes nothing else leaves it. The answer never depends on
+  whether a hidden target was deleted or is only unpublished.
 - Through a schema version, a field that changed since the client's version (a dynamic zone that gained a
   component, for example) can be sent back exactly as read, with or without the `id`s read, and nothing changes.
   So can a top-level field the version showed as empty that has since become private or deprecated. An item that

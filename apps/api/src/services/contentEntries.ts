@@ -40,7 +40,12 @@ import { syncEntryUniqueValues, touchEntry, writeDraft, type WriteContext } from
 import { withUniqueItemIds } from '../content/write/itemIdUniqueness.js';
 import { assertComponentListCaps, keepUnreadableComponentFields } from '../content/write/keepUnreadable.js';
 import { withLookalikesInIdOrder } from '../content/write/lookalikeOrder.js';
-import { assertTargets, mediaIdsOf, relationsByPath } from '../content/write/references.js';
+import {
+  assertTargets,
+  mediaIdsOf,
+  relationsByPath,
+  withoutDeadPutBackTargets,
+} from '../content/write/references.js';
 import { runEntryWrite } from '../content/write/transaction.js';
 import type { ContentData } from '../db/contentData.js';
 import type { DB } from '../db/types.js';
@@ -529,16 +534,24 @@ export const writeEntryUpdate = async (
         carryNothing: true,
         shown: otherHeadsWithIds(model, heads, previous, idScope, patch),
       });
-  const checked = validated(input.validator, applyPatch(before, patch), autosave);
-  // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.
-  const outcome = {
-    ...checked,
-    data: withUniqueItemIds(checked.data, model.definition.fields, componentOf),
+  // Targets the server put back that are deleted are dropped, never kept (`withoutDeadPutBackTargets`).
+  const kept = patch;
+  patch = await withoutDeadPutBackTargets(trx, model, patch, sentRelations, context.site.id);
+  const outcomeOf = (written: ContentData) => {
+    const checked = validated(input.validator, applyPatch(before, written), autosave);
+    // Item IDs are unique in what is stored (plan item-ids): a later repeat gets a renewed ID.
+    return { ...checked, data: withUniqueItemIds(checked.data, model.definition.fields, componentOf) };
   };
   // Both sides with every item's ID: items the body left out (or sent back) of an entry saved before item IDs
   // carry the IDs a read derives for them on both sides, so only content and IDs the body changed count.
-  const afterWithIds = withItemIds(outcome.data, model.definition.fields, componentOf, idScope);
-  if (isUnchangedSave(model, previous, beforeWithIds, afterWithIds, input.seesAllStoredIn)) {
+  const withIdsOf = (data: ContentData) => withItemIds(data, model.definition.fields, componentOf, idScope);
+  const unchanged = (data: ContentData) =>
+    isUnchangedSave(model, previous, beforeWithIds, withIdsOf(data), input.seesAllStoredIn);
+  const outcome = outcomeOf(patch);
+  const afterWithIds = withIdsOf(outcome.data);
+  // A save that would change nothing but drop a dead target the caller cannot see changes nothing either: whether
+  // a hidden target was deleted or is only unpublished never changes the answer (the next real change drops it).
+  if (unchanged(outcome.data) || (kept !== patch && unchanged(outcomeOf(kept).data))) {
     // Nothing to record: no revision, version, event or hook. The caller gets the draft as it is.
     return { locale: targetLocale, head: previous };
   }
