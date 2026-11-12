@@ -27,29 +27,28 @@ const DATA = sql.ref(CONTENT_HEADS_COLUMNS.data);
 const FILTER_DATA = sql.ref(CONTENT_HEADS_COLUMNS.filterData);
 
 /**
- * The longest top-level string (or string element of a top-level array) `filter_data` holds, in characters
- * (Unicode code points, what PostgreSQL's `length(text)` counts in a UTF-8 database). `shapio_scalar_fields`
- * leaves longer ones out, so a containment whose value is longer is emitted against `data` in either form
- * (`fieldEquals`). The migration `20261112120000_entry_heads_scalars_gin` writes the same number.
+ * The longest top-level string (or string element of a top-level array) `filter_data` holds: `shapio_scalar_fields`
+ * (migration `20261112120000_entry_heads_scalars_gin`) leaves out a string whose `length(text)` exceeds this.
+ * `length` counts characters in the database's server encoding, except SQL_ASCII, where it counts bytes.
  */
 export const FILTER_STRING_MAX_CHARS = 1000;
 
-/** Whether `value` is a string `filter_data` leaves out: more than `FILTER_STRING_MAX_CHARS` code points. */
-export const isLongFilterString = (value: unknown): boolean => {
-  if (typeof value !== 'string' || value.length <= FILTER_STRING_MAX_CHARS) {
-    // UTF-16 code units are never fewer than code points.
-    return false;
-  }
-  if (value.length > 2 * FILTER_STRING_MAX_CHARS) {
-    // Every code point is at most two code units.
-    return true;
-  }
-  let points = 0;
-  for (const _point of value) {
-    points += 1;
-  }
-  return points > FILTER_STRING_MAX_CHARS;
-};
+/**
+ * Whether a query value may be a string `filter_data` leaves out, so `fieldEquals` matches it against `data` in
+ * either form: its UTF-8 byte length exceeds `FILTER_STRING_MAX_CHARS`. That is never less than what
+ * `length(text)` gives for the same string stored in any server encoding PostgreSQL supports:
+ * - UTF8 and the other multi-byte server encodings (EUC_*, MULE_INTERNAL): `length` counts characters, and every
+ *   character is at least one UTF-8 byte;
+ * - single-byte encodings (LATIN1 to LATIN10, WIN*, ISO_8859_*, KOI8*): one byte per character, the same count;
+ * - SQL_ASCII: `length` counts the stored bytes, which are the UTF-8 bytes the client sent.
+ * So `length(s) <= byteLength(s)`: every string the function may drop is caught (some it keeps are matched
+ * against `data` too, which answers the same rows, only without the smaller index).
+ */
+export const isLongFilterString = (value: unknown): boolean =>
+  typeof value === 'string' &&
+  // At most three UTF-8 bytes per UTF-16 code unit: a string this short is never long.
+  value.length * 3 > FILTER_STRING_MAX_CHARS &&
+  Buffer.byteLength(value, 'utf8') > FILTER_STRING_MAX_CHARS;
 
 const ARRAY_TYPES: Readonly<Record<ListElement, RawBuilder<unknown>>> = {
   uuid: sql`uuid[]`,

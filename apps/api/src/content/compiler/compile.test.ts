@@ -135,8 +135,9 @@ describe('content query compiler', () => {
   });
 
   it('matches a string filter_data leaves out against the whole document in the filter form, per $in value', () => {
-    const long = '😀'.repeat(FILTER_STRING_MAX_CHARS + 1);
-    const atLimit = '😀'.repeat(FILTER_STRING_MAX_CHARS);
+    // Counted in UTF-8 bytes: 334 three-byte characters are past the limit, 1,000 ASCII ones are not.
+    const long = '€'.repeat(Math.ceil((FILTER_STRING_MAX_CHARS + 1) / 3));
+    const atLimit = 'a'.repeat(FILTER_STRING_MAX_CHARS);
     // A REST query value is at most 1,000 code units, so only other callers (GraphQL, in process) send one this
     // long: the parsed node with its values replaced stands for them.
     const query = parseContentQuery(
@@ -158,7 +159,10 @@ describe('content query compiler', () => {
     expect(isLongFilterString(long)).toBe(true);
     expect(isLongFilterString(atLimit)).toBe(false);
     expect(isLongFilterString('a'.repeat(FILTER_STRING_MAX_CHARS + 1))).toBe(true);
-    expect(isLongFilterString(`${'a'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`)).toBe(false);
+    expect(isLongFilterString(`${'a'.repeat(FILTER_STRING_MAX_CHARS - 4)}😀`)).toBe(false);
+    expect(isLongFilterString(`${'a'.repeat(FILTER_STRING_MAX_CHARS - 3)}😀`)).toBe(true);
+    expect(isLongFilterString('€'.repeat(333))).toBe(false);
+    expect(isLongFilterString(12)).toBe(false);
   });
 
   it('compiles containment against the whole document while the old index is live, and nothing else differs', () => {

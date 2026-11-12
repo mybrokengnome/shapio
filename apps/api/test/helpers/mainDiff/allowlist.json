@@ -164,5 +164,19 @@
     "when": {
       "unsentNotRechecked": true
     }
+  },
+  {
+    "id": "noop-after-allowed",
+    "cites": [
+      {
+        "file": "documentation/content.md",
+        "text": "A save that changes nothing records no revision: the API answers with the same version and sends no `entry.updated` event."
+      }
+    ],
+    "condition": "An admin API save that equals the branch's stored draft in every field it sends (computed from the stored draft and the body); the branch stored nothing (no revision, no event, heads unchanged). Main's draft differs from the body only in fields an earlier allowed difference on the same entry stored differently, and main refused only with RELATION_TARGET_MISSING or MEDIA_MISSING on a dead target or asset: main validated a change that the branch had already stored.",
+    "path": ".*",
+    "when": {
+      "noopAfterAllowed": true
+    }
   }
 ]

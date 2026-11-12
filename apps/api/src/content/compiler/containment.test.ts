@@ -12,9 +12,9 @@ import { FILTER_OPERATORS, type FilterNode } from './types.js';
 /**
  * The guard behind `entry_heads.filter_data` (ADR 0001, "Filter data"): `shapio_scalar_fields`
  * keeps only top-level scalars and the scalar elements of top-level arrays, and leaves out strings longer than
- * `FILTER_STRING_MAX_CHARS`, which is only safe while every containment document the compiler emits is
+ * `FILTER_STRING_MAX_CHARS` characters (bytes on SQL_ASCII), which is only safe while every containment document the compiler emits is
  * `{fieldId: scalar}` or `{fieldId: [scalar]}` on a top-level field, with a non-null scalar, and every one whose
- * string is longer goes against `data`. This runs every operator on every data type (and its settings variants,
+ * string has more UTF-8 bytes than that goes against `data`. This runs every operator on every data type (and its settings variants,
  * indexed or not) and fails if any containment has another shape. A new data type or operator is covered as
  * soon as it exists.
  */
@@ -208,8 +208,9 @@ describe('containment documents the compiler emits', () => {
   });
 
   it('in the filter form, are against filter_data, except a string longer than filter_data keeps', () => {
-    const long = `${'é'.repeat(FILTER_STRING_MAX_CHARS)}😀`;
-    const atLimit = `${'é'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`;
+    // In UTF-8 bytes, which no server encoding's `length` exceeds: 334 three-byte characters are long.
+    const long = '€'.repeat(Math.ceil((FILTER_STRING_MAX_CHARS + 1) / 3));
+    const atLimit = 'a'.repeat(FILTER_STRING_MAX_CHARS);
     let checked = 0;
     for (const { field, operator } of cases) {
       const filter = tryParse(querystringFor(field.apiKey, field.type, operator));
@@ -221,6 +222,9 @@ describe('containment documents the compiler emits', () => {
         const [value] = Object.values(document as Record<string, unknown>);
         const text = Array.isArray(value) ? (value[0] as unknown) : value;
         expect(isLongFilterString(text), `${field.label} ${operator}`).toBe(false);
+        if (typeof text === 'string') {
+          expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(FILTER_STRING_MAX_CHARS);
+        }
       }
       for (const { column } of containments(filter, 'document')) {
         expect(column, `${field.label} ${operator}`).toBe('data');

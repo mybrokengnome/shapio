@@ -3,8 +3,7 @@ import { sql } from 'kysely';
 import { sleep } from '../helpers/sleep.js';
 import type { ContentIndexForm } from './contentIndexForm.js';
 import { currentDialect } from './dialect.js';
-import { getIndexState } from './indexCatalog.js';
-import { isLockTimeout } from './sql/errors.js';
+import { isLockTimeout, isUndefinedColumn } from './sql/errors.js';
 import type { Database } from './index.js';
 
 /**
@@ -252,17 +251,41 @@ export const dropIndexConcurrently = (db: Database, name: string): Promise<unkno
 
 /**
  * `filter` once the column and the trigger exist, the check is validated (every row filled), and the index is
- * valid; never merely present.
+ * valid; never merely present. One catalog statement (the watch runs it every minute for the life of the
+ * process).
  */
-export const readContentIndexForm = async (db: Database): Promise<ContentIndexForm> =>
-  (await columnExists(db)) &&
-  (await triggerExists(db)) &&
-  (await filterCheckState(db)) === 'valid' &&
-  (await getIndexState(db, FILTER_INDEX)) === 'valid'
-    ? 'filter'
-    : 'document';
+export const readContentIndexForm = async (db: Database): Promise<ContentIndexForm> => {
+  const { rows } = await sql<{ ready: boolean }>`
+    select
+      exists (select 1 from pg_catalog.pg_attribute
+        where attrelid = to_regclass('entry_heads') and attname = 'filter_data' and not attisdropped)
+      and exists (select 1 from pg_catalog.pg_trigger
+        where tgrelid = to_regclass('entry_heads') and tgname = ${FILTER_TRIGGER} and tgenabled <> 'D')
+      and exists (select 1 from pg_catalog.pg_constraint
+        where conrelid = to_regclass('entry_heads') and conname = ${FILTER_CHECK} and convalidated)
+      and exists (select 1 from pg_catalog.pg_class c join pg_catalog.pg_index i on i.indexrelid = c.oid
+        where c.relname = ${FILTER_INDEX} and pg_catalog.pg_table_is_visible(c.oid) and i.indisvalid)
+      as ready`.execute(db);
+  return rows[0]?.ready ? 'filter' : 'document';
+};
 
 let processForm: ContentIndexForm = 'document';
+
+/** The catalog look of every running watch in this process (`watchContentIndexForm`). */
+const looks = new Set<() => Promise<void>>();
+
+/**
+ * Called with every failed query (`db/index.ts`): a query on the filter form that finds `filter_data` gone (a
+ * migration run down by hand, a restore) makes every watch look at the catalog now, so the process falls back
+ * to the document form before its next query instead of at the next minute. The failing query still fails.
+ */
+export const noticeQueryError = (error: unknown): void => {
+  if (processForm === 'filter' && isUndefinedColumn(error, 'filter_data')) {
+    for (const look of looks) {
+      void look();
+    }
+  }
+};
 
 /**
  * The form this process emits containment in (`db/contentIndexForm.ts`): `document` until a catalog read in
@@ -285,8 +308,8 @@ export type ContentIndexWatchOptions = {
   /**
    * Called after every catalog read (at the start and on each re-check) with the form it found, so the caller
    * can keep the jobs that finish the switch queued (an older worker in a rolling upgrade can refuse them).
-   * Returns whether there is still work to look after; once the filter form is live and it says no, the watch
-   * stops. Its failures are logged and count as yes.
+   * Returns whether there is still work to look after; once the filter form is live and it says no, it is not
+   * called again until the form changes. Its failures are logged and count as yes.
    */
   onLook?: (form: ContentIndexForm) => Promise<boolean>;
 };
@@ -295,24 +318,26 @@ const NO_WATCH: ContentIndexWatch = { ready: Promise.resolve(), stop: () => unde
 
 /**
  * Keeps the process's form in step with the catalog (PostgreSQL; SQLite and MySQL have no containment index).
- * The first read starts at once; until one confirms the filter form the process emits the document form,
- * which is right on every database, and an unref'd timer reads again every `CONTENT_INDEX_RECHECK_MS`, also
- * after a failed read (the database was down), until one confirms it and `onLook` has nothing left to do. The
- * switch never goes back: nothing undoes a validated check, and the old index is dropped only after the switch.
- * Steady state costs nothing. Callers that can wait (server and worker startup) await `ready`, so they serve
- * with the filter form from their first query on an instance that has it.
+ * The first read starts at once; an unref'd timer reads again every `CONTENT_INDEX_RECHECK_MS` for the life of
+ * the process (one catalog statement). The process emits the filter form only while the last read confirmed it,
+ * and falls back to the document form, right on every database, whenever a read finds the column, trigger,
+ * check or index gone or invalid (a migration run down by hand, a restore); a failed read changes nothing.
+ * Callers that can wait (server and worker startup) await `ready`, so they serve with the filter form from their
+ * first query on an instance that has it.
  */
 export const watchContentIndexForm = (
   db: Database,
   log: FastifyBaseLogger,
   { onLook }: ContentIndexWatchOptions = {},
 ): ContentIndexWatch => {
-  if (currentDialect() !== 'postgres' || (processForm === 'filter' && !onLook)) {
+  if (currentDialect() !== 'postgres') {
     return NO_WATCH;
   }
   let checking: Promise<void> | undefined;
   let stopped = false;
   let warned = false;
+  // `onLook` said nothing is left while the filter form was live: not called again until the form changes.
+  let jobsDone = false;
   const check = async (): Promise<void> => {
     let form: ContentIndexForm;
     try {
@@ -324,9 +349,17 @@ export const watchContentIndexForm = (
     if (stopped) {
       return;
     }
-    if (form === 'filter' && processForm !== 'filter') {
-      processForm = 'filter';
-      log.info({ indexName: FILTER_INDEX }, 'content filter index ready; containment uses it');
+    if (form !== processForm) {
+      jobsDone = false;
+      if (form === 'filter') {
+        log.info({ indexName: FILTER_INDEX }, 'content filter index ready; containment uses it');
+      } else if (processForm === 'filter') {
+        log.warn(
+          { indexName: FILTER_INDEX },
+          'content filter index no longer complete; containment uses the whole document again',
+        );
+      }
+      processForm = form;
     }
     if (form === 'document' && !warned) {
       warned = true;
@@ -335,23 +368,18 @@ export const watchContentIndexForm = (
         'content filter index not ready yet; containment uses the old index',
       );
     }
-    let more: boolean;
-    try {
-      more = (await onLook?.(form)) ?? false;
-    } catch (error) {
-      more = true;
-      log.warn({ err: error }, 'making sure the content index jobs are queued failed; trying again later');
+    if (!onLook || jobsDone) {
+      return;
     }
-    if (form === 'filter' && !more) {
-      clearInterval(timer);
+    try {
+      const more = await onLook(form);
+      jobsDone = form === 'filter' && !more;
+    } catch (error) {
+      log.warn({ err: error }, 'making sure the content index jobs are queued failed; trying again later');
     }
   };
   const run = () => {
-    if (processForm === 'filter' && !onLook) {
-      // Another watch in this process (a server and an in-process runtime) confirmed it.
-      clearInterval(timer);
-    }
-    if (checking || stopped || (processForm === 'filter' && !onLook)) {
+    if (checking || stopped) {
       return checking ?? Promise.resolve();
     }
     checking = check().finally(() => {
@@ -363,11 +391,13 @@ export const watchContentIndexForm = (
     void run();
   }, CONTENT_INDEX_RECHECK_MS);
   timer.unref();
+  looks.add(run);
   return {
     ready: run(),
     stop: () => {
       stopped = true;
       clearInterval(timer);
+      looks.delete(run);
     },
   };
 };

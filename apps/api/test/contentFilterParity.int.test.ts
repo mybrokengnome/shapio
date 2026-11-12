@@ -38,7 +38,8 @@ type Pool = { values: readonly unknown[]; query: readonly string[]; list?: boole
 
 /**
  * Strings at the long-string limit (`FILTER_STRING_MAX_CHARS` characters) and just past it, in characters of two
- * and four bytes: `filter_data` keeps the first and third and leaves the others out. A REST query value is at
+ * and four bytes: `filter_data` keeps the first, third, fifth and sixth and leaves the others out; the compiler
+ * matches all but the sixth against `data` (more than 1,000 UTF-8 bytes). A REST query value is at
  * most 1,000 code units, so a query names them by placeholder (`@L0`) and the parsed filter gets the string
  * (what GraphQL or an in-process call can send).
  */
@@ -47,6 +48,10 @@ const LONG = [
   `${'é'.repeat(FILTER_STRING_MAX_CHARS)}😀`,
   '😀'.repeat(FILTER_STRING_MAX_CHARS),
   'a'.repeat(FILTER_STRING_MAX_CHARS + 1),
+  // 600 characters, 1,200 UTF-8 bytes: kept here, left out on a SQL_ASCII database.
+  'é'.repeat(600),
+  // At the limit in bytes: kept, and matched against filter_data.
+  'a'.repeat(FILTER_STRING_MAX_CHARS),
 ];
 const LONG_PLACEHOLDERS = LONG.map((_, index) => `@L${index}`);
 
@@ -406,7 +411,7 @@ describe.skipIf(skip)(
     };
 
     it('on live heads and on a snapshot of older revisions, for every filter and plan', async () => {
-      const ONLY_LONG = /^filters(\[\$not\])?\[lt\]\[\$(eq|ne)\]=%40L[13]$/;
+      const ONLY_LONG = /^filters(\[\$not\])?\[lt\]\[\$(eq|ne)\]=%40L[0-4]$/;
       const filter = contentDialectFor('postgres', 'filter');
       const document = contentDialectFor('postgres', 'document');
       let matched = 0;
@@ -433,7 +438,7 @@ describe.skipIf(skip)(
               const unordered = await run(search, source, dialect, 'none', settings);
               expect([...unordered.rows].sort(), plan).toEqual([...expected.rows].sort());
               expect(unordered.total, plan).toBe(expected.total);
-              // Only a filter whose one containment is a long string has none against filter_data.
+              // A filter whose one value is past the compiler's byte limit has no containment against filter_data.
               if (dialect === filter && !ONLY_LONG.test(search)) {
                 expect(listed.sql).toContain('"filter_data" @>');
               }

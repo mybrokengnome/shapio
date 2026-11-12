@@ -353,7 +353,9 @@ export const resaveProblems = async (
       ];
     }
     // Through a version, fields read-only there are left out (an echoed null for one is refused while the entry
-    // has unpublished changes, by design: "leave it out to keep the stored value").
+    // has unpublished changes, by design: "leave it out to keep the stored value"). Inside component items, `rmv`
+    // (removed since V) is one of them (schema-lenses.md: "A field inside a component that the caller cannot write
+    // cannot be sent back").
     const readOnly = request.version ? ['count', 'ratio', 'old'] : [];
     const strip = (value: unknown): unknown =>
       Array.isArray(value)
@@ -365,7 +367,8 @@ export const resaveProblems = async (
                 .map(([key, entry]) => [key, strip(entry)]),
             )
           : value;
-    const withIds = strip(withTreeIds(request.body, tree)) as Json;
+    const stripped = strip(withTreeIds(request.body, tree));
+    const withIds = (request.version ? withoutItemKeys(stripped, ['rmv']) : stripped) as Json;
     const third = await send(w, { ...request, body: withIds, expectedVersion: version });
     return third.status < 300
       ? []
@@ -383,9 +386,13 @@ export const resaveProblems = async (
     request.version &&
     againOutcome.code === 'LENS_WRITE_UNSUPPORTED' &&
     againOutcome.issues.length > 0 &&
-    againOutcome.issues.every((issue) => /^NOT_ALLOWED \S*\/(count|ratio|old)$/.test(issue))
+    againOutcome.issues.every(
+      (issue) => /^NOT_ALLOWED \S*\/(count|ratio|old)$/.test(issue) || /^NOT_ALLOWED \/\S+\/rmv$/.test(issue),
+    )
   ) {
-    const withoutReadOnly = stripKeys(request.body, ['count', 'ratio', 'old']) as Json;
+    const withoutReadOnly = withoutItemKeys(stripKeys(request.body, ['count', 'ratio', 'old']), [
+      'rmv',
+    ]) as Json;
     const resent = await send(w, { ...request, body: withoutReadOnly, expectedVersion: version });
     const after2 = await headsOf(w, request.entryId);
     const [revisions2, events2] = [
@@ -540,6 +547,12 @@ export const stripKeys = (value: unknown, keys: readonly string[]): unknown =>
             .map(([key, entry]) => [key, stripKeys(entry, keys)]),
         )
       : value;
+
+/** `stripKeys` below the top level only: inside component items, never a top-level field of the body. */
+const withoutItemKeys = (value: unknown, keys: readonly string[]): unknown =>
+  isRecord(value)
+    ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, stripKeys(entry, keys)]))
+    : value;
 
 // ---------------------------------------------------------------------------------------------------------
 // No-op writes (review 8): a body that changes no content changes nothing

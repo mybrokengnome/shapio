@@ -1,6 +1,7 @@
-import { Kysely, PostgresDialect, type PostgresPool, type TransactionBuilder } from 'kysely';
+import { Kysely, PostgresDialect, type LogEvent, type PostgresPool, type TransactionBuilder } from 'kysely';
 import pg from 'pg';
 import { assertNotNested, withConnectionScope } from './connectionScope.js';
+import { noticeQueryError } from './contentFilterIndex.js';
 import { dialectOfUrl, setCurrentDialect, sqliteLocationOfUrl } from './dialect.js';
 import { createMysqlDb } from './mysql/index.js';
 import { DEFAULT_POOL_ACQUIRE_TIMEOUT_MS, pgAcquireError } from './poolAcquire.js';
@@ -123,7 +124,13 @@ export const createDb = ({
     // What the pool would use itself; Kysely opens it to cancel a query.
     controlClient: pg.Client,
   });
-  return strict ? new StrictPostgresKysely<DB>({ dialect }) : new Kysely<DB>({ dialect });
+  // A query that finds `filter_data` gone makes the process look at the catalog at once (ADR 0001, "Filter data").
+  const log = (event: LogEvent) => {
+    if (event.level === 'error') {
+      noticeQueryError(event.error);
+    }
+  };
+  return strict ? new StrictPostgresKysely<DB>({ dialect, log }) : new Kysely<DB>({ dialect, log });
 };
 
 /**

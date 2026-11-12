@@ -68,6 +68,7 @@ const matches = (entry, label, difference, step) =>
   (entry.when?.unsentDeadTarget !== true || step.unsentDeadTarget) &&
   (entry.when?.hiddenOverMax !== true || step.hiddenOverMax) &&
   (entry.when?.unsentNotRechecked !== true || step.unsentNotRechecked) &&
+  (entry.when?.noopAfterAllowed !== true || step.noopAfterAllowed) &&
   (entry.when?.hiddenKept !== true || step.hiddenKept);
 
 // Relation fields of the seed's types (`dref`, `dmtop`, `mixd`/`mixn`, `dlow` included), and media fields.
@@ -133,6 +134,21 @@ const onlyFields = (before, after, fields) => {
     fields.includes(difference.path.split('/')[2]),
   );
 };
+
+/** JSON with object keys sorted, so stored values and sent ones compare whatever their key order. */
+const canonical = (value) =>
+  JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === 'object' && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.keys(inner)
+            .sort()
+            .map((key) => [key, inner[key]]),
+        )
+      : inner,
+  );
+/** The data of one side's draft head in a locale (`observed` as a step records it). */
+const draftOf = (observed, locale) =>
+  observed?.heads?.find((head) => head.locale === locale && head.state === 'draft')?.data;
 
 const onlyLostHidden = (
   before,
@@ -465,6 +481,44 @@ for (let index = 0; index < count; index += 1) {
       (b?.status ?? 500) < 300 &&
       branchBefore !== undefined &&
       onlyFields(branchBefore, b?.entry, Object.keys(b?.sent ?? {})),
+    // An admin save that is unchanged on the branch only because an earlier allowed difference already stored the
+    // change there: the body equals the branch's stored draft in every field it sends, the branch stored nothing,
+    // main's draft differs from the body only in fields that earlier difference touched, and main refused only for
+    // dead relation targets or assets (it validated a real change; on the branch there was none to validate).
+    noopAfterAllowed: (() => {
+      const locale = / e\d+ \w+ (\w+) /.exec(label)?.[1];
+      const sent = b?.sent && typeof b.sent === 'object' ? b.sent : null;
+      const branchDraft = draftOf(branchBefore, locale);
+      const mainDraft = draftOf(mainBefore, locale);
+      if (!/ admin /.test(label) || !sent || !branchDraft || !mainDraft || !fields) return false;
+      const keys = Object.keys(sent);
+      const movedOnMain = keys.filter((key) => canonical(mainDraft[key]) !== canonical(sent[key]));
+      return (
+        (b?.status ?? 500) < 300 &&
+        deltaB?.revisions === 0 &&
+        deltaB?.events === 0 &&
+        canonical(b?.entry?.heads) === canonical(branchBefore.heads) &&
+        keys.every((key) => canonical(branchDraft[key]) === canonical(sent[key])) &&
+        movedOnMain.length > 0 &&
+        movedOnMain.every((key) => fields.has(key)) &&
+        a?.status === 422 &&
+        (a?.issues ?? []).length > 0 &&
+        a.issues.every((issue) => {
+          const [code, path] = issue.split(' ');
+          if (code !== 'RELATION_TARGET_MISSING' && code !== 'MEDIA_MISSING') return false;
+          const value = path
+            .split('/')
+            .filter(Boolean)
+            .reduce((at, key) => (at === undefined || at === null ? undefined : at[key]), {
+              ...mainDraft,
+              ...sent,
+            });
+          return (Array.isArray(value) ? value : [value]).some((id) =>
+            (b?.pre?.deadTargets ?? []).includes(id),
+          );
+        })
+      );
+    })(),
   };
   for (const difference of found) {
     if (touched.size > 0 && difference.path === '/body/meta/snapshot') {

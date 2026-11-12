@@ -45,6 +45,7 @@ import {
   ensureContentDocumentIndexDropJob,
   ensureContentFilterIndexJob,
   keepContentIndexJobsQueued,
+  LOCK_BUSY_WARN_AFTER,
   fillFilterData,
   requeueDeadContentFilterIndexJobs,
 } from '../src/schema/planner/contentFilterIndex.js';
@@ -69,7 +70,12 @@ const OTHER_MODEL_ID = '0d0d0d0d-0000-4000-8000-00000000000c';
 const REVISION_ID = '0d0d0d0d-0000-4000-8000-00000000000b';
 const FIELD = 'f';
 
-const jobContext = { log: silentLogger, signal: new AbortController().signal } as unknown as JobContext;
+const jobContext = {
+  log: silentLogger,
+  signal: new AbortController().signal,
+  checkpoint: null,
+  saveCheckpoint: async () => true,
+} as unknown as JobContext;
 
 const indexDefinition = async (db: Database, name: string) => {
   const { rows } = await sql<{ definition: string | null }>`
@@ -200,13 +206,22 @@ describe.skipIf(skip)(withSkipReason('shapio_scalar_fields contains what data co
    * Strings around the long-string limit, in characters that take one to four bytes and one or two UTF-16 code
    * units: `n` code points alternating two characters, so byte or code-unit counting would disagree.
    */
-  const aroundLimit = fc
+  const mixed = fc
     .tuple(
       fc.integer({ min: FILTER_STRING_MAX_CHARS - 3, max: FILTER_STRING_MAX_CHARS + 3 }),
       fc.constantFrom('a', 'é', '€', '😀'),
       fc.constantFrom('a', '😀'),
     )
     .map(([length, even, odd]) => Array.from({ length }, (_, index) => (index % 2 ? odd : even)).join(''));
+  /** ASCII at the byte limit: kept, and matched against filter_data. */
+  const ascii = fc
+    .integer({ min: FILTER_STRING_MAX_CHARS - 3, max: FILTER_STRING_MAX_CHARS + 3 })
+    .map((length) => 'a'.repeat(length));
+  /** 334 to 1,000 multi-byte characters: kept here, past 1,000 bytes (left out on a SQL_ASCII database). */
+  const multiByte = fc
+    .tuple(fc.integer({ min: 334, max: FILTER_STRING_MAX_CHARS }), fc.constantFrom('é', '€', '😀'))
+    .map(([length, char]) => char.repeat(length));
+  const aroundLimit = fc.oneof(mixed, ascii, multiByte);
   const scalar = fc.oneof(
     { arbitrary: fc.constantFrom('a', 'b', '', 'A', 'true', '1'), weight: 6 },
     { arbitrary: fc.constantFrom(0, 1, 1.5, -2, 1e21), weight: 4 },
@@ -269,7 +284,7 @@ describe.skipIf(skip)(withSkipReason('shapio_scalar_fields contains what data co
     const atLimit = sample.filter((pair, index) => {
       const [queried] = Object.values(pair.q ?? {});
       const text: unknown = Array.isArray(queried) ? (queried[0] as unknown) : queried;
-      return typeof text === 'string' && text.length >= FILTER_STRING_MAX_CHARS - 3 && rows[index]?.full;
+      return typeof text === 'string' && text.length >= 334 && rows[index]?.full;
     });
     expect(atLimit.filter((pair) => pair.long).length).toBeGreaterThan(5);
     expect(atLimit.filter((pair) => !pair.long).length).toBeGreaterThan(5);
@@ -279,21 +294,43 @@ describe.skipIf(skip)(withSkipReason('shapio_scalar_fields contains what data co
     ).toBeGreaterThan(200);
   });
 
-  it('counts characters, not bytes or UTF-16 code units, exactly as the compiler does', async () => {
+  it('the compiler sends every string the function may leave out to data, counting UTF-8 bytes', async () => {
     const strings = [
       'a'.repeat(FILTER_STRING_MAX_CHARS),
       'a'.repeat(FILTER_STRING_MAX_CHARS + 1),
       '😀'.repeat(FILTER_STRING_MAX_CHARS),
       '😀'.repeat(FILTER_STRING_MAX_CHARS + 1),
-      '€'.repeat(FILTER_STRING_MAX_CHARS),
+      '€'.repeat(334),
+      '€'.repeat(333),
       `${'é'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`,
       `${'é'.repeat(FILTER_STRING_MAX_CHARS)}😀`,
     ];
-    const { rows } = await sql<{ kept: boolean }>`
-      select shapio_scalar_fields(jsonb_build_object('s', s, 'l', jsonb_build_array(s, 'x'))) = jsonb_build_object('s', s, 'l', jsonb_build_array(s, 'x')) as kept
+    const { rows } = await sql<{ kept: boolean; chars: number; bytes: number }>`
+      select shapio_scalar_fields(jsonb_build_object('s', s, 'l', jsonb_build_array(s, 'x')))
+          = jsonb_build_object('s', s, 'l', jsonb_build_array(s, 'x')) as kept,
+        length(s) as chars, octet_length(convert_to(s, 'UTF8')) as bytes
       from unnest(${strings}::text[]) with ordinality as t(s, i) order by i`.execute(database.current.db);
-    expect(rows.map((row) => row.kept)).toEqual(strings.map((text) => !isLongFilterString(text)));
-    expect(rows.map((row) => row.kept)).toEqual([true, false, true, false, true, true, false]);
+    // This database counts characters: the function keeps up to 1,000 of them.
+    expect(rows.map((row) => row.kept)).toEqual([true, false, true, false, true, true, true, false]);
+    for (const [index, row] of rows.entries()) {
+      const text = strings[index] ?? '';
+      // length() never exceeds the UTF-8 byte count, so whatever is left out is long for the compiler.
+      expect(row.chars).toBeLessThanOrEqual(row.bytes);
+      expect(row.bytes).toBe(Buffer.byteLength(text, 'utf8'));
+      if (!row.kept) {
+        expect(isLongFilterString(text), text.slice(0, 3)).toBe(true);
+      }
+    }
+    expect(strings.map((text) => isLongFilterString(text))).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+    ]);
   });
 
   it('keeps scalars and the scalar elements of arrays, drops nulls, objects, long strings and empty arrays', async () => {
@@ -369,6 +406,34 @@ describe.skipIf(skip)(withSkipReason('filter data on a new install', skip), () =
     }
   });
 
+  it('falls back to the document form when a confirmation disappears, and switches forward again', async () => {
+    const { db } = database.current;
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const watch = watchContentIndexForm(db, silentLogger);
+    try {
+      await watch.ready;
+      expect(contentIndexForm()).toBe('filter');
+      // Gone by hand (a migration run down, a restore): the next look falls back.
+      await sql`alter table entry_heads drop constraint ${sql.id(FILTER_CHECK)}`.execute(db);
+      await vi.advanceTimersByTimeAsync(CONTENT_INDEX_RECHECK_MS);
+      await waitFor(async () => contentIndexForm() === 'document', { description: 'the fallback' });
+      // A disabled trigger counts as gone too (filter data could go stale).
+      await addFilterCheckNotValid(db);
+      await sql`alter table entry_heads validate constraint ${sql.id(FILTER_CHECK)}`.execute(db);
+      await sql`alter table entry_heads disable trigger entry_heads_filter_data`.execute(db);
+      await vi.advanceTimersByTimeAsync(CONTENT_INDEX_RECHECK_MS);
+      expect(await readContentIndexForm(db)).toBe('document');
+      expect(contentIndexForm()).toBe('document');
+      await sql`alter table entry_heads enable trigger entry_heads_filter_data`.execute(db);
+      await vi.advanceTimersByTimeAsync(CONTENT_INDEX_RECHECK_MS);
+      await waitFor(async () => contentIndexForm() === 'filter', { description: 'the switch forward' });
+    } finally {
+      watch.stop();
+      vi.useRealTimers();
+      resetContentIndexForm();
+    }
+  });
+
   it('down restores the whole-document index and removes the rest; up again rebuilds the install', async () => {
     const { db } = database.current;
     const migrator = createMigrator(db);
@@ -383,6 +448,37 @@ describe.skipIf(skip)(withSkipReason('filter data on a new install', skip), () =
     expect(await readContentIndexForm(db)).toBe('filter');
     expect(await getIndexState(db, DOCUMENT_INDEX)).toBe('missing');
     expect(await jobsOf(db)).toEqual([]);
+  });
+
+  it('falls back at once when a query finds the column gone, without waiting for the timer', async () => {
+    const { db } = database.current;
+    await ensureModels(db);
+    await insertHeads(db, 6);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const watch = watchContentIndexForm(db, silentLogger);
+    const target = {
+      fieldId: FIELD,
+      cast: 'text' as const,
+      list: false,
+      numericString: false,
+      indexed: false,
+    };
+    const filtered = () =>
+      sql<{ n: string }>`select count(*)::text as n from entry_heads
+        where ${contentDialect().fieldEquals(target, 'x1')}`.execute(db);
+    try {
+      await watch.ready;
+      expect(contentIndexForm()).toBe('filter');
+      await sql`alter table entry_heads drop column filter_data cascade`.execute(db);
+      // The first filtered query fails, and makes the process look at the catalog now (the timer never fires).
+      await expect(filtered()).rejects.toThrow(/filter_data/);
+      await waitFor(async () => contentIndexForm() === 'document', { description: 'the fallback' });
+      expect(Number((await filtered()).rows[0]?.n)).toBe(2);
+    } finally {
+      watch.stop();
+      vi.useRealTimers();
+      resetContentIndexForm();
+    }
   });
 });
 
@@ -871,12 +967,28 @@ describe.skipIf(skip)(
         expect(await outcome).toBeInstanceOf(EntryHeadsLockBusyError);
         expect(await filterCheckState(db)).toBe('missing');
         const build = new Map(createContentFilterIndexHandlers(db)).get(CONTENT_FILTER_INDEX_JOB);
-        const failure = await build?.(jobContext).then(
+        // The 20th reschedule in a row: counted in the checkpoint and the error, and logged as a warning.
+        const saveCheckpoint = vi.fn(async () => true);
+        const warn = vi.fn();
+        const failure = await build?.({
+          ...jobContext,
+          checkpoint: { lockBusyReschedules: LOCK_BUSY_WARN_AFTER - 1 },
+          saveCheckpoint,
+          log: Object.assign(Object.create(silentLogger) as JobContext['log'], { warn }),
+        }).then(
           () => undefined,
           (error: unknown) => error,
         );
         expect(failure).toBeInstanceOf(RescheduleJobError);
         expect((failure as RescheduleJobError).runAt.getTime()).toBeGreaterThan(Date.now());
+        expect((failure as RescheduleJobError).message).toContain(
+          `rescheduled ${LOCK_BUSY_WARN_AFTER} times in a row`,
+        );
+        expect(saveCheckpoint).toHaveBeenCalledWith({ lockBusyReschedules: LOCK_BUSY_WARN_AFTER });
+        expect(warn).toHaveBeenCalledWith(
+          expect.objectContaining({ reschedules: LOCK_BUSY_WARN_AFTER }),
+          expect.stringContaining('locked by another transaction'),
+        );
       } finally {
         await holder.release();
       }
@@ -1043,4 +1155,83 @@ describe.skipIf(skip)(withSkipReason('in-process delivery on a database that is 
     await waitFor(async () => contentIndexForm() === 'filter', { description: 'the switch' });
     await right();
   }, 60_000);
+});
+
+describe.skipIf(skip)(withSkipReason('long strings on a SQL_ASCII database', skip), () => {
+  const admin = useTestDatabase();
+  const name = `shapio_t_${process.pid}_ascii_${randomUUID().slice(0, 8)}`;
+  let ascii: Database | undefined;
+
+  afterAll(async () => {
+    await ascii?.destroy();
+    await sql`drop database if exists ${sql.id(name)} with (force)`.execute(admin.current.db);
+  });
+
+  it('both forms answer the same, negated too, where length() counts bytes', async () => {
+    // What `initdb` creates under a C or POSIX locale.
+    await sql`create database ${sql.id(name)} encoding 'SQL_ASCII' lc_collate 'C' lc_ctype 'C'
+      template template0`.execute(admin.current.db);
+    const url = new URL(admin.current.url);
+    url.pathname = `/${name}`;
+    ascii = createDb({ connectionString: url.toString(), poolMax: 2, applicationName: 'shapio-test' });
+    const db = ascii;
+    expect((await createMigrator(db).migrateToLatest()).error).toBeUndefined();
+    const { rows: encoding } = await sql<{ name: string }>`
+      select pg_encoding_to_char(encoding) as name from pg_database where datname = current_database()`.execute(
+      db,
+    );
+    expect(encoding[0]?.name).toBe('SQL_ASCII');
+    await ensureModels(db);
+
+    const values = [
+      '€'.repeat(334), // 334 characters, 1,002 bytes: left out here
+      'é'.repeat(600), // 600 characters, 1,200 bytes: left out here
+      '😀'.repeat(251), // 251 characters, 1,004 bytes: left out here
+      'é'.repeat(500), // 1,000 bytes: kept
+      '€'.repeat(333), // 999 bytes: kept
+      '😀'.repeat(250), // 1,000 bytes: kept
+      'a'.repeat(FILTER_STRING_MAX_CHARS), // kept
+    ];
+    const insertHead = (data: Record<string, unknown>) =>
+      sql`
+      with e as (
+        insert into entries (site_id, model_id) values (${PRIMARY_SITE_ID}::uuid, ${MODEL_ID}::uuid)
+        returning id, created_at
+      ), r as (
+        insert into content_revisions (entry_id, locale, schema_revision_id, data, reason, author_type)
+        select e.id, 'en', ${REVISION_ID}::uuid, ${JSON.stringify(data)}::jsonb, 'create', 'system' from e
+        returning id, entry_id, data
+      )
+      insert into entry_heads (entry_id, site_id, model_id, locale, state, revision_id, data, entry_created_at)
+      select r.entry_id, ${PRIMARY_SITE_ID}::uuid, ${MODEL_ID}::uuid, 'en', 'published', r.id, r.data, e.created_at
+      from r join e on e.id = r.entry_id`.execute(db);
+    for (const value of values) {
+      await insertHead({ [FIELD]: value, g: [value, 'x'] });
+      await insertHead({ [FIELD]: 'other', g: ['x'] });
+    }
+    // Here `length` counts bytes: the function leaves out strings of fewer than 1,000 characters.
+    const { rows: dropped } = await sql<{ n: string }>`select count(*)::text as n from entry_heads
+      where data ? ${FIELD} and not filter_data ? ${FIELD}`.execute(db);
+    expect(Number(dropped[0]?.n)).toBe(3);
+
+    const count = async (condition: RawBuilder<unknown>) =>
+      Number(
+        (await sql<{ n: string }>`select count(*)::text as n from entry_heads where ${condition}`.execute(db))
+          .rows[0]?.n,
+      );
+    for (const value of values) {
+      for (const [fieldId, list] of [
+        [FIELD, false],
+        ['g', true],
+      ] as const) {
+        const target = { fieldId, cast: 'text' as const, list, numericString: false, indexed: false };
+        const filter = contentDialectFor('postgres', 'filter').fieldEquals(target, value);
+        const document = contentDialectFor('postgres', 'document').fieldEquals(target, value);
+        const label = `${value.slice(0, 2)}×${value.length} ${fieldId}`;
+        expect(await count(document), label).toBe(1);
+        expect(await count(filter), label).toBe(1);
+        expect(await count(sql`not ${filter}`), label).toBe(await count(sql`not ${document}`));
+      }
+    }
+  });
 });

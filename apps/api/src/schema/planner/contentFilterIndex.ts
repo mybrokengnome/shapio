@@ -23,7 +23,7 @@ import { currentDialect } from '../../db/dialect.js';
 import type { Database } from '../../db/index.js';
 import { getIndexState, tableExists } from '../../db/indexCatalog.js';
 import { enqueueJob } from '../../jobs/queue.js';
-import { RescheduleJobError, type JobHandler } from '../../jobs/types.js';
+import { RescheduleJobError, type JobContext, type JobHandler } from '../../jobs/types.js';
 import * as jobsRepository from '../../repositories/jobs.js';
 import * as jobsAdminRepository from '../../repositories/jobsAdmin.js';
 import { withIndexBuildLock, type IndexBuildOutcome } from './indexes.js';
@@ -179,23 +179,49 @@ export const dropContentDocumentIndex = async (
   });
 };
 
-/** A table lock another transaction held: the job comes back later, the attempt not counted. */
-const rescheduleWhenLocked = async <T>(work: () => Promise<T>): Promise<T> => {
+/** After this many reschedules in a row (about half an hour at 60 to 120 s each) each one is logged as a warning. */
+export const LOCK_BUSY_WARN_AFTER = 20;
+
+const lockBusyCount = (checkpoint: unknown): number => {
+  const count = (checkpoint as { lockBusyReschedules?: unknown } | null)?.lockBusyReschedules;
+  return typeof count === 'number' ? count : 0;
+};
+
+/**
+ * A table lock another transaction held: the job comes back later, the attempt not counted. The count of
+ * reschedules in a row is kept in the checkpoint and shown in the job's error (`last_error`); from
+ * `LOCK_BUSY_WARN_AFTER` on, each is a warning naming the reason, and the job keeps coming back.
+ */
+const rescheduleWhenLocked = async <T>(context: JobContext, work: () => Promise<T>): Promise<T> => {
+  let result: T;
   try {
-    return await work();
+    result = await work();
   } catch (error) {
-    if (error instanceof EntryHeadsLockBusyError) {
-      const delay = LOCK_BUSY_RESCHEDULE_MS + Math.round(Math.random() * LOCK_BUSY_RESCHEDULE_MS);
-      throw new RescheduleJobError(error.message, new Date(Date.now() + delay), { cause: error });
+    if (!(error instanceof EntryHeadsLockBusyError)) {
+      throw error;
     }
-    throw error;
+    const reschedules = lockBusyCount(context.checkpoint) + 1;
+    await context.saveCheckpoint({ lockBusyReschedules: reschedules });
+    const delay = LOCK_BUSY_RESCHEDULE_MS + Math.round(Math.random() * LOCK_BUSY_RESCHEDULE_MS);
+    const message = `${error.message} (rescheduled ${reschedules} time${reschedules === 1 ? '' : 's'} in a row)`;
+    if (reschedules >= LOCK_BUSY_WARN_AFTER) {
+      context.log.warn(
+        { reschedules, reason: error.message },
+        'content index job keeps finding entry_heads locked by another transaction; end it to let the job finish',
+      );
+    }
+    throw new RescheduleJobError(message, new Date(Date.now() + delay), { cause: error });
   }
+  if (lockBusyCount(context.checkpoint) > 0) {
+    await context.saveCheckpoint({ lockBusyReschedules: 0 });
+  }
+  return result;
 };
 
 const createBuildHandler =
   (db: Database): JobHandler =>
   async (context) => {
-    const outcome = await rescheduleWhenLocked(() =>
+    const outcome = await rescheduleWhenLocked(context, () =>
       buildContentFilterIndex(db, context.log, { signal: context.signal }),
     );
     if (outcome !== 'skipped') {
@@ -217,7 +243,7 @@ const createBuildHandler =
 const createDropHandler =
   (db: Database): JobHandler =>
   async (context) => ({
-    dropped: await rescheduleWhenLocked(() =>
+    dropped: await rescheduleWhenLocked(context, () =>
       dropContentDocumentIndex(db, context.log, { signal: context.signal }),
     ),
   });
