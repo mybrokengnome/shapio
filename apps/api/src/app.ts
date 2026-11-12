@@ -14,6 +14,7 @@ import type { AppConfig } from './config/index.js';
 import type { ContentHooks } from './content/hooks.js';
 import { ensureItemIdKey } from './content/itemIds.js';
 import { createContentPorts } from './content/ports.js';
+import { watchContentIndexForm } from './db/contentFilterIndex.js';
 import { setDb, type Database } from './db/index.js';
 import { buildEditorManifest, type EditorManifest } from './extensions/editorManifest.js';
 import { loadExtensionRuntime, type ExtensionRuntime } from './extensions/runtime.js';
@@ -198,6 +199,9 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   app.decorate('schemaLookup', schemaLookup);
   // The item ID key exists before any request uses it (never first created inside a write that may roll back).
   await ensureItemIdKey(deps.db);
+  // Which GIN index containment is emitted for (ADR 0001, "Filter data").
+  const contentIndexWatch = await watchContentIndexForm(deps.db, app.log);
+  app.addHook('onClose', async () => contentIndexWatch.stop());
   app.decorate(
     'signingSecret',
     deps.signingSecret ?? (await resolveSigningSecret(deps.db, config.sessionSecret, app.log)),

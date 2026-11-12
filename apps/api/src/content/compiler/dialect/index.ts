@@ -1,5 +1,6 @@
+import type { ContentIndexForm } from '../../../db/contentIndexForm.js';
 import { mysqlContentDialect } from './mysql.js';
-import { postgresContentDialect } from './postgres.js';
+import { postgresContentDialect, postgresDocumentContainmentDialect } from './postgres.js';
 import { sqliteContentDialect } from './sqlite.js';
 import type { ContentDialectName, ContentSqlDialect } from './types.js';
 
@@ -11,4 +12,12 @@ const DIALECTS: Readonly<Record<ContentDialectName, ContentSqlDialect>> = {
   mysql: mysqlContentDialect,
 };
 
-export const contentDialectFor = (name: ContentDialectName): ContentSqlDialect => DIALECTS[name];
+/**
+ * The content dialect of a database. `indexForm` only matters on PostgreSQL: which GIN index containment is
+ * emitted for (`db/contentIndexForm.ts`).
+ */
+export const contentDialectFor = (
+  name: ContentDialectName,
+  indexForm: ContentIndexForm = 'filter',
+): ContentSqlDialect =>
+  name === 'postgres' && indexForm === 'document' ? postgresDocumentContainmentDialect : DIALECTS[name];

@@ -73,7 +73,11 @@ const ON_DELETE: Readonly<Record<string, string>> = {
 };
 
 /** Deliberate differences (each explained in the baseline's header). */
-const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin'];
+const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin', 'entry_heads_filter_data_gin'];
+/** `entry_heads.filter_data`, its check and its trigger serve the containment index only (ADR 0001, "Filter data"). */
+const POSTGRES_ONLY_COLUMNS = ['entry_heads.filter_data'];
+const POSTGRES_ONLY_CHECKS = ['entry_heads_filter_data_present'];
+const POSTGRES_ONLY_TRIGGERS = ['entry_heads_filter_data'];
 const SQLITE_ONLY_TABLES = ['sequences', 'sqlite_sequence'];
 const SQLITE_ONLY_TRIGGERS = ['media_assets_folder_id_fkey_set_null'];
 /** PostgreSQL's `ON DELETE SET NULL (folder_id)`; SQLite keeps NO ACTION and nulls the column by trigger. */
@@ -133,7 +137,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     checks: [],
     triggers: [],
   };
-  for (const column of columns.rows.filter((row) => !skippedTable(row.tbl))) {
+  for (const column of columns.rows.filter(
+    (row) => !skippedTable(row.tbl) && !POSTGRES_ONLY_COLUMNS.includes(`${row.tbl}.${row.col}`),
+  )) {
     (schema.tables[column.tbl] ??= {})[column.col] = {
       type: POSTGRES_TYPES[column.typ] ?? `unmapped ${column.typ}`,
       notNull: column.nn,
@@ -151,7 +157,7 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
         references: constraint.ref ?? '',
         onDelete: isColumnListSetNull ? 'no action' : (ON_DELETE[constraint.del] ?? constraint.del),
       });
-    } else if (constraint.typ === 'c') {
+    } else if (constraint.typ === 'c' && !POSTGRES_ONLY_CHECKS.includes(constraint.name)) {
       schema.checks.push(constraint.name);
     }
   }
@@ -167,7 +173,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
       : index.cols;
     schema.indexes[index.name] = { unique: index.uniq, partial: index.partial, columns: columnList };
   }
-  schema.triggers = triggers.rows.map((row) => row.name);
+  schema.triggers = triggers.rows
+    .map((row) => row.name)
+    .filter((name) => !POSTGRES_ONLY_TRIGGERS.includes(name));
   return schema;
 };
 

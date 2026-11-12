@@ -66,7 +66,11 @@ const mysqlType = (columnType: string, charset: string | null): string => {
 };
 
 /** Deliberate differences (each explained in the baseline's header). */
-const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin'];
+const POSTGRES_ONLY_INDEXES = ['entry_heads_data_gin', 'entry_heads_filter_data_gin'];
+/** `entry_heads.filter_data`, its check and its trigger serve the containment index only (ADR 0001, "Filter data"). */
+const POSTGRES_ONLY_COLUMNS = ['entry_heads.filter_data'];
+const POSTGRES_ONLY_CHECKS = ['entry_heads_filter_data_present'];
+const POSTGRES_ONLY_TRIGGERS = ['entry_heads_filter_data'];
 /** InnoDB indexes an AUTO_INCREMENT column; PostgreSQL's identity tiebreaker needs none. */
 const MYSQL_ONLY_INDEXES = ['audit_events_seq_key'];
 const MYSQL_ONLY_TABLES = ['advisory_locks', 'notifications', 'sequence_entry_heads_change_seq'];
@@ -103,7 +107,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     from pg_attribute a join pg_class c on c.oid = a.attrelid
     where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
   `.execute(db);
-  for (const column of columns.rows.filter((row) => !skippedTable(row.tbl))) {
+  for (const column of columns.rows.filter(
+    (row) => !skippedTable(row.tbl) && !POSTGRES_ONLY_COLUMNS.includes(`${row.tbl}.${row.col}`),
+  )) {
     (schema.tables[column.tbl] ??= {})[column.col] = {
       type: POSTGRES_TYPES[column.typ] ?? `unmapped ${column.typ}`,
       notNull: column.nn,
@@ -139,7 +145,7 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
         references: constraint.ref ?? '',
         onDelete: columnListSetNull ? 'no action' : (ON_DELETE[constraint.del] ?? constraint.del),
       });
-    } else if (constraint.typ === 'c') {
+    } else if (constraint.typ === 'c' && !POSTGRES_ONLY_CHECKS.includes(constraint.name)) {
       schema.checks.push(constraint.name);
     }
   }
@@ -175,7 +181,9 @@ const readPostgres = async (db: Kysely<DB>): Promise<LogicalSchema> => {
     select tgname as name from pg_trigger t join pg_class c on c.oid = t.tgrelid
     where c.relnamespace = 'public'::regnamespace and not t.tgisinternal
   `.execute(db);
-  schema.triggers = triggers.rows.map((row) => row.name);
+  schema.triggers = triggers.rows
+    .map((row) => row.name)
+    .filter((name) => !POSTGRES_ONLY_TRIGGERS.includes(name));
   return schema;
 };
 

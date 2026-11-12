@@ -10,6 +10,7 @@ import {
   compileSearch,
   filterReadsEntries,
 } from './compile.js';
+import { contentDialectFor, type ContentSqlDialect } from './dialect/index.js';
 import { parseContentQuery } from './parse.js';
 import { parseQueryTree } from './querystring.js';
 import { compileOrderBy } from './sort.js';
@@ -121,8 +122,24 @@ describe('content query compiler', () => {
 
   it('compiles equality on a field without an index to containment with the value as a parameter', () => {
     const { sql, parameters } = compileQuery('filters[live][$eq]=true');
-    expect(sql).toContain(`"data" @> $`);
+    expect(sql).toContain(`("filter_data" @> $`);
     expect(parameters).toContain(JSON.stringify({ [ids.live]: true }));
+  });
+
+  it('compiles containment against the whole document while the old index is live, and nothing else differs', () => {
+    const query = parseContentQuery(
+      parseQueryTree('filters[live][$eq]=true&filters[tags][$in][0]=a'),
+      context,
+    );
+    const compile = (dialect: ContentSqlDialect) =>
+      compiler.selectNoFrom(compileFilter(query.filter as FilterNode, dialect).as('x')).compile();
+    const filter = compile(contentDialectFor('postgres'));
+    const document = compile(contentDialectFor('postgres', 'document'));
+    expect(document.sql).not.toContain('filter_data');
+    expect(document.sql.replaceAll('"data" @>', '"filter_data" @>')).toBe(filter.sql);
+    expect(document.parameters).toEqual(filter.parameters);
+    expect(contentDialectFor('sqlite', 'document')).toBe(contentDialectFor('sqlite'));
+    expect(contentDialectFor('mysql', 'document')).toBe(contentDialectFor('mysql'));
   });
 
   it('compiles equality on an indexed field to its index expression, false for a missing value', () => {

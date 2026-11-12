@@ -156,6 +156,11 @@ test('a URL without a site opens the primary site, and the switcher leads to the
   );
   await expect(menu.getByRole('menuitem', { name: 'Network' })).toBeVisible();
   await captureScreen(page, 'sites-01-switcher', { viewports: ['desktop'] });
+  // The capture may close the menu: axe finishes each run in a blank page of this context, and a Radix menu
+  // closes when its window loses focus. Close it either way, then open it again to choose.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await switcher(page).click();
   await menu.getByRole('menuitem', { name: 'Network' }).click();
   await expect(page).toHaveURL(/\/admin\/network\/workspaces$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Workspaces' })).toBeVisible();

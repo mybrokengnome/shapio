@@ -133,6 +133,16 @@ describe('graceful shutdown', { timeout: 60_000 }, () => {
 
 const outageSkip = dialectSkipReason(import.meta.url, 'database outage');
 
+/**
+ * The server's pool acquire timeout in the outage test. It also bounds opening a connection, so once the database
+ * is back each readiness probe answers within it: a connection the database accepts but does not answer in time
+ * (an overloaded server, as on a slow CI runner) fails that one probe after this long, and the next probe tries a
+ * new connection. Recovery therefore takes a few of these at most, never the 10 s default each.
+ */
+const OUTAGE_ACQUIRE_TIMEOUT_MS = 2_000;
+/** How long recovery may take: several probes that each wait out a stalled connection, plus generous slack. */
+const OUTAGE_RECOVERY_TIMEOUT_MS = 5 * OUTAGE_ACQUIRE_TIMEOUT_MS + 15_000;
+
 describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), { timeout: 60_000 }, () => {
   const database = useTestDatabase();
   let proxy: TcpProxy;
@@ -148,6 +158,7 @@ describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), { tim
       DATABASE_URL: viaProxy.toString(),
       MIGRATE_ON_START: 'false',
       WORKER_POLL_INTERVAL_MS: '100',
+      DATABASE_POOL_ACQUIRE_TIMEOUT_MS: String(OUTAGE_ACQUIRE_TIMEOUT_MS),
     });
   });
   afterAll(async () => {
@@ -196,7 +207,7 @@ describe.skipIf(outageSkip)(withSkipReason('database outage', outageSkip), { tim
 
     await proxy.resume();
     await waitFor(async () => (await get('/api/ready')).status === 200, {
-      timeoutMs: 15_000,
+      timeoutMs: OUTAGE_RECOVERY_TIMEOUT_MS,
       intervalMs: 100,
       description: '/api/ready to answer 200 again after the database came back',
     });

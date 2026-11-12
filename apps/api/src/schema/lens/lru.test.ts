@@ -65,3 +65,45 @@ describe('createSegmentedLru', () => {
     expect(lru.has('a')).toBe(false);
   });
 });
+
+describe('createSegmentedLru with a weight budget', () => {
+  const weighted = () =>
+    createSegmentedLru<string, number>(
+      { probation: 10, protected: 10 },
+      { weigh: (_key, value) => value, maxWeight: 10 },
+    );
+
+  it('evicts probation first, then protected, until within the budget', () => {
+    const lru = weighted();
+    lru.set('p', 4);
+    expect(lru.get('p')).toBe(4); // protected
+    lru.set('a', 3);
+    lru.set('b', 3);
+    expect(lru.weight).toBe(10);
+    lru.set('c', 3);
+    // Over by 3: probation's oldest ('a') leaves.
+    expect(lru.has('a')).toBe(false);
+    expect(lru.weight).toBe(10);
+    lru.set('d', 9);
+    // Probation empties first, then protected's oldest goes too.
+    expect(lru.has('p')).toBe(false);
+    expect(lru.has('d')).toBe(true);
+    expect(lru.weight).toBe(9);
+  });
+
+  it('accounts replacements, deletes and clears, and never stores an entry heavier than the budget', () => {
+    const lru = weighted();
+    lru.set('a', 2);
+    lru.set('a', 5);
+    expect(lru.weight).toBe(5);
+    lru.delete('a');
+    expect(lru.weight).toBe(0);
+    lru.set('big', 11);
+    expect(lru.has('big')).toBe(false);
+    expect(lru.weight).toBe(0);
+    lru.set('b', 1);
+    lru.clear();
+    expect(lru.weight).toBe(0);
+    expect(lru.size).toBe(0);
+  });
+});

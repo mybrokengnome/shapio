@@ -27,7 +27,8 @@ import { populateRelations, type PopulateEnvironment } from './compiler/populate
 import { projectData, selectFields } from './compiler/select.js';
 import { DEFAULT_RICH_TEXT_MODE, type PopulateTree, type RichTextMode } from './compiler/types.js';
 import { familyIdsOf, groupByMember, readableMembers, type ReadMember } from './family.js';
-import { componentLookupOf, itemIdKeyOf, itemIdScopeOf, withItemIds } from './itemIds.js';
+import { withItemIdsCached } from './itemIdCache.js';
+import { itemIdKeyOf, itemIdScopeOf } from './itemIds.js';
 import { readThroughLens } from './lens/read.js';
 import { componentFieldShownThroughLens, readableThroughLens } from './lens/write.js';
 import { readScopeFor } from './locales.js';
@@ -508,10 +509,15 @@ const withRowItemIds = async (
     return [...rows];
   }
   const key = env.itemIdKey ?? (await itemIdKeyOf(env.executor));
-  const componentOf = componentLookupOf(model.components);
+  // Cached per stored value, schema and scope (content/itemIdCache.ts): the same IDs `withItemIds` derives.
   return rows.map((row) => ({
     ...row,
-    data: withItemIds(row.data, fields, componentOf, itemIdScopeOf(key, row.entry_id, model, row.locale)),
+    data: withItemIdsCached(
+      row.data,
+      fields,
+      model.components,
+      itemIdScopeOf(key, row.entry_id, model, row.locale),
+    ),
   }));
 };
 

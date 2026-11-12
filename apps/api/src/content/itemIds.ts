@@ -184,16 +184,55 @@ const entrySecretOf = (scope: ItemIdScope): string => {
 /** Entry secrets kept per key (a bounded memo: recomputing one is a single HMAC). */
 const MAX_ENTRY_SECRETS = 10_000;
 
-const derive = (scope: ItemIdScope, path: readonly string[], content: string, occurrence: number) =>
+let derivations = 0;
+
+/**
+ * Item IDs derived in this process so far: how tests show a read did no derivation work (the item ID cache,
+ * content/itemIdCache.ts), by counting, never by timing.
+ */
+export const itemIdsDerived = (): number => derivations;
+
+const derive = (scope: ItemIdScope, path: readonly string[], content: string, occurrence: number) => {
+  derivations += 1;
   // Field IDs (UUIDs) and item IDs (base62) in the path and the occurrence (a number) hold no NUL, so the parts
   // stay apart; the content (the item's canonical JSON) comes last.
-  itemIdOf(
+  return itemIdOf(
     hash(
       'sha256',
       `${entrySecretOf(scope)}\u0000${scope.locale ?? ''}\u0000${path.join('\u0000')}\u0000${occurrence}\u0000${content}`,
       'buffer',
     ),
   );
+};
+
+/**
+ * Where the walk below takes the ID of an instance stored without one. Absent: derived. `record`: derived, and
+ * each derived ID appended, in the walk's order. `replay`: taken, in that same order, from IDs an earlier walk
+ * of the same stored value under the same schema and scope recorded (content/itemIdCache.ts); none derived.
+ */
+export type DerivedIdSource = { record: string[] } | { replay: readonly string[]; next: number };
+
+/** A replay found an instance stored without an ID beyond the IDs it was given. */
+export class DerivedIdsExhausted extends Error {
+  constructor() {
+    super('item ID replay ran out of IDs');
+  }
+}
+
+/** The ID of an instance stored without one: replayed, or derived (and recorded). */
+const missingId = (source: DerivedIdSource | undefined, derived: () => string): string => {
+  if (source && 'replay' in source) {
+    const id = source.replay[source.next];
+    if (id === undefined) {
+      throw new DerivedIdsExhausted();
+    }
+    source.next += 1;
+    return id;
+  }
+  const id = derived();
+  source?.record.push(id);
+  return id;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -221,6 +260,7 @@ const instanceWithIds = (
   item: Readonly<Record<string, unknown>>,
   id: string,
   componentOf: ComponentLookup,
+  source: DerivedIdSource | undefined,
 ): Readonly<Record<string, unknown>> => {
   const nested = component?.fields.some(
     (field) => (field.type === 'component' || field.type === 'dynamiczone') && item[field.id] !== undefined,
@@ -230,7 +270,7 @@ const instanceWithIds = (
     return item;
   }
   return {
-    ...(component && nested ? fieldsWithIds(scope, component.fields, item, [id], componentOf) : item),
+    ...(component && nested ? fieldsWithIds(scope, component.fields, item, [id], componentOf, source) : item),
     [ITEM_ID_KEY]: id,
   };
 };
@@ -241,13 +281,14 @@ const valueWithIds = (
   value: unknown,
   path: readonly string[],
   componentOf: ComponentLookup,
+  source: DerivedIdSource | undefined,
 ): unknown => {
   if (field.type === 'component' && !field.settings.repeatable) {
     if (!isRecord(value)) {
       return value;
     }
-    const id = storedId(value) ?? derive(scope, path, 'single', 0);
-    return instanceWithIds(scope, componentOf(field.settings.component), value, id, componentOf);
+    const id = storedId(value) ?? missingId(source, () => derive(scope, path, 'single', 0));
+    return instanceWithIds(scope, componentOf(field.settings.component), value, id, componentOf, source);
   }
   if (!Array.isArray(value)) {
     return value;
@@ -259,21 +300,23 @@ const valueWithIds = (
     if (!isRecord(item)) {
       return item;
     }
-    let id = storedId(item);
-    if (!id) {
-      // The stored item in canonical form: the same stored item reads the same on every database.
-      const content = canonicalJson(item);
-      const occurrence = seen.get(content) ?? 0;
-      seen.set(content, occurrence + 1);
-      const derived = derive(scope, path, content, occurrence);
-      // Taken: the next renewal of it that is free, the same wherever the list is stored (draft, published).
-      id = derived;
-      for (let attempt = 1; taken.has(id); attempt += 1) {
-        id = renewedItemId(derived, attempt);
-      }
-      taken.add(id);
-    }
-    return instanceWithIds(scope, componentOfItem(field, componentOf, item), item, id, componentOf);
+    const id =
+      storedId(item) ??
+      missingId(source, () => {
+        // The stored item in canonical form: the same stored item reads the same on every database.
+        const content = canonicalJson(item);
+        const occurrence = seen.get(content) ?? 0;
+        seen.set(content, occurrence + 1);
+        const derived = derive(scope, path, content, occurrence);
+        // Taken: the next renewal of it that is free, the same wherever the list is stored (draft, published).
+        let free = derived;
+        for (let attempt = 1; taken.has(free); attempt += 1) {
+          free = renewedItemId(derived, attempt);
+        }
+        taken.add(free);
+        return free;
+      });
+    return instanceWithIds(scope, componentOfItem(field, componentOf, item), item, id, componentOf, source);
   });
 };
 
@@ -283,15 +326,78 @@ function fieldsWithIds(
   data: Readonly<Record<string, unknown>>,
   parent: readonly string[],
   componentOf: ComponentLookup,
+  source: DerivedIdSource | undefined,
 ): Record<string, unknown> {
   const output: Record<string, unknown> = { ...data };
   for (const field of fields) {
     if ((field.type === 'component' || field.type === 'dynamiczone') && data[field.id] !== undefined) {
-      output[field.id] = valueWithIds(scope, field, data[field.id], [...parent, field.id], componentOf);
+      output[field.id] = valueWithIds(
+        scope,
+        field,
+        data[field.id],
+        [...parent, field.id],
+        componentOf,
+        source,
+      );
     }
   }
   return output;
 }
+
+/**
+ * One top-level component field's stored value with an ID on every instance in it, at any depth (what
+ * `withItemIds` gives that field), its missing IDs taken from `source` (derived when absent).
+ */
+export const fieldValueWithItemIds = (
+  scope: ItemIdScope,
+  field: FieldDefinition,
+  value: unknown,
+  componentOf: ComponentLookup,
+  source?: DerivedIdSource,
+): unknown => valueWithIds(scope, field, value, [field.id], componentOf, source);
+
+/** How `itemIdsBy` gives one top-level component field (present in the data) its instances' IDs. */
+export type FieldItemIds = (scope: ItemIdScope, field: FieldDefinition, value: unknown) => unknown;
+
+/**
+ * `data` with every top-level component field's value replaced by what `valueOf` gives it, each field under the
+ * scope `withItemIds` derives it in: localized fields with the head's locale (with everything nested in them),
+ * shared ones without it, as in every locale.
+ */
+export const itemIdsBy = (
+  data: Readonly<ContentData>,
+  fields: readonly FieldDefinition[],
+  scope: ItemIdScope,
+  valueOf: FieldItemIds,
+): ContentData => {
+  const pass = (
+    passScope: ItemIdScope,
+    passFields: readonly FieldDefinition[],
+    input: Readonly<ContentData>,
+  ) => {
+    const output: Record<string, unknown> = { ...input };
+    for (const field of passFields) {
+      if ((field.type === 'component' || field.type === 'dynamiczone') && input[field.id] !== undefined) {
+        output[field.id] = valueOf(passScope, field, input[field.id]);
+      }
+    }
+    return output;
+  };
+  if (scope.locale === undefined) {
+    return pass(scope, fields, data);
+  }
+  const shared: ItemIdScope = { key: scope.key, entryId: scope.entryId };
+  const localized = pass(
+    scope,
+    fields.filter((field) => field.localized),
+    data,
+  );
+  return pass(
+    shared,
+    fields.filter((field) => !field.localized),
+    localized,
+  );
+};
 
 /**
  * `data` (storage form) with an ID on every component instance, at any depth: the stored one, or for an
@@ -303,27 +409,11 @@ export const withItemIds = (
   fields: readonly FieldDefinition[],
   componentOf: ComponentLookup,
   scope: ItemIdScope,
-): ContentData => {
-  if (scope.locale === undefined) {
-    return fieldsWithIds(scope, fields, data, [], componentOf);
-  }
+): ContentData =>
   // Localized fields derive per locale (with everything nested in them), shared ones as in every locale.
-  const shared: ItemIdScope = { key: scope.key, entryId: scope.entryId };
-  const localized = fieldsWithIds(
-    scope,
-    fields.filter((field) => field.localized),
-    data,
-    [],
-    componentOf,
+  itemIdsBy(data, fields, scope, (fieldScope, field, value) =>
+    fieldValueWithItemIds(fieldScope, field, value, componentOf),
   );
-  return fieldsWithIds(
-    shared,
-    fields.filter((field) => !field.localized),
-    localized,
-    [],
-    componentOf,
-  );
-};
 
 /** The derivation scope of a head: its locale only on a localized content type. */
 export const itemIdScopeOf = (

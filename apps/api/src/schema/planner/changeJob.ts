@@ -13,6 +13,7 @@ import * as schemaModelsRepository from '../../repositories/schemaModels.js';
 import { readStoredDefinition } from '../storedDefinition.js';
 import { activateDefinitions, type ActivationItem } from './activate.js';
 import { principalFromColumns } from './actor.js';
+import { createContentFilterIndexHandlers } from './contentFilterIndex.js';
 import type {
   ActivationContext,
   ContentStepContext,
@@ -342,4 +343,5 @@ export const createSchemaJobHandlers = (deps: HandlerDeps): Array<[string, JobHa
   [FIELD_INDEX_LAYOUT_JOB, createFieldIndexLayoutHandler(deps.db)],
   [ENTRY_ORDER_INDEX_JOB, async (context) => ({ outcome: await buildEntryOrderIndex(deps.db, context.log) })],
   [LENS_HISTORY_BACKFILL_JOB, createLensHistoryBackfillHandler(deps.db)],
+  ...createContentFilterIndexHandlers(deps.db),
 ];

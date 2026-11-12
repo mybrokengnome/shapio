@@ -429,6 +429,7 @@ export interface EntryHeads {
   data: ContentData;
   entry_created_at: Timestamp | null;
   entry_id: string;
+  filter_data: Json | null;
   locale: string;
   model_id: string;
   revision_id: string;

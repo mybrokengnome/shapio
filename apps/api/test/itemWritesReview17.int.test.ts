@@ -103,6 +103,7 @@ describe('item writes: seventeenth review, unchanged saves around deleted target
       many('rel2'),
       { ...many('one'), settings: { target: thing.definition.id, cardinality: 'one' } },
       many('tags', { max: 1 }),
+      many('rmin', { min: 2 }),
       media('files', true),
       media('files2', true),
       media('photo', false),
@@ -294,6 +295,30 @@ describe('item writes: seventeenth review, unchanged saves around deleted target
     },
   );
 
+  /** Stores `[b1, b2]` where every head holds `[b1]`: more tags than `max` allows, as when it was lowered later. */
+  const storeOverMax = async (id: string, b1: string, b2: string) => {
+    for (const head of await database.current.db
+      .selectFrom('entry_heads')
+      .select(['locale', 'state', 'data'])
+      .where('entry_id', '=', id)
+      .execute()) {
+      const stored = (typeof head.data === 'string' ? JSON.parse(head.data) : head.data) as Data;
+      const over = Object.fromEntries(
+        Object.entries(stored).map(([key, value]) => [
+          key,
+          Array.isArray(value) && value.length === 1 && value[0] === b1 ? [b1, b2] : value,
+        ]),
+      );
+      await database.current.db
+        .updateTable('entry_heads')
+        .set({ data: (typeof head.data === 'string' ? JSON.stringify(over) : over) as never })
+        .where('entry_id', '=', id)
+        .where('locale', '=', head.locale)
+        .where('state', '=', head.state)
+        .execute();
+    }
+  };
+
   it.each(MODELS.flatMap((model) => TWINS.map((twin) => [model, twin] as const)))(
     '%s, %s: an entry already invalid as stored answers TOO_MANY to an unchanged save, as before 0.9.0',
     async (model, twin) => {
@@ -303,29 +328,9 @@ describe('item writes: seventeenth review, unchanged saves around deleted target
       if (twin === 'dead') {
         await kill('relation', h);
       }
-      // Stored with more tags than its `max` allows (as when the max was lowered after the save).
       const tagsField = (await adminView(model, id)).data;
       expect(tagsField.tags).toEqual([b1]);
-      for (const head of await database.current.db
-        .selectFrom('entry_heads')
-        .select(['locale', 'state', 'data'])
-        .where('entry_id', '=', id)
-        .execute()) {
-        const stored = (typeof head.data === 'string' ? JSON.parse(head.data) : head.data) as Data;
-        const over = Object.fromEntries(
-          Object.entries(stored).map(([key, value]) => [
-            key,
-            Array.isArray(value) && value.length === 1 && value[0] === b1 ? [b1, b2] : value,
-          ]),
-        );
-        await database.current.db
-          .updateTable('entry_heads')
-          .set({ data: (typeof head.data === 'string' ? JSON.stringify(over) : over) as never })
-          .where('entry_id', '=', id)
-          .where('locale', '=', head.locale)
-          .where('state', '=', head.state)
-          .execute();
-      }
+      await storeOverMax(id, b1, b2);
       for (const change of [(body: Data) => body, (body: Data) => ({ ...body, title: 'changed' })]) {
         const read = expectStatus(await request('GET', `/api/content/${model}s/${id}`), 200).json<{
           data: Data;
@@ -339,6 +344,47 @@ describe('item writes: seventeenth review, unchanged saves around deleted target
         expect(response.body).toContain('"path":"/tags","code":"TOO_MANY"');
         expect(await footprint(id)).toBe(before);
       }
+    },
+  );
+
+  it.each(MODELS)(
+    '%s: an unchanged save of an entry already invalid lists the same issues whether a hidden target was deleted or not',
+    async (model) => {
+      /** Each twin's answer: the issues of an unchanged save, and of an edit. */
+      const answers = async (twin: Twin) => {
+        const h = await makeTarget('relation', twin);
+        const [b1, b2] = [await makeTarget('relation', 'dead'), await makeTarget('relation', 'dead')];
+        const id = await create(model, { title: 't', tags: [b1], rmin: [live.relation, h] });
+        if (twin === 'dead') {
+          await kill('relation', h);
+        }
+        await storeOverMax(id, b1, b2);
+        const issues = [];
+        for (const title of [undefined, 'changed']) {
+          const read = expectStatus(await request('GET', `/api/content/${model}s/${id}`), 200).json<{
+            data: Data;
+          }>().data;
+          const response = await request('PUT', `/api/content/${model}s/${id}`, {
+            expectedVersion: (await adminView(model, id)).version,
+            data: { title: title ?? read.title, tags: read.tags, rmin: read.rmin },
+          });
+          expect(response.statusCode, response.body).toBe(422);
+          issues.push(
+            response
+              .json<{ error: { details: { issues: Array<{ path: string; code: string }> } } }>()
+              .error.details.issues.map((issue) => `${issue.path} ${issue.code}`)
+              .sort(),
+          );
+        }
+        return issues;
+      };
+      const [hiddenEcho, hiddenEdit] = await answers('hidden');
+      const [deadEcho, deadEdit] = await answers('dead');
+      expect(hiddenEcho).toEqual(['/tags TOO_MANY']);
+      expect(deadEcho).toEqual(hiddenEcho);
+      // An edit is checked on what would be stored: without the deleted target, too few remain.
+      expect(hiddenEdit).toEqual(['/tags TOO_MANY']);
+      expect(deadEdit).toEqual(['/rmin TOO_FEW', '/tags TOO_MANY']);
     },
   );
 });

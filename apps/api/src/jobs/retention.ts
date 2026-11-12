@@ -6,6 +6,7 @@ import type { MediaStorage } from '../media/types.js';
 import * as assistRunsRepository from '../repositories/assistRuns.js';
 import * as retentionRepository from '../repositories/retention.js';
 import * as usageRepository from '../repositories/usage.js';
+import { requeueDeadContentFilterIndexJobs } from '../schema/planner/contentFilterIndex.js';
 import { usageDayOf } from '../usage/keys.js';
 import { requeueDeadLensHistoryBackfill } from './handlers/lensHistoryBackfill.js';
 import { enqueueJob } from './queue.js';
@@ -131,6 +132,7 @@ export const createRetentionJobHandlers = (
       };
       // A schema history rebuild that died gets a new round of attempts, at most once a day (plan schema-lenses).
       const lensHistoryRequeued = await requeueDeadLensHistoryBackfill(db, at);
+      await requeueDeadContentFilterIndexJobs(db, at, job.log);
       const next = new Date(at.getTime() + DAY_MS);
       await enqueueJob(
         { type: RETENTION_JOB, runAt: next, priority: JOB_PRIORITY.background, idempotencyKey: dayKey(next) },

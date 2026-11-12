@@ -12,11 +12,19 @@ import type {
 
 /**
  * PostgreSQL content SQL (ADR 0001): JSONB with a GIN `jsonb_path_ops` index serving containment, so
- * equality on a field without an index is emitted as `data @> {...}`; ranges, sorts and equality on indexed
- * fields (filterable or sortable) use per-field B-tree expression indexes built `CONCURRENTLY` with a
+ * equality on a field without an index is emitted as `filter_data @> {...}`; ranges, sorts and equality on
+ * indexed fields (filterable or sortable) use per-field B-tree expression indexes built `CONCURRENTLY` with a
  * matching `CREATE STATISTICS` object.
  */
 const DATA = sql.ref(CONTENT_HEADS_COLUMNS.data);
+
+/**
+ * `filter_data`: `shapio_scalar_fields(data)`, the top-level fields of `data` a containment can match (it drops
+ * nulls, objects, and arrays without a scalar element: component items, their item IDs, rich text and JSON
+ * objects). A trigger keeps it for every write (migration `20261112120000_entry_heads_scalars_gin`); the GIN
+ * index `entry_heads_filter_data_gin` covers it.
+ */
+const FILTER_DATA = sql.ref(CONTENT_HEADS_COLUMNS.filterData);
 
 const ARRAY_TYPES: Readonly<Record<ListElement, RawBuilder<unknown>>> = {
   uuid: sql`uuid[]`,
@@ -43,6 +51,8 @@ const likePattern = (operator: TextMatchOperator | '$containsi', text: string) =
 
 const fieldText = (fieldId: string): RawBuilder<unknown> => sql`(${DATA} ->> ${sql.lit(fieldId)})`;
 
+const fieldJson = (fieldId: string): RawBuilder<unknown> => sql`(${DATA} -> ${sql.lit(fieldId)})`;
+
 const fieldValue = (fieldId: string, cast: ValueCast): RawBuilder<unknown> => {
   const text = fieldText(fieldId);
   switch (cast) {
@@ -66,16 +76,30 @@ const castParameter = (value: unknown, cast: ValueCast): RawBuilder<unknown> => 
   }
 };
 
+type Containment = (document: Readonly<Record<string, unknown>>) => RawBuilder<unknown>;
+
 /**
- * `data @> $1::jsonb`: the only form the GIN index serves. The document is a parameter, field IDs included,
- * so nothing from the request is ever spliced into the SQL text.
+ * `<target> @> $1::jsonb`: the only form a GIN index serves. The document is a parameter, field IDs included,
+ * so nothing from the request is ever spliced into the SQL text. Every document is `{fieldId: scalar}` or
+ * `{fieldId: [scalar]}` (`fieldEquals`), which `data` and `shapio_scalar_fields(data)` contain alike.
  */
-export const containment = (document: Readonly<Record<string, unknown>>): RawBuilder<unknown> =>
-  sql`(${DATA} @> ${JSON.stringify(document)}::jsonb)`;
+const containmentOn =
+  (target: RawBuilder<unknown>): Containment =>
+  (document) =>
+    sql`(${target} @> ${JSON.stringify(document)}::jsonb)`;
+
+/** Against `filter_data`, served by `entry_heads_filter_data_gin`. */
+export const filterContainment: Containment = containmentOn(FILTER_DATA);
+
+/** Against the whole `data`, served by `entry_heads_data_gin` (an upgraded instance until the switch). */
+export const documentContainment: Containment = containmentOn(DATA);
 
 /** Published revisions of a model (or a family) as of a publication sequence (`snapshotCte`, relation targets). */
+// Revisions have no `filter_data`; their `data` stands in for it, which every containment the compiler emits
+// answers the same as `shapio_scalar_fields(data)` (and costs nothing: no index serves a snapshot anyway).
 const snapshotRows = ({ siteId, modelIds, seq }: Omit<SnapshotSource, 'name'>): RawBuilder<unknown> => sql`
-    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data, 0 as version,
+    select pl.entry_id, pl.site_id, pl.model_id, pl.locale, 'published'::text as state, r.data,
+      r.data as filter_data, 0 as version,
       r.id as revision_id, pl.published_at as updated_at, null::timestamptz as autosaved_at,
       en.created_at as entry_created_at
     from publication_log pl
@@ -103,7 +127,7 @@ const referenceIds = (fieldId: string, list: boolean): ReferenceIds => {
       };
 };
 
-export const postgresContentDialect: ContentSqlDialect = {
+const postgresDialectWith = (containment: Containment): ContentSqlDialect => ({
   name: 'postgres',
 
   uuid: (value) => sql`${value}::uuid`,
@@ -113,7 +137,7 @@ export const postgresContentDialect: ContentSqlDialect = {
 
   fieldValue,
   fieldText,
-  fieldJson: (fieldId) => sql`(${DATA} -> ${sql.lit(fieldId)})`,
+  fieldJson,
   castParameter,
 
   fieldEquals: (target, value) => {
@@ -131,7 +155,7 @@ export const postgresContentDialect: ContentSqlDialect = {
     return containment({ [target.fieldId]: target.list ? [value] : value });
   },
   fieldMissing: (fieldId) => {
-    const json = postgresContentDialect.fieldJson(fieldId);
+    const json = fieldJson(fieldId);
     return sql`(${json} is null or ${json} in ${MISSING_JSON})`;
   },
   textMatch: (fieldId, operator, text) =>
@@ -155,4 +179,13 @@ export const postgresContentDialect: ContentSqlDialect = {
   dropFieldIndex: (name) => sql`drop index concurrently if exists ${sql.id(name)}`,
   dropFieldStatistics: (name) => sql`drop statistics if exists ${sql.id(name)}`,
   analyze: (table) => sql`analyze ${sql.table(table)}`,
-};
+});
+
+/** PostgreSQL content SQL, containment against `filter_data`. */
+export const postgresContentDialect: ContentSqlDialect = postgresDialectWith(filterContainment);
+
+/**
+ * The same, with containment against the whole `data` (`db/contentIndexForm.ts`): what an upgraded instance
+ * runs until `filter_data` is proved complete and indexed. Every query answers exactly as with `postgresContentDialect`.
+ */
+export const postgresDocumentContainmentDialect: ContentSqlDialect = postgresDialectWith(documentContainment);

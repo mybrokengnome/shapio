@@ -213,9 +213,12 @@ What changes for a client that names no schema version and sends no item `id`s
   `__component` in place (`ITEM_COMPONENT_CHANGED`), on the admin API too. An `id` copied from another entry is
   `UNKNOWN_ITEM_ID` only where the list's items can hold values hidden from the caller; elsewhere the item is
   saved as new. Drop `id` from copies and replacements.
-- Lists saved before 0.9.0 work out their item IDs on each read until the entry is next saved (the draft) and
-  published (the published version). Reads are about as fast as before. Imported into another instance, such
-  items read with different IDs there until their first write.
+- On PostgreSQL, equality filters on fields that are not filterable or sortable use a much smaller index: each entry keeps a copy of its top-level values (`entry_heads.filter_data`, maintained by the database), and only that copy is indexed, so component items, item IDs, rich text, and JSON objects stay out of it. For component-heavy content the index is about 13 times smaller than in 0.8.2, counts and filtered lists with totals are faster (a 2,500-match list in about a third of the time), and saving maintains it about twice as fast. An instance with content fills the copy and builds the index in the background without blocking writes, keeps using the old index until the new one is complete, and drops the old one a few minutes later.
+- Lists saved before 0.9.0 store no item IDs until the entry is next saved (the draft) and published (the
+  published version); reads work them out. Each server process remembers what it worked out, in memory, so a
+  repeated read of the same content is about as fast as for content saved since; the first read after a restart,
+  and the first in each process of a multi-process install, works them out again. Imported into another instance,
+  such items read with different IDs there until their first write.
 
 Nothing else changes for clients that name no schema version. A server older than 0.9.0 refuses the
 `schemaVersion` query parameter with `400`, on purpose, so a newer client that names a version never silently
