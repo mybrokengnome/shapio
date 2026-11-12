@@ -668,7 +668,14 @@ describe('schema lenses: GraphQL', () => {
   it('never tells a caller allowed nothing the schema ID or version, headers included', async () => {
     /** Headers that differ between any two requests (the clock, the rate-limit counter). */
     const withoutDate = (headers: Record<string, unknown>) => {
-      const { date: _date, 'x-ratelimit-remaining': _remaining, ...rest } = headers;
+      // The clock and the rate limiter move between two requests: the date, how many requests remain, and
+      // the seconds until the window resets can differ by chance and say nothing about the schema version.
+      const {
+        date: _date,
+        'x-ratelimit-remaining': _remaining,
+        'x-ratelimit-reset': _reset,
+        ...rest
+      } = headers;
       return rest;
     };
     // Queries that answer 200 (or an error from a resolver) on an empty schema.
