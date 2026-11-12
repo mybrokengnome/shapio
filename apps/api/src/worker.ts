@@ -10,6 +10,7 @@ import { loadProjectConfig } from './extensions/loader.js';
 import { ensureHealthSweepScheduled } from './jobs/contentHealth.js';
 import { ensureRetentionScheduled } from './jobs/retention.js';
 import { createLogger } from './logger.js';
+import { keepContentIndexJobsQueued } from './schema/planner/contentFilterIndex.js';
 import { createConfiguredWorker, startExtensions } from './server.js';
 import { resolveSigningSecret } from './services/signingSecret.js';
 
@@ -48,7 +49,10 @@ export const startDedicatedWorker = async (config: AppConfig) => {
     throw new Error('Pending migrations');
   }
   const signingSecret = await resolveSigningSecret(db, config.sessionSecret, logger);
-  const contentIndexWatch = await watchContentIndexForm(db, logger);
+  const contentIndexWatch = watchContentIndexForm(db, logger, {
+    onLook: (form) => keepContentIndexJobsQueued(db, logger, form),
+  });
+  await contentIndexWatch.ready;
   const extensions = await startExtensions(config, db, logger, project);
   const worker = await createConfiguredWorker(config, db, logger, signingSecret, extensions);
   await ensureRetentionScheduled(db);

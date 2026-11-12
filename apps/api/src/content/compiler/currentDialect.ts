@@ -1,4 +1,4 @@
-import { contentIndexForm } from '../../db/contentIndexForm.js';
+import { contentIndexForm } from '../../db/contentFilterIndex.js';
 import { currentDialect } from '../../db/dialect.js';
 import { contentDialectFor } from './dialect/index.js';
 import type { ContentSqlDialect } from './dialect/types.js';

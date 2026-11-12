@@ -26,6 +26,31 @@ const DATA = sql.ref(CONTENT_HEADS_COLUMNS.data);
  */
 const FILTER_DATA = sql.ref(CONTENT_HEADS_COLUMNS.filterData);
 
+/**
+ * The longest top-level string (or string element of a top-level array) `filter_data` holds, in characters
+ * (Unicode code points, what PostgreSQL's `length(text)` counts in a UTF-8 database). `shapio_scalar_fields`
+ * leaves longer ones out, so a containment whose value is longer is emitted against `data` in either form
+ * (`fieldEquals`). The migration `20261112120000_entry_heads_scalars_gin` writes the same number.
+ */
+export const FILTER_STRING_MAX_CHARS = 1000;
+
+/** Whether `value` is a string `filter_data` leaves out: more than `FILTER_STRING_MAX_CHARS` code points. */
+export const isLongFilterString = (value: unknown): boolean => {
+  if (typeof value !== 'string' || value.length <= FILTER_STRING_MAX_CHARS) {
+    // UTF-16 code units are never fewer than code points.
+    return false;
+  }
+  if (value.length > 2 * FILTER_STRING_MAX_CHARS) {
+    // Every code point is at most two code units.
+    return true;
+  }
+  let points = 0;
+  for (const _point of value) {
+    points += 1;
+  }
+  return points > FILTER_STRING_MAX_CHARS;
+};
+
 const ARRAY_TYPES: Readonly<Record<ListElement, RawBuilder<unknown>>> = {
   uuid: sql`uuid[]`,
   text: sql`text[]`,
@@ -152,7 +177,9 @@ const postgresDialectWith = (containment: Containment): ContentSqlDialect => ({
       const expression = fieldValue(target.fieldId, target.cast);
       return sql`(${expression} = ${castParameter(value, target.cast)} and ${expression} is not null)`;
     }
-    return containment({ [target.fieldId]: target.list ? [value] : value });
+    const document = { [target.fieldId]: target.list ? [value] : value };
+    // `filter_data` leaves long strings out: such a value is matched against the whole document in either form.
+    return isLongFilterString(value) ? documentContainment(document) : containment(document);
   },
   fieldMissing: (fieldId) => {
     const json = fieldJson(fieldId);
@@ -181,7 +208,7 @@ const postgresDialectWith = (containment: Containment): ContentSqlDialect => ({
   analyze: (table) => sql`analyze ${sql.table(table)}`,
 });
 
-/** PostgreSQL content SQL, containment against `filter_data`. */
+/** PostgreSQL content SQL, containment against `filter_data` (but long strings against `data`). */
 export const postgresContentDialect: ContentSqlDialect = postgresDialectWith(filterContainment);
 
 /**

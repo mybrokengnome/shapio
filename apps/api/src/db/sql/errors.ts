@@ -64,3 +64,9 @@ export const isForeignKeyViolation = (error: unknown, constraint?: string): bool
   }
   return false;
 };
+
+/** PostgreSQL SQLSTATE for lock_not_available (a `lock_timeout` or `NOWAIT` gave up). */
+const LOCK_NOT_AVAILABLE = '55P03';
+
+/** Whether `error` is a lock wait that gave up (PostgreSQL `lock_timeout`). */
+export const isLockTimeout = (error: unknown): boolean => fieldsOf(error)?.code === LOCK_NOT_AVAILABLE;

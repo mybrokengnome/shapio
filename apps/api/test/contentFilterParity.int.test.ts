@@ -4,8 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRIMARY_SITE_ID } from '../src/constants/sites.js';
 import { compileFilter, compileHeadQuery, type HeadSource } from '../src/content/compiler/compile.js';
 import { contentDialectFor, type ContentSqlDialect } from '../src/content/compiler/dialect/index.js';
+import { FILTER_STRING_MAX_CHARS } from '../src/content/compiler/dialect/postgres.js';
 import { parseContentQuery } from '../src/content/compiler/parse.js';
 import { parseQueryTree } from '../src/content/compiler/querystring.js';
+import { compileOrderBy, defaultSortTerms } from '../src/content/compiler/sort.js';
+import type { FilterNode } from '../src/content/compiler/types.js';
 import { resolveModel, type ContentModel } from '../src/content/model.js';
 import { canonicalDatetime, canonicalTime } from '../src/content/validator/scalars.js';
 import { createDefinition, fieldIdOf, runContentSchemaJobs, type ModelBody } from './helpers/content.js';
@@ -33,6 +36,36 @@ const UUIDS = [
 
 type Pool = { values: readonly unknown[]; query: readonly string[]; list?: boolean };
 
+/**
+ * Strings at the long-string limit (`FILTER_STRING_MAX_CHARS` characters) and just past it, in characters of two
+ * and four bytes: `filter_data` keeps the first and third and leaves the others out. A REST query value is at
+ * most 1,000 code units, so a query names them by placeholder (`@L0`) and the parsed filter gets the string
+ * (what GraphQL or an in-process call can send).
+ */
+const LONG = [
+  `${'é'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`,
+  `${'é'.repeat(FILTER_STRING_MAX_CHARS)}😀`,
+  '😀'.repeat(FILTER_STRING_MAX_CHARS),
+  'a'.repeat(FILTER_STRING_MAX_CHARS + 1),
+];
+const LONG_PLACEHOLDERS = LONG.map((_, index) => `@L${index}`);
+
+const withLongStrings = (node: FilterNode): FilterNode => {
+  const swap = (value: unknown): unknown => {
+    const index = typeof value === 'string' ? LONG_PLACEHOLDERS.indexOf(value) : -1;
+    return index >= 0 ? LONG[index] : value;
+  };
+  switch (node.kind) {
+    case 'and':
+    case 'or':
+      return { ...node, nodes: node.nodes.map(withLongStrings) };
+    case 'not':
+      return { ...node, node: withLongStrings(node.node) };
+    default:
+      return { ...node, value: Array.isArray(node.value) ? node.value.map(swap) : swap(node.value) };
+  }
+};
+
 /** Stored values (canonical, as the validator writes them) and the query text that names them. */
 const POOLS: Readonly<Record<string, Pool>> = {
   s: { values: ['a', 'b', 'A'], query: ['a', 'b', 'A', 'z'] },
@@ -55,6 +88,7 @@ const POOLS: Readonly<Record<string, Pool>> = {
   rs: { values: UUIDS, query: UUIDS.slice(1), list: true },
   m: { values: UUIDS, query: UUIDS.slice(0, 2) },
   ms: { values: UUIDS, query: UUIDS.slice(0, 2), list: true },
+  lt: { values: LONG, query: LONG_PLACEHOLDERS },
 };
 
 /** Deterministic, so a failure reproduces. */
@@ -209,6 +243,7 @@ describe.skipIf(skip)(
           },
           { apiKey: 'm', label: 'M', type: 'media', settings: { multiple: false } },
           { apiKey: 'ms', label: 'Ms', type: 'media', settings: { multiple: true } },
+          { apiKey: 'lt', label: 'Lt', type: 'text' },
           { apiKey: 'idx', label: 'Idx', type: 'string', filterable: true },
           {
             apiKey: 'cards',
@@ -306,7 +341,31 @@ describe.skipIf(skip)(
       expect(rows[0]?.wrong).toBe('0');
     };
 
-    const run = async (search: string, source: HeadSource, dialect: ContentSqlDialect) => {
+    /**
+     * Planner settings each query also runs under, so the two forms are compared across different plans (bitmap
+     * scans of either GIN index, index scans in list order, sequential scans).
+     */
+    const PLANS: readonly (readonly string[])[] = [
+      [],
+      ['enable_bitmapscan = off'],
+      ['enable_bitmapscan = off', 'enable_indexscan = off'],
+    ];
+
+    type Order = 'none' | 'list';
+
+    /**
+     * One filter compiled with `dialect`: with no ORDER BY at all (`none`: the rows a filter selects, in whatever
+     * order the plan yields them), or in the order every list query has (`list`: `compileOrderBy`, the default
+     * newest first and then the entry ID, which is unique per row, so the order is total). The corpus is written
+     * in one transaction, so every entry shares its creation time and the entry ID decides the order.
+     */
+    const run = async (
+      search: string,
+      source: HeadSource,
+      dialect: ContentSqlDialect,
+      order: Order,
+      settings: readonly string[] = [],
+    ) => {
       const query = parseContentQuery(parseQueryTree(search), {
         model: model.definition,
         locales: ['en'],
@@ -321,44 +380,81 @@ describe.skipIf(skip)(
           members: [{ modelId: model.definition.id }],
           source,
           locales: { kind: 'any' },
-          conditions: query.filter ? [compileFilter(query.filter, dialect)] : [],
-          orderBy: [],
+          conditions: query.filter ? [compileFilter(withLongStrings(query.filter), dialect)] : [],
+          orderBy:
+            order === 'list'
+              ? compileOrderBy(
+                  defaultSortTerms(model.definition, () => true),
+                  dialect,
+                )
+              : [],
           limit: ENTRIES * 2,
         },
         dialect,
       );
       const { db } = database.current;
-      const rows = (await compiled.rows.execute(db)).rows.map((row) => row.entry_id);
-      const total = Number((await compiled.count.execute(db)).rows[0]?.total);
+      const { rows, total } = await db.transaction().execute(async (trx) => {
+        for (const setting of settings) {
+          await sql.raw(`set local ${setting}`).execute(trx);
+        }
+        return {
+          rows: (await compiled.rows.execute(trx)).rows.map((row) => row.entry_id),
+          total: Number((await compiled.count.execute(trx)).rows[0]?.total),
+        };
+      });
       return { sql: compiled.rows.compile(db).sql, rows, total };
     };
 
-    it('on live heads and on a snapshot of older revisions, for every filter', async () => {
-      const filter = contentDialectFor('postgres');
+    it('on live heads and on a snapshot of older revisions, for every filter and plan', async () => {
+      const ONLY_LONG = /^filters(\[\$not\])?\[lt\]\[\$(eq|ne)\]=%40L[13]$/;
+      const filter = contentDialectFor('postgres', 'filter');
       const document = contentDialectFor('postgres', 'document');
       let matched = 0;
       let compared = 0;
+      const longMatches = new Map<string, number>();
       const sources: HeadSource[] = [
         { kind: 'heads', state: 'published' },
         { kind: 'snapshot', seq: 1 },
       ];
       for (const search of querystrings()) {
         for (const source of sources) {
-          const expected = await run(search, source, document);
-          const actual = await run(search, source, filter);
-          expect(actual.sql).toContain('"filter_data" @>');
+          const label = `${search} (${source.kind})`;
+          const expected = await run(search, source, document, 'list');
           expect(expected.sql).not.toContain('"filter_data" @>');
-          expect(actual.rows, `${search} (${source.kind})`).toEqual(expected.rows);
-          expect(actual.total, `${search} (${source.kind})`).toBe(expected.total);
-          expect(actual.total).toBe(actual.rows.length);
-          matched += actual.total;
+          expect(expected.total).toBe(expected.rows.length);
+          for (const settings of PLANS) {
+            const plan = `${label} [${settings.join(', ') || 'default plan'}]`;
+            for (const dialect of [filter, document]) {
+              // In list order: the same rows in the same order, whichever form and plan.
+              const listed = await run(search, source, dialect, 'list', settings);
+              expect(listed.rows, plan).toEqual(expected.rows);
+              expect(listed.total, plan).toBe(expected.total);
+              // With no ORDER BY the plan decides the order: the same rows and count, in any order.
+              const unordered = await run(search, source, dialect, 'none', settings);
+              expect([...unordered.rows].sort(), plan).toEqual([...expected.rows].sort());
+              expect(unordered.total, plan).toBe(expected.total);
+              // Only a filter whose one containment is a long string has none against filter_data.
+              if (dialect === filter && !ONLY_LONG.test(search)) {
+                expect(listed.sql).toContain('"filter_data" @>');
+              }
+            }
+          }
+          matched += expected.total;
           compared += 1;
+          const long = /^filters\[lt\]\[\$eq\]=%40(L\d)$/.exec(search)?.[1];
+          if (long && source.kind === 'heads') {
+            longMatches.set(`@${long}`, expected.total);
+          }
         }
       }
       expect(compared).toBeGreaterThan(300);
+      // Every long string, kept or left out, is matched by some head.
+      expect(LONG_PLACEHOLDERS.map((placeholder) => (longMatches.get(placeholder) ?? 0) > 0)).toEqual(
+        LONG.map(() => true),
+      );
       // Not vacuous: filters match a good share of the corpus, and not all of it.
       expect(matched).toBeGreaterThan(compared * 20);
       expect(matched).toBeLessThan(compared * ENTRIES);
-    });
+    }, 600_000);
   },
 );

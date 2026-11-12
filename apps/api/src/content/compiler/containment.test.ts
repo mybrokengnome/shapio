@@ -3,6 +3,7 @@ import { Kysely, PostgresDialect } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { compileFilter } from './compile.js';
 import { contentDialectFor } from './dialect/index.js';
+import { FILTER_STRING_MAX_CHARS, isLongFilterString } from './dialect/postgres.js';
 import { parseContentQuery } from './parse.js';
 import { compileRowFilter } from './policy.js';
 import { parseQueryTree } from './querystring.js';
@@ -10,9 +11,10 @@ import { FILTER_OPERATORS, type FilterNode } from './types.js';
 
 /**
  * The guard behind `entry_heads.filter_data` (ADR 0001, "Filter data"): `shapio_scalar_fields`
- * drops top-level values that are null, objects, or arrays without a scalar element, which is only safe while
- * every containment document the compiler emits is `{fieldId: scalar}` or `{fieldId: [scalar]}` on a top-level
- * field, with a non-null scalar. This runs every operator on every data type (and its settings variants,
+ * keeps only top-level scalars and the scalar elements of top-level arrays, and leaves out strings longer than
+ * `FILTER_STRING_MAX_CHARS`, which is only safe while every containment document the compiler emits is
+ * `{fieldId: scalar}` or `{fieldId: [scalar]}` on a top-level field, with a non-null scalar, and every one whose
+ * string is longer goes against `data`. This runs every operator on every data type (and its settings variants,
  * indexed or not) and fails if any containment has another shape. A new data type or operator is covered as
  * soon as it exists.
  */
@@ -121,14 +123,39 @@ const tryParse = (search: string): FilterNode | undefined => {
   }
 };
 
-/** Every containment document a compiled filter binds (`@> $n::jsonb`). */
-const containmentDocuments = (filter: FilterNode, form: 'filter' | 'document') => {
+/** Every containment a compiled filter binds (`"column" @> $n::jsonb`): the column and the document. */
+const containments = (filter: FilterNode, form: 'filter' | 'document') => {
   const { sql, parameters } = compiler
     .selectNoFrom(compileFilter(filter, contentDialectFor('postgres', form)).as('x'))
     .compile();
-  return [...sql.matchAll(/@> \$(\d+)::jsonb/g)].map((match): unknown =>
-    JSON.parse(String(parameters[Number(match[1]) - 1])),
-  );
+  expect(sql.match(/@>/g)?.length ?? 0).toBe([...sql.matchAll(/"\w+" @> \$\d+::jsonb/g)].length);
+  return [...sql.matchAll(/"(\w+)" @> \$(\d+)::jsonb/g)].map((match) => ({
+    column: match[1],
+    document: JSON.parse(String(parameters[Number(match[2]) - 1])) as unknown,
+  }));
+};
+
+const containmentDocuments = (filter: FilterNode, form: 'filter' | 'document') =>
+  containments(filter, form).map((containment) => containment.document);
+
+/** The same filter with every condition's value (or each value of a list) replaced by `value`. */
+const withValue = (filter: FilterNode, value: string): FilterNode => {
+  switch (filter.kind) {
+    case 'and':
+    case 'or':
+      return { ...filter, nodes: filter.nodes.map((node) => withValue(node, value)) };
+    case 'not':
+      return { ...filter, node: withValue(filter.node, value) };
+    default:
+      return {
+        ...filter,
+        value: Array.isArray(filter.value)
+          ? filter.value.map(() => value)
+          : typeof filter.value === 'string'
+            ? value
+            : filter.value,
+      };
+  }
 };
 
 const isScalar = (value: unknown) =>
@@ -178,6 +205,43 @@ describe('containment documents the compiler emits', () => {
         'url',
       ].sort(),
     );
+  });
+
+  it('in the filter form, are against filter_data, except a string longer than filter_data keeps', () => {
+    const long = `${'é'.repeat(FILTER_STRING_MAX_CHARS)}😀`;
+    const atLimit = `${'é'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`;
+    let checked = 0;
+    for (const { field, operator } of cases) {
+      const filter = tryParse(querystringFor(field.apiKey, field.type, operator));
+      if (!filter) {
+        continue;
+      }
+      for (const { column, document } of containments(filter, 'filter')) {
+        expect(column, `${field.label} ${operator}`).toBe('filter_data');
+        const [value] = Object.values(document as Record<string, unknown>);
+        const text = Array.isArray(value) ? (value[0] as unknown) : value;
+        expect(isLongFilterString(text), `${field.label} ${operator}`).toBe(false);
+      }
+      for (const { column } of containments(filter, 'document')) {
+        expect(column, `${field.label} ${operator}`).toBe('data');
+      }
+      // Long values (what GraphQL or an in-process call can send): whole document in both forms.
+      for (const [value, expected] of [
+        [long, 'data'],
+        [atLimit, 'filter_data'],
+      ] as const) {
+        for (const containment of containments(withValue(filter, value), 'filter')) {
+          const [held] = Object.values(containment.document as Record<string, unknown>);
+          const text = Array.isArray(held) ? (held[0] as unknown) : held;
+          if (text === value) {
+            expect(containment.column, `${field.label} ${operator}`).toBe(expected);
+            checked += 1;
+          }
+        }
+      }
+    }
+    // Not vacuous.
+    expect(checked).toBeGreaterThan(20);
   });
 
   it('never come from structured types, which accept no operator at all', () => {

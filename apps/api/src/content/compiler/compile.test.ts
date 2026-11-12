@@ -11,6 +11,7 @@ import {
   filterReadsEntries,
 } from './compile.js';
 import { contentDialectFor, type ContentSqlDialect } from './dialect/index.js';
+import { FILTER_STRING_MAX_CHARS, isLongFilterString } from './dialect/postgres.js';
 import { parseContentQuery } from './parse.js';
 import { parseQueryTree } from './querystring.js';
 import { compileOrderBy } from './sort.js';
@@ -121,9 +122,43 @@ describe('content query compiler', () => {
   });
 
   it('compiles equality on a field without an index to containment with the value as a parameter', () => {
+    // A process that has not confirmed the filter form (none has, here) matches against the whole document.
     const { sql, parameters } = compileQuery('filters[live][$eq]=true');
-    expect(sql).toContain(`("filter_data" @> $`);
+    expect(sql).toContain(`("data" @> $`);
+    expect(sql).not.toContain('filter_data');
     expect(parameters).toContain(JSON.stringify({ [ids.live]: true }));
+  });
+
+  it('defaults to the document form, right on every database; only an explicit filter form uses filter_data', () => {
+    expect(contentDialectFor('postgres')).toBe(contentDialectFor('postgres', 'document'));
+    expect(contentDialectFor('postgres', 'filter')).not.toBe(contentDialectFor('postgres', 'document'));
+  });
+
+  it('matches a string filter_data leaves out against the whole document in the filter form, per $in value', () => {
+    const long = '😀'.repeat(FILTER_STRING_MAX_CHARS + 1);
+    const atLimit = '😀'.repeat(FILTER_STRING_MAX_CHARS);
+    // A REST query value is at most 1,000 code units, so only other callers (GraphQL, in process) send one this
+    // long: the parsed node with its values replaced stands for them.
+    const query = parseContentQuery(
+      parseQueryTree('filters[tags][$in][0]=a&filters[tags][$in][1]=a'),
+      context,
+    );
+    const node = { ...(query.filter as FilterNode & { kind: 'condition' }), value: [long, atLimit] };
+    const { sql, parameters } = compiler
+      .selectNoFrom(compileFilter(node, contentDialectFor('postgres', 'filter')).as('x'))
+      .compile();
+    const targets = [...sql.matchAll(/"(\w+)" @> \$(\d+)::jsonb/g)].map((match) => ({
+      column: match[1],
+      value: JSON.parse(String(parameters[Number(match[2]) - 1])) as unknown,
+    }));
+    expect(targets).toEqual([
+      { column: 'data', value: { [ids.tags]: [long] } },
+      { column: 'filter_data', value: { [ids.tags]: [atLimit] } },
+    ]);
+    expect(isLongFilterString(long)).toBe(true);
+    expect(isLongFilterString(atLimit)).toBe(false);
+    expect(isLongFilterString('a'.repeat(FILTER_STRING_MAX_CHARS + 1))).toBe(true);
+    expect(isLongFilterString(`${'a'.repeat(FILTER_STRING_MAX_CHARS - 1)}😀`)).toBe(false);
   });
 
   it('compiles containment against the whole document while the old index is live, and nothing else differs', () => {
@@ -133,7 +168,7 @@ describe('content query compiler', () => {
     );
     const compile = (dialect: ContentSqlDialect) =>
       compiler.selectNoFrom(compileFilter(query.filter as FilterNode, dialect).as('x')).compile();
-    const filter = compile(contentDialectFor('postgres'));
+    const filter = compile(contentDialectFor('postgres', 'filter'));
     const document = compile(contentDialectFor('postgres', 'document'));
     expect(document.sql).not.toContain('filter_data');
     expect(document.sql.replaceAll('"data" @>', '"filter_data" @>')).toBe(filter.sql);

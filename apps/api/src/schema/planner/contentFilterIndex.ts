@@ -3,12 +3,15 @@ import { JOB_PRIORITY } from '../../constants/jobPriorities.js';
 import { analyzeHeadsStatement, CONTENT_HEADS_TABLE } from '../../content/compiler/expressions.js';
 import {
   addFilterCheckNotValid,
+  addFilterDataColumn,
   CONTENT_INDEX_RECHECK_MS,
   createFilterIndexConcurrently,
   DOCUMENT_INDEX,
   DRAFT_SCALARS_INDEX,
   dropIndexConcurrently,
+  EntryHeadsLockBusyError,
   fillFilterDataBatch,
+  filterFunctionExists,
   FILTER_INDEX,
   filterCheckState,
   hasMissingFilterData,
@@ -20,7 +23,7 @@ import { currentDialect } from '../../db/dialect.js';
 import type { Database } from '../../db/index.js';
 import { getIndexState, tableExists } from '../../db/indexCatalog.js';
 import { enqueueJob } from '../../jobs/queue.js';
-import type { JobHandler } from '../../jobs/types.js';
+import { RescheduleJobError, type JobHandler } from '../../jobs/types.js';
 import * as jobsRepository from '../../repositories/jobs.js';
 import * as jobsAdminRepository from '../../repositories/jobsAdmin.js';
 import { withIndexBuildLock, type IndexBuildOutcome } from './indexes.js';
@@ -34,7 +37,10 @@ import { withIndexBuildLock, type IndexBuildOutcome } from './indexes.js';
  * 3. builds `entry_heads_filter_data_gin` `CONCURRENTLY`;
  * 4. enqueues `schema.contentDocumentIndexDrop`, `DOCUMENT_INDEX_DROP_DELAY_MS` later, when every process has
  *    seen the new index (each looks every `CONTENT_INDEX_RECHECK_MS`), so no process is left without an index.
- * Every step is idempotent and resumes where an earlier attempt stopped; dead jobs are queued again by retention.
+ * Every step is idempotent and resumes where an earlier attempt stopped. When another transaction holds
+ * `entry_heads` through every polite attempt to add the check, the job reschedules itself
+ * (`LOCK_BUSY_RESCHEDULE_MS`) without counting an attempt. Dead jobs are queued again by retention, and by every
+ * process still on the old form when an older worker refused the job (`ensureContentFilterIndexJob`).
  */
 export const CONTENT_FILTER_INDEX_JOB = 'schema.contentFilterIndex';
 /** The key the migration enqueues the build under. */
@@ -42,6 +48,8 @@ export const CONTENT_FILTER_INDEX_KEY = 'schema.contentFilterIndex:v1';
 export const CONTENT_DOCUMENT_INDEX_DROP_JOB = 'schema.contentDocumentIndexDrop';
 export const CONTENT_DOCUMENT_INDEX_DROP_KEY = 'schema.contentDocumentIndexDrop:v1';
 export const DOCUMENT_INDEX_DROP_DELAY_MS = 5 * CONTENT_INDEX_RECHECK_MS;
+/** How long a build or drop that found `entry_heads` locked waits before it tries again (plus up to as much). */
+export const LOCK_BUSY_RESCHEDULE_MS = 60_000;
 /** A dead job is queued again at most this often (the daily retention job looks). */
 export const CONTENT_INDEX_REQUEUE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -55,6 +63,8 @@ const isPostgresWithHeads = async (db: Database) =>
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type FillHooks = {
+  /** Called once the column and trigger exist, before the fill (tests write rows there). */
+  afterColumn?: () => Promise<void>;
   /** Called after each batch (tests write rows between batches). */
   afterBatch?: (filled: number) => Promise<void>;
   signal?: AbortSignal;
@@ -92,10 +102,10 @@ export const fillFilterData = async (
 };
 
 /** Steps 2 and 3, under the index build lock (the check's validation and the build both scan the table). */
-const proveAndIndexNow = async (db: Database, log: FastifyBaseLogger): Promise<void> => {
+const proveAndIndexNow = async (db: Database, log: FastifyBaseLogger, hooks: FillHooks): Promise<void> => {
   const check = await filterCheckState(db);
   if (check === 'missing') {
-    await addFilterCheckNotValid(db);
+    await addFilterCheckNotValid(db, hooks.signal ? { signal: hooks.signal } : {});
   }
   if (check !== 'valid') {
     // Fails, and the job retries (filling again first), if a row still lacks filter data.
@@ -133,8 +143,13 @@ export const buildContentFilterIndex = async (
   if ((await readContentIndexForm(db)) === 'filter') {
     return 'exists';
   }
+  // Step 0: the column and the trigger, which the migration leaves to this job on a table with heads.
+  if (await addFilterDataColumn(db, hooks.signal ? { signal: hooks.signal } : {})) {
+    log.info('content filter data column and trigger added');
+  }
+  await hooks.afterColumn?.();
   await fillFilterData(db, log, hooks);
-  await withIndexBuildLock(db, () => proveAndIndexNow(db, log));
+  await withIndexBuildLock(db, () => proveAndIndexNow(db, log, hooks));
   return 'built';
 };
 
@@ -142,11 +157,15 @@ export const buildContentFilterIndex = async (
  * Drops the whole-document index (and a draft's scalar index), never before the filter form is live (it
  * finishes the build first if need be). Returns whether there was anything to drop.
  */
-export const dropContentDocumentIndex = async (db: Database, log: FastifyBaseLogger): Promise<boolean> => {
+export const dropContentDocumentIndex = async (
+  db: Database,
+  log: FastifyBaseLogger,
+  hooks: FillHooks = {},
+): Promise<boolean> => {
   if (!(await isPostgresWithHeads(db))) {
     return false;
   }
-  await buildContentFilterIndex(db, log);
+  await buildContentFilterIndex(db, log, hooks);
   return withIndexBuildLock(db, async () => {
     let dropped = false;
     for (const name of [DOCUMENT_INDEX, DRAFT_SCALARS_INDEX]) {
@@ -160,16 +179,32 @@ export const dropContentDocumentIndex = async (db: Database, log: FastifyBaseLog
   });
 };
 
+/** A table lock another transaction held: the job comes back later, the attempt not counted. */
+const rescheduleWhenLocked = async <T>(work: () => Promise<T>): Promise<T> => {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof EntryHeadsLockBusyError) {
+      const delay = LOCK_BUSY_RESCHEDULE_MS + Math.round(Math.random() * LOCK_BUSY_RESCHEDULE_MS);
+      throw new RescheduleJobError(error.message, new Date(Date.now() + delay), { cause: error });
+    }
+    throw error;
+  }
+};
+
 const createBuildHandler =
   (db: Database): JobHandler =>
   async (context) => {
-    const outcome = await buildContentFilterIndex(db, context.log, { signal: context.signal });
+    const outcome = await rescheduleWhenLocked(() =>
+      buildContentFilterIndex(db, context.log, { signal: context.signal }),
+    );
     if (outcome !== 'skipped') {
       await enqueueJob(
         {
           type: CONTENT_DOCUMENT_INDEX_DROP_JOB,
           runAt: new Date(Date.now() + DOCUMENT_INDEX_DROP_DELAY_MS),
-          priority: JOB_PRIORITY.background,
+          // Ahead of bulk background work (health sweeps queue thousands), so it runs soon after it is due.
+          priority: JOB_PRIORITY.normal,
           maxAttempts: 5,
           idempotencyKey: CONTENT_DOCUMENT_INDEX_DROP_KEY,
         },
@@ -181,7 +216,11 @@ const createBuildHandler =
 
 const createDropHandler =
   (db: Database): JobHandler =>
-  async (context) => ({ dropped: await dropContentDocumentIndex(db, context.log) });
+  async (context) => ({
+    dropped: await rescheduleWhenLocked(() =>
+      dropContentDocumentIndex(db, context.log, { signal: context.signal }),
+    ),
+  });
 
 export const createContentFilterIndexHandlers = (db: Database): Array<[string, JobHandler]> => [
   [CONTENT_FILTER_INDEX_JOB, createBuildHandler(db)],
@@ -215,4 +254,117 @@ export const requeueDeadContentFilterIndexJobs = async (
     log.info({ requeued }, 'content index jobs queued again');
   }
   return requeued;
+};
+
+/** What 0.8.2 and earlier workers record when they claim a job type they do not know. */
+const noHandlerError = (type: string) => `No handler registered for job type "${type}"`;
+
+export type EnsureOutcome = 'skipped' | 'live' | 'queued' | 'requeued' | 'waiting' | 'finished';
+
+type JobSpec = { type: string; key: string; runAt?: Date; priority?: number };
+
+/**
+ * Makes sure one of this module's jobs is queued or running. Idempotent:
+ * - missing (deleted by hand, or never enqueued): enqueued;
+ * - dead because an older worker refused it (a rolling upgrade): queued again now;
+ * - dead after real failures: left to the daily round (`requeueDeadContentFilterIndexJobs`), so a job that keeps
+ *   failing never runs in a loop;
+ * - queued or running: nothing to do.
+ */
+const ensureJob = async (
+  db: Database,
+  log: FastifyBaseLogger,
+  spec: JobSpec,
+  now: Date,
+): Promise<EnsureOutcome> => {
+  const job = await jobsRepository.findByIdempotencyKey(spec.key, db);
+  if (!job) {
+    const { created } = await enqueueJob(
+      {
+        type: spec.type,
+        maxAttempts: 5,
+        idempotencyKey: spec.key,
+        ...(spec.runAt ? { runAt: spec.runAt } : {}),
+        ...(spec.priority !== undefined ? { priority: spec.priority } : {}),
+      },
+      db,
+    );
+    if (created) {
+      log.info({ jobType: spec.type }, 'content index job was missing; queued it');
+    }
+    return 'queued';
+  }
+  if (job.status === 'dead') {
+    if (
+      job.last_error?.startsWith(noHandlerError(spec.type)) &&
+      (await jobsAdminRepository.requeueDead(
+        job.id,
+        now,
+        db,
+        'Queued again after an older worker refused it: ',
+      ))
+    ) {
+      log.info({ jobType: spec.type }, 'content index job refused by an older worker; queued it again');
+      return 'requeued';
+    }
+    return (await requeueDeadContentFilterIndexJobs(db, now, log)) > 0 ? 'requeued' : 'waiting';
+  }
+  return job.status === 'pending' || job.status === 'running' ? 'live' : 'finished';
+};
+
+/** The build, while the old form is live (see `ensureJob`). */
+export const ensureContentFilterIndexJob = async (
+  db: Database,
+  log: FastifyBaseLogger,
+  now: Date = new Date(),
+): Promise<EnsureOutcome> => {
+  if (!(await isPostgresWithHeads(db)) || !(await filterFunctionExists(db))) {
+    return 'skipped';
+  }
+  return ensureJob(db, log, { type: CONTENT_FILTER_INDEX_JOB, key: CONTENT_FILTER_INDEX_KEY }, now);
+};
+
+/** The drop of the whole-document index, once the filter form is live and while that index is left. */
+export const ensureContentDocumentIndexDropJob = async (
+  db: Database,
+  log: FastifyBaseLogger,
+  now: Date = new Date(),
+): Promise<EnsureOutcome> => {
+  if (!(await isPostgresWithHeads(db))) {
+    return 'skipped';
+  }
+  const left = await Promise.all(
+    [DOCUMENT_INDEX, DRAFT_SCALARS_INDEX].map((name) => getIndexState(db, name)),
+  );
+  if (left.every((state) => state === 'missing')) {
+    return 'finished';
+  }
+  return ensureJob(
+    db,
+    log,
+    {
+      type: CONTENT_DOCUMENT_INDEX_DROP_JOB,
+      key: CONTENT_DOCUMENT_INDEX_DROP_KEY,
+      runAt: new Date(now.getTime() + DOCUMENT_INDEX_DROP_DELAY_MS),
+      priority: JOB_PRIORITY.normal,
+    },
+    now,
+  );
+};
+
+/**
+ * `watchContentIndexForm`'s `onLook` for the server and the worker: keeps the build queued while the old form is
+ * live, then the drop while the old index is left (during a rolling upgrade a worker of the previous release
+ * can claim either, know no handler for it, and mark it dead at once). Returns whether to keep looking.
+ */
+export const keepContentIndexJobsQueued = async (
+  db: Database,
+  log: FastifyBaseLogger,
+  form: 'document' | 'filter',
+): Promise<boolean> => {
+  if (form === 'document') {
+    await ensureContentFilterIndexJob(db, log);
+    return true;
+  }
+  return (await ensureContentDocumentIndexDropJob(db, log)) !== 'finished';
 };

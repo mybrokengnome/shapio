@@ -1,38 +1,56 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { sql } from 'kysely';
-import { setContentIndexForm, type ContentIndexForm } from './contentIndexForm.js';
+import { sleep } from '../helpers/sleep.js';
+import type { ContentIndexForm } from './contentIndexForm.js';
 import { currentDialect } from './dialect.js';
 import { getIndexState } from './indexCatalog.js';
+import { isLockTimeout } from './sql/errors.js';
 import type { Database } from './index.js';
 
 /**
  * `entry_heads.filter_data` and its containment index (ADR 0001, "Filter data"; PostgreSQL only).
  *
- * The migration `20261112120000_entry_heads_scalars_gin` adds the column (nullable, catalog only), the function
- * `shapio_scalar_fields(jsonb)` and the trigger `entry_heads_filter_data`, which sets
- * `filter_data = shapio_scalar_fields(data)` on every insert and on every update that names `data` or
- * `filter_data`, whoever writes. On a new install it also adds the check `entry_heads_filter_data_present` and the
- * index. With heads present, the `schema.contentFilterIndex` job fills the rows written before the trigger
+ * The migration `20261112120000_entry_heads_scalars_gin` creates the function `shapio_scalar_fields(jsonb)` and
+ * the trigger function. On an empty table (a new install) it also adds the column (nullable), the trigger
+ * `entry_heads_filter_data`, which sets `filter_data = shapio_scalar_fields(data)` on every insert and on every
+ * update that names `data` or `filter_data`, whoever writes, the check `entry_heads_filter_data_present`, and the
+ * index. On a table with heads it takes no lock on it and enqueues `schema.contentFilterIndex`, which adds the
+ * column and the trigger (`addFilterDataColumn`, a polite lock), fills the rows written before the trigger
  * existed (`fillFilterData`), adds the check `NOT VALID` and validates it, builds the index `CONCURRENTLY`, and
- * queues the drop of the whole-document index.
+ * queues the drop of the whole-document index. Until then the column may not exist: nothing but this module and
+ * the compiler's filter form names it, and a process uses that form only once `readContentIndexForm` says so.
  *
  * The invariant: once the check is validated, every row's `filter_data` is `shapio_scalar_fields(data)`. The
  * validated check proves no row lacks it (it scanned every row, and refuses any write that would clear it), and
  * the trigger recomputes it on every write that could change either column. So containment on `filter_data`
  * answers exactly what containment on `data` answers, for every row, and a process uses it (`filter`) only when
  * the check is validated and the index is valid (`readContentIndexForm`).
+ *
+ * Long strings: the function leaves out a top-level string longer than `FILTER_STRING_MAX_CHARS` characters (and
+ * such string elements of a top-level array), and the compiler emits the document form for a value that long
+ * (`content/compiler/dialect/postgres.ts`), so answers stay the same in both forms.
  */
 export const FILTER_INDEX = 'entry_heads_filter_data_gin';
 export const DOCUMENT_INDEX = 'entry_heads_data_gin';
 /** An index an unreleased draft of the migration built; dropped with the whole-document index. */
 export const DRAFT_SCALARS_INDEX = 'entry_heads_scalars_gin';
 export const FILTER_CHECK = 'entry_heads_filter_data_present';
+export const FILTER_TRIGGER = 'entry_heads_filter_data';
+/** Created by the migration, with the function, on every database. */
+export const FILTER_TRIGGER_FUNCTION = 'shapio_entry_heads_filter_data';
 
 /** How often a process still on the old form looks at the catalog again. */
 export const CONTENT_INDEX_RECHECK_MS = 60_000;
 
-/** How long adding the check may wait for its brief table lock before giving up (the job retries). */
-const CHECK_LOCK_TIMEOUT = '5s';
+/**
+ * How long one attempt to add the check waits for its table lock. While it waits, every query on `entry_heads`
+ * queues behind it, so it gives up quickly and tries again later (`addFilterCheckNotValid`).
+ */
+export const LOCK_ATTEMPT_TIMEOUT_MS = 150;
+/** Attempts to add the check before the job is rescheduled (`EntryHeadsLockBusyError`). */
+const LOCK_ATTEMPTS = 8;
+/** The longest pause between two attempts (jittered, doubling from 100 ms). */
+const LOCK_RETRY_MAX_PAUSE_MS = 5_000;
 
 export type HeadKey = { entryId: string; locale: string; state: string };
 
@@ -99,83 +117,254 @@ export const filterCheckState = async (db: Database): Promise<CheckState> => {
   return row.valid ? 'valid' : 'notValid';
 };
 
-/**
- * Adds the check without scanning (`NOT VALID`: it holds for every write from now on). Taking the table lock
- * is brief, but waits behind open transactions; it gives up after `CHECK_LOCK_TIMEOUT` instead of queueing
- * every query behind it.
- */
-export const addFilterCheckNotValid = (db: Database): Promise<void> =>
-  db.transaction().execute(async (trx) => {
-    await sql`set local lock_timeout = ${sql.lit(CHECK_LOCK_TIMEOUT)}`.execute(trx);
-    await sql`alter table entry_heads add constraint ${sql.id(FILTER_CHECK)}
-      check (filter_data is not null) not valid`.execute(trx);
-  });
+/** Another transaction held `entry_heads` through every attempt to lock it; the caller tries again later. */
+export class EntryHeadsLockBusyError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'EntryHeadsLockBusyError';
+  }
+}
 
-/** Scans every row under a lock that blocks neither reads nor writes; fails if a row lacks `filter_data`. */
+const lockRetryPause = (attempt: number) => {
+  const ceiling = Math.min(LOCK_RETRY_MAX_PAUSE_MS, 100 * 2 ** (attempt - 1));
+  return Math.round(ceiling / 2 + (Math.random() * ceiling) / 2);
+};
+
+export type LockAttempts = { attempts?: number; signal?: AbortSignal };
+
+/**
+ * Runs `statements` in a short transaction that needs ACCESS EXCLUSIVE on `entry_heads` for a moment. The lock
+ * waits behind any open transaction that touched the table (a long export, `pg_dump`), and every later query on
+ * the table queues behind the wait. So each attempt waits at most `LOCK_ATTEMPT_TIMEOUT_MS`, the next comes
+ * after a jittered pause, and after `attempts` it throws `EntryHeadsLockBusyError` for the job to reschedule
+ * itself.
+ */
+const withPoliteLock = async (
+  db: Database,
+  what: string,
+  statements: (trx: Database) => Promise<void>,
+  { attempts = LOCK_ATTEMPTS, signal }: LockAttempts,
+): Promise<void> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    signal?.throwIfAborted();
+    try {
+      await db.transaction().execute(async (trx) => {
+        await sql`set local lock_timeout = ${sql.lit(`${LOCK_ATTEMPT_TIMEOUT_MS}ms`)}`.execute(trx);
+        await statements(trx);
+      });
+      return;
+    } catch (error) {
+      if (!isLockTimeout(error)) {
+        throw error;
+      }
+      lastError = error;
+    }
+    if (attempt < attempts) {
+      await sleep(lockRetryPause(attempt), signal);
+    }
+  }
+  throw new EntryHeadsLockBusyError(
+    `Another transaction held entry_heads through ${attempts} attempts to ${what}`,
+    {
+      cause: lastError,
+    },
+  );
+};
+
+const columnExists = async (db: Database): Promise<boolean> => {
+  const { rows } = await sql<{ present: boolean }>`
+    select exists (select 1 from pg_catalog.pg_attribute
+      where attrelid = to_regclass('entry_heads') and attname = 'filter_data' and not attisdropped) as present
+  `.execute(db);
+  return rows[0]?.present ?? false;
+};
+
+const triggerExists = async (db: Database): Promise<boolean> => {
+  const { rows } = await sql<{ present: boolean }>`
+    select exists (select 1 from pg_catalog.pg_trigger
+      where tgrelid = to_regclass('entry_heads') and tgname = ${FILTER_TRIGGER}) as present`.execute(db);
+  return rows[0]?.present ?? false;
+};
+
+/** Whether the migration has run here (it creates the function on every database). */
+export const filterFunctionExists = async (db: Database): Promise<boolean> => {
+  const { rows } = await sql<{ present: boolean }>`
+    select to_regprocedure('shapio_scalar_fields(jsonb)') is not null as present`.execute(db);
+  return rows[0]?.present ?? false;
+};
+
+/**
+ * Adds `filter_data` (nullable: a catalog-only change) and the trigger that keeps it, in one short transaction
+ * under a polite lock, so every row written after it commits has its filter data. Both guarded, so a retry or a
+ * second job finds them and does nothing; a quick catalog look first skips the lock entirely once they exist.
+ */
+export const addFilterDataColumn = async (db: Database, options: LockAttempts = {}): Promise<boolean> => {
+  if ((await columnExists(db)) && (await triggerExists(db))) {
+    return false;
+  }
+  await withPoliteLock(
+    db,
+    'add filter_data',
+    async (trx) => {
+      await sql`alter table entry_heads add column if not exists filter_data jsonb`.execute(trx);
+      if (!(await triggerExists(trx))) {
+        await sql`create trigger ${sql.id(FILTER_TRIGGER)} before insert or update of data, filter_data
+          on entry_heads for each row execute function ${sql.id(FILTER_TRIGGER_FUNCTION)}()`.execute(trx);
+      }
+    },
+    options,
+  );
+  return true;
+};
+
+/** Adds the check without scanning (`NOT VALID`: it holds for every write from now on), under a polite lock. */
+export const addFilterCheckNotValid = (db: Database, options: LockAttempts = {}): Promise<void> =>
+  withPoliteLock(
+    db,
+    `add ${FILTER_CHECK}`,
+    async (trx) => {
+      await sql`alter table entry_heads add constraint ${sql.id(FILTER_CHECK)}
+        check (filter_data is not null) not valid`.execute(trx);
+    },
+    options,
+  );
+
+/**
+ * Scans every row under SHARE UPDATE EXCLUSIVE, which blocks neither reads nor writes (only other schema changes,
+ * index builds and VACUUM on the table); while it waits for that lock, user queries pass it. No lock timeout:
+ * it never holds anyone up. Fails if a row lacks `filter_data`.
+ */
 export const validateFilterCheck = (db: Database): Promise<unknown> =>
   sql`alter table entry_heads validate constraint ${sql.id(FILTER_CHECK)}`.execute(db);
 
+/**
+ * SHARE UPDATE EXCLUSIVE too, and waits for transactions older than the build to end; reads and writes pass it
+ * throughout. No lock timeout: one would leave an INVALID index after a wait that holds no one up.
+ */
 export const createFilterIndexConcurrently = (db: Database): Promise<unknown> =>
   sql`create index concurrently if not exists ${sql.id(FILTER_INDEX)}
     on entry_heads using gin (filter_data jsonb_path_ops)`.execute(db);
 
-/** Drops an index on `entry_heads` without blocking writes. */
+/** Drops an index on `entry_heads` without blocking reads or writes (the same lock as the build, same waits). */
 export const dropIndexConcurrently = (db: Database, name: string): Promise<unknown> =>
   sql`drop index concurrently if exists ${sql.id(name)}`.execute(db);
 
-/** `filter` once the check is validated (every row filled) and the index is valid; never merely present. */
+/**
+ * `filter` once the column and the trigger exist, the check is validated (every row filled), and the index is
+ * valid; never merely present.
+ */
 export const readContentIndexForm = async (db: Database): Promise<ContentIndexForm> =>
-  (await filterCheckState(db)) === 'valid' && (await getIndexState(db, FILTER_INDEX)) === 'valid'
+  (await columnExists(db)) &&
+  (await triggerExists(db)) &&
+  (await filterCheckState(db)) === 'valid' &&
+  (await getIndexState(db, FILTER_INDEX)) === 'valid'
     ? 'filter'
     : 'document';
 
-export type ContentIndexWatch = { stop: () => void };
-
-const NO_WATCH: ContentIndexWatch = { stop: () => undefined };
+let processForm: ContentIndexForm = 'document';
 
 /**
- * Sets the process's form from the catalog (PostgreSQL; SQLite and MySQL have no containment index). While the
- * old form is live, an unref'd timer looks again every `CONTENT_INDEX_RECHECK_MS` and stops at the switch, which
- * never goes back: nothing undoes a validated check, and the old index is dropped only after the switch.
- * Steady state costs nothing.
+ * The form this process emits containment in (`db/contentIndexForm.ts`): `document` until a catalog read in
+ * `watchContentIndexForm` confirmed the filter form, which is the only place that switches it.
  */
-export const watchContentIndexForm = async (
+export const contentIndexForm = (): ContentIndexForm => processForm;
+
+/** Back to the default form (tests that move one database back to before the switch). */
+export const resetContentIndexForm = (): void => {
+  processForm = 'document';
+};
+
+export type ContentIndexWatch = {
+  /** Settles after the first catalog read, whatever it found (never rejects). */
+  ready: Promise<void>;
+  stop: () => void;
+};
+
+export type ContentIndexWatchOptions = {
+  /**
+   * Called after every catalog read (at the start and on each re-check) with the form it found, so the caller
+   * can keep the jobs that finish the switch queued (an older worker in a rolling upgrade can refuse them).
+   * Returns whether there is still work to look after; once the filter form is live and it says no, the watch
+   * stops. Its failures are logged and count as yes.
+   */
+  onLook?: (form: ContentIndexForm) => Promise<boolean>;
+};
+
+const NO_WATCH: ContentIndexWatch = { ready: Promise.resolve(), stop: () => undefined };
+
+/**
+ * Keeps the process's form in step with the catalog (PostgreSQL; SQLite and MySQL have no containment index).
+ * The first read starts at once; until one confirms the filter form the process emits the document form,
+ * which is right on every database, and an unref'd timer reads again every `CONTENT_INDEX_RECHECK_MS`, also
+ * after a failed read (the database was down), until one confirms it and `onLook` has nothing left to do. The
+ * switch never goes back: nothing undoes a validated check, and the old index is dropped only after the switch.
+ * Steady state costs nothing. Callers that can wait (server and worker startup) await `ready`, so they serve
+ * with the filter form from their first query on an instance that has it.
+ */
+export const watchContentIndexForm = (
   db: Database,
   log: FastifyBaseLogger,
-): Promise<ContentIndexWatch> => {
-  if (currentDialect() !== 'postgres') {
+  { onLook }: ContentIndexWatchOptions = {},
+): ContentIndexWatch => {
+  if (currentDialect() !== 'postgres' || (processForm === 'filter' && !onLook)) {
     return NO_WATCH;
   }
-  const form = await readContentIndexForm(db);
-  setContentIndexForm(form);
-  if (form === 'filter') {
-    return NO_WATCH;
-  }
-  log.info({ indexName: FILTER_INDEX }, 'content filter index not ready yet; containment uses the old index');
-  let checking = false;
+  let checking: Promise<void> | undefined;
   let stopped = false;
-  const timer = setInterval(() => {
-    if (checking || stopped) {
+  let warned = false;
+  const check = async (): Promise<void> => {
+    let form: ContentIndexForm;
+    try {
+      form = await readContentIndexForm(db);
+    } catch (error) {
+      log.warn({ err: error }, 'checking the content filter index failed; trying again later');
       return;
     }
-    checking = true;
-    readContentIndexForm(db)
-      .then((next) => {
-        if (next === 'filter' && !stopped) {
-          clearInterval(timer);
-          setContentIndexForm('filter');
-          log.info({ indexName: FILTER_INDEX }, 'content filter index ready; containment uses it');
-        }
-      })
-      .catch((error: unknown) => {
-        log.warn({ err: error }, 'checking the content filter index failed; trying again later');
-      })
-      .finally(() => {
-        checking = false;
-      });
+    if (stopped) {
+      return;
+    }
+    if (form === 'filter' && processForm !== 'filter') {
+      processForm = 'filter';
+      log.info({ indexName: FILTER_INDEX }, 'content filter index ready; containment uses it');
+    }
+    if (form === 'document' && !warned) {
+      warned = true;
+      log.info(
+        { indexName: FILTER_INDEX },
+        'content filter index not ready yet; containment uses the old index',
+      );
+    }
+    let more: boolean;
+    try {
+      more = (await onLook?.(form)) ?? false;
+    } catch (error) {
+      more = true;
+      log.warn({ err: error }, 'making sure the content index jobs are queued failed; trying again later');
+    }
+    if (form === 'filter' && !more) {
+      clearInterval(timer);
+    }
+  };
+  const run = () => {
+    if (processForm === 'filter' && !onLook) {
+      // Another watch in this process (a server and an in-process runtime) confirmed it.
+      clearInterval(timer);
+    }
+    if (checking || stopped || (processForm === 'filter' && !onLook)) {
+      return checking ?? Promise.resolve();
+    }
+    checking = check().finally(() => {
+      checking = undefined;
+    });
+    return checking;
+  };
+  const timer = setInterval(() => {
+    void run();
   }, CONTENT_INDEX_RECHECK_MS);
   timer.unref();
   return {
+    ready: run(),
     stop: () => {
       stopped = true;
       clearInterval(timer);

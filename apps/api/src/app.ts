@@ -79,6 +79,7 @@ import { previewRoutes } from './routes/preview/index.js';
 import { siteRoutes } from './routes/site/index.js';
 import { snapshotsRoutes } from './routes/snapshots/index.js';
 import { createSchemaFieldVisibility } from './schema/fieldVisibility.js';
+import { keepContentIndexJobsQueued } from './schema/planner/contentFilterIndex.js';
 import type { SchemaContentPorts } from './schema/planner/contentPorts.js';
 import { createSchemaRegistry } from './schema/registry.js';
 import { createPreviewFrameSources } from './services/previewOrigins.js';
@@ -199,9 +200,13 @@ export const buildApp = async (config: AppConfig, deps: AppDependencies): Promis
   app.decorate('schemaLookup', schemaLookup);
   // The item ID key exists before any request uses it (never first created inside a write that may roll back).
   await ensureItemIdKey(deps.db);
-  // Which GIN index containment is emitted for (ADR 0001, "Filter data").
-  const contentIndexWatch = await watchContentIndexForm(deps.db, app.log);
+  // Which GIN index containment is emitted for (ADR 0001, "Filter data"): the first catalog read finishes
+  // before any route exists; while the old form is live, the job that switches it is kept queued.
+  const contentIndexWatch = watchContentIndexForm(deps.db, app.log, {
+    onLook: (form) => keepContentIndexJobsQueued(deps.db, app.log, form),
+  });
   app.addHook('onClose', async () => contentIndexWatch.stop());
+  await contentIndexWatch.ready;
   app.decorate(
     'signingSecret',
     deps.signingSecret ?? (await resolveSigningSecret(deps.db, config.sessionSecret, app.log)),

@@ -8,6 +8,7 @@ import type { JobRow } from '../repositories/jobs.js';
 import { relayOutboxEvents } from './outbox.js';
 import {
   PermanentJobError,
+  RescheduleJobError,
   type JobContext,
   type JobHandlers,
   type JobLogger,
@@ -57,6 +58,11 @@ export const createWorker = (options: WorkerOptions): Worker => {
 
   const settleFailure = async (job: JobRow, error: unknown) => {
     const message = describeError(error);
+    if (error instanceof RescheduleJobError) {
+      log.info({ jobId: job.id, jobType: job.type, runAt: error.runAt, reason: message }, 'job rescheduled');
+      await jobsRepository.postpone(fenceOf(job), message, error.runAt, now(), db);
+      return;
+    }
     const permanent = error instanceof PermanentJobError;
     if (permanent || job.attempts >= job.max_attempts) {
       log.error({ err: error, jobId: job.id, jobType: job.type, attempt: job.attempts }, 'job dead');

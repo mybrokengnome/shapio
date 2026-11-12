@@ -93,6 +93,11 @@ for every write change below is the same: send back the `id` of each item you re
    introspection is 184 tokens and the API explorer's largest generated queries about 2,500, so ordinary clients
    are far under it.
 
+On PostgreSQL, each entry's copy of its top-level values (`entry_heads.filter_data`) is kept by a database trigger.
+Writes made in a session with `session_replication_role = replica` (some replication and restore tools set it) skip
+that trigger: the database still refuses a row without the copy but cannot tell a stale one, so after such writes run
+`UPDATE entry_heads SET data = data` to recompute it.
+
 ## Going back
 
 Restarting an older version on a database migrated by a newer one is not supported. To go back, restore the

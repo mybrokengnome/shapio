@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createJobHandlers } from '../src/jobs/handlers/index.js';
 import { enqueueJob } from '../src/jobs/queue.js';
-import { PermanentJobError, type JobHandler } from '../src/jobs/types.js';
+import { PermanentJobError, RescheduleJobError, type JobHandler } from '../src/jobs/types.js';
 import { createWorker, type Worker } from '../src/jobs/worker.js';
 import * as jobsRepository from '../src/repositories/jobs.js';
 import { silentLogger } from './helpers/silentLogger.js';
@@ -134,6 +134,36 @@ describe('job queue and worker', () => {
       status: 'dead',
       last_error: expect.stringContaining('No handler') as unknown,
     });
+  });
+
+  it('puts a job back until a later time on a RescheduleJobError, without counting the attempt', async () => {
+    const { db } = database.current;
+    const later = new Date(Date.now() + 60 * 60 * 1000);
+    const { job } = await enqueueJob({ type: 'test.locked', maxAttempts: 1 }, db);
+    let calls = 0;
+    makeWorker({
+      'test.locked': async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new RescheduleJobError('table busy', later);
+        }
+        return 'ok';
+      },
+    }).start();
+    const postponed = await waitFor(
+      async () => {
+        const row = await findJob(job.id);
+        return row?.last_error ? row : undefined;
+      },
+      { description: 'the job postponed' },
+    );
+    // On its only attempt, and not dead: the attempt was not counted.
+    expect(postponed).toMatchObject({ status: 'pending', attempts: 0, locked_by: null });
+    expect(new Date(postponed.run_at).getTime()).toBe(later.getTime());
+    expect(postponed.last_error).toContain('table busy');
+    await db.updateTable('jobs').set({ run_at: new Date() }).where('id', '=', job.id).execute();
+    expect(await settled(job.id)).toMatchObject({ status: 'succeeded', attempts: 1 });
+    expect(calls).toBe(2);
   });
 
   it('reclaims a job whose lease expired and fences out the presumed-dead worker', async () => {

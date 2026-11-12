@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 import { pino, type Logger } from 'pino';
 import type { StorageConfig } from '../config/index.js';
-import { watchContentIndexForm, type ContentIndexWatch } from '../db/contentFilterIndex.js';
+import { watchContentIndexForm } from '../db/contentFilterIndex.js';
 import { describeDatabaseTarget, dialectOfUrl } from '../db/dialect.js';
 import { clearDb, createDb, hasDb, setDb, type Database } from '../db/index.js';
 import { createUrlBuilder } from '../helpers/publicUrl.js';
@@ -147,14 +147,10 @@ const openRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
   }
   const registryLog = log.child({ component: 'schema-registry' }) as unknown as FastifyBaseLogger;
   const registry = createSchemaRegistry({ db, log: registryLog });
-  // Which GIN index containment is emitted for (ADR 0001, "Filter data"); until the catalog
-  // answers, the default form (correct either way, only the index differs).
-  const contentIndexWatch: Promise<ContentIndexWatch> = watchContentIndexForm(db, registryLog).catch(
-    (error: unknown) => {
-      log.warn({ err: error }, 'checking the content index failed; containment keeps the default form');
-      return { stop: () => undefined };
-    },
-  );
+  // Which GIN index containment is emitted for (ADR 0001, "Filter data"). Not awaited (creating the runtime
+  // never touches the database): until a catalog read confirms the filter form, containment uses the document
+  // form, right on every database; a failed read is tried again every minute.
+  const contentIndexWatch = watchContentIndexForm(db, registryLog);
   const permissions = createPermissionEvaluator({
     grants: createPermissionCache(db),
     fields: createSchemaFieldVisibility(registry),
@@ -217,7 +213,7 @@ const openRuntime = (options: DeliveryRuntimeOptions): DeliveryRuntime => {
           runtimes().delete(options.databaseUrl);
         }
         await registry.close();
-        (await contentIndexWatch).stop();
+        contentIndexWatch.stop();
         await db.destroy();
         if (ownsProcessHandle) {
           clearDb(db);
